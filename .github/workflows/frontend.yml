@@ -1,0 +1,54 @@
+name: frontend
+
+# frontend/ 아래만 검사합니다. 파이썬 쪽 검사는 기존 checks.yml 이 그대로 담당합니다.
+# 프론트 파일이 바뀌지 않은 PR 에서는 실행되지 않습니다.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  check:
+    name: 타입 검사 · 빌드
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # pnpm 10 과 11 은 lockfile 형식과 설정 위치(11부터 pnpm-workspace.yaml)가
+          # 달라서 섞으면 install 이 어긋납니다. 로컬과 같은 메이저를 고정합니다.
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 의존성 설치
+        # ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION 으로 막히면 방금 배포된 전이 의존성이
+        # lockfile 에 물린 것입니다. pnpm-workspace.yaml 의 minimumReleaseAgeExclude 에
+        # 해당 패키지만 추가하세요. minimumReleaseAge 를 0으로 낮추지는 마세요.
+        run: pnpm install --frozen-lockfile
+
+      - name: 타입 검사
+        run: pnpm typecheck
+
+      - name: 빌드
+        run: pnpm build
