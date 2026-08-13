@@ -22,8 +22,12 @@ class PublicDataMetadata(BaseModel): #공공 데이터 메타 데이터
     source_url: str | None = None
 
 
-class RetrievedPublicChunk(BaseModel): #검색된 공공데이터 청크 단위
+class RetrievedPublicChunk(BaseModel): #검색된 공공데이터 청크 단위(Vector DB에서 검색 이후결과)
     vector_chunk_id: str
     content: str
     similarity_score: float | None = None
+    metadata: PublicDataMetadata
+
+class PublicDataDocument(BaseModel): #VectorDb에 넣기 전 문서
+    content: str
     metadata: PublicDataMetadata
