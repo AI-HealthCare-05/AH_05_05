@@ -173,5 +173,5 @@ chmod +x scripts/certbot.sh
 ## 📝 개발 가이드
 
 - **API 추가**: `app/apis/v1/` 아래에 새로운 라우터 파일을 생성하고 `app/apis/v1/__init__.py`에 등록하세요.
-- **DB 모델 추가**: `app/models/`에 Tortoise 모델을 정의하고 `app/db/databases.py`의 `MODELS` 리스트에 추가하세요.
+- **DB 모델 추가**: `app/models/`에 Tortoise 모델을 정의하고 `app/core/db/databases.py`의 `TORTOISE_APP_MODELS` 리스트에 추가하세요.
 - **AI 로직 추가**: `ai_worker/tasks/`에 새로운 처리 로직을 작성하고 `ai_worker/main.py`에서 호출하도록 구성하세요.
