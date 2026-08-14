@@ -1,0 +1,32 @@
+# pnpm 설정. pnpm 11부터 pnpm 관련 설정은 .npmrc가 아니라 이 파일에서 읽습니다.
+
+# esbuild의 postinstall(플랫폼 바이너리 설치) 실행을 허용합니다.
+# 없으면 install 때 ERR_PNPM_IGNORED_BUILDS가 뜹니다. (pnpm approve-builds가 기록한 값)
+allowBuilds:
+  esbuild: true
+
+# node_modules를 symlink 없이 평탄한 실제 폴더로 설치합니다.
+#
+# 이유: WSL(/mnt/c/...)에서 pnpm install을 돌리고 Windows 네이티브 IDE(PyCharm 등)로
+# 편집하는 조합에서, pnpm 기본 방식이 만드는 symlink를 Windows 쪽 TypeScript 서비스가
+# 따라가지 못해 모든 의존성이 "Cannot find module 'react'"로 뜹니다.
+# hoisted로 두면 실제 폴더가 깔려 어느 쪽에서 읽어도 동일하게 해석됩니다.
+#
+# 트레이드오프: pnpm의 엄격한 의존성 격리가 약해집니다. package.json에 선언하지 않은
+# 패키지를 import해도 통과할 수 있으니, 새 패키지를 쓸 때는 반드시 pnpm add로 먼저
+# 선언해주세요.
+nodeLinker: hoisted
+
+# pnpm 11부터 배포된 지 24시간이 안 된 패키지는 설치를 거부합니다(공급망 공격 방어).
+# 정책은 그대로 두고, 매일 자동 배포되는 데이터 패키지 하나만 예외로 둡니다.
+#
+# electron-to-chromium 은 Chromium↔Electron 버전 대응표만 담긴 데이터 모듈이고
+# install 스크립트가 없습니다. browserslist 를 통해 빌드 타임에만 쓰입니다.
+# 이걸 빼두지 않으면 누군가 pnpm add 를 한 직후 다른 팀원의 install 이
+# ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION 으로 막힙니다.
+#
+# 다른 패키지가 같은 이유로 막히면 여기에 이름만 추가하세요.
+# minimumReleaseAge 를 0으로 낮추거나 정책 자체를 끄지는 마세요.
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - electron-to-chromium

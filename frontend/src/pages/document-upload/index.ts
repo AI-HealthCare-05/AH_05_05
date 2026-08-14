@@ -1,0 +1,1 @@
+export { DocumentUploadPage } from './DocumentUploadPage';

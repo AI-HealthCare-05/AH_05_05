@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>관리자 로그인 - Ozcoding AI Health</title>
+  <link rel="stylesheet" href="../css/styles.css">
+  <script type="module" src="../js/login.js"></script>
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-card" aria-labelledby="login-title">
+      <header class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+          </svg>
+        </div>
+        <div>
+          <p class="brand-name">Ozcoding_AI.health</p>
+          <p class="brand-description">기업 관리 포털</p>
+        </div>
+      </header>
+
+      <h1 id="login-title" class="login-title">관리자 로그인</h1>
+
+      <form class="login-form" data-login-form data-dashboard-url="dashboard.html" novalidate>
+        <div class="form-field">
+          <label class="form-label" for="login-id">관리자 ID</label>
+          <div class="input-wrap">
+            <input id="login-id" class="text-input" name="loginId" type="text" autocomplete="username" placeholder="admin_ops_01@ozcoding.ai" aria-describedby="login-id-error">
+          </div>
+          <span id="login-id-error" class="field-error" data-error-for="loginId" aria-live="polite"></span>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="password">비밀번호</label>
+          <div class="input-wrap">
+            <input id="password" class="text-input" name="password" type="password" autocomplete="current-password" placeholder="비밀번호 입력" aria-describedby="password-error">
+            <button class="icon-button" type="button" data-password-toggle aria-label="비밀번호 표시" aria-pressed="false">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+          <span id="password-error" class="field-error" data-error-for="password" aria-live="polite"></span>
+        </div>
+
+        <div class="login-options">
+          <label class="remember-option">
+            <input name="remember" type="checkbox">
+            <span>로그인 상태 유지</span>
+          </label>
+          <a class="password-help" href="#" aria-label="비밀번호 찾기 준비 중">비밀번호 찾기</a>
+        </div>
+
+        <button class="login-button" type="submit">보안 로그인</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
