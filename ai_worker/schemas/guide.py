@@ -1,13 +1,10 @@
-#LLM에 반환할 최종 구현(최종 회복 가이드 구조)
-
 from pydantic import BaseModel, Field
 
-from ai_worker.schemas.enums import SourceType, SafetyStatus
+from ai_worker.schemas.enums import SafetyStatus, SourceType
 
 
-class GuideSource(BaseModel):#통합 출처 추적
+class GuideSource(BaseModel):
     source_type: SourceType
-
     extracted_field_id: int | None = None
 
     public_dataset_key: str | None = None
@@ -23,7 +20,7 @@ class GuideSource(BaseModel):#통합 출처 추적
     similarity_score: float | None = None
 
 
-class RecoveryGuideContent(BaseModel):#회복 안내서 본문 내용
+class RecoveryGuideContent(BaseModel):
     medication_guide: list[str] = Field(default_factory=list)
     patient_instructions: list[str] = Field(default_factory=list)
     public_information: list[str] = Field(default_factory=list)
@@ -33,7 +30,7 @@ class RecoveryGuideContent(BaseModel):#회복 안내서 본문 내용
     safety_notice: str
 
 
-class RecoveryGuideResult(BaseModel):#최종결과 래퍼 클래스
+class RecoveryGuideResult(BaseModel):
     care_episode_id: int
     guide_content: RecoveryGuideContent
     sources: list[GuideSource] = Field(default_factory=list)
