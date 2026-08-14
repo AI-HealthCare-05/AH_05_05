@@ -1,0 +1,14 @@
+.overlay-open { overflow: hidden; }
+.overlay-host { position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(17,24,39,.5); animation: overlay-fade .16s ease-out; }
+.overlay-panel { width: min(100%, 420px); max-height: calc(100vh - 40px); overflow: auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,.24); animation: overlay-rise .18s ease-out; }
+.overlay-panel-wide { width: min(100%, 440px); margin-left: auto; height: 100%; max-height: none; border-radius: 0; }
+.overlay-form { display: grid; gap: 16px; }
+.overlay-field { display: grid; gap: 6px; }
+.overlay-field label { font-size: 12px; font-weight: 600; color: #4b5563; }
+.overlay-error { min-height: 14px; font-size: 11px; color: #dc2626; }
+.overlay-actions { display: flex; gap: 12px; margin-top: 20px; }
+.overlay-actions > * { flex: 1; }
+@keyframes overlay-fade { from { opacity: 0; } }
+@keyframes overlay-rise { from { opacity: 0; transform: translateY(8px); } }
+@media (max-width: 480px) { .overlay-host { padding: 10px; } .overlay-panel { padding: 20px; } }
+@media (prefers-reduced-motion: reduce) { .overlay-host, .overlay-panel { animation: none; } }
