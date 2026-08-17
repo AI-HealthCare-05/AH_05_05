@@ -6,7 +6,10 @@ from ai_worker.schemas.guideline import (
     RetrievedGuidelineChunk,
 )
 from ai_worker.schemas.patient import PatientContext
-from ai_worker.schemas.safety import ConflictCheckResult, SafetyResult
+from ai_worker.schemas.safety import (
+    ConflictCheckResult,
+    SafetyResult,
+)
 
 
 class PatientContextProvider(Protocol):
@@ -15,6 +18,24 @@ class PatientContextProvider(Protocol):
         user_id: int,
         care_episode_id: int,
     ) -> PatientContext: ...
+
+
+class EmbeddingProvider(Protocol):
+    @property
+    def model_name(self) -> str: ...
+
+    @property
+    def dimension(self) -> int: ...
+
+    async def embed_documents(
+        self,
+        texts: list[str],
+    ) -> list[list[float]]: ...
+
+    async def embed_query(
+        self,
+        query: str,
+    ) -> list[float]: ...
 
 
 class GuidelineRetriever(Protocol):
@@ -28,7 +49,9 @@ class GuidelineConflictResolver(Protocol):
     async def resolve(
         self,
         patient_context: PatientContext,
-        guideline_chunks: list[RetrievedGuidelineChunk],
+        guideline_chunks: list[
+            RetrievedGuidelineChunk
+        ],
     ) -> ConflictCheckResult: ...
 
 
@@ -36,7 +59,9 @@ class GuideGenerator(Protocol):
     async def generate(
         self,
         patient_context: PatientContext,
-        guideline_chunks: list[RetrievedGuidelineChunk],
+        guideline_chunks: list[
+            RetrievedGuidelineChunk
+        ],
     ) -> RecoveryGuideResult: ...
 
 

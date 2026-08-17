@@ -1,12 +1,7 @@
 import pytest
 
-from ai_worker.rag.splitters.guideline_splitter import (
-    GuidelineSplitter,
-)
-from ai_worker.schemas.guideline import (
-    GuidelineDocument,
-    GuidelineMetadata,
-)
+from ai_worker.rag.splitters.guideline_splitter import GuidelineSplitter
+from ai_worker.schemas.guideline import GuidelineDocument, GuidelineMetadata
 
 
 def build_document(

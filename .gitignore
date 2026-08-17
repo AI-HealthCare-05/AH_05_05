@@ -6,9 +6,10 @@ wheels/
 *.egg-info
 .venv
 .*.env
-.env
+../.env
 .idea/
 .vscode
 .coverage
 *.coverage
 .coverage.*
+.env
