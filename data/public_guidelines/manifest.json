@@ -1,0 +1,18 @@
+{
+  "documents": [
+    {
+      "file_path": "data/public_guidelines/pdfs/canadian-stroke-secondary-prevention-2020.pdf",
+      "document_id": "canadian-stroke-2020",
+      "title": "Canadian Stroke Best Practice Recommendations",
+      "organization": "Heart and Stroke Foundation of Canada",
+      "dataset_version": "2020",
+      "publication_year": 2020,
+      "language": "en",
+      "condition": "STROKE",
+      "care_phase": "POST_DISCHARGE",
+      "topic": "LIFESTYLE",
+      "source_url": null,
+      "license": "확인 필요"
+    }
+  ]
+}
