@@ -1,0 +1,43 @@
+from fastapi import status
+
+
+class AppError(Exception):
+    """API 에러 공통 베이스.
+
+    핸들러가 {"code": ..., "message": ...} 형태로 직렬화한다.
+    프론트(frontend/src/shared/api/client.ts)가 code로 분기하고 message를 그대로 노출하므로,
+    message는 사용자에게 보여도 되는 문구로 작성한다.
+    """
+
+    status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code: str = "INTERNAL_ERROR"
+    message: str = "서버에서 알 수 없는 오류가 발생했습니다."
+
+    def __init__(self, message: str | None = None) -> None:
+        if message is not None:
+            self.message = message
+        super().__init__(self.message)
+
+
+class UnauthorizedError(AppError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "UNAUTHORIZED"
+    message = "인증이 필요합니다."
+
+
+class ForbiddenError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "FORBIDDEN"
+    message = "접근 권한이 없습니다."
+
+
+class AdminNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "ADMIN_NOT_FOUND"
+    message = "관리자를 찾을 수 없습니다."
+
+
+class UserNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "USER_NOT_FOUND"
+    message = "사용자를 찾을 수 없습니다."
