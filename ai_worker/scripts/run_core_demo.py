@@ -2,7 +2,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
@@ -64,7 +64,11 @@ class DemoSettings(BaseSettings):
     QDRANT_COLLECTION: str = (
         "public_guidelines_small_v1"
     )
-
+    RAG_MIN_SIMILARITY_SCORE: float = Field(
+        default=0.65,
+        ge=0.0,
+        le=1.0,
+    )
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -243,6 +247,9 @@ async def run_demo(
                 embedding_provider
             ),
             vector_store=vector_store,
+            min_similarity_score=(
+                settings.RAG_MIN_SIMILARITY_SCORE
+            ),
         )
 
         use_case = GenerateRecoveryGuideUseCase(
