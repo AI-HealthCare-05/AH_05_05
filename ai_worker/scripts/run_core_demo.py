@@ -61,6 +61,9 @@ class DemoSettings(BaseSettings):
         "text-embedding-3-small"
     )
     OPENAI_EMBEDDING_DIMENSIONS: int = 1536
+    QDRANT_URL: str = (
+        "http://localhost:6333"
+    )
     QDRANT_COLLECTION: str = (
         "public_guidelines_small_v1"
     )
@@ -68,6 +71,14 @@ class DemoSettings(BaseSettings):
         default=0.65,
         ge=0.0,
         le=1.0,
+    )
+
+
+def create_qdrant_client(
+    settings: DemoSettings,
+) -> AsyncQdrantClient:
+    return AsyncQdrantClient(
+        url=settings.QDRANT_URL
     )
 
 def parse_args() -> argparse.Namespace:
@@ -163,8 +174,8 @@ async def run_demo(
 ) -> None:
     settings = DemoSettings()
 
-    qdrant_client = AsyncQdrantClient(
-        location=":memory:"
+    qdrant_client = create_qdrant_client(
+        settings
     )
 
     try:
