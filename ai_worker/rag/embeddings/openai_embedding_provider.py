@@ -27,16 +27,10 @@ class OpenAIEmbeddingProvider:
         normalized_model = model.strip()
 
         if not normalized_model:
-            raise ValueError(
-                "임베딩 모델명은 "
-                "비어 있을 수 없습니다."
-            )
+            raise ValueError("임베딩 모델명은 비어 있을 수 없습니다.")
 
         if dimensions <= 0:
-            raise ValueError(
-                "임베딩 차원은 "
-                "0보다 커야 합니다."
-            )
+            raise ValueError("임베딩 차원은 0보다 커야 합니다.")
 
         self._model_name = normalized_model
         self._dimension = dimensions
@@ -66,31 +60,15 @@ class OpenAIEmbeddingProvider:
         if not texts:
             return []
 
-        normalized_texts = [
-            text.strip()
-            for text in texts
-        ]
+        normalized_texts = [text.strip() for text in texts]
 
-        if any(
-            not text
-            for text in normalized_texts
-        ):
-            raise ValueError(
-                "임베딩할 문서는 "
-                "비어 있을 수 없습니다."
-            )
+        if any(not text for text in normalized_texts):
+            raise ValueError("임베딩할 문서는 비어 있을 수 없습니다.")
 
-        vectors = (
-            await self._client.aembed_documents(
-                normalized_texts
-            )
-        )
+        vectors = await self._client.aembed_documents(normalized_texts)
 
         if len(vectors) != len(normalized_texts):
-            raise ValueError(
-                "문서 개수와 임베딩 벡터 "
-                "개수가 일치하지 않습니다."
-            )
+            raise ValueError("문서 개수와 임베딩 벡터 개수가 일치하지 않습니다.")
 
         for vector in vectors:
             self._validate_vector(vector)
@@ -104,13 +82,9 @@ class OpenAIEmbeddingProvider:
         normalized_query = query.strip()
 
         if not normalized_query:
-            raise ValueError(
-                "검색어는 비어 있을 수 없습니다."
-            )
+            raise ValueError("검색어는 비어 있을 수 없습니다.")
 
-        vector = await self._client.aembed_query(
-            normalized_query
-        )
+        vector = await self._client.aembed_query(normalized_query)
 
         self._validate_vector(vector)
 
@@ -121,7 +95,4 @@ class OpenAIEmbeddingProvider:
         vector: list[float],
     ) -> None:
         if len(vector) != self._dimension:
-            raise ValueError(
-                "임베딩 벡터 차원이 설정값과 "
-                "일치하지 않습니다."
-            )
+            raise ValueError("임베딩 벡터 차원이 설정값과 일치하지 않습니다.")

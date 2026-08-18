@@ -14,9 +14,7 @@ def format_patient_medication(
         parts.append(medication.dose)
 
     if medication.times_per_day is not None:
-        parts.append(
-            f"1일 {medication.times_per_day}회"
-        )
+        parts.append(f"1일 {medication.times_per_day}회")
 
     if medication.note:
         parts.append(medication.note)

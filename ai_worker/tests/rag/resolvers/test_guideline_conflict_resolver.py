@@ -24,13 +24,8 @@ def build_patient_context(
     if with_instruction:
         instructions.append(
             PatientInstruction(
-                instruction_type=(
-                    InstructionType.WARNING_SIGN
-                ),
-                content=(
-                    "심한 통증이 발생하면 "
-                    "의료기관에 연락하세요."
-                ),
+                instruction_type=(InstructionType.WARNING_SIGN),
+                content=("심한 통증이 발생하면 의료기관에 연락하세요."),
                 source_field_id=1001,
             )
         )
@@ -64,27 +59,20 @@ def build_chunk(
 
 
 async def test_resolve_returns_not_applicable_without_chunks() -> None:
-    resolver = (
-        RuleBasedGuidelineConflictResolver()
-    )
+    resolver = RuleBasedGuidelineConflictResolver()
 
     result = await resolver.resolve(
         patient_context=build_patient_context(),
         guideline_chunks=[],
     )
 
-    assert (
-        result.status
-        == ConflictStatus.NOT_APPLICABLE
-    )
+    assert result.status == ConflictStatus.NOT_APPLICABLE
     assert result.usable_guideline_chunks == []
     assert result.excluded_guideline_chunks == []
 
 
 async def test_resolve_uses_all_chunks_without_patient_instruction() -> None:
-    resolver = (
-        RuleBasedGuidelineConflictResolver()
-    )
+    resolver = RuleBasedGuidelineConflictResolver()
     chunks = [
         build_chunk(
             chunk_id="warning-chunk",
@@ -93,24 +81,17 @@ async def test_resolve_uses_all_chunks_without_patient_instruction() -> None:
     ]
 
     result = await resolver.resolve(
-        patient_context=build_patient_context(
-            with_instruction=False
-        ),
+        patient_context=build_patient_context(with_instruction=False),
         guideline_chunks=chunks,
     )
 
-    assert (
-        result.status
-        == ConflictStatus.NO_CONFLICT
-    )
+    assert result.status == ConflictStatus.NO_CONFLICT
     assert result.usable_guideline_chunks == chunks
     assert result.excluded_guideline_chunks == []
 
 
 async def test_resolve_excludes_same_topic_chunk() -> None:
-    resolver = (
-        RuleBasedGuidelineConflictResolver()
-    )
+    resolver = RuleBasedGuidelineConflictResolver()
     conflicting_chunk = build_chunk(
         chunk_id="warning-chunk",
         topic="WARNING_SIGN",
@@ -121,20 +102,13 @@ async def test_resolve_excludes_same_topic_chunk() -> None:
         guideline_chunks=[conflicting_chunk],
     )
 
-    assert (
-        result.status
-        == ConflictStatus.PUBLIC_SOURCE_EXCLUDED
-    )
+    assert result.status == ConflictStatus.PUBLIC_SOURCE_EXCLUDED
     assert result.usable_guideline_chunks == []
-    assert result.excluded_guideline_chunks == [
-        conflicting_chunk
-    ]
+    assert result.excluded_guideline_chunks == [conflicting_chunk]
 
 
 async def test_resolve_keeps_non_conflicting_topic() -> None:
-    resolver = (
-        RuleBasedGuidelineConflictResolver()
-    )
+    resolver = RuleBasedGuidelineConflictResolver()
     conflicting_chunk = build_chunk(
         chunk_id="warning-chunk",
         topic="WARNING_SIGN",
@@ -152,22 +126,13 @@ async def test_resolve_keeps_non_conflicting_topic() -> None:
         ],
     )
 
-    assert (
-        result.status
-        == ConflictStatus.PATIENT_DATA_PRIORITY
-    )
-    assert result.usable_guideline_chunks == [
-        usable_chunk
-    ]
-    assert result.excluded_guideline_chunks == [
-        conflicting_chunk
-    ]
+    assert result.status == ConflictStatus.PATIENT_DATA_PRIORITY
+    assert result.usable_guideline_chunks == [usable_chunk]
+    assert result.excluded_guideline_chunks == [conflicting_chunk]
 
 
 async def test_resolve_requires_review_when_topic_is_missing() -> None:
-    resolver = (
-        RuleBasedGuidelineConflictResolver()
-    )
+    resolver = RuleBasedGuidelineConflictResolver()
     unknown_chunk = build_chunk(
         chunk_id="unknown-chunk",
         topic=None,
@@ -178,12 +143,7 @@ async def test_resolve_requires_review_when_topic_is_missing() -> None:
         guideline_chunks=[unknown_chunk],
     )
 
-    assert (
-        result.status
-        == ConflictStatus.REVIEW_REQUIRED
-    )
+    assert result.status == ConflictStatus.REVIEW_REQUIRED
     assert result.usable_guideline_chunks == []
-    assert result.excluded_guideline_chunks == [
-        unknown_chunk
-    ]
+    assert result.excluded_guideline_chunks == [unknown_chunk]
     assert result.reason is not None

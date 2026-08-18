@@ -28,9 +28,7 @@ class FakePatientContextProvider:
     ) -> None:
         self._patient_context = patient_context
         self.received_user_id: int | None = None
-        self.received_care_episode_id: (
-            int | None
-        ) = None
+        self.received_care_episode_id: int | None = None
 
     async def get_patient_context(
         self,
@@ -38,9 +36,7 @@ class FakePatientContextProvider:
         care_episode_id: int,
     ) -> PatientContext:
         self.received_user_id = user_id
-        self.received_care_episode_id = (
-            care_episode_id
-        )
+        self.received_care_episode_id = care_episode_id
         return self._patient_context
 
 
@@ -50,9 +46,7 @@ class FakeQueryBuilder:
         search_query: GuidelineSearchQuery,
     ) -> None:
         self._search_query = search_query
-        self.received_patient_context: (
-            PatientContext | None
-        ) = None
+        self.received_patient_context: PatientContext | None = None
 
     def build(
         self,
@@ -62,9 +56,7 @@ class FakeQueryBuilder:
         care_phase: str = "POST_DISCHARGE",
         limit: int = 5,
     ) -> GuidelineSearchQuery:
-        self.received_patient_context = (
-            patient_context
-        )
+        self.received_patient_context = patient_context
         return self._search_query
 
 
@@ -74,9 +66,7 @@ class FakeRetriever:
         chunks: list[RetrievedGuidelineChunk],
     ) -> None:
         self._chunks = chunks
-        self.received_search_query: (
-            GuidelineSearchQuery | None
-        ) = None
+        self.received_search_query: GuidelineSearchQuery | None = None
 
     async def search(
         self,
@@ -92,16 +82,12 @@ class FakeConflictResolver:
         result: ConflictCheckResult,
     ) -> None:
         self._result = result
-        self.received_chunks: list[
-            RetrievedGuidelineChunk
-        ] = []
+        self.received_chunks: list[RetrievedGuidelineChunk] = []
 
     async def resolve(
         self,
         patient_context: PatientContext,
-        guideline_chunks: list[
-            RetrievedGuidelineChunk
-        ],
+        guideline_chunks: list[RetrievedGuidelineChunk],
     ) -> ConflictCheckResult:
         self.received_chunks = guideline_chunks
         return self._result
@@ -113,16 +99,12 @@ class FakeGuideGenerator:
         result: RecoveryGuideResult,
     ) -> None:
         self._result = result
-        self.received_chunks: list[
-            RetrievedGuidelineChunk
-        ] = []
+        self.received_chunks: list[RetrievedGuidelineChunk] = []
 
     async def generate(
         self,
         patient_context: PatientContext,
-        guideline_chunks: list[
-            RetrievedGuidelineChunk
-        ],
+        guideline_chunks: list[RetrievedGuidelineChunk],
     ) -> RecoveryGuideResult:
         self.received_chunks = guideline_chunks
         return self._result
@@ -178,25 +160,18 @@ def build_chunk() -> RetrievedGuidelineChunk:
 
 def build_guide(
     *,
-    medication_text: str = (
-        "처방받은 방법대로 복용하세요."
-    ),
+    medication_text: str = ("처방받은 방법대로 복용하세요."),
 ) -> RecoveryGuideResult:
     return RecoveryGuideResult(
         care_episode_id=100,
         guide_content=RecoveryGuideContent(
-            medication_guide=[
-                medication_text
-            ],
+            medication_guide=[medication_text],
             patient_instructions=[],
             public_information=[],
             lifestyle_guide=[],
             warning_signs=[],
             follow_up_schedule=[],
-            safety_notice=(
-                "이 안내는 의료진의 진료를 "
-                "대체하지 않습니다."
-            ),
+            safety_notice=("이 안내는 의료진의 진료를 대체하지 않습니다."),
         ),
         safety_status=SafetyStatus.PENDING,
     )
@@ -213,31 +188,15 @@ def build_use_case(
 ]:
     patient_context = build_patient_context()
     chunk = build_chunk()
-    generator = FakeGuideGenerator(
-        result=guide_result
-    )
+    generator = FakeGuideGenerator(result=guide_result)
 
     use_case = GenerateRecoveryGuideUseCase(
-        patient_context_provider=(
-            FakePatientContextProvider(
-                patient_context
-            )
-        ),
-        query_builder=FakeQueryBuilder(
-            build_search_query()
-        ),
+        patient_context_provider=(FakePatientContextProvider(patient_context)),
+        query_builder=FakeQueryBuilder(build_search_query()),
         retriever=FakeRetriever([chunk]),
-        conflict_resolver=(
-            FakeConflictResolver(
-                conflict_result
-            )
-        ),
+        conflict_resolver=(FakeConflictResolver(conflict_result)),
         guide_generator=generator,
-        safety_validator=(
-            FakeSafetyValidator(
-                safety_result
-            )
-        ),
+        safety_validator=(FakeSafetyValidator(safety_result)),
     )
 
     return use_case, generator
@@ -263,10 +222,7 @@ async def test_execute_returns_safe_guide() -> None:
         topic="LIFESTYLE",
     )
 
-    assert (
-        result.safety_status
-        == SafetyStatus.SAFE
-    )
+    assert result.safety_status == SafetyStatus.SAFE
     assert result.safety_reason_codes == []
     assert generator.received_chunks == [chunk]
 
@@ -278,16 +234,10 @@ async def test_execute_replaces_blocked_content() -> None:
             status=ConflictStatus.NO_CONFLICT,
             usable_guideline_chunks=[chunk],
         ),
-        guide_result=build_guide(
-            medication_text=(
-                "오늘부터 약 복용을 중단하세요."
-            )
-        ),
+        guide_result=build_guide(medication_text=("오늘부터 약 복용을 중단하세요.")),
         safety_result=SafetyResult(
             status=SafetyStatus.BLOCKED,
-            reason_codes=[
-                "MEDICATION_CHANGE_INSTRUCTION"
-            ],
+            reason_codes=["MEDICATION_CHANGE_INSTRUCTION"],
         ),
     )
 
@@ -298,28 +248,18 @@ async def test_execute_replaces_blocked_content() -> None:
         topic="LIFESTYLE",
     )
 
-    assert (
-        result.safety_status
-        == SafetyStatus.BLOCKED
-    )
+    assert result.safety_status == SafetyStatus.BLOCKED
     assert result.guide_content.medication_guide == []
     assert result.guide_content.lifestyle_guide == []
-    assert (
-        "제공할 수 없습니다"
-        in result.guide_content.safety_notice
-    )
-    assert result.safety_reason_codes == [
-        "MEDICATION_CHANGE_INSTRUCTION"
-    ]
+    assert "제공할 수 없습니다" in result.guide_content.safety_notice
+    assert result.safety_reason_codes == ["MEDICATION_CHANGE_INSTRUCTION"]
 
 
 async def test_execute_restricts_review_required_result() -> None:
     chunk = build_chunk()
     use_case, generator = build_use_case(
         conflict_result=ConflictCheckResult(
-            status=(
-                ConflictStatus.REVIEW_REQUIRED
-            ),
+            status=(ConflictStatus.REVIEW_REQUIRED),
             usable_guideline_chunks=[],
             excluded_guideline_chunks=[chunk],
         ),
@@ -336,14 +276,8 @@ async def test_execute_restricts_review_required_result() -> None:
         topic="LIFESTYLE",
     )
 
-    assert (
-        result.safety_status
-        == SafetyStatus.RESTRICTED
-    )
-    assert (
-        "GUIDELINE_REVIEW_REQUIRED"
-        in result.safety_reason_codes
-    )
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "GUIDELINE_REVIEW_REQUIRED" in result.safety_reason_codes
     assert generator.received_chunks == []
 
 
@@ -351,28 +285,13 @@ async def test_execute_restricted_keeps_only_confirmed_content() -> None:
     guide_result = RecoveryGuideResult(
         care_episode_id=100,
         guide_content=RecoveryGuideContent(
-            medication_guide=[
-                "아스피린 · 1정 · 1일 1회"
-            ],
-            patient_instructions=[
-                "무리한 활동은 피하세요."
-            ],
-            public_information=[
-                "LLM이 설명한 공공자료 내용"
-            ],
-            lifestyle_guide=[
-                "매일 30분씩 운동하세요."
-            ],
-            warning_signs=[
-                "LLM이 생성한 위험 신호"
-            ],
-            follow_up_schedule=[
-                "2026-08-20 10:00 · 신경과"
-            ],
-            safety_notice=(
-                "이 안내는 의료진의 진료를 "
-                "대체하지 않습니다."
-            ),
+            medication_guide=["아스피린 · 1정 · 1일 1회"],
+            patient_instructions=["무리한 활동은 피하세요."],
+            public_information=["LLM이 설명한 공공자료 내용"],
+            lifestyle_guide=["매일 30분씩 운동하세요."],
+            warning_signs=["LLM이 생성한 위험 신호"],
+            follow_up_schedule=["2026-08-20 10:00 · 신경과"],
+            safety_notice=("이 안내는 의료진의 진료를 대체하지 않습니다."),
         ),
         safety_status=SafetyStatus.PENDING,
     )
@@ -380,16 +299,12 @@ async def test_execute_restricted_keeps_only_confirmed_content() -> None:
     use_case, _ = build_use_case(
         conflict_result=ConflictCheckResult(
             status=ConflictStatus.NO_CONFLICT,
-            usable_guideline_chunks=[
-                build_chunk()
-            ],
+            usable_guideline_chunks=[build_chunk()],
         ),
         guide_result=guide_result,
         safety_result=SafetyResult(
             status=SafetyStatus.RESTRICTED,
-            reason_codes=[
-                "MISSING_MEDICAL_DISCLAIMER"
-            ],
+            reason_codes=["MISSING_MEDICAL_DISCLAIMER"],
         ),
     )
 
@@ -400,28 +315,16 @@ async def test_execute_restricted_keeps_only_confirmed_content() -> None:
         topic="LIFESTYLE",
     )
 
-    assert (
-        result.safety_status
-        == SafetyStatus.RESTRICTED
-    )
+    assert result.safety_status == SafetyStatus.RESTRICTED
 
     # 환자 확정정보는 유지한다.
-    assert result.guide_content.medication_guide == [
-        "아스피린 · 1정 · 1일 1회"
-    ]
-    assert result.guide_content.patient_instructions == [
-        "무리한 활동은 피하세요."
-    ]
-    assert result.guide_content.follow_up_schedule == [
-        "2026-08-20 10:00 · 신경과"
-    ]
+    assert result.guide_content.medication_guide == ["아스피린 · 1정 · 1일 1회"]
+    assert result.guide_content.patient_instructions == ["무리한 활동은 피하세요."]
+    assert result.guide_content.follow_up_schedule == ["2026-08-20 10:00 · 신경과"]
 
     # LLM·공공자료 기반 추가정보는 제거한다.
     assert result.guide_content.public_information == []
     assert result.guide_content.lifestyle_guide == []
     assert result.guide_content.warning_signs == []
 
-    assert (
-        "추가 안내를 제한"
-        in result.guide_content.safety_notice
-    )
+    assert "추가 안내를 제한" in result.guide_content.safety_notice

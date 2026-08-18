@@ -38,7 +38,5 @@ def test_create_qdrant_client_uses_qdrant_url(
 
     client = create_client(settings)
 
-    assert received_values["url"] == (
-        "http://qdrant:6333"
-    )
+    assert received_values["url"] == ("http://qdrant:6333")
     assert client is not None

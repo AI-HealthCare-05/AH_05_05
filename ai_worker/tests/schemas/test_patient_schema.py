@@ -73,9 +73,7 @@ def test_patient_context_represents_confirmed_erd_data() -> None:
 
     instruction = context.instructions[0]
     assert instruction.care_advice_id == 201
-    assert instruction.content == (
-        "퇴원 후 무리한 활동을 피하세요."
-    )
+    assert instruction.content == ("퇴원 후 무리한 활동을 피하세요.")
     assert instruction.display_order == 1
     assert instruction.instruction_type is None
 

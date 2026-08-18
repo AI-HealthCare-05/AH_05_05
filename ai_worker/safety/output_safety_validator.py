@@ -58,16 +58,12 @@ class RuleBasedOutputSafetyValidator:
         reason_codes: list[str] = []
 
         if self._has_medication_mismatch(
-                patient_context=patient_context,
-                result=result,
+            patient_context=patient_context,
+            result=result,
         ):
-            reason_codes.append(
-                "PATIENT_MEDICATION_MISMATCH"
-            )
+            reason_codes.append("PATIENT_MEDICATION_MISMATCH")
 
-        for text in self._collect_guide_texts(
-                result
-        ):
+        for text in self._collect_guide_texts(result):
             if self._is_confirmed_instruction(
                 text=text,
                 patient_context=patient_context,
@@ -78,63 +74,39 @@ class RuleBasedOutputSafetyValidator:
                 text,
                 self._MEDICATION_CHANGE_PATTERNS,
             ):
-                reason_codes.append(
-                    "MEDICATION_CHANGE_INSTRUCTION"
-                )
+                reason_codes.append("MEDICATION_CHANGE_INSTRUCTION")
 
-            if (
-                self._matches_any(
-                    text,
-                    self._DIAGNOSTIC_PATTERNS,
-                )
-                and not self._contains_confirmed_diagnosis(
-                    text=text,
-                    patient_context=patient_context,
-                )
+            if self._matches_any(
+                text,
+                self._DIAGNOSTIC_PATTERNS,
+            ) and not self._contains_confirmed_diagnosis(
+                text=text,
+                patient_context=patient_context,
             ):
-                reason_codes.append(
-                    "DIAGNOSTIC_ASSERTION"
-                )
+                reason_codes.append("DIAGNOSTIC_ASSERTION")
 
             if self._matches_any(
                 text,
                 self._TREATMENT_PATTERNS,
             ):
-                reason_codes.append(
-                    "TREATMENT_DECISION"
-                )
+                reason_codes.append("TREATMENT_DECISION")
 
-        reason_codes = list(
-            dict.fromkeys(reason_codes)
-        )
+        reason_codes = list(dict.fromkeys(reason_codes))
 
         if reason_codes:
             return SafetyResult(
                 status=SafetyStatus.BLOCKED,
                 reason_codes=reason_codes,
-                message=(
-                    "의학적 판단 또는 약 변경에 "
-                    "해당하는 표현이 감지되어 "
-                    "출력을 차단했습니다."
-                ),
+                message=("의학적 판단 또는 약 변경에 해당하는 표현이 감지되어 출력을 차단했습니다."),
             )
 
-        safety_notice = (
-            result.guide_content.safety_notice
-        )
+        safety_notice = result.guide_content.safety_notice
 
-        if not self._has_medical_disclaimer(
-            safety_notice
-        ):
+        if not self._has_medical_disclaimer(safety_notice):
             return SafetyResult(
                 status=SafetyStatus.RESTRICTED,
-                reason_codes=[
-                    "MISSING_MEDICAL_DISCLAIMER"
-                ],
-                message=(
-                    "의료진의 진료를 대체하지 "
-                    "않는다는 안내가 필요합니다."
-                ),
+                reason_codes=["MISSING_MEDICAL_DISCLAIMER"],
+                message=("의료진의 진료를 대체하지 않는다는 안내가 필요합니다."),
             )
 
         return SafetyResult(
@@ -144,22 +116,17 @@ class RuleBasedOutputSafetyValidator:
 
     @staticmethod
     def _has_medication_mismatch(
-            patient_context: PatientContext,
-            result: RecoveryGuideResult,
+        patient_context: PatientContext,
+        result: RecoveryGuideResult,
     ) -> bool:
         if not patient_context.medications:
             return False
 
         expected_medication_guide = [
-            format_patient_medication(medication)
-            for medication
-            in patient_context.medications
+            format_patient_medication(medication) for medication in patient_context.medications
         ]
 
-        return (
-                result.guide_content.medication_guide
-                != expected_medication_guide
-        )
+        return result.guide_content.medication_guide != expected_medication_guide
 
     @staticmethod
     def _collect_guide_texts(
@@ -186,12 +153,7 @@ class RuleBasedOutputSafetyValidator:
         normalized_text = cls._normalize_text(text)
 
         return any(
-            cls._normalize_text(
-                instruction.content
-            )
-            == normalized_text
-            for instruction
-            in patient_context.instructions
+            cls._normalize_text(instruction.content) == normalized_text for instruction in patient_context.instructions
         )
 
     @staticmethod
@@ -202,11 +164,7 @@ class RuleBasedOutputSafetyValidator:
         normalized_text = text.lower()
 
         return any(
-            diagnosis.strip().lower()
-            in normalized_text
-            for diagnosis
-            in patient_context.diagnoses
-            if diagnosis.strip()
+            diagnosis.strip().lower() in normalized_text for diagnosis in patient_context.diagnoses if diagnosis.strip()
         )
 
     @staticmethod
@@ -214,10 +172,7 @@ class RuleBasedOutputSafetyValidator:
         text: str,
         patterns: list[re.Pattern[str]],
     ) -> bool:
-        return any(
-            pattern.search(text)
-            for pattern in patterns
-        )
+        return any(pattern.search(text) for pattern in patterns)
 
     @staticmethod
     def _has_medical_disclaimer(
@@ -234,10 +189,7 @@ class RuleBasedOutputSafetyValidator:
             ]
         )
 
-        return (
-            has_medical_reference
-            and "대체" in normalized
-        )
+        return has_medical_reference and "대체" in normalized
 
     @staticmethod
     def _normalize_text(

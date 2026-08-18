@@ -18,9 +18,7 @@ class FakePage:
 class FakeReader:
     def __init__(self, _: Path) -> None:
         self.pages = [
-            FakePage(
-                "First page text.\n\nMedication instructions."
-            ),
+            FakePage("First page text.\n\nMedication instructions."),
             FakePage("   "),
             FakePage("Third page text."),
         ]
@@ -56,10 +54,7 @@ def test_load_returns_non_empty_pages_with_page_numbers(
     assert len(documents) == 2
     assert documents[0].metadata.page_number == 1
     assert documents[1].metadata.page_number == 3
-    assert (
-        documents[0].metadata.document_id
-        == "stroke-guideline-2020"
-    )
+    assert documents[0].metadata.document_id == "stroke-guideline-2020"
 
 
 def test_load_rejects_non_pdf_file(tmp_path) -> None:

@@ -8,14 +8,10 @@ from ai_worker.rag.embeddings.openai_embedding_provider import (
 class FakeEmbeddingClient:
     def __init__(
         self,
-        document_vectors: (
-            list[list[float]] | None
-        ) = None,
+        document_vectors: (list[list[float]] | None) = None,
         query_vector: list[float] | None = None,
     ) -> None:
-        self.document_vectors = (
-            document_vectors or []
-        )
+        self.document_vectors = document_vectors or []
         self.query_vector = query_vector or []
         self.document_calls: list[list[str]] = []
         self.query_calls: list[str] = []
@@ -153,9 +149,7 @@ async def test_embed_query_rejects_wrong_vector_dimension() -> None:
         ValueError,
         match="차원",
     ):
-        await provider.embed_query(
-            "퇴원 후 주의사항"
-        )
+        await provider.embed_query("퇴원 후 주의사항")
 
 
 @pytest.mark.asyncio
@@ -180,4 +174,3 @@ async def test_embed_documents_rejects_vector_count_mismatch() -> None:
                 "second document",
             ],
         )
-

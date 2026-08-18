@@ -49,9 +49,7 @@ class GuidelineConflictResolver(Protocol):
     async def resolve(
         self,
         patient_context: PatientContext,
-        guideline_chunks: list[
-            RetrievedGuidelineChunk
-        ],
+        guideline_chunks: list[RetrievedGuidelineChunk],
     ) -> ConflictCheckResult: ...
 
 
@@ -59,9 +57,7 @@ class GuideGenerator(Protocol):
     async def generate(
         self,
         patient_context: PatientContext,
-        guideline_chunks: list[
-            RetrievedGuidelineChunk
-        ],
+        guideline_chunks: list[RetrievedGuidelineChunk],
     ) -> RecoveryGuideResult: ...
 
 

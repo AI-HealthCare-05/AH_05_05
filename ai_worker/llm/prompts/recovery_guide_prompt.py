@@ -42,42 +42,24 @@ SYSTEM_PROMPT = """
 
 def build_recovery_guide_messages(
     patient_context: PatientContext,
-    guideline_chunks: list[
-        RetrievedGuidelineChunk
-    ],
+    guideline_chunks: list[RetrievedGuidelineChunk],
 ) -> list[BaseMessage]:
     patient_payload = {
         "diagnoses": patient_context.diagnoses,
         "surgery": patient_context.surgery,
-        "medication_names": [
-            medication.name
-            for medication
-            in patient_context.medications
-        ],
-        "confirmed_instructions": [
-            instruction.content
-            for instruction
-            in patient_context.instructions
-        ],
+        "medication_names": [medication.name for medication in patient_context.medications],
+        "confirmed_instructions": [instruction.content for instruction in patient_context.instructions],
     }
 
     public_payload = [
         {
-            "vector_chunk_id": (
-                chunk.vector_chunk_id
-            ),
+            "vector_chunk_id": (chunk.vector_chunk_id),
             "content": chunk.content,
-            "similarity_score": (
-                chunk.similarity_score
-            ),
+            "similarity_score": (chunk.similarity_score),
             "title": chunk.metadata.title,
-            "organization": (
-                chunk.metadata.organization
-            ),
+            "organization": (chunk.metadata.organization),
             "topic": chunk.metadata.topic,
-            "page_number": (
-                chunk.metadata.page_number
-            ),
+            "page_number": (chunk.metadata.page_number),
         }
         for chunk in guideline_chunks
     ]

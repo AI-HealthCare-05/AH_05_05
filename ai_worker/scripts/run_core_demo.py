@@ -57,16 +57,10 @@ class DemoSettings(BaseSettings):
 
     OPENAI_API_KEY: SecretStr
     OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
-    OPENAI_EMBEDDING_MODEL: str = (
-        "text-embedding-3-small"
-    )
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_DIMENSIONS: int = 1536
-    QDRANT_URL: str = (
-        "http://localhost:6333"
-    )
-    QDRANT_COLLECTION: str = (
-        "public_guidelines_small_v1"
-    )
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_COLLECTION: str = "public_guidelines_small_v1"
     RAG_MIN_SIMILARITY_SCORE: float = Field(
         default=0.65,
         ge=0.0,
@@ -77,17 +71,11 @@ class DemoSettings(BaseSettings):
 def create_qdrant_client(
     settings: DemoSettings,
 ) -> AsyncQdrantClient:
-    return AsyncQdrantClient(
-        url=settings.QDRANT_URL
-    )
+    return AsyncQdrantClient(url=settings.QDRANT_URL)
+
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "퇴원 환자 회복 가이드 "
-            "Core End-to-End 데모"
-        )
-    )
+    parser = argparse.ArgumentParser(description=("퇴원 환자 회복 가이드 Core End-to-End 데모"))
 
     parser.add_argument(
         "--patient-json",
@@ -174,71 +162,42 @@ async def run_demo(
 ) -> None:
     settings = DemoSettings()
 
-    qdrant_client = create_qdrant_client(
-        settings
-    )
+    qdrant_client = create_qdrant_client(settings)
 
     try:
-        embedding_provider = (
-            OpenAIEmbeddingProvider(
-                model=(
-                    settings
-                    .OPENAI_EMBEDDING_MODEL
-                ),
-                dimensions=(
-                    settings
-                    .OPENAI_EMBEDDING_DIMENSIONS
-                ),
-                api_key=(
-                    settings.OPENAI_API_KEY
-                ),
-            )
+        embedding_provider = OpenAIEmbeddingProvider(
+            model=(settings.OPENAI_EMBEDDING_MODEL),
+            dimensions=(settings.OPENAI_EMBEDDING_DIMENSIONS),
+            api_key=(settings.OPENAI_API_KEY),
         )
 
         vector_store = QdrantGuidelineStore(
             client=qdrant_client,
-            collection_name=(
-                settings.QDRANT_COLLECTION
-            ),
-            vector_size=(
-                settings
-                .OPENAI_EMBEDDING_DIMENSIONS
-            ),
+            collection_name=(settings.QDRANT_COLLECTION),
+            vector_size=(settings.OPENAI_EMBEDDING_DIMENSIONS),
         )
 
         indexer = GuidelineIndexer(
             loader=PdfLoader(),
             splitter=GuidelineSplitter(
                 chunk_size=args.chunk_size,
-                chunk_overlap=(
-                    args.chunk_overlap
-                ),
+                chunk_overlap=(args.chunk_overlap),
             ),
-            embedding_provider=(
-                embedding_provider
-            ),
+            embedding_provider=(embedding_provider),
             vector_store=vector_store,
         )
 
         metadata = GuidelineMetadata(
             dataset_key="PUBLIC_GUIDELINE",
-            dataset_version=(
-                args.dataset_version
-            ),
+            dataset_version=(args.dataset_version),
             document_id=args.document_id,
             title=args.title,
             organization=args.organization,
-            publication_year=(
-                args.publication_year
-            ),
+            publication_year=(args.publication_year),
             language=args.language,
             document_type="GUIDELINE",
-            condition=(
-                args.condition.strip().upper()
-            ),
-            care_phase=(
-                args.care_phase.strip().upper()
-            ),
+            condition=(args.condition.strip().upper()),
+            care_phase=(args.care_phase.strip().upper()),
             topic=args.topic.strip().upper(),
             source_url=args.source_url,
         )
@@ -248,53 +207,31 @@ async def run_demo(
             metadata=metadata,
         )
 
-        print(
-            f"Qdrant 인덱싱 완료: "
-            f"{len(point_ids)}개 Chunk"
-        )
+        print(f"Qdrant 인덱싱 완료: {len(point_ids)}개 Chunk")
 
         retriever = GuidelineRetriever(
-            embedding_provider=(
-                embedding_provider
-            ),
+            embedding_provider=(embedding_provider),
             vector_store=vector_store,
-            min_similarity_score=(
-                settings.RAG_MIN_SIMILARITY_SCORE
-            ),
+            min_similarity_score=(settings.RAG_MIN_SIMILARITY_SCORE),
         )
 
         use_case = GenerateRecoveryGuideUseCase(
-            patient_context_provider=(
-                JsonPatientContextProvider(
-                    args.patient_json
-                )
-            ),
+            patient_context_provider=(JsonPatientContextProvider(args.patient_json)),
             query_builder=PatientQueryBuilder(),
             retriever=retriever,
-            conflict_resolver=(
-                RuleBasedGuidelineConflictResolver()
-            ),
+            conflict_resolver=(RuleBasedGuidelineConflictResolver()),
             guide_generator=(
                 OpenAIRecoveryGuideGenerator(
-                    model=(
-                        settings
-                        .OPENAI_CHAT_MODEL
-                    ),
-                    api_key=(
-                        settings.OPENAI_API_KEY
-                    ),
+                    model=(settings.OPENAI_CHAT_MODEL),
+                    api_key=(settings.OPENAI_API_KEY),
                 )
             ),
-            safety_validator=(
-                RuleBasedOutputSafetyValidator()
-            ),
+            safety_validator=(RuleBasedOutputSafetyValidator()),
         )
 
         result = await use_case.execute(
             user_id=args.user_id,
-            care_episode_id=(
-                args.care_episode_id
-            ),
+            care_episode_id=(args.care_episode_id),
             condition=args.condition,
             topic=args.topic,
             care_phase=args.care_phase,

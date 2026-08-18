@@ -22,38 +22,22 @@ class GuidelineRetriever:
         min_similarity_score: float = 0.65,
     ) -> None:
         if not 0.0 <= min_similarity_score <= 1.0:
-            raise ValueError(
-                "최소 유사도 점수는 "
-                "0 이상 1 이하여야 합니다."
-            )
+            raise ValueError("최소 유사도 점수는 0 이상 1 이하여야 합니다.")
 
-        self._embedding_provider = (
-            embedding_provider
-        )
+        self._embedding_provider = embedding_provider
         self._vector_store = vector_store
-        self._min_similarity_score = (
-            min_similarity_score
-        )
+        self._min_similarity_score = min_similarity_score
 
     async def search(
         self,
         search_query: GuidelineSearchQuery,
     ) -> list[RetrievedGuidelineChunk]:
         try:
-            query_vector = (
-                await self._embedding_provider
-                .embed_query(search_query.query)
-            )
+            query_vector = await self._embedding_provider.embed_query(search_query.query)
         except Exception as error:
             raise GuidelineRetrievalError(
-                stage=(
-                    RetrievalFailureStage
-                    .EMBEDDING
-                ),
-                message=(
-                    "가이드라인 검색을 위한 "
-                    "질문 임베딩 생성에 실패했습니다."
-                ),
+                stage=(RetrievalFailureStage.EMBEDDING),
+                message=("가이드라인 검색을 위한 질문 임베딩 생성에 실패했습니다."),
             ) from error
 
         try:
@@ -63,23 +47,12 @@ class GuidelineRetriever:
             )
         except Exception as error:
             raise GuidelineRetrievalError(
-                stage=(
-                    RetrievalFailureStage
-                    .VECTOR_STORE
-                ),
-                message=(
-                    "공공 가이드라인 "
-                    "벡터 검색에 실패했습니다."
-                ),
+                stage=(RetrievalFailureStage.VECTOR_STORE),
+                message=("공공 가이드라인 벡터 검색에 실패했습니다."),
             ) from error
 
         return [
             result
             for result in results
-            if (
-                result.similarity_score
-                is not None
-                and result.similarity_score
-                >= self._min_similarity_score
-            )
+            if (result.similarity_score is not None and result.similarity_score >= self._min_similarity_score)
         ]

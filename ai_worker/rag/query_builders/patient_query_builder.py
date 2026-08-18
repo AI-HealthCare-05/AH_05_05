@@ -20,23 +20,17 @@ class PatientQueryBuilder:
         care_phase: str = "POST_DISCHARGE",
         limit: int = 5,
     ) -> GuidelineSearchQuery:
-        normalized_condition = (
-            self._normalize_required(
-                condition,
-                field_name="질환 코드",
-            )
+        normalized_condition = self._normalize_required(
+            condition,
+            field_name="질환 코드",
         )
-        normalized_topic = (
-            self._normalize_required(
-                topic,
-                field_name="검색 주제",
-            )
+        normalized_topic = self._normalize_required(
+            topic,
+            field_name="검색 주제",
         )
-        normalized_care_phase = (
-            self._normalize_required(
-                care_phase,
-                field_name="회복 단계",
-            )
+        normalized_care_phase = self._normalize_required(
+            care_phase,
+            field_name="회복 단계",
         )
 
         query_terms = [
@@ -45,11 +39,7 @@ class PatientQueryBuilder:
         ]
 
         if normalized_topic == "MEDICATION":
-            query_terms.extend(
-                medication.drug_name
-                for medication
-                in patient_context.medications
-            )
+            query_terms.extend(medication.drug_name for medication in patient_context.medications)
 
         query_terms.append(
             self._TOPIC_LABELS.get(
@@ -58,11 +48,7 @@ class PatientQueryBuilder:
             )
         )
 
-        query = " ".join(
-            self._remove_duplicates(
-                query_terms
-            )
-        )
+        query = " ".join(self._remove_duplicates(query_terms))
 
         return GuidelineSearchQuery(
             query=query,
@@ -80,9 +66,7 @@ class PatientQueryBuilder:
         normalized = value.strip().upper()
 
         if not normalized:
-            raise ValueError(
-                f"{field_name}은 비어 있을 수 없습니다."
-            )
+            raise ValueError(f"{field_name}은 비어 있을 수 없습니다.")
 
         return normalized
 

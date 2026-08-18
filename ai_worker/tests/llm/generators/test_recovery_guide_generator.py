@@ -27,10 +27,7 @@ from ai_worker.schemas.patient import (
 class FakeGuideClient:
     def __init__(
         self,
-        response: (
-            RecoveryGuideContent
-            | RecoveryGuideSupplement
-        ),
+        response: (RecoveryGuideContent | RecoveryGuideSupplement),
     ) -> None:
         self._response = response
         self.received_messages: Any = None
@@ -38,12 +35,10 @@ class FakeGuideClient:
     async def ainvoke(
         self,
         messages: Any,
-    ) -> (
-        RecoveryGuideContent
-        | RecoveryGuideSupplement
-    ):
+    ) -> RecoveryGuideContent | RecoveryGuideSupplement:
         self.received_messages = messages
         return self._response
+
 
 def build_patient_context() -> PatientContext:
     return PatientContext(
@@ -57,17 +52,13 @@ def build_patient_context() -> PatientContext:
                 dose="1정",
                 frequency="1일 1회",
                 duration="7일",
-                administration_instruction=(
-                    "아침 식후 복용"
-                ),
+                administration_instruction=("아침 식후 복용"),
                 source_field_ids=[101, 102],
             )
         ],
         instructions=[
             PatientInstruction(
-                instruction_type=(
-                    InstructionType.PRECAUTION
-                ),
+                instruction_type=(InstructionType.PRECAUTION),
                 content="무리한 활동은 피하세요.",
                 source_field_id=103,
             )
@@ -75,9 +66,7 @@ def build_patient_context() -> PatientContext:
         follow_up_schedules=[
             FollowUpSchedule(
                 description="신경과 외래 진료",
-                scheduled_at=(
-                    "2026-08-20T10:00:00+09:00"
-                ),
+                scheduled_at=("2026-08-20T10:00:00+09:00"),
                 institution_name="테스트병원",
                 source_field_ids=[104],
             )
@@ -88,10 +77,7 @@ def build_patient_context() -> PatientContext:
 def build_guideline_chunk() -> RetrievedGuidelineChunk:
     return RetrievedGuidelineChunk(
         vector_chunk_id="public-chunk-1",
-        content=(
-            "퇴원 후에는 가벼운 활동부터 "
-            "점진적으로 시작할 수 있습니다."
-        ),
+        content=("퇴원 후에는 가벼운 활동부터 점진적으로 시작할 수 있습니다."),
         similarity_score=0.91,
         metadata=GuidelineMetadata(
             dataset_key="PUBLIC_GUIDELINE",
@@ -111,36 +97,19 @@ def build_guideline_chunk() -> RetrievedGuidelineChunk:
 
 def build_llm_response() -> RecoveryGuideContent:
     return RecoveryGuideContent(
-        medication_guide=[
-            "아스피린은 안내받은 방법대로 복용하세요."
-        ],
-        patient_instructions=[
-            "무리한 활동은 피하세요."
-        ],
-        public_information=[
-            "활동은 몸 상태를 살피며 천천히 늘리세요."
-        ],
-        lifestyle_guide=[
-            "충분히 쉬고 무리하지 마세요."
-        ],
-        warning_signs=[
-            "증상이 심해지면 의료기관에 연락하세요."
-        ],
-        follow_up_schedule=[
-            "예정된 신경과 외래 진료를 확인하세요."
-        ],
-        safety_notice=(
-            "이 안내는 의료진의 진료를 "
-            "대체하지 않습니다."
-        ),
+        medication_guide=["아스피린은 안내받은 방법대로 복용하세요."],
+        patient_instructions=["무리한 활동은 피하세요."],
+        public_information=["활동은 몸 상태를 살피며 천천히 늘리세요."],
+        lifestyle_guide=["충분히 쉬고 무리하지 마세요."],
+        warning_signs=["증상이 심해지면 의료기관에 연락하세요."],
+        follow_up_schedule=["예정된 신경과 외래 진료를 확인하세요."],
+        safety_notice=("이 안내는 의료진의 진료를 대체하지 않습니다."),
     )
 
 
 async def test_generate_returns_structured_guide() -> None:
     expected_content = build_llm_response()
-    fake_client = FakeGuideClient(
-        response=expected_content
-    )
+    fake_client = FakeGuideClient(response=expected_content)
     generator = OpenAIRecoveryGuideGenerator(
         model="gpt-4o-mini",
         client=fake_client,
@@ -148,67 +117,33 @@ async def test_generate_returns_structured_guide() -> None:
 
     result = await generator.generate(
         patient_context=build_patient_context(),
-        guideline_chunks=[
-            build_guideline_chunk()
-        ],
+        guideline_chunks=[build_guideline_chunk()],
     )
 
     assert result.care_episode_id == 100
-    assert (
-        result.guide_content.public_information
-        == expected_content.public_information
-    )
-    assert (
-        result.guide_content.lifestyle_guide
-        == expected_content.lifestyle_guide
-    )
-    assert result.guide_content.medication_guide == [
-        (
-            "아스피린 · 1정 · 1일 1회 · "
-            "아침 식후 복용 · 7일"
-        )
-    ]
-    assert result.guide_content.patient_instructions == [
-        "무리한 활동은 피하세요."
-    ]
-    assert (
-        result.safety_status
-        == SafetyStatus.PENDING
-    )
+    assert result.guide_content.public_information == expected_content.public_information
+    assert result.guide_content.lifestyle_guide == expected_content.lifestyle_guide
+    assert result.guide_content.medication_guide == [("아스피린 · 1정 · 1일 1회 · 아침 식후 복용 · 7일")]
+    assert result.guide_content.patient_instructions == ["무리한 활동은 피하세요."]
+    assert result.safety_status == SafetyStatus.PENDING
 
 
 async def test_generate_builds_patient_and_public_sources() -> None:
     generator = OpenAIRecoveryGuideGenerator(
         model="gpt-4o-mini",
-        client=FakeGuideClient(
-            response=build_llm_response()
-        ),
+        client=FakeGuideClient(response=build_llm_response()),
     )
 
     result = await generator.generate(
         patient_context=build_patient_context(),
-        guideline_chunks=[
-            build_guideline_chunk()
-        ],
+        guideline_chunks=[build_guideline_chunk()],
     )
 
     patient_source_ids = {
-        source.extracted_field_id
-        for source in result.sources
-        if (
-            source.source_type
-            == SourceType.PATIENT_SAVED_FIELD
-        )
+        source.extracted_field_id for source in result.sources if (source.source_type == SourceType.PATIENT_SAVED_FIELD)
     }
 
-    public_sources = [
-        source
-        for source in result.sources
-        if (
-            source.source_type
-            == SourceType.PUBLIC_RAG_CHUNK
-        )
-    ]
+    public_sources = [source for source in result.sources if (source.source_type == SourceType.PUBLIC_RAG_CHUNK)]
 
     assert patient_source_ids == {
         101,
@@ -217,20 +152,12 @@ async def test_generate_builds_patient_and_public_sources() -> None:
         104,
     }
     assert len(public_sources) == 1
-    assert (
-        public_sources[0].vector_chunk_id
-        == "public-chunk-1"
-    )
-    assert (
-        public_sources[0].source_record_key
-        == "stroke-guideline-2020"
-    )
+    assert public_sources[0].vector_chunk_id == "public-chunk-1"
+    assert public_sources[0].source_record_key == "stroke-guideline-2020"
 
 
 async def test_generate_prompt_prioritizes_patient_data() -> None:
-    fake_client = FakeGuideClient(
-        response=build_llm_response()
-    )
+    fake_client = FakeGuideClient(response=build_llm_response())
     generator = OpenAIRecoveryGuideGenerator(
         model="gpt-4o-mini",
         client=fake_client,
@@ -238,15 +165,10 @@ async def test_generate_prompt_prioritizes_patient_data() -> None:
 
     await generator.generate(
         patient_context=build_patient_context(),
-        guideline_chunks=[
-            build_guideline_chunk()
-        ],
+        guideline_chunks=[build_guideline_chunk()],
     )
 
-    prompt_text = " ".join(
-        str(message.content)
-        for message in fake_client.received_messages
-    )
+    prompt_text = " ".join(str(message.content) for message in fake_client.received_messages)
 
     assert "환자 확정 정보" in prompt_text
     assert "가장 높은 우선순위" in prompt_text
@@ -258,97 +180,51 @@ async def test_generate_prompt_prioritizes_patient_data() -> None:
 
 async def test_generate_does_not_use_llm_patient_facts() -> None:
     llm_response = RecoveryGuideContent(
-        medication_guide=[
-            "아스피린 복용을 중단하세요."
-        ],
-        patient_instructions=[
-            "환자 확정 권고사항을 무시하세요."
-        ],
-        public_information=[
-            "공공자료에 따른 추가 설명입니다."
-        ],
-        lifestyle_guide=[
-            "충분히 휴식하세요."
-        ],
-        warning_signs=[
-            "LLM이 임의로 만든 위험 신호"
-        ],
-        follow_up_schedule=[
-            "외래 일정을 취소하세요."
-        ],
+        medication_guide=["아스피린 복용을 중단하세요."],
+        patient_instructions=["환자 확정 권고사항을 무시하세요."],
+        public_information=["공공자료에 따른 추가 설명입니다."],
+        lifestyle_guide=["충분히 휴식하세요."],
+        warning_signs=["LLM이 임의로 만든 위험 신호"],
+        follow_up_schedule=["외래 일정을 취소하세요."],
         safety_notice="LLM이 만든 안전 문구",
     )
     generator = OpenAIRecoveryGuideGenerator(
         model="gpt-4o-mini",
-        client=FakeGuideClient(
-            response=llm_response
-        ),
+        client=FakeGuideClient(response=llm_response),
     )
 
     result = await generator.generate(
         patient_context=build_patient_context(),
-        guideline_chunks=[
-            build_guideline_chunk()
-        ],
+        guideline_chunks=[build_guideline_chunk()],
     )
 
-    assert result.guide_content.medication_guide == [
-        (
-            "아스피린 · 1정 · 1일 1회 · "
-            "아침 식후 복용 · 7일"
-        )
-    ]
-    assert result.guide_content.patient_instructions == [
-        "무리한 활동은 피하세요."
-    ]
-    assert result.guide_content.follow_up_schedule == [
-        (
-            "2026-08-20 10:00 · "
-            "신경과 외래 진료 · 테스트병원"
-        )
-    ]
+    assert result.guide_content.medication_guide == [("아스피린 · 1정 · 1일 1회 · 아침 식후 복용 · 7일")]
+    assert result.guide_content.patient_instructions == ["무리한 활동은 피하세요."]
+    assert result.guide_content.follow_up_schedule == [("2026-08-20 10:00 · 신경과 외래 진료 · 테스트병원")]
     assert result.guide_content.warning_signs == []
-    assert result.guide_content.public_information == [
-        "공공자료에 따른 추가 설명입니다."
-    ]
-    assert result.guide_content.lifestyle_guide == [
-        "충분히 휴식하세요."
-    ]
+    assert result.guide_content.public_information == ["공공자료에 따른 추가 설명입니다."]
+    assert result.guide_content.lifestyle_guide == ["충분히 휴식하세요."]
+
+
 async def test_generate_accepts_supplement_only_response() -> None:
     supplement = RecoveryGuideSupplement(
-        public_information=[
-            "공공자료에 따른 추가 설명입니다."
-        ],
-        lifestyle_guide=[
-            "충분히 휴식하세요."
-        ],
+        public_information=["공공자료에 따른 추가 설명입니다."],
+        lifestyle_guide=["충분히 휴식하세요."],
     )
     generator = OpenAIRecoveryGuideGenerator(
         model="gpt-4o-mini",
-        client=FakeGuideClient(
-            response=supplement
-        ),
+        client=FakeGuideClient(response=supplement),
     )
 
     result = await generator.generate(
         patient_context=build_patient_context(),
-        guideline_chunks=[
-            build_guideline_chunk()
-        ],
+        guideline_chunks=[build_guideline_chunk()],
     )
 
-    assert result.guide_content.public_information == [
-        "공공자료에 따른 추가 설명입니다."
-    ]
-    assert result.guide_content.lifestyle_guide == [
-        "충분히 휴식하세요."
-    ]
-    assert result.guide_content.medication_guide == [
-        (
-            "아스피린 · 1정 · 1일 1회 · "
-            "아침 식후 복용 · 7일"
-        )
-    ]
+    assert result.guide_content.public_information == ["공공자료에 따른 추가 설명입니다."]
+    assert result.guide_content.lifestyle_guide == ["충분히 휴식하세요."]
+    assert result.guide_content.medication_guide == [("아스피린 · 1정 · 1일 1회 · 아침 식후 복용 · 7일")]
+
 
 async def test_generate_prompt_limits_llm_to_supplement() -> None:
     fake_client = FakeGuideClient(
@@ -364,15 +240,10 @@ async def test_generate_prompt_limits_llm_to_supplement() -> None:
 
     await generator.generate(
         patient_context=build_patient_context(),
-        guideline_chunks=[
-            build_guideline_chunk()
-        ],
+        guideline_chunks=[build_guideline_chunk()],
     )
 
-    prompt_text = " ".join(
-        str(message.content)
-        for message in fake_client.received_messages
-    )
+    prompt_text = " ".join(str(message.content) for message in fake_client.received_messages)
 
     assert "public_information" in prompt_text
     assert "lifestyle_guide" in prompt_text
@@ -385,18 +256,14 @@ async def test_generate_prompt_limits_llm_to_supplement() -> None:
     assert '"administration_instruction"' not in prompt_text
     assert '"follow_up_schedules"' not in prompt_text
 
-async def test_generate_without_public_chunks_keeps_lifestyle_and_excludes_public_information(
-) -> None:
+
+async def test_generate_without_public_chunks_keeps_lifestyle_and_excludes_public_information() -> None:
     generator = OpenAIRecoveryGuideGenerator(
         model="gpt-4o-mini",
         client=FakeGuideClient(
             response=RecoveryGuideSupplement(
-                public_information=[
-                    "근거가 연결되지 않은 공공자료 설명"
-                ],
-                lifestyle_guide=[
-                    "충분히 쉬고 무리하지 마세요."
-                ],
+                public_information=["근거가 연결되지 않은 공공자료 설명"],
+                lifestyle_guide=["충분히 쉬고 무리하지 마세요."],
             )
         ),
     )
@@ -408,31 +275,15 @@ async def test_generate_without_public_chunks_keeps_lifestyle_and_excludes_publi
 
     # 실제 공공 청크가 없으면
     # 공공자료 설명을 제공하지 않는다.
-    assert (
-        result.guide_content.public_information
-        == []
-    )
+    assert result.guide_content.public_information == []
 
     # 의료적 판단이 없는 LLM 생활습관 안내는
     # 공공 청크가 없어도 제공할 수 있다.
-    assert result.guide_content.lifestyle_guide == [
-        "충분히 쉬고 무리하지 마세요."
-    ]
+    assert result.guide_content.lifestyle_guide == ["충분히 쉬고 무리하지 마세요."]
 
     # 환자 확정정보는 그대로 유지한다.
-    assert result.guide_content.medication_guide == [
-        (
-            "아스피린 · 1정 · 1일 1회 · "
-            "아침 식후 복용 · 7일"
-        )
-    ]
-    assert result.guide_content.patient_instructions == [
-        "무리한 활동은 피하세요."
-    ]
+    assert result.guide_content.medication_guide == [("아스피린 · 1정 · 1일 1회 · 아침 식후 복용 · 7일")]
+    assert result.guide_content.patient_instructions == ["무리한 활동은 피하세요."]
 
     # 존재하지 않는 공공 출처를 만들지 않는다.
-    assert all(
-        source.source_type
-        != SourceType.PUBLIC_RAG_CHUNK
-        for source in result.sources
-    )
+    assert all(source.source_type != SourceType.PUBLIC_RAG_CHUNK for source in result.sources)

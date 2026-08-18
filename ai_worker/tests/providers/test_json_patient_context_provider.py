@@ -9,11 +9,7 @@ from ai_worker.providers.json_patient_context_provider import (
 
 @pytest.fixture
 def provider() -> JsonPatientContextProvider:
-    sample_path = (
-        Path(__file__).resolve().parents[1]
-        / "fixtures"
-        / "patient_sample.json"
-    )
+    sample_path = Path(__file__).resolve().parents[1] / "fixtures" / "patient_sample.json"
     return JsonPatientContextProvider(sample_path)
 
 

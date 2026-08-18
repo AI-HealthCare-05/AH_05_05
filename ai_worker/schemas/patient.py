@@ -45,41 +45,24 @@ class PatientMedication(BaseModel):
 
         normalized = dict(data)
 
-        if (
-            normalized.get("times_per_day") is None
-            and normalized.get("frequency")
-        ):
+        if normalized.get("times_per_day") is None and normalized.get("frequency"):
             matched = re.search(
                 r"\d+",
                 str(normalized["frequency"]),
             )
             if matched:
-                normalized["times_per_day"] = int(
-                    matched.group()
-                )
+                normalized["times_per_day"] = int(matched.group())
 
-        if (
-            normalized.get("days") is None
-            and normalized.get("duration")
-        ):
+        if normalized.get("days") is None and normalized.get("duration"):
             matched = re.search(
                 r"\d+",
                 str(normalized["duration"]),
             )
             if matched:
-                normalized["days"] = int(
-                    matched.group()
-                )
+                normalized["days"] = int(matched.group())
 
-        if (
-            normalized.get("note") is None
-            and normalized.get(
-                "administration_instruction"
-            )
-        ):
-            normalized["note"] = normalized[
-                "administration_instruction"
-            ]
+        if normalized.get("note") is None and normalized.get("administration_instruction"):
+            normalized["note"] = normalized["administration_instruction"]
 
         return normalized
 
@@ -187,9 +170,7 @@ class PatientContext(BaseModel):
     user_id: int
     care_episode_id: int
 
-    diagnoses: list[str] = Field(
-        default_factory=list
-    )
+    diagnoses: list[str] = Field(default_factory=list)
     surgery: str | None = None
     discharge_date: date | None = None
     medication_days: int | None = Field(
@@ -202,12 +183,6 @@ class PatientContext(BaseModel):
     confirmation_hash: str | None = None
     confirmed_at: datetime | None = None
 
-    medications: list[PatientMedication] = Field(
-        default_factory=list
-    )
-    instructions: list[PatientInstruction] = Field(
-        default_factory=list
-    )
-    follow_up_schedules: list[
-        FollowUpSchedule
-    ] = Field(default_factory=list)
+    medications: list[PatientMedication] = Field(default_factory=list)
+    instructions: list[PatientInstruction] = Field(default_factory=list)
+    follow_up_schedules: list[FollowUpSchedule] = Field(default_factory=list)

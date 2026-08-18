@@ -20,11 +20,7 @@ def build_document(
 
 
 def test_split_divides_long_text_and_preserves_metadata() -> None:
-    document = build_document(
-        ("Medication guidance. " * 50)
-        + "\n\n"
-        + ("Lifestyle guidance. " * 50)
-    )
+    document = build_document(("Medication guidance. " * 50) + "\n\n" + ("Lifestyle guidance. " * 50))
 
     splitter = GuidelineSplitter(
         chunk_size=300,
@@ -34,19 +30,9 @@ def test_split_divides_long_text_and_preserves_metadata() -> None:
     chunks = splitter.split([document])
 
     assert len(chunks) > 1
-    assert all(
-        len(chunk.content) <= 300
-        for chunk in chunks
-    )
-    assert all(
-        chunk.metadata.document_id
-        == "stroke-guideline-2020"
-        for chunk in chunks
-    )
-    assert all(
-        chunk.metadata.page_number == 7
-        for chunk in chunks
-    )
+    assert all(len(chunk.content) <= 300 for chunk in chunks)
+    assert all(chunk.metadata.document_id == "stroke-guideline-2020" for chunk in chunks)
+    assert all(chunk.metadata.page_number == 7 for chunk in chunks)
 
 
 def test_split_rejects_overlap_equal_to_chunk_size() -> None:

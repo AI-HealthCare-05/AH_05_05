@@ -18,9 +18,7 @@ class PdfLoader:
         path = Path(file_path)
 
         if path.suffix.lower() != ".pdf":
-            raise ValueError(
-                "PDF 파일만 불러올 수 있습니다."
-            )
+            raise ValueError("PDF 파일만 불러올 수 있습니다.")
 
         if not path.exists():
             raise FileNotFoundError(path)
@@ -32,9 +30,7 @@ class PdfLoader:
             reader.pages,
             start=1,
         ):
-            content = self._clean_text(
-                page.extract_text() or ""
-            )
+            content = self._clean_text(page.extract_text() or "")
 
             if not content:
                 continue
@@ -54,10 +50,7 @@ class PdfLoader:
             )
 
         if not documents:
-            raise ValueError(
-                "PDF에서 추출 가능한 텍스트를 "
-                "찾지 못했습니다."
-            )
+            raise ValueError("PDF에서 추출 가능한 텍스트를 찾지 못했습니다.")
 
         return documents
 

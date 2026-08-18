@@ -14,9 +14,7 @@ from ai_worker.schemas.guideline import (
 class FakeLoader:
     def __init__(self) -> None:
         self.received_path: Path | None = None
-        self.received_metadata: (
-            GuidelineMetadata | None
-        ) = None
+        self.received_metadata: GuidelineMetadata | None = None
 
     def load(
         self,
@@ -29,9 +27,7 @@ class FakeLoader:
         return [
             GuidelineDocument(
                 content="PDF에서 추출한 원문입니다.",
-                metadata=metadata.model_copy(
-                    update={"page_number": 1}
-                ),
+                metadata=metadata.model_copy(update={"page_number": 1}),
             )
         ]
 
@@ -81,10 +77,7 @@ class FakeEmbeddingProvider:
     ) -> list[list[float]]:
         self.received_texts = texts
 
-        return [
-            [1.0, 0.0, 0.0]
-            for _ in texts
-        ]
+        return [[1.0, 0.0, 0.0] for _ in texts]
 
     async def embed_query(
         self,
@@ -95,12 +88,8 @@ class FakeEmbeddingProvider:
 
 class FakeVectorStore:
     def __init__(self) -> None:
-        self.received_chunks: list[
-            GuidelineDocument
-        ] = []
-        self.received_vectors: list[
-            list[float]
-        ] = []
+        self.received_chunks: list[GuidelineDocument] = []
+        self.received_vectors: list[list[float]] = []
 
     async def upsert_chunks(
         self,
@@ -156,10 +145,7 @@ async def test_index_pdf_connects_pipeline() -> None:
         "두 번째 가이드라인 청크",
     ]
 
-    assert [
-        chunk.content
-        for chunk in vector_store.received_chunks
-    ] == embedding_provider.received_texts
+    assert [chunk.content for chunk in vector_store.received_chunks] == embedding_provider.received_texts
 
     assert vector_store.received_vectors == [
         [1.0, 0.0, 0.0],
@@ -176,9 +162,7 @@ async def test_index_pdf_rejects_empty_chunks() -> None:
     indexer = GuidelineIndexer(
         loader=FakeLoader(),
         splitter=EmptySplitter(),
-        embedding_provider=(
-            FakeEmbeddingProvider()
-        ),
+        embedding_provider=(FakeEmbeddingProvider()),
         vector_store=FakeVectorStore(),
     )
 
@@ -187,8 +171,6 @@ async def test_index_pdf_rejects_empty_chunks() -> None:
         match="청크",
     ):
         await indexer.index_pdf(
-            pdf_path=Path(
-                "stroke-guideline.pdf"
-            ),
+            pdf_path=Path("stroke-guideline.pdf"),
             metadata=build_metadata(),
         )

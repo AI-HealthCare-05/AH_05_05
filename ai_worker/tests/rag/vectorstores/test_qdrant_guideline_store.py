@@ -44,9 +44,7 @@ async def test_ensure_collection_creates_collection() -> None:
 
         await store.ensure_collection()
 
-        assert await client.collection_exists(
-            "test_guidelines"
-        )
+        assert await client.collection_exists("test_guidelines")
     finally:
         await client.close()
 
@@ -177,9 +175,7 @@ async def test_search_filters_by_condition_and_topic() -> None:
         assert len(results) == 1
         assert results[0].metadata.condition == "STROKE"
         assert results[0].metadata.topic == "MEDICATION"
-        assert results[0].content == (
-            "뇌졸중 환자의 퇴원 후 복약 안내"
-        )
+        assert results[0].content == ("뇌졸중 환자의 퇴원 후 복약 안내")
         assert results[0].similarity_score is not None
     finally:
         await client.close()
@@ -209,8 +205,6 @@ async def test_upsert_rejects_vector_count_mismatch() -> None:
         except ValueError as error:
             assert "개수" in str(error)
         else:
-            raise AssertionError(
-                "ValueError가 발생해야 합니다."
-            )
+            raise AssertionError("ValueError가 발생해야 합니다.")
     finally:
         await client.close()

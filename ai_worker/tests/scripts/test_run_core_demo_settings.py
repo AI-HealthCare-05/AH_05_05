@@ -15,14 +15,9 @@ def test_demo_settings_reads_rag_similarity_threshold(
         "0.72",
     )
 
-    settings = DemoSettings(
-        _env_file=None
-    )
+    settings = DemoSettings(_env_file=None)
 
-    assert (
-        settings.RAG_MIN_SIMILARITY_SCORE
-        == 0.72
-    )
+    assert settings.RAG_MIN_SIMILARITY_SCORE == 0.72
 
 
 def test_demo_settings_reads_qdrant_url(
@@ -37,11 +32,6 @@ def test_demo_settings_reads_qdrant_url(
         "http://qdrant:6333",
     )
 
-    settings = DemoSettings(
-        _env_file=None
-    )
+    settings = DemoSettings(_env_file=None)
 
-    assert (
-        settings.QDRANT_URL
-        == "http://qdrant:6333"
-    )
+    assert settings.QDRANT_URL == "http://qdrant:6333"

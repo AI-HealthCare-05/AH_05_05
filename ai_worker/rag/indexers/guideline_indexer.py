@@ -27,9 +27,7 @@ class GuidelineIndexer:
     ) -> None:
         self._loader = loader
         self._splitter = splitter
-        self._embedding_provider = (
-            embedding_provider
-        )
+        self._embedding_provider = embedding_provider
         self._vector_store = vector_store
 
     async def index_pdf(
@@ -45,19 +43,11 @@ class GuidelineIndexer:
         chunks = self._splitter.split(documents)
 
         if not chunks:
-            raise ValueError(
-                "인덱싱할 가이드라인 청크가 없습니다."
-            )
+            raise ValueError("인덱싱할 가이드라인 청크가 없습니다.")
 
-        texts = [
-            chunk.content
-            for chunk in chunks
-        ]
+        texts = [chunk.content for chunk in chunks]
 
-        vectors = (
-            await self._embedding_provider
-            .embed_documents(texts)
-        )
+        vectors = await self._embedding_provider.embed_documents(texts)
 
         return await self._vector_store.upsert_chunks(
             chunks=chunks,

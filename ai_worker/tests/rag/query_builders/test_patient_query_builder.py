@@ -23,17 +23,13 @@ def build_patient_context() -> PatientContext:
                 dose="1정",
                 frequency="1일 1회",
                 duration="7일",
-                administration_instruction=(
-                    "아침 식후 복용"
-                ),
+                administration_instruction=("아침 식후 복용"),
             )
         ],
         follow_up_schedules=[
             FollowUpSchedule(
                 description="신경과 외래 진료",
-                scheduled_at=(
-                    "2026-08-20T10:00:00+09:00"
-                ),
+                scheduled_at=("2026-08-20T10:00:00+09:00"),
                 institution_name="테스트병원",
             )
         ],
