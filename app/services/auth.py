@@ -7,6 +7,7 @@ from app.core.jwt.tokens import AccessToken, RefreshToken
 from app.core.utils.common import normalize_phone_number
 from app.core.utils.security import hash_password, verify_password
 from app.dtos.auth import LoginRequest, SignUpRequest
+from app.models.enums import AccountStatus
 from app.models.users import User
 from app.repositories.user_repository import UserRepository
 from app.services.jwt import JwtService
@@ -33,9 +34,8 @@ class AuthService:
                 email=data.email,
                 hashed_password=hash_password(data.password),  # 해시화된 비밀번호를 사용
                 name=data.name,
-                phone_number=normalized_phone_number,
-                gender=data.gender,
-                birthday=data.birth_date,
+                phone=normalized_phone_number,
+                status=AccountStatus.ACTIVE,
             )
 
             return user
@@ -56,13 +56,12 @@ class AuthService:
             )
 
         # 활성 사용자 체크
-        if not user.is_active:
+        if user.status != AccountStatus.ACTIVE:
             raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="비활성화된 계정입니다.")
 
         return user
 
     async def login(self, user: User) -> dict[str, AccessToken | RefreshToken]:
-        await self.user_repo.update_last_login(user.id)
         return self.jwt_service.issue_jwt_pair(user)
 
     async def check_email_exists(self, email: str | EmailStr) -> None:
