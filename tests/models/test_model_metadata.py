@@ -90,7 +90,7 @@ def test_user_matches_merged_account_schema() -> None:
     enums, user_model, _ = load_account_models()
 
     assert user_model._meta.db_table == "user"
-    assert user_model._meta.fields == {
+    assert user_model._meta.db_fields == {
         "id",
         "email",
         "hashed_password",
