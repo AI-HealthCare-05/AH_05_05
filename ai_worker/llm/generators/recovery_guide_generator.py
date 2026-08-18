@@ -115,6 +115,14 @@ class OpenAIRecoveryGuideGenerator:
                 )
             )
 
+        if not guideline_chunks:
+            supplement = supplement.model_copy(
+                update={
+                    "public_information": [],
+                },
+                deep=True,
+            )
+
         guide_content = self._assembler.assemble(
             patient_context=patient_context,
             supplement=supplement,

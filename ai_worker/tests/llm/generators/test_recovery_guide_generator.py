@@ -384,3 +384,55 @@ async def test_generate_prompt_limits_llm_to_supplement() -> None:
     assert '"duration"' not in prompt_text
     assert '"administration_instruction"' not in prompt_text
     assert '"follow_up_schedules"' not in prompt_text
+
+async def test_generate_without_public_chunks_keeps_lifestyle_and_excludes_public_information(
+) -> None:
+    generator = OpenAIRecoveryGuideGenerator(
+        model="gpt-4o-mini",
+        client=FakeGuideClient(
+            response=RecoveryGuideSupplement(
+                public_information=[
+                    "근거가 연결되지 않은 공공자료 설명"
+                ],
+                lifestyle_guide=[
+                    "충분히 쉬고 무리하지 마세요."
+                ],
+            )
+        ),
+    )
+
+    result = await generator.generate(
+        patient_context=build_patient_context(),
+        guideline_chunks=[],
+    )
+
+    # 실제 공공 청크가 없으면
+    # 공공자료 설명을 제공하지 않는다.
+    assert (
+        result.guide_content.public_information
+        == []
+    )
+
+    # 의료적 판단이 없는 LLM 생활습관 안내는
+    # 공공 청크가 없어도 제공할 수 있다.
+    assert result.guide_content.lifestyle_guide == [
+        "충분히 쉬고 무리하지 마세요."
+    ]
+
+    # 환자 확정정보는 그대로 유지한다.
+    assert result.guide_content.medication_guide == [
+        (
+            "아스피린 · 1정 · 1일 1회 · "
+            "아침 식후 복용 · 7일"
+        )
+    ]
+    assert result.guide_content.patient_instructions == [
+        "무리한 활동은 피하세요."
+    ]
+
+    # 존재하지 않는 공공 출처를 만들지 않는다.
+    assert all(
+        source.source_type
+        != SourceType.PUBLIC_RAG_CHUNK
+        for source in result.sources
+    )
