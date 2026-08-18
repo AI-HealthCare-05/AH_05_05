@@ -345,3 +345,83 @@ async def test_execute_restricts_review_required_result() -> None:
         in result.safety_reason_codes
     )
     assert generator.received_chunks == []
+
+
+async def test_execute_restricted_keeps_only_confirmed_content() -> None:
+    guide_result = RecoveryGuideResult(
+        care_episode_id=100,
+        guide_content=RecoveryGuideContent(
+            medication_guide=[
+                "아스피린 · 1정 · 1일 1회"
+            ],
+            patient_instructions=[
+                "무리한 활동은 피하세요."
+            ],
+            public_information=[
+                "LLM이 설명한 공공자료 내용"
+            ],
+            lifestyle_guide=[
+                "매일 30분씩 운동하세요."
+            ],
+            warning_signs=[
+                "LLM이 생성한 위험 신호"
+            ],
+            follow_up_schedule=[
+                "2026-08-20 10:00 · 신경과"
+            ],
+            safety_notice=(
+                "이 안내는 의료진의 진료를 "
+                "대체하지 않습니다."
+            ),
+        ),
+        safety_status=SafetyStatus.PENDING,
+    )
+
+    use_case, _ = build_use_case(
+        conflict_result=ConflictCheckResult(
+            status=ConflictStatus.NO_CONFLICT,
+            usable_guideline_chunks=[
+                build_chunk()
+            ],
+        ),
+        guide_result=guide_result,
+        safety_result=SafetyResult(
+            status=SafetyStatus.RESTRICTED,
+            reason_codes=[
+                "MISSING_MEDICAL_DISCLAIMER"
+            ],
+        ),
+    )
+
+    result = await use_case.execute(
+        user_id=1,
+        care_episode_id=100,
+        condition="STROKE",
+        topic="LIFESTYLE",
+    )
+
+    assert (
+        result.safety_status
+        == SafetyStatus.RESTRICTED
+    )
+
+    # 환자 확정정보는 유지한다.
+    assert result.guide_content.medication_guide == [
+        "아스피린 · 1정 · 1일 1회"
+    ]
+    assert result.guide_content.patient_instructions == [
+        "무리한 활동은 피하세요."
+    ]
+    assert result.guide_content.follow_up_schedule == [
+        "2026-08-20 10:00 · 신경과"
+    ]
+
+    # LLM·공공자료 기반 추가정보는 제거한다.
+    assert result.guide_content.public_information == []
+    assert result.guide_content.lifestyle_guide == []
+    assert result.guide_content.warning_signs == []
+
+    assert (
+        "추가 안내를 제한"
+        in result.guide_content.safety_notice
+    )

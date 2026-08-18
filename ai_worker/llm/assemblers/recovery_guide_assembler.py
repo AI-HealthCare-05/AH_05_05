@@ -1,3 +1,6 @@
+from ai_worker.domain.patient_fact_formatter import (
+    format_patient_medication,
+)
 from ai_worker.schemas.guide import (
     RecoveryGuideContent,
     RecoveryGuideSupplement,
@@ -5,7 +8,6 @@ from ai_worker.schemas.guide import (
 from ai_worker.schemas.patient import (
     FollowUpSchedule,
     PatientContext,
-    PatientMedication,
 )
 
 
@@ -32,7 +34,7 @@ class RecoveryGuideAssembler:
 
         return RecoveryGuideContent(
             medication_guide=[
-                self._format_medication(medication)
+                format_patient_medication(medication)
                 for medication
                 in patient_context.medications
             ],
@@ -55,27 +57,6 @@ class RecoveryGuideAssembler:
             safety_notice=self.SAFETY_NOTICE,
         )
 
-    @staticmethod
-    def _format_medication(
-        medication: PatientMedication,
-    ) -> str:
-        parts = [medication.name]
-
-        if medication.dose:
-            parts.append(medication.dose)
-
-        if medication.times_per_day is not None:
-            parts.append(
-                f"1일 {medication.times_per_day}회"
-            )
-
-        if medication.note:
-            parts.append(medication.note)
-
-        if medication.days is not None:
-            parts.append(f"{medication.days}일")
-
-        return " · ".join(parts)
 
     @staticmethod
     def _format_follow_up(

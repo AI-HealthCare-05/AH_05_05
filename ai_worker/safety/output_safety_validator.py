@@ -1,5 +1,8 @@
 import re
 
+from ai_worker.domain.patient_fact_formatter import (
+    format_patient_medication,
+)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.guide import (
     RecoveryGuideResult,
@@ -54,8 +57,16 @@ class RuleBasedOutputSafetyValidator:
     ) -> SafetyResult:
         reason_codes: list[str] = []
 
+        if self._has_medication_mismatch(
+                patient_context=patient_context,
+                result=result,
+        ):
+            reason_codes.append(
+                "PATIENT_MEDICATION_MISMATCH"
+            )
+
         for text in self._collect_guide_texts(
-            result
+                result
         ):
             if self._is_confirmed_instruction(
                 text=text,
@@ -132,6 +143,25 @@ class RuleBasedOutputSafetyValidator:
         )
 
     @staticmethod
+    def _has_medication_mismatch(
+            patient_context: PatientContext,
+            result: RecoveryGuideResult,
+    ) -> bool:
+        if not patient_context.medications:
+            return False
+
+        expected_medication_guide = [
+            format_patient_medication(medication)
+            for medication
+            in patient_context.medications
+        ]
+
+        return (
+                result.guide_content.medication_guide
+                != expected_medication_guide
+        )
+
+    @staticmethod
     def _collect_guide_texts(
         result: RecoveryGuideResult,
     ) -> list[str]:
@@ -144,6 +174,7 @@ class RuleBasedOutputSafetyValidator:
             *content.lifestyle_guide,
             *content.warning_signs,
             *content.follow_up_schedule,
+            content.safety_notice,
         ]
 
     @classmethod

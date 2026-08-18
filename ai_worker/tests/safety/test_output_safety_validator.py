@@ -12,6 +12,7 @@ from ai_worker.schemas.guide import (
 from ai_worker.schemas.patient import (
     PatientContext,
     PatientInstruction,
+    PatientMedication,
 )
 
 
@@ -220,3 +221,70 @@ async def test_validate_allows_confirmed_patient_instruction() -> None:
         == SafetyStatus.SAFE
     )
     assert safety_result.reason_codes == []
+
+async def test_validate_blocks_unsafe_safety_notice() -> None:
+    validator = (
+        RuleBasedOutputSafetyValidator()
+    )
+    result = build_result(
+        safety_notice=(
+            "오늘부터 아스피린 복용을 중단하세요. "
+            "이 안내는 의료진의 진료를 "
+            "대체하지 않습니다."
+        )
+    )
+
+    safety_result = await validator.validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert (
+        safety_result.status
+        == SafetyStatus.BLOCKED
+    )
+    assert (
+        "MEDICATION_CHANGE_INSTRUCTION"
+        in safety_result.reason_codes
+    )
+async def test_validate_blocks_patient_medication_mismatch() -> None:
+    patient_context = PatientContext(
+        user_id=1,
+        care_episode_id=100,
+        diagnoses=["뇌졸중"],
+        medications=[
+            PatientMedication(
+                medication_id=101,
+                name="아스피린",
+                dose="1정",
+                times_per_day=1,
+                note="아침 식후 복용",
+                days=7,
+            )
+        ],
+    )
+    result = build_result(
+        medication_guide=[
+            (
+                "아스피린 · 2정 · 1일 1회 · "
+                "아침 식후 복용 · 7일"
+            )
+        ]
+    )
+    validator = (
+        RuleBasedOutputSafetyValidator()
+    )
+
+    safety_result = await validator.validate(
+        patient_context=patient_context,
+        result=result,
+    )
+
+    assert (
+        safety_result.status
+        == SafetyStatus.BLOCKED
+    )
+    assert (
+        "PATIENT_MEDICATION_MISMATCH"
+        in safety_result.reason_codes
+    )

@@ -133,6 +133,12 @@ class GenerateRecoveryGuideUseCase:
             guide_content = (
                 self._build_blocked_content()
             )
+        elif final_status == SafetyStatus.RESTRICTED:
+            guide_content = (
+                self._build_restricted_content(
+                    guide_result.guide_content
+                )
+            )
         else:
             guide_content = (
                 guide_result.guide_content
@@ -147,6 +153,31 @@ class GenerateRecoveryGuideUseCase:
                 ),
             },
             deep=True,
+        )
+
+    @staticmethod
+    def _build_restricted_content(
+        original: RecoveryGuideContent,
+    ) -> RecoveryGuideContent:
+        return RecoveryGuideContent(
+            medication_guide=list(
+                original.medication_guide
+            ),
+            patient_instructions=list(
+                original.patient_instructions
+            ),
+            public_information=[],
+            lifestyle_guide=[],
+            warning_signs=[],
+            follow_up_schedule=list(
+                original.follow_up_schedule
+            ),
+            safety_notice=(
+                "안전성 확인이 필요한 추가 안내를 "
+                "제한했습니다. 사용자가 확인한 "
+                "복약정보, 의료진 권고사항 및 "
+                "진료 일정만 제공됩니다."
+            ),
         )
 
     @staticmethod
