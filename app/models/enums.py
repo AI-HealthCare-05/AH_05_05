@@ -1,0 +1,160 @@
+from enum import StrEnum
+
+
+class AccountStatus(StrEnum):
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    WITHDRAWN = "WITHDRAWN"
+
+
+class AdminRole(StrEnum):
+    ADMIN = "ADMIN"
+    STAFF = "STAFF"
+
+
+class OcrJobStatus(StrEnum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    READY_FOR_REVIEW = "READY_FOR_REVIEW"
+    COMPLETE = "COMPLETE"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class AlarmStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class AlarmEventType(StrEnum):
+    SCHEDULED = "SCHEDULED"
+    SENT = "SENT"
+    DELIVERED = "DELIVERED"
+    COMPLETED = "COMPLETED"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+
+
+class AlarmType(StrEnum):
+    MEDICATION = "MEDICATION"
+    FOLLOW_UP_VISIT = "FOLLOW_UP_VISIT"
+    CUSTOM = "CUSTOM"
+
+
+class BackgroundJobType(StrEnum):
+    OCR = "OCR"
+    LLM = "LLM"
+    CHAT = "CHAT"
+    ALARM = "ALARM"
+    DATA_DELETION = "DATA_DELETION"
+
+
+class BackgroundJobStatus(StrEnum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    RETRY_WAITING = "RETRY_WAITING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class CareEpisodeStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class OcrDocumentType(StrEnum):
+    DISCHARGE_SUMMARY = "DISCHARGE_SUMMARY"
+    DISCHARGE_INSTRUCTION = "DISCHARGE_INSTRUCTION"
+    PRESCRIPTION = "PRESCRIPTION"
+    MEDICATION_GUIDE = "MEDICATION_GUIDE"
+    MEDICATION_BAG = "MEDICATION_BAG"
+
+
+class OcrMaskingStatus(StrEnum):
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    SUSPECTED = "SUSPECTED"
+    FAILED = "FAILED"
+
+
+class OcrReviewStatus(StrEnum):
+    UNREVIEWED = "UNREVIEWED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    REVIEWED = "REVIEWED"
+
+
+class RecoveryGuideStatus(StrEnum):
+    COMPLETED = "COMPLETED"
+    SUPERSEDED = "SUPERSEDED"
+
+
+class GuideSourceType(StrEnum):
+    PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
+    PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
+
+
+class ChatSessionStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    DELETED = "DELETED"
+
+
+class ChatMessageRole(StrEnum):
+    USER = "USER"
+    ASSISTANT = "ASSISTANT"
+    SYSTEM = "SYSTEM"
+
+
+class ChatMessageStatus(StrEnum):
+    PENDING = "PENDING"
+    STREAMING = "STREAMING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class ChatRouteType(StrEnum):
+    PATIENT_DB = "PATIENT_DB"
+    PUBLIC_RAG = "PUBLIC_RAG"
+    PATIENT_AND_PUBLIC = "PATIENT_AND_PUBLIC"
+    GENERAL_LIFESTYLE = "GENERAL_LIFESTYLE"
+    SAFETY_RESPONSE = "SAFETY_RESPONSE"
+    OUT_OF_SCOPE_RESPONSE = "OUT_OF_SCOPE_RESPONSE"
+
+
+class ChatSafetyStatus(StrEnum):
+    PENDING = "PENDING"
+    SAFE = "SAFE"
+    RESTRICTED = "RESTRICTED"
+    BLOCKED = "BLOCKED"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+
+
+class ChatVerificationStatus(StrEnum):
+    NOT_REQUIRED = "NOT_REQUIRED"
+    PENDING = "PENDING"
+    VERIFIED = "VERIFIED"
+    FAILED = "FAILED"
+
+
+class ChatConflictStatus(StrEnum):
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    NO_CONFLICT = "NO_CONFLICT"
+    PATIENT_DATA_PRIORITY = "PATIENT_DATA_PRIORITY"
+    PUBLIC_SOURCE_EXCLUDED = "PUBLIC_SOURCE_EXCLUDED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+
+
+class ChatSourceType(StrEnum):
+    PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
+    PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
+
+
+class ConsentType(StrEnum):
+    MEDICAL_DATA = "MEDICAL_DATA"
+    AI_USAGE = "AI_USAGE"
+    NOTIFICATION = "NOTIFICATION"
+
