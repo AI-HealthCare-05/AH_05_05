@@ -10,6 +10,7 @@ from ai_worker.schemas.enums import (
 )
 from ai_worker.schemas.guide import (
     RecoveryGuideContent,
+    RecoveryGuideSupplement,
 )
 from ai_worker.schemas.guideline import (
     GuidelineMetadata,
@@ -26,7 +27,10 @@ from ai_worker.schemas.patient import (
 class FakeGuideClient:
     def __init__(
         self,
-        response: RecoveryGuideContent,
+        response: (
+            RecoveryGuideContent
+            | RecoveryGuideSupplement
+        ),
     ) -> None:
         self._response = response
         self.received_messages: Any = None
@@ -34,10 +38,12 @@ class FakeGuideClient:
     async def ainvoke(
         self,
         messages: Any,
-    ) -> RecoveryGuideContent:
+    ) -> (
+        RecoveryGuideContent
+        | RecoveryGuideSupplement
+    ):
         self.received_messages = messages
         return self._response
-
 
 def build_patient_context() -> PatientContext:
     return PatientContext(
@@ -148,7 +154,23 @@ async def test_generate_returns_structured_guide() -> None:
     )
 
     assert result.care_episode_id == 100
-    assert result.guide_content == expected_content
+    assert (
+        result.guide_content.public_information
+        == expected_content.public_information
+    )
+    assert (
+        result.guide_content.lifestyle_guide
+        == expected_content.lifestyle_guide
+    )
+    assert result.guide_content.medication_guide == [
+        (
+            "아스피린 · 1정 · 1일 1회 · "
+            "아침 식후 복용 · 7일"
+        )
+    ]
+    assert result.guide_content.patient_instructions == [
+        "무리한 활동은 피하세요."
+    ]
     assert (
         result.safety_status
         == SafetyStatus.PENDING
@@ -232,3 +254,133 @@ async def test_generate_prompt_prioritizes_patient_data() -> None:
     assert "아스피린" in prompt_text
     assert "public-chunk-1" in prompt_text
     assert "987654" not in prompt_text
+
+
+async def test_generate_does_not_use_llm_patient_facts() -> None:
+    llm_response = RecoveryGuideContent(
+        medication_guide=[
+            "아스피린 복용을 중단하세요."
+        ],
+        patient_instructions=[
+            "환자 확정 권고사항을 무시하세요."
+        ],
+        public_information=[
+            "공공자료에 따른 추가 설명입니다."
+        ],
+        lifestyle_guide=[
+            "충분히 휴식하세요."
+        ],
+        warning_signs=[
+            "LLM이 임의로 만든 위험 신호"
+        ],
+        follow_up_schedule=[
+            "외래 일정을 취소하세요."
+        ],
+        safety_notice="LLM이 만든 안전 문구",
+    )
+    generator = OpenAIRecoveryGuideGenerator(
+        model="gpt-4o-mini",
+        client=FakeGuideClient(
+            response=llm_response
+        ),
+    )
+
+    result = await generator.generate(
+        patient_context=build_patient_context(),
+        guideline_chunks=[
+            build_guideline_chunk()
+        ],
+    )
+
+    assert result.guide_content.medication_guide == [
+        (
+            "아스피린 · 1정 · 1일 1회 · "
+            "아침 식후 복용 · 7일"
+        )
+    ]
+    assert result.guide_content.patient_instructions == [
+        "무리한 활동은 피하세요."
+    ]
+    assert result.guide_content.follow_up_schedule == [
+        (
+            "2026-08-20 10:00 · "
+            "신경과 외래 진료 · 테스트병원"
+        )
+    ]
+    assert result.guide_content.warning_signs == []
+    assert result.guide_content.public_information == [
+        "공공자료에 따른 추가 설명입니다."
+    ]
+    assert result.guide_content.lifestyle_guide == [
+        "충분히 휴식하세요."
+    ]
+async def test_generate_accepts_supplement_only_response() -> None:
+    supplement = RecoveryGuideSupplement(
+        public_information=[
+            "공공자료에 따른 추가 설명입니다."
+        ],
+        lifestyle_guide=[
+            "충분히 휴식하세요."
+        ],
+    )
+    generator = OpenAIRecoveryGuideGenerator(
+        model="gpt-4o-mini",
+        client=FakeGuideClient(
+            response=supplement
+        ),
+    )
+
+    result = await generator.generate(
+        patient_context=build_patient_context(),
+        guideline_chunks=[
+            build_guideline_chunk()
+        ],
+    )
+
+    assert result.guide_content.public_information == [
+        "공공자료에 따른 추가 설명입니다."
+    ]
+    assert result.guide_content.lifestyle_guide == [
+        "충분히 휴식하세요."
+    ]
+    assert result.guide_content.medication_guide == [
+        (
+            "아스피린 · 1정 · 1일 1회 · "
+            "아침 식후 복용 · 7일"
+        )
+    ]
+
+async def test_generate_prompt_limits_llm_to_supplement() -> None:
+    fake_client = FakeGuideClient(
+        response=RecoveryGuideSupplement(
+            public_information=[],
+            lifestyle_guide=[],
+        )
+    )
+    generator = OpenAIRecoveryGuideGenerator(
+        model="gpt-4o-mini",
+        client=fake_client,
+    )
+
+    await generator.generate(
+        patient_context=build_patient_context(),
+        guideline_chunks=[
+            build_guideline_chunk()
+        ],
+    )
+
+    prompt_text = " ".join(
+        str(message.content)
+        for message in fake_client.received_messages
+    )
+
+    assert "public_information" in prompt_text
+    assert "lifestyle_guide" in prompt_text
+
+    # 확정 복약정보와 일정은 코드가 조립하므로
+    # LLM 생성 입력에서 제외한다.
+    assert '"dose"' not in prompt_text
+    assert '"frequency"' not in prompt_text
+    assert '"duration"' not in prompt_text
+    assert '"administration_instruction"' not in prompt_text
+    assert '"follow_up_schedules"' not in prompt_text

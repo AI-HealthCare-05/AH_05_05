@@ -3,6 +3,9 @@ from typing import Any, Protocol
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
+from ai_worker.llm.assemblers.recovery_guide_assembler import (
+    RecoveryGuideAssembler,
+)
 from ai_worker.llm.prompts.recovery_guide_prompt import (
     build_recovery_guide_messages,
 )
@@ -14,6 +17,7 @@ from ai_worker.schemas.guide import (
     GuideSource,
     RecoveryGuideContent,
     RecoveryGuideResult,
+    RecoveryGuideSupplement,
 )
 from ai_worker.schemas.guideline import (
     RetrievedGuidelineChunk,
@@ -25,7 +29,11 @@ class AsyncGuideClient(Protocol):
     async def ainvoke(
         self,
         messages: Any,
-    ) -> RecoveryGuideContent | dict[str, Any]: ...
+    ) -> (
+        RecoveryGuideSupplement
+        | RecoveryGuideContent
+        | dict[str, Any]
+    ): ...
 
 
 class OpenAIRecoveryGuideGenerator:
@@ -43,6 +51,7 @@ class OpenAIRecoveryGuideGenerator:
             )
 
         self._model_name = normalized_model
+        self._assembler = RecoveryGuideAssembler()
 
         if client is not None:
             self._client = client
@@ -56,7 +65,7 @@ class OpenAIRecoveryGuideGenerator:
 
         self._client = (
             chat_model.with_structured_output(
-                RecoveryGuideContent,
+                RecoveryGuideSupplement,
                 method="json_schema",
                 strict=True,
             )
@@ -83,16 +92,33 @@ class OpenAIRecoveryGuideGenerator:
         )
 
         if isinstance(
-            response,
-            RecoveryGuideContent,
+                response,
+                RecoveryGuideSupplement,
         ):
-            guide_content = response
+            supplement = response
+        elif isinstance(
+                response,
+                RecoveryGuideContent,
+        ):
+            supplement = RecoveryGuideSupplement(
+                public_information=(
+                    response.public_information
+                ),
+                lifestyle_guide=(
+                    response.lifestyle_guide
+                ),
+            )
         else:
-            guide_content = (
-                RecoveryGuideContent.model_validate(
+            supplement = (
+                RecoveryGuideSupplement.model_validate(
                     response
                 )
             )
+
+        guide_content = self._assembler.assemble(
+            patient_context=patient_context,
+            supplement=supplement,
+        )
 
         return RecoveryGuideResult(
             care_episode_id=(
