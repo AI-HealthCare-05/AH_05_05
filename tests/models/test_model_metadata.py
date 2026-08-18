@@ -54,6 +54,29 @@ def load_recovery_chat_models():
     return recovery, chat
 
 
+def load_alarm_job_models():
+    try:
+        alarms = import_module("app.models.alarms")
+        background_jobs = import_module("app.models.background_jobs")
+    except ModuleNotFoundError as exc:
+        pytest.fail(f"alarm/background-job model module is missing: {exc.name}")
+
+    Tortoise.init_models(
+        (
+            "app.models.users",
+            "app.models.admins",
+            "app.models.care",
+            "app.models.ocr",
+            "app.models.recovery",
+            "app.models.chat",
+            "app.models.alarms",
+            "app.models.background_jobs",
+        ),
+        "models",
+    )
+    return alarms, background_jobs
+
+
 def test_user_matches_merged_account_schema() -> None:
     enums, user_model, _ = load_account_models()
 
@@ -123,3 +146,24 @@ def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
     assert chat.ChatMessage._meta.fields_map["guide"].on_delete == fields.SET_NULL
     assert chat.ChatMessageSource._meta.unique_together == (("chat_message", "citation_order"),)
     assert chat.ChatMessageSource._meta.fields_map["extracted_field"].on_delete == fields.SET_NULL
+
+
+def test_alarm_models_preserve_subscription_and_optional_source_relations() -> None:
+    alarms, _ = load_alarm_job_models()
+
+    assert alarms.PushSubscription._meta.fields_map["endpoint"].unique is True
+    assert alarms.Alarm._meta.fields_map["user"].model_name == "models.User"
+    assert alarms.Alarm._meta.fields_map["source_guide"].on_delete == fields.SET_NULL
+    push_subscription = alarms.AlarmEvent._meta.fields_map["push_subscription"]
+    assert push_subscription.null is True
+    assert push_subscription.on_delete == fields.SET_NULL
+
+
+def test_background_job_keeps_polymorphic_reference_and_self_parent() -> None:
+    _, background_jobs = load_alarm_job_models()
+
+    model = background_jobs.BackgroundJob
+    assert {"reference_table", "reference_id"} <= model._meta.db_fields
+    assert model._meta.fields_map["parent_job"].model_name == "models.BackgroundJob"
+    assert model._meta.fields_map["parent_job"].on_delete == fields.SET_NULL
+    assert len(model._meta.fields_map["retry_count"].validators) == 1
