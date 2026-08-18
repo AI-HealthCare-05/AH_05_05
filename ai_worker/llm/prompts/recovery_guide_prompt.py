@@ -11,6 +11,8 @@ from ai_worker.schemas.guideline import (
 )
 from ai_worker.schemas.patient import PatientContext
 
+RECOVERY_GUIDE_PROMPT_VERSION = "recovery-guide-prompt-v1"
+
 SYSTEM_PROMPT = """
 당신은 퇴원 환자와 보호자가 공공 의료자료와
 일반적인 생활관리 정보를 쉽게 이해하도록 돕는

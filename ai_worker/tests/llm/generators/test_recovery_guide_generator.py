@@ -46,6 +46,7 @@ def build_patient_context() -> PatientContext:
     return PatientContext(
         user_id=987654,
         care_episode_id=100,
+        confirmation_hash="b" * 64,
         diagnoses=["뇌졸중"],
         medications=[
             PatientMedication(
@@ -128,6 +129,11 @@ async def test_generate_returns_structured_guide() -> None:
     assert result.guide_content.medication_guide == [("아스피린 · 1정 · 1일 1회 · 아침 식후 복용 · 7일")]
     assert result.guide_content.patient_instructions == ["무리한 활동은 피하세요."]
     assert result.safety_status == SafetyStatus.PENDING
+    assert result.patient_context_hash == "b" * 64
+    assert result.model_name == "gpt-4o-mini"
+    assert result.model_version is None
+    assert result.prompt_version == "recovery-guide-prompt-v1"
+    assert result.schema_version == "recovery-guide-result-v1"
 
 
 async def test_generate_builds_patient_and_public_sources() -> None:
@@ -310,3 +316,28 @@ async def test_generate_without_public_chunks_keeps_lifestyle_and_excludes_publi
 
     # 존재하지 않는 공공 출처를 만들지 않는다.
     assert all(source.source_type != SourceType.PUBLIC_RAG_CHUNK for source in result.sources)
+
+
+async def test_generate_computes_hash_when_confirmation_hash_missing() -> None:
+    patient_context = build_patient_context().model_copy(
+        update={
+            "confirmation_hash": None,
+        },
+        deep=True,
+    )
+    generator = OpenAIRecoveryGuideGenerator(
+        model="gpt-4o-mini",
+        client=FakeGuideClient(response=build_llm_response()),
+    )
+
+    first_result = await generator.generate(
+        patient_context=patient_context,
+        guideline_chunks=[build_guideline_chunk()],
+    )
+    second_result = await generator.generate(
+        patient_context=patient_context,
+        guideline_chunks=[build_guideline_chunk()],
+    )
+
+    assert len(first_result.patient_context_hash) == 64
+    assert first_result.patient_context_hash == second_result.patient_context_hash

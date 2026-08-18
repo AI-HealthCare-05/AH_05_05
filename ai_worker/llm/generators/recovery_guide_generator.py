@@ -3,10 +3,14 @@ from typing import Any, Protocol
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
+from ai_worker.domain.patient_context_hasher import (
+    resolve_patient_context_hash,
+)
 from ai_worker.llm.assemblers.recovery_guide_assembler import (
     RecoveryGuideAssembler,
 )
 from ai_worker.llm.prompts.recovery_guide_prompt import (
+    RECOVERY_GUIDE_PROMPT_VERSION,
     build_recovery_guide_messages,
 )
 from ai_worker.schemas.enums import (
@@ -16,6 +20,7 @@ from ai_worker.schemas.enums import (
     SourceType,
 )
 from ai_worker.schemas.guide import (
+    RECOVERY_GUIDE_SCHEMA_VERSION,
     GuideSource,
     RecoveryGuideContent,
     RecoveryGuideResult,
@@ -113,6 +118,11 @@ class OpenAIRecoveryGuideGenerator:
         return RecoveryGuideResult(
             care_episode_id=(patient_context.care_episode_id),
             guide_content=guide_content,
+            patient_context_hash=(resolve_patient_context_hash(patient_context)),
+            model_name=self._model_name,
+            model_version=None,
+            prompt_version=(RECOVERY_GUIDE_PROMPT_VERSION),
+            schema_version=(RECOVERY_GUIDE_SCHEMA_VERSION),
             sources=self._build_sources(
                 patient_context=patient_context,
                 guideline_chunks=(guideline_chunks),

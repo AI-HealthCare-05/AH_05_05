@@ -164,6 +164,11 @@ def build_guide(
 ) -> RecoveryGuideResult:
     return RecoveryGuideResult(
         care_episode_id=100,
+        patient_context_hash="a" * 64,
+        model_name="gpt-4o-mini",
+        model_version=None,
+        prompt_version=("recovery-guide-prompt-v1"),
+        schema_version=("recovery-guide-result-v1"),
         guide_content=RecoveryGuideContent(
             medication_guide=[medication_text],
             patient_instructions=[],
@@ -284,6 +289,11 @@ async def test_execute_restricts_review_required_result() -> None:
 async def test_execute_restricted_keeps_only_confirmed_content() -> None:
     guide_result = RecoveryGuideResult(
         care_episode_id=100,
+        patient_context_hash="a" * 64,
+        model_name="gpt-4o-mini",
+        model_version=None,
+        prompt_version=("recovery-guide-prompt-v1"),
+        schema_version=("recovery-guide-result-v1"),
         guide_content=RecoveryGuideContent(
             medication_guide=["아스피린 · 1정 · 1일 1회"],
             patient_instructions=["무리한 활동은 피하세요."],

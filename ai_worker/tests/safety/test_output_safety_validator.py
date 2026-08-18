@@ -37,6 +37,11 @@ def build_result(
 ) -> RecoveryGuideResult:
     return RecoveryGuideResult(
         care_episode_id=100,
+        patient_context_hash="a" * 64,
+        model_name="gpt-4o-mini",
+        model_version=None,
+        prompt_version=("recovery-guide-prompt-v1"),
+        schema_version=("recovery-guide-result-v1"),
         guide_content=RecoveryGuideContent(
             medication_guide=(medication_guide or []),
             patient_instructions=(patient_instructions or []),

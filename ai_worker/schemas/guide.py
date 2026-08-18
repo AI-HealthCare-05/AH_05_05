@@ -13,16 +13,14 @@ from ai_worker.schemas.enums import (
     SourceType,
 )
 
+RECOVERY_GUIDE_SCHEMA_VERSION = "recovery-guide-result-v1"
+
 
 class GuideSource(BaseModel):
     source_type: SourceType
 
-    patient_source_kind: (
-        PatientSourceKind | None
-    ) = None
-    patient_field: (
-        CareEpisodeSourceField | None
-    ) = None
+    patient_source_kind: PatientSourceKind | None = None
+    patient_field: CareEpisodeSourceField | None = None
     medication_id: int | None = None
     care_advice_id: int | None = None
     follow_up_visit_id: int | None = None
@@ -50,26 +48,17 @@ class GuideSource(BaseModel):
     def validate_source_fields(
         self,
     ) -> Self:
-        if (
-            self.source_type
-            == SourceType.PATIENT_SAVED_FIELD
-        ):
+        if self.source_type == SourceType.PATIENT_SAVED_FIELD:
             self._validate_patient_source()
 
-        if (
-            self.source_type
-            == SourceType.PUBLIC_RAG_CHUNK
-        ):
+        if self.source_type == SourceType.PUBLIC_RAG_CHUNK:
             self._validate_public_source()
 
         return self
 
     def _validate_patient_source(self) -> None:
         if self.patient_source_kind is None:
-            raise ValueError(
-                "환자 출처에는 "
-                "patient_source_kind가 필요합니다."
-            )
+            raise ValueError("환자 출처에는 patient_source_kind가 필요합니다.")
 
         forbidden_public_fields = (
             "public_dataset_key",
@@ -91,46 +80,24 @@ class GuideSource(BaseModel):
             message_prefix="환자 출처에는",
         )
 
-        if (
-            self.patient_source_kind
-            == PatientSourceKind.CARE_EPISODE_FIELD
-        ):
+        if self.patient_source_kind == PatientSourceKind.CARE_EPISODE_FIELD:
             self._require_field("patient_field")
-            self._reject_patient_ids(
-                allowed_field=None
-            )
+            self._reject_patient_ids(allowed_field=None)
             return
 
-        if (
-            self.patient_source_kind
-            == PatientSourceKind.MEDICATION
-        ):
+        if self.patient_source_kind == PatientSourceKind.MEDICATION:
             self._require_field("medication_id")
-            self._reject_patient_fields(
-                allowed_field="medication_id"
-            )
+            self._reject_patient_fields(allowed_field="medication_id")
             return
 
-        if (
-            self.patient_source_kind
-            == PatientSourceKind.CARE_ADVICE
-        ):
+        if self.patient_source_kind == PatientSourceKind.CARE_ADVICE:
             self._require_field("care_advice_id")
-            self._reject_patient_fields(
-                allowed_field="care_advice_id"
-            )
+            self._reject_patient_fields(allowed_field="care_advice_id")
             return
 
-        if (
-            self.patient_source_kind
-            == PatientSourceKind.FOLLOW_UP_VISIT
-        ):
-            self._require_field(
-                "follow_up_visit_id"
-            )
-            self._reject_patient_fields(
-                allowed_field="follow_up_visit_id"
-            )
+        if self.patient_source_kind == PatientSourceKind.FOLLOW_UP_VISIT:
+            self._require_field("follow_up_visit_id")
+            self._reject_patient_fields(allowed_field="follow_up_visit_id")
 
     def _validate_public_source(self) -> None:
         forbidden_patient_fields = (
@@ -166,11 +133,7 @@ class GuideSource(BaseModel):
             "follow_up_visit_id",
         )
 
-        fields_to_reject = tuple(
-            field_name
-            for field_name in patient_id_fields
-            if field_name != allowed_field
-        )
+        fields_to_reject = tuple(field_name for field_name in patient_id_fields if field_name != allowed_field)
 
         self._reject_non_null_fields(
             field_names=fields_to_reject,
@@ -188,11 +151,7 @@ class GuideSource(BaseModel):
             "follow_up_visit_id",
         )
 
-        fields_to_reject = tuple(
-            field_name
-            for field_name in patient_fields
-            if field_name != allowed_field
-        )
+        fields_to_reject = tuple(field_name for field_name in patient_fields if field_name != allowed_field)
 
         self._reject_non_null_fields(
             field_names=fields_to_reject,
@@ -204,9 +163,7 @@ class GuideSource(BaseModel):
         field_name: str,
     ) -> None:
         if getattr(self, field_name) is None:
-            raise ValueError(
-                f"{field_name}가 필요합니다."
-            )
+            raise ValueError(f"{field_name}가 필요합니다.")
 
     def _reject_non_null_fields(
         self,
@@ -215,55 +172,41 @@ class GuideSource(BaseModel):
     ) -> None:
         for field_name in field_names:
             if getattr(self, field_name) is not None:
-                raise ValueError(
-                    f"{message_prefix} "
-                    f"{field_name}를 사용할 수 없습니다."
-                )
+                raise ValueError(f"{message_prefix} {field_name}를 사용할 수 없습니다.")
 
 
 class RecoveryGuideSupplement(BaseModel):
     """LLM이 생성할 수 있는 보충정보."""
 
-    public_information: list[str] = Field(
-        default_factory=list
-    )
-    lifestyle_guide: list[str] = Field(
-        default_factory=list
-    )
+    public_information: list[str] = Field(default_factory=list)
+    lifestyle_guide: list[str] = Field(default_factory=list)
 
 
 class RecoveryGuideContent(BaseModel):
-    medication_guide: list[str] = Field(
-        default_factory=list
-    )
-    patient_instructions: list[str] = Field(
-        default_factory=list
-    )
-    public_information: list[str] = Field(
-        default_factory=list
-    )
-    lifestyle_guide_label: Literal[
-        "AI 생성 일반 안내"
-    ] = "AI 생성 일반 안내"
-    lifestyle_guide: list[str] = Field(
-        default_factory=list
-    )
-    warning_signs: list[str] = Field(
-        default_factory=list
-    )
-    follow_up_schedule: list[str] = Field(
-        default_factory=list
-    )
+    medication_guide: list[str] = Field(default_factory=list)
+    patient_instructions: list[str] = Field(default_factory=list)
+    public_information: list[str] = Field(default_factory=list)
+    lifestyle_guide_label: Literal["AI 생성 일반 안내"] = "AI 생성 일반 안내"
+    lifestyle_guide: list[str] = Field(default_factory=list)
+    warning_signs: list[str] = Field(default_factory=list)
+    follow_up_schedule: list[str] = Field(default_factory=list)
     safety_notice: str
 
 
 class RecoveryGuideResult(BaseModel):
     care_episode_id: int
     guide_content: RecoveryGuideContent
-    sources: list[GuideSource] = Field(
-        default_factory=list
+
+    patient_context_hash: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
     )
+    model_name: str = Field(min_length=1)
+    model_version: str | None = None
+    prompt_version: str = Field(min_length=1)
+    schema_version: str = Field(min_length=1)
+
+    sources: list[GuideSource] = Field(default_factory=list)
     safety_status: SafetyStatus
-    safety_reason_codes: list[str] = Field(
-        default_factory=list
-    )
+    safety_reason_codes: list[str] = Field(default_factory=list)
