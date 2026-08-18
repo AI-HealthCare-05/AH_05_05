@@ -155,8 +155,18 @@ class OpenAIRecoveryGuideGenerator:
                 chunk_type=chunk.metadata.topic,
                 source_title=chunk.metadata.title,
                 source_organization=(chunk.metadata.organization),
-                source_url=(chunk.metadata.source_url),
-                similarity_score=(chunk.similarity_score),
+                source_url=(
+                    chunk.metadata.source_url
+                ),
+                source_page_number=(
+                    chunk.metadata.page_number
+                ),
+                source_license=(
+                    chunk.metadata.license
+                ),
+                similarity_score=(
+                    chunk.similarity_score
+                ),
             )
             for chunk in guideline_chunks
         )

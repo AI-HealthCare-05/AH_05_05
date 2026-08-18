@@ -77,20 +77,30 @@ def build_patient_context() -> PatientContext:
 def build_guideline_chunk() -> RetrievedGuidelineChunk:
     return RetrievedGuidelineChunk(
         vector_chunk_id="public-chunk-1",
-        content=("퇴원 후에는 가벼운 활동부터 점진적으로 시작할 수 있습니다."),
+        content=(
+            "퇴원 후에는 가벼운 활동부터 "
+            "점진적으로 시작할 수 있습니다."
+        ),
         similarity_score=0.91,
         metadata=GuidelineMetadata(
             dataset_key="PUBLIC_GUIDELINE",
             dataset_version="2020",
-            document_id="stroke-guideline-2020",
+            document_id=(
+                "stroke-guideline-2020"
+            ),
             title="Stroke Guideline",
-            organization="Test Organization",
+            organization=(
+                "Test Organization"
+            ),
             condition="STROKE",
             care_phase="POST_DISCHARGE",
             topic="LIFESTYLE",
             section_title="Activity",
             page_number=10,
-            source_url="https://example.com/guide",
+            source_url=(
+                "https://example.com/guide"
+            ),
+            license="CC BY-NC-ND 4.0",
         ),
     )
 
@@ -154,7 +164,16 @@ async def test_generate_builds_patient_and_public_sources() -> None:
     assert len(public_sources) == 1
     assert public_sources[0].vector_chunk_id == "public-chunk-1"
     assert public_sources[0].source_record_key == "stroke-guideline-2020"
+    public_source = public_sources[0]
 
+    assert (
+        public_source.source_page_number
+        == 10
+    )
+    assert (
+        public_source.source_license
+        == "CC BY-NC-ND 4.0"
+    )
 
 async def test_generate_prompt_prioritizes_patient_data() -> None:
     fake_client = FakeGuideClient(response=build_llm_response())

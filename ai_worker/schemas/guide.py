@@ -19,6 +19,11 @@ class GuideSource(BaseModel):
     source_title: str | None = None
     source_organization: str | None = None
     source_url: str | None = None
+    source_page_number: int | None = Field(
+        default=None,
+        ge=1,
+    )
+    source_license: str | None = None
     similarity_score: float | None = None
 
 
@@ -60,3 +65,4 @@ class RecoveryGuideResult(BaseModel):
     sources: list[GuideSource] = Field(default_factory=list)
     safety_status: SafetyStatus
     safety_reason_codes: list[str] = Field(default_factory=list)
+
