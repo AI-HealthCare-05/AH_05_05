@@ -1,12 +1,13 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 from pydantic import EmailStr
 
 from app.core import config
-from app.models.users import Gender, User
+from app.models.enums import AccountStatus
+from app.models.users import User
 
-ALLOWED_UPDATE_FIELDS = ["name", "phone_number", "gender", "birthday"]
+ALLOWED_UPDATE_FIELDS = ["name", "email", "phone"]
 UPDATED_AT_FIELD = "updated_at"
 
 
@@ -25,22 +26,16 @@ class UserRepository:
         email: str | EmailStr,
         hashed_password: str,
         name: str,
-        phone_number: str,
-        gender: Gender,
-        birthday: date,
+        phone: str,
         *,
-        is_active: bool = True,
-        is_admin: bool = False,
+        status: AccountStatus = AccountStatus.ACTIVE,
     ) -> User:
         return await self._model.create(
             email=email,
             hashed_password=hashed_password,
             name=name,
-            phone_number=phone_number,
-            gender=gender,
-            birthday=birthday,
-            is_active=is_active,
-            is_admin=is_admin,
+            phone=phone,
+            status=status,
         )
 
     async def get_user_by_email(self, email: str) -> User | None:
@@ -50,10 +45,7 @@ class UserRepository:
         return await self._model.filter(email=email).exists()
 
     async def exists_by_phone_number(self, phone_number: str) -> bool:
-        return await self._model.filter(phone_number=phone_number).exists()
-
-    async def update_last_login(self, user_id: int) -> None:
-        await self._model.filter(id=user_id).update(last_login=datetime.now(config.TIMEZONE))
+        return await self._model.filter(phone=phone_number).exists()
 
     async def update_instance(self, user: User, data: dict[str, Any]) -> None:
         update_fields = []
