@@ -9,6 +9,10 @@ from ai_worker.schemas.guideline import (
     GuidelineDocument,
     GuidelineMetadata,
 )
+from ai_worker.schemas.guideline_manifest import (
+    GuidelineManifest,
+    GuidelineManifestDocument,
+)
 
 
 class FakeLoader:
@@ -30,6 +34,26 @@ class FakeLoader:
                 metadata=metadata.model_copy(update={"page_number": 1}),
             )
         ]
+
+
+class BatchRecordingLoader(FakeLoader):
+    def __init__(self) -> None:
+        super().__init__()
+        self.received_paths: list[Path] = []
+        self.received_metadatas: list[GuidelineMetadata] = []
+
+    def load(
+        self,
+        file_path: Path,
+        metadata: GuidelineMetadata,
+    ) -> list[GuidelineDocument]:
+        self.received_paths.append(file_path)
+        self.received_metadatas.append(metadata)
+
+        return super().load(
+            file_path=file_path,
+            metadata=metadata,
+        )
 
 
 class FakeSplitter:
@@ -88,23 +112,15 @@ class FakeEmbeddingProvider:
 
 class FakeVectorStore:
     def __init__(self) -> None:
-        self.received_chunks: list[
-            GuidelineDocument
-        ] = []
-        self.received_vectors: list[
-            list[float]
-        ] = []
-        self.deleted_document_ids: list[
-            str
-        ] = []
+        self.received_chunks: list[GuidelineDocument] = []
+        self.received_vectors: list[list[float]] = []
+        self.deleted_document_ids: list[str] = []
 
     async def delete_by_document_id(
         self,
         document_id: str,
     ) -> None:
-        self.deleted_document_ids.append(
-            document_id
-        )
+        self.deleted_document_ids.append(document_id)
 
     async def upsert_chunks(
         self,
@@ -118,9 +134,9 @@ class FakeVectorStore:
             "point-1",
             "point-2",
         ]
-class RecordingEmbeddingProvider(
-    FakeEmbeddingProvider
-):
+
+
+class RecordingEmbeddingProvider(FakeEmbeddingProvider):
     def __init__(
         self,
         events: list[str],
@@ -134,9 +150,7 @@ class RecordingEmbeddingProvider(
     ) -> list[list[float]]:
         self._events.append("embed")
 
-        return await super().embed_documents(
-            texts
-        )
+        return await super().embed_documents(texts)
 
 
 class RecordingVectorStore(FakeVectorStore):
@@ -151,9 +165,7 @@ class RecordingVectorStore(FakeVectorStore):
         self,
         document_id: str,
     ) -> None:
-        self._events.append(
-            f"delete:{document_id}"
-        )
+        self._events.append(f"delete:{document_id}")
 
     async def upsert_chunks(
         self,
@@ -167,16 +179,14 @@ class RecordingVectorStore(FakeVectorStore):
             vectors=vectors,
         )
 
-class FailingEmbeddingProvider(
-    FakeEmbeddingProvider
-):
+
+class FailingEmbeddingProvider(FakeEmbeddingProvider):
     async def embed_documents(
         self,
         texts: list[str],
     ) -> list[list[float]]:
-        raise RuntimeError(
-            "임베딩 생성 실패"
-        )
+        raise RuntimeError("임베딩 생성 실패")
+
 
 def build_metadata() -> GuidelineMetadata:
     return GuidelineMetadata(
@@ -225,9 +235,7 @@ async def test_index_pdf_connects_pipeline() -> None:
         [1.0, 0.0, 0.0],
     ]
 
-    assert vector_store.deleted_document_ids == [
-        "stroke-guideline-2020"
-    ]
+    assert vector_store.deleted_document_ids == ["stroke-guideline-2020"]
 
     assert point_ids == [
         "point-1",
@@ -252,35 +260,27 @@ async def test_index_pdf_rejects_empty_chunks() -> None:
             metadata=build_metadata(),
         )
 
+
 async def test_index_pdf_replaces_existing_chunks_after_embedding() -> None:
     events: list[str] = []
 
     indexer = GuidelineIndexer(
         loader=FakeLoader(),
         splitter=FakeSplitter(),
-        embedding_provider=(
-            RecordingEmbeddingProvider(events)
-        ),
-        vector_store=(
-            RecordingVectorStore(events)
-        ),
+        embedding_provider=(RecordingEmbeddingProvider(events)),
+        vector_store=(RecordingVectorStore(events)),
     )
 
     metadata = build_metadata()
 
     await indexer.index_pdf(
-        pdf_path=Path(
-            "stroke-guideline.pdf"
-        ),
+        pdf_path=Path("stroke-guideline.pdf"),
         metadata=metadata,
     )
 
     assert events == [
         "embed",
-        (
-            "delete:"
-            "stroke-guideline-2020"
-        ),
+        ("delete:stroke-guideline-2020"),
         "upsert",
     ]
 
@@ -291,9 +291,7 @@ async def test_index_pdf_keeps_existing_chunks_when_embedding_fails() -> None:
     indexer = GuidelineIndexer(
         loader=FakeLoader(),
         splitter=FakeSplitter(),
-        embedding_provider=(
-            FailingEmbeddingProvider()
-        ),
+        embedding_provider=(FailingEmbeddingProvider()),
         vector_store=vector_store,
     )
 
@@ -302,15 +300,81 @@ async def test_index_pdf_keeps_existing_chunks_when_embedding_fails() -> None:
         match="임베딩 생성 실패",
     ):
         await indexer.index_pdf(
-            pdf_path=Path(
-                "stroke-guideline.pdf"
-            ),
+            pdf_path=Path("stroke-guideline.pdf"),
             metadata=build_metadata(),
         )
 
-    assert (
-        vector_store.deleted_document_ids
-        == []
-    )
+    assert vector_store.deleted_document_ids == []
     assert vector_store.received_chunks == []
     assert vector_store.received_vectors == []
+
+
+async def test_index_manifest_indexes_all_documents() -> None:
+    loader = BatchRecordingLoader()
+    vector_store = FakeVectorStore()
+
+    indexer = GuidelineIndexer(
+        loader=loader,
+        splitter=FakeSplitter(),
+        embedding_provider=(FakeEmbeddingProvider()),
+        vector_store=vector_store,
+    )
+
+    manifest = GuidelineManifest(
+        documents=[
+            GuidelineManifestDocument(
+                file_path=Path("stroke-guideline.pdf"),
+                document_id=("stroke-guideline-2020"),
+                title="Stroke Guideline",
+                organization=("Test Organization"),
+                dataset_version="2020",
+                publication_year=2020,
+                language="en",
+                condition="STROKE",
+                care_phase="POST_DISCHARGE",
+                topic="LIFESTYLE",
+                source_url=("https://example.com/stroke"),
+                license="TEST_LICENSE",
+            ),
+            GuidelineManifestDocument(
+                file_path=Path("heart-failure-guideline.pdf"),
+                document_id=("heart-failure-guideline-2021"),
+                title=("Heart Failure Guideline"),
+                organization=("Test Organization"),
+                dataset_version="2021",
+                publication_year=2021,
+                language="en",
+                condition="HEART_FAILURE",
+                care_phase="POST_DISCHARGE",
+                topic="LIFESTYLE",
+                source_url=("https://example.com/heart-failure"),
+                license="TEST_LICENSE",
+            ),
+        ]
+    )
+
+    result = await indexer.index_manifest(manifest)
+
+    assert loader.received_paths == [
+        Path("stroke-guideline.pdf"),
+        Path("heart-failure-guideline.pdf"),
+    ]
+
+    assert [metadata.document_id for metadata in (loader.received_metadatas)] == [
+        "stroke-guideline-2020",
+        "heart-failure-guideline-2021",
+    ]
+
+    assert loader.received_metadatas[0].source_url == "https://example.com/stroke"
+    assert loader.received_metadatas[0].license == "TEST_LICENSE"
+
+    assert result == {
+        "stroke-guideline-2020": [
+            "point-1",
+            "point-2",
+        ],
+        "heart-failure-guideline-2021": [
+            "point-1",
+            "point-2",
+        ],
+    }

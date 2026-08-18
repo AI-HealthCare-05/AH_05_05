@@ -15,6 +15,9 @@ from ai_worker.rag.vectorstores.qdrant_guideline_store import (
 from ai_worker.schemas.guideline import (
     GuidelineMetadata,
 )
+from ai_worker.schemas.guideline_manifest import (
+    GuidelineManifest,
+)
 
 
 class GuidelineIndexer:
@@ -47,15 +50,32 @@ class GuidelineIndexer:
 
         texts = [chunk.content for chunk in chunks]
 
-        vectors = await self._embedding_provider.embed_documents(
-            texts
-        )
+        vectors = await self._embedding_provider.embed_documents(texts)
 
-        await self._vector_store.delete_by_document_id(
-            metadata.document_id
-        )
+        await self._vector_store.delete_by_document_id(metadata.document_id)
 
         return await self._vector_store.upsert_chunks(
             chunks=chunks,
             vectors=vectors,
         )
+
+    async def index_manifest(
+        self,
+        manifest: GuidelineManifest,
+    ) -> dict[str, list[str]]:
+        indexed_point_ids: dict[
+            str,
+            list[str],
+        ] = {}
+
+        for document in manifest.documents:
+            metadata = GuidelineMetadata.model_validate(document.model_dump(exclude={"file_path"}))
+
+            point_ids = await self.index_pdf(
+                pdf_path=document.file_path,
+                metadata=metadata,
+            )
+
+            indexed_point_ids[document.document_id] = point_ids
+
+        return indexed_point_ids
