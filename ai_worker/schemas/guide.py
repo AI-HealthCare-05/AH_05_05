@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from ai_worker.schemas.enums import SafetyStatus, SourceType
@@ -28,12 +30,27 @@ class RecoveryGuideSupplement(BaseModel):
 
 
 class RecoveryGuideContent(BaseModel):
-    medication_guide: list[str] = Field(default_factory=list)
-    patient_instructions: list[str] = Field(default_factory=list)
-    public_information: list[str] = Field(default_factory=list)
-    lifestyle_guide: list[str] = Field(default_factory=list)
-    warning_signs: list[str] = Field(default_factory=list)
-    follow_up_schedule: list[str] = Field(default_factory=list)
+    medication_guide: list[str] = Field(
+        default_factory=list
+    )
+    patient_instructions: list[str] = Field(
+        default_factory=list
+    )
+    public_information: list[str] = Field(
+        default_factory=list
+    )
+    lifestyle_guide_label: Literal[
+        "AI 생성 일반 안내"
+    ] = "AI 생성 일반 안내"
+    lifestyle_guide: list[str] = Field(
+        default_factory=list
+    )
+    warning_signs: list[str] = Field(
+        default_factory=list
+    )
+    follow_up_schedule: list[str] = Field(
+        default_factory=list
+    )
     safety_notice: str
 
 
