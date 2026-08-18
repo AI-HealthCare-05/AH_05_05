@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
     "python-dateutil>=2.9.0.post0",
+    "pywebpush>=2.3.0",
     "redis>=7.1.0",
     "tomlkit>=0.14.0",
     "tzdata>=2026.3",

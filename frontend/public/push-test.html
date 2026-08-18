@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>웹푸시 검증</title>
+  <style>
+    body { font-family: system-ui; padding: 24px; max-width: 480px; margin: 0 auto; }
+    button { display: block; width: 100%; padding: 16px; font-size: 16px; margin: 8px 0; }
+    pre { background: #f4f4f5; padding: 12px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>웹푸시 최소 검증</h1>
+  <p id="state">확인 중...</p>
+  <button id="sub">1. 권한 요청 + 구독</button>
+  <button id="send">2. 서버에 발송 요청</button>
+  <pre id="log"></pre>
+  <script>
+    const VAPID_PUBLIC_KEY = 'BJ3H6VsrTGzqApDpKdLgphg6W74KrtnpMyUnoFBuzgtceFVKvU-rYIgXEb2FdWA4xSfM6y2vF7qumSv1CRtlElI';
+    const log = (...a) => {
+      document.getElementById('log').textContent +=
+        a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x, null, 2))).join(' ') + '\n';
+    };
+    // base64url → Uint8Array. 이걸 안 거치면 subscribe()가 InvalidCharacterError로 실패합니다.
+    function b64ToU8(b64) {
+      const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+      const s = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+      return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    }
+    (async () => {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        document.getElementById('state').textContent = '이 브라우저는 Web Push 미지원';
+        return;
+      }
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      document.getElementById('state').textContent =
+        '서비스워커 등록됨 · 권한: ' + Notification.permission;
+      log('scope', reg.scope);
+    })();
+    document.getElementById('sub').onclick = async () => {
+      const perm = await Notification.requestPermission();
+      log('권한', perm);
+      if (perm !== 'granted') { log('거부됨 — 주소창 자물쇠 → 사이트 설정 → 알림 초기화'); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub =
+        (await reg.pushManager.getSubscription()) ||
+        (await reg.pushManager.subscribe({
+          userVisibleOnly: true,                                  // false면 브라우저가 거부합니다
+          applicationServerKey: b64ToU8(VAPID_PUBLIC_KEY),
+        }));
+      log('구독', sub.toJSON());
+      const res = await fetch('/api/dev/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      log('저장 응답', res.status);
+    };
+    document.getElementById('send').onclick = async () => {
+      const res = await fetch('/api/dev/push/send', { method: 'POST' });
+      log('발송 응답', res.status, await res.text());
+    };
+  </script>
+</body>
+</html>
