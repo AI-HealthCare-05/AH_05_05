@@ -24,9 +24,9 @@ def build_patient_context(
     if with_instruction:
         instructions.append(
             PatientInstruction(
+                care_advice_id=1001,
                 instruction_type=(InstructionType.WARNING_SIGN),
                 content=("심한 통증이 발생하면 의료기관에 연락하세요."),
-                source_field_id=1001,
             )
         )
 

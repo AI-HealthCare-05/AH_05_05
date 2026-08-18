@@ -6,40 +6,34 @@
   ],
   "medications": [
     {
-      "entity_key": "medication_1",
-      "drug_name": "테스트정",
-      "drug_code": "TEST001",
+      "medication_id": 1001,
+      "name": "테스트정",
       "dose": "1정",
-      "frequency": "1일 2회",
-      "duration": "7일",
-      "administration_instruction": "아침과 저녁 식사 후 복용",
-      "source_field_ids": [
-        1001,
-        1002,
-        1003
-      ]
+      "times_per_day": 2,
+      "days": 7,
+      "note": "아침과 저녁 식사 후 복용"
     }
   ],
   "instructions": [
     {
+      "care_advice_id": 1004,
       "instruction_type": "PRECAUTION",
       "content": "퇴원 후 무리한 활동은 피하십시오.",
-      "source_field_id": 1004
+      "display_order": 1
     },
     {
+      "care_advice_id": 1005,
       "instruction_type": "WARNING_SIGN",
       "content": "증상이 심해지면 의료기관에 연락하십시오.",
-      "source_field_id": 1005
+      "display_order": 2
     }
   ],
   "follow_up_schedules": [
     {
-      "description": "외래 진료",
-      "scheduled_at": "2026-08-20T10:00:00+09:00",
-      "institution_name": "테스트병원",
-      "source_field_ids": [
-        1006
-      ]
+      "follow_up_visit_id": 1006,
+      "purpose": "외래 진료",
+      "visit_at": "2026-08-20T10:00:00+09:00",
+      "place": "테스트병원"
     }
   ]
 }

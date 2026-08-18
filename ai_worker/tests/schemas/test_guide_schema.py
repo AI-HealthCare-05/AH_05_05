@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from ai_worker.schemas.enums import SourceType
+from ai_worker.schemas.enums import (
+    CareEpisodeSourceField,
+    PatientSourceKind,
+    SourceType,
+)
 from ai_worker.schemas.guide import (
     GuideSource,
     RecoveryGuideContent,
@@ -26,13 +30,143 @@ def test_recovery_guide_content_rejects_invalid_lifestyle_label() -> None:
         )
 
 
-def test_patient_source_requires_extracted_field_id() -> None:
+def test_care_episode_source_uses_patient_field() -> None:
+    source = GuideSource(
+        source_type=(SourceType.PATIENT_SAVED_FIELD),
+        patient_source_kind=(PatientSourceKind.CARE_EPISODE_FIELD),
+        patient_field=(CareEpisodeSourceField.DIAGNOSIS),
+        citation_order=1,
+    )
+
+    assert source.patient_field == CareEpisodeSourceField.DIAGNOSIS
+
+
+@pytest.mark.parametrize(
+    (
+        "source_kind",
+        "id_field",
+        "id_value",
+    ),
+    [
+        (
+            PatientSourceKind.MEDICATION,
+            "medication_id",
+            101,
+        ),
+        (
+            PatientSourceKind.CARE_ADVICE,
+            "care_advice_id",
+            201,
+        ),
+        (
+            PatientSourceKind.FOLLOW_UP_VISIT,
+            "follow_up_visit_id",
+            301,
+        ),
+    ],
+)
+def test_patient_domain_source_uses_matching_id(
+    source_kind: PatientSourceKind,
+    id_field: str,
+    id_value: int,
+) -> None:
+    source_data: dict[str, object] = {
+        "source_type": (SourceType.PATIENT_SAVED_FIELD),
+        "patient_source_kind": source_kind,
+        "citation_order": 1,
+        id_field: id_value,
+    }
+
+    source = GuideSource.model_validate(source_data)
+
+    assert getattr(source, id_field) == id_value
+
+
+def test_patient_source_requires_source_kind() -> None:
     with pytest.raises(
         ValidationError,
-        match="extracted_field_id",
+        match="patient_source_kind",
     ):
         GuideSource(
             source_type=(SourceType.PATIENT_SAVED_FIELD),
+            citation_order=1,
+        )
+
+
+@pytest.mark.parametrize(
+    (
+        "source_kind",
+        "required_field",
+    ),
+    [
+        (
+            PatientSourceKind.MEDICATION,
+            "medication_id",
+        ),
+        (
+            PatientSourceKind.CARE_ADVICE,
+            "care_advice_id",
+        ),
+        (
+            PatientSourceKind.FOLLOW_UP_VISIT,
+            "follow_up_visit_id",
+        ),
+    ],
+)
+def test_patient_source_requires_matching_id(
+    source_kind: PatientSourceKind,
+    required_field: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match=required_field,
+    ):
+        GuideSource(
+            source_type=(SourceType.PATIENT_SAVED_FIELD),
+            patient_source_kind=source_kind,
+            citation_order=1,
+        )
+
+
+def test_patient_source_rejects_mixed_domain_ids() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="care_advice_id",
+    ):
+        GuideSource(
+            source_type=(SourceType.PATIENT_SAVED_FIELD),
+            patient_source_kind=(PatientSourceKind.MEDICATION),
+            medication_id=101,
+            care_advice_id=201,
+            citation_order=1,
+        )
+
+
+def test_care_episode_source_rejects_domain_id() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="medication_id",
+    ):
+        GuideSource(
+            source_type=(SourceType.PATIENT_SAVED_FIELD),
+            patient_source_kind=(PatientSourceKind.CARE_EPISODE_FIELD),
+            patient_field=(CareEpisodeSourceField.DIAGNOSIS),
+            medication_id=101,
+            citation_order=1,
+        )
+
+
+def test_patient_source_rejects_public_fields() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="public_dataset_key",
+    ):
+        GuideSource(
+            source_type=(SourceType.PATIENT_SAVED_FIELD),
+            patient_source_kind=(PatientSourceKind.MEDICATION),
+            medication_id=101,
+            public_dataset_key=("PUBLIC_GUIDELINE"),
+            citation_order=1,
         )
 
 
@@ -40,6 +174,7 @@ def test_patient_source_requires_extracted_field_id() -> None:
     "missing_field",
     [
         "public_dataset_key",
+        "dataset_version",
         "vector_chunk_id",
         "source_record_key",
     ],
@@ -50,8 +185,10 @@ def test_public_source_requires_identifiers(
     source_data: dict[str, object] = {
         "source_type": (SourceType.PUBLIC_RAG_CHUNK),
         "public_dataset_key": ("PUBLIC_GUIDELINE"),
+        "dataset_version": "2020",
         "vector_chunk_id": "chunk-1",
         "source_record_key": "document-1",
+        "citation_order": 1,
     }
     source_data[missing_field] = None
 
@@ -62,88 +199,52 @@ def test_public_source_requires_identifiers(
         GuideSource.model_validate(source_data)
 
 
-@pytest.mark.parametrize(
-    (
-        "public_field",
-        "public_value",
-    ),
-    [
-        (
-            "public_dataset_key",
-            "PUBLIC_GUIDELINE",
-        ),
-        (
-            "dataset_version",
-            "2020",
-        ),
-        (
-            "vector_chunk_id",
-            "chunk-1",
-        ),
-        (
-            "source_record_key",
-            "document-1",
-        ),
-        (
-            "source_field",
-            "Activity",
-        ),
-        (
-            "chunk_type",
-            "LIFESTYLE",
-        ),
-        (
-            "source_title",
-            "Stroke Guideline",
-        ),
-        (
-            "source_organization",
-            "Test Organization",
-        ),
-        (
-            "source_url",
-            "https://example.com/guide",
-        ),
-        (
-            "source_page_number",
-            10,
-        ),
-        (
-            "source_license",
-            "CC BY-NC-ND 4.0",
-        ),
-        (
-            "similarity_score",
-            0.91,
-        ),
-    ],
-)
-def test_patient_source_rejects_public_fields(
-    public_field: str,
-    public_value: object,
-) -> None:
-    source_data: dict[str, object] = {
-        "source_type": (SourceType.PATIENT_SAVED_FIELD),
-        "extracted_field_id": 101,
-        public_field: public_value,
-    }
+def test_public_source_allows_optional_section_metadata() -> None:
+    source = GuideSource(
+        source_type=(SourceType.PUBLIC_RAG_CHUNK),
+        public_dataset_key=("PUBLIC_GUIDELINE"),
+        dataset_version="2020",
+        vector_chunk_id="chunk-1",
+        source_record_key="document-1",
+        source_field=None,
+        chunk_type=None,
+        citation_order=1,
+    )
 
+    assert source.source_field is None
+    assert source.chunk_type is None
+
+
+def test_public_source_rejects_patient_fields() -> None:
     with pytest.raises(
         ValidationError,
-        match=public_field,
-    ):
-        GuideSource.model_validate(source_data)
-
-
-def test_public_source_rejects_extracted_field_id() -> None:
-    with pytest.raises(
-        ValidationError,
-        match="extracted_field_id",
+        match="medication_id",
     ):
         GuideSource(
             source_type=(SourceType.PUBLIC_RAG_CHUNK),
-            extracted_field_id=101,
+            medication_id=101,
             public_dataset_key=("PUBLIC_GUIDELINE"),
+            dataset_version="2020",
             vector_chunk_id="chunk-1",
             source_record_key="document-1",
+            citation_order=1,
+        )
+
+
+@pytest.mark.parametrize(
+    "citation_order",
+    [
+        0,
+        -1,
+    ],
+)
+def test_source_rejects_invalid_citation_order(
+    citation_order: int,
+) -> None:
+    with pytest.raises(ValidationError):
+        GuideSource(
+            source_type=(SourceType.PATIENT_SAVED_FIELD),
+            patient_source_kind=(PatientSourceKind.MEDICATION),
+            medication_id=101,
+            citation_order=citation_order,
         )

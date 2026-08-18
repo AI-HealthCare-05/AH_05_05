@@ -28,12 +28,6 @@ class PatientMedication(BaseModel):
     days: int | None = None
     prescribed_at: date | None = None
 
-    # 기존 코드와 단계적으로 연동하기 위한 임시 호환 필드
-    source_field_ids: list[int] = Field(
-        default_factory=list,
-        exclude=True,
-    )
-
     @model_validator(mode="before")
     @classmethod
     def normalize_legacy_fields(
@@ -109,12 +103,6 @@ class PatientInstruction(BaseModel):
     # 최신 ERD에는 권고사항 유형이 없으므로 선택값으로 처리
     instruction_type: InstructionType | None = None
 
-    # 기존 출처 연결 코드가 사용하는 임시 호환 필드
-    source_field_id: int | None = Field(
-        default=None,
-        exclude=True,
-    )
-
 
 class FollowUpSchedule(BaseModel):
     """외래 진료 또는 검사 일정."""
@@ -141,10 +129,6 @@ class FollowUpSchedule(BaseModel):
     # 기존 테스트 데이터와 출처 연결을 위한 임시 호환 필드
     institution_name: str | None = Field(
         default=None,
-        exclude=True,
-    )
-    source_field_ids: list[int] = Field(
-        default_factory=list,
         exclude=True,
     )
 

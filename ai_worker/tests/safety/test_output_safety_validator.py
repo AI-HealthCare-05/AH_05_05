@@ -126,9 +126,9 @@ async def test_validate_restricts_missing_safety_notice() -> None:
 
 async def test_validate_allows_confirmed_patient_instruction() -> None:
     confirmed_instruction = PatientInstruction(
+        care_advice_id=1001,
         instruction_type=(InstructionType.DISCHARGE_INSTRUCTION),
         content=("의료진 지시에 따라 아스피린 복용을 중단하세요."),
-        source_field_id=1001,
     )
     patient_context = build_patient_context(instructions=[confirmed_instruction])
     result = build_result(patient_instructions=[confirmed_instruction.content])

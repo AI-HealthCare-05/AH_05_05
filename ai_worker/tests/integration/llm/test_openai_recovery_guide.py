@@ -52,28 +52,27 @@ def build_patient_context() -> PatientContext:
         diagnoses=["뇌졸중"],
         medications=[
             PatientMedication(
-                entity_key="medication-1",
-                drug_name="아스피린",
+                medication_id=101,
+                name="아스피린",
                 dose="1정",
-                frequency="1일 1회",
-                duration="7일",
-                administration_instruction=("아침 식후 복용"),
-                source_field_ids=[101],
+                times_per_day=1,
+                days=7,
+                note="아침 식후 복용",
             )
         ],
         instructions=[
             PatientInstruction(
+                care_advice_id=102,
                 instruction_type=(InstructionType.PRECAUTION),
                 content=("퇴원 후 무리한 활동은 피하십시오."),
-                source_field_id=102,
             )
         ],
         follow_up_schedules=[
             FollowUpSchedule(
-                description="신경과 외래 진료",
-                scheduled_at=("2026-08-20T10:00:00+09:00"),
-                institution_name="테스트병원",
-                source_field_ids=[103],
+                follow_up_visit_id=103,
+                purpose="신경과 외래 진료",
+                visit_at=("2026-08-20T10:00:00+09:00"),
+                place="테스트병원",
             )
         ],
     )

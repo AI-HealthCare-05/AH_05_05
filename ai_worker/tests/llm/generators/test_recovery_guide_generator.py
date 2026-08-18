@@ -4,7 +4,9 @@ from ai_worker.llm.generators.recovery_guide_generator import (
     OpenAIRecoveryGuideGenerator,
 )
 from ai_worker.schemas.enums import (
+    CareEpisodeSourceField,
     InstructionType,
+    PatientSourceKind,
     SafetyStatus,
     SourceType,
 )
@@ -47,28 +49,27 @@ def build_patient_context() -> PatientContext:
         diagnoses=["뇌졸중"],
         medications=[
             PatientMedication(
-                entity_key="medication-1",
-                drug_name="아스피린",
+                medication_id=101,
+                name="아스피린",
                 dose="1정",
-                frequency="1일 1회",
-                duration="7일",
-                administration_instruction=("아침 식후 복용"),
-                source_field_ids=[101, 102],
+                times_per_day=1,
+                note="아침 식후 복용",
+                days=7,
             )
         ],
         instructions=[
             PatientInstruction(
+                care_advice_id=201,
                 instruction_type=(InstructionType.PRECAUTION),
                 content="무리한 활동은 피하세요.",
-                source_field_id=103,
             )
         ],
         follow_up_schedules=[
             FollowUpSchedule(
-                description="신경과 외래 진료",
-                scheduled_at=("2026-08-20T10:00:00+09:00"),
+                follow_up_visit_id=301,
+                purpose="신경과 외래 진료",
+                visit_at=("2026-08-20T10:00:00+09:00"),
                 institution_name="테스트병원",
-                source_field_ids=[104],
             )
         ],
     )
@@ -77,29 +78,20 @@ def build_patient_context() -> PatientContext:
 def build_guideline_chunk() -> RetrievedGuidelineChunk:
     return RetrievedGuidelineChunk(
         vector_chunk_id="public-chunk-1",
-        content=(
-            "퇴원 후에는 가벼운 활동부터 "
-            "점진적으로 시작할 수 있습니다."
-        ),
+        content=("퇴원 후에는 가벼운 활동부터 점진적으로 시작할 수 있습니다."),
         similarity_score=0.91,
         metadata=GuidelineMetadata(
             dataset_key="PUBLIC_GUIDELINE",
             dataset_version="2020",
-            document_id=(
-                "stroke-guideline-2020"
-            ),
+            document_id=("stroke-guideline-2020"),
             title="Stroke Guideline",
-            organization=(
-                "Test Organization"
-            ),
+            organization=("Test Organization"),
             condition="STROKE",
             care_phase="POST_DISCHARGE",
             topic="LIFESTYLE",
             section_title="Activity",
             page_number=10,
-            source_url=(
-                "https://example.com/guide"
-            ),
+            source_url=("https://example.com/guide"),
             license="CC BY-NC-ND 4.0",
         ),
     )
@@ -149,31 +141,43 @@ async def test_generate_builds_patient_and_public_sources() -> None:
         guideline_chunks=[build_guideline_chunk()],
     )
 
-    patient_source_ids = {
-        source.extracted_field_id for source in result.sources if (source.source_type == SourceType.PATIENT_SAVED_FIELD)
-    }
-
+    patient_sources = [source for source in result.sources if (source.source_type == SourceType.PATIENT_SAVED_FIELD)]
     public_sources = [source for source in result.sources if (source.source_type == SourceType.PUBLIC_RAG_CHUNK)]
 
-    assert patient_source_ids == {
-        101,
-        102,
-        103,
-        104,
-    }
-    assert len(public_sources) == 1
-    assert public_sources[0].vector_chunk_id == "public-chunk-1"
-    assert public_sources[0].source_record_key == "stroke-guideline-2020"
-    public_source = public_sources[0]
+    assert len(patient_sources) == 4
 
-    assert (
-        public_source.source_page_number
-        == 10
-    )
-    assert (
-        public_source.source_license
-        == "CC BY-NC-ND 4.0"
-    )
+    diagnosis_source = patient_sources[0]
+    assert diagnosis_source.patient_source_kind == PatientSourceKind.CARE_EPISODE_FIELD
+    assert diagnosis_source.patient_field == CareEpisodeSourceField.DIAGNOSIS
+
+    medication_source = patient_sources[1]
+    assert medication_source.patient_source_kind == PatientSourceKind.MEDICATION
+    assert medication_source.medication_id == 101
+
+    advice_source = patient_sources[2]
+    assert advice_source.patient_source_kind == PatientSourceKind.CARE_ADVICE
+    assert advice_source.care_advice_id == 201
+
+    follow_up_source = patient_sources[3]
+    assert follow_up_source.patient_source_kind == PatientSourceKind.FOLLOW_UP_VISIT
+    assert follow_up_source.follow_up_visit_id == 301
+
+    assert len(public_sources) == 1
+
+    public_source = public_sources[0]
+    assert public_source.vector_chunk_id == "public-chunk-1"
+    assert public_source.source_record_key == "stroke-guideline-2020"
+    assert public_source.source_page_number == 10
+    assert public_source.source_license == "CC BY-NC-ND 4.0"
+
+    assert [source.citation_order for source in result.sources] == [
+        1,
+        2,
+        3,
+        4,
+        5,
+    ]
+
 
 async def test_generate_prompt_prioritizes_patient_data() -> None:
     fake_client = FakeGuideClient(response=build_llm_response())

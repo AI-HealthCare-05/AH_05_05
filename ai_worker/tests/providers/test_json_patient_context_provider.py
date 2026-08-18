@@ -25,13 +25,19 @@ async def test_get_patient_context_success(
     assert result.user_id == 1
     assert result.care_episode_id == 100
     assert result.medications[0].drug_name == "테스트정"
+    assert result.medications[0].medication_id == 1001
+    assert result.instructions[0].care_advice_id == 1004
+    assert result.follow_up_schedules[0].follow_up_visit_id == 1006
 
 
 @pytest.mark.asyncio
 async def test_get_patient_context_with_wrong_user_id(
     provider: JsonPatientContextProvider,
 ) -> None:
-    with pytest.raises(ValueError, match="사용자"):
+    with pytest.raises(
+        ValueError,
+        match="사용자",
+    ):
         await provider.get_patient_context(
             user_id=999,
             care_episode_id=100,
@@ -42,7 +48,10 @@ async def test_get_patient_context_with_wrong_user_id(
 async def test_get_patient_context_with_wrong_care_episode_id(
     provider: JsonPatientContextProvider,
 ) -> None:
-    with pytest.raises(ValueError, match="케어 ID"):
+    with pytest.raises(
+        ValueError,
+        match="케어 ID",
+    ):
         await provider.get_patient_context(
             user_id=1,
             care_episode_id=999,
