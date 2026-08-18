@@ -128,6 +128,8 @@ class ChatMessageSource(models.Model):
     source_title = fields.CharField(max_length=255, null=True)
     source_organization = fields.CharField(max_length=255, null=True)
     source_url = fields.TextField(null=True)
+    source_page_number = fields.IntField(null=True, validators=[MinValueValidator(1)])
+    source_license = fields.CharField(max_length=255, null=True)
     similarity_score = fields.DecimalField(
         max_digits=5,
         decimal_places=4,

@@ -51,6 +51,9 @@
 - `patient_source_kind`와 `care_episode_source_field` enum을 추가한다.
 - 환자 출처는 케어 필드, medication, care advice, follow-up visit 중 정확히 하나를 참조한다.
 - 공공 RAG 출처와 환자 저장 데이터 출처의 필드 조합은 DB 체크 제약으로 강제한다.
+- 최종 회복 가이드의 콘텐츠, 모델명, 프롬프트·스키마 버전, 안전 사유 코드 배열, 완료 시각은 필수로 저장한다.
+- 안전성 검사가 끝난 가이드만 저장하므로 `safety_status=PENDING`을 허용하지 않는다.
+- 가이드·채팅 공공 출처에 nullable 원문 페이지 번호와 라이선스를 저장하며 페이지 번호는 1 이상이어야 한다.
 
 ### 제거되는 구조
 
