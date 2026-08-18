@@ -33,6 +33,27 @@ def load_care_ocr_models():
     return care, ocr
 
 
+def load_recovery_chat_models():
+    try:
+        recovery = import_module("app.models.recovery")
+        chat = import_module("app.models.chat")
+    except ModuleNotFoundError as exc:
+        pytest.fail(f"recovery/chat model module is missing: {exc.name}")
+
+    Tortoise.init_models(
+        (
+            "app.models.users",
+            "app.models.admins",
+            "app.models.care",
+            "app.models.ocr",
+            "app.models.recovery",
+            "app.models.chat",
+        ),
+        "models",
+    )
+    return recovery, chat
+
+
 def test_user_matches_merged_account_schema() -> None:
     enums, user_model, _ = load_account_models()
 
@@ -82,3 +103,23 @@ def test_ocr_models_preserve_job_and_extracted_field_constraints() -> None:
         ("ocr_job", "entity_key", "field_type"),
     )
     assert len(ocr.OcrExtractedField._meta.fields_map["confidence"].validators) == 2
+
+
+def test_recovery_models_preserve_citations_and_patient_sources() -> None:
+    recovery, _ = load_recovery_chat_models()
+
+    assert recovery.RecoveryGuide._meta.fields_map["care_episode"].model_name == "models.CareEpisode"
+    assert recovery.RecoveryGuideSource._meta.unique_together == (("recovery_guide", "citation_order"),)
+    extracted_field = recovery.RecoveryGuideSource._meta.fields_map["extracted_field"]
+    assert extracted_field.null is True
+    assert extracted_field.on_delete == fields.SET_NULL
+
+
+def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
+    _, chat = load_recovery_chat_models()
+
+    assert chat.ChatMessage._meta.unique_together == (("chat_session", "sequence_no"),)
+    assert chat.ChatMessage._meta.fields_map["reply_to_message"].model_name == "models.ChatMessage"
+    assert chat.ChatMessage._meta.fields_map["guide"].on_delete == fields.SET_NULL
+    assert chat.ChatMessageSource._meta.unique_together == (("chat_message", "citation_order"),)
+    assert chat.ChatMessageSource._meta.fields_map["extracted_field"].on_delete == fields.SET_NULL
