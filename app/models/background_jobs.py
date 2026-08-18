@@ -9,7 +9,7 @@ class BackgroundJob(models.Model):
     id = fields.BigIntField(primary_key=True)
     job_type = fields.CharEnumField(BackgroundJobType)
     status = fields.CharEnumField(BackgroundJobStatus, default=BackgroundJobStatus.QUEUED)
-    user = fields.ForeignKeyField(
+    user: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.User",
         related_name="background_jobs",
         null=True,
@@ -23,7 +23,7 @@ class BackgroundJob(models.Model):
     duration_ms = fields.IntField(null=True)
     retry_count = fields.IntField(default=0, validators=[MinValueValidator(0)])
     max_retry_count = fields.IntField(default=0, validators=[MinValueValidator(0)])
-    parent_job = fields.ForeignKeyField(
+    parent_job: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.BackgroundJob",
         related_name="retry_jobs",
         null=True,
@@ -42,4 +42,3 @@ class BackgroundJob(models.Model):
             ("user",),
             Index(fields=("status", "requested_at"), name="idx_queue_stats"),
         )
-

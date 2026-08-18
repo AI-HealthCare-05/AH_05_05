@@ -8,7 +8,7 @@ from app.models.enums import OcrDocumentType, OcrJobStatus, OcrMaskingStatus, Oc
 
 class OcrJob(models.Model):
     id = fields.BigIntField(primary_key=True)
-    care_episode = fields.ForeignKeyField(
+    care_episode: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.CareEpisode",
         related_name="ocr_jobs",
         on_delete=fields.CASCADE,
@@ -31,7 +31,7 @@ class OcrJob(models.Model):
 
 class OcrExtractedField(models.Model):
     id = fields.BigIntField(primary_key=True)
-    ocr_job = fields.ForeignKeyField(
+    ocr_job: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.OcrJob",
         related_name="extracted_fields",
         on_delete=fields.CASCADE,
@@ -39,8 +39,8 @@ class OcrExtractedField(models.Model):
     entity_key = fields.CharField(max_length=100)
     field_type = fields.CharField(max_length=100)
     raw_value = fields.TextField(null=True)
-    normalized_value = fields.JSONField(null=True)
-    reviewed_value = fields.JSONField(null=True)
+    normalized_value: fields.JSONField[dict[str, object] | list[object]] = fields.JSONField(null=True)
+    reviewed_value: fields.JSONField[dict[str, object] | list[object]] = fields.JSONField(null=True)
     confidence = fields.DecimalField(
         max_digits=5,
         decimal_places=4,
@@ -57,4 +57,3 @@ class OcrExtractedField(models.Model):
         table = "ocr_extracted_fields"
         indexes = (("ocr_job", "review_status"),)
         unique_together = (("ocr_job", "entity_key", "field_type"),)
-

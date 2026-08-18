@@ -8,13 +8,13 @@ from app.models.enums import ChatSafetyStatus, GuideSourceType, RecoveryGuideSta
 
 class RecoveryGuide(models.Model):
     id = fields.BigIntField(primary_key=True)
-    care_episode = fields.ForeignKeyField(
+    care_episode: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.CareEpisode",
         related_name="recovery_guides",
         on_delete=fields.CASCADE,
     )
     status = fields.CharEnumField(RecoveryGuideStatus, default=RecoveryGuideStatus.COMPLETED)
-    guide_content = fields.JSONField(null=True)
+    guide_content: fields.JSONField[dict[str, object] | list[object]] = fields.JSONField(null=True)
     patient_context_hash = fields.CharField(max_length=64)
     model_name = fields.CharField(max_length=100, null=True)
     model_version = fields.CharField(max_length=100, null=True)
@@ -41,13 +41,13 @@ class RecoveryGuide(models.Model):
 
 class RecoveryGuideSource(models.Model):
     id = fields.BigIntField(primary_key=True)
-    recovery_guide = fields.ForeignKeyField(
+    recovery_guide: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.RecoveryGuide",
         related_name="sources",
         on_delete=fields.CASCADE,
     )
     source_type = fields.CharEnumField(GuideSourceType)
-    extracted_field = fields.ForeignKeyField(
+    extracted_field: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.OcrExtractedField",
         related_name="recovery_guide_sources",
         null=True,
@@ -80,4 +80,3 @@ class RecoveryGuideSource(models.Model):
             ("vector_chunk_id",),
         )
         unique_together = (("recovery_guide", "citation_order"),)
-

@@ -10,7 +10,7 @@ class Admin(models.Model):
     status = fields.CharEnumField(AccountStatus, default=AccountStatus.PENDING)
     name = fields.CharField(max_length=100)
     role = fields.CharEnumField(AdminRole, default=AdminRole.STAFF)
-    created_by_admin = fields.ForeignKeyField(
+    created_by_admin: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.Admin",
         related_name="created_admins",
         null=True,
@@ -23,4 +23,3 @@ class Admin(models.Model):
     class Meta:
         table = "admin"
         indexes = (("role",), ("status",), ("created_by_admin",), ("created_at",))
-

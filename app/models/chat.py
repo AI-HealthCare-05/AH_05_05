@@ -17,7 +17,7 @@ from app.models.enums import (
 
 class ChatSession(models.Model):
     id = fields.BigIntField(primary_key=True)
-    care_episode = fields.ForeignKeyField(
+    care_episode: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.CareEpisode",
         related_name="chat_sessions",
         on_delete=fields.CASCADE,
@@ -35,18 +35,18 @@ class ChatSession(models.Model):
 
 class ChatMessage(models.Model):
     id = fields.BigIntField(primary_key=True)
-    chat_session = fields.ForeignKeyField(
+    chat_session: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.ChatSession",
         related_name="messages",
         on_delete=fields.CASCADE,
     )
-    reply_to_message = fields.ForeignKeyField(
+    reply_to_message: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.ChatMessage",
         related_name="replies",
         null=True,
         on_delete=fields.SET_NULL,
     )
-    guide = fields.ForeignKeyField(
+    guide: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.RecoveryGuide",
         related_name="chat_messages",
         null=True,
@@ -91,13 +91,13 @@ class ChatMessage(models.Model):
 
 class ChatMessageSource(models.Model):
     id = fields.BigIntField(primary_key=True)
-    chat_message = fields.ForeignKeyField(
+    chat_message: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.ChatMessage",
         related_name="sources",
         on_delete=fields.CASCADE,
     )
     source_type = fields.CharEnumField(ChatSourceType)
-    extracted_field = fields.ForeignKeyField(
+    extracted_field: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.OcrExtractedField",
         related_name="chat_message_sources",
         null=True,
@@ -130,4 +130,3 @@ class ChatMessageSource(models.Model):
             ("vector_chunk_id",),
         )
         unique_together = (("chat_message", "citation_order"),)
-

@@ -5,7 +5,7 @@ from app.models.enums import ConsentType
 
 class UserConsent(models.Model):
     id = fields.BigIntField(primary_key=True)
-    user = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.User",
         related_name="consents",
         on_delete=fields.CASCADE,
@@ -19,4 +19,3 @@ class UserConsent(models.Model):
     class Meta:
         table = "user_consents"
         indexes = (("user", "consent_type", "agreed_at"), ("user", "consent_type"))
-

@@ -6,7 +6,7 @@ from app.models.enums import AlarmEventType, AlarmStatus, AlarmType
 
 class PushSubscription(models.Model):
     id = fields.BigIntField(primary_key=True)
-    user = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.User",
         related_name="push_subscriptions",
         on_delete=fields.CASCADE,
@@ -27,14 +27,16 @@ class PushSubscription(models.Model):
 
 class Alarm(models.Model):
     id = fields.BigIntField(primary_key=True)
-    user = fields.ForeignKeyField("models.User", related_name="alarms", on_delete=fields.CASCADE)
-    care_episode = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
+        "models.User", related_name="alarms", on_delete=fields.CASCADE
+    )
+    care_episode: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.CareEpisode",
         related_name="alarms",
         null=True,
         on_delete=fields.CASCADE,
     )
-    source_guide = fields.ForeignKeyField(
+    source_guide: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.RecoveryGuide",
         related_name="alarms",
         null=True,
@@ -65,24 +67,23 @@ class Alarm(models.Model):
 
 class AlarmEvent(models.Model):
     id = fields.BigIntField(primary_key=True)
-    alarm = fields.ForeignKeyField(
+    alarm: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.Alarm",
         related_name="events",
         on_delete=fields.CASCADE,
     )
     event_type = fields.CharEnumField(AlarmEventType)
-    push_subscription = fields.ForeignKeyField(
+    push_subscription: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.PushSubscription",
         related_name="alarm_events",
         null=True,
         on_delete=fields.SET_NULL,
     )
     event_at = fields.DatetimeField(auto_now_add=True)
-    payload = fields.JSONField(null=True)
+    payload: fields.JSONField[dict[str, object] | list[object]] = fields.JSONField(null=True)
     error_code = fields.CharField(max_length=100, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "alarm_events"
         indexes = (("alarm", "event_type"), ("event_at",))
-
