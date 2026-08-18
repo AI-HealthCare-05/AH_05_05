@@ -47,7 +47,13 @@ class GuidelineIndexer:
 
         texts = [chunk.content for chunk in chunks]
 
-        vectors = await self._embedding_provider.embed_documents(texts)
+        vectors = await self._embedding_provider.embed_documents(
+            texts
+        )
+
+        await self._vector_store.delete_by_document_id(
+            metadata.document_id
+        )
 
         return await self._vector_store.upsert_chunks(
             chunks=chunks,

@@ -86,6 +86,43 @@ class QdrantGuidelineStore:
 
         return point_ids
 
+    async def delete_by_document_id(
+            self,
+            document_id: str,
+    ) -> None:
+        normalized_document_id = document_id.strip()
+
+        if not normalized_document_id:
+            raise ValueError(
+                "문서 ID는 비어 있을 수 없습니다."
+            )
+
+        collection_exists = (
+            await self._client.collection_exists(
+                self._collection_name
+            )
+        )
+
+        if not collection_exists:
+            return
+
+        await self._client.delete(
+            collection_name=self._collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="metadata.document_id",
+                            match=models.MatchValue(
+                                value=normalized_document_id
+                            ),
+                        )
+                    ]
+                )
+            ),
+            wait=True,
+        )
+
     async def search(
         self,
         query_vector: list[float],

@@ -88,8 +88,23 @@ class FakeEmbeddingProvider:
 
 class FakeVectorStore:
     def __init__(self) -> None:
-        self.received_chunks: list[GuidelineDocument] = []
-        self.received_vectors: list[list[float]] = []
+        self.received_chunks: list[
+            GuidelineDocument
+        ] = []
+        self.received_vectors: list[
+            list[float]
+        ] = []
+        self.deleted_document_ids: list[
+            str
+        ] = []
+
+    async def delete_by_document_id(
+        self,
+        document_id: str,
+    ) -> None:
+        self.deleted_document_ids.append(
+            document_id
+        )
 
     async def upsert_chunks(
         self,
@@ -103,7 +118,65 @@ class FakeVectorStore:
             "point-1",
             "point-2",
         ]
+class RecordingEmbeddingProvider(
+    FakeEmbeddingProvider
+):
+    def __init__(
+        self,
+        events: list[str],
+    ) -> None:
+        super().__init__()
+        self._events = events
 
+    async def embed_documents(
+        self,
+        texts: list[str],
+    ) -> list[list[float]]:
+        self._events.append("embed")
+
+        return await super().embed_documents(
+            texts
+        )
+
+
+class RecordingVectorStore(FakeVectorStore):
+    def __init__(
+        self,
+        events: list[str],
+    ) -> None:
+        super().__init__()
+        self._events = events
+
+    async def delete_by_document_id(
+        self,
+        document_id: str,
+    ) -> None:
+        self._events.append(
+            f"delete:{document_id}"
+        )
+
+    async def upsert_chunks(
+        self,
+        chunks: list[GuidelineDocument],
+        vectors: list[list[float]],
+    ) -> list[str]:
+        self._events.append("upsert")
+
+        return await super().upsert_chunks(
+            chunks=chunks,
+            vectors=vectors,
+        )
+
+class FailingEmbeddingProvider(
+    FakeEmbeddingProvider
+):
+    async def embed_documents(
+        self,
+        texts: list[str],
+    ) -> list[list[float]]:
+        raise RuntimeError(
+            "임베딩 생성 실패"
+        )
 
 def build_metadata() -> GuidelineMetadata:
     return GuidelineMetadata(
@@ -152,6 +225,10 @@ async def test_index_pdf_connects_pipeline() -> None:
         [1.0, 0.0, 0.0],
     ]
 
+    assert vector_store.deleted_document_ids == [
+        "stroke-guideline-2020"
+    ]
+
     assert point_ids == [
         "point-1",
         "point-2",
@@ -174,3 +251,66 @@ async def test_index_pdf_rejects_empty_chunks() -> None:
             pdf_path=Path("stroke-guideline.pdf"),
             metadata=build_metadata(),
         )
+
+async def test_index_pdf_replaces_existing_chunks_after_embedding() -> None:
+    events: list[str] = []
+
+    indexer = GuidelineIndexer(
+        loader=FakeLoader(),
+        splitter=FakeSplitter(),
+        embedding_provider=(
+            RecordingEmbeddingProvider(events)
+        ),
+        vector_store=(
+            RecordingVectorStore(events)
+        ),
+    )
+
+    metadata = build_metadata()
+
+    await indexer.index_pdf(
+        pdf_path=Path(
+            "stroke-guideline.pdf"
+        ),
+        metadata=metadata,
+    )
+
+    assert events == [
+        "embed",
+        (
+            "delete:"
+            "stroke-guideline-2020"
+        ),
+        "upsert",
+    ]
+
+
+async def test_index_pdf_keeps_existing_chunks_when_embedding_fails() -> None:
+    vector_store = FakeVectorStore()
+
+    indexer = GuidelineIndexer(
+        loader=FakeLoader(),
+        splitter=FakeSplitter(),
+        embedding_provider=(
+            FailingEmbeddingProvider()
+        ),
+        vector_store=vector_store,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="임베딩 생성 실패",
+    ):
+        await indexer.index_pdf(
+            pdf_path=Path(
+                "stroke-guideline.pdf"
+            ),
+            metadata=build_metadata(),
+        )
+
+    assert (
+        vector_store.deleted_document_ids
+        == []
+    )
+    assert vector_store.received_chunks == []
+    assert vector_store.received_vectors == []

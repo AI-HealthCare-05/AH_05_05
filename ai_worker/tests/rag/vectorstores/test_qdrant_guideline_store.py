@@ -208,3 +208,90 @@ async def test_upsert_rejects_vector_count_mismatch() -> None:
             raise AssertionError("ValueError가 발생해야 합니다.")
     finally:
         await client.close()
+
+async def test_delete_by_document_id_removes_only_matching_chunks() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+
+    try:
+        store = QdrantGuidelineStore(
+            client=client,
+            collection_name="test_guidelines",
+            vector_size=3,
+        )
+        await store.ensure_collection()
+
+        documents = [
+            build_document(
+                document_id="stroke-2020",
+                condition="STROKE",
+                content="뇌졸중 퇴원 후 복약 안내",
+            ),
+            build_document(
+                document_id="stroke-2020",
+                condition="STROKE",
+                content="뇌졸중 퇴원 후 생활관리 안내",
+            ),
+            build_document(
+                document_id="heart-failure-2020",
+                condition="HEART_FAILURE",
+                content="심부전 퇴원 후 생활관리 안내",
+            ),
+        ]
+
+        await store.upsert_chunks(
+            chunks=documents,
+            vectors=[
+                [1.0, 0.0, 0.0],
+                [0.9, 0.1, 0.0],
+                [0.8, 0.2, 0.0],
+            ],
+        )
+
+        await store.delete_by_document_id(
+            "stroke-2020"
+        )
+
+        remaining_points, _ = await client.scroll(
+            collection_name="test_guidelines",
+            limit=10,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        assert len(remaining_points) == 1
+
+        remaining_payload = (
+            remaining_points[0].payload
+        )
+        assert remaining_payload is not None
+        assert (
+            remaining_payload["metadata"][
+                "document_id"
+            ]
+            == "heart-failure-2020"
+        )
+    finally:
+        await client.close()
+
+async def test_delete_by_document_id_rejects_blank_id() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+
+    try:
+        store = QdrantGuidelineStore(
+            client=client,
+            collection_name="test_guidelines",
+            vector_size=3,
+        )
+
+        try:
+            await store.delete_by_document_id(
+                "   "
+            )
+        except ValueError as error:
+            assert "문서 ID" in str(error)
+        else:
+            raise AssertionError(
+                "ValueError가 발생해야 합니다."
+            )
+    finally:
+        await client.close()
