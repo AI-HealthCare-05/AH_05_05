@@ -7,6 +7,15 @@ from app.core import config
 TORTOISE_APP_MODELS = [
     "aerich.models",
     "app.models.users",
+    "app.models.admins",
+    "app.models.care",
+    "app.models.ocr",
+    "app.models.recovery",
+    "app.models.chat",
+    "app.models.alarms",
+    "app.models.background_jobs",
+    "app.models.medications",
+    "app.models.consents",
 ]
 
 TORTOISE_ORM = {

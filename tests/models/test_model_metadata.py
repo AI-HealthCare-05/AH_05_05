@@ -77,6 +77,15 @@ def load_alarm_job_models():
     return alarms, background_jobs
 
 
+def load_medication_consent_models():
+    try:
+        medications = import_module("app.models.medications")
+        consents = import_module("app.models.consents")
+    except ModuleNotFoundError as exc:
+        pytest.fail(f"medication/consent model module is missing: {exc.name}")
+    return medications, consents
+
+
 def test_user_matches_merged_account_schema() -> None:
     enums, user_model, _ = load_account_models()
 
@@ -167,3 +176,46 @@ def test_background_job_keeps_polymorphic_reference_and_self_parent() -> None:
     assert model._meta.fields_map["parent_job"].model_name == "models.BackgroundJob"
     assert model._meta.fields_map["parent_job"].on_delete == fields.SET_NULL
     assert len(model._meta.fields_map["retry_count"].validators) == 1
+
+
+def test_medication_and_consent_models_preserve_domain_constraints() -> None:
+    medications, consents = load_medication_consent_models()
+
+    assert medications.Medication._meta.fields_map["source_ocr_job"].on_delete == fields.SET_NULL
+    assert medications.Medication._meta.fields_map["source_extracted_field"].on_delete == fields.SET_NULL
+    assert medications.MedicationTime._meta.unique_together == (("medication", "time_of_day"),)
+    assert consents.UserConsent._meta.db_table == "user_consents"
+    assert consents.UserConsent._meta.fields_map["user"].model_name == "models.User"
+
+
+def test_all_19_domain_tables_are_registered() -> None:
+    from app.core.db.databases import TORTOISE_APP_MODELS
+
+    expected_tables = {
+        "user",
+        "admin",
+        "care_episodes",
+        "ocr_jobs",
+        "ocr_extracted_fields",
+        "recovery_guides",
+        "recovery_guide_sources",
+        "chat_sessions",
+        "chat_messages",
+        "chat_message_sources",
+        "push_subscriptions",
+        "alarms",
+        "alarm_events",
+        "background_jobs",
+        "medications",
+        "medication_times",
+        "care_advices",
+        "follow_up_visits",
+        "user_consents",
+    }
+
+    Tortoise.init_models(TORTOISE_APP_MODELS, "models")
+    registered_tables = {model._meta.db_table for model in Tortoise.apps["models"].values()}
+
+    assert expected_tables <= registered_tables
+    assert "accounts" not in registered_tables
+    assert "users" not in registered_tables
