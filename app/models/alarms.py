@@ -1,7 +1,7 @@
 from tortoise import fields, models
 from tortoise.indexes import Index
 
-from app.models.enums import AlarmEventType, AlarmStatus, AlarmType
+from app.models.enums import AlarmEventType, AlarmStatus, AlarmType, MealSlot
 
 
 class PushSubscription(models.Model):
@@ -42,7 +42,8 @@ class Alarm(models.Model):
         null=True,
         on_delete=fields.SET_NULL,
     )
-    alarm_type = fields.CharEnumField(AlarmType, default=AlarmType.CUSTOM)
+    alarm_type = fields.CharEnumField(AlarmType, default=AlarmType.MEDICATION)
+    meal_slot = fields.CharEnumField(MealSlot, null=True)
     title = fields.CharField(max_length=255)
     message = fields.CharField(max_length=500, null=True)
     scheduled_at = fields.DatetimeField()
@@ -58,6 +59,7 @@ class Alarm(models.Model):
 
     class Meta:
         table = "alarms"
+        unique_together = (("user", "alarm_type", "meal_slot"),)
         indexes = (
             ("user", "status"),
             Index(fields=("status", "next_trigger_at"), name="idx_due_alarms"),

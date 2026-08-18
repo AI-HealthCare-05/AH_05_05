@@ -22,6 +22,13 @@ class OcrJobStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class MealSlot(StrEnum):
+    MORNING = "MORNING"
+    LUNCH = "LUNCH"
+    EVENING = "EVENING"
+    BEDTIME = "BEDTIME"
+
+
 class AlarmStatus(StrEnum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
@@ -41,7 +48,7 @@ class AlarmEventType(StrEnum):
 class AlarmType(StrEnum):
     MEDICATION = "MEDICATION"
     FOLLOW_UP_VISIT = "FOLLOW_UP_VISIT"
-    CUSTOM = "CUSTOM"
+    GUIDE_CHECK = "GUIDE_CHECK"
 
 
 class BackgroundJobType(StrEnum):
@@ -67,27 +74,6 @@ class CareEpisodeStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
-class OcrDocumentType(StrEnum):
-    DISCHARGE_SUMMARY = "DISCHARGE_SUMMARY"
-    DISCHARGE_INSTRUCTION = "DISCHARGE_INSTRUCTION"
-    PRESCRIPTION = "PRESCRIPTION"
-    MEDICATION_GUIDE = "MEDICATION_GUIDE"
-    MEDICATION_BAG = "MEDICATION_BAG"
-
-
-class OcrMaskingStatus(StrEnum):
-    PENDING = "PENDING"
-    COMPLETED = "COMPLETED"
-    SUSPECTED = "SUSPECTED"
-    FAILED = "FAILED"
-
-
-class OcrReviewStatus(StrEnum):
-    UNREVIEWED = "UNREVIEWED"
-    REVIEW_REQUIRED = "REVIEW_REQUIRED"
-    REVIEWED = "REVIEWED"
-
-
 class RecoveryGuideStatus(StrEnum):
     COMPLETED = "COMPLETED"
     SUPERSEDED = "SUPERSEDED"
@@ -96,6 +82,20 @@ class RecoveryGuideStatus(StrEnum):
 class GuideSourceType(StrEnum):
     PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
     PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
+
+
+class PatientSourceKind(StrEnum):
+    CARE_EPISODE_FIELD = "CARE_EPISODE_FIELD"
+    MEDICATION = "MEDICATION"
+    CARE_ADVICE = "CARE_ADVICE"
+    FOLLOW_UP_VISIT = "FOLLOW_UP_VISIT"
+
+
+class CareEpisodeSourceField(StrEnum):
+    DIAGNOSIS = "DIAGNOSIS"
+    SURGERY = "SURGERY"
+    DISCHARGE_DATE = "DISCHARGE_DATE"
+    MEDICATION_DAYS = "MEDICATION_DAYS"
 
 
 class ChatSessionStatus(StrEnum):
@@ -151,10 +151,4 @@ class ChatConflictStatus(StrEnum):
 class ChatSourceType(StrEnum):
     PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
     PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
-
-
-class ConsentType(StrEnum):
-    MEDICAL_DATA = "MEDICAL_DATA"
-    AI_USAGE = "AI_USAGE"
-    NOTIFICATION = "NOTIFICATION"
 

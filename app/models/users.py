@@ -1,3 +1,5 @@
+from datetime import time
+
 from tortoise import fields, models
 
 from app.models.enums import AccountStatus
@@ -10,10 +12,29 @@ class User(models.Model):
     status = fields.CharEnumField(AccountStatus, default=AccountStatus.PENDING)
     name = fields.CharField(max_length=100)
     phone = fields.TextField(null=True)
-    is_alarm = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True, null=True)
 
     class Meta:
         table = "user"
         indexes = (("status",), ("created_at",))
+
+
+class UserSettings(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    user: fields.OneToOneRelation[User] = fields.OneToOneField(
+        "models.User",
+        related_name="settings",
+        on_delete=fields.CASCADE,
+    )
+    is_notify_medication = fields.BooleanField(default=True)
+    is_notify_schedule = fields.BooleanField(default=True)
+    is_notify_guide = fields.BooleanField(default=True)
+    is_terms_agreed = fields.BooleanField(default=False)
+    morning_medication_time = fields.TimeField(default=time(8, 0))
+    lunch_medication_time = fields.TimeField(default=time(13, 0))
+    evening_medication_time = fields.TimeField(default=time(19, 0))
+    bedtime_medication_time = fields.TimeField(default=time(22, 0))
+
+    class Meta:
+        table = "user_settings"

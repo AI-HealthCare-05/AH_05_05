@@ -3,7 +3,13 @@ from decimal import Decimal
 from tortoise import fields, models
 from tortoise.validators import MaxValueValidator, MinValueValidator
 
-from app.models.enums import ChatSafetyStatus, GuideSourceType, RecoveryGuideStatus
+from app.models.enums import (
+    CareEpisodeSourceField,
+    ChatSafetyStatus,
+    GuideSourceType,
+    PatientSourceKind,
+    RecoveryGuideStatus,
+)
 
 
 class RecoveryGuide(models.Model):
@@ -47,11 +53,25 @@ class RecoveryGuideSource(models.Model):
         on_delete=fields.CASCADE,
     )
     source_type = fields.CharEnumField(GuideSourceType)
-    extracted_field: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.OcrExtractedField",
+    patient_source_kind = fields.CharEnumField(PatientSourceKind, null=True)
+    patient_field = fields.CharEnumField(CareEpisodeSourceField, null=True)
+    medication: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.Medication",
         related_name="recovery_guide_sources",
         null=True,
-        on_delete=fields.SET_NULL,
+        on_delete=fields.CASCADE,
+    )
+    care_advice: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.CareAdvice",
+        related_name="recovery_guide_sources",
+        null=True,
+        on_delete=fields.CASCADE,
+    )
+    follow_up_visit: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.FollowUpVisit",
+        related_name="recovery_guide_sources",
+        null=True,
+        on_delete=fields.CASCADE,
     )
     public_dataset_key = fields.CharField(max_length=100, null=True)
     dataset_version = fields.CharField(max_length=100, null=True)
@@ -75,7 +95,9 @@ class RecoveryGuideSource(models.Model):
         table = "recovery_guide_sources"
         indexes = (
             ("recovery_guide",),
-            ("extracted_field",),
+            ("medication",),
+            ("care_advice",),
+            ("follow_up_visit",),
             ("public_dataset_key", "source_record_key"),
             ("vector_chunk_id",),
         )

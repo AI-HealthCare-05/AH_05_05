@@ -1,6 +1,8 @@
 from tortoise import fields, models
 from tortoise.validators import MaxValueValidator, MinValueValidator
 
+from app.models.enums import MealSlot
+
 
 class Medication(models.Model):
     id = fields.BigIntField(primary_key=True)
@@ -24,12 +26,6 @@ class Medication(models.Model):
         null=True,
         on_delete=fields.SET_NULL,
     )
-    source_extracted_field: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.OcrExtractedField",
-        related_name="medications",
-        null=True,
-        on_delete=fields.SET_NULL,
-    )
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(null=True)
 
@@ -42,17 +38,17 @@ class Medication(models.Model):
         )
 
 
-class MedicationTime(models.Model):
+class MedicationSlot(models.Model):
     id = fields.BigIntField(primary_key=True)
     medication: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
         "models.Medication",
-        related_name="times",
+        related_name="slots",
         on_delete=fields.CASCADE,
     )
-    time_of_day = fields.TimeField()
+    slot = fields.CharEnumField(MealSlot)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
-        table = "medication_times"
-        indexes = (("time_of_day",),)
-        unique_together = (("medication", "time_of_day"),)
+        table = "medication_slots"
+        indexes = (("slot",),)
+        unique_together = (("medication", "slot"),)

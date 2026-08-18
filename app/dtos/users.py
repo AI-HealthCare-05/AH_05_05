@@ -24,6 +24,5 @@ class UserInfoResponse(BaseSerializerModel):
     name: str
     email: str
     phone_number: Annotated[str | None, Field(validation_alias="phone")]
-    is_alarm: bool
     status: AccountStatus
     created_at: datetime

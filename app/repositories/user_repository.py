@@ -7,7 +7,7 @@ from app.core import config
 from app.models.enums import AccountStatus
 from app.models.users import User
 
-ALLOWED_UPDATE_FIELDS = ["name", "email", "phone", "is_alarm"]
+ALLOWED_UPDATE_FIELDS = ["name", "email", "phone"]
 UPDATED_AT_FIELD = "updated_at"
 
 

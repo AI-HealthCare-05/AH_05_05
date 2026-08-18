@@ -45,7 +45,6 @@ def test_user_response_maps_database_phone_to_existing_api_name() -> None:
         email="user@example.com",
         name="테스터",
         phone="01012345678",
-        is_alarm=True,
         status=AccountStatus.ACTIVE,
         created_at="2026-08-18T12:00:00+09:00",
     )
@@ -54,6 +53,7 @@ def test_user_response_maps_database_phone_to_existing_api_name() -> None:
 
     assert response.phone_number == "01012345678"
     assert response.status == AccountStatus.ACTIVE
+    assert not hasattr(response, "is_alarm")
 
 
 @pytest.mark.asyncio
@@ -79,4 +79,3 @@ async def test_suspended_user_cannot_authenticate() -> None:
         )
 
     assert exc_info.value.status_code == 423
-

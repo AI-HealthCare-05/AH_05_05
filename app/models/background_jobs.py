@@ -7,6 +7,7 @@ from app.models.enums import BackgroundJobStatus, BackgroundJobType
 
 class BackgroundJob(models.Model):
     id = fields.BigIntField(primary_key=True)
+    idempotency_key = fields.CharField(max_length=150, unique=True)
     job_type = fields.CharEnumField(BackgroundJobType)
     status = fields.CharEnumField(BackgroundJobStatus, default=BackgroundJobStatus.QUEUED)
     user: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(

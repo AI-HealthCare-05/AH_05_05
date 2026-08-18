@@ -4,6 +4,7 @@ from tortoise import fields, models
 from tortoise.validators import MaxValueValidator, MinValueValidator
 
 from app.models.enums import (
+    CareEpisodeSourceField,
     ChatConflictStatus,
     ChatMessageRole,
     ChatMessageStatus,
@@ -12,6 +13,7 @@ from app.models.enums import (
     ChatSessionStatus,
     ChatSourceType,
     ChatVerificationStatus,
+    PatientSourceKind,
 )
 
 
@@ -97,11 +99,25 @@ class ChatMessageSource(models.Model):
         on_delete=fields.CASCADE,
     )
     source_type = fields.CharEnumField(ChatSourceType)
-    extracted_field: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.OcrExtractedField",
+    patient_source_kind = fields.CharEnumField(PatientSourceKind, null=True)
+    patient_field = fields.CharEnumField(CareEpisodeSourceField, null=True)
+    medication: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.Medication",
         related_name="chat_message_sources",
         null=True,
-        on_delete=fields.SET_NULL,
+        on_delete=fields.CASCADE,
+    )
+    care_advice: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.CareAdvice",
+        related_name="chat_message_sources",
+        null=True,
+        on_delete=fields.CASCADE,
+    )
+    follow_up_visit: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.FollowUpVisit",
+        related_name="chat_message_sources",
+        null=True,
+        on_delete=fields.CASCADE,
     )
     public_dataset_key = fields.CharField(max_length=100, null=True)
     dataset_version = fields.CharField(max_length=100, null=True)
@@ -125,7 +141,9 @@ class ChatMessageSource(models.Model):
         table = "chat_message_sources"
         indexes = (
             ("chat_message",),
-            ("extracted_field",),
+            ("medication",),
+            ("care_advice",),
+            ("follow_up_visit",),
             ("public_dataset_key", "source_record_key"),
             ("vector_chunk_id",),
         )

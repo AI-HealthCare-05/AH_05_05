@@ -1,7 +1,7 @@
 from tortoise import fields, models
 from tortoise.validators import MinValueValidator
 
-from app.models.enums import CareEpisodeStatus
+from app.models.enums import CareEpisodeStatus, MealSlot
 
 
 class CareEpisode(models.Model):
@@ -11,7 +11,16 @@ class CareEpisode(models.Model):
     )
     title = fields.CharField(max_length=150)
     status = fields.CharEnumField(CareEpisodeStatus, default=CareEpisodeStatus.ACTIVE)
+    diagnosis = fields.CharField(max_length=500, null=True)
+    surgery = fields.CharField(max_length=500, null=True)
+    discharge_date = fields.DateField(null=True)
+    medication_days = fields.IntField(null=True)
+    source_ocr_job_id = fields.BigIntField(null=True)
+    confirmation_hash = fields.CharField(max_length=64, null=True)
+    confirmed_at = fields.DatetimeField(null=True)
     started_at = fields.DatetimeField(auto_now_add=True)
+    medication_start_date = fields.DateField(null=True)
+    medication_start_slot = fields.CharEnumField(MealSlot, null=True)
     default_end_at = fields.DatetimeField(null=True)
     planned_end_at = fields.DatetimeField(null=True)
     completed_at = fields.DatetimeField(null=True)
@@ -32,12 +41,6 @@ class CareAdvice(models.Model):
     )
     text = fields.CharField(max_length=500)
     display_order = fields.IntField(validators=[MinValueValidator(1)])
-    source_extracted_field: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.OcrExtractedField",
-        related_name="care_advices",
-        null=True,
-        on_delete=fields.SET_NULL,
-    )
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(null=True)
 
@@ -58,12 +61,6 @@ class FollowUpVisit(models.Model):
     doctor_name = fields.CharField(max_length=100, null=True)
     place = fields.CharField(max_length=255, null=True)
     purpose = fields.CharField(max_length=255, null=True)
-    source_extracted_field: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.OcrExtractedField",
-        related_name="follow_up_visits",
-        null=True,
-        on_delete=fields.SET_NULL,
-    )
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(null=True)
 
