@@ -14,20 +14,20 @@ services:
       retries: 5
       start_period: 5s
 
-
+  # 2. Vector Database
   qdrant:
-    image: qdrant/qdrant:v1.18.2
+    image: qdrant/qdrant:latest
     container_name: qdrant
     restart: always
     ports:
-      - "127.0.0.1:6333:6333"
-    volumes:
-      - qdrant_data:/qdrant/storage
+      - "127.0.0.1:6333:6333"  # REST API 및 Dashboard
+      - "127.0.0.1:6334:6334"  # gRPC API
     networks:
       - ws
+    volumes:
+      - qdrant_data:/qdrant/storage
 
-
-  # 2. Database
+  # 3. Database
   mysql:
     image: mysql:8.0
     container_name: mysql
@@ -56,7 +56,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 3. API Server (FastAPI)
+  # 4. API Server (FastAPI)
   fastapi:
     container_name: fastapi
     build:
@@ -83,7 +83,7 @@ services:
       redis:
         condition: service_healthy
 
-  # 4. AI Worker (Model 학습 및 추론)
+  # 5. AI Worker (Model 학습 및 추론)
   ai-worker:
     container_name: ai-worker
     build:
@@ -108,7 +108,7 @@ services:
       qdrant:
         condition: service_started
 
-  # 5. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
+  # 6. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
     container_name: nginx
     image: nginx:latest
