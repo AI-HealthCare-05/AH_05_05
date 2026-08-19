@@ -5,12 +5,14 @@ from app.apis.v1.admin_auth_routers import REFRESH_COOKIE_NAME
 from app.core.jwt.tokens import AccessToken, JwtScope
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
+from app.services.admin_session import rotate_session_salt
 from app.tests.admin_apis.conftest import (
     ADMIN_ACCOUNTS_URL,
     ADMIN_LOGIN_URL,
     ADMIN_LOGOUT_URL,
     ADMIN_PASSWORD,
     ADMIN_REFRESH_URL,
+    ADMIN_STATUS_URL,
     auth_header,
     create_admin,
     create_user,
@@ -144,6 +146,17 @@ class TestAdminRefreshAPI(AdminAuthTestBase):
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["code"] == "INVALID_TOKEN"
 
+    async def test_rejects_token_without_session_salt(self) -> None:
+        """sid 클레임이 없는 토큰은 세션 대조를 할 수 없으므로 거부한다."""
+        from app.core.jwt.tokens import RefreshToken
+
+        no_sid = RefreshToken.for_admin(self.admin.id)
+
+        response = await request("POST", ADMIN_REFRESH_URL, cookies={REFRESH_COOKIE_NAME: str(no_sid)})
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["code"] == "INVALID_TOKEN"
+
     async def test_rejects_malformed_cookie(self) -> None:
         response = await request("POST", ADMIN_REFRESH_URL, cookies={REFRESH_COOKIE_NAME: "not-a-jwt"})
 
@@ -211,4 +224,80 @@ class TestAdminTokenScope(AdminAuthTestBase):
     async def test_accepts_admin_scope_token(self) -> None:
         response = await request("GET", ADMIN_ACCOUNTS_URL, headers=auth_header(self.admin.id))
 
+        assert response.status_code == status.HTTP_200_OK
+
+
+class TestSessionSaltRotation(AdminAuthTestBase):
+    """session_salt 가 갱신되는 지점마다 기존 리프레시 토큰이 끊기는지 확인한다."""
+
+    async def _login_cookies(self, email: str, password: str = ADMIN_PASSWORD) -> dict[str, str]:
+        response = await request("POST", ADMIN_LOGIN_URL, json=credentials(email, password))
+        return {REFRESH_COOKIE_NAME: response.cookies[REFRESH_COOKIE_NAME]}
+
+    async def test_suspension_invalidates_refresh_token(self) -> None:
+        """정지 즉시 세션이 끊긴다. 상태 재확인이 아니라 난수 갱신으로 막힌다."""
+        target = await create_admin(name="정지대상", email="target@ozcoding.ai", role=AdminRole.STAFF)
+        cookies = await self._login_cookies(target.email)
+        salt_before = target.session_salt
+
+        await request(
+            "PATCH",
+            ADMIN_STATUS_URL,
+            headers=auth_header(self.admin.id),
+            json={"adminIds": [target.id], "status": "SUSPENDED"},
+        )
+
+        await target.refresh_from_db()
+        assert target.session_salt != salt_before
+
+        response = await request("POST", ADMIN_REFRESH_URL, cookies=cookies)
+        assert response.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}
+
+    async def test_suspension_rotates_salt_per_admin(self) -> None:
+        """일괄 정지에서도 계정마다 서로 다른 난수를 받아야 한다."""
+        first = await create_admin(name="대상1", email="t1@ozcoding.ai", role=AdminRole.STAFF)
+        second = await create_admin(name="대상2", email="t2@ozcoding.ai", role=AdminRole.STAFF)
+
+        await request(
+            "PATCH",
+            ADMIN_STATUS_URL,
+            headers=auth_header(self.admin.id),
+            json={"adminIds": [first.id, second.id], "status": "SUSPENDED"},
+        )
+
+        await first.refresh_from_db()
+        await second.refresh_from_db()
+        assert first.session_salt != second.session_salt
+
+    async def test_role_change_invalidates_refresh_token(self) -> None:
+        """역할이 바뀌면 새 권한으로 다시 로그인해야 한다.
+
+        역할 변경 API 는 아직 없다. 그 API 가 반드시 호출해야 하는 rotate_session_salt 를
+        직접 불러 동작을 고정한다.
+        """
+        target = await create_admin(name="역할변경", email="role@ozcoding.ai", role=AdminRole.STAFF)
+        cookies = await self._login_cookies(target.email)
+
+        target.role = AdminRole.ADMIN
+        rotate_session_salt(target)
+        await target.save()
+
+        response = await request("POST", ADMIN_REFRESH_URL, cookies=cookies)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["code"] == "INVALID_TOKEN"
+
+    async def test_other_admin_session_survives(self) -> None:
+        """한 계정의 난수 갱신이 다른 계정 세션까지 끊으면 안 된다."""
+        other = await create_admin(name="다른관리자", email="other@ozcoding.ai", role=AdminRole.STAFF)
+        other_cookies = await self._login_cookies(other.email)
+
+        target = await create_admin(name="정지대상", email="target@ozcoding.ai", role=AdminRole.STAFF)
+        await request(
+            "PATCH",
+            ADMIN_STATUS_URL,
+            headers=auth_header(self.admin.id),
+            json={"adminIds": [target.id], "status": "SUSPENDED"},
+        )
+
+        response = await request("POST", ADMIN_REFRESH_URL, cookies=other_cookies)
         assert response.status_code == status.HTTP_200_OK

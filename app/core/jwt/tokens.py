@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from app.core.jwt.backends import TokenBackend
 
 
-# 비밀번호 변경 시 이전 리프레시 토큰을 무효화하기 위한 지문 클레임.
-PASSWORD_FINGERPRINT_CLAIM = "pwf"
+# 세션 무효화용 난수 클레임. admin.session_salt 와 대조한다.
+SESSION_SALT_CLAIM = "sid"
 
 
 class JwtScope(StrEnum):
@@ -98,21 +98,21 @@ class Token:
         return token
 
     @classmethod
-    def for_admin(cls, admin_id: int, password_fingerprint: str | None = None) -> Self:
+    def for_admin(cls, admin_id: int, session_salt: str | None = None) -> Self:
         """관리자 토큰을 만든다.
 
         user 와 admin 은 별도 테이블이라 id 가 겹칠 수 있다. scope 가 없으면
         사용자 토큰으로 관리자 API 를 호출할 수 있으므로 반드시 함께 넣는다.
 
-        password_fingerprint 를 넣으면 비밀번호 변경 시 그 토큰이 무효가 된다.
+        session_salt 를 넣으면 그 값이 갱신될 때 토큰이 무효가 된다(비밀번호 변경·정지·역할 변경).
         리프레시 토큰에만 필요하며, 액세스 토큰은 수명이 짧아 넣지 않아도 된다.
         """
         token = cls()
         # JWT 표준상 sub 는 문자열이어야 한다. 정수로 넣으면 PyJWT 가 검증 단계에서 거부한다.
         token["sub"] = str(admin_id)
         token["scope"] = JwtScope.ADMIN
-        if password_fingerprint is not None:
-            token[PASSWORD_FINGERPRINT_CLAIM] = password_fingerprint
+        if session_salt is not None:
+            token[SESSION_SALT_CLAIM] = session_salt
         return token
 
 

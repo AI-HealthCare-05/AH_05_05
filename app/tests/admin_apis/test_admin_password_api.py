@@ -171,7 +171,7 @@ class TestPasswordChangeInvalidatesSessions(AdminPasswordTestBase):
         return {REFRESH_COOKIE_NAME: response.cookies[REFRESH_COOKIE_NAME]}
 
     async def test_old_refresh_token_stops_working(self) -> None:
-        """계정 노출이 의심돼 비밀번호를 바꾸는 경우라, 다른 기기 세션도 끊겨야 한다."""
+        """session_salt 가 갱신돼 이전 리프레시 토큰이 모두 무효가 된다."""
         cookies = await self._login_cookies()
         assert (await request("POST", ADMIN_REFRESH_URL, cookies=cookies)).status_code == status.HTTP_200_OK
 

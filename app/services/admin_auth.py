@@ -12,8 +12,8 @@ from app.core.exceptions import (
     InvalidTokenError,
     SamePasswordError,
 )
-from app.core.jwt.tokens import PASSWORD_FINGERPRINT_CLAIM, AccessToken, JwtScope, RefreshToken
-from app.core.utils.security import hash_password, password_fingerprint, verify_password
+from app.core.jwt.tokens import SESSION_SALT_CLAIM, AccessToken, JwtScope, RefreshToken
+from app.core.utils.security import hash_password, verify_password
 from app.dtos.admin_auth import (
     AdminInfo,
     AdminLoginRequest,
@@ -24,6 +24,7 @@ from app.dtos.admin_auth import (
 )
 from app.models.admins import Admin
 from app.models.enums import AccountStatus
+from app.services.admin_session import rotate_session_salt
 from app.services.jwt import JwtService
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class AdminAuthService:
 
         self._ensure_usable(admin)
 
-        refresh_token = RefreshToken.for_admin(admin.id, password_fingerprint(admin.hashed_password))
+        refresh_token = RefreshToken.for_admin(admin.id, admin.session_salt)
         access_token = refresh_token.access_token
 
         logger.info("admin login: id=%s", admin.id)
@@ -75,8 +76,9 @@ class AdminAuthService:
             raise InvalidTokenError()
         self._ensure_usable(admin)
 
-        # 비밀번호가 바뀌면 지문이 달라져 이전 리프레시 토큰이 모두 무효가 된다.
-        if verified.payload.get(PASSWORD_FINGERPRINT_CLAIM) != password_fingerprint(admin.hashed_password):
+        # session_salt 가 갱신되면(비밀번호 변경·정지·역할 변경) 이전 리프레시 토큰이 모두 무효가 된다.
+        # sid 클레임이 없는 토큰도 여기서 걸러진다.
+        if verified.payload.get(SESSION_SALT_CLAIM) != admin.session_salt:
             raise InvalidTokenError()
 
         # access_token 은 리프레시의 클레임을 복사하므로 scope 도 함께 넘어간다.
@@ -95,6 +97,8 @@ class AdminAuthService:
             raise SamePasswordError()
 
         admin.hashed_password = hash_password(request.new_password)
+        # 계정 노출 의심이 사유일 수 있어 다른 기기 세션도 함께 끊는다.
+        rotate_session_salt(admin)
 
         # 상태는 PENDING 일 때만 바꾼다. 무조건 ACTIVE 로 덮어쓰면, 나중에 의존성이
         # 느슨해졌을 때 정지된 계정이 비밀번호 변경만으로 되살아난다.
@@ -104,8 +108,6 @@ class AdminAuthService:
 
         await admin.save()
 
-        # 비밀번호 해시가 바뀌었으므로 이전에 발급된 리프레시 토큰은 지문 검증에서 걸러진다.
-        # 다른 기기에 남아 있는 세션도 함께 끊긴다.
         logger.info("admin password changed: id=%s status=%s", admin.id, admin.status)
         return AdminPasswordChangeResponse(message="비밀번호가 변경되었습니다.", status=admin.status)
 
