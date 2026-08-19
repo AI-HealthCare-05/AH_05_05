@@ -251,38 +251,23 @@ def test_source_rejects_invalid_citation_order(
             citation_order=citation_order,
         )
 
+
 def test_recovery_guide_result_tracks_generation_versions() -> None:
     result = RecoveryGuideResult(
         care_episode_id=100,
         guide_content=RecoveryGuideContent(
-            safety_notice=(
-                "이 안내는 의료진의 진료를 "
-                "대체하지 않습니다."
-            ),
+            safety_notice=("이 안내는 의료진의 진료를 대체하지 않습니다."),
         ),
         safety_status=SafetyStatus.SAFE,
         patient_context_hash="a" * 64,
         model_name="gpt-4o-mini",
         model_version=None,
-        prompt_version=(
-            "recovery-guide-prompt-v1"
-        ),
-        schema_version=(
-            "recovery-guide-result-v1"
-        ),
+        prompt_version=("recovery-guide-prompt-v1"),
+        schema_version=("recovery-guide-result-v1"),
     )
 
-    assert (
-        result.patient_context_hash
-        == "a" * 64
-    )
+    assert result.patient_context_hash == "a" * 64
     assert result.model_name == "gpt-4o-mini"
     assert result.model_version is None
-    assert (
-        result.prompt_version
-        == "recovery-guide-prompt-v1"
-    )
-    assert (
-        result.schema_version
-        == "recovery-guide-result-v1"
-    )
+    assert result.prompt_version == "recovery-guide-prompt-v1"
+    assert result.schema_version == "recovery-guide-result-v1"

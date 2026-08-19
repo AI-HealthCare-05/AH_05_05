@@ -14,6 +14,7 @@ class SourceType(StrEnum):
     PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"  # 환자의 개인 저장 데이터
     PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"  # 공공/일반 RAG데이터 조각
 
+
 class PatientSourceKind(StrEnum):
     CARE_EPISODE_FIELD = "CARE_EPISODE_FIELD"
     MEDICATION = "MEDICATION"
@@ -26,6 +27,7 @@ class CareEpisodeSourceField(StrEnum):
     SURGERY = "SURGERY"
     DISCHARGE_DATE = "DISCHARGE_DATE"
     MEDICATION_DAYS = "MEDICATION_DAYS"
+
 
 class SafetyStatus(StrEnum):
     PENDING = "PENDING"  # 검사 대기중

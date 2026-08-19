@@ -31,13 +31,9 @@ def build_patient_context(
 
 
 def test_resolve_uses_confirmed_hash() -> None:
-    patient_context = build_patient_context(
-        confirmation_hash="a" * 64
-    )
+    patient_context = build_patient_context(confirmation_hash="a" * 64)
 
-    result = resolve_patient_context_hash(
-        patient_context
-    )
+    result = resolve_patient_context_hash(patient_context)
 
     assert result == "a" * 64
 
@@ -46,31 +42,16 @@ def test_resolve_generates_same_hash_for_same_context() -> None:
     first_context = build_patient_context()
     second_context = build_patient_context()
 
-    first_hash = resolve_patient_context_hash(
-        first_context
-    )
-    second_hash = resolve_patient_context_hash(
-        second_context
-    )
+    first_hash = resolve_patient_context_hash(first_context)
+    second_hash = resolve_patient_context_hash(second_context)
 
     assert first_hash == second_hash
     assert len(first_hash) == 64
-    assert all(
-        character in "0123456789abcdef"
-        for character in first_hash
-    )
+    assert all(character in "0123456789abcdef" for character in first_hash)
 
 
 def test_resolve_changes_hash_when_context_changes() -> None:
-    first_context = build_patient_context(
-        dose="1정"
-    )
-    second_context = build_patient_context(
-        dose="2정"
-    )
+    first_context = build_patient_context(dose="1정")
+    second_context = build_patient_context(dose="2정")
 
-    assert resolve_patient_context_hash(
-        first_context
-    ) != resolve_patient_context_hash(
-        second_context
-    )
+    assert resolve_patient_context_hash(first_context) != resolve_patient_context_hash(second_context)

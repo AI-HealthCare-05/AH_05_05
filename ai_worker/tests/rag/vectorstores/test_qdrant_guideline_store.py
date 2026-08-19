@@ -209,6 +209,7 @@ async def test_upsert_rejects_vector_count_mismatch() -> None:
     finally:
         await client.close()
 
+
 async def test_delete_by_document_id_removes_only_matching_chunks() -> None:
     client = AsyncQdrantClient(location=":memory:")
 
@@ -247,9 +248,7 @@ async def test_delete_by_document_id_removes_only_matching_chunks() -> None:
             ],
         )
 
-        await store.delete_by_document_id(
-            "stroke-2020"
-        )
+        await store.delete_by_document_id("stroke-2020")
 
         remaining_points, _ = await client.scroll(
             collection_name="test_guidelines",
@@ -260,18 +259,12 @@ async def test_delete_by_document_id_removes_only_matching_chunks() -> None:
 
         assert len(remaining_points) == 1
 
-        remaining_payload = (
-            remaining_points[0].payload
-        )
+        remaining_payload = remaining_points[0].payload
         assert remaining_payload is not None
-        assert (
-            remaining_payload["metadata"][
-                "document_id"
-            ]
-            == "heart-failure-2020"
-        )
+        assert remaining_payload["metadata"]["document_id"] == "heart-failure-2020"
     finally:
         await client.close()
+
 
 async def test_delete_by_document_id_rejects_blank_id() -> None:
     client = AsyncQdrantClient(location=":memory:")
@@ -284,14 +277,10 @@ async def test_delete_by_document_id_rejects_blank_id() -> None:
         )
 
         try:
-            await store.delete_by_document_id(
-                "   "
-            )
+            await store.delete_by_document_id("   ")
         except ValueError as error:
             assert "문서 ID" in str(error)
         else:
-            raise AssertionError(
-                "ValueError가 발생해야 합니다."
-            )
+            raise AssertionError("ValueError가 발생해야 합니다.")
     finally:
         await client.close()
