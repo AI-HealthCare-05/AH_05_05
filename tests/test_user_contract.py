@@ -74,8 +74,6 @@ async def test_suspended_user_cannot_authenticate() -> None:
     service.user_repo = UserRepositoryStub()
 
     with pytest.raises(HTTPException) as exc_info:
-        await service.authenticate(
-            auth_dtos.LoginRequest(email="user@example.com", password="Password123!")
-        )
+        await service.authenticate(auth_dtos.LoginRequest(email="user@example.com", password="Password123!"))
 
     assert exc_info.value.status_code == 423

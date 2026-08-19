@@ -6,11 +6,11 @@ from app.main import app
 
 
 def test_root_serves_static_index_after_api_routes() -> None:
-    api_route_index = next(index for index, route in enumerate(app.routes) if getattr(route, "path", "") == "/api/v1/auth/signup")
+    api_route_index = next(
+        index for index, route in enumerate(app.routes) if getattr(route, "path", "") == "/api/v1/auth/signup"
+    )
     static_route_index, static_mount = next(
-        (index, route)
-        for index, route in enumerate(app.routes)
-        if isinstance(route, Mount) and route.path == ""
+        (index, route) for index, route in enumerate(app.routes) if isinstance(route, Mount) and route.path == ""
     )
 
     assert api_route_index < static_route_index

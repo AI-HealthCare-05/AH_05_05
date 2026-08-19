@@ -151,4 +151,3 @@ class ChatConflictStatus(StrEnum):
 class ChatSourceType(StrEnum):
     PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
     PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
-
