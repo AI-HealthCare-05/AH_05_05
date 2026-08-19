@@ -1,16 +1,27 @@
 import logging
+from datetime import datetime
 
 from fastapi import HTTPException
 
+from app.core import config
 from app.core.exceptions import (
     AccountSuspendedError,
     AccountWithdrawnError,
     InvalidCredentialsError,
+    InvalidPasswordError,
     InvalidTokenError,
+    SamePasswordError,
 )
-from app.core.jwt.tokens import AccessToken, JwtScope, RefreshToken
-from app.core.utils.security import verify_password
-from app.dtos.admin_auth import AdminInfo, AdminLoginRequest, AdminLoginResponse, AdminTokenRefreshResponse
+from app.core.jwt.tokens import PASSWORD_FINGERPRINT_CLAIM, AccessToken, JwtScope, RefreshToken
+from app.core.utils.security import hash_password, password_fingerprint, verify_password
+from app.dtos.admin_auth import (
+    AdminInfo,
+    AdminLoginRequest,
+    AdminLoginResponse,
+    AdminPasswordChangeRequest,
+    AdminPasswordChangeResponse,
+    AdminTokenRefreshResponse,
+)
 from app.models.admins import Admin
 from app.models.enums import AccountStatus
 from app.services.jwt import JwtService
@@ -34,7 +45,7 @@ class AdminAuthService:
 
         self._ensure_usable(admin)
 
-        refresh_token = RefreshToken.for_admin(admin.id)
+        refresh_token = RefreshToken.for_admin(admin.id, password_fingerprint(admin.hashed_password))
         access_token = refresh_token.access_token
 
         logger.info("admin login: id=%s", admin.id)
@@ -64,9 +75,39 @@ class AdminAuthService:
             raise InvalidTokenError()
         self._ensure_usable(admin)
 
+        # 비밀번호가 바뀌면 지문이 달라져 이전 리프레시 토큰이 모두 무효가 된다.
+        if verified.payload.get(PASSWORD_FINGERPRINT_CLAIM) != password_fingerprint(admin.hashed_password):
+            raise InvalidTokenError()
+
         # access_token 은 리프레시의 클레임을 복사하므로 scope 도 함께 넘어간다.
         access_token: AccessToken = verified.access_token
         return AdminTokenRefreshResponse(access_token=str(access_token))
+
+    async def change_password(self, admin_id: int, request: AdminPasswordChangeRequest) -> AdminPasswordChangeResponse:
+        """REQ-ADMIN-009 본인 비밀번호 변경."""
+        admin = await Admin.get_or_none(id=admin_id)
+        if admin is None:
+            raise InvalidTokenError()
+
+        if not verify_password(request.current_password, admin.hashed_password):
+            raise InvalidPasswordError()
+        if verify_password(request.new_password, admin.hashed_password):
+            raise SamePasswordError()
+
+        admin.hashed_password = hash_password(request.new_password)
+
+        # 상태는 PENDING 일 때만 바꾼다. 무조건 ACTIVE 로 덮어쓰면, 나중에 의존성이
+        # 느슨해졌을 때 정지된 계정이 비밀번호 변경만으로 되살아난다.
+        if admin.status == AccountStatus.PENDING:
+            admin.status = AccountStatus.ACTIVE
+            admin.approved_at = datetime.now(tz=config.TIMEZONE)
+
+        await admin.save()
+
+        # 비밀번호 해시가 바뀌었으므로 이전에 발급된 리프레시 토큰은 지문 검증에서 걸러진다.
+        # 다른 기기에 남아 있는 세션도 함께 끊긴다.
+        logger.info("admin password changed: id=%s status=%s", admin.id, admin.status)
+        return AdminPasswordChangeResponse(message="비밀번호가 변경되었습니다.", status=admin.status)
 
     @staticmethod
     def _read_admin_id(token: AccessToken | RefreshToken) -> int:

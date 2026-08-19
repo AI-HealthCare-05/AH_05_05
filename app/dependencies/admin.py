@@ -24,9 +24,14 @@ class AuthenticatedAdmin:
     role: AdminRole
 
 
-async def get_current_admin(
-    credential: Annotated[HTTPAuthorizationCredentials | None, Depends(admin_security)],
+async def _authenticate(
+    credential: HTTPAuthorizationCredentials | None,
+    allowed_statuses: frozenset[AccountStatus],
 ) -> AuthenticatedAdmin:
+    """토큰을 검증하고 계정 상태가 허용 목록에 있는지 확인한다.
+
+    이 함수는 직접 의존성으로 쓰지 않는다. 허용 상태를 명시한 아래 두 함수를 쓴다.
+    """
     if credential is None:
         raise UnauthorizedError()
 
@@ -49,11 +54,36 @@ async def get_current_admin(
     admin = await Admin.get_or_none(id=int(admin_id))
     if admin is None:
         raise ForbiddenError("관리자 계정이 아닙니다.")
-    if admin.status != AccountStatus.ACTIVE:
-        # 정지된 계정과 임시 비밀번호 미변경(PENDING) 계정을 모두 막는다.
+    if admin.status not in allowed_statuses:
         raise ForbiddenError("사용할 수 없는 관리자 계정입니다.")
 
     return AuthenticatedAdmin(admin_id=admin.id, role=admin.role)
+
+
+async def get_current_admin(
+    credential: Annotated[HTTPAuthorizationCredentials | None, Depends(admin_security)],
+) -> AuthenticatedAdmin:
+    """관리자 API 의 기본 인증. ACTIVE 계정만 허용한다.
+
+    정지(SUSPENDED)·탈퇴(WITHDRAWN)뿐 아니라 임시 비밀번호를 아직 바꾸지 않은
+    PENDING 계정도 막는다. PENDING 계정은 비밀번호를 변경해야 서비스를 쓸 수 있다.
+    """
+    return await _authenticate(credential, frozenset({AccountStatus.ACTIVE}))
+
+
+async def get_current_admin_allow_pending(
+    credential: Annotated[HTTPAuthorizationCredentials | None, Depends(admin_security)],
+) -> AuthenticatedAdmin:
+    """비밀번호 변경 API 전용. ACTIVE 와 PENDING 을 허용한다.
+
+    PENDING 계정이 임시 비밀번호를 바꿀 유일한 경로라 예외적으로 열어둔다.
+    get_current_admin 에 옵션을 붙이지 않고 함수를 나눈 이유는, 어느 API 가
+    PENDING 을 허용하는지 호출부에서 바로 보이게 하기 위해서다.
+
+    SUSPENDED·WITHDRAWN 은 여기서도 막는다. 정지된 계정이 비밀번호 변경으로
+    되살아나면 안 된다.
+    """
+    return await _authenticate(credential, frozenset({AccountStatus.ACTIVE, AccountStatus.PENDING}))
 
 
 def require_roles(

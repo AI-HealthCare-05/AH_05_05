@@ -51,6 +51,18 @@ class InvalidCredentialsError(AppError):
     message = "이메일 또는 비밀번호가 일치하지 않습니다."
 
 
+class InvalidPasswordError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "INVALID_PASSWORD"
+    message = "현재 비밀번호가 일치하지 않습니다."
+
+
+class SamePasswordError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "SAME_AS_CURRENT"
+    message = "현재 비밀번호와 다른 비밀번호를 입력해주세요."
+
+
 class InvalidTokenError(AppError):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "INVALID_TOKEN"
