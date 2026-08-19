@@ -6,7 +6,8 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.exceptions import ForbiddenError, UnauthorizedError
-from app.models.enums import AdminRole
+from app.models.admins import Admin
+from app.models.enums import AccountStatus, AdminRole
 from app.services.jwt import JwtService
 
 # auto_error=False 로 두어 인증 실패도 공통 규격({"code", "message"})으로 응답한다.
@@ -19,7 +20,6 @@ class AuthenticatedAdmin:
     """요청을 보낸 관리자. ORM 모델과 분리해 라우터·서비스가 DB 구현에 묶이지 않게 한다."""
 
     admin_id: int
-    account_id: int
     role: AdminRole
 
 
@@ -40,17 +40,17 @@ async def get_current_admin(
     if admin_id is None:
         raise UnauthorizedError("유효하지 않은 토큰입니다.")
 
-    # TODO(#19): admin 테이블 조회로 교체한다.
-    #   SELECT id, role, status FROM admin WHERE id = :admin_id
-    #   - 행이 없으면 ForbiddenError (사용자 토큰으로 접근한 경우)
-    #   - status 가 ACTIVE 가 아니면 ForbiddenError (정지·임시비밀번호 대기)
-    #   - role 을 읽어 AuthenticatedAdmin 에 담는다
-    #
-    # 현재는 토큰 검증까지만 실제로 동작하고 role 은 고정값이다.
-    # user 와 admin 테이블이 분리돼 있는데 토큰 페이로드에 구분자가 없어,
-    # 일반 사용자 토큰도 그대로 통과한다. 즉 401 은 동작하지만 403 은 발생하지 않는다.
-    # 근본 해결은 페이로드에 scope("admin"|"user") 클레임을 넣는 것이다(회의 안건 B-3).
-    return AuthenticatedAdmin(admin_id=int(admin_id), account_id=int(admin_id), role=AdminRole.ADMIN)
+    # user 와 admin 은 별도 테이블이고 토큰 페이로드에 구분자가 없다.
+    # 따라서 admin 테이블에 실제로 존재하는지가 사용자 토큰을 걸러내는 유일한 방어선이다.
+    # 페이로드에 scope("admin"|"user") 클레임을 넣으면 DB 조회 전에 걸러낼 수 있다(회의 안건 B-3).
+    admin = await Admin.get_or_none(id=int(admin_id))
+    if admin is None:
+        raise ForbiddenError("관리자 계정이 아닙니다.")
+    if admin.status != AccountStatus.ACTIVE:
+        # 정지된 계정과 임시 비밀번호 미변경(PENDING) 계정을 모두 막는다.
+        raise ForbiddenError("사용할 수 없는 관리자 계정입니다.")
+
+    return AuthenticatedAdmin(admin_id=admin.id, role=admin.role)
 
 
 def require_roles(

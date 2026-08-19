@@ -1,80 +1,75 @@
-from datetime import datetime
+from datetime import timedelta
+
+from tortoise.expressions import Q
+from tortoise.queryset import QuerySet
 
 from app.core.exceptions import UserNotFoundError
 from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
 from app.dtos.pagination import PageResponse
-from app.models.enums import AccountStatus
-
-# ---------------------------------------------------------------------------
-# 목 데이터. 마이그레이션(이슈 #19) 완료 후 user 테이블 조회로 교체한다.
-# ERD v3 에서 accounts 가 사라져 user 단일 테이블 조회로 끝난다.
-# ---------------------------------------------------------------------------
-_MOCK_USERS: list[dict] = [
-    {
-        "user_id": 9201,
-        "name": "홍길동",
-        "email": "user@mail.com",
-        "phone": "010-1234-5678",
-        "status": AccountStatus.ACTIVE,
-        "is_terms_agreed": True,
-        "created_at": datetime(2024, 11, 2, 14, 18),
-        "active_alarm_count": 3,
-    },
-    {
-        "user_id": 9202,
-        "name": "김퇴원",
-        "email": "discharged@mail.com",
-        "phone": None,
-        "status": AccountStatus.PENDING,
-        "is_terms_agreed": False,
-        "created_at": datetime(2026, 8, 13, 11, 30),
-        "active_alarm_count": 0,
-    },
-]
+from app.models.alarms import Alarm
+from app.models.enums import AlarmStatus
+from app.models.users import User, UserSettings
 
 
 class AdminUserQueryService:
     """REQ-ADMIN-004 / REQ-ADMIN-005 관리자용 사용자 조회."""
 
     async def get_users(self, query: AdminUserListQuery) -> PageResponse[AdminUserListItem]:
-        # TODO(#19): user 테이블 조회로 교체한다.
-        #   WHERE (:keyword IS NULL OR name LIKE %:keyword% OR email LIKE %:keyword%)
-        #     AND (:status IS NULL OR status = :status)
-        #     AND (:start_date IS NULL OR created_at >= :start_date)
-        #     AND (:end_date IS NULL OR created_at < :end_date + 1day)
-        #   ORDER BY created_at DESC
-        #   LIMIT :size OFFSET (:page - 1) * :size
-        # NFR-ADMIN-002(3초 이내)를 위해 keyword·status·created_at 인덱스가 필요하다.
-        rows = [row for row in _MOCK_USERS if self._matches(row, query)]
+        queryset = self._apply_filters(User.all(), query)
+
+        total_count = await queryset.count()
         offset = (query.page - 1) * query.size
-        page_rows = rows[offset : offset + query.size]
+        users = await queryset.order_by("-created_at").offset(offset).limit(query.size)
 
         return PageResponse[AdminUserListItem](
-            total_count=len(rows),
+            total_count=total_count,
             page=query.page,
             size=query.size,
-            items=[AdminUserListItem.model_validate(row) for row in page_rows],
+            items=[
+                AdminUserListItem(
+                    user_id=user.id,
+                    name=user.name,
+                    email=user.email,
+                    status=user.status,
+                    created_at=user.created_at,
+                )
+                for user in users
+            ],
         )
 
     async def get_user(self, user_id: int) -> AdminUserDetailResponse:
-        # TODO(#19): user 단건 조회 + 활성 알림 수 집계로 교체한다.
-        #   SELECT COUNT(*) FROM alarms WHERE user_id = :user_id AND status = 'ACTIVE'
-        #   (user_id, status) 인덱스가 있어 그대로 탄다.
-        row = next((row for row in _MOCK_USERS if row["user_id"] == user_id), None)
-        if row is None:
+        user = await User.get_or_none(id=user_id)
+        if user is None:
             raise UserNotFoundError()
-        return AdminUserDetailResponse.model_validate(row)
+
+        # user 와 1:1 이지만 가입 직후에는 설정 행이 아직 없을 수 있다. 그 경우 미동의로 본다.
+        settings = await UserSettings.get_or_none(user_id=user_id)
+        is_terms_agreed = bool(settings and settings.is_terms_agreed)
+
+        # 집계 기준이 알림 담당자와 미합의 상태다. 복약 알람이 (사용자 x 시간대) 단위라
+        # 사용자당 최대 4건이므로, 화면이 기대하는 "활성 알림 수"와 같은지 확인이 필요하다.
+        active_alarm_count = await Alarm.filter(user_id=user_id, status=AlarmStatus.ACTIVE).count()
+
+        return AdminUserDetailResponse(
+            user_id=user.id,
+            name=user.name,
+            email=user.email,
+            phone=user.phone,
+            status=user.status,
+            is_terms_agreed=is_terms_agreed,
+            created_at=user.created_at,
+            active_alarm_count=active_alarm_count,
+        )
 
     @staticmethod
-    def _matches(row: dict, query: AdminUserListQuery) -> bool:
-        if query.status is not None and row["status"] != query.status:
-            return False
-        if query.start_date and row["created_at"].date() < query.start_date:
-            return False
-        if query.end_date and row["created_at"].date() > query.end_date:
-            return False
+    def _apply_filters(queryset: QuerySet[User], query: AdminUserListQuery) -> QuerySet[User]:
         if query.keyword:
-            keyword = query.keyword.lower()
-            if keyword not in row["name"].lower() and keyword not in row["email"].lower():
-                return False
-        return True
+            queryset = queryset.filter(Q(name__icontains=query.keyword) | Q(email__icontains=query.keyword))
+        if query.status is not None:
+            queryset = queryset.filter(status=query.status)
+        if query.start_date:
+            queryset = queryset.filter(created_at__gte=query.start_date)
+        if query.end_date:
+            # created_at 은 시각까지 있으므로 종료일 당일을 포함하려면 다음 날 0시 미만으로 본다.
+            queryset = queryset.filter(created_at__lt=query.end_date + timedelta(days=1))
+        return queryset
