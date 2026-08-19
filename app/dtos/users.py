@@ -19,6 +19,8 @@ class UserUpdateRequest(BaseModel):
         Field(None, description="Available Format: +8201011112222, 01011112222, 010-1111-2222"),
         optional_after_validator(validate_phone_number),
     ]
+
+
 class UserInfoResponse(BaseSerializerModel):
     id: int
     name: str
