@@ -20,17 +20,17 @@ class RecoveryGuide(models.Model):
         on_delete=fields.CASCADE,
     )
     status = fields.CharEnumField(RecoveryGuideStatus, default=RecoveryGuideStatus.COMPLETED)
-    guide_content: fields.JSONField[dict[str, object] | list[object]] = fields.JSONField(null=True)
+    guide_content: fields.JSONField[dict[str, object] | list[object]] = fields.JSONField()
     patient_context_hash = fields.CharField(max_length=64)
-    model_name = fields.CharField(max_length=100, null=True)
+    model_name = fields.CharField(max_length=100)
     model_version = fields.CharField(max_length=100, null=True)
-    prompt_version = fields.CharField(max_length=100, null=True)
-    schema_version = fields.CharField(max_length=50, null=True)
+    prompt_version = fields.CharField(max_length=100)
+    schema_version = fields.CharField(max_length=50)
     langsmith_trace_id = fields.CharField(max_length=100, null=True)
-    safety_status = fields.CharEnumField(ChatSafetyStatus, default=ChatSafetyStatus.PENDING)
-    safety_reason_code = fields.CharField(max_length=100, null=True)
+    safety_status = fields.CharEnumField(ChatSafetyStatus)
+    safety_reason_codes: fields.JSONField[list[str]] = fields.JSONField()
     error_code = fields.CharField(max_length=100, null=True)
-    completed_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField()
     superseded_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(null=True)
@@ -82,6 +82,8 @@ class RecoveryGuideSource(models.Model):
     source_title = fields.CharField(max_length=255, null=True)
     source_organization = fields.CharField(max_length=255, null=True)
     source_url = fields.TextField(null=True)
+    source_page_number = fields.IntField(null=True, validators=[MinValueValidator(1)])
+    source_license = fields.CharField(max_length=255, null=True)
     similarity_score = fields.DecimalField(
         max_digits=5,
         decimal_places=4,
