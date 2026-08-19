@@ -45,12 +45,28 @@ class GuidelineRetriever:
                 query_vector=query_vector,
                 search_query=search_query,
             )
+            filtered_results = self._filter_by_similarity(results)
+
+            if filtered_results or search_query.topic is None:
+                return filtered_results
+
+            fallback_query = search_query.model_copy(update={"topic": None})
+            fallback_results = await self._vector_store.search(
+                query_vector=query_vector,
+                search_query=fallback_query,
+            )
+
+            return self._filter_by_similarity(fallback_results)
         except Exception as error:
             raise GuidelineRetrievalError(
                 stage=(RetrievalFailureStage.VECTOR_STORE),
                 message=("공공 가이드라인 벡터 검색에 실패했습니다."),
             ) from error
 
+    def _filter_by_similarity(
+        self,
+        results: list[RetrievedGuidelineChunk],
+    ) -> list[RetrievedGuidelineChunk]:
         return [
             result
             for result in results
