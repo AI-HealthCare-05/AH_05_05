@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.core.jwt.tokens import JwtScope
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
 from app.services.jwt import JwtService
@@ -36,13 +37,15 @@ async def get_current_admin(
     except HTTPException as err:
         raise UnauthorizedError("유효하지 않거나 만료된 토큰입니다.") from err
 
-    admin_id = verified.payload.get("user_id")
+    # user 와 admin 은 별도 테이블이라 id 가 겹칠 수 있다.
+    # scope 가 없는 구버전 토큰과 사용자 토큰을 여기서 먼저 걸러낸다.
+    if verified.payload.get("scope") != JwtScope.ADMIN:
+        raise ForbiddenError("관리자 토큰이 아닙니다.")
+
+    admin_id = verified.payload.get("sub")
     if admin_id is None:
         raise UnauthorizedError("유효하지 않은 토큰입니다.")
 
-    # user 와 admin 은 별도 테이블이고 토큰 페이로드에 구분자가 없다.
-    # 따라서 admin 테이블에 실제로 존재하는지가 사용자 토큰을 걸러내는 유일한 방어선이다.
-    # 페이로드에 scope("admin"|"user") 클레임을 넣으면 DB 조회 전에 걸러낼 수 있다(회의 안건 B-3).
     admin = await Admin.get_or_none(id=int(admin_id))
     if admin is None:
         raise ForbiddenError("관리자 계정이 아닙니다.")

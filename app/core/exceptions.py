@@ -43,6 +43,32 @@ class UserNotFoundError(AppError):
     message = "사용자를 찾을 수 없습니다."
 
 
+class InvalidCredentialsError(AppError):
+    """이메일 열거를 막기 위해 계정 없음과 비밀번호 불일치를 구분하지 않는다."""
+
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "INVALID_CREDENTIALS"
+    message = "이메일 또는 비밀번호가 일치하지 않습니다."
+
+
+class InvalidTokenError(AppError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "INVALID_TOKEN"
+    message = "유효하지 않거나 만료된 토큰입니다."
+
+
+class AccountSuspendedError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "ACCOUNT_SUSPENDED"
+    message = "정지된 계정입니다. 관리자에게 문의하세요."
+
+
+class AccountWithdrawnError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "ACCOUNT_WITHDRAWN"
+    message = "사용할 수 없는 계정입니다."
+
+
 class EmailAlreadyExistsError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "EMAIL_ALREADY_EXISTS"
