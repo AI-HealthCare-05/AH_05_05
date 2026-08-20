@@ -1,6 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { toast } from 'sonner';
 import { Button, Header, Input } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
 import {
@@ -130,6 +129,7 @@ export function MedicationSchedulePage() {
     start: MedicationStartPoint,
     times: MealTimes,
     payloadSlots: Record<number, MealSlot[]>,
+    reason: 'schedule-saved' | 'schedule-skipped',
   ) {
     if (!schedule) return;
     setSaving(true);
@@ -142,8 +142,8 @@ export function MedicationSchedulePage() {
           .filter((m) => m.timesPerDay !== null)
           .map((m) => ({ medicationId: m.medicationId, slots: payloadSlots[m.medicationId] ?? [] })),
       });
-      toast.success('복약 시간을 저장했어요');
-      navigate('/dev/flow-complete');
+      // DevFlowComplete가 reason별로 안내 문구를 갈라 씁니다.
+      navigate('/dev/flow-complete', { state: { reason } });
     } finally {
       setSaving(false);
     }
@@ -151,7 +151,7 @@ export function MedicationSchedulePage() {
 
   function handleSave() {
     if (!startSlot || !startDate) return;
-    void persist({ date: startDate, slot: startSlot }, mealTimes, slots);
+    void persist({ date: startDate, slot: startSlot }, mealTimes, slots, 'schedule-saved');
   }
 
   /** 건너뛰기 — 기본 시각 + 자동 배정 결과를 그대로 보냅니다. */
@@ -165,6 +165,7 @@ export function MedicationSchedulePage() {
       { date: startDate || todayISO(), slot: startSlot ?? 'morning' },
       DEFAULT_MEAL_TIMES,
       defaults,
+      'schedule-skipped',
     );
   }
 
