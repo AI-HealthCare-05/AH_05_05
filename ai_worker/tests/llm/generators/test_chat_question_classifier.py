@@ -243,4 +243,4 @@ async def test_classify_converts_client_failure_to_classification_error() -> Non
     assert isinstance(
         exc_info.value.__cause__,
         RuntimeError,
-    )q
+    )
