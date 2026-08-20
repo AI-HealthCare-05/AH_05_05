@@ -1,7 +1,8 @@
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     field_validator,
     model_validator,
@@ -12,7 +13,9 @@ from ai_worker.schemas.enums import (
     ChatRiskLevel,
     ChatRole,
     ChatRoute,
+    SafetyStatus,
 )
+from ai_worker.schemas.guide import GuideSource
 
 
 class ChatHistoryMessage(BaseModel):
@@ -177,3 +180,63 @@ class ChatInputRiskResult(BaseModel):
             raise ValueError("HIGH 위험도에는 reason_codes가 필요합니다.")
 
         return self
+
+
+CHAT_ANSWER_SCHEMA_VERSION = "chat-answer-result-v1"
+
+
+class ChatAnswerSupplement(BaseModel):
+    """LLM이 생성할 수 있는 채팅 보충정보."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    general_response: list[str] = Field(
+        default_factory=list,
+    )
+    public_information: list[str] = Field(
+        default_factory=list,
+    )
+    lifestyle_guidance: list[str] = Field(
+        default_factory=list,
+    )
+
+
+class ChatAnswerResult(BaseModel):
+    """안전성 검사 전후에 사용하는 최종 채팅 결과."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    request_id: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    care_episode_id: int = Field(ge=1)
+    answer: str = Field(min_length=1)
+
+    intent: ChatIntent
+    route: ChatRoute | None
+    risk_level: ChatRiskLevel
+
+    lifestyle_guidance_label: Literal["AI 생성 일반 안내"] = "AI 생성 일반 안내"
+
+    safety_status: SafetyStatus
+    safety_reason_codes: list[str] = Field(
+        default_factory=list,
+    )
+    sources: list[GuideSource] = Field(
+        default_factory=list,
+    )
+
+    patient_context_hash: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    model_name: str = Field(min_length=1)
+    model_version: str | None = None
+    prompt_version: str = Field(min_length=1)
+    schema_version: str = Field(min_length=1)
