@@ -147,6 +147,36 @@ class TestAdminPasswordChangeAPI(AdminPasswordTestBase):
         assert body["field"] == "newPassword"
         assert body["message"] == "비밀번호는 8자 이상이어야 합니다."
 
+    async def test_rejects_new_password_missing_character_types(self) -> None:
+        """길이만 채운 비밀번호는 거부한다(사용자 회원가입과 같은 정책)."""
+        response = await request(
+            "PATCH", ADMIN_PASSWORD_URL, headers=auth_header(self.admin.id), json=change_payload(new="alllowercase")
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["code"] == "VALIDATION_ERROR"
+        await self.admin.refresh_from_db()
+        assert verify_password(ADMIN_PASSWORD, self.admin.hashed_password)
+
+    async def test_reports_which_character_types_are_missing(self) -> None:
+        """무엇이 부족한지 알려줘야 사용자가 고칠 수 있다."""
+        response = await request(
+            "PATCH", ADMIN_PASSWORD_URL, headers=auth_header(self.admin.id), json=change_payload(new="lowercase12")
+        )
+
+        body = response.json()
+        assert body["field"] == "newPassword"
+        assert body["message"] == "비밀번호에 대문자, 특수문자를 각각 1개 이상 포함해야 합니다."
+
+    async def test_accepts_new_password_with_all_character_types(self) -> None:
+        response = await request(
+            "PATCH", ADMIN_PASSWORD_URL, headers=auth_header(self.admin.id), json=change_payload(new="Combo1234!x")
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        await self.admin.refresh_from_db()
+        assert verify_password("Combo1234!x", self.admin.hashed_password)
+
     async def test_requires_authentication(self) -> None:
         response = await request("PATCH", ADMIN_PASSWORD_URL, json=change_payload())
 
