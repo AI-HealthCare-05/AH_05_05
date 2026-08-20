@@ -10,6 +10,7 @@ from app.dependencies.admin import (
     require_admin_or_staff,
 )
 from app.dtos.admin_auth import AdminPasswordChangeRequest, AdminPasswordChangeResponse
+from app.dtos.admin_dashboard import DashboardQuery, DashboardResponse
 from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
 from app.dtos.admins import (
     AdminCreateRequest,
@@ -23,6 +24,7 @@ from app.dtos.admins import (
 )
 from app.dtos.pagination import PageResponse
 from app.services.admin_auth import AdminAuthService
+from app.services.admin_dashboard import AdminDashboardService
 from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
 
@@ -32,6 +34,20 @@ admin_router = APIRouter(prefix="/admin", tags=["admin"])
 AdminOrStaff = Annotated[AuthenticatedAdmin, Depends(require_admin_or_staff)]
 # 계정 생성·상태 변경은 ADMIN 전용.
 AdminOnly = Annotated[AuthenticatedAdmin, Depends(require_admin)]
+
+
+@admin_router.get(
+    "/dashboard",
+    response_model=DashboardResponse,
+    status_code=status.HTTP_200_OK,
+    summary="운영 대시보드 통계",
+)
+async def get_dashboard(
+    _: AdminOrStaff,
+    query: Annotated[DashboardQuery, Query()],
+    service: Annotated[AdminDashboardService, Depends(AdminDashboardService)],
+) -> DashboardResponse:
+    return await service.get_dashboard(query)
 
 
 @admin_router.get(
