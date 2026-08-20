@@ -1,18 +1,28 @@
+import logging
 from datetime import timedelta
 
 from tortoise.expressions import Q
 from tortoise.queryset import QuerySet
+from tortoise.transactions import in_transaction
 
-from app.core.exceptions import UserNotFoundError
-from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
+from app.core.exceptions import CannotReactivateWithdrawnError, UserNotFoundError
+from app.dtos.admin_users import (
+    AdminUserDetailResponse,
+    AdminUserListItem,
+    AdminUserListQuery,
+    AdminUserStatusUpdateRequest,
+    AdminUserStatusUpdateResponse,
+)
 from app.dtos.pagination import PageResponse
 from app.models.alarms import Alarm
-from app.models.enums import AlarmStatus
+from app.models.enums import AccountStatus, AlarmStatus
 from app.models.users import User, UserSettings
+
+logger = logging.getLogger(__name__)
 
 
 class AdminUserQueryService:
-    """REQ-ADMIN-004 / REQ-ADMIN-005 관리자용 사용자 조회."""
+    """REQ-ADMIN-004 / REQ-ADMIN-005 / REQ-ADMIN-006 관리자용 사용자 조회·상태 변경."""
 
     async def get_users(self, query: AdminUserListQuery) -> PageResponse[AdminUserListItem]:
         queryset = self._apply_filters(User.all(), query)
@@ -59,6 +69,40 @@ class AdminUserQueryService:
             is_terms_agreed=is_terms_agreed,
             created_at=user.created_at,
             active_alarm_count=active_alarm_count,
+        )
+
+    async def update_status(
+        self, request: AdminUserStatusUpdateRequest, actor_admin_id: int
+    ) -> AdminUserStatusUpdateResponse:
+        """REQ-ADMIN-006 사용자 정지·해제. 일괄 처리이며 하나라도 실패하면 전체 롤백한다."""
+        user_ids = sorted(set(request.user_ids))
+
+        async with in_transaction():
+            # 검사와 UPDATE 사이에 대상이 탈퇴하면 탈퇴 계정이 되살아난다. 잠근 뒤 검사한다.
+            targets = await User.filter(id__in=user_ids).select_for_update()
+
+            missing = set(user_ids) - {user.id for user in targets}
+            if missing:
+                # 부분 성공을 허용하면 프론트가 무엇이 실패했는지 알 수 없다. 전체를 거부한다.
+                raise UserNotFoundError(f"존재하지 않는 사용자가 포함되어 있습니다: {sorted(missing)}")
+
+            withdrawn = sorted(user.id for user in targets if user.status == AccountStatus.WITHDRAWN)
+            if withdrawn:
+                raise CannotReactivateWithdrawnError(f"탈퇴한 사용자가 포함되어 있습니다: {withdrawn}")
+
+            updated_count = await User.filter(id__in=user_ids).update(status=request.status)
+
+        # 정지 이력은 남겨야 나중에 "왜 막혔는지" 를 추적할 수 있다.
+        logger.info(
+            "user status changed: ids=%s status=%s by=%s",
+            user_ids,
+            request.status,
+            actor_admin_id,
+        )
+        return AdminUserStatusUpdateResponse(
+            updated_count=updated_count,
+            status=request.status,
+            user_ids=user_ids,
         )
 
     @staticmethod
