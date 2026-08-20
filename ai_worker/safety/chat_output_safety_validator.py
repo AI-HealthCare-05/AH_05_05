@@ -15,26 +15,64 @@ from ai_worker.schemas.safety import SafetyResult
 
 
 class RuleBasedChatOutputSafetyValidator:
-    _MEDICATION_CHANGE_PATTERNS = (
-        re.compile(
-            r"(?:"
-            r"약|복용(?:량)?|용량|횟수|"
-            r"아스피린"
-            r")"
-            r".{0,20}"
-            r"(?:"
-            r"중단(?:하세요|하십시오)?|"
-            r"끊(?:으세요|으십시오)?|"
-            r"안\s*먹(?:어도\s*(?:됩니다|돼요))?|"
-            r"건너뛰(?:세요|십시오)?|"
-            r"증량(?:하세요|하십시오)?|"
-            r"감량(?:하세요|하십시오)?|"
-            r"늘리(?:세요|십시오)?|"
-            r"줄이(?:세요|십시오)?|"
-            r"변경(?:하세요|하십시오)|"
-            r"바꾸(?:세요|십시오)?"
-            r")"
-        ),
+    _MEDICATION_CHANGE_ACTION_EXPRESSION = (
+        r"(?:"
+        r"(?:중단|변경|증량|감량)\s*"
+        r"(?:"
+        r"하세요|하십시오|해야\s*합니다|"
+        r"해도\s*(?:됩니다|돼요)|해\s*주세요|"
+        r"하셔도\s*(?:됩니다|돼요)|"
+        r"하셔야\s*합니다|하시기\s*바랍니다|"
+        r"해\s*주시기\s*바랍니다"
+        r")|"
+        r"끊\s*"
+        r"(?:"
+        r"으세요|으십시오|어야\s*합니다|"
+        r"어도\s*(?:됩니다|돼요)|어\s*주세요|"
+        r"으셔도\s*(?:됩니다|돼요)|"
+        r"으셔야\s*합니다|으시기\s*바랍니다"
+        r")|"
+        r"안\s*먹어도\s*(?:됩니다|돼요)|"
+        r"복용\s*하지\s*않아도\s*(?:됩니다|돼요)|"
+        r"건너뛰\s*"
+        r"(?:"
+        r"세요|십시오|어야\s*합니다|"
+        r"어도\s*(?:됩니다|돼요)|어\s*주세요|"
+        r"셔도\s*(?:됩니다|돼요)|"
+        r"셔야\s*합니다|시기\s*바랍니다"
+        r")|"
+        r"(?:늘리|줄이)\s*"
+        r"(?:"
+        r"세요|십시오|셔도\s*(?:됩니다|돼요)|"
+        r"셔야\s*합니다|시기\s*바랍니다"
+        r")|"
+        r"(?:늘려|줄여)\s*"
+        r"(?:"
+        r"야\s*합니다|도\s*(?:됩니다|돼요)|"
+        r"주세요|주시기\s*바랍니다"
+        r")|"
+        r"바꾸\s*"
+        r"(?:"
+        r"세요|십시오|셔도\s*(?:됩니다|돼요)|"
+        r"셔야\s*합니다|시기\s*바랍니다"
+        r")|"
+        r"바꿔\s*"
+        r"(?:"
+        r"야\s*합니다|도\s*(?:됩니다|돼요)|"
+        r"주세요|주시기\s*바랍니다"
+        r")"
+        r")"
+    )
+    _MEDICATION_CHANGE_ACTION_PATTERN = re.compile(
+        _MEDICATION_CHANGE_ACTION_EXPRESSION,
+        re.IGNORECASE,
+    )
+    _ANCHORED_MEDICATION_CHANGE_ACTION_PATTERN = re.compile(
+        rf"(?:"
+        rf"{_MEDICATION_CHANGE_ACTION_EXPRESSION}|"
+        rf"하지\s*않아도\s*(?:됩니다|돼요)"
+        rf")",
+        re.IGNORECASE,
     )
 
     _DIAGNOSTIC_PATTERNS = (
@@ -75,9 +113,9 @@ class RuleBasedChatOutputSafetyValidator:
                 message=("환자 확정 복약정보와 답변 내용이 일치하지 않아 답변을 차단했습니다."),
             )
 
-        if self._matches_any(
-            text=result.answer,
-            patterns=(self._MEDICATION_CHANGE_PATTERNS),
+        if self._has_medication_change_instruction(
+            patient_context=patient_context,
+            result=result,
         ):
             return SafetyResult(
                 status=SafetyStatus.BLOCKED,
@@ -116,6 +154,82 @@ class RuleBasedChatOutputSafetyValidator:
             status=SafetyStatus.SAFE,
             message=("채팅 답변 안전성 검사를 통과했습니다."),
         )
+
+    @classmethod
+    def _has_medication_change_instruction(
+        cls,
+        patient_context: PatientContext,
+        result: ChatAnswerResult,
+    ) -> bool:
+        normalized_text = cls._normalize_spacing(result.answer)
+
+        if result.intent == ChatIntent.MEDICATION and cls._MEDICATION_CHANGE_ACTION_PATTERN.search(normalized_text):
+            return True
+
+        medication_names = {
+            medication.name.strip() for medication in patient_context.medications if medication.name.strip()
+        }
+        if cls._has_cross_sentence_medication_change(
+            text=normalized_text,
+            medication_names=medication_names,
+        ):
+            return True
+
+        anchors = {
+            "약",
+            "복용",
+            "복용량",
+            "용량",
+            "횟수",
+            *medication_names,
+        }
+        anchor_pattern = "|".join(
+            re.escape(anchor)
+            for anchor in sorted(
+                anchors,
+                key=len,
+                reverse=True,
+            )
+        )
+        medication_change_pattern = re.compile(
+            rf"(?:{anchor_pattern})"
+            rf"[^.!?。！？]{{0,30}}?"
+            rf"{cls._ANCHORED_MEDICATION_CHANGE_ACTION_PATTERN.pattern}",
+            re.IGNORECASE,
+        )
+
+        return bool(medication_change_pattern.search(normalized_text))
+
+    @classmethod
+    def _has_cross_sentence_medication_change(
+        cls,
+        text: str,
+        medication_names: set[str],
+    ) -> bool:
+        if not medication_names:
+            return False
+
+        medication_name_pattern = "|".join(
+            re.escape(name)
+            for name in sorted(
+                medication_names,
+                key=len,
+                reverse=True,
+            )
+        )
+        cross_sentence_pattern = re.compile(
+            rf"(?:{medication_name_pattern})"
+            rf"[^.!?。！？]{{0,80}}[.!?。！？]\s*"
+            rf"(?:[-•]\s*)?"
+            rf"(?:"
+            rf"내일부터|오늘부터|지금부터|앞으로|"
+            rf"이제부터|다음부터"
+            rf")?\s*"
+            rf"{cls._MEDICATION_CHANGE_ACTION_PATTERN.pattern}",
+            re.IGNORECASE,
+        )
+
+        return bool(cross_sentence_pattern.search(text))
 
     @classmethod
     def _has_medication_mismatch(

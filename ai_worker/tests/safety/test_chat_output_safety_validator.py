@@ -116,6 +116,187 @@ async def test_validate_blocks_medication_change_variants(
     assert "MEDICATION_CHANGE_INSTRUCTION" in safety_result.reason_codes
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "처방받은 약을 임의로 중단하지 마세요.",
+        "약을 임의로 변경하지 마세요.",
+        "복용량을 임의로 줄이지 마세요.",
+        "처방받은 약을 임의로 중단하\n지 마세요.",
+    ],
+)
+async def test_validate_allows_medication_safety_warning(
+    answer: str,
+) -> None:
+    validator = RuleBasedChatOutputSafetyValidator()
+    result = build_result(answer=(f"{answer}\n\n이 안내는 의료진의 진료를 대체하지 않습니다."))
+
+    safety_result = await validator.validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.SAFE
+    assert safety_result.reason_codes == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "약을 중단해야 합니다.",
+        "약을 중단 하세요.",
+        "약을 중단\n하세요.",
+        "약 용량을 증량\n해야 합니다.",
+        "약 용량을 감량해야 합니다.",
+        ("약을 임의로 중단하지 마세요. 하지만 내일부터 감량하세요."),
+    ],
+)
+async def test_validate_blocks_explicit_medication_change_directive(
+    answer: str,
+) -> None:
+    validator = RuleBasedChatOutputSafetyValidator()
+    result = build_result(answer=(f"{answer}\n\n이 안내는 의료진의 진료를 대체하지 않습니다."))
+
+    safety_result = await validator.validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in (safety_result.reason_codes)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "약을 중단해도 됩니다.",
+        "약을 중단해 주세요.",
+        "약을 건너뛰어도 됩니다.",
+        "약 용량을 줄여도 됩니다.",
+        "약을 중단해도\n됩니다.",
+    ],
+)
+async def test_validate_blocks_medication_change_permission_or_request(
+    answer: str,
+) -> None:
+    result = build_result(answer=(f"{answer}\n\n이 안내는 의료진의 진료를 대체하지 않습니다."))
+
+    safety_result = await RuleBasedChatOutputSafetyValidator().validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in (safety_result.reason_codes)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "약을 중단하셔도 됩니다.",
+        "약 용량을 줄이셔야 합니다.",
+        "약을 변경하시기 바랍니다.",
+        "약을 중단하셔도\n됩니다.",
+    ],
+)
+async def test_validate_blocks_honorific_medication_change_directive(
+    answer: str,
+) -> None:
+    result = build_result(answer=(f"{answer}\n\n이 안내는 의료진의 진료를 대체하지 않습니다."))
+
+    safety_result = await RuleBasedChatOutputSafetyValidator().validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in (safety_result.reason_codes)
+
+
+async def test_validate_allows_non_medication_permission() -> None:
+    result = build_result(
+        answer=(
+            "약을 임의로 중단하지 마세요. 운동은 하지 않아도 됩니다.\n\n이 안내는 의료진의 진료를 대체하지 않습니다."
+        )
+    )
+
+    safety_result = await RuleBasedChatOutputSafetyValidator().validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.SAFE
+    assert safety_result.reason_codes == []
+
+
+async def test_validate_blocks_directive_for_confirmed_medication_name() -> None:
+    patient_context = PatientContext(
+        user_id=1,
+        care_episode_id=100,
+        confirmation_hash="a" * 64,
+        diagnoses=["뇌졸중"],
+        medications=[
+            PatientMedication(
+                medication_id=101,
+                name="와파린",
+                dose="1정",
+                times_per_day=1,
+                days=7,
+            )
+        ],
+    )
+    result = build_result(answer=("와파린을 중단하세요.\n\n이 안내는 의료진의 진료를 대체하지 않습니다.")).model_copy(
+        update={
+            "intent": ChatIntent.LIFESTYLE,
+            "route": ChatRoute.PATIENT_AND_RAG,
+        }
+    )
+
+    safety_result = await RuleBasedChatOutputSafetyValidator().validate(
+        patient_context=patient_context,
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in (safety_result.reason_codes)
+
+
+async def test_validate_blocks_cross_sentence_medication_directive() -> None:
+    patient_context = PatientContext(
+        user_id=1,
+        care_episode_id=100,
+        confirmation_hash="a" * 64,
+        diagnoses=["뇌졸중"],
+        medications=[
+            PatientMedication(
+                medication_id=101,
+                name="와파린",
+                dose="1정",
+                times_per_day=1,
+                days=7,
+            )
+        ],
+    )
+    result = build_result(
+        answer=(
+            "와파린은 현재 복용 중입니다. 내일부터 중단해도 됩니다.\n\n이 안내는 의료진의 진료를 대체하지 않습니다."
+        )
+    ).model_copy(
+        update={
+            "intent": ChatIntent.LIFESTYLE,
+            "route": ChatRoute.PATIENT_AND_RAG,
+        }
+    )
+
+    safety_result = await RuleBasedChatOutputSafetyValidator().validate(
+        patient_context=patient_context,
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in (safety_result.reason_codes)
+
+
 async def test_validate_blocks_treatment_decision() -> None:
     validator = RuleBasedChatOutputSafetyValidator()
     result = build_result(answer=("현재 상태에는 수술이 필요합니다.\n\n이 안내는 의료진의 진료를 대체하지 않습니다."))

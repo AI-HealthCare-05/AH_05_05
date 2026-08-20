@@ -6,6 +6,10 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
+from ai_worker.llm.prompts.prompt_assets import (
+    CHAT_ANSWER_PRINCIPLES,
+    LIFESTYLE_MEDICINE_COACH_PERSONA,
+)
 from ai_worker.schemas.chat import (
     ChatAnswerRequest,
     ChatClassificationResult,
@@ -15,29 +19,14 @@ from ai_worker.schemas.guideline import (
 )
 from ai_worker.schemas.patient import PatientContext
 
-CHAT_ANSWER_PROMPT_VERSION = "chat-answer-prompt-v1"
+CHAT_ANSWER_PROMPT_VERSION = "chat-answer-prompt-v2"
 
-SYSTEM_PROMPT = """
-당신은 퇴원 환자와 보호자가 저장된 환자정보와
-공공 의료자료를 쉽게 이해하도록 돕는 안내 도우미입니다.
-
-다음 원칙을 반드시 지키세요.
-
-1. 환자 확정정보가 가장 높은 우선순위입니다.
-2. 공공자료는 환자 확정정보를 보충하는 설명에만 사용합니다.
-3. 환자 확정정보를 생성하거나 수정하지 마세요.
-4. 약의 시작, 중단, 변경, 용량 또는 복용 횟수를 지시하지 마세요.
-5. 새로운 진단을 내리거나 치료 방법을 결정하지 마세요.
-6. public_information은 제공된 공공자료에서만 작성하세요.
-7. lifestyle_guidance는 위험이 낮은 일반 생활관리 안내만 작성하세요.
-8. general_response는 일반적인 대화 응답에만 사용하세요.
-9. 근거가 부족한 항목은 빈 목록으로 반환하세요.
-10. 안전 안내 문구는 생성하지 마세요.
-11. 출력에는 다음 세 필드만 포함하세요.
-    - general_response
-    - public_information
-    - lifestyle_guidance
-""".strip()
+SYSTEM_PROMPT = "\n\n".join(
+    (
+        LIFESTYLE_MEDICINE_COACH_PERSONA,
+        CHAT_ANSWER_PRINCIPLES,
+    )
+)
 
 
 def build_chat_answer_messages(
