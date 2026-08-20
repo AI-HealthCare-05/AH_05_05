@@ -87,6 +87,20 @@ class EmailAlreadyExistsError(AppError):
     message = "이미 등록된 이메일입니다."
 
 
+class CannotResetSuspendedError(AppError):
+    """정지를 풀지 않고 비밀번호만 재발급하면 정지가 무의미해진다."""
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_RESET_SUSPENDED"
+    message = "정지된 계정은 재발송할 수 없습니다."
+
+
+class CannotResetWithdrawnError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_RESET_WITHDRAWN"
+    message = "탈퇴한 계정은 재발송할 수 없습니다."
+
+
 class LastActiveAdminError(AppError):
     """활성 ADMIN 이 0명이 되는 것을 막는다.
 

@@ -36,6 +36,17 @@ class AdminStatusUpdateRequest(CamelModel):
     status: Literal[AccountStatus.SUSPENDED, AccountStatus.ACTIVE]
 
 
+class AdminPasswordResetResponse(CamelModel):
+    """REQ-ADMIN-003 임시 비밀번호 재발송 결과."""
+
+    admin_id: int
+    email: str
+    # 재발송하면 항상 PENDING 으로 돌아간다(임시 비밀번호를 다시 바꿔야 하므로).
+    status: AccountStatus
+    # false 면 비밀번호는 바뀌었지만 새 임시 비밀번호가 전달되지 않은 상태다.
+    email_sent: bool
+
+
 class AdminStatusUpdateResponse(CamelModel):
     updated_count: int
     status: AccountStatus

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from tortoise import fields, models
 
 from app.core.utils.security import generate_session_salt
@@ -22,7 +24,8 @@ class Admin(models.Model):
     # 갱신 시점은 app/services/admin_session.py 의 rotate_session_salt 참고.
     # 기본값은 DB 가 아니라 코드에서 만든다(계정마다 서로 다른 값이어야 한다).
     session_salt = fields.CharField(max_length=32, default=generate_session_salt)
-    approved_at = fields.DatetimeField(null=True)
+    # null=True 인데 타입 주석이 없으면 정적 분석이 datetime 으로 좁혀 None 대입을 막는다.
+    approved_at: datetime | None = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True, null=True)
 

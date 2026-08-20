@@ -17,6 +17,7 @@ from app.dtos.admins import (
     AdminDetailResponse,
     AdminListItem,
     AdminListQuery,
+    AdminPasswordResetResponse,
     AdminStatusUpdateRequest,
     AdminStatusUpdateResponse,
 )
@@ -94,6 +95,20 @@ async def update_admin_status(
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminStatusUpdateResponse:
     return await service.update_status(request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.post(
+    "/accounts/{admin_id}/password/reset",
+    response_model=AdminPasswordResetResponse,
+    status_code=status.HTTP_200_OK,
+    summary="임시 비밀번호 재발송",
+)
+async def reset_admin_password(
+    actor: AdminOnly,
+    admin_id: Annotated[int, Path(ge=1)],
+    service: Annotated[AdminQueryService, Depends(AdminQueryService)],
+) -> AdminPasswordResetResponse:
+    return await service.reset_password(admin_id, actor_admin_id=actor.admin_id)
 
 
 @admin_router.get(

@@ -1,6 +1,4 @@
 import logging
-import secrets
-import string
 
 from tortoise.expressions import Q
 from tortoise.queryset import QuerySet
@@ -8,29 +6,29 @@ from tortoise.transactions import in_transaction
 
 from app.core.exceptions import (
     AdminNotFoundError,
+    CannotResetSuspendedError,
+    CannotResetWithdrawnError,
     CannotSuspendSelfError,
     EmailAlreadyExistsError,
     LastActiveAdminError,
 )
-from app.core.utils.security import hash_password
 from app.dtos.admins import (
     AdminCreateRequest,
     AdminCreateResponse,
     AdminDetailResponse,
     AdminListItem,
     AdminListQuery,
+    AdminPasswordResetResponse,
     AdminStatusUpdateRequest,
     AdminStatusUpdateResponse,
 )
 from app.dtos.pagination import PageResponse
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
-from app.services.admin_email import send_temporary_password
+from app.services.admin_credentials import issue_temporary_password
 from app.services.admin_session import rotate_session_salt
 
 logger = logging.getLogger(__name__)
-
-TEMPORARY_PASSWORD_LENGTH = 12
 
 
 class AdminQueryService:
@@ -73,10 +71,10 @@ class AdminQueryService:
             if await Admin.filter(email=email).exists():
                 raise EmailAlreadyExistsError()
 
-            temporary_password = self._generate_temporary_password()
+            credential = issue_temporary_password()
             admin = await Admin.create(
                 email=email,
-                hashed_password=hash_password(temporary_password),
+                hashed_password=credential.hashed_password,
                 name=request.name,
                 role=request.role,
                 status=AccountStatus.ACTIVE if request.is_active else AccountStatus.PENDING,
@@ -86,12 +84,8 @@ class AdminQueryService:
         # 발송은 트랜잭션 밖에서 한다. 실패해도 계정 생성을 되돌리지 않는다.
         # 되돌리면 관리자는 "계정이 안 만들어졌다"고만 알게 되는데, 실제로는 메일만
         # 실패한 것이라 상황을 구분할 수 없다. emailSent 로 알려주는 편이 낫다.
-        #
-        # 다만 발송에 실패하면 그 계정은 비밀번호를 아무도 모르는 상태가 되고,
-        # 이메일이 UNIQUE 라 재등록도 막힌다. 재발송 수단(REQ-ADMIN-003)이 필요하다.
-        email_sent = send_temporary_password(name=request.name, email=email, temporary_password=temporary_password)
-        # 평문은 발송에만 쓰고 즉시 버린다. 응답·로그 어디에도 남기지 않는다.
-        del temporary_password
+        # 발송에 실패해도 재발송(REQ-ADMIN-003)으로 복구할 수 있다.
+        email_sent = credential.send_to(name=request.name, email=email)
 
         logger.info(
             "admin created: id=%s by=%s role=%s email_sent=%s",
@@ -109,6 +103,50 @@ class AdminQueryService:
             created_by_admin_id=admin.created_by_admin_id,  # type: ignore[attr-defined]
             approved_at=admin.approved_at,
             created_at=admin.created_at,
+            email_sent=email_sent,
+        )
+
+    async def reset_password(self, admin_id: int, actor_admin_id: int) -> AdminPasswordResetResponse:
+        """REQ-ADMIN-003 임시 비밀번호 재발송.
+
+        등록 시 메일 발송이 실패하면 비밀번호를 아무도 모르는 계정이 남는데,
+        이메일이 UNIQUE 라 재등록도 막힌다. 그 상황을 푸는 유일한 경로다.
+        """
+        admin = await Admin.get_or_none(id=admin_id)
+        if admin is None:
+            raise AdminNotFoundError()
+
+        # 정지를 풀지 않고 비밀번호만 새로 주면 정지가 무의미해진다.
+        if admin.status == AccountStatus.SUSPENDED:
+            raise CannotResetSuspendedError()
+        if admin.status == AccountStatus.WITHDRAWN:
+            raise CannotResetWithdrawnError()
+
+        credential = issue_temporary_password()
+        admin.hashed_password = credential.hashed_password
+        # 임시 비밀번호를 다시 받은 상태이므로 활성 계정도 PENDING 으로 돌린다.
+        # 비밀번호를 바꿔야 관리자 기능을 다시 쓸 수 있다.
+        admin.status = AccountStatus.PENDING
+        # approved_at 은 "현재 활성 상태가 된 시각"이다(change_password 가 전이할 때마다
+        # 덮어쓴다). PENDING 으로 돌아갔는데 값이 남아 있으면 목록에서 모순으로 보이므로 비운다.
+        admin.approved_at = None
+        # 기존 세션을 모두 끊는다. 재발송은 계정을 넘겨받는 상황이라 이전 세션이 살아 있으면 안 된다.
+        rotate_session_salt(admin)
+        await admin.save()
+
+        # 등록과 같은 정책. 발송이 실패해도 되돌리지 않고 결과만 알린다.
+        email_sent = credential.send_to(name=admin.name, email=admin.email)
+
+        logger.info(
+            "admin password reset: id=%s by=%s email_sent=%s",
+            admin.id,
+            actor_admin_id,
+            email_sent,
+        )
+        return AdminPasswordResetResponse(
+            admin_id=admin.id,
+            email=admin.email,
+            status=admin.status,
             email_sent=email_sent,
         )
 
@@ -181,11 +219,6 @@ class AdminQueryService:
             approved_at=admin.approved_at,
             created_at=admin.created_at,
         )
-
-    @staticmethod
-    def _generate_temporary_password() -> str:
-        alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
-        return "".join(secrets.choice(alphabet) for _ in range(TEMPORARY_PASSWORD_LENGTH))
 
     @staticmethod
     def _apply_filters(queryset: QuerySet[Admin], query: AdminListQuery) -> QuerySet[Admin]:
