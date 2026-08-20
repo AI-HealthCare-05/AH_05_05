@@ -168,12 +168,27 @@ def test_ocr_job_uses_temporary_structured_result_contract() -> None:
 def test_recovery_models_preserve_citations_and_patient_sources() -> None:
     recovery, _ = load_recovery_chat_models()
 
-    assert recovery.RecoveryGuide._meta.fields_map["care_episode"].model_name == "models.CareEpisode"
+    guide_fields = recovery.RecoveryGuide._meta.fields_map
+    assert guide_fields["care_episode"].model_name == "models.CareEpisode"
+    for field_name in (
+        "guide_content",
+        "model_name",
+        "prompt_version",
+        "schema_version",
+        "safety_reason_codes",
+        "completed_at",
+    ):
+        assert guide_fields[field_name].null is False
+    assert "safety_reason_code" not in guide_fields
+
     assert recovery.RecoveryGuideSource._meta.unique_together == (("recovery_guide", "citation_order"),)
     assert "extracted_field" not in recovery.RecoveryGuideSource._meta.fields_map
     assert recovery.RecoveryGuideSource._meta.fields_map["medication"].on_delete == fields.CASCADE
     assert recovery.RecoveryGuideSource._meta.fields_map["care_advice"].null is True
     assert recovery.RecoveryGuideSource._meta.fields_map["follow_up_visit"].null is True
+    assert recovery.RecoveryGuideSource._meta.fields_map["source_page_number"].null is True
+    assert len(recovery.RecoveryGuideSource._meta.fields_map["source_page_number"].validators) == 1
+    assert recovery.RecoveryGuideSource._meta.fields_map["source_license"].max_length == 255
 
 
 def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
@@ -186,6 +201,9 @@ def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
     assert "extracted_field" not in chat.ChatMessageSource._meta.fields_map
     assert chat.ChatMessageSource._meta.fields_map["medication"].on_delete == fields.CASCADE
     assert chat.ChatMessageSource._meta.fields_map["care_advice"].null is True
+    assert chat.ChatMessageSource._meta.fields_map["source_page_number"].null is True
+    assert len(chat.ChatMessageSource._meta.fields_map["source_page_number"].validators) == 1
+    assert chat.ChatMessageSource._meta.fields_map["source_license"].max_length == 255
 
 
 def test_alarm_models_preserve_subscription_and_optional_source_relations() -> None:
