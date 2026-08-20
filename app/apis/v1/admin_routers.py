@@ -13,9 +13,11 @@ from app.dtos.admin_auth import AdminPasswordChangeRequest, AdminPasswordChangeR
 from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
 from app.dtos.admins import (
     AdminCreateRequest,
+    AdminCreateResponse,
     AdminDetailResponse,
     AdminListItem,
     AdminListQuery,
+    AdminPasswordResetResponse,
     AdminStatusUpdateRequest,
     AdminStatusUpdateResponse,
 )
@@ -48,7 +50,7 @@ async def list_admins(
 
 @admin_router.post(
     "/accounts",
-    response_model=AdminDetailResponse,
+    response_model=AdminCreateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="관리자 등록",
 )
@@ -56,7 +58,7 @@ async def create_admin(
     actor: AdminOnly,
     request: AdminCreateRequest,
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
-) -> AdminDetailResponse:
+) -> AdminCreateResponse:
     return await service.create_admin(request, actor_admin_id=actor.admin_id)
 
 
@@ -93,6 +95,20 @@ async def update_admin_status(
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminStatusUpdateResponse:
     return await service.update_status(request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.post(
+    "/accounts/{admin_id}/password/reset",
+    response_model=AdminPasswordResetResponse,
+    status_code=status.HTTP_200_OK,
+    summary="임시 비밀번호 재발송",
+)
+async def reset_admin_password(
+    actor: AdminOnly,
+    admin_id: Annotated[int, Path(ge=1)],
+    service: Annotated[AdminQueryService, Depends(AdminQueryService)],
+) -> AdminPasswordResetResponse:
+    return await service.reset_password(admin_id, actor_admin_id=actor.admin_id)
 
 
 @admin_router.get(

@@ -2,17 +2,9 @@ from typing import Annotated
 
 from pydantic import AfterValidator, EmailStr, Field
 
+from app.core.validators.user_validators import validate_password
 from app.dtos.base import CamelModel
 from app.models.enums import AccountStatus, AdminRole
-
-MIN_PASSWORD_LENGTH = 8
-
-
-def validate_password_length(value: str) -> str:
-    # Field(min_length=...) 을 쓰면 Pydantic 기본 영문 메시지가 나가므로 직접 검사한다.
-    if len(value) < MIN_PASSWORD_LENGTH:
-        raise ValueError(f"비밀번호는 {MIN_PASSWORD_LENGTH}자 이상이어야 합니다.")
-    return value
 
 
 class AdminLoginRequest(CamelModel):
@@ -48,7 +40,9 @@ class AdminPasswordChangeRequest(CamelModel):
     """REQ-ADMIN-009. 대상은 토큰의 sub 로 정하며 관리자 ID 를 받지 않는다."""
 
     current_password: str = Field(min_length=1)
-    new_password: Annotated[str, AfterValidator(validate_password_length)]
+    # 사용자 회원가입과 같은 검증기를 쓴다. 권한이 더 큰 관리자 쪽 정책이 더 느슨하면 안 되고,
+    # 함수를 공유하면 두 곳의 정책이 어긋날 일도 없다.
+    new_password: Annotated[str, AfterValidator(validate_password)]
 
 
 class AdminPasswordChangeResponse(CamelModel):
