@@ -50,6 +50,24 @@ class AdminListItem(CamelModel):
     status: AccountStatus
 
 
+class AdminCreateResponse(CamelModel):
+    """등록 응답. 조회 응답과 달리 메일 발송 결과를 함께 알려준다.
+
+    발송에 실패해도 계정 생성은 롤백하지 않으므로, 관리자가 이 값으로 상황을 알 수 있어야 한다.
+    """
+
+    admin_id: int
+    name: str
+    email: str
+    role: AdminRole
+    status: AccountStatus
+    created_by_admin_id: int | None = None
+    approved_at: datetime | None = None
+    created_at: datetime
+    # false 면 계정은 만들어졌지만 임시 비밀번호가 전달되지 않은 상태다.
+    email_sent: bool
+
+
 class AdminDetailResponse(CamelModel):
     """REQ-ADMIN-010 관리자 상세 조회 응답."""
 

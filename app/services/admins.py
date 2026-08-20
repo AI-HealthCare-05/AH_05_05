@@ -15,6 +15,7 @@ from app.core.exceptions import (
 from app.core.utils.security import hash_password
 from app.dtos.admins import (
     AdminCreateRequest,
+    AdminCreateResponse,
     AdminDetailResponse,
     AdminListItem,
     AdminListQuery,
@@ -24,6 +25,7 @@ from app.dtos.admins import (
 from app.dtos.pagination import PageResponse
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
+from app.services.admin_email import send_temporary_password
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,7 @@ class AdminQueryService:
             raise AdminNotFoundError()
         return self._to_detail(admin)
 
-    async def create_admin(self, request: AdminCreateRequest, actor_admin_id: int) -> AdminDetailResponse:
+    async def create_admin(self, request: AdminCreateRequest, actor_admin_id: int) -> AdminCreateResponse:
         """REQ-ADMIN-008 관리자 등록. 임시 비밀번호는 서버가 만들어 메일로만 전달한다."""
         email = str(request.email)
 
@@ -80,15 +82,34 @@ class AdminQueryService:
                 created_by_admin_id=actor_admin_id,
             )
 
-            # TODO(#19): 임시 비밀번호를 이메일로 발송한다(REQ-ADMIN-008).
-            #   발송이 실패하면 이 트랜잭션을 롤백해야 한다. 계정만 생성되면
-            #   비밀번호를 아무도 모르는 상태가 되어 그 계정을 영영 쓸 수 없다.
-            #   재발송 수단(REQ-ADMIN-003)도 함께 필요하다.
-            #   평문 비밀번호는 응답·로그 어디에도 남기지 않는다.
-            del temporary_password
+        # 발송은 트랜잭션 밖에서 한다. 실패해도 계정 생성을 되돌리지 않는다.
+        # 되돌리면 관리자는 "계정이 안 만들어졌다"고만 알게 되는데, 실제로는 메일만
+        # 실패한 것이라 상황을 구분할 수 없다. emailSent 로 알려주는 편이 낫다.
+        #
+        # 다만 발송에 실패하면 그 계정은 비밀번호를 아무도 모르는 상태가 되고,
+        # 이메일이 UNIQUE 라 재등록도 막힌다. 재발송 수단(REQ-ADMIN-003)이 필요하다.
+        email_sent = send_temporary_password(name=request.name, email=email, temporary_password=temporary_password)
+        # 평문은 발송에만 쓰고 즉시 버린다. 응답·로그 어디에도 남기지 않는다.
+        del temporary_password
 
-        logger.info("admin created: id=%s by=%s role=%s", admin.id, actor_admin_id, request.role)
-        return self._to_detail(admin)
+        logger.info(
+            "admin created: id=%s by=%s role=%s email_sent=%s",
+            admin.id,
+            actor_admin_id,
+            request.role,
+            email_sent,
+        )
+        return AdminCreateResponse(
+            admin_id=admin.id,
+            name=admin.name,
+            email=admin.email,
+            role=admin.role,
+            status=admin.status,
+            created_by_admin_id=admin.created_by_admin_id,  # type: ignore[attr-defined]
+            approved_at=admin.approved_at,
+            created_at=admin.created_at,
+            email_sent=email_sent,
+        )
 
     async def update_status(self, request: AdminStatusUpdateRequest, actor_admin_id: int) -> AdminStatusUpdateResponse:
         """REQ-ADMIN-011 관리자 정지·해제. 일괄 처리이며 하나라도 실패하면 전체 롤백한다."""
