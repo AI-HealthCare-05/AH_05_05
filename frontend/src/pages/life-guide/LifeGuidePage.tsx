@@ -31,12 +31,20 @@ const PERIOD_LABEL: Record<RoutinePeriod, string> = {
 export function LifeGuidePage() {
   const navigate = useNavigate();
   const [guide, setGuide] = useState<LifeGuide | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getLifeGuide().then((data) => {
-      if (!cancelled) setGuide(data);
-    });
+    getLifeGuide()
+      .then((data) => {
+        if (!cancelled) setGuide(data);
+      })
+      // catch 가 없으면 실 API 오류에서 guide 가 null 로 남아 "불러오는 중"에
+      // 영구히 멈춥니다. 로딩과 실패는 화면에서 구분되어야 합니다.
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : '안내를 불러오지 못했어요.');
+      });
     return () => {
       cancelled = true;
     };
@@ -57,7 +65,9 @@ export function LifeGuidePage() {
       <Header title="생활관리" />
 
       <main className="flex flex-1 flex-col gap-5 px-page-x py-4">
-        {guide === null ? (
+        {loadError !== null ? (
+          <Card title="안내를 불러오지 못했어요">{loadError}</Card>
+        ) : guide === null ? (
           <p className="text-sm text-muted-foreground">불러오는 중...</p>
         ) : guide.records.length === 0 ? (
           <Card title="아직 안내가 없어요">
@@ -68,7 +78,7 @@ export function LifeGuidePage() {
         )}
       </main>
 
-      <BottomTabbar active="life" onChange={handleTabChange} />
+      <BottomTabbar active="life" onChange={handleTabChange} className="border-t border-border" />
     </div>
   );
 }

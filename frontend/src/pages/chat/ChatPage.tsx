@@ -48,6 +48,10 @@ export function ChatPage() {
         ...prev,
         { role: 'assistant', text: result.answer, sources: result.sources },
       ]);
+    } catch (error: unknown) {
+      // 목업은 실패하지 않지만 실 API(명세 15번)는 4xx·5xx 를 냅니다. catch 가 없으면
+      // 질문만 남고 답변도 오류도 없는 상태로 끝나서 사용자가 원인을 알 수 없습니다.
+      toast.error(error instanceof Error ? error.message : '답변을 가져오지 못했어요.');
     } finally {
       setPending(false);
     }
