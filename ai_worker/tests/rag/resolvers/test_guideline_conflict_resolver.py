@@ -147,3 +147,32 @@ async def test_resolve_requires_review_when_topic_is_missing() -> None:
     assert result.usable_guideline_chunks == []
     assert result.excluded_guideline_chunks == [unknown_chunk]
     assert result.reason is not None
+
+
+async def test_resolve_ignores_instruction_without_type() -> None:
+    resolver = RuleBasedGuidelineConflictResolver()
+    patient_context = PatientContext(
+        user_id=1,
+        care_episode_id=100,
+        diagnoses=["뇌졸중"],
+        instructions=[
+            PatientInstruction(
+                care_advice_id=1001,
+                content=("퇴원 후 무리한 활동을 피하세요."),
+                instruction_type=None,
+            )
+        ],
+    )
+    chunk = build_chunk(
+        chunk_id="topicless-chunk",
+        topic=None,
+    )
+
+    result = await resolver.resolve(
+        patient_context=patient_context,
+        guideline_chunks=[chunk],
+    )
+
+    assert result.status == ConflictStatus.NO_CONFLICT
+    assert result.usable_guideline_chunks == [chunk]
+    assert result.excluded_guideline_chunks == []

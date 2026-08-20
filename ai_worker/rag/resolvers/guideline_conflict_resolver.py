@@ -23,14 +23,16 @@ class RuleBasedGuidelineConflictResolver:
             )
 
         patient_instruction_topics = {
-            instruction.instruction_type.value.upper() for instruction in patient_context.instructions
+            instruction.instruction_type.value.upper()
+            for instruction in patient_context.instructions
+            if instruction.instruction_type is not None
         }
 
         if not patient_instruction_topics:
             return ConflictCheckResult(
                 status=ConflictStatus.NO_CONFLICT,
                 usable_guideline_chunks=(guideline_chunks),
-                reason=("비교할 환자 확정 지침이 없습니다."),
+                reason=("유형으로 비교할 수 있는 환자 확정 지침이 없습니다."),
             )
 
         usable_chunks: list[RetrievedGuidelineChunk] = []

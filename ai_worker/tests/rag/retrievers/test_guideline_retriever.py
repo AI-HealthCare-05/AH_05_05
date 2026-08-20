@@ -77,6 +77,28 @@ class FailingVectorStore(FakeVectorStore):
         raise RuntimeError("Qdrant 검색 연결 실패")
 
 
+class TopicFallbackVectorStore(FakeVectorStore):
+    def __init__(
+        self,
+        fallback_results: list[RetrievedGuidelineChunk],
+    ) -> None:
+        super().__init__(results=[])
+        self._fallback_results = fallback_results
+        self.received_search_queries: list[GuidelineSearchQuery] = []
+
+    async def search(
+        self,
+        query_vector: list[float],
+        search_query: GuidelineSearchQuery,
+    ) -> list[RetrievedGuidelineChunk]:
+        self.received_search_queries.append(search_query)
+
+        if search_query.topic is not None:
+            return []
+
+        return self._fallback_results
+
+
 def build_result() -> RetrievedGuidelineChunk:
     return RetrievedGuidelineChunk(
         vector_chunk_id="chunk-1",
@@ -196,3 +218,35 @@ async def test_search_converts_vector_store_failure_to_retrieval_error() -> None
         exc_info.value.__cause__,
         RuntimeError,
     )
+
+
+async def test_search_retries_without_topic_when_exact_topic_is_empty() -> None:
+    fallback_result = RetrievedGuidelineChunk(
+        vector_chunk_id="topicless-chunk",
+        content=("퇴원 후 생활관리와 회복에 관한 공공 가이드라인입니다."),
+        similarity_score=0.91,
+        metadata=GuidelineMetadata(
+            dataset_key="PUBLIC_GUIDELINE",
+            dataset_version="2020",
+            document_id=("stroke-guideline-2020"),
+            title="Stroke Guideline",
+            organization="Test Organization",
+            condition="STROKE",
+            care_phase="POST_DISCHARGE",
+            topic=None,
+            page_number=10,
+        ),
+    )
+    vector_store = TopicFallbackVectorStore(fallback_results=[fallback_result])
+    retriever = GuidelineRetriever(
+        embedding_provider=(FakeEmbeddingProvider()),
+        vector_store=vector_store,
+    )
+
+    results = await retriever.search(build_search_query())
+
+    assert results == [fallback_result]
+    assert [query.topic for query in vector_store.received_search_queries] == [
+        "MEDICATION",
+        None,
+    ]
