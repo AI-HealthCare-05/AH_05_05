@@ -15,6 +15,7 @@ import {
   SelectValue,
   StatusBadge,
 } from '@/shared/ui';
+import { cn } from '@/shared/lib/cn';
 import type { OcrMedication } from '@/entities/document';
 
 /**
@@ -61,7 +62,47 @@ const TIMES_PER_DAY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'prn', label: '필요 시' },
 ];
 
-const NOTE_PRESETS = ['식전', '식후', '취침 전', '필요 시'];
+/**
+ * 복용 시점 프리셋 — 여러 개를 함께 고를 수 있는 토글입니다.
+ *
+ * "필요 시"는 넣지 않습니다. 바로 위 "1일 복용 횟수" Select에 이미 같은 선택지가 있어서
+ * 둘 다 고르면 약 카드에 "필요 시 · 필요 시"로 찍힙니다. 복용 안 하는 조건은 Select
+ * 한 곳에서만 정합니다.
+ *
+ * 프리셋에서 뺐다고 frequencyText의 "필요 시" 접두어 가드를 지우면 안 됩니다 — OCR이
+ * note에 "필요 시, 6시간 이상 간격"처럼 보내오므로(entities/document/api.mock.ts 참고)
+ * 그 가드는 지금도 실제로 동작합니다.
+ *
+ * "취침 전"은 09 화면의 취침 슬롯 자동 배정(slotsFromTiming)이 이 문구를 읽어 켜므로
+ * 남겨둡니다. 09의 "취침" 슬롯과 이름이 겹쳐 보이지만 중복 입력이 아니라 그 입력값입니다.
+ */
+const NOTE_PRESETS = ['식전', '식후', '취침 전'];
+
+const NOTE_SEPARATOR = ' · ';
+
+/**
+ * 프리셋을 note에 넣거나 뺍니다.
+ *
+ * 기존 텍스트를 덮어쓰지 않아서 (1) 여러 개를 함께 고를 수 있고 (2) OCR 원문
+ * ("아침·저녁 식후")이 살아남습니다. 예전에는 칩을 누르면 note 전체가 프리셋 하나로
+ * 교체돼서 조합이 불가능했습니다.
+ */
+function toggleNoteToken(note: string, token: string): string {
+  const at = note.indexOf(token);
+  if (at === -1) {
+    const trimmed = note.trim();
+    return trimmed ? `${trimmed}${NOTE_SEPARATOR}${token}` : token;
+  }
+  // 토큰에 붙어 있던 구분자까지 같이 걷어냅니다. OCR 원문은 쉼표로 나누기도 하므로
+  // ("필요 시, 6시간 이상 간격") · 와 , 를 모두 구분자로 봅니다. 한 종류만 처리하면
+  // 토글을 끈 뒤 "아침," 처럼 구분자가 덜렁 남습니다.
+  const before = note.slice(0, at).replace(/[\s·,]+$/, '');
+  const after = note.slice(at + token.length).replace(/^[\s·,]+/, '');
+  const joined =
+    before && after ? `${before}${NOTE_SEPARATOR}${after}` : `${before}${after}`;
+  // 남은 양끝 구분자·공백을 한 번 더 걷어냅니다.
+  return joined.replace(/^[\s·,]+|[\s·,]+$/g, '');
+}
 
 function timesPerDayToSelectValue(timesPerDay: number | null): string {
   return timesPerDay === null ? 'prn' : String(timesPerDay);
@@ -72,11 +113,14 @@ function selectValueToTimesPerDay(value: string): number | null {
 }
 
 function frequencyText(med: OcrMedication): string {
+  const note = med.note.trim();
   if (med.timesPerDay === null) {
     // note가 이미 "필요 시"로 시작하면(예: "필요 시, 6시간 이상 간격") 접두어를 또 붙이지 않습니다.
-    return med.note.trim().startsWith('필요 시') ? med.note : `필요 시 · ${med.note}`;
+    return note.startsWith('필요 시') ? note : ['필요 시', note].filter(Boolean).join(' · ');
   }
-  return `1일 ${med.timesPerDay}회 · ${med.note}`;
+  // note 가 비어 있으면 구분자만 덜렁 남으므로(예: "1일 2회 · ") 빈 값은 걸러냅니다.
+  // 프리셋이 토글이 된 뒤로는 마지막 칩을 끄면 note 가 실제로 빈 문자열이 됩니다.
+  return [`1일 ${med.timesPerDay}회`, note].filter(Boolean).join(' · ');
 }
 
 function toDraft(med: OcrMedication): Draft {
@@ -242,16 +286,27 @@ export function MedicationEditDialog({
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold text-foreground">복용 시점</label>
               <div className="flex flex-wrap gap-2">
-                {NOTE_PRESETS.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setDraft({ ...draft, note: preset })}
-                    className="rounded-pill border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted-bg"
-                  >
-                    {preset}
-                  </button>
-                ))}
+                {NOTE_PRESETS.map((preset) => {
+                  const selected = draft.note.includes(preset);
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        setDraft({ ...draft, note: toggleNoteToken(draft.note, preset) })
+                      }
+                      className={cn(
+                        'min-h-touch rounded-pill border px-4 text-sm transition-colors',
+                        selected
+                          ? 'border-primary bg-primary-bg font-bold text-primary-strong'
+                          : 'border-border bg-card text-foreground hover:bg-muted-bg',
+                      )}
+                    >
+                      {preset}
+                    </button>
+                  );
+                })}
               </div>
               <Input
                 value={draft.note}
