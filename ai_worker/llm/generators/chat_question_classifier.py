@@ -3,6 +3,7 @@ from typing import Any, Protocol
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
+from ai_worker.domain.errors import ChatClassificationError
 from ai_worker.llm.prompts.chat_classification_prompt import (
     build_chat_classification_messages,
 )
@@ -15,10 +16,6 @@ from ai_worker.schemas.enums import (
     ChatRiskLevel,
     ChatRoute,
 )
-
-
-class ChatClassificationError(RuntimeError):
-    """질문 분류 호출 또는 응답 검증 실패."""
 
 
 class AsyncClassificationClient(Protocol):
@@ -40,6 +37,8 @@ class OpenAIChatQuestionClassifier:
         model: str,
         api_key: SecretStr | None = None,
         client: AsyncClassificationClient | None = None,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 2,
     ) -> None:
         normalized_model = model.strip()
 
@@ -56,6 +55,8 @@ class OpenAIChatQuestionClassifier:
             model=normalized_model,
             temperature=0,
             api_key=api_key,
+            timeout=timeout_seconds,
+            max_retries=max_retries,
         )
 
         self._client = chat_model.with_structured_output(

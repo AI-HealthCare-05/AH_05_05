@@ -115,6 +115,20 @@ class FakeVectorStore:
         self.received_chunks: list[GuidelineDocument] = []
         self.received_vectors: list[list[float]] = []
         self.deleted_document_ids: list[str] = []
+        self.existing_point_ids = ["old-point-1", "point-1"]
+        self.deleted_point_ids: list[str] = []
+
+    async def list_point_ids_by_document_id(
+        self,
+        document_id: str,
+    ) -> list[str]:
+        return list(self.existing_point_ids)
+
+    async def delete_points(
+        self,
+        point_ids: list[str],
+    ) -> None:
+        self.deleted_point_ids.extend(point_ids)
 
     async def delete_by_document_id(
         self,
@@ -167,6 +181,20 @@ class RecordingVectorStore(FakeVectorStore):
     ) -> None:
         self._events.append(f"delete:{document_id}")
 
+    async def list_point_ids_by_document_id(
+        self,
+        document_id: str,
+    ) -> list[str]:
+        self._events.append(f"list:{document_id}")
+        return await super().list_point_ids_by_document_id(document_id)
+
+    async def delete_points(
+        self,
+        point_ids: list[str],
+    ) -> None:
+        self._events.append(f"delete-points:{','.join(point_ids)}")
+        await super().delete_points(point_ids)
+
     async def upsert_chunks(
         self,
         chunks: list[GuidelineDocument],
@@ -186,6 +214,15 @@ class FailingEmbeddingProvider(FakeEmbeddingProvider):
         texts: list[str],
     ) -> list[list[float]]:
         raise RuntimeError("임베딩 생성 실패")
+
+
+class FailingUpsertVectorStore(FakeVectorStore):
+    async def upsert_chunks(
+        self,
+        chunks: list[GuidelineDocument],
+        vectors: list[list[float]],
+    ) -> list[str]:
+        raise RuntimeError("Qdrant upsert 실패")
 
 
 def build_metadata() -> GuidelineMetadata:
@@ -235,7 +272,8 @@ async def test_index_pdf_connects_pipeline() -> None:
         [1.0, 0.0, 0.0],
     ]
 
-    assert vector_store.deleted_document_ids == ["stroke-guideline-2020"]
+    assert vector_store.deleted_document_ids == []
+    assert vector_store.deleted_point_ids == ["old-point-1"]
 
     assert point_ids == [
         "point-1",
@@ -280,8 +318,9 @@ async def test_index_pdf_replaces_existing_chunks_after_embedding() -> None:
 
     assert events == [
         "embed",
-        ("delete:stroke-guideline-2020"),
+        "list:stroke-guideline-2020",
         "upsert",
+        "delete-points:old-point-1",
     ]
 
 
@@ -307,6 +346,28 @@ async def test_index_pdf_keeps_existing_chunks_when_embedding_fails() -> None:
     assert vector_store.deleted_document_ids == []
     assert vector_store.received_chunks == []
     assert vector_store.received_vectors == []
+
+
+async def test_index_pdf_keeps_existing_chunks_when_upsert_fails() -> None:
+    vector_store = FailingUpsertVectorStore()
+    indexer = GuidelineIndexer(
+        loader=FakeLoader(),
+        splitter=FakeSplitter(),
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=vector_store,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="upsert 실패",
+    ):
+        await indexer.index_pdf(
+            pdf_path=Path("stroke-guideline.pdf"),
+            metadata=build_metadata(),
+        )
+
+    assert vector_store.deleted_point_ids == []
+    assert vector_store.deleted_document_ids == []
 
 
 async def test_index_manifest_indexes_all_documents() -> None:

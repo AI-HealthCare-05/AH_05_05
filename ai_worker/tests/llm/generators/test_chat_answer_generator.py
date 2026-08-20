@@ -1,7 +1,10 @@
 from datetime import date
 from typing import Any
 
+import pytest
+
 from ai_worker.llm.generators.chat_answer_generator import (
+    ChatAnswerGenerationError,
     OpenAIChatAnswerGenerator,
 )
 from ai_worker.schemas.chat import (
@@ -44,6 +47,14 @@ class FakeChatAnswerClient:
         self.received_messages = list(messages)
 
         return self._response
+
+
+class FailingChatAnswerClient:
+    async def ainvoke(
+        self,
+        messages: Any,
+    ) -> ChatAnswerSupplement:
+        raise TimeoutError("OpenAI 응답 시간 초과")
 
 
 def build_request() -> ChatAnswerRequest:
@@ -230,3 +241,28 @@ async def test_generate_patient_only_uses_confirmed_medication_source() -> None:
     assert source.patient_source_kind == (PatientSourceKind.MEDICATION)
     assert source.medication_id == 101
     assert source.citation_order == 1
+
+
+async def test_generate_wraps_openai_failure_with_ai_exception_contract() -> None:
+    generator = OpenAIChatAnswerGenerator(
+        model="gpt-4o-mini",
+        client=FailingChatAnswerClient(),
+    )
+    classification = ChatClassificationResult(
+        intent=ChatIntent.LIFESTYLE,
+        route=ChatRoute.PATIENT_AND_RAG,
+        risk_level=ChatRiskLevel.CAUTION,
+        normalized_query="뇌졸중 퇴원 후 안전한 운동",
+    )
+
+    with pytest.raises(ChatAnswerGenerationError) as exc_info:
+        await generator.generate(
+            request=build_request(),
+            patient_context=build_patient_context(),
+            classification=classification,
+            guideline_chunks=[build_guideline_chunk()],
+        )
+
+    assert exc_info.value.code == "CHAT_ANSWER_GENERATION_FAILED"
+    assert exc_info.value.retryable is True
+    assert isinstance(exc_info.value.__cause__, TimeoutError)

@@ -244,3 +244,5 @@ async def test_classify_converts_client_failure_to_classification_error() -> Non
         exc_info.value.__cause__,
         RuntimeError,
     )
+    assert exc_info.value.code == "CHAT_CLASSIFICATION_FAILED"
+    assert exc_info.value.retryable is True

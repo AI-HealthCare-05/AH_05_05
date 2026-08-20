@@ -53,14 +53,61 @@ def test_chat_answer_result_tracks_versions_and_ai_label() -> None:
         model_name="gpt-4o-mini",
         model_version=None,
         prompt_version="chat-answer-prompt-v1",
-        schema_version="chat-answer-result-v1",
+        schema_version="chat-answer-result-v2",
     )
 
     assert result.lifestyle_guidance_label == ("AI 생성 일반 안내")
     assert result.patient_context_hash == "a" * 64
     assert result.model_name == "gpt-4o-mini"
     assert result.prompt_version == ("chat-answer-prompt-v1")
-    assert result.schema_version == ("chat-answer-result-v1")
+    assert result.schema_version == ("chat-answer-result-v2")
+
+
+def test_chat_answer_result_tracks_clarification_state() -> None:
+    result = ChatAnswerResult(
+        request_id="clarification-request-1",
+        care_episode_id=100,
+        answer="질문을 조금 더 구체적으로 알려주세요.",
+        intent=ChatIntent.GENERAL,
+        route=None,
+        risk_level=ChatRiskLevel.CAUTION,
+        needs_clarification=True,
+        safety_status=SafetyStatus.RESTRICTED,
+        patient_context_hash="a" * 64,
+        model_name="rule-based-clarification",
+        prompt_version="chat-clarification-v1",
+        schema_version="chat-answer-result-v2",
+    )
+
+    assert result.needs_clarification is True
+
+
+@pytest.mark.parametrize(
+    ("route", "needs_clarification"),
+    [
+        (None, False),
+        (ChatRoute.PATIENT_ONLY, True),
+    ],
+)
+def test_chat_answer_result_rejects_inconsistent_clarification_state(
+    route: ChatRoute | None,
+    needs_clarification: bool,
+) -> None:
+    with pytest.raises(ValidationError, match="명확화"):
+        ChatAnswerResult(
+            request_id="clarification-request-1",
+            care_episode_id=100,
+            answer="테스트 답변",
+            intent=ChatIntent.GENERAL,
+            route=route,
+            risk_level=ChatRiskLevel.CAUTION,
+            needs_clarification=needs_clarification,
+            safety_status=SafetyStatus.RESTRICTED,
+            patient_context_hash="a" * 64,
+            model_name="rule-based",
+            prompt_version="chat-test-v1",
+            schema_version="chat-answer-result-v2",
+        )
 
 
 def test_chat_answer_result_rejects_invalid_ai_label() -> None:

@@ -1,3 +1,5 @@
+from ai_worker.domain.chat_source_builder import ChatSourceBuilder
+from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.interfaces import (
     ChatAnswerGenerator,
     ChatInputRiskClassifier,
@@ -15,6 +17,7 @@ from ai_worker.llm.assemblers.chat_answer_assembler import (
 from ai_worker.llm.generators.chat_question_classifier import (
     ChatClassificationError,
 )
+from ai_worker.rag.errors import GuidelineRetrievalError
 from ai_worker.rag.query_builders.chat_query_builder import (
     ChatQueryBuilder,
 )
@@ -30,9 +33,7 @@ from ai_worker.schemas.enums import (
     ChatIntent,
     ChatRiskLevel,
     ChatRoute,
-    PatientSourceKind,
     SafetyStatus,
-    SourceType,
 )
 from ai_worker.schemas.guide import GuideSource
 from ai_worker.schemas.guideline import (
@@ -45,12 +46,19 @@ from ai_worker.schemas.safety import SafetyResult
 class AnswerChatMessageUseCase:
     RESTRICTED_MODEL_NAME = "rule-based-restricted"
     RESTRICTED_PROMPT_VERSION = "chat-restricted-v1"
+    PATIENT_ONLY_MODEL_NAME = "rule-based-patient-only"
+    PATIENT_ONLY_PROMPT_VERSION = "chat-patient-only-v1"
+    CLARIFICATION_MODEL_NAME = "rule-based-clarification"
+    CLARIFICATION_PROMPT_VERSION = "chat-clarification-v1"
 
     RESTRICTED_NOTICE = (
         "요청하신 내용은 의료적 판단 또는 복약 변경에 해당할 수 있어 사용자가 확인하고 저장한 확정된 정보만 안내합니다."
     )
 
     BLOCKED_NOTICE = "안전성 검사를 통과하지 못해 현재 답변을 제공할 수 없습니다. 의료진 또는 의료기관에 문의하세요."
+    CLARIFICATION_NOTICE = (
+        "질문을 조금 더 구체적으로 알려주세요. 복약, 다음 진료 일정, 생활관리 중 어떤 내용을 묻는지 확인이 필요합니다."
+    )
 
     def __init__(
         self,
@@ -91,11 +99,37 @@ class AnswerChatMessageUseCase:
         except ChatClassificationError:
             classification = self._build_classification_failure(minimum_risk)
 
+        if classification.needs_clarification:
+            return self._build_clarification_result(
+                request=request,
+                patient_context=patient_context,
+                classification=classification,
+            )
+
         if classification.route == ChatRoute.RESTRICTED:
             return self._build_restricted_result(
                 request=request,
                 patient_context=patient_context,
                 classification=classification,
+            )
+
+        if classification.route == ChatRoute.PATIENT_ONLY:
+            result = self._build_patient_only_result(
+                request=request,
+                patient_context=patient_context,
+                classification=classification,
+            )
+            safety_result = await self._safety_validator.validate(
+                patient_context=patient_context,
+                result=result,
+            )
+
+            return self._apply_safety_result(
+                request=request,
+                patient_context=patient_context,
+                classification=classification,
+                result=result,
+                safety_result=safety_result,
             )
 
         guideline_chunks: list[RetrievedGuidelineChunk] = []
@@ -106,14 +140,54 @@ class AnswerChatMessageUseCase:
                 classification=classification,
                 limit=limit,
             )
-            guideline_chunks = await self._retriever.search(search_query)
+            try:
+                guideline_chunks = await self._retriever.search(search_query)
+            except GuidelineRetrievalError:
+                fallback_classification = ChatClassificationResult(
+                    intent=classification.intent,
+                    route=ChatRoute.RESTRICTED,
+                    risk_level=classification.risk_level,
+                    reason_codes=list(
+                        dict.fromkeys(
+                            [
+                                *classification.reason_codes,
+                                "GUIDELINE_RETRIEVAL_FAILED",
+                            ]
+                        )
+                    ),
+                )
+                return self._build_restricted_result(
+                    request=request,
+                    patient_context=patient_context,
+                    classification=fallback_classification,
+                )
 
-        result = await self._answer_generator.generate(
-            request=request,
-            patient_context=patient_context,
-            classification=classification,
-            guideline_chunks=guideline_chunks,
-        )
+        try:
+            result = await self._answer_generator.generate(
+                request=request,
+                patient_context=patient_context,
+                classification=classification,
+                guideline_chunks=guideline_chunks,
+            )
+        except ChatAnswerGenerationError as error:
+            fallback_classification = ChatClassificationResult(
+                intent=classification.intent,
+                route=ChatRoute.RESTRICTED,
+                risk_level=classification.risk_level,
+                reason_codes=list(
+                    dict.fromkeys(
+                        [
+                            *classification.reason_codes,
+                            error.code,
+                        ]
+                    )
+                ),
+            )
+            return self._build_restricted_result(
+                request=request,
+                patient_context=patient_context,
+                classification=fallback_classification,
+            )
 
         safety_result = await self._safety_validator.validate(
             patient_context=patient_context,
@@ -188,7 +262,7 @@ class AnswerChatMessageUseCase:
             dict.fromkeys(
                 [
                     *minimum_risk.reason_codes,
-                    "QUESTION_CLASSIFICATION_FAILED",
+                    ChatClassificationError.code,
                 ]
             )
         )
@@ -237,27 +311,71 @@ class AnswerChatMessageUseCase:
             ),
         )
 
+    def _build_patient_only_result(
+        self,
+        request: ChatAnswerRequest,
+        patient_context: PatientContext,
+        classification: ChatClassificationResult,
+    ) -> ChatAnswerResult:
+        answer = self._answer_assembler.assemble(
+            patient_context=patient_context,
+            classification=classification,
+            supplement=ChatAnswerSupplement(),
+        )
+
+        return ChatAnswerResult(
+            request_id=request.request_id,
+            care_episode_id=patient_context.care_episode_id,
+            answer=answer,
+            intent=classification.intent,
+            route=classification.route,
+            risk_level=classification.risk_level,
+            safety_status=SafetyStatus.PENDING,
+            patient_context_hash=resolve_patient_context_hash(patient_context),
+            model_name=self.PATIENT_ONLY_MODEL_NAME,
+            model_version=None,
+            prompt_version=self.PATIENT_ONLY_PROMPT_VERSION,
+            schema_version=CHAT_ANSWER_SCHEMA_VERSION,
+            sources=self._build_restricted_sources(
+                patient_context=patient_context,
+                classification=classification,
+            ),
+        )
+
+    def _build_clarification_result(
+        self,
+        request: ChatAnswerRequest,
+        patient_context: PatientContext,
+        classification: ChatClassificationResult,
+    ) -> ChatAnswerResult:
+        reason_codes = list(classification.reason_codes)
+        if not reason_codes:
+            reason_codes.append("NEEDS_CLARIFICATION")
+
+        return ChatAnswerResult(
+            request_id=request.request_id,
+            care_episode_id=patient_context.care_episode_id,
+            answer=self.CLARIFICATION_NOTICE,
+            intent=classification.intent,
+            route=None,
+            risk_level=classification.risk_level,
+            needs_clarification=True,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=reason_codes,
+            patient_context_hash=resolve_patient_context_hash(patient_context),
+            model_name=self.CLARIFICATION_MODEL_NAME,
+            model_version=None,
+            prompt_version=self.CLARIFICATION_PROMPT_VERSION,
+            schema_version=CHAT_ANSWER_SCHEMA_VERSION,
+            sources=[],
+        )
+
     @staticmethod
     def _build_restricted_sources(
         patient_context: PatientContext,
         classification: ChatClassificationResult,
     ) -> list[GuideSource]:
-        if classification.intent != ChatIntent.MEDICATION:
-            return []
-
-        medications = (
-            medication for medication in (patient_context.medications) if medication.medication_id is not None
+        return ChatSourceBuilder.build_patient_sources(
+            patient_context=patient_context,
+            intent=classification.intent,
         )
-
-        return [
-            GuideSource(
-                source_type=(SourceType.PATIENT_SAVED_FIELD),
-                patient_source_kind=(PatientSourceKind.MEDICATION),
-                medication_id=(medication.medication_id),
-                citation_order=citation_order,
-            )
-            for citation_order, medication in enumerate(
-                medications,
-                start=1,
-            )
-        ]

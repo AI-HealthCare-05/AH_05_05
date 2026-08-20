@@ -1,3 +1,5 @@
+import pytest
+
 from ai_worker.safety.chat_output_safety_validator import (
     RuleBasedChatOutputSafetyValidator,
 )
@@ -69,6 +71,49 @@ async def test_validate_blocks_new_diagnostic_assertion() -> None:
 
     assert safety_result.status == SafetyStatus.BLOCKED
     assert "DIAGNOSTIC_ASSERTION" in safety_result.reason_codes
+
+
+async def test_validate_blocks_new_diagnosis_even_when_confirmed_diagnosis_is_mentioned() -> None:
+    validator = RuleBasedChatOutputSafetyValidator()
+    result = build_result(
+        answer=(
+            "기존 진단명은 뇌졸중입니다. 현재 증상은 폐렴으로 진단됩니다.\n\n"
+            "이 안내는 의료진의 진료를 대체하지 않습니다."
+        )
+    )
+
+    safety_result = await validator.validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.BLOCKED
+    assert "DIAGNOSTIC_ASSERTION" in safety_result.reason_codes
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "아스피린을 안 먹어도 됩니다.",
+        "아스피린 복용을 건너뛰세요.",
+        "아스피린 용량을 증량하세요.",
+        "아스피린 용량을 감량하세요.",
+        "아스피린 복용을\n중단하세요.",
+    ],
+)
+async def test_validate_blocks_medication_change_variants(
+    answer: str,
+) -> None:
+    validator = RuleBasedChatOutputSafetyValidator()
+    result = build_result(answer=(f"{answer}\n\n이 안내는 의료진의 진료를 대체하지 않습니다."))
+
+    safety_result = await validator.validate(
+        patient_context=build_patient_context(),
+        result=result,
+    )
+
+    assert safety_result.status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in safety_result.reason_codes
 
 
 async def test_validate_blocks_treatment_decision() -> None:

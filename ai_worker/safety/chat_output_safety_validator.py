@@ -25,9 +25,13 @@ class RuleBasedChatOutputSafetyValidator:
             r"(?:"
             r"중단(?:하세요|하십시오)?|"
             r"끊(?:으세요|으십시오)?|"
+            r"안\s*먹(?:어도\s*(?:됩니다|돼요))?|"
+            r"건너뛰(?:세요|십시오)?|"
+            r"증량(?:하세요|하십시오)?|"
+            r"감량(?:하세요|하십시오)?|"
             r"늘리(?:세요|십시오)?|"
             r"줄이(?:세요|십시오)?|"
-            r"변경(?:하세요|하십시오)?|"
+            r"변경(?:하세요|하십시오)|"
             r"바꾸(?:세요|십시오)?"
             r")"
         ),
@@ -84,11 +88,6 @@ class RuleBasedChatOutputSafetyValidator:
         if self._matches_any(
             text=result.answer,
             patterns=(self._DIAGNOSTIC_PATTERNS),
-        ) and not (
-            self._contains_confirmed_diagnosis(
-                text=result.answer,
-                patient_context=(patient_context),
-            )
         ):
             return SafetyResult(
                 status=SafetyStatus.BLOCKED,
@@ -155,28 +154,28 @@ class RuleBasedChatOutputSafetyValidator:
 
         return has_medical_reference and "대체" in normalized_answer
 
-    @staticmethod
-    def _contains_confirmed_diagnosis(
-        text: str,
-        patient_context: PatientContext,
-    ) -> bool:
-        normalized_text = text.lower()
-
-        return any(
-            diagnosis.strip().lower() in normalized_text
-            for diagnosis in (patient_context.diagnoses)
-            if diagnosis.strip()
-        )
-
-    @staticmethod
+    @classmethod
     def _matches_any(
+        cls,
         text: str,
         patterns: tuple[
             re.Pattern[str],
             ...,
         ],
     ) -> bool:
-        return any(pattern.search(text) for pattern in patterns)
+        normalized_text = cls._normalize_spacing(text)
+
+        return any(pattern.search(normalized_text) for pattern in patterns)
+
+    @staticmethod
+    def _normalize_spacing(
+        value: str,
+    ) -> str:
+        return re.sub(
+            r"\s+",
+            " ",
+            value,
+        ).strip()
 
     @staticmethod
     def _normalize_text(

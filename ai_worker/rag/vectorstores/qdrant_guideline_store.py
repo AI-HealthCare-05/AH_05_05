@@ -115,6 +115,64 @@ class QdrantGuidelineStore:
             wait=True,
         )
 
+    async def list_point_ids_by_document_id(
+        self,
+        document_id: str,
+    ) -> list[str]:
+        normalized_document_id = document_id.strip()
+        if not normalized_document_id:
+            raise ValueError("문서 ID는 비어 있을 수 없습니다.")
+
+        collection_exists = await self._client.collection_exists(self._collection_name)
+        if not collection_exists:
+            return []
+
+        document_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="metadata.document_id",
+                    match=models.MatchValue(value=normalized_document_id),
+                )
+            ]
+        )
+        point_ids: list[str] = []
+        offset = None
+
+        while True:
+            points, offset = await self._client.scroll(
+                collection_name=self._collection_name,
+                scroll_filter=document_filter,
+                limit=256,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+            point_ids.extend(str(point.id) for point in points)
+            if offset is None:
+                break
+
+        return point_ids
+
+    async def delete_points(
+        self,
+        point_ids: list[str],
+    ) -> None:
+        normalized_point_ids = list(dict.fromkeys(point_id.strip() for point_id in point_ids if point_id.strip()))
+        if not normalized_point_ids:
+            return
+
+        collection_exists = await self._client.collection_exists(self._collection_name)
+        if not collection_exists:
+            return
+
+        await self._client.delete(
+            collection_name=self._collection_name,
+            points_selector=models.PointIdsList(
+                points=normalized_point_ids,
+            ),
+            wait=True,
+        )
+
     async def search(
         self,
         query_vector: list[float],

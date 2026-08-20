@@ -45,6 +45,12 @@ def test_settings_read_worker_environment(
         "REDIS_CONSUMER_NAME",
         "worker-1",
     )
+    monkeypatch.setenv("REDIS_CLAIM_IDLE_MS", "120000")
+    monkeypatch.setenv("REDIS_MAX_ATTEMPTS", "5")
+    monkeypatch.setenv(
+        "REDIS_DEAD_LETTER_STREAM",
+        "public-index-jobs-dead",
+    )
 
     settings = worker_main.PublicGuidelineWorkerSettings(_env_file=None)
 
@@ -54,6 +60,9 @@ def test_settings_read_worker_environment(
     assert settings.REDIS_STREAM_NAME == "public-index-jobs"
     assert settings.REDIS_CONSUMER_GROUP == "public-index-workers"
     assert settings.REDIS_CONSUMER_NAME == "worker-1"
+    assert settings.REDIS_CLAIM_IDLE_MS == 120000
+    assert settings.REDIS_MAX_ATTEMPTS == 5
+    assert settings.REDIS_DEAD_LETTER_STREAM == "public-index-jobs-dead"
 
 
 def test_build_worker_returns_public_guideline_worker() -> None:

@@ -23,6 +23,8 @@ class OpenAIEmbeddingProvider:
         dimensions: int,
         api_key: SecretStr | None = None,
         client: AsyncEmbeddingClient | None = None,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 2,
     ) -> None:
         normalized_model = model.strip()
 
@@ -42,6 +44,8 @@ class OpenAIEmbeddingProvider:
                 model=normalized_model,
                 dimensions=dimensions,
                 api_key=api_key,
+                request_timeout=timeout_seconds,
+                max_retries=max_retries,
             )
         )
 

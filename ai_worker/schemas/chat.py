@@ -182,7 +182,7 @@ class ChatInputRiskResult(BaseModel):
         return self
 
 
-CHAT_ANSWER_SCHEMA_VERSION = "chat-answer-result-v1"
+CHAT_ANSWER_SCHEMA_VERSION = "chat-answer-result-v2"
 
 
 class ChatAnswerSupplement(BaseModel):
@@ -220,6 +220,7 @@ class ChatAnswerResult(BaseModel):
     intent: ChatIntent
     route: ChatRoute | None
     risk_level: ChatRiskLevel
+    needs_clarification: bool = False
 
     lifestyle_guidance_label: Literal["AI 생성 일반 안내"] = "AI 생성 일반 안내"
 
@@ -240,3 +241,11 @@ class ChatAnswerResult(BaseModel):
     model_version: str | None = None
     prompt_version: str = Field(min_length=1)
     schema_version: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_clarification_contract(self) -> Self:
+        if self.needs_clarification and self.route is not None:
+            raise ValueError("명확화 응답에는 route를 사용할 수 없습니다.")
+        if not self.needs_clarification and self.route is None:
+            raise ValueError("명확화 응답이 아니면 route가 필요합니다.")
+        return self

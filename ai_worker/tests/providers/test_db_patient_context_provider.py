@@ -5,6 +5,10 @@ import pytest
 import pytest_asyncio
 from tortoise import Tortoise
 
+from ai_worker.domain.errors import (
+    PatientContextNotFoundError,
+    UnconfirmedPatientContextError,
+)
 from ai_worker.providers.db_patient_context_provider import (
     DbPatientContextProvider,
 )
@@ -148,7 +152,7 @@ async def test_get_patient_context_rejects_unconfirmed_data(
     provider = DbPatientContextProvider()
 
     with pytest.raises(
-        ValueError,
+        UnconfirmedPatientContextError,
         match="확정",
     ):
         await provider.get_patient_context(
@@ -192,7 +196,7 @@ async def test_get_patient_context_rejects_other_users_episode(
     provider = DbPatientContextProvider()
 
     with pytest.raises(
-        ValueError,
+        PatientContextNotFoundError,
         match="찾을 수 없습니다",
     ):
         await provider.get_patient_context(

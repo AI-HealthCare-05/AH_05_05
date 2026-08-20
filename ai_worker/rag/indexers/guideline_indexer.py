@@ -52,12 +52,17 @@ class GuidelineIndexer:
 
         vectors = await self._embedding_provider.embed_documents(texts)
 
-        await self._vector_store.delete_by_document_id(metadata.document_id)
-
-        return await self._vector_store.upsert_chunks(
+        previous_point_ids = await self._vector_store.list_point_ids_by_document_id(metadata.document_id)
+        current_point_ids = await self._vector_store.upsert_chunks(
             chunks=chunks,
             vectors=vectors,
         )
+        current_point_id_set = set(current_point_ids)
+        obsolete_point_ids = [point_id for point_id in previous_point_ids if point_id not in current_point_id_set]
+        if obsolete_point_ids:
+            await self._vector_store.delete_points(obsolete_point_ids)
+
+        return current_point_ids
 
     async def index_manifest(
         self,

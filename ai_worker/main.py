@@ -86,6 +86,15 @@ class PublicGuidelineWorkerSettings(BaseSettings):
         default=5,
         gt=0,
     )
+    REDIS_CLAIM_IDLE_MS: int = Field(
+        default=60_000,
+        gt=0,
+    )
+    REDIS_MAX_ATTEMPTS: int = Field(
+        default=3,
+        gt=0,
+    )
+    REDIS_DEAD_LETTER_STREAM: str = "public-guideline-index-jobs-dead"
 
 
 def create_redis_client(
@@ -170,6 +179,9 @@ def build_worker(
         consumer_name=(settings.REDIS_CONSUMER_NAME),
         read_count=settings.REDIS_READ_COUNT,
         block_ms=settings.REDIS_BLOCK_MS,
+        claim_idle_ms=settings.REDIS_CLAIM_IDLE_MS,
+        max_attempts=settings.REDIS_MAX_ATTEMPTS,
+        dead_letter_stream=settings.REDIS_DEAD_LETTER_STREAM,
         logger=logger,
     )
 

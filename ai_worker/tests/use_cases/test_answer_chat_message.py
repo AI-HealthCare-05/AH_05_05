@@ -1,5 +1,10 @@
+from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.llm.generators.chat_question_classifier import (
     ChatClassificationError,
+)
+from ai_worker.rag.errors import (
+    GuidelineRetrievalError,
+    RetrievalFailureStage,
 )
 from ai_worker.rag.query_builders.chat_query_builder import (
     ChatQueryBuilder,
@@ -138,7 +143,7 @@ async def test_execute_patient_only_does_not_search_qdrant() -> None:
         question_classifier=(PatientOnlyQuestionClassifier()),
         query_builder=ChatQueryBuilder(),
         retriever=(UnexpectedGuidelineRetriever()),
-        answer_generator=(PatientOnlyAnswerGenerator()),
+        answer_generator=(UnexpectedAnswerGenerator()),
         safety_validator=(SafeChatOutputValidator()),
     )
 
@@ -149,6 +154,45 @@ async def test_execute_patient_only_does_not_search_qdrant() -> None:
     assert result.route == ChatRoute.PATIENT_ONLY
     assert result.safety_status == SafetyStatus.SAFE
     assert "진단명: 뇌졸중" in result.answer
+    assert result.model_name == "rule-based-patient-only"
+    assert result.schema_version == "chat-answer-result-v2"
+    assert len(result.sources) == 1
+    assert result.sources[0].patient_field is not None
+
+
+class ClarificationQuestionClassifier:
+    async def classify(
+        self,
+        request: ChatAnswerRequest,
+        minimum_risk: ChatInputRiskResult,
+    ) -> ChatClassificationResult:
+        return ChatClassificationResult(
+            intent=ChatIntent.GENERAL,
+            risk_level=ChatRiskLevel.CAUTION,
+            needs_clarification=True,
+            reason_codes=["AMBIGUOUS_QUESTION"],
+        )
+
+
+async def test_execute_clarification_skips_rag_and_answer_llm() -> None:
+    use_case = AnswerChatMessageUseCase(
+        patient_context_provider=FakePatientContextProvider(),
+        input_risk_classifier=LowRiskClassifier(),
+        question_classifier=ClarificationQuestionClassifier(),
+        query_builder=ChatQueryBuilder(),
+        retriever=UnexpectedGuidelineRetriever(),
+        answer_generator=UnexpectedAnswerGenerator(),
+        safety_validator=UnexpectedChatSafetyValidator(),
+    )
+
+    result = await use_case.execute(request=build_request())
+
+    assert result.needs_clarification is True
+    assert result.route is None
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "질문을 조금 더 구체적으로" in result.answer
+    assert "AMBIGUOUS_QUESTION" in result.safety_reason_codes
+    assert result.sources == []
 
 
 class RagQuestionClassifier:
@@ -253,6 +297,67 @@ async def test_execute_patient_and_rag_searches_qdrant() -> None:
     assert result.route == ChatRoute.PATIENT_AND_RAG
     assert result.safety_status == SafetyStatus.SAFE
     assert "가벼운 활동부터 시작할 수 있습니다." in result.answer
+
+
+class FailingGuidelineRetriever:
+    async def search(
+        self,
+        search_query: GuidelineSearchQuery,
+    ) -> list[RetrievedGuidelineChunk]:
+        raise GuidelineRetrievalError(
+            stage=RetrievalFailureStage.VECTOR_STORE,
+            message="Qdrant 검색 실패",
+        )
+
+
+async def test_execute_falls_back_to_confirmed_data_when_rag_fails() -> None:
+    use_case = AnswerChatMessageUseCase(
+        patient_context_provider=FakePatientContextProvider(),
+        input_risk_classifier=LowRiskClassifier(),
+        question_classifier=RagQuestionClassifier(),
+        query_builder=ChatQueryBuilder(),
+        retriever=FailingGuidelineRetriever(),
+        answer_generator=UnexpectedAnswerGenerator(),
+        safety_validator=UnexpectedChatSafetyValidator(),
+    )
+
+    result = await use_case.execute(request=build_request())
+
+    assert result.route == ChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "GUIDELINE_RETRIEVAL_FAILED" in result.safety_reason_codes
+    assert "확정된 정보만" in result.answer
+    assert result.sources == []
+
+
+class FailingAnswerGenerator:
+    async def generate(
+        self,
+        request: ChatAnswerRequest,
+        patient_context: PatientContext,
+        classification: ChatClassificationResult,
+        guideline_chunks: list[RetrievedGuidelineChunk],
+    ) -> ChatAnswerResult:
+        raise ChatAnswerGenerationError("OpenAI 답변 생성 실패")
+
+
+async def test_execute_falls_back_to_confirmed_data_when_answer_llm_fails() -> None:
+    use_case = AnswerChatMessageUseCase(
+        patient_context_provider=FakePatientContextProvider(),
+        input_risk_classifier=LowRiskClassifier(),
+        question_classifier=RagQuestionClassifier(),
+        query_builder=ChatQueryBuilder(),
+        retriever=ValidatingGuidelineRetriever(),
+        answer_generator=FailingAnswerGenerator(),
+        safety_validator=UnexpectedChatSafetyValidator(),
+    )
+
+    result = await use_case.execute(request=build_request(), limit=3)
+
+    assert result.route == ChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "CHAT_ANSWER_GENERATION_FAILED" in result.safety_reason_codes
+    assert "확정된 정보만" in result.answer
 
 
 class ConfirmedMedicationPatientContextProvider:
@@ -382,7 +487,7 @@ async def test_execute_converts_classification_failure_to_restricted() -> None:
     assert result.intent == ChatIntent.GENERAL
     assert result.risk_level == ChatRiskLevel.CAUTION
     assert result.safety_status == SafetyStatus.RESTRICTED
-    assert "QUESTION_CLASSIFICATION_FAILED" in result.safety_reason_codes
+    assert "CHAT_CLASSIFICATION_FAILED" in result.safety_reason_codes
     assert "확정된 정보만" in result.answer
     assert result.sources == []
 
@@ -482,14 +587,14 @@ class SupplementalMedicationAnswerGenerator:
         )
 
 
-async def test_execute_replaces_restricted_output_with_confirmed_information() -> None:
+async def test_execute_patient_only_returns_confirmed_medication_without_llm() -> None:
     use_case = AnswerChatMessageUseCase(
         patient_context_provider=(ConfirmedMedicationPatientContextProvider()),
         input_risk_classifier=LowRiskClassifier(),
         question_classifier=(MedicationPatientOnlyQuestionClassifier()),
         query_builder=ChatQueryBuilder(),
         retriever=UnexpectedGuidelineRetriever(),
-        answer_generator=(SupplementalMedicationAnswerGenerator()),
+        answer_generator=UnexpectedAnswerGenerator(),
         safety_validator=(RuleBasedChatOutputSafetyValidator()),
     )
 
@@ -503,12 +608,10 @@ async def test_execute_replaces_restricted_output_with_confirmed_information() -
         )
     )
 
-    assert result.route == ChatRoute.RESTRICTED
-    assert result.safety_status == SafetyStatus.RESTRICTED
-    assert "MISSING_MEDICAL_DISCLAIMER" in (result.safety_reason_codes)
+    assert result.route == ChatRoute.PATIENT_ONLY
+    assert result.safety_status == SafetyStatus.SAFE
 
     assert ("아스피린 · 1정 · 1일 1회 · 아침 식후 복용 · 7일") in result.answer
-    assert "확정된 정보만" in result.answer
     assert "LLM이 만든 추가 복약 설명" not in result.answer
 
     assert len(result.sources) == 1

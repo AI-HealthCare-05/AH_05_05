@@ -3,6 +3,8 @@ from typing import Any, Protocol
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
+from ai_worker.domain.chat_source_builder import ChatSourceBuilder
+from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.patient_context_hasher import (
     resolve_patient_context_hash,
 )
@@ -20,14 +22,7 @@ from ai_worker.schemas.chat import (
     ChatAnswerSupplement,
     ChatClassificationResult,
 )
-from ai_worker.schemas.enums import (
-    ChatIntent,
-    ChatRoute,
-    PatientSourceKind,
-    SafetyStatus,
-    SourceType,
-)
-from ai_worker.schemas.guide import GuideSource
+from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.guideline import (
     RetrievedGuidelineChunk,
 )
@@ -47,6 +42,8 @@ class OpenAIChatAnswerGenerator:
         model: str,
         api_key: SecretStr | None = None,
         client: AsyncChatAnswerClient | None = None,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 2,
     ) -> None:
         normalized_model = model.strip()
 
@@ -64,6 +61,8 @@ class OpenAIChatAnswerGenerator:
             model=normalized_model,
             temperature=0,
             api_key=api_key,
+            timeout=timeout_seconds,
+            max_retries=max_retries,
         )
 
         self._client = chat_model.with_structured_output(
@@ -90,15 +89,18 @@ class OpenAIChatAnswerGenerator:
             guideline_chunks=guideline_chunks,
         )
 
-        response = await self._client.ainvoke(messages)
+        try:
+            response = await self._client.ainvoke(messages)
 
-        if isinstance(
-            response,
-            ChatAnswerSupplement,
-        ):
-            supplement = response
-        else:
-            supplement = ChatAnswerSupplement.model_validate(response)
+            if isinstance(
+                response,
+                ChatAnswerSupplement,
+            ):
+                supplement = response
+            else:
+                supplement = ChatAnswerSupplement.model_validate(response)
+        except Exception as error:
+            raise ChatAnswerGenerationError("챗봇 답변 생성에 실패했습니다.") from error
 
         if not guideline_chunks:
             supplement = supplement.model_copy(
@@ -127,91 +129,10 @@ class OpenAIChatAnswerGenerator:
             model_version=None,
             prompt_version=(CHAT_ANSWER_PROMPT_VERSION),
             schema_version=(CHAT_ANSWER_SCHEMA_VERSION),
-            sources=self._build_sources(
+            sources=ChatSourceBuilder.build_sources(
                 patient_context=patient_context,
                 classification=classification,
                 supplement=supplement,
                 guideline_chunks=(guideline_chunks),
             ),
         )
-
-    @classmethod
-    def _build_sources(
-        cls,
-        patient_context: PatientContext,
-        classification: ChatClassificationResult,
-        supplement: ChatAnswerSupplement,
-        guideline_chunks: list[RetrievedGuidelineChunk],
-    ) -> list[GuideSource]:
-        source_data: list[dict[str, Any]] = []
-
-        if classification.intent == ChatIntent.LIFESTYLE:
-            source_data.extend(cls._build_lifestyle_patient_sources(patient_context))
-        if classification.intent == ChatIntent.MEDICATION:
-            source_data.extend(cls._build_medication_sources(patient_context))
-        if classification.route == ChatRoute.PATIENT_AND_RAG and supplement.public_information:
-            source_data.extend(cls._build_public_sources(guideline_chunks))
-
-        return [
-            GuideSource.model_validate(
-                {
-                    **data,
-                    "citation_order": (citation_order),
-                }
-            )
-            for citation_order, data in enumerate(
-                source_data,
-                start=1,
-            )
-        ]
-
-    @staticmethod
-    def _build_medication_sources(
-        patient_context: PatientContext,
-    ) -> list[dict[str, Any]]:
-        return [
-            {
-                "source_type": (SourceType.PATIENT_SAVED_FIELD),
-                "patient_source_kind": (PatientSourceKind.MEDICATION),
-                "medication_id": (medication.medication_id),
-            }
-            for medication in (patient_context.medications)
-            if medication.medication_id is not None
-        ]
-
-    @staticmethod
-    def _build_lifestyle_patient_sources(
-        patient_context: PatientContext,
-    ) -> list[dict[str, Any]]:
-        return [
-            {
-                "source_type": (SourceType.PATIENT_SAVED_FIELD),
-                "patient_source_kind": (PatientSourceKind.CARE_ADVICE),
-                "care_advice_id": (instruction.care_advice_id),
-            }
-            for instruction in (patient_context.instructions)
-            if (instruction.care_advice_id is not None)
-        ]
-
-    @staticmethod
-    def _build_public_sources(
-        guideline_chunks: list[RetrievedGuidelineChunk],
-    ) -> list[dict[str, Any]]:
-        return [
-            {
-                "source_type": (SourceType.PUBLIC_RAG_CHUNK),
-                "public_dataset_key": (chunk.metadata.dataset_key),
-                "dataset_version": (chunk.metadata.dataset_version),
-                "vector_chunk_id": (chunk.vector_chunk_id),
-                "source_record_key": (chunk.metadata.document_id),
-                "source_field": (chunk.metadata.section_title),
-                "chunk_type": (chunk.metadata.topic),
-                "source_title": (chunk.metadata.title),
-                "source_organization": (chunk.metadata.organization),
-                "source_url": (chunk.metadata.source_url),
-                "source_page_number": (chunk.metadata.page_number),
-                "source_license": (chunk.metadata.license),
-                "similarity_score": (chunk.similarity_score),
-            }
-            for chunk in guideline_chunks
-        ]
