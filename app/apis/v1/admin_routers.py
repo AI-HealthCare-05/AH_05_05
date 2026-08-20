@@ -1,8 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
-from app.dependencies.admin import AuthenticatedAdmin, require_admin, require_admin_or_staff
+from app.apis.v1.admin_auth_routers import REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH
+from app.dependencies.admin import (
+    AuthenticatedAdmin,
+    get_current_admin_allow_pending,
+    require_admin,
+    require_admin_or_staff,
+)
+from app.dtos.admin_auth import AdminPasswordChangeRequest, AdminPasswordChangeResponse
 from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
 from app.dtos.admins import (
     AdminCreateRequest,
@@ -14,6 +21,7 @@ from app.dtos.admins import (
     AdminStatusUpdateResponse,
 )
 from app.dtos.pagination import PageResponse
+from app.services.admin_auth import AdminAuthService
 from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
 
@@ -51,6 +59,27 @@ async def create_admin(
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminCreateResponse:
     return await service.create_admin(request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.patch(
+    "/accounts/password",
+    response_model=AdminPasswordChangeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="본인 비밀번호 변경",
+)
+async def change_password(
+    # 임시 비밀번호를 바꿀 유일한 경로라 PENDING 계정도 허용한다.
+    # 다른 관리자 API 는 get_current_admin(ACTIVE 전용)을 쓴다.
+    actor: Annotated[AuthenticatedAdmin, Depends(get_current_admin_allow_pending)],
+    request: AdminPasswordChangeRequest,
+    response: Response,
+    service: Annotated[AdminAuthService, Depends(AdminAuthService)],
+) -> AdminPasswordChangeResponse:
+    result = await service.change_password(actor.admin_id, request)
+    # 이전 리프레시 토큰은 지문 검증에서 이미 무효가 된다.
+    # 브라우저에 남은 쿠키까지 지워 다음 갱신에서 불필요한 401 을 만들지 않는다.
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH, httponly=True)
+    return result
 
 
 @admin_router.patch(

@@ -26,6 +26,7 @@ from app.dtos.pagination import PageResponse
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
 from app.services.admin_email import send_temporary_password
+from app.services.admin_session import rotate_session_salt
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,15 @@ class AdminQueryService:
 
             await self._ensure_active_admin_remains(request.status, admin_ids)
 
-            updated_count = await Admin.filter(id__in=admin_ids).update(status=request.status)
+            for admin in targets:
+                admin.status = request.status
+                if request.status == AccountStatus.SUSPENDED:
+                    # 정지 즉시 세션이 끊겨야 한다. 난수가 바뀌면 그 자체로 리프레시가 무효가 되므로,
+                    # 갱신 시점의 상태 재확인에만 기대지 않는다.
+                    rotate_session_salt(admin)
+                # 계정마다 난수가 달라야 해서 일괄 UPDATE 대신 개별로 저장한다(최대 100건).
+                await admin.save()
+            updated_count = len(targets)
 
         logger.info(
             "admin status changed: ids=%s status=%s by=%s",

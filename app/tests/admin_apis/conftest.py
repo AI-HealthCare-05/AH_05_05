@@ -14,12 +14,15 @@ BASE_URL = "http://test"
 ADMIN_ACCOUNTS_URL = "/api/v1/admin/accounts"
 ADMIN_STATUS_URL = "/api/v1/admin/accounts/status"
 ADMIN_USERS_URL = "/api/v1/admin/users"
+ADMIN_LOGIN_URL = "/api/v1/admin/auth/login"
+ADMIN_REFRESH_URL = "/api/v1/admin/auth/refresh"
+ADMIN_LOGOUT_URL = "/api/v1/admin/auth/logout"
+
+ADMIN_PASSWORD = "Password123!"
 
 
 def auth_header(admin_id: int) -> dict[str, str]:
-    token = AccessToken()
-    token["user_id"] = admin_id
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {AccessToken.for_admin(admin_id)}"}
 
 
 async def request(
@@ -29,8 +32,9 @@ async def request(
     headers: dict[str, str] | None = None,
     params: dict[str, Any] | None = None,
     json: dict[str, Any] | None = None,
+    cookies: dict[str, str] | None = None,
 ) -> Response:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL, cookies=cookies) as client:
         return await client.request(method, url, headers=headers, params=params, json=json)
 
 
@@ -45,7 +49,7 @@ async def create_admin(
     return await Admin.create(
         name=name,
         email=email,
-        hashed_password=hash_password("Password123!"),
+        hashed_password=hash_password(ADMIN_PASSWORD),
         role=role,
         status=status,
         created_by_admin_id=created_by_admin_id,
