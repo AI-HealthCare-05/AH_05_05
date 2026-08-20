@@ -45,3 +45,30 @@ class ConflictStatus(StrEnum):  # 데이터 충돌 상태
     )
     PUBLIC_SOURCE_EXCLUDED = "PUBLIC_SOURCE_EXCLUDED"  # 공공 출처 제외됨(충돌로 인해 일반 RAG 정보는 배제됨)
     REVIEW_REQUIRED = "REVIEW_REQUIRED"  # 검토 필요(사람/의료진의 직접적인 확인이 필요한 상태)
+
+
+class ChatRole(StrEnum):
+    USER = "USER"
+    ASSISTANT = "ASSISTANT"
+
+
+class ChatIntent(StrEnum):
+    PATIENT_FACT = "PATIENT_FACT"
+    MEDICATION = "MEDICATION"
+    FOLLOW_UP = "FOLLOW_UP"
+    WARNING_SIGN = "WARNING_SIGN"
+    LIFESTYLE = "LIFESTYLE"
+    GENERAL = "GENERAL"
+
+
+class ChatRoute(StrEnum):
+    PATIENT_ONLY = "PATIENT_ONLY"
+    PATIENT_AND_RAG = "PATIENT_AND_RAG"
+    GENERAL_GUIDANCE = "GENERAL_GUIDANCE"
+    RESTRICTED = "RESTRICTED"
+
+
+class ChatRiskLevel(StrEnum):
+    LOW = "LOW"
+    CAUTION = "CAUTION"
+    HIGH = "HIGH"
