@@ -1,3 +1,6 @@
+from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
+
 from ai_worker.domain.errors import (
     PatientContextNotFoundError,
     UnconfirmedPatientContextError,
@@ -47,7 +50,8 @@ class DbPatientContextProvider:
         follow_up_visits = await FollowUpVisit.filter(
             care_episode_id=care_episode_id,
         ).order_by(
-            "visit_at",
+            "visit_date",
+            "visit_time",
             "id",
         )
 
@@ -85,7 +89,10 @@ class DbPatientContextProvider:
             follow_up_schedules=[
                 FollowUpSchedule(
                     follow_up_visit_id=visit.id,
-                    visit_at=visit.visit_at,
+                    visit_at=self._combine_visit_at(
+                        visit_date=visit.visit_date,
+                        visit_time=visit.visit_time,
+                    ),
                     department=visit.department,
                     doctor_name=visit.doctor_name,
                     place=visit.place,
@@ -93,6 +100,17 @@ class DbPatientContextProvider:
                 )
                 for visit in follow_up_visits
             ],
+        )
+
+    @staticmethod
+    def _combine_visit_at(
+        visit_date: date,
+        visit_time: time | None,
+    ) -> datetime:
+        return datetime.combine(
+            visit_date,
+            visit_time or time.min,
+            tzinfo=ZoneInfo("Asia/Seoul"),
         )
 
     @staticmethod
