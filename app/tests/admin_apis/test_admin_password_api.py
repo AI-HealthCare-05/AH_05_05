@@ -195,21 +195,25 @@ class TestAdminPasswordChangeAPI(AdminPasswordTestBase):
         assert verify_password(ADMIN_PASSWORD, other.hashed_password)
 
 
-class TestPasswordChangeInvalidatesSessions(AdminPasswordTestBase):
+class TestPasswordChangeLeavesOtherSessions(AdminPasswordTestBase):
     async def _login_cookies(self) -> dict[str, str]:
         response = await request("POST", ADMIN_LOGIN_URL, json={"email": self.admin.email, "password": ADMIN_PASSWORD})
         return {REFRESH_COOKIE_NAME: response.cookies[REFRESH_COOKIE_NAME]}
 
-    async def test_old_refresh_token_stops_working(self) -> None:
-        """session_salt 가 갱신돼 이전 리프레시 토큰이 모두 무효가 된다."""
+    async def test_old_refresh_token_still_works(self) -> None:
+        """비밀번호를 바꿔도 다른 기기의 리프레시 토큰은 살아 있다.
+
+        의도한 동작은 아니지만 세션 무효화 수단을 두지 않기로 한 결과다.
+        발급된 JWT 를 개별 폐기할 방법이 없어 리프레시 수명이 지나야 정리된다.
+        모르고 지나치지 않도록 여기서 고정해 둔다.
+        """
         cookies = await self._login_cookies()
         assert (await request("POST", ADMIN_REFRESH_URL, cookies=cookies)).status_code == status.HTTP_200_OK
 
         await request("PATCH", ADMIN_PASSWORD_URL, headers=auth_header(self.admin.id), json=change_payload())
 
         response = await request("POST", ADMIN_REFRESH_URL, cookies=cookies)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.json()["code"] == "INVALID_TOKEN"
+        assert response.status_code == status.HTTP_200_OK
 
     async def test_new_login_works_with_new_password(self) -> None:
         await request("PATCH", ADMIN_PASSWORD_URL, headers=auth_header(self.admin.id), json=change_payload())
