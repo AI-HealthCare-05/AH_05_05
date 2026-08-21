@@ -5,26 +5,29 @@ from dateutil.relativedelta import relativedelta
 
 from app.core import config
 
+MIN_PASSWORD_LENGTH = 8
+
+# 비밀번호에 반드시 포함되어야 하는 문자 종류.
+_PASSWORD_CHARACTER_RULES = (
+    (r"[A-Z]", "대문자"),
+    (r"[a-z]", "소문자"),
+    (r"[0-9]", "숫자"),
+    (r"[^a-zA-Z0-9]", "특수문자"),
+)
+
 
 def validate_password(password: str) -> str:
-    if len(password) < 8:
-        raise ValueError("비밀번호는 8자 이상이어야 합니다.")
+    """사용자·관리자 공통 비밀번호 정책.
 
-    # 대문자를 포함하고 있는지
-    if not re.search(r"[A-Z]", password):
-        raise ValueError("비밀번호에는 대문자, 소문자, 특수문자, 숫자가 각 하나씩 포함되어야 합니다.")
+    두 곳이 같은 함수를 쓰므로 정책이 어긋날 일이 없다.
+    무엇이 부족한지 알려줘야 사용자가 고칠 수 있으므로, 빠진 종류를 모아서 알려준다.
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"비밀번호는 {MIN_PASSWORD_LENGTH}자 이상이어야 합니다.")
 
-    # 소문자를 포함하고 있는지
-    if not re.search(r"[a-z]", password):
-        raise ValueError("비밀번호에는 대문자, 소문자, 특수문자, 숫자가 각 하나씩 포함되어야 합니다.")
-
-    # 숫자를 포함하고 있는지
-    if not re.search(r"[0-9]", password):
-        raise ValueError("비밀번호에는 대문자, 소문자, 특수문자, 숫자가 각 하나씩 포함되어야 합니다.")
-
-    # 특수문자를 포함하고 있는지
-    if not re.search(r"[^a-zA-Z0-9]", password):
-        raise ValueError("비밀번호에는 대문자, 소문자, 특수문자, 숫자가 각 하나씩 포함되어야 합니다.")
+    missing = [label for pattern, label in _PASSWORD_CHARACTER_RULES if not re.search(pattern, password)]
+    if missing:
+        raise ValueError(f"비밀번호에 {', '.join(missing)}를 각각 1개 이상 포함해야 합니다.")
 
     return password
 

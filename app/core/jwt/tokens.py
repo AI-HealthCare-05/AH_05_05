@@ -1,5 +1,6 @@
 from calendar import timegm
 from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Self
 from uuid import uuid4
 
@@ -10,6 +11,21 @@ from app.models.users import User
 
 if TYPE_CHECKING:
     from app.core.jwt.backends import TokenBackend
+
+
+# 세션 무효화용 난수 클레임. admin.session_salt 와 대조한다.
+SESSION_SALT_CLAIM = "sid"
+
+
+class JwtScope(StrEnum):
+    """토큰이 어느 계정 종류에 발급됐는지 나타낸다.
+
+    user 와 admin 은 별도 테이블이라 id 만으로는 구분할 수 없다.
+    사용자 토큰에 USER 를 넣는 작업은 사용자 인증 담당 몫이며 규칙만 공유한다.
+    """
+
+    ADMIN = "admin"
+    USER = "user"
 
 
 class Token:
@@ -81,6 +97,24 @@ class Token:
         token["user_id"] = user.id
         return token
 
+    @classmethod
+    def for_admin(cls, admin_id: int, session_salt: str | None = None) -> Self:
+        """관리자 토큰을 만든다.
+
+        user 와 admin 은 별도 테이블이라 id 가 겹칠 수 있다. scope 가 없으면
+        사용자 토큰으로 관리자 API 를 호출할 수 있으므로 반드시 함께 넣는다.
+
+        session_salt 를 넣으면 그 값이 갱신될 때 토큰이 무효가 된다(비밀번호 변경·정지·역할 변경).
+        리프레시 토큰에만 필요하며, 액세스 토큰은 수명이 짧아 넣지 않아도 된다.
+        """
+        token = cls()
+        # JWT 표준상 sub 는 문자열이어야 한다. 정수로 넣으면 PyJWT 가 검증 단계에서 거부한다.
+        token["sub"] = str(admin_id)
+        token["scope"] = JwtScope.ADMIN
+        if session_salt is not None:
+            token[SESSION_SALT_CLAIM] = session_salt
+        return token
+
 
 class AccessToken(Token):
     token_type = "access"
@@ -89,7 +123,9 @@ class AccessToken(Token):
 
 class RefreshToken(Token):
     token_type = "refresh"
-    lifetime = timedelta(days=config.REFRESH_TOKEN_EXPIRE_MINUTES)
+    # config 값이 분 단위이므로 minutes 로 넘긴다.
+    # days 로 넘기면 20160일(약 55년)짜리 토큰이 발급된다.
+    lifetime = timedelta(minutes=config.REFRESH_TOKEN_EXPIRE_MINUTES)
     no_copy_claims = ("type", "exp", "jti")
 
     @property

@@ -14,7 +14,7 @@ echo "${COLOR_BLUE}Find Tests${COLOR_NC}"
 HAS_TESTS=false
 MYSQL_CONTAINER_NAME=mysql
 
-if [ -d "./app/tests" ] && find ./app/tests -name 'test_*.py' -print -quit | read ; then
+if [ -d "./app/tests" ] && find ./app/fixtures -name 'test_*.py' -print -quit | read ; then
   HAS_TESTS=true
 fi
 

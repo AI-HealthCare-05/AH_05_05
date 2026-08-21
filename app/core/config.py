@@ -4,6 +4,7 @@ import zoneinfo
 from dataclasses import field
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -48,7 +49,20 @@ class Config(BaseSettings):
 
     COOKIE_DOMAIN: str = "localhost"
 
+    # 메일 발송 방식. console 은 로그로만 출력하고 실제로 보내지 않는다.
+    EMAIL_BACKEND: Literal["console", "smtp"] = "console"
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM: str | None = None
+
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_MINUTES: int = 14 * 24 * 60
+    # NFR-ADMIN-001: 액세스 30분, 리프레시 7일
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 7 * 24 * 60
     JWT_LEEWAY: int = 5
+
+    # 초기 ADMIN 시드용(scripts/seed_admin.py). 운영에서는 시드 후 값을 지운다.
+    SUPERADMIN_EMAIL: str | None = None
+    SUPERADMIN_PASSWORD: str | None = None

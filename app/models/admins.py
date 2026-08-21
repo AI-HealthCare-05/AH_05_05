@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from tortoise import fields, models
 
+from app.core.utils.security import generate_session_salt
 from app.models.enums import AccountStatus, AdminRole
 
 
@@ -16,7 +19,13 @@ class Admin(models.Model):
         null=True,
         on_delete=fields.SET_NULL,
     )
-    approved_at = fields.DatetimeField(null=True)
+    # 세션 무효화용 난수. 리프레시 토큰의 sid 클레임과 대조한다.
+    # 이 값을 새로 발급하면 기기와 무관하게 기존 리프레시 토큰이 모두 무효가 된다.
+    # 갱신 시점은 app/services/admin_session.py 의 rotate_session_salt 참고.
+    # 기본값은 DB 가 아니라 코드에서 만든다(계정마다 서로 다른 값이어야 한다).
+    session_salt = fields.CharField(max_length=32, default=generate_session_salt)
+    # null=True 인데 타입 주석이 없으면 정적 분석이 datetime 으로 좁혀 None 대입을 막는다.
+    approved_at: datetime | None = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True, null=True)
 
