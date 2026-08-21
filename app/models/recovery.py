@@ -59,19 +59,19 @@ class RecoveryGuideSource(models.Model):
         "models.Medication",
         related_name="recovery_guide_sources",
         null=True,
-        on_delete=fields.CASCADE,
+        on_delete=fields.RESTRICT,
     )
     care_advice: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.CareAdvice",
         related_name="recovery_guide_sources",
         null=True,
-        on_delete=fields.CASCADE,
+        on_delete=fields.RESTRICT,
     )
     follow_up_visit: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.FollowUpVisit",
         related_name="recovery_guide_sources",
         null=True,
-        on_delete=fields.CASCADE,
+        on_delete=fields.RESTRICT,
     )
     public_dataset_key = fields.CharField(max_length=100, null=True)
     dataset_version = fields.CharField(max_length=100, null=True)
