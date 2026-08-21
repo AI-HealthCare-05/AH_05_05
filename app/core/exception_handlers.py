@@ -9,6 +9,10 @@ from app.core.exceptions import AppError
 # 본문 위치를 나타내는 loc 접두사. 프론트에 넘길 field 이름에서 제외한다.
 _LOC_PREFIXES = frozenset({"body", "query", "path", "header", "cookie"})
 
+# Pydantic 이 커스텀 validator 의 ValueError 앞에 붙이는 접두사.
+# message 는 사용자에게 그대로 노출되므로 제거한다.
+_VALUE_ERROR_PREFIX = "Value error, "
+
 
 async def app_error_handler(request: Request, exc: Exception) -> ORJSONResponse:
     error = exc if isinstance(exc, AppError) else AppError()
@@ -23,7 +27,7 @@ async def validation_error_handler(request: Request, exc: Exception) -> ORJSONRe
 
     if isinstance(exc, RequestValidationError) and exc.errors():
         first = exc.errors()[0]
-        content["message"] = first.get("msg", content["message"])
+        content["message"] = first.get("msg", content["message"]).removeprefix(_VALUE_ERROR_PREFIX)
         # 프론트가 field로 해당 입력칸 아래에 메시지를 붙인다(client.ts 참조).
         location = [str(part) for part in first.get("loc", ()) if part not in _LOC_PREFIXES]
         if location:

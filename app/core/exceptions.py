@@ -43,10 +43,62 @@ class UserNotFoundError(AppError):
     message = "사용자를 찾을 수 없습니다."
 
 
+class InvalidCredentialsError(AppError):
+    """이메일 열거를 막기 위해 계정 없음과 비밀번호 불일치를 구분하지 않는다."""
+
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "INVALID_CREDENTIALS"
+    message = "이메일 또는 비밀번호가 일치하지 않습니다."
+
+
+class InvalidPasswordError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "INVALID_PASSWORD"
+    message = "현재 비밀번호가 일치하지 않습니다."
+
+
+class SamePasswordError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "SAME_AS_CURRENT"
+    message = "현재 비밀번호와 다른 비밀번호를 입력해주세요."
+
+
+class InvalidTokenError(AppError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "INVALID_TOKEN"
+    message = "유효하지 않거나 만료된 토큰입니다."
+
+
+class AccountSuspendedError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "ACCOUNT_SUSPENDED"
+    message = "정지된 계정입니다. 관리자에게 문의하세요."
+
+
+class AccountWithdrawnError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "ACCOUNT_WITHDRAWN"
+    message = "사용할 수 없는 계정입니다."
+
+
 class EmailAlreadyExistsError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "EMAIL_ALREADY_EXISTS"
     message = "이미 등록된 이메일입니다."
+
+
+class CannotResetSuspendedError(AppError):
+    """정지를 풀지 않고 비밀번호만 재발급하면 정지가 무의미해진다."""
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_RESET_SUSPENDED"
+    message = "정지된 계정은 재발송할 수 없습니다."
+
+
+class CannotResetWithdrawnError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_RESET_WITHDRAWN"
+    message = "탈퇴한 계정은 재발송할 수 없습니다."
 
 
 class LastActiveAdminError(AppError):

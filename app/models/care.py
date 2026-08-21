@@ -1,7 +1,7 @@
 from tortoise import fields, models
 from tortoise.validators import MinValueValidator
 
-from app.models.enums import CareEpisodeStatus, MealSlot
+from app.models.enums import CareAdviceCategory, CareEpisodeStatus, MealSlot
 
 
 class CareEpisode(models.Model):
@@ -39,6 +39,7 @@ class CareAdvice(models.Model):
         related_name="care_advices",
         on_delete=fields.CASCADE,
     )
+    category = fields.CharEnumField(CareAdviceCategory)
     text = fields.CharField(max_length=500)
     display_order = fields.IntField(validators=[MinValueValidator(1)])
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -46,6 +47,7 @@ class CareAdvice(models.Model):
 
     class Meta:
         table = "care_advices"
+        indexes = (("care_episode", "category"),)
         unique_together = (("care_episode", "display_order"),)
 
 
@@ -56,9 +58,16 @@ class FollowUpVisit(models.Model):
         related_name="follow_up_visits",
         on_delete=fields.CASCADE,
     )
-    visit_at = fields.DatetimeField()
-    department = fields.CharField(max_length=100, null=True)
-    doctor_name = fields.CharField(max_length=100, null=True)
+    source_ocr_job: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.OcrJob",
+        related_name="follow_up_visits",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    visit_date = fields.DateField()
+    visit_time = fields.TimeField(null=True)
+    department = fields.CharField(max_length=255, null=True)
+    doctor_name = fields.CharField(max_length=255, null=True)
     place = fields.CharField(max_length=255, null=True)
     purpose = fields.CharField(max_length=255, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -66,4 +75,4 @@ class FollowUpVisit(models.Model):
 
     class Meta:
         table = "follow_up_visits"
-        indexes = (("care_episode",), ("visit_at",))
+        indexes = (("care_episode",), ("visit_date", "visit_time", "id"))

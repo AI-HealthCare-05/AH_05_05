@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from tortoise import fields, models
 
 from app.models.enums import AccountStatus, AdminRole
@@ -16,7 +18,8 @@ class Admin(models.Model):
         null=True,
         on_delete=fields.SET_NULL,
     )
-    approved_at = fields.DatetimeField(null=True)
+    # null=True 인데 타입 주석이 없으면 정적 분석이 datetime 으로 좁혀 None 대입을 막는다.
+    approved_at: datetime | None = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True, null=True)
 

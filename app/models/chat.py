@@ -19,9 +19,15 @@ from app.models.enums import (
 
 class ChatSession(models.Model):
     id = fields.BigIntField(primary_key=True)
-    care_episode: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
+        "models.User",
+        related_name="chat_sessions",
+        on_delete=fields.CASCADE,
+    )
+    care_episode: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.CareEpisode",
         related_name="chat_sessions",
+        null=True,
         on_delete=fields.CASCADE,
     )
     status = fields.CharEnumField(ChatSessionStatus, default=ChatSessionStatus.ACTIVE)
@@ -105,19 +111,19 @@ class ChatMessageSource(models.Model):
         "models.Medication",
         related_name="chat_message_sources",
         null=True,
-        on_delete=fields.CASCADE,
+        on_delete=fields.RESTRICT,
     )
     care_advice: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.CareAdvice",
         related_name="chat_message_sources",
         null=True,
-        on_delete=fields.CASCADE,
+        on_delete=fields.RESTRICT,
     )
     follow_up_visit: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.FollowUpVisit",
         related_name="chat_message_sources",
         null=True,
-        on_delete=fields.CASCADE,
+        on_delete=fields.RESTRICT,
     )
     public_dataset_key = fields.CharField(max_length=100, null=True)
     dataset_version = fields.CharField(max_length=100, null=True)

@@ -2,7 +2,7 @@ from datetime import time
 
 from tortoise import fields, models
 
-from app.models.enums import AccountStatus
+from app.models.enums import AccountStatus, NotifySettingKey
 
 
 class User(models.Model):
@@ -31,6 +31,8 @@ class UserSettings(models.Model):
     is_notify_schedule = fields.BooleanField(default=True)
     is_notify_guide = fields.BooleanField(default=True)
     is_terms_agreed = fields.BooleanField(default=False)
+    terms_agreed_at = fields.DatetimeField(null=True)
+    notify_consented_at = fields.DatetimeField(null=True)
     morning_medication_time = fields.TimeField(default=time(8, 0))
     lunch_medication_time = fields.TimeField(default=time(13, 0))
     evening_medication_time = fields.TimeField(default=time(19, 0))
@@ -38,3 +40,19 @@ class UserSettings(models.Model):
 
     class Meta:
         table = "user_settings"
+
+
+class UserNotifyHistory(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
+        "models.User",
+        related_name="notify_histories",
+        on_delete=fields.CASCADE,
+    )
+    setting_key = fields.CharEnumField(NotifySettingKey)
+    new_value = fields.BooleanField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "user_notify_histories"
+        indexes = (("user", "setting_key", "created_at"), ("created_at",))

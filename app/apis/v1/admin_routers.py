@@ -1,18 +1,28 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
-from app.dependencies.admin import AuthenticatedAdmin, require_admin, require_admin_or_staff
+from app.apis.v1.admin_auth_routers import REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH
+from app.dependencies.admin import (
+    AuthenticatedAdmin,
+    get_current_admin_allow_pending,
+    require_admin,
+    require_admin_or_staff,
+)
+from app.dtos.admin_auth import AdminPasswordChangeRequest, AdminPasswordChangeResponse
 from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
 from app.dtos.admins import (
     AdminCreateRequest,
+    AdminCreateResponse,
     AdminDetailResponse,
     AdminListItem,
     AdminListQuery,
+    AdminPasswordResetResponse,
     AdminStatusUpdateRequest,
     AdminStatusUpdateResponse,
 )
 from app.dtos.pagination import PageResponse
+from app.services.admin_auth import AdminAuthService
 from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
 
@@ -40,7 +50,7 @@ async def list_admins(
 
 @admin_router.post(
     "/accounts",
-    response_model=AdminDetailResponse,
+    response_model=AdminCreateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="관리자 등록",
 )
@@ -48,8 +58,29 @@ async def create_admin(
     actor: AdminOnly,
     request: AdminCreateRequest,
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
-) -> AdminDetailResponse:
+) -> AdminCreateResponse:
     return await service.create_admin(request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.patch(
+    "/accounts/password",
+    response_model=AdminPasswordChangeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="본인 비밀번호 변경",
+)
+async def change_password(
+    # 임시 비밀번호를 바꿀 유일한 경로라 PENDING 계정도 허용한다.
+    # 다른 관리자 API 는 get_current_admin(ACTIVE 전용)을 쓴다.
+    actor: Annotated[AuthenticatedAdmin, Depends(get_current_admin_allow_pending)],
+    request: AdminPasswordChangeRequest,
+    response: Response,
+    service: Annotated[AdminAuthService, Depends(AdminAuthService)],
+) -> AdminPasswordChangeResponse:
+    result = await service.change_password(actor.admin_id, request)
+    # 이 브라우저의 쿠키만 지운다. 다른 기기에 남은 리프레시 토큰은 끊을 수단이 없어
+    # 만료될 때까지 유효하다.
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH, httponly=True)
+    return result
 
 
 @admin_router.patch(
@@ -64,6 +95,20 @@ async def update_admin_status(
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminStatusUpdateResponse:
     return await service.update_status(request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.post(
+    "/accounts/{admin_id}/password/reset",
+    response_model=AdminPasswordResetResponse,
+    status_code=status.HTTP_200_OK,
+    summary="임시 비밀번호 재발송",
+)
+async def reset_admin_password(
+    actor: AdminOnly,
+    admin_id: Annotated[int, Path(ge=1)],
+    service: Annotated[AdminQueryService, Depends(AdminQueryService)],
+) -> AdminPasswordResetResponse:
+    return await service.reset_password(admin_id, actor_admin_id=actor.admin_id)
 
 
 @admin_router.get(

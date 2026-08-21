@@ -36,6 +36,17 @@ class AdminStatusUpdateRequest(CamelModel):
     status: Literal[AccountStatus.SUSPENDED, AccountStatus.ACTIVE]
 
 
+class AdminPasswordResetResponse(CamelModel):
+    """REQ-ADMIN-003 임시 비밀번호 재발송 결과."""
+
+    admin_id: int
+    email: str
+    # 재발송하면 항상 PENDING 으로 돌아간다(임시 비밀번호를 다시 바꿔야 하므로).
+    status: AccountStatus
+    # false 면 비밀번호는 바뀌었지만 새 임시 비밀번호가 전달되지 않은 상태다.
+    email_sent: bool
+
+
 class AdminStatusUpdateResponse(CamelModel):
     updated_count: int
     status: AccountStatus
@@ -48,6 +59,24 @@ class AdminListItem(CamelModel):
     email: str
     role: AdminRole
     status: AccountStatus
+
+
+class AdminCreateResponse(CamelModel):
+    """등록 응답. 조회 응답과 달리 메일 발송 결과를 함께 알려준다.
+
+    발송에 실패해도 계정 생성은 롤백하지 않으므로, 관리자가 이 값으로 상황을 알 수 있어야 한다.
+    """
+
+    admin_id: int
+    name: str
+    email: str
+    role: AdminRole
+    status: AccountStatus
+    created_by_admin_id: int | None = None
+    approved_at: datetime | None = None
+    created_at: datetime
+    # false 면 계정은 만들어졌지만 임시 비밀번호가 전달되지 않은 상태다.
+    email_sent: bool
 
 
 class AdminDetailResponse(CamelModel):
