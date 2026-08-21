@@ -6,7 +6,7 @@ services:
     networks:
       - ws
     ports:
-      - "${REDIS_PORT}:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -48,6 +48,8 @@ services:
     container_name: fastapi
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}  # APP_VERSION은 빌드된 이미지의 버전관리를 위함입니다. v1.0.0 형식으로 사용합니다.
     env_file: .env
+    environment:
+      DB_HOST: mysql
     volumes:
       - static_volume:/app/templates
       - media_volume:/app/media
@@ -62,7 +64,28 @@ services:
       redis:
         condition: service_healthy
 
-  # 4. AI Worker (Model 학습 및 추론)
+  # 4. Alarm Worker (스케줄링 및 Web Push 발송)
+  alarm-worker:
+    container_name: alarm-worker
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
+    env_file: .env
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      TZ: Asia/Seoul
+    command: uv run --no-sync arq app.workers.alarm_worker.WorkerSettings
+    restart: always
+    networks:
+      - ws
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 5. AI Worker (Model 학습 및 추론)
   ai-worker:
     container_name: ai-worker
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:ai-${AI_WORKER_VERSION}  # AI_WORKER_VERSION은 빌드된 이미지의 버전관리를 위함입니다. V1.0.0 형식으로 사용합니다.
@@ -77,7 +100,7 @@ services:
       redis:
         condition: service_healthy
 
-  # 5. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
+  # 6. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
     container_name: nginx
     image: nginx:latest
@@ -95,7 +118,7 @@ services:
     depends_on:
       - fastapi
 
-  # 6. certbot: SSL 인증서 발급담당
+  # 7. certbot: SSL 인증서 발급담당
   certbot:
     image: certbot/certbot
     container_name: auto-certbot
