@@ -13,12 +13,18 @@ class Medication(models.Model):
     )
     name = fields.CharField(max_length=255)
     dose = fields.CharField(max_length=100, null=True)
+    efficacy = fields.CharField(max_length=500, null=True)
+    administration = fields.CharField(max_length=500, null=True)
+    precautions = fields.CharField(max_length=500, null=True)
     times_per_day = fields.IntField(
         null=True,
         validators=[MinValueValidator(1), MaxValueValidator(6)],
     )
-    note = fields.CharField(max_length=255, null=True)
-    days = fields.IntField(null=True, validators=[MinValueValidator(1)])
+    note = fields.CharField(max_length=500, null=True)
+    days = fields.IntField(
+        null=True,
+        validators=[MinValueValidator(1), MaxValueValidator(365)],
+    )
     prescribed_at = fields.DateField(null=True)
     source_ocr_job: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.OcrJob",

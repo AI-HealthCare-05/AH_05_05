@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from httpx import ASGITransport, AsyncClient
 from starlette import status
@@ -57,11 +57,13 @@ class TestAlarmCrudAPI(TestCase):
             care_episode = await CareEpisode.create(user=user, title="외래 진료 테스트")
             first_visit = await FollowUpVisit.create(
                 care_episode=care_episode,
-                visit_at=datetime.fromisoformat("2026-08-25T10:00:00+09:00"),
+                visit_date=date(2026, 8, 25),
+                visit_time=time(10, 0),
             )
             second_visit = await FollowUpVisit.create(
                 care_episode=care_episode,
-                visit_at=first_visit.visit_at + timedelta(days=7),
+                visit_date=first_visit.visit_date + timedelta(days=7),
+                visit_time=first_visit.visit_time,
             )
 
             created = await client.post(
@@ -103,7 +105,8 @@ class TestAlarmCrudAPI(TestCase):
             other_episode = await CareEpisode.create(user=other, title="다른 사용자 에피소드")
             other_visit = await FollowUpVisit.create(
                 care_episode=other_episode,
-                visit_at=datetime.fromisoformat("2026-08-25T10:00:00+09:00"),
+                visit_date=date(2026, 8, 25),
+                visit_time=time(10, 0),
             )
 
             response = await client.post(
@@ -124,7 +127,8 @@ class TestAlarmCrudAPI(TestCase):
             second_episode = await CareEpisode.create(user=user, title="두 번째 에피소드")
             visit = await FollowUpVisit.create(
                 care_episode=second_episode,
-                visit_at=datetime.fromisoformat("2026-08-25T10:00:00+09:00"),
+                visit_date=date(2026, 8, 25),
+                visit_time=time(10, 0),
             )
 
             response = await client.post(

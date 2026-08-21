@@ -151,3 +151,19 @@ class ChatConflictStatus(StrEnum):
 class ChatSourceType(StrEnum):
     PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
     PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
+
+
+class CareAdviceCategory(StrEnum):
+    ACTIVITY = "ACTIVITY"
+    HYGIENE = "HYGIENE"
+    DIET = "DIET"
+    LIFESTYLE = "LIFESTYLE"
+    RESTRICTION = "RESTRICTION"
+    RED_FLAG = "RED_FLAG"
+    OTHER = "OTHER"
+
+
+class NotifySettingKey(StrEnum):
+    IS_NOTIFY_MEDICATION = "IS_NOTIFY_MEDICATION"
+    IS_NOTIFY_SCHEDULE = "IS_NOTIFY_SCHEDULE"
+    IS_NOTIFY_GUIDE = "IS_NOTIFY_GUIDE"
