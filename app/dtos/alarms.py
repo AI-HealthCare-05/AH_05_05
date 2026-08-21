@@ -24,9 +24,7 @@ class AlarmCreateRequest(BaseModel):
     message: Annotated[str | None, Field(max_length=500)] = None
     scheduled_at: datetime
     recurrence_rule: Annotated[str | None, Field(max_length=100)] = None
-    timezone: Annotated[str, Field(min_length=1, max_length=50)] = Field(
-        default_factory=lambda: str(config.TIMEZONE)
-    )
+    timezone: Annotated[str, Field(min_length=1, max_length=50)] = Field(default_factory=lambda: str(config.TIMEZONE))
 
     @model_validator(mode="after")
     def validate_schedule(self) -> Self:
@@ -78,14 +76,14 @@ class AlarmResponse(BaseSerializerModel):
     message: str | None
     scheduled_at: datetime
     recurrence_rule: str | None
-    #timezone: str
-    #next_trigger_at: datetime
+    # timezone: str
+    # next_trigger_at: datetime
     status: AlarmStatus
-    #last_triggered_at: datetime | None
-    #completed_at: datetime | None
-    #cancelled_at: datetime | None
-    #created_at: datetime
-    #updated_at: datetime | None
+    # last_triggered_at: datetime | None
+    # completed_at: datetime | None
+    # cancelled_at: datetime | None
+    # created_at: datetime
+    # updated_at: datetime | None
 
 
 class AlarmListResponse(BaseModel):
