@@ -1,7 +1,9 @@
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def _load_compose_config() -> dict:
@@ -21,14 +23,18 @@ def _load_compose_config() -> dict:
             "AI_WORKER_VERSION": "test",
         }
     )
-    result = subprocess.run(
-        ["docker", "compose", "config", "--no-env-resolution", "--format", "json"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=project_root,
-        env=compose_env,
-    )
+    with TemporaryDirectory() as temp_dir:
+        compose_root = Path(temp_dir)
+        shutil.copy2(project_root / "docker-compose.yml", compose_root / "docker-compose.yml")
+        (compose_root / ".env").touch()
+        result = subprocess.run(
+            ["docker", "compose", "config", "--format", "json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=compose_root,
+            env=compose_env,
+        )
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 
