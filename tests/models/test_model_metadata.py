@@ -212,6 +212,10 @@ def test_alarm_models_preserve_subscription_and_optional_source_relations() -> N
     assert alarms.PushSubscription._meta.fields_map["endpoint"].unique is True
     assert alarms.Alarm._meta.fields_map["user"].model_name == "models.User"
     assert alarms.Alarm._meta.fields_map["source_guide"].on_delete == fields.SET_NULL
+    follow_up_visit = alarms.Alarm._meta.fields_map["follow_up_visit"]
+    assert follow_up_visit.model_name == "models.FollowUpVisit"
+    assert follow_up_visit.null is True
+    assert follow_up_visit.on_delete == fields.CASCADE
     assert alarms.Alarm._meta.fields_map["meal_slot"].null is True
     assert alarms.Alarm._meta.unique_together == (("user", "alarm_type", "meal_slot"),)
     push_subscription = alarms.AlarmEvent._meta.fields_map["push_subscription"]
