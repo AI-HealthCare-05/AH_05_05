@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -27,6 +27,7 @@ from app.models.care import (
     FollowUpVisit,
 )
 from app.models.enums import (
+    CareAdviceCategory,
     ChatSafetyStatus,
     RecoveryGuideStatus,
 )
@@ -46,6 +47,7 @@ async def initialized_db() -> None:
             "models": TORTOISE_APP_MODELS,
         },
         timezone="Asia/Seoul",
+        use_tz=False,
     )
     await Tortoise.generate_schemas()
 
@@ -378,20 +380,15 @@ async def test_save_rejects_patient_source_from_other_episode(
     other_advice = await CareAdvice.create(
         id=2001,
         care_episode=other_episode,
+        category=CareAdviceCategory.OTHER,
         text="다른 환자의 권고사항",
         display_order=1,
     )
     other_follow_up = await FollowUpVisit.create(
         id=3001,
         care_episode=other_episode,
-        visit_at=datetime(
-            2026,
-            8,
-            20,
-            10,
-            0,
-            tzinfo=ZoneInfo("Asia/Seoul"),
-        ),
+        visit_date=date(2026, 8, 20),
+        visit_time=time(10, 0),
     )
 
     source_ids = {
