@@ -168,10 +168,12 @@ class AdminQueryService:
 
             await self._ensure_active_admin_remains(request.status, admin_ids)
 
+            # 정지해도 이미 발급된 토큰을 즉시 폐기하지는 못한다. 갱신 시점에 상태를 다시
+            # 확인해 막으므로, 액세스 토큰이 만료되는 30분 안에는 기존 토큰이 통한다.
             for admin in targets:
-            # 정지된 계정은 갱신할 때 상태를 다시 확인해 막는다. 액세스 토큰이 만료되는
-            # 30분 안에는 기존 토큰으로 접근할 수 있다.
-            updated_count = await Admin.filter(id__in=admin_ids).update(status=request.status)
+                admin.status = request.status
+                await admin.save()
+            updated_count = len(targets)
 
         logger.info(
             "admin status changed: ids=%s status=%s by=%s",

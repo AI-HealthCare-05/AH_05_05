@@ -1,4 +1,3 @@
-from calendar import timegm
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Self
@@ -82,7 +81,10 @@ class Token:
         assert lifetime is not None
 
         dt = from_time + lifetime
-        self.payload["exp"] = timegm(dt.timetuple())
+        # timegm(dt.timetuple()) 은 timetuple 을 UTC 로 해석한다. current_time 이 KST
+        # aware 라 벽시계 그대로 넘어가 exp 가 9시간 뒤로 밀렸다(30분 토큰이 9시간 30분).
+        # timestamp() 는 tzinfo 를 반영하므로 aware/naive 어느 쪽이든 올바른 epoch 을 준다.
+        self.payload["exp"] = int(dt.timestamp())
 
     def set_jti(self) -> None:
         self.payload["jti"] = uuid4().hex
