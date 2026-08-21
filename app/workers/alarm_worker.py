@@ -83,10 +83,15 @@ async def _prepare_alarm_delivery(
 
 async def poll_due_alarms(ctx: dict[str, Any]) -> None:
     now = datetime.now(config.TIMEZONE)
-    alarm_ids = await Alarm.filter(
-        status=AlarmStatus.ACTIVE,
-        next_trigger_at__lte=now,
-    ).order_by("next_trigger_at", "id").limit(100).values_list("id", flat=True)
+    alarm_ids = (
+        await Alarm.filter(
+            status=AlarmStatus.ACTIVE,
+            next_trigger_at__lte=now,
+        )
+        .order_by("next_trigger_at", "id")
+        .limit(100)
+        .values_list("id", flat=True)
+    )
     job_service: BackgroundJobService = ctx["job_service"]
 
     for alarm_id in alarm_ids:
@@ -135,12 +140,7 @@ async def send_alarm_push(
     job = await BackgroundJob.get(id=job_id)
     alarm = await Alarm.get_or_none(id=alarm_id)
     subscription = await PushSubscription.get_or_none(id=subscription_id)
-    if (
-        alarm is None
-        or subscription is None
-        or not subscription.is_active
-        or alarm.status != AlarmStatus.ACTIVE
-    ):
+    if alarm is None or subscription is None or not subscription.is_active or alarm.status != AlarmStatus.ACTIVE:
         await _cancel_claimed_job(job)
         return
 
@@ -302,10 +302,14 @@ def _duration_ms(started_at: datetime | None, completed_at: datetime) -> int | N
 async def recover_background_jobs(ctx: dict[str, Any]) -> None:
     now = datetime.now(config.TIMEZONE)
     queued_before = now - timedelta(seconds=max(30, config.ALARM_POLL_SECONDS * 2))
-    candidates = await BackgroundJob.filter(
-        status__in=[BackgroundJobStatus.QUEUED, BackgroundJobStatus.RETRY_WAITING],
-        job_type=BackgroundJobType.ALARM,
-    ).order_by("requested_at", "id").limit(100)
+    candidates = (
+        await BackgroundJob.filter(
+            status__in=[BackgroundJobStatus.QUEUED, BackgroundJobStatus.RETRY_WAITING],
+            job_type=BackgroundJobType.ALARM,
+        )
+        .order_by("requested_at", "id")
+        .limit(100)
+    )
     job_service: BackgroundJobService = ctx["job_service"]
 
     for job in candidates:

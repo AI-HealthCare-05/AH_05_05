@@ -67,9 +67,7 @@ async def list_push_subscriptions(
 ) -> PushSubscriptionListResponse:
     """현재 사용자에게 등록된 활성·비활성 Web Push 구독 목록을 조회한다."""
     subscriptions = await service.list_subscriptions(user)
-    return PushSubscriptionListResponse(
-        items=[PushSubscriptionResponse.model_validate(item) for item in subscriptions]
-    )
+    return PushSubscriptionListResponse(items=[PushSubscriptionResponse.model_validate(item) for item in subscriptions])
 
 
 @alarm_router.delete(
