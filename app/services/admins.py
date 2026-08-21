@@ -26,7 +26,6 @@ from app.dtos.pagination import PageResponse
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
 from app.services.admin_credentials import issue_temporary_password
-from app.services.admin_session import rotate_session_salt
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +129,8 @@ class AdminQueryService:
         # approved_at 은 "현재 활성 상태가 된 시각"이다(change_password 가 전이할 때마다
         # 덮어쓴다). PENDING 으로 돌아갔는데 값이 남아 있으면 목록에서 모순으로 보이므로 비운다.
         admin.approved_at = None
-        # 기존 세션을 모두 끊는다. 재발송은 계정을 넘겨받는 상황이라 이전 세션이 살아 있으면 안 된다.
-        rotate_session_salt(admin)
+        # 이전 보유자의 리프레시 토큰은 남는다. 계정을 넘겨받는 상황이라 끊는 게 맞지만
+        # 발급된 JWT 를 개별 폐기할 수단이 없다. 리프레시 수명이 지나야 정리된다.
         await admin.save()
 
         # 등록과 같은 정책. 발송이 실패해도 되돌리지 않고 결과만 알린다.
@@ -170,14 +169,9 @@ class AdminQueryService:
             await self._ensure_active_admin_remains(request.status, admin_ids)
 
             for admin in targets:
-                admin.status = request.status
-                if request.status == AccountStatus.SUSPENDED:
-                    # 정지 즉시 세션이 끊겨야 한다. 난수가 바뀌면 그 자체로 리프레시가 무효가 되므로,
-                    # 갱신 시점의 상태 재확인에만 기대지 않는다.
-                    rotate_session_salt(admin)
-                # 계정마다 난수가 달라야 해서 일괄 UPDATE 대신 개별로 저장한다(최대 100건).
-                await admin.save()
-            updated_count = len(targets)
+            # 정지된 계정은 갱신할 때 상태를 다시 확인해 막는다. 액세스 토큰이 만료되는
+            # 30분 안에는 기존 토큰으로 접근할 수 있다.
+            updated_count = await Admin.filter(id__in=admin_ids).update(status=request.status)
 
         logger.info(
             "admin status changed: ids=%s status=%s by=%s",

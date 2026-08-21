@@ -58,9 +58,11 @@ class Config(BaseSettings):
     SMTP_FROM: str | None = None
 
     JWT_ALGORITHM: str = "HS256"
-    # NFR-ADMIN-001: 액세스 30분, 리프레시 7일
+    # NFR-ADMIN-001 은 액세스 30분·리프레시 7일이었으나, 세션 무효화 수단을 두지 않기로
+    # 하면서 1일로 줄였다. 비밀번호를 바꿔도 다른 기기의 리프레시 토큰을 끊을 수 없어
+    # 이 값이 그대로 노출 창이 된다.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_MINUTES: int = 7 * 24 * 60
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 24 * 60
     JWT_LEEWAY: int = 5
 
     # 초기 ADMIN 시드용(scripts/seed_admin.py). 운영에서는 시드 후 값을 지운다.

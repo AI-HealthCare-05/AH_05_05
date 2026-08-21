@@ -13,10 +13,6 @@ if TYPE_CHECKING:
     from app.core.jwt.backends import TokenBackend
 
 
-# 세션 무효화용 난수 클레임. admin.session_salt 와 대조한다.
-SESSION_SALT_CLAIM = "sid"
-
-
 class JwtScope(StrEnum):
     """토큰이 어느 계정 종류에 발급됐는지 나타낸다.
 
@@ -98,21 +94,19 @@ class Token:
         return token
 
     @classmethod
-    def for_admin(cls, admin_id: int, session_salt: str | None = None) -> Self:
+    def for_admin(cls, admin_id: int) -> Self:
         """관리자 토큰을 만든다.
 
         user 와 admin 은 별도 테이블이라 id 가 겹칠 수 있다. scope 가 없으면
         사용자 토큰으로 관리자 API 를 호출할 수 있으므로 반드시 함께 넣는다.
 
-        session_salt 를 넣으면 그 값이 갱신될 때 토큰이 무효가 된다(비밀번호 변경·정지·역할 변경).
-        리프레시 토큰에만 필요하며, 액세스 토큰은 수명이 짧아 넣지 않아도 된다.
+        발급한 토큰을 만료 전에 개별 폐기할 수단은 없다. 정지된 계정은 갱신 시점의
+        DB 상태 확인으로 막고, 그 외의 노출 위험은 리프레시 수명을 짧게 두어 줄인다.
         """
         token = cls()
         # JWT 표준상 sub 는 문자열이어야 한다. 정수로 넣으면 PyJWT 가 검증 단계에서 거부한다.
         token["sub"] = str(admin_id)
         token["scope"] = JwtScope.ADMIN
-        if session_salt is not None:
-            token[SESSION_SALT_CLAIM] = session_salt
         return token
 
 
