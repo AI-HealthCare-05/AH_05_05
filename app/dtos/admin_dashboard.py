@@ -63,6 +63,8 @@ class MemberStats(CamelModel):
     # total = active + suspended. 화면이 활성 95% + 정지 5% = 100% 로 표시하기 때문이다.
     # PENDING·WITHDRAWN 은 total 에 넣지 않고 아래 별도 필드로만 내려준다.
     total: int
+    # 상태를 가리지 않고 기간 내 가입 전체를 센다. total 이 PENDING·WITHDRAWN 을 빼므로
+    # newSignups > total 이 나올 수 있는데 버그가 아니다(분모가 서로 다른 값이다).
     new_signups: int
     active: int
     pending: int
