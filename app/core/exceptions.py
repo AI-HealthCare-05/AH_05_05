@@ -117,3 +117,15 @@ class CannotSuspendSelfError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "CANNOT_SUSPEND_SELF"
     message = "본인 계정은 정지할 수 없습니다."
+
+
+class CannotReactivateWithdrawnError(AppError):
+    """탈퇴한 계정을 관리자가 되살리는 것을 막는다.
+
+    탈퇴는 본인 의사이고 REQ-ADMIN-007 데이터 삭제의 대상이기도 하다.
+    관리자가 임의로 ACTIVE 로 되돌리면 삭제 대기 중인 계정이 다시 살아난다.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_REACTIVATE_WITHDRAWN"
+    message = "탈퇴한 계정은 상태를 변경할 수 없습니다."
