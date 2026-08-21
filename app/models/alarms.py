@@ -42,6 +42,12 @@ class Alarm(models.Model):
         null=True,
         on_delete=fields.SET_NULL,
     )
+    follow_up_visit: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.FollowUpVisit",
+        related_name="alarms",
+        null=True,
+        on_delete=fields.CASCADE,
+    )
     alarm_type = fields.CharEnumField(AlarmType, default=AlarmType.MEDICATION)
     meal_slot = fields.CharEnumField(MealSlot, null=True)
     title = fields.CharField(max_length=255)
@@ -64,6 +70,7 @@ class Alarm(models.Model):
             ("user", "status"),
             Index(fields=("status", "next_trigger_at"), name="idx_due_alarms"),
             ("care_episode",),
+            ("follow_up_visit",),
         )
 
 
