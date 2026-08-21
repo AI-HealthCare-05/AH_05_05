@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, Path, Query, Response, status
 from app.apis.v1.admin_auth_routers import REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH
 from app.dependencies.admin import (
     AuthenticatedAdmin,
+    get_current_admin,
     get_current_admin_allow_pending,
     require_admin,
     require_admin_or_staff,
 )
 from app.dtos.admin_auth import AdminPasswordChangeRequest, AdminPasswordChangeResponse
+from app.dtos.admin_dashboard import DashboardSummaryQuery, DashboardSummaryResponse
 from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
 from app.dtos.admins import (
     AdminCreateRequest,
@@ -23,6 +25,7 @@ from app.dtos.admins import (
 )
 from app.dtos.pagination import PageResponse
 from app.services.admin_auth import AdminAuthService
+from app.services.admin_dashboard import AdminDashboardService
 from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
 
@@ -32,6 +35,22 @@ admin_router = APIRouter(prefix="/admin", tags=["admin"])
 AdminOrStaff = Annotated[AuthenticatedAdmin, Depends(require_admin_or_staff)]
 # 계정 생성·상태 변경은 ADMIN 전용.
 AdminOnly = Annotated[AuthenticatedAdmin, Depends(require_admin)]
+# 대시보드는 역할을 가리지 않고 ACTIVE 관리자면 통과한다.
+ActiveAdmin = Annotated[AuthenticatedAdmin, Depends(get_current_admin)]
+
+
+@admin_router.get(
+    "/dashboard/summary",
+    response_model=DashboardSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="대시보드 요약 (회원 현황)",
+)
+async def get_dashboard_summary(
+    _: ActiveAdmin,
+    query: Annotated[DashboardSummaryQuery, Query()],
+    service: Annotated[AdminDashboardService, Depends(AdminDashboardService)],
+) -> DashboardSummaryResponse:
+    return await service.get_summary(query)
 
 
 @admin_router.get(
