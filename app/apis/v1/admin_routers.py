@@ -50,6 +50,26 @@ async def get_dashboard_summary(
     query: Annotated[DashboardSummaryQuery, Query()],
     service: Annotated[AdminDashboardService, Depends(AdminDashboardService)],
 ) -> DashboardSummaryResponse:
+    """운영 대시보드의 회원 현황 집계. (REQ-DASH-001)
+
+    역할을 가리지 않고 ACTIVE 관리자면 조회할 수 있다. 집계 숫자만 나가며
+    개별 회원의 이메일·전화번호는 포함되지 않는다.
+
+    `period` 는 `newSignups` 와 그 증감률에만 적용된다. `total`·`active`·`pending`·
+    `suspended`·`withdrawn` 은 조회 시점의 현재 값이라 기간을 바꿔도 변하지 않는다.
+
+    - `total` = `active` + `suspended` (화면이 활성·정지 합을 100% 로 표시한다).
+      `pending`·`withdrawn` 은 별도 필드로만 내려가므로 `newSignups` 가 `total` 보다 클 수 있다.
+    - 증감률은 직전 동일 기간과 비교하며, 경과 시간까지 맞춘다(TODAY 면 어제 같은 시각까지).
+      직전 기간이 0건이면 계산할 수 없어 `null` 이다.
+    - `signupTrend` 는 기간과 무관하게 항상 최근 14일이고, 가입자가 없는 날도 0 으로 포함된다.
+    - `status` 는 정지 비율 기준 경보 단계다(NORMAL / WARNING / DANGER).
+
+    OCR·챗봇·알림·시스템 지표는 아직 데이터가 없어 응답에 넣지 않았다.
+    0 으로 채우면 화면이 정상값으로 그려 오해를 부른다.
+
+    - **422 VALIDATION_ERROR** — 지원하지 않는 `period`
+    """
     return await service.get_summary(query)
 
 
@@ -64,6 +84,16 @@ async def list_admins(
     query: Annotated[AdminListQuery, Query()],
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> PageResponse[AdminListItem]:
+    """관리자 계정 목록을 페이지 단위로 조회한다. (REQ-ADMIN-004)
+
+    ADMIN·STAFF 모두 조회할 수 있다.
+
+    `keyword` 는 이름·이메일 부분 일치이며, `role`·`status` 로 좁힐 수 있다.
+    정렬은 등록일 최신순 고정이다.
+
+    관리자 계정에는 `WITHDRAWN` 을 쓰지 않는다(탈퇴는 사용자 전용).
+    값을 넣어도 거부되지는 않지만 결과가 항상 비어 있다.
+    """
     return await service.get_admins(query)
 
 
@@ -78,6 +108,20 @@ async def create_admin(
     request: AdminCreateRequest,
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminCreateResponse:
+    """관리자 계정을 새로 만든다. ADMIN 전용. (REQ-ADMIN-008)
+
+    비밀번호는 받지 않는다. 서버가 임시 비밀번호를 만들어 해시로 저장하고 평문은
+    안내 메일로만 전달한다. **응답에는 평문이 포함되지 않는다.**
+
+    `isActive` 가 false 면 PENDING 으로 만들어져 첫 로그인 후 비밀번호를 바꿔야 한다.
+
+    메일 발송이 실패해도 계정 생성은 되돌리지 않고 `emailSent: false` 로 알린다.
+    롤백하면 "계정이 안 만들어졌다"와 "메일만 실패했다"를 구분할 수 없기 때문이며,
+    실패 시에는 임시 비밀번호 재발송 API 로 복구한다.
+
+    - **409 EMAIL_ALREADY_EXISTS** — 이미 등록된 이메일
+    - **403 FORBIDDEN** — STAFF 계정
+    """
     return await service.create_admin(request, actor_admin_id=actor.admin_id)
 
 
@@ -95,6 +139,25 @@ async def change_password(
     response: Response,
     service: Annotated[AdminAuthService, Depends(AdminAuthService)],
 ) -> AdminPasswordChangeResponse:
+    """로그인한 본인의 비밀번호를 바꾼다. (REQ-ADMIN-009)
+
+    대상은 토큰의 `sub` 로 정한다. 다른 관리자 ID 를 받는 파라미터는 없으며,
+    본문에 넣어도 무시된다.
+
+    임시 비밀번호를 바꿀 유일한 경로라 PENDING 계정도 허용한다(다른 관리자 API 는
+    ACTIVE 만 통과). PENDING 이었다면 변경과 함께 ACTIVE 로 전환되고 승인 시각이 기록된다.
+    이미 ACTIVE 면 상태를 건드리지 않는다.
+
+    새 비밀번호는 사용자 회원가입과 같은 정책을 따른다 —
+    8자 이상, 대문자·소문자·숫자·특수문자 각 1개 이상.
+
+    변경하면 기존 리프레시 토큰이 모두 무효가 되고 쿠키도 삭제된다. 다시 로그인해야 한다.
+    액세스 토큰은 만료 전까지 유효하다.
+
+    - **400 INVALID_PASSWORD** — 현재 비밀번호 불일치
+    - **400 SAME_AS_CURRENT** — 새 비밀번호가 현재와 동일
+    - **422 VALIDATION_ERROR** — 비밀번호 정책 위반 (부족한 조건을 메시지로 알려준다)
+    """
     result = await service.change_password(actor.admin_id, request)
     # 이전 리프레시 토큰은 지문 검증에서 이미 무효가 된다.
     # 브라우저에 남은 쿠키까지 지워 다음 갱신에서 불필요한 401 을 만들지 않는다.
@@ -113,6 +176,21 @@ async def update_admin_status(
     request: AdminStatusUpdateRequest,
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminStatusUpdateResponse:
+    """관리자 계정을 일괄 정지하거나 해제한다. ADMIN 전용. (REQ-ADMIN-011)
+
+    화면에서 체크박스로 여러 명을 고르므로 한 번에 최대 100건까지 받는다.
+    `status` 는 `SUSPENDED` 또는 `ACTIVE` 만 가능하다. 계정 삭제는 제공하지 않는다.
+
+    **전부 성공하거나 전부 롤백된다.** 없는 ID 가 하나라도 섞이면 아무것도 바꾸지 않고
+    404 로 거부한다. 부분 성공을 허용하면 무엇이 실패했는지 알 수 없기 때문이다.
+
+    정지하면 대상의 기존 리프레시 토큰이 즉시 무효가 된다.
+
+    - **409 LAST_ACTIVE_ADMIN** — 정지 후 활성 ADMIN 이 0명이 되는 경우.
+      아무도 콘솔에 로그인할 수 없게 되므로 막는다
+    - **409 CANNOT_SUSPEND_SELF** — 본인 계정 포함
+    - **404 ADMIN_NOT_FOUND** — 존재하지 않는 ID 포함
+    """
     return await service.update_status(request, actor_admin_id=actor.admin_id)
 
 
@@ -127,6 +205,24 @@ async def reset_admin_password(
     admin_id: Annotated[int, Path(ge=1)],
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminPasswordResetResponse:
+    """대상 관리자의 임시 비밀번호를 새로 발급해 메일로 보낸다. ADMIN 전용. (REQ-ADMIN-003)
+
+    등록 시 메일 발송이 실패하면 비밀번호를 아무도 모르는 계정이 남는데,
+    이메일이 UNIQUE 라 재등록도 막힌다. 그 상황을 푸는 유일한 경로다.
+
+    새 비밀번호는 해시로 저장하고 평문은 메일로만 전달한다.
+    **응답에는 평문이 포함되지 않는다.**
+
+    발급하면 계정이 PENDING 으로 돌아가고 승인 시각이 비워진다. 비밀번호를 바꿔야
+    관리자 기능을 다시 쓸 수 있다. 기존 세션도 모두 끊긴다(계정을 넘겨받는 상황이므로).
+
+    등록과 같은 정책으로, 메일 발송이 실패해도 비밀번호 변경은 되돌리지 않고
+    `emailSent: false` 로 알린다.
+
+    - **409 CANNOT_RESET_SUSPENDED** — 정지를 풀지 않고 비밀번호만 주면 정지가 무의미해진다
+    - **409 CANNOT_RESET_WITHDRAWN** — 탈퇴한 계정
+    - **404 ADMIN_NOT_FOUND**
+    """
     return await service.reset_password(admin_id, actor_admin_id=actor.admin_id)
 
 
@@ -141,6 +237,15 @@ async def get_admin(
     admin_id: Annotated[int, Path(ge=1)],
     service: Annotated[AdminQueryService, Depends(AdminQueryService)],
 ) -> AdminDetailResponse:
+    """관리자 계정 한 건의 상세 정보를 조회한다. (REQ-ADMIN-005)
+
+    ADMIN·STAFF 모두 조회할 수 있다.
+
+    `createdByAdminId` 는 이 계정을 만든 관리자다. 최초 슈퍼 ADMIN 은 생성자가 없어 `null` 이다.
+    `approvedAt` 은 임시 비밀번호를 바꿔 ACTIVE 가 된 시각이며, 아직 PENDING 이면 `null` 이다.
+
+    - **404 ADMIN_NOT_FOUND**
+    """
     return await service.get_admin(admin_id)
 
 
@@ -155,6 +260,15 @@ async def list_users(
     query: Annotated[AdminUserListQuery, Query()],
     service: Annotated[AdminUserQueryService, Depends(AdminUserQueryService)],
 ) -> PageResponse[AdminUserListItem]:
+    """서비스 회원 목록을 페이지 단위로 조회한다. (REQ-ADMIN-010)
+
+    ADMIN·STAFF 모두 조회할 수 있다.
+
+    `keyword` 는 이름·이메일 부분 일치, `status` 는 계정 상태, `startDate`·`endDate` 는
+    가입일 범위다. 종료일은 **당일을 포함**한다. 정렬은 가입일 최신순 고정이다.
+
+    - **422 VALIDATION_ERROR** — 가입일 시작이 종료보다 늦은 경우
+    """
     return await service.get_users(query)
 
 
@@ -169,4 +283,16 @@ async def get_user(
     user_id: Annotated[int, Path(ge=1)],
     service: Annotated[AdminUserQueryService, Depends(AdminUserQueryService)],
 ) -> AdminUserDetailResponse:
+    """회원 한 명의 상세 정보를 조회한다. (REQ-ADMIN-010)
+
+    ADMIN·STAFF 모두 조회할 수 있다.
+
+    `isTermsAgreed` 는 `user_settings` 를 조인해 가져온다. 가입 직후라 설정 행이 아직
+    없는 회원은 미동의(false)로 본다.
+
+    `activeAlarmCount` 는 상태가 ACTIVE 인 알람 수다. 복약 알람이 (회원 x 시간대) 단위라
+    회원당 최대 4건이며, 화면이 기대하는 "활성 알림 수"와 같은 기준인지는 알림 담당자 확인이 남아 있다.
+
+    - **404 USER_NOT_FOUND**
+    """
     return await service.get_user(user_id)
