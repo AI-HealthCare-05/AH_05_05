@@ -58,8 +58,14 @@ export function DevFlowComplete() {
 
         <div className="flex-1" />
 
+        {/*
+          데모 동선의 허브. 홈이 없어 저장 이후 갈 곳이 없었는데, 다음 단계인
+          LLM 가이드(15) · RAG 챗봇(17)을 여기서 이어갑니다.
+        */}
         <div className="flex flex-col gap-2 pb-4">
-          <Button onClick={() => navigate('/dev/document-upload')}>
+          <Button onClick={() => navigate('/dev/life-guide')}>생활관리 가이드 보기</Button>
+          <Button onClick={() => navigate('/dev/chat')}>AI 에게 물어보기</Button>
+          <Button variant="secondary" onClick={() => navigate('/dev/document-upload')}>
             처음부터 다시 보기
           </Button>
           <Button variant="secondary" onClick={() => navigate('/dev/gallery')}>
