@@ -1,7 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router';
 import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
-import { DocumentConfirmPage } from '@/pages/document-confirm';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationSchedulePage } from '@/pages/medication-schedule';
 import { OcrReviewPage } from '@/pages/ocr-review';
@@ -24,9 +23,11 @@ export function AppRouter() {
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/supplements" element={<SupplementsPage />} />
+        <Route path="/document-upload" element={<DocumentUploadPage />} />
+        <Route path="/ocr-review" element={<OcrReviewPage />} />
+        <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
-        <Route path="/dev/document-confirm" element={<DocumentConfirmPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
         <Route path="/dev/chat" element={<ChatPage />} />

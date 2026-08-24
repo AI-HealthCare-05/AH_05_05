@@ -33,6 +33,7 @@ import {
  */
 interface ScheduleLocationState {
   recordId?: number;
+  dispensedDate?: string;
 }
 
 /** info = 아직 안 고른 것(안내), error = 잘못 고른 것(오류). */
@@ -107,6 +108,7 @@ export function MedicationSchedulePage() {
   const location = useLocation();
   const state = (location.state as ScheduleLocationState | null) ?? {};
   const recordId = state.recordId ?? 12;
+  const dispensedDate = state.dispensedDate;
 
   const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
   const [mealTimes, setMealTimes] = useState<MealTimes>(DEFAULT_MEAL_TIMES);
@@ -128,8 +130,8 @@ export function MedicationSchedulePage() {
         if (cancelled) return;
         setSchedule(data);
         setMealTimes(data.mealTimes ?? DEFAULT_MEAL_TIMES);
-        // 저장값 우선(09-B 프리필). 날짜는 비어 있으면 오늘로 채워 사용자가 고치게 합니다.
-        setStartDate(data.start?.date ?? todayISO());
+        // 저장값 우선. 최초 등록이면 바로 전 화면에서 확인한 조제일을 채워 사용자가 고칩니다.
+        setStartDate(data.start?.date ?? dispensedDate ?? todayISO());
         setStartSlot(data.start?.slot ?? null);
 
         const next: Record<number, MealSlot[]> = {};
@@ -148,7 +150,7 @@ export function MedicationSchedulePage() {
     return () => {
       cancelled = true;
     };
-  }, [recordId]);
+  }, [dispensedDate, recordId]);
 
   /** 토글. SLOT_ORDER 순서를 유지해 담습니다 — 클릭 순서대로 쌓으면 재진입 시 표시가 흔들립니다. */
   function toggleSlot(medicationId: number, slot: MealSlot) {
@@ -195,7 +197,6 @@ export function MedicationSchedulePage() {
     start: MedicationStartPoint,
     times: MealTimes,
     payloadSlots: Record<number, MealSlot[]>,
-    reason: 'schedule-saved' | 'schedule-skipped',
   ) {
     if (!schedule) return;
     setSaving(true);
@@ -209,12 +210,12 @@ export function MedicationSchedulePage() {
           .filter((m) => m.timesPerDay !== null)
           .map((m) => ({ medicationId: m.medicationId, slots: payloadSlots[m.medicationId] ?? [] })),
       });
-      // DevFlowComplete가 reason별로 안내 문구를 갈라 씁니다.
-      navigate('/dev/flow-complete', { state: { reason } });
+      // 저장이 끝난 흐름으로 뒤로가기를 해도 시간 설정 화면으로 돌아오지 않게 교체합니다.
+      navigate('/home', { replace: true });
     } catch (error: unknown) {
       setSaveError({
         message: error instanceof Error ? error.message : '복약 시간을 저장하지 못했어요.',
-        retry: () => persist(start, times, payloadSlots, reason),
+        retry: () => persist(start, times, payloadSlots),
       });
     } finally {
       setSaving(false);
@@ -223,7 +224,7 @@ export function MedicationSchedulePage() {
 
   function handleSave() {
     if (!startSlot || !startDate) return;
-    void persist({ date: startDate, slot: startSlot }, mealTimes, slots, 'schedule-saved');
+    void persist({ date: startDate, slot: startSlot }, mealTimes, slots);
   }
 
   /** 건너뛰기 — 기본 시각 + 자동 배정 결과를 그대로 보냅니다. */
@@ -237,7 +238,6 @@ export function MedicationSchedulePage() {
       { date: startDate || todayISO(), slot: startSlot ?? 'morning' },
       DEFAULT_MEAL_TIMES,
       defaults,
-      'schedule-skipped',
     );
   }
 

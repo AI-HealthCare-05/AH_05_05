@@ -51,6 +51,7 @@ interface Draft {
   name: string;
   dose: string;
   timesPerDay: number | null;
+  days: number | null;
   note: string;
 }
 
@@ -114,17 +115,26 @@ function selectValueToTimesPerDay(value: string): number | null {
 
 function frequencyText(med: OcrMedication): string {
   const note = med.note.trim();
+  const days = med.days === null ? '' : `${med.days}일분`;
   if (med.timesPerDay === null) {
     // note가 이미 "필요 시"로 시작하면(예: "필요 시, 6시간 이상 간격") 접두어를 또 붙이지 않습니다.
-    return note.startsWith('필요 시') ? note : ['필요 시', note].filter(Boolean).join(' · ');
+    return note.startsWith('필요 시')
+      ? [note, days].filter(Boolean).join(' · ')
+      : ['필요 시', days, note].filter(Boolean).join(' · ');
   }
   // note 가 비어 있으면 구분자만 덜렁 남으므로(예: "1일 2회 · ") 빈 값은 걸러냅니다.
   // 프리셋이 토글이 된 뒤로는 마지막 칩을 끄면 note 가 실제로 빈 문자열이 됩니다.
-  return [`1일 ${med.timesPerDay}회`, note].filter(Boolean).join(' · ');
+  return [`1일 ${med.timesPerDay}회`, days, note].filter(Boolean).join(' · ');
 }
 
 function toDraft(med: OcrMedication): Draft {
-  return { name: med.name, dose: med.dose, timesPerDay: med.timesPerDay, note: med.note };
+  return {
+    name: med.name,
+    dose: med.dose,
+    timesPerDay: med.timesPerDay,
+    days: med.days,
+    note: med.note,
+  };
 }
 
 export function MedicationEditDialog({
@@ -164,7 +174,7 @@ export function MedicationEditDialog({
   function handleAddStart() {
     newIdCounterRef.current += 1;
     setEditingTarget({ mode: 'add', tempId: `new_${newIdCounterRef.current}` });
-    setDraft({ name: '', dose: '', timesPerDay: 1, note: '' });
+    setDraft({ name: '', dose: '', timesPerDay: 1, days: 1, note: '' });
     setView('edit');
   }
 
@@ -283,6 +293,18 @@ export function MedicationEditDialog({
               </Select>
             </div>
 
+            <Input
+              label="복용 일수"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={draft.days ?? ''}
+              onChange={(e) =>
+                setDraft({ ...draft, days: e.target.value ? Number(e.target.value) : null })
+              }
+              placeholder="예: 7"
+            />
+
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold text-foreground">복용 시점</label>
               <div className="flex flex-wrap gap-2">
@@ -363,7 +385,10 @@ export function MedicationEditDialog({
                       <p className="text-sm font-bold text-foreground">
                         {med.name} {med.dose}
                       </p>
-                      {med.confidence === 'low' && <StatusBadge type="review" />}
+                      {med.confidence === 'low' && <StatusBadge type="review">확인 필요</StatusBadge>}
+                      {med.confidence === 'medium' && (
+                        <StatusBadge type="dose">확인 권장</StatusBadge>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground">{frequencyText(med)}</p>
                     <div className="flex justify-end gap-2">

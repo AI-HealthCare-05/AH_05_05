@@ -10,7 +10,7 @@ import {
 } from '@/shared/ui';
 
 /**
- * `O08 낮은 신뢰도 항목 확인` (Figma node 205:25)
+ * `O08 확인이 필요한 항목 확인` (Figma node 205:25)
  *
  * REQ-DOC-003: "저장하기는 바로 다음 화면으로 넘어가지 않고 '낮은 신뢰도 항목을 모두
  * 확인하셨나요?' 확인 모달을 1회 노출(미확인 항목 수 표시), 확인 시에만 이동."
@@ -22,7 +22,7 @@ import {
 
 export interface LowConfidenceConfirmDialogProps {
   open: boolean;
-  /** 낮은 신뢰도로 판정된 항목 이름들. 예: ['진단명', '복약 정보'] */
+  /** high가 아니어서 사용자가 다시 볼 항목 이름들. */
   itemNames: string[];
   onConfirm: () => void;
   onCancel: () => void;
@@ -72,10 +72,10 @@ export function LowConfidenceConfirmDialog({
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
       <DialogContent showCloseButton={false} className="bg-warning-bg">
         <DialogHeader>
-          <DialogTitle>낮은 신뢰도 항목을 모두 확인하셨나요?</DialogTitle>
+          <DialogTitle>확인이 필요한 항목을 모두 보셨나요?</DialogTitle>
         </DialogHeader>
 
-        <Card tone="warning" title={`${itemNames.length}개 항목 미확인`}>
+        <Card tone="warning" title={`${itemNames.length}개 항목 확인 필요`}>
           <DialogDescription>
             {joinItemNames(itemNames)} 다시 확인해주세요.
           </DialogDescription>

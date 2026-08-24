@@ -1,1 +1,0 @@
-export { DocumentConfirmPage } from './DocumentConfirmPage';

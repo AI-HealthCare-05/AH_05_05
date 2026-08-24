@@ -9,9 +9,8 @@
  */
 import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import { mockConfirmOcrResult, mockOcrResult, mockUploadDocuments } from './api.mock';
+import { mockConfirmOcrResult, mockOcrResult, mockUploadDocument } from './api.mock';
 import type {
-  CapturedDocument,
   ConfirmOcrResultPayload,
   ConfirmOcrResultResponse,
   OcrResult,
@@ -20,20 +19,15 @@ import type {
 } from './types';
 
 /** REQ-DOC-001 — POST /documents (multipart/form-data) · 명세 3-1 */
-export async function uploadDocuments(
-  files: CapturedDocument[],
-  purpose: UploadPurpose,
-): Promise<UploadDocumentsResult> {
+export async function uploadDocument(file: File, purpose: UploadPurpose): Promise<UploadDocumentsResult> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockUploadDocuments(files);
+    return mockUploadDocument();
   }
 
-  // 실제 카메라·파일 선택이 붙으면 CapturedDocument 에 File 객체를 함께 담고
-  // 여기서 form.append('files', doc.file) 로 바꿉니다. 지금은 파일명만 보냅니다.
   const form = new FormData();
   form.append('purpose', purpose);
-  for (const doc of files) form.append('fileNames', doc.fileName);
+  form.append('file', file);
   return http.post<UploadDocumentsResult>('/documents', form);
 }
 
