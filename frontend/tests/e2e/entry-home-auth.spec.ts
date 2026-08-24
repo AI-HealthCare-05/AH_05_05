@@ -59,3 +59,34 @@ test('로그인 홈은 약 없음·복약 중·복약 종료 상태를 모두 �
   await expect(page.getByText('복용이 끝났어요')).toBeVisible();
   await expect(page.getByRole('button', { name: '새 약봉투 등록' })).toBeVisible();
 });
+
+test('복약 중 홈은 오늘 약의 숫자 위계와 다음 시간을 한 카드에서 보여준다', async ({ page }) => {
+  await page.goto('/dev/home-active');
+
+  const today = page.getByRole('region', { name: '오늘의 복약' });
+  await expect(today.getByText('아침 08:00')).toBeVisible();
+  await expect(today.getByText('3개 · 식후에 드세요')).toBeVisible();
+  await expect(today.getByText('셀레콕시브 200mg')).toBeVisible();
+  await expect(today.getByText('리바록사반 10mg')).toBeVisible();
+  await expect(today.getByText('파모티딘 20mg')).toBeVisible();
+  await expect(today.getByRole('button', { name: '먹었어요' })).toBeVisible();
+  await expect(today.getByText('점심 13:00')).toBeVisible();
+  await expect(today.getByText('1개', { exact: true })).toBeVisible();
+  await expect(today.getByText('저녁 19:00')).toBeVisible();
+  await expect(today.getByText('3개', { exact: true })).toBeVisible();
+  await expect(today.getByText('7일 중 4일째')).toBeVisible();
+  await expect(today.getByText('8월 22일 시작')).toBeVisible();
+  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toHaveCount(0);
+});
+
+test('게스트와 복약 중 홈은 주요 기능 행이 같은 높이에서 시작한다', async ({ page }) => {
+  await page.goto('/home');
+  const guestBox = await page.getByRole('button', { name: /복용약 관리/ }).boundingBox();
+
+  await page.goto('/dev/home-active');
+  const loggedInBox = await page.getByRole('button', { name: /복용약 관리/ }).boundingBox();
+
+  expect(guestBox).not.toBeNull();
+  expect(loggedInBox).not.toBeNull();
+  expect(Math.abs((guestBox?.y ?? 0) - (loggedInBox?.y ?? 0))).toBeLessThanOrEqual(4);
+});

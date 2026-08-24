@@ -174,9 +174,9 @@ function GuestCarousel() {
   ] as const;
 
   return (
-    <section aria-label="포케 기능 소개" className="flex flex-col gap-3">
+    <section aria-label="포케 기능 소개" className="flex min-h-84 flex-col gap-3">
       <div
-        className="-mr-page-x flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
+        className="-mr-page-x flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
         onScroll={(event) => {
           const children = Array.from(event.currentTarget.children) as HTMLElement[];
           const firstOffset = children[0]?.offsetLeft ?? 0;
@@ -195,7 +195,7 @@ function GuestCarousel() {
         {banners.map(({ title, description, icon: Icon, tone }) => (
           <article
             key={title}
-            className={`flex min-h-64 min-w-[88%] snap-start flex-col rounded-card p-5 shadow-card ${tone}`}
+            className={`flex min-h-64 min-w-[88%] flex-1 snap-start flex-col rounded-card p-5 shadow-card ${tone}`}
           >
             <span className="flex size-12 items-center justify-center rounded-pill bg-card/80">
               <Icon aria-hidden className="size-6" />
@@ -279,25 +279,44 @@ function LoggedInHero({ state, onUpload }: { state: MedicationHomeState; onUploa
   }
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="today-medication-title">
+    <section className="flex min-h-84 flex-col gap-2" aria-labelledby="today-medication-title">
       <div className="flex items-center justify-between">
         <h2 id="today-medication-title" className="text-xl font-bold text-foreground">
           오늘의 복약
         </h2>
         <span className="text-sm text-muted-foreground">3일 남음</span>
       </div>
-      <Card tone="info" className="gap-4 p-4">
+      <Card tone="info" className="gap-2 p-3">
         <div className="flex items-center gap-3">
-          <span className="flex size-12 items-center justify-center rounded-pill bg-card text-primary">
-            <Clock3 aria-hidden className="size-6" />
+          <span className="flex size-10 items-center justify-center rounded-pill bg-card text-primary">
+            <Clock3 aria-hidden className="size-5" />
           </span>
-          <div>
-            <p className="text-xl font-bold text-foreground tnum">아침 08:00</p>
-            <p className="text-sm text-muted-foreground">셀레콕시브 · 리바록사반 · 파모티딘</p>
+          <div className="min-w-0">
+            <p className="text-2xl font-bold text-foreground tnum">아침 08:00</p>
+            <p className="text-sm text-muted-foreground">3개 · 식후에 드세요</p>
           </div>
         </div>
+        <ul className="rounded-input bg-card px-3 py-1 text-sm text-foreground shadow-card">
+          <li className="leading-5">셀레콕시브 200mg</li>
+          <li className="leading-5">리바록사반 10mg</li>
+          <li className="leading-5">파모티딘 20mg</li>
+        </ul>
         <Button>먹었어요</Button>
       </Card>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex min-h-touch items-center justify-between rounded-pill bg-card px-4 shadow-card">
+          <span className="text-sm font-bold text-foreground tnum">점심 13:00</span>
+          <span className="text-sm text-muted-foreground">1개</span>
+        </div>
+        <div className="flex min-h-touch items-center justify-between rounded-pill bg-card px-4 shadow-card">
+          <span className="text-sm font-bold text-foreground tnum">저녁 19:00</span>
+          <span className="text-sm text-muted-foreground">3개</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span className="font-bold text-foreground">7일 중 4일째</span>
+        <span>8월 22일 시작</span>
+      </div>
     </section>
   );
 }
