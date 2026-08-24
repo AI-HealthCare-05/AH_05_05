@@ -1,0 +1,145 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path, Query, Response, status
+
+from app.dependencies.security import get_request_user
+from app.dtos.supplement_nutrients import SupplementNutrientListResponse, SupplementNutrientResponse
+from app.dtos.user_supplement_nutrients import (
+    UserSupplementNutrientListResponse,
+    UserSupplementNutrientResponse,
+    UserSupplementNutrientUpdateRequest,
+    UserSupplementNutrientUpsertRequest,
+)
+from app.models.enums import SupplementStatus
+from app.models.users import User
+from app.services.supplement_nutrients import SupplementNutrientService
+from app.services.user_supplement_nutrients import UserSupplementNutrientService
+
+med_router = APIRouter(prefix="/med", tags=["med-nutrition"])
+
+
+def get_supplement_nutrient_service() -> SupplementNutrientService:
+    return SupplementNutrientService()
+
+
+def get_user_supplement_nutrient_service() -> UserSupplementNutrientService:
+    return UserSupplementNutrientService()
+
+
+@med_router.get(
+    "/nutr",
+    response_model=SupplementNutrientListResponse,
+    summary="건강기능식품 영양성분 검색",
+)
+async def search_supplement_nutrients(
+    _user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
+    name: Annotated[str, Query(min_length=1, max_length=100)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> SupplementNutrientListResponse:
+    """제품명 앞뒤 부분 검색으로 건강기능식품 기준정보를 페이지 단위로 조회한다."""
+    products, total = await service.search(name, offset=offset, limit=limit)
+    return SupplementNutrientListResponse(
+        items=[SupplementNutrientResponse.model_validate(product) for product in products],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@med_router.get(
+    "/nutr/{supplement_nutrient_id}",
+    response_model=SupplementNutrientResponse,
+    summary="건강기능식품 영양성분 상세 조회",
+)
+async def get_supplement_nutrient(
+    supplement_nutrient_id: int,
+    _user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
+) -> SupplementNutrientResponse:
+    """건강기능식품 한 제품의 전체 영양성분과 섭취 기준정보를 조회한다."""
+    return SupplementNutrientResponse.model_validate(await service.get(supplement_nutrient_id))
+
+
+@med_router.get(
+    "/user-suppl-nutr",
+    response_model=UserSupplementNutrientListResponse,
+    summary="영양제 복용 정보 목록 조회",
+)
+async def list_user_supplement_nutrients(
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[UserSupplementNutrientService, Depends(get_user_supplement_nutrient_service)],
+    registration_status: Annotated[SupplementStatus | None, Query(alias="status")] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> UserSupplementNutrientListResponse:
+    """현재 사용자의 영양제 복용 정보를 상태 조건과 페이지 단위로 조회한다."""
+    return await service.list(
+        user,
+        registration_status=registration_status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@med_router.put(
+    "/user-suppl-nutr/{registration_id}",
+    response_model=UserSupplementNutrientResponse,
+    summary="영양제 복용 정보 등록 또는 재등록",
+)
+async def upsert_user_supplement_nutrient(
+    registration_id: Annotated[
+        int,
+        Path(ge=1, description="등록할 supplement_nutrients 제품 ID"),
+    ],
+    data: UserSupplementNutrientUpsertRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[UserSupplementNutrientService, Depends(get_user_supplement_nutrient_service)],
+) -> UserSupplementNutrientResponse:
+    """제품 ID를 기준으로 복용 정보를 새로 등록하거나 기존 정보를 활성 상태로 갱신한다."""
+    return await service.upsert(user, registration_id, data)
+
+
+@med_router.get(
+    "/user-suppl-nutr/{registration_id}",
+    response_model=UserSupplementNutrientResponse,
+    summary="영양제 복용 정보 상세 조회",
+)
+async def get_user_supplement_nutrient(
+    registration_id: Annotated[int, Path(ge=1, description="사용자 복용 정보 ID")],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[UserSupplementNutrientService, Depends(get_user_supplement_nutrient_service)],
+) -> UserSupplementNutrientResponse:
+    """현재 사용자가 소유한 영양제 복용 정보 한 건과 복용 시간대를 조회한다."""
+    return await service.get(user, registration_id)
+
+
+@med_router.patch(
+    "/user-suppl-nutr/{registration_id}",
+    response_model=UserSupplementNutrientResponse,
+    summary="영양제 복용 정보 수정",
+)
+async def update_user_supplement_nutrient(
+    registration_id: Annotated[int, Path(ge=1, description="사용자 복용 정보 ID")],
+    data: UserSupplementNutrientUpdateRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[UserSupplementNutrientService, Depends(get_user_supplement_nutrient_service)],
+) -> UserSupplementNutrientResponse:
+    """복용량·기간·상태·시간대·메모 중 전달된 항목만 수정한다."""
+    return await service.update(user, registration_id, data)
+
+
+@med_router.delete(
+    "/user-suppl-nutr/{registration_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="영양제 복용 완료 처리",
+)
+async def complete_user_supplement_nutrient(
+    registration_id: Annotated[int, Path(ge=1, description="사용자 복용 정보 ID")],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[UserSupplementNutrientService, Depends(get_user_supplement_nutrient_service)],
+) -> Response:
+    """복용 정보를 물리적으로 삭제하지 않고 COMPLETED 상태와 종료일을 기록한다."""
+    await service.complete(user, registration_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

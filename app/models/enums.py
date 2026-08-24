@@ -29,6 +29,12 @@ class MealSlot(StrEnum):
     BEDTIME = "BEDTIME"
 
 
+class SupplementStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+
+
 class AlarmStatus(StrEnum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
