@@ -1,7 +1,7 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { Button, Card, Header, Input, StatusBadge } from '@/shared/ui';
+import { Button, Card, ErrorDialog, Header, Input, StatusBadge } from '@/shared/ui';
 import type { StatusBadgeType } from '@/shared/ui';
 import {
   confirmOcrResult,
@@ -77,6 +77,26 @@ export function OcrReviewPage() {
   const [lowConfidenceConfirmOpen, setLowConfidenceConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** 저장 실패 팝업. 입력값은 그대로 두고 재시도만 제공합니다. */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  /**
+   * OCR 실패(failed·cancelled) 팝업을 사용자가 닫고 직접 입력하기로 한 상태.
+   * 여기서 막으면 서비스를 아예 쓸 수 없으므로 직접 입력 경로를 반드시 남깁니다.
+   */
+  const [dismissedOcrFailure, setDismissedOcrFailure] = useState(false);
+  /**
+   * 필드별 신뢰도. 결과가 온 상태에서만 채워집니다.
+   *
+   * 값을 로드 시점에 지역 상태로 옮겨두면 렌더가 `result.fields` 를 만지지 않아도 됩니다 —
+   * failed 에서 "그대로 직접 입력" 으로 들어온 폼에는 신뢰도가 아예 없고(추출된 게 없으니
+   * 당연합니다), 그때 배지를 숨기는 판단이 null 하나로 끝납니다.
+   */
+  const [fieldConfidence, setFieldConfidence] = useState<{
+    diagnosis: Confidence;
+    surgery: Confidence;
+    dischargeDate: Confidence;
+    medicationDays: Confidence;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,12 +104,22 @@ export function OcrReviewPage() {
       .then((data) => {
         if (cancelled) return;
         setResult(data);
+        // 명세 4번 — queued·processing·failed·cancelled 에는 결과 필드가 없습니다.
+        // 상태를 먼저 검사하지 않으면 undefined 접근으로 throw 해서, 아래 대기·실패 분기에
+        // 도달하지 못하고 loadError 카드로 떨어집니다.
+        if (data.ocrStatus !== 'ready_for_review' && data.ocrStatus !== 'complete') return;
         setDiagnosis(data.fields.diagnosis.value ?? '');
         setSurgery(data.fields.surgery.value ?? '');
         setDischargeDate(data.fields.dischargeDate.value ?? '');
         setMedicationDays(
           data.fields.medicationDays.value != null ? String(data.fields.medicationDays.value) : '',
         );
+        setFieldConfidence({
+          diagnosis: data.fields.diagnosis.confidence,
+          surgery: data.fields.surgery.confidence,
+          dischargeDate: data.fields.dischargeDate.confidence,
+          medicationDays: data.fields.medicationDays.confidence,
+        });
         setMedications(data.medications);
         setAdvices(data.advices);
       })
@@ -150,10 +180,10 @@ export function OcrReviewPage() {
    */
   const lowConfidenceItemNames: string[] = [];
   if (result) {
-    if (result.fields.diagnosis.confidence === 'low') lowConfidenceItemNames.push('진단명');
-    if (result.fields.surgery.confidence === 'low') lowConfidenceItemNames.push('수술명');
-    if (result.fields.dischargeDate.confidence === 'low') lowConfidenceItemNames.push('퇴원일');
-    if (result.fields.medicationDays.confidence === 'low') lowConfidenceItemNames.push('복용일수');
+    if (fieldConfidence?.diagnosis === 'low') lowConfidenceItemNames.push('진단명');
+    if (fieldConfidence?.surgery === 'low') lowConfidenceItemNames.push('수술명');
+    if (fieldConfidence?.dischargeDate === 'low') lowConfidenceItemNames.push('퇴원일');
+    if (fieldConfidence?.medicationDays === 'low') lowConfidenceItemNames.push('복용일수');
     // 약이 여러 건 낮게 나올 수 있어 건수를 함께 표기합니다. 항목 이름만 두면
     // "복약 정보 1개"로 세어져, 실제로 확인해야 할 약이 2건일 때 개수가 어긋납니다.
     const lowMedCount = medications.filter((m) => m.confidence === 'low').length;
@@ -181,6 +211,7 @@ export function OcrReviewPage() {
   async function doSave() {
     if (!result) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const { recordId, hasMedication } = await confirmOcrResult(batchId, {
         diagnosis,
@@ -204,6 +235,9 @@ export function OcrReviewPage() {
       } else {
         navigate('/dev/flow-complete', { state: { reason: 'no-medication' } });
       }
+    } catch (error: unknown) {
+      // 화면 상태(diagnosis 등)는 건드리지 않습니다 — 방금 고친 값이 사라지면 안 됩니다.
+      setSaveError(error instanceof Error ? error.message : '저장하지 못했어요.');
     } finally {
       setSaving(false);
     }
@@ -223,6 +257,64 @@ export function OcrReviewPage() {
       </div>
     );
   }
+
+  /*
+    명세 4번: queued·processing 에서는 결과 필드가 오지 않습니다. 아직 실패가 아니라
+    진행 중이므로 팝업이 아니라 화면 내 대기 표시로 두고, 결과 필드를 읽기 전에 갈랍니다.
+  */
+  if (result.ocrStatus === 'queued' || result.ocrStatus === 'processing') {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+        <Header title="OCR 결과 확인" onBack={() => navigate(-1)} />
+        <main className="flex flex-1 flex-col px-page-x py-4">
+          <Card tone="info" title="문서를 읽고 있어요">
+            잠시만 기다려주세요. 다 읽으면 확인할 내용을 보여드립니다.
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  /*
+    complete 는 이미 확정이 끝난 작업입니다(ERD: 확정 시 structured_result 를 지우고
+    상태를 COMPLETE 로). 실패가 아니고 뒤에 돌아갈 폼도 없으므로 팝업이 아니라 화면 내
+    카드로 알립니다.
+
+    **검토 폼을 렌더하지 않습니다.** 명세상 같은 hash 재요청만 기존 결과를 돌려주고 다른
+    hash 는 409 로 거부하므로, 값을 고칠 수 있게 보여주면 저장에서 실패합니다.
+  */
+  if (result.ocrStatus === 'complete') {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+        <Header title="OCR 결과 확인" onBack={() => navigate(-1)} />
+        <main className="flex flex-1 flex-col gap-3 px-page-x py-4">
+          <Card tone="success" title="이미 등록된 문서예요">
+            이 문서는 확인과 저장이 끝났습니다. 등록된 내용은 복약·생활관리 화면에서 볼 수
+            있어요.
+          </Card>
+
+          <div className="flex-1" />
+
+          {/* 막다른 화면으로 두지 않습니다. complete 응답에는 recordId 가 없어
+              복약 시간 설정으로 바로 보낼 수 없으므로 허브로 보냅니다. */}
+          <div className="flex flex-col gap-2 pb-4">
+            <Button onClick={() => navigate('/dev/flow-complete')}>다음으로</Button>
+            <Button variant="secondary" onClick={() => navigate('/dev/document-upload')}>
+              다른 문서 등록하기
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  /*
+    failed·cancelled 는 사용자가 여기서 조치할 수 있는 실패라 팝업으로 알립니다.
+    뒤에 빈 검토 폼이 남아 있어서(= 직접 입력 경로) 팝업이 의미가 있습니다.
+  */
+  const ocrFailed = result.ocrStatus === 'failed';
+  const ocrCancelled = result.ocrStatus === 'cancelled';
+  const showOcrFailureDialog = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
 
   const medicationConfidence: Confidence = medications.some((m) => m.confidence === 'low')
     ? 'low'
@@ -244,7 +336,7 @@ export function OcrReviewPage() {
             <label htmlFor="diagnosis" className="text-sm font-bold text-foreground">
               진단명
             </label>
-            <ConfidenceBadge confidence={result.fields.diagnosis.confidence} />
+            {fieldConfidence && <ConfidenceBadge confidence={fieldConfidence.diagnosis} />}
           </div>
           <Input
             id="diagnosis"
@@ -259,7 +351,7 @@ export function OcrReviewPage() {
             <label htmlFor="surgery" className="text-sm font-bold text-foreground">
               수술명
             </label>
-            <ConfidenceBadge confidence={result.fields.surgery.confidence} />
+            {fieldConfidence && <ConfidenceBadge confidence={fieldConfidence.surgery} />}
           </div>
           <Input
             id="surgery"
@@ -274,7 +366,7 @@ export function OcrReviewPage() {
             <label htmlFor="dischargeDate" className="text-sm font-bold text-foreground">
               퇴원일
             </label>
-            <ConfidenceBadge confidence={result.fields.dischargeDate.confidence} />
+            {fieldConfidence && <ConfidenceBadge confidence={fieldConfidence.dischargeDate} />}
           </div>
           <Input
             id="dischargeDate"
@@ -293,7 +385,7 @@ export function OcrReviewPage() {
             <label htmlFor="medicationDays" className="text-sm font-bold text-foreground">
               복용일수
             </label>
-            <ConfidenceBadge confidence={result.fields.medicationDays.confidence} />
+            {fieldConfidence && <ConfidenceBadge confidence={fieldConfidence.medicationDays} />}
           </div>
           <div className="flex items-center gap-2">
             <Input
@@ -365,6 +457,32 @@ export function OcrReviewPage() {
         medications={medications}
         onOpenChange={setMedicationDialogOpen}
         onSave={setMedications}
+      />
+
+      <ErrorDialog
+        open={showOcrFailureDialog}
+        title={ocrCancelled ? '검토 시간이 지났어요' : '문서를 읽지 못했어요'}
+        message={
+          ocrCancelled
+            ? '검토 가능한 시간이 지나 결과를 사용할 수 없어요. 문서를 다시 등록해주세요.'
+            : '문서에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'
+        }
+        retryLabel="다시 촬영하기"
+        onRetry={() => navigate('/dev/document-upload')}
+        // 여기서 막으면 사용자가 서비스를 아예 쓸 수 없으므로 직접 입력 경로를 남깁니다.
+        // cancelled 는 결과 자체가 무효라 직접 입력을 제공하지 않습니다.
+        secondaryLabel={ocrFailed ? '그대로 직접 입력' : undefined}
+        onSecondary={ocrFailed ? () => setDismissedOcrFailure(true) : undefined}
+      />
+
+      <ErrorDialog
+        open={saveError !== null}
+        title="저장하지 못했어요"
+        message={saveError ?? ''}
+        onRetry={() => {
+          setSaveError(null);
+          void doSave();
+        }}
       />
 
       <LowConfidenceConfirmDialog

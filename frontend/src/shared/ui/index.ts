@@ -10,6 +10,9 @@ export type { InputProps } from './Input';
 export { StatusBadge } from './StatusBadge';
 export type { StatusBadgeProps, StatusBadgeType } from './StatusBadge';
 
+export { ErrorDialog } from './ErrorDialog';
+export type { ErrorDialogProps } from './ErrorDialog';
+
 export { Header } from './Header';
 export type { HeaderProps } from './Header';
 
