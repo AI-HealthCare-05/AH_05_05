@@ -2,7 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router';
 import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
-import { MedicationSchedulePage } from '@/pages/medication-schedule';
+import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
 import { MedicationsPage } from '@/pages/medications';
 import { MyPage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
@@ -33,6 +33,7 @@ export function AppRouter() {
         <Route path="/document-upload" element={<DocumentUploadPage />} />
         <Route path="/ocr-review" element={<OcrReviewPage />} />
         <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
+        <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route path="/medications" element={<MedicationsPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/my" element={<MyPage />} />
@@ -40,6 +41,7 @@ export function AppRouter() {
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
+        <Route path="/dev/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route
           path="/dev/medication-schedule-auto-assigned"
           element={

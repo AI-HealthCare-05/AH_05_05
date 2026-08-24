@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { toast } from 'sonner';
 import {
   getMedicationOverview,
+  saveMedicationSchedule,
   type MealSlot,
   type MedicationOverview,
   type MedicationOverviewItem,
 } from '@/entities/medication';
-import { BottomTabbar, Card, Header, type TabKey } from '@/shared/ui';
+import { BottomTabbar, Card, ErrorDialog, Header, type TabKey } from '@/shared/ui';
+import { MedicationSlotSheet } from './MedicationSlotSheet';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -28,6 +31,8 @@ export function MedicationsPage() {
   const navigate = useNavigate();
   const [overview, setOverview] = useState<MedicationOverview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editingMedication, setEditingMedication] = useState<MedicationOverviewItem | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +49,34 @@ export function MedicationsPage() {
       cancelled = true;
     };
   }, []);
+
+  async function saveMedicationSlots(slots: MealSlot[]) {
+    if (!overview || !editingMedication) return;
+    setSaveError(null);
+    const nextMedications = overview.medications.map((medication) =>
+      medication.medicationId === editingMedication.medicationId
+        ? { ...medication, slots }
+        : medication,
+    );
+    try {
+      await saveMedicationSchedule({
+        recordId: overview.recordId,
+        start: overview.start,
+        mealTimes: overview.mealTimes,
+        medications: nextMedications
+          .filter((medication) => !medication.asNeeded)
+          .map((medication) => ({
+            medicationId: medication.medicationId,
+            slots: medication.slots,
+          })),
+      });
+      setOverview({ ...overview, medications: nextMedications });
+      setEditingMedication(null);
+      toast.success('복용 시간을 바꿨어요.');
+    } catch (error: unknown) {
+      setSaveError(error instanceof Error ? error.message : '복용 시간을 저장하지 못했어요.');
+    }
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -73,7 +106,7 @@ export function MedicationsPage() {
               <div className="flex items-end justify-between gap-3">
                 <div>
                   <p className="text-sm text-muted-foreground">
-                    {formatDate(overview.startDate)}부터 복용 중
+                    {formatDate(overview.start.date)}부터 복용 중
                   </p>
                   <p className="mt-1 text-2xl font-bold text-foreground">
                     {overview.daysRemaining}일 남음
@@ -87,9 +120,7 @@ export function MedicationsPage() {
               type="button"
               className="flex min-h-20 items-center gap-3 rounded-card bg-card px-4 py-3 text-left shadow-card"
               onClick={() =>
-                navigate('/medication-schedule', {
-                  state: { recordId: overview.recordId, dispensedDate: overview.startDate },
-                })
+                navigate('/medication-alarm-times')
               }
             >
               <span className="min-w-0 flex-1">
@@ -107,7 +138,13 @@ export function MedicationsPage() {
                 약 {overview.medications.length}개
               </h2>
               {overview.medications.map((medication) => (
-                <MedicationCard key={medication.medicationId} medication={medication} />
+                <MedicationCard
+                  key={medication.medicationId}
+                  medication={medication}
+                  onClick={
+                    medication.asNeeded ? undefined : () => setEditingMedication(medication)
+                  }
+                />
               ))}
             </section>
           </>
@@ -119,13 +156,34 @@ export function MedicationsPage() {
         onChange={(key) => navigate(TAB_ROUTES[key])}
         className="border-t border-border"
       />
+      <MedicationSlotSheet
+        open={editingMedication !== null}
+        medication={editingMedication}
+        onOpenChange={(open) => {
+          if (!open) setEditingMedication(null);
+        }}
+        onSave={saveMedicationSlots}
+      />
+      <ErrorDialog
+        open={saveError !== null}
+        title="복용 시간을 저장하지 못했어요"
+        message={saveError ?? ''}
+        retryLabel="확인"
+        onRetry={() => setSaveError(null)}
+      />
     </div>
   );
 }
 
-function MedicationCard({ medication }: { medication: MedicationOverviewItem }) {
+function MedicationCard({
+  medication,
+  onClick,
+}: {
+  medication: MedicationOverviewItem;
+  onClick?: () => void;
+}) {
   return (
-    <Card className="gap-3 p-4">
+    <Card className="gap-3 p-4" onClick={onClick}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-lg font-bold text-foreground">
           {medication.name} {medication.dose}

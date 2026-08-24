@@ -76,7 +76,7 @@ export interface MedicationOverviewItem {
 
 export interface MedicationOverview {
   recordId: number;
-  startDate: string;
+  start: MedicationStartPoint;
   daysRemaining: number;
   mealTimes: MealTimes;
   medications: MedicationOverviewItem[];
