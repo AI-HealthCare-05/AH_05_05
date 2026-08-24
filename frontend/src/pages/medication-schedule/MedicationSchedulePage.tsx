@@ -1,6 +1,6 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { Button, Card, Header, Input } from '@/shared/ui';
+import { Button, Card, ErrorDialog, Header, Input } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
 import {
   getMedicationSchedule,
@@ -118,6 +118,8 @@ export function MedicationSchedulePage() {
   const [editingSlot, setEditingSlot] = useState<MealSlot | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** 저장 실패 팝업. 재시도가 같은 인자로 다시 보내야 해서 콜백을 함께 담습니다. */
+  const [saveError, setSaveError] = useState<{ message: string; retry: () => void } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,6 +181,16 @@ export function MedicationSchedulePage() {
     }
   }
 
+  /**
+   * 저장 실패는 사용자가 버튼을 눌러 생긴 실패고 뒤에 입력 화면이 그대로 남아 있으므로
+   * 팝업으로 알립니다. catch 가 없으면 finally 가 saving 만 풀고 아무 표시가 없어서,
+   * 사용자는 저장된 줄 압니다.
+   *
+   * **실패하면 navigate 에 도달하지 않습니다** — navigate 를 try 안 await 뒤에 두어
+   * 요청이 throw 하면 그 줄을 건너뛰고 catch 로 갑니다.
+   *
+   * 재시도가 같은 인자로 다시 보내야 해서, 실패 시 인자를 통째로 클로저에 담아둡니다.
+   */
   async function persist(
     start: MedicationStartPoint,
     times: MealTimes,
@@ -187,6 +199,7 @@ export function MedicationSchedulePage() {
   ) {
     if (!schedule) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await saveMedicationSchedule({
         recordId,
@@ -198,6 +211,11 @@ export function MedicationSchedulePage() {
       });
       // DevFlowComplete가 reason별로 안내 문구를 갈라 씁니다.
       navigate('/dev/flow-complete', { state: { reason } });
+    } catch (error: unknown) {
+      setSaveError({
+        message: error instanceof Error ? error.message : '복약 시간을 저장하지 못했어요.',
+        retry: () => persist(start, times, payloadSlots, reason),
+      });
     } finally {
       setSaving(false);
     }
@@ -477,6 +495,17 @@ export function MedicationSchedulePage() {
           </Button>
         </div>
       </main>
+
+      <ErrorDialog
+        open={saveError !== null}
+        title="복약 시간을 저장하지 못했어요"
+        message={saveError?.message ?? ''}
+        onRetry={() => {
+          const retry = saveError?.retry;
+          setSaveError(null);
+          retry?.();
+        }}
+      />
 
       <TimePickerSheet
         open={editingSlot !== null}

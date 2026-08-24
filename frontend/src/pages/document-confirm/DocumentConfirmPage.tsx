@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { Button, Card, Header } from '@/shared/ui';
+import { Button, Card, ErrorDialog, Header } from '@/shared/ui';
 import { uploadDocuments, type CapturedDocument } from '@/entities/document';
 
 /**
@@ -27,14 +28,33 @@ export function DocumentConfirmPage() {
   const captured =
     state.captured && state.captured.length > 0 ? state.captured : DEFAULT_CAPTURED;
 
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   function handleAddMore() {
     navigate('/dev/document-upload', { state: { captured } });
   }
 
+  /**
+   * 업로드는 사용자가 버튼을 눌러 시작한 작업이고 뒤에 화면이 남아 있으므로 실패를
+   * 팝업으로 알립니다. catch 가 없으면 413(용량)·415(형식)·500 에서 버튼을 눌렀는데
+   * 화면이 그대로라, 사용자는 자기가 잘못 눌렀다고 생각하고 계속 누릅니다.
+   */
   async function handleFinish() {
-    const { batchId } = await uploadDocuments(captured, 'initial');
-    toast.success('업로드 완료');
-    navigate('/dev/ocr-review', { state: { batchId } });
+    if (uploading) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const { batchId } = await uploadDocuments(captured, 'initial');
+      toast.success('업로드 완료');
+      navigate('/dev/ocr-review', { state: { batchId } });
+    } catch (error: unknown) {
+      setUploadError(
+        error instanceof Error ? error.message : '문서를 등록하지 못했어요.',
+      );
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -47,11 +67,15 @@ export function DocumentConfirmPage() {
         </p>
 
         <Card tone="info" title={`등록할 문서 · ${captured.length}장`}>
-          <div className="flex flex-wrap gap-3 py-1">
+          {/*
+            등록하는 문서는 퇴원요약지·처방전이라 A4 세로입니다. 고정폭 + flex-wrap 대신
+            grid 를 쓰면 375px 에서 장수가 늘어도 열이 흔들리지 않습니다.
+          */}
+          <div className="grid grid-cols-3 gap-3 py-1">
             {captured.map((doc, i) => (
               <div
                 key={doc.id}
-                className="flex h-[88px] w-[96px] shrink-0 items-center justify-center rounded-input border border-border bg-card text-sm font-bold text-foreground"
+                className="flex aspect-[3/4] items-center justify-center rounded-input border border-border bg-card text-sm font-bold text-foreground"
               >
                 {i + 1}쪽
               </div>
@@ -65,12 +89,30 @@ export function DocumentConfirmPage() {
         <div className="flex-1" />
 
         <div className="flex flex-col gap-2 pb-4">
-          <Button variant="secondary" onClick={handleAddMore}>
+          <Button variant="secondary" onClick={handleAddMore} disabled={uploading}>
             문서 추가
           </Button>
-          <Button onClick={handleFinish}>등록 완료</Button>
+          {/* 전송 중 중복 전송을 막습니다. */}
+          <Button onClick={handleFinish} disabled={uploading}>
+            {uploading ? '등록 중...' : '등록 완료'}
+          </Button>
         </div>
       </main>
+
+      <ErrorDialog
+        open={uploadError !== null}
+        title="문서를 등록하지 못했어요"
+        message={uploadError ?? ''}
+        onRetry={() => {
+          setUploadError(null);
+          void handleFinish();
+        }}
+        secondaryLabel="문서 다시 선택"
+        onSecondary={() => {
+          setUploadError(null);
+          navigate('/dev/document-upload', { state: { captured } });
+        }}
+      />
     </div>
   );
 }
