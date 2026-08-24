@@ -79,14 +79,15 @@ test('복약 중 홈은 오늘 약의 숫자 위계와 다음 시간을 한 카�
   await expect(page.getByRole('region', { name: '포케 기능 소개' })).toHaveCount(0);
 });
 
-test('게스트와 복약 중 홈은 주요 기능 행이 같은 높이에서 시작한다', async ({ page }) => {
+test('홈 네 상태는 주요 기능 행이 같은 높이에서 시작한다', async ({ page }) => {
   await page.goto('/home');
   const guestBox = await page.getByRole('button', { name: /복용약 관리/ }).boundingBox();
 
-  await page.goto('/dev/home-active');
-  const loggedInBox = await page.getByRole('button', { name: /복용약 관리/ }).boundingBox();
-
   expect(guestBox).not.toBeNull();
-  expect(loggedInBox).not.toBeNull();
-  expect(Math.abs((guestBox?.y ?? 0) - (loggedInBox?.y ?? 0))).toBeLessThanOrEqual(4);
+  for (const route of ['/dev/home-empty', '/dev/home-active', '/dev/home-ended']) {
+    await page.goto(route);
+    const loggedInBox = await page.getByRole('button', { name: /복용약 관리/ }).boundingBox();
+    expect(loggedInBox).not.toBeNull();
+    expect(Math.abs((guestBox?.y ?? 0) - (loggedInBox?.y ?? 0))).toBeLessThanOrEqual(4);
+  }
 });
