@@ -129,3 +129,39 @@ class CannotReactivateWithdrawnError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "CANNOT_REACTIVATE_WITHDRAWN"
     message = "탈퇴한 계정은 상태를 변경할 수 없습니다."
+
+
+class InvalidImageError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_IMAGE"
+    message = "유효한 JPG 또는 PNG 이미지를 선택해 주세요."
+
+
+class TemplateNotMatchedError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "TEMPLATE_NOT_MATCHED"
+    message = "등록된 조제약 복약안내 템플릿과 일치하지 않습니다."
+
+
+class NoMedicationsFoundError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "NO_MEDICATIONS_FOUND"
+    message = "약품 정보를 찾지 못했습니다. 이미지와 템플릿을 확인해 주세요."
+
+
+class OcrProviderConfigError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "PROVIDER_CONFIG_MISSING"
+    message = "Template OCR 설정이 필요합니다."
+
+
+class OcrProviderError(AppError):
+    status_code = status.HTTP_502_BAD_GATEWAY
+    code = "OCR_PROVIDER_ERROR"
+    message = "Template OCR 응답을 처리할 수 없습니다."
+
+
+class OcrProviderTimeoutError(AppError):
+    status_code = status.HTTP_504_GATEWAY_TIMEOUT
+    code = "OCR_PROVIDER_TIMEOUT"
+    message = "Template OCR 호출 시간이 초과됐습니다."

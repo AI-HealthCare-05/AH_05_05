@@ -9,6 +9,7 @@ from app.core import config
 from app.core.db.databases import initialize_tortoise
 from app.core.exception_handlers import register_exception_handlers
 from app.core.logger import configure_db_query_logging
+from app.core.ocr_upload_middleware import OcrUploadSizeLimitMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -17,6 +18,7 @@ configure_db_query_logging(config.DB_QUERY_LOG_ENABLED)
 app = FastAPI(
     default_response_class=ORJSONResponse, docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json"
 )
+app.add_middleware(OcrUploadSizeLimitMiddleware)
 initialize_tortoise(app)
 register_exception_handlers(app)
 
