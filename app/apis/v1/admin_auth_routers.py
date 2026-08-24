@@ -77,10 +77,12 @@ async def refresh(
     요청 본문은 없다. 브라우저가 `admin_refresh_token` 쿠키를 자동으로 보낸다.
 
     갱신 때마다 계정 상태를 다시 확인한다. 로그인 이후 정지된 계정이 리프레시 토큰만으로
-    계속 접근하는 것을 막기 위해서다. 비밀번호 변경·정지·임시 비밀번호 재발송이 일어나면
-    세션 난수가 바뀌어 이전 리프레시 토큰은 무효가 된다.
+    계속 접근하는 것을 막기 위해서다. **정지 차단은 이 검사에만 의존한다.**
 
-    - **401 UNAUTHORIZED / INVALID_TOKEN** — 쿠키가 없거나 만료·위변조됨, 또는 무효화된 세션
+    발급된 토큰을 만료 전에 폐기할 수단은 없다. 비밀번호를 바꿔도 다른 기기의 리프레시
+    토큰은 살아 있으며, 노출 창은 수명(REFRESH_TOKEN_EXPIRE_MINUTES)으로만 제한된다.
+
+    - **401 UNAUTHORIZED / INVALID_TOKEN** — 쿠키가 없거나 만료·위변조됨
     - **403 ACCOUNT_SUSPENDED / ACCOUNT_WITHDRAWN** — 사용할 수 없는 계정
     """
     return await service.refresh(admin_refresh_token)
