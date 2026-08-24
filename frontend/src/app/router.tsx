@@ -7,6 +7,7 @@ import { MedicationSchedulePage } from '@/pages/medication-schedule';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
+import { SupplementsPage } from '@/pages/supplements';
 import { DevGallery } from './DevGallery';
 
 /**
@@ -22,12 +23,14 @@ export function AppRouter() {
         <Route path="/" element={<SplashPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
+        <Route path="/supplements" element={<SupplementsPage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/document-confirm" element={<DocumentConfirmPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
         <Route path="/dev/chat" element={<ChatPage />} />
+        <Route path="/dev/supplements" element={<SupplementsPage />} />
         <Route path="/dev/home-empty" element={<HomePage authenticatedOverride />} />
         <Route
           path="/dev/home-active"
