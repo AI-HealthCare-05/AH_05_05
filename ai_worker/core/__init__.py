@@ -1,7 +1,7 @@
 import logging
 
-from app.core.config import Config
-from app.core.logger import setup_logger
+from ai_worker.core.config import Config
+from ai_worker.core.logger import setup_logger
 
 
 def get_config() -> Config:
@@ -9,7 +9,6 @@ def get_config() -> Config:
 
 
 def get_logger() -> logging.Logger:
-    # 앱 전역에서 사용할 로거
     return setup_logger()
 
 

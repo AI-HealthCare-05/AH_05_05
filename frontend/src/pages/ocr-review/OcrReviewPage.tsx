@@ -37,6 +37,18 @@ interface OcrReviewLocationState {
   batchId?: string;
 }
 
+/**
+ * 오늘 날짜(YYYY-MM-DD). 퇴원일 상한으로만 씁니다 — 퇴원일이 미래일 수는 없습니다.
+ * 09 화면(복약 시작일)과 같은 로컬 기준을 씁니다. 두 화면의 날짜 입력이 다르게
+ * 동작하면 안 됩니다.
+ */
+function todayISO(): string {
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${m}-${d}`;
+}
+
 const CONFIDENCE_BADGE: Record<Confidence, { type: StatusBadgeType; label: string }> = {
   high: { type: 'active', label: '확인됨' },
   medium: { type: 'dose', label: '확인 권장' },
@@ -64,19 +76,29 @@ export function OcrReviewPage() {
   const [medicationDialogOpen, setMedicationDialogOpen] = useState(false);
   const [lowConfidenceConfirmOpen, setLowConfidenceConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getOcrResult(batchId).then((data) => {
-      if (cancelled) return;
-      setResult(data);
-      setDiagnosis(data.fields.diagnosis.value ?? '');
-      setSurgery(data.fields.surgery.value ?? '');
-      setDischargeDate(data.fields.dischargeDate.value ?? '');
-      setMedicationDays(data.fields.medicationDays.value != null ? String(data.fields.medicationDays.value) : '');
-      setMedications(data.medications);
-      setAdvices(data.advices);
-    });
+    getOcrResult(batchId)
+      .then((data) => {
+        if (cancelled) return;
+        setResult(data);
+        setDiagnosis(data.fields.diagnosis.value ?? '');
+        setSurgery(data.fields.surgery.value ?? '');
+        setDischargeDate(data.fields.dischargeDate.value ?? '');
+        setMedicationDays(
+          data.fields.medicationDays.value != null ? String(data.fields.medicationDays.value) : '',
+        );
+        setMedications(data.medications);
+        setAdvices(data.advices);
+      })
+      // catch 가 없으면 실 API 오류에서 result 가 null 로 남아 "불러오는 중"에
+      // 영구히 멈춥니다. 로딩과 실패는 화면에서 구분되어야 합니다.
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : 'OCR 결과를 불러오지 못했어요.');
+      });
     return () => {
       cancelled = true;
     };
@@ -109,6 +131,13 @@ export function OcrReviewPage() {
   function handleReupload() {
     navigate('/dev/document-upload');
   }
+
+  /*
+    max 는 달력 UI만 제한하고 키보드로 넣은 미래 날짜는 그대로 올라옵니다.
+    그래서 저장도 같은 조건으로 막습니다(09 복약 시작일과 같은 방식).
+  */
+  const maxDischargeDate = todayISO();
+  const dischargeDateInFuture = dischargeDate > maxDischargeDate;
 
   /**
    * 낮은 신뢰도 항목 이름 목록 — O08 모달 문구와 07의 "확인 필요 항목" 카드가 함께 씁니다.
@@ -180,12 +209,16 @@ export function OcrReviewPage() {
     }
   }
 
-  if (!result) {
+  if (loadError !== null || !result) {
     return (
       <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
         <Header title="OCR 결과 확인" onBack={() => navigate(-1)} />
-        <main className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">불러오는 중...</p>
+        <main className="flex flex-1 flex-col px-page-x py-4">
+          {loadError !== null ? (
+            <Card title="OCR 결과를 불러오지 못했어요">{loadError}</Card>
+          ) : (
+            <p className="text-sm text-muted-foreground">불러오는 중...</p>
+          )}
         </main>
       </div>
     );
@@ -246,9 +279,11 @@ export function OcrReviewPage() {
           <Input
             id="dischargeDate"
             type="date"
+            max={maxDischargeDate}
             value={dischargeDate}
             onChange={(e) => setDischargeDate(e.target.value)}
             onClick={openDatePicker}
+            error={dischargeDateInFuture ? '퇴원일은 오늘까지만 고를 수 있어요.' : undefined}
             hint={dischargeDate ? undefined : '추출된 퇴원일이 없습니다. 달력에서 선택해주세요.'}
           />
         </div>
@@ -316,7 +351,7 @@ export function OcrReviewPage() {
         <div className="flex-1" />
 
         <div className="flex flex-col gap-2 pb-4">
-          <Button onClick={handleSaveClick} disabled={saving}>
+          <Button onClick={handleSaveClick} disabled={saving || dischargeDateInFuture}>
             {saving ? '저장 중...' : '저장하기'}
           </Button>
           <Button variant="secondary" onClick={handleReupload}>

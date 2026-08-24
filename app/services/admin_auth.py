@@ -12,7 +12,7 @@ from app.core.exceptions import (
     InvalidTokenError,
     SamePasswordError,
 )
-from app.core.jwt.tokens import SESSION_SALT_CLAIM, AccessToken, JwtScope, RefreshToken
+from app.core.jwt.tokens import AccessToken, JwtScope, RefreshToken
 from app.core.utils.security import hash_password, verify_password
 from app.dtos.admin_auth import (
     AdminInfo,
@@ -24,7 +24,6 @@ from app.dtos.admin_auth import (
 )
 from app.models.admins import Admin
 from app.models.enums import AccountStatus
-from app.services.admin_session import rotate_session_salt
 from app.services.jwt import JwtService
 
 logger = logging.getLogger(__name__)
@@ -46,7 +45,7 @@ class AdminAuthService:
 
         self._ensure_usable(admin)
 
-        refresh_token = RefreshToken.for_admin(admin.id, admin.session_salt)
+        refresh_token = RefreshToken.for_admin(admin.id)
         access_token = refresh_token.access_token
 
         logger.info("admin login: id=%s", admin.id)
@@ -76,11 +75,6 @@ class AdminAuthService:
             raise InvalidTokenError()
         self._ensure_usable(admin)
 
-        # session_salt 가 갱신되면(비밀번호 변경·정지·역할 변경) 이전 리프레시 토큰이 모두 무효가 된다.
-        # sid 클레임이 없는 토큰도 여기서 걸러진다.
-        if verified.payload.get(SESSION_SALT_CLAIM) != admin.session_salt:
-            raise InvalidTokenError()
-
         # access_token 은 리프레시의 클레임을 복사하므로 scope 도 함께 넘어간다.
         access_token: AccessToken = verified.access_token
         return AdminTokenRefreshResponse(access_token=str(access_token))
@@ -97,8 +91,8 @@ class AdminAuthService:
             raise SamePasswordError()
 
         admin.hashed_password = hash_password(request.new_password)
-        # 계정 노출 의심이 사유일 수 있어 다른 기기 세션도 함께 끊는다.
-        rotate_session_salt(admin)
+        # 다른 기기에 남은 리프레시 토큰은 끊지 못한다. 발급된 JWT 를 개별 폐기할 수단이
+        # 없어서이며, 노출 창은 리프레시 수명(REFRESH_TOKEN_EXPIRE_MINUTES)으로 제한한다.
 
         # 상태는 PENDING 일 때만 바꾼다. 무조건 ACTIVE 로 덮어쓰면, 나중에 의존성이
         # 느슨해졌을 때 정지된 계정이 비밀번호 변경만으로 되살아난다.

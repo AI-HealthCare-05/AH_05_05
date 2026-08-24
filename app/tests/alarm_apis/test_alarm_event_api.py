@@ -39,7 +39,10 @@ class TestAlarmEventAPI(TestCase):
 
         assert first.status_code == status.HTTP_200_OK
         assert second.json()["id"] == first.json()["id"]
-        assert await AlarmEvent.filter(
-            alarm_id=alarm.json()["id"],
-            event_type=AlarmEventType.DELIVERED,
-        ).count() == 1
+        assert (
+            await AlarmEvent.filter(
+                alarm_id=alarm.json()["id"],
+                event_type=AlarmEventType.DELIVERED,
+            ).count()
+            == 1
+        )

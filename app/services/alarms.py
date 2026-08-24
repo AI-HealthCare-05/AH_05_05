@@ -98,7 +98,9 @@ class AlarmService:
             if guide is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recovery guide not found.")
             if care_episode_id is not None and guide.care_episode_id != care_episode_id:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Recovery guide does not match care episode.")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="Recovery guide does not match care episode."
+                )
 
         if follow_up_visit_id is not None:
             visit = await self.repository.get_owned_follow_up_visit(follow_up_visit_id, user.id)

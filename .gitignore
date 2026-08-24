@@ -1,5 +1,9 @@
 __pycache__/
 *.py[oc]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
 build/
 dist/
 wheels/
@@ -13,3 +17,8 @@ wheels/
 *.coverage
 .coverage.*
 .env
+.codex-work/
+
+# OS-generated metadata
+.DS_Store
+Thumbs.db

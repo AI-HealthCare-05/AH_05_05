@@ -284,3 +284,51 @@ async def test_delete_by_document_id_rejects_blank_id() -> None:
             raise AssertionError("ValueError가 발생해야 합니다.")
     finally:
         await client.close()
+
+
+async def test_list_and_delete_specific_document_points() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+
+    try:
+        store = QdrantGuidelineStore(
+            client=client,
+            collection_name="test_guidelines",
+            vector_size=3,
+        )
+        documents = [
+            build_document(
+                document_id="stroke-2020",
+                condition="STROKE",
+                content="기존 청크 1",
+            ),
+            build_document(
+                document_id="stroke-2020",
+                condition="STROKE",
+                content="기존 청크 2",
+            ),
+            build_document(
+                document_id="heart-2020",
+                condition="HEART_FAILURE",
+                content="유지할 청크",
+            ),
+        ]
+        point_ids = await store.upsert_chunks(
+            chunks=documents,
+            vectors=[
+                [1.0, 0.0, 0.0],
+                [0.9, 0.1, 0.0],
+                [0.8, 0.2, 0.0],
+            ],
+        )
+
+        stroke_ids = await store.list_point_ids_by_document_id("stroke-2020")
+        await store.delete_points([stroke_ids[0]])
+
+        remaining_stroke_ids = await store.list_point_ids_by_document_id("stroke-2020")
+        remaining_heart_ids = await store.list_point_ids_by_document_id("heart-2020")
+
+        assert sorted(stroke_ids) == sorted(point_ids[:2])
+        assert remaining_stroke_ids == [next(point_id for point_id in point_ids[:2] if point_id != stroke_ids[0])]
+        assert remaining_heart_ids == [point_ids[2]]
+    finally:
+        await client.close()

@@ -1,5 +1,11 @@
 from typing import Protocol
 
+from ai_worker.schemas.chat import (
+    ChatAnswerRequest,
+    ChatAnswerResult,
+    ChatClassificationResult,
+    ChatInputRiskResult,
+)
 from ai_worker.schemas.guide import RecoveryGuideResult
 from ai_worker.schemas.guideline import (
     GuidelineSearchQuery,
@@ -66,4 +72,37 @@ class OutputSafetyValidator(Protocol):
         self,
         patient_context: PatientContext,
         result: RecoveryGuideResult,
+    ) -> SafetyResult: ...
+
+
+class ChatInputRiskClassifier(Protocol):
+    def assess(
+        self,
+        question: str,
+    ) -> ChatInputRiskResult: ...
+
+
+class ChatQuestionClassifier(Protocol):
+    async def classify(
+        self,
+        request: ChatAnswerRequest,
+        minimum_risk: ChatInputRiskResult,
+    ) -> ChatClassificationResult: ...
+
+
+class ChatAnswerGenerator(Protocol):
+    async def generate(
+        self,
+        request: ChatAnswerRequest,
+        patient_context: PatientContext,
+        classification: ChatClassificationResult,
+        guideline_chunks: list[RetrievedGuidelineChunk],
+    ) -> ChatAnswerResult: ...
+
+
+class ChatOutputSafetyValidator(Protocol):
+    async def validate(
+        self,
+        patient_context: PatientContext,
+        result: ChatAnswerResult,
     ) -> SafetyResult: ...
