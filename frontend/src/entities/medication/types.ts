@@ -63,3 +63,21 @@ export interface SaveMedicationSchedulePayload {
 export interface SaveMedicationScheduleResponse {
   saved: boolean;
 }
+
+export interface MedicationOverviewItem {
+  medicationId: number;
+  name: string;
+  dose: string;
+  daysRemaining: number | null;
+  slots: MealSlot[];
+  asNeeded: boolean;
+  untilComplete?: boolean;
+}
+
+export interface MedicationOverview {
+  recordId: number;
+  startDate: string;
+  daysRemaining: number;
+  mealTimes: MealTimes;
+  medications: MedicationOverviewItem[];
+}

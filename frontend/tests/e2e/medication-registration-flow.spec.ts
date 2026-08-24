@@ -59,3 +59,11 @@ test('조제일을 스케줄 시작일로 넘기고 저장 후 홈으로 교체 
   await page.goBack();
   await expect(page).not.toHaveURL(/\/medication-schedule$/);
 });
+
+test('미래 조제일은 저장할 수 없다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+  await page.getByLabel('조제일').fill('2099-01-01');
+
+  await expect(page.getByText('조제일은 오늘까지만 고를 수 있어요.')).toBeVisible();
+  await expect(page.getByRole('button', { name: '저장하고 복약 시간 설정' })).toBeDisabled();
+});

@@ -29,9 +29,13 @@ const TAB_ROUTES: Record<TabKey, string> = {
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
 
-export function SupplementsPage() {
+interface SupplementsPageProps {
+  supplementsOverride?: Supplement[];
+}
+
+export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = {}) {
   const navigate = useNavigate();
-  const [supplements, setSupplements] = useState<Supplement[] | null>(null);
+  const [supplements, setSupplements] = useState<Supplement[] | null>(supplementsOverride ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -40,6 +44,10 @@ export function SupplementsPage() {
   const neutral = totals.filter((total) => !total.exceeded);
 
   useEffect(() => {
+    if (supplementsOverride) {
+      setSupplements(supplementsOverride);
+      return;
+    }
     let cancelled = false;
     getSupplements()
       .then((result) => {
@@ -53,7 +61,7 @@ export function SupplementsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [supplementsOverride]);
 
   async function saveSupplement(payload: AddSupplementPayload) {
     try {
@@ -159,7 +167,8 @@ export function SupplementsPage() {
 function ExceededNutrientCard({ total }: { total: NutrientTotal }) {
   const excess = total.amount - total.upperLimit;
   return (
-    <Card tone="warning" className="gap-4 p-4">
+    <article aria-label={`${total.name} 성분 합계`}>
+      <Card tone="warning" className="gap-4 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <AlertCircle aria-hidden className="size-5 shrink-0 text-warning" />
@@ -191,7 +200,8 @@ function ExceededNutrientCard({ total }: { total: NutrientTotal }) {
         {total.sourceNames.join('과 ')}에 함께 들어 있어요. 하나를 줄일지 담당 의사·약사에게
         확인해 주세요.
       </p>
-    </Card>
+      </Card>
+    </article>
   );
 }
 
@@ -201,7 +211,12 @@ function NeutralNutrientCard({ totals }: { totals: NutrientTotal[] }) {
       {totals.map((total) => {
         const percent = Math.min(100, (total.amount / total.upperLimit) * 100);
         return (
-          <div key={total.nutrientId} className="flex flex-col gap-2">
+          <div
+            key={total.nutrientId}
+            role="article"
+            aria-label={`${total.name} 성분 합계`}
+            className="flex flex-col gap-2"
+          >
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-base font-bold text-foreground">{total.name}</span>
               <span className="text-sm text-muted-foreground tnum">

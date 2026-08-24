@@ -18,7 +18,22 @@
  *   파모티딘(1회, "취침 전")            → 취침 전       (문구에서 bedtime 1개 = 횟수 일치)
  * → 점심 슬롯을 쓰는 약이 하나도 없으므로 점심 행만 흐리게 표시되어야 합니다.
  */
-import type { MedicationSchedule, SaveMedicationScheduleResponse } from './types';
+import type { MedicationOverview, MedicationSchedule, SaveMedicationScheduleResponse } from './types';
+
+export function mockMedicationOverview(): MedicationOverview {
+  return {
+    recordId: 12,
+    startDate: '2026-08-22',
+    daysRemaining: 3,
+    mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+    medications: [
+      { medicationId: 301, name: '셀레콕시브', dose: '200mg', daysRemaining: 3, slots: ['morning', 'evening'], asNeeded: false },
+      { medicationId: 302, name: '리바록사반', dose: '10mg', daysRemaining: 10, slots: ['evening'], asNeeded: false, untilComplete: true },
+      { medicationId: 304, name: '파모티딘', dose: '20mg', daysRemaining: 3, slots: ['morning', 'evening'], asNeeded: false },
+      { medicationId: 303, name: '아세트아미노펜', dose: '650mg', daysRemaining: null, slots: [], asNeeded: true },
+    ],
+  };
+}
 
 export function mockMedicationSchedule(): MedicationSchedule {
   return {

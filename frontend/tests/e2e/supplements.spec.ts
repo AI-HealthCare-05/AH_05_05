@@ -38,3 +38,20 @@ test('영양제 추가는 검색을 기본으로 하고 바코드를 보조 수�
   await expect(sheet.getByRole('spinbutton', { name: '1일 정수' })).toBeVisible();
   await expect(sheet.getByText('먹는 시간대')).toBeVisible();
 });
+
+test('성분 8개에서도 초과 항목을 중립 항목보다 먼저 보여준다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+
+  const totals = page.getByRole('region', { name: '성분 합계' });
+  await expect(totals.getByRole('article')).toHaveCount(8);
+  const exceededBox = await totals.getByRole('article', { name: '비타민 A 성분 합계' }).boundingBox();
+  const firstNeutralBox = await totals.getByRole('article', { name: '비타민 D 성분 합계' }).boundingBox();
+  expect(exceededBox?.y).toBeLessThan(firstNeutralBox?.y ?? 0);
+});
+
+test('상한 초과가 3개여도 모든 경고를 구분하고 가로 넘침이 없다', async ({ page }) => {
+  await page.goto('/dev/supplements-three-exceeded');
+
+  await expect(page.getByText('상한 초과', { exact: true })).toHaveCount(3);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

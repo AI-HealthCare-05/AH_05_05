@@ -3,11 +3,16 @@ import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationSchedulePage } from '@/pages/medication-schedule';
+import { MedicationsPage } from '@/pages/medications';
+import { MyPage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
 import { SupplementsPage } from '@/pages/supplements';
+import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import { DevGallery } from './DevGallery';
+
+const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
 
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
@@ -26,12 +31,22 @@ export function AppRouter() {
         <Route path="/document-upload" element={<DocumentUploadPage />} />
         <Route path="/ocr-review" element={<OcrReviewPage />} />
         <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
+        <Route path="/medications" element={<MedicationsPage />} />
+        <Route path="/chat" element={<ChatPage />} />
+        <Route path="/my" element={<MyPage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
+        <Route path="/dev/medications" element={<MedicationsPage />} />
         <Route path="/dev/chat" element={<ChatPage />} />
+        <Route path="/dev/my-guest" element={<MyPage authenticatedOverride={false} />} />
+        <Route path="/dev/my-authenticated" element={<MyPage authenticatedOverride />} />
         <Route path="/dev/supplements" element={<SupplementsPage />} />
+        <Route
+          path="/dev/supplements-three-exceeded"
+          element={<SupplementsPage supplementsOverride={THREE_EXCEEDED_SUPPLEMENTS} />}
+        />
         <Route path="/dev/home-empty" element={<HomePage authenticatedOverride />} />
         <Route
           path="/dev/home-active"

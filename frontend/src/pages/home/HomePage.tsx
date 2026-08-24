@@ -76,6 +76,10 @@ export function HomePage({ authenticatedOverride, medicationState = 'empty' }: H
 
   function handleTabChange(key: TabKey) {
     if (key === 'home') return;
+    if (key === 'my') {
+      navigate('/my');
+      return;
+    }
     if (!isAuthenticated) {
       setLoginPromptOpen(true);
       return;
@@ -147,6 +151,7 @@ export function HomePage({ authenticatedOverride, medicationState = 'empty' }: H
 }
 
 function GuestCarousel() {
+  const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const banners = [
     {
       title: '약봉투를 찍으면\n먹을 시간을 알려드려요',
@@ -170,7 +175,23 @@ function GuestCarousel() {
 
   return (
     <section aria-label="포케 기능 소개" className="flex flex-col gap-3">
-      <div className="-mr-page-x flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1">
+      <div
+        className="-mr-page-x flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
+        onScroll={(event) => {
+          const children = Array.from(event.currentTarget.children) as HTMLElement[];
+          const firstOffset = children[0]?.offsetLeft ?? 0;
+          const nextIndex = children.reduce((closestIndex, child, index) => {
+            const closestDistance = Math.abs(
+              children[closestIndex].offsetLeft - firstOffset - event.currentTarget.scrollLeft,
+            );
+            const childDistance = Math.abs(
+              child.offsetLeft - firstOffset - event.currentTarget.scrollLeft,
+            );
+            return childDistance < closestDistance ? index : closestIndex;
+          }, 0);
+          setActiveBannerIndex(nextIndex);
+        }}
+      >
         {banners.map(({ title, description, icon: Icon, tone }) => (
           <article
             key={title}
@@ -184,10 +205,21 @@ function GuestCarousel() {
           </article>
         ))}
       </div>
-      <div aria-hidden className="flex justify-center gap-2">
-        <span className="h-1.5 w-5 rounded-pill bg-primary" />
-        <span className="size-1.5 rounded-pill bg-border" />
-        <span className="size-1.5 rounded-pill bg-border" />
+      <div
+        aria-label={`현재 배너 ${activeBannerIndex + 1} / ${banners.length}`}
+        className="flex justify-center gap-2"
+      >
+        {banners.map((banner, index) => (
+          <span
+            aria-hidden
+            key={banner.title}
+            className={
+              index === activeBannerIndex
+                ? 'h-1.5 w-5 rounded-pill bg-primary'
+                : 'size-1.5 rounded-pill bg-border'
+            }
+          />
+        ))}
       </div>
     </section>
   );
