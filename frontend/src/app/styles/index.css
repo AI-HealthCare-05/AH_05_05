@@ -96,6 +96,8 @@
 
   --text-sm: 14px;
   --text-sm--line-height: 21px;
+  --text-tagline: 15px;
+  --text-tagline--line-height: 22px;
   --text-base: 16px;
   --text-base--line-height: 25.6px;
   --text-lg: 18px;
@@ -104,6 +106,9 @@
   --text-xl--line-height: 28px;
   --text-2xl: 24px;
   --text-2xl--line-height: 33.6px;
+
+  --text-logo: 42px;
+  --text-logo--line-height: 1.2;
 
   --text-metric: 28px;
   --text-metric--line-height: 32px;
