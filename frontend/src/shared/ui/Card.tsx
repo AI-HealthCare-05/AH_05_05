@@ -55,7 +55,7 @@ export function Card({
   );
 
   const base = cn(
-    'flex w-full flex-col gap-1 rounded-card border border-border px-3.5 py-2.5 text-left',
+    'flex w-full flex-col gap-1 rounded-card px-3.5 py-2.5 text-left shadow-card',
     toneClass[tone],
     interactive && 'transition-colors hover:brightness-[0.98]',
     className,

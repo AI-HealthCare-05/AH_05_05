@@ -43,12 +43,14 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
 
 interface DialogContentProps extends ComponentProps<typeof DialogPrimitive.Content> {
   showCloseButton?: boolean;
+  variant?: 'dialog' | 'sheet';
 }
 
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  variant = 'dialog',
   ...props
 }: DialogContentProps) {
   return (
@@ -57,8 +59,10 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          'fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-app -translate-x-1/2 -translate-y-1/2',
-          'gap-4 rounded-card border border-border bg-card p-5 shadow-lg',
+          'fixed left-1/2 z-50 grid max-w-app -translate-x-1/2 gap-4 bg-card p-5',
+          variant === 'dialog' &&
+            'top-1/2 w-[calc(100%-2rem)] -translate-y-1/2 rounded-card border border-border shadow-card',
+          variant === 'sheet' && 'bottom-0 w-full rounded-sheet rounded-b-none shadow-sheet',
           className,
         )}
         {...props}

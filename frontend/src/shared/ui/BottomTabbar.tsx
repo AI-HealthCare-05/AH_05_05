@@ -1,21 +1,22 @@
+import { House, MessageCircle, Pill, Sprout, UserRound } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 
 /**
  * Figma: Bottom Tabbar
  * 높이 56px(size/tabbar). 5개 탭이 화면 폭을 균등 분할합니다.
  *
- * 와이어프레임이 ○/● 글리프로 그려져 있어 그대로 옮겼습니다.
- * 아이콘이 정해지면 dot 자리에 아이콘 컴포넌트를 넣으면 됩니다.
+ * 아이콘은 24px 스트로크 SVG 세트(lucide-react)로 통일합니다.
  */
 export const TABS = [
-  { key: 'home', label: '홈' },
-  { key: 'med', label: '복약' },
-  { key: 'life', label: '생활' },
-  { key: 'schedule', label: '일정' },
-  { key: 'chat', label: '챗봇' },
+  { key: 'home', label: '홈', icon: House },
+  { key: 'medication', label: '복약', icon: Pill },
+  { key: 'supplement', label: '영양제', icon: Sprout },
+  { key: 'chat', label: '챗봇', icon: MessageCircle },
+  { key: 'my', label: '마이', icon: UserRound },
 ] as const;
 
-export type TabKey = (typeof TABS)[number]['key'];
+/** 2단계에서 삭제될 기존 화면이 1단계 커밋에서도 타입 안전하게 빌드되도록만 유지합니다. */
+export type TabKey = (typeof TABS)[number]['key'] | 'life' | 'schedule';
 
 export interface BottomTabbarProps {
   active: TabKey;
@@ -31,6 +32,7 @@ export function BottomTabbar({ active, onChange, className }: BottomTabbarProps)
     >
       {TABS.map((tab) => {
         const selected = tab.key === active;
+        const Icon = tab.icon;
         return (
           <button
             key={tab.key}
@@ -42,9 +44,7 @@ export function BottomTabbar({ active, onChange, className }: BottomTabbarProps)
               selected ? 'text-primary' : 'text-muted-foreground',
             )}
           >
-            <span aria-hidden className={cn('text-sm leading-none', selected && 'font-bold')}>
-              {selected ? '●' : '○'}
-            </span>
+            <Icon aria-hidden className="size-5" strokeWidth={selected ? 2.5 : 2} />
             <span className={cn('text-sm', selected && 'font-bold')}>{tab.label}</span>
           </button>
         );

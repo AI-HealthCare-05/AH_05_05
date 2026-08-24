@@ -41,7 +41,7 @@ export function DevGallery() {
 
   return (
     <div className="min-h-dvh bg-background py-8">
-      <div className="mx-auto flex w-full max-w-app flex-col overflow-hidden rounded-card border border-border bg-background shadow-sm">
+      <div className="mx-auto flex w-full max-w-app flex-col overflow-hidden rounded-card border border-border bg-background shadow-card">
         <Header title="컴포넌트 확인" right={<span aria-hidden>👤</span>} />
 
         <main className="flex flex-1 flex-col gap-2.5 px-page-x py-4">

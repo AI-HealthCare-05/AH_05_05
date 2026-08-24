@@ -418,7 +418,7 @@ export function MedicationSchedulePage() {
               return (
                 <div
                   key={med.medicationId}
-                  className="flex flex-col gap-2 rounded-card border border-border bg-card px-4 py-3 shadow-sm"
+                  className="flex flex-col gap-2 rounded-card border border-border bg-card px-4 py-3 shadow-card"
                 >
                   <div className="flex flex-col gap-0.5">
                     <p className="text-base font-bold text-foreground">
