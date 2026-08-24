@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentType } from 'react';
 import {
+  Check,
   ChevronRight,
-  Clock3,
   MessageCircle,
   Pill,
   ShoppingBag,
@@ -27,30 +27,49 @@ interface FeatureItem {
   title: string;
   description: string;
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
-  tone: 'primary' | 'warning';
+  emphasis?: 'warning';
 }
 
-const GUEST_FEATURES: FeatureItem[] = [
+const DEFAULT_FEATURES: FeatureItem[] = [
   {
     key: 'medication',
     title: '복용약 관리',
     description: '약봉투 등록 · 시간 알림',
     icon: Pill,
-    tone: 'primary',
   },
   {
     key: 'supplement',
     title: '영양제 관리',
     description: '성분 합계 · 상한 비교',
     icon: Sprout,
-    tone: 'primary',
   },
   {
     key: 'chat',
     title: 'AI 상담',
     description: '근거와 함께 답해드려요',
     icon: MessageCircle,
-    tone: 'warning',
+  },
+];
+
+const ACTIVE_FEATURES: FeatureItem[] = [
+  {
+    key: 'medication',
+    title: '복용약 관리',
+    description: '약 4개 · 8월 28일까지',
+    icon: Pill,
+  },
+  {
+    key: 'supplement',
+    title: '영양제 관리',
+    description: '비타민 A 상한 초과',
+    icon: Sprout,
+    emphasis: 'warning',
+  },
+  {
+    key: 'chat',
+    title: 'AI 상담',
+    description: '근거와 함께 답해드려요',
+    icon: MessageCircle,
   },
 ];
 
@@ -99,6 +118,10 @@ export function HomePage({
   const resolvedMedicationState =
     medicationState ??
     (medicationOverview ? medicationHomeStateFromOverview(medicationOverview) : null);
+  const features =
+    isAuthenticated && resolvedMedicationState === 'active'
+      ? ACTIVE_FEATURES
+      : DEFAULT_FEATURES;
 
   function openFeature(key: FeatureItem['key']) {
     if (!isAuthenticated) {
@@ -171,7 +194,7 @@ export function HomePage({
         )}
 
         <section aria-label="주요 기능" className="flex flex-col gap-3">
-          {GUEST_FEATURES.map((feature) => (
+          {features.map((feature) => (
             <FeatureRow key={feature.key} feature={feature} onClick={() => openFeature(feature.key)} />
           ))}
         </section>
@@ -278,20 +301,22 @@ function FeatureRow({ feature, onClick }: { feature: FeatureItem; onClick: () =>
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-20 w-full items-center gap-4 rounded-card bg-card px-4 py-3 text-left shadow-card"
+      className="flex min-h-18 w-full items-center gap-4 rounded-card bg-card px-4 py-3 text-left shadow-card"
     >
       <span
-        className={`flex size-12 shrink-0 items-center justify-center rounded-pill ${
-          feature.tone === 'warning'
-            ? 'bg-warning-bg text-warning'
-            : 'bg-primary-bg text-primary-strong'
-        }`}
+        className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-muted-foreground"
       >
         <Icon aria-hidden className="size-6" />
       </span>
       <span className="min-w-0 flex-1">
         <strong className="block text-lg text-foreground">{feature.title}</strong>
-        <span className="block truncate text-sm text-muted-foreground">{feature.description}</span>
+        <span
+          className={`block truncate text-sm ${
+            feature.emphasis === 'warning' ? 'text-warning-strong' : 'text-muted-foreground'
+          }`}
+        >
+          {feature.description}
+        </span>
       </span>
       <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
     </button>
@@ -326,43 +351,77 @@ function LoggedInHero({ state, onUpload }: { state: MedicationHomeState; onUploa
   }
 
   return (
-    <section className="flex min-h-84 flex-col gap-2" aria-labelledby="today-medication-title">
+    <section className="flex flex-col gap-3" aria-labelledby="today-medication-title">
       <div className="flex items-center justify-between">
         <h2 id="today-medication-title" className="text-xl font-bold text-foreground">
           오늘의 복약
         </h2>
-        <span className="text-sm text-muted-foreground">3일 남음</span>
+        <span className="text-base text-muted-foreground tnum">4일째 · 3일 남음</span>
       </div>
-      <Card tone="info" className="gap-2 p-3">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-pill bg-card text-primary">
-            <Clock3 aria-hidden className="size-5" />
+      <div
+        role="group"
+        aria-label="하루 복약 시간표"
+        className="overflow-hidden rounded-card bg-card shadow-card"
+      >
+        <div
+          role="group"
+          aria-label="지난 복약"
+          className="flex min-h-12 items-center gap-3 px-4 py-2 text-disabled-foreground"
+        >
+          <span className="flex size-5.5 shrink-0 items-center justify-center rounded-pill bg-muted-bg">
+            <Check aria-hidden className="size-4" />
           </span>
-          <div className="min-w-0">
-            <p className="text-2xl font-bold text-foreground tnum">아침 08:00</p>
-            <p className="text-sm text-muted-foreground">3개 · 식후에 드세요</p>
+          <span className="text-base tnum">기상 후 07:00</span>
+          <span className="ml-auto text-sm">먹었어요</span>
+        </div>
+
+        <div role="group" aria-label="현재 복약" className="flex flex-col bg-primary-bg px-4 py-4">
+          <div className="flex items-center gap-3">
+            <span className="size-5.5 shrink-0 rounded-pill border-2 border-primary" />
+            <p className="text-metric font-bold text-foreground tnum">아침 08:00</p>
+            <span className="ml-auto rounded-pill bg-primary px-3 py-1 text-sm font-bold text-card">
+              지금
+            </span>
+          </div>
+          <ul aria-label="지금 먹을 약" className="ml-8.5 mt-2 flex flex-col gap-1">
+            <li className="text-base text-foreground">
+              셀레콕시브 <span className="text-muted-foreground">200mg</span>
+            </li>
+            <li className="text-base text-foreground">
+              리바록사반 <span className="text-muted-foreground">10mg</span>
+            </li>
+            <li className="text-base text-foreground">
+              파모티딘 <span className="text-muted-foreground">20mg</span>
+            </li>
+          </ul>
+          <p className="ml-8.5 mt-2 text-sm text-muted-foreground">식사 후에 드세요</p>
+          <Button fullWidth={false} className="ml-8.5 mt-3 w-auto gap-2 text-base tnum">
+            <Check aria-hidden className="size-5" />
+            3개 먹었어요
+          </Button>
+        </div>
+
+        <div
+          role="group"
+          aria-label="다음 복약 점심"
+          className="flex min-h-12 items-center gap-3 px-4 py-2"
+        >
+          <span className="size-5.5 shrink-0 rounded-pill border border-border" />
+          <span className="text-base text-foreground tnum">점심 13:00</span>
+          <span className="ml-auto text-base text-muted-foreground tnum">1개</span>
+        </div>
+
+        <div className="mx-4 border-t border-border">
+          <div
+            role="group"
+            aria-label="다음 복약 저녁"
+            className="flex min-h-12 items-center gap-3 py-2"
+          >
+            <span className="size-5.5 shrink-0 rounded-pill border border-border" />
+            <span className="text-base text-foreground tnum">저녁 19:00</span>
+            <span className="ml-auto text-base text-muted-foreground tnum">3개</span>
           </div>
         </div>
-        <ul className="rounded-input bg-card px-3 py-1 text-sm text-foreground shadow-card">
-          <li className="leading-5">셀레콕시브 200mg</li>
-          <li className="leading-5">리바록사반 10mg</li>
-          <li className="leading-5">파모티딘 20mg</li>
-        </ul>
-        <Button>먹었어요</Button>
-      </Card>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="flex min-h-touch items-center justify-between rounded-pill bg-card px-4 shadow-card">
-          <span className="text-sm font-bold text-foreground tnum">점심 13:00</span>
-          <span className="text-sm text-muted-foreground">1개</span>
-        </div>
-        <div className="flex min-h-touch items-center justify-between rounded-pill bg-card px-4 shadow-card">
-          <span className="text-sm font-bold text-foreground tnum">저녁 19:00</span>
-          <span className="text-sm text-muted-foreground">3개</span>
-        </div>
-      </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span className="font-bold text-foreground">7일 중 4일째</span>
-        <span>8월 22일 시작</span>
       </div>
     </section>
   );
