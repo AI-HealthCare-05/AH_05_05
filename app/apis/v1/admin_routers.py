@@ -83,8 +83,8 @@ async def change_password(
     service: Annotated[AdminAuthService, Depends(AdminAuthService)],
 ) -> AdminPasswordChangeResponse:
     result = await service.change_password(actor.admin_id, request)
-    # 이전 리프레시 토큰은 지문 검증에서 이미 무효가 된다.
-    # 브라우저에 남은 쿠키까지 지워 다음 갱신에서 불필요한 401 을 만들지 않는다.
+    # 이 브라우저의 쿠키만 지운다. 다른 기기에 남은 리프레시 토큰은 끊을 수단이 없어
+    # 만료될 때까지 유효하다.
     response.delete_cookie(key=REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH, httponly=True)
     return result
 

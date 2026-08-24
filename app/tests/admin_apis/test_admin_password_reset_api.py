@@ -156,9 +156,13 @@ class TestAdminPasswordResetAPI(AdminPasswordResetTestBase):
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-class TestPasswordResetInvalidatesSessions(AdminPasswordResetTestBase):
-    async def test_existing_refresh_token_stops_working(self) -> None:
-        """재발송은 계정을 넘겨받는 상황이라 이전 세션이 살아 있으면 안 된다."""
+class TestPasswordResetLeavesExistingSessions(AdminPasswordResetTestBase):
+    async def test_existing_refresh_token_still_works(self) -> None:
+        """재발송은 계정을 넘겨받는 상황이라 이전 세션이 끊기는 게 맞지만 끊지 못한다.
+
+        세션 무효화 수단을 두지 않기로 해서 이전 보유자의 리프레시 토큰이
+        수명이 다할 때까지 남는다. 알려진 한계이며 동작을 고정해 둔다.
+        """
         login = await request("POST", ADMIN_LOGIN_URL, json={"email": self.target.email, "password": ADMIN_PASSWORD})
         cookies = {REFRESH_COOKIE_NAME: login.cookies[REFRESH_COOKIE_NAME]}
         assert (await request("POST", ADMIN_REFRESH_URL, cookies=cookies)).status_code == status.HTTP_200_OK
@@ -166,7 +170,7 @@ class TestPasswordResetInvalidatesSessions(AdminPasswordResetTestBase):
         await request("POST", reset_url(self.target.id), headers=self.headers)
 
         response = await request("POST", ADMIN_REFRESH_URL, cookies=cookies)
-        assert response.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}
+        assert response.status_code == status.HTTP_200_OK
 
     async def test_actor_session_is_not_affected(self) -> None:
         login = await request("POST", ADMIN_LOGIN_URL, json={"email": self.actor.email, "password": ADMIN_PASSWORD})

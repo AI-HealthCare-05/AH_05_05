@@ -1,10 +1,14 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
 from tortoise import Tortoise
 
+from ai_worker.domain.errors import (
+    PatientContextNotFoundError,
+    UnconfirmedPatientContextError,
+)
 from ai_worker.providers.db_patient_context_provider import (
     DbPatientContextProvider,
 )
@@ -14,7 +18,10 @@ from app.models.care import (
     CareEpisode,
     FollowUpVisit,
 )
-from app.models.enums import MealSlot
+from app.models.enums import (
+    CareAdviceCategory,
+    MealSlot,
+)
 from app.models.medications import Medication
 from app.models.users import User
 
@@ -27,6 +34,7 @@ async def initialized_db() -> None:
             "models": TORTOISE_APP_MODELS,
         },
         timezone="Asia/Seoul",
+        use_tz=False,
     )
     await Tortoise.generate_schemas()
 
@@ -78,20 +86,15 @@ async def test_get_patient_context_reads_confirmed_erd_data(
     await CareAdvice.create(
         id=2001,
         care_episode=care_episode,
+        category=CareAdviceCategory.RESTRICTION,
         text="퇴원 후 무리한 활동을 피하세요.",
         display_order=1,
     )
     await FollowUpVisit.create(
         id=3001,
         care_episode=care_episode,
-        visit_at=datetime(
-            2026,
-            8,
-            20,
-            10,
-            0,
-            tzinfo=ZoneInfo("Asia/Seoul"),
-        ),
+        visit_date=date(2026, 8, 20),
+        visit_time=time(10, 0),
         department="신경과",
         doctor_name="담당의",
         place="본관 2층",
@@ -123,6 +126,14 @@ async def test_get_patient_context_reads_confirmed_erd_data(
 
     assert len(result.follow_up_schedules) == 1
     assert result.follow_up_schedules[0].follow_up_visit_id == 3001
+    assert result.follow_up_schedules[0].visit_at == datetime(
+        2026,
+        8,
+        20,
+        10,
+        0,
+        tzinfo=ZoneInfo("Asia/Seoul"),
+    )
     assert result.follow_up_schedules[0].department == "신경과"
 
 
@@ -148,7 +159,7 @@ async def test_get_patient_context_rejects_unconfirmed_data(
     provider = DbPatientContextProvider()
 
     with pytest.raises(
-        ValueError,
+        UnconfirmedPatientContextError,
         match="확정",
     ):
         await provider.get_patient_context(
@@ -192,7 +203,7 @@ async def test_get_patient_context_rejects_other_users_episode(
     provider = DbPatientContextProvider()
 
     with pytest.raises(
-        ValueError,
+        PatientContextNotFoundError,
         match="찾을 수 없습니다",
     ):
         await provider.get_patient_context(

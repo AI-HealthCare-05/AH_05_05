@@ -1,6 +1,8 @@
 import { BrowserRouter, Route, Routes } from 'react-router';
+import { ChatPage } from '@/pages/chat';
 import { DocumentConfirmPage } from '@/pages/document-confirm';
 import { DocumentUploadPage } from '@/pages/document-upload';
+import { LifeGuidePage } from '@/pages/life-guide';
 import { MedicationSchedulePage } from '@/pages/medication-schedule';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { DevFlowComplete } from './DevFlowComplete';
@@ -40,6 +42,8 @@ export function AppRouter() {
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
         <Route path="/dev/flow-complete" element={<DevFlowComplete />} />
+        <Route path="/dev/life-guide" element={<LifeGuidePage />} />
+        <Route path="/dev/chat" element={<ChatPage />} />
       </Routes>
     </BrowserRouter>
   );

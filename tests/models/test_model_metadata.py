@@ -119,6 +119,27 @@ def test_user_settings_are_one_to_one_and_have_default_times() -> None:
     assert enums.MealSlot.BEDTIME.value == "BEDTIME"
 
 
+def test_user_notification_v4_metadata() -> None:
+    enums = import_module("app.models.enums")
+    users = import_module("app.models.users")
+
+    assert {item.value for item in enums.NotifySettingKey} == {
+        "IS_NOTIFY_MEDICATION",
+        "IS_NOTIFY_SCHEDULE",
+        "IS_NOTIFY_GUIDE",
+    }
+    assert users.UserSettings._meta.fields_map["terms_agreed_at"].null is True
+    assert users.UserSettings._meta.fields_map["notify_consented_at"].null is True
+    history = users.UserNotifyHistory
+    assert history._meta.db_table == "user_notify_histories"
+    assert history._meta.fields_map["user"].on_delete == fields.CASCADE
+    assert history._meta.fields_map["user"].null is False
+    assert history._meta.fields_map["setting_key"].enum_type is enums.NotifySettingKey
+    assert history._meta.fields_map["new_value"].null is False
+    assert history._meta.fields_map["created_at"].auto_now_add is True
+    assert history._meta.indexes == (("user", "setting_key", "created_at"), ("created_at",))
+
+
 def test_admin_has_nullable_creator_self_reference() -> None:
     enums, _, admin_model = load_account_models()
 
@@ -148,6 +169,32 @@ def test_care_models_preserve_ownership_and_confirmation_fields() -> None:
     assert care.CareAdvice._meta.unique_together == (("care_episode", "display_order"),)
     assert "source_extracted_field" not in care.CareAdvice._meta.fields_map
     assert "source_extracted_field" not in care.FollowUpVisit._meta.fields_map
+
+
+def test_care_v4_metadata() -> None:
+    care, _ = load_care_ocr_models()
+    enums = import_module("app.models.enums")
+
+    assert {item.value for item in enums.CareAdviceCategory} == {
+        "ACTIVITY",
+        "HYGIENE",
+        "DIET",
+        "LIFESTYLE",
+        "RESTRICTION",
+        "RED_FLAG",
+        "OTHER",
+    }
+    assert care.CareAdvice._meta.fields_map["category"].null is False
+    assert care.CareAdvice._meta.fields_map["category"].enum_type is enums.CareAdviceCategory
+    assert ("care_episode", "category") in care.CareAdvice._meta.indexes
+    assert care.FollowUpVisit._meta.fields_map["visit_date"].null is False
+    assert care.FollowUpVisit._meta.fields_map["visit_time"].null is True
+    assert care.FollowUpVisit._meta.fields_map["source_ocr_job"].on_delete == fields.SET_NULL
+    assert care.FollowUpVisit._meta.fields_map["source_ocr_job"].model_name == "models.OcrJob"
+    assert care.FollowUpVisit._meta.fields_map["department"].max_length == 255
+    assert care.FollowUpVisit._meta.fields_map["doctor_name"].max_length == 255
+    assert ("visit_date", "visit_time", "id") in care.FollowUpVisit._meta.indexes
+    assert "visit_at" not in care.FollowUpVisit._meta.fields_map
 
 
 def test_ocr_job_uses_temporary_structured_result_contract() -> None:
@@ -183,7 +230,7 @@ def test_recovery_models_preserve_citations_and_patient_sources() -> None:
 
     assert recovery.RecoveryGuideSource._meta.unique_together == (("recovery_guide", "citation_order"),)
     assert "extracted_field" not in recovery.RecoveryGuideSource._meta.fields_map
-    assert recovery.RecoveryGuideSource._meta.fields_map["medication"].on_delete == fields.CASCADE
+    assert recovery.RecoveryGuideSource._meta.fields_map["medication"].on_delete == fields.RESTRICT
     assert recovery.RecoveryGuideSource._meta.fields_map["care_advice"].null is True
     assert recovery.RecoveryGuideSource._meta.fields_map["follow_up_visit"].null is True
     assert recovery.RecoveryGuideSource._meta.fields_map["source_page_number"].null is True
@@ -199,11 +246,25 @@ def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
     assert chat.ChatMessage._meta.fields_map["guide"].on_delete == fields.SET_NULL
     assert chat.ChatMessageSource._meta.unique_together == (("chat_message", "citation_order"),)
     assert "extracted_field" not in chat.ChatMessageSource._meta.fields_map
-    assert chat.ChatMessageSource._meta.fields_map["medication"].on_delete == fields.CASCADE
+    assert chat.ChatMessageSource._meta.fields_map["medication"].on_delete == fields.RESTRICT
     assert chat.ChatMessageSource._meta.fields_map["care_advice"].null is True
     assert chat.ChatMessageSource._meta.fields_map["source_page_number"].null is True
     assert len(chat.ChatMessageSource._meta.fields_map["source_page_number"].validators) == 1
     assert chat.ChatMessageSource._meta.fields_map["source_license"].max_length == 255
+
+
+def test_chat_and_source_retention_v4_metadata() -> None:
+    recovery, chat = load_recovery_chat_models()
+
+    assert chat.ChatSession._meta.fields_map["user"].null is False
+    assert chat.ChatSession._meta.fields_map["user"].model_name == "models.User"
+    assert chat.ChatSession._meta.fields_map["user"].on_delete == fields.CASCADE
+    assert chat.ChatSession._meta.fields_map["care_episode"].null is True
+    assert chat.ChatSession._meta.fields_map["care_episode"].model_name == "models.CareEpisode"
+    assert chat.ChatSession._meta.fields_map["care_episode"].on_delete == fields.CASCADE
+    for model in (chat.ChatMessageSource, recovery.RecoveryGuideSource):
+        for name in ("medication", "care_advice", "follow_up_visit"):
+            assert model._meta.fields_map[name].on_delete == fields.RESTRICT
 
 
 def test_alarm_models_preserve_subscription_and_optional_source_relations() -> None:
@@ -244,12 +305,26 @@ def test_medication_slot_model_replaces_legacy_time_model() -> None:
     assert medications.MedicationSlot._meta.unique_together == (("medication", "slot"),)
 
 
-def test_all_18_domain_tables_are_registered() -> None:
+def test_medication_v4_metadata() -> None:
+    medications = load_medication_models()
+
+    medication_fields = medications.Medication._meta.fields_map
+    for name in ("efficacy", "administration", "precautions"):
+        assert medication_fields[name].null is True
+        assert medication_fields[name].max_length == 500
+    assert medication_fields["note"].null is True
+    assert medication_fields["note"].max_length == 500
+    assert any(getattr(validator, "min_value", None) == 1 for validator in medication_fields["days"].validators)
+    assert any(getattr(validator, "max_value", None) == 365 for validator in medication_fields["days"].validators)
+
+
+def test_all_19_domain_tables_are_registered() -> None:
     from app.core.db.databases import TORTOISE_APP_MODELS
 
     expected_tables = {
         "user",
         "user_settings",
+        "user_notify_histories",
         "admin",
         "care_episodes",
         "ocr_jobs",

@@ -1,3 +1,10 @@
+from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
+
+from ai_worker.domain.errors import (
+    PatientContextNotFoundError,
+    UnconfirmedPatientContextError,
+)
 from ai_worker.schemas.patient import (
     FollowUpSchedule,
     PatientContext,
@@ -24,10 +31,10 @@ class DbPatientContextProvider:
         ).first()
 
         if care_episode is None:
-            raise ValueError("요청한 사용자의 케어 에피소드를 찾을 수 없습니다.")
+            raise PatientContextNotFoundError("요청한 사용자의 케어 에피소드를 찾을 수 없습니다.")
 
         if care_episode.confirmed_at is None or not care_episode.confirmation_hash:
-            raise ValueError("사용자가 확인하고 저장한 확정 환자정보가 아닙니다.")
+            raise UnconfirmedPatientContextError("사용자가 확인하고 저장한 확정 환자정보가 아닙니다.")
 
         medications = await Medication.filter(
             care_episode_id=care_episode_id,
@@ -43,7 +50,8 @@ class DbPatientContextProvider:
         follow_up_visits = await FollowUpVisit.filter(
             care_episode_id=care_episode_id,
         ).order_by(
-            "visit_at",
+            "visit_date",
+            "visit_time",
             "id",
         )
 
@@ -81,7 +89,10 @@ class DbPatientContextProvider:
             follow_up_schedules=[
                 FollowUpSchedule(
                     follow_up_visit_id=visit.id,
-                    visit_at=visit.visit_at,
+                    visit_at=self._combine_visit_at(
+                        visit_date=visit.visit_date,
+                        visit_time=visit.visit_time,
+                    ),
                     department=visit.department,
                     doctor_name=visit.doctor_name,
                     place=visit.place,
@@ -89,6 +100,17 @@ class DbPatientContextProvider:
                 )
                 for visit in follow_up_visits
             ],
+        )
+
+    @staticmethod
+    def _combine_visit_at(
+        visit_date: date,
+        visit_time: time | None,
+    ) -> datetime:
+        return datetime.combine(
+            visit_date,
+            visit_time or time.min,
+            tzinfo=ZoneInfo("Asia/Seoul"),
         )
 
     @staticmethod
