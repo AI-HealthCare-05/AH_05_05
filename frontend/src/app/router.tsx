@@ -10,9 +10,11 @@ import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
 import { SupplementsPage } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
+import { mockMedicationScheduleWithAutoAssigned } from '@/entities/medication';
 import { DevGallery } from './DevGallery';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
+const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
 
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
@@ -38,6 +40,12 @@ export function AppRouter() {
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
+        <Route
+          path="/dev/medication-schedule-auto-assigned"
+          element={
+            <MedicationSchedulePage scheduleOverride={AUTO_ASSIGNED_MEDICATION_SCHEDULE} />
+          }
+        />
         <Route path="/dev/medications" element={<MedicationsPage />} />
         <Route path="/dev/chat" element={<ChatPage />} />
         <Route path="/dev/my-guest" element={<MyPage authenticatedOverride={false} />} />

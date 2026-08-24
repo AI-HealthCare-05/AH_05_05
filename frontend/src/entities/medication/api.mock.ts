@@ -48,6 +48,18 @@ export function mockMedicationSchedule(): MedicationSchedule {
   };
 }
 
+export function mockMedicationScheduleWithAutoAssigned(): MedicationSchedule {
+  const schedule = mockMedicationSchedule();
+  return {
+    ...schedule,
+    medications: schedule.medications.map((medication) =>
+      medication.medicationId === 302
+        ? { ...medication, timing: '' }
+        : medication,
+    ),
+  };
+}
+
 export function mockSaveMedicationSchedule(): SaveMedicationScheduleResponse {
   return { saved: true };
 }

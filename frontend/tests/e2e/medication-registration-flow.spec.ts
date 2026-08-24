@@ -103,3 +103,27 @@ test('빠진 약 직접 추가는 목록 편집을 거치지 않고 빈 약 추�
   await expect(sheet.getByLabel('약품명')).toHaveValue('');
   await expect(sheet.getByText('추출 내용을 수정')).toHaveCount(0);
 });
+
+test('봉투 원문에 시간대가 모두 있으면 복약 시간 설정은 시간과 날짜 두 블록만 보여준다', async ({
+  page,
+}) => {
+  await page.goto('/dev/medication-schedule');
+
+  await expect(page.getByText('어느 시간에 알람을 드릴까요?')).toBeVisible();
+  await expect(page.getByText('처음 약을 언제부터 드셨나요?')).toBeVisible();
+  await expect(page.getByRole('region', { name: '자동 배정 시간 확인' })).toHaveCount(0);
+  await expect(page.getByText('약마다 언제 먹는지 확인해주세요')).toHaveCount(0);
+});
+
+test('시간대가 없는 약은 자동 배정 확인 블록에 그 약만 보여준다', async ({ page }) => {
+  await page.goto('/dev/medication-schedule-auto-assigned');
+
+  const confirmation = page.getByRole('region', { name: '자동 배정 시간 확인' });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByText('이 약들은 언제 먹는지 봉투에 없었어요')).toBeVisible();
+  await expect(confirmation.getByText('저희가 정한 시간입니다. 맞는지 확인해주세요.')).toBeVisible();
+  await expect(confirmation.getByText('리바록사반 10mg')).toBeVisible();
+  await expect(confirmation.getByText('셀레콕시브 200mg')).toHaveCount(0);
+  await expect(confirmation.getByText('파모티딘 20mg')).toHaveCount(0);
+  await expect(confirmation.getByText('아세트아미노펜 650mg')).toHaveCount(0);
+});

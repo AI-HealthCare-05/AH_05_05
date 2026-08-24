@@ -42,6 +42,15 @@ function slotsFromTiming(timing: string): MealSlot[] {
 }
 
 /**
+ * OCR 원문만으로 시간대를 확정할 수 없어 횟수 기반 기본값을 적용했는지 알려줍니다.
+ * 필요 시 약은 알림 대상이 아니므로 확인 대상에도 넣지 않습니다.
+ */
+export function needsSlotConfirmation(timesPerDay: number | null, timing: string): boolean {
+  if (timesPerDay === null) return false;
+  return slotsFromTiming(timing).length !== timesPerDay;
+}
+
+/**
  * 자동 배정. 문구에서 읽은 시간대 개수가 복용 횟수와 정확히 맞을 때만 그것을 쓰고,
  * 아니면 횟수 기준 기본값으로 떨어집니다.
  *
