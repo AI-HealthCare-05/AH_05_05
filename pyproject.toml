@@ -33,6 +33,7 @@ app = [
     "bcrypt<=4.0.1",
     "fastapi[standard]>=0.128.0",
     "httpx>=0.28.1",
+    "numbers-parser>=4.19.0",
     "orjson>=3.11.5",
     "pillow>=11,<13",
     "passlib[bcrypt]>=1.7.4",
