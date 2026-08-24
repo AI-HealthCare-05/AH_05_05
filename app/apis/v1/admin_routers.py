@@ -294,6 +294,27 @@ async def update_user_status(
     request: AdminUserStatusUpdateRequest,
     service: Annotated[AdminUserQueryService, Depends(AdminUserQueryService)],
 ) -> AdminUserStatusUpdateResponse:
+    """회원 계정을 일괄 정지하거나 해제한다. ADMIN 전용. (REQ-ADMIN-006)
+
+    화면에서 체크박스로 여러 명을 고르므로 한 번에 최대 100건까지 받는다.
+    `status` 는 `SUSPENDED` 또는 `ACTIVE` 만 가능하다.
+
+    **강제 탈퇴는 이 API 로 하지 않는다.** 탈퇴는 본인 의사이고, 관리자에 의한
+    데이터 삭제는 REQ-ADMIN-007 의 별도 API 다.
+
+    **전부 성공하거나 전부 롤백된다.** 없는 ID 가 하나라도 섞이면 아무것도 바꾸지 않고
+    404 로 거부한다. 부분 성공을 허용하면 무엇이 실패했는지 알 수 없기 때문이다.
+    같은 ID 를 여러 번 보내도 한 명으로 센다.
+
+    정지해도 **이미 로그인한 회원의 세션은 끊기지 않는다.** 새 로그인은 막히지만,
+    사용자 토큰 갱신은 계정 상태를 다시 확인하지 않아 리프레시 토큰이 만료될 때까지
+    접근이 이어진다. 관리자 계정과 달리 아직 차단 수단이 없다.
+
+    - **409 CANNOT_REACTIVATE_WITHDRAWN** — 탈퇴한 회원이 포함된 경우.
+      되살리면 삭제 대기 중인 계정이 다시 살아난다
+    - **404 USER_NOT_FOUND** — 존재하지 않는 ID 포함
+    - **403 FORBIDDEN** — STAFF 계정(조회는 되지만 상태 변경은 ADMIN 전용)
+    """
     return await service.update_status(request, actor_admin_id=actor.admin_id)
 
 
