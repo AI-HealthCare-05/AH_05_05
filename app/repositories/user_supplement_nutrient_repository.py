@@ -82,9 +82,6 @@ class UserSupplementNutrientRepository:
     ) -> None:
         await UserSupplementNutrientSlot.filter(user_suppl_nutrient_id=registration_id).using_db(connection).delete()
         await UserSupplementNutrientSlot.bulk_create(
-            [
-                UserSupplementNutrientSlot(user_suppl_nutrient_id=registration_id, slot=slot)
-                for slot in slots
-            ],
+            [UserSupplementNutrientSlot(user_suppl_nutrient_id=registration_id, slot=slot) for slot in slots],
             using_db=connection,
         )

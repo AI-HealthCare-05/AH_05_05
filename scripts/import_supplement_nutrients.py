@@ -169,9 +169,7 @@ def validate_rows(rows: list[list[object]], *, first_row_number: int) -> list[di
         if not any(value is not None and (not isinstance(value, str) or value.strip()) for value in row):
             continue
         if len(row) != len(FIELD_SPECS):
-            raise ImportValidationError(
-                f"row {row_number}: expected {len(FIELD_SPECS)} columns, received {len(row)}"
-            )
+            raise ImportValidationError(f"row {row_number}: expected {len(FIELD_SPECS)} columns, received {len(row)}")
         record = {
             spec.name: _convert_value(value, spec, row_number=row_number, header=header)
             for value, spec, header in zip(row, FIELD_SPECS, EXPECTED_HEADERS, strict=True)
