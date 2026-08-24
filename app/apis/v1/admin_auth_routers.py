@@ -45,6 +45,18 @@ async def login(
     response: Response,
     service: Annotated[AdminAuthService, Depends(AdminAuthService)],
 ) -> AdminLoginResponse:
+    """이메일·비밀번호로 로그인한다. (REQ-ADMIN-001)
+
+    액세스 토큰은 본문으로, 리프레시 토큰은 `admin_refresh_token` http_only 쿠키로 내려간다.
+    쿠키는 `/api/v1/admin/auth` 경로에서만 오간다.
+
+    임시 비밀번호를 아직 바꾸지 않은 계정(PENDING)도 로그인은 되며, 이때
+    `mustChangePassword` 가 true 다. 비밀번호 변경 외의 API 는 막힌다.
+
+    - **401 INVALID_CREDENTIALS** — 이메일이 없거나 비밀번호가 틀림
+      (이메일 존재 여부를 알 수 없도록 두 경우를 같은 응답으로 처리한다)
+    - **403 ACCOUNT_SUSPENDED / ACCOUNT_WITHDRAWN** — 사용할 수 없는 계정
+    """
     result, refresh_token = await service.login(request)
     _set_refresh_cookie(response, str(refresh_token))
     return result
@@ -60,6 +72,19 @@ async def refresh(
     service: Annotated[AdminAuthService, Depends(AdminAuthService)],
     admin_refresh_token: Annotated[str | None, Cookie()] = None,
 ) -> AdminTokenRefreshResponse:
+    """리프레시 쿠키로 액세스 토큰을 새로 발급한다. (REQ-ADMIN-002)
+
+    요청 본문은 없다. 브라우저가 `admin_refresh_token` 쿠키를 자동으로 보낸다.
+
+    갱신 때마다 계정 상태를 다시 확인한다. 로그인 이후 정지된 계정이 리프레시 토큰만으로
+    계속 접근하는 것을 막기 위해서다. **정지 차단은 이 검사에만 의존한다.**
+
+    발급된 토큰을 만료 전에 폐기할 수단은 없다. 비밀번호를 바꿔도 다른 기기의 리프레시
+    토큰은 살아 있으며, 노출 창은 수명(REFRESH_TOKEN_EXPIRE_MINUTES)으로만 제한된다.
+
+    - **401 UNAUTHORIZED / INVALID_TOKEN** — 쿠키가 없거나 만료·위변조됨
+    - **403 ACCOUNT_SUSPENDED / ACCOUNT_WITHDRAWN** — 사용할 수 없는 계정
+    """
     return await service.refresh(admin_refresh_token)
 
 
@@ -73,7 +98,7 @@ async def logout(
     _: Annotated[AuthenticatedAdmin, Depends(get_current_admin)],
     response: Response,
 ) -> AdminLogoutResponse:
-    """리프레시 쿠키를 삭제해 갱신을 막는다.
+    """리프레시 쿠키를 삭제해 갱신을 막는다. (REQ-ADMIN-009)
 
     액세스 토큰은 JWT 라 서버에 저장하지 않으므로 즉시 무효화할 수 없고,
     만료(ACCESS_TOKEN_EXPIRE_MINUTES) 전까지는 그대로 유효하다.
