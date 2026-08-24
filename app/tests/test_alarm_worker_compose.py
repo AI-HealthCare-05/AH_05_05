@@ -51,7 +51,11 @@ def test_alarm_worker_has_required_dependencies():
     assert worker["environment"]["TZ"] == "Asia/Seoul"
 
 
-def test_fastapi_uses_mysql_service_inside_compose_network():
+def test_fastapi_uses_mysql_and_redis_services_inside_compose_network():
     compose = _load_compose_config()
+    environment = compose["services"]["fastapi"]["environment"]
 
-    assert compose["services"]["fastapi"]["environment"]["DB_HOST"] == "mysql"
+    assert environment["DB_HOST"] == "mysql"
+    assert environment["REDIS_HOST"] == "redis"
+    assert environment["REDIS_PORT"] == "6379"
+    assert environment["REDIS_DB"] == "0"
