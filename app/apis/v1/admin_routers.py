@@ -12,7 +12,13 @@ from app.dependencies.admin import (
 )
 from app.dtos.admin_auth import AdminPasswordChangeRequest, AdminPasswordChangeResponse
 from app.dtos.admin_dashboard import DashboardSummaryQuery, DashboardSummaryResponse
-from app.dtos.admin_users import AdminUserDetailResponse, AdminUserListItem, AdminUserListQuery
+from app.dtos.admin_users import (
+    AdminUserDetailResponse,
+    AdminUserListItem,
+    AdminUserListQuery,
+    AdminUserStatusUpdateRequest,
+    AdminUserStatusUpdateResponse,
+)
 from app.dtos.admins import (
     AdminCreateRequest,
     AdminCreateResponse,
@@ -277,6 +283,22 @@ async def list_users(
     return await service.get_users(query)
 
 
+@admin_router.patch(
+    "/users/status",
+    response_model=AdminUserStatusUpdateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="사용자 정지·해제 (일괄)",
+)
+async def update_user_status(
+    actor: AdminOnly,
+    request: AdminUserStatusUpdateRequest,
+    service: Annotated[AdminUserQueryService, Depends(AdminUserQueryService)],
+) -> AdminUserStatusUpdateResponse:
+    return await service.update_status(request, actor_admin_id=actor.admin_id)
+
+
+# "/users/{user_id}" 보다 먼저 선언한다. 지금은 메서드가 달라 겹치지 않지만,
+# 나중에 PATCH /users/{user_id} 가 생기면 "status" 를 id 로 해석하게 된다.
 @admin_router.get(
     "/users/{user_id}",
     response_model=AdminUserDetailResponse,

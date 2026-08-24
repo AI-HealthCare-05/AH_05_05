@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -21,6 +21,21 @@ class AdminUserListQuery(PageQuery):
         if self.start_date and self.end_date and self.start_date > self.end_date:
             raise ValueError("가입일 시작이 종료보다 늦을 수 없습니다.")
         return self
+
+
+class AdminUserStatusUpdateRequest(CamelModel):
+    """REQ-ADMIN-006 사용자 정지·해제 요청. 화면에서 체크박스로 여러 명을 선택한다."""
+
+    user_ids: list[int] = Field(min_length=1, max_length=100)
+    # 계정 삭제(WITHDRAWN)는 여기서 다루지 않는다. 탈퇴는 본인 의사이고,
+    # 관리자에 의한 데이터 삭제는 REQ-ADMIN-007 의 별도 API 다.
+    status: Literal[AccountStatus.SUSPENDED, AccountStatus.ACTIVE]
+
+
+class AdminUserStatusUpdateResponse(CamelModel):
+    updated_count: int
+    status: AccountStatus
+    user_ids: list[int]
 
 
 class AdminUserListItem(CamelModel):
