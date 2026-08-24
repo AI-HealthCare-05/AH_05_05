@@ -6,6 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +36,17 @@ class Config(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+
+    CLOVA_TEMPLATE_OCR_INVOKE_URL: str | None = None
+    CLOVA_TEMPLATE_OCR_SECRET: SecretStr | None = None
+    CLOVA_TEMPLATE_ID: int | None = Field(default=None, gt=0)
+    CLOVA_CONNECT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
+    CLOVA_READ_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0)
+    OCR_REVIEW_CONFIDENCE_THRESHOLD: float = Field(
+        default=0.90,
+        ge=0.0,
+        le=1.0,
+    )
 
     INTERNAL_API_KEY: str = ""
     VAPID_PRIVATE_KEY: str = ""

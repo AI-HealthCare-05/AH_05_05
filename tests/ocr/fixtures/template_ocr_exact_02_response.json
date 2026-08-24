@@ -1,0 +1,38 @@
+{
+  "version": "V2",
+  "images": [
+    {
+      "name": "template_ocr_exact_02",
+      "inferResult": "SUCCESS",
+      "message": "SUCCESS",
+      "matchedTemplate": {
+        "id": 43199,
+        "name": "약"
+      },
+      "fields": [
+        {"name": "next_visit_date", "inferText": "2025-04-16(수))", "inferConfidence": 0.9999},
+        {"name": "dispensing_date", "inferText": "2025-04-02", "inferConfidence": 1.0},
+        {"name": "med_01_name", "inferText": "에스오메프라졸캡슐20mg", "inferConfidence": 0.9995},
+        {"name": "med_01_efficacy", "inferText": "[위산분비억제제]\n위산 과다, 속쓰림, 역류 증상 완화", "inferConfidence": 0.99984294},
+        {"name": "med_01_dose_line", "inferText": "1회 1캡슐씩 1일 1회 14일분", "inferConfidence": 0.99969995},
+        {"name": "med_01_administration", "inferText": "아침 식사 30분 전에 물과 함께 복용하세요.", "inferConfidence": 0.9999714},
+        {"name": "med_01_precaution", "inferText": "캡슐을 씹거나 열지 마세요.\n복통이나 설사가 지속되면 상담하세요.\n실온보관", "inferConfidence": 0.999525},
+        {"name": "med_02_name", "inferText": "레바미피드정100mg", "inferConfidence": 0.9996},
+        {"name": "med_02_efficacy", "inferText": "[위점막보호제]\n손상된위점막 보호와 회복", "inferConfidence": 0.998325},
+        {"name": "med_02_dose_line", "inferText": "1회 1정씩 1일 3회 14일분", "inferConfidence": 0.99978},
+        {"name": "med_02_administration", "inferText": "아침, 점심, 저녁 식후에 복용하세요.", "inferConfidence": 0.99987996},
+        {"name": "med_02_precaution", "inferText": "발진이나 가려움이 나타나면 복용을 중단하고 상\n담하세요.\n실온보관", "inferConfidence": 0.9994125},
+        {"name": "med_03_name", "inferText": "모사프리드정5mg", "inferConfidence": 0.9987},
+        {"name": "med_03_efficacy", "inferText": "[위장운동촉진제]\n더부룩함, 소화불량 증상 완화", "inferConfidence": 0.99865997},
+        {"name": "med_03_dose_line", "inferText": "1회 1정씩 1일 3회 14일분", "inferConfidence": 0.99983996},
+        {"name": "med_03_administration", "inferText": "식사 30분 전에 물과 함께 복용하세요.", "inferConfidence": 0.9999333},
+        {"name": "med_03_precaution", "inferText": "어지러움이나 복통이 나타날 수 있습니다.\n증상이 심하면 상담하세요.\n실온보관", "inferConfidence": 0.99973327},
+        {"name": "med_04_name", "inferText": "락토바실러스캡슐", "inferConfidence": 0.9999},
+        {"name": "med_04_efficacy", "inferText": "[정장제]\n장내 균형 유지와 배변 도움", "inferConfidence": 0.99946666},
+        {"name": "med_04_dose_line", "inferText": "1회 1캡슐씩 1일 2회 14일분", "inferConfidence": 0.99974},
+        {"name": "med_04_administration", "inferText": "식후에 미지근한 물과 함께 복용하세요.", "inferConfidence": 0.99958},
+        {"name": "med_04_precaution", "inferText": "뜨거운음료와 함께 복용하지 마세요.\n항생제와는 2시간 간격을 두세요.\n실온보관", "inferConfidence": 0.99926674}
+      ]
+    }
+  ]
+}
