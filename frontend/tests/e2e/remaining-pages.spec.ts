@@ -106,3 +106,10 @@ test('복용약 카드를 누르면 그 약의 시간대만 시트에서 바꾼�
 
   await expect(page.getByRole('button', { name: /셀레콕시브 200mg/ }).getByText('점심')).toBeVisible();
 });
+
+test('복용약 화면은 이 기록의 약봉투 원본 한 장을 다시 보여준다', async ({ page }) => {
+  await page.goto('/dev/medications');
+
+  await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '약 4개' }).getByRole('img')).toHaveCount(0);
+});

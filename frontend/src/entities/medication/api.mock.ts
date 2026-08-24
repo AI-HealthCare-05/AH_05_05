@@ -23,6 +23,7 @@ import type { MedicationOverview, MedicationSchedule, SaveMedicationScheduleResp
 export function mockMedicationOverview(): MedicationOverview {
   return {
     recordId: 12,
+    documentImageUrl: '/mock/medication-envelope.svg',
     start: { date: '2026-08-22', slot: 'morning' },
     daysRemaining: 3,
     mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },

@@ -76,6 +76,8 @@ export interface MedicationOverviewItem {
 
 export interface MedicationOverview {
   recordId: number;
+  /** 이 복약 기록을 만든 약봉투 원본 한 장의 영속 URL. */
+  documentImageUrl: string;
   start: MedicationStartPoint;
   daysRemaining: number;
   mealTimes: MealTimes;

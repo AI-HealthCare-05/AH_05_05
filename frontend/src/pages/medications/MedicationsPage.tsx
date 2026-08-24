@@ -9,7 +9,7 @@ import {
   type MedicationOverview,
   type MedicationOverviewItem,
 } from '@/entities/medication';
-import { BottomTabbar, Card, ErrorDialog, Header, type TabKey } from '@/shared/ui';
+import { BottomTabbar, Card, ErrorDialog, Header, ImageViewer, type TabKey } from '@/shared/ui';
 import { MedicationSlotSheet } from './MedicationSlotSheet';
 
 const TAB_ROUTES: Record<TabKey, string> = {
@@ -33,6 +33,7 @@ export function MedicationsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingMedication, setEditingMedication] = useState<MedicationOverviewItem | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +119,23 @@ export function MedicationsPage() {
 
             <button
               type="button"
+              aria-label="등록한 약봉투 원본 크게 보기"
+              className="overflow-hidden rounded-card bg-card text-left shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setImageViewerOpen(true)}
+            >
+              <img
+                src={overview.documentImageUrl}
+                alt="등록한 약봉투 원본"
+                className="h-24 w-full object-cover object-top"
+              />
+              <span className="flex min-h-touch items-center justify-between gap-3 px-4 text-sm font-bold text-foreground">
+                이 기록의 약봉투 원본
+                <span className="text-muted-foreground">크게 보기</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
               className="flex min-h-20 items-center gap-3 rounded-card bg-card px-4 py-3 text-left shadow-card"
               onClick={() =>
                 navigate('/medication-alarm-times')
@@ -171,6 +189,14 @@ export function MedicationsPage() {
         retryLabel="확인"
         onRetry={() => setSaveError(null)}
       />
+      {overview && (
+        <ImageViewer
+          open={imageViewerOpen}
+          src={overview.documentImageUrl}
+          title="약봉투 원본 크게 보기"
+          onOpenChange={setImageViewerOpen}
+        />
+      )}
     </div>
   );
 }

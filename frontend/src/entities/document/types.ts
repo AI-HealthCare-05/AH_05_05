@@ -64,6 +64,8 @@ interface OcrResultPending {
 interface OcrResultReady {
   batchId: string;
   ocrStatus: OcrResultReadyStatus;
+  /** 등록한 문서 원본의 영속 URL. 미리보기와 저장 후 기록 화면이 같은 주소를 사용합니다. */
+  documentImageUrl: string;
   fields: {
     /** 약봉투 조제일. 미래 날짜일 수 없습니다. */
     dispensedDate: OcrField<string>;

@@ -64,6 +64,7 @@ export function mockOcrResult(batchId: string): OcrResult {
     batchId,
     // complete 는 결과 필드가 있는 상태라 아래 값을 그대로 쓰되 상태만 갈아끼웁니다.
     ocrStatus: forced?.status === 'complete' ? 'complete' : 'ready_for_review',
+    documentImageUrl: '/mock/medication-envelope.svg',
     fields: {
       dispensedDate: { value: '2026-08-22', confidence: 'high' },
     },

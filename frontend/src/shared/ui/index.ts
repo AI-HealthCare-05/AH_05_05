@@ -13,6 +13,9 @@ export type { StatusBadgeProps, StatusBadgeType } from './StatusBadge';
 export { ErrorDialog } from './ErrorDialog';
 export type { ErrorDialogProps } from './ErrorDialog';
 
+export { ImageViewer } from './ImageViewer';
+export type { ImageViewerProps } from './ImageViewer';
+
 export { Header } from './Header';
 export type { HeaderProps } from './Header';
 

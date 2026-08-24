@@ -14,6 +14,7 @@ import {
   Card,
   ErrorDialog,
   Header,
+  ImageViewer,
   Input,
   StatusBadge,
   type StatusBadgeType,
@@ -70,6 +71,7 @@ export function OcrReviewPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dismissedOcrFailure, setDismissedOcrFailure] = useState(false);
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +198,7 @@ export function OcrReviewPage() {
   const ocrFailed = result.ocrStatus === 'failed';
   const ocrCancelled = result.ocrStatus === 'cancelled';
   const showOcrFailure = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
+  const documentImageUrl = 'documentImageUrl' in result ? result.documentImageUrl : null;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -219,6 +222,25 @@ export function OcrReviewPage() {
           <Card tone="info" title="내용을 잘 읽었어요">
             저장하기 전에 조제일과 약 정보를 한 번 확인해주세요.
           </Card>
+        )}
+
+        {documentImageUrl && (
+          <button
+            type="button"
+            aria-label="등록한 약봉투 원본 크게 보기"
+            className="overflow-hidden rounded-card bg-card text-left shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setImageViewerOpen(true)}
+          >
+            <img
+              src={documentImageUrl}
+              alt="등록한 약봉투 원본"
+              className="h-24 w-full object-cover object-top"
+            />
+            <span className="flex min-h-touch items-center justify-between gap-3 px-4 text-sm font-bold text-foreground">
+              촬영한 약봉투 원본
+              <span className="text-muted-foreground">크게 보기</span>
+            </span>
+          </button>
         )}
 
         <Card className="gap-3 p-4">
@@ -359,6 +381,14 @@ export function OcrReviewPage() {
         }}
         onCancel={() => setReviewConfirmOpen(false)}
       />
+      {documentImageUrl && (
+        <ImageViewer
+          open={imageViewerOpen}
+          src={documentImageUrl}
+          title="약봉투 원본 크게 보기"
+          onOpenChange={setImageViewerOpen}
+        />
+      )}
     </div>
   );
 }

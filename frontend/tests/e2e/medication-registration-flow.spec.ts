@@ -127,3 +127,29 @@ test('시간대가 없는 약은 자동 배정 확인 블록에 그 약만 보�
   await expect(confirmation.getByText('파모티딘 20mg')).toHaveCount(0);
   await expect(confirmation.getByText('아세트아미노펜 650mg')).toHaveCount(0);
 });
+
+test('OCR 확인 화면은 새로 열어도 저장된 약봉투 원본 한 장을 보여준다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+
+  const image = page.getByRole('img', { name: '등록한 약봉투 원본' });
+  await expect(image).toBeVisible();
+  await expect(image).toHaveAttribute('src', '/mock/medication-envelope.svg');
+  await expect(page.getByRole('region', { name: '약 4개' }).getByRole('img')).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toBeVisible();
+});
+
+test('약봉투 원본은 전체화면으로 확대하고 확대 제스처를 막지 않는다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+  await page.getByRole('button', { name: '등록한 약봉투 원본 크게 보기' }).click();
+
+  const viewer = page.getByRole('dialog', { name: '약봉투 원본 크게 보기' });
+  const enlargedImage = viewer.getByRole('img', { name: '확대한 약봉투 원본' });
+  await expect(viewer).toBeVisible();
+  expect(await enlargedImage.evaluate((element) => getComputedStyle(element).touchAction)).not.toBe(
+    'none',
+  );
+  await viewer.getByRole('button', { name: '닫기' }).click();
+  await expect(viewer).toHaveCount(0);
+});
