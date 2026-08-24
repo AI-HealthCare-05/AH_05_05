@@ -1,0 +1,98 @@
+schema_version: knowledge-chunking-experiments-v1
+experiments:
+  - experiment_id: section-token-prefix-pilot-v1
+    executed_on: "2026-08-24"
+    dataset_version: knowledge-pilot-v1
+    strategy: >-
+      문서 유형별 제목/필드로 섹션을 먼저 분리하고, 최대 크기를 넘는
+      섹션만 cl100k_base 토큰 기준으로 재귀 분할한다. embedding_text에는
+      문서·약/성분·섹션 접두어를 추가하고 content는 정규화 원문으로 유지한다.
+    extraction:
+      default_mode: plain
+      layout_mode_document_types:
+        - PHARM_REVIEW
+      reason: >-
+        plain 모드는 대부분 문서의 읽기 순서를 보존했다. 팜리뷰는 plain 추출 시
+        NUL 문자로 공백이 사라져 layout 모드가 무공백 문자열 비율을 99.7%에서
+        0%로 낮췄기 때문에 문서 유형 예외로 고정했다.
+    input:
+      text_extractable_and_index_eligible_documents: 8
+      skipped_ocr_documents: 1
+      skipped_unverified_sources: 1
+      skipped_structured_sources: 13
+    output:
+      processed_documents: 8
+      chunks: 480
+      by_document:
+        - source_id: food_safety_korea_supplement_ingredients
+          chunks: 4
+          min_tokens: 20
+          average_tokens: 101.8
+          max_tokens: 175
+        - source_id: kpicia_adverse_case_report
+          chunks: 7
+          min_tokens: 20
+          average_tokens: 332.1
+          max_tokens: 686
+        - source_id: kpicia_drug_encyclopedia
+          chunks: 12
+          min_tokens: 31
+          average_tokens: 309.9
+          max_tokens: 578
+        - source_id: kpicia_pharm_review
+          chunks: 7
+          min_tokens: 35
+          average_tokens: 398.7
+          max_tokens: 728
+        - source_id: mfds_drug_food_interaction_guide
+          chunks: 100
+          min_tokens: 34
+          average_tokens: 343.0
+          max_tokens: 448
+        - source_id: mfds_supplement_code
+          chunks: 5
+          min_tokens: 18
+          average_tokens: 145.0
+          max_tokens: 490
+        - source_id: mfds_supplement_function_guide
+          chunks: 332
+          min_tokens: 18
+          average_tokens: 401.1
+          max_tokens: 596
+        - source_id: research_supplement_interactions
+          chunks: 13
+          min_tokens: 59
+          average_tokens: 510.7
+          max_tokens: 779
+    fixes_during_pilot:
+      - >-
+        모든 PDF에 layout 모드를 적용했을 때 회전 텍스트 누락 경고가 발생해
+        팜리뷰에만 layout 모드를 사용하도록 제한했다.
+      - >-
+        본문의 '상호작용'과 '치료'를 제목으로 오인해 과분할하던 규칙을 제거했다.
+        전체 청크 수는 593개에서 532개로 감소했다.
+      - >-
+        제조기준·제품의 요건 같은 부모 제목과 기호 전용 하위 청크를 제거해
+        해당 단계의 청크 수를 531개로 줄였다.
+      - >-
+        제목 문자열을 본문 어디서나 찾던 방식을 문서 시작·줄 시작·문장 종결
+        경계와 뒤쪽 구분자를 확인하는 방식으로 제한했다. 본문 용어를 제목으로
+        오인하던 경계가 줄어 파일럿 청크는 531개에서 480개로 감소했다.
+      - >-
+        OCR_REQUIRED와 출처 미확인 문서의 이전 JSONL이 남지 않도록 문서별
+        산출물을 실행 전에 제거한다.
+    retrieval_evaluation:
+      status: PENDING_QDRANT_PILOT_RELEASE
+      planned_metrics:
+        hit_at_5_target: 0.90
+        citation_accuracy_target: 0.90
+        qdrant_search_p95_ms_target: 300
+        additional:
+          - MRR
+          - chunk_boundary_integrity
+          - wrong_entity_mixing_count
+          - duplicate_retrieval_rate
+          - repeated_query_rank_consistency
+    decision: >-
+      전처리 구조 검증은 통과했다. 아직 임베딩·Qdrant 검색 평가를 수행하지
+      않았으므로 전체 원본 확대와 기존 컬렉션 삭제는 보류한다.

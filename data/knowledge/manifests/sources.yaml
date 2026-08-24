@@ -23,52 +23,61 @@ sources:
     provider: 식품의약품안전처
     access_scope: PUBLIC
     target: QDRANT
+    document_type: DRUG_FOOD_INTERACTION_GUIDE
     raw_path: data/knowledge/raw/public/mfds/drug_food_interactions
 
   - source_id: mfds_supplement_function_guide
     provider: 식품의약품안전처
     access_scope: PUBLIC
     target: QDRANT
+    document_type: SUPPLEMENT_FUNCTION_GUIDE
     raw_path: data/knowledge/raw/public/mfds/supplement_guides
 
   - source_id: mfds_supplement_code
     provider: 식품의약품안전처
     access_scope: PUBLIC
     target: QDRANT
+    document_type: SUPPLEMENT_CODE
     raw_path: data/knowledge/raw/public/mfds/supplement_code
 
   - source_id: food_safety_korea_supplement_ingredients
     provider: 식품안전나라
     access_scope: PUBLIC
     target: QDRANT
+    document_type: SUPPLEMENT_CODE
     raw_path: data/knowledge/raw/public/food_safety_korea/supplement_ingredients
 
   - source_id: kpicia_drug_encyclopedia
     provider: 약학정보원
     access_scope: DEMO_RESTRICTED
     target: QDRANT
+    document_type: DRUG_ENCYCLOPEDIA
     raw_path: data/knowledge/raw/demo_restricted/kpicia/drug_encyclopedia
 
   - source_id: kpicia_adverse_case_report
     provider: 약학정보원
     access_scope: DEMO_RESTRICTED
     target: QDRANT
+    document_type: ADVERSE_CASE_REPORT
     raw_path: data/knowledge/raw/demo_restricted/kpicia/adverse_case_report
 
   - source_id: kpicia_pharm_review
     provider: 약학정보원
     access_scope: DEMO_RESTRICTED
     target: QDRANT
+    document_type: PHARM_REVIEW
     raw_path: data/knowledge/raw/demo_restricted/kpicia/pharm_review
 
   - source_id: research_supplement_interactions
     provider: 개별 학술 논문 발행처
     access_scope: DEMO_RESTRICTED
     target: QDRANT
+    document_type: RESEARCH_ARTICLE
     raw_path: data/knowledge/raw/demo_restricted/research/supplement_interactions
 
   - source_id: unknown_supplement_interaction_monograph
     provider: 출처 확인 필요
     access_scope: DEMO_RESTRICTED
     target: QDRANT_DISABLED_UNTIL_VERIFIED
+    document_type: SUPPLEMENT_INTERACTION_MONOGRAPH
     raw_path: data/knowledge/raw/demo_restricted/unknown_source/supplement_interactions

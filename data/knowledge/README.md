@@ -19,6 +19,22 @@
 7. Qdrant에는 출처가 확인된 설명·주의·상호작용 근거 청크만 적재한다.
 8. `DEMO_RESTRICTED` 자료는 내부 발표·포트폴리오 데모에서만 사용하며 원문 다운로드 API를 제공하지 않는다.
 
+## VectorDB 파일럿 전처리
+
+청킹 경계와 선택 이유는 `CHUNKING_STRATEGY.md`에 기록합니다. 대표 PDF만 다시 전처리하려면 저장소 루트에서 실행합니다.
+
+```bash
+uv run --group ai python -m scripts.preprocess_knowledge_pilots \
+  --dataset-version knowledge-pilot-v1
+```
+
+이 명령은 다음 문서만 처리합니다.
+
+- `pilot_manifest.json`에서 `TEXT_EXTRACTABLE` 상태인 문서
+- `sources.yaml`에서 `target: QDRANT`로 허용된 출처
+
+`OCR_REQUIRED`, `STRUCTURED_SOURCE`, `QDRANT_DISABLED_UNTIL_VERIFIED` 문서는 건너뜁니다. 실행 결과는 Git에서 제외된 `processed/text/*.jsonl`과 `processed/chunks/*.jsonl`에 생성됩니다. 같은 문서를 다시 실행하면 동일한 청크 ID를 만들며, 인덱싱 대상에서 제외된 문서의 이전 산출물은 제거합니다.
+
 ## 응답 안전 원칙
 
 - 보유한 환자 확정정보와 검색된 근거 범위 안에서만 답한다.

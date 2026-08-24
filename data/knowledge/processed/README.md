@@ -11,3 +11,7 @@ processed/
 ```
 
 Qdrant 벡터 자체는 이 디렉터리가 아니라 Qdrant Docker Volume에 저장합니다.
+
+`text/*.jsonl`은 페이지 번호를 포함한 정규화 원문이고, `chunks/*.jsonl`은 Qdrant 임베딩 직전 계약입니다. 청크의 `content`는 출처 표시용 원문이며 `embedding_text`는 문서·약/성분·섹션 접두어를 추가한 검색용 텍스트입니다.
+
+현재 파일럿 산출물은 품질 검토용이며 자동으로 Qdrant에 적재되지 않습니다.
