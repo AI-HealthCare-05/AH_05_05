@@ -59,10 +59,6 @@ export function ChatPage() {
 
   function handleTabChange(key: TabKey) {
     if (key === 'chat') return;
-    if (key === 'life') {
-      navigate('/dev/life-guide');
-      return;
-    }
     toast('이 탭 화면은 아직 구현 전입니다.');
   }
 

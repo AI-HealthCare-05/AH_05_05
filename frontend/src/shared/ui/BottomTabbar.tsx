@@ -15,8 +15,7 @@ export const TABS = [
   { key: 'my', label: '마이', icon: UserRound },
 ] as const;
 
-/** 2단계에서 삭제될 기존 화면이 1단계 커밋에서도 타입 안전하게 빌드되도록만 유지합니다. */
-export type TabKey = (typeof TABS)[number]['key'] | 'life' | 'schedule';
+export type TabKey = (typeof TABS)[number]['key'];
 
 export interface BottomTabbarProps {
   active: TabKey;
