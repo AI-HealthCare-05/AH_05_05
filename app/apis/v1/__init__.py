@@ -5,8 +5,8 @@ from app.apis.v1.admin_routers import admin_router
 from app.apis.v1.alarm_router import alarm_router
 from app.apis.v1.auth_routers import auth_router
 from app.apis.v1.job_router import job_router
-from app.apis.v1.medication_guide_ocr_router import medication_guide_ocr_router
 from app.apis.v1.med_router import med_router
+from app.apis.v1.medication_guide_ocr_router import medication_guide_ocr_router
 from app.apis.v1.user_routers import user_router
 
 v1_routers = APIRouter(prefix="/api/v1")

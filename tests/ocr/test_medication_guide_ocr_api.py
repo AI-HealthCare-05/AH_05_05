@@ -64,9 +64,7 @@ def test_openapi_documents_ocr_runtime_error_contract() -> None:
     assert set(responses) == {"200", *expected_error_codes}
     for status_code, error_codes in expected_error_codes.items():
         response = responses[status_code]
-        assert response["content"]["application/json"]["schema"] == {
-            "$ref": "#/components/schemas/OcrErrorResponse"
-        }
+        assert response["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/OcrErrorResponse"}
         assert all(error_code in response["description"] for error_code in error_codes)
 
 
