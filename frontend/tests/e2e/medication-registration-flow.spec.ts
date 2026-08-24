@@ -67,3 +67,39 @@ test('미래 조제일은 저장할 수 없다', async ({ page }) => {
   await expect(page.getByText('조제일은 오늘까지만 고를 수 있어요.')).toBeVisible();
   await expect(page.getByRole('button', { name: '저장하고 복약 시간 설정' })).toBeDisabled();
 });
+
+test('OCR 약 카드를 누르면 선택한 약 하나만 편집하는 시트가 열린다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+  await page.getByRole('button', { name: /리바록사반 10mg/ }).click();
+
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('heading', { name: '리바록사반 수정' })).toBeVisible();
+  await expect(sheet.getByLabel('약품명')).toHaveValue('리바록사반');
+  await expect(sheet.getByLabel('용량')).toHaveValue('10mg');
+  await expect(sheet.getByText('셀레콕시브 200mg')).toHaveCount(0);
+  await expect(sheet.getByRole('button', { name: '약 추가' })).toHaveCount(0);
+  await expect(sheet.getByRole('button', { name: '저장', exact: true })).toHaveCount(1);
+});
+
+test('약 삭제는 편집 시트의 텍스트 동작을 거쳐 확인 화면에서만 실행한다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+  await page.getByRole('button', { name: /리바록사반 10mg/ }).click();
+
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('button', { name: '삭제', exact: true })).toHaveCount(0);
+  await sheet.getByRole('button', { name: '이 약 삭제' }).click();
+  await expect(sheet.getByRole('heading', { name: '이 약을 지울까요?' })).toBeVisible();
+  await sheet.getByRole('button', { name: '삭제', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: /리바록사반 10mg/ })).toHaveCount(0);
+});
+
+test('빠진 약 직접 추가는 목록 편집을 거치지 않고 빈 약 추가 시트를 연다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+  await page.getByRole('button', { name: '빠진 약 직접 추가' }).click();
+
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('heading', { name: '약 추가' })).toBeVisible();
+  await expect(sheet.getByLabel('약품명')).toHaveValue('');
+  await expect(sheet.getByText('추출 내용을 수정')).toHaveCount(0);
+});

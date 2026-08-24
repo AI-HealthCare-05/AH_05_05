@@ -25,6 +25,10 @@ interface OcrReviewLocationState {
   batchId?: string;
 }
 
+type MedicationEditorTarget =
+  | { mode: 'add' }
+  | { mode: 'edit'; tempId: string };
+
 /**
  * 오늘 날짜(YYYY-MM-DD). 조제일은 미래일 수 없으므로 입력 상한과 저장 검증에 함께 씁니다.
  * 복약 시간 화면과 같은 로컬 기준을 써야 두 화면의 날짜 입력이 다르게 동작하지 않습니다.
@@ -59,7 +63,8 @@ export function OcrReviewPage() {
   const [dispensedDate, setDispensedDate] = useState('');
   const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(null);
   const [medications, setMedications] = useState<OcrMedication[]>([]);
-  const [medicationDialogOpen, setMedicationDialogOpen] = useState(false);
+  const [medicationEditorTarget, setMedicationEditorTarget] =
+    useState<MedicationEditorTarget | null>(null);
   const [reviewConfirmOpen, setReviewConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -245,7 +250,9 @@ export function OcrReviewPage() {
               key={medication.tempId}
               type="button"
               className="flex min-h-20 w-full items-center gap-3 rounded-card bg-card px-4 py-3 text-left shadow-card"
-              onClick={() => setMedicationDialogOpen(true)}
+              onClick={() =>
+                setMedicationEditorTarget({ mode: 'edit', tempId: medication.tempId })
+              }
             >
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
@@ -264,7 +271,7 @@ export function OcrReviewPage() {
           <button
             type="button"
             className="flex min-h-touch items-center justify-center gap-2 rounded-card border border-dashed border-border text-sm font-bold text-muted-foreground"
-            onClick={() => setMedicationDialogOpen(true)}
+            onClick={() => setMedicationEditorTarget({ mode: 'add' })}
           >
             <Plus aria-hidden className="size-5" />
             빠진 약 직접 추가
@@ -286,10 +293,40 @@ export function OcrReviewPage() {
       </main>
 
       <MedicationEditDialog
-        open={medicationDialogOpen}
-        medications={medications}
-        onOpenChange={setMedicationDialogOpen}
-        onSave={setMedications}
+        open={medicationEditorTarget !== null}
+        mode={medicationEditorTarget?.mode ?? 'add'}
+        medication={
+          medicationEditorTarget?.mode === 'edit'
+            ? medications.find(
+                (medication) => medication.tempId === medicationEditorTarget.tempId,
+              ) ?? null
+            : null
+        }
+        onOpenChange={(open) => {
+          if (!open) setMedicationEditorTarget(null);
+        }}
+        onSave={(savedMedication) => {
+          setMedications((current) =>
+            medicationEditorTarget?.mode === 'edit'
+              ? current.map((medication) =>
+                  medication.tempId === savedMedication.tempId ? savedMedication : medication,
+                )
+              : [...current, savedMedication],
+          );
+          setMedicationEditorTarget(null);
+        }}
+        onDelete={
+          medicationEditorTarget?.mode === 'edit'
+            ? () => {
+                setMedications((current) =>
+                  current.filter(
+                    (medication) => medication.tempId !== medicationEditorTarget.tempId,
+                  ),
+                );
+                setMedicationEditorTarget(null);
+              }
+            : undefined
+        }
       />
       <ErrorDialog
         open={showOcrFailure}
