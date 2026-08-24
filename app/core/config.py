@@ -68,3 +68,9 @@ class Config(BaseSettings):
     # 초기 ADMIN 시드용(scripts/seed_admin.py). 운영에서는 시드 후 값을 지운다.
     SUPERADMIN_EMAIL: str | None = None
     SUPERADMIN_PASSWORD: str | None = None
+
+    # REQ-DASH-001 회원 현황 경보 임계치(정지 비율 %).
+    # 이하는 NORMAL, 초과~WARNING 이하는 WARNING, 그 위는 DANGER.
+    # 기준이 바뀌어도 프론트를 고치지 않도록 서버 설정으로 둔다.
+    DASHBOARD_SUSPENDED_WARNING_PERCENT: float = 10.0
+    DASHBOARD_SUSPENDED_DANGER_PERCENT: float = 20.0
