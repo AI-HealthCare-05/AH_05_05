@@ -10,11 +10,30 @@ import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
 import { SupplementsPage } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
-import { mockMedicationScheduleWithAutoAssigned } from '@/entities/medication';
+import {
+  mockMedicationOverview,
+  mockMedicationScheduleWithAutoAssigned,
+  type MedicationOverview,
+} from '@/entities/medication';
 import { DevGallery } from './DevGallery';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
 const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
+const ACTIVE_MEDICATION_OVERVIEW = mockMedicationOverview();
+const EMPTY_MEDICATION_OVERVIEW: MedicationOverview = {
+  ...ACTIVE_MEDICATION_OVERVIEW,
+  medications: [],
+};
+const ENDED_MEDICATION_OVERVIEW: MedicationOverview = {
+  ...ACTIVE_MEDICATION_OVERVIEW,
+  daysRemaining: 0,
+};
+
+const loadEmptyMedicationOverview = async () => EMPTY_MEDICATION_OVERVIEW;
+const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
+const failMedicationOverview = async (): Promise<MedicationOverview> => {
+  throw new Error('잠시 후 다시 시도해주세요.');
+};
 
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
@@ -57,7 +76,10 @@ export function AppRouter() {
           path="/dev/supplements-three-exceeded"
           element={<SupplementsPage supplementsOverride={THREE_EXCEEDED_SUPPLEMENTS} />}
         />
-        <Route path="/dev/home-empty" element={<HomePage authenticatedOverride />} />
+        <Route
+          path="/dev/home-empty"
+          element={<HomePage authenticatedOverride medicationState="empty" />}
+        />
         <Route
           path="/dev/home-active"
           element={<HomePage authenticatedOverride medicationState="active" />}
@@ -65,6 +87,30 @@ export function AppRouter() {
         <Route
           path="/dev/home-ended"
           element={<HomePage authenticatedOverride medicationState="ended" />}
+        />
+        <Route
+          path="/dev/home-data-empty"
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationOverviewLoader={loadEmptyMedicationOverview}
+            />
+          }
+        />
+        <Route
+          path="/dev/home-data-ended"
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationOverviewLoader={loadEndedMedicationOverview}
+            />
+          }
+        />
+        <Route
+          path="/dev/home-load-error"
+          element={
+            <HomePage authenticatedOverride medicationOverviewLoader={failMedicationOverview} />
+          }
         />
       </Routes>
     </BrowserRouter>

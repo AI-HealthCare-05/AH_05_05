@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import {
   ChevronRight,
   Clock3,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
+import { getMedicationOverview, type MedicationOverview } from '@/entities/medication';
 import { BottomTabbar, Button, Card, Header, type TabKey } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
 
@@ -18,6 +19,7 @@ export type MedicationHomeState = 'empty' | 'active' | 'ended';
 interface HomePageProps {
   authenticatedOverride?: boolean;
   medicationState?: MedicationHomeState;
+  medicationOverviewLoader?: () => Promise<MedicationOverview>;
 }
 
 interface FeatureItem {
@@ -60,11 +62,43 @@ const TAB_ROUTES: Record<TabKey, string> = {
   my: '/my',
 };
 
-export function HomePage({ authenticatedOverride, medicationState = 'empty' }: HomePageProps) {
+export function HomePage({
+  authenticatedOverride,
+  medicationState,
+  medicationOverviewLoader = getMedicationOverview,
+}: HomePageProps) {
   const navigate = useNavigate();
   const { authenticated } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
   const [loginPromptOpen, setLoginPromptOpen] = useState(false);
+  const [medicationOverview, setMedicationOverview] = useState<MedicationOverview | null>(null);
+  const [medicationLoadError, setMedicationLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated || medicationState !== undefined) return;
+
+    let cancelled = false;
+    setMedicationOverview(null);
+    setMedicationLoadError(null);
+    medicationOverviewLoader()
+      .then((overview) => {
+        if (!cancelled) setMedicationOverview(overview);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMedicationLoadError(
+            error instanceof Error ? error.message : '복약 정보를 불러오지 못했어요.',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, medicationOverviewLoader, medicationState]);
+
+  const resolvedMedicationState =
+    medicationState ??
+    (medicationOverview ? medicationHomeStateFromOverview(medicationOverview) : null);
 
   function openFeature(key: FeatureItem['key']) {
     if (!isAuthenticated) {
@@ -118,7 +152,20 @@ export function HomePage({ authenticatedOverride, medicationState = 'empty' }: H
 
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
         {isAuthenticated ? (
-          <LoggedInHero state={medicationState} onUpload={() => navigate('/document-upload')} />
+          medicationLoadError ? (
+            <Card title="복약 정보를 불러오지 못했어요">{medicationLoadError}</Card>
+          ) : resolvedMedicationState ? (
+            <LoggedInHero
+              state={resolvedMedicationState}
+              onUpload={() => navigate('/document-upload')}
+            />
+          ) : (
+            <div
+              role="status"
+              aria-label="복약 정보 불러오는 중"
+              className="min-h-84 animate-pulse rounded-card bg-muted-bg"
+            />
+          )
         ) : (
           <GuestCarousel />
         )}
@@ -254,7 +301,7 @@ function FeatureRow({ feature, onClick }: { feature: FeatureItem; onClick: () =>
 function LoggedInHero({ state, onUpload }: { state: MedicationHomeState; onUpload: () => void }) {
   if (state === 'empty') {
     return (
-      <Card className="min-h-84 justify-between gap-4 bg-primary-bg p-5">
+      <Card className="gap-4 bg-primary-bg p-5">
         <div>
           <p className="text-xl font-bold text-foreground">약봉투를 등록해 주세요</p>
           <p className="mt-1 text-sm text-muted-foreground">사진 한 장이면 오늘부터 알림을 드릴게요.</p>
@@ -266,7 +313,7 @@ function LoggedInHero({ state, onUpload }: { state: MedicationHomeState; onUploa
 
   if (state === 'ended') {
     return (
-      <Card className="min-h-84 justify-between gap-4 p-5">
+      <Card className="gap-4 p-5">
         <div>
           <p className="text-xl font-bold text-foreground">복용이 끝났어요</p>
           <p className="mt-1 text-sm text-muted-foreground">새 처방을 받았다면 약봉투를 다시 등록해 주세요.</p>
@@ -319,4 +366,9 @@ function LoggedInHero({ state, onUpload }: { state: MedicationHomeState; onUploa
       </div>
     </section>
   );
+}
+
+function medicationHomeStateFromOverview(overview: MedicationOverview): MedicationHomeState {
+  if (overview.medications.length === 0) return 'empty';
+  return overview.daysRemaining > 0 ? 'active' : 'ended';
 }
