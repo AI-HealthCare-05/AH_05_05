@@ -87,3 +87,24 @@ export interface MedicationOverview {
   mealTimes: MealTimes;
   medications: MedicationOverviewItem[];
 }
+
+export interface DoseRecord {
+  /** YYYY-MM-DD */
+  date: string;
+  slot: MealSlot;
+  taken: boolean;
+}
+
+export interface SaveDoseTakenPayload {
+  /** 화면이 보유한 오늘 날짜를 그대로 보냅니다. */
+  date: string;
+  slot: MealSlot;
+  taken: boolean;
+}
+
+export interface DoseRecordRange {
+  /** YYYY-MM-DD */
+  from: string;
+  /** YYYY-MM-DD */
+  to: string;
+}

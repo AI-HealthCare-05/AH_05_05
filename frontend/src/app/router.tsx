@@ -13,7 +13,9 @@ import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import {
   mockMedicationOverview,
   mockMedicationScheduleWithAutoAssigned,
+  type DoseRecord,
   type MedicationOverview,
+  type SaveDoseTakenPayload,
 } from '@/entities/medication';
 import { DevGallery } from './DevGallery';
 
@@ -44,6 +46,9 @@ const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
 const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
 const failMedicationOverview = async (): Promise<MedicationOverview> => {
   throw new Error('잠시 후 다시 시도해주세요.');
+};
+const failDoseRecordSave = async (_payload: SaveDoseTakenPayload): Promise<DoseRecord> => {
+  throw new Error('기록하지 못했어요. 다시 시도해주세요.');
 };
 
 /**
@@ -101,6 +106,16 @@ export function AppRouter() {
             <HomePage
               authenticatedOverride
               medicationOverviewLoader={loadOneMedicationOverview}
+            />
+          }
+        />
+        <Route
+          path="/dev/home-dose-save-error"
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationState="active"
+              doseRecordSaver={failDoseRecordSave}
             />
           }
         />

@@ -243,3 +243,77 @@ test('현재 시각이 바뀌면 펼쳐지는 복약 슬롯도 mealTimes를 따�
   await expect(current.getByText('저녁 19:00')).toBeVisible();
   await expect(current.getByText('지금', { exact: true })).toBeVisible();
 });
+test('먹었어요를 누르면 즉시 완료되고 다음 슬롯은 중립 다음 상태로 펼쳐진다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-active');
+  const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
+
+  await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
+
+  await expect(timeline.getByRole('button', { name: /완료한 복약 아침/ })).toBeVisible();
+  await expect(timeline.getByText('2개 먹었어요')).toBeVisible();
+  await expect(timeline.getByRole('group', { name: '다음 복약 저녁' })).toContainText('다음');
+  const earlyButton = timeline.getByRole('button', { name: '3개 먹었어요' });
+  await expect(earlyButton).toBeVisible();
+  expect(await earlyButton.evaluate((element) => getComputedStyle(element).borderTopWidth)).not.toBe(
+    '0px',
+  );
+  await expect(page.getByText(/저장 중|기록 중/)).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('복약 기록 토스트의 되돌리기는 완료 칸을 다시 현재 칸으로 복구한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-active');
+  const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
+
+  await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
+  await page.getByRole('button', { name: '되돌리기' }).click();
+
+  const current = timeline.getByRole('group', { name: '현재 복약' });
+  await expect(current.getByText('아침 08:00')).toBeVisible();
+  await expect(current.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
+});
+
+test('다음 슬롯도 미리 기록할 수 있고 모두 기록하면 사실 문구만 보여준다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-active');
+  const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
+
+  await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
+  await timeline.getByRole('button', { name: '3개 먹었어요' }).click();
+
+  await expect(timeline.getByText('오늘 다 드셨어요')).toBeVisible();
+  await expect(timeline.getByText(/잘하셨어요|훌륭/)).toHaveCount(0);
+  await timeline.getByRole('button', { name: /완료한 복약 아침/ }).click();
+  await expect(timeline.getByRole('group', { name: '현재 복약' })).toContainText('아침 08:00');
+  await expect(timeline.getByText('오늘 다 드셨어요')).toHaveCount(0);
+});
+
+test('복약 기록 저장 실패는 낙관적 표시를 원복하고 같은 화면에 오류 팝업을 띄운다', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-dose-save-error');
+  const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
+
+  await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
+  const dialog = page.getByRole('dialog', { name: '기록하지 못했어요' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('다시 시도해주세요.');
+  await expect(
+    page.locator('[aria-label="하루 복약 시간표"] [aria-label="현재 복약"]'),
+  ).toContainText('아침 08:00');
+  await expect(page).toHaveURL(/\/dev\/home-dose-save-error$/);
+});
+
+test('포커스 복귀 때 날짜가 바뀌었으면 오늘 기준 제목과 기록을 다시 조회한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-active');
+  await expect(page.getByText('4일째 · 3일 남음')).toBeVisible();
+
+  await page.clock.setFixedTime(new Date('2026-08-26T12:00:00+09:00'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+
+  await expect(page.getByText('5일째 · 3일 남음')).toBeVisible();
+});

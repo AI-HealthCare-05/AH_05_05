@@ -19,16 +19,27 @@
  * → 점심 슬롯을 쓰는 약이 하나도 없으므로 점심 행만 흐리게 표시되어야 합니다.
  */
 import type {
+  DoseRecord,
+  DoseRecordRange,
   MedicationOverview,
   MedicationSchedule,
+  SaveDoseTakenPayload,
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,
 } from './types';
 
 let hasRegisteredMedication = true;
+let doseRecords: DoseRecord[] = [
+  { date: '2026-08-22', slot: 'morning', taken: true },
+  { date: '2026-08-22', slot: 'evening', taken: true },
+  { date: '2026-08-23', slot: 'morning', taken: true },
+  { date: '2026-08-23', slot: 'evening', taken: true },
+  { date: '2026-08-24', slot: 'morning', taken: true },
+];
 
 export function resetMockMedicationForNewAccount(): void {
   hasRegisteredMedication = false;
+  doseRecords = [];
 }
 
 export function mockMedicationOverview(): MedicationOverview {
@@ -99,4 +110,18 @@ export function mockSaveMedicationSchedule(
 ): SaveMedicationScheduleResponse {
   hasRegisteredMedication = true;
   return { saved: true };
+}
+
+export function mockSaveDoseTaken(payload: SaveDoseTakenPayload): DoseRecord {
+  doseRecords = doseRecords.filter(
+    (record) => record.date !== payload.date || record.slot !== payload.slot,
+  );
+  if (payload.taken) doseRecords.push({ ...payload });
+  return { ...payload };
+}
+
+export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] {
+  return doseRecords
+    .filter((record) => record.taken && record.date >= from && record.date <= to)
+    .map((record) => ({ ...record }));
 }
