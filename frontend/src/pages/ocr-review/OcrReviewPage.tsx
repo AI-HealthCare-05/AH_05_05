@@ -1,10 +1,11 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import { AlertTriangle, ChevronRight, Plus } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Plus, ScanLine } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
   confirmOcrResult,
   getOcrResult,
+  uploadDocument,
   type Confidence,
   type OcrMedication,
   type OcrResult,
@@ -16,6 +17,7 @@ import {
   Header,
   ImageViewer,
   Input,
+  PokeFeatureCarousel,
   StatusBadge,
   type StatusBadgeType,
 } from '@/shared/ui';
@@ -24,7 +26,20 @@ import { MedicationEditDialog } from './MedicationEditDialog';
 
 interface OcrReviewLocationState {
   batchId?: string;
+  file?: File;
 }
+
+type ReadingStage = 'uploading' | 'reading' | 'organizing' | 'complete';
+
+const STAGE_DETAILS: Record<
+  ReadingStage,
+  { title: string; step: number; baseProgress: number; capProgress: number }
+> = {
+  uploading: { title: '사진을 올리고 있어요', step: 1, baseProgress: 0, capProgress: 32 },
+  reading: { title: '글자를 찾고 있어요', step: 2, baseProgress: 33, capProgress: 65 },
+  organizing: { title: '약 이름을 정리하고 있어요', step: 3, baseProgress: 66, capProgress: 90 },
+  complete: { title: '다 읽었어요', step: 3, baseProgress: 100, capProgress: 100 },
+};
 
 type MedicationEditorTarget =
   | { mode: 'add' }
@@ -58,9 +73,19 @@ export function OcrReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state as OcrReviewLocationState | null) ?? {};
-  const batchId = state.batchId ?? 'b_mock_9f21';
+  const [batchId, setBatchId] = useState<string | null>(
+    state.batchId ?? (state.file ? null : 'b_mock_9f21'),
+  );
 
   const [result, setResult] = useState<OcrResult | null>(null);
+  const [readingStage, setReadingStage] = useState<ReadingStage>(
+    state.file ? 'uploading' : 'reading',
+  );
+  const [progress, setProgress] = useState(state.file ? 0 : 33);
+  const [uploadAttempt, setUploadAttempt] = useState(0);
+  const [pollAttempt, setPollAttempt] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
   const [dispensedDate, setDispensedDate] = useState('');
   const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(null);
   const [medications, setMedications] = useState<OcrMedication[]>([]);
@@ -74,26 +99,99 @@ export function OcrReviewPage() {
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
 
   useEffect(() => {
+    if (!state.file || batchId) return;
     let cancelled = false;
-    getOcrResult(batchId)
-      .then((data) => {
+    setReadingStage('uploading');
+    setProgress(0);
+    setUploadError(null);
+    uploadDocument(state.file, 'initial')
+      .then(({ batchId: uploadedBatchId }) => {
         if (cancelled) return;
-        setResult(data);
-        // 판별 유니온 계약: 결과 필드가 있는 두 상태를 확인한 뒤에만 fields를 읽습니다.
-        if (data.ocrStatus !== 'ready_for_review' && data.ocrStatus !== 'complete') return;
-        setDispensedDate(data.fields.dispensedDate.value ?? '');
-        setDispensedDateConfidence(data.fields.dispensedDate.confidence);
-        setMedications(data.medications);
+        setBatchId(uploadedBatchId);
+        setReadingStage('reading');
+        setProgress(33);
+        navigate(location.pathname, {
+          replace: true,
+          state: { batchId: uploadedBatchId },
+        });
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : '판독 결과를 불러오지 못했어요.');
+          setUploadError(
+            error instanceof Error ? error.message : '사진을 올리지 못했어요. 다시 시도해주세요.',
+          );
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [batchId]);
+  }, [batchId, location.pathname, navigate, state.file, uploadAttempt]);
+
+  useEffect(() => {
+    if (!batchId) return;
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    let completionTimer: number | undefined;
+    const timeoutTimer = window.setTimeout(() => {
+      cancelled = true;
+      if (pollTimer) window.clearTimeout(pollTimer);
+      setTimedOut(true);
+    }, 60_000);
+
+    async function poll() {
+      if (!batchId || cancelled) return;
+      try {
+        const data = await getOcrResult(batchId);
+        if (cancelled) return;
+        if (data.ocrStatus === 'queued' || data.ocrStatus === 'processing') {
+          setResult(data);
+          setReadingStage(data.ocrStatus === 'queued' ? 'reading' : 'organizing');
+          pollTimer = window.setTimeout(poll, 1_000);
+          return;
+        }
+
+        window.clearTimeout(timeoutTimer);
+        if (data.ocrStatus === 'ready_for_review' || data.ocrStatus === 'complete') {
+          setReadingStage('complete');
+          setProgress(100);
+          completionTimer = window.setTimeout(() => {
+            if (cancelled) return;
+            setResult(data);
+            setDispensedDate(data.fields.dispensedDate.value ?? '');
+            setDispensedDateConfidence(data.fields.dispensedDate.confidence);
+            setMedications(data.medications);
+            navigate(location.pathname, { replace: true, state: { batchId } });
+          }, 400);
+          return;
+        }
+
+        setResult(data);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : '문서를 읽지 못했어요.');
+          setResult({ batchId, ocrStatus: 'failed' });
+        }
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutTimer);
+      if (pollTimer) window.clearTimeout(pollTimer);
+      if (completionTimer) window.clearTimeout(completionTimer);
+    };
+  }, [batchId, location.pathname, navigate, pollAttempt]);
+
+  useEffect(() => {
+    const details = STAGE_DETAILS[readingStage];
+    setProgress((current) => Math.max(current, details.baseProgress));
+    if (details.baseProgress === details.capProgress) return;
+    const intervalId = window.setInterval(() => {
+      setProgress((current) => Math.min(details.capProgress, current + 1));
+    }, 450);
+    return () => window.clearInterval(intervalId);
+  }, [readingStage]);
 
   function openDatePicker(event: MouseEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -129,7 +227,7 @@ export function OcrReviewPage() {
   }
 
   async function save() {
-    if (!result || !dispensedDate) return;
+    if (!result || !batchId || !dispensedDate) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -157,25 +255,42 @@ export function OcrReviewPage() {
     }
   }
 
-  if (loadError !== null || result === null) {
+  if (
+    result === null ||
+    result.ocrStatus === 'queued' ||
+    result.ocrStatus === 'processing'
+  ) {
     return (
-      <PageFrame onBack={() => navigate(-1)}>
-        {loadError ? (
-          <Card title="판독 결과를 불러오지 못했어요">{loadError}</Card>
-        ) : (
-          <p className="text-sm text-muted-foreground">불러오는 중...</p>
-        )}
-      </PageFrame>
-    );
-  }
-
-  if (result.ocrStatus === 'queued' || result.ocrStatus === 'processing') {
-    return (
-      <PageFrame onBack={() => navigate(-1)}>
-        <Card tone="info" title="약봉투를 읽고 있어요">
-          잠시만 기다려주세요. 다 읽으면 확인할 내용을 보여드릴게요.
-        </Card>
-      </PageFrame>
+      <>
+        <ReadingScreen
+          stage={readingStage}
+          progress={progress}
+          onCancel={() => navigate('/document-upload', { replace: true })}
+        />
+        <ErrorDialog
+          open={uploadError !== null}
+          title="업로드에 실패했어요"
+          message={uploadError ?? ''}
+          onRetry={() => {
+            setUploadError(null);
+            setUploadAttempt((attempt) => attempt + 1);
+          }}
+          secondaryLabel="닫기"
+          onSecondary={() => navigate('/document-upload', { replace: true })}
+        />
+        <ErrorDialog
+          open={timedOut}
+          title="시간이 오래 걸리고 있어요"
+          message="판독이 아직 끝나지 않았어요. 그대로 기다리거나 약봉투를 다시 촬영할 수 있어요."
+          retryLabel="계속 기다리기"
+          onRetry={() => {
+            setTimedOut(false);
+            setPollAttempt((attempt) => attempt + 1);
+          }}
+          secondaryLabel="다시 촬영"
+          onSecondary={() => navigate('/document-upload', { replace: true })}
+        />
+      </>
     );
   }
 
@@ -356,10 +471,11 @@ export function OcrReviewPage() {
         message={
           ocrCancelled
             ? '검토 가능한 시간이 지나 결과를 사용할 수 없어요. 약봉투를 다시 등록해주세요.'
-            : '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'
+            : loadError ??
+              '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'
         }
-        retryLabel="다시 촬영하기"
-        onRetry={() => navigate('/document-upload')}
+        retryLabel="다시 촬영"
+        onRetry={() => navigate('/document-upload', { replace: true })}
         secondaryLabel={ocrFailed ? '그대로 직접 입력' : undefined}
         onSecondary={ocrFailed ? () => setDismissedOcrFailure(true) : undefined}
       />
@@ -389,6 +505,66 @@ export function OcrReviewPage() {
           onOpenChange={setImageViewerOpen}
         />
       )}
+    </div>
+  );
+}
+
+function ReadingScreen({
+  stage,
+  progress,
+  onCancel,
+}: {
+  stage: ReadingStage;
+  progress: number;
+  onCancel: () => void;
+}) {
+  const details = STAGE_DETAILS[stage];
+  return (
+    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+      <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x pt-8 pb-4">
+        <section aria-labelledby="ocr-reading-title" className="flex flex-col gap-4">
+          <div className="flex items-start gap-3">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-primary-bg text-primary">
+              <ScanLine aria-hidden className="size-6" />
+            </span>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <h1 id="ocr-reading-title" className="text-2xl font-bold text-foreground">
+                {details.title}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                사진 속 복약 정보를 차례로 확인하고 있어요.
+              </p>
+            </div>
+            <span className="shrink-0 pt-1 text-sm font-bold text-muted-foreground">
+              {details.step} / 3 단계
+            </span>
+          </div>
+
+          <div
+            role="progressbar"
+            aria-label="약봉투 판독 진행률"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress)}
+            className="h-2 overflow-hidden rounded-pill bg-muted-bg"
+          >
+            <div
+              className="h-full rounded-pill bg-primary transition-[width] duration-300 ease-out motion-reduce:transition-none"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </section>
+
+        <PokeFeatureCarousel autoAdvanceMs={1_800} />
+
+        <button
+          type="button"
+          className="mt-auto min-h-touch self-center px-5 text-sm font-bold text-muted-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={onCancel}
+        >
+          취소
+        </button>
+      </main>
     </div>
   );
 }

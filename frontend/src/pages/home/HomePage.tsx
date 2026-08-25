@@ -4,14 +4,20 @@ import {
   ChevronRight,
   MessageCircle,
   Pill,
-  ShoppingBag,
   Sprout,
   UserRound,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { getMedicationOverview, type MedicationOverview } from '@/entities/medication';
-import { BottomTabbar, Button, Card, Header, type TabKey } from '@/shared/ui';
+import {
+  BottomTabbar,
+  Button,
+  Card,
+  Header,
+  PokeFeatureCarousel,
+  type TabKey,
+} from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
@@ -190,7 +196,7 @@ export function HomePage({
             />
           )
         ) : (
-          <GuestCarousel />
+          <PokeFeatureCarousel />
         )}
 
         <section aria-label="주요 기능" className="flex flex-col gap-3">
@@ -217,81 +223,6 @@ export function HomePage({
         onLogin={() => navigate('/login')}
       />
     </div>
-  );
-}
-
-function GuestCarousel() {
-  const [activeBannerIndex, setActiveBannerIndex] = useState(0);
-  const banners = [
-    {
-      title: '약봉투를 찍으면\n먹을 시간을 알려드려요',
-      description: '약 이름을 몰라도 됩니다. 사진 한 장으로 등록해요.',
-      icon: ShoppingBag,
-      tone: 'bg-primary-bg text-primary',
-    },
-    {
-      title: '영양제 성분을\n한눈에 더해드려요',
-      description: '등록한 제품끼리 성분 합계와 상한을 비교해요.',
-      icon: Sprout,
-      tone: 'bg-warning-bg text-warning',
-    },
-    {
-      title: '내 약을 바탕으로\n차분하게 답해드려요',
-      description: '확인할 수 있는 근거가 있을 때 함께 보여드려요.',
-      icon: MessageCircle,
-      tone: 'bg-muted-bg text-primary-strong',
-    },
-  ] as const;
-
-  return (
-    <section aria-label="포케 기능 소개" className="flex min-h-84 flex-col gap-3">
-      <div
-        className="-mr-page-x flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
-        onScroll={(event) => {
-          const children = Array.from(event.currentTarget.children) as HTMLElement[];
-          const firstOffset = children[0]?.offsetLeft ?? 0;
-          const nextIndex = children.reduce((closestIndex, child, index) => {
-            const closestDistance = Math.abs(
-              children[closestIndex].offsetLeft - firstOffset - event.currentTarget.scrollLeft,
-            );
-            const childDistance = Math.abs(
-              child.offsetLeft - firstOffset - event.currentTarget.scrollLeft,
-            );
-            return childDistance < closestDistance ? index : closestIndex;
-          }, 0);
-          setActiveBannerIndex(nextIndex);
-        }}
-      >
-        {banners.map(({ title, description, icon: Icon, tone }) => (
-          <article
-            key={title}
-            className={`flex min-h-64 min-w-[88%] flex-1 snap-start flex-col rounded-card p-5 shadow-card ${tone}`}
-          >
-            <span className="flex size-12 items-center justify-center rounded-pill bg-card/80">
-              <Icon aria-hidden className="size-6" />
-            </span>
-            <h2 className="mt-6 whitespace-pre-line text-2xl font-bold text-foreground">{title}</h2>
-            <p className="mt-auto text-base text-muted-foreground">{description}</p>
-          </article>
-        ))}
-      </div>
-      <div
-        aria-label={`현재 배너 ${activeBannerIndex + 1} / ${banners.length}`}
-        className="flex justify-center gap-2"
-      >
-        {banners.map((banner, index) => (
-          <span
-            aria-hidden
-            key={banner.title}
-            className={
-              index === activeBannerIndex
-                ? 'h-1.5 w-5 rounded-pill bg-primary'
-                : 'size-1.5 rounded-pill bg-border'
-            }
-          />
-        ))}
-      </div>
-    </section>
   );
 }
 

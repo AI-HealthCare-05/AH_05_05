@@ -21,11 +21,18 @@ import type {
   UploadDocumentsResult,
 } from './types';
 
-const MOCK_BATCH_ID = 'b_mock_9f21';
+let uploadSequence = 0;
+const uploadedBatchPollCount = new Map<string, number>();
 
-export function mockUploadDocument(): UploadDocumentsResult {
+export function mockUploadDocument(file: File): UploadDocumentsResult {
+  if (file.name.includes('upload-fail')) {
+    throw new Error('사진을 올리지 못했어요. 연결을 확인하고 다시 시도해주세요.');
+  }
+  uploadSequence += 1;
+  const batchId = `b_mock_uploaded_${uploadSequence}`;
+  uploadedBatchPollCount.set(batchId, 0);
   return {
-    batchId: MOCK_BATCH_ID,
+    batchId,
     documentIds: [101],
     ocrStatus: 'processing',
   };
@@ -54,6 +61,14 @@ const STATUS_BY_BATCH_ID: Array<{
 ];
 
 export function mockOcrResult(batchId: string): OcrResult {
+  const uploadedPollCount = uploadedBatchPollCount.get(batchId);
+  if (uploadedPollCount !== undefined && uploadedPollCount < 2) {
+    uploadedBatchPollCount.set(batchId, uploadedPollCount + 1);
+    return {
+      batchId,
+      ocrStatus: uploadedPollCount === 0 ? 'queued' : 'processing',
+    };
+  }
   const forced = STATUS_BY_BATCH_ID.find((r) => batchId.includes(r.match));
   // 결과 필드가 없는 상태는 명세 4번대로 { batchId, ocrStatus } 만 돌려줍니다.
   if (forced && forced.status !== 'complete') {

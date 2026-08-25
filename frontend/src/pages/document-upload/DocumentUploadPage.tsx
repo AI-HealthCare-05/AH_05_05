@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { toast } from 'sonner';
-import { uploadDocument } from '@/entities/document';
-import { Button, Card, ErrorDialog, Header } from '@/shared/ui';
+import { Button, Card, Header } from '@/shared/ui';
 
 const GUIDE_ITEMS = ['조제일', '약 이름과 용량', '하루 몇 번, 며칠분'] as const;
 
@@ -13,8 +11,6 @@ export function DocumentUploadPage() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!file) {
@@ -32,19 +28,9 @@ export function DocumentUploadPage() {
     event.target.value = '';
   }
 
-  async function handleUpload() {
-    if (!file || uploading) return;
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const { batchId } = await uploadDocument(file, 'initial');
-      toast.success('약봉투를 등록했어요.');
-      navigate('/ocr-review', { state: { batchId } });
-    } catch (error: unknown) {
-      setUploadError(error instanceof Error ? error.message : '약봉투를 등록하지 못했어요.');
-    } finally {
-      setUploading(false);
-    }
+  function handleUpload() {
+    if (!file) return;
+    navigate('/ocr-review', { replace: true, state: { file } });
   }
 
   return (
@@ -96,10 +82,10 @@ export function DocumentUploadPage() {
               {file.name} · {formatFileSize(file.size)}
             </p>
             <div className="mt-auto flex flex-col gap-2 pb-4">
-              <Button onClick={handleUpload} disabled={uploading}>
-                {uploading ? '읽는 중...' : '등록하기'}
-              </Button>
-              <p className="text-center text-sm text-muted-foreground">읽는 데 10초쯤 걸립니다.</p>
+              <Button onClick={handleUpload}>등록하기</Button>
+              <p className="text-center text-sm text-muted-foreground">
+                사진을 올린 뒤 바로 읽기 시작해요.
+              </p>
             </div>
           </>
         ) : (
@@ -142,21 +128,6 @@ export function DocumentUploadPage() {
           </>
         )}
       </main>
-
-      <ErrorDialog
-        open={uploadError !== null}
-        title="약봉투를 등록하지 못했어요"
-        message={uploadError ?? ''}
-        onRetry={() => {
-          setUploadError(null);
-          void handleUpload();
-        }}
-        secondaryLabel="다시 선택"
-        onSecondary={() => {
-          setUploadError(null);
-          galleryInputRef.current?.click();
-        }}
-      />
     </div>
   );
 }

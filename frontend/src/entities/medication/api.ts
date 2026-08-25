@@ -8,6 +8,7 @@ import {
   mockMedicationOverview,
   mockMedicationSchedule,
   mockSaveMedicationSchedule,
+  resetMockMedicationForNewAccount,
 } from './api.mock';
 import type {
   MedicationOverview,
@@ -22,6 +23,10 @@ export async function getMedicationOverview(): Promise<MedicationOverview> {
     return mockMedicationOverview();
   }
   return http.get<MedicationOverview>('/medications');
+}
+
+export function prepareMedicationStateForNewAccount(): void {
+  if (USE_MOCK) resetMockMedicationForNewAccount();
 }
 
 /** REQ-CARE-003 — GET /medications/schedule?recordId=... · 명세 5-3 */
@@ -39,7 +44,7 @@ export async function saveMedicationSchedule(
 ): Promise<SaveMedicationScheduleResponse> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockSaveMedicationSchedule();
+    return mockSaveMedicationSchedule(payload);
   }
   return http.put<SaveMedicationScheduleResponse>('/medications/schedule', payload);
 }

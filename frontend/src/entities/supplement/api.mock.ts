@@ -1,4 +1,110 @@
-import type { AddSupplementPayload, Supplement } from './types';
+import type {
+  AddSupplementPayload,
+  SearchSupplementProductsParams,
+  Supplement,
+  SupplementNutrientAmount,
+  SupplementProduct,
+  SupplementSearchPage,
+} from './types';
+
+const BASE_MULTIVITAMIN_NUTRIENTS: SupplementNutrientAmount[] = [
+  { nutrientId: 'vitamin-a', name: '비타민 A', amount: 400, unit: 'µg RAE', upperLimit: 3000 },
+  { nutrientId: 'vitamin-d', name: '비타민 D', amount: 10, unit: 'µg', upperLimit: 100 },
+  { nutrientId: 'iron', name: '철', amount: 6, unit: 'mg', upperLimit: 45 },
+];
+
+function product(
+  productId: string,
+  productName: string,
+  brand: string,
+  manufacturer: string,
+  packageAmount: string,
+  recommendedDailyCount: number | null,
+): SupplementProduct {
+  return {
+    productId,
+    productName,
+    brand,
+    manufacturer,
+    dosageForm: '정제',
+    packageAmount,
+    category: '종합비타민',
+    recommendedDailyCount,
+    nutrients: BASE_MULTIVITAMIN_NUTRIENTS.map((nutrient) => ({ ...nutrient })),
+  };
+}
+
+/**
+ * 건강기능식품 영양성분 표준데이터(2026.06) 형태를 따른 검색 목업입니다.
+ * 실제 제품 동기화가 아니라 과다 결과·브랜드 검색·페이지네이션을 검증하는 고정 픽스처입니다.
+ */
+const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
+  product('sp-001', '센트룸 실버 우먼', '센트룸', '한국화이자', '90정', 1),
+  product('sp-002', '센트룸 실버 맨', '센트룸', '한국화이자', '90정', 1),
+  product('sp-003', '고려은단 멀티비타민 올인원', '고려은단', '고려은단헬스케어', '60정', 2),
+  product('sp-004', '종근당 아이커버 멀티비타민', '종근당', '종근당건강', '60정', 1),
+  product('sp-005', '얼라이브 원스데일리 포 우먼', '얼라이브', '네이쳐스웨이', '60정', null),
+  product('sp-006', '얼라이브 원스데일리 포 맨', '얼라이브', '네이쳐스웨이', '60정', 1),
+  product('sp-007', '뉴트리코어 멀티비타민 미네랄', '뉴트리코어', '에프앤디넷', '60정', 2),
+  product('sp-008', '오쏘몰 이뮨', '오쏘몰', '오쏘몰파마', '30정', 1),
+  product('sp-009', '세노비스 트리플러스', '세노비스', '사노피아벤티스', '100정', 2),
+  product('sp-010', '솔가 여성용 멀티비타민', '솔가', '솔가코리아', '60정', 1),
+  product('sp-011', 'GNC 메가맨', 'GNC', '동원F&B', '90정', 2),
+  product('sp-012', 'GNC 우먼스 울트라 메가', 'GNC', '동원F&B', '90정', 2),
+  product('sp-013', '네이쳐메이드 멀티 포 허', '네이쳐메이드', '한국오츠카제약', '90정', 1),
+  product('sp-014', '네이쳐메이드 멀티 포 힘', '네이쳐메이드', '한국오츠카제약', '90정', 1),
+  product('sp-015', '닥터린 멀티비타민 미네랄', '닥터린', '비즈메디', '60정', 1),
+  product('sp-016', '락티브 올인원 멀티비타민', '락티브', '한미양행', '60정', 1),
+  product('sp-017', '덴프스 트루바이타민', '덴프스', '에이치피오', '30정', 1),
+  product('sp-018', 'JW중외제약 리얼메디 멀티', 'JW중외제약', '콜마코리아', '60정', 2),
+  product('sp-019', '일양약품 프라임 멀티비타민', '일양약품', '일양약품', '90정', 1),
+  product('sp-020', '유한양행 유한 멀티비타민', '유한양행', '유한건강생활', '60정', 1),
+  product('sp-021', '동국제약 마이핏 멀티비타민', '동국제약', '동국제약', '60정', 1),
+  product('sp-022', '안국건강 앤트리 멀티비타민', '안국건강', '안국건강', '60정', 1),
+  product('sp-023', '대상웰라이프 뉴케어 멀티비타민', '뉴케어', '대상웰라이프', '60정', 1),
+  product('sp-024', '풀무원 그린체 멀티비타민', '그린체', '풀무원건강생활', '60정', 2),
+];
+
+function normalized(value: string): string {
+  return value.toLocaleLowerCase('ko-KR').replace(/\s+/g, '');
+}
+
+function relevance(productItem: SupplementProduct, query: string): number {
+  const fields = [
+    productItem.productName,
+    productItem.brand,
+    productItem.manufacturer,
+    productItem.category,
+  ].map(normalized);
+  const normalizedQuery = normalized(query);
+  return fields.reduce((score, field, index) => {
+    if (field === normalizedQuery) return score + 100 - index;
+    if (field.startsWith(normalizedQuery)) return score + 60 - index;
+    if (field.includes(normalizedQuery)) return score + 30 - index;
+    return score;
+  }, 0);
+}
+
+export function mockSearchSupplementProducts({
+  query,
+  offset = 0,
+  limit = 20,
+}: SearchSupplementProductsParams): SupplementSearchPage {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return { items: [], total: 0, nextOffset: null };
+
+  const matches = SUPPLEMENT_PRODUCTS
+    .map((productItem, index) => ({ productItem, index, score: relevance(productItem, trimmedQuery) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map(({ productItem }) => productItem);
+  const items = matches.slice(offset, offset + limit).map((productItem) => ({
+    ...productItem,
+    nutrients: productItem.nutrients.map((nutrient) => ({ ...nutrient })),
+  }));
+  const nextOffset = offset + items.length < matches.length ? offset + items.length : null;
+  return { items, total: matches.length, nextOffset };
+}
 
 export function mockSupplements(): Supplement[] {
   return [
@@ -7,8 +113,9 @@ export function mockSupplements(): Supplement[] {
       name: '오메가3',
       dailyCount: 2,
       times: ['아침', '저녁'],
+      nutrientDataAvailable: true,
       nutrients: [
-        { nutrientId: 'vitamin-a', name: '비타민 A', amount: 600, unit: 'µg RAE', upperLimit: 3000 },
+        { nutrientId: 'vitamin-a', name: '비타민 A', amount: 300, unit: 'µg RAE', upperLimit: 3000 },
       ],
     },
     {
@@ -16,6 +123,7 @@ export function mockSupplements(): Supplement[] {
       name: '종합비타민',
       dailyCount: 1,
       times: ['아침'],
+      nutrientDataAvailable: true,
       nutrients: [
         { nutrientId: 'vitamin-a', name: '비타민 A', amount: 2600, unit: 'µg RAE', upperLimit: 3000 },
         { nutrientId: 'vitamin-d', name: '비타민 D', amount: 20, unit: 'µg', upperLimit: 100 },
@@ -32,6 +140,7 @@ export function mockSupplements(): Supplement[] {
       name: '비타민 D',
       dailyCount: 1,
       times: ['저녁'],
+      nutrientDataAvailable: true,
       nutrients: [
         { nutrientId: 'vitamin-d', name: '비타민 D', amount: 30, unit: 'µg', upperLimit: 100 },
       ],
@@ -55,9 +164,18 @@ export function mockSupplementsWithThreeExceeded(): Supplement[] {
 }
 
 export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
+  const standardProduct =
+    payload.source === 'standard'
+      ? SUPPLEMENT_PRODUCTS.find((productItem) => productItem.productId === payload.productId)
+      : undefined;
   return {
     supplementId: Date.now(),
-    ...payload,
-    nutrients: [],
+    name: standardProduct?.productName ?? payload.name,
+    dailyCount: payload.dailyCount,
+    times: payload.times,
+    nutrientDataAvailable: Boolean(standardProduct),
+    nutrients: standardProduct
+      ? standardProduct.nutrients.map((nutrient) => ({ ...nutrient }))
+      : [],
   };
 }

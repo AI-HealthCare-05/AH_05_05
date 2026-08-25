@@ -15,6 +15,7 @@ import {
   Card,
   ErrorDialog,
   Header,
+  StatusBadge,
   type TabKey,
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
@@ -42,6 +43,10 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
   const totals = useMemo(() => summarizeNutrients(supplements ?? []), [supplements]);
   const exceeded = totals.filter((total) => total.exceeded);
   const neutral = totals.filter((total) => !total.exceeded);
+  const supplementsWithNutrients = (supplements ?? []).filter(
+    (supplement) => supplement.nutrientDataAvailable,
+  ).length;
+  const manuallyEnteredSupplements = (supplements ?? []).length - supplementsWithNutrients;
 
   useEffect(() => {
     if (supplementsOverride) {
@@ -66,7 +71,7 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
   async function saveSupplement(payload: AddSupplementPayload) {
     try {
       const saved = await addSupplement(payload);
-      setSupplements((current) => [...(current ?? []), saved]);
+      setSupplements((current) => [saved, ...(current ?? [])]);
     } catch (error: unknown) {
       setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
       throw error;
@@ -97,7 +102,11 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
           <p className="text-sm text-muted-foreground">불러오는 중...</p>
         ) : (
           <>
-            <section className="flex flex-col gap-3" aria-labelledby="supplement-list-title">
+            <section
+              className="flex flex-col gap-3"
+              aria-label="먹고 있는 영양제"
+              aria-labelledby="supplement-list-title"
+            >
               <h2 id="supplement-list-title" className="text-xl font-bold text-foreground">
                 먹고 있는 영양제 {supplements.length}개
               </h2>
@@ -111,7 +120,14 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
                     <Sprout aria-hidden className="size-6" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <strong className="block text-lg text-foreground">{supplement.name}</strong>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <strong className="text-lg text-foreground">{supplement.name}</strong>
+                      {!supplement.nutrientDataAvailable && (
+                        <StatusBadge type="done" className="px-2.5 py-1 text-sm">
+                          성분 정보 없음
+                        </StatusBadge>
+                      )}
+                    </span>
                     <span className="block text-sm text-muted-foreground">
                       1일 {supplement.dailyCount}정 · {supplement.times.join(' · ')}
                     </span>
@@ -134,9 +150,15 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
             <div className="flex flex-col gap-1 text-sm text-muted-foreground">
               <p>기준 · 2025 한국인 영양소 섭취기준 상한섭취량</p>
               <p>
-                등록한 건강기능식품 {supplements.length}개만 더한 값입니다. 음식과 의약품을 통한
+                등록한 건강기능식품 {supplementsWithNutrients}개만 더한 값입니다. 음식과 의약품을 통한
                 섭취량은 포함되지 않았습니다.
               </p>
+              {manuallyEnteredSupplements > 0 && (
+                <p>
+                  직접 입력한 {manuallyEnteredSupplements}개는 성분을 알 수 없어 합계에 포함하지
+                  않았습니다.
+                </p>
+              )}
             </div>
 
             <Button variant="secondary" onClick={() => setAddOpen(true)}>

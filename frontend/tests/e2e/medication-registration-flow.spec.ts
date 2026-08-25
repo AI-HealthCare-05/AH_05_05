@@ -1,4 +1,16 @@
-import { expect, test } from 'playwright/test';
+import { expect, test, type Page } from 'playwright/test';
+
+async function openOcrReviewWithBatch(page: Page, batchId: string) {
+  await page.goto('/dev/ocr-review');
+  await page.evaluate((nextBatchId) => {
+    window.history.replaceState(
+      { ...window.history.state, usr: { batchId: nextBatchId } },
+      '',
+      '/dev/ocr-review',
+    );
+    window.location.reload();
+  }, batchId);
+}
 
 test('약봉투 입력은 촬영과 갤러리 모두 이미지 한 장만 받는다', async ({ page }) => {
   await page.goto('/dev/document-upload');
@@ -23,8 +35,109 @@ test('선택한 약봉투를 같은 화면에서 미리보고 바로 판독 화�
 
   await expect(page.getByRole('img', { name: '선택한 약봉투 미리보기' })).toBeVisible();
   await expect(page.getByText('조제약봉투_01.png')).toBeVisible();
+  const completedHeading = expect(
+    page.getByRole('heading', { name: '다 읽었어요' }),
+  ).toBeVisible();
+  const completedProgress = expect(
+    page.getByRole('progressbar', { name: '약봉투 판독 진행률' }),
+  ).toHaveAttribute('aria-valuenow', '100');
   await page.getByRole('button', { name: '등록하기' }).click();
   await expect(page).toHaveURL(/\/ocr-review$/);
+  await expect(page.getByRole('heading', { name: '글자를 찾고 있어요' })).toBeVisible();
+  await expect(page.getByText('2 / 3 단계')).toBeVisible();
+  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /인식이 끝났어요/ })).toHaveCount(0);
+  await completedHeading;
+  await completedProgress;
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+});
+
+test('판독 중에는 같은 S07에서 단계 기반 진행률만 90%까지 표시한다', async ({ page }) => {
+  await page.clock.install();
+  await openOcrReviewWithBatch(page, 'processing-forever');
+
+  await expect(page).toHaveURL(/\/dev\/ocr-review$/);
+  await expect(page.getByRole('heading', { name: '약 이름을 정리하고 있어요' })).toBeVisible();
+  await expect(page.getByText('3 / 3 단계')).toBeVisible();
+  const progress = page.getByRole('progressbar', { name: '약봉투 판독 진행률' });
+  await expect(progress).toBeVisible();
+  await page.clock.runFor(11_000);
+  await expect(progress).toHaveAttribute('aria-valuenow', '90');
+  await expect(page.getByText(/초 남음|초 후/)).toHaveCount(0);
+});
+
+test('판독 중 취소는 헤더 없이 화면 아래 텍스트 버튼으로 S06에 돌아간다', async ({ page }) => {
+  await openOcrReviewWithBatch(page, 'processing-forever');
+
+  await expect(page.getByRole('banner')).toHaveCount(0);
+  await page.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(page).toHaveURL(/\/document-upload$/);
+});
+
+test('판독이 60초를 넘으면 같은 화면에서 계속 기다리거나 다시 촬영할 수 있다', async ({ page }) => {
+  await page.clock.install();
+  await openOcrReviewWithBatch(page, 'processing-timeout');
+  await expect(page.getByRole('heading', { name: '약 이름을 정리하고 있어요' })).toBeVisible();
+
+  await page.clock.fastForward(60_000);
+  const dialog = page.getByRole('dialog', { name: '시간이 오래 걸리고 있어요' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '계속 기다리기' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '다시 촬영' })).toBeVisible();
+  await expect(page).toHaveURL(/\/dev\/ocr-review$/);
+});
+
+test('읽는 중 배너는 손으로 넘길 수 있고 reduced motion에서는 자동으로 움직이지 않는다', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openOcrReviewWithBatch(page, 'processing-reduced-motion');
+  const carousel = page.getByRole('region', { name: '포케 기능 소개' }).locator('.overflow-x-auto');
+
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
+  await page.waitForTimeout(2_000);
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
+  await carousel.evaluate((element) =>
+    element.scrollTo({ left: element.scrollWidth, behavior: 'instant' }),
+  );
+  await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible();
+});
+
+test('업로드 실패는 읽는 중 화면의 팝업에서 다시 시도하거나 S06으로 닫을 수 있다', async ({ page }) => {
+  await page.goto('/dev/document-upload');
+  await page.locator('input[type="file"]').nth(1).setInputFiles({
+    name: 'upload-fail.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('fake-png-upload-failure'),
+  });
+
+  await page.getByRole('button', { name: '등록하기' }).click();
+  const dialog = page.getByRole('dialog', { name: '업로드에 실패했어요' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '다시 시도' })).toBeVisible();
+  await dialog.getByRole('button', { name: '닫기' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(/\/document-upload$/);
+});
+
+test('읽는 중 배너는 1.8초마다 다음 장으로 자동 전환한다', async ({ page }) => {
+  await openOcrReviewWithBatch(page, 'processing-auto-carousel');
+
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
+  await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 2_800 });
+  await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible({ timeout: 2_800 });
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible({ timeout: 2_800 });
+});
+
+test('판독 불가는 다시 촬영하거나 같은 S07에서 직접 입력할 수 있다', async ({ page }) => {
+  await openOcrReviewWithBatch(page, 'failed-unreadable');
+
+  const dialog = page.getByRole('dialog', { name: '문서를 읽지 못했어요' });
+  await expect(dialog.getByRole('button', { name: '다시 촬영' })).toBeVisible();
+  await dialog.getByRole('button', { name: '그대로 직접 입력' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(/\/dev\/ocr-review$/);
+  await expect(page.getByRole('button', { name: '빠진 약 직접 추가' })).toBeVisible();
 });
 
 test('OCR 확인 항목 수와 배지와 저장 전 모달 개수가 같고 제거 필드는 보이지 않는다', async ({

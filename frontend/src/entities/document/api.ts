@@ -22,7 +22,7 @@ import type {
 export async function uploadDocument(file: File, purpose: UploadPurpose): Promise<UploadDocumentsResult> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockUploadDocument();
+    return mockUploadDocument(file);
   }
 
   const form = new FormData();

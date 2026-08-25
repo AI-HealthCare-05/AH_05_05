@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
+import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { Button, CheckboxField, Header, Input } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
@@ -15,6 +16,7 @@ export function AuthPage() {
   function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (mode === 'signup' && (!recordTerms || !aiTerms)) return;
+    if (mode === 'signup') prepareMedicationStateForNewAccount();
     signIn();
     navigate('/home', { replace: true });
   }

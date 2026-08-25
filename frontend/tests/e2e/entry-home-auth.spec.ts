@@ -56,6 +56,48 @@ test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있
   await expect(submit).toBeEnabled();
 });
 
+test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한다', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+  await page.getByLabel('이메일').fill('new-patient@example.com');
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByRole('status', { name: '복약 정보 불러오는 중' })).toBeVisible();
+  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('오늘의 복약')).toHaveCount(0);
+});
+
+test('신규 회원이 약봉투와 복약 시간을 저장하면 홈이 복약 중 상태로 바뀐다', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+  await page.getByLabel('이메일').fill('new-patient@example.com');
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+
+  await page.getByRole('button', { name: '약봉투 등록', exact: true }).click();
+  await page.locator('input[type="file"]').nth(1).setInputFiles({
+    name: '조제약봉투_01.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('fake-png-for-medication-registration'),
+  });
+  await page.getByRole('button', { name: '등록하기' }).click();
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정' }).click();
+  await page.getByRole('button', { name: '확인 후 저장' }).click();
+  await page.getByRole('button', { name: '기본 시간으로 건너뛰기' }).focus();
+  await page.keyboard.press('Enter');
+
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByText('오늘의 복약')).toBeVisible();
+  await expect(page.getByText('약봉투를 등록해 주세요')).toHaveCount(0);
+});
+
 test('로그인 홈은 약 없음·복약 중·복약 종료 상태를 모두 표현한다', async ({ page }) => {
   await page.goto('/dev/home-data-empty');
   await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();

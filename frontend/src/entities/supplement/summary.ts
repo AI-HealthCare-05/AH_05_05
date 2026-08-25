@@ -7,14 +7,16 @@ export function summarizeNutrients(supplements: Supplement[]): NutrientTotal[] {
   for (const supplement of supplements) {
     for (const nutrient of supplement.nutrients) {
       const current = totals.get(nutrient.nutrientId);
+      const dailyAmount = nutrient.amount * supplement.dailyCount;
       if (current) {
-        current.amount += nutrient.amount;
+        current.amount += dailyAmount;
         current.exceeded = current.amount > current.upperLimit;
         if (!current.sourceNames.includes(supplement.name)) current.sourceNames.push(supplement.name);
       } else {
         totals.set(nutrient.nutrientId, {
           ...nutrient,
-          exceeded: nutrient.amount > nutrient.upperLimit,
+          amount: dailyAmount,
+          exceeded: dailyAmount > nutrient.upperLimit,
           sourceNames: [supplement.name],
         });
       }
