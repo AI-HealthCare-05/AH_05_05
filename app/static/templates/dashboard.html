@@ -89,40 +89,40 @@
 
           <!-- member status card -->
           <div class="card flex flex-col gap-4 items-start w-full">
-            <p class="font-semibold text-[14px] w-full" style="color:#111827;">회원 현황 및 가입</p>
+            <p data-member-state class="font-semibold text-[14px] w-full" style="color:#111827;">회원 현황 및 가입</p>
             <div class="flex gap-3 items-start w-full">
               <div class="stat-card flex flex-col gap-1">
                 <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 회원</p>
                 <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">28,491</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +12%</span>
+                  <p data-member-total class="font-bold text-[20px]" style="color:#111827;">28,491</p>
+                  <span data-member-total-rate class="font-semibold text-[11px]" style="color:#16a34a;">▲ +12%</span>
                 </div>
               </div>
               <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">오늘 가입</p>
+                <p data-member-signups-label class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">오늘 가입</p>
                 <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">142</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +4.8%</span>
+                  <p data-member-signups class="font-bold text-[20px]" style="color:#111827;">142</p>
+                  <span data-member-signups-rate class="font-semibold text-[11px]" style="color:#16a34a;">▲ +4.8%</span>
                 </div>
               </div>
               <div class="stat-card flex flex-col gap-1">
                 <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">활성</p>
                 <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">27,105</p>
-                  <span class="font-semibold text-[11px]" style="color:#6b7280;">— 95%</span>
+                  <p data-member-active class="font-bold text-[20px]" style="color:#111827;">27,105</p>
+                  <span data-member-active-ratio class="font-semibold text-[11px]" style="color:#6b7280;">— 95%</span>
                 </div>
               </div>
               <div class="stat-card flex flex-col gap-1">
                 <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">정지</p>
                 <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">1,386</p>
-                  <span class="font-semibold text-[11px]" style="color:#6b7280;">— 5%</span>
+                  <p data-member-suspended class="font-bold text-[20px]" style="color:#111827;">1,386</p>
+                  <span data-member-suspended-ratio class="font-semibold text-[11px]" style="color:#6b7280;">— 5%</span>
                 </div>
               </div>
             </div>
             <div class="flex flex-col gap-2 items-start w-full">
               <p class="font-medium text-[11px] whitespace-nowrap" style="color:#9ca3af;">14일간 가입 추이</p>
-              <div class="flex items-end justify-between p-2 rounded-md w-full h-[70px]" style="background:#f7f8fa;">
+              <div data-member-trend class="flex items-end justify-between p-2 rounded-md w-full h-[70px]" style="background:#f7f8fa;">
                 <div class="w-2 rounded" style="background:#1c64f2; height:7.5px;"></div>
                 <div class="w-2 rounded" style="background:#1c64f2; height:12px;"></div>
                 <div class="w-2 rounded" style="background:#1c64f2; height:9px;"></div>
