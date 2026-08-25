@@ -19,6 +19,44 @@ class AppError(Exception):
         super().__init__(self.message)
 
 
+class UserAuthError(Exception):
+    """사용자 인증 실패 공통 베이스.
+
+    관리자 API 는 {"code", "message"} 로 응답하지만 사용자 로그인 명세는 {"detail"} 이다.
+    팀 규약이 아직 없어 두 형식이 공존하므로 계열을 나눠 둔다.
+
+    라우터·서비스는 이 예외만 던지고 직렬화는 exception_handlers 의 핸들러 한 곳이 맡는다.
+    규약이 정해지면 그 핸들러만 고치면 응답 형식이 바뀐다.
+    """
+
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    detail: str = "인증에 실패했습니다."
+
+    def __init__(self, detail: str | None = None) -> None:
+        if detail is not None:
+            self.detail = detail
+        super().__init__(self.detail)
+
+
+class InvalidUserCredentialsError(UserAuthError):
+    """이메일 열거를 막기 위해 계정 없음과 비밀번호 불일치를 구분하지 않는다."""
+
+    status_code = status.HTTP_400_BAD_REQUEST
+    detail = "이메일 또는 비밀번호가 일치하지 않습니다."
+
+
+class UserSuspendedError(UserAuthError):
+    """정지 계정. 상태 코드는 관리자 로그인(AccountSuspendedError)과 맞춘다."""
+
+    status_code = status.HTTP_403_FORBIDDEN
+    detail = "정지된 계정입니다."
+
+
+class UserWithdrawnError(UserAuthError):
+    status_code = status.HTTP_403_FORBIDDEN
+    detail = "사용할 수 없는 계정입니다."
+
+
 class UnauthorizedError(AppError):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "UNAUTHORIZED"

@@ -91,8 +91,19 @@ class Token:
 
     @classmethod
     def for_user(cls, user: User) -> Self:
+        """사용자 토큰을 만든다.
+
+        user 와 admin 은 별도 테이블이라 id 가 겹칠 수 있다. scope 가 없으면
+        사용자 토큰으로 관리자 API 를 호출할 수 있으므로 반드시 함께 넣는다.
+
+        user_id 는 기존 클레임이라 그대로 둔다. app/dependencies/security.py 가
+        이 값을 읽으므로 빼면 기존 사용자 API 인증이 깨진다.
+        """
         token = cls()
         token["user_id"] = user.id
+        # JWT 표준상 sub 는 문자열이어야 한다. 정수로 넣으면 PyJWT 가 검증 단계에서 거부한다.
+        token["sub"] = str(user.id)
+        token["scope"] = JwtScope.USER
         return token
 
     @classmethod
