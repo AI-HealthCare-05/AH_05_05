@@ -58,7 +58,10 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
   await page.getByLabel('이메일').fill('new-patient@example.com');
-  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
+  await page.getByLabel('비밀번호 확인').fill('password1234');
+  await page.getByLabel('생년월일').fill('1990-01-01');
+  await page.getByRole('radio', { name: '여성' }).check();
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
   await page.getByRole('button', { name: '회원가입 완료' }).click();
@@ -73,7 +76,10 @@ test('신규 회원이 약봉투와 복약 시간을 저장하면 홈이 복약 
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
   await page.getByLabel('이메일').fill('new-patient@example.com');
-  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
+  await page.getByLabel('비밀번호 확인').fill('password1234');
+  await page.getByLabel('생년월일').fill('1990-01-01');
+  await page.getByRole('radio', { name: '여성' }).check();
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
   await page.getByRole('button', { name: '회원가입 완료' }).click();

@@ -1,8 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
+import { createAccount, type Gender } from '@/entities/account';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
-import { Button, CheckboxField, Header, Input } from '@/shared/ui';
+import {
+  MIN_BIRTH_DATE,
+  formatDateInputValue,
+  validateBirthDate,
+} from '@/shared/lib/birthDate';
+import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
 
@@ -12,11 +18,35 @@ export function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login');
   const [recordTerms, setRecordTerms] = useState(false);
   const [aiTerms, setAiTerms] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [gender, setGender] = useState<Gender | ''>('');
+  const [birthDateError, setBirthDateError] = useState<string | null>(null);
+  const [passwordConfirmError, setPasswordConfirmError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const today = formatDateInputValue(new Date());
 
-  function complete(event: FormEvent<HTMLFormElement>) {
+  async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (mode === 'signup' && (!recordTerms || !aiTerms)) return;
-    if (mode === 'signup') prepareMedicationStateForNewAccount();
+    if (mode === 'signup') {
+      if (!recordTerms || !aiTerms || !gender) return;
+      const nextBirthDateError = validateBirthDate(birthDate);
+      const nextPasswordConfirmError =
+        password === passwordConfirm ? null : '비밀번호가 일치하지 않아요.';
+      setBirthDateError(nextBirthDateError);
+      setPasswordConfirmError(nextPasswordConfirmError);
+      if (nextBirthDateError || nextPasswordConfirmError) return;
+
+      setSaving(true);
+      try {
+        await createAccount({ email, password, birthDate, gender });
+        prepareMedicationStateForNewAccount();
+      } finally {
+        setSaving(false);
+      }
+    }
     signIn();
     navigate('/home', { replace: true });
   }
@@ -56,36 +86,74 @@ export function AuthPage() {
         </div>
 
         <form className="mt-6 flex flex-1 flex-col gap-4" onSubmit={complete}>
-          <Input label="이메일" type="email" inputMode="email" autoComplete="email" required />
+          <Input
+            label="이메일"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
           <Input
             label="비밀번호"
             type="password"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
             required
           />
 
           {mode === 'signup' && (
-            <fieldset className="mt-2 flex flex-col gap-3">
-              <legend className="mb-2 text-base font-bold text-foreground">필수 동의</legend>
-              <CheckboxField
-                id="record-terms"
-                checked={recordTerms}
-                onCheckedChange={(checked) => setRecordTerms(checked === true)}
-                label="진료기록 수집 및 이용에 동의해요 (필수)"
+            <>
+              <Input
+                label="비밀번호 확인"
+                type="password"
+                autoComplete="new-password"
+                value={passwordConfirm}
+                error={passwordConfirmError ?? undefined}
+                onChange={(event) => {
+                  setPasswordConfirm(event.target.value);
+                  setPasswordConfirmError(null);
+                }}
+                required
               />
-              <CheckboxField
-                id="ai-terms"
-                checked={aiTerms}
-                onCheckedChange={(checked) => setAiTerms(checked === true)}
-                label="AI 서비스 이용에 동의해요 (필수)"
+              <Input
+                label="생년월일"
+                type="date"
+                min={MIN_BIRTH_DATE}
+                max={today}
+                value={birthDate}
+                error={birthDateError ?? undefined}
+                onChange={(event) => {
+                  setBirthDate(event.target.value);
+                  setBirthDateError(null);
+                }}
+                required
               />
-            </fieldset>
+              <GenderRadioGroup value={gender} onChange={setGender} />
+              <fieldset className="mt-2 flex flex-col gap-3">
+                <legend className="mb-2 text-base font-bold text-foreground">필수 동의</legend>
+                <CheckboxField
+                  id="record-terms"
+                  checked={recordTerms}
+                  onCheckedChange={(checked) => setRecordTerms(checked === true)}
+                  label="진료기록 수집 및 이용에 동의해요 (필수)"
+                />
+                <CheckboxField
+                  id="ai-terms"
+                  checked={aiTerms}
+                  onCheckedChange={(checked) => setAiTerms(checked === true)}
+                  label="AI 서비스 이용에 동의해요 (필수)"
+                />
+              </fieldset>
+            </>
           )}
 
           <Button
             type="submit"
             className="mt-auto"
-            disabled={mode === 'signup' && (!recordTerms || !aiTerms)}
+            disabled={saving || (mode === 'signup' && (!recordTerms || !aiTerms))}
           >
             {mode === 'login' ? '로그인' : '회원가입 완료'}
           </Button>

@@ -4,12 +4,13 @@ import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
 import { MedicationsPage } from '@/pages/medications';
-import { MyPage } from '@/pages/my';
+import { MyPage, MyProfilePage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
 import { SupplementsPage } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
+import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import {
   mockMedicationOverview,
   mockMedicationScheduleWithAutoAssigned,
@@ -60,6 +61,11 @@ const failMedicationOverview = async (): Promise<MedicationOverview> => {
 const failDoseRecordSave = async (_payload: SaveDoseTakenPayload): Promise<DoseRecord> => {
   throw new Error('기록하지 못했어요. 다시 시도해주세요.');
 };
+const failProfileSave = async (
+  _payload: UpdateAccountProfilePayload,
+): Promise<AccountProfile> => {
+  throw new Error('잠시 후 다시 시도해주세요.');
+};
 
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
@@ -82,6 +88,7 @@ export function AppRouter() {
         <Route path="/medications" element={<MedicationsPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/my" element={<MyPage />} />
+        <Route path="/my/profile" element={<MyProfilePage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
@@ -97,6 +104,11 @@ export function AppRouter() {
         <Route path="/dev/chat" element={<ChatPage />} />
         <Route path="/dev/my-guest" element={<MyPage authenticatedOverride={false} />} />
         <Route path="/dev/my-authenticated" element={<MyPage authenticatedOverride />} />
+        <Route path="/dev/my-profile" element={<MyProfilePage />} />
+        <Route
+          path="/dev/my-profile-save-error"
+          element={<MyProfilePage profileSaver={failProfileSave} />}
+        />
         <Route path="/dev/supplements" element={<SupplementsPage />} />
         <Route
           path="/dev/supplements-three-exceeded"
