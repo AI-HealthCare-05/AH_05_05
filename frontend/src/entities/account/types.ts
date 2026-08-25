@@ -9,3 +9,10 @@ export interface CreateAccountPayload extends AccountProfile {
   email: string;
   password: string;
 }
+
+export type UpdateAccountProfilePayload = AccountProfile;
+
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+}

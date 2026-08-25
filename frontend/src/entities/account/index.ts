@@ -1,2 +1,8 @@
-export { createAccount } from './api';
-export type { AccountProfile, CreateAccountPayload, Gender } from './types';
+export { changePassword, createAccount, getMyProfile, updateMyProfile } from './api';
+export type {
+  AccountProfile,
+  ChangePasswordPayload,
+  CreateAccountPayload,
+  Gender,
+  UpdateAccountProfilePayload,
+} from './types';

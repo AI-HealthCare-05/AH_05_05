@@ -38,14 +38,20 @@ export function MyPage({ authenticatedOverride }: MyPageProps) {
       <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5">
         {isAuthenticated ? (
           <>
-            <Card className="flex-row items-center gap-4 p-4">
+            <button
+              type="button"
+              className="flex min-h-20 items-center gap-4 rounded-card bg-card p-4 text-left shadow-card"
+              onClick={() => navigate('/my/profile')}
+            >
               <span className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-muted-foreground">
                 <UserRound aria-hidden className="size-6" />
               </span>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-lg font-bold text-foreground">포케 사용자</p>
+                <p className="text-sm text-muted-foreground">기본정보</p>
               </div>
-            </Card>
+              <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
+            </button>
 
             <section className="flex flex-col gap-3" aria-labelledby="my-management-title">
               <h2 id="my-management-title" className="text-xl font-bold text-foreground">
