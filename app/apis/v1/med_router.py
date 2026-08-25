@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.dependencies.security import get_request_user
+from app.dtos.nutrient_standards import NutrientStandardListResponse, NutrientStandardResponse
 from app.dtos.supplement_nutrients import SupplementNutrientListResponse, SupplementNutrientResponse
 from app.dtos.user_supplement_nutrients import (
     UserSupplementNutrientListResponse,
@@ -12,6 +13,7 @@ from app.dtos.user_supplement_nutrients import (
 )
 from app.models.enums import SupplementStatus
 from app.models.users import User
+from app.services.nutrient_standards import NutrientStandardService
 from app.services.supplement_nutrients import SupplementNutrientService
 from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
@@ -22,8 +24,35 @@ def get_supplement_nutrient_service() -> SupplementNutrientService:
     return SupplementNutrientService()
 
 
+def get_nutrient_standard_service() -> NutrientStandardService:
+    return NutrientStandardService()
+
+
 def get_user_supplement_nutrient_service() -> UserSupplementNutrientService:
     return UserSupplementNutrientService()
+
+
+@med_router.get(
+    "/nutr-std",
+    response_model=NutrientStandardListResponse,
+    summary="한국인 영양소 섭취기준 목록 조회",
+)
+async def list_nutrient_standards(
+    _user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[NutrientStandardService, Depends(get_nutrient_standard_service)],
+    grp: Annotated[str | None, Query(min_length=1, max_length=10, description="대상 구분")] = None,
+    age: Annotated[int | None, Query(ge=1, description="만 나이(1세 이상)")] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> NutrientStandardListResponse:
+    """2025 한국인 영양소 섭취기준을 대상 구분·연령 조건과 페이지 단위로 조회한다."""
+    standards, total = await service.list(grp=grp, age=age, offset=offset, limit=limit)
+    return NutrientStandardListResponse(
+        items=[NutrientStandardResponse.model_validate(item) for item in standards],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @med_router.get(

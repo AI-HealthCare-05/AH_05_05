@@ -75,6 +75,12 @@ class Config(BaseSettings):
     # 이 값이 그대로 노출 창이 된다.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 24 * 60
+
+    # 사용자(앱) 자동 로그인 여부. 끄면 로그인 시 리프레시 쿠키를 내리지 않고
+    # GET /api/v1/auth/token/refresh 가 404 가 된다. 만료되면 다시 로그인한다.
+    # **관리자 콘솔의 리프레시(admin_refresh_token)는 이 값과 무관하게 항상 동작한다.**
+    # 30분마다 재로그인하면 운영이 불가능하기 때문이다.
+    USER_REFRESH_ENABLED: bool = False
     JWT_LEEWAY: int = 5
 
     # 초기 ADMIN 시드용(scripts/seed_admin.py). 운영에서는 시드 후 값을 지운다.

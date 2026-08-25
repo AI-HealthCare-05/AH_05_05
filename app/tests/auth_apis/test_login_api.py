@@ -1,8 +1,23 @@
+from unittest.mock import patch
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.core import config
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def enable_user_refresh():
+    """test_login_success 가 리프레시 쿠키를 확인하므로 플래그를 켠 상태로 돌린다.
+
+    USER_REFRESH_ENABLED 기본값은 False 다(자동 로그인 미사용).
+    끈 상태에서 쿠키가 나가지 않는 것은 test_token_refresh_disabled.py 가 확인한다.
+    """
+    with patch.object(config, "USER_REFRESH_ENABLED", True):
+        yield
 
 
 class TestLoginAPI(TestCase):
