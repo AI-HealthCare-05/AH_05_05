@@ -11,6 +11,13 @@ from app.services.jwt import JwtService
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
+# 관리자도 리프레시 쿠키를 쓴다(admin_refresh_token, /api/v1/admin/auth).
+# 이름과 경로가 겹치면 브라우저가 둘 다 보내 서버가 어느 쪽인지 알 수 없다.
+REFRESH_COOKIE_NAME = "refresh_token"
+# path 를 지정하지 않으면 "/" 가 되어 리프레시 토큰이 모든 요청에 실려 나간다.
+# 필요한 곳은 GET /api/v1/auth/token/refresh 하나뿐이므로 그 위로 좁힌다.
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(
@@ -32,12 +39,15 @@ async def login(
         content=LoginResponse(access_token=str(tokens["access_token"])).model_dump(), status_code=status.HTTP_200_OK
     )
     resp.set_cookie(
-        key="refresh_token",
+        key=REFRESH_COOKIE_NAME,
         value=str(tokens["refresh_token"]),
         httponly=True,
         secure=True if config.ENV == Env.PROD else False,
-        domain=config.COOKIE_DOMAIN or None,
-        expires=tokens["access_token"].payload["exp"],
+        # domain 을 지정하지 않는다. COOKIE_DOMAIN="localhost" 를 넣으면 쿠키가 ".localhost" 로
+        # 저장되는데, 단일 라벨 도메인이라 클라이언트가 전송을 거부해 갱신이 통째로 깨진다.
+        # 생략하면 host-only 쿠키가 되어 발급한 호스트에만 실린다(관리자 쿠키와 같은 방식).
+        path=REFRESH_COOKIE_PATH,
+        max_age=config.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
     return resp
 
