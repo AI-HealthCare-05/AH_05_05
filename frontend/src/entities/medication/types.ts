@@ -68,6 +68,8 @@ export interface MedicationOverviewItem {
   medicationId: number;
   name: string;
   dose: string;
+  /** 이 약의 처방 일수. start.date부터 세며, 기간이 지난 날짜에는 슬롯 칸이 없습니다. */
+  days: number;
   daysRemaining: number | null;
   slots: MealSlot[];
   asNeeded: boolean;
@@ -79,7 +81,30 @@ export interface MedicationOverview {
   /** 이 복약 기록을 만든 약봉투 원본 한 장의 영속 URL. */
   documentImageUrl: string;
   start: MedicationStartPoint;
+  /** start.date + MAX(활성 약 days) - 1. prescribed_at은 기준으로 쓰지 않습니다. */
+  endDate: string;
   daysRemaining: number;
   mealTimes: MealTimes;
   medications: MedicationOverviewItem[];
+}
+
+export interface DoseRecord {
+  /** YYYY-MM-DD */
+  date: string;
+  slot: MealSlot;
+  taken: boolean;
+}
+
+export interface SaveDoseTakenPayload {
+  /** 화면이 보유한 오늘 날짜를 그대로 보냅니다. */
+  date: string;
+  slot: MealSlot;
+  taken: boolean;
+}
+
+export interface DoseRecordRange {
+  /** YYYY-MM-DD */
+  from: string;
+  /** YYYY-MM-DD */
+  to: string;
 }
