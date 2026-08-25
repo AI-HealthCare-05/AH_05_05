@@ -7,14 +7,19 @@ import { USE_MOCK } from '@/shared/config/env';
 import {
   mockMedicationOverview,
   mockMedicationSchedule,
+  mockGetDoseRecords,
+  mockSaveDoseTaken,
   mockSaveMedicationSchedule,
   resetMockMedicationForNewAccount,
 } from './api.mock';
 import type {
+  DoseRecord,
+  DoseRecordRange,
   MedicationOverview,
   MedicationSchedule,
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,
+  SaveDoseTakenPayload,
 } from './types';
 
 export async function getMedicationOverview(): Promise<MedicationOverview> {
@@ -47,4 +52,21 @@ export async function saveMedicationSchedule(
     return mockSaveMedicationSchedule(payload);
   }
   return http.put<SaveMedicationScheduleResponse>('/medications/schedule', payload);
+}
+
+export async function saveDoseTaken(payload: SaveDoseTakenPayload): Promise<DoseRecord> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockSaveDoseTaken(payload);
+  }
+  return http.post<DoseRecord>('/medications/doses', payload);
+}
+
+export async function getDoseRecords(range: DoseRecordRange): Promise<DoseRecord[]> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockGetDoseRecords(range);
+  }
+  const query = new URLSearchParams({ from: range.from, to: range.to });
+  return http.get<DoseRecord[]>(`/medications/doses?${query.toString()}`);
 }

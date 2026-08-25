@@ -45,7 +45,7 @@ test('로그인 마이페이지는 내 관리와 알림 토글, 계정을 보여
   await expect(page.getByRole('button', { name: /복용약 4개/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /영양제 3개/ })).toBeVisible();
   await expect(page.getByRole('switch')).toHaveCount(2);
-  await expect(page.getByText('poke@example.com').first()).toBeVisible();
+  await expect(page.getByText('poke@example.com')).toHaveCount(0);
 });
 
 test('하단 탭은 구현된 실제 화면 경로로 이동한다', async ({ page }) => {

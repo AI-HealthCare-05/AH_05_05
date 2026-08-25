@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import { AlertTriangle, ChevronRight, Plus, ScanLine } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -522,24 +522,29 @@ function ReadingScreen({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x pt-8 pb-4">
-        <section aria-labelledby="ocr-reading-title" className="flex flex-col gap-4">
-          <div className="flex items-start gap-3">
-            <span className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-primary-bg text-primary">
-              <ScanLine aria-hidden className="size-6" />
-            </span>
-            <div className="min-w-0 flex-1 pt-0.5">
-              <h1 id="ocr-reading-title" className="text-2xl font-bold text-foreground">
-                {details.title}
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                사진 속 복약 정보를 차례로 확인하고 있어요.
-              </p>
-            </div>
-            <span className="shrink-0 pt-1 text-sm font-bold text-muted-foreground">
-              {details.step} / 3 단계
-            </span>
-          </div>
+        <section aria-labelledby="ocr-reading-title">
+          <h1 id="ocr-reading-title" className="text-2xl font-bold text-foreground">
+            약봉투를 읽고 있어요
+          </h1>
+          <p className="mt-1 text-base text-muted-foreground">
+            잠깐이면 끝나요. 그동안 둘러보세요.
+          </p>
+        </section>
 
+        <PokeFeatureCarousel autoAdvanceMs={1_800} />
+
+        <section className="flex flex-col gap-3">
+          <div
+            role="status"
+            aria-label="약봉투 판독 단계"
+            aria-live="polite"
+            className="flex items-baseline justify-between gap-3"
+          >
+            <p className="text-lg font-bold text-foreground">{details.title}</p>
+            <p className="shrink-0 text-sm text-muted-foreground">
+              {details.step} / 3 단계
+            </p>
+          </div>
           <div
             role="progressbar"
             aria-label="약봉투 판독 진행률"
@@ -554,8 +559,6 @@ function ReadingScreen({
             />
           </div>
         </section>
-
-        <PokeFeatureCarousel autoAdvanceMs={1_800} />
 
         <button
           type="button"
