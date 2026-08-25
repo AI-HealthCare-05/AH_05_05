@@ -6,5 +6,10 @@ from .chat import ChatMessage, ChatMessageSource, ChatSession
 from .medications import Medication, MedicationSlot
 from .ocr import OcrJob, OcrJobStatus
 from .recovery import RecoveryGuide, RecoveryGuideSource
-from .supplement_nutrients import SupplementNutrient, UserSupplementNutrient, UserSupplementNutrientSlot
+from .supplement_nutrients import (
+    NutrientStandard,
+    SupplementNutrient,
+    UserSupplementNutrient,
+    UserSupplementNutrientSlot,
+)
 from .users import User, UserNotifyHistory, UserSettings

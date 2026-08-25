@@ -139,8 +139,10 @@ docker compose exec fastapi uv run --no-sync aerich heads
 OCR 비동기 구조에는 다음 migration이 포함되어야 한다.
 
 ```text
-6_20260825114656_async_medication_ocr.py
+7_20260825114656_async_medication_ocr.py
 ```
+
+이 migration은 `6_20260825155701_add_nutrient_standard.py` 다음에 적용된다.
 
 migration 전에 `fastapi` 컨테이너가 실행 중이어야 한다.
 

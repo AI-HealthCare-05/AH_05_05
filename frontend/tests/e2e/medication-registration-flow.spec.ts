@@ -222,11 +222,22 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await page.getByRole('button', { name: '등록하기' }).click();
 
   await expect(page).toHaveURL('/ocr-review');
-  await expect(page.getByRole('heading', { name: '글자를 찾고 있어요' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toBeVisible();
+  await expect(page.getByText('잠깐이면 끝나요. 그동안 둘러보세요.')).toBeVisible();
+  const carousel = page.getByRole('region', { name: '포케 기능 소개' });
+  const stage = page.getByRole('status', { name: '약봉투 판독 단계' });
+  await expect(carousel).toBeVisible();
+  await expect(stage).toContainText('글자를 찾고 있어요');
+  await expect(stage).toContainText('2 / 3 단계');
   await expect(page.getByRole('heading', { name: '약 4개' })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: '약 이름을 정리하고 있어요' })).toBeVisible({
-    timeout: 4_500,
-  });
+
+  const carouselBox = await carousel.boundingBox();
+  const stageBox = await stage.boundingBox();
+  expect(carouselBox).not.toBeNull();
+  expect(stageBox).not.toBeNull();
+  expect(carouselBox!.y + carouselBox!.height).toBeLessThanOrEqual(stageBox!.y);
+
+  await expect(stage).toContainText('약 이름을 정리하고 있어요', { timeout: 4_500 });
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible({ timeout: 5_000 });
 
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
