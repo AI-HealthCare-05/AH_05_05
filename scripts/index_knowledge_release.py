@@ -25,6 +25,9 @@ from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunk,
 )
+from ai_worker.services.knowledge_pilot_preprocessing_service import (
+    KnowledgePilotPreprocessingResult,
+)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -33,6 +36,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--chunks-dir",
         type=Path,
         default=Path("data/knowledge/processed/chunks"),
+    )
+    parser.add_argument(
+        "--quality-report",
+        type=Path,
+        default=Path("data/knowledge/processed/reports/preprocessing-quality.json"),
     )
     parser.add_argument("--dataset-version", required=True)
     parser.add_argument("--collection", required=True)
@@ -74,6 +82,29 @@ def load_release_chunks(args: argparse.Namespace) -> list[KnowledgeChunk]:
         args.chunks_dir,
         expected_dataset_version=args.dataset_version,
     )
+
+
+def ensure_preprocessing_approved(
+    chunks: list[KnowledgeChunk],
+    *,
+    quality_report_path: Path,
+    expected_dataset_version: str,
+) -> None:
+    path = Path(quality_report_path)
+    if not path.is_file():
+        raise ValueError("전처리 품질 보고서가 없습니다. 대표 문서 자동 검사와 수동 승인을 먼저 완료하세요.")
+
+    report = KnowledgePilotPreprocessingResult.model_validate_json(path.read_text(encoding="utf-8"))
+    if report.dataset_version != expected_dataset_version:
+        raise ValueError("전처리 품질 보고서와 인덱싱 대상의 dataset_version이 일치하지 않습니다.")
+
+    ready_sources = set(report.ready_for_bulk_source_ids)
+    chunk_sources = {chunk.metadata.source_id for chunk in chunks}
+    unapproved_sources = sorted(chunk_sources - ready_sources)
+    if unapproved_sources:
+        raise ValueError(
+            "자동 품질 검사와 수동 승인이 완료되지 않은 출처가 포함되어 있습니다: " + ", ".join(unapproved_sources)
+        )
 
 
 def ensure_external_embedding_allowed(
@@ -126,6 +157,11 @@ async def run_cli(
     qdrant_client = create_qdrant_client(resolved_settings)
     try:
         chunks = load_release_chunks(args)
+        ensure_preprocessing_approved(
+            chunks,
+            quality_report_path=args.quality_report,
+            expected_dataset_version=args.dataset_version,
+        )
         ensure_external_embedding_allowed(
             chunks,
             allow_demo_restricted=args.allow_demo_restricted,

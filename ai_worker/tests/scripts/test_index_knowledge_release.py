@@ -1,3 +1,4 @@
+import json
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -42,6 +43,7 @@ async def test_run_cli_loads_release_and_closes_client(
 ) -> None:
     args = Namespace(
         chunks_dir=tmp_path,
+        quality_report=tmp_path / "preprocessing-quality.json",
         dataset_version="knowledge-pilot-v1",
         collection="medication_knowledge_pilot_v1",
         embedding_batch_size=64,
@@ -91,6 +93,11 @@ async def test_run_cli_loads_release_and_closes_client(
         fake_load_release_chunks,
     )
     monkeypatch.setattr(module, "build_indexer", fake_build_indexer)
+    monkeypatch.setattr(
+        module,
+        "ensure_preprocessing_approved",
+        lambda chunks, **kwargs: None,
+    )
 
     result = await module.run_cli(args=args, settings=settings)
 
@@ -136,6 +143,7 @@ def test_parse_args_requires_explicit_demo_restricted_opt_in() -> None:
 
     assert default_args.allow_demo_restricted is False
     assert approved_args.allow_demo_restricted is True
+    assert default_args.quality_report == Path("data/knowledge/processed/reports/preprocessing-quality.json")
 
 
 def test_rejects_demo_restricted_chunks_without_explicit_opt_in() -> None:
@@ -157,4 +165,53 @@ def test_rejects_demo_restricted_chunks_without_explicit_opt_in() -> None:
     module.ensure_external_embedding_allowed(
         [restricted_chunk],
         allow_demo_restricted=True,
+    )
+
+
+def test_rejects_chunks_from_source_without_completed_approval(
+    tmp_path: Path,
+) -> None:
+    quality_report = tmp_path / "preprocessing-quality.json"
+    quality_report.write_text(
+        json.dumps(
+            {
+                "dataset_version": "knowledge-pilot-v1",
+                "processed_document_count": 1,
+                "chunk_count": 1,
+                "ready_for_bulk_source_ids": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    chunk = SimpleNamespace(metadata=SimpleNamespace(source_id="supplement_code"))
+
+    with pytest.raises(ValueError, match="승인"):
+        module.ensure_preprocessing_approved(
+            [chunk],
+            quality_report_path=quality_report,
+            expected_dataset_version="knowledge-pilot-v1",
+        )
+
+
+def test_accepts_chunks_only_from_approved_sources(
+    tmp_path: Path,
+) -> None:
+    quality_report = tmp_path / "preprocessing-quality.json"
+    quality_report.write_text(
+        json.dumps(
+            {
+                "dataset_version": "knowledge-pilot-v1",
+                "processed_document_count": 1,
+                "chunk_count": 1,
+                "ready_for_bulk_source_ids": ["supplement_code"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    chunk = SimpleNamespace(metadata=SimpleNamespace(source_id="supplement_code"))
+
+    module.ensure_preprocessing_approved(
+        [chunk],
+        quality_report_path=quality_report,
+        expected_dataset_version="knowledge-pilot-v1",
     )

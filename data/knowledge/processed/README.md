@@ -7,6 +7,8 @@ processed/
 ├── text/       # PDF 추출 또는 OCR 텍스트
 ├── records/    # MySQL 적재용 정규화 레코드
 ├── chunks/     # Qdrant 임베딩 직전 청크와 메타데이터
+├── reports/    # 대표 문서별 자동 품질 지표 JSON
+├── review/     # 원본과 사람이 대조할 결정론적 표본 Markdown
 └── failed/     # 실패 파일과 오류 기록
 ```
 
@@ -15,3 +17,8 @@ Qdrant 벡터 자체는 이 디렉터리가 아니라 Qdrant Docker Volume에 �
 `text/*.jsonl`은 페이지 번호를 포함한 정규화 원문이고, `chunks/*.jsonl`은 Qdrant 임베딩 직전 계약입니다. 청크의 `content`는 출처 표시용 원문이며 `embedding_text`는 문서·약/성분·섹션 접두어를 추가한 검색용 텍스트입니다.
 
 현재 파일럿 산출물은 품질 검토용이며 자동으로 Qdrant에 적재되지 않습니다.
+
+`reports/preprocessing-quality.json`에는 페이지·문자·청크 수, 최소·평균·최대
+토큰, 의미 섹션 비율, 자동 검사 상태와 수동 검수 상태가 기록됩니다.
+`review/<document_id>.md`에는 첫·중간·마지막 및 최단·최장 청크를 중복 없이
+선정한 표본과 원본 대조 체크리스트가 기록됩니다.

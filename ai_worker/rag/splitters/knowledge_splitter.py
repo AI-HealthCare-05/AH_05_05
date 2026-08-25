@@ -64,6 +64,17 @@ _COMMON_CAUTION_HEADINGS = {
 }
 
 
+_KPICIA_ATTACHED_DRUG_ENCYCLOPEDIA_HEADINGS = {
+    "요약": KnowledgeSectionType.SUMMARY,
+    "약리작용": KnowledgeSectionType.OVERVIEW,
+    "효능.효과": KnowledgeSectionType.FUNCTION,
+    "접종권장대상": KnowledgeSectionType.FUNCTION,
+    "종류": KnowledgeSectionType.OVERVIEW,
+    "부작용": KnowledgeSectionType.ADVERSE_EVENT,
+    "다른백신과의동시접종": KnowledgeSectionType.INTERACTION,
+}
+
+
 _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
     KnowledgeDocumentType.SUPPLEMENT_CODE: {
         "원료": KnowledgeSectionType.INGREDIENT,
@@ -81,13 +92,12 @@ _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
     },
     KnowledgeDocumentType.DRUG_ENCYCLOPEDIA: {
         "개요": KnowledgeSectionType.OVERVIEW,
-        "요약": KnowledgeSectionType.SUMMARY,
-        "약리작용": KnowledgeSectionType.OVERVIEW,
         "효능·효과": KnowledgeSectionType.FUNCTION,
         "효능․효과": KnowledgeSectionType.FUNCTION,
         "용법·용량": KnowledgeSectionType.DAILY_INTAKE,
         "용법․용량": KnowledgeSectionType.DAILY_INTAKE,
         **_COMMON_CAUTION_HEADINGS,
+        **_KPICIA_ATTACHED_DRUG_ENCYCLOPEDIA_HEADINGS,
     },
     KnowledgeDocumentType.ADVERSE_CASE_REPORT: {
         "환자 정보": KnowledgeSectionType.CASE_SUMMARY,
@@ -125,6 +135,13 @@ _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
         **_COMMON_CAUTION_HEADINGS,
     },
 }
+
+
+_ATTACHED_BODY_HEADINGS_BY_SOURCE = {
+    "kpicia_drug_encyclopedia": frozenset(_KPICIA_ATTACHED_DRUG_ENCYCLOPEDIA_HEADINGS),
+}
+
+_ATTACHED_BODY_PROSE_CONTINUATION = re.compile(r"^(?:하면|하자면|은|는|이|가|을|를|의|도|만|에서|에는|으로)(?:\s|$)")
 
 
 class KnowledgeSplitter:
@@ -258,7 +275,14 @@ class KnowledgeSplitter:
         metadata = pages[0].metadata
         headings = _HEADINGS.get(metadata.document_type, {})
         combined, page_ranges = self._combine_pages(pages)
-        matches = self._find_heading_matches(combined, headings)
+        matches = self._find_heading_matches(
+            combined,
+            headings,
+            attached_body_headings=_ATTACHED_BODY_HEADINGS_BY_SOURCE.get(
+                metadata.source_id,
+                frozenset(),
+            ),
+        )
 
         if not matches:
             content = combined.strip()
@@ -327,6 +351,8 @@ class KnowledgeSplitter:
     def _find_heading_matches(
         content: str,
         headings: dict[str, KnowledgeSectionType],
+        *,
+        attached_body_headings: frozenset[str],
     ) -> list[tuple[int, str, KnowledgeSectionType]]:
         candidates: list[tuple[int, int, str, KnowledgeSectionType]] = []
 
@@ -336,6 +362,7 @@ class KnowledgeSplitter:
                     content,
                     match.start(),
                     match.end(),
+                    allow_attached_body=(heading in attached_body_headings),
                 ):
                     continue
                 candidates.append((match.start(), match.end(), heading, section_type))
@@ -362,7 +389,10 @@ class KnowledgeSplitter:
         content: str,
         start: int,
         end: int,
+        *,
+        allow_attached_body: bool = False,
     ) -> bool:
+        at_line_start = start == 0
         if start > 0:
             prefix = content[:start]
             at_line_start = not prefix.rsplit("\n", maxsplit=1)[-1].strip()
@@ -372,9 +402,13 @@ class KnowledgeSplitter:
                     return False
 
         if end < len(content):
-            following = content[end]
-            if not following.isspace() and following not in ":：-–—([{":
-                return False
+            following_text = content[end:]
+            following = following_text[0]
+            if not following.isspace() and following not in ":：-–—([{•·":
+                if not (allow_attached_body and (at_line_start or following.isdigit())):
+                    return False
+                if _ATTACHED_BODY_PROSE_CONTINUATION.match(following_text):
+                    return False
 
         return True
 

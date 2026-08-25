@@ -33,7 +33,34 @@ uv run --group ai python -m scripts.preprocess_knowledge_pilots \
 - `pilot_manifest.json`에서 `TEXT_EXTRACTABLE` 상태인 문서
 - `sources.yaml`에서 `target: QDRANT`로 허용된 출처
 
-`OCR_REQUIRED`, `STRUCTURED_SOURCE`, `QDRANT_DISABLED_UNTIL_VERIFIED` 문서는 건너뜁니다. 실행 결과는 Git에서 제외된 `processed/text/*.jsonl`과 `processed/chunks/*.jsonl`에 생성됩니다. 같은 문서를 다시 실행하면 동일한 청크 ID를 만들며, 인덱싱 대상에서 제외된 문서의 이전 산출물은 제거합니다.
+`OCR_REQUIRED`, `STRUCTURED_SOURCE`, `QDRANT_DISABLED_UNTIL_VERIFIED` 문서는 건너뜁니다. 실행 결과는 Git에서 제외된 `processed/text/*.jsonl`과 `processed/chunks/*.jsonl`에 생성됩니다. 같은 문서를 다시 실행하면 동일한 청크 ID를 만들며, 인덱싱 대상에서 제외되거나 매니페스트에서 제거된 문서의 이전 텍스트·청크·검수 표본은 제거합니다.
+
+### 대표 문서 품질 검사와 승인
+
+전처리 명령은 다음 로컬 검수 산출물도 생성합니다.
+
+- `processed/reports/preprocessing-quality.json`: 문서별 자동 품질 지표와 전체 처리 준비 출처 목록
+- `processed/review/<document_id>.md`: 원본 PDF와 대조할 결정론적 표본 청크 및 체크리스트
+
+자동 검사는 다음 조건을 확인합니다.
+
+- 기존 텍스트 품질 검사: 최소 추출량, 대체문자, 비정상적인 장문 무공백 문자열
+- 유형별 최대 토큰 초과 여부
+- 제목 사전에 따른 의미 섹션이 하나 이상 탐지되었는지
+
+자동 상태가 `PASS`여도 전체 원본으로 바로 확대하지 않습니다. 검수자는
+`review/<document_id>.md`의 표본을 원본 PDF와 대조한 뒤 해당
+`pilot_manifest.json` 항목에 아래 상태를 기록합니다.
+
+```json
+"manual_review_status": "APPROVED"
+```
+
+가능한 값은 `PENDING`, `APPROVED`, `REJECTED`이며 기본값은 `PENDING`입니다.
+같은 출처의 대표 문서가 모두 `자동 PASS + 수동 APPROVED`인 경우에만 실행
+결과의 `ready_for_bulk_source_ids`에 포함됩니다. `REVIEW`는 제목·섹션 규칙을
+보완하고 다시 실험하며, `BLOCKED`는 청크를 전체 처리 후보로 사용하지 않습니다.
+현재 명령은 대표 문서만 처리하고 전체 원본 확대는 수행하지 않습니다.
 
 ## 불변 Qdrant release 생성
 
@@ -44,6 +71,12 @@ uv run --group ai python -m scripts.index_knowledge_release \
   --dataset-version knowledge-pilot-v1 \
   --collection medication_knowledge_pilot_v1
 ```
+
+인덱싱 명령은 같은 dataset version의
+`processed/reports/preprocessing-quality.json`을 읽습니다. 청크에 포함된 모든
+출처가 `ready_for_bulk_source_ids`에 없으면 OpenAI 임베딩 호출과 Qdrant 적재를
+시작하기 전에 실패합니다. 따라서 자동 `PASS`만으로는 적재할 수 없고, 대표
+문서 표본의 수동 `APPROVED`까지 완료해야 합니다.
 
 현재 파일럿처럼 `DEMO_RESTRICTED` 청크가 포함된 release는 기본적으로 외부 임베딩 전송을 차단합니다. 자료 이용 범위와 외부 API 전송을 확인하고 명시적으로 승인한 경우에만 다음 플래그를 추가합니다.
 

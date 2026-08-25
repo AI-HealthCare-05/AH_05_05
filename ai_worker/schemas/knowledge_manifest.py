@@ -23,6 +23,12 @@ class KnowledgeProcessingStatus(StrEnum):
     OCR_REQUIRED = "OCR_REQUIRED"
 
 
+class KnowledgeManualReviewStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class KnowledgeSourceConfig(BaseModel):
     source_id: str = Field(
         min_length=1,
@@ -70,6 +76,7 @@ class KnowledgePilotEntry(BaseModel):
     repo_path: Path
     processing_status: KnowledgeProcessingStatus
     selection_reason: str = Field(min_length=1)
+    manual_review_status: KnowledgeManualReviewStatus = KnowledgeManualReviewStatus.PENDING
 
 
 class KnowledgePilotManifest(BaseModel):

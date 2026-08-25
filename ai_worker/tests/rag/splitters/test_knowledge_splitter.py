@@ -19,12 +19,13 @@ def build_page(
     document_type: KnowledgeDocumentType = KnowledgeDocumentType.SUPPLEMENT_CODE,
     title: str = "비타민 B6",
     page_number: int = 1,
+    source_id: str = "pilot-source",
 ) -> KnowledgePage:
     return KnowledgePage(
         content=content,
         page_number=page_number,
         metadata=KnowledgeMetadata(
-            source_id="pilot-source",
+            source_id=source_id,
             document_id="pilot-document",
             title=title,
             provider="식품의약품안전처",
@@ -176,6 +177,74 @@ def test_split_does_not_treat_inline_research_term_as_heading() -> None:
 
     assert [chunk.metadata.section_type for chunk in chunks] == [
         KnowledgeSectionType.SUMMARY,
+    ]
+
+
+def test_split_recognizes_attached_drug_encyclopedia_headings() -> None:
+    page = build_page(
+        (
+            "A형간염의개요질환에 관한 도입 설명입니다.\n"
+            "요약백신의 핵심 정보를 설명합니다.\n"
+            "약리작용면역반응을 이용합니다. 효능.효과12개월 이상에서 "
+            "감염 예방에 사용됩니다.\n"
+            "부작용가장 흔한 이상반응은 주사부위 통증입니다. "
+            "주의사항• 이상반응이 있으면 전문가에게 알립니다.\n"
+            "다른백신과의동시접종동시 접종 근거를 설명합니다."
+        ),
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="A형 간염 백신",
+        source_id="kpicia_drug_encyclopedia",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.SUMMARY,
+        KnowledgeSectionType.OVERVIEW,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.ADVERSE_EVENT,
+        KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.INTERACTION,
+    ]
+
+
+def test_split_does_not_treat_inline_attached_term_as_heading() -> None:
+    page = build_page(
+        ("개요 백신 정보를 설명합니다. 요약하면 접종 전 확인이 필요하고 부작용은 개인에 따라 다를 수 있습니다."),
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="백신 안내",
+        source_id="kpicia_drug_encyclopedia",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.OVERVIEW,
+    ]
+
+
+@pytest.mark.parametrize(
+    "continuation",
+    [
+        "요약하면 접종 전 확인이 필요합니다.",
+        "종류는 대상에 따라 달라집니다.",
+        "부작용은 개인에 따라 다를 수 있습니다.",
+    ],
+)
+def test_split_does_not_treat_line_start_prose_as_attached_heading(
+    continuation: str,
+) -> None:
+    page = build_page(
+        f"개요 백신 정보를 설명합니다.\n{continuation}",
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="백신 안내",
+        source_id="kpicia_drug_encyclopedia",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.OVERVIEW,
     ]
 
 

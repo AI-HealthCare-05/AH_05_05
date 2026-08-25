@@ -5,6 +5,7 @@ import pytest
 
 from ai_worker.rag.normalizers.knowledge_normalizer import KnowledgeNormalizer
 from ai_worker.rag.splitters.knowledge_splitter import (
+    ChunkingPolicy,
     KnowledgeSplitter,
     WordTokenCounter,
 )
@@ -28,6 +29,61 @@ class FakeKnowledgePdfLoader:
                 page_number=1,
             )
         ]
+
+
+class FakeUnstructuredKnowledgePdfLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        return [
+            KnowledgePage(
+                content=(
+                    "이 문서는 제목 경계 없이 이어지는 충분히 긴 설명입니다. "
+                    "약명과 성분, 주의사항이 한 문단에 섞여 있어 사람이 원본과 "
+                    "대조하여 청킹 규칙을 추가해야 하는 대표 문서입니다."
+                ),
+                metadata=metadata,
+                page_number=1,
+            )
+        ]
+
+
+class FakeBlockedKnowledgeSplitter(KnowledgeSplitter):
+    @staticmethod
+    def policy_for(document_type) -> ChunkingPolicy:
+        return ChunkingPolicy(
+            target_min_tokens=1,
+            hard_max_tokens=1,
+            overlap_tokens=0,
+        )
+
+
+class FakeMixedQualityKnowledgePdfLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        if file_path.name == "too-short.pdf":
+            return [
+                KnowledgePage(
+                    content="짧은 문서",
+                    metadata=metadata,
+                    page_number=1,
+                )
+            ]
+        return FakeKnowledgePdfLoader().load(file_path, metadata)
+
+
+class FakeLongReviewKnowledgePdfLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        body = " ".join(f"검수단어{index:03d}" for index in range(250))
+        return [
+            KnowledgePage(
+                content=f"기능성 내용 {body} 최종검수표식",
+                metadata=metadata,
+                page_number=1,
+            )
+        ]
+
+
+class FakeFailingKnowledgePdfLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        raise RuntimeError("PDF 추출 실패")
 
 
 def write_json(path: Path, value: object) -> None:
@@ -368,10 +424,13 @@ sources: []
     )
     stale_text = output_root / "text" / "removed-document.jsonl"
     stale_chunk = output_root / "chunks" / "removed-document.jsonl"
+    stale_review = output_root / "review" / "removed-document.md"
     stale_text.parent.mkdir(parents=True)
     stale_chunk.parent.mkdir(parents=True)
+    stale_review.parent.mkdir(parents=True)
     stale_text.write_text('{"stale": true}\n', encoding="utf-8")
     stale_chunk.write_text('{"stale": true}\n', encoding="utf-8")
+    stale_review.write_text("stale\n", encoding="utf-8")
     service = KnowledgePilotPreprocessingService(
         repo_root=tmp_path,
         loader=FakeKnowledgePdfLoader(),
@@ -389,3 +448,397 @@ sources: []
     assert result.processed_document_count == 0
     assert not stale_text.exists()
     assert not stale_chunk.exists()
+    assert not stale_review.exists()
+
+
+def test_preprocess_writes_quality_report_and_review_sample(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    output_root = tmp_path / "processed"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "vitamin-b6",
+                    "repo_path": "raw/1-10_비타민_B6.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "유형별 대표 문서",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=output_root,
+        dataset_version="pilot-v1",
+    )
+
+    assert result.ready_for_bulk_source_ids == []
+    assert len(result.document_reports) == 1
+    report = result.document_reports[0]
+    assert report.automatic_status.value == "PASS"
+    assert report.manual_review_status.value == "PENDING"
+    assert report.page_count == 1
+    assert report.chunk_count == 3
+    assert report.semantic_section_ratio == 1.0
+
+    quality_report = output_root / result.quality_report_path
+    review_sample = output_root / report.review_sample_path
+    assert quality_report.exists()
+    assert review_sample.exists()
+    assert "유형별 대표 문서" in review_sample.read_text(encoding="utf-8")
+    assert "원본 읽기 순서" in review_sample.read_text(encoding="utf-8")
+
+
+def test_preprocess_marks_approved_quality_pilot_ready_for_bulk(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "vitamin-b6",
+                    "repo_path": "raw/1-10_비타민_B6.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "유형별 대표 문서",
+                    "manual_review_status": "APPROVED",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=tmp_path / "processed",
+        dataset_version="pilot-v1",
+    )
+
+    assert result.ready_for_bulk_source_ids == ["supplement_code"]
+
+
+def test_preprocess_requires_review_when_semantic_sections_are_missing(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "unstructured-document",
+                    "repo_path": "raw/unstructured.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "제목 경계 검증",
+                    "manual_review_status": "APPROVED",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeUnstructuredKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=tmp_path / "processed",
+        dataset_version="pilot-v1",
+    )
+
+    assert result.ready_for_bulk_source_ids == []
+    report = result.document_reports[0]
+    assert report.automatic_status.value == "REVIEW"
+    assert [reason.value for reason in report.reason_codes] == ["NO_SEMANTIC_SECTIONS"]
+
+
+def test_preprocess_does_not_publish_automatically_blocked_chunks(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    output_root = tmp_path / "processed"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "oversized-document",
+                    "repo_path": "raw/oversized.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "최대 토큰 차단 검증",
+                    "manual_review_status": "APPROVED",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=FakeBlockedKnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=output_root,
+        dataset_version="pilot-v1",
+    )
+
+    assert result.processed_document_count == 0
+    assert result.document_reports[0].automatic_status.value == "BLOCKED"
+    assert result.skipped_documents[0].reason == "AUTOMATIC_QUALITY_BLOCKED"
+    assert not (output_root / "chunks" / "oversized-document.jsonl").exists()
+
+
+def test_preprocess_does_not_ready_source_with_failed_representative(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "passing-document",
+                    "repo_path": "raw/passing.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "정상 대표 문서",
+                    "manual_review_status": "APPROVED",
+                },
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "failed-document",
+                    "repo_path": "raw/too-short.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "추출 실패 대표 문서",
+                    "manual_review_status": "APPROVED",
+                },
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeMixedQualityKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=tmp_path / "processed",
+        dataset_version="pilot-v1",
+    )
+
+    assert result.processed_document_count == 1
+    assert result.ready_for_bulk_source_ids == []
+    assert result.skipped_documents[-1].reason == "TEXT_QUALITY_REVIEW"
+
+
+def test_preprocess_review_sample_keeps_full_selected_chunk(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    output_root = tmp_path / "processed"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "long-review-document",
+                    "repo_path": "raw/long-review.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "긴 청크 표본 검증",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeLongReviewKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=output_root,
+        dataset_version="pilot-v1",
+    )
+
+    review_path = output_root / result.document_reports[0].review_sample_path
+    assert "최종검수표식" in review_path.read_text(encoding="utf-8")
+
+
+def test_preprocess_invalidates_previous_report_before_processing(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    output_root = tmp_path / "processed"
+    report_path = output_root / "reports" / "preprocessing-quality.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text('{"stale": true}', encoding="utf-8")
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "failing-document",
+                    "repo_path": "raw/failing.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "실패 시 보고서 무효화 검증",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeFailingKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    with pytest.raises(RuntimeError, match="PDF 추출 실패"):
+        service.preprocess(
+            manifest_path=manifest_path,
+            sources_path=sources_path,
+            output_root=output_root,
+            dataset_version="pilot-v1",
+        )
+
+    assert not report_path.exists()
