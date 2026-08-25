@@ -21,6 +21,7 @@ def build_chunk(
     ingredient_names: list[str] | None = None,
     document_type: KnowledgeDocumentType = KnowledgeDocumentType.SUPPLEMENT_CODE,
     section_type: KnowledgeSectionType = KnowledgeSectionType.CAUTION,
+    interaction_pair_keys: list[str] | None = None,
 ) -> KnowledgeChunk:
     return KnowledgeChunk(
         chunk_id=marker * 64,
@@ -36,6 +37,7 @@ def build_chunk(
             document_type=document_type,
             dataset_version=dataset_version,
             ingredient_names=ingredient_names or [],
+            interaction_pair_keys=interaction_pair_keys or [],
             section_type=section_type,
             section_title="섭취 시 주의사항",
             page_start=1,
@@ -178,6 +180,48 @@ async def test_search_filters_document_and_section_types() -> None:
         )
 
         assert [result.metadata.document_id for result in results] == ["document-b"]
+    finally:
+        await client.close()
+
+
+async def test_search_filters_exact_interaction_pair_key() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+    requested_pair_key = "a" * 64
+
+    try:
+        await store.create_release_collection()
+        chunks = [
+            build_chunk(
+                "a",
+                interaction_pair_keys=[requested_pair_key],
+            ),
+            build_chunk(
+                "b",
+                interaction_pair_keys=["b" * 64],
+            ),
+        ]
+        await store.upsert_chunks(
+            chunks,
+            [[1.0, 0.0, 0.0], [0.99, 0.01, 0.0]],
+        )
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="파록세틴과 셀레길린 상호작용",
+                dataset_version="knowledge-pilot-v1",
+                interaction_pair_keys=[requested_pair_key],
+            ),
+        )
+
+        assert [result.metadata.document_id for result in results] == [
+            "document-a"
+        ]
     finally:
         await client.close()
 

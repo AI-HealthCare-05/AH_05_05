@@ -1,3 +1,4 @@
+import re
 from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -55,6 +56,7 @@ class KnowledgeMetadata(BaseModel):
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
     interaction_type: str | None = None
+    interaction_pair_keys: list[str] = Field(default_factory=list)
     special_populations: list[str] = Field(default_factory=list)
     index_eligible: bool = True
 
@@ -76,6 +78,14 @@ class KnowledgeMetadata(BaseModel):
             seen.add(item)
 
         return normalized
+
+    @field_validator("interaction_pair_keys")
+    @classmethod
+    def normalize_interaction_pair_keys(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return _normalize_interaction_pair_keys(values)
 
 
 class KnowledgePage(BaseModel):
@@ -126,6 +136,7 @@ class KnowledgeSearchQuery(BaseModel):
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
     interaction_type: str | None = None
+    interaction_pair_keys: list[str] = Field(default_factory=list)
     special_populations: list[str] = Field(default_factory=list)
     section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     limit: int = Field(default=5, ge=1, le=50)
@@ -150,6 +161,14 @@ class KnowledgeSearchQuery(BaseModel):
     def normalize_filter_values(cls, values: list[str]) -> list[str]:
         return KnowledgeMetadata.normalize_unique_values(values)
 
+    @field_validator("interaction_pair_keys")
+    @classmethod
+    def normalize_interaction_pair_key_filters(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return _normalize_interaction_pair_keys(values)
+
     @field_validator("interaction_type")
     @classmethod
     def normalize_optional_filter(cls, value: str | None) -> str | None:
@@ -162,3 +181,16 @@ class KnowledgeSearchQuery(BaseModel):
 class RetrievedKnowledgeChunk(KnowledgeChunk):
     point_id: str = Field(min_length=1)
     similarity_score: float = Field(ge=-1.0, le=1.0)
+
+
+def _normalize_interaction_pair_keys(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = value.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", item):
+            raise ValueError("interaction pair key는 SHA-256 형식이어야 합니다.")
+        if item not in seen:
+            normalized.append(item)
+            seen.add(item)
+    return normalized

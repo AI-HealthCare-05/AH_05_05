@@ -6,6 +6,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeMetadata,
     KnowledgePage,
+    KnowledgeSearchQuery,
 )
 from ai_worker.schemas.knowledge_manifest import (
     KnowledgePilotManifest,
@@ -51,6 +52,34 @@ def test_page_requires_positive_page_number() -> None:
             content="기능성 내용",
             metadata=build_metadata(),
             page_number=0,
+        )
+
+
+def test_metadata_normalizes_interaction_pair_keys() -> None:
+    metadata = build_metadata().model_copy(
+        update={
+            "interaction_pair_keys": [
+                "a" * 64,
+                "a" * 64,
+                "b" * 64,
+            ]
+        }
+    )
+
+    normalized = KnowledgeMetadata.model_validate(metadata.model_dump())
+
+    assert normalized.interaction_pair_keys == [
+        "a" * 64,
+        "b" * 64,
+    ]
+
+
+def test_search_query_rejects_invalid_interaction_pair_key() -> None:
+    with pytest.raises(ValidationError, match="pair key"):
+        KnowledgeSearchQuery(
+            query="파록세틴과 셀레길린 상호작용",
+            dataset_version="interaction-pilot-v1",
+            interaction_pair_keys=["not-a-sha256"],
         )
 
 

@@ -180,6 +180,11 @@ class QdrantKnowledgeStore:
         )
         QdrantKnowledgeStore._append_any_filter(
             conditions,
+            "metadata.interaction_pair_keys",
+            search_query.interaction_pair_keys,
+        )
+        QdrantKnowledgeStore._append_any_filter(
+            conditions,
             "metadata.section_type",
             [value.value for value in search_query.section_types],
         )
