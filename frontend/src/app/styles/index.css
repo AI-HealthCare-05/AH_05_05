@@ -76,6 +76,7 @@
   --radius-input: 12px;
   --radius-sheet: 24px;
   --radius-pill: 9999px;
+  --radius-record-cell: 5px;
 
   /* ---------- 그림자 ---------- */
   --shadow-card: 0 1px 3px rgba(36, 30, 32, 0.08);
@@ -87,6 +88,9 @@
   --spacing-touch: 44px;
   --spacing-page-x: 20px;
   --spacing-content: 335px;
+  --spacing-record-cell-w: 30px;
+  --spacing-record-cell-h: 22px;
+  --spacing-record-gap: 6px;
 
   --container-page: 375px;
   --container-app: 480px;

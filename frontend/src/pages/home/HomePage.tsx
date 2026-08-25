@@ -24,6 +24,7 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
+import { MedicationRecordGrid } from './MedicationRecordGrid';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
@@ -102,7 +103,7 @@ export function HomePage({
     let cancelled = false;
     setDoseRecords(null);
     setDoseLoadError(null);
-    doseRecordsLoader({ from: currentDate, to: currentDate })
+    doseRecordsLoader({ from: medicationOverview.start.date, to: medicationOverview.endDate })
       .then((records) => {
         if (!cancelled) setDoseRecords(records);
       })
@@ -197,18 +198,28 @@ export function HomePage({
               {medicationLoadError ?? doseLoadError}
             </Card>
           ) : resolvedMedicationState &&
-            (resolvedMedicationState !== 'active' ||
-              (medicationOverview && doseRecords !== null)) ? (
-            <LoggedInHero
-              state={resolvedMedicationState}
-              overview={medicationOverview}
-              doseRecords={doseRecords ?? []}
-              currentDate={currentDate}
-              onDoseChange={(slot, taken) =>
-                void changeDose({ date: currentDate, slot, taken })
-              }
-              onUpload={() => navigate('/document-upload')}
-            />
+            (resolvedMedicationState !== 'active' || medicationOverview) &&
+            (!medicationOverview?.medications.length || doseRecords !== null) ? (
+            <>
+              <LoggedInHero
+                state={resolvedMedicationState}
+                overview={medicationOverview}
+                doseRecords={doseRecords ?? []}
+                currentDate={currentDate}
+                onDoseChange={(slot, taken) =>
+                  void changeDose({ date: currentDate, slot, taken })
+                }
+                onUpload={() => navigate('/document-upload')}
+              />
+              {medicationOverview?.medications.length && doseRecords ? (
+                <MedicationRecordGrid
+                  overview={medicationOverview}
+                  records={doseRecords}
+                  now={new Date()}
+                  onMarkTaken={(date, slot) => void changeDose({ date, slot, taken: true })}
+                />
+              ) : null}
+            </>
           ) : (
             <div
               role="status"

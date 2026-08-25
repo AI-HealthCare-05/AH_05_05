@@ -40,10 +40,20 @@ const ONE_MEDICATION_OVERVIEW: MedicationOverview = {
     },
   ],
 };
+const FOURTEEN_DAY_MEDICATION_OVERVIEW: MedicationOverview = {
+  ...ACTIVE_MEDICATION_OVERVIEW,
+  endDate: '2026-09-04',
+  daysRemaining: 11,
+  medications: ACTIVE_MEDICATION_OVERVIEW.medications.map((medication) => ({
+    ...medication,
+    days: 14,
+  })),
+};
 
 const loadEmptyMedicationOverview = async () => EMPTY_MEDICATION_OVERVIEW;
 const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
 const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
+const loadFourteenDayMedicationOverview = async () => FOURTEEN_DAY_MEDICATION_OVERVIEW;
 const failMedicationOverview = async (): Promise<MedicationOverview> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
@@ -106,6 +116,15 @@ export function AppRouter() {
             <HomePage
               authenticatedOverride
               medicationOverviewLoader={loadOneMedicationOverview}
+            />
+          }
+        />
+        <Route
+          path="/dev/home-14-days"
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationOverviewLoader={loadFourteenDayMedicationOverview}
             />
           }
         />
