@@ -19,6 +19,16 @@ pnpm dev
 실제 서버에 붙이려면 `frontend/.env.local` 에 `VITE_USE_MOCK=false` 를 넣으세요.
 `vite` 가 `/api` 요청을 `http://127.0.0.1:8000` 으로 프록시하므로 CORS 설정은 필요 없습니다.
 
+조제약 OCR의 현재 비동기 API·DB 저장·worker 계약은
+[`medication-guide-ocr-api-spec-v1.md`](medication-guide-ocr-api-spec-v1.md)를 참고하세요. 실서버 OCR 흐름에는
+FastAPI뿐 아니라 `ocr-worker`도 필요합니다.
+
+팀원이 로컬에서 처음 실행할 때는 [조제약 OCR 로컬 실행 가이드](ocr/README.md)를 순서대로 따라가세요.
+
+```bash
+docker compose up -d mysql redis fastapi ocr-worker
+```
+
 폴더 구조·색·컴포넌트 규칙은 [`frontend/README.md`](../frontend/README.md) 에 있습니다.
 
 ## 설치·빌드가 막힐 때
