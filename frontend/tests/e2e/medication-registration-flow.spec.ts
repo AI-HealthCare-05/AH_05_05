@@ -36,14 +36,17 @@ test('선택한 약봉투를 같은 화면에서 미리보고 바로 판독 화�
   await expect(page.getByRole('img', { name: '선택한 약봉투 미리보기' })).toBeVisible();
   await expect(page.getByText('조제약봉투_01.png')).toBeVisible();
   const completedHeading = expect(
-    page.getByRole('heading', { name: '다 읽었어요' }),
+    page.getByRole('status', { name: '약봉투 판독 단계' }).getByText('다 읽었어요'),
   ).toBeVisible();
   const completedProgress = expect(
     page.getByRole('progressbar', { name: '약봉투 판독 진행률' }),
   ).toHaveAttribute('aria-valuenow', '100');
   await page.getByRole('button', { name: '등록하기' }).click();
   await expect(page).toHaveURL(/\/ocr-review$/);
-  await expect(page.getByRole('heading', { name: '글자를 찾고 있어요' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toBeVisible();
+  await expect(page.getByRole('status', { name: '약봉투 판독 단계' })).toContainText(
+    '글자를 찾고 있어요',
+  );
   await expect(page.getByText('2 / 3 단계')).toBeVisible();
   await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
   await expect(page.getByRole('dialog', { name: /인식이 끝났어요/ })).toHaveCount(0);
@@ -57,13 +60,34 @@ test('판독 중에는 같은 S07에서 단계 기반 진행률만 90%까지 표
   await openOcrReviewWithBatch(page, 'processing-forever');
 
   await expect(page).toHaveURL(/\/dev\/ocr-review$/);
-  await expect(page.getByRole('heading', { name: '약 이름을 정리하고 있어요' })).toBeVisible();
+  await expect(page.getByRole('status', { name: '약봉투 판독 단계' })).toContainText(
+    '약 이름을 정리하고 있어요',
+  );
   await expect(page.getByText('3 / 3 단계')).toBeVisible();
   const progress = page.getByRole('progressbar', { name: '약봉투 판독 진행률' });
   await expect(progress).toBeVisible();
   await page.clock.runFor(11_000);
   await expect(progress).toHaveAttribute('aria-valuenow', '90');
   await expect(page.getByText(/초 남음|초 후/)).toHaveCount(0);
+});
+
+test('읽는 중 화면은 고정 안내 뒤 배너를 먼저 보여주고 현재 단계를 아래에 둔다', async ({
+  page,
+}) => {
+  await openOcrReviewWithBatch(page, 'processing-layout');
+
+  await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toBeVisible();
+  await expect(page.getByText('잠깐이면 끝나요. 그동안 둘러보세요.')).toBeVisible();
+  const carousel = page.getByRole('region', { name: '포케 기능 소개' });
+  const stage = page.getByRole('status', { name: '약봉투 판독 단계' });
+  await expect(stage).toContainText('약 이름을 정리하고 있어요');
+  await expect(stage).toContainText('3 / 3 단계');
+
+  const carouselBox = await carousel.boundingBox();
+  const stageBox = await stage.boundingBox();
+  expect(carouselBox).not.toBeNull();
+  expect(stageBox).not.toBeNull();
+  expect(carouselBox!.y + carouselBox!.height).toBeLessThanOrEqual(stageBox!.y);
 });
 
 test('판독 중 취소는 헤더 없이 화면 아래 텍스트 버튼으로 S06에 돌아간다', async ({ page }) => {
@@ -77,7 +101,9 @@ test('판독 중 취소는 헤더 없이 화면 아래 텍스트 버튼으로 S0
 test('판독이 60초를 넘으면 같은 화면에서 계속 기다리거나 다시 촬영할 수 있다', async ({ page }) => {
   await page.clock.install();
   await openOcrReviewWithBatch(page, 'processing-timeout');
-  await expect(page.getByRole('heading', { name: '약 이름을 정리하고 있어요' })).toBeVisible();
+  await expect(page.getByRole('status', { name: '약봉투 판독 단계' })).toContainText(
+    '약 이름을 정리하고 있어요',
+  );
 
   await page.clock.fastForward(60_000);
   const dialog = page.getByRole('dialog', { name: '시간이 오래 걸리고 있어요' });
