@@ -25,15 +25,13 @@ test('같은 브라우저 세션의 두 번째 진입은 스플래시를 다시 
   await expect(page).toHaveURL(/\/home$/, { timeout: 500 });
 });
 
-test('게스트가 기능을 누르면 로그인 이유를 설명하는 시트가 열리고 닫힌다', async ({ page }) => {
+test('게스트 홈은 기능 중복 카드 없이 소개 배너와 탭바를 유지한다', async ({ page }) => {
   await page.goto('/home');
 
-  await page.getByRole('button', { name: /복용약 관리/ }).click();
-  const sheet = page.getByRole('dialog');
-  await expect(sheet).toContainText('복용약과 영양제는 사람마다 달라 저장할 곳이 필요해요');
-  await sheet.getByRole('button', { name: '다음에 할게요' }).click();
-  await expect(sheet).toBeHidden();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /복용약 관리/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /영양제 관리/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /AI 상담/ })).toHaveCount(0);
 });
 
 test('게스트 탭은 조회 화면으로 가지 않고 같은 로그인 시트를 연다', async ({ page }) => {
@@ -108,6 +106,16 @@ test('로그인 홈은 약 없음·복약 중·복약 종료 상태를 모두 �
   await page.goto('/dev/home-data-ended');
   await expect(page.getByText('복용이 끝났어요')).toBeVisible();
   await expect(page.getByRole('button', { name: '새 약봉투 등록' })).toBeVisible();
+});
+
+test('로그인 홈 헤더는 탭바와 중복되는 마이 버튼을 두지 않는다', async ({ page }) => {
+  await page.goto('/dev/home-active');
+
+  await expect(page.getByRole('button', { name: '마이페이지' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '마이', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /복용약 관리/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /영양제 관리/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /AI 상담/ })).toHaveCount(0);
 });
 
 test('로그인 홈은 조회 중 등록 카드를 띄우지 않고 실제 복약 데이터로 바뀐다', async ({ page }) => {
@@ -199,36 +207,5 @@ test('복약 중 홈은 지난·현재·다음 복약을 한 타임라인 카드
   expect(currentStyle.borderTop).toBe('0px');
   expect(currentStyle.borderBottom).toBe('0px');
 
-  await expect(page.getByRole('button', { name: /복용약 관리/ })).toContainText(
-    '약 4개 · 8월 28일까지',
-  );
-  await expect(page.getByRole('button', { name: /영양제 관리/ })).toContainText(
-    '비타민 A 상한 초과',
-  );
-
-  const featureIconBackgrounds = await Promise.all(
-    ['복용약 관리', '영양제 관리', 'AI 상담'].map((name) =>
-      page
-        .getByRole('button', { name: new RegExp(name) })
-        .locator(':scope > span')
-        .first()
-        .evaluate((element) => getComputedStyle(element).backgroundColor),
-    ),
-  );
-  expect(new Set(featureIconBackgrounds).size).toBe(1);
-  expect(featureIconBackgrounds[0]).not.toBe(currentStyle.background);
   await expect(page.getByRole('region', { name: '포케 기능 소개' })).toHaveCount(0);
-});
-
-test('빈 상태와 종료 상태에서는 주요 기능 행을 복약 중보다 위로 당긴다', async ({ page }) => {
-  await page.goto('/dev/home-active');
-  const activeBox = await page.getByRole('button', { name: /복용약 관리/ }).boundingBox();
-  expect(activeBox).not.toBeNull();
-
-  for (const route of ['/dev/home-data-empty', '/dev/home-data-ended']) {
-    await page.goto(route);
-    const compactBox = await page.getByRole('button', { name: /복용약 관리/ }).boundingBox();
-    expect(compactBox).not.toBeNull();
-    expect((compactBox?.y ?? 0) + 100).toBeLessThan(activeBox?.y ?? 0);
-  }
 });

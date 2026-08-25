@@ -1,12 +1,5 @@
-import { useEffect, useState, type ComponentType } from 'react';
-import {
-  Check,
-  ChevronRight,
-  MessageCircle,
-  Pill,
-  Sprout,
-  UserRound,
-} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { getMedicationOverview, type MedicationOverview } from '@/entities/medication';
@@ -27,57 +20,6 @@ interface HomePageProps {
   medicationState?: MedicationHomeState;
   medicationOverviewLoader?: () => Promise<MedicationOverview>;
 }
-
-interface FeatureItem {
-  key: Exclude<TabKey, 'home' | 'my'>;
-  title: string;
-  description: string;
-  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
-  emphasis?: 'warning';
-}
-
-const DEFAULT_FEATURES: FeatureItem[] = [
-  {
-    key: 'medication',
-    title: '복용약 관리',
-    description: '약봉투 등록 · 시간 알림',
-    icon: Pill,
-  },
-  {
-    key: 'supplement',
-    title: '영양제 관리',
-    description: '성분 합계 · 상한 비교',
-    icon: Sprout,
-  },
-  {
-    key: 'chat',
-    title: 'AI 상담',
-    description: '근거와 함께 답해드려요',
-    icon: MessageCircle,
-  },
-];
-
-const ACTIVE_FEATURES: FeatureItem[] = [
-  {
-    key: 'medication',
-    title: '복용약 관리',
-    description: '약 4개 · 8월 28일까지',
-    icon: Pill,
-  },
-  {
-    key: 'supplement',
-    title: '영양제 관리',
-    description: '비타민 A 상한 초과',
-    icon: Sprout,
-    emphasis: 'warning',
-  },
-  {
-    key: 'chat',
-    title: 'AI 상담',
-    description: '근거와 함께 답해드려요',
-    icon: MessageCircle,
-  },
-];
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -124,12 +66,7 @@ export function HomePage({
   const resolvedMedicationState =
     medicationState ??
     (medicationOverview ? medicationHomeStateFromOverview(medicationOverview) : null);
-  const features =
-    isAuthenticated && resolvedMedicationState === 'active'
-      ? ACTIVE_FEATURES
-      : DEFAULT_FEATURES;
-
-  function openFeature(key: FeatureItem['key']) {
+  function openFeature(key: Exclude<TabKey, 'home' | 'my'>) {
     if (!isAuthenticated) {
       setLoginPromptOpen(true);
       return;
@@ -143,29 +80,13 @@ export function HomePage({
       navigate('/my');
       return;
     }
-    if (!isAuthenticated) {
-      setLoginPromptOpen(true);
-      return;
-    }
-    navigate(TAB_ROUTES[key]);
+    openFeature(key);
   }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       {isAuthenticated ? (
-        <Header
-          title="포케"
-          right={
-            <button
-              type="button"
-              aria-label="마이페이지"
-              className="flex size-touch items-center justify-center text-muted-foreground"
-              onClick={() => navigate('/my')}
-            >
-              <UserRound aria-hidden className="size-6" />
-            </button>
-          }
-        />
+        <Header title="포케" />
       ) : (
         <header className="flex h-header shrink-0 items-center justify-between bg-card px-page-x">
           <h1 className="text-xl font-bold text-foreground">포케</h1>
@@ -199,12 +120,6 @@ export function HomePage({
           <PokeFeatureCarousel />
         )}
 
-        <section aria-label="주요 기능" className="flex flex-col gap-3">
-          {features.map((feature) => (
-            <FeatureRow key={feature.key} feature={feature} onClick={() => openFeature(feature.key)} />
-          ))}
-        </section>
-
         {!isAuthenticated && (
           <p className="mt-auto py-4 text-center text-sm text-disabled-foreground">
             기능을 쓰려면 로그인이 필요해요
@@ -223,34 +138,6 @@ export function HomePage({
         onLogin={() => navigate('/login')}
       />
     </div>
-  );
-}
-
-function FeatureRow({ feature, onClick }: { feature: FeatureItem; onClick: () => void }) {
-  const Icon = feature.icon;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex min-h-18 w-full items-center gap-4 rounded-card bg-card px-4 py-3 text-left shadow-card"
-    >
-      <span
-        className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-muted-foreground"
-      >
-        <Icon aria-hidden className="size-6" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <strong className="block text-lg text-foreground">{feature.title}</strong>
-        <span
-          className={`block truncate text-sm ${
-            feature.emphasis === 'warning' ? 'text-warning-strong' : 'text-muted-foreground'
-          }`}
-        >
-          {feature.description}
-        </span>
-      </span>
-      <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
-    </button>
   );
 }
 
