@@ -20,7 +20,8 @@ Qdrant 벡터 자체는 이 디렉터리가 아니라 Qdrant Docker Volume에 �
 
 `staging/<version>/<generation>/interaction_rule_candidates.jsonl`은 식약처 DUR
 병용금기 CSV에서 결정론적으로 생성한 약-약 규칙 후보입니다. 자동 생성 상태는 모두
-`PENDING`이며 MySQL에 자동 적재되지 않습니다. 같은 generation의
+`PENDING`이며 MySQL에 자동 적재되지 않습니다. `--allow-pending`을 명시한 importer로
+검수 대기 상태 그대로 보관할 수 있지만 런타임 답변에는 사용할 수 없습니다. 같은 generation의
 `interaction-staging-quality.json`에서 원본 행 수, 중복 병합 수, 제외 사유와 원본
 줄 번호를 확인한 뒤 별도의 승인 단계가 필요합니다. 소비자는 항상
 `staging/<version>/current.json`이 가리키는 두 파일을 함께 읽어야 합니다.

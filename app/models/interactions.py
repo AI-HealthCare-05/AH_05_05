@@ -15,6 +15,26 @@ from app.models.enums import (
 )
 
 
+class MedicationProductGuide(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    item_seq = fields.CharField(max_length=20, unique=True)
+    product_name = fields.CharField(max_length=255)
+    manufacturer_name = fields.CharField(max_length=255)
+    efficacy = fields.TextField()
+    usage_instructions = fields.TextField()
+    pre_use_warning = fields.TextField()
+    precautions = fields.TextField()
+    drug_food_interactions = fields.TextField()
+    adverse_reactions = fields.TextField()
+    storage_instructions = fields.TextField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "medication_product_guides"
+        indexes = (("product_name",),)
+
+
 class InteractionEntity(models.Model):
     id = fields.BigIntField(primary_key=True)
     entity_kind = fields.CharEnumField(InteractionEntityKind)
@@ -61,10 +81,7 @@ class InteractionEntityIdentifier(models.Model):
 
     class Meta:
         table = "interaction_entity_identifiers"
-        unique_together = (
-            ("source_id", "source_code"),
-            ("interaction_entity", "source_id"),
-        )
+        unique_together = (("source_id", "source_code"),)
 
 
 class MedicationInteractionMapping(models.Model):

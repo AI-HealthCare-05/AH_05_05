@@ -152,9 +152,28 @@ uv run --group ai python -m scripts.build_interaction_staging \
 generation과 새 미완성 파일을 섞지 않습니다.
 
 자동 생성 후보의 `review_status`는 항상 `PENDING`이며 보고서의
-`ready_for_rdb_import`도 `false`입니다. 따라서 이 산출물은 런타임 챗봇이 사용하거나
-RDBMS에 자동 적재할 수 없습니다. ORM·마이그레이션과 관리자 승인 절차가 확정된 뒤
-사람이 검수한 후보만 별도 importer를 통해 적재해야 합니다.
+`ready_for_rdb_import`도 `false`입니다. 런타임 챗봇은 `APPROVED` 규칙만 사용합니다.
+검수 대기 후보를 MySQL에 보관하려면 위험을 명시적으로 확인하는 옵션이 필요합니다.
+
+```bash
+uv run --group app --group ai python scripts/import_interaction_staging.py \
+  --allow-pending
+```
+
+importer는 `current.json`과 품질 보고서·후보 파일의 세대, 버전, 경로, 건수를 함께
+검증합니다. 같은 데이터셋 버전의 규칙과 출처는 불변이며 재실행해도 중복 생성하지
+않습니다. `--allow-pending`은 적재만 허용할 뿐 후보를 승인하지 않습니다.
+
+식약처 e약은요 제품 가이드는 원본 CSV를 Git 제외 raw 경로에 둔 뒤 다음 명령으로
+적재합니다.
+
+```bash
+uv run --group app python scripts/import_medication_product_guides.py
+```
+
+품목일련번호, 제품명, 업체명과 효능·용법·사전 경고·주의사항·약/음식 상호작용·
+이상반응·보관법만 저장합니다. 같은 품목일련번호의 완전 중복은 병합하며 필수값 누락,
+형식 오류 또는 내용 충돌은 MySQL 쓰기 전에 차단합니다.
 
 상호작용 상세 원문은 Qdrant에 보존하고, RDBMS 규칙과 Qdrant 청크는 동일한
 `pair_key` 및 검수된 `evidence_chunk_ids`로 연결합니다. 근거 청크가 아직 연결되지

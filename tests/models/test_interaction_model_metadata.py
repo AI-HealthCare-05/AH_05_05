@@ -68,10 +68,29 @@ def test_interaction_entity_models_preserve_normalized_identity() -> None:
     assert alias._meta.unique_together == (("interaction_entity", "normalized_alias"),)
     assert alias._meta.fields_map["interaction_entity"].on_delete == fields.CASCADE
     assert identifier._meta.db_table == "interaction_entity_identifiers"
-    assert identifier._meta.unique_together == (
-        ("source_id", "source_code"),
-        ("interaction_entity", "source_id"),
-    )
+    assert identifier._meta.unique_together == (("source_id", "source_code"),)
+
+
+def test_medication_product_guide_keeps_public_product_information() -> None:
+    _, interactions, _ = load_interaction_models()
+
+    guide = interactions.MedicationProductGuide
+
+    assert guide._meta.db_table == "medication_product_guides"
+    assert guide._meta.fields_map["item_seq"].unique is True
+    assert ("product_name",) in guide._meta.indexes
+    assert guide._meta.fields_map["product_name"].max_length == 255
+    assert guide._meta.fields_map["manufacturer_name"].max_length == 255
+    for field_name in (
+        "efficacy",
+        "usage_instructions",
+        "pre_use_warning",
+        "precautions",
+        "drug_food_interactions",
+        "adverse_reactions",
+        "storage_instructions",
+    ):
+        assert guide._meta.fields_map[field_name].null is False
 
 
 def test_medication_and_supplement_mappings_do_not_modify_source_models() -> None:
@@ -155,6 +174,7 @@ def test_tortoise_registers_all_interaction_tables() -> None:
     from app.core.db.databases import TORTOISE_APP_MODELS
 
     expected_tables = {
+        "medication_product_guides",
         "interaction_entities",
         "interaction_entity_aliases",
         "interaction_entity_identifiers",

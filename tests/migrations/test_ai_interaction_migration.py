@@ -1,6 +1,9 @@
 from importlib import import_module
 
 MIGRATION = import_module("app.core.db.migrations.models.7_20260825203757_add_ai_interaction_chat_schema")
+IDENTIFIER_MIGRATION = import_module(
+    "app.core.db.migrations.models.9_20260825220218_allow_multiple_source_codes_per_interaction_entity"
+)
 
 
 async def test_upgrade_replaces_chat_source_checks_for_all_source_types() -> None:
@@ -104,3 +107,16 @@ async def test_downgrade_restores_legacy_chat_source_checks() -> None:
     assert "'INTERACTION_RULE'" not in patient_check
     assert "'PATIENT_SAVED_FIELD'" in public_check
     assert "'PUBLIC_RAG_CHUNK'" in public_check
+
+
+async def test_identifier_migration_keeps_foreign_key_index() -> None:
+    upgrade_sql = await IDENTIFIER_MIGRATION.upgrade(None)
+    downgrade_sql = await IDENTIFIER_MIGRATION.downgrade(None)
+
+    add_fk_index = upgrade_sql.index("ADD INDEX `idx_interaction_entity_identifiers_entity`")
+    drop_unique = upgrade_sql.index("DROP INDEX `uid_interaction_interac_328f17`")
+    restore_unique = downgrade_sql.index("ADD UNIQUE INDEX `uid_interaction_interac_328f17`")
+    drop_fk_index = downgrade_sql.index("DROP INDEX `idx_interaction_entity_identifiers_entity`")
+
+    assert add_fk_index < drop_unique
+    assert restore_unique < drop_fk_index
