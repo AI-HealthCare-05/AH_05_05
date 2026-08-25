@@ -144,6 +144,11 @@ class SupplementCodeParser:
                     source_end = heading_end + parent_match.start()
                     break
             body = self._normalize_extraction_artifacts(_PARENT_MARKER.sub("", raw_body).strip())
+            if field.section_type == KnowledgeSectionType.STANDARD:
+                body = self._normalize_standard_items(
+                    body,
+                    ingredient_name,
+                )
             if body:
                 raw_sections.append((field, body, start, source_end))
 
@@ -162,7 +167,11 @@ class SupplementCodeParser:
             content_parts = [
                 f"성분: {ingredient_name}",
                 f"분류: {field.hierarchy}",
-                f"{field.title}: {normalized_body}",
+                (
+                    f"{field.title}:\n{normalized_body}"
+                    if "\n" in normalized_body
+                    else f"{field.title}: {normalized_body}"
+                ),
             ]
             if resolved_references:
                 content_parts.extend(["참조 내용:", *resolved_references])
@@ -248,6 +257,21 @@ class SupplementCodeParser:
             content,
         )
         normalized = re.sub(r"\bB\s+(\d+)\b", r"B\1", normalized)
+        normalized = re.sub(r"\(\s*\)", "", normalized)
+        normalized = re.sub(
+            r"(?<!\()(?P<english>[A-Za-z][A-Za-z]*"
+            r"(?:\s+[A-Za-z][A-Za-z]*)+)\)\(",
+            r"(\g<english>)",
+            normalized,
+        )
+        normalized = normalized.replace("・", "·")
+        normalized = re.sub(r"\s*·\s*", "·", normalized)
+        normalized = re.sub(r"[ \t]+([,;:])", r"\1", normalized)
+        normalized = re.sub(
+            r"섭취를\s*,\s*(?:\n\s*)?중단",
+            "섭취를 중단",
+            normalized,
+        )
         normalized = re.sub(
             r"(?m)^\s*([가-하])\s*\(\s*\)\s*",
             r"(\1) ",
@@ -259,6 +283,75 @@ class SupplementCodeParser:
             normalized,
         )
         return "\n".join(line.rstrip() for line in normalized.splitlines() if line.strip()).strip()
+
+    @classmethod
+    def _normalize_standard_items(
+        cls,
+        content: str,
+        ingredient_name: str,
+    ) -> str:
+        item_pattern = re.compile(r"\(\s*(?P<number>\d+)\s*\)")
+        items: list[tuple[str, list[str]]] = []
+        preamble: list[str] = []
+
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            match = item_pattern.search(stripped)
+            if match:
+                before = stripped[: match.start()].strip()
+                after = stripped[match.end() :].strip()
+                item_content = " ".join(part for part in (before, after) if part)
+                items.append((match.group("number"), [item_content]))
+            elif items:
+                items[-1][1].append(stripped)
+            else:
+                preamble.append(stripped)
+
+        if not items:
+            return content
+
+        rendered = list(preamble)
+        rendered.extend(
+            cls._render_standard_item(
+                number,
+                " ".join(parts),
+                ingredient_name,
+            )
+            for number, parts in items
+        )
+        return "\n".join(rendered)
+
+    @staticmethod
+    def _render_standard_item(
+        number: str,
+        content: str,
+        ingredient_name: str,
+    ) -> str:
+        normalized = " ".join(content.split()).strip(" :")
+        if normalized.startswith("성상"):
+            body = normalized.removeprefix("성상").strip(" :")
+            body = re.sub(r"이미\s*:\s*·\s*이취", "이미·이취", body)
+            return f"({number}) 성상: {body}"
+
+        if "표시량의" in normalized:
+            body = normalized[normalized.index("표시량의") :]
+            range_match = re.search(
+                r"\d[\d,.]*\s*~\s*\d[\d,.]*\s*%",
+                body,
+            )
+            if range_match:
+                body = f"표시량의 {range_match.group()}"
+            else:
+                body = re.sub(r"표시량의\s*:\s*", "표시량의 ", body)
+            return f"({number}) {ingredient_name}: {body}"
+
+        if normalized.startswith("대장균군"):
+            body = normalized.removeprefix("대장균군").strip(" :")
+            return f"({number}) 대장균군: {body}"
+
+        return f"({number}) {normalized}"
 
     @staticmethod
     def _ingredient_name(page: KnowledgePage) -> str:

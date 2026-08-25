@@ -107,6 +107,87 @@ def test_split_supplement_code_separates_extracted_hierarchy() -> None:
     assert "섭취 시 주의사항: :" not in chunks[4].content
 
 
+def test_split_supplement_code_restores_standard_numbered_items() -> None:
+    page = build_page(
+        "비타민 B6\n"
+        "규격2)\n"
+        "성상 고유의 색택과 향미를 가지며 이미(1) : ・ 이취가 없어야 함\n"
+        "비타민 (2) B 6 표시량의 : 80 ~ 150%\n"
+        "대장균군 음성(3) :\n"
+        "제품의 요건3)\n"
+        "기능성 내용(1)\n"
+        "가 단백질 및 아미노산 이용에 필요\n"
+        "일일섭취량 (2) : 0.45 ~ 67 mg\n"
+        "시험법4)\n"
+        "성상 제4 시험법"
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    standard = next(chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.STANDARD)
+    assert "규격:\n(1) 성상: 고유의 색택과 향미를 가지며 이미·이취가 없어야 함" in standard.content
+    assert "(2) 비타민 B6: 표시량의 80 ~ 150%" in standard.content
+    assert "(3) 대장균군: 음성" in standard.content
+
+
+def test_split_supplement_code_restores_displaced_ingredient_in_standard() -> None:
+    page = build_page(
+        "비타민 A\n"
+        "규격2)\n"
+        "성상 고유의 색택과 향미를 가지며 이미(1) : ・ 이취가 없어야 함\n"
+        "비타민 표시량의 (2) A : 80 ~ 150%\n"
+        "대장균군 음성(3) :\n"
+        "제품의 요건3)\n"
+        "기능성 내용(1)\n"
+        "가 어두운 곳에서 시각 적응을 위해 필요\n"
+        "일일섭취량 (2) : 210 ~ 1,000 μg RAE\n"
+        "시험법4)\n"
+        "성상 제4 시험법",
+        title="비타민 A",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    standard = next(chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.STANDARD)
+    assert "(2) 비타민 A: 표시량의 80 ~ 150%" in standard.content
+    assert "표시량의 A:" not in standard.content
+
+
+def test_split_supplement_code_repairs_safe_parenthesis_and_punctuation() -> None:
+    page = build_page(
+        "비타민 B6\n"
+        "제조기준1)\n"
+        "원료(1)\n"
+        "가 피리독신염산염( ) Pyridoxine Hydrochloride)(\n"
+        "나 식품원료를 사용하여 제조 ・\n"
+        "가공한 것\n"
+        "규격2)\n"
+        "성상 고유의 색택과 향미를 가짐(1) :\n"
+        "비타민 B6 표시량의 80 ~ 150%(2) :\n"
+        "대장균군 음성(3) :\n"
+        "제품의 요건3)\n"
+        "기능성 내용(1)\n"
+        "가 단백질 및 아미노산 이용에 필요( )\n"
+        "일일섭취량 (2) : 0.45 ~ 67 mg\n"
+        "섭취 시 주의사항 (3)\n"
+        "손발 저림 발생 시 섭취를 ,\n"
+        "중단하고 전문가와 상담할 것\n"
+        "시험법4)\n"
+        "성상 제4 시험법"
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    ingredient = next(chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.INGREDIENT)
+    function = next(chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.FUNCTION)
+    caution = next(chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.CAUTION)
+    assert "피리독신염산염 (Pyridoxine Hydrochloride)" in ingredient.content
+    assert "제조·가공한 것" in ingredient.content
+    assert "( )" not in function.content
+    assert "섭취를 중단하고" in caution.content
+    assert "섭취를 ," not in caution.content
+
+
 def test_split_supplement_code_repairs_displaced_microgram_symbol() -> None:
     page = build_page(
         "비타민 A\n"

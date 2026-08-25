@@ -21,9 +21,19 @@ class FakeKnowledgePdfLoader:
             KnowledgePage(
                 content=(
                     "비타민 B6\n"
+                    "제조기준1)\n"
+                    "원료(1)\n"
+                    "가 피리독신염산염\n"
+                    "규격2)\n"
+                    "성상 고유의 색택과 향미를 가짐(1) :\n"
+                    "비타민 B6 표시량의 80~150%(2) :\n"
+                    "대장균군 음성(3) :\n"
+                    "제품의 요건3)\n"
                     "기능성 내용 단백질 및 아미노산 이용에 필요\n"
                     "일일섭취량 0.45~67 mg\n"
-                    "섭취 시 주의사항 손발 저림이 생기면 전문가와 상담할 것"
+                    "섭취 시 주의사항 손발 저림이 생기면 전문가와 상담할 것\n"
+                    "시험법4)\n"
+                    "성상 제4 시험법"
                 ),
                 metadata=metadata,
                 page_number=1,
@@ -146,6 +156,54 @@ class FakeContaminatedSupplementSectionLoader:
         ]
 
 
+class FakeMalformedSupplementTextLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        return [
+            KnowledgePage(
+                content=(
+                    "비타민 A\n"
+                    "제조기준1)\n"
+                    "원료(1)\n"
+                    "가 비타민 를 보충할 수 있도록 제조 A\n"
+                    "규격2)\n"
+                    "성상 고유의 색택과 향미를 가짐(1) :\n"
+                    "비타민 A 표시량의 80~150%(2) :\n"
+                    "대장균군 음성(3) :\n"
+                    "제품의 요건3)\n"
+                    "기능성 내용(1)\n"
+                    "가 어두운 곳에서 시각 적응을 위해 필요\n"
+                    "일일섭취량 (2) : 210 ~ 1,000 μg RAE\n"
+                    "시험법4)\n"
+                    "성상 제4 시험법"
+                ),
+                metadata=metadata,
+                page_number=1,
+            )
+        ]
+
+
+class FakeMissingRequiredSupplementSectionLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        return [
+            KnowledgePage(
+                content=(
+                    "비타민 B6\n"
+                    "제조기준1)\n"
+                    "원료(1)\n"
+                    "가 피리독신염산염\n"
+                    "제품의 요건3)\n"
+                    "기능성 내용(1)\n"
+                    "가 단백질 및 아미노산 이용에 필요\n"
+                    "일일섭취량 (2) : 0.45 ~ 67 mg\n"
+                    "시험법4)\n"
+                    "성상 제4 시험법"
+                ),
+                metadata=metadata,
+                page_number=1,
+            )
+        ]
+
+
 def write_json(path: Path, value: object) -> None:
     path.write_text(
         json.dumps(value, ensure_ascii=False),
@@ -238,7 +296,7 @@ sources:
     )
 
     assert result.processed_document_count == 1
-    assert result.chunk_count == 3
+    assert result.chunk_count == 5
     assert {item.reason for item in result.skipped_documents} == {
         "OCR_REQUIRED",
         "SOURCE_NOT_INDEX_ELIGIBLE",
@@ -565,7 +623,7 @@ sources:
     assert report.automatic_status.value == "PASS"
     assert report.manual_review_status.value == "PENDING"
     assert report.page_count == 1
-    assert report.chunk_count == 3
+    assert report.chunk_count == 5
     assert report.semantic_section_ratio == 1.0
 
     quality_report = output_root / result.quality_report_path
@@ -575,6 +633,14 @@ sources:
     review_content = review_sample.read_text(encoding="utf-8")
     assert "유형별 대표 문서" in review_content
     assert "원본 읽기 순서" in review_content
+    for section_type in (
+        "INGREDIENT",
+        "STANDARD",
+        "FUNCTION",
+        "DAILY_INTAKE",
+        "CAUTION",
+    ):
+        assert f"· {section_type} ·" in review_content
 
 
 def test_preprocess_marks_approved_quality_pilot_ready_for_bulk(
@@ -922,6 +988,14 @@ sources:
         (
             FakeContaminatedSupplementSectionLoader(),
             "SUPPLEMENT_SECTION_CONTAMINATION",
+        ),
+        (
+            FakeMalformedSupplementTextLoader(),
+            "MALFORMED_SUPPLEMENT_TEXT",
+        ),
+        (
+            FakeMissingRequiredSupplementSectionLoader(),
+            "MISSING_REQUIRED_SUPPLEMENT_SECTION",
         ),
     ],
 )

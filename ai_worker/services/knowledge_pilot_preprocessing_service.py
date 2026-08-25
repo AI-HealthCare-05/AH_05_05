@@ -58,6 +58,8 @@ class KnowledgeAutomaticQualityReasonCode(StrEnum):
     SUSPICIOUS_SUPPLEMENT_UNIT = "SUSPICIOUS_SUPPLEMENT_UNIT"
     UNRESOLVED_HIERARCHY_REFERENCE = "UNRESOLVED_HIERARCHY_REFERENCE"
     SUPPLEMENT_SECTION_CONTAMINATION = "SUPPLEMENT_SECTION_CONTAMINATION"
+    MALFORMED_SUPPLEMENT_TEXT = "MALFORMED_SUPPLEMENT_TEXT"
+    MISSING_REQUIRED_SUPPLEMENT_SECTION = "MISSING_REQUIRED_SUPPLEMENT_SECTION"
 
 
 _BLOCKING_QUALITY_REASONS = {
@@ -66,7 +68,24 @@ _BLOCKING_QUALITY_REASONS = {
     KnowledgeAutomaticQualityReasonCode.SUSPICIOUS_SUPPLEMENT_UNIT,
     KnowledgeAutomaticQualityReasonCode.UNRESOLVED_HIERARCHY_REFERENCE,
     KnowledgeAutomaticQualityReasonCode.SUPPLEMENT_SECTION_CONTAMINATION,
+    KnowledgeAutomaticQualityReasonCode.MALFORMED_SUPPLEMENT_TEXT,
+    KnowledgeAutomaticQualityReasonCode.MISSING_REQUIRED_SUPPLEMENT_SECTION,
 }
+
+_REQUIRED_SUPPLEMENT_SECTIONS = frozenset(
+    {
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.STANDARD,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+    }
+)
+_MALFORMED_SUPPLEMENT_TEXT_PATTERNS = (
+    re.compile(r"\)\("),
+    re.compile(r"\(\s*\)"),
+    re.compile(r"[ \t]+[,;:]"),
+    re.compile(r"비타민\s+(?:를|을|와|과)\b[^\n]{0,80}\b[A-Z]\d*\b"),
+)
 
 _RESOLVED_SUPPLEMENT_REFERENCE = re.compile(
     r"-\s*(?P<top>\d+)\)\s*>\s*"
@@ -390,7 +409,10 @@ class KnowledgePilotPreprocessingService:
         report: KnowledgeDocumentPreprocessingReport,
         chunks: list[KnowledgeChunk],
     ) -> None:
-        sample_indices = KnowledgePilotPreprocessingService._sample_indices(chunks)
+        sample_indices = KnowledgePilotPreprocessingService._sample_indices(
+            chunks,
+            document_type=report.document_type,
+        )
         lines = [
             f"# 전처리 표본 검수: {report.document_id}",
             "",
@@ -440,6 +462,12 @@ class KnowledgePilotPreprocessingService:
         chunks: list[KnowledgeChunk],
     ) -> list[KnowledgeAutomaticQualityReasonCode]:
         reasons: list[KnowledgeAutomaticQualityReasonCode] = []
+        section_types = {chunk.metadata.section_type for chunk in chunks}
+        if section_types.intersection(_REQUIRED_SUPPLEMENT_SECTIONS) and not _REQUIRED_SUPPLEMENT_SECTIONS.issubset(
+            section_types
+        ):
+            reasons.append(KnowledgeAutomaticQualityReasonCode.MISSING_REQUIRED_SUPPLEMENT_SECTION)
+
         for chunk in chunks:
             content = chunk.content
             if not content.startswith("성분: ") or "\n분류: " not in content:
@@ -452,6 +480,9 @@ class KnowledgePilotPreprocessingService:
 
             if KnowledgePilotPreprocessingService._has_unresolved_reference(content):
                 reasons.append(KnowledgeAutomaticQualityReasonCode.UNRESOLVED_HIERARCHY_REFERENCE)
+
+            if any(pattern.search(content) for pattern in _MALFORMED_SUPPLEMENT_TEXT_PATTERNS):
+                reasons.append(KnowledgeAutomaticQualityReasonCode.MALFORMED_SUPPLEMENT_TEXT)
 
             body = KnowledgePilotPreprocessingService._supplement_chunk_body(content)
             forbidden = _SUPPLEMENT_SECTION_FORBIDDEN_HEADINGS.get(
@@ -496,7 +527,11 @@ class KnowledgePilotPreprocessingService:
         return "\n".join(body_lines)
 
     @staticmethod
-    def _sample_indices(chunks: list[KnowledgeChunk]) -> list[int]:
+    def _sample_indices(
+        chunks: list[KnowledgeChunk],
+        *,
+        document_type: KnowledgeDocumentType,
+    ) -> list[int]:
         shortest = min(
             range(len(chunks)),
             key=lambda index: chunks[index].token_count,
@@ -512,6 +547,14 @@ class KnowledgePilotPreprocessingService:
             shortest,
             longest,
         }
+        if document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
+            first_index_by_section: dict[KnowledgeSectionType, int] = {}
+            for index, chunk in enumerate(chunks):
+                first_index_by_section.setdefault(
+                    chunk.metadata.section_type,
+                    index,
+                )
+            candidates.update(first_index_by_section.values())
         return sorted(candidates)
 
     @staticmethod
