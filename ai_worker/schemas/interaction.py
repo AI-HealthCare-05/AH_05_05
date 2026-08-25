@@ -171,7 +171,13 @@ class InteractionRuleCandidate(BaseModel):
     @field_validator("evidence_chunk_ids")
     @classmethod
     def normalize_evidence_chunk_ids(cls, values: list[str]) -> list[str]:
-        normalized = _normalize_unique_text(values, field_name="근거 청크 ID")
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            item = normalize_interaction_name(value)
+            if item and item not in seen:
+                normalized.append(item)
+                seen.add(item)
         for value in normalized:
             if not re.fullmatch(r"[0-9a-f]{64}", value):
                 raise ValueError("근거 청크 ID는 SHA-256 형식이어야 합니다.")
@@ -224,4 +230,3 @@ def _normalize_unique_text(
     if not normalized:
         raise ValueError(f"{field_name}은 하나 이상 필요합니다.")
     return normalized
-

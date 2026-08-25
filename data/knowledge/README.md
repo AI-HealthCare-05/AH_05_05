@@ -124,6 +124,35 @@ uv run --group ai python -m scripts.evaluate_knowledge_retrieval \
 
 현재 파일럿의 실제 평가 결과는 `EVALUATION_RESULTS.md`에 기록되어 있습니다.
 
+## 상호작용 RDBMS staging
+
+구조화된 식약처 DUR 병용금기 CSV를 향후 RDBMS에 넣을 검수 후보로 만들려면
+다음 명령을 실행합니다.
+
+```bash
+uv run --group ai python -m scripts.build_interaction_staging \
+  --dataset-version interaction-pilot-v1
+```
+
+이 명령은 MySQL이나 ORM을 사용하지 않고 Git 제외 대상인 다음 파일만 만듭니다.
+
+- `processed/records/interaction_rule_candidates.jsonl`: 정규화된 약-약 조합 후보
+- `processed/reports/interaction-staging-quality.json`: 입력·후보·중복 병합·제외 행 검증 결과
+
+조합 키는 두 성분의 입력 순서와 관계없이 동일하게 생성합니다. 같은 조합의 여러
+금기 내용과 원본 DUR 일련번호는 삭제하지 않고 한 후보에 병합합니다. 닫히지 않은
+따옴표, 컬럼 수 불일치, 필수값 누락 행은 추측해서 복원하지 않으며 원본 줄 번호와
+DUR 일련번호를 품질 보고서에 남깁니다.
+
+자동 생성 후보의 `review_status`는 항상 `PENDING`이며 보고서의
+`ready_for_rdb_import`도 `false`입니다. 따라서 이 산출물은 런타임 챗봇이 사용하거나
+RDBMS에 자동 적재할 수 없습니다. ORM·마이그레이션과 관리자 승인 절차가 확정된 뒤
+사람이 검수한 후보만 별도 importer를 통해 적재해야 합니다.
+
+상호작용 상세 원문은 Qdrant에 보존하고, RDBMS 규칙과 Qdrant 청크는 동일한
+`pair_key` 및 검수된 `evidence_chunk_ids`로 연결합니다. 근거 청크가 아직 연결되지
+않은 후보의 빈 목록은 `상호작용 없음`이 아니라 `연결된 상세 근거 미검수`를 뜻합니다.
+
 ## Chat Core 연결
 
 검색 평가를 통과한 `knowledge-pilot-v1`은 Chat Core의 기본 Knowledge 검색 대상으로 연결되어 있습니다.
