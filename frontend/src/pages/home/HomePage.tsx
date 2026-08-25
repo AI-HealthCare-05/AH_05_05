@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
-import { getMedicationOverview, type MedicationOverview } from '@/entities/medication';
+import {
+  getMedicationOverview,
+  type MealSlot,
+  type MedicationOverview,
+  type MedicationOverviewItem,
+} from '@/entities/medication';
 import {
   BottomTabbar,
   Button,
@@ -20,6 +25,14 @@ interface HomePageProps {
   medicationState?: MedicationHomeState;
   medicationOverviewLoader?: () => Promise<MedicationOverview>;
 }
+
+const SLOT_ORDER: MealSlot[] = ['morning', 'lunch', 'evening', 'bedtime'];
+const SLOT_LABEL: Record<MealSlot, string> = {
+  morning: '아침',
+  lunch: '점심',
+  evening: '저녁',
+  bedtime: '취침 전',
+};
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -42,7 +55,10 @@ export function HomePage({
   const [medicationLoadError, setMedicationLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated || medicationState !== undefined) return;
+    if (
+      !isAuthenticated ||
+      (medicationState !== undefined && medicationState !== 'active')
+    ) return;
 
     let cancelled = false;
     setMedicationOverview(null);
@@ -67,11 +83,7 @@ export function HomePage({
     medicationState ??
     (medicationOverview ? medicationHomeStateFromOverview(medicationOverview) : null);
   function openFeature(key: Exclude<TabKey, 'home' | 'my'>) {
-    if (!isAuthenticated) {
-      setLoginPromptOpen(true);
-      return;
-    }
-    navigate(TAB_ROUTES[key]);
+    openFeature(key);
   }
 
   function handleTabChange(key: TabKey) {
@@ -80,7 +92,11 @@ export function HomePage({
       navigate('/my');
       return;
     }
-    openFeature(key);
+    if (!isAuthenticated) {
+      setLoginPromptOpen(true);
+      return;
+    }
+    navigate(TAB_ROUTES[key]);
   }
 
   return (
@@ -104,9 +120,11 @@ export function HomePage({
         {isAuthenticated ? (
           medicationLoadError ? (
             <Card title="복약 정보를 불러오지 못했어요">{medicationLoadError}</Card>
-          ) : resolvedMedicationState ? (
+          ) : resolvedMedicationState &&
+            (resolvedMedicationState !== 'active' || medicationOverview) ? (
             <LoggedInHero
               state={resolvedMedicationState}
+              overview={medicationOverview}
               onUpload={() => navigate('/document-upload')}
             />
           ) : (
@@ -141,7 +159,15 @@ export function HomePage({
   );
 }
 
-function LoggedInHero({ state, onUpload }: { state: MedicationHomeState; onUpload: () => void }) {
+function LoggedInHero({
+  state,
+  overview,
+  onUpload,
+}: {
+  state: MedicationHomeState;
+  overview: MedicationOverview | null;
+  onUpload: () => void;
+}) {
   if (state === 'empty') {
     return (
       <Card className="gap-4 bg-primary-bg p-5">
@@ -168,81 +194,173 @@ function LoggedInHero({ state, onUpload }: { state: MedicationHomeState; onUploa
     );
   }
 
+  if (!overview) return null;
+
+  const timeline = medicationTimeline(overview, new Date());
+  const dayNumber = Math.max(1, daysBetween(overview.start.date, localISODate(new Date())) + 1);
+
   return (
     <section className="flex flex-col gap-3" aria-labelledby="today-medication-title">
       <div className="flex items-center justify-between">
         <h2 id="today-medication-title" className="text-xl font-bold text-foreground">
           오늘의 복약
         </h2>
-        <span className="text-base text-muted-foreground tnum">4일째 · 3일 남음</span>
+        <span className="text-base text-muted-foreground tnum">
+          {dayNumber}일째 · {overview.daysRemaining}일 남음
+        </span>
       </div>
       <div
         role="group"
         aria-label="하루 복약 시간표"
         className="overflow-hidden rounded-card bg-card shadow-card"
       >
-        <div
-          role="group"
-          aria-label="지난 복약"
-          className="flex min-h-12 items-center gap-3 px-4 py-2 text-disabled-foreground"
-        >
-          <span className="flex size-5.5 shrink-0 items-center justify-center rounded-pill bg-muted-bg">
-            <Check aria-hidden className="size-4" />
-          </span>
-          <span className="text-base tnum">기상 후 07:00</span>
-          <span className="ml-auto text-sm">먹었어요</span>
-        </div>
-
-        <div role="group" aria-label="현재 복약" className="flex flex-col bg-primary-bg px-4 py-4">
-          <div className="flex items-center gap-3">
-            <span className="size-5.5 shrink-0 rounded-pill border-2 border-primary" />
-            <p className="text-metric font-bold text-foreground tnum">아침 08:00</p>
-            <span className="ml-auto rounded-pill bg-primary px-3 py-1 text-sm font-bold text-card">
-              지금
-            </span>
-          </div>
-          <ul aria-label="지금 먹을 약" className="ml-8.5 mt-2 flex flex-col gap-1">
-            <li className="text-base text-foreground">
-              셀레콕시브 <span className="text-muted-foreground">200mg</span>
-            </li>
-            <li className="text-base text-foreground">
-              리바록사반 <span className="text-muted-foreground">10mg</span>
-            </li>
-            <li className="text-base text-foreground">
-              파모티딘 <span className="text-muted-foreground">20mg</span>
-            </li>
-          </ul>
-          <p className="ml-8.5 mt-2 text-sm text-muted-foreground">식사 후에 드세요</p>
-          <Button fullWidth={false} className="ml-8.5 mt-3 w-auto gap-2 text-base tnum">
-            <Check aria-hidden className="size-5" />
-            3개 먹었어요
-          </Button>
-        </div>
-
-        <div
-          role="group"
-          aria-label="다음 복약 점심"
-          className="flex min-h-12 items-center gap-3 px-4 py-2"
-        >
-          <span className="size-5.5 shrink-0 rounded-pill border border-border" />
-          <span className="text-base text-foreground tnum">점심 13:00</span>
-          <span className="ml-auto text-base text-muted-foreground tnum">1개</span>
-        </div>
-
-        <div className="mx-4 border-t border-border">
-          <div
-            role="group"
-            aria-label="다음 복약 저녁"
-            className="flex min-h-12 items-center gap-3 py-2"
-          >
-            <span className="size-5.5 shrink-0 rounded-pill border border-border" />
-            <span className="text-base text-foreground tnum">저녁 19:00</span>
-            <span className="ml-auto text-base text-muted-foreground tnum">3개</span>
-          </div>
-        </div>
+        {timeline.map((item, index) => (
+          <Fragment key={item.slot}>
+            {index > 0 && <div className="mx-4 border-t border-border" />}
+            <TimelineItem item={item} />
+          </Fragment>
+        ))}
       </div>
     </section>
   );
+}
+
+type TimelineStatus = 'current' | 'next' | 'missed';
+
+interface TimelineItemData {
+  slot: MealSlot;
+  label: string;
+  time: string;
+  medications: MedicationOverviewItem[];
+  status: TimelineStatus;
+  expanded: boolean;
+}
+
+function TimelineItem({ item }: { item: TimelineItemData }) {
+  const ariaLabel =
+    item.status === 'current'
+      ? '현재 복약'
+      : item.status === 'missed'
+        ? `놓친 복약 ${item.label}`
+        : `다음 복약 ${item.label}`;
+
+  if (!item.expanded) {
+    return (
+      <div
+        role="group"
+        aria-label={ariaLabel}
+        className={`flex min-h-12 items-center gap-3 px-4 py-2 ${
+          item.status === 'missed' ? 'text-muted-foreground' : 'text-foreground'
+        }`}
+      >
+        <span className="size-5.5 shrink-0 rounded-pill border border-border" />
+        <span className="text-base tnum">
+          {item.label} {item.time}
+        </span>
+        <span className="ml-auto text-base text-muted-foreground tnum">
+          {item.medications.length}개
+        </span>
+      </div>
+    );
+  }
+
+  const current = item.status === 'current';
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className={`flex flex-col px-4 py-4 ${current ? 'bg-primary-bg' : 'bg-card'}`}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={`size-5.5 shrink-0 rounded-pill ${
+            current ? 'border-2 border-primary' : 'border border-border'
+          }`}
+        />
+        <p className="text-metric font-bold text-foreground tnum">
+          {item.label} {item.time}
+        </p>
+        <span
+          className={`ml-auto rounded-pill px-3 py-1 text-sm font-bold ${
+            current
+              ? 'bg-primary text-card'
+              : 'bg-muted-bg text-muted-foreground'
+          }`}
+        >
+          {current ? '지금' : '다음'}
+        </span>
+      </div>
+      <ul
+        aria-label={current ? '지금 먹을 약' : '다음에 먹을 약'}
+        className="ml-8.5 mt-2 flex flex-col gap-1"
+      >
+        {item.medications.map((medication) => (
+          <li key={medication.medicationId} className="text-base text-foreground">
+            {medication.name}{' '}
+            <span className="text-muted-foreground">{medication.dose}</span>
+          </li>
+        ))}
+      </ul>
+      <Button
+        variant={current ? 'primary' : 'secondary'}
+        fullWidth={false}
+        className="ml-8.5 mt-3 w-auto gap-2 text-base tnum"
+      >
+        <Check aria-hidden className="size-5" />
+        {item.medications.length}개 먹었어요
+      </Button>
+    </div>
+  );
+}
+
+function medicationTimeline(overview: MedicationOverview, now: Date): TimelineItemData[] {
+  const todayOffset = daysBetween(overview.start.date, localISODate(now));
+  const medications = overview.medications.filter(
+    (medication) =>
+      !medication.asNeeded && todayOffset >= 0 && todayOffset < medication.days,
+  );
+  const items = SLOT_ORDER.map((slot) => ({
+    slot,
+    label: SLOT_LABEL[slot],
+    time: overview.mealTimes[slot],
+    medications: medications.filter((medication) => medication.slots.includes(slot)),
+  }))
+    .filter((item) => item.medications.length > 0)
+    .sort((left, right) => timeInMinutes(left.time) - timeInMinutes(right.time));
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  let currentIndex = -1;
+  items.forEach((item, index) => {
+    if (timeInMinutes(item.time) <= nowMinutes) currentIndex = index;
+  });
+  const expandedIndex = currentIndex >= 0 ? currentIndex : 0;
+
+  return items.map((item, index) => ({
+    ...item,
+    status: index === currentIndex ? 'current' : index < currentIndex ? 'missed' : 'next',
+    expanded: index === expandedIndex,
+  }));
+}
+
+function timeInMinutes(value: string): number {
+  const [hours = '0', minutes = '0'] = value.split(':');
+  return Number(hours) * 60 + Number(minutes);
+}
+
+function daysBetween(from: string, to: string): number {
+  const fromDate = localDate(from);
+  const toDate = localDate(to);
+  return Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000);
+}
+
+function localDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
+function localISODate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 function medicationHomeStateFromOverview(overview: MedicationOverview): MedicationHomeState {

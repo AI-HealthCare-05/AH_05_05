@@ -32,19 +32,41 @@ export function resetMockMedicationForNewAccount(): void {
 }
 
 export function mockMedicationOverview(): MedicationOverview {
+  const startDate = '2026-08-22';
+  const medications = hasRegisteredMedication ? [
+    { medicationId: 301, name: '셀레콕시브', dose: '200mg', days: 7, daysRemaining: 3, slots: ['morning', 'evening'] as const, asNeeded: false },
+    { medicationId: 302, name: '리바록사반', dose: '10mg', days: 10, daysRemaining: 10, slots: ['evening'] as const, asNeeded: false, untilComplete: true },
+    { medicationId: 304, name: '파모티딘', dose: '20mg', days: 7, daysRemaining: 3, slots: ['morning', 'evening'] as const, asNeeded: false },
+    { medicationId: 303, name: '아세트아미노펜', dose: '650mg', days: 7, daysRemaining: null, slots: [] as const, asNeeded: true },
+  ] : [];
   return {
     recordId: 12,
     documentImageUrl: '/mock/medication-envelope.svg',
-    start: { date: '2026-08-22', slot: 'morning' },
+    start: { date: startDate, slot: 'morning' },
+    endDate: medicationEndDate(startDate, medications),
     daysRemaining: 3,
     mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
-    medications: hasRegisteredMedication ? [
-      { medicationId: 301, name: '셀레콕시브', dose: '200mg', daysRemaining: 3, slots: ['morning', 'evening'], asNeeded: false },
-      { medicationId: 302, name: '리바록사반', dose: '10mg', daysRemaining: 10, slots: ['evening'], asNeeded: false, untilComplete: true },
-      { medicationId: 304, name: '파모티딘', dose: '20mg', daysRemaining: 3, slots: ['morning', 'evening'], asNeeded: false },
-      { medicationId: 303, name: '아세트아미노펜', dose: '650mg', daysRemaining: null, slots: [], asNeeded: true },
-    ] : [],
+    medications: medications.map((medication) => ({
+      ...medication,
+      slots: [...medication.slots],
+    })),
   };
+}
+
+function medicationEndDate(
+  startDate: string,
+  medications: Array<{ days: number }>,
+): string {
+  const longestDays = Math.max(1, ...medications.map((medication) => medication.days));
+  const date = new Date(`${startDate}T00:00:00`);
+  date.setDate(date.getDate() + longestDays - 1);
+  return localISODate(date);
+}
+
+function localISODate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 export function mockMedicationSchedule(): MedicationSchedule {

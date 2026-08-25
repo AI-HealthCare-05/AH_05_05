@@ -28,9 +28,20 @@ const ENDED_MEDICATION_OVERVIEW: MedicationOverview = {
   ...ACTIVE_MEDICATION_OVERVIEW,
   daysRemaining: 0,
 };
+const ONE_MEDICATION_OVERVIEW: MedicationOverview = {
+  ...ACTIVE_MEDICATION_OVERVIEW,
+  endDate: '2026-08-28',
+  medications: [
+    {
+      ...ACTIVE_MEDICATION_OVERVIEW.medications[0],
+      slots: ['morning'],
+    },
+  ],
+};
 
 const loadEmptyMedicationOverview = async () => EMPTY_MEDICATION_OVERVIEW;
 const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
+const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
 const failMedicationOverview = async (): Promise<MedicationOverview> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
@@ -83,6 +94,15 @@ export function AppRouter() {
         <Route
           path="/dev/home-active"
           element={<HomePage authenticatedOverride medicationState="active" />}
+        />
+        <Route
+          path="/dev/home-one-medication"
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationOverviewLoader={loadOneMedicationOverview}
+            />
+          }
         />
         <Route
           path="/dev/home-ended"
