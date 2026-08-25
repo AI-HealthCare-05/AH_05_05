@@ -10,19 +10,19 @@ import {
 } from '@/shared/ui';
 
 /**
- * `O08 낮은 신뢰도 항목 확인` (Figma node 205:25)
+ * `O08 확인이 필요한 항목 확인` (Figma node 205:25)
  *
  * REQ-DOC-003: "저장하기는 바로 다음 화면으로 넘어가지 않고 '낮은 신뢰도 항목을 모두
  * 확인하셨나요?' 확인 모달을 1회 노출(미확인 항목 수 표시), 확인 시에만 이동."
  *
- * Figma는 "진단명과 복약 정보를 다시 확인해주세요."처럼 항목 이름이 하드코딩된
- * 2개짜리 예시로 그려져 있습니다. 실제로는 어떤 항목이 낮은 신뢰도인지가 매번 달라지므로
- * 이름 목록을 넘겨받아 문장을 조립합니다(조사도 받침에 맞춰 바꿉니다).
+ * 시안은 항목 이름이 하드코딩된 2개짜리 예시로 그려져 있습니다. 실제로는 어떤 항목이
+ * 낮은 신뢰도인지가 매번 달라지므로 이름 목록을 넘겨받아 문장을 조립합니다
+ * (조사도 받침에 맞춰 바꿉니다).
  */
 
 export interface LowConfidenceConfirmDialogProps {
   open: boolean;
-  /** 낮은 신뢰도로 판정된 항목 이름들. 예: ['진단명', '복약 정보'] */
+  /** high가 아니어서 사용자가 다시 볼 항목 이름들. */
   itemNames: string[];
   onConfirm: () => void;
   onCancel: () => void;
@@ -43,9 +43,9 @@ function hasFinalConsonant(word: string): boolean {
 
 /**
  * 항목 이름들을 자연스러운 한국어 문장으로 잇습니다.
- *   1개  — "진단명을"
- *   2개  — "진단명과 복약 정보를"   (Figma 문구와 동일)
- *   3개+ — "진단명, 수술명, 복용일수를"
+ *   1개  — "조제일을"
+ *   2개  — "조제일과 리바록사반을"
+ *   3개+ — "조제일, 리바록사반, 복용일수를"
  */
 function joinItemNames(names: string[]): string {
   if (names.length === 0) return '';
@@ -72,10 +72,10 @@ export function LowConfidenceConfirmDialog({
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
       <DialogContent showCloseButton={false} className="bg-warning-bg">
         <DialogHeader>
-          <DialogTitle>낮은 신뢰도 항목을 모두 확인하셨나요?</DialogTitle>
+          <DialogTitle>확인이 필요한 항목을 모두 보셨나요?</DialogTitle>
         </DialogHeader>
 
-        <Card tone="warning" title={`${itemNames.length}개 항목 미확인`}>
+        <Card tone="warning" title={`${itemNames.length}개 항목 확인 필요`}>
           <DialogDescription>
             {joinItemNames(itemNames)} 다시 확인해주세요.
           </DialogDescription>

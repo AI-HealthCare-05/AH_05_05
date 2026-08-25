@@ -63,3 +63,23 @@ export interface SaveMedicationSchedulePayload {
 export interface SaveMedicationScheduleResponse {
   saved: boolean;
 }
+
+export interface MedicationOverviewItem {
+  medicationId: number;
+  name: string;
+  dose: string;
+  daysRemaining: number | null;
+  slots: MealSlot[];
+  asNeeded: boolean;
+  untilComplete?: boolean;
+}
+
+export interface MedicationOverview {
+  recordId: number;
+  /** 이 복약 기록을 만든 약봉투 원본 한 장의 영속 URL. */
+  documentImageUrl: string;
+  start: MedicationStartPoint;
+  daysRemaining: number;
+  mealTimes: MealTimes;
+  medications: MedicationOverviewItem[];
+}

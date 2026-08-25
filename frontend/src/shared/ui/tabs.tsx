@@ -36,7 +36,7 @@ function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsPrimitiv
       data-slot="tabs-trigger"
       className={cn(
         'inline-flex flex-1 items-center justify-center rounded-input py-2 text-sm font-bold text-muted-foreground transition-colors',
-        'data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm',
+        'data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-card',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         'disabled:pointer-events-none disabled:opacity-50',
         className,

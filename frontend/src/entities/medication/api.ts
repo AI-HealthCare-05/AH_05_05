@@ -4,12 +4,30 @@
  */
 import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import { mockMedicationSchedule, mockSaveMedicationSchedule } from './api.mock';
+import {
+  mockMedicationOverview,
+  mockMedicationSchedule,
+  mockSaveMedicationSchedule,
+  resetMockMedicationForNewAccount,
+} from './api.mock';
 import type {
+  MedicationOverview,
   MedicationSchedule,
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,
 } from './types';
+
+export async function getMedicationOverview(): Promise<MedicationOverview> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockMedicationOverview();
+  }
+  return http.get<MedicationOverview>('/medications');
+}
+
+export function prepareMedicationStateForNewAccount(): void {
+  if (USE_MOCK) resetMockMedicationForNewAccount();
+}
 
 /** REQ-CARE-003 — GET /medications/schedule?recordId=... · 명세 5-3 */
 export async function getMedicationSchedule(recordId: number): Promise<MedicationSchedule> {
@@ -26,7 +44,7 @@ export async function saveMedicationSchedule(
 ): Promise<SaveMedicationScheduleResponse> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockSaveMedicationSchedule();
+    return mockSaveMedicationSchedule(payload);
   }
   return http.put<SaveMedicationScheduleResponse>('/medications/schedule', payload);
 }

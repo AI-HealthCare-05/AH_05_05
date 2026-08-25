@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1000" viewBox="0 0 750 1000" role="img" aria-labelledby="title description">
+  <title id="title">등록한 약봉투 원본 예시</title>
+  <desc id="description">조제일과 네 가지 약 정보가 인쇄된 약봉투</desc>
+  <rect width="750" height="1000" fill="#e8e3da"/>
+  <rect x="58" y="42" width="634" height="916" rx="12" fill="#fffdf8" stroke="#c7bfb2" stroke-width="3"/>
+  <rect x="58" y="42" width="634" height="118" rx="12" fill="#e1f3ec"/>
+  <path d="M58 148h634" stroke="#88bca9" stroke-width="3"/>
+  <circle cx="122" cy="100" r="29" fill="#2b9b77"/>
+  <path d="M107 100h30M122 85v30" stroke="#fffdf8" stroke-width="8" stroke-linecap="round"/>
+  <text x="174" y="92" font-family="sans-serif" font-size="29" font-weight="700" fill="#20352d">포케 약국</text>
+  <text x="174" y="126" font-family="sans-serif" font-size="19" fill="#50655d">복약 안내서</text>
+  <text x="92" y="207" font-family="sans-serif" font-size="20" font-weight="700" fill="#2d2b29">환자명</text>
+  <text x="196" y="207" font-family="sans-serif" font-size="20" fill="#514e49">김철수</text>
+  <text x="422" y="207" font-family="sans-serif" font-size="20" font-weight="700" fill="#2d2b29">조제일</text>
+  <text x="505" y="207" font-family="sans-serif" font-size="20" fill="#514e49">2026.08.22</text>
+  <path d="M92 240h566" stroke="#d8d1c6" stroke-width="2"/>
+  <text x="92" y="286" font-family="sans-serif" font-size="19" font-weight="700" fill="#2d2b29">약 이름</text>
+  <text x="415" y="286" font-family="sans-serif" font-size="19" font-weight="700" fill="#2d2b29">복용 방법</text>
+  <g font-family="sans-serif" font-size="20" fill="#47433e">
+    <text x="92" y="345">셀레콕시브 200mg</text><text x="415" y="345">아침·저녁 식후</text>
+    <text x="92" y="415">리바록사반 10mg</text><text x="415" y="415">저녁 식후</text>
+    <text x="92" y="485">아세트아미노펜 650mg</text><text x="415" y="485">필요 시</text>
+    <text x="92" y="555">파모티딘 20mg</text><text x="415" y="555">취침 전</text>
+  </g>
+  <g stroke="#e0dad0" stroke-width="2"><path d="M92 365h566"/><path d="M92 435h566"/><path d="M92 505h566"/><path d="M92 575h566"/></g>
+  <rect x="92" y="630" width="566" height="176" rx="8" fill="#f3f0e9"/>
+  <text x="116" y="674" font-family="sans-serif" font-size="20" font-weight="700" fill="#2d2b29">복약 시 주의사항</text>
+  <text x="116" y="719" font-family="sans-serif" font-size="18" fill="#5c5750">정해진 시간과 용량을 지켜 복용하세요.</text>
+  <text x="116" y="754" font-family="sans-serif" font-size="18" fill="#5c5750">이상 반응이 있으면 의료진과 상담하세요.</text>
+  <path d="M92 864h566" stroke="#d8d1c6" stroke-width="2"/>
+  <text x="92" y="904" font-family="sans-serif" font-size="17" fill="#746e65">서울특별시 포케로 12 · 02-1234-5678</text>
+</svg>

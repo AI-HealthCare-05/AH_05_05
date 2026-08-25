@@ -1,8 +1,8 @@
 /**
  * 챗봇 목업.
  *
- * 개인 출처(personal)에 문서명·페이지를 붙이지 않습니다. 원본 파일을 저장하지 않기로
- * 결정했으므로 개인 출처는 확정 환자 데이터(약·권고사항)를 가리킵니다.
+ * 개인 출처(personal)에 페이지를 붙이지 않습니다. 원본 파일을 저장하지 않기로
+ * 결정했으므로 개인 출처는 확정한 약봉투의 약 데이터를 가리킵니다.
  * 가짜 페이지 번호를 만들면 근거가 아니라 거짓이 됩니다.
  *
  * 근거 없는 응답 경로(`sources: []`)도 눌러볼 수 있어야 하므로, 질문에 "일반"·"보통"
@@ -37,13 +37,13 @@ export function mockSendChat(payload: SendChatPayload): SendChatResult {
     conversationId: payload.conversationId ?? CONVERSATION_ID,
     messageId: messageSeq,
     answer:
-      '보행기는 수술 후 4~6주간 사용하시는 것이 일반적입니다. 퇴원 시 받은 안내에도 '
-      + '보행기 사용이 포함되어 있어요. 계단과 쪼그려 앉기는 피해주세요.',
+      '리바록사반을 복용하는 동안 잇몸이나 코피가 잘 멎지 않거나 이유 없이 멍이 크게 '
+      + '들면 처방한 의료진에게 알려주세요. 임의로 중단하지 마세요.',
     sources: [
-      { scope: 'personal', title: '퇴원요약지 · 의료진 권고사항' },
+      { scope: 'personal', title: '약봉투 · 리바록사반 10mg' },
       {
         scope: 'official',
-        title: 'e약은요 · 셀레콕시브',
+        title: 'e약은요 · 리바록사반',
         organization: '식품의약품안전처',
         url: 'https://nedrug.mfds.go.kr',
       },

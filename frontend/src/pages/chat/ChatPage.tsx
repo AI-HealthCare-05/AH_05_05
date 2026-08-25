@@ -59,21 +59,24 @@ export function ChatPage() {
 
   function handleTabChange(key: TabKey) {
     if (key === 'chat') return;
-    if (key === 'life') {
-      navigate('/dev/life-guide');
-      return;
-    }
-    toast('이 탭 화면은 아직 구현 전입니다.');
+    const routes: Record<TabKey, string> = {
+      home: '/home',
+      medication: '/medications',
+      supplement: '/supplements',
+      chat: '/chat',
+      my: '/my',
+    };
+    navigate(routes[key]);
   }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="AI 상담" />
+      <Header title="AI 상담" onBack={() => navigate(-1)} />
 
       <main className="flex flex-1 flex-col gap-3 px-page-x py-4">
         {messages.length === 0 && !pending && (
           <p className="text-sm text-muted-foreground">
-            복약·회복에 대해 궁금한 것을 물어보세요. 답변에는 근거를 함께 보여드립니다.
+            등록한 약과 복용 중 궁금한 점을 물어보세요. 확인 가능한 근거를 함께 보여드립니다.
           </p>
         )}
 
@@ -93,7 +96,7 @@ export function ChatPage() {
                 ) : (
                   // 근거가 없는데 있는 것처럼 보이면 안 됩니다. 명시적으로 알립니다.
                   <p className="border-t border-border pt-2 text-sm text-muted-foreground">
-                    이 답변은 일반적인 안내이며 개인 진료기록에 근거하지 않았습니다.
+                    이 답변은 일반적인 안내이며 등록하신 약에 근거하지 않았습니다.
                   </p>
                 )}
               </div>

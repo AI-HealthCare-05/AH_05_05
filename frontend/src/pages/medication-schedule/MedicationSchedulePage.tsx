@@ -19,6 +19,7 @@ import {
   defaultSlotsFor,
   exceedsSlotCapacity,
   isMealTimeOrderValid,
+  needsSlotConfirmation,
 } from './slotAssignment';
 
 /**
@@ -33,6 +34,11 @@ import {
  */
 interface ScheduleLocationState {
   recordId?: number;
+  dispensedDate?: string;
+}
+
+interface MedicationSchedulePageProps {
+  scheduleOverride?: MedicationSchedule;
 }
 
 /** info = 아직 안 고른 것(안내), error = 잘못 고른 것(오류). */
@@ -102,11 +108,12 @@ function formatStartPoint(date: string, slot: MealSlot): string {
   return `${Number(month)}월 ${Number(day)}일 ${label}`;
 }
 
-export function MedicationSchedulePage() {
+export function MedicationSchedulePage({ scheduleOverride }: MedicationSchedulePageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state as ScheduleLocationState | null) ?? {};
   const recordId = state.recordId ?? 12;
+  const dispensedDate = state.dispensedDate;
 
   const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
   const [mealTimes, setMealTimes] = useState<MealTimes>(DEFAULT_MEAL_TIMES);
@@ -122,22 +129,31 @@ export function MedicationSchedulePage() {
   const [saveError, setSaveError] = useState<{ message: string; retry: () => void } | null>(null);
 
   useEffect(() => {
+    const applySchedule = (data: MedicationSchedule) => {
+      setSchedule(data);
+      setMealTimes(data.mealTimes ?? DEFAULT_MEAL_TIMES);
+      // 저장값 우선. 최초 등록이면 바로 전 화면에서 확인한 조제일을 채워 사용자가 고칩니다.
+      setStartDate(data.start?.date ?? dispensedDate ?? todayISO());
+      setStartSlot(data.start?.slot ?? null);
+
+      const next: Record<number, MealSlot[]> = {};
+      for (const med of data.medications) {
+        next[med.medicationId] =
+          med.slots.length > 0 ? med.slots : defaultSlotsFor(med.timesPerDay, med.timing);
+      }
+      setSlots(next);
+    };
+
+    if (scheduleOverride) {
+      applySchedule(scheduleOverride);
+      return;
+    }
+
     let cancelled = false;
     getMedicationSchedule(recordId)
       .then((data) => {
         if (cancelled) return;
-        setSchedule(data);
-        setMealTimes(data.mealTimes ?? DEFAULT_MEAL_TIMES);
-        // 저장값 우선(09-B 프리필). 날짜는 비어 있으면 오늘로 채워 사용자가 고치게 합니다.
-        setStartDate(data.start?.date ?? todayISO());
-        setStartSlot(data.start?.slot ?? null);
-
-        const next: Record<number, MealSlot[]> = {};
-        for (const med of data.medications) {
-          next[med.medicationId] =
-            med.slots.length > 0 ? med.slots : defaultSlotsFor(med.timesPerDay, med.timing);
-        }
-        setSlots(next);
+        applySchedule(data);
       })
       // catch 가 없으면 실 API 오류에서 schedule 이 null 로 남아 "불러오는 중"에
       // 영구히 멈춥니다. 로딩과 실패는 화면에서 구분되어야 합니다.
@@ -148,7 +164,7 @@ export function MedicationSchedulePage() {
     return () => {
       cancelled = true;
     };
-  }, [recordId]);
+  }, [dispensedDate, recordId, scheduleOverride]);
 
   /** 토글. SLOT_ORDER 순서를 유지해 담습니다 — 클릭 순서대로 쌓으면 재진입 시 표시가 흔들립니다. */
   function toggleSlot(medicationId: number, slot: MealSlot) {
@@ -195,7 +211,6 @@ export function MedicationSchedulePage() {
     start: MedicationStartPoint,
     times: MealTimes,
     payloadSlots: Record<number, MealSlot[]>,
-    reason: 'schedule-saved' | 'schedule-skipped',
   ) {
     if (!schedule) return;
     setSaving(true);
@@ -209,12 +224,12 @@ export function MedicationSchedulePage() {
           .filter((m) => m.timesPerDay !== null)
           .map((m) => ({ medicationId: m.medicationId, slots: payloadSlots[m.medicationId] ?? [] })),
       });
-      // DevFlowComplete가 reason별로 안내 문구를 갈라 씁니다.
-      navigate('/dev/flow-complete', { state: { reason } });
+      // 저장이 끝난 흐름으로 뒤로가기를 해도 시간 설정 화면으로 돌아오지 않게 교체합니다.
+      navigate('/home', { replace: true });
     } catch (error: unknown) {
       setSaveError({
         message: error instanceof Error ? error.message : '복약 시간을 저장하지 못했어요.',
-        retry: () => persist(start, times, payloadSlots, reason),
+        retry: () => persist(start, times, payloadSlots),
       });
     } finally {
       setSaving(false);
@@ -223,7 +238,7 @@ export function MedicationSchedulePage() {
 
   function handleSave() {
     if (!startSlot || !startDate) return;
-    void persist({ date: startDate, slot: startSlot }, mealTimes, slots, 'schedule-saved');
+    void persist({ date: startDate, slot: startSlot }, mealTimes, slots);
   }
 
   /** 건너뛰기 — 기본 시각 + 자동 배정 결과를 그대로 보냅니다. */
@@ -237,7 +252,6 @@ export function MedicationSchedulePage() {
       { date: startDate || todayISO(), slot: startSlot ?? 'morning' },
       DEFAULT_MEAL_TIMES,
       defaults,
-      'schedule-skipped',
     );
   }
 
@@ -257,10 +271,13 @@ export function MedicationSchedulePage() {
   }
 
   const scheduledMeds = schedule.medications.filter((m) => m.timesPerDay !== null);
+  const confirmationMeds = scheduledMeds.filter((medication) =>
+    needsSlotConfirmation(medication.timesPerDay, medication.timing),
+  );
   const usedSlots = new Set<MealSlot>(scheduledMeds.flatMap((m) => slots[m.medicationId] ?? []));
   const orderValid = isMealTimeOrderValid(mealTimes);
   const emptyMedIds = new Set(
-    scheduledMeds
+    confirmationMeds
       .filter((m) => (slots[m.medicationId] ?? []).length === 0)
       .map((m) => m.medicationId),
   );
@@ -408,85 +425,82 @@ export function MedicationSchedulePage() {
           ) : null}
         </div>
 
-        {/* [3] 약별 시간대 */}
-        <div className="flex flex-col gap-2">
-          <p className="text-base font-bold text-foreground">약마다 언제 먹는지 확인해주세요</p>
-          <div className="flex flex-col gap-3">
-            {schedule.medications.map((med) => {
-              const asNeeded = med.timesPerDay === null;
-              const medSlots = slots[med.medicationId] ?? [];
-              return (
-                <div
-                  key={med.medicationId}
-                  className="flex flex-col gap-2 rounded-card border border-border bg-card px-4 py-3 shadow-sm"
-                >
-                  <div className="flex flex-col gap-0.5">
-                    <p className="text-base font-bold text-foreground">
-                      {med.name} {med.dose}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {medicationMetaText(med)}
-                    </p>
+        {/* [3] 원문에 시간대가 없어 횟수 기준으로 자동 배정한 약만 확인합니다. */}
+        {confirmationMeds.length > 0 && (
+          <section aria-label="자동 배정 시간 확인" className="flex flex-col gap-2">
+            <div>
+              <p className="text-base font-bold text-foreground">
+                이 약들은 언제 먹는지 봉투에 없었어요
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                저희가 정한 시간입니다. 맞는지 확인해주세요.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              {confirmationMeds.map((med) => {
+                const medSlots = slots[med.medicationId] ?? [];
+                return (
+                  <div
+                    key={med.medicationId}
+                    className="flex flex-col gap-2 rounded-card border border-border bg-card px-4 py-3 shadow-card"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-base font-bold text-foreground">
+                        {med.name} {med.dose}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{medicationMetaText(med)}</p>
+                    </div>
+
+                    {/* 4개는 flex-1로 두면 라벨 길이 차이로 폭이 들쭉날쭉해집니다. */}
+                    <div className="grid grid-cols-4 gap-2 border-t border-border pt-2">
+                      {MEAL_SLOTS.map((slot) => {
+                        const on = medSlots.includes(slot.value);
+                        return (
+                          <button
+                            key={slot.value}
+                            type="button"
+                            aria-pressed={on}
+                            aria-label={`${med.name} ${slot.label}`}
+                            onClick={() => toggleSlot(med.medicationId, slot.value)}
+                            className={cn(
+                              'h-touch rounded-input border text-sm transition-colors',
+                              on
+                                ? 'border-primary bg-primary font-bold text-card'
+                                : 'border-border bg-card text-muted-foreground hover:bg-muted-bg',
+                            )}
+                          >
+                            {slot.short}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {emptyMedIds.has(med.medicationId) && (
+                      <p className="text-sm text-danger-strong">
+                        복용 시간을 하나 이상 선택해주세요.
+                      </p>
+                    )}
+
+                    {exceedsSlotCapacity(med.timesPerDay) && (
+                      <p className="text-sm text-warning-strong">
+                        1일 {med.timesPerDay}회 처방이에요. 시간 4개로는 다 담기지 않아 복용
+                        간격을 의료진·약사에게 확인해주세요.
+                      </p>
+                    )}
                   </div>
-
-                  {asNeeded ? (
-                    <p className="border-t border-border pt-2 text-sm text-muted-foreground">
-                      필요할 때만 복용 · 알림을 보내지 않아요
-                    </p>
-                  ) : (
-                    <>
-                      {/* 4개는 flex-1로 두면 라벨 길이 차이로 폭이 들쭉날쭉해집니다. */}
-                      <div className="grid grid-cols-4 gap-2 border-t border-border pt-2">
-                        {MEAL_SLOTS.map((slot) => {
-                          const on = medSlots.includes(slot.value);
-                          return (
-                            <button
-                              key={slot.value}
-                              type="button"
-                              aria-pressed={on}
-                              aria-label={`${med.name} ${slot.label}`}
-                              onClick={() => toggleSlot(med.medicationId, slot.value)}
-                              className={cn(
-                                'h-touch rounded-input border text-sm transition-colors',
-                                on
-                                  ? 'border-primary bg-primary font-bold text-card'
-                                  : 'border-border bg-card text-muted-foreground hover:bg-muted-bg',
-                              )}
-                            >
-                              {slot.short}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {emptyMedIds.has(med.medicationId) && (
-                        <p className="text-sm text-danger-strong">
-                          복용 시간을 하나 이상 선택해주세요.
-                        </p>
-                      )}
-
-                      {exceedsSlotCapacity(med.timesPerDay) && (
-                        <p className="text-sm text-warning-strong">
-                          1일 {med.timesPerDay}회 처방이에요. 시간 4개로는 다 담기지 않아 복용
-                          간격을 의료진·약사에게 확인해주세요.
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <p className="text-sm text-muted-foreground">
-          저장한 시간에 알림을 보내요. 나중에 마이페이지에서 바꿀 수 있어요.
+          저장한 시간에 알림을 보내요. 나중에 복용약 화면에서 바꿀 수 있어요.
         </p>
 
         <div className="flex-1" />
 
         <div className="flex flex-col gap-2 pb-4">
-          {blocker && !saving && <p className={blockerClass(blocker.tone)}>{blocker.message}</p>}
           <Button onClick={handleSave} disabled={saving || !canSave}>
             {saving ? '저장 중...' : '저장하고 계속'}
           </Button>

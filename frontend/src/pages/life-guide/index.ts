@@ -1,1 +1,0 @@
-export { LifeGuidePage } from './LifeGuidePage';
