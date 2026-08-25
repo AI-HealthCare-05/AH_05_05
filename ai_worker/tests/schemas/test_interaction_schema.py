@@ -109,9 +109,7 @@ def test_candidate_preserves_raw_effect_text_separately() -> None:
     )
 
     assert candidate.effect_summaries == ["심각한 위험?"]
-    assert candidate.source_records[0].raw_effect_text == (
-        " 심각한   위험？ "
-    )
+    assert candidate.source_records[0].raw_effect_text == (" 심각한   위험？ ")
 
 
 def test_automatic_candidate_cannot_be_preapproved() -> None:

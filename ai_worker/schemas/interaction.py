@@ -123,9 +123,7 @@ def build_interaction_pair_key(
     left_entity: InteractionEntity,
     right_entity: InteractionEntity,
 ) -> str:
-    canonical_entities = sorted(
-        [left_entity.canonical_key, right_entity.canonical_key]
-    )
+    canonical_entities = sorted([left_entity.canonical_key, right_entity.canonical_key])
     raw_key = "|".join(canonical_entities)
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
@@ -144,9 +142,7 @@ class InteractionRuleCandidate(BaseModel):
     effect_summaries: list[str] = Field(min_length=1)
     source_records: list[InteractionSourceRecord] = Field(min_length=1)
     evidence_chunk_ids: list[str] = Field(default_factory=list)
-    extraction_method: InteractionExtractionMethod = (
-        InteractionExtractionMethod.DETERMINISTIC_STRUCTURED
-    )
+    extraction_method: InteractionExtractionMethod = InteractionExtractionMethod.DETERMINISTIC_STRUCTURED
     review_status: InteractionReviewStatus = InteractionReviewStatus.PENDING
 
     @field_validator("dataset_version")

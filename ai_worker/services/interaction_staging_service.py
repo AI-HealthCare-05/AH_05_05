@@ -42,9 +42,7 @@ _REQUIRED_VALUE_COLUMNS = (
 
 _MALFORMED_ROW_KEY = "__interaction_staging_csv_error__"
 _SOURCE_LINE_KEY = "__interaction_staging_source_line__"
-_SAFE_DATASET_VERSION = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
-)
+_SAFE_DATASET_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 
 
 class SkippedInteractionSourceRow(BaseModel):
@@ -62,9 +60,7 @@ class InteractionStagingResult(BaseModel):
     candidate_count: int = Field(ge=0)
     duplicate_merged_count: int = Field(ge=0)
     skipped_reason_counts: dict[str, int] = Field(default_factory=dict)
-    skipped_rows: list[SkippedInteractionSourceRow] = Field(
-        default_factory=list
-    )
+    skipped_rows: list[SkippedInteractionSourceRow] = Field(default_factory=list)
     candidates_path: Path
     quality_report_path: Path
     current_marker_path: Path
@@ -90,9 +86,7 @@ class InteractionStagingService:
         output_root: Path,
         dataset_version: str,
     ) -> InteractionStagingResult:
-        normalized_version = validate_interaction_dataset_version(
-            dataset_version
-        )
+        normalized_version = validate_interaction_dataset_version(dataset_version)
         source_path = Path(input_path)
         if not source_path.is_file():
             raise ValueError(f"DUR 병용금기 CSV를 찾을 수 없습니다: {source_path}")
@@ -100,10 +94,7 @@ class InteractionStagingService:
         rows, fieldnames = self._read_rows(source_path)
         missing_columns = sorted(_REQUIRED_COLUMNS.difference(fieldnames))
         if missing_columns:
-            raise ValueError(
-                "DUR 병용금기 CSV 필수 컬럼이 없습니다: "
-                + ", ".join(missing_columns)
-            )
+            raise ValueError("DUR 병용금기 CSV 필수 컬럼이 없습니다: " + ", ".join(missing_columns))
 
         candidates_by_pair: dict[str, InteractionRuleCandidate] = {}
         skipped_reasons: Counter[str] = Counter()
@@ -146,35 +137,31 @@ class InteractionStagingService:
                 candidates_by_pair[candidate.pair_key] = candidate
                 continue
 
-            candidates_by_pair[candidate.pair_key] = (
-                InteractionRuleCandidate(
-                    dataset_version=previous.dataset_version,
-                    pair_type=previous.pair_type,
-                    left_entity=previous.left_entity,
-                    right_entity=previous.right_entity,
-                    risk_level=previous.risk_level,
-                    effect_summaries=[
-                        *previous.effect_summaries,
-                        *candidate.effect_summaries,
-                    ],
-                    source_records=[
-                        *previous.source_records,
-                        *candidate.source_records,
-                    ],
-                    evidence_chunk_ids=[
-                        *previous.evidence_chunk_ids,
-                        *candidate.evidence_chunk_ids,
-                    ],
-                )
+            candidates_by_pair[candidate.pair_key] = InteractionRuleCandidate(
+                dataset_version=previous.dataset_version,
+                pair_type=previous.pair_type,
+                left_entity=previous.left_entity,
+                right_entity=previous.right_entity,
+                risk_level=previous.risk_level,
+                effect_summaries=[
+                    *previous.effect_summaries,
+                    *candidate.effect_summaries,
+                ],
+                source_records=[
+                    *previous.source_records,
+                    *candidate.source_records,
+                ],
+                evidence_chunk_ids=[
+                    *previous.evidence_chunk_ids,
+                    *candidate.evidence_chunk_ids,
+                ],
             )
 
         candidates = sorted(
             candidates_by_pair.values(),
             key=lambda item: item.pair_key,
         )
-        candidate_content = "".join(
-            f"{candidate.model_dump_json()}\n" for candidate in candidates
-        )
+        candidate_content = "".join(f"{candidate.model_dump_json()}\n" for candidate in candidates)
         generation_id = self._build_generation_id(
             dataset_version=normalized_version,
             candidate_content=candidate_content,
@@ -182,9 +169,7 @@ class InteractionStagingService:
             accepted_row_count=accepted_row_count,
             skipped_rows=skipped_rows,
         )
-        generation_root = (
-            Path("staging") / normalized_version / generation_id
-        )
+        generation_root = Path("staging") / normalized_version / generation_id
         result = InteractionStagingResult(
             generation_id=generation_id,
             dataset_version=normalized_version,
@@ -194,15 +179,9 @@ class InteractionStagingService:
             duplicate_merged_count=(accepted_row_count - len(candidates)),
             skipped_reason_counts=dict(sorted(skipped_reasons.items())),
             skipped_rows=skipped_rows,
-            candidates_path=(
-                generation_root / "interaction_rule_candidates.jsonl"
-            ),
-            quality_report_path=(
-                generation_root / "interaction-staging-quality.json"
-            ),
-            current_marker_path=(
-                Path("staging") / normalized_version / "current.json"
-            ),
+            candidates_path=(generation_root / "interaction_rule_candidates.jsonl"),
+            quality_report_path=(generation_root / "interaction-staging-quality.json"),
+            current_marker_path=(Path("staging") / normalized_version / "current.json"),
         )
         self._publish_generation(
             output_root=Path(output_root),
@@ -215,9 +194,7 @@ class InteractionStagingService:
     def _read_rows(
         input_path: Path,
     ) -> tuple[list[dict[str, str]], set[str]]:
-        physical_lines = input_path.read_text(
-            encoding="utf-8-sig"
-        ).splitlines()
+        physical_lines = input_path.read_text(encoding="utf-8-sig").splitlines()
         if not physical_lines:
             return [], set()
 
@@ -277,10 +254,7 @@ class InteractionStagingService:
             return "INACTIVE_STATUS"
         if normalize_interaction_name(row.get("DUR유형") or "") != "병용금기":
             return "UNEXPECTED_DUR_TYPE"
-        if any(
-            _is_missing_value(row.get(column))
-            for column in _REQUIRED_VALUE_COLUMNS
-        ):
+        if any(_is_missing_value(row.get(column)) for column in _REQUIRED_VALUE_COLUMNS):
             return "MISSING_REQUIRED_VALUE"
         return None
 
@@ -292,11 +266,7 @@ class InteractionStagingService:
         if reason == "MALFORMED_CSV_ROW":
             return row.get(_MALFORMED_ROW_KEY)
         if reason == "MISSING_REQUIRED_VALUE":
-            missing = [
-                column
-                for column in _REQUIRED_VALUE_COLUMNS
-                if _is_missing_value(row.get(column))
-            ]
+            missing = [column for column in _REQUIRED_VALUE_COLUMNS if _is_missing_value(row.get(column))]
             return "누락 필드: " + ", ".join(missing)
         return None
 
@@ -307,9 +277,7 @@ class InteractionStagingService:
         reason: str,
         detail: str | None,
     ) -> SkippedInteractionSourceRow:
-        record_id = normalize_interaction_name(
-            row.get("DUR일련번호") or ""
-        )
+        record_id = normalize_interaction_name(row.get("DUR일련번호") or "")
         return SkippedInteractionSourceRow(
             source_line_number=int(row[_SOURCE_LINE_KEY]),
             record_id=record_id or None,
@@ -359,14 +327,10 @@ class InteractionStagingService:
     ) -> str:
         generation_contract = {
             "dataset_version": dataset_version,
-            "candidate_content_sha256": hashlib.sha256(
-                candidate_content.encode("utf-8")
-            ).hexdigest(),
+            "candidate_content_sha256": hashlib.sha256(candidate_content.encode("utf-8")).hexdigest(),
             "input_row_count": input_row_count,
             "accepted_row_count": accepted_row_count,
-            "skipped_rows": [
-                row.model_dump(mode="json") for row in skipped_rows
-            ],
+            "skipped_rows": [row.model_dump(mode="json") for row in skipped_rows],
         }
         canonical = json.dumps(
             generation_contract,
@@ -383,17 +347,10 @@ class InteractionStagingService:
         candidate_content: str,
         result: InteractionStagingResult,
     ) -> None:
-        generation_root = (
-            output_root
-            / "staging"
-            / result.dataset_version
-            / result.generation_id
-        ).resolve()
+        generation_root = (output_root / "staging" / result.dataset_version / result.generation_id).resolve()
         resolved_output_root = output_root.resolve()
         if not generation_root.is_relative_to(resolved_output_root):
-            raise ValueError(
-                "staging generation 경로가 output_root를 벗어났습니다."
-            )
+            raise ValueError("staging generation 경로가 output_root를 벗어났습니다.")
         generation_parent = generation_root.parent
         generation_parent.mkdir(parents=True, exist_ok=True)
 
@@ -419,13 +376,9 @@ class InteractionStagingService:
             "candidates_path": str(result.candidates_path),
             "quality_report_path": str(result.quality_report_path),
         }
-        marker_path = (
-            output_root / result.current_marker_path
-        ).resolve()
+        marker_path = (output_root / result.current_marker_path).resolve()
         if not marker_path.is_relative_to(resolved_output_root):
-            raise ValueError(
-                "staging marker 경로가 output_root를 벗어났습니다."
-            )
+            raise ValueError("staging marker 경로가 output_root를 벗어났습니다.")
         _write_text_atomic(
             marker_path,
             json.dumps(
@@ -447,10 +400,7 @@ def _require_text(value: str, field_name: str) -> str:
 def validate_interaction_dataset_version(value: str) -> str:
     normalized = _require_text(value, "dataset_version")
     if _SAFE_DATASET_VERSION.fullmatch(normalized) is None:
-        raise ValueError(
-            "dataset_version은 영문자·숫자로 시작하는 "
-            "100자 이하의 안전한 slug여야 합니다."
-        )
+        raise ValueError("dataset_version은 영문자·숫자로 시작하는 100자 이하의 안전한 slug여야 합니다.")
     return normalized
 
 
@@ -471,22 +421,12 @@ def _is_dur_record_start(
     if any(field not in header for field in required_prefix_fields):
         return False
 
-    field_indexes = {
-        field: header.index(field) for field in required_prefix_fields
-    }
-    single_compound_index = (
-        header.index("단일복합구분코드")
-        if "단일복합구분코드" in header
-        else None
-    )
+    field_indexes = {field: header.index(field) for field in required_prefix_fields}
+    single_compound_index = header.index("단일복합구분코드") if "단일복합구분코드" in header else None
     last_prefix_index = max(
         [
             *field_indexes.values(),
-            *(
-                [single_compound_index]
-                if single_compound_index is not None
-                else []
-            ),
+            *([single_compound_index] if single_compound_index is not None else []),
         ]
     )
     values = line.split(",", maxsplit=last_prefix_index + 1)
@@ -494,12 +434,8 @@ def _is_dur_record_start(
         return False
 
     record_id = values[field_indexes["DUR일련번호"]].strip()
-    dur_type = normalize_interaction_name(
-        values[field_indexes["DUR유형"]]
-    )
-    ingredient_code = values[
-        field_indexes["DUR성분코드"]
-    ].strip()
+    dur_type = normalize_interaction_name(values[field_indexes["DUR유형"]])
+    ingredient_code = values[field_indexes["DUR성분코드"]].strip()
     if re.fullmatch(r"\d+", record_id) is None:
         return False
     if dur_type != "병용금기":
@@ -507,9 +443,7 @@ def _is_dur_record_start(
     if re.fullmatch(r"D\d+", ingredient_code) is None:
         return False
     if single_compound_index is not None:
-        single_compound = normalize_interaction_name(
-            values[single_compound_index]
-        )
+        single_compound = normalize_interaction_name(values[single_compound_index])
         if single_compound not in {"단일", "복합"}:
             return False
     return True

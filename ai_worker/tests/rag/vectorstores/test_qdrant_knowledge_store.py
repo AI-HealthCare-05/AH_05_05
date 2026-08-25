@@ -220,9 +220,7 @@ async def test_search_filters_exact_interaction_pair_key() -> None:
             ),
         )
 
-        assert [result.metadata.document_id for result in results] == [
-            "document-a"
-        ]
+        assert [result.metadata.document_id for result in results] == ["document-a"]
     finally:
         await client.close()
 

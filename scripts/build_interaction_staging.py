@@ -21,18 +21,11 @@ class InteractionStagingBuilder(Protocol):
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "식약처 DUR 병용금기 CSV를 검수 대기 RDBMS 후보 JSONL로 변환합니다."
-        )
-    )
+    parser = argparse.ArgumentParser(description=("식약처 DUR 병용금기 CSV를 검수 대기 RDBMS 후보 JSONL로 변환합니다."))
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path(
-            "data/knowledge/raw/public/mfds/drug_records/"
-            "DUR병용금기.csv"
-        ),
+        default=Path("data/knowledge/raw/public/mfds/drug_records/DUR병용금기.csv"),
     )
     parser.add_argument(
         "--output",
@@ -56,9 +49,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         if not getattr(args, field_name).strip():
             parser.error(f"--{field_name.replace('_', '-')}은 비어 있을 수 없습니다.")
     try:
-        args.dataset_version = validate_interaction_dataset_version(
-            args.dataset_version
-        )
+        args.dataset_version = validate_interaction_dataset_version(args.dataset_version)
     except ValueError as error:
         parser.error(str(error))
     return args

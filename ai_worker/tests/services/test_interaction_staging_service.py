@@ -114,13 +114,9 @@ def test_build_merges_reverse_pairs_and_preserves_source_rows(
         (5, "26", "MISSING_REQUIRED_VALUE"),
     ]
 
-    candidate_lines = (
-        output_root / result.candidates_path
-    ).read_text(encoding="utf-8").splitlines()
+    candidate_lines = (output_root / result.candidates_path).read_text(encoding="utf-8").splitlines()
     assert len(candidate_lines) == 1
-    candidate = InteractionRuleCandidate.model_validate_json(
-        candidate_lines[0]
-    )
+    candidate = InteractionRuleCandidate.model_validate_json(candidate_lines[0])
     assert candidate.effect_summaries == [
         "세로토닌성증후군",
         "고혈압·고열 위험",
@@ -131,22 +127,12 @@ def test_build_merges_reverse_pairs_and_preserves_source_rows(
     ]
     assert candidate.review_status.value == "PENDING"
 
-    quality_report = json.loads(
-        (output_root / result.quality_report_path).read_text(
-            encoding="utf-8"
-        )
-    )
+    quality_report = json.loads((output_root / result.quality_report_path).read_text(encoding="utf-8"))
     assert quality_report["candidate_count"] == 1
     assert quality_report["ready_for_rdb_import"] is False
-    current_marker = json.loads(
-        (output_root / result.current_marker_path).read_text(
-            encoding="utf-8"
-        )
-    )
+    current_marker = json.loads((output_root / result.current_marker_path).read_text(encoding="utf-8"))
     assert current_marker["generation_id"] == result.generation_id
-    assert current_marker["candidates_path"] == str(
-        result.candidates_path
-    )
+    assert current_marker["candidates_path"] == str(result.candidates_path)
     assert result.generation_id in str(result.candidates_path)
     assert result.generation_id in str(result.quality_report_path)
 
@@ -159,11 +145,7 @@ def test_build_rejects_missing_required_csv_column(
     write_csv(
         input_path,
         [build_row("23")],
-        fieldnames=[
-            field
-            for field in FIELDNAMES
-            if field != "병용금기DUR성분명"
-        ],
+        fieldnames=[field for field in FIELDNAMES if field != "병용금기DUR성분명"],
     )
 
     with pytest.raises(ValueError, match="필수 컬럼"):
@@ -200,17 +182,13 @@ def test_build_is_deterministic(tmp_path: Path) -> None:
         output_root=output_root,
         dataset_version="interaction-pilot-v1",
     )
-    first = (output_root / first_result.candidates_path).read_text(
-        encoding="utf-8"
-    )
+    first = (output_root / first_result.candidates_path).read_text(encoding="utf-8")
     second_result = service.build(
         input_path=input_path,
         output_root=output_root,
         dataset_version="interaction-pilot-v1",
     )
-    second = (output_root / second_result.candidates_path).read_text(
-        encoding="utf-8"
-    )
+    second = (output_root / second_result.candidates_path).read_text(encoding="utf-8")
 
     assert first == second
     assert first_result.generation_id == second_result.generation_id
@@ -285,16 +263,10 @@ def test_build_skips_unclosed_quote_before_valid_multiline_row(
     assert result.skipped_reason_counts == {
         "MALFORMED_CSV_ROW": 1,
     }
-    candidate_line = (
-        output_root / result.candidates_path
-    ).read_text(encoding="utf-8").strip()
-    candidate = InteractionRuleCandidate.model_validate_json(
-        candidate_line
-    )
+    candidate_line = (output_root / result.candidates_path).read_text(encoding="utf-8").strip()
+    candidate = InteractionRuleCandidate.model_validate_json(candidate_line)
     assert candidate.source_records[0].record_id == "1500"
-    assert candidate.source_records[0].raw_effect_text == (
-        "첫 번째 위험\n2024, 추가 위험"
-    )
+    assert candidate.source_records[0].raw_effect_text == ("첫 번째 위험\n2024, 추가 위험")
 
 
 def test_build_preserves_valid_multiline_quoted_field(
