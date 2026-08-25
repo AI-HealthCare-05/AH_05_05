@@ -117,3 +117,48 @@ class KnowledgeChunk(BaseModel):
     embedding_text: str = Field(min_length=1)
     token_count: int = Field(ge=1)
     metadata: KnowledgeChunkMetadata
+
+
+class KnowledgeSearchQuery(BaseModel):
+    query: str = Field(min_length=1)
+    dataset_version: str = Field(min_length=1)
+    document_types: list[KnowledgeDocumentType] = Field(default_factory=list)
+    drug_names: list[str] = Field(default_factory=list)
+    ingredient_names: list[str] = Field(default_factory=list)
+    interaction_type: str | None = None
+    special_populations: list[str] = Field(default_factory=list)
+    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
+    limit: int = Field(default=5, ge=1, le=50)
+
+    @field_validator(
+        "query",
+        "dataset_version",
+    )
+    @classmethod
+    def require_non_blank_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("검색어와 dataset_version은 비어 있을 수 없습니다.")
+        return normalized
+
+    @field_validator(
+        "drug_names",
+        "ingredient_names",
+        "special_populations",
+    )
+    @classmethod
+    def normalize_filter_values(cls, values: list[str]) -> list[str]:
+        return KnowledgeMetadata.normalize_unique_values(values)
+
+    @field_validator("interaction_type")
+    @classmethod
+    def normalize_optional_filter(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class RetrievedKnowledgeChunk(KnowledgeChunk):
+    point_id: str = Field(min_length=1)
+    similarity_score: float = Field(ge=-1.0, le=1.0)

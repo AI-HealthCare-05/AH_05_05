@@ -1,0 +1,115 @@
+schema_version: knowledge-retrieval-evaluation-v1
+dataset_version: knowledge-pilot-v1
+thresholds:
+  min_hit_at_5: 0.90
+  min_citation_accuracy: 0.90
+  max_wrong_entity_mixing_count: 0
+  max_search_p95_ms: 300.0
+cases:
+  - query_id: vitamin-b6-function
+    query: 비타민 B6는 몸에서 어떤 기능을 하나요?
+    expected_document_ids:
+      - food_safety_korea_supplement_ingredients-bbd07d1c2d46d789
+    expected_ingredient_names:
+      - 비타민 B6
+    ingredient_names:
+      - 비타민 B6
+    document_types:
+      - SUPPLEMENT_CODE
+    section_types:
+      - FUNCTION
+    expected_section_types:
+      - FUNCTION
+
+  - query_id: vitamin-b6-daily-intake
+    query: 비타민 B6의 일일 섭취량 기준은 얼마인가요?
+    expected_document_ids:
+      - food_safety_korea_supplement_ingredients-bbd07d1c2d46d789
+    expected_ingredient_names:
+      - 비타민 B6
+    ingredient_names:
+      - 비타민 B6
+    section_types:
+      - DAILY_INTAKE
+    expected_section_types:
+      - DAILY_INTAKE
+
+  - query_id: vitamin-a-daily-intake
+    query: 비타민 A의 일일 섭취량 기준은 어떻게 되나요?
+    expected_document_ids:
+      - mfds_supplement_code-d0ee39cdebceccf2
+    expected_ingredient_names:
+      - 비타민 A
+    ingredient_names:
+      - 비타민 A
+    section_types:
+      - DAILY_INTAKE
+    expected_section_types:
+      - DAILY_INTAKE
+
+  - query_id: hepatitis-a-vaccine-purpose
+    query: A형 간염 백신은 어떤 역할을 하나요?
+    expected_document_ids:
+      - kpicia_drug_encyclopedia-3e5922cbedbdbc62
+    expected_drug_names:
+      - A형 간염 백신
+    drug_names:
+      - A형 간염 백신
+    document_types:
+      - DRUG_ENCYCLOPEDIA
+
+  - query_id: doxazosin-dizziness-case
+    query: 독사조신 복용 후 심한 어지러움이 보고된 사례가 있나요?
+    expected_document_ids:
+      - kpicia_adverse_case_report-2e89423c98769fbb
+    document_types:
+      - ADVERSE_CASE_REPORT
+    section_types:
+      - ADVERSE_EVENT
+      - INGREDIENT
+    expected_section_types:
+      - ADVERSE_EVENT
+      - INGREDIENT
+
+  - query_id: ibs-symptom-management
+    query: 과민성대장증후군은 어떤 증상이 나타나고 어떻게 관리하나요?
+    expected_document_ids:
+      - kpicia_pharm_review-dd03682eeb66c07e
+    document_types:
+      - PHARM_REVIEW
+
+  - query_id: calcium-iron-absorption
+    query: 칼슘 섭취가 철 흡수에 어떤 영향을 줄 수 있나요?
+    expected_document_ids:
+      - research_supplement_interactions-016c81c9a3e29ebd
+    document_types:
+      - RESEARCH_ARTICLE
+
+  - query_id: fexofenadine-fruit-juice
+    query: 펙소페나딘을 자몽주스나 사과주스와 함께 먹어도 되나요?
+    expected_document_ids:
+      - mfds_drug_food_interaction_guide-53bfb2433f48a8b0
+    document_types:
+      - DRUG_FOOD_INTERACTION_GUIDE
+    section_types:
+      - INTERACTION
+    expected_section_types:
+      - INTERACTION
+
+  - query_id: bisphosphonate-food
+    query: 알렌드로네이트는 음식이나 물과 어떻게 복용해야 하나요?
+    expected_document_ids:
+      - mfds_drug_food_interaction_guide-53bfb2433f48a8b0
+    document_types:
+      - DRUG_FOOD_INTERACTION_GUIDE
+    section_types:
+      - INTERACTION
+    expected_section_types:
+      - INTERACTION
+
+  - query_id: supplement-sleep-function
+    query: 수면의 질 개선과 관련된 건강기능식품 기능 정보가 있나요?
+    expected_document_ids:
+      - mfds_supplement_function_guide-b6e3f0c206cd3a22
+    document_types:
+      - SUPPLEMENT_FUNCTION_GUIDE

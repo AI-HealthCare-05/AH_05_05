@@ -28,6 +28,7 @@ Thumbs.db
 !/data/knowledge/raw/README.md
 /data/knowledge/processed/**
 !/data/knowledge/processed/README.md
+/data/knowledge/reports/*.json
 
 # Local vector database persistence
 /qdrant_storage/

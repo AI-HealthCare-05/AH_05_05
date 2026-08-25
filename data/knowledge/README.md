@@ -35,6 +35,58 @@ uv run --group ai python -m scripts.preprocess_knowledge_pilots \
 
 `OCR_REQUIRED`, `STRUCTURED_SOURCE`, `QDRANT_DISABLED_UNTIL_VERIFIED` 문서는 건너뜁니다. 실행 결과는 Git에서 제외된 `processed/text/*.jsonl`과 `processed/chunks/*.jsonl`에 생성됩니다. 같은 문서를 다시 실행하면 동일한 청크 ID를 만들며, 인덱싱 대상에서 제외된 문서의 이전 산출물은 제거합니다.
 
+## 불변 Qdrant release 생성
+
+전처리된 청크를 새 컬렉션에 적재하려면 다음 명령을 실행합니다.
+
+```bash
+uv run --group ai python -m scripts.index_knowledge_release \
+  --dataset-version knowledge-pilot-v1 \
+  --collection medication_knowledge_pilot_v1
+```
+
+현재 파일럿처럼 `DEMO_RESTRICTED` 청크가 포함된 release는 기본적으로 외부 임베딩 전송을 차단합니다. 자료 이용 범위와 외부 API 전송을 확인하고 명시적으로 승인한 경우에만 다음 플래그를 추가합니다.
+
+```bash
+  --allow-demo-restricted
+```
+
+- `content`는 답변의 근거·출처 표시에 보존하고, 검색 임베딩에는 약명·성분명·섹션명이 포함된 `embedding_text`를 사용합니다.
+- 컬렉션은 release 단위의 불변 산출물입니다. 같은 이름이 이미 있으면 덮어쓰거나 먼저 삭제하지 않고 실패합니다.
+- 새 release는 반드시 새 컬렉션 이름으로 생성합니다. 검증 전까지 기존 `public_guidelines_small_v1`과 Chat Core의 현재 컬렉션 설정은 변경하지 않습니다.
+- 적재가 끝난 뒤 Qdrant point 수와 JSONL 청크 수가 정확히 같은지 검사합니다.
+
+## 검색 품질 평가
+
+파일럿 질문 세트로 새 컬렉션을 평가하려면 다음 명령을 실행합니다.
+
+```bash
+uv run --group ai python -m scripts.evaluate_knowledge_retrieval \
+  --evaluation-file data/knowledge/evaluation/pilot_queries.yaml \
+  --dataset-version knowledge-pilot-v1 \
+  --collection medication_knowledge_pilot_v1 \
+  --output data/knowledge/reports/knowledge-pilot-v1.json
+```
+
+평가는 질문 임베딩 시간을 제외한 Qdrant 검색 시간과 함께 Hit@5, MRR, 출처 정확도, 잘못된 약·성분 혼합, 중복 검색 결과를 기록합니다. 종료 코드 `0`은 모든 품질 기준 통과, `2`는 실행은 정상적으로 끝났지만 하나 이상의 품질 기준을 통과하지 못했다는 의미입니다. 생성된 JSON 보고서는 로컬 실험 산출물이므로 Git에서 제외합니다.
+
+평가를 통과한 뒤에만 FastAPI/Chat Core가 참조하는 컬렉션 별칭 또는 설정을 새 release로 전환합니다. 전환에 실패하면 기존 컬렉션으로 되돌릴 수 있으므로 Qdrant 볼륨이나 기존 컬렉션을 먼저 삭제하지 않습니다.
+
+현재 파일럿의 실제 평가 결과는 `EVALUATION_RESULTS.md`에 기록되어 있습니다.
+
+## Chat Core 연결
+
+검색 평가를 통과한 `knowledge-pilot-v1`은 Chat Core의 기본 Knowledge 검색 대상으로 연결되어 있습니다.
+
+```dotenv
+KNOWLEDGE_QDRANT_COLLECTION=medication_knowledge_pilot_v1
+KNOWLEDGE_DATASET_VERSION=knowledge-pilot-v1
+```
+
+Chat Core는 새 `QdrantKnowledgeStore`를 직접 기존 가이드라인 스키마로 읽지 않습니다. `KnowledgeGuidelineRetriever`가 dataset version과 질문 유형별 메타데이터 필터를 적용한 뒤, 검색 결과를 기존 답변·출처 계약으로 변환합니다.
+
+기존 `QDRANT_COLLECTION` 설정은 아직 레거시 공공 PDF 인덱싱 Worker와 회복 가이드 데모가 사용합니다. 새 Chat 검색 대상과는 별도 설정입니다. 레거시 Worker에 새 작업을 등록하면 삭제한 과거 컬렉션이 다시 만들어질 수 있으므로, 프로젝트 방향 전환 후에는 해당 작업을 등록하지 않습니다.
+
 ## 응답 안전 원칙
 
 - 보유한 환자 확정정보와 검색된 근거 범위 안에서만 답한다.
