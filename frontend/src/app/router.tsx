@@ -58,6 +58,9 @@ const loadFourteenDayMedicationOverview = async () => FOURTEEN_DAY_MEDICATION_OV
 const failMedicationOverview = async (): Promise<MedicationOverview> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
+const failDoseRecordSave = async (_payload: SaveDoseTakenPayload): Promise<DoseRecord> => {
+  throw new Error('기록하지 못했어요. 다시 시도해주세요.');
+};
 const failProfileSave = async (
   _payload: UpdateAccountProfilePayload,
 ): Promise<AccountProfile> => {
