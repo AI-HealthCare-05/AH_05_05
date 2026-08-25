@@ -10,7 +10,7 @@ import {
   statusValue,
   tableState,
 } from "./api.js";
-import { closeOverlay, downloadCsv, openOverlay, showToast } from "./overlay.js";
+import { closeOverlay, openOverlay, showToast } from "./overlay.js";
 
 const COLUMN_COUNT = 8;
 // 화면에 페이지 이동 UI 가 없어 1페이지만 보여준다. 디자인을 바꾸지 않기 위한 선택이다.
@@ -32,7 +32,7 @@ export function suspendUser(users, memberId) {
   return users.map((user) => (user.id === memberId ? { ...user, status: "정지" } : { ...user }));
 }
 
-/** 화면에 그려진 현재 페이지. CSV 내보내기가 이 값을 쓴다. */
+/** 화면에 그려진 현재 페이지. */
 let currentItems = [];
 
 function rowMarkup(user) {
@@ -92,20 +92,6 @@ function initializeUserManagement() {
     search.value = "";
     status.value = "전체";
     load();
-  });
-
-  document.querySelector("[data-user-export]").addEventListener("click", () => {
-    const ok = downloadCsv("users.csv", [
-      ["회원 ID", "이름", "이메일", "가입일", "상태"],
-      ...currentItems.map((user) => [
-        user.userId,
-        user.name,
-        user.email,
-        formatDate(user.createdAt),
-        statusLabel(user.status),
-      ]),
-    ]);
-    if (!ok) showToast("내보낼 회원이 없습니다.", "error");
   });
 
   tableBody.addEventListener("click", async (event) => {

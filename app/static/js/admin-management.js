@@ -13,7 +13,7 @@ import {
   statusValue,
   tableState,
 } from "./api.js";
-import { closeOverlay, downloadCsv, openOverlay, showToast } from "./overlay.js";
+import { closeOverlay, openOverlay, showToast } from "./overlay.js";
 
 const COLUMN_COUNT = 6;
 // 화면에 페이지 이동 UI 가 없어 1페이지만 보여준다.
@@ -142,20 +142,6 @@ function initializeAdminManagement() {
         }
       },
     });
-  });
-
-  document.querySelector("[data-admin-export]").addEventListener("click", () => {
-    const ok = downloadCsv("admins.csv", [
-      ["ID", "이름", "이메일", "역할", "상태"],
-      ...currentItems.map((admin) => [
-        admin.adminId,
-        admin.name,
-        admin.email,
-        roleLabel(admin.role),
-        statusLabel(admin.status),
-      ]),
-    ]);
-    if (!ok) showToast("내보낼 관리자가 없습니다.", "error");
   });
 
   tbody.addEventListener("click", async (event) => {
