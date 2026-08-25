@@ -10,13 +10,13 @@ export function summarizeNutrients(supplements: Supplement[]): NutrientTotal[] {
       const dailyAmount = nutrient.amount * supplement.dailyCount;
       if (current) {
         current.amount += dailyAmount;
-        current.exceeded = current.amount > current.upperLimit;
+        current.exceeded = current.ul !== null && current.amount > current.ul;
         if (!current.sourceNames.includes(supplement.name)) current.sourceNames.push(supplement.name);
       } else {
         totals.set(nutrient.nutrientId, {
           ...nutrient,
           amount: dailyAmount,
-          exceeded: dailyAmount > nutrient.upperLimit,
+          exceeded: nutrient.ul !== null && dailyAmount > nutrient.ul,
           sourceNames: [supplement.name],
         });
       }
@@ -25,6 +25,11 @@ export function summarizeNutrients(supplements: Supplement[]): NutrientTotal[] {
 
   return [...totals.values()].sort((left, right) => {
     if (left.exceeded !== right.exceeded) return left.exceeded ? -1 : 1;
-    return right.amount / right.upperLimit - left.amount / left.upperLimit;
+    return standardRatio(right) - standardRatio(left);
   });
+}
+
+function standardRatio(total: NutrientTotal): number {
+  const reference = total.ul ?? total.rni ?? total.ai;
+  return reference === null || reference === 0 ? 0 : total.amount / reference;
 }

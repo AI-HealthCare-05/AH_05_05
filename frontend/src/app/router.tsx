@@ -8,7 +8,7 @@ import { MyPage, MyProfilePage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
-import { SupplementsPage } from '@/pages/supplements';
+import { SupplementsPage, type NutrientStandardProfile } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import {
@@ -21,6 +21,14 @@ import {
 import { DevGallery } from './DevGallery';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
+const DEV_NUTRIENT_PROFILE: NutrientStandardProfile = {
+  birthDate: '2000-08-25',
+  gender: 'female',
+};
+const MISSING_NUTRIENT_PROFILE: NutrientStandardProfile = {
+  birthDate: null,
+  gender: null,
+};
 const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
 const ACTIVE_MEDICATION_OVERVIEW = mockMedicationOverview();
 const EMPTY_MEDICATION_OVERVIEW: MedicationOverview = {
@@ -109,10 +117,22 @@ export function AppRouter() {
           path="/dev/my-profile-save-error"
           element={<MyProfilePage profileSaver={failProfileSave} />}
         />
-        <Route path="/dev/supplements" element={<SupplementsPage />} />
+        <Route
+          path="/dev/supplements"
+          element={<SupplementsPage profileOverride={DEV_NUTRIENT_PROFILE} />}
+        />
+        <Route
+          path="/dev/supplements-profile-missing"
+          element={<SupplementsPage profileOverride={MISSING_NUTRIENT_PROFILE} />}
+        />
         <Route
           path="/dev/supplements-three-exceeded"
-          element={<SupplementsPage supplementsOverride={THREE_EXCEEDED_SUPPLEMENTS} />}
+          element={
+            <SupplementsPage
+              supplementsOverride={THREE_EXCEEDED_SUPPLEMENTS}
+              profileOverride={DEV_NUTRIENT_PROFILE}
+            />
+          }
         />
         <Route
           path="/dev/home-empty"

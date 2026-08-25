@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ChevronRight, Plus, Sprout } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { getMyProfile, type Gender } from '@/entities/account';
 import {
   addSupplement,
+  evaluateNutrientStandard,
   getSupplements,
   summarizeNutrients,
   type AddSupplementPayload,
   type NutrientTotal,
   type Supplement,
 } from '@/entities/supplement';
+import { calculateFullAge } from '@/shared/lib/birthDate';
 import {
   BottomTabbar,
   Button,
@@ -32,17 +35,31 @@ const numberFormat = new Intl.NumberFormat('ko-KR');
 
 interface SupplementsPageProps {
   supplementsOverride?: Supplement[];
+  profileOverride?: NutrientStandardProfile;
 }
 
-export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = {}) {
+export interface NutrientStandardProfile {
+  birthDate: string | null;
+  gender: Gender | null;
+}
+
+export function SupplementsPage({
+  supplementsOverride,
+  profileOverride,
+}: SupplementsPageProps = {}) {
   const navigate = useNavigate();
   const [supplements, setSupplements] = useState<Supplement[] | null>(supplementsOverride ?? null);
+  const [profile, setProfile] = useState<NutrientStandardProfile | null>(
+    profileOverride ?? null,
+  );
+  const [profileResolved, setProfileResolved] = useState(profileOverride !== undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const totals = useMemo(() => summarizeNutrients(supplements ?? []), [supplements]);
-  const exceeded = totals.filter((total) => total.exceeded);
-  const neutral = totals.filter((total) => !total.exceeded);
+  const hasStandardProfile = Boolean(profile?.birthDate && profile.gender);
+  const exceeded = hasStandardProfile ? totals.filter((total) => total.exceeded) : [];
+  const neutral = hasStandardProfile ? totals.filter((total) => !total.exceeded) : totals;
   const supplementsWithNutrients = (supplements ?? []).filter(
     (supplement) => supplement.nutrientDataAvailable,
   ).length;
@@ -67,6 +84,28 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
       cancelled = true;
     };
   }, [supplementsOverride]);
+
+  useEffect(() => {
+    if (profileOverride !== undefined) {
+      setProfile(profileOverride);
+      setProfileResolved(true);
+      return;
+    }
+    let cancelled = false;
+    getMyProfile()
+      .then((result) => {
+        if (!cancelled) setProfile(result);
+      })
+      .catch(() => {
+        if (!cancelled) setProfile(null);
+      })
+      .finally(() => {
+        if (!cancelled) setProfileResolved(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileOverride]);
 
   async function saveSupplement(payload: AddSupplementPayload) {
     try {
@@ -142,22 +181,45 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
                 성분 합계
               </h2>
               {exceeded.map((total) => (
-                <ExceededNutrientCard key={total.nutrientId} total={total} />
+                <NutrientTotalCard
+                  key={total.nutrientId}
+                  total={total}
+                  showStandards={hasStandardProfile}
+                />
               ))}
-              {neutral.length > 0 && <NeutralNutrientCard totals={neutral} />}
+              {neutral.length > 0 && (
+                <Card className="gap-0 overflow-hidden p-0">
+                  {neutral.map((total) => (
+                    <NutrientTotalCard
+                      key={total.nutrientId}
+                      total={total}
+                      showStandards={hasStandardProfile}
+                      grouped
+                    />
+                  ))}
+                </Card>
+              )}
             </section>
 
             <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-              <p>기준 · 2025 한국인 영양소 섭취기준 상한섭취량</p>
+              <p>{standardSourceLabel(profile)}</p>
               <p>
                 등록한 건강기능식품 {supplementsWithNutrients}개만 더한 값입니다. 음식과 의약품을 통한
                 섭취량은 포함되지 않았습니다.
               </p>
-              {manuallyEnteredSupplements > 0 && (
-                <p>
-                  직접 입력한 {manuallyEnteredSupplements}개는 성분을 알 수 없어 합계에 포함하지
-                  않았습니다.
-                </p>
+              <p>
+                직접 입력한 {manuallyEnteredSupplements}개는 성분을 알 수 없어 합계에 포함하지
+                않았습니다.
+              </p>
+              {profileResolved && !hasStandardProfile && (
+                <button
+                  type="button"
+                  className="mt-2 flex min-h-touch items-center justify-between gap-3 rounded-control bg-card px-4 py-3 text-left text-sm font-bold text-foreground shadow-card"
+                  onClick={() => navigate('/my/profile')}
+                >
+                  <span>생년월일과 성별을 입력하면 나이·성별에 맞는 기준을 보여드려요</span>
+                  <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+                </button>
               )}
             </div>
 
@@ -186,74 +248,188 @@ export function SupplementsPage({ supplementsOverride }: SupplementsPageProps = 
   );
 }
 
-function ExceededNutrientCard({ total }: { total: NutrientTotal }) {
-  const excess = total.amount - total.upperLimit;
+function NutrientTotalCard({
+  total,
+  showStandards,
+  grouped = false,
+}: {
+  total: NutrientTotal;
+  showStandards: boolean;
+  grouped?: boolean;
+}) {
+  const evaluation = evaluateNutrientStandard(total);
+  const isOverUpperLimit = showStandards && evaluation.status === 'over-upper-limit';
+
+  const content = (
+    <>
+        <div className="flex items-start gap-3">
+          <div className="flex items-center gap-2">
+            {isOverUpperLimit && (
+              <AlertCircle aria-hidden className="size-5 shrink-0 text-warning" />
+            )}
+            <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
+          </div>
+        </div>
+
+        <div className="flex items-baseline gap-2">
+          <strong
+            className={`text-metric font-bold tnum ${
+              isOverUpperLimit ? 'text-warning-strong' : 'text-foreground'
+            }`}
+          >
+            {numberFormat.format(total.amount)}
+          </strong>
+          <span className="text-unit text-muted-foreground">{total.unit}</span>
+        </div>
+
+        {showStandards && (
+          <>
+            {evaluation.base === null && total.ul === null ? (
+              <p className="text-sm text-muted-foreground">기준이 없는 성분이에요</p>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-unit text-muted-foreground tnum">
+                  {evaluation.base !== null && (
+                    <span>
+                      {evaluation.baseKind === 'ai' ? '충분' : '권장'}{' '}
+                      {numberFormat.format(evaluation.base)}
+                    </span>
+                  )}
+                  {total.ul !== null ? (
+                    <span>상한 {numberFormat.format(total.ul)}</span>
+                  ) : (
+                    <span>상한 기준이 없어요</span>
+                  )}
+                </div>
+                <NutrientRangeBar total={total} />
+                <StandardStatus total={total} />
+              </>
+            )}
+          </>
+        )}
+
+        {isOverUpperLimit && (
+          <p className="border-t border-border pt-3 text-sm text-muted-foreground">
+            {total.sourceNames.join('과 ')}에 함께 들어 있어요. 하나를 줄일지 담당 의사·약사에게
+            확인해 주세요.
+          </p>
+        )}
+    </>
+  );
+
+  if (grouped) {
+    return (
+      <article
+        aria-label={`${total.name} 성분 합계`}
+        className="flex flex-col gap-4 border-t border-border p-4 first:border-t-0"
+      >
+        {content}
+      </article>
+    );
+  }
+
   return (
     <article aria-label={`${total.name} 성분 합계`}>
-      <Card tone="warning" className="gap-4 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <AlertCircle aria-hidden className="size-5 shrink-0 text-warning" />
-          <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
-        </div>
-        <span className="rounded-pill bg-card px-3 py-1 text-sm font-bold text-warning-strong">
-          상한 초과
-        </span>
-      </div>
-      <div className="flex items-baseline gap-2">
-        <strong className="text-metric font-bold text-warning-strong tnum">
-          {numberFormat.format(total.amount)}
-        </strong>
-        <span className="text-unit text-muted-foreground tnum">
-          / {numberFormat.format(total.upperLimit)} {total.unit}
-        </span>
-      </div>
-      <div>
-        <div className="relative h-2 rounded-pill bg-card" aria-hidden>
-          <div className="h-full w-full rounded-pill bg-warning" />
-          <span className="absolute top-0 right-0 h-full w-px bg-foreground" />
-        </div>
-        <div className="mt-1 flex justify-between text-unit font-bold text-warning-strong tnum">
-          <span>+{numberFormat.format(excess)}</span>
-          <span>상한 {numberFormat.format(total.upperLimit)}</span>
-        </div>
-      </div>
-      <p className="border-t border-border pt-3 text-sm text-muted-foreground">
-        {total.sourceNames.join('과 ')}에 함께 들어 있어요. 하나를 줄일지 담당 의사·약사에게
-        확인해 주세요.
-      </p>
+      <Card tone={isOverUpperLimit ? 'warning' : 'default'} className="gap-4 p-4">
+        {content}
       </Card>
     </article>
   );
 }
 
-function NeutralNutrientCard({ totals }: { totals: NutrientTotal[] }) {
+function StandardStatus({ total }: { total: NutrientTotal }) {
+  const evaluation = evaluateNutrientStandard(total);
+  if (evaluation.status === 'over-upper-limit') {
+    return <p className="text-sm font-bold text-warning-strong">상한 초과</p>;
+  }
+  if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        영양제로는 권장량의 {evaluation.percentOfBase}%
+      </p>
+    );
+  }
+  if (evaluation.status === 'recommended') {
+    return <p className="text-sm text-muted-foreground">권장 범위예요</p>;
+  }
+  return null;
+}
+
+function NutrientRangeBar({ total }: { total: NutrientTotal }) {
+  const evaluation = evaluateNutrientStandard(total);
+  const positions = rangePositions(total, evaluation.base);
+  const overUpperLimit = evaluation.status === 'over-upper-limit';
+
   return (
-    <Card className="gap-4 p-4">
-      {totals.map((total) => {
-        const percent = Math.min(100, (total.amount / total.upperLimit) * 100);
-        return (
-          <div
-            key={total.nutrientId}
-            role="article"
-            aria-label={`${total.name} 성분 합계`}
-            className="flex flex-col gap-2"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-base font-bold text-foreground">{total.name}</span>
-              <span className="text-sm text-muted-foreground tnum">
-                {numberFormat.format(total.amount)} / {numberFormat.format(total.upperLimit)} {total.unit}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-pill bg-muted-bg" aria-hidden>
-              <div
-                className="h-full rounded-pill bg-disabled-foreground"
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-          </div>
-        );
-      })}
-    </Card>
+    <div
+      role="meter"
+      aria-label={`${total.name} 섭취기준 위치`}
+      aria-valuemin={0}
+      aria-valuenow={total.amount}
+      aria-valuemax={Math.max(total.amount, total.ul ?? evaluation.base ?? total.amount)}
+      className="relative mx-1 h-5"
+    >
+      <div className="absolute inset-x-0 top-2 h-2 rounded-pill bg-muted-bg">
+        <div
+          className={`h-full rounded-pill ${overUpperLimit ? 'bg-warning' : 'bg-primary-bg'}`}
+          style={{ width: `${positions.marker}%` }}
+        />
+      </div>
+      {positions.base !== null && (
+        <span
+          data-threshold="base"
+          aria-hidden
+          className="absolute top-1 h-4 w-px bg-muted-foreground"
+          style={{ left: `${positions.base}%` }}
+        />
+      )}
+      {positions.upper !== null && (
+        <span
+          data-threshold="upper-limit"
+          aria-hidden
+          className={`absolute top-1 h-4 w-px ${
+            overUpperLimit ? 'bg-warning' : 'bg-muted-foreground'
+          }`}
+          style={{ left: `${positions.upper}%` }}
+        />
+      )}
+      <span
+        aria-hidden
+        className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${
+          overUpperLimit ? 'bg-warning' : 'bg-muted-foreground'
+        }`}
+        style={{ left: `${positions.marker}%` }}
+      />
+    </div>
   );
+}
+
+function rangePositions(total: NutrientTotal, base: number | null) {
+  if (total.ul !== null) {
+    const upper = 88;
+    const marker = total.amount > total.ul
+      ? 100
+      : Math.max(0, Math.min(upper, (total.amount / total.ul) * upper));
+    const basePosition = base === null
+      ? null
+      : Math.max(8, Math.min(upper - 8, (base / total.ul) * upper));
+    return { base: basePosition, upper, marker };
+  }
+
+  if (base !== null) {
+    const basePosition = 64;
+    const marker = Math.max(0, Math.min(100, (total.amount / base) * basePosition));
+    return { base: basePosition, upper: null, marker };
+  }
+
+  return { base: null, upper: null, marker: 0 };
+}
+
+function standardSourceLabel(profile: NutrientStandardProfile | null): string {
+  if (!profile?.birthDate || !profile.gender) {
+    return '기준 · 2025 한국인 영양소 섭취기준';
+  }
+  const age = calculateFullAge(profile.birthDate);
+  const gender = profile.gender === 'female' ? '여성' : '남성';
+  return `기준 · 2025 한국인 영양소 섭취기준 · 만 ${age}세 ${gender}`;
 }
