@@ -201,9 +201,13 @@ def test_ocr_job_uses_temporary_structured_result_contract() -> None:
     _, ocr = load_care_ocr_models()
 
     assert ocr.OcrJob._meta.db_table == "ocr_jobs"
+    assert ocr.OcrJob._meta.fields_map["user"].model_name == "models.User"
+    assert ocr.OcrJob._meta.fields_map["user"].null is False
     assert ocr.OcrJob._meta.fields_map["care_episode"].model_name == "models.CareEpisode"
+    assert ocr.OcrJob._meta.fields_map["care_episode"].null is True
+    assert ocr.OcrJob._meta.fields_map["care_episode"].on_delete == fields.SET_NULL
     assert ocr.OcrJob._meta.unique_together == (
-        ("care_episode", "idempotency_key"),
+        ("user", "idempotency_key"),
         ("id", "care_episode"),
     )
     assert ocr.OcrJob._meta.fields_map["input_manifest"].null is False

@@ -7,7 +7,12 @@ from typing import cast
 import httpx
 
 from app.core.config import Config
-from app.core.exceptions import OcrProviderConfigError, OcrProviderError, OcrProviderTimeoutError
+from app.core.exceptions import (
+    OcrProviderConfigError,
+    OcrProviderError,
+    OcrProviderTimeoutError,
+    OcrProviderTransientError,
+)
 from app.services.ocr_image_input import ValidatedImage
 
 
@@ -55,7 +60,10 @@ class ClovaTemplateProvider:
         except httpx.TimeoutException as error:
             raise OcrProviderTimeoutError() from error
         except httpx.RequestError as error:
-            raise OcrProviderError() from error
+            raise OcrProviderTransientError() from error
+
+        if response.status_code in {408, 425, 429} or response.status_code >= 500:
+            raise OcrProviderTransientError()
 
         try:
             response.raise_for_status()

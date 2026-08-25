@@ -16,6 +16,7 @@ TORTOISE_APP_MODELS = [
     "app.models.background_jobs",
     "app.models.medications",
     "app.models.supplement_nutrients",
+    "app.models.interactions",
 ]
 
 TORTOISE_ORM = {

@@ -1,0 +1,174 @@
+{
+  "policy": "PDF 전체 청킹 전에 문서 유형별 대표 파일만 전처리한다.",
+  "pilots": [
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-b1ac511de6a0e0e4",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/1일최대투여량.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-5d8cbe6ad85d7a4e",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR노인주의.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-d66d41973aea7577",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR병용금기.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-bb50beaf25b69ad0",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR용량주의.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-5421628dfa0c5dec",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR임부금기.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-f2833b7d55bde3e0",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR첨가제주의.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-0695154e6f834669",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR투여기간주의.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-1dd5e412185f2607",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR특정연령대금기.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-6c1c8f022c94c7fa",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/DUR효능군중복주의.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-b34c1684de58bf06",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/e약은요.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_records",
+      "document_id": "mfds_drug_records-2617258a49875bcc",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/이상사례보고_제품_정보.csv",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_easy_drug_xlsx",
+      "document_id": "mfds_easy_drug_xlsx-81491343ada4248b",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_records/e약은요정보검색.xlsx",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_supplement_products",
+      "document_id": "mfds_supplement_products-082873eea2e2d55e",
+      "repo_path": "data/knowledge/raw/public/mfds/supplement_products/건강기능식품DB_20260623_5556건.xlsx",
+      "processing_status": "STRUCTURED_SOURCE",
+      "selection_reason": "구조화 데이터 스키마 확인"
+    },
+    {
+      "source_id": "mfds_drug_food_interaction_guide",
+      "document_id": "mfds_drug_food_interaction_guide-53bfb2433f48a8b0",
+      "repo_path": "data/knowledge/raw/public/mfds/drug_food_interactions/약과음식_상호작용을_피하는_복약안내서.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "mfds_supplement_function_guide",
+      "document_id": "mfds_supplement_function_guide-b6e3f0c206cd3a22",
+      "repo_path": "data/knowledge/raw/public/mfds/supplement_guides/건강기능식품_기능별_정보집.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "mfds_supplement_code",
+      "document_id": "mfds_supplement_code-d0ee39cdebceccf2",
+      "repo_path": "data/knowledge/raw/public/mfds/supplement_code/1-1 비타민 A _20260616.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "food_safety_korea_supplement_ingredients",
+      "document_id": "food_safety_korea_supplement_ingredients-bbd07d1c2d46d789",
+      "repo_path": "data/knowledge/raw/public/food_safety_korea/supplement_ingredients/1-10_비타민_B6.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "kpicia_drug_encyclopedia",
+      "document_id": "kpicia_drug_encyclopedia-3e5922cbedbdbc62",
+      "repo_path": "data/knowledge/raw/demo_restricted/kpicia/drug_encyclopedia/A형 간염 백신.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "kpicia_adverse_case_report",
+      "document_id": "kpicia_adverse_case_report-2e89423c98769fbb",
+      "repo_path": "data/knowledge/raw/demo_restricted/kpicia/adverse_case_report/01_독사조신_심한어지러움.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "kpicia_adverse_case_report",
+      "document_id": "kpicia_adverse_case_report-8aad9e34e38a87ab",
+      "repo_path": "data/knowledge/raw/demo_restricted/kpicia/adverse_case_report/ocr/경구피임제 복용 후 개방성 이관 증상 악화 사례_가능함.pdf",
+      "processing_status": "OCR_REQUIRED",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증"
+    },
+    {
+      "source_id": "kpicia_pharm_review",
+      "document_id": "kpicia_pharm_review-dd03682eeb66c07e",
+      "repo_path": "data/knowledge/raw/demo_restricted/kpicia/pharm_review/161010 과민성대장증후군_곽혜선_final.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "research_supplement_interactions",
+      "document_id": "research_supplement_interactions-016c81c9a3e29ebd",
+      "repo_path": "data/knowledge/raw/demo_restricted/research/supplement_interactions/Calcium and IronAbsorption – Mechanisms andPublic Health Relevance.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증",
+      "manual_review_status": "APPROVED"
+    },
+    {
+      "source_id": "unknown_supplement_interaction_monograph",
+      "document_id": "unknown_supplement_interaction_monograph-eb5e7c060e481b58",
+      "repo_path": "data/knowledge/raw/demo_restricted/unknown_source/supplement_interactions/건강기능식품원료별_상호작용_모노그래프.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "동일 문서 유형의 대표 전처리 검증"
+    }
+  ]
+}

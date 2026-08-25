@@ -115,8 +115,9 @@ def test_assemble_lifestyle_orders_information_sources() -> None:
 
     assert patient_index < public_index < ai_index
     assert "환자 확정정보" in answer
-    assert "공공자료 추가 설명" in answer
+    assert "검색 근거 추가 설명" in answer
     assert "AI 생성 일반 안내" in answer
+    assert "참고용 정보" in answer
 
 
 def test_assemble_general_does_not_expose_patient_facts() -> None:

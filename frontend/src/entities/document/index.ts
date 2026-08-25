@@ -1,4 +1,10 @@
-export { confirmOcrResult, getOcrResult, uploadDocument } from './api';
+export {
+  confirmOcrResult,
+  getOcrDocumentImageUrl,
+  getOcrResult,
+  releaseOcrDocumentImageUrl,
+  uploadDocument,
+} from './api';
 export type {
   Confidence,
   ConfirmOcrResultPayload,
@@ -8,5 +14,4 @@ export type {
   OcrResult,
   OcrStatus,
   UploadDocumentsResult,
-  UploadPurpose,
 } from './types';

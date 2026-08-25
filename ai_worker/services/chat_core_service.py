@@ -17,11 +17,11 @@ from ai_worker.rag.embeddings.openai_embedding_provider import (
 from ai_worker.rag.query_builders.chat_query_builder import (
     ChatQueryBuilder,
 )
-from ai_worker.rag.retrievers.guideline_retriever import (
-    GuidelineRetriever,
+from ai_worker.rag.retrievers.knowledge_guideline_retriever import (
+    KnowledgeGuidelineRetriever,
 )
-from ai_worker.rag.vectorstores.qdrant_guideline_store import (
-    QdrantGuidelineStore,
+from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
+    QdrantKnowledgeStore,
 )
 from ai_worker.safety.chat_input_risk_classifier import (
     RuleBasedChatInputRiskClassifier,
@@ -67,9 +67,9 @@ def build_chat_use_case(
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
     )
-    vector_store = QdrantGuidelineStore(
+    vector_store = QdrantKnowledgeStore(
         client=qdrant_client,
-        collection_name=settings.QDRANT_COLLECTION,
+        collection_name=settings.KNOWLEDGE_QDRANT_COLLECTION,
         vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
     )
 
@@ -83,9 +83,10 @@ def build_chat_use_case(
             max_retries=settings.OPENAI_MAX_RETRIES,
         ),
         query_builder=ChatQueryBuilder(),
-        retriever=GuidelineRetriever(
+        retriever=KnowledgeGuidelineRetriever(
             embedding_provider=embedding_provider,
             vector_store=vector_store,
+            dataset_version=settings.KNOWLEDGE_DATASET_VERSION,
             min_similarity_score=settings.RAG_MIN_SIMILARITY_SCORE,
         ),
         answer_generator=OpenAIChatAnswerGenerator(

@@ -18,4 +18,3 @@
 3. Generate an Aerich migration containing the table definition and source rows.
 4. Run focused tests, Ruff, migration checks, and the full test suite as practical.
 5. Add the table definition to the requested dbdiagram after action-time confirmation.
-
