@@ -7,6 +7,8 @@ export type { CardProps, CardTone } from './Card';
 export { Input } from './Input';
 export type { InputProps } from './Input';
 
+export { GenderRadioGroup } from './GenderRadioGroup';
+
 export { StatusBadge } from './StatusBadge';
 export type { StatusBadgeProps, StatusBadgeType } from './StatusBadge';
 
