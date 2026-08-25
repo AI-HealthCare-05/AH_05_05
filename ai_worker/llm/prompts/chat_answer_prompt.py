@@ -8,7 +8,7 @@ from langchain_core.messages import (
 
 from ai_worker.llm.prompts.prompt_assets import (
     CHAT_ANSWER_PRINCIPLES,
-    LIFESTYLE_MEDICINE_COACH_PERSONA,
+    MEDICATION_KNOWLEDGE_COACH_PERSONA,
 )
 from ai_worker.schemas.chat import (
     ChatAnswerRequest,
@@ -19,11 +19,11 @@ from ai_worker.schemas.guideline import (
 )
 from ai_worker.schemas.patient import PatientContext
 
-CHAT_ANSWER_PROMPT_VERSION = "chat-answer-prompt-v2"
+CHAT_ANSWER_PROMPT_VERSION = "chat-answer-prompt-v3"
 
 SYSTEM_PROMPT = "\n\n".join(
     (
-        LIFESTYLE_MEDICINE_COACH_PERSONA,
+        MEDICATION_KNOWLEDGE_COACH_PERSONA,
         CHAT_ANSWER_PRINCIPLES,
     )
 )
@@ -86,7 +86,7 @@ def build_chat_answer_messages(
         "[환자 확정정보]\n"
         f"{json.dumps(patient_payload, ensure_ascii=False, indent=2)}"
         "\n\n"
-        "[검색된 공공자료]\n"
+        "[검색된 약·영양제 근거]\n"
         f"{json.dumps(public_payload, ensure_ascii=False, indent=2)}"
     )
 

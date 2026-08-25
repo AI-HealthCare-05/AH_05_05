@@ -18,8 +18,9 @@ from ai_worker.schemas.patient import (
 
 class ChatAnswerAssembler:
     SAFETY_NOTICE = (
-        "이 안내는 의료진의 진료를 대체하지 않습니다. "
-        "복약 변경이나 증상 판단이 필요한 경우 "
+        "이 내용은 참고용 정보이며 의료진의 진료를 "
+        "대체하지 않습니다. 복약 시작·중단·변경이나 "
+        "증상 판단이 필요한 경우 "
         "의료진 또는 의료기관에 문의하세요."
     )
 
@@ -51,7 +52,7 @@ class ChatAnswerAssembler:
         if classification.route == ChatRoute.PATIENT_AND_RAG:
             self._append_section(
                 sections=sections,
-                title="공공자료 추가 설명",
+                title="검색 근거 추가 설명",
                 lines=supplement.public_information,
             )
 
