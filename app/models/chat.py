@@ -38,7 +38,11 @@ class ChatSession(models.Model):
 
     class Meta:
         table = "chat_sessions"
-        indexes = (("care_episode", "status"), ("last_message_at",))
+        indexes = (
+            ("user", "status", "last_message_at"),
+            ("care_episode", "status"),
+            ("last_message_at",),
+        )
 
 
 class ChatMessage(models.Model):
@@ -80,6 +84,10 @@ class ChatMessage(models.Model):
     patient_context_hash = fields.CharField(max_length=64, null=True)
     langsmith_trace_id = fields.CharField(max_length=100, null=True)
     error_code = fields.CharField(max_length=100, null=True)
+    duration_ms = fields.IntField(
+        null=True,
+        validators=[MinValueValidator(0)],
+    )
     started_at = fields.DatetimeField(null=True)
     completed_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -107,6 +115,12 @@ class ChatMessageSource(models.Model):
     source_type = fields.CharEnumField(ChatSourceType)
     patient_source_kind = fields.CharEnumField(PatientSourceKind, null=True)
     patient_field = fields.CharEnumField(CareEpisodeSourceField, null=True)
+    care_episode: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.CareEpisode",
+        related_name="chat_message_sources",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
     medication: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.Medication",
         related_name="chat_message_sources",
@@ -121,6 +135,18 @@ class ChatMessageSource(models.Model):
     )
     follow_up_visit: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.FollowUpVisit",
+        related_name="chat_message_sources",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    user_suppl_nutrient: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.UserSupplementNutrient",
+        related_name="chat_message_sources",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    interaction_rule: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.InteractionRule",
         related_name="chat_message_sources",
         null=True,
         on_delete=fields.RESTRICT,
@@ -149,9 +175,12 @@ class ChatMessageSource(models.Model):
         table = "chat_message_sources"
         indexes = (
             ("chat_message",),
+            ("care_episode",),
             ("medication",),
             ("care_advice",),
             ("follow_up_visit",),
+            ("user_suppl_nutrient",),
+            ("interaction_rule",),
             ("public_dataset_key", "source_record_key"),
             ("vector_chunk_id",),
         )

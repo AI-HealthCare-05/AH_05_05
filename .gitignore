@@ -22,3 +22,14 @@ wheels/
 # OS-generated metadata
 .DS_Store
 Thumbs.db
+
+# Knowledge source files and reproducible processing outputs
+/data/knowledge/raw/**
+!/data/knowledge/raw/README.md
+/data/knowledge/processed/**
+!/data/knowledge/processed/README.md
+/data/knowledge/reports/*.json
+
+# Local vector database persistence
+/qdrant_storage/
+/data/qdrant_storage/

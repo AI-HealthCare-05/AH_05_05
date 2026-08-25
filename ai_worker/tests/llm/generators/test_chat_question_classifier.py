@@ -178,6 +178,9 @@ async def test_classify_builds_prompt_with_question_and_history() -> None:
     assert "그 약은 언제 먹어?" in prompt_text
     assert "PATIENT_AND_RAG" in prompt_text
     assert "normalized_query" in prompt_text
+    assert "영양제" in prompt_text
+    assert "약-약" in prompt_text
+    assert "복용 결정을 대신" in prompt_text
 
 
 async def test_classify_accepts_dictionary_response() -> None:

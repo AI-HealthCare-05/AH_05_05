@@ -118,8 +118,29 @@ async def test_openai_classifies_lifestyle_question() -> None:
         ChatClassificationResult,
     )
     assert result.intent == ChatIntent.LIFESTYLE
+    assert result.route == ChatRoute.GENERAL_GUIDANCE
+    assert result.normalized_query is None
+
+
+async def test_openai_routes_interaction_question_to_knowledge_rag() -> None:
+    classifier = OpenAIChatQuestionClassifier(
+        model=settings.OPENAI_CHAT_MODEL,
+        api_key=settings.OPENAI_API_KEY,
+    )
+    request = build_request().model_copy(
+        update={"question": ("아스피린과 오메가3를 같이 먹을 때 알려진 상호작용 정보가 있어?")}
+    )
+
+    result = await classifier.classify(
+        request=request,
+        minimum_risk=ChatInputRiskResult(
+            risk_level=ChatRiskLevel.LOW,
+        ),
+    )
+
+    assert result.intent == ChatIntent.MEDICATION
     assert result.route == ChatRoute.PATIENT_AND_RAG
-    assert result.normalized_query
+    assert result.normalized_query is not None
     assert result.risk_level in {
         ChatRiskLevel.LOW,
         ChatRiskLevel.CAUTION,
@@ -154,4 +175,5 @@ async def test_openai_generates_structured_chat_answer() -> None:
     assert result.model_name == (settings.OPENAI_CHAT_MODEL)
 
     assert "퇴원 후 무리한 활동은 피하세요." in (result.answer)
-    assert "이 안내는 의료진의 진료를 대체하지 않습니다." in (result.answer)
+    assert "참고용 정보" in result.answer
+    assert "의료진의 진료를 대체하지 않습니다." in result.answer

@@ -3,6 +3,9 @@ from qdrant_client import AsyncQdrantClient
 
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
+from ai_worker.rag.retrievers.knowledge_guideline_retriever import (
+    KnowledgeGuidelineRetriever,
+)
 from ai_worker.schemas.chat import ChatAnswerRequest, ChatAnswerResult
 from ai_worker.services.chat_core_service import (
     ChatCoreService,
@@ -66,12 +69,20 @@ async def test_build_chat_use_case_connects_ai_components() -> None:
         use_case = build_chat_use_case(
             settings=Config(
                 OPENAI_API_KEY="test-api-key",
+                KNOWLEDGE_QDRANT_COLLECTION=("medication_knowledge_pilot_v1"),
+                KNOWLEDGE_DATASET_VERSION="knowledge-pilot-v1",
                 _env_file=None,
             ),
             qdrant_client=qdrant_client,
         )
 
         assert isinstance(use_case, AnswerChatMessageUseCase)
+        assert isinstance(
+            use_case._retriever,
+            KnowledgeGuidelineRetriever,
+        )
+        assert use_case._retriever._dataset_version == "knowledge-pilot-v1"
+        assert use_case._retriever._vector_store.collection_name == "medication_knowledge_pilot_v1"
     finally:
         await qdrant_client.close()
 

@@ -4,7 +4,7 @@ from importlib.resources import files
 _ALLOWED_PROMPT_ASSETS = frozenset(
     {
         "chat_answer_principles.md",
-        "lifestyle_medicine_coach_persona.md",
+        "medication_knowledge_coach_persona.md",
     }
 )
 
@@ -22,5 +22,5 @@ def load_prompt_asset(asset_name: str) -> str:
     return content
 
 
-LIFESTYLE_MEDICINE_COACH_PERSONA = load_prompt_asset("lifestyle_medicine_coach_persona.md")
+MEDICATION_KNOWLEDGE_COACH_PERSONA = load_prompt_asset("medication_knowledge_coach_persona.md")
 CHAT_ANSWER_PRINCIPLES = load_prompt_asset("chat_answer_principles.md")
