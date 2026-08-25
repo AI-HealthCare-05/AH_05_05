@@ -1,0 +1,30 @@
+import type { NutrientTotal, Supplement } from './types';
+
+/** 초과 성분이 화면 상단에 오도록 합계를 계산합니다. */
+export function summarizeNutrients(supplements: Supplement[]): NutrientTotal[] {
+  const totals = new Map<string, NutrientTotal>();
+
+  for (const supplement of supplements) {
+    for (const nutrient of supplement.nutrients) {
+      const current = totals.get(nutrient.nutrientId);
+      const dailyAmount = nutrient.amount * supplement.dailyCount;
+      if (current) {
+        current.amount += dailyAmount;
+        current.exceeded = current.amount > current.upperLimit;
+        if (!current.sourceNames.includes(supplement.name)) current.sourceNames.push(supplement.name);
+      } else {
+        totals.set(nutrient.nutrientId, {
+          ...nutrient,
+          amount: dailyAmount,
+          exceeded: dailyAmount > nutrient.upperLimit,
+          sourceNames: [supplement.name],
+        });
+      }
+    }
+  }
+
+  return [...totals.values()].sort((left, right) => {
+    if (left.exceeded !== right.exceeded) return left.exceeded ? -1 : 1;
+    return right.amount / right.upperLimit - left.amount / left.upperLimit;
+  });
+}

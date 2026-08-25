@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 /* ============================================================
-   포케 디자인 토큰
-   Figma 파일 rXdIMgnJTBnFXia6Eb5hAn 의 변수와 1:1 대응합니다.
+   포케 디자인 토큰 — B 방향(부드러운 케어) 적용본
+   2026.08 · UI 레퍼런스 조사 결과 반영 (MyTherapy·마보 계열)
+
    2단 구조를 그대로 유지합니다.
      1) Primitives — 실제 색값. 테마를 바꿀 때 여기만 수정.
      2) 의미 토큰   — Primitives를 참조. 이름은 절대 바꾸지 않음(코드가 참조).
@@ -10,62 +11,56 @@
 
 @theme {
   /* ---------- 1) Primitives ---------- */
-  --color-slate-50: #f8fafc;
-  --color-slate-100: #f1f5f9;
-  --color-slate-200: #e2e8f0;
-  --color-slate-400: #94a3b8;
-  --color-slate-600: #475569;
-  --color-slate-900: #0f172a;
+  --color-warm-50: #fbf6f3;
+  --color-warm-100: #f5efec;
+  --color-warm-200: #ede4e0;
+  --color-warm-400: #a39a9c;
+  --color-warm-600: #6f6769;
+  --color-warm-900: #241e20;
   --color-white: #ffffff;
 
-  --color-blue-50: #eff6ff;
-  --color-blue-600: #2563eb;
-  --color-blue-700: #1d4ed8;
+  --color-mint-50: #e8f7f2;
+  --color-mint-600: #2fb88c;
+  --color-mint-700: #23906d;
+  --color-mint-800: #1c7357;
 
-  --color-red-50: #fef2f2;
-  --color-red-600: #dc2626;
-  --color-red-700: #b91c1c;
+  --color-peach-50: #fdf1e7;
+  --color-peach-600: #e8833a;
+  --color-peach-700: #c26722;
 
-  --color-amber-50: #fffbeb;
-  --color-amber-700: #b45309;
-  --color-amber-800: #92400e;
+  --color-rose-50: #fdeded;
+  --color-rose-600: #d9534f;
+  --color-rose-700: #b03f3c;
 
-  --color-green-50: #f0fdf4;
-  --color-green-700: #15803d;
-  --color-green-800: #166534;
-
-  /* ---------- 2) 의미 토큰 (Figma의 Color 컬렉션) ---------- */
-  --color-background: var(--color-slate-50);
+  /* ---------- 2) 의미 토큰 (이름 고정) ---------- */
+  --color-background: var(--color-warm-50);
   --color-card: var(--color-white);
-  --color-foreground: var(--color-slate-900);
-  --color-muted-foreground: var(--color-slate-600);
-  --color-disabled-foreground: var(--color-slate-400);
-  --color-muted-bg: var(--color-slate-100);
-  --color-border: var(--color-slate-200);
-  --color-input: var(--color-slate-200);
-  --color-ring: var(--color-blue-600);
+  --color-foreground: var(--color-warm-900);
+  --color-muted-foreground: var(--color-warm-600);
+  --color-disabled-foreground: var(--color-warm-400);
+  --color-muted-bg: var(--color-warm-100);
+  --color-border: var(--color-warm-200);
+  --color-input: var(--color-warm-200);
+  --color-ring: var(--color-mint-600);
 
-  --color-primary: var(--color-blue-600);
-  --color-primary-strong: var(--color-blue-700);
-  --color-primary-bg: var(--color-blue-50);
+  --color-primary: var(--color-mint-600);
+  --color-primary-strong: var(--color-mint-700);
+  --color-primary-bg: var(--color-mint-50);
 
-  --color-danger: var(--color-red-600);
-  --color-danger-strong: var(--color-red-700);
-  --color-danger-bg: var(--color-red-50);
+  --color-danger: var(--color-rose-600);
+  --color-danger-strong: var(--color-rose-700);
+  --color-danger-bg: var(--color-rose-50);
 
-  --color-warning: var(--color-amber-700);
-  --color-warning-strong: var(--color-amber-800);
-  --color-warning-bg: var(--color-amber-50);
+  --color-warning: var(--color-peach-600);
+  --color-warning-strong: var(--color-peach-700);
+  --color-warning-bg: var(--color-peach-50);
 
-  --color-success: var(--color-green-700);
-  --color-success-strong: var(--color-green-800);
-  --color-success-bg: var(--color-green-50);
+  /* success는 중립적인 상태 표시에만 사용합니다. 건강 판정에는 쓰지 않습니다. */
+  --color-success: var(--color-mint-700);
+  --color-success-strong: var(--color-mint-800);
+  --color-success-bg: var(--color-mint-50);
 
-  /* ---------- shadcn/ui 별칭 토큰 ----------
-     우리 토큰 이름·구조(Primitives → 의미 토큰)는 그대로 두고,
-     shadcn(Radix 기반) 컴포넌트 코드가 참조하는 이름만 같은 값을 가리키는
-     별칭으로 추가합니다. 새 색을 만드는 게 아니라 기존 값을 재사용합니다.
-     (계약서 3장 "shadcn/ui와의 분업" 참고) */
+  /* ---------- shadcn/ui 별칭 토큰 ---------- */
   --color-primary-foreground: var(--color-card);
   --color-destructive: var(--color-danger);
   --color-destructive-foreground: var(--color-card);
@@ -75,27 +70,34 @@
   --color-popover: var(--color-card);
   --color-popover-foreground: var(--color-foreground);
 
-  /* ---------- 모서리 (Figma Layout/radius) ---------- */
-  --radius-card: 12px;
-  --radius-button: 8px;
-  --radius-input: 8px;
+  /* ---------- 모서리 ---------- */
+  --radius-card: 16px;
+  --radius-button: 12px;
+  --radius-input: 12px;
+  --radius-sheet: 24px;
   --radius-pill: 9999px;
 
-  /* ---------- 크기 (Figma Layout/size) ---------- */
+  /* ---------- 그림자 ---------- */
+  --shadow-card: 0 1px 3px rgba(36, 30, 32, 0.08);
+  --shadow-sheet: 0 -4px 24px rgba(36, 30, 32, 0.12);
+
+  /* ---------- 크기 ---------- */
   --spacing-header: 56px;
   --spacing-tabbar: 56px;
-  --spacing-touch: 44px;   /* NFR-ACC-001 최소 터치 영역 */
-  --spacing-page-x: 16px;
-  --spacing-content: 343px; /* 375 - 좌우 16 */
+  --spacing-touch: 44px;
+  --spacing-page-x: 20px;
+  --spacing-content: 335px;
 
   --container-page: 375px;
-  --container-app: 480px;   /* NFR-USE-001 반응형 최대 폭 */
+  --container-app: 480px;
 
-  /* ---------- 타이포 (Figma Typography) ---------- */
+  /* ---------- 타이포 ---------- */
   --font-sans: "Noto Sans KR", system-ui, -apple-system, sans-serif;
 
   --text-sm: 14px;
   --text-sm--line-height: 21px;
+  --text-tagline: 15px;
+  --text-tagline--line-height: 22px;
   --text-base: 16px;
   --text-base--line-height: 25.6px;
   --text-lg: 18px;
@@ -104,11 +106,16 @@
   --text-xl--line-height: 28px;
   --text-2xl: 24px;
   --text-2xl--line-height: 33.6px;
+
+  --text-logo: 42px;
+  --text-logo--line-height: 1.2;
+
+  --text-metric: 28px;
+  --text-metric--line-height: 32px;
+  --text-unit: 12px;
+  --text-unit--line-height: 16px;
 }
 
-/* ============================================================
-   전역 기본값
-   ============================================================ */
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -123,7 +130,7 @@
     line-height: var(--text-base--line-height);
   }
 
-  /* 의료 정보 앱이므로 확대/축소를 막지 않습니다(접근성) */
+  /* 의료 정보 앱이므로 확대/축소를 막지 않습니다(접근성). */
   * {
     -webkit-tap-highlight-color: transparent;
   }
@@ -131,5 +138,11 @@
   :focus-visible {
     outline: 2px solid var(--color-ring);
     outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }

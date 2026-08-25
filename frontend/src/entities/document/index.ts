@@ -1,10 +1,8 @@
-export { confirmOcrResult, getOcrResult, uploadDocuments } from './api';
+export { confirmOcrResult, getOcrResult, uploadDocument } from './api';
 export type {
-  CapturedDocument,
   Confidence,
   ConfirmOcrResultPayload,
   ConfirmOcrResultResponse,
-  OcrAdvice,
   OcrField,
   OcrMedication,
   OcrResult,

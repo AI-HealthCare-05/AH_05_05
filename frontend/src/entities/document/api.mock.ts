@@ -8,13 +8,11 @@
  *
  * - 진단명·수술명은 의도적으로 OCR 원문 그대로(영문·약어) 둡니다. LLM 단순화 이전
  *   상태를 화면에서 확인하기 위한 것이며, 읽기 좋은 한국어로 바꾸지 않습니다.
- * - medicationDays 는 레코드 전체에 1개 값입니다. 개별 약의 note 에는 "복용 시점"만
- *   담습니다 — O07 약 카드가 "1일 N회 · {note}" 로 조립하므로 note 에 빈도를 다시
- *   넣으면 중복 표시됩니다.
- * - high/medium/low 3단계가 한 화면에 모두 보이도록 신뢰도를 분산했습니다.
+ * - days 는 약별 처방 일수이고 note 는 "복용 시점" 원문입니다. 둘을 섞어 저장하면
+ *   결과 확인 화면과 복약 시간 화면에서 일수·시점 문구를 다시 분리할 수 없습니다.
+ * - high 항목은 배지를 숨기고 리바록사반 low 한 건만 확인 대상으로 보이게 합니다.
  */
 import type {
-  CapturedDocument,
   ConfirmOcrResultPayload,
   ConfirmOcrResultResponse,
   OcrResult,
@@ -23,12 +21,19 @@ import type {
   UploadDocumentsResult,
 } from './types';
 
-const MOCK_BATCH_ID = 'b_mock_9f21';
+let uploadSequence = 0;
+const uploadedBatchPollCount = new Map<string, number>();
 
-export function mockUploadDocuments(files: CapturedDocument[]): UploadDocumentsResult {
+export function mockUploadDocument(file: File): UploadDocumentsResult {
+  if (file.name.includes('upload-fail')) {
+    throw new Error('사진을 올리지 못했어요. 연결을 확인하고 다시 시도해주세요.');
+  }
+  uploadSequence += 1;
+  const batchId = `b_mock_uploaded_${uploadSequence}`;
+  uploadedBatchPollCount.set(batchId, 0);
   return {
-    batchId: MOCK_BATCH_ID,
-    documentIds: files.map((_, i) => 101 + i),
+    batchId,
+    documentIds: [101],
     ocrStatus: 'processing',
   };
 }
@@ -56,6 +61,14 @@ const STATUS_BY_BATCH_ID: Array<{
 ];
 
 export function mockOcrResult(batchId: string): OcrResult {
+  const uploadedPollCount = uploadedBatchPollCount.get(batchId);
+  if (uploadedPollCount !== undefined && uploadedPollCount < 2) {
+    uploadedBatchPollCount.set(batchId, uploadedPollCount + 1);
+    return {
+      batchId,
+      ocrStatus: uploadedPollCount === 0 ? 'queued' : 'processing',
+    };
+  }
   const forced = STATUS_BY_BATCH_ID.find((r) => batchId.includes(r.match));
   // 결과 필드가 없는 상태는 명세 4번대로 { batchId, ocrStatus } 만 돌려줍니다.
   if (forced && forced.status !== 'complete') {
@@ -66,24 +79,17 @@ export function mockOcrResult(batchId: string): OcrResult {
     batchId,
     // complete 는 결과 필드가 있는 상태라 아래 값을 그대로 쓰되 상태만 갈아끼웁니다.
     ocrStatus: forced?.status === 'complete' ? 'complete' : 'ready_for_review',
+    documentImageUrl: '/mock/medication-envelope.svg',
     fields: {
-      diagnosis: { value: 'Rt Femur head Fracture, closed', confidence: 'low' },
-      surgery: { value: 'Rt Femur head ORIF', confidence: 'low' },
-      dischargeDate: { value: '2026-08-07', confidence: 'high' },
-      medicationDays: { value: 14, confidence: 'low' },
+      dispensedDate: { value: '2026-08-22', confidence: 'high' },
     },
     medications: [
-      { tempId: 'm1', name: 'Celecoxib', dose: '200mg', timesPerDay: 2, note: '아침·저녁 식후', confidence: 'high' },
-      { tempId: 'm2', name: 'Rivaroxaban', dose: '10mg', timesPerDay: 1, note: '저녁 식후', confidence: 'low' },
-      { tempId: 'm3', name: 'Acetaminophen', dose: '650mg', timesPerDay: null, note: '필요 시, 6시간 이상 간격', confidence: 'high' },
-      { tempId: 'm4', name: 'Famotidine', dose: '20mg', timesPerDay: 2, note: '아침·저녁 식후', confidence: 'medium' },
+      { tempId: 'm1', name: '셀레콕시브', dose: '200mg', timesPerDay: 2, days: 7, note: '아침·저녁 식후', confidence: 'high' },
+      { tempId: 'm2', name: '리바록사반', dose: '10mg', timesPerDay: 2, days: 7, note: '아침·저녁 식후', confidence: 'low' },
+      { tempId: 'm3', name: '아세트아미노펜', dose: '650mg', timesPerDay: null, days: 7, note: '필요 시, 6시간 이상 간격', confidence: 'high' },
+      { tempId: 'm4', name: '파모티딘', dose: '20mg', timesPerDay: 2, days: 7, note: '아침·저녁 식후', confidence: 'high' },
     ],
-    advices: [
-      { tempId: 'a1', text: '보행기 사용', confidence: 'high' },
-      { tempId: 'a2', text: '계단과 쪼그려 앉기 피하기', confidence: 'medium' },
-    ],
-    // 낮은 신뢰도: 진단명 + 수술명 + medicationDays + Rivaroxaban = 4건
-    lowConfidenceCount: 4,
+    lowConfidenceCount: 1,
   };
 }
 

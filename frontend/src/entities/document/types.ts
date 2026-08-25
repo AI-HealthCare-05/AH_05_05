@@ -21,14 +21,6 @@ export type OcrStatus =
 
 export type Confidence = 'high' | 'medium' | 'low';
 
-/** 카메라 루프·갤러리 선택으로 아직 서버에 올리기 전, 화면에서 들고 있는 문서 1장. */
-export interface CapturedDocument {
-  id: string;
-  fileName: string;
-  /** 갤러리로 고른 경우에만 채워집니다. 카메라 촬영은 크기를 알 수 없다고 가정합니다. */
-  sizeLabel?: string;
-}
-
 export interface UploadDocumentsResult {
   batchId: string;
   documentIds: number[];
@@ -45,11 +37,9 @@ export interface OcrMedication {
   name: string;
   dose: string;
   timesPerDay: number | null;
-  /**
-   * 스펙(3-2)에는 약별 복용일수 필드가 없습니다. 복용일수는 fields.medicationDays
-   * 하나로만 관리하기로 확인했고, 개별 약의 "며칠분"은 필요하면 이 note 텍스트에
-   * 자연어로 녹여 넣습니다(예: "1일 2회 · 7일분"). 별도 구조화 필드를 추가하지 않습니다.
-   */
+  /** 약봉투에 적힌 약별 처방 일수. 읽히지 않으면 null입니다. */
+  days: number | null;
+  /** 복용 시점 원문. 예: "아침·저녁 식후", "필요 시" */
   note: string;
   /**
    * O07(복약 정보 편집 모달)에서 사용자가 새로 추가한 약은 OCR로 추출된 값이
@@ -58,13 +48,7 @@ export interface OcrMedication {
   confidence?: Confidence;
 }
 
-export interface OcrAdvice {
-  tempId: string;
-  text: string;
-  confidence: Confidence;
-}
-
-/** 결과 필드가 오는 상태. 명세 4번은 이 두 상태에서만 fields·medications·advices 를 보냅니다. */
+/** 결과 필드가 오는 상태. 명세 4번은 이 두 상태에서만 fields·medications 를 보냅니다. */
 export type OcrResultReadyStatus = 'ready_for_review' | 'complete';
 
 /**
@@ -80,20 +64,13 @@ interface OcrResultPending {
 interface OcrResultReady {
   batchId: string;
   ocrStatus: OcrResultReadyStatus;
+  /** 등록한 문서 원본의 영속 URL. 미리보기와 저장 후 기록 화면이 같은 주소를 사용합니다. */
+  documentImageUrl: string;
   fields: {
-    diagnosis: OcrField<string>;
-    /**
-     * 노션 API 명세 3-2에는 없는 필드입니다. Figma `07` 프레임에도 진단명만 있고
-     * 수술명은 없었으나, 실제로는 진단명과 수술명이 별개 값으로 필요하다고 판단해
-     * (사용자 확인 후) 타입과 Figma 양쪽에 함께 추가했습니다.
-     */
-    surgery: OcrField<string>;
-    dischargeDate: OcrField<string>;
-    /** 처방 복용일수. 레코드 전체에 하나뿐인 값이며(스펙 3-2 기준), 개별 약마다는 없습니다. */
-    medicationDays: OcrField<number>;
+    /** 약봉투 조제일. 미래 날짜일 수 없습니다. */
+    dispensedDate: OcrField<string>;
   };
   medications: OcrMedication[];
-  advices: OcrAdvice[];
   lowConfidenceCount: number;
 }
 
@@ -107,18 +84,15 @@ interface OcrResultReady {
 export type OcrResult = OcrResultPending | OcrResultReady;
 
 export interface ConfirmOcrResultPayload {
-  diagnosis: string;
-  surgery: string;
-  dischargeDate: string;
-  medicationDays: number;
+  dispensedDate: string;
   medications: Array<{
     tempId: string;
     name: string;
     dose: string;
     timesPerDay: number | null;
+    days: number | null;
     note: string;
   }>;
-  advices: Array<{ tempId: string; text: string }>;
 }
 
 export interface ConfirmOcrResultResponse {
