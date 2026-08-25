@@ -116,6 +116,7 @@ _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
         "서론": KnowledgeSectionType.INTRODUCTION,
         "결론": KnowledgeSectionType.CONCLUSION,
         "참고문헌": KnowledgeSectionType.REFERENCES,
+        "◘ 참고문헌 ◘": KnowledgeSectionType.REFERENCES,
     },
     KnowledgeDocumentType.RESEARCH_ARTICLE: {
         "Abstract": KnowledgeSectionType.SUMMARY,
@@ -133,6 +134,7 @@ _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
     KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE: {
         "의약품-식품간 상호작용 요약서": KnowledgeSectionType.INTERACTION,
         "그밖에 안전한 약복용 방법": KnowledgeSectionType.CAUTION,
+        "발 행 일": KnowledgeSectionType.REFERENCES,
     },
     KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH: {
         **_COMMON_CAUTION_HEADINGS,
@@ -460,7 +462,34 @@ class KnowledgeSplitter:
                     start + len(chunk),
                 )
             )
-        return chunks
+        return self._merge_small_fragments(
+            content,
+            chunks,
+            policy,
+        )
+
+    def _merge_small_fragments(
+        self,
+        source: str,
+        chunks: list[tuple[str, int, int]],
+        policy: ChunkingPolicy,
+    ) -> list[tuple[str, int, int]]:
+        merged: list[tuple[str, int, int]] = []
+
+        for content, start, end in chunks:
+            if merged and self._token_counter.count(content) < policy.target_min_tokens:
+                _, previous_start, _ = merged[-1]
+                combined = source[previous_start:end].strip()
+                if self._token_counter.count(combined) <= policy.hard_max_tokens:
+                    merged[-1] = (
+                        combined,
+                        previous_start,
+                        end,
+                    )
+                    continue
+            merged.append((content, start, end))
+
+        return merged
 
     def _build_chunk(
         self,

@@ -73,3 +73,27 @@ def test_assess_pages_quality_uses_total_document_length() -> None:
 
     assert report.status == TextQualityStatus.PASS
     assert report.character_count > 60
+
+
+def test_normalize_pages_removes_pdf_download_audit_footer() -> None:
+    pages = build_pages(
+        "Calcium can affect short-term iron absorption.\n"
+        "https://example.org/article.pdf - Saturday, August 22, 2026 "
+        "5:00:06 AM - IP Address:203.0.113.10"
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content == ("Calcium can affect short-term iron absorption.")
+
+
+def test_normalize_pages_removes_document_production_footer_and_banner() -> None:
+    pages = build_pages(
+        "와파린과 비타민 K의 상호작용을 설명합니다.\n"
+        "NATIONAL INSTITUTE OF FOOD AND DRUG SAFETY / www.nifds.go.kr\n"
+        "약과음식안내서-최종.indd 10 2016-10-14 오후 12:45:15"
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content == ("와파린과 비타민 K의 상호작용을 설명합니다.")

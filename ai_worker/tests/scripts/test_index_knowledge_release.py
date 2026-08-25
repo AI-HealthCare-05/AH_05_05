@@ -183,7 +183,12 @@ def test_rejects_chunks_from_source_without_completed_approval(
         ),
         encoding="utf-8",
     )
-    chunk = SimpleNamespace(metadata=SimpleNamespace(source_id="supplement_code"))
+    chunk = SimpleNamespace(
+        metadata=SimpleNamespace(
+            source_id="supplement_code",
+            document_id="vitamin-a",
+        )
+    )
 
     with pytest.raises(ValueError, match="승인"):
         module.ensure_preprocessing_approved(
@@ -208,10 +213,78 @@ def test_accepts_chunks_only_from_approved_sources(
         ),
         encoding="utf-8",
     )
-    chunk = SimpleNamespace(metadata=SimpleNamespace(source_id="supplement_code"))
+    chunk = SimpleNamespace(
+        metadata=SimpleNamespace(
+            source_id="supplement_code",
+            document_id="vitamin-a",
+        )
+    )
 
     module.ensure_preprocessing_approved(
         [chunk],
         quality_report_path=quality_report,
         expected_dataset_version="knowledge-pilot-v1",
     )
+
+
+def test_rejects_stale_quality_report_with_different_chunk_count(
+    tmp_path: Path,
+) -> None:
+    quality_report = tmp_path / "preprocessing-quality.json"
+    quality_report.write_text(
+        json.dumps(
+            {
+                "dataset_version": "knowledge-pilot-v1",
+                "processed_document_count": 1,
+                "chunk_count": 2,
+                "ready_for_bulk_source_ids": ["supplement_code"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    chunk = SimpleNamespace(
+        metadata=SimpleNamespace(
+            source_id="supplement_code",
+            document_id="vitamin-a",
+        )
+    )
+
+    with pytest.raises(ValueError, match="청크 수"):
+        module.ensure_preprocessing_approved(
+            [chunk],
+            quality_report_path=quality_report,
+            expected_dataset_version="knowledge-pilot-v1",
+        )
+
+
+def test_rejects_stale_quality_report_with_different_document_count(
+    tmp_path: Path,
+) -> None:
+    quality_report = tmp_path / "preprocessing-quality.json"
+    quality_report.write_text(
+        json.dumps(
+            {
+                "dataset_version": "knowledge-pilot-v1",
+                "processed_document_count": 1,
+                "chunk_count": 2,
+                "ready_for_bulk_source_ids": ["supplement_code"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    chunks = [
+        SimpleNamespace(
+            metadata=SimpleNamespace(
+                source_id="supplement_code",
+                document_id=document_id,
+            )
+        )
+        for document_id in ("vitamin-a", "vitamin-b6")
+    ]
+
+    with pytest.raises(ValueError, match="문서 수"):
+        module.ensure_preprocessing_approved(
+            chunks,
+            quality_report_path=quality_report,
+            expected_dataset_version="knowledge-pilot-v1",
+        )

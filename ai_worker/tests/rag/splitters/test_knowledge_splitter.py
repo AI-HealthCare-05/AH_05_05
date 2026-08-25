@@ -4,6 +4,7 @@ from ai_worker.rag.parsers.supplement_code_parser import (
     SupplementCodeParser,
 )
 from ai_worker.rag.splitters.knowledge_splitter import (
+    ChunkingPolicy,
     KnowledgeSplitter,
     WordTokenCounter,
 )
@@ -409,6 +410,29 @@ def test_split_uses_recursive_fallback_and_narrative_overlap() -> None:
     assert first_words & second_words
 
 
+def test_recursive_split_merges_tiny_tail_when_union_fits_hard_limit() -> None:
+    previous = " ".join(f"본문{index}" for index in range(580))
+    tail = " ".join(f"꼬리{index}" for index in range(18))
+    content = f"{previous} {tail}"
+    tail_start = len(previous) + 1
+    splitter = KnowledgeSplitter(token_counter=WordTokenCounter())
+
+    merged = splitter._merge_small_fragments(
+        content,
+        [
+            (previous, 0, len(previous)),
+            (tail, tail_start, len(content)),
+        ],
+        ChunkingPolicy(
+            target_min_tokens=250,
+            hard_max_tokens=600,
+            overlap_tokens=40,
+        ),
+    )
+
+    assert merged == [(content, 0, len(content))]
+
+
 def test_split_atomic_case_does_not_add_overlap() -> None:
     words = [f"사례{index}" for index in range(900)]
     page = build_page(
@@ -438,6 +462,37 @@ def test_split_excludes_research_references() -> None:
 
     assert all("Example citation" not in chunk.content for chunk in chunks)
     assert KnowledgeSectionType.REFERENCES not in {chunk.metadata.section_type for chunk in chunks}
+
+
+def test_split_excludes_decorated_korean_references() -> None:
+    page = build_page(
+        "개요 과민성대장증후군의 주요 내용을 설명합니다.\n◘ 참고문헌 ◘\n1. 검색 근거로 사용하지 않을 참고문헌입니다.",
+        document_type=KnowledgeDocumentType.PHARM_REVIEW,
+        title="과민성대장증후군 팜리뷰",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert len(chunks) == 1
+    assert "참고문헌" not in chunks[0].content
+
+
+def test_split_excludes_drug_food_publication_colophon() -> None:
+    page = build_page(
+        "의약품-식품간 상호작용 요약서\n"
+        "와파린과 비타민 K 섭취량의 관계를 설명합니다.\n"
+        "발 행 일\n"
+        "2016년 9월 30일\n"
+        "발행기관 식품의약품안전평가원",
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        title="약과 음식 상호작용 안내서",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert len(chunks) == 1
+    assert "와파린" in chunks[0].content
+    assert "발행기관" not in chunks[0].content
 
 
 def test_split_builds_deterministic_chunk_ids() -> None:

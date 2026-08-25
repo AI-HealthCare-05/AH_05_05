@@ -156,3 +156,57 @@ experiments:
       PENDING이므로 전체 원본 확대는 아직 허용하지 않으며, 표본을 원본과
       대조한 뒤 pilot_manifest.json에서 출처별 대표 문서를 APPROVED로
       변경한다.
+
+  - experiment_id: immutable-vector-baseline-v1
+    executed_on: "2026-08-25"
+    dataset_version: knowledge-baseline-v1
+    collection: medication_knowledge_baseline_v1
+    goal: >-
+      대표 문서 전처리 승인, 산출물 재현성, 불변 Qdrant 적재와 검색 품질을
+      하나의 배포 기준선으로 확정한다.
+    input:
+      approved_documents: 8
+      public_chunks: 416
+      demo_restricted_chunks: 36
+    output:
+      processed_documents: 8
+      chunks: 452
+      by_document:
+        - source_id: food_safety_korea_supplement_ingredients
+          chunks: 4
+        - source_id: kpicia_adverse_case_report
+          chunks: 7
+        - source_id: kpicia_drug_encyclopedia
+          chunks: 11
+        - source_id: kpicia_pharm_review
+          chunks: 6
+        - source_id: mfds_drug_food_interaction_guide
+          chunks: 95
+        - source_id: mfds_supplement_code
+          chunks: 3
+        - source_id: mfds_supplement_function_guide
+          chunks: 314
+        - source_id: research_supplement_interactions
+          chunks: 12
+    quality_gate:
+      automatic_pass_documents: 8
+      manual_approved_documents: 8
+      deterministic_second_run: PASS
+      report_and_chunk_count_match: REQUIRED
+    retrieval_evaluation:
+      query_count: 10
+      priority: ACCURACY_FIRST
+      hit_at_5: 1.0
+      mrr: 1.0
+      citation_accuracy: 1.0
+      wrong_entity_mixing_count: 0
+      duplicate_retrieval_rate: 0.0
+      qdrant_search_p95_ms: 43.755
+      status: PASS
+    decision: >-
+      현재 dense embedding과 metadata filter를 VectorDB 최소 기준선으로
+      확정한다. 검색과 출처 정확도 100% 및 잘못된 개체 혼합 0건을 속도보다
+      우선하며, 300ms는 정확도를 낮춰 맞추는 목표가 아니라 회귀 상한으로
+      사용한다. 서비스 기본 collection과 dataset version을 이 release로
+      전환하며, reranking과 hybrid search는 FrontAPI·RDBMS 연결 후 별도
+      지표 비교를 통해서만 도입한다.

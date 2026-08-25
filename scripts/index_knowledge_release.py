@@ -98,6 +98,23 @@ def ensure_preprocessing_approved(
     if report.dataset_version != expected_dataset_version:
         raise ValueError("전처리 품질 보고서와 인덱싱 대상의 dataset_version이 일치하지 않습니다.")
 
+    actual_chunk_count = len(chunks)
+    if report.chunk_count != actual_chunk_count:
+        raise ValueError(
+            "전처리 품질 보고서의 청크 수와 인덱싱 대상의 "
+            f"청크 수가 일치하지 않습니다: report={report.chunk_count}, "
+            f"actual={actual_chunk_count}"
+        )
+
+    actual_document_count = len({chunk.metadata.document_id for chunk in chunks})
+    if report.processed_document_count != actual_document_count:
+        raise ValueError(
+            "전처리 품질 보고서의 문서 수와 인덱싱 대상의 "
+            "문서 수가 일치하지 않습니다: "
+            f"report={report.processed_document_count}, "
+            f"actual={actual_document_count}"
+        )
+
     ready_sources = set(report.ready_for_bulk_source_ids)
     chunk_sources = {chunk.metadata.source_id for chunk in chunks}
     unapproved_sources = sorted(chunk_sources - ready_sources)

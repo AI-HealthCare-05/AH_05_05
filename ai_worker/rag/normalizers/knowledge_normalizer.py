@@ -29,6 +29,19 @@ class TextQualityReport(BaseModel):
 
 class KnowledgeNormalizer:
     _PAGE_NUMBER_PATTERN = re.compile(r"^(?:-\s*)?\d{1,4}(?:\s*/\s*\d{1,4})?(?:\s*-)?$")
+    _DOWNLOAD_AUDIT_PATTERN = re.compile(
+        r"^https?://\S+\s+-\s+.*\bIP Address:\s*\S+$",
+        flags=re.IGNORECASE,
+    )
+    _DOCUMENT_PRODUCTION_PATTERN = re.compile(
+        r"^.+\.indd\s+\d+\s+\d{4}-\d{2}-\d{2}\s+"
+        r"(?:오전|오후)\s+\d{1,2}:\d{2}:\d{2}$"
+    )
+    _PUBLISHER_BANNER_PATTERN = re.compile(
+        r"^NATIONAL INSTITUTE OF FOOD AND DRUG SAFETY"
+        r"(?:\s*/\s*www\.nifds\.go\.kr)?$",
+        flags=re.IGNORECASE,
+    )
     _CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
     _LONG_UNSPACED_PATTERN = re.compile(r"\S{120,}")
 
@@ -45,7 +58,13 @@ class KnowledgeNormalizer:
 
         for page, lines in zip(pages, normalized_lines, strict=True):
             retained = [
-                line for line in lines if line not in repeated_edges and not self._PAGE_NUMBER_PATTERN.fullmatch(line)
+                line
+                for line in lines
+                if line not in repeated_edges
+                and not self._PAGE_NUMBER_PATTERN.fullmatch(line)
+                and not self._DOWNLOAD_AUDIT_PATTERN.fullmatch(line)
+                and not self._DOCUMENT_PRODUCTION_PATTERN.fullmatch(line)
+                and not self._PUBLISHER_BANNER_PATTERN.fullmatch(line)
             ]
             content = "\n".join(retained).strip()
             if not content:
