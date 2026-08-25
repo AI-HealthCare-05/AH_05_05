@@ -68,6 +68,7 @@ export function HomePage({
   const [doseRecords, setDoseRecords] = useState<DoseRecord[] | null>(null);
   const [doseLoadError, setDoseLoadError] = useState<string | null>(null);
   const [failedDoseChange, setFailedDoseChange] = useState<SaveDoseTakenPayload | null>(null);
+  const [animatedDoseKey, setAnimatedDoseKey] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -155,6 +156,7 @@ export function HomePage({
     if (!doseRecords) return;
     const previousRecords = doseRecords;
     setFailedDoseChange(null);
+    setAnimatedDoseKey(payload.taken ? doseKey(payload.date, payload.slot) : null);
     setDoseRecords(updateDoseRecords(previousRecords, payload));
     try {
       await doseRecordSaver(payload);
@@ -170,6 +172,7 @@ export function HomePage({
       }
     } catch {
       setDoseRecords(previousRecords);
+      setAnimatedDoseKey(null);
       setFailedDoseChange(payload);
     }
   }
@@ -216,6 +219,7 @@ export function HomePage({
                   overview={medicationOverview}
                   records={doseRecords}
                   now={new Date()}
+                  animatedRecordKey={animatedDoseKey}
                   onMarkTaken={(date, slot) => void changeDose({ date, slot, taken: true })}
                 />
               ) : null}
@@ -508,6 +512,10 @@ function updateDoseRecords(
     (record) => record.date !== payload.date || record.slot !== payload.slot,
   );
   return payload.taken ? [...withoutSlot, { ...payload }] : withoutSlot;
+}
+
+function doseKey(date: string, slot: MealSlot): string {
+  return `${date}:${slot}`;
 }
 
 function timeInMinutes(value: string): number {

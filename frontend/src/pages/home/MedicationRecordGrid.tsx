@@ -18,6 +18,7 @@ interface MedicationRecordGridProps {
   overview: MedicationOverview;
   records: DoseRecord[];
   now: Date;
+  animatedRecordKey?: string | null;
   onMarkTaken: (date: string, slot: MealSlot) => void;
 }
 
@@ -27,6 +28,7 @@ export function MedicationRecordGrid({
   overview,
   records,
   now,
+  animatedRecordKey,
   onMarkTaken,
 }: MedicationRecordGridProps) {
   const dates = getDateRange(overview.start.date, overview.endDate);
@@ -124,7 +126,11 @@ export function MedicationRecordGrid({
                       key={date}
                       role="gridcell"
                       aria-label={label}
-                      className={`h-record-cell-h min-w-0 rounded-record-cell ${CELL_CLASS[state]}`}
+                      className={`h-record-cell-h min-w-0 rounded-record-cell ${CELL_CLASS[state]} ${
+                        state === 'taken' && animatedRecordKey === `${date}:${slot}`
+                          ? 'origin-bottom animate-record-grow motion-reduce:animate-none'
+                          : ''
+                      }`}
                     />
                   );
                 })}
