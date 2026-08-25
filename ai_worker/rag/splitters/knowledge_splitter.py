@@ -5,6 +5,9 @@ from typing import Protocol
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from ai_worker.rag.parsers.supplement_code_parser import (
+    SupplementCodeParser,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
     KnowledgeChunkMetadata,
@@ -160,6 +163,7 @@ class KnowledgeSplitter:
 
     def __init__(self, token_counter: TokenCounter | None = None) -> None:
         self._token_counter = token_counter or TiktokenTokenCounter()
+        self._supplement_code_parser = SupplementCodeParser()
 
     def split(self, pages: list[KnowledgePage]) -> list[KnowledgeChunk]:
         if not pages:
@@ -178,6 +182,11 @@ class KnowledgeSplitter:
         for section in sections:
             if section.section_type == KnowledgeSectionType.REFERENCES:
                 continue
+            if (
+                metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE
+                and section.section_type == KnowledgeSectionType.TEST_METHOD
+            ):
+                continue
             if not self._has_meaningful_body(section):
                 continue
 
@@ -189,11 +198,17 @@ class KnowledgeSplitter:
                     section.section_title,
                 ):
                     continue
-                page_start, page_end = self._page_range_for(
-                    section.source_start + local_start,
-                    section.source_start + local_end,
-                    page_ranges,
-                )
+                if metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
+                    page_start, page_end = (
+                        section.page_start,
+                        section.page_end,
+                    )
+                else:
+                    page_start, page_end = self._page_range_for(
+                        section.source_start + local_start,
+                        section.source_start + local_end,
+                        page_ranges,
+                    )
                 chunk_section = section.model_copy(
                     update={
                         "page_start": page_start,
@@ -273,6 +288,10 @@ class KnowledgeSplitter:
         pages: list[KnowledgePage],
     ) -> tuple[list[KnowledgeSection], list[tuple[int, int, int]]]:
         metadata = pages[0].metadata
+        if metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
+            supplement_sections, supplement_page_ranges = self._supplement_code_parser.parse(pages)
+            if supplement_sections:
+                return supplement_sections, supplement_page_ranges
         headings = _HEADINGS.get(metadata.document_type, {})
         combined, page_ranges = self._combine_pages(pages)
         matches = self._find_heading_matches(

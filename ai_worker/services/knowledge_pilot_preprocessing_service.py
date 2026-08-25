@@ -11,6 +11,9 @@ from ai_worker.rag.normalizers.knowledge_normalizer import (
     KnowledgeNormalizer,
     TextQualityStatus,
 )
+from ai_worker.rag.parsers.supplement_code_parser import (
+    iter_supplement_reference_keys,
+)
 from ai_worker.rag.splitters.knowledge_splitter import KnowledgeSplitter
 from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
@@ -51,6 +54,52 @@ class KnowledgeAutomaticQualityStatus(StrEnum):
 class KnowledgeAutomaticQualityReasonCode(StrEnum):
     NO_SEMANTIC_SECTIONS = "NO_SEMANTIC_SECTIONS"
     OVERSIZED_CHUNK = "OVERSIZED_CHUNK"
+    MISSING_SUPPLEMENT_CONTEXT = "MISSING_SUPPLEMENT_CONTEXT"
+    SUSPICIOUS_SUPPLEMENT_UNIT = "SUSPICIOUS_SUPPLEMENT_UNIT"
+    UNRESOLVED_HIERARCHY_REFERENCE = "UNRESOLVED_HIERARCHY_REFERENCE"
+    SUPPLEMENT_SECTION_CONTAMINATION = "SUPPLEMENT_SECTION_CONTAMINATION"
+
+
+_BLOCKING_QUALITY_REASONS = {
+    KnowledgeAutomaticQualityReasonCode.OVERSIZED_CHUNK,
+    KnowledgeAutomaticQualityReasonCode.MISSING_SUPPLEMENT_CONTEXT,
+    KnowledgeAutomaticQualityReasonCode.SUSPICIOUS_SUPPLEMENT_UNIT,
+    KnowledgeAutomaticQualityReasonCode.UNRESOLVED_HIERARCHY_REFERENCE,
+    KnowledgeAutomaticQualityReasonCode.SUPPLEMENT_SECTION_CONTAMINATION,
+}
+
+_RESOLVED_SUPPLEMENT_REFERENCE = re.compile(
+    r"-\s*(?P<top>\d+)\)\s*>\s*"
+    r"\((?P<sub>\d+)\)\s*>\s*"
+    r"\((?P<label>[가-하])\):"
+)
+_SUPPLEMENT_SECTION_FORBIDDEN_HEADINGS = {
+    KnowledgeSectionType.INGREDIENT: (
+        r"규격",
+        r"제품의\s*요건",
+        r"기능성\s*내용",
+        r"일일섭취량",
+        r"섭취\s*시\s*주의사항",
+        r"시험\s*법",
+    ),
+    KnowledgeSectionType.STANDARD: (
+        r"제품의\s*요건",
+        r"기능성\s*내용",
+        r"일일섭취량",
+        r"섭취\s*시\s*주의사항",
+        r"시험\s*법",
+    ),
+    KnowledgeSectionType.FUNCTION: (
+        r"일일섭취량",
+        r"섭취\s*시\s*주의사항",
+        r"시험\s*법",
+    ),
+    KnowledgeSectionType.DAILY_INTAKE: (
+        r"섭취\s*시\s*주의사항",
+        r"시험\s*법",
+    ),
+    KnowledgeSectionType.CAUTION: (r"시험\s*법",),
+}
 
 
 class KnowledgeDocumentPreprocessingReport(BaseModel):
@@ -275,8 +324,11 @@ class KnowledgePilotPreprocessingService:
             reason_codes.append(KnowledgeAutomaticQualityReasonCode.NO_SEMANTIC_SECTIONS)
         if max(token_counts) > policy.hard_max_tokens:
             reason_codes.append(KnowledgeAutomaticQualityReasonCode.OVERSIZED_CHUNK)
+        if document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
+            reason_codes.extend(self._supplement_quality_reason_codes(chunks))
 
-        if KnowledgeAutomaticQualityReasonCode.OVERSIZED_CHUNK in reason_codes:
+        reason_codes = list(dict.fromkeys(reason_codes))
+        if _BLOCKING_QUALITY_REASONS.intersection(reason_codes):
             automatic_status = KnowledgeAutomaticQualityStatus.BLOCKED
         elif reason_codes:
             automatic_status = KnowledgeAutomaticQualityStatus.REVIEW
@@ -347,6 +399,10 @@ class KnowledgePilotPreprocessingService:
             f"- 자동 품질 상태: `{report.automatic_status.value}`",
             f"- 수동 검수 상태: `{report.manual_review_status.value}`",
             f"- 페이지/청크: {report.page_count}/{report.chunk_count}",
+            (
+                "- 자동 검사 사유: "
+                + (", ".join(reason.value for reason in report.reason_codes) if report.reason_codes else "없음")
+            ),
             "",
             "## 사람이 확인할 항목",
             "",
@@ -378,6 +434,66 @@ class KnowledgePilotPreprocessingService:
             path,
             "\n".join(lines).rstrip() + "\n",
         )
+
+    @staticmethod
+    def _supplement_quality_reason_codes(
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeAutomaticQualityReasonCode]:
+        reasons: list[KnowledgeAutomaticQualityReasonCode] = []
+        for chunk in chunks:
+            content = chunk.content
+            if not content.startswith("성분: ") or "\n분류: " not in content:
+                reasons.append(KnowledgeAutomaticQualityReasonCode.MISSING_SUPPLEMENT_CONTEXT)
+
+            if chunk.metadata.section_type == KnowledgeSectionType.DAILY_INTAKE and re.search(
+                r"(?<![μu])g\s+RAE\b", content
+            ):
+                reasons.append(KnowledgeAutomaticQualityReasonCode.SUSPICIOUS_SUPPLEMENT_UNIT)
+
+            if KnowledgePilotPreprocessingService._has_unresolved_reference(content):
+                reasons.append(KnowledgeAutomaticQualityReasonCode.UNRESOLVED_HIERARCHY_REFERENCE)
+
+            body = KnowledgePilotPreprocessingService._supplement_chunk_body(content)
+            forbidden = _SUPPLEMENT_SECTION_FORBIDDEN_HEADINGS.get(
+                chunk.metadata.section_type,
+                (),
+            )
+            if any(
+                re.search(
+                    rf"(?m)^\s*(?:\(?\d+\)?[.)]?\s*)?"
+                    rf"{pattern}(?=\s|:|\d|\(|$)",
+                    body,
+                    flags=re.IGNORECASE,
+                )
+                for pattern in forbidden
+            ):
+                reasons.append(KnowledgeAutomaticQualityReasonCode.SUPPLEMENT_SECTION_CONTAMINATION)
+
+            if chunk.metadata.section_type == KnowledgeSectionType.TEST_METHOD:
+                reasons.append(KnowledgeAutomaticQualityReasonCode.SUPPLEMENT_SECTION_CONTAMINATION)
+        return reasons
+
+    @staticmethod
+    def _has_unresolved_reference(content: str) -> bool:
+        expected = set(iter_supplement_reference_keys(content))
+        if not expected:
+            return False
+
+        resolved = {
+            (match.group("top"), match.group("sub"), match.group("label"))
+            for match in _RESOLVED_SUPPLEMENT_REFERENCE.finditer(content)
+        }
+        return not expected.issubset(resolved)
+
+    @staticmethod
+    def _supplement_chunk_body(content: str) -> str:
+        lines = content.splitlines()
+        if len(lines) < 3:
+            return content
+        _, separator, first_body = lines[2].partition(":")
+        body_lines = [first_body] if separator else []
+        body_lines.extend(lines[3:])
+        return "\n".join(body_lines)
 
     @staticmethod
     def _sample_indices(chunks: list[KnowledgeChunk]) -> list[int]:

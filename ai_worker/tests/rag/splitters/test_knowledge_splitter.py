@@ -58,12 +58,124 @@ def test_split_uses_supplement_field_headings_before_size_split() -> None:
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.DAILY_INTAKE,
         KnowledgeSectionType.CAUTION,
-        KnowledgeSectionType.TEST_METHOD,
     ]
-    assert chunks[3].content.startswith("일일섭취량")
+    assert "분류: 제품의 요건 > 일일섭취량" in chunks[3].content
+    assert "일일섭취량: 0.45~67 mg" in chunks[3].content
     assert "[성분] 비타민 B6" in chunks[3].embedding_text
-    assert "[섹션] 일일섭취량" in chunks[3].embedding_text
+    assert "[섹션] 제품의 요건 > 일일섭취량" in chunks[3].embedding_text
+    assert all("성분: 비타민 B6" in chunk.content for chunk in chunks)
     assert all(chunk.content.strip() not in {"제조기준", "제품의 요건"} for chunk in chunks)
+
+
+def test_split_supplement_code_separates_extracted_hierarchy() -> None:
+    page = build_page(
+        "1-10\n"
+        "비타민 B6\n"
+        "제조기준1)\n"
+        "원료(1)\n"
+        "가 피리독신염산염( ) Pyridoxine Hydrochloride)(\n"
+        "나( ) 식품원료를 사용하여 비타민 B6를 보충할 수 있도록 제조 ・ 가공한 것\n"
+        "규격2)\n"
+        "성상 고유의 색택과 향미를 가지며 이미(1) : ・ 이취가 없어야 함\n"
+        "비타민 (2) B 6 표시량의 : 80 ~ 150%\n"
+        "대장균군 음성(3) :\n"
+        "제품의 요건3)\n"
+        "기능성 내용(1)\n"
+        "가 단백질 및 아미노산 이용에 필요( )\n"
+        "나 혈액의 호모시스테인 수준을 정상으로 유지하는데 필요( )\n"
+        "일일섭취량 (2) : 0.45 ~ 67 mg\n"
+        "섭취 시 주의사항 (3)\n"
+        ": 손발 따끔거림 작열감 또는 저림 등의 이상사례 발생 시 섭취를 중단하고 전문가와 상담할 것\n"
+        "시험법4)\n"
+        "성상 제 성상시험법(1) : 4. 2-7"
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.STANDARD,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
+    assert all("성분: 비타민 B6" in chunk.content for chunk in chunks)
+    assert "제품의 요건" not in chunks[1].content
+    assert "시험법" not in chunks[-1].content
+    assert "단백질 및 아미노산 이용에 필요" in chunks[2].content
+    assert "일일섭취량: :" not in chunks[3].content
+    assert "섭취 시 주의사항: :" not in chunks[4].content
+
+
+def test_split_supplement_code_repairs_displaced_microgram_symbol() -> None:
+    page = build_page(
+        "비타민 A\n"
+        "제품의 요건3)\n"
+        "기능성 내용(1)\n"
+        "가 어두운 곳에서 시각 적응을 위해 필요( )\n"
+        "일일섭취량 (2) : 210 ~ 1,000 g RAE (699.93μ ~ 3,333 IU)\n"
+        "시험법4)\n"
+        "성상 제 성상시험법(1) : 4. 2-7",
+        title="비타민 A",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    daily_intake = next(chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.DAILY_INTAKE)
+    assert "210 ~ 1,000 μg RAE (699.93 ~ 3,333 IU)" in daily_intake.content
+
+
+def test_split_supplement_code_resolves_numbered_references() -> None:
+    page = build_page(
+        "비타민 A\n"
+        "1) 제조기준\n"
+        "(1) 원료\n"
+        "(가) 레티닐 팔미트산염\n"
+        "(나) 레티닐 아세트산염\n"
+        "3) 제품의 요건\n"
+        "(2) 일일섭취량\n"
+        "(가) 1). (1). (가) 및 (나)의 경우: 0.42~7 mg\n"
+        "4) 시험법\n"
+        "(1) 성상시험법",
+        title="비타민 A",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    daily_intake = next(chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.DAILY_INTAKE)
+    assert "참조 내용:" in daily_intake.content
+    assert "레티닐 팔미트산염" in daily_intake.content
+    assert "레티닐 아세트산염" in daily_intake.content
+
+
+def test_split_supplement_code_preserves_source_page_ranges() -> None:
+    first_page = build_page(
+        "비타민 B6\n제조기준1)\n원료(1)\n가 피리독신염산염\n규격2)\n성상 고유의 색택과 향미를 가짐",
+        page_number=1,
+    )
+    second_page = build_page(
+        "제품의 요건3)\n"
+        "기능성 내용(1)\n"
+        "가 단백질 및 아미노산 이용에 필요\n"
+        "일일섭취량 (2) : 0.45 ~ 67 mg\n"
+        "시험법4)\n"
+        "성상 제4 시험법",
+        page_number=2,
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([first_page, second_page])
+
+    page_ranges = {
+        chunk.metadata.section_type: (
+            chunk.metadata.page_start,
+            chunk.metadata.page_end,
+        )
+        for chunk in chunks
+    }
+    assert page_ranges[KnowledgeSectionType.INGREDIENT] == (1, 1)
+    assert page_ranges[KnowledgeSectionType.STANDARD] == (1, 1)
+    assert page_ranges[KnowledgeSectionType.FUNCTION] == (2, 2)
+    assert page_ranges[KnowledgeSectionType.DAILY_INTAKE] == (2, 2)
 
 
 def test_split_uses_recursive_fallback_and_narrative_overlap() -> None:

@@ -86,6 +86,66 @@ class FakeFailingKnowledgePdfLoader:
         raise RuntimeError("PDF 추출 실패")
 
 
+class FakeSuspiciousSupplementUnitLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        return [
+            KnowledgePage(
+                content=(
+                    "비타민 A\n"
+                    "제품의 요건3)\n"
+                    "기능성 내용(1)\n"
+                    "가 어두운 곳에서 시각 적응을 위해 필요( )\n"
+                    "일일섭취량 (2) : 210 ~ 1,000 g RAE\n"
+                    "시험법4)\n"
+                    "성상 제 성상시험법(1) : 4. 2-7"
+                ),
+                metadata=metadata,
+                page_number=1,
+            )
+        ]
+
+
+class FakeUnresolvedSupplementReferenceLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        return [
+            KnowledgePage(
+                content=(
+                    "비타민 A\n"
+                    "1) 제조기준\n"
+                    "(1) 원료\n"
+                    "(가) 레티닐 팔미트산염\n"
+                    "3) 제품의 요건\n"
+                    "(2) 일일섭취량\n"
+                    "(가) 9). (9). (가)의 경우: 0.42~7 mg\n"
+                    "4) 시험법\n"
+                    "(1) 성상시험법"
+                ),
+                metadata=metadata,
+                page_number=1,
+            )
+        ]
+
+
+class FakeContaminatedSupplementSectionLoader:
+    def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
+        return [
+            KnowledgePage(
+                content=(
+                    "비타민 B6\n"
+                    "제품의 요건3)\n"
+                    "기능성 내용(1)\n"
+                    "가 단백질 및 아미노산 이용에 필요( )\n"
+                    "섭취 시 주의사항 (3)\n"
+                    "이상사례 발생 시 전문가와 상담할 것\n"
+                    "시험 법\n"
+                    "성상 제 성상시험법(1) : 4. 2-7"
+                ),
+                metadata=metadata,
+                page_number=1,
+            )
+        ]
+
+
 def write_json(path: Path, value: object) -> None:
     path.write_text(
         json.dumps(value, ensure_ascii=False),
@@ -512,8 +572,9 @@ sources:
     review_sample = output_root / report.review_sample_path
     assert quality_report.exists()
     assert review_sample.exists()
-    assert "유형별 대표 문서" in review_sample.read_text(encoding="utf-8")
-    assert "원본 읽기 순서" in review_sample.read_text(encoding="utf-8")
+    review_content = review_sample.read_text(encoding="utf-8")
+    assert "유형별 대표 문서" in review_content
+    assert "원본 읽기 순서" in review_content
 
 
 def test_preprocess_marks_approved_quality_pilot_ready_for_bulk(
@@ -567,7 +628,7 @@ sources:
     assert result.ready_for_bulk_source_ids == ["supplement_code"]
 
 
-def test_preprocess_requires_review_when_semantic_sections_are_missing(
+def test_preprocess_blocks_supplement_code_without_semantic_sections(
     tmp_path: Path,
 ) -> None:
     manifest_path = tmp_path / "pilot_manifest.json"
@@ -617,8 +678,11 @@ sources:
 
     assert result.ready_for_bulk_source_ids == []
     report = result.document_reports[0]
-    assert report.automatic_status.value == "REVIEW"
-    assert [reason.value for reason in report.reason_codes] == ["NO_SEMANTIC_SECTIONS"]
+    assert report.automatic_status.value == "BLOCKED"
+    assert [reason.value for reason in report.reason_codes] == [
+        "NO_SEMANTIC_SECTIONS",
+        "MISSING_SUPPLEMENT_CONTEXT",
+    ]
 
 
 def test_preprocess_does_not_publish_automatically_blocked_chunks(
@@ -842,3 +906,78 @@ sources:
         )
 
     assert not report_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("loader", "expected_reason"),
+    [
+        (
+            FakeSuspiciousSupplementUnitLoader(),
+            "SUSPICIOUS_SUPPLEMENT_UNIT",
+        ),
+        (
+            FakeUnresolvedSupplementReferenceLoader(),
+            "UNRESOLVED_HIERARCHY_REFERENCE",
+        ),
+        (
+            FakeContaminatedSupplementSectionLoader(),
+            "SUPPLEMENT_SECTION_CONTAMINATION",
+        ),
+    ],
+)
+def test_preprocess_blocks_unsafe_supplement_code_chunks(
+    tmp_path: Path,
+    loader,
+    expected_reason: str,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    output_root = tmp_path / "processed"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "supplement_code",
+                    "document_id": "unsafe-supplement-code",
+                    "repo_path": "raw/unsafe.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "건강기능식품공전 안전 검사",
+                    "manual_review_status": "APPROVED",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: supplement_code
+    provider: 식품의약품안전처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: SUPPLEMENT_CODE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=loader,
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=output_root,
+        dataset_version="pilot-v1",
+    )
+
+    report = result.document_reports[0]
+    assert report.automatic_status.value == "BLOCKED"
+    assert expected_reason in [reason.value for reason in report.reason_codes]
+    assert result.ready_for_bulk_source_ids == []
+    assert not (output_root / "chunks" / "unsafe-supplement-code.jsonl").exists()
