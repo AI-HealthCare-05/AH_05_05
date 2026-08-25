@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
+import { login } from '@/entities/auth';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
+import { ApiError } from '@/shared/api/client';
+import { USE_MOCK } from '@/shared/config/env';
 import { Button, CheckboxField, Header, Input } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
@@ -12,13 +15,35 @@ export function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login');
   const [recordTerms, setRecordTerms] = useState(false);
   const [aiTerms, setAiTerms] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function complete(event: FormEvent<HTMLFormElement>) {
+  async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (mode === 'signup' && (!recordTerms || !aiTerms)) return;
-    if (mode === 'signup') prepareMedicationStateForNewAccount();
-    signIn();
-    navigate('/home', { replace: true });
+    setSubmitError(null);
+    if (mode === 'signup') {
+      if (!USE_MOCK) {
+        setSubmitError('실서버 회원가입에는 이름과 전화번호가 필요해 아직 이 화면에서 처리할 수 없어요. 로그인해 주세요.');
+        return;
+      }
+      prepareMedicationStateForNewAccount();
+      signIn();
+      navigate('/home', { replace: true });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await login({ email, password });
+      signIn();
+      navigate('/home', { replace: true });
+    } catch (error: unknown) {
+      setSubmitError(error instanceof ApiError || error instanceof Error ? error.message : '로그인하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -56,11 +81,13 @@ export function AuthPage() {
         </div>
 
         <form className="mt-6 flex flex-1 flex-col gap-4" onSubmit={complete}>
-          <Input label="이메일" type="email" inputMode="email" autoComplete="email" required />
+          <Input label="이메일" type="email" inputMode="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
           <Input
             label="비밀번호"
             type="password"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
             required
           />
 
@@ -82,12 +109,13 @@ export function AuthPage() {
             </fieldset>
           )}
 
+          {submitError && <p role="alert" className="text-sm text-danger-strong">{submitError}</p>}
           <Button
             type="submit"
             className="mt-auto"
-            disabled={mode === 'signup' && (!recordTerms || !aiTerms)}
+            disabled={submitting || (mode === 'signup' && (!recordTerms || !aiTerms))}
           >
-            {mode === 'login' ? '로그인' : '회원가입 완료'}
+            {submitting ? '로그인 중...' : mode === 'login' ? '로그인' : '회원가입 완료'}
           </Button>
         </form>
       </main>

@@ -8,8 +8,7 @@
  *
  * - 진단명·수술명은 의도적으로 OCR 원문 그대로(영문·약어) 둡니다. LLM 단순화 이전
  *   상태를 화면에서 확인하기 위한 것이며, 읽기 좋은 한국어로 바꾸지 않습니다.
- * - days 는 약별 처방 일수이고 note 는 "복용 시점" 원문입니다. 둘을 섞어 저장하면
- *   결과 확인 화면과 복약 시간 화면에서 일수·시점 문구를 다시 분리할 수 없습니다.
+ * - days 는 약별 처방 일수이고 administration 은 복용 방법 원문입니다.
  * - high 항목은 배지를 숨기고 리바록사반 low 한 건만 확인 대상으로 보이게 합니다.
  */
 import type {
@@ -30,10 +29,12 @@ export function mockUploadDocument(file: File): UploadDocumentsResult {
   }
   uploadSequence += 1;
   const batchId = `b_mock_uploaded_${uploadSequence}`;
-  uploadedBatchPollCount.set(batchId, 0);
+  const documentId = 100 + uploadSequence;
+  // 실계약과 같이 후속 조회 키는 batchId가 아니라 documentIds[0]입니다.
+  uploadedBatchPollCount.set(String(documentId), 0);
   return {
     batchId,
-    documentIds: [101],
+    documentIds: [documentId],
     ocrStatus: 'processing',
   };
 }
@@ -70,7 +71,10 @@ export function mockOcrResult(batchId: string): OcrResult {
     };
   }
   const forced = STATUS_BY_BATCH_ID.find((r) => batchId.includes(r.match));
-  // 결과 필드가 없는 상태는 명세 4번대로 { batchId, ocrStatus } 만 돌려줍니다.
+  if (forced?.status === 'failed') {
+    return { batchId, ocrStatus: 'failed', errorCode: 'EXTRACTION_FAILED' };
+  }
+  // 진행 중·취소 상태에는 결과 필드가 없습니다.
   if (forced && forced.status !== 'complete') {
     return { batchId, ocrStatus: forced.status };
   }
@@ -84,10 +88,10 @@ export function mockOcrResult(batchId: string): OcrResult {
       dispensedDate: { value: '2026-08-22', confidence: 'high' },
     },
     medications: [
-      { tempId: 'm1', name: '셀레콕시브', dose: '200mg', timesPerDay: 2, days: 7, note: '아침·저녁 식후', confidence: 'high' },
-      { tempId: 'm2', name: '리바록사반', dose: '10mg', timesPerDay: 2, days: 7, note: '아침·저녁 식후', confidence: 'low' },
-      { tempId: 'm3', name: '아세트아미노펜', dose: '650mg', timesPerDay: null, days: 7, note: '필요 시, 6시간 이상 간격', confidence: 'high' },
-      { tempId: 'm4', name: '파모티딘', dose: '20mg', timesPerDay: 2, days: 7, note: '아침·저녁 식후', confidence: 'high' },
+      { tempId: 'm1', name: '셀레콕시브', dose: '200mg', efficacy: '염증과 통증 완화', administration: '아침·저녁 식후', precautions: '위장장애가 있으면 상담하세요.', timesPerDay: 2, days: 7, confidence: 'high' },
+      { tempId: 'm2', name: '리바록사반', dose: '10mg', efficacy: '혈전 생성 억제', administration: '아침·저녁 식후', precautions: '출혈 증상이 있으면 상담하세요.', timesPerDay: 2, days: 7, confidence: 'low' },
+      { tempId: 'm3', name: '아세트아미노펜', dose: '650mg', efficacy: '해열 및 진통', administration: '필요 시, 6시간 이상 간격', precautions: '과량 복용하지 마세요.', timesPerDay: null, days: 7, confidence: 'high' },
+      { tempId: 'm4', name: '파모티딘', dose: '20mg', efficacy: '위산 분비 억제', administration: '아침·저녁 식후', precautions: '임의로 증량하지 마세요.', timesPerDay: 2, days: 7, confidence: 'high' },
     ],
     lowConfidenceCount: 1,
   };

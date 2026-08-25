@@ -1,7 +1,5 @@
 // REQ-DOC-001 / 노션 API 명세 3-1, 3-2, 3-3 기준 타입
 
-export type UploadPurpose = 'initial' | 'reupload';
-
 /**
  * OCR 작업 상태. ERD `Enum ocr_job_status` · 노션 API 명세 4번과 같은 집합입니다.
  *
@@ -36,11 +34,12 @@ export interface OcrMedication {
   tempId: string;
   name: string;
   dose: string;
+  efficacy: string;
+  administration: string;
+  precautions: string;
   timesPerDay: number | null;
   /** 약봉투에 적힌 약별 처방 일수. 읽히지 않으면 null입니다. */
   days: number | null;
-  /** 복용 시점 원문. 예: "아침·저녁 식후", "필요 시" */
-  note: string;
   /**
    * O07(복약 정보 편집 모달)에서 사용자가 새로 추가한 약은 OCR로 추출된 값이
    * 아니므로 신뢰도가 없습니다(값이 있으면 = OCR 추출 항목, 없으면 = 사용자 추가 항목).
@@ -52,13 +51,18 @@ export interface OcrMedication {
 export type OcrResultReadyStatus = 'ready_for_review' | 'complete';
 
 /**
- * 결과 필드가 없는 상태 — queued · processing · failed · cancelled.
- * 진행 중이라 아직 없거나(queued·processing), 읽어낸 결과가 없어서(failed·cancelled)
- * 응답이 `{ batchId, ocrStatus }` 두 개뿐입니다.
+ * 결과 필드가 없는 비완료 상태 — queued · processing · cancelled.
  */
 interface OcrResultPending {
   batchId: string;
-  ocrStatus: Exclude<OcrStatus, OcrResultReadyStatus>;
+  ocrStatus: 'queued' | 'processing' | 'cancelled';
+}
+
+/** 실패 상태는 화면 메시지와 운영 진단에 사용할 기계 판독 오류 코드를 함께 받습니다. */
+interface OcrResultFailed {
+  batchId: string;
+  ocrStatus: 'failed';
+  errorCode: string;
 }
 
 interface OcrResultReady {
@@ -81,7 +85,7 @@ interface OcrResultReady {
  * 없게 만들기 위해서입니다.** `fields?:` optional 로 두면 물음표를 빠뜨린 자리를 타입이
  * 잡아주지 못하고, 목업이 항상 값을 채워주는 탓에 실 API 를 붙이는 순간에야 드러납니다.
  */
-export type OcrResult = OcrResultPending | OcrResultReady;
+export type OcrResult = OcrResultPending | OcrResultFailed | OcrResultReady;
 
 export interface ConfirmOcrResultPayload {
   dispensedDate: string;
@@ -89,9 +93,11 @@ export interface ConfirmOcrResultPayload {
     tempId: string;
     name: string;
     dose: string;
+    efficacy: string;
+    administration: string;
+    precautions: string;
     timesPerDay: number | null;
     days: number | null;
-    note: string;
   }>;
 }
 

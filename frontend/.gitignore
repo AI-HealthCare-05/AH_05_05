@@ -3,6 +3,8 @@
 node_modules/
 dist/
 dist-ssr/
+test-results/
+playwright-report/
 
 # 환경변수 실제 값 (.env.example 은 커밋합니다)
 .env
