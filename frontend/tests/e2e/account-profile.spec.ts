@@ -1,0 +1,151 @@
+import { expect, test, type Page } from 'playwright/test';
+
+async function openSignup(page: Page) {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+}
+
+async function fillSignupBase(page: Page) {
+  await page.getByLabel('이메일').fill('new-patient@example.com');
+  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
+  await page.getByLabel('비밀번호 확인').fill('password1234');
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+}
+
+test('회원가입은 생년월일 다음에 기본 선택 없는 성별을 필수로 받는다', async ({ page }) => {
+  await openSignup(page);
+  const birthDate = page.getByLabel('생년월일');
+  const male = page.getByRole('radio', { name: '남성' });
+  const female = page.getByRole('radio', { name: '여성' });
+
+  await expect(birthDate).toHaveAttribute('type', 'date');
+  await expect(birthDate).toHaveAttribute('min', '1900-01-01');
+  await expect(birthDate).toHaveAttribute('max', '2026-08-25');
+  await expect(birthDate).toHaveAttribute('required', '');
+  await expect(male).toHaveAttribute('required', '');
+  await expect(female).toHaveAttribute('required', '');
+  await expect(male).not.toBeChecked();
+  await expect(female).not.toBeChecked();
+
+  const passwordConfirmBox = await page.getByLabel('비밀번호 확인').boundingBox();
+  const birthDateBox = await birthDate.boundingBox();
+  const genderBox = await page.getByRole('group', { name: '성별' }).boundingBox();
+  const termsBox = await page.getByText('필수 동의', { exact: true }).boundingBox();
+  expect(passwordConfirmBox).not.toBeNull();
+  expect(birthDateBox).not.toBeNull();
+  expect(genderBox).not.toBeNull();
+  expect(termsBox).not.toBeNull();
+  expect(passwordConfirmBox!.y).toBeLessThan(birthDateBox!.y);
+  expect(birthDateBox!.y).toBeLessThan(genderBox!.y);
+  expect(genderBox!.y).toBeLessThan(termsBox!.y);
+});
+
+test('만 14세 미만은 보호자 안내와 함께 가입을 막는다', async ({ page }) => {
+  await openSignup(page);
+  await fillSignupBase(page);
+  await page.getByLabel('생년월일').fill('2012-08-26');
+  await page.getByRole('radio', { name: '여성' }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await expect(page.getByText('만 14세 미만은 보호자와 함께 가입해주세요.')).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test('정확히 만 14세인 생일에는 생년월일과 성별을 저장하고 가입한다', async ({ page }) => {
+  await openSignup(page);
+  await fillSignupBase(page);
+  await page.getByLabel('생년월일').fill('2012-08-25');
+  await page.getByRole('radio', { name: '남성' }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await expect(page).toHaveURL(/\/home$/);
+});
+
+test('미래 생년월일과 일치하지 않는 비밀번호 확인으로 가입할 수 없다', async ({ page }) => {
+  await openSignup(page);
+  await fillSignupBase(page);
+  await page.getByLabel('생년월일').fill('2026-08-26');
+  await page.getByRole('radio', { name: '남성' }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+
+  await page.getByLabel('생년월일').fill('1990-01-01');
+  await page.getByLabel('비밀번호 확인').fill('different-password');
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+  await expect(page.getByText('비밀번호가 일치하지 않아요.')).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test('마이페이지의 기본정보에서 가입 때 저장한 생년월일과 성별을 수정한다', async ({ page }) => {
+  await openSignup(page);
+  await fillSignupBase(page);
+  await page.getByLabel('생년월일').fill('1991-03-15');
+  await page.getByRole('radio', { name: '남성' }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await page.getByRole('button', { name: '마이', exact: true }).click();
+  await page.getByRole('button', { name: /기본정보/ }).click();
+  await expect(page).toHaveURL(/\/my\/profile$/);
+  await expect(page.getByRole('heading', { name: '기본정보 수정' })).toBeVisible();
+  await expect(page.getByLabel('생년월일')).toHaveValue('1991-03-15');
+  await expect(page.getByRole('radio', { name: '남성' })).toBeChecked();
+  await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
+
+  await page.getByLabel('생년월일').fill('1991-04-16');
+  await expect(page.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('기본정보를 저장했어요.')).toBeVisible();
+  await expect(page).toHaveURL(/\/my\/profile$/);
+  await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
+});
+
+test('기본정보에서도 공용 만 14세 검증을 적용한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/my-profile');
+  await page.getByLabel('생년월일').fill('2012-08-26');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+
+  await expect(page.getByText('만 14세 미만은 보호자와 함께 가입해주세요.')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('기본정보 저장 실패는 화면 전환 없이 ErrorDialog로 알린다', async ({ page }) => {
+  await page.goto('/dev/my-profile-save-error');
+  await page.getByLabel('생년월일').fill('1981-08-02');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: '기본정보를 저장하지 못했어요' })).toBeVisible();
+  await expect(page).toHaveURL(/\/dev\/my-profile-save-error$/);
+});
+
+test('비밀번호 변경은 별도 시트에서 입력 오류를 인라인으로 보여준다', async ({ page }) => {
+  await page.goto('/dev/my-profile');
+  await expect(page.getByLabel('현재 비밀번호')).toHaveCount(0);
+  await page.getByRole('button', { name: '비밀번호 변경' }).click();
+  const sheet = page.getByRole('dialog');
+
+  await expect(sheet.getByRole('heading', { name: '비밀번호 변경' })).toBeVisible();
+  await sheet.getByLabel('현재 비밀번호').fill('wrong-password');
+  await sheet.getByLabel('새 비밀번호', { exact: true }).fill('new-password1234');
+  await sheet.getByLabel('새 비밀번호 확인').fill('new-password1234');
+  await sheet.getByRole('button', { name: '변경', exact: true }).click();
+  await expect(sheet.getByText('현재 비밀번호가 맞지 않아요.')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+});
+
+test('비밀번호 변경 성공은 시트를 닫고 토스트만 보여준다', async ({ page }) => {
+  await page.goto('/dev/my-profile');
+  await page.getByRole('button', { name: '비밀번호 변경' }).click();
+  const sheet = page.getByRole('dialog');
+  await sheet.getByLabel('현재 비밀번호').fill('password1234');
+  await sheet.getByLabel('새 비밀번호', { exact: true }).fill('new-password1234');
+  await sheet.getByLabel('새 비밀번호 확인').fill('new-password1234');
+  await sheet.getByRole('button', { name: '변경', exact: true }).click();
+
+  await expect(sheet).toBeHidden();
+  await expect(page.getByText('비밀번호를 변경했어요.')).toBeVisible();
+  await expect(page).toHaveURL(/\/dev\/my-profile$/);
+});
