@@ -161,7 +161,35 @@ class OcrProviderError(AppError):
     message = "Template OCR 응답을 처리할 수 없습니다."
 
 
+class OcrProviderTransientError(OcrProviderError):
+    """네트워크 또는 공급자 일시 장애로 한 번 재시도할 수 있는 오류."""
+
+
 class OcrProviderTimeoutError(AppError):
     status_code = status.HTTP_504_GATEWAY_TIMEOUT
     code = "OCR_PROVIDER_TIMEOUT"
     message = "Template OCR 호출 시간이 초과됐습니다."
+
+
+class OcrIdempotencyConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "IDEMPOTENCY_CONFLICT"
+    message = "같은 Idempotency-Key로 다른 파일을 요청할 수 없습니다."
+
+
+class OcrJobNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "OCR_JOB_NOT_FOUND"
+    message = "OCR 작업을 찾을 수 없습니다."
+
+
+class OcrJobStateConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "OCR_JOB_STATE_CONFLICT"
+    message = "현재 OCR 작업 상태에서는 요청을 처리할 수 없습니다."
+
+
+class OcrQueueUnavailableError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "OCR_QUEUE_UNAVAILABLE"
+    message = "OCR 분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요."

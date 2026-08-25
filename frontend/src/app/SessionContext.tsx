@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { restoreAccessToken, setAccessToken } from '@/shared/api/client';
 
 interface SessionValue {
   authenticated: boolean;
@@ -9,12 +10,15 @@ interface SessionValue {
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [authenticated, setAuthenticated] = useState(false);
+  const [authenticated, setAuthenticated] = useState(() => Boolean(restoreAccessToken()));
   const value = useMemo(
     () => ({
       authenticated,
       signIn: () => setAuthenticated(true),
-      signOut: () => setAuthenticated(false),
+      signOut: () => {
+        setAccessToken(null);
+        setAuthenticated(false);
+      },
     }),
     [authenticated],
   );

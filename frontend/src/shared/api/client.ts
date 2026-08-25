@@ -4,22 +4,37 @@
  * 그래서 목업 → 실서버 전환이 화면 코드를 건드리지 않습니다.
  *
  * 인증: 노션 API 명세 0장 — 로그인 후 모든 요청에
- * `Authorization: Bearer <accessToken>`. 쿠키는 쓰지 않습니다.
+ * `Authorization: Bearer <accessToken>`. 리프레시 토큰 쿠키도 함께 전송합니다.
  */
 import { API_BASE_URL } from '@/shared/config/env';
 
-// 로그인 화면(REQ-USER-002)이 붙기 전까지 쓰는 고정값.
-// 로그인이 붙으면 setAccessToken()으로 교체하고 이 상수는 지웁니다.
-const DEV_ACCESS_TOKEN = 'dev-fixed-token';
+const ACCESS_TOKEN_STORAGE_KEY = 'poke.access-token';
 
 let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+  try {
+    if (token) sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+    else sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    // 저장소를 사용할 수 없는 환경에서는 현재 탭 메모리의 토큰만 사용합니다.
+  }
+}
+
+export function restoreAccessToken(): string | null {
+  if (accessToken) return accessToken;
+  try {
+    accessToken = sessionStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    accessToken = null;
+  }
+  return accessToken;
 }
 
 export function authHeader(): Record<string, string> {
-  return { Authorization: `Bearer ${accessToken ?? DEV_ACCESS_TOKEN}` };
+  const token = restoreAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /** 목업이 네트워크 지연을 흉내내어 로딩 상태를 확인할 수 있게 합니다. */
@@ -65,12 +80,19 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message, field);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  additionalHeaders: Record<string, string> = {},
+): Promise<T> {
   const isFormData = body instanceof FormData;
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
+    credentials: 'include',
     headers: {
       ...authHeader(),
+      ...additionalHeaders,
       // FormData 는 boundary 를 브라우저가 붙여야 해서 Content-Type 을 직접 지정하지 않습니다.
       ...(body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
     },
@@ -82,9 +104,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return (await res.json()) as T;
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: authHeader(),
+  });
+  if (!res.ok) throw await toApiError(res);
+  return res.blob();
+}
+
 export const http = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  getBlob: (path: string) => requestBlob(path),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>('POST', path, body, headers),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),

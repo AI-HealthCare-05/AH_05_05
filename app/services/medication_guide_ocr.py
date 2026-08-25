@@ -25,6 +25,9 @@ class MedicationGuideService:
 
     async def extract(self, upload: UploadFile) -> MedicationGuideResult:
         image = await validate_image(upload)
+        return await self.extract_validated(image)
+
+    async def extract_validated(self, image: ValidatedImage) -> MedicationGuideResult:
         payload = await self._provider.extract(image)
         try:
             return normalize_clova_response(

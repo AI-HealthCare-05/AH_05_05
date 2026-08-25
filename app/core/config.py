@@ -47,6 +47,10 @@ class Config(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    OCR_TEMP_DIR: Path = Path("media/ocr-tmp")
+    OCR_QUEUE_NAME: str = "arq:ocr"
+    OCR_REVIEW_TTL_MINUTES: int = Field(default=60, gt=0)
+    OCR_RETRY_BASE_SECONDS: int = Field(default=5, gt=0)
 
     INTERNAL_API_KEY: str = ""
     VAPID_PRIVATE_KEY: str = ""
