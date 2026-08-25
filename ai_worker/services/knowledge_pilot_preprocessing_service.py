@@ -75,7 +75,6 @@ _BLOCKING_QUALITY_REASONS = {
 _REQUIRED_SUPPLEMENT_SECTIONS = frozenset(
     {
         KnowledgeSectionType.INGREDIENT,
-        KnowledgeSectionType.STANDARD,
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.DAILY_INTAKE,
     }
@@ -85,12 +84,16 @@ _MALFORMED_SUPPLEMENT_TEXT_PATTERNS = (
     re.compile(r"\(\s*\)"),
     re.compile(r"[ \t]+[,;:]"),
     re.compile(r"비타민\s+(?:를|을|와|과)\b[^\n]{0,80}\b[A-Z]\d*\b"),
+    re.compile(r"\b(?P<symbol>[A-Z]\d*)\s+(?P=symbol)\b"),
+    re.compile(r"비타민\s+(?:를|을|와|과)\b"),
+    re.compile(r"다만[A-Z]\d*\b"),
+    re.compile(r"\)\s+[A-Z]\d*\s+의\s+형태"),
 )
 
 _RESOLVED_SUPPLEMENT_REFERENCE = re.compile(
     r"-\s*(?P<top>\d+)\)\s*>\s*"
     r"\((?P<sub>\d+)\)\s*>\s*"
-    r"\((?P<label>[가-하])\):"
+    r"\((?P<label>[가나다라마바사아자차카타파하])\):"
 )
 _SUPPLEMENT_SECTION_FORBIDDEN_HEADINGS = {
     KnowledgeSectionType.INGREDIENT: (

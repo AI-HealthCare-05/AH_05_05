@@ -182,10 +182,10 @@ class KnowledgeSplitter:
         for section in sections:
             if section.section_type == KnowledgeSectionType.REFERENCES:
                 continue
-            if (
-                metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE
-                and section.section_type == KnowledgeSectionType.TEST_METHOD
-            ):
+            if metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE and section.section_type in {
+                KnowledgeSectionType.STANDARD,
+                KnowledgeSectionType.TEST_METHOD,
+            }:
                 continue
             if not self._has_meaningful_body(section):
                 continue

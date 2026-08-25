@@ -23,7 +23,7 @@ class FakeKnowledgePdfLoader:
                     "비타민 B6\n"
                     "제조기준1)\n"
                     "원료(1)\n"
-                    "가 피리독신염산염\n"
+                    "가 피리독신염산염 (Pyridoxine Hydrochloride)\n"
                     "규격2)\n"
                     "성상 고유의 색택과 향미를 가짐(1) :\n"
                     "비타민 B6 표시량의 80~150%(2) :\n"
@@ -123,7 +123,7 @@ class FakeUnresolvedSupplementReferenceLoader:
                     "비타민 A\n"
                     "1) 제조기준\n"
                     "(1) 원료\n"
-                    "(가) 레티닐 팔미트산염\n"
+                    "(가) 레티닐 팔미트산염 (Retinyl Palmitate)\n"
                     "3) 제품의 요건\n"
                     "(2) 일일섭취량\n"
                     "(가) 9). (9). (가)의 경우: 0.42~7 mg\n"
@@ -157,6 +157,9 @@ class FakeContaminatedSupplementSectionLoader:
 
 
 class FakeMalformedSupplementTextLoader:
+    def __init__(self, malformed_text: str) -> None:
+        self._malformed_text = malformed_text
+
     def load(self, file_path: Path, metadata) -> list[KnowledgePage]:
         return [
             KnowledgePage(
@@ -164,7 +167,7 @@ class FakeMalformedSupplementTextLoader:
                     "비타민 A\n"
                     "제조기준1)\n"
                     "원료(1)\n"
-                    "가 비타민 를 보충할 수 있도록 제조 A\n"
+                    "가 레티닐 팔미트산염 (Retinyl Palmitate)\n"
                     "규격2)\n"
                     "성상 고유의 색택과 향미를 가짐(1) :\n"
                     "비타민 A 표시량의 80~150%(2) :\n"
@@ -172,6 +175,7 @@ class FakeMalformedSupplementTextLoader:
                     "제품의 요건3)\n"
                     "기능성 내용(1)\n"
                     "가 어두운 곳에서 시각 적응을 위해 필요\n"
+                    f"{self._malformed_text}\n"
                     "일일섭취량 (2) : 210 ~ 1,000 μg RAE\n"
                     "시험법4)\n"
                     "성상 제4 시험법"
@@ -190,10 +194,12 @@ class FakeMissingRequiredSupplementSectionLoader:
                     "비타민 B6\n"
                     "제조기준1)\n"
                     "원료(1)\n"
-                    "가 피리독신염산염\n"
+                    "가 피리독신염산염 (Pyridoxine Hydrochloride)\n"
+                    "규격2)\n"
+                    "성상 고유의 색택과 향미를 가짐(1) :\n"
+                    "비타민 B6 표시량의 80~150%(2) :\n"
+                    "대장균군 음성(3) :\n"
                     "제품의 요건3)\n"
-                    "기능성 내용(1)\n"
-                    "가 단백질 및 아미노산 이용에 필요\n"
                     "일일섭취량 (2) : 0.45 ~ 67 mg\n"
                     "시험법4)\n"
                     "성상 제4 시험법"
@@ -296,7 +302,7 @@ sources:
     )
 
     assert result.processed_document_count == 1
-    assert result.chunk_count == 5
+    assert result.chunk_count == 4
     assert {item.reason for item in result.skipped_documents} == {
         "OCR_REQUIRED",
         "SOURCE_NOT_INDEX_ELIGIBLE",
@@ -623,7 +629,7 @@ sources:
     assert report.automatic_status.value == "PASS"
     assert report.manual_review_status.value == "PENDING"
     assert report.page_count == 1
-    assert report.chunk_count == 5
+    assert report.chunk_count == 4
     assert report.semantic_section_ratio == 1.0
 
     quality_report = output_root / result.quality_report_path
@@ -635,7 +641,6 @@ sources:
     assert "원본 읽기 순서" in review_content
     for section_type in (
         "INGREDIENT",
-        "STANDARD",
         "FUNCTION",
         "DAILY_INTAKE",
         "CAUTION",
@@ -990,7 +995,19 @@ sources:
             "SUPPLEMENT_SECTION_CONTAMINATION",
         ),
         (
-            FakeMalformedSupplementTextLoader(),
+            FakeMalformedSupplementTextLoader("비타민 보충 목적으로 비타민 원료를 A A"),
+            "MALFORMED_SUPPLEMENT_TEXT",
+        ),
+        (
+            FakeMalformedSupplementTextLoader("최소함량기준은 비타민 와 베타카로틴의 합으로 적용"),
+            "MALFORMED_SUPPLEMENT_TEXT",
+        ),
+        (
+            FakeMalformedSupplementTextLoader("베타카로틴의 비타민 전환계수는 을 적용함 다만A 1/2"),
+            "MALFORMED_SUPPLEMENT_TEXT",
+        ),
+        (
+            FakeMalformedSupplementTextLoader("유성비타민 지방산 에스테르(Dry Formed Vitamin A) A\n의 형태로 사용"),
             "MALFORMED_SUPPLEMENT_TEXT",
         ),
         (

@@ -87,17 +87,24 @@ _PARENT_MARKER = re.compile(
     r"(?m)^\s*(?:제조기준\s*1\s*\)|1\s*\)\s*제조기준|"
     r"제품의\s*요건\s*3\s*\)|3\s*\)\s*제품의\s*요건)\s*$"
 )
+_KOREAN_ITEM_LABELS = "가나다라마바사아자차카타파하"
 _LETTER_ITEM = re.compile(
-    r"(?ms)^\s*(?:\(\s*(?P<bracket>[가-하])\s*\)|"
-    r"(?P<plain>[가-하])(?:\s*\(\s*\))?\s+)"
+    rf"(?ms)^\s*(?:\(\s*(?P<bracket>[{_KOREAN_ITEM_LABELS}])\s*\)|"
+    rf"(?P<plain>[{_KOREAN_ITEM_LABELS}])(?:\s*\(\s*\))?\s+)"
     r"(?P<body>.*?)"
-    r"(?=^\s*(?:\(\s*[가-하]\s*\)|[가-하](?:\s*\(\s*\))?\s+)|\Z)"
+    rf"(?=^\s*(?:\(\s*[{_KOREAN_ITEM_LABELS}]\s*\)|"
+    rf"[{_KOREAN_ITEM_LABELS}](?:\s*\(\s*\))?\s+)|\Z)"
+)
+_NAMED_INGREDIENT_ITEM = re.compile(
+    rf"^\s*\((?P<label>[{_KOREAN_ITEM_LABELS}])\)\s*"
+    r"(?P<korean>.+?)\s*"
+    r"\((?P<english>[A-Za-z][A-Za-z0-9\s,./+\-'βγ]+)\)\s*$"
 )
 SUPPLEMENT_REFERENCE_PATTERN = re.compile(
     r"(?P<top>\d+)\s*\)\s*\.?\s*"
     r"\(\s*(?P<sub>\d+)\s*\)\s*\.?\s*"
-    r"\(\s*(?P<first>[가-하])\s*\)"
-    r"(?P<tail>(?:\s*및\s*\(\s*[가-하]\s*\))*)"
+    rf"\(\s*(?P<first>[{_KOREAN_ITEM_LABELS}])\s*\)"
+    rf"(?P<tail>(?:\s*및\s*\(\s*[{_KOREAN_ITEM_LABELS}]\s*\))*)"
 )
 _DISPLACED_MICROGRAM_RAE = re.compile(
     r"(?P<amount>\d[\d,.]*\s*~\s*\d[\d,.]*)\s+g\s+RAE\s*"
@@ -115,7 +122,7 @@ def iter_supplement_reference_keys(
             match.group("first"),
         )
         for letter in re.findall(
-            r"\(\s*([가-하])\s*\)",
+            rf"\(\s*([{_KOREAN_ITEM_LABELS}])\s*\)",
             match.group("tail"),
         ):
             yield match.group("top"), match.group("sub"), letter
@@ -144,7 +151,13 @@ class SupplementCodeParser:
                     source_end = heading_end + parent_match.start()
                     break
             body = self._normalize_extraction_artifacts(_PARENT_MARKER.sub("", raw_body).strip())
-            if field.section_type == KnowledgeSectionType.STANDARD:
+            if field.section_type == KnowledgeSectionType.INGREDIENT:
+                body = self._restore_verified_ingredient_text(
+                    body,
+                    ingredient_name,
+                )
+                body = self._retain_named_ingredient_items(body)
+            elif field.section_type == KnowledgeSectionType.STANDARD:
                 body = self._normalize_standard_items(
                     body,
                     ingredient_name,
@@ -264,7 +277,7 @@ class SupplementCodeParser:
             r"(\g<english>)",
             normalized,
         )
-        normalized = normalized.replace("・", "·")
+        normalized = normalized.replace("・", "·").replace("･", "·")
         normalized = re.sub(r"\s*·\s*", "·", normalized)
         normalized = re.sub(r"[ \t]+([,;:])", r"\1", normalized)
         normalized = re.sub(
@@ -273,16 +286,52 @@ class SupplementCodeParser:
             normalized,
         )
         normalized = re.sub(
-            r"(?m)^\s*([가-하])\s*\(\s*\)\s*",
+            rf"(?m)^\s*([{_KOREAN_ITEM_LABELS}])\s*\(\s*\)\s*",
             r"(\1) ",
             normalized,
         )
         normalized = re.sub(
-            r"(?m)^\s*([가-하])\s+",
+            rf"(?m)^\s*([{_KOREAN_ITEM_LABELS}])\s+",
             r"(\1) ",
             normalized,
         )
         return "\n".join(line.rstrip() for line in normalized.splitlines() if line.strip()).strip()
+
+    @staticmethod
+    def _restore_verified_ingredient_text(
+        content: str,
+        ingredient_name: str,
+    ) -> str:
+        prefix = "비타민 "
+        if not ingredient_name.startswith(prefix):
+            return content
+
+        ingredient_symbol = ingredient_name.removeprefix(prefix).strip()
+        if not re.fullmatch(r"[A-Za-z]\d*", ingredient_symbol):
+            return content
+
+        pattern = re.compile(
+            rf"비타민\s+를\s+보충할\s+수\s+있도록\s+제조\s+"
+            rf"{re.escape(ingredient_symbol)}·가공\s+한\s+것"
+        )
+        return pattern.sub(
+            f"{ingredient_name}를 보충할 수 있도록 제조·가공한 것",
+            content,
+        )
+
+    @staticmethod
+    def _retain_named_ingredient_items(content: str) -> str:
+        """검색용 원료에는 한글명과 영문명이 함께 있는 항목만 남깁니다."""
+
+        named_items: list[str] = []
+        for line in content.splitlines():
+            match = _NAMED_INGREDIENT_ITEM.fullmatch(line)
+            if match is None:
+                continue
+            named_items.append(
+                f"({match.group('label')}) {match.group('korean').strip()} ({match.group('english').strip()})"
+            )
+        return "\n".join(named_items)
 
     @classmethod
     def _normalize_standard_items(
