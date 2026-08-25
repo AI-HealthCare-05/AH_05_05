@@ -44,7 +44,6 @@ export function MyPage({ authenticatedOverride }: MyPageProps) {
               </span>
               <div>
                 <p className="text-lg font-bold text-foreground">포케 사용자</p>
-                <p className="text-sm text-muted-foreground">poke@example.com</p>
               </div>
             </Card>
 
@@ -92,8 +91,7 @@ export function MyPage({ authenticatedOverride }: MyPageProps) {
               <h2 id="account-title" className="text-xl font-bold text-foreground">
                 계정
               </h2>
-              <Card className="gap-3 p-4">
-                <p className="text-sm text-muted-foreground">poke@example.com</p>
+              <Card className="p-4">
                 <Button
                   variant="secondary"
                   onClick={() => {
