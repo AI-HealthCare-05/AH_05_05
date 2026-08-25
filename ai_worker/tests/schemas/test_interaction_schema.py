@@ -24,11 +24,16 @@ def build_drug(
     )
 
 
-def build_source(record_id: str = "23") -> InteractionSourceRecord:
+def build_source(
+    record_id: str = "23",
+    *,
+    raw_effect_text: str | None = None,
+) -> InteractionSourceRecord:
     return InteractionSourceRecord(
         source_id="mfds_drug_records",
         document_id="mfds-dur-contraindication",
         record_id=record_id,
+        raw_effect_text=raw_effect_text,
     )
 
 
@@ -88,6 +93,27 @@ def test_candidate_normalizes_duplicate_effects_sources_and_chunks() -> None:
     assert candidate.evidence_chunk_ids == ["a" * 64]
 
 
+def test_candidate_preserves_raw_effect_text_separately() -> None:
+    candidate = InteractionRuleCandidate(
+        dataset_version="interaction-pilot-v1",
+        pair_type=InteractionPairType.DRUG_DRUG,
+        left_entity=build_drug("파록세틴", source_code="D000353"),
+        right_entity=build_drug("셀레길린염산염", source_code="D000139"),
+        risk_level=InteractionRiskLevel.CONTRAINDICATED,
+        effect_summaries=[" 심각한   위험？ "],
+        source_records=[
+            build_source(
+                raw_effect_text=" 심각한   위험？ ",
+            )
+        ],
+    )
+
+    assert candidate.effect_summaries == ["심각한 위험?"]
+    assert candidate.source_records[0].raw_effect_text == (
+        " 심각한   위험？ "
+    )
+
+
 def test_automatic_candidate_cannot_be_preapproved() -> None:
     with pytest.raises(ValidationError, match="PENDING"):
         InteractionRuleCandidate(
@@ -113,4 +139,3 @@ def test_candidate_rejects_pair_type_that_does_not_match_entities() -> None:
             effect_summaries=["세로토닌성증후군"],
             source_records=[build_source()],
         )
-

@@ -79,6 +79,7 @@ class InteractionSourceRecord(BaseModel):
     source_id: str = Field(min_length=1)
     document_id: str = Field(min_length=1)
     record_id: str = Field(min_length=1)
+    raw_effect_text: str | None = None
     source_url: str | None = None
 
     @field_validator("source_id", "document_id", "record_id")
@@ -88,6 +89,16 @@ class InteractionSourceRecord(BaseModel):
         if not normalized:
             raise ValueError("출처 식별자는 비어 있을 수 없습니다.")
         return normalized
+
+    @field_validator("raw_effect_text")
+    @classmethod
+    def preserve_non_blank_raw_effect(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("원본 금기 내용은 공백일 수 없습니다.")
+        return value
 
 
 _PAIR_TYPE_BY_ENTITY_KINDS = {

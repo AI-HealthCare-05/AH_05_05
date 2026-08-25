@@ -1,5 +1,6 @@
 import pytest
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.http import models
 
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
@@ -222,6 +223,51 @@ async def test_search_filters_exact_interaction_pair_key() -> None:
         assert [result.metadata.document_id for result in results] == [
             "document-a"
         ]
+    finally:
+        await client.close()
+
+
+async def test_search_reads_legacy_payload_without_interaction_pair_keys() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        chunk = build_chunk("a")
+        legacy_metadata = chunk.metadata.model_dump(mode="json")
+        legacy_metadata.pop("interaction_pair_keys")
+        await client.upsert(
+            collection_name="knowledge_release",
+            wait=True,
+            points=[
+                models.PointStruct(
+                    id=1,
+                    vector=[1.0, 0.0, 0.0],
+                    payload={
+                        "chunk_id": chunk.chunk_id,
+                        "content": chunk.content,
+                        "embedding_text": chunk.embedding_text,
+                        "token_count": chunk.token_count,
+                        "metadata": legacy_metadata,
+                    },
+                )
+            ],
+        )
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="기존 청크",
+                dataset_version="knowledge-pilot-v1",
+            ),
+        )
+
+        assert len(results) == 1
+        assert results[0].metadata.interaction_pair_keys == []
     finally:
         await client.close()
 

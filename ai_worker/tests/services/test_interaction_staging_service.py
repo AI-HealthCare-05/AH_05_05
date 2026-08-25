@@ -138,6 +138,17 @@ def test_build_merges_reverse_pairs_and_preserves_source_rows(
     )
     assert quality_report["candidate_count"] == 1
     assert quality_report["ready_for_rdb_import"] is False
+    current_marker = json.loads(
+        (output_root / result.current_marker_path).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert current_marker["generation_id"] == result.generation_id
+    assert current_marker["candidates_path"] == str(
+        result.candidates_path
+    )
+    assert result.generation_id in str(result.candidates_path)
+    assert result.generation_id in str(result.quality_report_path)
 
 
 def test_build_rejects_missing_required_csv_column(
@@ -184,24 +195,25 @@ def test_build_is_deterministic(tmp_path: Path) -> None:
     )
     service = build_service(tmp_path)
 
-    service.build(
+    first_result = service.build(
         input_path=input_path,
         output_root=output_root,
         dataset_version="interaction-pilot-v1",
     )
-    first = (
-        output_root / "records" / "interaction_rule_candidates.jsonl"
-    ).read_text(encoding="utf-8")
-    service.build(
+    first = (output_root / first_result.candidates_path).read_text(
+        encoding="utf-8"
+    )
+    second_result = service.build(
         input_path=input_path,
         output_root=output_root,
         dataset_version="interaction-pilot-v1",
     )
-    second = (
-        output_root / "records" / "interaction_rule_candidates.jsonl"
-    ).read_text(encoding="utf-8")
+    second = (output_root / second_result.candidates_path).read_text(
+        encoding="utf-8"
+    )
 
     assert first == second
+    assert first_result.generation_id == second_result.generation_id
 
 
 def test_build_skips_unclosed_quote_without_swallowing_later_rows(
@@ -237,3 +249,143 @@ def test_build_skips_unclosed_quote_without_swallowing_later_rows(
     }
     assert result.skipped_rows[0].source_line_number == 2
     assert result.skipped_rows[0].record_id == "1492"
+
+
+def test_build_skips_unclosed_quote_before_valid_multiline_row(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "DUR병용금기.csv"
+    output_root = tmp_path / "processed"
+    write_csv(
+        input_path,
+        [
+            build_row("1492", effect="닫히지 않은 따옴표"),
+            build_row(
+                "1500",
+                effect="첫 번째 위험\n2024, 추가 위험",
+            ),
+        ],
+    )
+    malformed = input_path.read_text(encoding="utf-8-sig").replace(
+        "닫히지 않은 따옴표",
+        '"닫히지 않은 따옴표',
+        1,
+    )
+    input_path.write_text(malformed, encoding="utf-8-sig")
+
+    result = build_service(tmp_path).build(
+        input_path=input_path,
+        output_root=output_root,
+        dataset_version="interaction-pilot-v1",
+    )
+
+    assert result.input_row_count == 2
+    assert result.accepted_row_count == 1
+    assert result.candidate_count == 1
+    assert result.skipped_reason_counts == {
+        "MALFORMED_CSV_ROW": 1,
+    }
+    candidate_line = (
+        output_root / result.candidates_path
+    ).read_text(encoding="utf-8").strip()
+    candidate = InteractionRuleCandidate.model_validate_json(
+        candidate_line
+    )
+    assert candidate.source_records[0].record_id == "1500"
+    assert candidate.source_records[0].raw_effect_text == (
+        "첫 번째 위험\n2024, 추가 위험"
+    )
+
+
+def test_build_preserves_valid_multiline_quoted_field(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "DUR병용금기.csv"
+    output_root = tmp_path / "processed"
+    write_csv(
+        input_path,
+        [
+            build_row(
+                "23",
+                effect="첫 번째 위험\n2024, 추가 위험",
+            ),
+            build_row(
+                "29",
+                left_code="D000455",
+                left_name="아토르바스타틴",
+                right_code="D000769",
+                right_name="케토코나졸",
+                effect="근육병증",
+            ),
+        ],
+    )
+
+    result = build_service(tmp_path).build(
+        input_path=input_path,
+        output_root=output_root,
+        dataset_version="interaction-pilot-v1",
+    )
+
+    assert result.input_row_count == 2
+    assert result.accepted_row_count == 2
+    assert result.candidate_count == 2
+    assert result.skipped_rows == []
+
+
+@pytest.mark.parametrize(
+    "dataset_version",
+    [
+        "../../outside",
+        "/tmp/outside",
+    ],
+)
+def test_build_rejects_dataset_version_path_escape(
+    tmp_path: Path,
+    dataset_version: str,
+) -> None:
+    input_path = tmp_path / "DUR병용금기.csv"
+    output_root = tmp_path / "processed"
+    write_csv(input_path, [build_row("23")])
+
+    with pytest.raises(ValueError, match="dataset_version"):
+        build_service(tmp_path).build(
+            input_path=input_path,
+            output_root=output_root,
+            dataset_version=dataset_version,
+        )
+
+    assert not output_root.exists()
+
+
+def test_build_skips_row_validation_error_and_continues(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "DUR병용금기.csv"
+    output_root = tmp_path / "processed"
+    write_csv(
+        input_path,
+        [
+            build_row(
+                "10",
+                left_code="D000001",
+                left_name="동일성분",
+                right_code="D000001",
+                right_name="동일성분",
+            ),
+            build_row("23"),
+        ],
+    )
+
+    result = build_service(tmp_path).build(
+        input_path=input_path,
+        output_root=output_root,
+        dataset_version="interaction-pilot-v1",
+    )
+
+    assert result.accepted_row_count == 1
+    assert result.candidate_count == 1
+    assert result.skipped_reason_counts == {
+        "ROW_VALIDATION_ERROR": 1,
+    }
+    assert result.skipped_rows[0].record_id == "10"
+    assert "중복" in (result.skipped_rows[0].detail or "")

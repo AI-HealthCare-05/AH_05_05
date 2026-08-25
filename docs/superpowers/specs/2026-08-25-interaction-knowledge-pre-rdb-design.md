@@ -62,8 +62,9 @@ DUR 병용금기 CSV
 
 ## 산출물
 
-- `processed/records/interaction_rule_candidates.jsonl`: 향후 RDBMS 적재 후보
-- `processed/reports/interaction-staging-quality.json`: 입력/출력/제외/중복 병합 수
+- `processed/staging/<version>/<generation>/interaction_rule_candidates.jsonl`: 향후 RDBMS 적재 후보
+- 같은 generation의 `interaction-staging-quality.json`: 입력/출력/제외/중복 병합 수
+- `processed/staging/<version>/current.json`: 완성된 generation만 가리키는 원자적 포인터
 - 두 파일은 재생성 가능하므로 Git에 포함하지 않는다.
 - 코드, 테스트, 계약 문서만 Git에 포함한다.
 
@@ -74,6 +75,10 @@ DUR 병용금기 CSV
 - LLM은 조합과 위험도를 생성하거나 승격하지 않는다.
 - 원본의 금기 내용을 요약하지 않고 그대로 보존한다.
 - 동일 조합에 여러 사유가 있으면 하나를 버리지 않고 모두 병합한다.
+- 원본 금기 문구와 검색·비교용 정규화 문구를 분리해 보존한다.
+- 한 행의 검증 실패는 전체 처리를 중단하지 않고 추적 가능한 제외 행으로 기록한다.
+- 손상된 따옴표 뒤의 레코드 경계는 DUR 고정 선행 컬럼을 검증해 복구하며, 본문의
+  연도·쉼표 표현은 새 레코드로 오인하지 않는다.
 
 ## 이번 범위 밖
 
@@ -82,4 +87,3 @@ DUR 병용금기 CSV
 - 관리자 승인 API/UI
 - Chat Core의 RDBMS 규칙 조회
 - 비정형 PDF에서 LLM으로 조합을 자동 추출하는 기능
-

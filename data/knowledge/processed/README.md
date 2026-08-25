@@ -5,7 +5,7 @@
 ```text
 processed/
 ├── text/       # PDF 추출 또는 OCR 텍스트
-├── records/    # 사람 검수 전 RDBMS 적재 후보 레코드
+├── staging/    # 불변 generation 단위 RDBMS 적재 후보와 품질 보고서
 ├── chunks/     # Qdrant 임베딩 직전 청크와 메타데이터
 ├── reports/    # 대표 문서별 자동 품질 지표 JSON
 ├── review/     # 원본과 사람이 대조할 결정론적 표본 Markdown
@@ -18,11 +18,12 @@ Qdrant 벡터 자체는 이 디렉터리가 아니라 Qdrant Docker Volume에 �
 
 현재 파일럿 산출물은 품질 검토용이며 자동으로 Qdrant에 적재되지 않습니다.
 
-`records/interaction_rule_candidates.jsonl`은 식약처 DUR 병용금기 CSV에서
-결정론적으로 생성한 약-약 규칙 후보입니다. 자동 생성 상태는 모두 `PENDING`이며
-MySQL에 자동 적재되지 않습니다. `reports/interaction-staging-quality.json`에서
-원본 행 수, 중복 병합 수, 제외 사유와 원본 줄 번호를 확인한 뒤 별도의 승인 단계가
-필요합니다.
+`staging/<version>/<generation>/interaction_rule_candidates.jsonl`은 식약처 DUR
+병용금기 CSV에서 결정론적으로 생성한 약-약 규칙 후보입니다. 자동 생성 상태는 모두
+`PENDING`이며 MySQL에 자동 적재되지 않습니다. 같은 generation의
+`interaction-staging-quality.json`에서 원본 행 수, 중복 병합 수, 제외 사유와 원본
+줄 번호를 확인한 뒤 별도의 승인 단계가 필요합니다. 소비자는 항상
+`staging/<version>/current.json`이 가리키는 두 파일을 함께 읽어야 합니다.
 
 `reports/preprocessing-quality.json`에는 페이지·문자·청크 수, 최소·평균·최대
 토큰, 의미 섹션 비율, 자동 검사 상태와 수동 검수 상태가 기록됩니다.

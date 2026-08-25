@@ -136,13 +136,20 @@ uv run --group ai python -m scripts.build_interaction_staging \
 
 이 명령은 MySQL이나 ORM을 사용하지 않고 Git 제외 대상인 다음 파일만 만듭니다.
 
-- `processed/records/interaction_rule_candidates.jsonl`: 정규화된 약-약 조합 후보
-- `processed/reports/interaction-staging-quality.json`: 입력·후보·중복 병합·제외 행 검증 결과
+- `processed/staging/<version>/<generation>/interaction_rule_candidates.jsonl`: 정규화된 약-약 조합 후보
+- `processed/staging/<version>/<generation>/interaction-staging-quality.json`: 입력·후보·중복 병합·제외 행 검증 결과
+- `processed/staging/<version>/current.json`: 두 산출물이 모두 완성된 현재 generation 포인터
 
 조합 키는 두 성분의 입력 순서와 관계없이 동일하게 생성합니다. 같은 조합의 여러
 금기 내용과 원본 DUR 일련번호는 삭제하지 않고 한 후보에 병합합니다. 닫히지 않은
-따옴표, 컬럼 수 불일치, 필수값 누락 행은 추측해서 복원하지 않으며 원본 줄 번호와
-DUR 일련번호를 품질 보고서에 남깁니다.
+따옴표, 컬럼 수 불일치, 필수값 누락과 행 검증 실패는 추측해서 복원하지 않으며
+원본 줄 번호, DUR 일련번호와 상세 사유를 품질 보고서에 남깁니다. 정상적인 따옴표
+내부 개행은 한 레코드로 보존합니다. 원본 금기 문구는 `raw_effect_text`에 그대로
+보존하고, 검색·비교용 정규화 문구와 분리합니다.
+
+후보와 품질 보고서는 같은 불변 generation 디렉터리에 먼저 완성됩니다. 두 파일이
+모두 준비된 뒤에만 `current.json`을 원자적으로 교체하므로, 중간 실패가 이전 정상
+generation과 새 미완성 파일을 섞지 않습니다.
 
 자동 생성 후보의 `review_status`는 항상 `PENDING`이며 보고서의
 `ready_for_rdb_import`도 `false`입니다. 따라서 이 산출물은 런타임 챗봇이 사용하거나

@@ -2,6 +2,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from ai_worker.services.interaction_staging_service import (
     InteractionStagingResult,
 )
@@ -15,12 +17,24 @@ class FakeStagingService:
     def build(self, **kwargs) -> InteractionStagingResult:
         self.received = kwargs
         return InteractionStagingResult(
+            generation_id="a" * 16,
             dataset_version=str(kwargs["dataset_version"]),
             input_row_count=10,
             accepted_row_count=8,
             candidate_count=7,
             duplicate_merged_count=1,
             skipped_reason_counts={"INACTIVE_STATUS": 2},
+            candidates_path=Path(
+                "staging/interaction-pilot-v1/aaaaaaaaaaaaaaaa/"
+                "interaction_rule_candidates.jsonl"
+            ),
+            quality_report_path=Path(
+                "staging/interaction-pilot-v1/aaaaaaaaaaaaaaaa/"
+                "interaction-staging-quality.json"
+            ),
+            current_marker_path=Path(
+                "staging/interaction-pilot-v1/current.json"
+            ),
         )
 
 
@@ -35,6 +49,13 @@ def test_parse_args_uses_safe_defaults() -> None:
     assert args.output == Path("data/knowledge/processed")
     assert args.source_id == "mfds_drug_records"
     assert args.document_id == "mfds-dur-contraindication"
+
+
+def test_parse_args_rejects_dataset_version_path_escape() -> None:
+    with pytest.raises(SystemExit):
+        module.parse_args(
+            ["--dataset-version", "../../outside"]
+        )
 
 
 def test_run_cli_builds_staging_and_prints_result(
@@ -60,4 +81,3 @@ def test_run_cli_builds_staging_and_prints_result(
     }
     output = json.loads(capsys.readouterr().out)
     assert output["ready_for_rdb_import"] is False
-

@@ -6,6 +6,7 @@ from typing import Protocol
 from ai_worker.services.interaction_staging_service import (
     InteractionStagingResult,
     InteractionStagingService,
+    validate_interaction_dataset_version,
 )
 
 
@@ -49,12 +50,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     args = parser.parse_args(argv)
     for field_name in (
-        "dataset_version",
         "source_id",
         "document_id",
     ):
         if not getattr(args, field_name).strip():
             parser.error(f"--{field_name.replace('_', '-')}은 비어 있을 수 없습니다.")
+    try:
+        args.dataset_version = validate_interaction_dataset_version(
+            args.dataset_version
+        )
+    except ValueError as error:
+        parser.error(str(error))
     return args
 
 
@@ -88,4 +94,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
