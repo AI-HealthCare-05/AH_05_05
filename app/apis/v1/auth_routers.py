@@ -18,6 +18,27 @@ REFRESH_COOKIE_NAME = "refresh_token"
 # 필요한 곳은 GET /api/v1/auth/token/refresh 하나뿐이므로 그 위로 좁힌다.
 REFRESH_COOKIE_PATH = "/api/v1/auth"
 
+# AuthService 가 던지는 HTTPException 의 상태 코드 -> 프론트가 분기에 쓸 code.
+# 서비스(은미님 파일)는 {detail} 만 주므로 라우터에서 형식을 맞춘다.
+_LOGIN_ERROR_CODES = {
+    status.HTTP_400_BAD_REQUEST: "INVALID_CREDENTIALS",
+    status.HTTP_423_LOCKED: "ACCOUNT_INACTIVE",
+}
+
+
+def _login_error(exc: HTTPException) -> Response:
+    """로그인 실패를 {"code", "message"} 로 바꾼다.
+
+    프론트 클라이언트(shared/api/client.ts)가 code 로 분기하고 message 를 그대로 띄운다.
+    detail 만 오면 code 를 못 찾아 "일시적인 오류가 발생했어요" 라는 기본 문구가 나간다.
+
+    **전역 HTTPException 핸들러를 등록하지 않는다.** 다른 담당자 API 응답까지 한꺼번에
+    바뀌기 때문이며, 팀 합의가 필요한 사안이다. 여기서 이 엔드포인트만 변환한다.
+    메시지는 서비스가 준 detail 을 그대로 쓴다.
+    """
+    code = _LOGIN_ERROR_CODES.get(exc.status_code, "LOGIN_FAILED")
+    return Response(content={"code": code, "message": str(exc.detail)}, status_code=exc.status_code)
+
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(
@@ -28,12 +49,36 @@ async def signup(
     return Response(content={"detail": "회원가입이 성공적으로 완료되었습니다."}, status_code=status.HTTP_201_CREATED)
 
 
-@auth_router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
+@auth_router.post(
+    "/login",
+    response_model=LoginResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "이메일이 없거나 비밀번호가 틀림 (두 경우를 구분하지 않는다)",
+            "content": {
+                "application/json": {
+                    "example": {"code": "INVALID_CREDENTIALS", "message": "이메일 또는 비밀번호가 올바르지 않습니다."}
+                }
+            },
+        },
+        status.HTTP_423_LOCKED: {
+            "description": "정지·탈퇴·대기 계정. 관리자 로그인(403)과 상태 코드가 다르다",
+            "content": {
+                "application/json": {"example": {"code": "ACCOUNT_INACTIVE", "message": "비활성화된 계정입니다."}}
+            },
+        },
+    },
+)
 async def login(
     request: LoginRequest,
     auth_service: Annotated[AuthService, Depends(AuthService)],
 ) -> Response:
-    user = await auth_service.authenticate(request)
+    try:
+        user = await auth_service.authenticate(request)
+    except HTTPException as exc:
+        return _login_error(exc)
+
     tokens = await auth_service.login(user)
     resp = Response(
         content=LoginResponse(access_token=str(tokens["access_token"])).model_dump(), status_code=status.HTTP_200_OK

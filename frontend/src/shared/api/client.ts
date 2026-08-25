@@ -8,18 +8,23 @@
  */
 import { API_BASE_URL } from '@/shared/config/env';
 
-// 로그인 화면(REQ-USER-002)이 붙기 전까지 쓰는 고정값.
-// 로그인이 붙으면 setAccessToken()으로 교체하고 이 상수는 지웁니다.
-const DEV_ACCESS_TOKEN = 'dev-fixed-token';
-
+/**
+ * 액세스 토큰은 메모리에만 둡니다(유저플로우 v4).
+ * localStorage·sessionStorage 에 저장하지 않으므로 새로고침하면 로그아웃됩니다.
+ */
 let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+/** 토큰이 없으면 헤더를 붙이지 않습니다. "Bearer null" 을 보내면 서버가 위조 토큰으로 봅니다. */
 export function authHeader(): Record<string, string> {
-  return { Authorization: `Bearer ${accessToken ?? DEV_ACCESS_TOKEN}` };
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }
 
 /** 목업이 네트워크 지연을 흉내내어 로딩 상태를 확인할 수 있게 합니다. */
