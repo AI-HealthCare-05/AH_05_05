@@ -1,9 +1,12 @@
-from datetime import datetime
+from __future__ import annotations
+
+from datetime import datetime, timedelta
 from typing import Any
 
+from tortoise.expressions import Q
 from tortoise.functions import Count
 
-from app.dtos.background_jobs import BackgroundJobFilter
+from app.dtos.background_jobs import AdminBackgroundJobListQuery, BackgroundJobFilter
 from app.models.background_jobs import BackgroundJob
 from app.models.enums import BackgroundJobStatus
 
@@ -31,7 +34,34 @@ class BackgroundJobRepository:
         if filters.requested_to is not None:
             query = query.filter(requested_at__lte=filters.requested_to)
         total = await query.count()
-        items = await query.order_by("-requested_at", "-id").offset(filters.offset).limit(filters.limit)
+        items = (
+            await query.prefetch_related("user")
+            .order_by("-requested_at", "-id")
+            .offset(filters.offset)
+            .limit(filters.limit)
+        )
+        return items, total
+
+    async def list_for_admin(self, filters: AdminBackgroundJobListQuery) -> tuple[list[BackgroundJob], int]:
+        query = BackgroundJob.all()
+        if filters.keyword:
+            keyword = filters.keyword.strip()
+            keyword_filter = Q(job_type__icontains=keyword)
+            if keyword.isdigit():
+                keyword_filter |= Q(id=int(keyword))
+            query = query.filter(keyword_filter)
+        if filters.job_type is not None:
+            query = query.filter(job_type=filters.job_type)
+        if filters.status is not None:
+            query = query.filter(status=filters.status)
+        if filters.start_date is not None:
+            query = query.filter(requested_at__gte=filters.start_date)
+        if filters.end_date is not None:
+            query = query.filter(requested_at__lt=filters.end_date + timedelta(days=1))
+
+        total = await query.count()
+        offset = (filters.page - 1) * filters.size
+        items = await query.prefetch_related("user").order_by("-requested_at", "-id").offset(offset).limit(filters.size)
         return items, total
 
     async def count_by_status(self, created_from: datetime, created_to: datetime) -> dict[BackgroundJobStatus, int]:

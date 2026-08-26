@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
@@ -29,11 +30,17 @@ from app.dtos.admins import (
     AdminStatusUpdateRequest,
     AdminStatusUpdateResponse,
 )
+from app.dtos.background_jobs import (
+    AdminBackgroundJobListItem,
+    AdminBackgroundJobListQuery,
+    AdminBackgroundJobStatsResponse,
+)
 from app.dtos.pagination import PageResponse
 from app.services.admin_auth import AdminAuthService
 from app.services.admin_dashboard import AdminDashboardService
 from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
+from app.services.background_jobs import BackgroundJobService
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -43,6 +50,46 @@ AdminOrStaff = Annotated[AuthenticatedAdmin, Depends(require_admin_or_staff)]
 AdminOnly = Annotated[AuthenticatedAdmin, Depends(require_admin)]
 # 대시보드는 역할을 가리지 않고 ACTIVE 관리자면 통과한다.
 ActiveAdmin = Annotated[AuthenticatedAdmin, Depends(get_current_admin)]
+
+
+def get_background_job_service() -> BackgroundJobService:
+    return BackgroundJobService()
+
+
+@admin_router.get(
+    "/jobs",
+    response_model=PageResponse[AdminBackgroundJobListItem],
+    status_code=status.HTTP_200_OK,
+    summary="관리자 작업 목록 조회",
+)
+async def list_background_jobs_for_admin(
+    _: AdminOrStaff,
+    query: Annotated[AdminBackgroundJobListQuery, Query()],
+    service: Annotated[BackgroundJobService, Depends(get_background_job_service)],
+) -> PageResponse[AdminBackgroundJobListItem]:
+    """관리자 JWT로 백그라운드 작업을 조회한다.
+
+    브라우저에 내부 API 키를 노출하지 않고 작업 모니터링 화면에서 실제 작업 이력을
+    조회하기 위한 관리자용 프록시 엔드포인트다. ADMIN·STAFF 모두 사용할 수 있다.
+    """
+    return await service.list_for_admin(query)
+
+
+@admin_router.get(
+    "/jobs/stats",
+    response_model=AdminBackgroundJobStatsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="관리자 작업 상태별 통계 조회",
+)
+async def get_background_job_stats_for_admin(
+    _: AdminOrStaff,
+    start_date: Annotated[date, Query(alias="startDate")],
+    end_date: Annotated[date, Query(alias="endDate")],
+    service: Annotated[BackgroundJobService, Depends(get_background_job_service)],
+) -> AdminBackgroundJobStatsResponse:
+    """내부 API 키를 노출하지 않고 관리자 JWT로 작업 상태별 건수를 조회한다."""
+    result = await service.stats(start_date, end_date)
+    return AdminBackgroundJobStatsResponse.model_validate(result)
 
 
 @admin_router.get(
