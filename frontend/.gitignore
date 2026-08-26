@@ -14,5 +14,9 @@ playwright-report/
 # tsc -b 캐시
 *.tsbuildinfo
 
+# playwright 가 실패한 테스트의 스크린샷·트레이스를 남기는 곳입니다.
+test-results/
+playwright-report/
+
 # Tailwind v4 는 .gitignore 에 없는 파일을 전부 클래스 소스로 스캔합니다.
 # dist/ 를 여기서 빼면 이전 빌드 결과를 다시 읽어 CSS 가 부풀어 오릅니다(21kB → 34kB).

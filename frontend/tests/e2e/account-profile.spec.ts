@@ -10,9 +10,54 @@ async function fillSignupBase(page: Page) {
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
   await page.getByLabel('비밀번호 확인').fill('password1234');
+  await page.getByLabel('이름').fill('신동훈');
+  await page.getByLabel('전화번호').fill('01012345678');
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
 }
+
+test('회원가입은 비밀번호 확인 다음에 이름과 전화번호를 필수로 받는다', async ({ page }) => {
+  await openSignup(page);
+
+  const passwordConfirm = page.getByLabel('비밀번호 확인');
+  const name = page.getByLabel('이름');
+  const phoneNumber = page.getByLabel('전화번호');
+  const birthDate = page.getByLabel('생년월일');
+
+  await expect(name).toHaveAttribute('required', '');
+  await expect(phoneNumber).toHaveAttribute('required', '');
+  await expect(phoneNumber).toHaveAttribute('inputmode', 'tel');
+
+  const passwordConfirmBox = await passwordConfirm.boundingBox();
+  const nameBox = await name.boundingBox();
+  const phoneNumberBox = await phoneNumber.boundingBox();
+  const birthDateBox = await birthDate.boundingBox();
+  expect(passwordConfirmBox).not.toBeNull();
+  expect(nameBox).not.toBeNull();
+  expect(phoneNumberBox).not.toBeNull();
+  expect(birthDateBox).not.toBeNull();
+  expect(passwordConfirmBox!.y).toBeLessThan(nameBox!.y);
+  expect(nameBox!.y).toBeLessThan(phoneNumberBox!.y);
+  expect(phoneNumberBox!.y).toBeLessThan(birthDateBox!.y);
+});
+
+test('회원가입 전화번호는 읽기 쉬운 형식으로 바꾸고 잘못된 번호는 인라인으로 막는다', async ({
+  page,
+}) => {
+  await openSignup(page);
+  await fillSignupBase(page);
+
+  const phoneNumber = page.getByLabel('전화번호');
+  await expect(phoneNumber).toHaveValue('010-1234-5678');
+
+  await phoneNumber.fill('021234');
+  await page.getByLabel('생년월일').fill('1990-01-01');
+  await page.getByRole('radio', { name: '여성' }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await expect(page.getByText('휴대전화 번호를 확인해 주세요.')).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
+});
 
 test('회원가입은 생년월일 다음에 기본 선택 없는 성별을 필수로 받는다', async ({ page }) => {
   await openSignup(page);
@@ -89,15 +134,19 @@ test('마이페이지의 기본정보에서 가입 때 저장한 생년월일과
   await page.getByRole('button', { name: /기본정보/ }).click();
   await expect(page).toHaveURL(/\/my\/profile$/);
   await expect(page.getByRole('heading', { name: '기본정보 수정' })).toBeVisible();
+  await expect(page.getByLabel('이름')).toHaveValue('신동훈');
+  await expect(page.getByLabel('전화번호')).toHaveValue('010-1234-5678');
   await expect(page.getByLabel('생년월일')).toHaveValue('1991-03-15');
   await expect(page.getByRole('radio', { name: '남성' })).toBeChecked();
   await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
 
+  await page.getByLabel('전화번호').fill('01098765432');
   await page.getByLabel('생년월일').fill('1991-04-16');
   await expect(page.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByText('기본정보를 저장했어요.')).toBeVisible();
   await expect(page).toHaveURL(/\/my\/profile$/);
+  await expect(page.getByLabel('전화번호')).toHaveValue('010-9876-5432');
   await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
 });
 

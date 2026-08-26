@@ -29,8 +29,6 @@ import { MedicationEditDialog } from './MedicationEditDialog';
 interface OcrReviewLocationState {
   batchId?: string;
   file?: File;
-  saved?: boolean;
-  recordId?: number;
 }
 
 type ReadingStage = 'uploading' | 'reading' | 'organizing' | 'complete';
@@ -82,7 +80,6 @@ export function OcrReviewPage() {
   );
 
   const [result, setResult] = useState<OcrResult | null>(null);
-  const [saveCompleted, setSaveCompleted] = useState(state.saved === true);
   const [readingStage, setReadingStage] = useState<ReadingStage>(
     state.file ? 'uploading' : 'reading',
   );
@@ -149,7 +146,7 @@ export function OcrReviewPage() {
   }, [batchId, location.pathname, navigate, state.file, uploadAttempt]);
 
   useEffect(() => {
-    if (!batchId || saveCompleted) return;
+    if (!batchId) return;
     let cancelled = false;
     let pollTimer: number | undefined;
     let completionTimer: number | undefined;
@@ -211,7 +208,7 @@ export function OcrReviewPage() {
       if (pollTimer) window.clearTimeout(pollTimer);
       if (completionTimer) window.clearTimeout(completionTimer);
     };
-  }, [batchId, location.pathname, navigate, pollAttempt, saveCompleted]);
+  }, [batchId, location.pathname, navigate, pollAttempt]);
 
   useEffect(() => {
     const details = STAGE_DETAILS[readingStage];
@@ -261,7 +258,7 @@ export function OcrReviewPage() {
     setSaving(true);
     setSaveError(null);
     try {
-      const { recordId } = await confirmOcrResult(batchId, {
+      const { recordId, hasMedication } = await confirmOcrResult(batchId, {
         dispensedDate,
         medications: medications.map((medication) => ({
           tempId: medication.tempId,
@@ -276,8 +273,11 @@ export function OcrReviewPage() {
       });
       releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
-      setSaveCompleted(true);
-      navigate(location.pathname, { replace: true, state: { batchId, saved: true, recordId } });
+      if (hasMedication) {
+        navigate('/medication-schedule', { state: { recordId, dispensedDate } });
+      } else {
+        navigate('/home', { replace: true });
+      }
     } catch (error: unknown) {
       setSaveError(error instanceof Error ? error.message : '저장하지 못했어요.');
     } finally {
@@ -285,13 +285,11 @@ export function OcrReviewPage() {
     }
   }
 
-  if (saveCompleted || result?.ocrStatus === 'complete') {
+  if (result?.ocrStatus === 'complete') {
     return (
       <PageFrame onBack={() => navigate(-1)}>
-        <Card tone="success" title={saveCompleted ? '저장했어요' : '이미 등록된 약봉투예요'}>
-          {saveCompleted
-            ? '약 정보를 저장했어요. 복약 시간 설정은 준비 중이에요.'
-            : '이 약봉투는 이미 저장되었습니다. 저장된 내용은 곧 복용약 화면에서 볼 수 있어요.'}
+        <Card tone="success" title="이미 등록된 약봉투예요">
+          이 약봉투는 이미 저장되었습니다. 저장된 내용은 곧 복용약 화면에서 볼 수 있어요.
         </Card>
         <div className="mt-auto flex flex-col gap-2 pb-4">
           <Button onClick={() => navigate('/home', { replace: true })}>저장 완료</Button>
@@ -458,7 +456,7 @@ export function OcrReviewPage() {
 
         <div className="mt-auto flex flex-col gap-2 pb-4">
           <Button onClick={handleSaveClick} disabled={!canSave}>
-            {saving ? '저장 중...' : '저장'}
+            {saving ? '저장 중...' : '저장하고 복약 시간 설정'}
           </Button>
           <Button variant="secondary" onClick={() => navigate('/document-upload')}>
             다시 촬영하기

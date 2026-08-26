@@ -1,1 +1,60 @@
-<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>관리자 관리 - Ozcoding_AI.health</title><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="../css/styles.css"><link rel="stylesheet" href="../css/management.css"><link rel="stylesheet" href="../css/overlays.css"><script type="module" src="../js/navigation.js"></script><script type="module" src="../js/admin-management.js"></script></head><body class="management-page flex min-h-screen"><aside class="desktop-sidebar bg-white w-[240px] p-4 flex flex-col justify-between border-r"><div><div class="flex items-center gap-2 mb-8"><img class="sidebar-logo" src="../images/logo-mark.svg" alt=""><strong>Ozcoding_AI.health</strong></div><nav class="flex flex-col gap-2"><a data-nav="dashboard" class="p-3" href="dashboard.html">대시보드</a><a data-nav="users" class="p-3" href="user-management.html">회원 관리</a><a data-nav="admins" class="p-3 rounded-lg bg-blue-50 text-blue-700 font-semibold" href="screen-4-admin-management.html">관리자 관리</a><a data-nav="tasks" class="p-3" href="screen-5-task-management.html">업무 관리</a></nav></div><a data-nav="logout" href="login.html">로그아웃</a></aside><main class="flex-1 min-w-0"><header class="bg-white h-16 px-6 flex items-center border-b"><h1 class="text-xl font-semibold">관리자 관리</h1></header><section class="p-6"><div class="management-toolbar flex justify-between gap-3 mb-5"><div class="flex gap-3 flex-wrap"><input data-admin-search class="ui-control" type="search" placeholder="이름, 이메일 검색" aria-label="관리자 검색"><select data-admin-role class="ui-control" aria-label="권한 역할"><option>전체</option><option>일반 관리자</option><option>최고 관리자</option></select><select data-admin-status class="ui-control" aria-label="관리자 상태"><option>전체</option><option>활성</option><option>정지</option></select></div><div class="flex gap-2"><button data-admin-register class="ui-button ui-button-primary">관리자 등록</button></div></div><div class="management-table-wrap bg-white rounded-xl border"><table class="management-table w-full text-sm"><thead class="bg-gray-50"><tr><th>ID</th><th>이름</th><th>이메일</th><th>역할</th><th>상태</th><th>작업</th></tr></thead><tbody data-admin-rows></tbody></table></div></section></main></body></html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>관리자 관리 - Ozcoding_AI.health</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/management.css?v=20260825-2">
+    <link rel="stylesheet" href="../css/overlays.css">
+    <script type="module" src="../js/navigation.js"></script>
+    <script type="module" src="../js/sidebar.js?v=20260825-2"></script>
+    <script type="module" src="../js/admin-management.js"></script>
+</head>
+<body class="management-page flex min-h-screen">
+<!-- sidebar -->
+<aside data-sidebar data-active-nav="admins"
+       class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0"
+       aria-label="관리자 메뉴"><span class="text-sm text-gray-500">메뉴 불러오는 중...</span>
+</aside>
+<!-- //sidebar -->
+<main class="flex-1 min-w-0">
+    <header class="bg-white h-16 px-6 flex items-center border-b"><h1 class="text-xl font-semibold">관리자 관리</h1></header>
+    <section class="p-6">
+        <div class="management-toolbar flex justify-between gap-3 mb-5">
+            <div class="flex gap-3 flex-wrap"><input data-admin-search class="ui-control" type="search"
+                                                     placeholder="이름, 이메일 검색" aria-label="관리자 검색"><select
+                    data-admin-role class="ui-control" aria-label="권한 역할">
+                <option>전체</option>
+                <option>일반 관리자</option>
+                <option>최고 관리자</option>
+            </select><select data-admin-status class="ui-control" aria-label="관리자 상태">
+                <option>전체</option>
+                <option>활성</option>
+                <option>정지</option>
+            </select></div>
+            <div class="flex gap-2">
+                <button data-admin-export class="ui-button">CSV 내보내기</button>
+                <button data-admin-register class="ui-button ui-button-primary">관리자 등록</button>
+            </div>
+        </div>
+        <div class="management-table-wrap bg-white rounded-xl border">
+            <table class="management-table w-full text-sm">
+                <thead class="bg-gray-50">
+                <tr>
+                    <th>ID</th>
+                    <th>이름</th>
+                    <th>이메일</th>
+                    <th>역할</th>
+                    <th>상태</th>
+                    <th>작업</th>
+                </tr>
+                </thead>
+                <tbody data-admin-rows></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>

@@ -161,7 +161,7 @@ async function interceptDocumentRegistration(page: Page): Promise<DocumentApiTra
     await route.continue();
   });
 
-  await page.route('**/api/medications/schedule**', async (route) => {
+  await page.route('**/api/v1/medications/schedule**', async (route) => {
     trace.scheduleRequests.push(capture(route));
     await fulfillJson(route, {
       start: null,
@@ -189,6 +189,59 @@ async function selectGalleryPng(page: Page) {
     buffer: ONE_PIXEL_PNG,
   });
 }
+
+test('OCR 결과를 확정하면 해당 복약 시간 설정 화면으로 이동한다', async ({ page }) => {
+  await authenticate(page);
+  const scheduleRequests: CapturedRequest[] = [];
+
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
+      return;
+    }
+    await fulfillJson(route, {
+      ...readyOcrResult,
+      batchId: 'b_mock_9f21',
+      medications: [{ ...readyOcrResult.medications[0] }],
+      lowConfidenceCount: 0,
+    });
+  });
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/image', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+  });
+  await page.route('**/api/v1/medications/schedule**', async (route) => {
+    scheduleRequests.push(capture(route));
+    await fulfillJson(route, {
+      start: null,
+      mealTimes: null,
+      medications: [
+        {
+          medicationId: 801,
+          name: '셀레콕시브',
+          dose: '200mg',
+          timesPerDay: 2,
+          timing: '아침·저녁 식후',
+          slots: [],
+        },
+      ],
+    });
+  });
+
+  await page.goto('/dev/ocr-review');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await page.getByRole('button', { name: /저장/ }).click();
+
+  await expect(page).toHaveURL('/medication-schedule');
+  await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
+  expect(scheduleRequests.length).toBeGreaterThan(0);
+  expect(
+    scheduleRequests.every(
+      (request) =>
+        new URL(request.url).pathname === '/api/v1/medications/schedule' &&
+        new URL(request.url).searchParams.get('recordId') === '315',
+    ),
+  ).toBe(true);
+});
 
 function expectAuthenticated(requests: CapturedRequest[]) {
   expect(requests.length).toBeGreaterThan(0);
@@ -268,11 +321,10 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await deleteDialog.getByRole('button', { name: '삭제', exact: true }).click();
   await expect(page.getByRole('button', { name: /셀레콕시브 200mg/ })).toHaveCount(0);
 
-  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
-  await expect(page).toHaveURL('/ocr-review');
-  await expect(page.getByText('저장했어요', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '다른 약봉투 저장' })).toBeVisible();
+  await expect(page).toHaveURL('/medication-schedule');
+  await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
 
   expectAuthenticated(trace.uploads);
   expect(trace.uploads.every((request) => request.headers['content-type']?.startsWith('multipart/form-data;'))).toBe(true);
@@ -322,7 +374,44 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
     expect.arrayContaining([expect.objectContaining({ tempId: 'm1' })]),
   );
 
-  expect(trace.scheduleRequests).toHaveLength(0);
+  expect(trace.scheduleRequests.length).toBeGreaterThan(0);
+  expect(
+    trace.scheduleRequests.every(
+      (request) => new URL(request.url).pathname === '/api/v1/medications/schedule',
+    ),
+  ).toBe(true);
+});
+
+test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여준다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/medications', async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'http_404', message: 'Not Found' }),
+    });
+  });
+  await page.route('**/api/v1/medications', async (route) => {
+    await fulfillJson(route, {
+      recordId: 0,
+      documentImageUrl: '',
+      start: { date: '2026-08-26', slot: 'morning' },
+      endDate: '2026-08-26',
+      daysRemaining: 0,
+      mealTimes: {
+        morning: '08:00',
+        lunch: '13:00',
+        evening: '19:00',
+        bedtime: '22:00',
+      },
+      medications: [],
+    });
+  });
+
+  await page.goto('/home');
+
+  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
 });
 
 test('업로드 응답에 문서 ID가 없으면 polling을 시작하지 않는다', async ({ page }) => {
@@ -387,6 +476,22 @@ test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장�
     }
     await route.continue();
   });
+  await page.route('**/api/v1/medications/schedule**', async (route) => {
+    await fulfillJson(route, {
+      start: null,
+      mealTimes: null,
+      medications: [
+        {
+          medicationId: 901,
+          name: '셀레콕시브',
+          dose: '200mg',
+          timesPerDay: 2,
+          timing: '아침·저녁 식후',
+          slots: [],
+        },
+      ],
+    });
+  });
 
   await page.goto('/dev/ocr-review');
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
@@ -396,8 +501,8 @@ test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장�
   await expect(page.getByText('원본 미리보기를 불러오지 못했어요')).toBeVisible();
   await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page.getByText('저장했어요', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await expect(page).toHaveURL('/medication-schedule');
 
   expect(patches).toHaveLength(1);
   expectAuthenticated(images);

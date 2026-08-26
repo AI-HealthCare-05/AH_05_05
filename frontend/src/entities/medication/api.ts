@@ -6,6 +6,7 @@ import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockMedicationOverview,
+  mockMedicationOverviews,
   mockMedicationSchedule,
   mockGetDoseRecords,
   mockSaveDoseTaken,
@@ -22,12 +23,33 @@ import type {
   SaveDoseTakenPayload,
 } from './types';
 
-export async function getMedicationOverview(): Promise<MedicationOverview> {
+type MedicationOverviewResponse =
+  | MedicationOverview
+  | MedicationOverview[]
+  | { episodes: MedicationOverview[] };
+
+export async function getMedicationOverviews(): Promise<MedicationOverview[]> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockMedicationOverview();
+    return mockMedicationOverviews();
   }
-  return http.get<MedicationOverview>('/medications');
+  const response = await http.get<MedicationOverviewResponse>('/v1/medications');
+  if (Array.isArray(response)) return response;
+  if ('episodes' in response) return response.episodes;
+  return [response];
+}
+
+export async function getMedicationOverview(recordId?: number): Promise<MedicationOverview> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockMedicationOverview(recordId);
+  }
+  const overviews = await getMedicationOverviews();
+  const overview = recordId === undefined
+    ? overviews[0]
+    : overviews.find((item) => item.recordId === recordId);
+  if (!overview) throw new Error('복약 기록을 찾지 못했어요.');
+  return overview;
 }
 
 export function prepareMedicationStateForNewAccount(): void {
@@ -40,7 +62,7 @@ export async function getMedicationSchedule(recordId: number): Promise<Medicatio
     await mockDelay();
     return mockMedicationSchedule();
   }
-  return http.get<MedicationSchedule>(`/medications/schedule?recordId=${recordId}`);
+  return http.get<MedicationSchedule>(`/v1/medications/schedule?recordId=${recordId}`);
 }
 
 /** REQ-CARE-003 — PUT /medications/schedule · 명세 5-3 */
@@ -51,7 +73,7 @@ export async function saveMedicationSchedule(
     await mockDelay();
     return mockSaveMedicationSchedule(payload);
   }
-  return http.put<SaveMedicationScheduleResponse>('/medications/schedule', payload);
+  return http.put<SaveMedicationScheduleResponse>('/v1/medications/schedule', payload);
 }
 
 export async function saveDoseTaken(payload: SaveDoseTakenPayload): Promise<DoseRecord> {
@@ -59,7 +81,7 @@ export async function saveDoseTaken(payload: SaveDoseTakenPayload): Promise<Dose
     await mockDelay();
     return mockSaveDoseTaken(payload);
   }
-  return http.post<DoseRecord>('/medications/doses', payload);
+  return http.post<DoseRecord>('/v1/medications/doses', payload);
 }
 
 export async function getDoseRecords(range: DoseRecordRange): Promise<DoseRecord[]> {
@@ -67,6 +89,10 @@ export async function getDoseRecords(range: DoseRecordRange): Promise<DoseRecord
     await mockDelay();
     return mockGetDoseRecords(range);
   }
-  const query = new URLSearchParams({ from: range.from, to: range.to });
-  return http.get<DoseRecord[]>(`/medications/doses?${query.toString()}`);
+  const query = new URLSearchParams({
+    recordId: String(range.recordId),
+    from: range.from,
+    to: range.to,
+  });
+  return http.get<DoseRecord[]>(`/v1/medications/doses?${query.toString()}`);
 }

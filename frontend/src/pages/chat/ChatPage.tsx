@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { BottomTabbar, Button, Header, Input, type TabKey } from '@/shared/ui';
-import { sendChat, type ChatMessage } from '@/entities/chat';
+import { BottomTabbar, Button, Card, Header, Input, type TabKey } from '@/shared/ui';
+import {
+  sendChat,
+  type ChatMessage,
+  type SendChatPayload,
+  type SendChatResult,
+} from '@/entities/chat';
+import { ChatStartGuide } from './ChatStartGuide';
 import { SourceList } from './SourceList';
 
 /**
  * REQ-CHAT-001 · 화면 17 AI 상담 — 공공 근거를 보여주는 화면.
  *
- * 이번 범위에서 잘라낸 것: 대화 이력 조회(명세 16), 세션 목록·삭제, 질문 재전송·수정,
- * SSE 스트리밍. 출처 표시가 유일한 필수 기능입니다.
+ * 실제 이력 API 경로는 아직 확정되지 않아 loader 경계만 둡니다. loader가 없으면 빈 이력으로
+ * 바로 시작하며, 서버 계약이 생기면 이 화면을 바꾸지 않고 entities/chat 함수로 교체합니다.
  *
  * 말풍선은 Card를 재사용하지 않고 직접 만들었습니다 — 정렬과 최대폭 규칙이 다릅니다.
  */
@@ -17,32 +23,74 @@ interface ChatLocationState {
   recordId?: number;
 }
 
-export function ChatPage() {
+type ChatHistoryLoader = () => Promise<ChatMessage[]>;
+type ChatSender = (payload: SendChatPayload) => Promise<SendChatResult>;
+
+interface ChatPageProps {
+  historyLoader?: ChatHistoryLoader;
+  chatSender?: ChatSender;
+}
+
+export function ChatPage({
+  historyLoader,
+  chatSender = sendChat,
+}: ChatPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state as ChatLocationState | null) ?? {};
   const recordId = state.recordId ?? null;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(historyLoader !== undefined);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (historyLoader === undefined) {
+      setHistoryLoading(false);
+      setHistoryError(null);
+      return;
+    }
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    historyLoader()
+      .then((history) => {
+        if (!cancelled) setMessages(history);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMessages([]);
+          setHistoryError(
+            error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.',
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [historyLoader]);
 
   // 새 메시지·대기 상태가 생기면 맨 아래로 내립니다.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, pending]);
 
-  async function handleSend() {
-    const message = draft.trim();
+  async function sendMessage(rawMessage: string) {
+    const message = rawMessage.trim();
     if (!message || pending) return;
 
     setMessages((prev) => [...prev, { role: 'user', text: message, sources: [] }]);
     setDraft('');
     setPending(true);
     try {
-      const result = await sendChat({
+      const result = await chatSender({
         requestId: crypto.randomUUID(),
         recordId,
         message,
@@ -62,6 +110,10 @@ export function ChatPage() {
     }
   }
 
+  function handleSend() {
+    void sendMessage(draft);
+  }
+
   function handleTabChange(key: TabKey) {
     if (key === 'chat') return;
     const routes: Record<TabKey, string> = {
@@ -79,10 +131,24 @@ export function ChatPage() {
       <Header title="AI 상담" onBack={() => navigate(-1)} />
 
       <main className="flex flex-1 flex-col gap-3 px-page-x py-4">
-        {messages.length === 0 && !pending && (
-          <p className="text-sm text-muted-foreground">
-            등록한 약과 복용 중 궁금한 점을 물어보세요. 확인 가능한 근거를 함께 보여드립니다.
-          </p>
+        {historyLoading ? (
+          <div
+            role="status"
+            aria-label="대화 이력 불러오는 중"
+            className="min-h-20 animate-pulse rounded-card bg-muted-bg"
+          />
+        ) : (
+          <>
+            {historyError !== null && (
+              <Card title="대화 이력을 불러오지 못했어요.">{historyError}</Card>
+            )}
+            {messages.length === 0 && (
+              <ChatStartGuide
+                pending={pending}
+                onQuestion={(question) => void sendMessage(question)}
+              />
+            )}
+          </>
         )}
 
         {messages.map((message, index) =>
@@ -132,7 +198,7 @@ export function ChatPage() {
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              void handleSend();
+              handleSend();
             }
           }}
           placeholder={pending ? '답변을 기다리는 중이에요' : '궁금한 것을 입력하세요'}

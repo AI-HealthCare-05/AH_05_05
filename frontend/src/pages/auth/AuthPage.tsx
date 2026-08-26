@@ -5,15 +5,18 @@ import { createAccount, type Gender } from '@/entities/account';
 import { login } from '@/entities/auth';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { ApiError } from '@/shared/api/client';
-import { USE_MOCK } from '@/shared/config/env';
 import {
   MIN_BIRTH_DATE,
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
+import { formatPhoneNumberInput, validatePhoneNumber } from '@/shared/lib/phoneNumber';
 import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
+
+/** 서버가 오류 본문을 못 줄 때만 씁니다. 평소에는 서버 message 를 그대로 띄웁니다. */
+const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 시도해주세요.';
 
 export function AuthPage() {
   const navigate = useNavigate();
@@ -24,67 +27,70 @@ export function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [name, setName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState<Gender | ''>('');
   const [birthDateError, setBirthDateError] = useState<string | null>(null);
   const [passwordConfirmError, setPasswordConfirmError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const today = formatDateInputValue(new Date());
 
   async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitError(null);
+    setLoginError(null);
 
     if (mode === 'signup') {
       if (!recordTerms || !aiTerms || !gender) return;
       const nextBirthDateError = validateBirthDate(birthDate);
       const nextPasswordConfirmError =
         password === passwordConfirm ? null : '비밀번호가 일치하지 않아요.';
+      const nextNameError = name.trim().length >= 2 ? null : '이름을 두 글자 이상 입력해 주세요.';
+      const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
       setBirthDateError(nextBirthDateError);
       setPasswordConfirmError(nextPasswordConfirmError);
-      if (nextBirthDateError || nextPasswordConfirmError) return;
+      setNameError(nextNameError);
+      setPhoneNumberError(nextPhoneNumberError);
+      if (
+        nextBirthDateError ||
+        nextPasswordConfirmError ||
+        nextNameError ||
+        nextPhoneNumberError
+      ) return;
 
-      if (!USE_MOCK) {
-        setSubmitError(
-          '실서버 회원가입에는 이름과 전화번호가 필요해 아직 이 화면에서 처리할 수 없어요. 로그인해 주세요.',
-        );
-        return;
-      }
-    }
-
-    setSubmitting(true);
-    try {
-      if (mode === 'signup') {
-        await createAccount({ email, password, birthDate, gender: gender as Gender });
+      setSaving(true);
+      try {
+        await createAccount({ email, password, name, phoneNumber, birthDate, gender });
         prepareMedicationStateForNewAccount();
-      } else {
-        await login({ email, password });
+      } finally {
+        setSaving(false);
       }
-      signIn();
-      navigate('/home', { replace: true });
-    } catch (error: unknown) {
-      const fallback =
-        mode === 'login'
-          ? '로그인하지 못했어요. 다시 시도해주세요.'
-          : '회원가입하지 못했어요. 다시 시도해주세요.';
-      setSubmitError(
-        error instanceof ApiError || error instanceof Error ? error.message : fallback,
-      );
-    } finally {
-      setSubmitting(false);
+    } else {
+      setSaving(true);
+      try {
+        // 토큰은 login() 안에서 메모리에만 심습니다. 새로고침하면 사라집니다(유저플로우 v4).
+        await login({ email: email.trim(), password });
+      } catch (error) {
+        // 서버 문구를 그대로 씁니다. 400(자격증명)과 423(정지·탈퇴) 모두 마찬가지입니다.
+        // 프론트가 "이메일이 없습니다" 같은 문구를 만들면 가입 여부가 새어나갑니다.
+        setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
+        return;
+      } finally {
+        setSaving(false);
+      }
     }
+    signIn();
+    navigate('/home', { replace: true });
   }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="로그인 · 회원가입" onBack={() => navigate(-1)} />
       <main className="flex flex-1 flex-col px-page-x py-6">
-        <div
-          className="grid grid-cols-2 rounded-input bg-muted-bg p-1"
-          role="group"
-          aria-label="인증 방식"
-        >
+        <div className="grid grid-cols-2 rounded-input bg-muted-bg p-1" role="group" aria-label="인증 방식">
           {(['login', 'signup'] as const).map((item) => {
             const selected = item === mode;
             return (
@@ -97,7 +103,8 @@ export function AuthPage() {
                 }`}
                 onClick={() => {
                   setMode(item);
-                  setSubmitError(null);
+                  // 탭을 옮기면 지난 로그인 실패 문구를 지웁니다. 회원가입 폼에 남아 있으면 오해합니다.
+                  setLoginError(null);
                 }}
               >
                 {item === 'login' ? '로그인' : '회원가입'}
@@ -107,7 +114,9 @@ export function AuthPage() {
         </div>
 
         <div className="mt-8">
-          <h1 className="text-2xl font-bold text-foreground">
+          <h1
+            className={`${mode === 'signup' ? 'text-xl' : 'text-2xl'} font-bold text-foreground`}
+          >
             {mode === 'login' ? '다시 만나서 반가워요' : '내 복약 기록을 안전하게 보관해요'}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -133,6 +142,7 @@ export function AuthPage() {
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            error={loginError ?? undefined}
             required
           />
 
@@ -147,6 +157,30 @@ export function AuthPage() {
                 onChange={(event) => {
                   setPasswordConfirm(event.target.value);
                   setPasswordConfirmError(null);
+                }}
+                required
+              />
+              <Input
+                label="이름"
+                autoComplete="name"
+                value={name}
+                error={nameError ?? undefined}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setNameError(null);
+                }}
+                required
+              />
+              <Input
+                label="전화번호"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phoneNumber}
+                error={phoneNumberError ?? undefined}
+                onChange={(event) => {
+                  setPhoneNumber(formatPhoneNumberInput(event.target.value));
+                  setPhoneNumberError(null);
                 }}
                 required
               />
@@ -182,23 +216,12 @@ export function AuthPage() {
             </>
           )}
 
-          {submitError && (
-            <p role="alert" className="text-sm text-danger-strong">
-              {submitError}
-            </p>
-          )}
           <Button
             type="submit"
             className="mt-auto"
-            disabled={submitting || (mode === 'signup' && (!recordTerms || !aiTerms))}
+            disabled={saving || (mode === 'signup' && (!recordTerms || !aiTerms))}
           >
-            {submitting
-              ? mode === 'login'
-                ? '로그인 중...'
-                : '가입 중...'
-              : mode === 'login'
-                ? '로그인'
-                : '회원가입 완료'}
+            {mode === 'login' ? '로그인' : '회원가입 완료'}
           </Button>
         </form>
       </main>

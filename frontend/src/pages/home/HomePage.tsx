@@ -1,17 +1,15 @@
-import { Fragment, useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import {
   getDoseRecords,
-  getMedicationOverview,
+  getMedicationOverviews,
   saveDoseTaken,
   type DoseRecord,
   type DoseRecordRange,
   type MealSlot,
   type MedicationOverview,
-  type MedicationOverviewItem,
   type SaveDoseTakenPayload,
 } from '@/entities/medication';
 import {
@@ -25,24 +23,26 @@ import {
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
 import { MedicationRecordGrid } from './MedicationRecordGrid';
+import { MedicationTimeline } from './MedicationTimeline';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
 interface HomePageProps {
   authenticatedOverride?: boolean;
   medicationState?: MedicationHomeState;
+  medicationOverviewsLoader?: () => Promise<MedicationOverview[]>;
+  /** DevGallery의 기존 단일 fixture를 위한 전환기 호환 prop. */
   medicationOverviewLoader?: () => Promise<MedicationOverview>;
   doseRecordsLoader?: (range: DoseRecordRange) => Promise<DoseRecord[]>;
   doseRecordSaver?: (payload: SaveDoseTakenPayload) => Promise<DoseRecord>;
 }
 
-const SLOT_ORDER: MealSlot[] = ['morning', 'lunch', 'evening', 'bedtime'];
-const SLOT_LABEL: Record<MealSlot, string> = {
-  morning: '아침',
-  lunch: '점심',
-  evening: '저녁',
-  bedtime: '취침 전',
-};
+interface DoseBatchChange {
+  recordIds: number[];
+  date: string;
+  slot: MealSlot;
+  taken: boolean;
+}
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -55,7 +55,8 @@ const TAB_ROUTES: Record<TabKey, string> = {
 export function HomePage({
   authenticatedOverride,
   medicationState,
-  medicationOverviewLoader = getMedicationOverview,
+  medicationOverviewsLoader,
+  medicationOverviewLoader,
   doseRecordsLoader = getDoseRecords,
   doseRecordSaver = saveDoseTaken,
 }: HomePageProps) {
@@ -63,27 +64,31 @@ export function HomePage({
   const { authenticated } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
   const [loginPromptOpen, setLoginPromptOpen] = useState(false);
-  const [medicationOverview, setMedicationOverview] = useState<MedicationOverview | null>(null);
+  const [medicationOverviews, setMedicationOverviews] = useState<MedicationOverview[] | null>(null);
   const [medicationLoadError, setMedicationLoadError] = useState<string | null>(null);
   const [doseRecords, setDoseRecords] = useState<DoseRecord[] | null>(null);
   const [doseLoadError, setDoseLoadError] = useState<string | null>(null);
-  const [failedDoseChange, setFailedDoseChange] = useState<SaveDoseTakenPayload | null>(null);
+  const [failedDoseChange, setFailedDoseChange] = useState<DoseBatchChange | null>(null);
   const [animatedDoseKey, setAnimatedDoseKey] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (
-      !isAuthenticated ||
-      (medicationState !== undefined && medicationState !== 'active')
-    ) return;
+    if (!isAuthenticated || (medicationState !== undefined && medicationState !== 'active')) {
+      return;
+    }
 
     let cancelled = false;
-    setMedicationOverview(null);
+    setMedicationOverviews(null);
     setMedicationLoadError(null);
-    medicationOverviewLoader()
-      .then((overview) => {
-        if (!cancelled) setMedicationOverview(overview);
+    const request = medicationOverviewsLoader
+      ? medicationOverviewsLoader()
+      : medicationOverviewLoader
+        ? medicationOverviewLoader().then((overview) => [overview])
+        : getMedicationOverviews();
+    request
+      .then((overviews) => {
+        if (!cancelled) setMedicationOverviews(overviews);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -95,18 +100,38 @@ export function HomePage({
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, medicationOverviewLoader, medicationState, reloadKey]);
+  }, [
+    isAuthenticated,
+    medicationOverviewLoader,
+    medicationOverviewsLoader,
+    medicationState,
+    reloadKey,
+  ]);
 
   useEffect(() => {
-    if (!isAuthenticated || !medicationOverview || medicationOverview.medications.length === 0) {
+    const withMedication = (medicationOverviews ?? []).filter(
+      (overview) => overview.medications.length > 0,
+    );
+    if (!isAuthenticated || medicationOverviews === null) return;
+    if (withMedication.length === 0) {
+      setDoseRecords([]);
       return;
     }
+
     let cancelled = false;
     setDoseRecords(null);
     setDoseLoadError(null);
-    doseRecordsLoader({ from: medicationOverview.start.date, to: medicationOverview.endDate })
+    Promise.all(
+      withMedication.map((overview) =>
+        doseRecordsLoader({
+          recordId: overview.recordId,
+          from: overview.start.date,
+          to: overview.endDate,
+        }),
+      ),
+    )
       .then((records) => {
-        if (!cancelled) setDoseRecords(records);
+        if (!cancelled) setDoseRecords(records.flat());
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -118,7 +143,7 @@ export function HomePage({
     return () => {
       cancelled = true;
     };
-  }, [currentDate, doseRecordsLoader, isAuthenticated, medicationOverview, reloadKey]);
+  }, [currentDate, doseRecordsLoader, isAuthenticated, medicationOverviews, reloadKey]);
 
   useEffect(() => {
     function refreshAfterDateChange() {
@@ -133,7 +158,15 @@ export function HomePage({
 
   const resolvedMedicationState =
     medicationState ??
-    (medicationOverview ? medicationHomeStateFromOverview(medicationOverview) : null);
+    (medicationOverviews ? medicationHomeStateFromOverviews(medicationOverviews) : null);
+  const overviewDataReady =
+    medicationState !== undefined && medicationState !== 'active'
+      ? true
+      : medicationOverviews !== null;
+  const hasMedication = Boolean(
+    medicationOverviews?.some((overview) => overview.medications.length > 0),
+  );
+  const pageDataReady = overviewDataReady && (!hasMedication || doseRecords !== null);
 
   function openFeature(key: Exclude<TabKey, 'home' | 'my'>) {
     if (!isAuthenticated) {
@@ -152,20 +185,22 @@ export function HomePage({
     openFeature(key);
   }
 
-  async function changeDose(payload: SaveDoseTakenPayload, showUndo = true) {
-    if (!doseRecords) return;
+  async function changeDose(change: DoseBatchChange, showUndo = true) {
+    if (!doseRecords || change.recordIds.length === 0) return;
     const previousRecords = doseRecords;
     setFailedDoseChange(null);
-    setAnimatedDoseKey(payload.taken ? doseKey(payload.date, payload.slot) : null);
-    setDoseRecords(updateDoseRecords(previousRecords, payload));
+    setAnimatedDoseKey(change.taken ? doseKey(change.date, change.slot) : null);
+    setDoseRecords(updateDoseRecords(previousRecords, change));
     try {
-      await doseRecordSaver(payload);
+      await Promise.all(
+        change.recordIds.map((recordId) => doseRecordSaver({ ...change, recordId })),
+      );
       if (showUndo) {
-        toast.success(payload.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
+        toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
           action: {
             label: '되돌리기',
             onClick: () => {
-              void changeDose({ ...payload, taken: !payload.taken }, false);
+              void changeDose({ ...change, taken: !change.taken }, false);
             },
           },
         });
@@ -173,7 +208,7 @@ export function HomePage({
     } catch {
       setDoseRecords(previousRecords);
       setAnimatedDoseKey(null);
-      setFailedDoseChange(payload);
+      setFailedDoseChange(change);
     }
   }
 
@@ -195,32 +230,34 @@ export function HomePage({
       )}
 
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
+        <PokeFeatureCarousel />
+
         {isAuthenticated ? (
           medicationLoadError || doseLoadError ? (
             <Card title="복약 정보를 불러오지 못했어요">
               {medicationLoadError ?? doseLoadError}
             </Card>
-          ) : resolvedMedicationState &&
-            (resolvedMedicationState !== 'active' || medicationOverview) &&
-            (!medicationOverview?.medications.length || doseRecords !== null) ? (
+          ) : resolvedMedicationState && pageDataReady ? (
             <>
-              <LoggedInHero
+              <LoggedInMedicationContent
                 state={resolvedMedicationState}
-                overview={medicationOverview}
+                overviews={medicationOverviews ?? []}
                 doseRecords={doseRecords ?? []}
                 currentDate={currentDate}
-                onDoseChange={(slot, taken) =>
-                  void changeDose({ date: currentDate, slot, taken })
+                onDoseChange={(recordIds, slot, taken) =>
+                  void changeDose({ recordIds, date: currentDate, slot, taken })
                 }
                 onUpload={() => navigate('/document-upload')}
               />
-              {medicationOverview?.medications.length && doseRecords ? (
+              {hasMedication && doseRecords ? (
                 <MedicationRecordGrid
-                  overview={medicationOverview}
+                  overviews={medicationOverviews ?? []}
                   records={doseRecords}
                   now={new Date()}
                   animatedRecordKey={animatedDoseKey}
-                  onMarkTaken={(date, slot) => void changeDose({ date, slot, taken: true })}
+                  onMarkTaken={(date, slot, recordIds) =>
+                    void changeDose({ recordIds, date, slot, taken: true })
+                  }
                 />
               ) : null}
             </>
@@ -231,9 +268,7 @@ export function HomePage({
               className="min-h-84 animate-pulse rounded-card bg-muted-bg"
             />
           )
-        ) : (
-          <PokeFeatureCarousel />
-        )}
+        ) : null}
 
         {!isAuthenticated && (
           <p className="mt-auto py-4 text-center text-sm text-disabled-foreground">
@@ -257,28 +292,28 @@ export function HomePage({
         title="기록하지 못했어요"
         message="기록하지 못했어요. 다시 시도해주세요."
         onRetry={() => {
-          const payload = failedDoseChange;
+          const change = failedDoseChange;
           setFailedDoseChange(null);
-          if (payload) void changeDose(payload);
+          if (change) void changeDose(change);
         }}
       />
     </div>
   );
 }
 
-function LoggedInHero({
+function LoggedInMedicationContent({
   state,
-  overview,
+  overviews,
   doseRecords,
   currentDate,
   onDoseChange,
   onUpload,
 }: {
   state: MedicationHomeState;
-  overview: MedicationOverview | null;
+  overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
-  onDoseChange: (slot: MealSlot, taken: boolean) => void;
+  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void;
   onUpload: () => void;
 }) {
   if (state === 'empty') {
@@ -286,7 +321,9 @@ function LoggedInHero({
       <Card className="gap-4 bg-primary-bg p-5">
         <div>
           <p className="text-xl font-bold text-foreground">약봉투를 등록해 주세요</p>
-          <p className="mt-1 text-sm text-muted-foreground">사진 한 장이면 오늘부터 알림을 드릴게요.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            사진 한 장이면 오늘부터 알림을 드릴게요.
+          </p>
         </div>
         <Button onClick={onUpload}>약봉투 등록</Button>
       </Card>
@@ -298,7 +335,9 @@ function LoggedInHero({
       <Card className="gap-4 p-5">
         <div>
           <p className="text-xl font-bold text-foreground">복용이 끝났어요</p>
-          <p className="mt-1 text-sm text-muted-foreground">새 처방을 받았다면 약봉투를 다시 등록해 주세요.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            새 처방을 받았다면 약봉투를 다시 등록해 주세요.
+          </p>
         </div>
         <Button variant="secondary" onClick={onUpload}>
           새 약봉투 등록
@@ -307,231 +346,38 @@ function LoggedInHero({
     );
   }
 
-  if (!overview) return null;
-
-  const timeline = medicationTimeline(overview, new Date(), currentDate, doseRecords);
-  const dayNumber = Math.max(1, daysBetween(overview.start.date, currentDate) + 1);
-  const allTaken = timeline.length > 0 && timeline.every((item) => item.status === 'completed');
-
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="today-medication-title">
-      <div className="flex items-center justify-between">
-        <h2 id="today-medication-title" className="text-xl font-bold text-foreground">
-          오늘의 복약
-        </h2>
-        <span className="text-base text-muted-foreground tnum">
-          {dayNumber}일째 · {overview.daysRemaining}일 남음
-        </span>
-      </div>
-      <div
-        role="group"
-        aria-label="하루 복약 시간표"
-        className="overflow-hidden rounded-card bg-card shadow-card"
-      >
-        {allTaken && (
-          <p className="px-4 pt-4 text-base font-bold text-foreground">오늘 다 드셨어요</p>
-        )}
-        {timeline.map((item, index) => (
-          <Fragment key={item.slot}>
-            {index > 0 && <div className="mx-4 border-t border-border" />}
-            <TimelineItem item={item} onDoseChange={onDoseChange} />
-          </Fragment>
-        ))}
-      </div>
-    </section>
+    <MedicationTimeline
+      overviews={overviews}
+      doseRecords={doseRecords}
+      currentDate={currentDate}
+      onDoseChange={onDoseChange}
+    />
   );
 }
 
-type TimelineStatus = 'completed' | 'current' | 'next' | 'missed';
-
-interface TimelineItemData {
-  slot: MealSlot;
-  label: string;
-  time: string;
-  medications: MedicationOverviewItem[];
-  status: TimelineStatus;
-  expanded: boolean;
-}
-
-function TimelineItem({
-  item,
-  onDoseChange,
-}: {
-  item: TimelineItemData;
-  onDoseChange: (slot: MealSlot, taken: boolean) => void;
-}) {
-  if (item.status === 'completed') {
-    return (
-      <button
-        type="button"
-        aria-label={`완료한 복약 ${item.label}`}
-        className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left text-disabled-foreground"
-        onClick={() => onDoseChange(item.slot, false)}
-      >
-        <span className="flex size-5.5 shrink-0 items-center justify-center rounded-pill bg-primary text-card">
-          <Check aria-hidden className="size-4" />
-        </span>
-        <span className="text-base tnum">
-          {item.label} {item.time}
-        </span>
-        <span className="ml-auto text-sm tnum">{item.medications.length}개 먹었어요</span>
-      </button>
-    );
-  }
-
-  const ariaLabel =
-    item.status === 'current'
-      ? '현재 복약'
-      : item.status === 'missed'
-        ? `놓친 복약 ${item.label}`
-        : `다음 복약 ${item.label}`;
-
-  if (!item.expanded) {
-    return (
-      <div
-        role="group"
-        aria-label={ariaLabel}
-        className={`flex min-h-12 items-center gap-3 px-4 py-2 ${
-          item.status === 'missed' ? 'text-muted-foreground' : 'text-foreground'
-        }`}
-      >
-        <span className="size-5.5 shrink-0 rounded-pill border border-border" />
-        <span className="text-base tnum">
-          {item.label} {item.time}
-        </span>
-        <span className="ml-auto text-base text-muted-foreground tnum">
-          {item.medications.length}개
-        </span>
-      </div>
-    );
-  }
-
-  const current = item.status === 'current';
-  return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className={`flex flex-col px-4 py-4 ${current ? 'bg-primary-bg' : 'bg-card'}`}
-    >
-      <div className="flex items-center gap-3">
-        <span
-          className={`size-5.5 shrink-0 rounded-pill ${
-            current ? 'border-2 border-primary' : 'border border-border'
-          }`}
-        />
-        <p className="text-metric font-bold text-foreground tnum">
-          {item.label} {item.time}
-        </p>
-        <span
-          className={`ml-auto rounded-pill px-3 py-1 text-sm font-bold ${
-            current
-              ? 'bg-primary text-card'
-              : 'bg-muted-bg text-muted-foreground'
-          }`}
-        >
-          {current ? '지금' : '다음'}
-        </span>
-      </div>
-      <ul
-        aria-label={current ? '지금 먹을 약' : '다음에 먹을 약'}
-        className="ml-8.5 mt-2 flex flex-col gap-1"
-      >
-        {item.medications.map((medication) => (
-          <li key={medication.medicationId} className="text-base text-foreground">
-            {medication.name}{' '}
-            <span className="text-muted-foreground">{medication.dose}</span>
-          </li>
-        ))}
-      </ul>
-      <Button
-        variant={current ? 'primary' : 'secondary'}
-        fullWidth={false}
-        className="ml-8.5 mt-3 w-auto gap-2 text-base tnum"
-        onClick={() => onDoseChange(item.slot, true)}
-      >
-        <Check aria-hidden className="size-5" />
-        {item.medications.length}개 먹었어요
-      </Button>
-    </div>
+function updateDoseRecords(records: DoseRecord[], change: DoseBatchChange): DoseRecord[] {
+  const recordIds = new Set(change.recordIds);
+  const remaining = records.filter(
+    (record) =>
+      !recordIds.has(record.recordId) ||
+      record.date !== change.date ||
+      record.slot !== change.slot,
   );
-}
-
-function medicationTimeline(
-  overview: MedicationOverview,
-  now: Date,
-  currentDate: string,
-  doseRecords: DoseRecord[],
-): TimelineItemData[] {
-  const todayOffset = daysBetween(overview.start.date, currentDate);
-  const medications = overview.medications.filter(
-    (medication) =>
-      !medication.asNeeded && todayOffset >= 0 && todayOffset < medication.days,
-  );
-  const items = SLOT_ORDER.map((slot) => ({
-    slot,
-    label: SLOT_LABEL[slot],
-    time: overview.mealTimes[slot],
-    medications: medications.filter((medication) => medication.slots.includes(slot)),
-  }))
-    .filter((item) => item.medications.length > 0)
-    .sort((left, right) => timeInMinutes(left.time) - timeInMinutes(right.time));
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  let currentIndex = -1;
-  items.forEach((item, index) => {
-    if (timeInMinutes(item.time) <= nowMinutes) currentIndex = index;
-  });
-  const takenSlots = new Set(
-    doseRecords
-      .filter((record) => record.date === currentDate && record.taken)
-      .map((record) => record.slot),
-  );
-  const currentSlot = items[currentIndex]?.slot;
-  const expandedIndex =
-    currentSlot && !takenSlots.has(currentSlot)
-      ? currentIndex
-      : items.findIndex((item, index) => index > currentIndex && !takenSlots.has(item.slot));
-
-  return items.map((item, index) => ({
-    ...item,
-    status: takenSlots.has(item.slot)
-      ? 'completed'
-      : index === currentIndex
-        ? 'current'
-        : index < currentIndex
-          ? 'missed'
-          : 'next',
-    expanded: index === expandedIndex,
-  }));
-}
-
-function updateDoseRecords(
-  records: DoseRecord[],
-  payload: SaveDoseTakenPayload,
-): DoseRecord[] {
-  const withoutSlot = records.filter(
-    (record) => record.date !== payload.date || record.slot !== payload.slot,
-  );
-  return payload.taken ? [...withoutSlot, { ...payload }] : withoutSlot;
+  if (!change.taken) return remaining;
+  return [
+    ...remaining,
+    ...change.recordIds.map((recordId) => ({
+      recordId,
+      date: change.date,
+      slot: change.slot,
+      taken: true,
+    })),
+  ];
 }
 
 function doseKey(date: string, slot: MealSlot): string {
   return `${date}:${slot}`;
-}
-
-function timeInMinutes(value: string): number {
-  const [hours = '0', minutes = '0'] = value.split(':');
-  return Number(hours) * 60 + Number(minutes);
-}
-
-function daysBetween(from: string, to: string): number {
-  const fromDate = localDate(from);
-  const toDate = localDate(to);
-  return Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000);
-}
-
-function localDate(value: string): Date {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, (month || 1) - 1, day || 1);
 }
 
 function localISODate(date: Date): string {
@@ -540,7 +386,9 @@ function localISODate(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-function medicationHomeStateFromOverview(overview: MedicationOverview): MedicationHomeState {
-  if (overview.medications.length === 0) return 'empty';
-  return overview.daysRemaining > 0 ? 'active' : 'ended';
+function medicationHomeStateFromOverviews(
+  overviews: MedicationOverview[],
+): MedicationHomeState {
+  if (!overviews.some((overview) => overview.medications.length > 0)) return 'empty';
+  return overviews.some((overview) => overview.daysRemaining > 0) ? 'active' : 'ended';
 }
