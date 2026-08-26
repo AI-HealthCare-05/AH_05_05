@@ -21,6 +21,7 @@ import {
   type SaveDoseTakenPayload,
 } from '@/entities/medication';
 import { DevGallery } from './DevGallery';
+import { ChatSessionProvider } from './ChatSessionContext';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
 const EXISTING_CHAT_HISTORY: ChatMessage[] = [
@@ -101,7 +102,8 @@ const failChatHistory = async (): Promise<ChatMessage[]> => {
 export function AppRouter() {
   return (
     <BrowserRouter>
-      <Routes>
+      <ChatSessionProvider>
+        <Routes>
         <Route path="/" element={<SplashPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
@@ -240,7 +242,8 @@ export function AppRouter() {
             <HomePage authenticatedOverride medicationOverviewLoader={failMedicationOverview} />
           }
         />
-      </Routes>
+        </Routes>
+      </ChatSessionProvider>
     </BrowserRouter>
   );
 }

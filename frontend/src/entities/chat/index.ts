@@ -1,4 +1,4 @@
-export { sendChat } from './api';
+export { getChatMessages, sendChat } from './api';
 export type {
   ChatMessage,
   ChatSource,

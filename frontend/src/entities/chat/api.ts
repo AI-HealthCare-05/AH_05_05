@@ -8,8 +8,8 @@
  */
 import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import { mockSendChat } from './api.mock';
-import type { SendChatPayload, SendChatResult } from './types';
+import { mockGetChatMessages, mockSendChat } from './api.mock';
+import type { ChatMessage, SendChatPayload, SendChatResult } from './types';
 
 /** REQ-CHAT-001 — POST /chat · 명세 15번 */
 export async function sendChat(payload: SendChatPayload): Promise<SendChatResult> {
@@ -19,4 +19,11 @@ export async function sendChat(payload: SendChatPayload): Promise<SendChatResult
     return mockSendChat(payload);
   }
   return http.post<SendChatResult>('/chat', payload);
+}
+
+/** #111 임시 이력 경계. 실 API 경로를 추측하지 않고 계약 확정 후 내부만 교체합니다. */
+export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
+  if (!USE_MOCK) throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
+  await mockDelay();
+  return mockGetChatMessages(sessionId);
 }

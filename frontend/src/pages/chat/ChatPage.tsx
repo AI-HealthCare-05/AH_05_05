@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { useChatSession } from '@/app/ChatSessionContext';
 import { BottomTabbar, Button, Card, Header, Input, type TabKey } from '@/shared/ui';
 import {
+  getChatMessages,
   sendChat,
   type ChatMessage,
   type SendChatPayload,
@@ -39,9 +41,12 @@ export function ChatPage({
   const location = useLocation();
   const state = (location.state as ChatLocationState | null) ?? {};
   const recordId = state.recordId ?? null;
+  const { activeSessionId, selectSession } = useChatSession();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(historyLoader !== undefined);
+  const [historyLoading, setHistoryLoading] = useState(
+    historyLoader !== undefined || activeSessionId !== null,
+  );
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [conversationId, setConversationId] = useState<number | null>(null);
@@ -49,7 +54,11 @@ export function ChatPage({
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (historyLoader === undefined) {
+    const loader = historyLoader
+      ?? (activeSessionId === null ? undefined : () => getChatMessages(activeSessionId));
+    if (loader === undefined) {
+      setMessages([]);
+      setConversationId(null);
       setHistoryLoading(false);
       setHistoryError(null);
       return;
@@ -57,9 +66,12 @@ export function ChatPage({
     let cancelled = false;
     setHistoryLoading(true);
     setHistoryError(null);
-    historyLoader()
+    loader()
       .then((history) => {
-        if (!cancelled) setMessages(history);
+        if (!cancelled) {
+          setMessages(history);
+          if (historyLoader === undefined) setConversationId(activeSessionId);
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -75,7 +87,7 @@ export function ChatPage({
     return () => {
       cancelled = true;
     };
-  }, [historyLoader]);
+  }, [activeSessionId, historyLoader]);
 
   // 새 메시지·대기 상태가 생기면 맨 아래로 내립니다.
   useEffect(() => {
@@ -92,6 +104,7 @@ export function ChatPage({
     try {
       const result = await chatSender({ recordId, message, conversationId });
       setConversationId(result.conversationId);
+      selectSession(result.conversationId);
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', text: result.answer, sources: result.sources },
