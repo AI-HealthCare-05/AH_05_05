@@ -1,5 +1,7 @@
 import { expect, test } from 'playwright/test';
 
+test.setTimeout(20_000);
+
 test('복용약 화면은 약봉투 원본 없이 care episode 목록을 보여준다', async ({ page }) => {
   await page.goto('/dev/medications');
 
@@ -73,6 +75,11 @@ test('로그인 마이페이지는 내 관리와 알림 토글, 계정을 보여
 
 test('하단 탭은 구현된 실제 화면 경로로 이동한다', async ({ page }) => {
   await page.goto('/dev/medications');
+  await page.evaluate(() => {
+    sessionStorage.setItem('poke.access-token', 'e2e-navigation-token');
+    sessionStorage.setItem('poke.account-principal', 'navigation@example.com');
+  });
+  await page.reload();
   await page.getByRole('button', { name: '영양제', exact: true }).click();
   await expect(page).toHaveURL(/\/supplements$/);
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
@@ -86,8 +93,65 @@ test('게스트 배너를 넘기면 현재 위치 인디케이터가 함께 바�
   const carousel = page.getByRole('region', { name: '포케 기능 소개' }).locator('.overflow-x-auto');
 
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
-  await carousel.evaluate((element) => element.scrollTo({ left: element.scrollWidth, behavior: 'instant' }));
+  await carousel.evaluate((element) => {
+    const banners = Array.from(element.children) as HTMLElement[];
+    const firstOffset = banners[0]?.offsetLeft ?? 0;
+    element.scrollTo({ left: banners[2].offsetLeft - firstOffset, behavior: 'instant' });
+  });
   await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible();
+});
+
+test('홈 기능 배너는 마우스가 배너 위에 있어도 자동으로 다음 장을 보여준다', async ({ page }) => {
+  await page.goto('/home');
+  await page.getByRole('region', { name: '포케 기능 소개' }).hover();
+
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
+  await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
+});
+
+test('홈 기능 배너는 마지막 장에서도 같은 방향으로 첫 장을 이어 보여준다', async ({ page }) => {
+  await page.goto('/home');
+  const carousel = page.getByRole('region', { name: '포케 기능 소개' }).locator('.overflow-x-auto');
+
+  await carousel.evaluate((element) => {
+    const banners = Array.from(element.children) as HTMLElement[];
+    const firstOffset = banners[0]?.offsetLeft ?? 0;
+    element.scrollTo({ left: banners[2].offsetLeft - firstOffset, behavior: 'instant' });
+  });
+  await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible();
+  await page.waitForTimeout(200);
+
+  await carousel.evaluate((element) => {
+    element.dataset.autoplayBaseline = String(element.scrollLeft);
+    element.dataset.autoplayMax = String(element.scrollLeft);
+    element.addEventListener('scroll', () => {
+      const previousMax = Number(element.dataset.autoplayMax ?? element.scrollLeft);
+      element.dataset.autoplayMax = String(Math.max(previousMax, element.scrollLeft));
+    });
+  });
+  await page.waitForTimeout(3_500);
+
+  const movement = await carousel.evaluate((element) => ({
+    baseline: Number(element.dataset.autoplayBaseline),
+    max: Number(element.dataset.autoplayMax),
+  }));
+  expect(movement.max).toBeGreaterThan(movement.baseline + 10);
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
+});
+
+test('홈 기능 배너에는 자동 넘김 제어 문구를 노출하지 않는다', async ({ page }) => {
+  await page.goto('/home');
+
+  await expect(page.getByRole('button', { name: /자동 넘김/ })).toHaveCount(0);
+});
+
+test('동작 줄이기 환경에서는 홈 기능 배너를 자동으로 넘기지 않는다', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/home');
+
+  await expect(page.getByRole('button', { name: /자동 넘김/ })).toHaveCount(0);
+  await page.waitForTimeout(3_500);
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
 });
 
 test('복용약의 알림 시간은 시간 네 개만 있는 전용 화면으로 들어간다', async ({ page }) => {

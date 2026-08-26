@@ -6,17 +6,87 @@
  * 내놓을 때까지 화면이 대기하게 됩니다. 나중에 스트리밍으로 바꿀 때 이 파일 안만
  * 바뀌고 화면 코드는 그대로입니다.
  */
-import { http, mockDelay } from '@/shared/api/client';
+import {
+  getAuthGeneration,
+  http,
+  mockDelay,
+  restoreAccountPrincipal,
+} from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import { mockSendChat } from './api.mock';
-import type { SendChatPayload, SendChatResult } from './types';
+import {
+  mockDeleteChatSessions,
+  mockGetChatMessages,
+  mockListChatSessions,
+  mockSendChat,
+} from './api.mock';
+import type {
+  ChatMessage,
+  ChatSessionSummary,
+  SendChatPayload,
+  SendChatResult,
+} from './types';
+
+export class ChatSessionNotFoundError extends Error {
+  constructor() {
+    super('대화를 찾지 못했어요.');
+    this.name = 'ChatSessionNotFoundError';
+  }
+}
 
 /** REQ-CHAT-001 — POST /api/v1/chat */
 export async function sendChat(payload: SendChatPayload): Promise<SendChatResult> {
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
   if (USE_MOCK) {
     // LLM 응답은 실제로 수 초 걸립니다. 대기 상태를 확인할 수 있게 길게 잡았습니다.
     await mockDelay(1200);
-    return mockSendChat(payload);
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 답변 전송을 중단했어요.');
+    }
+    return mockSendChat(payload, requestPrincipal);
   }
-  return http.post<SendChatResult>('/v1/chat', payload);
+  const result = await http.post<SendChatResult>('/v1/chat', payload);
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 답변 표시를 중단했어요.');
+  }
+  return result;
+}
+
+/** #111 임시 이력 경계. 실 API 경로를 추측하지 않고 계약 확정 후 내부만 교체합니다. */
+export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
+  if (!USE_MOCK) throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
+  await mockDelay();
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+  }
+  const messages = mockGetChatMessages(sessionId, requestPrincipal);
+  if (messages === null) throw new ChatSessionNotFoundError();
+  return messages;
+}
+
+/** #111 임시 세션 목록 경계. 백엔드 계약이 확정되면 내부만 HTTP 조회로 교체합니다. */
+export async function listChatSessions(): Promise<ChatSessionSummary[]> {
+  if (!USE_MOCK) throw new Error('대화 목록 API가 아직 준비되지 않았어요.');
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
+  await mockDelay();
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
+  }
+  return mockListChatSessions(requestPrincipal);
+}
+
+/** #111 임시 다중 삭제 경계. 실제 소프트 삭제 계약은 백엔드 API 확정 후 연결합니다. */
+export async function deleteChatSessions(sessionIds: readonly number[]): Promise<void> {
+  if (sessionIds.length === 0) return;
+  if (!USE_MOCK) throw new Error('대화 삭제 API가 아직 준비되지 않았어요.');
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
+  await mockDelay();
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
+  }
+  mockDeleteChatSessions(sessionIds, requestPrincipal);
 }

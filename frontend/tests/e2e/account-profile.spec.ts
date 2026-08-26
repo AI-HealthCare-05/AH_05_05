@@ -106,6 +106,14 @@ test('정확히 만 14세인 생일에는 생년월일과 성별을 저장하고
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page).toHaveURL(/\/home$/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        token: sessionStorage.getItem('poke.access-token'),
+        principal: sessionStorage.getItem('poke.account-principal'),
+      })),
+    )
+    .toEqual({ token: 'mock-access-token', principal: 'new-patient@example.com' });
 });
 
 test('미래 생년월일과 일치하지 않는 비밀번호 확인으로 가입할 수 없다', async ({ page }) => {

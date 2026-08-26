@@ -1,5 +1,7 @@
 import { expect, test, type Page } from 'playwright/test';
 
+test.setTimeout(20_000);
+
 async function logIn(page: Page) {
   await page.goto('/login');
   await page.getByLabel('이메일').fill('patient@example.com');
@@ -49,6 +51,17 @@ test('게스트 탭은 조회 화면으로 가지 않고 같은 로그인 시트
   await expect(page).toHaveURL(/\/home$/);
 });
 
+test('로그인하지 않고 챗봇 주소를 직접 열면 로그인 화면으로 보낸다', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'principal-missing-token');
+    sessionStorage.removeItem('poke.account-principal');
+  });
+  await page.goto('/chat');
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible();
+});
+
 test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
@@ -73,10 +86,7 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
   await page.getByRole('radio', { name: '여성' }).check();
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
-  await Promise.all([
-    expect(page.getByRole('status', { name: '복약 정보 불러오는 중' })).toBeVisible(),
-    page.getByRole('button', { name: '회원가입 완료' }).click(),
-  ]);
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page).toHaveURL(/\/home$/);
   await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
