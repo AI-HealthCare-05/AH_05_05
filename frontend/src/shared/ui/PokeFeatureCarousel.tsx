@@ -56,7 +56,8 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
       const scroller = scrollerRef.current;
       if (!scroller) return;
       const children = Array.from(scroller.children) as HTMLElement[];
-      const nextIndex = (activeBannerIndex + 1) % children.length;
+      const nextIndex =
+        activeBannerIndex === BANNERS.length - 1 ? BANNERS.length : activeBannerIndex + 1;
       const firstOffset = children[0]?.offsetLeft ?? 0;
       const nextBanner = children[nextIndex];
       if (!nextBanner) return;
@@ -87,12 +88,32 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
             );
             return childDistance < closestDistance ? index : closestIndex;
           }, 0);
-          setActiveBannerIndex(nextIndex);
+          setActiveBannerIndex(nextIndex % BANNERS.length);
+        }}
+        onScrollEnd={(event) => {
+          const children = Array.from(event.currentTarget.children) as HTMLElement[];
+          const firstOffset = children[0]?.offsetLeft ?? 0;
+          const closestIndex = children.reduce((closest, child, index) => {
+            const closestDistance = Math.abs(
+              children[closest].offsetLeft - firstOffset - event.currentTarget.scrollLeft,
+            );
+            const childDistance = Math.abs(
+              child.offsetLeft - firstOffset - event.currentTarget.scrollLeft,
+            );
+            return childDistance < closestDistance ? index : closest;
+          }, 0);
+          if (closestIndex === BANNERS.length) {
+            event.currentTarget.scrollTo({
+              left: children[0].offsetLeft - firstOffset,
+              behavior: 'auto',
+            });
+          }
         }}
       >
-        {BANNERS.map(({ title, description, icon: Icon, tone }) => (
+        {[...BANNERS, BANNERS[0]].map(({ title, description, icon: Icon, tone }, index) => (
           <article
-            key={title}
+            aria-hidden={index === BANNERS.length || undefined}
+            key={`${title}-${index}`}
             className={`flex min-h-64 min-w-[88%] flex-1 snap-start flex-col rounded-card p-5 shadow-card ${tone}`}
           >
             <span className="flex size-12 items-center justify-center rounded-pill bg-card/80">

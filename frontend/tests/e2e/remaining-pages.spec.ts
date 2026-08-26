@@ -93,7 +93,11 @@ test('게스트 배너를 넘기면 현재 위치 인디케이터가 함께 바�
   const carousel = page.getByRole('region', { name: '포케 기능 소개' }).locator('.overflow-x-auto');
 
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
-  await carousel.evaluate((element) => element.scrollTo({ left: element.scrollWidth, behavior: 'instant' }));
+  await carousel.evaluate((element) => {
+    const banners = Array.from(element.children) as HTMLElement[];
+    const firstOffset = banners[0]?.offsetLeft ?? 0;
+    element.scrollTo({ left: banners[2].offsetLeft - firstOffset, behavior: 'instant' });
+  });
   await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible();
 });
 
@@ -103,6 +107,36 @@ test('홈 기능 배너는 마우스가 배너 위에 있어도 자동으로 다
 
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
   await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
+});
+
+test('홈 기능 배너는 마지막 장에서도 같은 방향으로 첫 장을 이어 보여준다', async ({ page }) => {
+  await page.goto('/home');
+  const carousel = page.getByRole('region', { name: '포케 기능 소개' }).locator('.overflow-x-auto');
+
+  await carousel.evaluate((element) => {
+    const banners = Array.from(element.children) as HTMLElement[];
+    const firstOffset = banners[0]?.offsetLeft ?? 0;
+    element.scrollTo({ left: banners[2].offsetLeft - firstOffset, behavior: 'instant' });
+  });
+  await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible();
+  await page.waitForTimeout(200);
+
+  await carousel.evaluate((element) => {
+    element.dataset.autoplayBaseline = String(element.scrollLeft);
+    element.dataset.autoplayMax = String(element.scrollLeft);
+    element.addEventListener('scroll', () => {
+      const previousMax = Number(element.dataset.autoplayMax ?? element.scrollLeft);
+      element.dataset.autoplayMax = String(Math.max(previousMax, element.scrollLeft));
+    });
+  });
+  await page.waitForTimeout(3_500);
+
+  const movement = await carousel.evaluate((element) => ({
+    baseline: Number(element.dataset.autoplayBaseline),
+    max: Number(element.dataset.autoplayMax),
+  }));
+  expect(movement.max).toBeGreaterThan(movement.baseline + 10);
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
 });
 
 test('홈 기능 배너에는 자동 넘김 제어 문구를 노출하지 않는다', async ({ page }) => {
