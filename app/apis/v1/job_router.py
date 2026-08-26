@@ -1,10 +1,15 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
 from app.dependencies.internal_auth import require_internal_api_key
-from app.dtos.background_jobs import BackgroundJobFilter, BackgroundJobListResponse, BackgroundJobResponse
+from app.dtos.background_jobs import (
+    BackgroundJobFilter,
+    BackgroundJobListResponse,
+    BackgroundJobResponse,
+    BackgroundJobStatsResponse,
+)
 from app.models.enums import BackgroundJobStatus, BackgroundJobType
 from app.services.background_jobs import BackgroundJobService
 
@@ -47,6 +52,16 @@ async def list_background_jobs(
         offset=offset,
         limit=limit,
     )
+
+
+@job_router.get("/stats", response_model=BackgroundJobStatsResponse, summary="백그라운드 작업 상태별 통계 조회")
+async def get_background_job_stats(
+    service: Annotated[BackgroundJobService, Depends(get_background_job_service)],
+    start_date: date,
+    end_date: date,
+) -> BackgroundJobStatsResponse:
+    """내부 운영 시스템이 생성일 범위에 포함된 백그라운드 작업을 상태별로 집계한다."""
+    return await service.stats(start_date, end_date)
 
 
 @job_router.get("/{job_id}", response_model=BackgroundJobResponse, summary="백그라운드 작업 상세 조회")

@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Any
 
+from tortoise.functions import Count
+
 from app.dtos.background_jobs import BackgroundJobFilter
 from app.models.background_jobs import BackgroundJob
 from app.models.enums import BackgroundJobStatus
@@ -31,6 +33,15 @@ class BackgroundJobRepository:
         total = await query.count()
         items = await query.order_by("-requested_at", "-id").offset(filters.offset).limit(filters.limit)
         return items, total
+
+    async def count_by_status(self, created_from: datetime, created_to: datetime) -> dict[BackgroundJobStatus, int]:
+        rows: list[dict[str, Any]] = (
+            await BackgroundJob.filter(created_at__gte=created_from, created_at__lt=created_to)
+            .annotate(total=Count("id"))
+            .group_by("status")
+            .values("status", "total")
+        )
+        return {BackgroundJobStatus(row["status"]): row["total"] for row in rows}
 
     async def claim(self, job_id: int, started_at: datetime) -> bool:
         updated = await BackgroundJob.filter(

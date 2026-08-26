@@ -1,323 +1,343 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>운영 대시보드 - 포케 관리자</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="../css/styles.css" />
-<link rel="stylesheet" href="../css/management.css" />
-<script type="module" src="../js/dashboard.js"></script>
-<script type="module" src="../js/navigation.js"></script>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>운영 대시보드 - 포케 관리자</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/styles.css"/>
+    <link rel="stylesheet" href="../css/management.css?v=20260825-2"/>
+    <script type="module" src="../js/dashboard.js"></script>
+    <script type="module" src="../js/navigation.js"></script>
+    <script type="module" src="../js/sidebar.js?v=20260825-2"></script>
 </head>
 <body class="dashboard-page m-0 flex items-start w-full min-h-screen">
 
-  <!-- sidebar -->
-  <aside class="bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0" style="border-right:1px solid #e5e7eb;">
-    <div class="flex flex-col gap-8 items-start w-full">
-      <div class="flex gap-2 items-center">
-        <div class="flex items-center justify-center rounded-lg w-8 h-8" style="background:#1c64f2;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        </div>
-        <p class="font-bold text-[16px]" style="color:#111827;">포케 관리자</p>
-      </div>
+<!-- sidebar -->
+<aside data-sidebar data-active-nav="dashboard"
+       class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0"
+       aria-label="관리자 메뉴"><span class="text-sm text-gray-500">메뉴 불러오는 중...</span>
+</aside>
+<!-- //sidebar -->
 
-      <nav class="flex flex-col gap-1.5 items-start w-full">
-        <a href="dashboard.html" data-nav="dashboard" class="flex gap-3 items-center px-3 py-2.5 rounded-lg w-full" style="background:rgba(28,100,242,0.06);">
-          <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1c64f2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          <p class="font-semibold text-[14px]" style="color:#1c64f2;">대시보드</p>
-        </a>
-        <a href="user-management.html" data-nav="users" class="flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
-          <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <p class="font-medium text-[14px]" style="color:#4b5563;">회원 관리</p>
-        </a>
-        <a href="screen-4-admin-management.html" data-nav="admins" class="flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
-          <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
-          <p class="font-medium text-[14px]" style="color:#4b5563;">관리자 관리</p>
-        </a>
-        <a href="screen-5-task-management.html" data-nav="tasks" class="flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
-          <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          <p class="font-medium text-[14px]" style="color:#4b5563;">업무 관리</p>
-        </a>
-      </nav>
-    </div>
-
-    <a href="login.html" data-nav="logout" class="flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
-      <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      <p class="font-medium text-[14px]" style="color:#6b7280;">로그아웃</p>
-    </a>
-  </aside>
-
-  <!-- main -->
-  <main class="flex flex-col flex-1 h-screen min-w-0">
-    <header class="bg-white flex items-center justify-between px-6 h-16 w-full" style="border-bottom:1px solid #e5e7eb;">
-      <p class="font-semibold text-[20px]" style="color:#111827;">운영 대시보드</p>
-      <div class="flex gap-5 items-center">
-        <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <div class="relative">
-          <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-          <span class="absolute rounded-full w-2 h-2" style="background:#dc2626; top:-2px; right:-2px;"></span>
+<!-- main -->
+<main class="flex flex-col flex-1 h-screen min-w-0">
+    <header class="bg-white flex items-center justify-between px-6 h-16 w-full"
+            style="border-bottom:1px solid #e5e7eb;">
+        <p class="font-semibold text-[20px]" style="color:#111827;">운영 대시보드</p>
+        <div class="flex gap-5 items-center">
+            <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <div class="relative">
+                <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                </svg>
+                <span class="absolute rounded-full w-2 h-2" style="background:#dc2626; top:-2px; right:-2px;"></span>
+            </div>
+            <div class="flex gap-2 items-center">
+                <div class="rounded-full w-8 h-8 flex items-center justify-center text-white font-semibold text-[12px]"
+                     style="background:#1c64f2;">A
+                </div>
+                <div class="flex flex-col items-start">
+                    <p class="font-semibold text-[13px]" style="color:#111827;">Admin</p>
+                    <p class="font-normal text-[11px]" style="color:#9ca3af;">운영 관리자</p>
+                </div>
+                <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4b5563"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
         </div>
-        <div class="flex gap-2 items-center">
-          <div class="rounded-full w-8 h-8 flex items-center justify-center text-white font-semibold text-[12px]" style="background:#1c64f2;">A</div>
-          <div class="flex flex-col items-start">
-            <p class="font-semibold text-[13px]" style="color:#111827;">Admin</p>
-            <p class="font-normal text-[11px]" style="color:#9ca3af;">운영 관리자</p>
-          </div>
-          <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-      </div>
     </header>
 
     <div class="flex flex-col gap-6 p-6 w-full overflow-y-auto">
 
-      <!-- control bar -->
-      <div class="flex items-center justify-between w-full">
-        <div class="bg-white flex gap-1 p-1 rounded-lg" style="border:1px solid #e5e7eb;" aria-label="조회 기간">
-          <button type="button" class="period-button" data-period="오늘" aria-pressed="false">오늘</button>
-          <button type="button" class="period-button is-active" data-period="7일" aria-pressed="true">7일</button>
-          <button type="button" class="period-button" data-period="30일" aria-pressed="false">30일</button>
-        </div>
-        <button type="button" data-refresh aria-label="대시보드 새로고침" class="dashboard-action bg-white flex items-center justify-center rounded-lg w-8 h-8" style="border:1px solid #e5e7eb;">
-          <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
-        </button>
-      </div>
-
-      <div class="flex gap-5 items-start w-full">
-        <!-- col 1 -->
-        <div class="flex flex-col gap-5 flex-1 min-w-0">
-
-          <!-- member status card -->
-          <div class="card flex flex-col gap-4 items-start w-full">
-            <p class="font-semibold text-[14px] w-full" style="color:#111827;">회원 현황 및 가입</p>
-            <div class="flex gap-3 items-start w-full">
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 회원</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">28,491</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +12%</span>
-                </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">오늘 가입</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">142</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +4.8%</span>
-                </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">활성</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">27,105</p>
-                  <span class="font-semibold text-[11px]" style="color:#6b7280;">— 95%</span>
-                </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">정지</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">1,386</p>
-                  <span class="font-semibold text-[11px]" style="color:#6b7280;">— 5%</span>
-                </div>
-              </div>
+        <!-- control bar -->
+        <div class="flex items-center justify-between w-full">
+            <div class="bg-white flex gap-1 p-1 rounded-lg" style="border:1px solid #e5e7eb;" aria-label="조회 기간">
+                <button type="button" class="period-button" data-period="오늘" aria-pressed="false">오늘</button>
+                <button type="button" class="period-button is-active" data-period="7일" aria-pressed="true">7일</button>
+                <button type="button" class="period-button" data-period="30일" aria-pressed="false">30일</button>
             </div>
-            <div class="flex flex-col gap-2 items-start w-full">
-              <p class="font-medium text-[11px] whitespace-nowrap" style="color:#9ca3af;">14일간 가입 추이</p>
-              <div class="flex items-end justify-between p-2 rounded-md w-full h-[70px]" style="background:#f7f8fa;">
-                <div class="w-2 rounded" style="background:#1c64f2; height:7.5px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:12px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:9px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:17.5px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:21px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:19px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:25px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:24px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:32.5px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:29.5px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:37px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:41px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:45px;"></div>
-                <div class="w-2 rounded" style="background:#1c64f2; height:52px;"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- chatbot status card -->
-          <div class="card flex flex-col gap-4 items-start w-full">
-            <p class="font-semibold text-[14px] w-full" style="color:#111827;">AI 챗봇 응답 현황</p>
-            <div class="flex gap-3 items-start w-full">
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 대화</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">4,821</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +18.4%</span>
-                </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">응답 성공</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">4,210</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ 87.3%</span>
-                </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">응답 실패</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">611</p>
-                  <span class="font-semibold text-[11px]" style="color:#dc2626;">▼ 12.7%</span>
-                </div>
-              </div>
-            </div>
-            <div class="flex gap-4 items-center p-3 rounded-lg w-full" style="background:#f7f8fa;">
-              <div class="bg-white rounded-full flex flex-col items-center justify-center w-14 h-14 shrink-0" style="border:5px solid #0e9384;">
-                <p class="font-bold text-[12px]" style="color:#0e9384;">87%</p>
-              </div>
-              <div class="flex flex-col gap-1 items-start flex-1 min-w-0">
-                <p class="font-semibold text-[12px] w-full" style="color:#111827;">자동 해결률</p>
-                <p class="font-normal text-[11px] w-full" style="color:#4b5563;">LLM 서비스를 통해 운영자 개입 없이 4,210건의 의료 표준 질의에 정확하게 응답하였습니다.</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- system status card -->
-          <div class="card flex flex-col gap-4 items-start w-full">
-            <div class="flex items-center justify-between w-full">
-              <p class="font-semibold text-[14px]" style="color:#111827;">시스템 코어 및 마이크로서비스</p>
-              <p data-refresh-time class="font-normal text-[11px]" style="color:#9ca3af;">최종 점검: 2분 전</p>
-            </div>
-            <div class="flex flex-col gap-2 items-start w-full">
-              <div class="flex items-center justify-between p-2.5 rounded-lg w-full" style="background:#f7f8fa;">
-                <div class="flex gap-2 items-center">
-                  <span class="w-2 h-2 rounded-full" style="background:#16a34a;"></span>
-                  <p class="font-semibold text-[12px]" style="color:#111827;">작업 큐 처리</p>
-                </div>
-                <div class="flex gap-3 items-center">
-                  <p class="font-normal text-[11px]" style="color:#4b5563;">42건 대기 중</p>
-                  <span class="font-bold text-[10px] px-1.5 py-0.5 rounded" style="background:#dcfce7; color:#16a34a;">활성</span>
-                </div>
-              </div>
-              <div class="flex items-center justify-between p-2.5 rounded-lg w-full" style="background:#f7f8fa;">
-                <div class="flex gap-2 items-center">
-                  <span class="w-2 h-2 rounded-full" style="background:#16a34a;"></span>
-                  <p class="font-semibold text-[12px]" style="color:#111827;">OCR 추출 엔진</p>
-                </div>
-                <div class="flex gap-3 items-center">
-                  <p class="font-normal text-[11px]" style="color:#4b5563;">정확도 99.8%</p>
-                  <span class="font-bold text-[10px] px-1.5 py-0.5 rounded" style="background:#dcfce7; color:#16a34a;">최적</span>
-                </div>
-              </div>
-              <div class="flex items-center justify-between p-2.5 rounded-lg w-full" style="background:#f7f8fa;">
-                <div class="flex gap-2 items-center">
-                  <span class="w-2 h-2 rounded-full" style="background:#d97706;"></span>
-                  <p class="font-semibold text-[12px]" style="color:#111827;">LLM 채팅 진단 API</p>
-                </div>
-                <div class="flex gap-3 items-center">
-                  <p class="font-normal text-[11px]" style="color:#4b5563;">평균 지연: 2.1초</p>
-                  <span class="font-bold text-[10px] px-1.5 py-0.5 rounded" style="background:#fef3c7; color:#d97706;">지연</span>
-                </div>
-              </div>
-              <div class="flex items-center justify-between p-2.5 rounded-lg w-full" style="background:#f7f8fa;">
-                <div class="flex gap-2 items-center">
-                  <span class="w-2 h-2 rounded-full" style="background:#16a34a;"></span>
-                  <p class="font-semibold text-[12px]" style="color:#111827;">SMTP 및 푸시 게이트웨이</p>
-                </div>
-                <div class="flex gap-3 items-center">
-                  <p class="font-normal text-[11px]" style="color:#4b5563;">10,000건 발송</p>
-                  <span class="font-bold text-[10px] px-1.5 py-0.5 rounded" style="background:#dcfce7; color:#16a34a;">최적</span>
-                </div>
-              </div>
-            </div>
-          </div>
+            <button type="button" data-refresh aria-label="대시보드 새로고침"
+                    class="dashboard-action bg-white flex items-center justify-center rounded-lg w-8 h-8"
+                    style="border:1px solid #e5e7eb;">
+                <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4b5563"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/>
+                    <polyline points="21 3 21 8 16 8"/>
+                </svg>
+            </button>
         </div>
 
-        <!-- col 2 -->
-        <div class="flex flex-col gap-5 flex-1 min-w-0">
+        <div class="flex gap-5 items-start w-full">
+            <!-- col 1 -->
+            <div class="flex flex-col gap-5 flex-1 min-w-0">
 
-          <!-- document status card -->
-          <div class="card flex flex-col gap-4 items-start w-full">
-            <p class="font-semibold text-[14px] w-full" style="color:#111827;">OCR 문서 처리</p>
-            <div class="flex gap-3 items-start w-full">
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 업로드</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">1,842</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +11.2%</span>
+                <!-- member status card -->
+                <div class="card flex flex-col gap-4 items-start w-full">
+                    <p class="font-semibold text-[14px] w-full" style="color:#111827;">회원 현황 및 가입</p>
+                    <div class="flex gap-3 items-start w-full">
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 회원</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">28,491</p>
+                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +12%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">오늘 가입</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">142</p>
+                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +4.8%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">활성</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">27,105</p>
+                                <span class="font-semibold text-[11px]" style="color:#6b7280;">— 95%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">정지</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">1,386</p>
+                                <span class="font-semibold text-[11px]" style="color:#6b7280;">— 5%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2 items-start w-full">
+                        <p class="font-medium text-[11px] whitespace-nowrap" style="color:#9ca3af;">14일간 가입 추이</p>
+                        <div class="flex items-end justify-between p-2 rounded-md w-full h-[70px]"
+                             style="background:#f7f8fa;">
+                            <div class="w-2 rounded" style="background:#1c64f2; height:7.5px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:12px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:9px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:17.5px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:21px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:19px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:25px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:24px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:32.5px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:29.5px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:37px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:41px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:45px;"></div>
+                            <div class="w-2 rounded" style="background:#1c64f2; height:52px;"></div>
+                        </div>
+                    </div>
                 </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">OCR 대기</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">15</p>
-                  <span class="font-semibold text-[11px]" style="color:#dc2626;">▼ 긴급</span>
-                </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">성공</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">1,811</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ 98.3%</span>
-                </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">실패</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">16</p>
-                  <span class="font-semibold text-[11px]" style="color:#6b7280;">— 0.8%</span>
-                </div>
-              </div>
-            </div>
-            <div class="flex gap-4 items-center p-3 rounded-lg w-full" style="background:#f7f8fa;">
-              <div class="bg-white rounded-full flex flex-col items-center justify-center w-14 h-14 shrink-0" style="border:6px solid #1c64f2;">
-                <p class="font-bold text-[10px]" style="color:#1c64f2;">98%</p>
-              </div>
-              <div class="flex flex-col gap-1 items-start flex-1 min-w-0">
-                <p class="font-semibold text-[12px] w-full" style="color:#111827;">OCR 추출 정확도</p>
-                <p class="font-normal text-[11px] w-full" style="color:#4b5563;">AI 비전 알고리즘을 통해 처리된 1,842건의 의료 보험 기록에서 최적의 정확도가 보고되었습니다.</p>
-              </div>
-            </div>
-          </div>
 
-          <!-- notification status card -->
-          <div class="card flex flex-col gap-4 items-start w-full">
-            <p class="font-semibold text-[14px] w-full" style="color:#111827;">알림 발송 허브</p>
-            <div class="flex gap-3 items-start w-full">
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">예약됨</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">482</p>
-                  <span class="font-semibold text-[11px]" style="color:#6b7280;">— 대기열</span>
+                <!-- chatbot status card -->
+                <div class="card flex flex-col gap-4 items-start w-full">
+                    <p class="font-semibold text-[14px] w-full" style="color:#111827;">AI 챗봇 응답 현황</p>
+                    <div class="flex gap-3 items-start w-full">
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 대화</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">4,821</p>
+                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +18.4%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">응답 성공</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">4,210</p>
+                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ 87.3%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">응답 실패</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">611</p>
+                                <span class="font-semibold text-[11px]" style="color:#dc2626;">▼ 12.7%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-4 items-center p-3 rounded-lg w-full" style="background:#f7f8fa;">
+                        <div class="bg-white rounded-full flex flex-col items-center justify-center w-14 h-14 shrink-0"
+                             style="border:5px solid #0e9384;">
+                            <p class="font-bold text-[12px]" style="color:#0e9384;">87%</p>
+                        </div>
+                        <div class="flex flex-col gap-1 items-start flex-1 min-w-0">
+                            <p class="font-semibold text-[12px] w-full" style="color:#111827;">자동 해결률</p>
+                            <p class="font-normal text-[11px] w-full" style="color:#4b5563;">LLM 서비스를 통해 운영자 개입 없이
+                                4,210건의 의료 표준 질의에 정확하게 응답하였습니다.</p>
+                        </div>
+                    </div>
                 </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">발송 완료</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">14,192</p>
-                  <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ 99.4%</span>
+
+                <!-- system status card -->
+                <div class="card flex flex-col gap-4 items-start w-full">
+                    <div class="flex items-center justify-between w-full">
+                        <p class="font-semibold text-[14px]" style="color:#111827;">시스템 코어 및 마이크로서비스</p>
+                        <p data-refresh-time class="font-normal text-[11px]" style="color:#9ca3af;">최종 점검: 2분 전</p>
+                    </div>
+                    <div class="flex flex-col gap-2 items-start w-full">
+                        <div class="flex items-center justify-between p-2.5 rounded-lg w-full"
+                             style="background:#f7f8fa;">
+                            <div class="flex gap-2 items-center">
+                                <span class="w-2 h-2 rounded-full" style="background:#16a34a;"></span>
+                                <p class="font-semibold text-[12px]" style="color:#111827;">작업 큐 처리</p>
+                            </div>
+                            <div class="flex gap-3 items-center">
+                                <p class="font-normal text-[11px]" style="color:#4b5563;">42건 대기 중</p>
+                                <span class="font-bold text-[10px] px-1.5 py-0.5 rounded"
+                                      style="background:#dcfce7; color:#16a34a;">활성</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between p-2.5 rounded-lg w-full"
+                             style="background:#f7f8fa;">
+                            <div class="flex gap-2 items-center">
+                                <span class="w-2 h-2 rounded-full" style="background:#16a34a;"></span>
+                                <p class="font-semibold text-[12px]" style="color:#111827;">OCR 추출 엔진</p>
+                            </div>
+                            <div class="flex gap-3 items-center">
+                                <p class="font-normal text-[11px]" style="color:#4b5563;">정확도 99.8%</p>
+                                <span class="font-bold text-[10px] px-1.5 py-0.5 rounded"
+                                      style="background:#dcfce7; color:#16a34a;">최적</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between p-2.5 rounded-lg w-full"
+                             style="background:#f7f8fa;">
+                            <div class="flex gap-2 items-center">
+                                <span class="w-2 h-2 rounded-full" style="background:#d97706;"></span>
+                                <p class="font-semibold text-[12px]" style="color:#111827;">LLM 채팅 진단 API</p>
+                            </div>
+                            <div class="flex gap-3 items-center">
+                                <p class="font-normal text-[11px]" style="color:#4b5563;">평균 지연: 2.1초</p>
+                                <span class="font-bold text-[10px] px-1.5 py-0.5 rounded"
+                                      style="background:#fef3c7; color:#d97706;">지연</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between p-2.5 rounded-lg w-full"
+                             style="background:#f7f8fa;">
+                            <div class="flex gap-2 items-center">
+                                <span class="w-2 h-2 rounded-full" style="background:#16a34a;"></span>
+                                <p class="font-semibold text-[12px]" style="color:#111827;">SMTP 및 푸시 게이트웨이</p>
+                            </div>
+                            <div class="flex gap-3 items-center">
+                                <p class="font-normal text-[11px]" style="color:#4b5563;">10,000건 발송</p>
+                                <span class="font-bold text-[10px] px-1.5 py-0.5 rounded"
+                                      style="background:#dcfce7; color:#16a34a;">최적</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-              </div>
-              <div class="stat-card flex flex-col gap-1">
-                <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">실패</p>
-                <div class="flex items-baseline justify-between w-full">
-                  <p class="font-bold text-[20px]" style="color:#111827;">84</p>
-                  <span class="font-semibold text-[11px]" style="color:#6b7280;">— 0.6%</span>
-                </div>
-              </div>
             </div>
-            <div class="flex flex-col gap-2 items-start w-full">
-              <p class="font-medium text-[11px] whitespace-nowrap" style="color:#9ca3af;">일별 발송량 (7일)</p>
-              <div class="flex items-end justify-between p-2 rounded-md w-full h-[70px]" style="background:#f7f8fa;">
-                <div class="flex flex-col gap-1 items-center"><div class="w-4 rounded-t" style="background:#1c64f2; height:30px;"></div><p class="text-[9px]" style="color:#9ca3af;">월</p></div>
-                <div class="flex flex-col gap-1 items-center"><div class="w-4 rounded-t" style="background:#1c64f2; height:45px;"></div><p class="text-[9px]" style="color:#9ca3af;">화</p></div>
-                <div class="flex flex-col gap-1 items-center"><div class="w-4 rounded-t" style="background:#1c64f2; height:20px;"></div><p class="text-[9px]" style="color:#9ca3af;">수</p></div>
-                <div class="flex flex-col gap-1 items-center"><div class="w-4 rounded-t" style="background:#1c64f2; height:60px;"></div><p class="text-[9px]" style="color:#9ca3af;">목</p></div>
-                <div class="flex flex-col gap-1 items-center"><div class="w-4 rounded-t" style="background:#1c64f2; height:55px;"></div><p class="text-[9px]" style="color:#9ca3af;">금</p></div>
-                <div class="flex flex-col gap-1 items-center"><div class="w-4 rounded-t" style="background:#1c64f2; height:10px;"></div><p class="text-[9px]" style="color:#9ca3af;">토</p></div>
-                <div class="flex flex-col gap-1 items-center"><div class="w-4 rounded-t" style="background:#1c64f2; height:15px;"></div><p class="text-[9px]" style="color:#9ca3af;">일</p></div>
-              </div>
+
+            <!-- col 2 -->
+            <div class="flex flex-col gap-5 flex-1 min-w-0">
+
+                <!-- document status card -->
+                <div class="card flex flex-col gap-4 items-start w-full">
+                    <p class="font-semibold text-[14px] w-full" style="color:#111827;">OCR 문서 처리</p>
+                    <div class="flex gap-3 items-start w-full">
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 업로드</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">1,842</p>
+                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ +11.2%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">OCR 대기</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">15</p>
+                                <span class="font-semibold text-[11px]" style="color:#dc2626;">▼ 긴급</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">성공</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">1,811</p>
+                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ 98.3%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">실패</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">16</p>
+                                <span class="font-semibold text-[11px]" style="color:#6b7280;">— 0.8%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-4 items-center p-3 rounded-lg w-full" style="background:#f7f8fa;">
+                        <div class="bg-white rounded-full flex flex-col items-center justify-center w-14 h-14 shrink-0"
+                             style="border:6px solid #1c64f2;">
+                            <p class="font-bold text-[10px]" style="color:#1c64f2;">98%</p>
+                        </div>
+                        <div class="flex flex-col gap-1 items-start flex-1 min-w-0">
+                            <p class="font-semibold text-[12px] w-full" style="color:#111827;">OCR 추출 정확도</p>
+                            <p class="font-normal text-[11px] w-full" style="color:#4b5563;">AI 비전 알고리즘을 통해 처리된 1,842건의
+                                의료 보험 기록에서 최적의 정확도가 보고되었습니다.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- notification status card -->
+                <div class="card flex flex-col gap-4 items-start w-full">
+                    <p class="font-semibold text-[14px] w-full" style="color:#111827;">알림 발송 허브</p>
+                    <div class="flex gap-3 items-start w-full">
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">예약됨</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">482</p>
+                                <span class="font-semibold text-[11px]" style="color:#6b7280;">— 대기열</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">발송 완료</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">14,192</p>
+                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ 99.4%</span>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">실패</p>
+                            <div class="flex items-baseline justify-between w-full">
+                                <p class="font-bold text-[20px]" style="color:#111827;">84</p>
+                                <span class="font-semibold text-[11px]" style="color:#6b7280;">— 0.6%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2 items-start w-full">
+                        <p class="font-medium text-[11px] whitespace-nowrap" style="color:#9ca3af;">일별 발송량 (7일)</p>
+                        <div class="flex items-end justify-between p-2 rounded-md w-full h-[70px]"
+                             style="background:#f7f8fa;">
+                            <div class="flex flex-col gap-1 items-center">
+                                <div class="w-4 rounded-t" style="background:#1c64f2; height:30px;"></div>
+                                <p class="text-[9px]" style="color:#9ca3af;">월</p></div>
+                            <div class="flex flex-col gap-1 items-center">
+                                <div class="w-4 rounded-t" style="background:#1c64f2; height:45px;"></div>
+                                <p class="text-[9px]" style="color:#9ca3af;">화</p></div>
+                            <div class="flex flex-col gap-1 items-center">
+                                <div class="w-4 rounded-t" style="background:#1c64f2; height:20px;"></div>
+                                <p class="text-[9px]" style="color:#9ca3af;">수</p></div>
+                            <div class="flex flex-col gap-1 items-center">
+                                <div class="w-4 rounded-t" style="background:#1c64f2; height:60px;"></div>
+                                <p class="text-[9px]" style="color:#9ca3af;">목</p></div>
+                            <div class="flex flex-col gap-1 items-center">
+                                <div class="w-4 rounded-t" style="background:#1c64f2; height:55px;"></div>
+                                <p class="text-[9px]" style="color:#9ca3af;">금</p></div>
+                            <div class="flex flex-col gap-1 items-center">
+                                <div class="w-4 rounded-t" style="background:#1c64f2; height:10px;"></div>
+                                <p class="text-[9px]" style="color:#9ca3af;">토</p></div>
+                            <div class="flex flex-col gap-1 items-center">
+                                <div class="w-4 rounded-t" style="background:#1c64f2; height:15px;"></div>
+                                <p class="text-[9px]" style="color:#9ca3af;">일</p></div>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
-      </div>
     </div>
-  </main>
+</main>
 </body>
 </html>

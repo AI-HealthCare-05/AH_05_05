@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -42,3 +42,10 @@ class BackgroundJobListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class BackgroundJobStatsResponse(BaseModel):
+    start_date: date
+    end_date: date
+    total: int
+    counts: dict[BackgroundJobStatus, int]
