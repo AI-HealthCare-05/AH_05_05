@@ -1,4 +1,11 @@
-export { deleteChatSessions, getChatMessages, listChatSessions, sendChat } from './api';
+export {
+  ChatSessionNotFoundError,
+  clearChatSessionCache,
+  deleteChatSessions,
+  getChatMessages,
+  listChatSessions,
+  sendChat,
+} from './api';
 export type {
   ChatMessage,
   ChatSessionSummary,

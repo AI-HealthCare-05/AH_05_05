@@ -12,6 +12,7 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import {
+  ChatSessionNotFoundError,
   deleteChatSessions,
   getChatMessages,
   listChatSessions,
@@ -41,6 +42,7 @@ interface ChatLocationState {
 type ChatHistoryLoader = () => Promise<ChatMessage[]>;
 type ChatSender = (payload: SendChatPayload) => Promise<SendChatResult>;
 type ChatSessionListLoader = () => Promise<ChatSessionSummary[]>;
+type ChatSessionHistoryLoader = (sessionId: number) => Promise<ChatMessage[]>;
 type ChatSessionDeleter = (sessionIds: readonly number[]) => Promise<void>;
 type ChatView = 'loading' | 'list' | 'room';
 
@@ -48,6 +50,7 @@ interface ChatPageProps {
   historyLoader?: ChatHistoryLoader;
   chatSender?: ChatSender;
   sessionListLoader?: ChatSessionListLoader;
+  sessionHistoryLoader?: ChatSessionHistoryLoader;
   sessionDeleter?: ChatSessionDeleter;
 }
 
@@ -55,13 +58,20 @@ export function ChatPage({
   historyLoader,
   chatSender = sendChat,
   sessionListLoader = listChatSessions,
+  sessionHistoryLoader = getChatMessages,
   sessionDeleter = deleteChatSessions,
 }: ChatPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state as ChatLocationState | null) ?? {};
   const recordId = state.recordId ?? null;
-  const { activeSessionId, selectSession, startNewSession } = useChatSession();
+  const {
+    activeSessionId,
+    sessionRevision,
+    selectSession,
+    startNewSession,
+    notifySessionUpdated,
+  } = useChatSession();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -80,16 +90,20 @@ export function ChatPage({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const handledSessionRevisionRef = useRef(sessionRevision);
+  const suppressNextSessionRefreshRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    setHistoryLoading(true);
+    let requestKind: 'history' | 'list' | null = null;
     setHistoryError(null);
     setSessionListError(null);
 
     async function loadEntry() {
       try {
         if (historyLoader !== undefined) {
+          requestKind = 'history';
+          setHistoryLoading(true);
           const history = await historyLoader();
           if (cancelled) return;
           setMessages(history);
@@ -97,39 +111,65 @@ export function ChatPage({
           return;
         }
 
-        if (newChatRequested) {
-          if (cancelled) return;
-          setView('room');
-          return;
-        }
-
         if (activeSessionId !== null) {
-          const history = await getChatMessages(activeSessionId);
+          const revisionChanged = handledSessionRevisionRef.current !== sessionRevision;
+          const hasCurrentRoom = conversationId === activeSessionId;
+          if (
+            hasCurrentRoom
+            && (!revisionChanged || suppressNextSessionRefreshRef.current)
+          ) {
+            suppressNextSessionRefreshRef.current = false;
+            handledSessionRevisionRef.current = sessionRevision;
+            setHistoryLoading(false);
+            setView('room');
+            return;
+          }
+
+          requestKind = 'history';
+          setHistoryLoading(true);
+          const history = await sessionHistoryLoader(activeSessionId);
           if (cancelled) return;
           setMessages(history);
           setConversationId(activeSessionId);
+          handledSessionRevisionRef.current = sessionRevision;
           setView('room');
           return;
         }
 
+        if (newChatRequested) {
+          setHistoryLoading(false);
+          setView('room');
+          return;
+        }
+
+        requestKind = 'list';
+        setHistoryLoading(true);
         const loadedSessions = await sessionListLoader();
         if (cancelled) return;
         setSessions(loadedSessions);
         if (loadedSessions.length === 0) {
           setMessages([]);
           setConversationId(null);
-          setNewChatRequested(true);
           setView('room');
         } else {
           setView('list');
         }
       } catch (error: unknown) {
         if (cancelled) return;
+        if (error instanceof ChatSessionNotFoundError) {
+          handledSessionRevisionRef.current = sessionRevision;
+          startNewSession();
+          setMessages([]);
+          setConversationId(null);
+          setNewChatRequested(false);
+          setView('loading');
+          setSessionListReloadKey((current) => current + 1);
+          return;
+        }
+
         setMessages([]);
         const message = error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.';
-        const loadingSessionList =
-          historyLoader === undefined && !newChatRequested && activeSessionId === null;
-        if (loadingSessionList) setSessionListError(message);
+        if (requestKind === 'list') setSessionListError(message);
         else setHistoryError(message);
         setView('room');
       } finally {
@@ -143,9 +183,12 @@ export function ChatPage({
     };
   }, [
     activeSessionId,
+    conversationId,
     historyLoader,
     newChatRequested,
+    sessionRevision,
     sessionListLoader,
+    sessionHistoryLoader,
     sessionListReloadKey,
   ]);
 
@@ -156,19 +199,24 @@ export function ChatPage({
 
   async function sendMessage(rawMessage: string) {
     const message = rawMessage.trim();
-    if (!message || pending) return;
+    if (!message || pending || historyLoading || view === 'loading') return;
 
+    setHistoryError(null);
+    setSessionListError(null);
     setMessages((prev) => [...prev, { role: 'user', text: message, sources: [] }]);
     setDraft('');
     setPending(true);
     try {
       const result = await chatSender({ recordId, message, conversationId });
+      suppressNextSessionRefreshRef.current = true;
       setConversationId(result.conversationId);
+      setNewChatRequested(false);
       selectSession(result.conversationId);
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', text: result.answer, sources: result.sources },
       ]);
+      notifySessionUpdated();
     } catch (error: unknown) {
       // 목업은 실패하지 않지만 실 API(명세 15번)는 4xx·5xx 를 냅니다. catch 가 없으면
       // 질문만 남고 답변도 오류도 없는 상태로 끝나서 사용자가 원인을 알 수 없습니다.
@@ -196,6 +244,12 @@ export function ChatPage({
 
   function openSession(sessionId: number) {
     setNewChatRequested(false);
+    setMessages([]);
+    setConversationId(null);
+    setDraft('');
+    setHistoryError(null);
+    setSessionListError(null);
+    setHistoryLoading(true);
     selectSession(sessionId);
     setView('loading');
   }
@@ -207,6 +261,8 @@ export function ChatPage({
     setConversationId(null);
     setDraft('');
     setHistoryError(null);
+    setSessionListError(null);
+    setHistoryLoading(false);
     setSelectionMode(false);
     setSelectedSessionIds(new Set());
     setView('room');
@@ -218,17 +274,23 @@ export function ChatPage({
       return;
     }
 
-    if (sessions.length > 0) {
-      setSelectionMode(false);
-      setSelectedSessionIds(new Set());
-      setView('list');
-      return;
-    }
-
-    if (activeSessionId !== null || conversationId !== null) {
+    if (
+      sessions.length > 0
+      || activeSessionId !== null
+      || conversationId !== null
+    ) {
       startNewSession();
       setNewChatRequested(false);
+      setMessages([]);
+      setConversationId(null);
+      setDraft('');
+      setHistoryError(null);
+      setSessionListError(null);
+      setSelectionMode(false);
+      setSelectedSessionIds(new Set());
+      setHistoryLoading(true);
       setView('loading');
+      setSessionListReloadKey((current) => current + 1);
       return;
     }
 
@@ -316,6 +378,8 @@ export function ChatPage({
     );
   }
 
+  const composerDisabled = pending || historyLoading || view === 'loading';
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="AI 상담" onBack={handleRoomBack} />
@@ -397,7 +461,7 @@ export function ChatPage({
         <Input
           aria-label="질문 입력"
           value={draft}
-          disabled={pending}
+          disabled={composerDisabled}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -410,7 +474,7 @@ export function ChatPage({
         <Button
           fullWidth={false}
           className="shrink-0 px-5"
-          disabled={pending || draft.trim().length === 0}
+          disabled={composerDisabled || draft.trim().length === 0}
           onClick={handleSend}
         >
           보내기

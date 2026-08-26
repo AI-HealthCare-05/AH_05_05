@@ -125,3 +125,77 @@ test('대화 삭제 실패 뒤에도 선택 상태를 유지해 다시 시도할
   await expect(checkbox).toBeChecked();
   await expect(page.getByRole('button', { name: '1개 삭제' })).toBeEnabled();
 });
+
+test('로그아웃하면 메모리의 활성 대화 ID를 지운다', async ({ page }) => {
+  await createConversation(page, '로그아웃 전 상담 질문');
+  await page.getByRole('button', { name: '마이', exact: true }).click();
+  await page.getByRole('button', { name: '로그아웃' }).click();
+
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+  await page.getByRole('button', { name: '로그인 · 회원가입' }).click();
+  await page.getByLabel('이메일').fill('patient@example.com');
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+
+  await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
+  await expect(page.getByText('대화 이력을 불러오지 못했어요.')).toHaveCount(0);
+});
+
+test('이력 API가 없어도 성공한 실 API 답변을 현재 화면에서 지우지 않는다', async ({ page }) => {
+  await page.goto('/dev/chat-send-without-history');
+  const question = '실제 API 경계 확인 질문';
+
+  await page.getByRole('textbox', { name: '질문 입력' }).fill(question);
+  await page.getByRole('button', { name: '보내기' }).click();
+
+  await expect(page.getByText(question, { exact: true })).toBeVisible();
+  await expect(page.getByText('실제 전송 API에서 받은 답변이에요.', { exact: true })).toBeVisible();
+  await expect(page.getByText('대화 이력을 불러오지 못했어요.')).toHaveCount(0);
+});
+
+test('선택한 대화 이력을 불러오는 동안 이전 세션으로 질문을 보낼 수 없다', async ({ page }) => {
+  await createConversation(page, '로딩 차단 확인 질문');
+  await page.reload();
+  await page.getByRole('button', { name: /로딩 차단 확인 질문/ }).click();
+
+  await expect(page.getByRole('status', { name: '대화 이력 불러오는 중' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '질문 입력' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '보내기' })).toBeDisabled();
+  await expect(page.getByText('로딩 차단 확인 질문', { exact: true })).toBeVisible();
+});
+
+test('답변 대기 중 다른 탭에 다녀와도 완료된 활성 대화를 불러온다', async ({ page }) => {
+  const question = '답변 대기 중 탭 이동 질문';
+  await page.getByRole('textbox', { name: '질문 입력' }).fill(question);
+  await page.getByRole('button', { name: '보내기' }).click();
+  await page.getByRole('button', { name: '홈', exact: true }).click();
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+
+  await expect(page.getByText(question, { exact: true })).toBeVisible();
+  await expect(page.getByText('리바록사반을 복용하는 동안', { exact: false })).toBeVisible();
+});
+
+test('후속 답변 뒤 목록으로 돌아오면 최신 미리보기로 갱신한다', async ({ page }) => {
+  await createConversation(page, '목록 갱신 확인 질문');
+  await page.reload();
+  await page.getByRole('button', { name: /목록 갱신 확인 질문/ }).click();
+  await page.getByRole('textbox', { name: '질문 입력' }).fill('일반적인 안내로 답해주세요');
+  await page.getByRole('button', { name: '보내기' }).click();
+  await expect(page.getByText('수술 후 회복 기간은 사람마다', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: '뒤로' }).click();
+
+  await expect(page.getByRole('button', { name: /목록 갱신 확인 질문/ })).toContainText(
+    '수술 후 회복 기간은 사람마다',
+  );
+});
+
+test('저장소에서 사라진 활성 대화는 오류 방에 머물지 않고 빈 대화로 복구한다', async ({ page }) => {
+  await createConversation(page, '사라질 활성 대화');
+  await page.getByRole('button', { name: '홈', exact: true }).click();
+  await page.evaluate((storageKey) => localStorage.removeItem(storageKey), MOCK_CHAT_STORAGE_KEY);
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+
+  await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
+  await expect(page.getByText('대화 이력을 불러오지 못했어요.')).toHaveCount(0);
+});

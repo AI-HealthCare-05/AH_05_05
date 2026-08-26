@@ -37,8 +37,23 @@ const EMPTY_STORE: MockChatStore = {
   sessions: [],
 };
 
+let memoryStore: MockChatStore = { ...EMPTY_STORE, sessions: [] };
+
+function cloneStore(store: MockChatStore): MockChatStore {
+  return {
+    ...store,
+    sessions: store.sessions.map((session) => ({
+      ...session,
+      messages: session.messages.map((message) => ({
+        ...message,
+        sources: message.sources.map((source) => ({ ...source })),
+      })),
+    })),
+  };
+}
+
 function readStore(): MockChatStore {
-  if (typeof window === 'undefined') return { ...EMPTY_STORE, sessions: [] };
+  if (typeof window === 'undefined' || import.meta.env.PROD) return cloneStore(memoryStore);
   const saved = window.localStorage.getItem(MOCK_CHAT_STORAGE_KEY);
   if (!saved) return { ...EMPTY_STORE, sessions: [] };
   try {
@@ -52,7 +67,10 @@ function readStore(): MockChatStore {
 }
 
 function writeStore(store: MockChatStore): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || import.meta.env.PROD) {
+    memoryStore = cloneStore(store);
+    return;
+  }
   window.localStorage.setItem(MOCK_CHAT_STORAGE_KEY, JSON.stringify(store));
 }
 
@@ -107,9 +125,9 @@ export function mockSendChat(payload: SendChatPayload): SendChatResult {
   return response;
 }
 
-export function mockGetChatMessages(sessionId: number): ChatMessage[] {
+export function mockGetChatMessages(sessionId: number): ChatMessage[] | null {
   const session = readStore().sessions.find((item) => item.sessionId === sessionId);
-  if (!session) throw new Error('대화를 찾지 못했어요.');
+  if (!session) return null;
   return session.messages.map((message) => ({
     ...message,
     sources: message.sources.map((source) => ({ ...source })),
@@ -133,4 +151,9 @@ export function mockDeleteChatSessions(sessionIds: readonly number[]): void {
   const store = readStore();
   store.sessions = store.sessions.filter((session) => !deleted.has(session.sessionId));
   writeStore(store);
+}
+
+export function mockClearChatSessions(): void {
+  memoryStore = { ...EMPTY_STORE, sessions: [] };
+  if (typeof window !== 'undefined') window.localStorage.removeItem(MOCK_CHAT_STORAGE_KEY);
 }

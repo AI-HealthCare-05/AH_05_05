@@ -10,6 +10,7 @@ import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockDeleteChatSessions,
+  mockClearChatSessions,
   mockGetChatMessages,
   mockListChatSessions,
   mockSendChat,
@@ -20,6 +21,13 @@ import type {
   SendChatPayload,
   SendChatResult,
 } from './types';
+
+export class ChatSessionNotFoundError extends Error {
+  constructor() {
+    super('대화를 찾지 못했어요.');
+    this.name = 'ChatSessionNotFoundError';
+  }
+}
 
 /** REQ-CHAT-001 — POST /chat · 명세 15번 */
 export async function sendChat(payload: SendChatPayload): Promise<SendChatResult> {
@@ -35,7 +43,9 @@ export async function sendChat(payload: SendChatPayload): Promise<SendChatResult
 export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
   if (!USE_MOCK) throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
   await mockDelay();
-  return mockGetChatMessages(sessionId);
+  const messages = mockGetChatMessages(sessionId);
+  if (messages === null) throw new ChatSessionNotFoundError();
+  return messages;
 }
 
 /** #111 임시 세션 목록 경계. 백엔드 계약이 확정되면 내부만 HTTP 조회로 교체합니다. */
@@ -51,4 +61,9 @@ export async function deleteChatSessions(sessionIds: readonly number[]): Promise
   if (!USE_MOCK) throw new Error('대화 삭제 API가 아직 준비되지 않았어요.');
   await mockDelay();
   mockDeleteChatSessions(sessionIds);
+}
+
+/** 로그아웃한 사용자의 목업 건강 대화가 다음 계정에 노출되지 않게 지웁니다. */
+export function clearChatSessionCache(): void {
+  if (USE_MOCK) mockClearChatSessions();
 }

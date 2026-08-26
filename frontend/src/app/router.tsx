@@ -11,7 +11,7 @@ import { SplashPage } from '@/pages/splash';
 import { SupplementsPage, type NutrientStandardProfile } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
-import type { ChatMessage, ChatSessionSummary } from '@/entities/chat';
+import type { ChatMessage, ChatSessionSummary, SendChatResult } from '@/entities/chat';
 import {
   mockMedicationOverview,
   mockMedicationOverviews,
@@ -98,6 +98,15 @@ const failChatSessionList = async (): Promise<ChatSessionSummary[]> => {
 const failChatSessionDelete = async (_sessionIds: readonly number[]): Promise<void> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
+const sendChatWithoutStoredHistory = async (): Promise<SendChatResult> => ({
+  conversationId: 9901,
+  messageId: 9902,
+  answer: '실제 전송 API에서 받은 답변이에요.',
+  sources: [],
+});
+const failChatSessionHistory = async (_sessionId: number): Promise<ChatMessage[]> => {
+  throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
+};
 
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
@@ -151,6 +160,16 @@ export function AppRouter() {
         <Route
           path="/dev/chat-delete-error"
           element={<ChatPage sessionDeleter={failChatSessionDelete} />}
+        />
+        <Route
+          path="/dev/chat-send-without-history"
+          element={
+            <ChatPage
+              sessionListLoader={failChatSessionList}
+              sessionHistoryLoader={failChatSessionHistory}
+              chatSender={sendChatWithoutStoredHistory}
+            />
+          }
         />
         <Route path="/dev/my-guest" element={<MyPage authenticatedOverride={false} />} />
         <Route path="/dev/my-authenticated" element={<MyPage authenticatedOverride />} />
