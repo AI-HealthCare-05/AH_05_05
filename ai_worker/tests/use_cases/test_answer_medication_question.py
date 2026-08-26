@@ -60,6 +60,11 @@ class ExactNameGuideRepository:
         return MedicationGuideLookup()
 
 
+class UnexpectedGuideRepository:
+    async def find_by_name(self, product_name: str) -> MedicationGuideLookup:
+        raise AssertionError(f"영양제 상호작용 질문에서 의약품 제품 조회를 호출했습니다: {product_name}")
+
+
 class FakeRuleRepository:
     def __init__(self, rules: list[InteractionRuleFact]) -> None:
         self.rules = rules
@@ -393,3 +398,35 @@ async def test_supplement_evidence_precedes_single_partial_medication_match() ->
     assert "에너지 이용" in result.answer
     assert "일반 제품 안내" not in result.answer
     assert all(source.medication_guide_id is None for source in result.sources)
+
+
+async def test_supplement_pair_question_skips_medication_product_lookup() -> None:
+    interaction_chunk = build_chunk().model_copy(
+        update={
+            "content": ("Supplemental zinc lowered measures of iron status in young women with low iron reserves."),
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "Supplemental Zinc Lowers Measures of Iron Status",
+                    "document_type": KnowledgeDocumentType.RESEARCH_ARTICLE,
+                    "ingredient_names": ["아연", "철분"],
+                    "section_type": KnowledgeSectionType.SUMMARY,
+                }
+            ),
+        }
+    )
+    use_case = AnswerMedicationQuestionUseCase(
+        context_provider=FakeContextProvider(ActiveIntakeContext(user_id=1)),
+        guide_repository=UnexpectedGuideRepository(),
+        interaction_rule_repository=FakeRuleRepository([]),
+        knowledge_retriever=FakeKnowledgeRetriever(chunks=[interaction_chunk]),
+        answer_generator=PassthroughGenerator(),
+        grounded_claim_validator=PassthroughValidator(),
+    )
+
+    result = await use_case.execute(
+        build_request("철분이 부족한 사람이 아연 영양제를 먹어도 되나요?"),
+    )
+
+    assert result.route == MedicationChatRoute.INTERACTION
+    assert "검색된 상호작용 연구 근거" in result.answer
+    assert "제품명을 확인" not in result.answer

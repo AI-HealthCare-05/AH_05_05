@@ -7,6 +7,9 @@ from typing import Protocol, cast
 import yaml
 from pydantic import BaseModel, Field
 
+from ai_worker.rag.metadata.knowledge_entity_extractor import (
+    KnowledgeEntityExtractor,
+)
 from ai_worker.rag.normalizers.knowledge_normalizer import (
     KnowledgeNormalizer,
     TextQualityStatus,
@@ -586,13 +589,10 @@ class KnowledgePilotPreprocessingService:
     ) -> KnowledgeMetadata:
         document_type = cast(KnowledgeDocumentType, source.document_type)
         title = KnowledgePilotPreprocessingService._title_from_path(repo_path)
-        ingredient_names: list[str] = []
-        drug_names: list[str] = []
-
-        if document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
-            ingredient_names = [title]
-        elif document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
-            drug_names = [title]
+        entities = KnowledgeEntityExtractor().extract_from_title(
+            document_type=document_type,
+            title=title,
+        )
 
         return KnowledgeMetadata(
             source_id=source.source_id,
@@ -603,8 +603,10 @@ class KnowledgePilotPreprocessingService:
             document_type=document_type,
             dataset_version=dataset_version,
             file_name=repo_path.name,
-            drug_names=drug_names,
-            ingredient_names=ingredient_names,
+            drug_names=entities.drug_names,
+            ingredient_names=entities.ingredient_names,
+            interaction_type=entities.interaction_type,
+            interaction_pair_keys=entities.interaction_pair_keys,
             index_eligible=source.index_eligible,
         )
 

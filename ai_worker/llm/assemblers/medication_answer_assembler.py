@@ -43,7 +43,7 @@ class MedicationAnswerAssembler:
                 f"- {rule.left_name} ↔ {rule.right_name}: " + " ".join(rule.effect_texts) for rule in rules
             ]
             sections.append("확인된 상호작용\n" + "\n".join(interaction_lines))
-        elif interaction_question:
+        elif interaction_question and not chunks:
             sections.append(
                 "확인된 상호작용\n"
                 "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 "
@@ -88,7 +88,8 @@ class MedicationAnswerAssembler:
             sections.append(section_title + "\n" + "\n".join(guide_lines))
         if chunks:
             public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
-            sections.append("공공자료 추가 설명\n" + "\n".join(public_lines))
+            section_title = "검색된 상호작용 연구 근거" if interaction_question else "공공자료 추가 설명"
+            sections.append(section_title + "\n" + "\n".join(public_lines))
         if not sections:
             sections.append(
                 "현재 보유한 RDBMS와 공공자료에서 질문에 답할 근거를 "

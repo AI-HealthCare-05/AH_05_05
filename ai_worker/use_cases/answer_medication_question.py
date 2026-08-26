@@ -13,6 +13,11 @@ from ai_worker.domain.interfaces import (
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
 )
+from ai_worker.rag.metadata.supplement_interaction_registry import (
+    find_supplement_interaction_pair,
+    known_supplement_names_in,
+    supplement_pair_matches_text,
+)
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
@@ -69,7 +74,12 @@ class AnswerMedicationQuestionUseCase:
             user_id=request.user_id,
             care_episode_id=request.care_episode_id,
         )
-        interaction_question = self._is_interaction_question(request.question)
+        query_plan = MedicationKnowledgeQueryBuilder().build(
+            request.question,
+        )
+        interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
+            request.question
+        )
         rules = await self._interaction_rule_repository.find_approved_rules(
             context=context,
         )
@@ -83,12 +93,12 @@ class AnswerMedicationQuestionUseCase:
             request.question,
             chunks=chunks,
         )
-        query_plan = MedicationKnowledgeQueryBuilder().build(
-            request.question,
-        )
         guide_lookup = (
             MedicationGuideLookup()
-            if has_supplement_evidence and not query_plan.has_medication_product_cue
+            if (
+                query_plan.interaction_pair is not None
+                or (has_supplement_evidence and not query_plan.has_medication_product_cue)
+            )
             else await self._find_guide(
                 request=request,
                 context=context,
@@ -234,9 +244,21 @@ class AnswerMedicationQuestionUseCase:
             KnowledgeDocumentType.SUPPLEMENT_CODE,
             KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH,
         }
+        pair = find_supplement_interaction_pair(question)
         question_key = "".join(question.casefold().split())
         for chunk in chunks:
             metadata = chunk.metadata
+            if (
+                pair is not None
+                and metadata.document_type == KnowledgeDocumentType.RESEARCH_ARTICLE
+                and supplement_pair_matches_text(
+                    pair,
+                    metadata.title,
+                    chunk.content,
+                    *metadata.ingredient_names,
+                )
+            ):
+                return True
             if metadata.document_type not in supplement_types:
                 continue
             if not metadata.ingredient_names:
@@ -288,7 +310,7 @@ class AnswerMedicationQuestionUseCase:
 
     @staticmethod
     def _is_supplement_question(question: str) -> bool:
-        return any(
+        return bool(known_supplement_names_in(question)) or any(
             keyword in question
             for keyword in (
                 "영양제",
