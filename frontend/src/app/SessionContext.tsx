@@ -16,15 +16,24 @@ interface SessionValue {
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [authenticated, setAuthenticated] = useState(() => Boolean(restoreAccessToken()));
   const [principalKey, setPrincipalKey] = useState(() => restoreAccountPrincipal());
+  const [authenticated, setAuthenticated] = useState(
+    () => Boolean(restoreAccessToken() && restoreAccountPrincipal()),
+  );
   const value = useMemo(
     () => ({
       authenticated,
       principalKey,
       signIn: (nextPrincipalKey: string) => {
-        setAccountPrincipal(nextPrincipalKey);
-        setPrincipalKey(nextPrincipalKey.trim().toLowerCase());
+        const normalizedPrincipal = nextPrincipalKey.trim().toLowerCase();
+        if (!restoreAccessToken() || !normalizedPrincipal) {
+          setAccountPrincipal(null);
+          setPrincipalKey(null);
+          setAuthenticated(false);
+          return;
+        }
+        setAccountPrincipal(normalizedPrincipal);
+        setPrincipalKey(normalizedPrincipal);
         setAuthenticated(true);
       },
       signOut: () => {

@@ -110,8 +110,8 @@ const failChatSessionHistory = async (_sessionId: number): Promise<ChatMessage[]
 };
 
 function AuthenticatedChatPage() {
-  const { authenticated } = useSession();
-  return authenticated ? <ChatPage /> : <Navigate to="/login" replace />;
+  const { authenticated, principalKey } = useSession();
+  return authenticated && principalKey ? <ChatPage /> : <Navigate to="/login" replace />;
 }
 
 /**

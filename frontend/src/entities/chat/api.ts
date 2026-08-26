@@ -55,8 +55,13 @@ export async function sendChat(payload: SendChatPayload): Promise<SendChatResult
 /** #111 임시 이력 경계. 실 API 경로를 추측하지 않고 계약 확정 후 내부만 교체합니다. */
 export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
   if (!USE_MOCK) throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
   await mockDelay();
-  const messages = mockGetChatMessages(sessionId);
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+  }
+  const messages = mockGetChatMessages(sessionId, requestPrincipal);
   if (messages === null) throw new ChatSessionNotFoundError();
   return messages;
 }
@@ -64,14 +69,24 @@ export async function getChatMessages(sessionId: number): Promise<ChatMessage[]>
 /** #111 임시 세션 목록 경계. 백엔드 계약이 확정되면 내부만 HTTP 조회로 교체합니다. */
 export async function listChatSessions(): Promise<ChatSessionSummary[]> {
   if (!USE_MOCK) throw new Error('대화 목록 API가 아직 준비되지 않았어요.');
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
   await mockDelay();
-  return mockListChatSessions();
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
+  }
+  return mockListChatSessions(requestPrincipal);
 }
 
 /** #111 임시 다중 삭제 경계. 실제 소프트 삭제 계약은 백엔드 API 확정 후 연결합니다. */
 export async function deleteChatSessions(sessionIds: readonly number[]): Promise<void> {
   if (sessionIds.length === 0) return;
   if (!USE_MOCK) throw new Error('대화 삭제 API가 아직 준비되지 않았어요.');
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
   await mockDelay();
-  mockDeleteChatSessions(sessionIds);
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
+  }
+  mockDeleteChatSessions(sessionIds, requestPrincipal);
 }

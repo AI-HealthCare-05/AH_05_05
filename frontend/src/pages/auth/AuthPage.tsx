@@ -65,6 +65,11 @@ export function AuthPage() {
       try {
         await createAccount({ email, password, name, phoneNumber, birthDate, gender });
         prepareMedicationStateForNewAccount();
+        // 회원가입 응답에는 액세스 토큰이 없으므로 같은 자격증명으로 로그인까지 완료합니다.
+        await login({ email: email.trim(), password });
+      } catch (error) {
+        setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
+        return;
       } finally {
         setSaving(false);
       }

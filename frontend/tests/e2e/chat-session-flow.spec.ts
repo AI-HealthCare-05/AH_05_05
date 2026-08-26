@@ -194,6 +194,36 @@ test('답변 대기 중 로그아웃해도 이전 질문이 다음 계정에 저
   await expect(page.getByText(question, { exact: true })).toHaveCount(0);
 });
 
+test('삭제 대기 중 계정이 바뀌어도 다른 계정의 같은 ID 대화를 지우지 않는다', async ({ page }) => {
+  const patientQuestion = '첫 계정에 남아야 하는 질문';
+  const otherQuestion = '두 번째 계정 삭제 요청 질문';
+  await createConversation(page, patientQuestion);
+  await page.getByRole('button', { name: '마이', exact: true }).click();
+  await page.getByRole('button', { name: '로그아웃' }).click();
+
+  await page.goto('/login');
+  await page.getByLabel('이메일').fill(OTHER_MOCK_ACCOUNT);
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+  await createConversation(page, otherQuestion);
+  await page.reload();
+  await page.getByRole('button', { name: '대화 선택' }).click();
+  await page.getByRole('checkbox', { name: new RegExp(otherQuestion) }).check();
+  await page.getByRole('button', { name: '1개 삭제' }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+
+  await page.goto('/my');
+  await page.getByRole('button', { name: '로그아웃' }).click();
+  await page.goto('/login');
+  await page.getByLabel('이메일').fill(MOCK_ACCOUNT);
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: new RegExp(patientQuestion) })).toBeVisible();
+});
+
 test('이력 API가 없어도 성공한 실 API 답변을 현재 화면에서 지우지 않는다', async ({ page }) => {
   await page.goto('/dev/chat-send-without-history');
   const question = '실제 API 경계 확인 질문';

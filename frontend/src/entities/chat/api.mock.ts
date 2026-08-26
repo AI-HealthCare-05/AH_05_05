@@ -154,8 +154,11 @@ export function mockSendChat(
   return response;
 }
 
-export function mockGetChatMessages(sessionId: number): ChatMessage[] | null {
-  const session = readStore().sessions.find((item) => item.sessionId === sessionId);
+export function mockGetChatMessages(
+  sessionId: number,
+  principalKey = restoreAccountPrincipal(),
+): ChatMessage[] | null {
+  const session = readStore(principalKey).sessions.find((item) => item.sessionId === sessionId);
   if (!session) return null;
   return session.messages.map((message) => ({
     ...message,
@@ -163,8 +166,10 @@ export function mockGetChatMessages(sessionId: number): ChatMessage[] | null {
   }));
 }
 
-export function mockListChatSessions(): ChatSessionSummary[] {
-  return readStore()
+export function mockListChatSessions(
+  principalKey = restoreAccountPrincipal(),
+): ChatSessionSummary[] {
+  return readStore(principalKey)
     .sessions.map((session) => ({
       sessionId: session.sessionId,
       title: session.messages.find((message) => message.role === 'user')?.text ?? '새 대화',
@@ -174,10 +179,13 @@ export function mockListChatSessions(): ChatSessionSummary[] {
     .sort((left, right) => right.lastMessageAt.localeCompare(left.lastMessageAt));
 }
 
-export function mockDeleteChatSessions(sessionIds: readonly number[]): void {
+export function mockDeleteChatSessions(
+  sessionIds: readonly number[],
+  principalKey = restoreAccountPrincipal(),
+): void {
   if (sessionIds.length === 0) return;
   const deleted = new Set(sessionIds);
-  const store = readStore();
+  const store = readStore(principalKey);
   store.sessions = store.sessions.filter((session) => !deleted.has(session.sessionId));
-  writeStore(store);
+  writeStore(store, principalKey);
 }
