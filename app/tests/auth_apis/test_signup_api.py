@@ -24,6 +24,9 @@ class TestSignupAPI(TestCase):
 
         user = await User.get(email=signup_data["email"])
         settings = await UserSettings.get(user_id=user.id)
+        assert settings.is_notify_medication is False
+        assert settings.is_notify_schedule is False
+        assert settings.is_notify_guide is False
         assert settings.morning_medication_time == timedelta(hours=8)
         assert settings.lunch_medication_time == timedelta(hours=13)
         assert settings.evening_medication_time == timedelta(hours=19)
