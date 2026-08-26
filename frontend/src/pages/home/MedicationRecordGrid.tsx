@@ -1,12 +1,7 @@
-import type {
-  DoseRecord,
-  MealSlot,
-  MedicationOverview,
-} from '@/entities/medication';
+import type { DoseRecord, MealSlot, MedicationOverview } from '@/entities/medication';
 import { Card } from '@/shared/ui';
 
 const SLOT_ORDER: MealSlot[] = ['morning', 'lunch', 'evening', 'bedtime'];
-
 const SLOT_LABEL: Record<MealSlot, string> = {
   morning: '아침',
   lunch: '점심',
@@ -15,30 +10,37 @@ const SLOT_LABEL: Record<MealSlot, string> = {
 };
 
 interface MedicationRecordGridProps {
-  overview: MedicationOverview;
+  overviews: MedicationOverview[];
   records: DoseRecord[];
   now: Date;
   animatedRecordKey?: string | null;
-  onMarkTaken: (date: string, slot: MealSlot) => void;
+  onMarkTaken: (date: string, slot: MealSlot, recordIds: number[]) => void;
 }
 
 type RecordCellState = 'taken' | 'missing' | 'future' | 'empty';
 
 export function MedicationRecordGrid({
-  overview,
+  overviews,
   records,
   now,
   animatedRecordKey,
   onMarkTaken,
 }: MedicationRecordGridProps) {
-  const dates = getDateRange(overview.start.date, overview.endDate);
+  const dates = getDateRange(
+    overviews.map((overview) => overview.start.date).sort()[0] ?? '',
+    overviews.map((overview) => overview.endDate).sort().at(-1) ?? '',
+  );
   const slots = SLOT_ORDER.filter((slot) =>
-    overview.medications.some(
-      (medication) => !medication.asNeeded && medication.slots.includes(slot),
+    overviews.some((overview) =>
+      overview.medications.some(
+        (medication) => !medication.asNeeded && medication.slots.includes(slot),
+      ),
     ),
   );
   const takenRecords = new Set(
-    records.filter((record) => record.taken).map((record) => `${record.date}:${record.slot}`),
+    records
+      .filter((record) => record.taken)
+      .map((record) => `${record.recordId}:${record.date}:${record.slot}`),
   );
   const today = formatLocalIsoDate(now);
   const gridTemplateColumns = `minmax(2.75rem, auto) repeat(${dates.length}, minmax(0, var(--spacing-record-cell-w)))`;
@@ -50,7 +52,7 @@ export function MedicationRecordGrid({
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-xl font-bold text-foreground">복약 기록</h2>
             <p className="text-sm text-muted-foreground tnum">
-              {formatPeriod(overview.start.date, overview.endDate)}
+              {formatPeriod(dates[0] ?? '', dates.at(-1) ?? '')}
             </p>
           </div>
 
@@ -84,12 +86,13 @@ export function MedicationRecordGrid({
                 >
                   {SLOT_LABEL[slot]}
                 </span>
-                {dates.map((date, dateIndex) => {
+                {dates.map((date) => {
+                  const recordIds = episodeTargetsForCell(overviews, date, slot);
                   const state = getCellState({
-                    overview,
+                    overviews,
                     date,
-                    dateIndex,
                     slot,
+                    recordIds,
                     now,
                     takenRecords,
                   });
@@ -103,7 +106,7 @@ export function MedicationRecordGrid({
                         role="gridcell"
                         aria-label={label}
                         className="h-record-cell-h min-w-0 rounded-record-cell bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => onMarkTaken(date, slot)}
+                        onClick={() => onMarkTaken(date, slot, recordIds)}
                       />
                     );
                   }
@@ -172,29 +175,46 @@ const CELL_CLASS: Record<Exclude<RecordCellState, 'missing'>, string> = {
 };
 
 function getCellState({
-  overview,
+  overviews,
   date,
-  dateIndex,
   slot,
+  recordIds,
   now,
   takenRecords,
 }: {
-  overview: MedicationOverview;
+  overviews: MedicationOverview[];
   date: string;
-  dateIndex: number;
   slot: MealSlot;
+  recordIds: number[];
   now: Date;
   takenRecords: Set<string>;
 }): RecordCellState {
-  const hasMedication = overview.medications.some(
-    (medication) =>
-      !medication.asNeeded &&
-      medication.slots.includes(slot) &&
-      dateIndex < medication.days,
+  if (recordIds.length === 0) return 'empty';
+  const allTaken = recordIds.every((recordId) =>
+    takenRecords.has(`${recordId}:${date}:${slot}`),
   );
-  if (!hasMedication) return 'empty';
-  if (takenRecords.has(`${date}:${slot}`)) return 'taken';
-  return hasSlotTimePassed(date, slot, overview, now) ? 'missing' : 'future';
+  if (allTaken) return 'taken';
+  const overview = overviews.find((item) => recordIds.includes(item.recordId));
+  return overview && hasSlotTimePassed(date, slot, overview, now) ? 'missing' : 'future';
+}
+
+function episodeTargetsForCell(
+  overviews: MedicationOverview[],
+  date: string,
+  slot: MealSlot,
+): number[] {
+  return overviews
+    .filter((overview) => {
+      const dateIndex = daysBetween(overview.start.date, date);
+      return overview.medications.some(
+        (medication) =>
+          !medication.asNeeded &&
+          medication.slots.includes(slot) &&
+          dateIndex >= 0 &&
+          dateIndex < medication.days,
+      );
+    })
+    .map((overview) => overview.recordId);
 }
 
 function hasSlotTimePassed(
@@ -206,12 +226,12 @@ function hasSlotTimePassed(
   const today = formatLocalIsoDate(now);
   if (date < today) return true;
   if (date > today) return false;
-
   const [hours, minutes] = overview.mealTimes[slot].split(':').map(Number);
   return now.getHours() * 60 + now.getMinutes() >= hours * 60 + minutes;
 }
 
 function getDateRange(from: string, to: string): string[] {
+  if (!from || !to) return [];
   const start = parseLocalDate(from);
   const end = parseLocalDate(to);
   const dates: string[] = [];
@@ -219,6 +239,10 @@ function getDateRange(from: string, to: string): string[] {
     dates.push(formatLocalIsoDate(cursor));
   }
   return dates;
+}
+
+function daysBetween(from: string, to: string): number {
+  return Math.round((parseLocalDate(to).getTime() - parseLocalDate(from).getTime()) / 86_400_000);
 }
 
 function parseLocalDate(value: string): Date {
@@ -240,6 +264,7 @@ function formatDateLabel(value: string): string {
 }
 
 function formatPeriod(from: string, to: string): string {
+  if (!from || !to) return '';
   const [, fromMonth, fromDay] = from.split('-').map(Number);
   const [, toMonth, toDay] = to.split('-').map(Number);
   return fromMonth === toMonth

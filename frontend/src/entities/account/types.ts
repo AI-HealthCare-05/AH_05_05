@@ -1,6 +1,8 @@
 export type Gender = 'male' | 'female';
 
 export interface AccountProfile {
+  name: string;
+  phoneNumber: string;
   birthDate: string;
   gender: Gender;
 }

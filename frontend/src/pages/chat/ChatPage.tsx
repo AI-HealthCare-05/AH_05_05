@@ -90,7 +90,12 @@ export function ChatPage({
     setDraft('');
     setPending(true);
     try {
-      const result = await chatSender({ recordId, message, conversationId });
+      const result = await chatSender({
+        requestId: crypto.randomUUID(),
+        recordId,
+        message,
+        conversationId,
+      });
       setConversationId(result.conversationId);
       setMessages((prev) => [
         ...prev,
@@ -156,7 +161,9 @@ export function ChatPage({
           ) : (
             <div key={index} className="flex justify-start">
               <div className="flex max-w-[80%] flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
-                <p className="text-base break-words text-foreground">{message.text}</p>
+                <p className="whitespace-pre-wrap text-base break-words text-foreground">
+                  {message.text}
+                </p>
                 {message.sources.length > 0 ? (
                   <SourceList sources={message.sources} />
                 ) : (
