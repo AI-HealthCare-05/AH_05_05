@@ -1,0 +1,34 @@
+<aside class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0" aria-label="관리자 메뉴">
+  <div class="flex flex-col gap-8 items-start w-full">
+    <div class="flex gap-2 items-center">
+      <div class="flex items-center justify-center rounded-lg w-8 h-8" style="background:#1c64f2;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      </div>
+      <p class="font-bold text-[16px]" style="color:#111827;">포케 관리자</p>
+    </div>
+
+    <nav class="flex flex-col gap-1.5 items-start w-full" aria-label="주 메뉴">
+      <a href="dashboard.html" data-nav="dashboard" class="sidebar-link flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span class="text-[14px]">대시보드</span>
+      </a>
+      <a href="user-management.html" data-nav="users" class="sidebar-link flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span class="text-[14px]">회원 관리</span>
+      </a>
+      <a href="screen-4-admin-management.html" data-nav="admins" class="sidebar-link flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+        <span class="text-[14px]">관리자 관리</span>
+      </a>
+      <a href="screen-5-task-management.html" data-nav="tasks" class="sidebar-link flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span class="text-[14px]">작업 모니터링</span>
+      </a>
+    </nav>
+  </div>
+
+  <a href="login.html" data-nav="logout" class="sidebar-link flex gap-3 items-center px-3 py-2.5 rounded-lg w-full">
+    <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    <span class="text-[14px]">로그아웃</span>
+  </a>
+</aside>

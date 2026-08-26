@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 from httpx import ASGITransport, AsyncClient
@@ -44,6 +45,66 @@ class TestJobAPI(TestCase):
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["total"] == 2
+
+    async def test_job_stats_counts_statuses_by_inclusive_created_date_range(self):
+        jobs = []
+        for index, job_status in enumerate(
+            [BackgroundJobStatus.QUEUED, BackgroundJobStatus.COMPLETED, BackgroundJobStatus.COMPLETED]
+        ):
+            job = await BackgroundJob.create(
+                idempotency_key=f"job-stats-inside-{index}",
+                job_type=BackgroundJobType.ALARM,
+                status=job_status,
+            )
+            jobs.append(job)
+
+        outside = await BackgroundJob.create(
+            idempotency_key="job-stats-outside",
+            job_type=BackgroundJobType.ALARM,
+            status=BackgroundJobStatus.FAILED,
+        )
+        await BackgroundJob.filter(id=jobs[0].id).update(created_at=datetime(2026, 8, 10, 0, 0, tzinfo=config.TIMEZONE))
+        await BackgroundJob.filter(id=jobs[1].id).update(
+            created_at=datetime(2026, 8, 11, 12, 30, tzinfo=config.TIMEZONE)
+        )
+        await BackgroundJob.filter(id=jobs[2].id).update(
+            created_at=datetime(2026, 8, 12, 23, 59, 59, tzinfo=config.TIMEZONE)
+        )
+        await BackgroundJob.filter(id=outside.id).update(created_at=datetime(2026, 8, 13, 0, 0, tzinfo=config.TIMEZONE))
+
+        with patch.object(config, "INTERNAL_API_KEY", "test-internal-key"):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get(
+                    "/api/v1/internal/jobs/stats",
+                    params={"start_date": "2026-08-10", "end_date": "2026-08-12"},
+                    headers=INTERNAL_HEADERS,
+                )
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert response.json() == {
+            "start_date": "2026-08-10",
+            "end_date": "2026-08-12",
+            "total": 3,
+            "counts": {
+                "QUEUED": 1,
+                "PROCESSING": 0,
+                "RETRY_WAITING": 0,
+                "COMPLETED": 2,
+                "FAILED": 0,
+                "CANCELLED": 0,
+            },
+        }
+
+    async def test_job_stats_rejects_reversed_date_range(self):
+        with patch.object(config, "INTERNAL_API_KEY", "test-internal-key"):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get(
+                    "/api/v1/internal/jobs/stats",
+                    params={"start_date": "2026-08-12", "end_date": "2026-08-10"},
+                    headers=INTERNAL_HEADERS,
+                )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_queued_job_can_be_cancelled(self):
         job = await BackgroundJob.create(
