@@ -1,5 +1,6 @@
 import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
+import { normalizePhoneNumber } from '@/shared/lib/phoneNumber';
 import {
   mockChangePassword,
   mockCreateAccount,
@@ -14,11 +15,16 @@ import type {
 } from './types';
 
 export async function createAccount(payload: CreateAccountPayload): Promise<AccountProfile> {
+  const normalizedPayload = {
+    ...payload,
+    name: payload.name.trim(),
+    phoneNumber: normalizePhoneNumber(payload.phoneNumber),
+  };
   if (USE_MOCK) {
     await mockDelay();
-    return mockCreateAccount(payload);
+    return mockCreateAccount(normalizedPayload);
   }
-  return http.post<AccountProfile>('/v1/accounts', payload);
+  return http.post<AccountProfile>('/v1/accounts', normalizedPayload);
 }
 
 export async function getMyProfile(): Promise<AccountProfile> {
@@ -32,11 +38,16 @@ export async function getMyProfile(): Promise<AccountProfile> {
 export async function updateMyProfile(
   payload: UpdateAccountProfilePayload,
 ): Promise<AccountProfile> {
+  const normalizedPayload = {
+    ...payload,
+    name: payload.name.trim(),
+    phoneNumber: normalizePhoneNumber(payload.phoneNumber),
+  };
   if (USE_MOCK) {
     await mockDelay();
-    return mockUpdateMyProfile(payload);
+    return mockUpdateMyProfile(normalizedPayload);
   }
-  return http.patch<AccountProfile>('/v1/me', payload);
+  return http.patch<AccountProfile>('/v1/me', normalizedPayload);
 }
 
 export async function changePassword(payload: ChangePasswordPayload): Promise<void> {

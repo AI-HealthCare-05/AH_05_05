@@ -89,6 +89,8 @@ export interface MedicationOverview {
 }
 
 export interface DoseRecord {
+  /** care_episodes.id. 여러 처방의 같은 날짜·시간대 기록을 구분합니다. */
+  recordId: number;
   /** YYYY-MM-DD */
   date: string;
   slot: MealSlot;
@@ -96,6 +98,7 @@ export interface DoseRecord {
 }
 
 export interface SaveDoseTakenPayload {
+  recordId: number;
   /** 화면이 보유한 오늘 날짜를 그대로 보냅니다. */
   date: string;
   slot: MealSlot;
@@ -103,6 +106,7 @@ export interface SaveDoseTakenPayload {
 }
 
 export interface DoseRecordRange {
+  recordId: number;
   /** YYYY-MM-DD */
   from: string;
   /** YYYY-MM-DD */

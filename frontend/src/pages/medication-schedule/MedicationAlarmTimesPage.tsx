@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
   getMedicationOverview,
@@ -15,6 +15,8 @@ import { MEAL_SLOTS, isMealTimeOrderValid } from './slotAssignment';
 
 export function MedicationAlarmTimesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const recordId = (location.state as { recordId?: number } | null)?.recordId;
   const [overview, setOverview] = useState<MedicationOverview | null>(null);
   const [editingSlot, setEditingSlot] = useState<MealSlot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -22,7 +24,7 @@ export function MedicationAlarmTimesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getMedicationOverview()
+    getMedicationOverview(recordId)
       .then((data) => {
         if (!cancelled) setOverview(data);
       })
@@ -34,7 +36,7 @@ export function MedicationAlarmTimesPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [recordId]);
 
   async function persist(nextMealTimes: MealTimes) {
     if (!overview) return;
