@@ -1,0 +1,1754 @@
+/***********************************************************
+* [v1.0.6] 전체 ERD + AI/CHAT/상호작용 통합본
+* 기준 ERD 최종수정일 2026.08.25 20:11
+* AI 파트 통합일 2026.08.26
+***********************************************************/
+/* =========================================================
+   ENUM
+========================================================= */
+Enum account_status {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  WITHDRAWN
+}
+Enum admin_role {
+  ADMIN
+  STAFF
+}
+
+Enum gender {
+  MALE
+  FEMALE
+}
+
+Enum ocr_job_status {
+  QUEUED
+  PROCESSING
+  READY_FOR_REVIEW
+  COMPLETE
+  FAILED
+  CANCELLED
+}
+Enum care_advice_category {
+  ACTIVITY
+  HYGIENE
+  DIET
+  LIFESTYLE
+  RESTRICTION
+  RED_FLAG
+  OTHER
+}
+/* [v4] 알림 토글 이력의 대상 항목. user_settings 컬럼명과 1:1 로 맞춘다 */
+Enum notify_setting_key {
+  IS_NOTIFY_MEDICATION
+  IS_NOTIFY_SCHEDULE
+  IS_NOTIFY_GUIDE
+}
+Enum meal_slot {
+  MORNING    // 아침약
+  LUNCH      // 점심약
+  EVENING    // 저녁약
+  BEDTIME    // 취침약
+}
+Enum alarm_status {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+Enum alarm_event_type {
+  SCHEDULED
+  SENT
+  DELIVERED
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+Enum alarm_type {
+  MEDICATION        // 복약
+  FOLLOW_UP_VISIT   // 재방문 일정
+  GUIDE_CHECK       // 생활관리 가이드 확인
+  NUTRIENT          // 영양제 성분
+}
+Enum background_job_type {
+  OCR
+  LLM
+  CHAT
+  ALARM
+  DATA_DELETION
+}
+Enum background_job_status {
+  QUEUED
+  PROCESSING
+  RETRY_WAITING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+/* care_episode_status ENUM */
+Enum care_episode_status {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+/* RECOVERY GUIDE ENUM */
+Enum recovery_guide_status {
+  COMPLETED
+  SUPERSEDED
+}
+Enum guide_source_type {
+  PATIENT_SAVED_FIELD
+  PUBLIC_RAG_CHUNK
+}
+Enum patient_source_kind {
+  CARE_EPISODE_FIELD
+  MEDICATION
+  CARE_ADVICE
+  FOLLOW_UP_VISIT
+}
+Enum care_episode_source_field {
+  DIAGNOSIS
+  SURGERY
+  DISCHARGE_DATE
+  MEDICATION_DAYS
+}
+Enum interaction_entity_kind {
+  DRUG
+  SUPPLEMENT
+  FOOD
+}
+
+Enum interaction_alias_type {
+  INGREDIENT_NAME
+  PRODUCT_NAME
+  SYNONYM
+  SOURCE_NAME
+}
+
+Enum interaction_mapping_status {
+  PENDING
+  MATCHED
+  FAILED
+}
+
+Enum interaction_match_method {
+  SOURCE_CODE
+  EXACT_NAME
+  ALIAS
+  MANUAL
+}
+
+Enum interaction_extraction_method {
+  DETERMINISTIC_STRUCTURED
+  MANUAL_ANNOTATION
+}
+
+Enum interaction_pair_type {
+  DRUG_DRUG
+  DRUG_SUPPLEMENT
+  SUPPLEMENT_SUPPLEMENT
+  DRUG_FOOD
+}
+
+Enum interaction_risk_level {
+  CONTRAINDICATED
+  HIGH_CAUTION
+  CAUTION
+  INFORMATIONAL
+  UNKNOWN
+}
+
+Enum interaction_review_status {
+  PENDING
+  APPROVED
+  REJECTED
+}
+/* CHAT ENUM */
+Enum chat_session_status {
+  ACTIVE
+  DELETED
+}
+Enum chat_message_role {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+Enum chat_message_status {
+  PENDING
+  STREAMING
+  COMPLETED
+  FAILED
+}
+Enum chat_route_type {
+  PATIENT_DB
+  PUBLIC_RAG
+  PATIENT_AND_PUBLIC
+  GENERAL_LIFESTYLE
+  INTERACTION
+  SAFETY_RESPONSE
+  OUT_OF_SCOPE_RESPONSE
+}
+Enum chat_safety_status {
+  PENDING
+  SAFE
+  RESTRICTED
+  BLOCKED
+  VALIDATION_FAILED
+}
+Enum chat_verification_status {
+  NOT_REQUIRED
+  PENDING
+  VERIFIED
+  FAILED
+}
+Enum chat_conflict_status {
+  NOT_APPLICABLE
+  NO_CONFLICT
+  PATIENT_DATA_PRIORITY
+  PUBLIC_SOURCE_EXCLUDED
+  REVIEW_REQUIRED
+}
+Enum chat_source_type {
+  PATIENT_SAVED_FIELD
+  PUBLIC_RAG_CHUNK
+  USER_SUPPLEMENT
+  INTERACTION_RULE
+}
+Enum supplement_status {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+/* =========================================================
+   회원
+   ========================================================= */
+/* 사용자 */
+Table user {
+  id bigint [pk, increment]
+  email varchar(255) [not null, unique]
+  hashed_password varchar(255) [not null, note: '평문 저장 금지. 해시화된 비밀번호 저장']
+  status account_status [not null, default: 'PENDING']
+  name varchar(100) [not null]
+  phone text
+
+  /* [v5-2 신설] 영양소 섭취기준 조회용.
+     nutrient_standard 는 (grp, age) 로 조회하므로 성별·나이가 없으면
+     기준선(권장·상한)을 정할 수 없다. */
+  birth_date date [note: '''
+    생년월일. 만나이는 조회 시점에 계산한다.
+    ★ 나이를 저장하지 않는다 — 해가 바뀌면 틀린 값이 된다.
+    기존 계정에는 값이 없으므로 nullable 이다.
+  ''']
+  gender gender [note: '''
+    성별. nutrient_standard.grp 매칭에 쓴다.
+    ★ 주민등록번호 성별코드(1~4)를 저장하지 않는다.
+    임신부·수유부는 받지 않는다 — 그 기준값은 증감값(+0 형태)이고
+    임신 여부를 수집하지 않으므로 매칭될 경로가 없다.
+    기존 계정에는 값이 없으므로 nullable 이다.
+  ''']
+
+  created_at datetime [not null, default: `current_timestamp`, note: '유저 생성 일시']
+  updated_at datetime [note: '유저 정보 수정 일시']
+
+  indexes {
+    status
+    created_at
+  }
+
+  Note: '''
+  실제 서비스 이용자이자 사용자 인증 계정.
+  전화번호 등 직접식별정보는 애플리케이션 계층에서 암호화한다.
+
+  [v5] birth_date·gender 는 영양소 섭취기준 조회에만 쓴다.
+  (grp, age) 매칭은 서버가 수행하고 API 응답에는 이미 고른 rni·ai·ul 만 담는다 —
+  age 표기가 '0-5 (개월)' · '6-11' · '75 이상' 처럼 단위와 형태가 섞여 있어
+  클라이언트가 파싱하면 표기 변경마다 화면이 깨진다.
+  '''
+}
+/* 사용자 알림 설정과 시간대별 실제 복용 시각 */
+Table user_settings {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: '사용자']
+  is_notify_medication boolean [not null, default: true, note: '복약 알림 수신 여부. alarm_type=MEDICATION에 적용']
+  is_notify_schedule boolean [not null, default: true, note: '진료·검사 일정 알림 수신 여부. alarm_type=FOLLOW_UP_VISIT에 적용']
+  is_notify_guide boolean [not null, default: true, note: '생활관리 가이드 확인 알림 수신 여부. alarm_type=GUIDE_CHECK에 적용']
+  is_terms_agreed boolean [not null, default : false, note: '필수 약관(진료기록 수집 + AI 이용) 동의 여부. 둘을 AND 로 묶어 저장한다']
+
+  /* [v4] 동의·알림 설정 시각 */
+  terms_agreed_at datetime [note: '필수 약관에 동의한 시각. is_terms_agreed 가 true 로 바뀔 때 기록한다']
+  notify_consented_at datetime [note: '''
+    동의 화면(03)에서 알림 수신 여부를 최초로 선택한 시각. 거부를 선택한 경우도 기록한다.
+    이 값이 null 인지로 "동의 저장 API 의 최초 호출"을 판정한다 —
+    null 이면 알림 토글 3개를 동의 화면 값으로 초기화하고, 값이 있으면 토글을 건드리지 않는다.
+    마이페이지에서 바꾼 설정이 동의 API 재호출로 되돌아가는 것을 막기 위한 기준이다.
+  ''']
+
+  morning_medication_time time [not null, default: '08:00']
+  lunch_medication_time time [not null, default: '13:00']
+  evening_medication_time time [not null, default: '19:00']
+  bedtime_medication_time time [not null, default: '22:00']
+
+  Note: '''
+  사용자 기본정보를 제외한 셋팅 정보.
+  복약 시각 4개는 사용자 단위다 — 진료기록이 2건이어도 환자의 아침 식사 시각은 하나다.
+  MORNING < LUNCH < EVENING < BEDTIME 순서와 30분 단위(:00 / :30)는 서버가 검증한다.
+  BEDTIME 은 23:30 이하 — 자정을 넘기는 취침 시각은 지원하지 않는다.
+
+  방침이 바뀌어 재동의가 필요하면 is_terms_agreed 를 false, terms_agreed_at 을 null 로
+  일괄 리셋한다. 방침 버전 컬럼은 두지 않는다 — 전원 재동의로 갈음한다.
+  '''
+}
+
+/* [v4 신설] 알림 토글 변경 이력 */
+Table user_notify_histories {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  setting_key notify_setting_key [not null, note: '어느 알림 항목이 바뀌었는지']
+  new_value boolean [not null, note: '변경 후 값']
+  created_at datetime [not null, default: `current_timestamp`, note: '변경 시각. append-only 라 별도 changed_at 을 두지 않는다']
+
+  indexes {
+    (user_id, setting_key, created_at)
+    created_at
+  }
+
+  Note: '''
+  알림 토글(복약 / 일정 / 가이드) 변경 이력만 담는다.
+  서버는 이전값과 다를 때만 행을 넣는다 — 알림 설정은 토글 변경 즉시 저장이라
+  같은 값으로 요청이 반복될 수 있고, 비교하지 않으면 변화 없는 행이 쌓인다.
+  약관 동의는 user_settings.terms_agreed_at 에 시각만 남기고 이력을 만들지 않는다.
+  복약 시각(morning_medication_time 등)은 boolean 이 아니라 이 구조로 담을 수 없어 대상이 아니다.
+
+  UPDATE 하지 않고 새 행만 넣는다. user_settings 의 현재값과 중복되지만 의도된 비정규화다 —
+  로그인·홈 조회마다 이력을 집계하면 느리고, "현재 사실"과 "감사 기록"은 성격이 다르다.
+
+  "사용자가 알림을 껐다"는 사실은 발송 스킵 판정과 문의 대응에 쓴다.
+  알람 행 자체는 지우지 않으므로(alarms Note 참고) 다시 켜면 그대로 살아난다.
+  '''
+}
+Ref: user_notify_histories.user_id > user.id [delete: cascade]
+
+/* 관리자 */
+Table admin {
+  id bigint [pk, increment]
+  email varchar(255) [not null, unique]
+  hashed_password varchar(255) [not null, note: '평문 저장 금지. 해시화된 비밀번호 저장']
+  status account_status [not null, default: 'PENDING']
+  name varchar(100) [not null]
+  role admin_role [not null, default: 'STAFF']
+  created_by_admin_id bigint [note: '최초 관리자는 null. 관리자 계정 생성자']
+  approved_at datetime [note: '승인 일시']
+  created_at datetime [not null, default: `current_timestamp`, note: '생성 일시']
+  updated_at datetime [note: '수정 일시']
+
+  indexes {
+    role
+    status
+    created_by_admin_id
+    created_at
+  }
+
+  Note: '''
+  관리자 전용 인증 계정.
+  일반 회원가입으로 생성하지 않고 관리자가 생성한다.
+  '''
+}
+Ref: admin.created_by_admin_id > admin.id [delete: set null]
+
+/* [v4] set null → cascade.
+   user_settings.user_id 가 not null 이라 set null 은 제약 위반으로 삭제가 실패한다. */
+Ref: user.id - user_settings.user_id [delete: cascade]
+
+/* =========================================================
+   care_episode_status
+   ========================================================= */
+/* 하나의 회복·관리 목적을 지속적으로 추적하는 케어 단위 */
+Table care_episodes {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: "케어 소유 사용자"]
+  title varchar(150) [not null, note: "여러 케어를 구분하는 이름. 확정 시 서버가 diagnosis → surgery → '진료기록 {날짜}' 순으로 채우고 150자로 절단한다"]
+  status care_episode_status [not null, default: 'ACTIVE']
+  /* OCR 사용자 확정 결과 */
+  diagnosis varchar(500) [note: "사용자가 OCR 결과에서 확인·수정한 최종 진단명"]
+  surgery varchar(500) [note: "사용자가 OCR 결과에서 확인·수정한 최종 수술명"]
+  discharge_date date [note: "사용자가 확인한 퇴원일. 활성 기간 계산에는 쓰지 않고 '퇴원 후 N일째' 표시와 medication_start_date 하한 검증에 쓴다"]
+  medication_days int [note: "사용자가 확인한 전체 복용일수. 1차 계약은 1~365일"]
+  source_ocr_job_id bigint [note: "현재 확정값을 만든 OCR 작업"]
+  confirmation_hash varchar(64) [note: "클라이언트 confirm body의 scalar·배열·tempId를 canonicalize한 SHA-256. 서버 소유 category·confidence·source는 제외한다"]
+  confirmed_at datetime [note: "OCR 결과 최종 저장 시각. 이 값이 null 인 기록은 미확정이며 홈·목록·recordCount 에서 제외한다"]
+  started_at datetime [not null, default: `current_timestamp`]
+  medication_start_date date [note: '확정 복약의 공통 시작일. 활성 기간 계산 기준이며 퇴원일과 구분한다']
+  medication_start_slot meal_slot [note: '첫날 최초 복용 슬롯. 첫날에는 이 슬롯보다 앞선 복약 알림을 건너뛴다']
+  default_end_at datetime [note: "medication_start_date + 복약기간 - 1. 약별 days가 있으면 MAX(medications.days), 없으면 care_episodes.medication_days 사용"]
+  planned_end_at datetime [note: "추가 처방·진료로 연장된 현재 종료 예정 시각"]
+  completed_at datetime [note: "실제 케어 종료 시각"]
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+  indexes {
+    (user_id, status)
+    (user_id, planned_end_at)
+  }
+  checks {
+    `medication_days IS NULL OR (medication_days BETWEEN 1 AND 365)`
+    `(source_ocr_job_id IS NULL AND confirmed_at IS NULL AND confirmation_hash IS NULL) OR (source_ocr_job_id IS NOT NULL AND confirmed_at IS NOT NULL AND confirmation_hash IS NOT NULL)`
+    `default_end_at IS NULL OR default_end_at >= started_at`
+    `planned_end_at IS NULL OR planned_end_at >= started_at`
+    `completed_at IS NULL OR completed_at >= started_at`
+  }
+  Note: '''
+  같은 관리 목적의 입퇴원·외래·추가 처방을 계속 묶는다.
+  한 사용자는 여러 ACTIVE 케어를 가질 수 있고 종료된 케어도 이력으로 보관한다.
+
+  활성 기간은 퇴원일이 아니라 medication_start_date 기준으로 계산한다.
+    default_end_at = medication_start_date + 복약기간 - 1
+    활성 판정      = medication_start_date <= 오늘 <= planned_end_at
+  "7일분"은 먹기 시작한 날부터 세기 때문이다. 퇴원일 기준으로 계산하면
+  약이 남아 있는데 홈에서 기록이 사라진다.
+
+  확정 source OCR job은 개별 hard delete하지 않는다.
+  episode 전체 삭제 시 source_ocr_job_id·confirmation_hash·confirmed_at을 먼저 함께 null로 만든 뒤 episode를 삭제한다.
+  '''
+}
+Ref: care_episodes.user_id > user.id [delete: cascade]
+
+/* =========================================================
+   OCR
+   ========================================================= */
+/* 한 케어 에피소드에서 실행한 OCR·LLM 구조화 시도 */
+Table ocr_jobs {
+  id bigint [pk, increment, note: "서버 내부 OCR 시도 식별자. API 의 ocrJobId"]
+  care_episode_id bigint [not null, note: "이 OCR 작업이 속한 케어 에피소드"]
+  status ocr_job_status [not null, default: 'QUEUED', note: "OCR·LLM 구조화 및 사용자 확정 상태"]
+  idempotency_key varchar(100) [not null, note: "같은 에피소드 안에서 동일 업로드 요청의 중복 생성 방지"]
+  input_manifest json [not null, note: "퇴원기록지와 복약지도서의 파일 순서·페이지·content hash·요청 fingerprint 메타데이터"]
+  structured_result json [note: "ocr-demo-result-v3 확인·수정용 구조화 후보. READY_FOR_REVIEW 동안만 임시 보관"]
+  ocr_model varchar(100) [not null, note: "사용한 OCR 공급자·모델 버전"]
+  structuring_model varchar(100) [not null, note: "OCR 원문을 구조화한 LLM 모델"]
+  prompt_version varchar(100) [not null]
+  schema_version varchar(50) [not null]
+  error_code varchar(100) [note: "의료 원문을 포함하지 않는 공개 오류 코드"]
+  started_at datetime [note: "작업 처리 시작 시각"]
+  ready_at datetime [note: "구조화 후보가 검토 가능해진 시각"]
+  expires_at datetime [note: "검토 후보 자동 만료 시각"]
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+  completed_at datetime [note: "COMPLETE·FAILED·CANCELLED 종료 시각"]
+  indexes {
+    (care_episode_id, idempotency_key) [unique]
+    (care_episode_id, status)
+    (id, care_episode_id) [unique]
+    expires_at
+  }
+  checks {
+    `structured_result IS NULL OR status = 'READY_FOR_REVIEW'`
+    `status <> 'READY_FOR_REVIEW' OR (structured_result IS NOT NULL AND ready_at IS NOT NULL AND expires_at IS NOT NULL)`
+    `(status = 'FAILED' AND error_code IS NOT NULL AND error_code IN ('OCR_PROVIDER_ERROR', 'OCR_PROVIDER_TIMEOUT', 'EXTRACTION_FAILED', 'VALIDATION_FAILED', 'WORKER_INTERRUPTED')) OR (status = 'CANCELLED' AND error_code IS NOT NULL AND error_code IN ('USER_CANCELLED', 'REVIEW_EXPIRED')) OR (status IN ('QUEUED', 'PROCESSING', 'READY_FOR_REVIEW', 'COMPLETE') AND error_code IS NULL)`
+    `(status IN ('COMPLETE', 'FAILED', 'CANCELLED') AND completed_at IS NOT NULL) OR (status IN ('QUEUED', 'PROCESSING', 'READY_FOR_REVIEW') AND completed_at IS NULL)`
+    `(status = 'QUEUED' AND started_at IS NULL AND ready_at IS NULL AND expires_at IS NULL) OR (status = 'PROCESSING' AND started_at IS NOT NULL AND ready_at IS NULL AND expires_at IS NULL) OR (status = 'READY_FOR_REVIEW' AND started_at IS NOT NULL AND ready_at IS NOT NULL AND expires_at IS NOT NULL) OR (status IN ('COMPLETE', 'FAILED') AND started_at IS NOT NULL AND ready_at IS NULL AND expires_at IS NULL) OR (status = 'CANCELLED' AND ready_at IS NULL AND expires_at IS NULL)`
+    `started_at IS NULL OR started_at >= created_at`
+    `ready_at IS NULL OR (started_at IS NOT NULL AND ready_at >= started_at)`
+    `completed_at IS NULL OR completed_at >= COALESCE(started_at, created_at)`
+    `expires_at IS NULL OR ready_at IS NULL OR expires_at > ready_at`
+  }
+  Note: '''
+  한 행은 한 케어 에피소드에서 실행한 OCR·LLM 구조화 시도 하나다.
+  같은 에피소드에 재업로드·재시도 이력은 여러 건 존재할 수 있으며,
+  QUEUED·PROCESSING·READY_FOR_REVIEW 상태의 작업은 서버에서 하나만 허용한다.
+
+  input_manifest에는 퇴원기록지와 복약지도서의 입력 메타데이터와
+  동일 요청 판별에 사용하는 fingerprint를 보존한다.
+  같은 care_episode_id와 idempotency_key에 다른 입력을 사용할 수 없다.
+  같은 key와 fingerprint라도 그 작업이 더 이상 현재 작업이 아니면 stale replay로 보고 409로 거부한다.
+
+  structured_result는 사용자 확인·수정용 임시 후보이며 READY_FOR_REVIEW 상태에서만 존재한다.
+  OCR 원문 JSON과 LLM 원응답은 영구 저장하지 않는다.
+
+  사용자 확정이 성공하면 확정값을 care_episodes, medications, care_advices, follow_up_visits에 저장하고
+  클라이언트 confirm body의 canonical confirmation hash를 care_episodes.confirmation_hash에 함께 기록한다.
+  COMPLETE 재요청은 structured_result 없이 body hash를 비교하여 같은 hash만 기존 확정 결과를 반환하고 다른 hash는 409로 거부한다.
+  작업을 COMPLETE로 변경한 뒤 structured_result를 삭제한다.
+  취소·만료 시에는 확정 데이터를 생성하지 않고 임시 결과를 삭제한다.
+  한 에피소드의 확정 결과는 한 번만 생성한다.
+  '''
+}
+Ref: ocr_jobs.care_episode_id > care_episodes.id [delete: cascade]
+Ref: care_episodes.(source_ocr_job_id, id) > ocr_jobs.(id, care_episode_id) [delete: restrict]
+
+/* =========================================================
+   RECOVERY GUIDE
+   ========================================================= */
+/* 안전성 검사를 완료하고 사용자에게 제공한 최종 회복 가이드 */
+Table recovery_guides {
+  id bigint [pk, increment]
+  care_episode_id bigint [not null, note: '가이드의 주 대상 케어']
+  status recovery_guide_status [not null, default: 'COMPLETED']
+
+  guide_content json [
+    not null,
+    note: '''
+    사용자에게 실제로 제공한 최종 회복 가이드.
+    복약 안내, 의료진 권고사항, 공공자료 추가 설명,
+    AI 생성 일반 생활습관 안내, 추적 일정,
+    안전 안내를 구조화하여 저장한다.
+    키 이름과 구조는 schema_version 이 가리키는 별도 스키마 문서를 정본으로 한다.
+    '''
+  ]
+
+  patient_context_hash varchar(64) [
+    not null,
+    note: '''
+    가이드 생성에 실제로 사용한 확정 환자 컨텍스트의
+    canonical SHA-256 해시값.
+    약, 의료진 권고, 추적 일정 등 생성 입력 전체를 기준으로 계산한다.
+    '''
+  ]
+
+  model_name varchar(100) [not null, note: '가이드 생성에 사용한 모델명. 예: gpt-4o-mini']
+
+  model_version varchar(100) [
+    note: '''
+    공급자가 반환한 정확한 모델 배포·스냅샷 식별자.
+    확인할 수 없는 경우 임의 값을 만들지 않고 null로 저장한다.
+    '''
+  ]
+
+  prompt_version varchar(100) [not null, note: '가이드 생성에 사용한 프롬프트 버전']
+  schema_version varchar(50) [not null, note: '가이드 출력 스키마 버전']
+
+  langsmith_trace_id varchar(100) [
+    note: '''
+    가이드 생성 과정의 LangSmith 실행 추적 ID.
+    LangSmith에는 환자 원문을 기록하지 않고
+    허용된 실행 메타데이터만 기록한다.
+    '''
+  ]
+
+  safety_status chat_safety_status [
+    not null,
+    note: '''
+    최종 안전성 검사 결과.
+    recovery_guides에는 안전성 검사 완료 결과만 저장하므로
+    PENDING 상태는 허용하지 않는다.
+    '''
+  ]
+
+  safety_reason_codes json [
+    not null,
+    note: '''
+    안전성 검사 사유 코드 문자열 배열.
+    사유가 없으면 빈 배열([])을 저장한다.
+    '''
+  ]
+
+  error_code varchar(100) [note: '환자 의료 원문을 포함하지 않는 공개 오류 코드']
+  completed_at datetime [not null, note: '가이드 생성 및 안전성 검사 완료 시각']
+  superseded_at datetime [note: '새 가이드가 생성되어 기존 가이드가 대체된 시각']
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (care_episode_id, status)
+    patient_context_hash
+    langsmith_trace_id
+    created_at
+  }
+
+  checks {
+    `safety_status <> 'PENDING'`
+    `(status = 'COMPLETED' AND superseded_at IS NULL) OR (status = 'SUPERSEDED' AND superseded_at IS NOT NULL)`
+  }
+
+  Note: '''
+  사용자가 확인할 수 있는 최종 회복 가이드만 저장한다.
+
+  가이드 생성 중간 결과와 안전성 검사 전 결과는 저장하지 않는다.
+  생성·검증 실패는 background_jobs에 기록한다.
+
+  환자 데이터가 변경되어 새로운 가이드가 생성되면
+  기존 가이드는 삭제하지 않고 SUPERSEDED 상태로 변경한다.
+
+  모델명, 프롬프트 버전, 출력 스키마 버전과
+  환자 컨텍스트 해시를 함께 저장하여
+  가이드 생성 조건을 추적할 수 있게 한다.
+  '''
+}
+/* 회복 가이드 생성에 실제로 사용된 환자·공공자료 출처 */
+Table recovery_guide_sources {
+  id bigint [pk, increment]
+  recovery_guide_id bigint [not null, note: '출처가 연결된 회복 가이드']
+  source_type guide_source_type [not null]
+
+  /* ------------------------- 환자 확정정보 출처 ------------------------- */
+  patient_source_kind patient_source_kind [
+    note: '''
+    사용자가 확인하고 저장한 환자 데이터 종류.
+    PUBLIC_RAG_CHUNK이면 null이다.
+    '''
+  ]
+  patient_field care_episode_source_field [
+    note: '''
+    patient_source_kind=CARE_EPISODE_FIELD일 때
+    recovery_guides.care_episode_id에서 참조한 필드.
+    '''
+  ]
+  medication_id bigint [note: 'patient_source_kind=MEDICATION일 때 medications.id']
+  care_advice_id bigint [note: 'patient_source_kind=CARE_ADVICE일 때 care_advices.id']
+  follow_up_visit_id bigint [note: 'patient_source_kind=FOLLOW_UP_VISIT일 때 follow_up_visits.id']
+
+  /* ------------------------- 공공 RAG 출처 ------------------------- */
+  public_dataset_key varchar(100) [
+    note: '''
+    공공 데이터셋 구분값.
+    예: PUBLIC_GUIDELINE, MFDS_EASY_DRUG
+    '''
+  ]
+  dataset_version varchar(100) [
+    note: '''
+    검색에 사용한 공공 데이터셋의 불변 수집·인덱스 버전.
+    공식 버전이 없으면 팀 내부 인덱스 버전을 사용한다.
+    예: 2026-08-18-v1
+    '''
+  ]
+  vector_chunk_id varchar(255) [
+    note: '''
+    검색된 Qdrant 청크 식별자.
+    일반 DB의 FK가 아니다.
+    '''
+  ]
+  source_record_key varchar(100) [
+    note: '''
+    공공 데이터셋의 원본 문서 또는 레코드 식별값.
+    예: PDF document_id, e약은요 itemSeq
+    '''
+  ]
+  source_field varchar(100) [
+    note: '''
+    원본 필드명 또는 문서 섹션명.
+    문서에서 섹션을 식별할 수 없으면 null이다.
+    '''
+  ]
+  chunk_type varchar(100) [
+    note: '''
+    정규화된 청크 주제 또는 정보 유형.
+    문서 전체 주제가 혼합되어 있으면 null일 수 있다.
+    '''
+  ]
+  source_title varchar(255) [note: '공공자료 제목']
+  source_organization varchar(255) [note: '공공자료 발행 기관']
+  source_url text [note: '공공자료 원문 URL']
+  source_page_number int [note: '공공자료 원문 페이지 번호']
+  source_license varchar(255) [note: '공공자료 이용 조건 또는 라이선스']
+  similarity_score decimal(5,4) [note: '검색 당시 청크 유사도 점수']
+  citation_order int [not null, note: '가이드에서 출처를 표시하는 순서. 1부터 시작한다.']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    recovery_guide_id
+    medication_id
+    care_advice_id
+    follow_up_visit_id
+    (recovery_guide_id, citation_order) [unique]
+    (public_dataset_key, source_record_key)
+    vector_chunk_id
+  }
+
+  checks {
+    `(source_type = 'PUBLIC_RAG_CHUNK' AND patient_source_kind IS NULL AND patient_field IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL) OR (source_type = 'PATIENT_SAVED_FIELD' AND patient_source_kind IS NOT NULL AND ((patient_source_kind = 'CARE_EPISODE_FIELD' AND patient_field IS NOT NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL) OR (patient_source_kind = 'MEDICATION' AND patient_field IS NULL AND medication_id IS NOT NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL) OR (patient_source_kind = 'CARE_ADVICE' AND patient_field IS NULL AND medication_id IS NULL AND care_advice_id IS NOT NULL AND follow_up_visit_id IS NULL) OR (patient_source_kind = 'FOLLOW_UP_VISIT' AND patient_field IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NOT NULL)))`
+    `(source_type = 'PUBLIC_RAG_CHUNK' AND public_dataset_key IS NOT NULL AND dataset_version IS NOT NULL AND vector_chunk_id IS NOT NULL AND source_record_key IS NOT NULL) OR (source_type = 'PATIENT_SAVED_FIELD' AND public_dataset_key IS NULL AND dataset_version IS NULL AND vector_chunk_id IS NULL AND source_record_key IS NULL AND source_field IS NULL AND chunk_type IS NULL AND source_title IS NULL AND source_organization IS NULL AND source_url IS NULL AND source_page_number IS NULL AND source_license IS NULL AND similarity_score IS NULL)`
+    `source_page_number IS NULL OR source_page_number >= 1`
+    `citation_order >= 1`
+  }
+
+  Note: '''
+  회복 가이드 생성에 실제로 사용된 출처를 기록한다.
+
+  PATIENT_SAVED_FIELD는 OCR 검토 중 임시값이 아니라
+  사용자가 확인·수정하여 일반 DB에 저장한 확정 환자 데이터다.
+
+  CARE_EPISODE_FIELD 출처는
+  recovery_guides.care_episode_id와 patient_field 조합으로 식별한다.
+
+  나머지 환자 출처는 medication_id, care_advice_id,
+  follow_up_visit_id 중 종류에 맞는 하나만 사용한다.
+
+  PUBLIC_RAG_CHUNK는 공공자료 메타데이터만 사용하고
+  환자 데이터 참조 필드는 모두 비워 둔다.
+
+  source_field와 chunk_type은 PDF 구조상 식별할 수 없는 경우가 있으므로
+  공공 출처의 필수값으로 강제하지 않는다.
+  '''
+}
+/* 사용자 1명은 하나의 케어에서 여러 회복 가이드 이력을 가질 수 있음 */
+Ref: recovery_guides.care_episode_id > care_episodes.id [delete: cascade]
+
+/* 하나의 회복 가이드에는 여러 출처가 포함될 수 있음 */
+Ref: recovery_guides.id < recovery_guide_sources.recovery_guide_id [delete: cascade]
+
+/*
+환자 확정 데이터가 개별 삭제되면서
+기존 가이드의 출처 이력이 사라지는 것을 막는다.
+주의 — 이 restrict 는 cascade 삭제도 막는다. 회원탈퇴·데이터 파기는
+background_jobs Note 의 DATA_DELETION 삭제 순서를 따라야 한다.
+*/
+Ref: medications.id < recovery_guide_sources.medication_id [delete: restrict]
+Ref: care_advices.id < recovery_guide_sources.care_advice_id [delete: restrict]
+Ref: follow_up_visits.id < recovery_guide_sources.follow_up_visit_id [delete: restrict]
+
+/* =========================================================
+   CHAT
+   ========================================================= */
+Table chat_sessions {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: '세션 소유자. 답변 근거는 이 사용자의 활성 케어·약·영양제 전체에서 모은다.']
+  care_episode_id bigint [note: '세션을 시작한 케어. 계정 단위 일반 세션이면 null이며 grounding 범위가 아니다.']
+  status chat_session_status [not null, default: 'ACTIVE']
+  last_message_at datetime
+  deleted_at datetime
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (user_id, status, last_message_at)
+    (care_episode_id, status)
+    last_message_at
+  }
+
+  Note: '''
+  최신 ERD의 care_episode_id를 시작 화면 맥락으로 유지한다.
+  답변 근거는 care_episode_id 하나로 제한하지 않고 user_id 기준 활성 케어·약·영양제 전체에서 모은다.
+  '''
+}
+
+Table chat_messages {
+  id bigint [pk, increment]
+  chat_session_id bigint [not null]
+  reply_to_message_id bigint [note: 'ASSISTANT 메시지가 답변한 USER 메시지']
+  guide_id bigint [note: '답변 생성 시 참고한 회복 가이드. 사용하지 않았으면 null']
+  request_id varchar(100) [note: '중복 요청 방지와 실행 추적용 식별자']
+  sequence_no int [not null]
+  role chat_message_role [not null]
+  content text [not null]
+  status chat_message_status [not null, default: 'PENDING']
+  route_type chat_route_type
+  safety_status chat_safety_status [not null, default: 'PENDING']
+  safety_reason_code varchar(100) [note: '안전성 검사에서 선택한 대표 사유 코드']
+  verification_status chat_verification_status [not null, default: 'NOT_REQUIRED']
+  conflict_status chat_conflict_status [not null, default: 'NOT_APPLICABLE']
+  model_name varchar(100)
+  model_version varchar(100)
+  prompt_version varchar(100)
+  schema_version varchar(50)
+  patient_context_hash varchar(64) [note: '답변에 사용한 활성 케어·약·영양제 컨텍스트의 canonical SHA-256']
+  langsmith_trace_id varchar(100)
+  error_code varchar(100)
+  duration_ms int [note: '직접 처리한 채팅 응답의 전체 소요시간. P95 평가용']
+  started_at datetime
+  completed_at datetime
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (chat_session_id, sequence_no) [unique]
+    reply_to_message_id
+    guide_id
+    request_id
+    langsmith_trace_id
+    created_at
+  }
+
+  checks {
+    `duration_ms IS NULL OR duration_ms >= 0`
+  }
+
+  Note: '''
+  최신 ERD의 회복 가이드 연결, 검증 상태, 권고 충돌 상태를 유지한다.
+  INTERACTION 경로에서는 승인된 상호작용 규칙만 사용하고 안전하지 않은 답변은 safety_status로 차단한다.
+  duration_ms는 전체 채팅 API의 P95 응답시간을 측정하는 데 사용한다.
+  '''
+}
+
+Table chat_message_sources {
+  id bigint [pk, increment]
+  chat_message_id bigint [not null, note: '출처가 연결된 ASSISTANT 메시지']
+  source_type chat_source_type [not null]
+
+  patient_source_kind patient_source_kind [note: 'PATIENT_SAVED_FIELD인 경우 확정 데이터 종류']
+  patient_field care_episode_source_field [note: 'CARE_EPISODE_FIELD인 경우 사용한 필드']
+  care_episode_id bigint [note: 'CARE_EPISODE_FIELD 출처의 실제 케어 ID. 세션 시작 케어와 다를 수 있다']
+  medication_id bigint [note: 'patient_source_kind=MEDICATION인 경우 medications.id']
+  care_advice_id bigint [note: 'patient_source_kind=CARE_ADVICE인 경우 care_advices.id']
+  follow_up_visit_id bigint [note: 'patient_source_kind=FOLLOW_UP_VISIT인 경우 follow_up_visits.id']
+  user_suppl_nutrient_id bigint [note: 'USER_SUPPLEMENT 출처인 경우 사용자 영양제 등록 ID']
+  interaction_rule_id bigint [note: 'INTERACTION_RULE 출처인 경우 승인된 규칙 ID']
+
+  public_dataset_key varchar(100) [note: 'PUBLIC_RAG_CHUNK 데이터셋 키']
+  dataset_version varchar(100) [note: 'Qdrant 불변 데이터셋 버전']
+  vector_chunk_id varchar(255) [note: 'Qdrant point 또는 청크 ID']
+  source_record_key varchar(100) [note: '최신 v1.0.6과 동일한 원본 문서·레코드 식별자']
+  source_field varchar(100) [note: '문서 섹션 또는 원본 필드']
+  chunk_type varchar(100) [note: '정규화된 청크 정보 유형']
+  source_title varchar(255)
+  source_organization varchar(255)
+  source_url text
+  source_page_number int
+  source_license varchar(255)
+  similarity_score decimal(5,4)
+  citation_order int [not null]
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    chat_message_id
+    care_episode_id
+    medication_id
+    care_advice_id
+    follow_up_visit_id
+    user_suppl_nutrient_id
+    interaction_rule_id
+    (chat_message_id, citation_order) [unique]
+    (public_dataset_key, source_record_key)
+    vector_chunk_id
+  }
+
+  checks {
+    `(source_type = 'PATIENT_SAVED_FIELD' AND patient_source_kind IS NOT NULL AND user_suppl_nutrient_id IS NULL AND interaction_rule_id IS NULL AND public_dataset_key IS NULL AND vector_chunk_id IS NULL)
+      OR (source_type = 'USER_SUPPLEMENT' AND patient_source_kind IS NULL AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL AND user_suppl_nutrient_id IS NOT NULL AND interaction_rule_id IS NULL AND public_dataset_key IS NULL AND vector_chunk_id IS NULL)
+      OR (source_type = 'INTERACTION_RULE' AND patient_source_kind IS NULL AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL AND user_suppl_nutrient_id IS NULL AND interaction_rule_id IS NOT NULL AND public_dataset_key IS NULL AND vector_chunk_id IS NULL)
+      OR (source_type = 'PUBLIC_RAG_CHUNK' AND patient_source_kind IS NULL AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL AND user_suppl_nutrient_id IS NULL AND interaction_rule_id IS NULL AND public_dataset_key IS NOT NULL AND dataset_version IS NOT NULL AND vector_chunk_id IS NOT NULL AND source_record_key IS NOT NULL)`
+    `(patient_source_kind = 'CARE_EPISODE_FIELD' AND patient_field IS NOT NULL AND care_episode_id IS NOT NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL)
+      OR (patient_source_kind = 'MEDICATION' AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NOT NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL)
+      OR (patient_source_kind = 'CARE_ADVICE' AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NOT NULL AND follow_up_visit_id IS NULL)
+      OR (patient_source_kind = 'FOLLOW_UP_VISIT' AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NOT NULL)
+      OR patient_source_kind IS NULL`
+    `(source_type = 'PUBLIC_RAG_CHUNK' AND public_dataset_key IS NOT NULL AND dataset_version IS NOT NULL AND vector_chunk_id IS NOT NULL AND source_record_key IS NOT NULL)
+      OR (source_type <> 'PUBLIC_RAG_CHUNK' AND public_dataset_key IS NULL AND dataset_version IS NULL AND vector_chunk_id IS NULL AND source_record_key IS NULL AND source_field IS NULL AND chunk_type IS NULL AND source_title IS NULL AND source_organization IS NULL AND source_url IS NULL AND source_page_number IS NULL AND source_license IS NULL AND similarity_score IS NULL)`
+    `source_page_number IS NULL OR source_page_number >= 1`
+    `similarity_score IS NULL OR (similarity_score >= 0 AND similarity_score <= 1)`
+    `citation_order >= 1`
+  }
+
+  Note: '''
+  최신 ERD의 환자 확정정보와 공공 RAG 출처 구조를 유지한다.
+  사용자 영양제와 승인 상호작용 규칙 출처만 추가하여 실제 답변 근거를 추적한다.
+  계정 전체 활성 케어를 grounding하므로 CARE_EPISODE_FIELD는 care_episode_id로 실제 출처를 남긴다.
+  '''
+}
+
+Ref: chat_sessions.user_id > user.id [delete: cascade]
+Ref: chat_sessions.care_episode_id > care_episodes.id [delete: cascade]
+Ref: chat_sessions.id < chat_messages.chat_session_id [delete: cascade]
+Ref: chat_messages.id < chat_messages.reply_to_message_id [delete: set null]
+Ref: recovery_guides.id < chat_messages.guide_id [delete: set null]
+Ref: chat_messages.id < chat_message_sources.chat_message_id [delete: cascade]
+Ref: care_episodes.id < chat_message_sources.care_episode_id [delete: restrict]
+Ref: medications.id < chat_message_sources.medication_id [delete: restrict]
+Ref: care_advices.id < chat_message_sources.care_advice_id [delete: restrict]
+Ref: follow_up_visits.id < chat_message_sources.follow_up_visit_id [delete: restrict]
+Ref: user_suppl_nutrient.id < chat_message_sources.user_suppl_nutrient_id [delete: restrict]
+Ref: interaction_rules.id < chat_message_sources.interaction_rule_id [delete: restrict]
+/* =========================================================
+   ALARM
+   ========================================================= */
+
+/* 사용자 기기별 웹 푸시 구독 정보 */
+Table push_subscriptions {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: "구독 소유자"]
+  endpoint varchar(500) [not null, unique, note: "브라우저가 발급한 푸시 엔드포인트 URL"]
+  p256dh_key varchar(255) [not null]
+  auth_key varchar(255) [not null]
+  platform varchar(50) [note: "ios / android / desktop 등"]
+  user_agent varchar(255)
+  is_active boolean [not null, default: true, note: "구독 만료·해지 시 false 처리. 발송 시 410 Gone·404 응답을 받으면 false 로 바꾼다"]
+  created_at datetime [not null, default: `current_timestamp`]
+  last_used_at datetime
+
+  indexes {
+    (user_id, is_active)
+  }
+
+  Note: '''
+  사용자 1명이 여러 기기(브라우저)를 등록할 수 있으므로, 알람 발송 시 각 기기가 fan-out 대상이 된다.
+  구독 해지는 행 삭제가 아니라 is_active=false 다 — alarm_events.push_subscription_id 가
+  이 행을 참조하므로 지우면 발송 이력이 끊긴다.
+  '''
+}
+
+/* 복약·추적 일정·가이드 확인 알림 등 예약된 알람 정의 */
+Table alarms {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: "알람 대상 사용자"]
+
+  /* [v4] MEDICATION 은 케어를 특정할 수 없다 —
+     사용자 × meal_slot 단위로 활성 케어 전체의 약을 통합하기 때문이다. */
+  care_episode_id bigint [note: 'FOLLOW_UP_VISIT·GUIDE_CHECK 의 대상 케어. MEDICATION 은 활성 케어 전체를 통합하므로 null']
+
+  /* [v4] 주석. CUSTOM 타입 제거 반영 */
+  source_guide_id bigint [note: 'GUIDE_CHECK 알람을 만든 회복 가이드. 그 외 타입은 null']
+
+  alarm_type alarm_type [not null, default: 'MEDICATION']
+  meal_slot meal_slot [note: 'MEDICATION 알람의 시간대. 그 외 타입은 null']
+
+  /* [v4] 어느 외래 일정의 알람인지.
+     케어에 일정이 3건이면 이 값 없이는 구분할 수 없고,
+     일정 시각이 바뀌었을 때 어느 알람을 갱신할지도 알 수 없다. */
+  follow_up_visit_id bigint [note: 'FOLLOW_UP_VISIT 알람의 대상 일정. 그 외 타입은 null']
+
+  title varchar(255) [not null, note: '관리 화면 표시용 라벨. 발송 문구는 발송 직전에 다시 만든다']
+
+  message varchar(500)
+  scheduled_at datetime [not null, note: "최초 등록된 발송 예정 시각"]
+  recurrence_rule varchar(100) [note: "RRULE 형식. null이면 단발성"]
+  timezone varchar(50) [not null, default: 'Asia/Seoul', note: 'KST 단일 고정이라 상수로만 채워진다. 해외 확장 전까지 분기 조건으로 쓰지 않는다']
+  next_trigger_at datetime [not null, note: "다음 발송 예정 시각. 매 발송마다 재계산되어 갱신됨"]
+  status alarm_status [not null, default: 'ACTIVE']
+  last_triggered_at datetime
+
+  /* [v5-1] 주석 정정.
+     v4 는 "복약 완료 체크 UI 는 만들지 않으므로 사용자 조작으로는 채워지지 않는다" 였다.
+     그 결정이 뒤집혀 홈에 [N개 먹었어요] 버튼과 복약 기록 화면이 생겼다.
+     다만 복용 체크는 이 컬럼이 아니라 medication_doses 에 저장한다 — 이유는 그 테이블 Note 참고. */
+  completed_at datetime [note: '''
+    알람이 종료된 시각. 복약 기간 만료 등 시스템 판정으로만 채워진다.
+    사용자의 "먹었어요" 조작은 이 컬럼과 무관하다 — medication_doses 에 기록한다.
+  ''']
+
+  cancelled_at datetime
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (user_id, status)
+    (status, next_trigger_at) [name: 'idx_due_alarms', note: "발송 대상 스케줄러 폴링용"]
+    care_episode_id
+    (user_id, alarm_type, meal_slot) [unique, note: '사용자별 복약 슬롯 알람을 최대 4개로 유지']
+  }
+
+  checks {
+    `(alarm_type = 'MEDICATION' AND meal_slot IS NOT NULL) OR (alarm_type <> 'MEDICATION' AND meal_slot IS NULL)`
+    /* FOLLOW_UP_VISIT 은 follow_up_visit_id 가, GUIDE_CHECK 은 care_episode_id 가 필요하다.
+       타입별 전체 제약은 백엔드 구현 시 함께 넣기를 권한다. */
+  }
+
+  Note: '''
+  타입별 단위가 다르다.
+    MEDICATION      — (사용자 × meal_slot). 사용자당 최대 4행. 활성 케어 전체의 약을 통합한다.
+    FOLLOW_UP_VISIT — 일정 1건당 1행. 단발성.
+    GUIDE_CHECK     — 케어 1건당 1행.
+
+  약이 추가·삭제돼도 MEDICATION 알람 행은 그대로다. title/message 는 고정 약 목록의 원본이 아니며,
+  발송 직전에 해당 슬롯의 활성 약을 다시 조회해 최종 문구를 만든다.
+  발송 시각은 user_settings 의 시간대별 시각을 조인해 얻는다.
+
+  발송 직전 확인 순서 — 하나라도 걸리면 alarm_events 에 SKIPPED 로 기록한다.
+    1. user_settings 의 해당 타입 토글이 false
+    2. 그 슬롯의 약 목록이 비어 있음 (MEDICATION)
+    3. 활성 케어가 없음 → status = COMPLETED
+    4. 활성 push_subscriptions 가 없음
+  사용자가 알림을 껐을 때 알람 행을 지우면 다시 켜도 복구되지 않으므로 행은 유지한다.
+
+  첫날에는 care_episodes.medication_start_slot 보다 앞선 슬롯의 알림을 건너뛴다.
+
+  [v5] 이 테이블과 alarm_events 는 "알림 발송"의 기록이다.
+  사용자가 실제로 먹었는지는 medication_doses 가 담는다. 둘을 섞지 않는다.
+  '''
+}
+
+/* 알람 1건의 생명주기 이벤트(예약/발송/수신/완료/스킵/실패) 로그 */
+Table alarm_events {
+  id bigint [pk, increment]
+  alarm_id bigint [not null]
+  event_type alarm_event_type [not null]
+  push_subscription_id bigint [note: "SENT/DELIVERED 이벤트에서 실제 발송된 기기. 그 외 이벤트는 null"]
+  event_at datetime [not null, default: `current_timestamp`]
+  payload json [note: "발송 시점 알림 문구(title/body/click_url) 스냅샷"]
+  error_code varchar(100)
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (alarm_id, event_type)
+    event_at
+  }
+
+  Note: '''
+  알람 1건이 여러 기기로 fan-out 되면 SENT/DELIVERED 이벤트가 기기(push_subscription)별로 여러 행 생성된다.
+  실제 발송 작업의 큐 상태(대기/처리중/성공/실패, 재시도)는 background_jobs에서 별도로 추적한다.
+  Web Push 서버의 성공 응답은 요청 접수(SENT)를 뜻한다. DELIVERED는 서비스 워커가 별도 수신 확인 API를 호출한 경우에만 기록한다.
+
+  [v5] event_type 의 COMPLETED·SKIPPED 는 "발송 파이프라인 관점"의 결과다.
+  사용자가 약을 먹었다는 사실은 medication_doses 에 기록한다 —
+  이 테이블은 alarm_id 가 NOT NULL 이라 알림을 쓰지 않는 사용자의 복용을 담을 수 없다.
+  '''
+}
+
+Ref: push_subscriptions.user_id > user.id [delete: cascade]
+Ref: alarms.user_id > user.id [delete: cascade]
+Ref: alarms.source_guide_id > recovery_guides.id [delete: set null]
+Ref: alarm_events.alarm_id > alarms.id [delete: cascade]
+Ref: alarm_events.push_subscription_id > push_subscriptions.id [delete: set null]
+Ref: alarms.care_episode_id > care_episodes.id [delete: cascade]
+
+/* [v4] 외래 일정이 삭제되면 그 일정의 알람도 함께 사라진다 */
+Ref: alarms.follow_up_visit_id > follow_up_visits.id [delete: cascade]
+
+/* =========================================================
+   BACKGROUND JOB (통합 처리 작업 로그)
+   ========================================================= */
+
+/* OCR·챗봇 응답·알람 발송·데이터 삭제 등 비동기 처리 작업을 한 화면에서 조회하기 위한 통합 로그 */
+Table background_jobs {
+  id bigint [pk, increment, note: '화면 표시 시 "J-{id}" 형식으로 노출']
+  idempotency_key varchar(150) [not null, unique, note: '동일 논리 작업의 중복 생성·중복 발송 방지 키. ALARM 은 "alarm:{alarm_id}:{next_trigger_at epoch}"']
+  job_type background_job_type [not null, note: "현재 사용 필터 기준 (LLM / CHAT / ALARM / DATA_DELETION). OCR은 예약값"]
+  status background_job_status [not null, default: 'QUEUED']
+  user_id bigint [note: "작업 대상 회원. 시스템 배치성 작업은 null"]
+  reference_table varchar(50) [note: "상세 테이블명. recovery_guides / chat_messages / alarm_events 중 하나. FK로 강제하지 않는 polymorphic 참조"]
+  reference_id bigint [note: "reference_table이 가리키는 테이블의 PK"]
+  requested_at datetime [not null, default: `current_timestamp`, note: "요청시각"]
+  started_at datetime [note: "실제 처리 시작 시각"]
+  completed_at datetime [note: "처리완료시각. 대기/처리중이면 null"]
+  duration_ms int [note: "소요시간(ms) = completed_at - started_at"]
+  retry_count int [not null, default: 0]
+  max_retry_count int [not null, default: 0]
+  parent_job_id bigint [note: '"재처리"로 재생성된 경우에만 원본 작업 참조. 그 외 null']
+  error_code varchar(100)
+  error_message text
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (job_type, status)
+    requested_at
+    user_id
+    (status, requested_at) [name: 'idx_queue_stats', note: "대기중/처리중 카운트 및 실시간 큐 모니터 집계용"]
+  }
+
+  checks {
+    `retry_count >= 0`
+  }
+
+  Note: '''
+  "처리 작업 관리" 화면의 단일 데이터 소스.
+  idempotency_key는 워커 재시작과 다중 워커 경쟁에서도 같은 논리 작업이 한 번만 생성되도록 한다.
+
+  OCR은 ocr_jobs를 상태 정본으로 사용하며 이 테이블에 중복 행을 만들지 않는다.
+  background_job_type.OCR 값은 후속 관리 화면 확장을 위해 유지한다.
+  챗봇 응답 생성(chat_messages), 알람 발송(alarm_events) 등 이 통합 로그 대상 작업이
+  비동기로 생성될 때마다 이 테이블에 1행씩 기록된다.
+  ALARM 타입은 알람 1건이 여러 기기로 fan-out 될 때 발송 건(기기)당 1행씩 생성되어
+  화면의 "대상 회원" 단위 로그와 정확히 일치한다.
+
+  실제 도메인 데이터(챗봇 답변 내용, 알림 발송 상세 등)는
+  reference_table/reference_id로 각 테이블을 참조해 "상세보기"에서 조회하고,
+  이 테이블 자체는 큐 상태·소요시간·재시도 이력만 관리한다.
+
+  ── DATA_DELETION 삭제 순서 [v5 갱신] ──
+  회원탈퇴·개인정보 파기는 아래 순서로 지운다.
+  recovery_guide_sources·chat_message_sources 의 FK 가 delete: restrict 라서
+  단순히 user 를 삭제하면 cascade 연쇄가 restrict 에 막혀 트랜잭션이 실패한다.
+
+    1. chat_message_sources, recovery_guide_sources          (출처 행)
+    2. chat_messages, chat_sessions
+    3. recovery_guides
+    4. medication_doses, medication_slots, medications, care_advices, follow_up_visits
+       ★ [v5] medication_doses 가 medications 보다 먼저다 —
+         care_episode_id cascade 로 함께 지워지지만 순서를 명시해 둔다
+    5. alarm_events, alarms, push_subscriptions
+    6. care_episodes.source_ocr_job_id·confirmation_hash·confirmed_at 을 null 로 → ocr_jobs → care_episodes
+    7. user_suppl_nutrient_slots, user_suppl_nutrient
+    8. user_settings, user
+
+  6번의 순서 주의 — care_episodes.(source_ocr_job_id, id) > ocr_jobs 가 restrict 이므로
+  참조를 먼저 끊어야 한다.
+
+  DATA_DELETION은 회원탈퇴 시 개인정보 파기 배치 작업을 추적하기 위한 타입이며,
+  현재는 별도 상세 테이블 없이 이 테이블만으로 진행 상태를 관리한다.
+  '''
+}
+
+Ref: background_jobs.user_id > user.id [delete: cascade]
+Ref: background_jobs.parent_job_id > background_jobs.id [delete: set null]
+
+/* =========================================================
+   프론트 화면이 읽어야 하는 테이블
+   ========================================================= */
+/* ---------------------------------------------------------
+   확정 복약 — 복약안내(11) · 복약 시간 설정(09) · 약물 변경 비교(13)
+   --------------------------------------------------------- */
+Table medications {
+  id bigint [pk, increment, note: 'API 요청·응답의 medicationId']
+  care_episode_id bigint [not null]
+  name varchar(255) [not null, note: '사용자가 확인한 최종 약품명']
+  dose varchar(100) [note: "함량. '200mg'"]
+  times_per_day int [note: '1일 복용 횟수. null = 필요 시 복용 → 알림 대상 제외']
+  efficacy varchar(500) [note: '문서에 인쇄된 약품 효능의 exact OCR 문자열. 근거가 없으면 null']
+  administration varchar(500) [note: '문서에 인쇄된 복용·투약법의 exact OCR 문자열. 근거가 없으면 null.중복?']
+  precautions varchar(500) [note: '문서에 인쇄된 주의사항의 exact OCR 문자열. 근거가 없으면 null']
+  note varchar(500) [note: '그 밖의 명시 복약 정보 또는 PRN 조건·간격. 근거가 없으면 null']
+  days int [note: '이 약의 처방 일수. 케어 종료일은 활성 약 중 가장 긴 일수(MAX days)를 기준으로 계산']
+  prescribed_at date [note: '처방일. 같은 케어 안의 처방 회차를 시간순으로 정렬할 때']
+  source_ocr_job_id bigint [note: '''
+    어느 업로드에서 나온 처방인지. 약물 변경 비교(REQ-CARE-002, 화면 13)가
+    같은 케어 안의 처방 2건 이상을 비교하는데, 그 회차 구분이 이 값이다.
+  ''']
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+  indexes {
+    care_episode_id
+    (care_episode_id, name)
+    (care_episode_id, source_ocr_job_id) [note: '처방 회차별 조회 — 변경 비교 화면']
+  }
+  checks {
+    `times_per_day IS NULL OR times_per_day BETWEEN 1 AND 6`
+    `days IS NULL OR days BETWEEN 1 AND 365`
+    `times_per_day IS NOT NULL OR note IS NOT NULL`
+  }
+  Note: '''
+  사용자 확인·수정 후 확정한 약 한 건을 한 행으로 저장한다.
+  검토 중 후보는 ocr_jobs.structured_result에만 있으며 확정 시 이 테이블로 저장한다.
+  source_ocr_job_id는 같은 케어 안에서 어느 업로드·처방 회차에서 확정된 약인지 구분한다.
+  confirm transaction은 source_ocr_job_id가 같은 care_episode에 속한 READY_FOR_REVIEW 작업인지 잠금 상태에서 검증하고, 저장과 함께 해당 작업을 COMPLETE로 변경한다.
+  필요 시 복용은 times_per_day를 null로 두고 문서에 명시된 조건·간격만 note에 보존한다.
+  efficacy·administration·precautions·note는 각각 해당 OCR 구역의 원문을 저장하며 누락값을 추정하지 않는다.
+  알람·가이드·챗봇은 검토 중 후보가 아니라 이 확정 데이터를 현재 사실로 사용한다.
+  복약 안내(REQ-CARE-001)는 활성 케어 전체의 medications 를 통합해 보여준다.
+  같은 성분이 두 처방에 겹치는지 확인하는 것이 목적이므로 케어별로 나누지 않는다.
+  '''
+}
+
+/* 확정 약이 어느 사용자 시간대에 속하는지 */
+Table medication_slots {
+  id bigint [pk, increment]
+  medication_id bigint [not null]
+  slot meal_slot [not null]
+  created_at datetime [not null, default: `current_timestamp`]
+  indexes {
+    (medication_id, slot) [unique]
+    slot [note: '발송 시 해당 슬롯의 약 목록 조회용']
+  }
+  Note: '''
+  약별 실제 시각이 아니라 복용 시간대만 저장한다.
+  실제 발송 시각은 user_settings 의 시간대별 시각을 조인해 얻는다 —
+  사용자가 아침을 08:00 → 09:00 으로 바꾸면 user_settings 한 행만 UPDATE 하면 되고
+  약별 알람을 다시 만들 필요가 없다.
+  OCR 확정 단계에서는 times_per_day와 note만 medications에 저장하고 이 테이블에는 행을 만들지 않는다.
+  필요 시 복용(times_per_day IS NULL)인 약은 행을 만들지 않는다.
+  발송 시 medication_slots와 medications를 조인해 해당 슬롯의 활성 약 목록을 만든다.
+  '''
+}
+
+/* ---------------------------------------------------------
+   [v5-1 신설] 복용 체크 — 홈 "오늘의 복약" · 복약 기록 그리드
+   --------------------------------------------------------- */
+Table medication_doses {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  dose_date date [not null]
+  slot meal_slot [not null]
+  taken_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (user_id, dose_date, slot) [unique]
+    (user_id, dose_date)
+  }
+
+  Note: '''
+  사용자 단위 슬롯 복약 완료 기록.
+  알람 발송 여부와 무관하다.
+  필요 시 복용약은 대상이 아니다.
+  '''
+}
+
+Ref: medication_doses.user_id > user.id [delete: cascade]
+
+/* ---------------------------------------------------------
+   의료진 권고사항 — 홈 카드 · 기록 상세 · 가이드 근거 · 챗봇 grounding
+   --------------------------------------------------------- */
+Table care_advices {
+  id bigint [pk, increment]
+  care_episode_id bigint [not null]
+  category care_advice_category [not null, note: '서버가 OCR 근거와 의미 분류를 검증한 최종 category']
+  text varchar(500) [not null, note: '사용자가 확인·수정한 최종 문장']
+  display_order int [not null, note: '화면 표시 순서. 1부터']
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+  indexes {
+    (care_episode_id, display_order) [unique]
+    (care_episode_id, category) [note: 'RED_FLAG·금기·생활 안내 조회용']
+  }
+  checks {
+    `display_order >= 1`
+  }
+  Note: '''
+  네 곳이 이 값을 읽는다 — 홈 카드, 기록 상세, 가이드 생성 근거, 챗봇 grounding.
+  사용자가 OCR·LLM 구조화 결과에서 확인·수정한 권고 문장 하나를 한 행으로 저장한다.
+  중요: 사용자가 항목을 새로 추가할 수 없다(REQ-DOC-003 확정).
+  OCR 이 추출한 항목의 text 수정만 허용한다. 근거 없는 문장이 "의료진 권고사항"의
+  권위를 얻고 챗봇 답변까지 번지는 것을 막기 위한 결정이다.
+  confirm은 현재 structured_result.advices[]에 존재하는 tempId만 허용하고 알 수 없는 ID를 거부한다.
+  category는 사용자가 수정하지 않으며 confirm 시 같은 tempId의 서버 검증값을 저장한다.
+
+  활성 케어가 2건 이상일 때 권고사항이 상충할 수 있다(무릎은 걷기 권장, 다른 질환은 활동 제한).
+  챗봇은 한쪽을 골라 단정하지 않고 양쪽을 제시한 뒤 의료진 확인을 안내한다.
+  '''
+}
+/* ---------------------------------------------------------
+   외래 · 검사 일정 — 홈 "다음 일정" · 진료·검사 일정(16)
+   --------------------------------------------------------- */
+Table follow_up_visits {
+  id bigint [pk, increment]
+  care_episode_id bigint [not null]
+  source_ocr_job_id bigint [note: '현재 확정 일정을 만든 OCR 작업. 원본 파기와 독립된 추적용']
+  visit_date date [not null]
+  visit_time time [note: '문서에 시각이 명시된 경우만 저장하며 임의의 00:00을 만들지 않는다']
+  department varchar(255) [note: "'정형외과(OS)'. 일정 화면이 '어디로 가야 하나'를 표시하는 데 쓴다"]
+  doctor_name varchar(255)
+  place varchar(255) [note: "'본관 2층'"]
+  purpose varchar(255) [note: "'실밥 제거', '흉부 X선 확인'"]
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+  indexes {
+    care_episode_id
+    (visit_date, visit_time, id) [note: '일정 화면 날짜·시각·PK 순 통합 목록']
+  }
+  Note: '''
+  alarms 로 대체할 수 없다. 알람은 "알려줄 것"이고 일정은 "표시할 사실"이다.
+  알람 행이 곧 일정이면 사용자가 알림을 끄는 순간 일정 화면이 비어버린다.
+  일정은 날짜순으로 통합해 보여준다 — 케어별로 나누지 않는다.
+  각 항목이 날짜·시각·장소를 자기 안에 갖고 있어 출처 표시가 없어도 헷갈리지 않는다.
+  외래 예약일은 care_episodes.planned_end_at 을 연장하는 근거가 되기도 한다.
+  일정 종류(진료/검사/재활)를 분류하는 컬럼은 두지 않는다 — 분류 규칙이 없어 서버가 추측하게 된다.
+  ocr-demo-result-v3의 followUpVisits[]를 사용자 확인 후 confirm 트랜잭션에서 저장한다.
+  visitDate는 필수이고 visitTime은 선택이다. 실제 날짜 예약행이 없으면 빈 배열을 허용한다.
+  source_ocr_job_id는 잠근 READY_FOR_REVIEW 작업이 같은 care_episode 소속인지 검증한 뒤 기록한다.
+  '''
+}
+
+/* ---------------------------------------------------------
+   관계
+   --------------------------------------------------------- */
+Ref: medications.care_episode_id > care_episodes.id [delete: cascade]
+Ref: medication_slots.medication_id > medications.id [delete: cascade]
+Ref: care_advices.care_episode_id > care_episodes.id [delete: cascade]
+Ref: follow_up_visits.care_episode_id > care_episodes.id [delete: cascade]
+/* 추적용 참조. OCR 원본이 파기돼도 확정 데이터는 남아야 하므로 set null 이다. */
+Ref: medications.source_ocr_job_id > ocr_jobs.id [delete: set null]
+Ref: follow_up_visits.source_ocr_job_id > ocr_jobs.id [delete: set null]
+
+
+/* ---------------------------------------------------------
+   건강기능식품 영양성분 표준데이터
+   --------------------------------------------------------- */
+Table supplement_nutrients {
+  id bigint [pk, increment, note: '건강기능식품 영양성분 정보 내부 식별자']
+  food_code varchar(20) [not null, unique, note: '식품코드. 원본 데이터에서 제품을 고유하게 식별']
+  name varchar(100) [not null, note: '식품명']
+  basis_qty varchar(10) [not null, note: '영양성분제공단위량. 예: 450mg, 0.137ml']
+
+  energy_kcal int [not null, note: '제공 단위당 에너지. 단위: kcal']
+  water_g decimal(10,3) [note: '제공 단위당 수분 함량. 단위: g']
+  protein_g decimal(5,2) [not null, note: '제공 단위당 단백질 함량. 단위: g']
+  fat_g decimal(5,2) [note: '제공 단위당 지방 함량. 단위: g']
+  ash_g decimal(10,3) [note: '제공 단위당 회분 함량. 단위: g']
+  carb_g decimal(6,2) [not null, note: '제공 단위당 탄수화물 함량. 단위: g']
+  sugar_g decimal(5,2) [note: '제공 단위당 당류 함량. 단위: g']
+  fiber_g decimal(7,1) [note: '제공 단위당 식이섬유 함량. 단위: g']
+
+  calcium_mg int [note: '제공 단위당 칼슘 함량. 단위: mg']
+  iron_mg decimal(5,2) [note: '제공 단위당 철 함량. 단위: mg']
+  phosphorus_mg int [note: '제공 단위당 인 함량. 단위: mg']
+  potassium_mg int [note: '제공 단위당 칼륨 함량. 단위: mg']
+  sodium_mg int [note: '제공 단위당 나트륨 함량. 단위: mg']
+
+  vitamin_a_ug_rae int [note: '제공 단위당 비타민 A 함량. 단위: μg RAE']
+  retinol_ug int [note: '제공 단위당 레티놀 함량. 단위: μg']
+  beta_carotene_ug int [note: '제공 단위당 베타카로틴 함량. 단위: μg']
+  thiamine_mg decimal(6,3) [note: '제공 단위당 티아민 함량. 단위: mg']
+  riboflavin_mg decimal(6,3) [note: '제공 단위당 리보플라빈 함량. 단위: mg']
+  niacin_mg decimal(6,3) [note: '제공 단위당 니아신 함량. 단위: mg']
+  vitamin_c_mg decimal(7,2) [note: '제공 단위당 비타민 C 함량. 단위: mg']
+  vitamin_d_ug decimal(7,2) [note: '제공 단위당 비타민 D 함량. 단위: μg']
+
+  cholesterol_mg decimal(6,2) [note: '제공 단위당 콜레스테롤 함량. 단위: mg']
+  sat_fat_g decimal(4,2) [note: '제공 단위당 포화지방산 함량. 단위: g']
+  trans_fat_g decimal(4,2) [note: '제공 단위당 트랜스지방산 함량. 단위: g']
+
+  serving_desc varchar(10) [not null, note: '1회 섭취 분량. 예: 1정, 1캡슐, 5방울']
+  serving_size varchar(10) [not null, note: '1회 섭취 분량의 중량 또는 부피. 예: 500mg, 20ml']
+  daily_freq varchar(5) [not null, note: '1일 섭취 횟수. 예: 1회, 2회']
+  target varchar(10) [note: '권장 섭취 대상. 예: 성인, 성인 남성']
+
+  Note: '''
+  전국 건강기능식품 영양성분정보 표준데이터를 저장한다.
+  영양성분 값은 basis_qty에 표시된 영양성분 제공 단위를 기준으로 한다.
+  원본에서 제공되지 않은 영양성분 값은 null로 보존한다.
+
+  [v5] 하루 총 섭취량 계산은 서버가 수행하고 API 응답에는 계산된 dailyAmount 를 담는다.
+  클라이언트가 basis_qty·serving_size 문자열을 파싱해 환산하면 틀린다 —
+    · 단위 차원이 섞인다 (450mg ÷ 20ml 는 나눌 수 없다)
+    · serving_desc 의 수치를 문자열에서 뽑아야 한다 ('5방울' → 5)
+    · ★ vitamin_a_ug_rae · retinol_ug · beta_carotene_ug 를 단순 합산하면
+      비타민 A 를 두 번 센다. RAE 는 레티놀 + 베타카로틴/12 의 가중합이고
+      기준(nutrient_standard)은 vitamin_a_ug_rae_ul 하나뿐이다.
+      이는 단위 변환이 아니라 영양학 규칙이므로 적재·조회 계층에서 정규화한다.
+  '''
+}
+/* =========================================================
+   USER SUPPLEMENT NUTRITION
+   ========================================================= */
+Table user_suppl_nutrient {
+  id bigint [pk, increment, note: '사용자 영양제 복용 정보 식별자']
+  user_id bigint [not null, note: '영양제를 복용하는 사용자 식별자']
+
+  /* [v5-3] not null 제거. 표준데이터에 없는 제품의 직접 입력을 허용한다.
+     프론트에 이미 있는 기능이다 — AddSupplementSheet 의 "제품명 직접 입력". */
+  supplement_nutrient_id bigint [note: '''
+    건강기능식품 영양성분 기준정보 식별자.
+    ★ 직접 입력한 제품이면 null 이고 custom_name 에 제품명이 들어간다.
+  ''']
+  custom_name varchar(255) [note: '''
+    [v5] 직접 입력한 제품명. supplement_nutrient_id 가 null 일 때만 값이 있다.
+    ★ 성분은 받지 않는다 — 사용자가 라벨을 옮겨 적다 틀리면 우리가 틀린 계산을 한다.
+    이 제품은 성분 합계에서 제외하고, 제외했다는 사실을 화면에 표시한다.
+  ''']
+
+  dose_amount decimal(8,3) [not null, note: '1회 복용량 수치. 슬롯당 복용량으로 해석한다']
+  dose_unit varchar(20) [not null, note: '정, 캡슐, 포 등 복용량 단위']
+  start_date date [not null, note: '복용 시작일']
+  end_date date [note: '복용 종료일이며 복용 중에는 NULL']
+  status supplement_status [not null, default: 'ACTIVE', note: '현재 복용 상태']
+  note varchar(500) [note: '사용자 복용 메모']
+  created_at datetime [not null, note: '복용 정보 생성 일시']
+  updated_at datetime [note: '복용 정보 최종 수정 일시']
+
+  indexes {
+    /* [v5-3] 표준데이터 제품에만 중복 방지를 적용한다.
+       직접 입력 제품은 supplement_nutrient_id 가 null 이고 제품명이 자유 입력이라
+       중복을 막는 의미가 없다. (부분 유니크 인덱스 또는 애플리케이션 계층 검증) */
+    (user_id, supplement_nutrient_id) [unique, note: '사용자별 동일 영양제 중복 등록 방지. supplement_nutrient_id 가 null 인 행은 대상 밖']
+    (user_id, status) [note: '사용자의 상태별 복용 정보 조회']
+  }
+
+  // 복용량은 0보다 커야 함
+  // 종료일은 시작일 이후여야 함
+  checks {
+    `dose_amount > 0` [name: 'chk_user_suppl_dose_positive']
+    `end_date is null or end_date >= start_date` [name: 'chk_user_suppl_date_range']
+    /* [v5-3] 표준데이터 제품이면 custom_name 이 없고, 직접 입력이면 반대다 */
+    `(supplement_nutrient_id IS NOT NULL AND custom_name IS NULL)
+      OR (supplement_nutrient_id IS NULL AND custom_name IS NOT NULL)` [name: 'chk_user_suppl_source_exclusive']
+  }
+
+  Note: '''
+  사용자가 선택한 건강기능식품의 복용량, 기간, 상태를 관리.
+
+  [v5] 표준데이터에 없는 제품은 supplement_nutrient_id 를 null 로 두고 custom_name 에 담는다.
+  그 제품은 성분 데이터가 없으므로 성분 합계에 더하지 않는다 —
+  조용히 0 으로 더하면 "상한 이내" 가 거짓말이 된다.
+  화면에는 목록 카드의 "성분 정보 없음" 배지와 합계 카드의 안내 문구로 그 사실을 밝힌다.
+
+  [v5] 하루 총 섭취량 = dose_amount × (user_suppl_nutrient_slots 행 수) × 1회 성분량.
+  dose_amount 는 슬롯당 복용량으로 해석한다 — 아침 2정·저녁 1정 처럼
+  슬롯별로 양이 다른 경우는 지원하지 않는다.
+  supplement_nutrients.daily_freq 는 제품 라벨의 권장 횟수이며 표시용이다.
+  계산에는 사용자가 실제로 정한 슬롯 수를 쓴다.
+  '''
+}
+
+Table user_suppl_nutrient_slots {
+  id bigint [pk, increment, note: '사용자 영양제 복용 시간대 식별자']
+  user_suppl_nutrient_id bigint [not null, note: '사용자 영양제 복용 정보 식별자']
+  slot meal_slot [not null, note: '아침, 점심, 저녁, 취침 전 복용 시간대']
+  created_at datetime [not null, note: '복용 시간대 생성 일시']
+
+  indexes {
+    (user_suppl_nutrient_id, slot) [unique, note: '복용 정보별 동일 시간대 중복 방지']
+  }
+
+  Note: '''
+  사용자 영양제 복용 정보에 연결된 하나 이상의 복용 시간대를 관리.
+  [v5] 행 개수가 하루 섭취 횟수다 — 성분 합계 계산의 곱셈 인자다.
+  '''
+}
+
+// 사용자 삭제 시 복용 정보도 함께 삭제
+Ref user_suppl_nutrient_user: user_suppl_nutrient.user_id > user.id [delete: cascade]
+
+// 기준 영양성분이 복용 정보에서 사용 중이면 삭제 제한
+Ref user_suppl_nutrient_product: user_suppl_nutrient.supplement_nutrient_id > supplement_nutrients.id [delete: restrict]
+
+// 복용 정보 삭제 시 해당 시간대도 함께 삭제
+Ref user_suppl_nutrient_slot: user_suppl_nutrient_slots.user_suppl_nutrient_id > user_suppl_nutrient.id [delete: cascade]
+
+
+
+// 2025 한국인 영양소 섭취기준 (엑셀형 구조)
+Table nutrient_standard [note: '한국인 영양소 섭취기준. RNI=권장섭취량, AI=충분섭취량, UL=상한섭취량'] {
+  id bigint [pk, increment, note: '영양소 섭취기준 ID']
+  grp varchar(10) [not null, note: '''
+    대상 구분. 원본 표의 "성별" 열이다 —
+    영아 · 유아 · 남자 · 여자 · 임신부 · 수유부
+
+    [v5] 임신부·수유부 행의 값은 절대값이 아니라 증감값(+0 형태)이다.
+    그리고 임신 여부를 수집하지 않으므로 매칭될 경로가 없다.
+    적재하더라도 조회 대상에서 제외한다 — 절대값으로 잘못 쓰이면
+    "임신부의 지방 충분섭취량은 0g" 같은 값이 조용히 만들어진다.
+  ''']
+  age varchar(20) [note: '''
+    연령 구간. 원본 표기를 그대로 보존한다 —
+    0-5 (개월) · 6-11 · 1-2 (세) · 3-5 · 6-8 (세) · 9-11 ·
+    12-14 · 15-18 · 19-29 · 30-49 · 50-64 · 65-74 · 75 이상
+    임신부·수유부는 연령 구분이 없어 null 이다.
+
+    [v5] 단위(개월/세)가 grp 에 따라 달라지고 첫 행에만 표기된다.
+    '75 이상' 은 범위가 아니라 하한이다.
+    ★ 따라서 (grp, age) 매칭은 서버가 수행하고 API 응답에는
+      이미 고른 rni·ai·ul 만 담는다. 클라이언트가 파싱하지 않는다.
+  ''']
+
+  carb_g_rni decimal(10,3) [note: '탄수화물 권장섭취량(g/일)']
+  carb_g_ai decimal(10,3) [note: '탄수화물 충분섭취량(g/일)']
+  carb_g_ul decimal(10,3) [note: '탄수화물 상한섭취량(g/일)']
+  protein_g_rni decimal(10,3) [note: '단백질 권장섭취량(g/일)']
+  protein_g_ai decimal(10,3) [note: '단백질 충분섭취량(g/일)']
+  protein_g_ul decimal(10,3) [note: '단백질 상한섭취량(g/일)']
+  fat_g_rni decimal(10,3) [note: '지방 권장섭취량(g/일)']
+  fat_g_ai decimal(10,3) [note: '지방 충분섭취량(g/일)']
+  fat_g_ul decimal(10,3) [note: '지방 상한섭취량(g/일)']
+  fiber_g_rni decimal(10,3) [note: '식이섬유 권장섭취량(g/일)']
+  fiber_g_ai decimal(10,3) [note: '식이섬유 충분섭취량(g/일)']
+  fiber_g_ul decimal(10,3) [note: '식이섬유 상한섭취량(g/일)']
+  calcium_mg_rni decimal(10,3) [note: '칼슘 권장섭취량(mg/일)']
+  calcium_mg_ai decimal(10,3) [note: '칼슘 충분섭취량(mg/일)']
+  calcium_mg_ul decimal(10,3) [note: '칼슘 상한섭취량(mg/일)']
+  iron_mg_rni decimal(10,3) [note: '철 권장섭취량(mg/일)']
+  iron_mg_ai decimal(10,3) [note: '철 충분섭취량(mg/일)']
+  iron_mg_ul decimal(10,3) [note: '철 상한섭취량(mg/일)']
+  phosphorus_mg_rni decimal(10,3) [note: '인 권장섭취량(mg/일)']
+  phosphorus_mg_ai decimal(10,3) [note: '인 충분섭취량(mg/일)']
+  phosphorus_mg_ul decimal(10,3) [note: '인 상한섭취량(mg/일)']
+  potassium_mg_rni decimal(10,3) [note: '칼륨 권장섭취량(mg/일)']
+  potassium_mg_ai decimal(10,3) [note: '칼륨 충분섭취량(mg/일)']
+  potassium_mg_ul decimal(10,3) [note: '칼륨 상한섭취량(mg/일)']
+  sodium_mg_rni decimal(10,3) [note: '나트륨 권장섭취량(mg/일)']
+  sodium_mg_ai decimal(10,3) [note: '나트륨 충분섭취량(mg/일)']
+  sodium_mg_ul decimal(10,3) [note: '나트륨 상한섭취량(mg/일)']
+  vitamin_a_ug_rae_rni decimal(10,3) [note: '비타민 A 권장섭취량(μg RAE/일)']
+  vitamin_a_ug_rae_ai decimal(10,3) [note: '비타민 A 충분섭취량(μg RAE/일)']
+  vitamin_a_ug_rae_ul decimal(10,3) [note: '비타민 A 상한섭취량(μg RAE/일)']
+  thiamine_mg_rni decimal(10,3) [note: '티아민 권장섭취량(mg/일)']
+  thiamine_mg_ai decimal(10,3) [note: '티아민 충분섭취량(mg/일)']
+  thiamine_mg_ul decimal(10,3) [note: '티아민 상한섭취량(mg/일)']
+  riboflavin_mg_rni decimal(10,3) [note: '리보플라빈 권장섭취량(mg/일)']
+  riboflavin_mg_ai decimal(10,3) [note: '리보플라빈 충분섭취량(mg/일)']
+  riboflavin_mg_ul decimal(10,3) [note: '리보플라빈 상한섭취량(mg/일)']
+  niacin_mg_rni decimal(10,3) [note: '나이아신 권장섭취량(mg NE/일)']
+  niacin_mg_ai decimal(10,3) [note: '나이아신 충분섭취량(mg NE/일)']
+  niacin_mg_ul decimal(10,3) [note: '나이아신 상한섭취량(mg NE/일)']
+  vitamin_c_mg_rni decimal(10,3) [note: '비타민 C 권장섭취량(mg/일)']
+  vitamin_c_mg_ai decimal(10,3) [note: '비타민 C 충분섭취량(mg/일)']
+  vitamin_c_mg_ul decimal(10,3) [note: '비타민 C 상한섭취량(mg/일)']
+  vitamin_d_ug_rni decimal(10,3) [note: '비타민 D 권장섭취량(μg/일)']
+  vitamin_d_ug_ai decimal(10,3) [note: '비타민 D 충분섭취량(μg/일)']
+  vitamin_d_ug_ul decimal(10,3) [note: '비타민 D 상한섭취량(μg/일)']
+
+  indexes {
+    (grp, age) [name: 'idx_nutrient_standard_grp_age']
+  }
+
+  Note: '''
+  [v5] 값이 비어 있는 칸이 많다. 원본 표에서 지방·리놀레산 등은
+  성인 구간의 네 열이 모두 비어 있고, energy_kcal·sugar_g·cholesterol_mg·
+  sat_fat_g·trans_fat_g 는 이 테이블에 컬럼 자체가 없다.
+
+  따라서 "기준 없음" 은 예외가 아니라 흔한 경우다.
+  API 응답은 rni·ai·ul 을 전부 null 로 내려주고, 성분을 응답에서 빼지 않는다 —
+  사용자가 먹고 있는 성분이므로 수치는 보여주고 판정만 하지 않는다.
+
+  rni 와 ai 는 정의상 동시에 존재하지 않는다 —
+  AI 는 RNI 를 정할 근거가 부족할 때 대신 쓰는 값이다.
+  둘 다 값이 있는 행이 생기면 적재 오류다.
+
+  ★ 병합 셀 주의 — 원본 표의 "성별" 열은 9행에 걸친 병합 셀이고
+  (개월)/(세) 표기도 첫 행에만 있다. 평평한 격자로 읽으면 행이 밀리기 쉽고,
+  그 경우 값은 그럴싸하지만 틀린다(여자 19-29 에 남자 75이상 값이 들어감).
+  적재 후 한 행만 원본과 대조해 정렬을 확인할 것을 권한다.
+  '''
+}
+
+Table medication_product_guides {
+  id bigint [pk, increment]
+  item_seq varchar(20) [not null, unique, note: '식약처 e약은요 품목일련번호']
+  product_name varchar(255) [not null]
+  manufacturer_name varchar(255) [not null]
+  efficacy text [not null]
+  usage_instructions text [not null]
+  pre_use_warning text [not null]
+  precautions text [not null]
+  drug_food_interactions text [not null]
+  adverse_reactions text [not null]
+  storage_instructions text [not null]
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime [not null]
+
+  indexes {
+    product_name
+  }
+
+  Note: '''
+  식약처 e약은요 CSV에서 사용자에게 필요한 제품 가이드 10개 필드만 보존한다.
+  이미지 URL·공개일자 등 현재 서비스에서 사용하지 않는 중복 필드는 적재하지 않는다.
+  품목일련번호가 같은 완전 중복 행은 하나로 병합하고 내용 충돌은 적재 전에 차단한다.
+  '''
+}
+/* =========================================================
+   성분 정규화 계층
+   ========================================================= */
+
+Table interaction_entities {
+  id bigint [pk, increment]
+  entity_kind interaction_entity_kind [not null]
+  canonical_name varchar(255) [not null, note: '사용자 화면과 출처에 표시할 표준 성분·음식 이름']
+  normalized_name varchar(255) [not null, note: 'NFKC·공백 정규화·casefold를 적용한 검색 및 pair key 생성용 이름']
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (entity_kind, normalized_name) [unique]
+    canonical_name
+  }
+
+  Note: '''
+  약, 영양제 성분, 상호작용 대상 음식을 하나의 공통 주체로 관리한다.
+  제품명은 이 테이블의 표준 이름으로 사용하지 않고 aliases에 둔다.
+  LLM이 새 성분을 임의 생성하지 않으며 importer 또는 관리자 검수로만 추가한다.
+  '''
+}
+
+Table interaction_entity_aliases {
+  id bigint [pk, increment]
+  interaction_entity_id bigint [not null]
+  alias_type interaction_alias_type [not null]
+  alias varchar(255) [not null, note: '표준명과 실제로 다른 성분명·제품명·동의어만 저장']
+  normalized_alias varchar(255) [not null, note: '사용자 확정 약명과 비교하기 위한 정규화 별칭']
+  is_preferred boolean [not null, default: false]
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (interaction_entity_id, normalized_alias) [unique]
+    normalized_alias
+  }
+
+  Note: '''
+  표준명과 다른 문자열만 저장하며 canonical_name과 같은 별칭은 만들지 않는다.
+  사용자 확정 제품명과 출처 성분명이 다른 경우 성분 매칭에 사용한다.
+  '''
+}
+
+Ref: interaction_entity_aliases.interaction_entity_id > interaction_entities.id [delete: cascade]
+
+Table interaction_entity_identifiers {
+  id bigint [pk, increment]
+  interaction_entity_id bigint [not null]
+  source_id varchar(100) [not null, note: '외부 식별자 제공 데이터셋. 예: MFDS_DUR']
+  source_code varchar(100) [not null, note: 'DUR 성분코드 등 출처가 제공한 식별자']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (source_id, source_code) [unique]
+  }
+
+  Note: '''
+  출처 코드를 저장하기 위해 표준 성분명과 동일한 별칭을 중복 생성하지 않는다.
+  출처 코드가 있으면 이름·별칭 매칭보다 우선한다.
+  같은 정규화 성분에 출처 코드가 여러 개일 수 있으므로 성분·출처 조합은 유일하지 않다.
+  대신 하나의 출처 코드는 하나의 성분에만 연결되도록 source_id·source_code를 유일하게 둔다.
+  '''
+}
+
+Ref: interaction_entity_identifiers.interaction_entity_id > interaction_entities.id [delete: cascade]
+
+/* =========================================================
+   사용자 약·영양제와 표준 성분 연결
+   ========================================================= */
+
+Table medication_interaction_mappings {
+  id bigint [pk, increment]
+  medication_id bigint [not null, unique]
+  mapping_status interaction_mapping_status [not null, default: 'PENDING']
+  error_code varchar(100) [note: '약 원문이나 개인정보를 포함하지 않는 성분 매핑 실패 코드']
+  mapped_at datetime [note: '성분 매핑을 마지막으로 완료한 시각']
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    mapping_status
+  }
+
+  Note: '''
+  기존 medications 테이블을 변경하지 않고 AI 성분 매핑 상태를 관리한다.
+  PENDING·FAILED여도 사용자 확정 약은 유지하며 MATCHED만 결정론적 상호작용 검사에 사용한다.
+  '''
+}
+
+Table medication_interaction_entities {
+  id bigint [pk, increment]
+  medication_id bigint [not null]
+  interaction_entity_id bigint [not null]
+  match_method interaction_match_method [not null]
+  match_confidence decimal(5,4) [note: '자동 이름 매칭 신뢰도. SOURCE_CODE·MANUAL이면 null 가능']
+  matched_source_text varchar(255) [not null, note: '매칭 당시 사용한 사용자 확정 약명 또는 성분 문자열']
+  reviewed_at datetime [note: '수동 검수한 경우 검수 완료 시각']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (medication_id, interaction_entity_id) [unique]
+    interaction_entity_id
+  }
+
+  checks {
+    `match_confidence IS NULL OR (match_confidence >= 0 AND match_confidence <= 1)`
+  }
+
+  Note: '''
+  한 약에 여러 유효성분이 있을 수 있으므로 다대다 연결로 둔다.
+  medication_interaction_mappings.mapping_status=MATCHED인 약만 상호작용 검사에 사용한다.
+  매칭되지 않은 약은 medications에는 남고 챗봇은 "성분을 확인할 수 없음"이라고 안내한다.
+  '''
+}
+
+Table supplement_interaction_entities {
+  id bigint [pk, increment]
+  supplement_nutrient_id bigint [not null]
+  interaction_entity_id bigint [not null]
+  amount decimal(12,4) [note: '원본이 제공한 기준량당 성분 함량. 상호작용 판정에 필요하지 않으면 null 가능']
+  unit varchar(30) [note: 'mg, μg RAE 등 원본 단위']
+  source_field varchar(100) [note: 'vitamin_c_mg 등 원본 표의 성분 필드명']
+  match_method interaction_match_method [not null, default: 'SOURCE_CODE']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (supplement_nutrient_id, interaction_entity_id) [unique]
+    interaction_entity_id
+  }
+
+  checks {
+    `amount IS NULL OR amount > 0`
+    `(amount IS NULL AND unit IS NULL) OR (amount IS NOT NULL AND unit IS NOT NULL)`
+  }
+
+  Note: '''
+  기존 supplement_nutrients의 고정 영양성분 컬럼을 삭제하지 않고
+  상호작용 검색에 필요한 성분 정규화 행을 추가한다.
+  user_suppl_nutrient의 표준데이터 제품만 이 매핑을 통해 성분 판정에 사용한다.
+  custom_name으로 저장한 직접 입력 제품은 복용 목록에는 유지하지만
+  성분이 없으므로 상호작용 판정에서 제외하고 "성분 정보 없음"을 안내한다.
+  '''
+}
+
+Ref: medication_interaction_mappings.medication_id > medications.id [delete: cascade]
+Ref: medication_interaction_entities.medication_id > medications.id [delete: cascade]
+Ref: medication_interaction_entities.interaction_entity_id > interaction_entities.id [delete: restrict]
+Ref: supplement_interaction_entities.supplement_nutrient_id > supplement_nutrients.id [delete: cascade]
+Ref: supplement_interaction_entities.interaction_entity_id > interaction_entities.id [delete: restrict]
+
+/* =========================================================
+   결정론적 상호작용 규칙
+   ========================================================= */
+
+Table interaction_rules {
+  id bigint [pk, increment]
+  pair_key char(64) [not null, note: '두 주체의 kind·normalized_name을 정렬해 만든 SHA-256']
+  pair_type interaction_pair_type [not null]
+  left_entity_id bigint [not null]
+  right_entity_id bigint [not null]
+  risk_level interaction_risk_level [not null]
+  review_status interaction_review_status [not null, default: 'PENDING']
+  rule_dataset_version varchar(100) [not null, note: 'RDBMS 규칙 데이터셋의 불변 버전']
+  extraction_method interaction_extraction_method [not null]
+  approved_at datetime
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (pair_key, rule_dataset_version) [unique]
+    (left_entity_id, right_entity_id)
+    (pair_type, review_status, risk_level)
+    rule_dataset_version
+  }
+
+  checks {
+    `left_entity_id <> right_entity_id`
+    `(review_status = 'APPROVED' AND approved_at IS NOT NULL) OR (review_status <> 'APPROVED' AND approved_at IS NULL)`
+  }
+
+  Note: '''
+  같은 조합도 데이터셋 버전별로 누적 저장한다.
+  pair_key 단독 전역 유일성은 새 버전 적재를 막으므로 사용하지 않는다.
+  런타임에서는 review_status=APPROVED 규칙만 사용한다.
+  PENDING staging 후보는 챗봇 답변이나 자동 경고에 사용하지 않는다.
+  금기·주의 문구는 interaction_rule_sources.raw_effect_text 한 곳에만 저장한다.
+  규칙을 찾지 못한 것은 "상호작용 없음"이 아니라 "확인 가능한 근거 없음"이다.
+  '''
+}
+
+Table interaction_rule_sources {
+  id bigint [pk, increment]
+  interaction_rule_id bigint [not null]
+  source_id varchar(100) [not null, note: '예: MFDS_DUR']
+  document_id varchar(150) [not null]
+  record_id varchar(150) [not null, note: '원본 행 식별자. 예: DUR일련번호']
+  raw_effect_text text [not null, note: '원본 효과·금기 문구를 변형하지 않고 보존']
+  source_published_at date [note: '고시일자 등 출처 정보의 기준일']
+  source_url text
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (interaction_rule_id, source_id, document_id, record_id) [unique]
+    (source_id, record_id)
+  }
+}
+
+Table interaction_rule_evidence_chunks {
+  id bigint [pk, increment]
+  interaction_rule_source_id bigint [not null]
+  dataset_key varchar(100) [not null, note: 'Qdrant knowledge 데이터셋 키']
+  dataset_version varchar(100) [not null, note: '검색·인덱싱에 사용한 불변 버전']
+  vector_chunk_id varchar(255) [not null, note: 'Qdrant point 또는 청크 ID. RDBMS FK가 아니다.']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (interaction_rule_source_id, dataset_version, vector_chunk_id) [unique]
+    vector_chunk_id
+  }
+
+  Note: '''
+  구조화된 조합·위험도는 interaction_rules가 정본이고,
+  상세 설명 원문은 이 링크를 통해 Qdrant에서 검색한다.
+  검수되지 않은 청크는 규칙과 연결하지 않는다.
+  '''
+}
+
+Ref: interaction_rules.left_entity_id > interaction_entities.id [delete: restrict]
+Ref: interaction_rules.right_entity_id > interaction_entities.id [delete: restrict]
+Ref: interaction_rule_sources.interaction_rule_id > interaction_rules.id [delete: cascade]
+Ref: interaction_rule_evidence_chunks.interaction_rule_source_id > interaction_rule_sources.id [delete: cascade]
+
+/* =========================================================
+   런타임 조회 원칙
+   =========================================================
+
+   1. 사용자 질문 또는 DB에 저장된 사용자 확정 약 정보 변경
+   2. user_id 기준 활성 medications + user_suppl_nutrient 조회
+      (custom_name 직접 입력 제품은 목록에 표시하되 성분 판정에서는 제외)
+   3. medication_interaction_mappings.mapping_status=MATCHED인 약과 성분 연결 조회
+   4. 모든 조합의 pair_key 생성
+   5. 배포 설정의 활성 rule_dataset_version과 APPROVED를 함께 만족하는
+      interaction_rules만 단건·배치 조회
+   6. 연결된 Qdrant 청크로 상세 근거 보강
+   7. LLM은 검증된 사실을 친절한 한국어로 표현
+
+   PENDING·FAILED 매핑 약은 기존 medications에 유지하되 상호작용을 추측하지 않는다.
+   과거 rule_dataset_version은 답변 이력의 출처 보존용이며 새 답변 판정에는 사용하지 않는다.
+   규칙 없음은 안전함이 아니라 확인 가능한 근거가 없음을 의미한다.
+   ========================================================= */
