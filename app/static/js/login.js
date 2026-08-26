@@ -1,3 +1,6 @@
+import { ApiError, post, session } from "./api.js";
+import { showToast } from "./overlay.js";
+
 const REMEMBERED_LOGIN_ID_KEY = "rememberedLoginId";
 
 export function validateCredentials(loginId, password) {
@@ -38,6 +41,7 @@ function initializeLoginForm() {
   const loginIdError = document.querySelector("[data-error-for='loginId']");
   const passwordError = document.querySelector("[data-error-for='password']");
   const passwordToggle = document.querySelector("[data-password-toggle]");
+  const submitButton = form.querySelector("[type='submit']");
   const rememberedLoginId = window.localStorage.getItem(REMEMBERED_LOGIN_ID_KEY);
 
   if (rememberedLoginId) {
@@ -52,7 +56,7 @@ function initializeLoginForm() {
     passwordToggle.setAttribute("aria-label", isVisible ? "비밀번호 표시" : "비밀번호 숨기기");
   });
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const result = validateCredentials(loginIdInput.value, passwordInput.value);
@@ -61,9 +65,44 @@ function initializeLoginForm() {
 
     if (!result.valid) return;
 
-    setRememberedLoginId(window.localStorage, loginIdInput.value, rememberInput.checked);
-    window.sessionStorage.setItem("adminAuthenticated", "true");
-    window.location.href = form.dataset.dashboardUrl;
+    const originalLabel = submitButton?.textContent;
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "로그인 중…";
+    }
+
+    try {
+      // 폼 필드명은 loginId 지만 API 는 email 을 받는다. 라벨·필드명은 화면 그대로 둔다.
+      const body = await post("/admin/auth/login", {
+        email: loginIdInput.value.trim(),
+        password: passwordInput.value,
+      });
+
+      setRememberedLoginId(window.localStorage, loginIdInput.value, rememberInput.checked);
+      session.save(body.accessToken, body.admin);
+
+      if (body.mustChangePassword) {
+        // 임시 비밀번호로 로그인한 상태다(계정 상태와는 무관).
+        // 비밀번호를 바꾸기 전에는 다른 관리자 API 가 전부 403 이라 대시보드로 보내면
+        // 빈 화면만 보게 된다. 자체 비밀번호 변경 화면이 아직 없어 여기서 멈춘다.
+        session.clear();
+        showToast("임시 비밀번호입니다. 비밀번호를 변경한 뒤 이용해 주세요.", "error");
+        return;
+      }
+
+      window.location.href = form.dataset.dashboardUrl;
+    } catch (error) {
+      // 401 은 "계정 없음"과 "비밀번호 오류"를 구분하지 않는다.
+      // 서버 문구를 그대로 띄운다 — 프론트가 구분 문구를 만들면 이메일 존재 여부가 새어나간다.
+      const message = error instanceof ApiError ? error.message : "로그인에 실패했습니다.";
+      showToast(message, "error");
+      setFieldError(passwordInput, passwordError, message);
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
+    }
   });
 }
 

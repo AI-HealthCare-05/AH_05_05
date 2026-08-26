@@ -15,32 +15,84 @@ import type {
   ConfirmOcrResultResponse,
   OcrResult,
   UploadDocumentsResult,
-  UploadPurpose,
 } from './types';
 
-/** REQ-DOC-001 — POST /documents (multipart/form-data) · 명세 3-1 */
-export async function uploadDocument(file: File, purpose: UploadPurpose): Promise<UploadDocumentsResult> {
+const idempotencyKeys = new WeakMap<File, string>();
+const documentImageUrls = new Map<string, Promise<string>>();
+
+function revokeAuthenticatedImageUrl(ocrJobId: string): void {
+  const pendingUrl = documentImageUrls.get(ocrJobId);
+  if (!pendingUrl) return;
+  documentImageUrls.delete(ocrJobId);
+  void pendingUrl.then((url) => URL.revokeObjectURL(url), () => undefined);
+}
+
+function revokeAllAuthenticatedImageUrls(): void {
+  for (const ocrJobId of documentImageUrls.keys()) revokeAuthenticatedImageUrl(ocrJobId);
+}
+
+function idempotencyKeyFor(file: File): string {
+  const existing = idempotencyKeys.get(file);
+  if (existing) return existing;
+  const key = `ocr-${crypto.randomUUID()}`;
+  idempotencyKeys.set(file, key);
+  return key;
+}
+
+function authenticatedImageUrl(ocrJobId: string): Promise<string> {
+  const existing = documentImageUrls.get(ocrJobId);
+  if (existing) return existing;
+  const request = http
+    .getBlob(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}/image`)
+    .then((blob) => URL.createObjectURL(blob))
+    .catch((error: unknown) => {
+      documentImageUrls.delete(ocrJobId);
+      throw error;
+    });
+  documentImageUrls.set(ocrJobId, request);
+  return request;
+}
+
+/**
+ * 원본 이미지는 <img> 태그에 Bearer 헤더를 붙일 수 없어서 별도로 인증 fetch 합니다.
+ * OCR JSON 조회와 분리해, 미리보기만 실패해도 검토·저장을 계속할 수 있게 합니다.
+ */
+export function getOcrDocumentImageUrl(ocrJobId: string, mockImageUrl: string): Promise<string> {
+  return USE_MOCK ? Promise.resolve(mockImageUrl) : authenticatedImageUrl(ocrJobId);
+}
+
+/** 검토 화면이 떠나거나 저장을 마치면 인증 이미지 blob URL을 해제합니다. */
+export function releaseOcrDocumentImageUrl(ocrJobId: string): void {
+  revokeAuthenticatedImageUrl(ocrJobId);
+}
+
+/** 조제약 OCR 작업 생성 — POST /ocr/medication-guides */
+export async function uploadDocument(file: File): Promise<UploadDocumentsResult> {
   if (USE_MOCK) {
     await mockDelay();
     return mockUploadDocument(file);
   }
 
+  revokeAllAuthenticatedImageUrls();
+
   const form = new FormData();
-  form.append('purpose', purpose);
   form.append('file', file);
-  return http.post<UploadDocumentsResult>('/documents', form);
+  const uploaded = await http.post<UploadDocumentsResult>('/v1/ocr/medication-guides', form, {
+    'Idempotency-Key': idempotencyKeyFor(file),
+  });
+  return uploaded;
 }
 
-/** REQ-DOC-003 — GET /documents/{batchId}/ocr · 명세 3-2 */
+/** 조제약 OCR 상태·결과 조회 — GET /ocr/jobs/{ocrJobId} */
 export async function getOcrResult(batchId: string): Promise<OcrResult> {
   if (USE_MOCK) {
     await mockDelay();
     return mockOcrResult(batchId);
   }
-  return http.get<OcrResult>(`/documents/${encodeURIComponent(batchId)}/ocr`);
+  return http.get<OcrResult>(`/v1/ocr/jobs/${encodeURIComponent(batchId)}`);
 }
 
-/** REQ-DOC-003 — PATCH /documents/{batchId}/ocr · 명세 3-3 */
+/** 사용자 수정본 확정 — PATCH /ocr/jobs/{ocrJobId} */
 export async function confirmOcrResult(
   batchId: string,
   payload: ConfirmOcrResultPayload,
@@ -49,8 +101,10 @@ export async function confirmOcrResult(
     await mockDelay();
     return mockConfirmOcrResult(payload);
   }
-  return http.patch<ConfirmOcrResultResponse>(
-    `/documents/${encodeURIComponent(batchId)}/ocr`,
+  const confirmed = await http.patch<ConfirmOcrResultResponse>(
+    `/v1/ocr/jobs/${encodeURIComponent(batchId)}`,
     payload,
   );
+  releaseOcrDocumentImageUrl(batchId);
+  return confirmed;
 }

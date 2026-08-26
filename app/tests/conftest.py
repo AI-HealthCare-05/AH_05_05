@@ -4,10 +4,9 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
-import pytest_asyncio
 from _pytest.fixtures import FixtureRequest
 from tortoise import generate_config
-from tortoise.contrib.test import finalizer, initializer
+from tortoise.contrib.test import SimpleTestCase, finalizer, initializer
 
 from app.core import config
 from app.core.db.databases import TORTOISE_APP_MODELS
@@ -15,6 +14,21 @@ from app.core.db.databases import TORTOISE_APP_MODELS
 TEST_BASE_URL = "http://test"
 TEST_DB_LABEL = "models"
 TEST_DB_TZ = "Asia/Seoul"
+_TEST_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
+
+
+def _setup_tortoise_test_runner(test_case: SimpleTestCase) -> None:
+    """Reuse the loop that owns the MySQL pool on Python 3.13/pytest 9."""
+
+    if _TEST_EVENT_LOOP is None:
+        raise RuntimeError("Tortoise test event loop is not initialized")
+    test_case._asyncioRunner = asyncio.Runner(  # type: ignore[attr-defined]  # noqa: SLF001
+        debug=True,
+        loop_factory=lambda: _TEST_EVENT_LOOP,
+    )
+
+
+SimpleTestCase._setupAsyncioRunner = _setup_tortoise_test_runner  # type: ignore[method-assign]  # noqa: SLF001
 
 
 def get_test_db_config() -> dict[str, Any]:
@@ -31,15 +45,14 @@ def get_test_db_config() -> dict[str, Any]:
 
 @pytest.fixture(scope="session", autouse=True)
 def initialize(request: FixtureRequest) -> Generator[None, None]:
+    global _TEST_EVENT_LOOP
+
     loop = asyncio.new_event_loop()
+    _TEST_EVENT_LOOP = loop
     asyncio.set_event_loop(loop)
     with patch("tortoise.contrib.test.getDBConfig", Mock(return_value=get_test_db_config())):
-        initializer(modules=TORTOISE_APP_MODELS)
+        initializer(modules=TORTOISE_APP_MODELS, loop=loop)
     yield
     finalizer()
     loop.close()
-
-
-@pytest_asyncio.fixture(autouse=True, scope="session")  # type: ignore[type-var]
-def event_loop() -> None:
-    pass
+    _TEST_EVENT_LOOP = None

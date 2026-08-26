@@ -7,7 +7,12 @@ from fastapi import UploadFile
 from PIL import Image
 
 from app.core.config import Config
-from app.core.exceptions import OcrProviderConfigError, OcrProviderTimeoutError
+from app.core.exceptions import (
+    OcrProviderConfigError,
+    OcrProviderError,
+    OcrProviderTimeoutError,
+    OcrProviderTransientError,
+)
 from app.services.clova_template_ocr import ClovaTemplateProvider
 from app.services.ocr_image_input import validate_image
 
@@ -88,6 +93,29 @@ async def test_provider_maps_timeout_to_project_error() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(OcrProviderTimeoutError):
             await ClovaTemplateProvider(settings(), client).extract(image)
+
+
+@pytest.mark.parametrize("status_code", [408, 429, 500, 503])
+async def test_provider_marks_only_retryable_http_statuses_as_transient(status_code: int) -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json={"message": "temporary"})
+
+    image = await validate_image(upload())
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(OcrProviderTransientError):
+            await ClovaTemplateProvider(settings(), client).extract(image)
+
+
+async def test_provider_keeps_non_retryable_http_errors_permanent() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"message": "bad request"})
+
+    image = await validate_image(upload())
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(OcrProviderError) as error:
+            await ClovaTemplateProvider(settings(), client).extract(image)
+
+    assert not isinstance(error.value, OcrProviderTransientError)
 
 
 def test_config_repr_does_not_expose_clova_secret() -> None:
