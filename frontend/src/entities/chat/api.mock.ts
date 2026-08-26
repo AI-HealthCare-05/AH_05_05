@@ -126,3 +126,11 @@ export function mockListChatSessions(): ChatSessionSummary[] {
     }))
     .sort((left, right) => right.lastMessageAt.localeCompare(left.lastMessageAt));
 }
+
+export function mockDeleteChatSessions(sessionIds: readonly number[]): void {
+  if (sessionIds.length === 0) return;
+  const deleted = new Set(sessionIds);
+  const store = readStore();
+  store.sessions = store.sessions.filter((session) => !deleted.has(session.sessionId));
+  writeStore(store);
+}

@@ -8,7 +8,12 @@
  */
 import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import { mockGetChatMessages, mockListChatSessions, mockSendChat } from './api.mock';
+import {
+  mockDeleteChatSessions,
+  mockGetChatMessages,
+  mockListChatSessions,
+  mockSendChat,
+} from './api.mock';
 import type {
   ChatMessage,
   ChatSessionSummary,
@@ -38,4 +43,12 @@ export async function listChatSessions(): Promise<ChatSessionSummary[]> {
   if (!USE_MOCK) throw new Error('대화 목록 API가 아직 준비되지 않았어요.');
   await mockDelay();
   return mockListChatSessions();
+}
+
+/** #111 임시 다중 삭제 경계. 실제 소프트 삭제 계약은 백엔드 API 확정 후 연결합니다. */
+export async function deleteChatSessions(sessionIds: readonly number[]): Promise<void> {
+  if (sessionIds.length === 0) return;
+  if (!USE_MOCK) throw new Error('대화 삭제 API가 아직 준비되지 않았어요.');
+  await mockDelay();
+  mockDeleteChatSessions(sessionIds);
 }

@@ -2,8 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useChatSession } from '@/app/ChatSessionContext';
-import { BottomTabbar, Button, Card, Header, Input, type TabKey } from '@/shared/ui';
 import {
+  BottomTabbar,
+  Button,
+  Card,
+  ErrorDialog,
+  Header,
+  Input,
+  type TabKey,
+} from '@/shared/ui';
+import {
+  deleteChatSessions,
   getChatMessages,
   listChatSessions,
   sendChat,
@@ -12,6 +21,7 @@ import {
   type SendChatPayload,
   type SendChatResult,
 } from '@/entities/chat';
+import { ChatDeleteDialog } from './ChatDeleteDialog';
 import { ChatSessionList } from './ChatSessionList';
 import { ChatStartGuide } from './ChatStartGuide';
 import { SourceList } from './SourceList';
@@ -30,16 +40,19 @@ interface ChatLocationState {
 
 type ChatHistoryLoader = () => Promise<ChatMessage[]>;
 type ChatSender = (payload: SendChatPayload) => Promise<SendChatResult>;
+type ChatSessionDeleter = (sessionIds: readonly number[]) => Promise<void>;
 type ChatView = 'loading' | 'list' | 'room';
 
 interface ChatPageProps {
   historyLoader?: ChatHistoryLoader;
   chatSender?: ChatSender;
+  sessionDeleter?: ChatSessionDeleter;
 }
 
 export function ChatPage({
   historyLoader,
   chatSender = sendChat,
+  sessionDeleter = deleteChatSessions,
 }: ChatPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,6 +69,11 @@ export function ChatPage({
   const [draft, setDraft] = useState('');
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<number>>(() => new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -173,18 +191,89 @@ export function ChatPage({
     setConversationId(null);
     setDraft('');
     setHistoryError(null);
+    setSelectionMode(false);
+    setSelectedSessionIds(new Set());
     setView('room');
+  }
+
+  function toggleSelectionMode() {
+    setSelectionMode((current) => {
+      if (current) setSelectedSessionIds(new Set());
+      return !current;
+    });
+  }
+
+  function toggleSession(sessionId: number) {
+    setSelectedSessionIds((current) => {
+      const next = new Set(current);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  }
+
+  async function confirmDelete() {
+    if (selectedSessionIds.size === 0 || deleting) return;
+    const deletingIds = [...selectedSessionIds];
+    setDeleting(true);
+    try {
+      await sessionDeleter(deletingIds);
+      const deleted = new Set(deletingIds);
+      const remaining = sessions.filter((session) => !deleted.has(session.sessionId));
+      setSessions(remaining);
+      setDeleteDialogOpen(false);
+      setSelectionMode(false);
+      setSelectedSessionIds(new Set());
+      if (activeSessionId !== null && deleted.has(activeSessionId)) startNewSession();
+      if (remaining.length === 0) {
+        startNewSession();
+        setNewChatRequested(true);
+        setMessages([]);
+        setConversationId(null);
+        setView('room');
+      }
+    } catch (error: unknown) {
+      setDeleteDialogOpen(false);
+      setDeleteError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   if (view === 'list') {
     return (
-      <ChatSessionList
-        sessions={sessions}
-        onBack={() => navigate(-1)}
-        onNewChat={startNewChat}
-        onOpen={openSession}
-        onTabChange={handleTabChange}
-      />
+      <>
+        <ChatSessionList
+          sessions={sessions}
+          selectionMode={selectionMode}
+          selectedSessionIds={selectedSessionIds}
+          onBack={() => navigate(-1)}
+          onDeleteSelected={() => setDeleteDialogOpen(true)}
+          onNewChat={startNewChat}
+          onOpen={openSession}
+          onTabChange={handleTabChange}
+          onToggleSelectionMode={toggleSelectionMode}
+          onToggleSession={toggleSession}
+        />
+        <ChatDeleteDialog
+          open={deleteDialogOpen}
+          count={selectedSessionIds.size}
+          deleting={deleting}
+          onCancel={() => setDeleteDialogOpen(false)}
+          onConfirm={() => void confirmDelete()}
+        />
+        <ErrorDialog
+          open={deleteError !== null}
+          title="대화를 삭제하지 못했어요"
+          message={deleteError ?? ''}
+          onRetry={() => {
+            setDeleteError(null);
+            void confirmDelete();
+          }}
+          secondaryLabel="닫기"
+          onSecondary={() => setDeleteError(null)}
+        />
+      </>
     );
   }
 
