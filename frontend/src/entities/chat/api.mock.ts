@@ -15,8 +15,9 @@ import type {
   SendChatPayload,
   SendChatResult,
 } from './types';
+import { restoreAccountPrincipal } from '@/shared/api/client';
 
-const MOCK_CHAT_STORAGE_KEY = 'poke.mock-chat-sessions';
+const MOCK_CHAT_STORAGE_KEY_PREFIX = 'poke.mock-chat-sessions';
 
 interface MockStoredSession {
   sessionId: number;
@@ -37,7 +38,7 @@ const EMPTY_STORE: MockChatStore = {
   sessions: [],
 };
 
-let memoryStore: MockChatStore = { ...EMPTY_STORE, sessions: [] };
+const memoryStores = new Map<string, MockChatStore>();
 
 function cloneStore(store: MockChatStore): MockChatStore {
   return {
@@ -52,26 +53,51 @@ function cloneStore(store: MockChatStore): MockChatStore {
   };
 }
 
-function readStore(): MockChatStore {
-  if (typeof window === 'undefined' || import.meta.env.PROD) return cloneStore(memoryStore);
-  const saved = window.localStorage.getItem(MOCK_CHAT_STORAGE_KEY);
+function resolvePrincipalKey(principalKey = restoreAccountPrincipal()): string {
+  return principalKey?.trim().toLowerCase() || 'guest';
+}
+
+function storageKey(principalKey?: string | null): string {
+  return `${MOCK_CHAT_STORAGE_KEY_PREFIX}:${encodeURIComponent(resolvePrincipalKey(principalKey))}`;
+}
+
+function readStore(principalKey?: string | null): MockChatStore {
+  const resolvedPrincipal = resolvePrincipalKey(principalKey);
+  if (typeof window === 'undefined' || import.meta.env.PROD) {
+    return cloneStore(memoryStores.get(resolvedPrincipal) ?? EMPTY_STORE);
+  }
+  let saved: string | null = null;
+  try {
+    saved = window.localStorage.getItem(storageKey(resolvedPrincipal));
+  } catch {
+    return { ...EMPTY_STORE, sessions: [] };
+  }
   if (!saved) return { ...EMPTY_STORE, sessions: [] };
   try {
     const parsed = JSON.parse(saved) as MockChatStore;
     if (!Array.isArray(parsed.sessions)) throw new Error('invalid mock chat store');
     return parsed;
   } catch {
-    window.localStorage.removeItem(MOCK_CHAT_STORAGE_KEY);
+    try {
+      window.localStorage.removeItem(storageKey(resolvedPrincipal));
+    } catch {
+      // 저장소를 사용할 수 없는 환경에서는 빈 목업 저장소로 복구합니다.
+    }
     return { ...EMPTY_STORE, sessions: [] };
   }
 }
 
-function writeStore(store: MockChatStore): void {
+function writeStore(store: MockChatStore, principalKey?: string | null): void {
+  const resolvedPrincipal = resolvePrincipalKey(principalKey);
   if (typeof window === 'undefined' || import.meta.env.PROD) {
-    memoryStore = cloneStore(store);
+    memoryStores.set(resolvedPrincipal, cloneStore(store));
     return;
   }
-  window.localStorage.setItem(MOCK_CHAT_STORAGE_KEY, JSON.stringify(store));
+  try {
+    window.localStorage.setItem(storageKey(resolvedPrincipal), JSON.stringify(store));
+  } catch {
+    // 저장소가 막힌 환경에서는 현재 응답만 보여주고 영속화하지 않습니다.
+  }
 }
 
 /** 근거 없는 답변을 돌려줄 질문인지. 목업 전용 규칙입니다. */
@@ -79,8 +105,11 @@ function shouldAnswerWithoutSources(message: string): boolean {
   return /일반|보통|아무|그냥/.test(message);
 }
 
-export function mockSendChat(payload: SendChatPayload): SendChatResult {
-  const store = readStore();
+export function mockSendChat(
+  payload: SendChatPayload,
+  principalKey = restoreAccountPrincipal(),
+): SendChatResult {
+  const store = readStore(principalKey);
   const sessionId = payload.conversationId ?? store.nextSessionId++;
   const now = new Date().toISOString();
   let session = store.sessions.find((item) => item.sessionId === sessionId);
@@ -121,7 +150,7 @@ export function mockSendChat(payload: SendChatPayload): SendChatResult {
     { role: 'assistant', text: response.answer, sources: response.sources },
   );
   session.lastMessageAt = now;
-  writeStore(store);
+  writeStore(store, principalKey);
   return response;
 }
 
@@ -151,9 +180,4 @@ export function mockDeleteChatSessions(sessionIds: readonly number[]): void {
   const store = readStore();
   store.sessions = store.sessions.filter((session) => !deleted.has(session.sessionId));
   writeStore(store);
-}
-
-export function mockClearChatSessions(): void {
-  memoryStore = { ...EMPTY_STORE, sessions: [] };
-  if (typeof window !== 'undefined') window.localStorage.removeItem(MOCK_CHAT_STORAGE_KEY);
 }

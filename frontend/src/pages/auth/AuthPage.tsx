@@ -82,7 +82,7 @@ export function AuthPage() {
         setSaving(false);
       }
     }
-    signIn();
+    signIn(email);
     navigate('/home', { replace: true });
   }
 

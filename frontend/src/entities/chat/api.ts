@@ -6,11 +6,15 @@
  * 내놓을 때까지 화면이 대기하게 됩니다. 나중에 스트리밍으로 바꿀 때 이 파일 안만
  * 바뀌고 화면 코드는 그대로입니다.
  */
-import { http, mockDelay } from '@/shared/api/client';
+import {
+  getAuthGeneration,
+  http,
+  mockDelay,
+  restoreAccountPrincipal,
+} from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockDeleteChatSessions,
-  mockClearChatSessions,
   mockGetChatMessages,
   mockListChatSessions,
   mockSendChat,
@@ -31,12 +35,21 @@ export class ChatSessionNotFoundError extends Error {
 
 /** REQ-CHAT-001 — POST /api/v1/chat */
 export async function sendChat(payload: SendChatPayload): Promise<SendChatResult> {
+  const requestAuthGeneration = getAuthGeneration();
+  const requestPrincipal = restoreAccountPrincipal();
   if (USE_MOCK) {
     // LLM 응답은 실제로 수 초 걸립니다. 대기 상태를 확인할 수 있게 길게 잡았습니다.
     await mockDelay(1200);
-    return mockSendChat(payload);
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 답변 전송을 중단했어요.');
+    }
+    return mockSendChat(payload, requestPrincipal);
   }
-  return http.post<SendChatResult>('/v1/chat', payload);
+  const result = await http.post<SendChatResult>('/v1/chat', payload);
+  if (requestAuthGeneration !== getAuthGeneration()) {
+    throw new Error('로그인 상태가 바뀌어 답변 표시를 중단했어요.');
+  }
+  return result;
 }
 
 /** #111 임시 이력 경계. 실 API 경로를 추측하지 않고 계약 확정 후 내부만 교체합니다. */
@@ -61,9 +74,4 @@ export async function deleteChatSessions(sessionIds: readonly number[]): Promise
   if (!USE_MOCK) throw new Error('대화 삭제 API가 아직 준비되지 않았어요.');
   await mockDelay();
   mockDeleteChatSessions(sessionIds);
-}
-
-/** 로그아웃한 사용자의 목업 건강 대화가 다음 계정에 노출되지 않게 지웁니다. */
-export function clearChatSessionCache(): void {
-  if (USE_MOCK) mockClearChatSessions();
 }

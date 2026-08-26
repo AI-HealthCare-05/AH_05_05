@@ -1,6 +1,10 @@
 import { expect, test, type Page } from 'playwright/test';
 
-const MOCK_CHAT_STORAGE_KEY = 'poke.mock-chat-sessions';
+const MOCK_ACCOUNT = 'patient@example.com';
+const OTHER_MOCK_ACCOUNT = 'other-patient@example.com';
+const ACCOUNT_PRINCIPAL_STORAGE_KEY = 'poke.account-principal';
+const mockChatStorageKey = (account: string) =>
+  `poke.mock-chat-sessions:${encodeURIComponent(account.toLowerCase())}`;
 
 test.setTimeout(30_000);
 
@@ -12,8 +16,20 @@ async function createConversation(page: Page, question: string) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/dev/chat');
-  await page.evaluate((key) => localStorage.removeItem(key), MOCK_CHAT_STORAGE_KEY);
-  await page.evaluate(() => sessionStorage.setItem('poke.access-token', 'e2e-chat-token'));
+  await page.evaluate(
+    ({ patientKey, otherKey, principalKey, account }) => {
+      localStorage.removeItem(patientKey);
+      localStorage.removeItem(otherKey);
+      sessionStorage.setItem('poke.access-token', 'e2e-chat-token');
+      sessionStorage.setItem(principalKey, account);
+    },
+    {
+      patientKey: mockChatStorageKey(MOCK_ACCOUNT),
+      otherKey: mockChatStorageKey(OTHER_MOCK_ACCOUNT),
+      principalKey: ACCOUNT_PRINCIPAL_STORAGE_KEY,
+      account: MOCK_ACCOUNT,
+    },
+  );
   await page.reload();
 });
 
@@ -126,20 +142,56 @@ test('대화 삭제 실패 뒤에도 선택 상태를 유지해 다시 시도할
   await expect(page.getByRole('button', { name: '1개 삭제' })).toBeEnabled();
 });
 
-test('로그아웃하면 메모리의 활성 대화 ID를 지운다', async ({ page }) => {
+test('로그아웃 뒤 다른 계정으로 로그인하면 이전 계정 대화를 보여주지 않는다', async ({ page }) => {
   await createConversation(page, '로그아웃 전 상담 질문');
   await page.getByRole('button', { name: '마이', exact: true }).click();
   await page.getByRole('button', { name: '로그아웃' }).click();
 
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
   await page.getByRole('button', { name: '로그인 · 회원가입' }).click();
-  await page.getByLabel('이메일').fill('patient@example.com');
+  await page.getByLabel('이메일').fill(OTHER_MOCK_ACCOUNT);
   await page.getByLabel('비밀번호').fill('password1234');
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
 
   await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
   await expect(page.getByText('대화 이력을 불러오지 못했어요.')).toHaveCount(0);
+});
+
+test('같은 계정으로 다시 로그인하면 저장된 대화 목록을 복구한다', async ({ page }) => {
+  const question = '같은 계정 복구 확인 질문';
+  await createConversation(page, question);
+  await page.getByRole('button', { name: '마이', exact: true }).click();
+  await page.getByRole('button', { name: '로그아웃' }).click();
+
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+  await page.getByRole('button', { name: '로그인 · 회원가입' }).click();
+  await page.getByLabel('이메일').fill(MOCK_ACCOUNT);
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();
+  await expect(page.getByRole('button', { name: new RegExp(question) })).toBeVisible();
+});
+
+test('답변 대기 중 로그아웃해도 이전 질문이 다음 계정에 저장되지 않는다', async ({ page }) => {
+  const question = '로그아웃 경합 확인 질문';
+  await page.getByRole('textbox', { name: '질문 입력' }).fill(question);
+  await page.getByRole('button', { name: '보내기' }).click();
+  await page.getByRole('button', { name: '마이', exact: true }).click();
+  await page.getByRole('button', { name: '로그아웃' }).click();
+
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+  await page.getByRole('button', { name: '로그인 · 회원가입' }).click();
+  await page.getByLabel('이메일').fill(OTHER_MOCK_ACCOUNT);
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await page.getByRole('button', { name: '챗봇', exact: true }).click();
+
+  await page.waitForTimeout(1_500);
+  await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
+  await expect(page.getByText(question, { exact: true })).toHaveCount(0);
 });
 
 test('이력 API가 없어도 성공한 실 API 답변을 현재 화면에서 지우지 않는다', async ({ page }) => {
@@ -172,8 +224,11 @@ test('답변 대기 중 다른 탭에 다녀와도 완료된 활성 대화를 �
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
 
+  await expect(page.getByRole('textbox', { name: '질문 입력' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '보내기' })).toBeDisabled();
   await expect(page.getByText(question, { exact: true })).toBeVisible();
   await expect(page.getByText('리바록사반을 복용하는 동안', { exact: false })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '질문 입력' })).toBeEnabled();
 });
 
 test('후속 답변 뒤 목록으로 돌아오면 최신 미리보기로 갱신한다', async ({ page }) => {
@@ -193,7 +248,10 @@ test('후속 답변 뒤 목록으로 돌아오면 최신 미리보기로 갱신�
 test('저장소에서 사라진 활성 대화는 오류 방에 머물지 않고 빈 대화로 복구한다', async ({ page }) => {
   await createConversation(page, '사라질 활성 대화');
   await page.getByRole('button', { name: '홈', exact: true }).click();
-  await page.evaluate((storageKey) => localStorage.removeItem(storageKey), MOCK_CHAT_STORAGE_KEY);
+  await page.evaluate(
+    (storageKey) => localStorage.removeItem(storageKey),
+    mockChatStorageKey(MOCK_ACCOUNT),
+  );
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
 
   await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();

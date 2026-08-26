@@ -1,6 +1,5 @@
 export {
   ChatSessionNotFoundError,
-  clearChatSessionCache,
   deleteChatSessions,
   getChatMessages,
   listChatSessions,

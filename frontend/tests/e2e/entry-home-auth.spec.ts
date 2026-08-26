@@ -49,6 +49,13 @@ test('게스트 탭은 조회 화면으로 가지 않고 같은 로그인 시트
   await expect(page).toHaveURL(/\/home$/);
 });
 
+test('로그인하지 않고 챗봇 주소를 직접 열면 로그인 화면으로 보낸다', async ({ page }) => {
+  await page.goto('/chat');
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible();
+});
+
 test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();

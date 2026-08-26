@@ -68,6 +68,9 @@ export function ChatPage({
   const {
     activeSessionId,
     sessionRevision,
+    chatRequestPending,
+    beginChatRequest,
+    endChatRequest,
     selectSession,
     startNewSession,
     notifySessionUpdated,
@@ -195,12 +198,14 @@ export function ChatPage({
   // 새 메시지·대기 상태가 생기면 맨 아래로 내립니다.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages, pending]);
+  }, [chatRequestPending, messages, pending]);
 
   async function sendMessage(rawMessage: string) {
     const message = rawMessage.trim();
-    if (!message || pending || historyLoading || view === 'loading') return;
+    if (!message || pending || chatRequestPending || historyLoading || view === 'loading') return;
 
+    const requestId = crypto.randomUUID();
+    beginChatRequest(requestId);
     setHistoryError(null);
     setSessionListError(null);
     setMessages((prev) => [...prev, { role: 'user', text: message, sources: [] }]);
@@ -208,7 +213,7 @@ export function ChatPage({
     setPending(true);
     try {
       const result = await chatSender({
-        requestId: crypto.randomUUID(),
+        requestId,
         recordId,
         message,
         conversationId,
@@ -227,6 +232,7 @@ export function ChatPage({
       // 질문만 남고 답변도 오류도 없는 상태로 끝나서 사용자가 원인을 알 수 없습니다.
       toast.error(error instanceof Error ? error.message : '답변을 가져오지 못했어요.');
     } finally {
+      endChatRequest(requestId);
       setPending(false);
     }
   }
@@ -383,7 +389,7 @@ export function ChatPage({
     );
   }
 
-  const composerDisabled = pending || historyLoading || view === 'loading';
+  const composerDisabled = chatRequestPending || pending || historyLoading || view === 'loading';
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -419,7 +425,7 @@ export function ChatPage({
             )}
             {messages.length === 0 && (
               <ChatStartGuide
-                pending={pending}
+                pending={chatRequestPending || pending}
                 onQuestion={(question) => void sendMessage(question)}
               />
             )}
@@ -452,7 +458,7 @@ export function ChatPage({
           ),
         )}
 
-        {pending && (
+        {(chatRequestPending || pending) && (
           <div className="flex justify-start">
             <p className="max-w-[80%] rounded-card bg-muted-bg px-3.5 py-2.5 text-base text-muted-foreground">
               답변을 준비하고 있어요...
@@ -476,7 +482,7 @@ export function ChatPage({
               handleSend();
             }
           }}
-          placeholder={pending ? '답변을 기다리는 중이에요' : '궁금한 것을 입력하세요'}
+          placeholder={composerDisabled ? '답변을 기다리는 중이에요' : '궁금한 것을 입력하세요'}
         />
         <Button
           fullWidth={false}

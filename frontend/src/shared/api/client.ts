@@ -9,17 +9,46 @@
 import { API_BASE_URL } from '@/shared/config/env';
 
 const ACCESS_TOKEN_STORAGE_KEY = 'poke.access-token';
+const ACCOUNT_PRINCIPAL_STORAGE_KEY = 'poke.account-principal';
 
 let accessToken: string | null = null;
+let accountPrincipal: string | null = null;
+let authGeneration = 0;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+  authGeneration += 1;
   try {
     if (token) sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
     else sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
   } catch {
     // 저장소를 사용할 수 없는 환경에서는 현재 탭 메모리의 토큰만 사용합니다.
   }
+}
+
+export function setAccountPrincipal(principal: string | null): void {
+  accountPrincipal = principal?.trim().toLowerCase() || null;
+  authGeneration += 1;
+  try {
+    if (accountPrincipal) sessionStorage.setItem(ACCOUNT_PRINCIPAL_STORAGE_KEY, accountPrincipal);
+    else sessionStorage.removeItem(ACCOUNT_PRINCIPAL_STORAGE_KEY);
+  } catch {
+    // 저장소를 사용할 수 없는 환경에서는 현재 탭 메모리의 주체만 사용합니다.
+  }
+}
+
+export function restoreAccountPrincipal(): string | null {
+  if (accountPrincipal) return accountPrincipal;
+  try {
+    accountPrincipal = sessionStorage.getItem(ACCOUNT_PRINCIPAL_STORAGE_KEY);
+  } catch {
+    accountPrincipal = null;
+  }
+  return accountPrincipal;
+}
+
+export function getAuthGeneration(): number {
+  return authGeneration;
 }
 
 export function restoreAccessToken(): string | null {

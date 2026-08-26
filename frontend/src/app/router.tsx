@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
@@ -22,6 +22,7 @@ import {
 } from '@/entities/medication';
 import { DevGallery } from './DevGallery';
 import { ChatSessionProvider } from './ChatSessionContext';
+import { useSession } from './SessionContext';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
 const EXISTING_CHAT_HISTORY: ChatMessage[] = [
@@ -108,6 +109,11 @@ const failChatSessionHistory = async (_sessionId: number): Promise<ChatMessage[]
   throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
 };
 
+function AuthenticatedChatPage() {
+  const { authenticated } = useSession();
+  return authenticated ? <ChatPage /> : <Navigate to="/login" replace />;
+}
+
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
  *
@@ -129,7 +135,7 @@ export function AppRouter() {
         <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route path="/medications" element={<MedicationsPage />} />
         <Route path="/medications/:recordId" element={<MedicationEpisodePage />} />
-        <Route path="/chat" element={<ChatPage />} />
+        <Route path="/chat" element={<AuthenticatedChatPage />} />
         <Route path="/my" element={<MyPage />} />
         <Route path="/my/profile" element={<MyProfilePage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
