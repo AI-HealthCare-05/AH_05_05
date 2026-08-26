@@ -40,18 +40,21 @@ interface ChatLocationState {
 
 type ChatHistoryLoader = () => Promise<ChatMessage[]>;
 type ChatSender = (payload: SendChatPayload) => Promise<SendChatResult>;
+type ChatSessionListLoader = () => Promise<ChatSessionSummary[]>;
 type ChatSessionDeleter = (sessionIds: readonly number[]) => Promise<void>;
 type ChatView = 'loading' | 'list' | 'room';
 
 interface ChatPageProps {
   historyLoader?: ChatHistoryLoader;
   chatSender?: ChatSender;
+  sessionListLoader?: ChatSessionListLoader;
   sessionDeleter?: ChatSessionDeleter;
 }
 
 export function ChatPage({
   historyLoader,
   chatSender = sendChat,
+  sessionListLoader = listChatSessions,
   sessionDeleter = deleteChatSessions,
 }: ChatPageProps = {}) {
   const navigate = useNavigate();
@@ -66,6 +69,8 @@ export function ChatPage({
   const [newChatRequested, setNewChatRequested] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [sessionListError, setSessionListError] = useState<string | null>(null);
+  const [sessionListReloadKey, setSessionListReloadKey] = useState(0);
   const [draft, setDraft] = useState('');
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
@@ -80,6 +85,7 @@ export function ChatPage({
     let cancelled = false;
     setHistoryLoading(true);
     setHistoryError(null);
+    setSessionListError(null);
 
     async function loadEntry() {
       try {
@@ -106,7 +112,7 @@ export function ChatPage({
           return;
         }
 
-        const loadedSessions = await listChatSessions();
+        const loadedSessions = await sessionListLoader();
         if (cancelled) return;
         setSessions(loadedSessions);
         if (loadedSessions.length === 0) {
@@ -120,7 +126,11 @@ export function ChatPage({
       } catch (error: unknown) {
         if (cancelled) return;
         setMessages([]);
-        setHistoryError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
+        const message = error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.';
+        const loadingSessionList =
+          historyLoader === undefined && !newChatRequested && activeSessionId === null;
+        if (loadingSessionList) setSessionListError(message);
+        else setHistoryError(message);
         setView('room');
       } finally {
         if (!cancelled) setHistoryLoading(false);
@@ -131,7 +141,13 @@ export function ChatPage({
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, historyLoader, newChatRequested]);
+  }, [
+    activeSessionId,
+    historyLoader,
+    newChatRequested,
+    sessionListLoader,
+    sessionListReloadKey,
+  ]);
 
   // 새 메시지·대기 상태가 생기면 맨 아래로 내립니다.
   useEffect(() => {
@@ -194,6 +210,29 @@ export function ChatPage({
     setSelectionMode(false);
     setSelectedSessionIds(new Set());
     setView('room');
+  }
+
+  function handleRoomBack() {
+    if (historyLoader !== undefined) {
+      navigate(-1);
+      return;
+    }
+
+    if (sessions.length > 0) {
+      setSelectionMode(false);
+      setSelectedSessionIds(new Set());
+      setView('list');
+      return;
+    }
+
+    if (activeSessionId !== null || conversationId !== null) {
+      startNewSession();
+      setNewChatRequested(false);
+      setView('loading');
+      return;
+    }
+
+    navigate(-1);
   }
 
   function toggleSelectionMode() {
@@ -279,7 +318,7 @@ export function ChatPage({
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="AI 상담" onBack={() => navigate(-1)} />
+      <Header title="AI 상담" onBack={handleRoomBack} />
 
       <main className="flex flex-1 flex-col gap-3 px-page-x py-4">
         {historyLoading ? (
@@ -292,6 +331,22 @@ export function ChatPage({
           <>
             {historyError !== null && (
               <Card title="대화 이력을 불러오지 못했어요.">{historyError}</Card>
+            )}
+            {sessionListError !== null && (
+              <Card title="대화 목록을 불러오지 못했어요.">
+                <div className="flex flex-col gap-3">
+                  <p>{sessionListError}</p>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setView('loading');
+                      setSessionListReloadKey((current) => current + 1);
+                    }}
+                  >
+                    다시 시도
+                  </Button>
+                </div>
+              </Card>
             )}
             {messages.length === 0 && (
               <ChatStartGuide

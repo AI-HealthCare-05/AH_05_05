@@ -42,6 +42,9 @@ test('새로고침하면 최신 대화 목록을 보여주고 선택한 세션�
 
   await row.click();
   await expect(page.getByText(question, { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '뒤로' }).click();
+  await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();
 });
 
 test('새 채팅 버튼은 빈 세션을 저장하지 않고 시작 가이드를 연다', async ({ page }) => {
@@ -77,4 +80,48 @@ test('선택 모드에서 마우스로 여러 대화를 고르고 삭제할 수 
   await page.getByRole('button', { name: '2개 삭제' }).click();
   await page.getByRole('button', { name: '삭제' }).click();
   await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
+});
+
+test('대화 목록 조회 실패는 화면 안 카드에서 다시 시도할 수 있다', async ({ page }) => {
+  await page.goto('/dev/chat-session-list-error');
+
+  await expect(page.getByText('대화 목록을 불러오지 못했어요.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '다시 시도' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
+});
+
+test('375px 목록과 선택 화면은 가로로 넘치지 않고 조작 이름을 제공한다', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await createConversation(page, '작은 화면 상담 질문');
+  await page.reload();
+
+  await expect(page.getByRole('button', { name: '새 채팅' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '대화 선택' })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBe(true);
+
+  await page.getByRole('button', { name: '대화 선택' }).click();
+  await expect(page.getByRole('checkbox', { name: /작은 화면 상담 질문 선택/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: '0개 삭제' })).toBeDisabled();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBe(true);
+});
+
+test('대화 삭제 실패 뒤에도 선택 상태를 유지해 다시 시도할 수 있다', async ({ page }) => {
+  await createConversation(page, '삭제 실패 확인 질문');
+  await page.goto('/dev/chat-delete-error');
+
+  await page.getByRole('button', { name: '대화 선택' }).click();
+  const checkbox = page.getByRole('checkbox', { name: /삭제 실패 확인 질문 선택/ });
+  await checkbox.check();
+  await page.getByRole('button', { name: '1개 삭제' }).click();
+  await page.getByRole('button', { name: '삭제' }).click();
+
+  await expect(page.getByRole('dialog')).toContainText('대화를 삭제하지 못했어요');
+  await page.getByRole('button', { name: '닫기' }).click();
+  await expect(checkbox).toBeChecked();
+  await expect(page.getByRole('button', { name: '1개 삭제' })).toBeEnabled();
 });

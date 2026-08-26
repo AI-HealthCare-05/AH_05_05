@@ -11,7 +11,7 @@ import { SplashPage } from '@/pages/splash';
 import { SupplementsPage, type NutrientStandardProfile } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
-import type { ChatMessage } from '@/entities/chat';
+import type { ChatMessage, ChatSessionSummary } from '@/entities/chat';
 import {
   mockMedicationOverview,
   mockMedicationOverviews,
@@ -92,6 +92,12 @@ const loadExistingChatHistory = async () => EXISTING_CHAT_HISTORY;
 const failChatHistory = async (): Promise<ChatMessage[]> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
+const failChatSessionList = async (): Promise<ChatSessionSummary[]> => {
+  throw new Error('잠시 후 다시 시도해주세요.');
+};
+const failChatSessionDelete = async (_sessionIds: readonly number[]): Promise<void> => {
+  throw new Error('잠시 후 다시 시도해주세요.');
+};
 
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
@@ -137,6 +143,14 @@ export function AppRouter() {
         <Route
           path="/dev/chat-history-error"
           element={<ChatPage historyLoader={failChatHistory} />}
+        />
+        <Route
+          path="/dev/chat-session-list-error"
+          element={<ChatPage sessionListLoader={failChatSessionList} />}
+        />
+        <Route
+          path="/dev/chat-delete-error"
+          element={<ChatPage sessionDeleter={failChatSessionDelete} />}
         />
         <Route path="/dev/my-guest" element={<MyPage authenticatedOverride={false} />} />
         <Route path="/dev/my-authenticated" element={<MyPage authenticatedOverride />} />
