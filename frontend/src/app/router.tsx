@@ -3,7 +3,7 @@ import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
-import { MedicationsPage } from '@/pages/medications';
+import { MedicationEpisodePage, MedicationsPage } from '@/pages/medications';
 import { MyPage, MyProfilePage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
@@ -14,6 +14,7 @@ import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/acc
 import type { ChatMessage } from '@/entities/chat';
 import {
   mockMedicationOverview,
+  mockMedicationOverviews,
   mockMedicationScheduleWithAutoAssigned,
   type DoseRecord,
   type MedicationOverview,
@@ -40,6 +41,7 @@ const MISSING_NUTRIENT_PROFILE: NutrientStandardProfile = {
 };
 const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
 const ACTIVE_MEDICATION_OVERVIEW = mockMedicationOverview();
+const MULTIPLE_MEDICATION_OVERVIEWS = mockMedicationOverviews();
 const EMPTY_MEDICATION_OVERVIEW: MedicationOverview = {
   ...ACTIVE_MEDICATION_OVERVIEW,
   medications: [],
@@ -70,8 +72,10 @@ const FOURTEEN_DAY_MEDICATION_OVERVIEW: MedicationOverview = {
 
 const loadEmptyMedicationOverview = async () => EMPTY_MEDICATION_OVERVIEW;
 const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
+const loadActiveMedicationOverview = async () => ACTIVE_MEDICATION_OVERVIEW;
 const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
 const loadFourteenDayMedicationOverview = async () => FOURTEEN_DAY_MEDICATION_OVERVIEW;
+const loadMultipleMedicationOverviews = async () => MULTIPLE_MEDICATION_OVERVIEWS;
 const failMedicationOverview = async (): Promise<MedicationOverview> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
@@ -107,13 +111,17 @@ export function AppRouter() {
         <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
         <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route path="/medications" element={<MedicationsPage />} />
+        <Route path="/medications/:recordId" element={<MedicationEpisodePage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/my" element={<MyPage />} />
         <Route path="/my/profile" element={<MyProfilePage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
-        <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
+        <Route
+          path="/dev/medication-schedule"
+          element={<MedicationSchedulePage defaultRecordId={12} />}
+        />
         <Route path="/dev/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route
           path="/dev/medication-schedule-auto-assigned"
@@ -161,7 +169,22 @@ export function AppRouter() {
         />
         <Route
           path="/dev/home-active"
-          element={<HomePage authenticatedOverride medicationState="active" />}
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationState="active"
+              medicationOverviewLoader={loadActiveMedicationOverview}
+            />
+          }
+        />
+        <Route
+          path="/dev/home-multiple-episodes"
+          element={
+            <HomePage
+              authenticatedOverride
+              medicationOverviewsLoader={loadMultipleMedicationOverviews}
+            />
+          }
         />
         <Route
           path="/dev/home-one-medication"
@@ -187,6 +210,7 @@ export function AppRouter() {
             <HomePage
               authenticatedOverride
               medicationState="active"
+              medicationOverviewLoader={loadActiveMedicationOverview}
               doseRecordSaver={failDoseRecordSave}
             />
           }

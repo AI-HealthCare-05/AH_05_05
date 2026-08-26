@@ -46,6 +46,27 @@ class TestJobAPI(TestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["total"] == 2
 
+    async def test_job_list_includes_user_name_and_null_for_system_job(self):
+        user = await create_user("job-list-name@example.com")
+        user_job = await BackgroundJob.create(
+            idempotency_key="job-list-with-user-name",
+            job_type=BackgroundJobType.ALARM,
+            user=user,
+        )
+        system_job = await BackgroundJob.create(
+            idempotency_key="job-list-system-job",
+            job_type=BackgroundJobType.LLM,
+        )
+
+        with patch.object(config, "INTERNAL_API_KEY", "test-internal-key"):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get("/api/v1/internal/jobs", headers=INTERNAL_HEADERS)
+
+        assert response.status_code == status.HTTP_200_OK
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[user_job.id]["user_name"] == "알람 테스트 사용자"
+        assert items[system_job.id]["user_name"] is None
+
     async def test_job_stats_counts_statuses_by_inclusive_created_date_range(self):
         jobs = []
         for index, job_status in enumerate(

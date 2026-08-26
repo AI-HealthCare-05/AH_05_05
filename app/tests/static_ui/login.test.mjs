@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { setRememberedLoginId, validateCredentials, validatePasswordChange } from "../../static/js/login.js";
 
@@ -77,4 +78,11 @@ test("setRememberedLoginId clears the saved ID when remember is disabled", () =>
   setRememberedLoginId(storage, "admin@ozcoding.ai", false);
 
   assert.equal(values.has("rememberedLoginId"), false);
+});
+
+test("login page cache-busts the API-connected login script", async () => {
+  const templateUrl = new URL("../../static/templates/login.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+
+  assert.match(html, /src="\.\.\/js\/login\.js\?v=\d{8}-\d+"/);
 });

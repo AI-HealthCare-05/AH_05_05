@@ -193,3 +193,57 @@ class OcrQueueUnavailableError(AppError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "OCR_QUEUE_UNAVAILABLE"
     message = "OCR 분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요."
+
+
+class MedicationScheduleNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "MEDICATION_SCHEDULE_NOT_FOUND"
+    message = "복약 시간표를 찾을 수 없습니다."
+
+
+class InvalidMedicationScheduleError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_MEDICATION_SCHEDULE"
+    message = "복약 시간표 입력값이 올바르지 않습니다."
+
+
+class ChatConversationNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "CHAT_SESSION_NOT_FOUND"
+    message = "채팅 세션을 찾을 수 없습니다."
+
+
+class ChatCareEpisodeNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "CARE_EPISODE_NOT_FOUND"
+    message = "확인 완료된 복약 기록을 찾을 수 없습니다."
+
+
+class ChatContextConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHAT_CONTEXT_MISMATCH"
+    message = "기존 채팅과 다른 복약 기록을 연결할 수 없습니다."
+
+
+class ChatRequestConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHAT_REQUEST_IN_PROGRESS"
+    message = "같은 채팅 요청을 처리하고 있습니다."
+
+
+class ChatIdempotencyConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHAT_IDEMPOTENCY_CONFLICT"
+    message = "같은 requestId로 다른 채팅 요청을 보낼 수 없습니다."
+
+
+class ChatUpstreamUnavailableError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "CHAT_UPSTREAM_UNAVAILABLE"
+    message = "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
+class ChatProcessingFailedError(AppError):
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code = "CHAT_PROCESSING_FAILED"
+    message = "채팅 답변 처리 중 오류가 발생했습니다."

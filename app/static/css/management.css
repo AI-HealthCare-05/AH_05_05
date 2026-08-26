@@ -2,6 +2,19 @@
 .management-page button, .management-page input, .management-page select { font: inherit; }
 .ui-control { min-height: 36px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #111827; padding: 0 10px; }
 .ui-control:focus { outline: 3px solid rgba(28,100,242,.16); border-color: #1c64f2; }
+.task-date-range { display: flex; align-items: center; gap: 8px; color: #374151; font-size: 14px; }
+.task-date-range input[type="date"] { width: 150px; }
+.task-status-grid, .management-table-wrap { width: 100%; }
+.task-status-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.task-status-card { position: relative; min-width: 0; min-height: 62px; padding: 8px 10px; }
+.task-status-card strong { display: block; margin-top: 2px; font-size: 20px; line-height: 1.15; }
+.task-status-label { display: flex; align-items: center; gap: 4px; min-width: 0; white-space: nowrap; }
+.task-status-label small { overflow: hidden; text-overflow: ellipsis; }
+.task-status-help { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid #94a3b8; border-radius: 999px; color: #64748b; font-size: 11px; font-weight: 800; line-height: 1; cursor: help; }
+.task-status-help:focus { outline: 2px solid rgba(28,100,242,.35); outline-offset: 2px; }
+.task-status-tooltip { position: absolute; z-index: 30; left: 12px; top: 34px; width: max-content; max-width: 290px; padding: 7px 10px; border-radius: 7px; background: #111827; color: #fff; box-shadow: 0 6px 18px rgba(15,23,42,.2); font-size: 12px; line-height: 1.4; opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity .15s, transform .15s, visibility .15s; pointer-events: none; }
+.task-status-tooltip::before { content: ""; position: absolute; left: 38px; top: -5px; width: 10px; height: 10px; background: #111827; transform: rotate(45deg); }
+.task-status-help:hover + .task-status-tooltip, .task-status-help:focus + .task-status-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
 .ui-button { min-height: 36px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #111827; padding: 0 12px; cursor: pointer; font-weight: 600; }
 .ui-button:hover { background: #f3f4f6; }
 .ui-button-primary { background: #1c64f2; border-color: #1c64f2; color: #fff; }
@@ -13,6 +26,7 @@
 .management-table tbody tr:hover { background: rgba(28,100,242,.035); }
 .management-table th, .management-table td { padding: 12px; text-align: left; border-bottom: 1px solid #f0f1f3; white-space: nowrap; }
 .empty-row { text-align: center; color: #6b7280; padding: 32px !important; }
+.management-table td.empty-row { text-align: center; }
 .status-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
 .status-active { background: #dcfce7; color: #166534; }
 .status-stopped { background: #f3f4f6; color: #4b5563; }

@@ -30,11 +30,12 @@ import type {
 
 let hasRegisteredMedication = true;
 let doseRecords: DoseRecord[] = [
-  { date: '2026-08-22', slot: 'morning', taken: true },
-  { date: '2026-08-22', slot: 'evening', taken: true },
-  { date: '2026-08-23', slot: 'morning', taken: true },
-  { date: '2026-08-23', slot: 'evening', taken: true },
-  { date: '2026-08-24', slot: 'morning', taken: true },
+  { recordId: 12, date: '2026-08-22', slot: 'morning', taken: true },
+  { recordId: 12, date: '2026-08-22', slot: 'evening', taken: true },
+  { recordId: 12, date: '2026-08-23', slot: 'morning', taken: true },
+  { recordId: 12, date: '2026-08-23', slot: 'evening', taken: true },
+  { recordId: 12, date: '2026-08-24', slot: 'morning', taken: true },
+  { recordId: 24, date: '2026-08-24', slot: 'morning', taken: true },
 ];
 
 export function resetMockMedicationForNewAccount(): void {
@@ -42,7 +43,7 @@ export function resetMockMedicationForNewAccount(): void {
   doseRecords = [];
 }
 
-export function mockMedicationOverview(): MedicationOverview {
+function primaryMedicationOverview(): MedicationOverview {
   const startDate = '2026-08-22';
   const medications = hasRegisteredMedication ? [
     { medicationId: 301, name: '셀레콕시브', dose: '200mg', days: 7, daysRemaining: 3, slots: ['morning', 'evening'] as const, asNeeded: false },
@@ -62,6 +63,45 @@ export function mockMedicationOverview(): MedicationOverview {
       slots: [...medication.slots],
     })),
   };
+}
+
+function secondaryMedicationOverview(): MedicationOverview {
+  const startDate = '2026-08-24';
+  const medications = [
+    {
+      medicationId: 501,
+      name: '아목시실린',
+      dose: '500mg',
+      days: 5,
+      daysRemaining: 3,
+      slots: ['morning', 'lunch', 'evening'] as const,
+      asNeeded: false,
+    },
+  ];
+  return {
+    recordId: 24,
+    documentImageUrl: '/mock/medication-envelope.svg',
+    start: { date: startDate, slot: 'morning' },
+    endDate: medicationEndDate(startDate, medications),
+    daysRemaining: 3,
+    mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+    medications: medications.map((medication) => ({
+      ...medication,
+      slots: [...medication.slots],
+    })),
+  };
+}
+
+export function mockMedicationOverviews(): MedicationOverview[] {
+  return hasRegisteredMedication
+    ? [primaryMedicationOverview(), secondaryMedicationOverview()]
+    : [];
+}
+
+export function mockMedicationOverview(recordId = 12): MedicationOverview {
+  const overview = mockMedicationOverviews().find((item) => item.recordId === recordId);
+  if (overview) return overview;
+  return { ...primaryMedicationOverview(), medications: [] };
 }
 
 function medicationEndDate(
@@ -114,14 +154,23 @@ export function mockSaveMedicationSchedule(
 
 export function mockSaveDoseTaken(payload: SaveDoseTakenPayload): DoseRecord {
   doseRecords = doseRecords.filter(
-    (record) => record.date !== payload.date || record.slot !== payload.slot,
+    (record) =>
+      record.recordId !== payload.recordId ||
+      record.date !== payload.date ||
+      record.slot !== payload.slot,
   );
   if (payload.taken) doseRecords.push({ ...payload });
   return { ...payload };
 }
 
-export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] {
+export function mockGetDoseRecords({ recordId, from, to }: DoseRecordRange): DoseRecord[] {
   return doseRecords
-    .filter((record) => record.taken && record.date >= from && record.date <= to)
+    .filter(
+      (record) =>
+        record.recordId === recordId &&
+        record.taken &&
+        record.date >= from &&
+        record.date <= to,
+    )
     .map((record) => ({ ...record }));
 }

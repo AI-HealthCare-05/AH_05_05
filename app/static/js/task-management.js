@@ -1,32 +1,119 @@
-import { closeOverlay, openOverlay, showToast } from "./overlay.js";
+import { escapeHtml, get, requireLogin, tableState } from "./api.js";
 
-export function filterTasks(tasks, query, type, status) {
-  const term = query.trim().toLowerCase();
-  return tasks.filter((task) => (!term || `${task.id} ${task.type}`.toLowerCase().includes(term)) && (type === "전체" || task.type === type) && (status === "전체" || task.status === status));
+const TYPE_VALUES = { OCR: "OCR", LLM: "LLM", CHAT: "CHAT", ALARM: "ALARM" };
+const STATUS_VALUES = {
+  진행중: "PROCESSING",
+  성공: "COMPLETED",
+  실패: "FAILED",
+  "진행 대기": "QUEUED",
+  "재시도 대기": "RETRY_WAITING",
+  취소: "CANCELLED",
+};
+const STATUS_LABELS = { QUEUED: "대기", PROCESSING: "진행 중", RETRY_WAITING: "재시도 대기", COMPLETED: "성공", FAILED: "실패", CANCELLED: "취소" };
+
+export function buildTaskQuery({ keyword, type, status, startDate, endDate }) {
+  return { keyword: keyword.trim(), jobType: TYPE_VALUES[type] ?? "", status: STATUS_VALUES[status] ?? "", startDate, endDate, page: 1, size: 100 };
 }
 
-export function retryTask(tasks, taskId) {
-  return tasks.map((task) => task.id === taskId ? { ...task, status: "진행 중" } : { ...task });
+export function validateTaskDateRange(startDate, endDateInput, alertFn = window.alert) {
+  if (startDate && endDateInput.value && endDateInput.value < startDate) {
+    alertFn("조회 기간이 올바르지 않습니다.");
+    endDateInput.value = "";
+    return false;
+  }
+  return true;
 }
 
-let tasks = [
-  { id: "TSK-8812", type: "OCR 추출", owner: "시스템 자동", started: "2024.12.14 09:31", status: "실패" },
-  { id: "TSK-8801", type: "알림 발송", owner: "시스템 자동", started: "2024.12.14 09:44", status: "진행 중" },
-  { id: "TSK-8500", type: "챗봇 응답 검수", owner: "Dr. Park, AI", started: "2024.12.13 22:10", status: "성공" },
-  { id: "TSK-8488", type: "OCR 추출", owner: "시스템 자동", started: "2024.12.13 21:02", status: "성공" },
-];
+function localDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+}
+
+function statusClass(value) {
+  if (value === "COMPLETED") return "active";
+  if (value === "FAILED" || value === "CANCELLED") return "failed";
+  return "processing";
+}
+
+function renderJobs(tbody, jobs) {
+  if (!jobs.length) return tableState.empty(tbody, 6, "조회 결과가 없습니다.");
+  tbody.innerHTML = jobs.map((job) => {
+    const error = [job.errorCode, job.errorMessage].filter(Boolean).join(" - ") || "-";
+    const userName = job.userName || (job.userId ? `사용자 #${job.userId}` : "시스템 자동");
+    return `<tr><td><strong>${escapeHtml(job.jobId)}</strong></td><td>${escapeHtml(job.jobType)}</td><td>${escapeHtml(userName)}</td><td>${escapeHtml(formatDateTime(job.requestedAt))}</td><td><span class="status-badge status-${statusClass(job.status)}">${escapeHtml(STATUS_LABELS[job.status] ?? job.status)}</span></td><td>${escapeHtml(error)}</td></tr>`;
+  }).join("");
+}
+
+export function renderTaskStats(root, counts) {
+  const selectors = {
+    QUEUED: "[data-task-count-queued]",
+    PROCESSING: "[data-task-count-processing]",
+    RETRY_WAITING: "[data-task-count-retry-waiting]",
+    COMPLETED: "[data-task-count-completed]",
+    FAILED: "[data-task-count-failed]",
+    CANCELLED: "[data-task-count-cancelled]",
+  };
+  Object.entries(selectors).forEach(([jobStatus, selector]) => {
+    root.querySelector(selector).textContent = String(counts?.[jobStatus] ?? 0);
+  });
+}
 
 function initializeTaskManagement() {
-  const tbody = document.querySelector("[data-task-rows]"); if (!tbody) return;
-  const search = document.querySelector("[data-task-search]"); const type = document.querySelector("[data-task-type]"); const status = document.querySelector("[data-task-status]");
-  const render = () => { const visible = filterTasks(tasks, search.value, type.value, status.value); tbody.innerHTML = visible.length ? visible.map((task) => `<tr><td><strong>${task.id}</strong></td><td>${task.type}</td><td>${task.owner}</td><td>${task.started}</td><td><span class="status-badge status-${task.status === "성공" ? "active" : task.status === "실패" ? "failed" : "processing"}">${task.status}</span></td><td><button class="ui-link-button" data-task-detail="${task.id}">상세 보기</button></td></tr>`).join("") : '<tr><td class="empty-row" colspan="6">조건에 맞는 작업이 없습니다.</td></tr>'; };
-  [search, type, status].forEach((control) => control.addEventListener(control === search ? "input" : "change", render));
-  document.querySelector("[data-task-reset]").addEventListener("click", () => { search.value = ""; type.value = "전체"; status.value = "전체"; render(); });
-  tbody.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-task-detail]"); if (!button) return; const task = tasks.find((item) => item.id === button.dataset.taskDetail);
-    const file = task.status === "성공" ? "overlay-task-detail-success.html" : task.status === "진행 중" ? "overlay-task-detail-processing.html" : "overlay-task-retry.html";
-    const overlay = await openOverlay(file, { onConfirm: task.status === "실패" ? () => { tasks = retryTask(tasks, task.id); closeOverlay(); render(); showToast(`${task.id} 재시도를 시작했습니다.`); } : undefined });
-    overlay.querySelectorAll("[data-task-id]").forEach((node) => { node.textContent = task.id; });
-  }); render();
+  const tbody = document.querySelector("[data-task-rows]");
+  if (!tbody || !requireLogin()) return;
+  const search = document.querySelector("[data-task-search]");
+  const type = document.querySelector("[data-task-type]");
+  const status = document.querySelector("[data-task-status]");
+  const startDate = document.querySelector("[data-task-start-date]");
+  const endDate = document.querySelector("[data-task-end-date]");
+  const searchButton = document.querySelector("[data-task-search-button]");
+  const resetButton = document.querySelector("[data-task-reset]");
+  const today = localDateValue(new Date());
+
+  const loadJobs = async () => {
+    if (!startDate.value) startDate.value = today;
+    if (!endDate.value) endDate.value = today;
+    if (!validateTaskDateRange(startDate.value, endDate)) return;
+    const previousRows = tbody.innerHTML;
+    searchButton.disabled = true;
+    try {
+      const [jobsResponse, statsResponse] = await Promise.all([
+        get("/admin/jobs", buildTaskQuery({ keyword: search.value, type: type.value, status: status.value, startDate: startDate.value, endDate: endDate.value })),
+        get("/admin/jobs/stats", { startDate: startDate.value, endDate: endDate.value }),
+      ]);
+      renderJobs(tbody, jobsResponse.items ?? []);
+      renderTaskStats(document, statsResponse.counts);
+    } catch {
+      tbody.innerHTML = previousRows;
+      window.alert("작업 목록 조회에 실패했습니다.");
+    } finally {
+      searchButton.disabled = false;
+    }
+  };
+
+  startDate.value = today;
+  endDate.value = today;
+  tableState.loading(tbody, 6, "오늘 작업을 조회하는 중…");
+
+  endDate.addEventListener("change", () => validateTaskDateRange(startDate.value, endDate));
+  searchButton.addEventListener("click", loadJobs);
+  resetButton.addEventListener("click", () => {
+    search.value = "";
+    type.value = "전체";
+    status.value = "전체";
+    startDate.value = today;
+    endDate.value = today;
+  });
+
+  void loadJobs();
 }
+
 if (typeof document !== "undefined") initializeTaskManagement();
