@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-import { setRememberedLoginId, validateCredentials } from "../../static/js/login.js";
+import { setRememberedLoginId, validateCredentials, validatePasswordChange } from "../../static/js/login.js";
 
 test("validateCredentials rejects blank login fields", () => {
   assert.deepEqual(validateCredentials("  ", ""), {
@@ -19,6 +19,33 @@ test("validateCredentials accepts non-empty login fields", () => {
     valid: true,
     errors: {},
   });
+});
+
+test("validatePasswordChange rejects blank password fields", () => {
+  assert.deepEqual(validatePasswordChange("", "", ""), {
+    valid: false,
+    errors: {
+      currentPassword: "현재 비밀번호를 입력해주세요.",
+      newPassword: "새 비밀번호를 입력해주세요.",
+      newPasswordConfirm: "새 비밀번호를 한 번 더 입력해주세요.",
+    },
+  });
+});
+
+test("validatePasswordChange rejects a mismatched confirmation", () => {
+  assert.deepEqual(validatePasswordChange("Temp1234!", "NewPass1!", "NewPass2!"), {
+    valid: false,
+    errors: { newPasswordConfirm: "새 비밀번호가 일치하지 않습니다." },
+  });
+});
+
+test("validatePasswordChange leaves the policy to the server", () => {
+  // 8자 미만이지만 프론트는 막지 않는다. 정책 판정은 서버 몫이다.
+  assert.deepEqual(validatePasswordChange("Temp1234!", "short", "short"), { valid: true, errors: {} });
+});
+
+test("validatePasswordChange accepts a matching confirmation", () => {
+  assert.deepEqual(validatePasswordChange("Temp1234!", "NewPass1!", "NewPass1!"), { valid: true, errors: {} });
 });
 
 test("setRememberedLoginId stores only the login ID when remember is enabled", () => {

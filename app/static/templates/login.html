@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>관리자 로그인 - Ozcoding AI Health</title>
   <link rel="stylesheet" href="../css/styles.css">
+  <!-- 비밀번호 변경 오버레이가 쓰는 스타일. management.css 는 .ui-control·.ui-button 과 토스트를,
+       overlays.css 는 패널·배경·입력칸 오류 표시를 담당한다. 로그인 화면은 자체 클래스만 써서
+       (login-card, text-input …) 두 파일을 넣어도 기존 화면에 영향이 없다. -->
+  <link rel="stylesheet" href="../css/management.css">
+  <link rel="stylesheet" href="../css/overlays.css">
   <script type="module" src="../js/login.js?v=20260826-1"></script>
 </head>
 <body>
@@ -48,10 +53,6 @@
         </div>
 
         <div class="login-options">
-          <label class="remember-option">
-            <input name="remember" type="checkbox">
-            <span>로그인 상태 유지</span>
-          </label>
           <a class="password-help" href="#" aria-label="비밀번호 찾기 준비 중">비밀번호 찾기</a>
         </div>
 

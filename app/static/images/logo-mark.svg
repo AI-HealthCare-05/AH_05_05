@@ -1,5 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title">
-  <title id="title">Ozcoding AI Health</title>
+  <title id="title">포케 관리자</title>
   <rect width="32" height="32" rx="8" fill="#1c64f2"/>
-  <path d="M5 16h5l2.5-7 4 14 3-9 2 2H27" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 대시보드·로그인 화면이 인라인으로 쓰는 것과 같은 경로다(24 뷰박스 기준).
+       그 화면들은 32px 상자 안에 18px 로 그리므로 0.75 로 줄이고 (32-18)/2 = 7 만큼 민다. -->
+  <g transform="translate(7 7) scale(0.75)">
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>
