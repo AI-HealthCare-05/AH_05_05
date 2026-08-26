@@ -4,10 +4,6 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
 });
 
-async function expandMorningMedication(page: import('playwright/test').Page) {
-  await page.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
-}
-
 test('첫 렌더의 기존 복약 기록은 자라나는 애니메이션을 재생하지 않는다', async ({
   page,
 }) => {
@@ -21,7 +17,6 @@ test('첫 렌더의 기존 복약 기록은 자라나는 애니메이션을 재�
 
 test('방금 기록한 오늘 칸은 아래에서 220ms 동안 자라난다', async ({ page }) => {
   await page.goto('/dev/home-active');
-  await expandMorningMedication(page);
   await page.getByRole('button', { name: '2개 먹었어요' }).click();
   const planted = page.getByLabel('8월 25일 아침 먹은 기록');
 
@@ -42,7 +37,6 @@ test('방금 기록한 오늘 칸은 아래에서 220ms 동안 자라난다', as
 
 test('되돌리기는 역방향 애니메이션 없이 즉시 기록 없음으로 돌아간다', async ({ page }) => {
   await page.goto('/dev/home-active');
-  await expandMorningMedication(page);
   await page.getByRole('button', { name: '2개 먹었어요' }).click();
   await page.getByRole('button', { name: '되돌리기' }).click();
   const reverted = page.getByLabel('8월 25일 아침 기록 없음');
@@ -68,7 +62,6 @@ test('지난 기록을 뒤늦게 채울 때도 그 칸만 자라난다', async (
 test('움직임 줄이기 설정에서는 새 기록도 색만 바뀐다', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/dev/home-active');
-  await expandMorningMedication(page);
   await page.getByRole('button', { name: '2개 먹었어요' }).click();
   const planted = page.getByLabel('8월 25일 아침 먹은 기록');
 

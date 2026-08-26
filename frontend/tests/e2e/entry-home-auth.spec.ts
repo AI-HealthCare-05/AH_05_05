@@ -67,8 +67,6 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
   await page.getByLabel('비밀번호 확인').fill('password1234');
-  await page.getByLabel('이름').fill('신규 사용자');
-  await page.getByLabel('전화번호').fill('01012345678');
   await page.getByLabel('생년월일').fill('1990-01-01');
   await page.getByRole('radio', { name: '여성' }).check();
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
@@ -89,8 +87,6 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
   await page.getByLabel('비밀번호 확인').fill('password1234');
-  await page.getByLabel('이름').fill('신규 사용자');
-  await page.getByLabel('전화번호').fill('01012345678');
   await page.getByLabel('생년월일').fill('1990-01-01');
   await page.getByRole('radio', { name: '여성' }).check();
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
@@ -176,28 +172,46 @@ test('복약 중 홈은 overview의 시각과 슬롯별 약만 타임라인에 �
   await expect(today.getByText('4일째 · 3일 남음')).toBeVisible();
 
   const timeline = today.getByRole('group', { name: '하루 복약 시간표' });
-  const morningDisclosure = timeline.getByRole('button', {
-    name: /아침약 2개.*08:00.*자세히 보기/,
-  });
-  const eveningDisclosure = timeline.getByRole('button', {
-    name: /저녁약 3개.*19:00.*자세히 보기/,
-  });
+  const current = timeline.getByRole('group', { name: '현재 복약' });
+  const evening = timeline.getByRole('group', { name: '다음 복약 저녁' });
 
-  await expect(morningDisclosure).toContainText('지금');
-  await expect(eveningDisclosure).toContainText('다음');
-  await expect(timeline.getByText('셀레콕시브 200mg')).toHaveCount(0);
-  await morningDisclosure.click();
-  const morning = timeline.getByRole('group', { name: '아침약 상세' });
-  await expect(morning.getByText('셀레콕시브 200mg')).toBeVisible();
-  await expect(morning.getByText('파모티딘 20mg')).toBeVisible();
-  await expect(morning.getByText('리바록사반 10mg')).toHaveCount(0);
-  await expect(morning.getByText('아세트아미노펜 650mg')).toHaveCount(0);
-  await expect(morning.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
+  await expect(current.getByText('아침 08:00')).toBeVisible();
+  await expect(current.getByText('지금', { exact: true })).toBeVisible();
+  await expect(current.getByText('셀레콕시브 200mg')).toBeVisible();
+  await expect(current.getByText('파모티딘 20mg')).toBeVisible();
+  await expect(current.getByText('리바록사반 10mg')).toHaveCount(0);
+  await expect(current.getByText('아세트아미노펜 650mg')).toHaveCount(0);
+  await expect(current.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
+  await expect(evening).toContainText('저녁 19:00');
+  await expect(evening).toContainText('3개');
   await expect(timeline.getByText('기상 후 07:00')).toHaveCount(0);
-  await expect(timeline.getByRole('button', { name: /점심약/ })).toHaveCount(0);
-  await expect(timeline.getByRole('button', { name: /취침 전약/ })).toHaveCount(0);
+  await expect(timeline.getByText('점심 13:00')).toHaveCount(0);
+  await expect(timeline.getByText('취침 전 22:30')).toHaveCount(0);
   await expect(today.getByText('7일 중 4일째')).toHaveCount(0);
   await expect(today.getByText('8월 22일 시작')).toHaveCount(0);
+
+  const medicineListBox = await current.getByRole('list', { name: '지금 먹을 약' }).boundingBox();
+  const takenButtonBox = await current.getByRole('button', { name: '2개 먹었어요' }).boundingBox();
+  expect(medicineListBox).not.toBeNull();
+  expect(takenButtonBox).not.toBeNull();
+  expect(Math.abs((medicineListBox?.x ?? 0) - (takenButtonBox?.x ?? 0))).toBeLessThanOrEqual(1);
+
+  const timelineOverflow = await timeline.evaluate((element) => getComputedStyle(element).overflow);
+  const currentStyle = await current.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      background: style.backgroundColor,
+      borderTop: style.borderTopWidth,
+      borderBottom: style.borderBottomWidth,
+    };
+  });
+  const eveningBackground = await evening.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  expect(timelineOverflow).toBe('hidden');
+  expect(currentStyle.background).not.toBe(eveningBackground);
+  expect(currentStyle.borderTop).toBe('0px');
+  expect(currentStyle.borderBottom).toBe('0px');
 
   await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
 });
@@ -209,11 +223,10 @@ test('약 하나가 한 슬롯에만 있으면 타임라인도 한 칸과 실제
   await page.goto('/dev/home-one-medication');
 
   const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
-  const disclosure = timeline.getByRole('button', { name: /아침약 1개.*08:00.*자세히 보기/ });
-  await expect(disclosure).toBeVisible();
-  await expect(timeline.getByRole('button', { name: /저녁약/ })).toHaveCount(0);
-  await disclosure.click();
+  await expect(timeline.getByRole('group')).toHaveCount(1);
+  await expect(timeline.getByText('아침 08:00')).toBeVisible();
   await expect(timeline.getByRole('button', { name: '1개 먹었어요' })).toBeVisible();
+  await expect(timeline.getByText('저녁 19:00')).toHaveCount(0);
 });
 
 test('약별 days가 지난 뒤에는 아직 복용 중인 약의 슬롯만 남는다', async ({ page }) => {
@@ -221,34 +234,40 @@ test('약별 days가 지난 뒤에는 아직 복용 중인 약의 슬롯만 남�
   await page.goto('/dev/home-active');
 
   const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
-  const disclosure = timeline.getByRole('button', { name: /저녁약 1개.*19:00.*자세히 보기/ });
-  await expect(disclosure).toBeVisible();
-  await disclosure.click();
+  await expect(timeline.getByRole('group')).toHaveCount(1);
+  await expect(timeline.getByText('저녁 19:00')).toBeVisible();
   await expect(timeline.getByText('리바록사반 10mg')).toBeVisible();
   await expect(timeline.getByText('셀레콕시브 200mg')).toHaveCount(0);
   await expect(timeline.getByText('파모티딘 20mg')).toHaveCount(0);
 });
 
-test('현재 시각이 바뀌면 접힌 복약 슬롯의 상태도 mealTimes를 따라 바뀐다', async ({ page }) => {
+test('현재 시각이 바뀌면 펼쳐지는 복약 슬롯도 mealTimes를 따라 바뀐다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T07:30:00+09:00'));
   await page.goto('/dev/home-active');
-  await expect(page.getByRole('button', { name: /아침약 2개.*자세히 보기/ })).toContainText('다음');
+  await expect(page.getByRole('group', { name: '다음 복약 아침' })).toBeVisible();
+  await expect(page.getByText('다음', { exact: true })).toBeVisible();
 
   await page.clock.setFixedTime(new Date('2026-08-25T20:00:00+09:00'));
   await page.reload();
-  await expect(page.getByRole('button', { name: /저녁약 3개.*자세히 보기/ })).toContainText('지금');
+  const current = page.getByRole('group', { name: '현재 복약' });
+  await expect(current.getByText('저녁 19:00')).toBeVisible();
+  await expect(current.getByText('지금', { exact: true })).toBeVisible();
 });
-test('먹었어요를 누르면 즉시 완료되고 다른 슬롯은 접힌 상태를 유지한다', async ({ page }) => {
+test('먹었어요를 누르면 즉시 완료되고 다음 슬롯은 중립 다음 상태로 펼쳐진다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/dev/home-active');
   const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
 
-  await timeline.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
   await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
 
-  await expect(timeline.getByRole('button', { name: /아침약 2개.*간단히 보기/ })).toContainText('완료');
-  await expect(timeline.getByRole('button', { name: /저녁약 3개.*자세히 보기/ })).toContainText('다음');
-  await expect(timeline.getByRole('group', { name: '저녁약 상세' })).toHaveCount(0);
+  await expect(timeline.getByRole('button', { name: /완료한 복약 아침/ })).toBeVisible();
+  await expect(timeline.getByText('2개 먹었어요')).toBeVisible();
+  await expect(timeline.getByRole('group', { name: '다음 복약 저녁' })).toContainText('다음');
+  const earlyButton = timeline.getByRole('button', { name: '3개 먹었어요' });
+  await expect(earlyButton).toBeVisible();
+  expect(await earlyButton.evaluate((element) => getComputedStyle(element).borderTopWidth)).not.toBe(
+    '0px',
+  );
   await expect(page.getByText(/저장 중|기록 중/)).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
@@ -258,12 +277,12 @@ test('복약 기록 토스트의 되돌리기는 완료 칸을 다시 현재 칸
   await page.goto('/dev/home-active');
   const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
 
-  await timeline.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
   await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
   await page.getByRole('button', { name: '되돌리기' }).click();
 
-  await expect(page.locator('[aria-controls="timeline-detail-morning"]')).toContainText('지금');
-  await expect(timeline.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
+  const current = timeline.getByRole('group', { name: '현재 복약' });
+  await expect(current.getByText('아침 08:00')).toBeVisible();
+  await expect(current.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
 });
 
 test('다음 슬롯도 미리 기록할 수 있고 모두 기록하면 사실 문구만 보여준다', async ({ page }) => {
@@ -271,17 +290,13 @@ test('다음 슬롯도 미리 기록할 수 있고 모두 기록하면 사실 �
   await page.goto('/dev/home-active');
   const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
 
-  await timeline.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
   await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
-  await timeline.getByRole('button', { name: /저녁약 3개.*자세히 보기/ }).click();
   await timeline.getByRole('button', { name: '3개 먹었어요' }).click();
 
   await expect(timeline.getByText('오늘 다 드셨어요')).toBeVisible();
   await expect(timeline.getByText(/잘하셨어요|훌륭/)).toHaveCount(0);
-  await timeline.getByRole('group', { name: '아침약 상세' }).getByRole('button', {
-    name: '복약 기록 되돌리기',
-  }).click();
-  await expect(timeline.getByRole('button', { name: /아침약 2개.*간단히 보기/ })).toContainText('지금');
+  await timeline.getByRole('button', { name: /완료한 복약 아침/ }).click();
+  await expect(timeline.getByRole('group', { name: '현재 복약' })).toContainText('아침 08:00');
   await expect(timeline.getByText('오늘 다 드셨어요')).toHaveCount(0);
 });
 
@@ -292,12 +307,13 @@ test('복약 기록 저장 실패는 낙관적 표시를 원복하고 같은 화
   await page.goto('/dev/home-dose-save-error');
   const timeline = page.getByRole('group', { name: '하루 복약 시간표' });
 
-  await timeline.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
   await timeline.getByRole('button', { name: '2개 먹었어요' }).click();
   const dialog = page.getByRole('dialog', { name: '기록하지 못했어요' });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('다시 시도해주세요.');
-  await expect(page.locator('[aria-controls="timeline-detail-morning"]')).toContainText('지금');
+  await expect(
+    page.locator('[aria-label="하루 복약 시간표"] [aria-label="현재 복약"]'),
+  ).toContainText('아침 08:00');
   await expect(page).toHaveURL(/\/dev\/home-dose-save-error$/);
 });
 
