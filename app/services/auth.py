@@ -8,7 +8,7 @@ from app.core.utils.common import normalize_phone_number
 from app.core.utils.security import hash_password, verify_password
 from app.dtos.auth import LoginRequest, SignUpRequest
 from app.models.enums import AccountStatus
-from app.models.users import User
+from app.models.users import User, UserSettings
 from app.repositories.user_repository import UserRepository
 from app.services.jwt import JwtService
 
@@ -37,6 +37,7 @@ class AuthService:
                 phone=normalized_phone_number,
                 status=AccountStatus.ACTIVE,
             )
+            await UserSettings.create(user=user)
 
             return user
 
