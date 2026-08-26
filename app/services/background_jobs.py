@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
 from arq.connections import ArqRedis, RedisSettings, create_pool
@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from tortoise.exceptions import IntegrityError
 
 from app.core import config
-from app.dtos.background_jobs import BackgroundJobFilter
+from app.dtos.background_jobs import BackgroundJobFilter, BackgroundJobStatsResponse
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
 from app.models.enums import BackgroundJobStatus, BackgroundJobType
@@ -30,6 +30,23 @@ class BackgroundJobService:
 
     async def list(self, filters: BackgroundJobFilter) -> tuple[list[BackgroundJob], int]:
         return await self.repository.list(filters)
+
+    async def stats(self, start_date: date, end_date: date) -> BackgroundJobStatsResponse:
+        if start_date > end_date:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="start_date must be on or before end_date.",
+            )
+        created_from = datetime.combine(start_date, time.min, tzinfo=config.TIMEZONE)
+        created_to = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=config.TIMEZONE)
+        stored_counts = await self.repository.count_by_status(created_from, created_to)
+        counts = {job_status: stored_counts.get(job_status, 0) for job_status in BackgroundJobStatus}
+        return BackgroundJobStatsResponse(
+            start_date=start_date,
+            end_date=end_date,
+            total=sum(counts.values()),
+            counts=counts,
+        )
 
     @staticmethod
     def alarm_idempotency_key(alarm_id: int, subscription_id: int, trigger_at: datetime) -> str:
