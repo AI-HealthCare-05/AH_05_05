@@ -65,8 +65,7 @@ export function MedicationEpisodePage() {
         : medication,
     );
     try {
-      await saveMedicationSchedule({
-        recordId: overview.recordId,
+      await saveMedicationSchedule(overview.recordId, {
         start: overview.start,
         mealTimes: overview.mealTimes,
         medications: nextMedications
