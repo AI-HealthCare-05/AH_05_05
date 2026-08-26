@@ -156,17 +156,14 @@ function initializeLoginForm() {
 
   const loginIdInput = form.elements.loginId;
   const passwordInput = form.elements.password;
-  const rememberInput = form.elements.remember;
   const loginIdError = document.querySelector("[data-error-for='loginId']");
   const passwordError = document.querySelector("[data-error-for='password']");
   const passwordToggle = document.querySelector("[data-password-toggle]");
   const submitButton = form.querySelector("[type='submit']");
-  const rememberedLoginId = window.localStorage.getItem(REMEMBERED_LOGIN_ID_KEY);
 
-  if (rememberedLoginId) {
-    loginIdInput.value = rememberedLoginId;
-    rememberInput.checked = true;
-  }
+  // 체크박스가 사라져 다시 저장할 방법이 없다. 예전에 저장된 값이 남아 있으면
+  // 지울 수도 없이 계속 채워지므로 여기서 한 번 비운다.
+  window.localStorage.removeItem(REMEMBERED_LOGIN_ID_KEY);
 
   passwordToggle?.addEventListener("click", () => {
     const isVisible = passwordInput.type === "text";
@@ -197,7 +194,6 @@ function initializeLoginForm() {
         password: passwordInput.value,
       });
 
-      setRememberedLoginId(window.localStorage, loginIdInput.value, rememberInput.checked);
       session.save(body.accessToken, body.admin);
 
       if (body.mustChangePassword) {
