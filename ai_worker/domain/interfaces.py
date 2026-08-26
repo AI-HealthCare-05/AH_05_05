@@ -11,6 +11,14 @@ from ai_worker.schemas.guideline import (
     GuidelineSearchQuery,
     RetrievedGuidelineChunk,
 )
+from ai_worker.schemas.knowledge import RetrievedKnowledgeChunk
+from ai_worker.schemas.medication_chat import (
+    ActiveIntakeContext,
+    InteractionRuleFact,
+    MedicationChatRequest,
+    MedicationChatResult,
+    MedicationGuideLookup,
+)
 from ai_worker.schemas.patient import PatientContext
 from ai_worker.schemas.safety import (
     ConflictCheckResult,
@@ -106,3 +114,58 @@ class ChatOutputSafetyValidator(Protocol):
         patient_context: PatientContext,
         result: ChatAnswerResult,
     ) -> SafetyResult: ...
+
+
+class ActiveIntakeContextProvider(Protocol):
+    async def get_active_context(
+        self,
+        *,
+        user_id: int,
+        care_episode_id: int | None,
+    ) -> ActiveIntakeContext: ...
+
+
+class MedicationGuideRepository(Protocol):
+    async def find_by_name(
+        self,
+        product_name: str,
+    ) -> MedicationGuideLookup: ...
+
+
+class InteractionRuleRepository(Protocol):
+    async def find_approved_rules(
+        self,
+        *,
+        context: ActiveIntakeContext,
+    ) -> list[InteractionRuleFact]: ...
+
+
+class MedicationKnowledgeRetriever(Protocol):
+    async def search(
+        self,
+        *,
+        question: str,
+        medication_names: list[str],
+        supplement_names: list[str],
+        interaction_pair_keys: list[str],
+        limit: int,
+    ) -> list[RetrievedKnowledgeChunk]: ...
+
+
+class MedicationAnswerGenerator(Protocol):
+    async def generate(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationChatResult: ...
+
+
+class GroundedClaimValidator(Protocol):
+    async def validate(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationChatResult: ...

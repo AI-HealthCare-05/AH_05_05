@@ -29,14 +29,14 @@ export class ChatSessionNotFoundError extends Error {
   }
 }
 
-/** REQ-CHAT-001 — POST /chat · 명세 15번 */
+/** REQ-CHAT-001 — POST /api/v1/chat */
 export async function sendChat(payload: SendChatPayload): Promise<SendChatResult> {
   if (USE_MOCK) {
     // LLM 응답은 실제로 수 초 걸립니다. 대기 상태를 확인할 수 있게 길게 잡았습니다.
     await mockDelay(1200);
     return mockSendChat(payload);
   }
-  return http.post<SendChatResult>('/chat', payload);
+  return http.post<SendChatResult>('/v1/chat', payload);
 }
 
 /** #111 임시 이력 경계. 실 API 경로를 추측하지 않고 계약 확정 후 내부만 교체합니다. */

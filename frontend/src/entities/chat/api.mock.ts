@@ -104,7 +104,7 @@ export function mockSendChat(payload: SendChatPayload): SendChatResult {
         messageId: store.nextMessageId,
         answer:
           '리바록사반을 복용하는 동안 잇몸이나 코피가 잘 멎지 않거나 이유 없이 멍이 크게 '
-          + '들면 처방한 의료진에게 알려주세요. 임의로 중단하지 마세요.',
+          + '들면 처방한 의료진에게 알려주세요.\n\n임의로 중단하지 마세요.',
         sources: [
           { scope: 'personal', title: '약봉투 · 리바록사반 10mg' },
           {

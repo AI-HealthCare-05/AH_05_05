@@ -6,7 +6,13 @@ from fastapi import HTTPException, status
 from tortoise.exceptions import IntegrityError
 
 from app.core import config
-from app.dtos.background_jobs import BackgroundJobFilter, BackgroundJobStatsResponse
+from app.dtos.background_jobs import (
+    AdminBackgroundJobListItem,
+    AdminBackgroundJobListQuery,
+    BackgroundJobFilter,
+    BackgroundJobStatsResponse,
+)
+from app.dtos.pagination import PageResponse
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
 from app.models.enums import BackgroundJobStatus, BackgroundJobType
@@ -30,6 +36,27 @@ class BackgroundJobService:
 
     async def list(self, filters: BackgroundJobFilter) -> tuple[list[BackgroundJob], int]:
         return await self.repository.list(filters)
+
+    async def list_for_admin(self, filters: AdminBackgroundJobListQuery) -> PageResponse[AdminBackgroundJobListItem]:
+        jobs, total = await self.repository.list_for_admin(filters)
+        return PageResponse[AdminBackgroundJobListItem](
+            items=[
+                AdminBackgroundJobListItem(
+                    job_id=job.id,
+                    job_type=job.job_type,
+                    status=job.status,
+                    user_id=job.user_id,
+                    user_name=getattr(job.user, "name", None) if job.user_id is not None else None,
+                    requested_at=job.requested_at,
+                    error_code=job.error_code,
+                    error_message=job.error_message,
+                )
+                for job in jobs
+            ],
+            total_count=total,
+            page=filters.page,
+            size=filters.size,
+        )
 
     async def stats(self, start_date: date, end_date: date) -> BackgroundJobStatsResponse:
         if start_date > end_date:

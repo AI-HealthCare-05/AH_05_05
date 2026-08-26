@@ -153,11 +153,12 @@ a {
   min-height: 14px;
 }
 
+/* 남은 항목은 "비밀번호 찾기" 하나다. space-between 이면 왼쪽으로 붙어 버린다. */
 .login-options {
   align-items: center;
   display: flex;
   font-size: 12px;
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 
 .remember-option {

@@ -42,6 +42,17 @@ test('약에 근거한 챗봇 답변은 약봉투와 공식 자료 출처를 함
   await expect(page.getByText('e약은요 · 리바록사반')).toBeVisible();
 });
 
+test('챗봇 답변의 문단 줄바꿈을 화면에서도 유지한다', async ({ page }) => {
+  await page.goto('/dev/chat');
+  await page.getByRole('textbox', { name: '질문 입력' }).fill('리바록사반 주의사항을 알려줘');
+  await page.getByRole('button', { name: '보내기' }).click();
+
+  const answer = page.getByText(/리바록사반을 복용하는 동안/);
+  await expect(answer).toBeVisible();
+  await expect(answer).toHaveCSS('white-space', 'pre-wrap');
+  await expect(answer).toContainText(/알려주세요\.\n\n임의로 중단하지 마세요\./);
+});
+
 test('게스트 마이페이지는 로그인 유도와 약관·개인정보만 보여준다', async ({ page }) => {
   await page.goto('/dev/my-guest');
 

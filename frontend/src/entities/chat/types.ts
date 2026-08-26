@@ -31,6 +31,8 @@ export interface ChatSessionSummary {
 }
 
 export interface SendChatPayload {
+  /** 한 번의 전송을 식별하는 UUID. 네트워크 재시도 시 같은 값을 재사용합니다. */
+  requestId: string;
   /** 세션을 시작한 기록. 없으면 null */
   recordId: number | null;
   message: string;

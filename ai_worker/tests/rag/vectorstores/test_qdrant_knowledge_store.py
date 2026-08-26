@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
@@ -20,6 +22,7 @@ def build_chunk(
     *,
     dataset_version: str = "knowledge-pilot-v1",
     ingredient_names: list[str] | None = None,
+    drug_names: list[str] | None = None,
     document_type: KnowledgeDocumentType = KnowledgeDocumentType.SUPPLEMENT_CODE,
     section_type: KnowledgeSectionType = KnowledgeSectionType.CAUTION,
     interaction_pair_keys: list[str] | None = None,
@@ -37,6 +40,7 @@ def build_chunk(
             access_scope=KnowledgeAccessScope.PUBLIC,
             document_type=document_type,
             dataset_version=dataset_version,
+            drug_names=drug_names or [],
             ingredient_names=ingredient_names or [],
             interaction_pair_keys=interaction_pair_keys or [],
             section_type=section_type,
@@ -225,6 +229,54 @@ async def test_search_filters_exact_interaction_pair_key() -> None:
         await client.close()
 
 
+async def test_search_treats_entity_filters_as_alternatives() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+    requested_pair_key = "a" * 64
+
+    try:
+        await store.create_release_collection()
+        chunks = [
+            build_chunk("a", drug_names=["아스피린"]),
+            build_chunk("b", ingredient_names=["오메가3"]),
+            build_chunk("c", interaction_pair_keys=[requested_pair_key]),
+            build_chunk("d", ingredient_names=["마그네슘"]),
+        ]
+        await store.upsert_chunks(
+            chunks,
+            [
+                [1.0, 0.0, 0.0],
+                [0.99, 0.01, 0.0],
+                [0.98, 0.02, 0.0],
+                [0.97, 0.03, 0.0],
+            ],
+        )
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="아스피린과 오메가3 상호작용",
+                dataset_version="knowledge-pilot-v1",
+                drug_names=["아스피린"],
+                ingredient_names=["오메가3"],
+                interaction_pair_keys=[requested_pair_key],
+                limit=10,
+            ),
+        )
+
+        assert {result.metadata.document_id for result in results} == {
+            "document-a",
+            "document-b",
+            "document-c",
+        }
+    finally:
+        await client.close()
+
+
 async def test_search_reads_legacy_payload_without_interaction_pair_keys() -> None:
     client = AsyncQdrantClient(location=":memory:")
     store = QdrantKnowledgeStore(
@@ -288,3 +340,56 @@ async def test_upsert_rejects_vector_dimension_mismatch() -> None:
             )
     finally:
         await client.close()
+
+
+async def test_search_validates_collection_only_once() -> None:
+    class CountingClient:
+        def __init__(self) -> None:
+            self.exists_calls = 0
+            self.get_calls = 0
+            self.query_calls = 0
+
+        async def collection_exists(self, collection_name: str) -> bool:
+            self.exists_calls += 1
+            return True
+
+        async def get_collection(self, collection_name: str):
+            self.get_calls += 1
+            return SimpleNamespace(
+                config=SimpleNamespace(
+                    params=SimpleNamespace(
+                        vectors=models.VectorParams(
+                            size=3,
+                            distance=models.Distance.COSINE,
+                        )
+                    )
+                )
+            )
+
+        async def query_points(self, **kwargs):
+            self.query_calls += 1
+            return SimpleNamespace(points=[])
+
+    client = CountingClient()
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+    search_query = KnowledgeSearchQuery(
+        query="마그네슘 기능",
+        dataset_version="knowledge-pilot-v1",
+    )
+
+    await store.search(
+        query_vector=[1.0, 0.0, 0.0],
+        search_query=search_query,
+    )
+    await store.search(
+        query_vector=[1.0, 0.0, 0.0],
+        search_query=search_query,
+    )
+
+    assert client.exists_calls == 1
+    assert client.get_calls == 1
+    assert client.query_calls == 2

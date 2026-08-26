@@ -135,7 +135,10 @@ export function AppRouter() {
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
-        <Route path="/dev/medication-schedule" element={<MedicationSchedulePage />} />
+        <Route
+          path="/dev/medication-schedule"
+          element={<MedicationSchedulePage defaultRecordId={12} />}
+        />
         <Route path="/dev/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route
           path="/dev/medication-schedule-auto-assigned"
