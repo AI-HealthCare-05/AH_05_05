@@ -10,6 +10,7 @@ from app.dtos.background_jobs import (
     BackgroundJobResponse,
     BackgroundJobStatsResponse,
 )
+from app.models.background_jobs import BackgroundJob
 from app.models.enums import BackgroundJobStatus, BackgroundJobType
 from app.services.background_jobs import BackgroundJobService
 
@@ -22,6 +23,12 @@ job_router = APIRouter(
 
 def get_background_job_service() -> BackgroundJobService:
     return BackgroundJobService()
+
+
+def background_job_list_item(job: BackgroundJob) -> BackgroundJobResponse:
+    response = BackgroundJobResponse.model_validate(job)
+    response.user_name = getattr(job.user, "name", None) if job.user_id is not None else None
+    return response
 
 
 @job_router.get("", response_model=BackgroundJobListResponse, summary="백그라운드 작업 목록 조회")
@@ -47,7 +54,7 @@ async def list_background_jobs(
     )
     jobs, total = await service.list(filters)
     return BackgroundJobListResponse(
-        items=[BackgroundJobResponse.model_validate(job) for job in jobs],
+        items=[background_job_list_item(job) for job in jobs],
         total=total,
         offset=offset,
         limit=limit,
