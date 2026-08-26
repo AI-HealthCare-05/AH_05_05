@@ -56,10 +56,7 @@ class MedicationScheduleService:
             if locked_user is None:
                 raise MedicationScheduleNotFoundError()
             episode = (
-                await CareEpisode.filter(id=record_id, user_id=user.id)
-                .using_db(connection)
-                .select_for_update()
-                .first()
+                await CareEpisode.filter(id=record_id, user_id=user.id).using_db(connection).select_for_update().first()
             )
             if episode is None:
                 raise MedicationScheduleNotFoundError()

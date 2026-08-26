@@ -348,7 +348,9 @@ class TestMedicationScheduleAPI(TestCase):
         assert [response.status_code for response in responses] == [
             status.HTTP_422_UNPROCESSABLE_CONTENT,
         ] * 6
-        assert all(response.json()["code"] in {"INVALID_MEDICATION_SCHEDULE", "VALIDATION_ERROR"} for response in responses)
+        assert all(
+            response.json()["code"] in {"INVALID_MEDICATION_SCHEDULE", "VALIDATION_ERROR"} for response in responses
+        )
         stored_episode = await CareEpisode.get(id=episode.id)
         assert stored_episode.medication_start_slot is None
         assert await MedicationSlot.filter(medication=scheduled).count() == 0
