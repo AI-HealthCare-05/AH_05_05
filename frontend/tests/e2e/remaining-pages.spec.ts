@@ -1,5 +1,7 @@
 import { expect, test } from 'playwright/test';
 
+test.setTimeout(20_000);
+
 test('복용약 화면은 약봉투 원본 없이 care episode 목록을 보여준다', async ({ page }) => {
   await page.goto('/dev/medications');
 
@@ -77,6 +79,13 @@ test('게스트 배너를 넘기면 현재 위치 인디케이터가 함께 바�
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
   await carousel.evaluate((element) => element.scrollTo({ left: element.scrollWidth, behavior: 'instant' }));
   await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible();
+});
+
+test('홈 기능 배너는 사용자가 넘기지 않아도 자동으로 다음 장을 보여준다', async ({ page }) => {
+  await page.goto('/home');
+
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
+  await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
 });
 
 test('복용약의 알림 시간은 시간 네 개만 있는 전용 화면으로 들어간다', async ({ page }) => {
