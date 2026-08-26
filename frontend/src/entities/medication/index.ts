@@ -1,12 +1,17 @@
 export {
   getMedicationOverview,
+  getMedicationOverviews,
   getDoseRecords,
   getMedicationSchedule,
   prepareMedicationStateForNewAccount,
   saveMedicationSchedule,
   saveDoseTaken,
 } from './api';
-export { mockMedicationOverview, mockMedicationScheduleWithAutoAssigned } from './api.mock';
+export {
+  mockMedicationOverview,
+  mockMedicationOverviews,
+  mockMedicationScheduleWithAutoAssigned,
+} from './api.mock';
 export type {
   MealSlot,
   MealTimes,

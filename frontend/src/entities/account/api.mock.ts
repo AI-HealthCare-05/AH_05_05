@@ -7,6 +7,8 @@ import type {
 } from './types';
 
 let currentProfile: AccountProfile = {
+  name: '포케 사용자',
+  phoneNumber: '01012345678',
   birthDate: '1980-08-02',
   gender: 'female',
 };
@@ -14,6 +16,8 @@ let currentPassword = 'password1234';
 
 export function mockCreateAccount(payload: CreateAccountPayload): AccountProfile {
   currentProfile = {
+    name: payload.name,
+    phoneNumber: payload.phoneNumber,
     birthDate: payload.birthDate,
     gender: payload.gender,
   };

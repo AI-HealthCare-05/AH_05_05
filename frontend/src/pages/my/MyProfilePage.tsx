@@ -13,6 +13,7 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
+import { formatPhoneNumberInput, validatePhoneNumber } from '@/shared/lib/phoneNumber';
 import { Button, Card, ErrorDialog, GenderRadioGroup, Header, Input } from '@/shared/ui';
 import { PasswordChangeSheet } from './PasswordChangeSheet';
 
@@ -27,9 +28,13 @@ export function MyProfilePage({
 }: MyProfilePageProps) {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [name, setName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState<Gender | ''>('');
   const [birthDateError, setBirthDateError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -42,6 +47,8 @@ export function MyProfilePage({
       .then((loadedProfile) => {
         if (cancelled) return;
         setProfile(loadedProfile);
+        setName(loadedProfile.name);
+        setPhoneNumber(formatPhoneNumberInput(loadedProfile.phoneNumber));
         setBirthDate(loadedProfile.birthDate);
         setGender(loadedProfile.gender);
       })
@@ -56,21 +63,32 @@ export function MyProfilePage({
   }, [profileLoader]);
 
   const changed = Boolean(
-    profile && gender && (profile.birthDate !== birthDate || profile.gender !== gender),
+    profile &&
+      gender &&
+      (profile.name !== name.trim() ||
+        formatPhoneNumberInput(profile.phoneNumber) !== phoneNumber ||
+        profile.birthDate !== birthDate ||
+        profile.gender !== gender),
   );
 
   async function save(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     if (!profile || !gender || !changed || saving) return;
     const nextBirthDateError = validateBirthDate(birthDate);
+    const nextNameError = name.trim().length >= 2 ? null : '이름을 두 글자 이상 입력해 주세요.';
+    const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
     setBirthDateError(nextBirthDateError);
-    if (nextBirthDateError) return;
+    setNameError(nextNameError);
+    setPhoneNumberError(nextPhoneNumberError);
+    if (nextBirthDateError || nextNameError || nextPhoneNumberError) return;
 
     setSaving(true);
     setSaveError(null);
     try {
-      const savedProfile = await profileSaver({ birthDate, gender });
+      const savedProfile = await profileSaver({ name, phoneNumber, birthDate, gender });
       setProfile(savedProfile);
+      setName(savedProfile.name);
+      setPhoneNumber(formatPhoneNumberInput(savedProfile.phoneNumber));
       setBirthDate(savedProfile.birthDate);
       setGender(savedProfile.gender);
       toast.success('기본정보를 저장했어요.');
@@ -96,6 +114,30 @@ export function MyProfilePage({
         ) : (
           <>
             <form className="flex flex-col gap-4" onSubmit={save}>
+              <Input
+                label="이름"
+                autoComplete="name"
+                value={name}
+                error={nameError ?? undefined}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setNameError(null);
+                }}
+                required
+              />
+              <Input
+                label="전화번호"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phoneNumber}
+                error={phoneNumberError ?? undefined}
+                onChange={(event) => {
+                  setPhoneNumber(formatPhoneNumberInput(event.target.value));
+                  setPhoneNumberError(null);
+                }}
+                required
+              />
               <Input
                 label="생년월일"
                 type="date"

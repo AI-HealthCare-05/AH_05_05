@@ -10,6 +10,7 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
+import { formatPhoneNumberInput, validatePhoneNumber } from '@/shared/lib/phoneNumber';
 import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
@@ -26,10 +27,14 @@ export function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [name, setName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState<Gender | ''>('');
   const [birthDateError, setBirthDateError] = useState<string | null>(null);
   const [passwordConfirmError, setPasswordConfirmError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const today = formatDateInputValue(new Date());
@@ -43,13 +48,22 @@ export function AuthPage() {
       const nextBirthDateError = validateBirthDate(birthDate);
       const nextPasswordConfirmError =
         password === passwordConfirm ? null : '비밀번호가 일치하지 않아요.';
+      const nextNameError = name.trim().length >= 2 ? null : '이름을 두 글자 이상 입력해 주세요.';
+      const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
       setBirthDateError(nextBirthDateError);
       setPasswordConfirmError(nextPasswordConfirmError);
-      if (nextBirthDateError || nextPasswordConfirmError) return;
+      setNameError(nextNameError);
+      setPhoneNumberError(nextPhoneNumberError);
+      if (
+        nextBirthDateError ||
+        nextPasswordConfirmError ||
+        nextNameError ||
+        nextPhoneNumberError
+      ) return;
 
       setSaving(true);
       try {
-        await createAccount({ email, password, birthDate, gender });
+        await createAccount({ email, password, name, phoneNumber, birthDate, gender });
         prepareMedicationStateForNewAccount();
       } finally {
         setSaving(false);
@@ -100,7 +114,9 @@ export function AuthPage() {
         </div>
 
         <div className="mt-8">
-          <h1 className="text-2xl font-bold text-foreground">
+          <h1
+            className={`${mode === 'signup' ? 'text-xl' : 'text-2xl'} font-bold text-foreground`}
+          >
             {mode === 'login' ? '다시 만나서 반가워요' : '내 복약 기록을 안전하게 보관해요'}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -141,6 +157,30 @@ export function AuthPage() {
                 onChange={(event) => {
                   setPasswordConfirm(event.target.value);
                   setPasswordConfirmError(null);
+                }}
+                required
+              />
+              <Input
+                label="이름"
+                autoComplete="name"
+                value={name}
+                error={nameError ?? undefined}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setNameError(null);
+                }}
+                required
+              />
+              <Input
+                label="전화번호"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phoneNumber}
+                error={phoneNumberError ?? undefined}
+                onChange={(event) => {
+                  setPhoneNumber(formatPhoneNumberInput(event.target.value));
+                  setPhoneNumberError(null);
                 }}
                 required
               />
