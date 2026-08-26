@@ -127,8 +127,12 @@ class MedicationScheduleService:
             if prescribed_days:
                 end_date = request.start.date + timedelta(days=max(prescribed_days) - 1)
                 end_at = datetime.combine(end_date, time.max, tzinfo=config.TIMEZONE)
-                episode.default_end_at = end_at
-                episode.planned_end_at = end_at
+                # 과거 약봉투를 뒤늦게 등록할 수 있다. 이때 복약 종료일은 care episode가
+                # 생성된 시각보다 앞서므로 started_at 이후만 허용하는 DB 제약에 넣지 않는다.
+                # 복약 화면의 종료일은 medication_start_date + medications.days로 계산한다.
+                care_end_at = end_at if end_at >= episode.started_at else None
+                episode.default_end_at = care_end_at
+                episode.planned_end_at = care_end_at
             await episode.save(
                 using_db=connection,
                 update_fields=[

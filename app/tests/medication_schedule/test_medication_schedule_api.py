@@ -192,3 +192,48 @@ class TestMedicationScheduleAPI(TestCase):
             "evening": "19:00",
             "bedtime": "22:00",
         }
+
+    async def test_historical_schedule_does_not_backdate_care_episode_end_timestamps(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "schedule-history@example.com", "01021000103")
+            user = await User.get(email="schedule-history@example.com")
+            episode = await CareEpisode.create(
+                user=user,
+                title="지난 약봉투",
+                status=CareEpisodeStatus.ACTIVE,
+            )
+            regular = await Medication.create(
+                care_episode=episode,
+                name="암브록솔정",
+                dose="30mg",
+                times_per_day=3,
+                days=7,
+            )
+            historical_start = date.today() - timedelta(days=30)
+
+            response = await client.put(
+                "/api/v1/medications/schedule",
+                headers=headers,
+                json={
+                    "recordId": episode.id,
+                    "start": {"date": historical_start.isoformat(), "slot": "morning"},
+                    "mealTimes": {
+                        "morning": "08:00",
+                        "lunch": "13:00",
+                        "evening": "19:00",
+                        "bedtime": "22:00",
+                    },
+                    "medications": [
+                        {
+                            "medicationId": regular.id,
+                            "slots": ["morning", "lunch", "evening"],
+                        }
+                    ],
+                },
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        await episode.refresh_from_db()
+        assert episode.medication_start_date == historical_start
+        assert episode.default_end_at is None
+        assert episode.planned_end_at is None
