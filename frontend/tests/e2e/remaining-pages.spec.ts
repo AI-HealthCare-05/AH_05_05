@@ -75,6 +75,11 @@ test('로그인 마이페이지는 내 관리와 알림 토글, 계정을 보여
 
 test('하단 탭은 구현된 실제 화면 경로로 이동한다', async ({ page }) => {
   await page.goto('/dev/medications');
+  await page.evaluate(() => {
+    sessionStorage.setItem('poke.access-token', 'e2e-navigation-token');
+    sessionStorage.setItem('poke.account-principal', 'navigation@example.com');
+  });
+  await page.reload();
   await page.getByRole('button', { name: '영양제', exact: true }).click();
   await expect(page).toHaveURL(/\/supplements$/);
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
@@ -97,6 +102,27 @@ test('홈 기능 배너는 사용자가 넘기지 않아도 자동으로 다음 
 
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
   await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
+});
+
+test('홈 기능 배너 자동 넘김은 사용자가 멈추고 다시 시작할 수 있다', async ({ page }) => {
+  await page.goto('/home');
+
+  await page.getByRole('button', { name: '자동 넘김 멈춤' }).click();
+  await page.waitForTimeout(3_500);
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
+
+  await page.getByRole('button', { name: '자동 넘김 다시 시작' }).click();
+  await page.mouse.move(0, 0);
+  await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
+});
+
+test('동작 줄이기 환경에서는 홈 기능 배너를 자동으로 넘기지 않는다', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/home');
+
+  await expect(page.getByRole('button', { name: /자동 넘김/ })).toHaveCount(0);
+  await page.waitForTimeout(3_500);
+  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
 });
 
 test('복용약의 알림 시간은 시간 네 개만 있는 전용 화면으로 들어간다', async ({ page }) => {

@@ -28,9 +28,13 @@ interface PokeFeatureCarouselProps {
 
 /** 비로그인 홈과 기다림 화면이 함께 쓰는 포케 기능 소개 배너. */
 export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps) {
+  const sectionRef = useRef<HTMLElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [manualPaused, setManualPaused] = useState(false);
+  const [interactionPaused, setInteractionPaused] = useState(false);
+  const [documentHidden, setDocumentHidden] = useState(false);
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -41,7 +45,16 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
   }, []);
 
   useEffect(() => {
-    if (!autoAdvanceMs || reducedMotion) return;
+    const syncVisibility = () => setDocumentHidden(document.hidden);
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => document.removeEventListener('visibilitychange', syncVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (!autoAdvanceMs || reducedMotion || manualPaused || interactionPaused || documentHidden) {
+      return;
+    }
     const intervalId = window.setInterval(() => {
       const scroller = scrollerRef.current;
       if (!scroller) return;
@@ -53,10 +66,29 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
       scroller.scrollTo({ left: nextBanner.offsetLeft - firstOffset, behavior: 'smooth' });
     }, autoAdvanceMs);
     return () => window.clearInterval(intervalId);
-  }, [activeBannerIndex, autoAdvanceMs, reducedMotion]);
+  }, [
+    activeBannerIndex,
+    autoAdvanceMs,
+    documentHidden,
+    interactionPaused,
+    manualPaused,
+    reducedMotion,
+  ]);
 
   return (
-    <section aria-label="포케 기능 소개" className="flex min-h-84 flex-col gap-3">
+    <section
+      ref={sectionRef}
+      aria-label="포케 기능 소개"
+      className="flex min-h-84 flex-col gap-3"
+      onMouseEnter={() => setInteractionPaused(true)}
+      onMouseLeave={() => setInteractionPaused(false)}
+      onFocusCapture={() => setInteractionPaused(true)}
+      onBlurCapture={(event) => {
+        if (!sectionRef.current?.contains(event.relatedTarget as Node | null)) {
+          setInteractionPaused(false);
+        }
+      }}
+    >
       <div
         ref={scrollerRef}
         className="-mr-page-x flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -74,6 +106,7 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
           }, 0);
           setActiveBannerIndex(nextIndex);
         }}
+        onPointerDown={() => setManualPaused(true)}
       >
         {BANNERS.map(({ title, description, icon: Icon, tone }) => (
           <article
@@ -88,21 +121,32 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
           </article>
         ))}
       </div>
-      <div
-        aria-label={`현재 배너 ${activeBannerIndex + 1} / ${BANNERS.length}`}
-        className="flex justify-center gap-2"
-      >
-        {BANNERS.map((banner, index) => (
-          <span
-            aria-hidden
-            key={banner.title}
-            className={
-              index === activeBannerIndex
-                ? 'h-1.5 w-5 rounded-pill bg-primary'
-                : 'size-1.5 rounded-pill bg-border'
-            }
-          />
-        ))}
+      <div className="flex items-center justify-center gap-3">
+        <div
+          aria-label={`현재 배너 ${activeBannerIndex + 1} / ${BANNERS.length}`}
+          className="flex gap-2"
+        >
+          {BANNERS.map((banner, index) => (
+            <span
+              aria-hidden
+              key={banner.title}
+              className={
+                index === activeBannerIndex
+                  ? 'h-1.5 w-5 rounded-pill bg-primary'
+                  : 'size-1.5 rounded-pill bg-border'
+              }
+            />
+          ))}
+        </div>
+        {autoAdvanceMs && !reducedMotion && (
+          <button
+            type="button"
+            className="min-h-touch rounded-pill px-3 text-sm font-bold text-muted-foreground"
+            onClick={() => setManualPaused((current) => !current)}
+          >
+            {manualPaused ? '자동 넘김 다시 시작' : '자동 넘김 멈춤'}
+          </button>
+        )}
       </div>
     </section>
   );
