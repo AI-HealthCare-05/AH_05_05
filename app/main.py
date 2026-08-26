@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -15,8 +16,22 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 configure_db_query_logging(config.DB_QUERY_LOG_ENABLED)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Chat Core가 재사용한 Qdrant 연결을 프로세스 종료 시 정리한다."""
+    yield
+    qdrant_client = getattr(app.state, "chat_qdrant_client", None)
+    if qdrant_client is not None:
+        await qdrant_client.close()
+
+
 app = FastAPI(
-    default_response_class=ORJSONResponse, docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json"
+    default_response_class=ORJSONResponse,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 app.add_middleware(OcrUploadSizeLimitMiddleware)
 initialize_tortoise(app)

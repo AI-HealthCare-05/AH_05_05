@@ -38,6 +38,8 @@ app = [
     "numbers-parser>=4.19.0",
     "orjson>=3.11.5",
     "pillow>=11,<13",
+    "qdrant-client>=1.19.0",
+    "langchain-openai>=1.5.1",
     "passlib[bcrypt]>=1.7.4",
     "pyjwt>=2.10.1",
     "pywebpush==2.4.0",
