@@ -97,23 +97,18 @@ test('게스트 배너를 넘기면 현재 위치 인디케이터가 함께 바�
   await expect(page.getByLabel('현재 배너 3 / 3')).toBeVisible();
 });
 
-test('홈 기능 배너는 사용자가 넘기지 않아도 자동으로 다음 장을 보여준다', async ({ page }) => {
+test('홈 기능 배너는 마우스가 배너 위에 있어도 자동으로 다음 장을 보여준다', async ({ page }) => {
   await page.goto('/home');
+  await page.getByRole('region', { name: '포케 기능 소개' }).hover();
 
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
   await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
 });
 
-test('홈 기능 배너 자동 넘김은 사용자가 멈추고 다시 시작할 수 있다', async ({ page }) => {
+test('홈 기능 배너에는 자동 넘김 제어 문구를 노출하지 않는다', async ({ page }) => {
   await page.goto('/home');
 
-  await page.getByRole('button', { name: '자동 넘김 멈춤' }).click();
-  await page.waitForTimeout(3_500);
-  await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
-
-  await page.getByRole('button', { name: '자동 넘김 다시 시작' }).click();
-  await page.mouse.move(0, 0);
-  await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
+  await expect(page.getByRole('button', { name: /자동 넘김/ })).toHaveCount(0);
 });
 
 test('동작 줄이기 환경에서는 홈 기능 배너를 자동으로 넘기지 않는다', async ({ page }) => {
