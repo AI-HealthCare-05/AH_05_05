@@ -5,11 +5,14 @@ import { useChatSession } from '@/app/ChatSessionContext';
 import { BottomTabbar, Button, Card, Header, Input, type TabKey } from '@/shared/ui';
 import {
   getChatMessages,
+  listChatSessions,
   sendChat,
   type ChatMessage,
+  type ChatSessionSummary,
   type SendChatPayload,
   type SendChatResult,
 } from '@/entities/chat';
+import { ChatSessionList } from './ChatSessionList';
 import { ChatStartGuide } from './ChatStartGuide';
 import { SourceList } from './SourceList';
 
@@ -27,6 +30,7 @@ interface ChatLocationState {
 
 type ChatHistoryLoader = () => Promise<ChatMessage[]>;
 type ChatSender = (payload: SendChatPayload) => Promise<SendChatResult>;
+type ChatView = 'loading' | 'list' | 'room';
 
 interface ChatPageProps {
   historyLoader?: ChatHistoryLoader;
@@ -41,12 +45,13 @@ export function ChatPage({
   const location = useLocation();
   const state = (location.state as ChatLocationState | null) ?? {};
   const recordId = state.recordId ?? null;
-  const { activeSessionId, selectSession } = useChatSession();
+  const { activeSessionId, selectSession, startNewSession } = useChatSession();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(
-    historyLoader !== undefined || activeSessionId !== null,
-  );
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [view, setView] = useState<ChatView>('loading');
+  const [newChatRequested, setNewChatRequested] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [conversationId, setConversationId] = useState<number | null>(null);
@@ -54,40 +59,61 @@ export function ChatPage({
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loader = historyLoader
-      ?? (activeSessionId === null ? undefined : () => getChatMessages(activeSessionId));
-    if (loader === undefined) {
-      setMessages([]);
-      setConversationId(null);
-      setHistoryLoading(false);
-      setHistoryError(null);
-      return;
-    }
     let cancelled = false;
     setHistoryLoading(true);
     setHistoryError(null);
-    loader()
-      .then((history) => {
-        if (!cancelled) {
+
+    async function loadEntry() {
+      try {
+        if (historyLoader !== undefined) {
+          const history = await historyLoader();
+          if (cancelled) return;
           setMessages(history);
-          if (historyLoader === undefined) setConversationId(activeSessionId);
+          setView('room');
+          return;
         }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
+
+        if (newChatRequested) {
+          if (cancelled) return;
+          setView('room');
+          return;
+        }
+
+        if (activeSessionId !== null) {
+          const history = await getChatMessages(activeSessionId);
+          if (cancelled) return;
+          setMessages(history);
+          setConversationId(activeSessionId);
+          setView('room');
+          return;
+        }
+
+        const loadedSessions = await listChatSessions();
+        if (cancelled) return;
+        setSessions(loadedSessions);
+        if (loadedSessions.length === 0) {
           setMessages([]);
-          setHistoryError(
-            error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.',
-          );
+          setConversationId(null);
+          setNewChatRequested(true);
+          setView('room');
+        } else {
+          setView('list');
         }
-      })
-      .finally(() => {
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setMessages([]);
+        setHistoryError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
+        setView('room');
+      } finally {
         if (!cancelled) setHistoryLoading(false);
-      });
+      }
+    }
+
+    void loadEntry();
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, historyLoader]);
+  }, [activeSessionId, historyLoader, newChatRequested]);
 
   // 새 메시지·대기 상태가 생기면 맨 아래로 내립니다.
   useEffect(() => {
@@ -132,6 +158,34 @@ export function ChatPage({
       my: '/my',
     };
     navigate(routes[key]);
+  }
+
+  function openSession(sessionId: number) {
+    setNewChatRequested(false);
+    selectSession(sessionId);
+    setView('loading');
+  }
+
+  function startNewChat() {
+    startNewSession();
+    setNewChatRequested(true);
+    setMessages([]);
+    setConversationId(null);
+    setDraft('');
+    setHistoryError(null);
+    setView('room');
+  }
+
+  if (view === 'list') {
+    return (
+      <ChatSessionList
+        sessions={sessions}
+        onBack={() => navigate(-1)}
+        onNewChat={startNewChat}
+        onOpen={openSession}
+        onTabChange={handleTabChange}
+      />
+    );
   }
 
   return (

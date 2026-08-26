@@ -23,6 +23,13 @@ export interface ChatMessage {
   sources: ChatSource[];
 }
 
+export interface ChatSessionSummary {
+  sessionId: number;
+  title: string;
+  lastMessagePreview: string;
+  lastMessageAt: string;
+}
+
 export interface SendChatPayload {
   /** 세션을 시작한 기록. 없으면 null */
   recordId: number | null;

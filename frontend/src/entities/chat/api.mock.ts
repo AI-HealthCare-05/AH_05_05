@@ -9,7 +9,12 @@
  * 같은 말이 들어오면 근거 없는 답변을 돌려줍니다. 근거가 없는데 있는 것처럼 보이는 게
  * 이 서비스에서 가장 위험한 실패라, 그 상태를 개발 중에 반드시 확인해야 합니다.
  */
-import type { ChatMessage, SendChatPayload, SendChatResult } from './types';
+import type {
+  ChatMessage,
+  ChatSessionSummary,
+  SendChatPayload,
+  SendChatResult,
+} from './types';
 
 const MOCK_CHAT_STORAGE_KEY = 'poke.mock-chat-sessions';
 
@@ -109,4 +114,15 @@ export function mockGetChatMessages(sessionId: number): ChatMessage[] {
     ...message,
     sources: message.sources.map((source) => ({ ...source })),
   }));
+}
+
+export function mockListChatSessions(): ChatSessionSummary[] {
+  return readStore()
+    .sessions.map((session) => ({
+      sessionId: session.sessionId,
+      title: session.messages.find((message) => message.role === 'user')?.text ?? '새 대화',
+      lastMessagePreview: session.messages.at(-1)?.text ?? '',
+      lastMessageAt: session.lastMessageAt,
+    }))
+    .sort((left, right) => right.lastMessageAt.localeCompare(left.lastMessageAt));
 }

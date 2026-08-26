@@ -8,8 +8,13 @@
  */
 import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import { mockGetChatMessages, mockSendChat } from './api.mock';
-import type { ChatMessage, SendChatPayload, SendChatResult } from './types';
+import { mockGetChatMessages, mockListChatSessions, mockSendChat } from './api.mock';
+import type {
+  ChatMessage,
+  ChatSessionSummary,
+  SendChatPayload,
+  SendChatResult,
+} from './types';
 
 /** REQ-CHAT-001 — POST /chat · 명세 15번 */
 export async function sendChat(payload: SendChatPayload): Promise<SendChatResult> {
@@ -26,4 +31,11 @@ export async function getChatMessages(sessionId: number): Promise<ChatMessage[]>
   if (!USE_MOCK) throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
   await mockDelay();
   return mockGetChatMessages(sessionId);
+}
+
+/** #111 임시 세션 목록 경계. 백엔드 계약이 확정되면 내부만 HTTP 조회로 교체합니다. */
+export async function listChatSessions(): Promise<ChatSessionSummary[]> {
+  if (!USE_MOCK) throw new Error('대화 목록 API가 아직 준비되지 않았어요.');
+  await mockDelay();
+  return mockListChatSessions();
 }

@@ -1,6 +1,7 @@
-export { getChatMessages, sendChat } from './api';
+export { getChatMessages, listChatSessions, sendChat } from './api';
 export type {
   ChatMessage,
+  ChatSessionSummary,
   ChatSource,
   SendChatPayload,
   SendChatResult,
