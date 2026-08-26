@@ -193,3 +193,15 @@ class OcrQueueUnavailableError(AppError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "OCR_QUEUE_UNAVAILABLE"
     message = "OCR 분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요."
+
+
+class MedicationScheduleNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "MEDICATION_SCHEDULE_NOT_FOUND"
+    message = "복약 시간표를 찾을 수 없습니다."
+
+
+class InvalidMedicationScheduleError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_MEDICATION_SCHEDULE"
+    message = "복약 시간표 입력값이 올바르지 않습니다."

@@ -42,8 +42,7 @@ export function MedicationAlarmTimesPage() {
     if (!overview) return;
     setSaveError(null);
     try {
-      await saveMedicationSchedule({
-        recordId: overview.recordId,
+      await saveMedicationSchedule(overview.recordId, {
         start: overview.start,
         mealTimes: nextMealTimes,
         medications: overview.medications
