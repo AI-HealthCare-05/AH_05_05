@@ -27,7 +27,7 @@ export async function getMedicationOverview(): Promise<MedicationOverview> {
     await mockDelay();
     return mockMedicationOverview();
   }
-  return http.get<MedicationOverview>('/medications');
+  return http.get<MedicationOverview>('/v1/medications');
 }
 
 export function prepareMedicationStateForNewAccount(): void {
@@ -40,7 +40,7 @@ export async function getMedicationSchedule(recordId: number): Promise<Medicatio
     await mockDelay();
     return mockMedicationSchedule();
   }
-  return http.get<MedicationSchedule>(`/medications/schedule?recordId=${recordId}`);
+  return http.get<MedicationSchedule>(`/v1/medications/schedule?recordId=${recordId}`);
 }
 
 /** REQ-CARE-003 — PUT /medications/schedule · 명세 5-3 */
@@ -51,7 +51,7 @@ export async function saveMedicationSchedule(
     await mockDelay();
     return mockSaveMedicationSchedule(payload);
   }
-  return http.put<SaveMedicationScheduleResponse>('/medications/schedule', payload);
+  return http.put<SaveMedicationScheduleResponse>('/v1/medications/schedule', payload);
 }
 
 export async function saveDoseTaken(payload: SaveDoseTakenPayload): Promise<DoseRecord> {
@@ -59,7 +59,7 @@ export async function saveDoseTaken(payload: SaveDoseTakenPayload): Promise<Dose
     await mockDelay();
     return mockSaveDoseTaken(payload);
   }
-  return http.post<DoseRecord>('/medications/doses', payload);
+  return http.post<DoseRecord>('/v1/medications/doses', payload);
 }
 
 export async function getDoseRecords(range: DoseRecordRange): Promise<DoseRecord[]> {
@@ -68,5 +68,5 @@ export async function getDoseRecords(range: DoseRecordRange): Promise<DoseRecord
     return mockGetDoseRecords(range);
   }
   const query = new URLSearchParams({ from: range.from, to: range.to });
-  return http.get<DoseRecord[]>(`/medications/doses?${query.toString()}`);
+  return http.get<DoseRecord[]>(`/v1/medications/doses?${query.toString()}`);
 }
