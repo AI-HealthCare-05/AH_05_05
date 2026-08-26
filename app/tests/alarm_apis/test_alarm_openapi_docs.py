@@ -17,7 +17,7 @@ def test_alarm_and_job_routes_expose_korean_usage_documentation():
         if method in HTTP_METHODS
     ]
 
-    assert len(operations) == 16
+    assert len(operations) == 17
     assert all(HANGUL_PATTERN.search(operation.get("summary", "")) for operation in operations)
     assert all(HANGUL_PATTERN.search(operation.get("description", "")) for operation in operations)
 
