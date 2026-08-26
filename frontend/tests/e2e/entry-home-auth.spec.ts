@@ -108,7 +108,7 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible({ timeout: 7_000 });
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await page.getByRole('button', { name: '확인 후 저장' }).click();
-  await expect(page).toHaveURL(/\/medication-schedule\?recordId=12&ocrJobId=102$/);
+  await expect(page).toHaveURL(/\/medication-schedule$/);
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
 });
 

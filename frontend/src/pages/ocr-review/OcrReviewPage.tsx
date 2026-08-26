@@ -75,12 +75,8 @@ export function OcrReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state as OcrReviewLocationState | null) ?? {};
-  const searchParams = new URLSearchParams(location.search);
-  const queryBatchId = searchParams.get('batchId')?.trim() || null;
-  const confirmedRecordId = parsePositiveInteger(searchParams.get('recordId'));
-  const confirmedReviewMode = searchParams.get('mode') === 'confirmed' && confirmedRecordId !== null;
   const [batchId, setBatchId] = useState<string | null>(
-    state.batchId ?? queryBatchId ?? (state.file ? null : 'b_mock_9f21'),
+    state.batchId ?? (state.file ? null : 'b_mock_9f21'),
   );
 
   const [result, setResult] = useState<OcrResult | null>(null);
@@ -182,7 +178,7 @@ export function OcrReviewPage() {
             setDispensedDate(data.fields.dispensedDate.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate.confidence);
             setMedications(data.medications);
-            if (data.ocrStatus === 'ready_for_review' || confirmedReviewMode) {
+            if (data.ocrStatus === 'ready_for_review') {
               void getOcrDocumentImageUrl(batchId, data.documentImageUrl)
                 .then((imageUrl) => {
                   if (!cancelled) setDocumentImageUrl(imageUrl);
@@ -191,10 +187,7 @@ export function OcrReviewPage() {
                   if (!cancelled) setImageUnavailable(true);
                 });
             }
-            navigate(`${location.pathname}${location.search}`, {
-              replace: true,
-              state: { batchId },
-            });
+            navigate(location.pathname, { replace: true, state: { batchId } });
           }, 400);
           return;
         }
@@ -215,7 +208,7 @@ export function OcrReviewPage() {
       if (pollTimer) window.clearTimeout(pollTimer);
       if (completionTimer) window.clearTimeout(completionTimer);
     };
-  }, [batchId, confirmedReviewMode, location.pathname, location.search, navigate, pollAttempt]);
+  }, [batchId, location.pathname, navigate, pollAttempt]);
 
   useEffect(() => {
     const details = STAGE_DETAILS[readingStage];
@@ -281,13 +274,7 @@ export function OcrReviewPage() {
       releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
       if (hasMedication) {
-        const params = new URLSearchParams({
-          recordId: String(recordId),
-          ocrJobId: batchId,
-        });
-        navigate(`/medication-schedule?${params.toString()}`, {
-          state: { recordId, dispensedDate, ocrJobId: batchId },
-        });
+        navigate('/medication-schedule', { state: { recordId, dispensedDate } });
       } else {
         navigate('/home', { replace: true });
       }
@@ -298,7 +285,7 @@ export function OcrReviewPage() {
     }
   }
 
-  if (result?.ocrStatus === 'complete' && !confirmedReviewMode) {
+  if (result?.ocrStatus === 'complete') {
     return (
       <PageFrame onBack={() => navigate(-1)}>
         <Card tone="success" title="이미 등록된 약봉투예요">
@@ -356,29 +343,12 @@ export function OcrReviewPage() {
   const ocrFailed = result.ocrStatus === 'failed';
   const ocrCancelled = result.ocrStatus === 'cancelled';
   const showOcrFailure = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
-  const scheduleReturnUrl =
-    confirmedReviewMode && batchId
-      ? `/medication-schedule?${new URLSearchParams({
-          recordId: String(confirmedRecordId),
-          ocrJobId: batchId,
-        }).toString()}`
-      : null;
-  const returnToSchedule = () => {
-    if (scheduleReturnUrl) navigate(scheduleReturnUrl, { replace: true });
-  };
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header
-        title="확인해주세요"
-        onBack={scheduleReturnUrl ? returnToSchedule : () => navigate(-1)}
-      />
+      <Header title="확인해주세요" onBack={() => navigate(-1)} />
       <main className="flex flex-1 flex-col gap-5 px-page-x py-5">
-        {confirmedReviewMode ? (
-          <Card tone="info" title="저장한 내용을 다시 확인해보세요">
-            확인을 마치면 복약 시간 설정으로 돌아갈 수 있어요.
-          </Card>
-        ) : reviewItemNames.length > 0 ? (
+        {reviewItemNames.length > 0 ? (
           <Card tone="warning" className="gap-2 p-4">
             <div className="flex items-start gap-3">
               <AlertTriangle aria-hidden className="mt-0.5 size-5 shrink-0 text-warning-strong" />
@@ -438,9 +408,8 @@ export function OcrReviewPage() {
             value={dispensedDate}
             onChange={(event) => setDispensedDate(event.target.value)}
             onClick={openDatePicker}
-            disabled={confirmedReviewMode}
             error={dispensedDateInFuture ? '조제일은 오늘까지만 고를 수 있어요.' : undefined}
-            hint={confirmedReviewMode ? '저장된 조제일입니다.' : '복용 시작일을 이 날짜로 채워둘게요.'}
+            hint="복용 시작일을 이 날짜로 채워둘게요."
           />
         </Card>
 
@@ -452,8 +421,7 @@ export function OcrReviewPage() {
             <button
               key={medication.tempId}
               type="button"
-              disabled={confirmedReviewMode}
-              className="flex min-h-20 w-full items-center gap-3 rounded-card bg-card px-4 py-3 text-left shadow-card disabled:cursor-default"
+              className="flex min-h-20 w-full items-center gap-3 rounded-card bg-card px-4 py-3 text-left shadow-card"
               onClick={() =>
                 setMedicationEditorTarget({ mode: 'edit', tempId: medication.tempId })
               }
@@ -469,42 +437,30 @@ export function OcrReviewPage() {
                   {medicationSummary(medication)}
                 </span>
               </span>
-              {!confirmedReviewMode && (
-                <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
-              )}
+              <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
             </button>
           ))}
-          {!confirmedReviewMode && (
-            <button
-              type="button"
-              className="flex min-h-touch items-center justify-center gap-2 rounded-card border border-dashed border-border text-sm font-bold text-muted-foreground"
-              onClick={() => setMedicationEditorTarget({ mode: 'add' })}
-            >
-              <Plus aria-hidden className="size-5" />
-              빠진 약 직접 추가
-            </button>
-          )}
+          <button
+            type="button"
+            className="flex min-h-touch items-center justify-center gap-2 rounded-card border border-dashed border-border text-sm font-bold text-muted-foreground"
+            onClick={() => setMedicationEditorTarget({ mode: 'add' })}
+          >
+            <Plus aria-hidden className="size-5" />
+            빠진 약 직접 추가
+          </button>
         </section>
 
         <p className="text-sm text-muted-foreground">
-          {confirmedReviewMode
-            ? '복약 시간 설정 전에 저장된 약 정보를 다시 확인할 수 있어요.'
-            : '사진에서 읽은 내용입니다. 실제 약봉투와 다르면 고쳐주세요.'}
+          사진에서 읽은 내용입니다. 실제 약봉투와 다르면 고쳐주세요.
         </p>
 
         <div className="mt-auto flex flex-col gap-2 pb-4">
-          {confirmedReviewMode ? (
-            <Button onClick={returnToSchedule}>복약 시간 설정으로 돌아가기</Button>
-          ) : (
-            <>
-              <Button onClick={handleSaveClick} disabled={!canSave}>
-                {saving ? '저장 중...' : '저장하고 복약 시간 설정'}
-              </Button>
-              <Button variant="secondary" onClick={() => navigate('/document-upload')}>
-                다시 촬영하기
-              </Button>
-            </>
-          )}
+          <Button onClick={handleSaveClick} disabled={!canSave}>
+            {saving ? '저장 중...' : '저장하고 복약 시간 설정'}
+          </Button>
+          <Button variant="secondary" onClick={() => navigate('/document-upload')}>
+            다시 촬영하기
+          </Button>
         </div>
       </main>
 
@@ -586,12 +542,6 @@ export function OcrReviewPage() {
       )}
     </div>
   );
-}
-
-function parsePositiveInteger(value: string | null): number | null {
-  if (value === null) return null;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function ReadingScreen({

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { Button, Card, Header, ImageViewer } from '@/shared/ui';
+import { Button, Card, Header } from '@/shared/ui';
 
 const GUIDE_ITEMS = ['조제일', '약 이름과 용량', '하루 몇 번, 며칠분'] as const;
 
@@ -11,7 +11,6 @@ export function DocumentUploadPage() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [imageViewerOpen, setImageViewerOpen] = useState(false);
 
   useEffect(() => {
     if (!file) {
@@ -65,18 +64,11 @@ export function DocumentUploadPage() {
               </p>
             </div>
             <div className="relative overflow-hidden rounded-card bg-muted-bg shadow-card">
-              <button
-                type="button"
-                aria-label="선택한 약봉투 크게 보기"
-                className="block w-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                onClick={() => setImageViewerOpen(true)}
-              >
-                <img
-                  src={previewUrl}
-                  alt="선택한 약봉투 미리보기"
-                  className="aspect-[4/3] w-full object-contain"
-                />
-              </button>
+              <img
+                src={previewUrl}
+                alt="선택한 약봉투 미리보기"
+                className="aspect-[4/5] w-full object-contain"
+              />
               <button
                 type="button"
                 className="absolute right-3 bottom-3 flex min-h-touch items-center gap-2 rounded-pill bg-foreground/80 px-4 text-sm font-bold text-card"
@@ -86,12 +78,6 @@ export function DocumentUploadPage() {
                 다시 선택
               </button>
             </div>
-            <ImageViewer
-              open={imageViewerOpen}
-              src={previewUrl}
-              title="선택한 약봉투 크게 보기"
-              onOpenChange={setImageViewerOpen}
-            />
             <p className="text-sm text-muted-foreground">
               {file.name} · {formatFileSize(file.size)}
             </p>

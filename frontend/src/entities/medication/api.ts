@@ -56,25 +56,24 @@ export function prepareMedicationStateForNewAccount(): void {
   if (USE_MOCK) resetMockMedicationForNewAccount();
 }
 
-/** REQ-CARE-003 — GET /med/medication/schedule/{record_id} · 명세 5-3 */
+/** REQ-CARE-003 — GET /medications/schedule?recordId=... · 명세 5-3 */
 export async function getMedicationSchedule(recordId: number): Promise<MedicationSchedule> {
   if (USE_MOCK) {
     await mockDelay();
     return mockMedicationSchedule();
   }
-  return http.get<MedicationSchedule>(`/v1/med/medication/schedule/${recordId}`);
+  return http.get<MedicationSchedule>(`/v1/medications/schedule?recordId=${recordId}`);
 }
 
-/** REQ-CARE-003 — PUT /med/medication/schedule/{record_id} · 명세 5-3 */
+/** REQ-CARE-003 — PUT /medications/schedule · 명세 5-3 */
 export async function saveMedicationSchedule(
-  recordId: number,
   payload: SaveMedicationSchedulePayload,
 ): Promise<SaveMedicationScheduleResponse> {
   if (USE_MOCK) {
     await mockDelay();
     return mockSaveMedicationSchedule(payload);
   }
-  return http.put<SaveMedicationScheduleResponse>(`/v1/med/medication/schedule/${recordId}`, payload);
+  return http.put<SaveMedicationScheduleResponse>('/v1/medications/schedule', payload);
 }
 
 export async function saveDoseTaken(payload: SaveDoseTakenPayload): Promise<DoseRecord> {

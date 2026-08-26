@@ -35,12 +35,10 @@ import {
 interface ScheduleLocationState {
   recordId?: number;
   dispensedDate?: string;
-  ocrJobId?: string;
 }
 
 interface MedicationSchedulePageProps {
   scheduleOverride?: MedicationSchedule;
-  defaultRecordId?: number;
 }
 
 /** info = 아직 안 고른 것(안내), error = 잘못 고른 것(오류). */
@@ -110,25 +108,12 @@ function formatStartPoint(date: string, slot: MealSlot): string {
   return `${Number(month)}월 ${Number(day)}일 ${label}`;
 }
 
-function parseRecordId(value: string | null): number | null {
-  if (value === null) return null;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-export function MedicationSchedulePage({
-  scheduleOverride,
-  defaultRecordId,
-}: MedicationSchedulePageProps = {}) {
+export function MedicationSchedulePage({ scheduleOverride }: MedicationSchedulePageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state as ScheduleLocationState | null) ?? {};
-  const searchParams = new URLSearchParams(location.search);
-  const queryRecordId = parseRecordId(searchParams.get('recordId'));
-  const queryOcrJobId = searchParams.get('ocrJobId')?.trim() || null;
-  const recordId = state.recordId ?? queryRecordId ?? defaultRecordId ?? (scheduleOverride ? 12 : null);
+  const recordId = state.recordId ?? 12;
   const dispensedDate = state.dispensedDate;
-  const ocrJobId = state.ocrJobId ?? queryOcrJobId;
 
   const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
   const [mealTimes, setMealTimes] = useState<MealTimes>(DEFAULT_MEAL_TIMES);
@@ -163,8 +148,6 @@ export function MedicationSchedulePage({
       applySchedule(scheduleOverride);
       return;
     }
-
-    if (recordId === null) return;
 
     let cancelled = false;
     getMedicationSchedule(recordId)
@@ -229,11 +212,12 @@ export function MedicationSchedulePage({
     times: MealTimes,
     payloadSlots: Record<number, MealSlot[]>,
   ) {
-    if (!schedule || recordId === null) return;
+    if (!schedule) return;
     setSaving(true);
     setSaveError(null);
     try {
-      await saveMedicationSchedule(recordId, {
+      await saveMedicationSchedule({
+        recordId,
         start,
         mealTimes: times,
         medications: schedule.medications
@@ -259,7 +243,7 @@ export function MedicationSchedulePage({
 
   /** 건너뛰기 — 기본 시각 + 자동 배정 결과를 그대로 보냅니다. */
   function handleSkip() {
-    if (!schedule || recordId === null) return;
+    if (!schedule) return;
     const defaults: Record<number, MealSlot[]> = {};
     for (const med of schedule.medications) {
       defaults[med.medicationId] = defaultSlotsFor(med.timesPerDay, med.timing);
@@ -271,39 +255,10 @@ export function MedicationSchedulePage({
     );
   }
 
-  function handleBack() {
-    if (recordId !== null && ocrJobId) {
-      const params = new URLSearchParams({
-        batchId: ocrJobId,
-        recordId: String(recordId),
-        mode: 'confirmed',
-      });
-      navigate(`/ocr-review?${params.toString()}`, { replace: true });
-      return;
-    }
-    navigate(-1);
-  }
-
-  if (recordId === null) {
-    return (
-      <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-        <Header title="복약 시간 설정" onBack={handleBack} />
-        <main className="flex flex-1 flex-col px-page-x py-4">
-          <Card title="복약 기록을 선택해주세요.">
-            <div className="flex flex-col gap-4">
-              <p>약봉투 등록을 완료한 뒤 복약 시간을 설정할 수 있어요.</p>
-              <Button onClick={() => navigate('/document-upload')}>약봉투 등록하기</Button>
-            </div>
-          </Card>
-        </main>
-      </div>
-    );
-  }
-
   if (loadError !== null || !schedule) {
     return (
       <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-        <Header title="복약 시간 설정" onBack={handleBack} />
+        <Header title="복약 시간 설정" onBack={() => navigate(-1)} />
         <main className="flex flex-1 flex-col px-page-x py-4">
           {loadError !== null ? (
             <Card title="복약 정보를 불러오지 못했어요">{loadError}</Card>
@@ -316,13 +271,13 @@ export function MedicationSchedulePage({
   }
 
   const scheduledMeds = schedule.medications.filter((m) => m.timesPerDay !== null);
-  const hasAutomaticallyAssignedMeds = scheduledMeds.some((medication) =>
+  const confirmationMeds = scheduledMeds.filter((medication) =>
     needsSlotConfirmation(medication.timesPerDay, medication.timing),
   );
   const usedSlots = new Set<MealSlot>(scheduledMeds.flatMap((m) => slots[m.medicationId] ?? []));
   const orderValid = isMealTimeOrderValid(mealTimes);
   const emptyMedIds = new Set(
-    scheduledMeds
+    confirmationMeds
       .filter((m) => (slots[m.medicationId] ?? []).length === 0)
       .map((m) => m.medicationId),
   );
@@ -370,7 +325,7 @@ export function MedicationSchedulePage({
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="복약 시간 설정" onBack={handleBack} />
+      <Header title="복약 시간 설정" onBack={() => navigate(-1)} />
 
       <main className="flex flex-1 flex-col gap-5 px-page-x py-4">
         {/* [1] 시간대 카드 — 화면의 주인공 */}
@@ -470,19 +425,19 @@ export function MedicationSchedulePage({
           ) : null}
         </div>
 
-        {/* [3] 자동 배정 여부와 무관하게 모든 정기약의 시간대를 보여줍니다. */}
-        {scheduledMeds.length > 0 && (
-          <section aria-label="약별 복용 시간 확인" className="flex flex-col gap-2">
+        {/* [3] 원문에 시간대가 없어 횟수 기준으로 자동 배정한 약만 확인합니다. */}
+        {confirmationMeds.length > 0 && (
+          <section aria-label="자동 배정 시간 확인" className="flex flex-col gap-2">
             <div>
-              <p className="text-base font-bold text-foreground">약마다 먹는 시간을 확인해주세요</p>
+              <p className="text-base font-bold text-foreground">
+                이 약들은 언제 먹는지 봉투에 없었어요
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {hasAutomaticallyAssignedMeds
-                  ? '봉투에 시간대가 없는 약은 복용 횟수에 맞춰 정했어요.'
-                  : '봉투에서 읽은 시간입니다. 맞는지 확인해주세요.'}
+                저희가 정한 시간입니다. 맞는지 확인해주세요.
               </p>
             </div>
             <div className="flex flex-col gap-3">
-              {scheduledMeds.map((med) => {
+              {confirmationMeds.map((med) => {
                 const medSlots = slots[med.medicationId] ?? [];
                 return (
                   <div

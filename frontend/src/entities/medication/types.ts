@@ -53,6 +53,7 @@ export interface MedicationSchedule {
 }
 
 export interface SaveMedicationSchedulePayload {
+  recordId: number;
   start: MedicationStartPoint;
   mealTimes: MealTimes;
   /** 필요 시 복용 약(timesPerDay === null)은 제외하고 보냅니다. */
