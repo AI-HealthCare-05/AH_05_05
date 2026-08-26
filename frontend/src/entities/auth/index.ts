@@ -1,2 +1,2 @@
-export { login } from './api';
-export type { LoginPayload, LoginResponse } from './types';
+export { login, logout } from './api';
+export type { LoginErrorCode, LoginPayload, LoginResult } from './types';
