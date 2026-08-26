@@ -111,6 +111,15 @@ function initializeAdminManagement() {
   });
   [role, status].forEach((control) => control.addEventListener("change", load));
 
+  document.querySelector("[data-admin-reset]")?.addEventListener("click", () => {
+    search.value = "";
+    role.value = "전체";
+    status.value = "전체";
+    // 입력 디바운스가 걸려 있으면 방금 지운 값으로 한 번 더 조회된다.
+    window.clearTimeout(searchTimer);
+    load();
+  });
+
   registerButton?.addEventListener("click", async () => {
     await openOverlay("overlay-admin-register.html", {
       onConfirm: async (overlay) => {
