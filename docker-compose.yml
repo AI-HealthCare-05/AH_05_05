@@ -72,10 +72,12 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: ${REDIS_DB:-0}
+      QDRANT_URL: http://qdrant:6333
     command: | 
       sh -c "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./app:/app/app  # 로컬의 app 디렉토리를 컨테이너의 /app/app에 마운트(수정사항 즉시 반영)
+      - ./ai_worker:/app/ai_worker:ro
       - static_volume:/app/templates
       - media_volume:/app/media
     restart: always
@@ -88,6 +90,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_started
 
   # 4. Alarm Worker (스케줄링 및 Web Push 발송)
   alarm-worker:
