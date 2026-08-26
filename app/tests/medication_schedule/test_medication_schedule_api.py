@@ -13,6 +13,59 @@ from app.tests.med_apis.helpers import authentication_headers
 
 
 class TestMedicationScheduleAPI(TestCase):
+    async def test_new_account_gets_an_empty_medication_overview_list(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "overview-empty@example.com", "01021000100")
+
+            response = await client.get("/api/v1/medications", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    async def test_saved_schedule_is_returned_as_a_medication_overview(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "overview@example.com", "01021000109")
+            user = await User.get(email="overview@example.com")
+            start_date = date.today() - timedelta(days=2)
+            episode = await CareEpisode.create(
+                user=user,
+                title="복약 개요",
+                status=CareEpisodeStatus.ACTIVE,
+                medication_start_date=start_date,
+                medication_start_slot=MealSlot.MORNING,
+            )
+            regular = await Medication.create(
+                care_episode=episode,
+                name="암브록솔정",
+                dose="30mg",
+                administration="식후",
+                times_per_day=3,
+                days=7,
+            )
+            await MedicationSlot.create(medication=regular, slot=MealSlot.MORNING)
+            await MedicationSlot.create(medication=regular, slot=MealSlot.LUNCH)
+            await MedicationSlot.create(medication=regular, slot=MealSlot.EVENING)
+
+            response = await client.get("/api/v1/medications", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        overview = response.json()[0]
+        assert overview["recordId"] == episode.id
+        assert overview["start"] == {"date": start_date.isoformat(), "slot": "morning"}
+        assert overview["endDate"] == (start_date + timedelta(days=6)).isoformat()
+        assert overview["medications"] == [
+            {
+                "medicationId": regular.id,
+                "name": "암브록솔정",
+                "dose": "30mg",
+                "days": 7,
+                "daysRemaining": 4,
+                "slots": ["morning", "lunch", "evening"],
+                "asNeeded": False,
+                "untilComplete": False,
+            }
+        ]
+
     async def test_ocr_confirmed_episode_opens_schedule_with_its_real_medication_ids(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await authentication_headers(client, "schedule@example.com", "01021000101")
