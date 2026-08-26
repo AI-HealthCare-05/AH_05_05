@@ -1,3 +1,4 @@
+import asyncio
 from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import AsyncQdrantClient
@@ -27,6 +28,8 @@ class QdrantKnowledgeStore:
         self._client = client
         self._collection_name = normalized_name
         self._vector_size = vector_size
+        self._collection_validated = False
+        self._collection_validation_lock = asyncio.Lock()
 
     @property
     def collection_name(self) -> str:
@@ -43,6 +46,7 @@ class QdrantKnowledgeStore:
                 distance=models.Distance.COSINE,
             ),
         )
+        self._collection_validated = True
 
     async def upsert_chunks(
         self,
@@ -129,17 +133,25 @@ class QdrantKnowledgeStore:
         return results
 
     async def _validate_existing_collection(self) -> None:
-        if not await self._client.collection_exists(self._collection_name):
-            raise ValueError(f"release 컬렉션을 찾을 수 없습니다: {self._collection_name}")
+        if self._collection_validated:
+            return
+        async with self._collection_validation_lock:
+            if self._collection_validated:
+                return
+            if not await self._client.collection_exists(self._collection_name):
+                raise ValueError(f"release 컬렉션을 찾을 수 없습니다: {self._collection_name}")
 
-        collection = await self._client.get_collection(self._collection_name)
-        vector_params = collection.config.params.vectors
-        if not isinstance(vector_params, models.VectorParams):
-            raise ValueError("단일 벡터 컬렉션만 사용할 수 있습니다.")
-        if vector_params.size != self._vector_size:
-            raise ValueError("기존 컬렉션의 벡터 차원이 설정값과 일치하지 않습니다.")
-        if vector_params.distance != models.Distance.COSINE:
-            raise ValueError("기존 컬렉션의 거리 방식이 COSINE이 아닙니다.")
+            collection = await self._client.get_collection(self._collection_name)
+            vector_params = collection.config.params.vectors
+            if not isinstance(vector_params, models.VectorParams):
+                raise ValueError("단일 벡터 컬렉션만 사용할 수 있습니다.")
+            if vector_params.size != self._vector_size:
+                raise ValueError("기존 컬렉션의 벡터 차원이 설정값과 일치하지 않습니다.")
+            if vector_params.distance != models.Distance.COSINE:
+                raise ValueError("기존 컬렉션의 거리 방식이 COSINE이 아닙니다.")
+            # 릴리스 컬렉션은 불변으로 운영하므로 프로세스 생명주기 동안
+            # 성공한 스키마 검증을 재사용해 검색별 관리 RPC를 제거한다.
+            self._collection_validated = True
 
     def _validate_vectors(self, vectors: list[list[float]]) -> None:
         if any(len(vector) != self._vector_size for vector in vectors):
@@ -158,6 +170,22 @@ class QdrantKnowledgeStore:
             )
         ]
 
+        entity_conditions: list[models.Condition] = []
+        QdrantKnowledgeStore._append_any_filter(
+            entity_conditions,
+            "metadata.drug_names",
+            search_query.drug_names,
+        )
+        QdrantKnowledgeStore._append_any_filter(
+            entity_conditions,
+            "metadata.ingredient_names",
+            search_query.ingredient_names,
+        )
+        QdrantKnowledgeStore._append_any_filter(
+            entity_conditions,
+            "metadata.interaction_pair_keys",
+            search_query.interaction_pair_keys,
+        )
         QdrantKnowledgeStore._append_any_filter(
             conditions,
             "metadata.document_type",
@@ -165,23 +193,8 @@ class QdrantKnowledgeStore:
         )
         QdrantKnowledgeStore._append_any_filter(
             conditions,
-            "metadata.drug_names",
-            search_query.drug_names,
-        )
-        QdrantKnowledgeStore._append_any_filter(
-            conditions,
-            "metadata.ingredient_names",
-            search_query.ingredient_names,
-        )
-        QdrantKnowledgeStore._append_any_filter(
-            conditions,
             "metadata.special_populations",
             search_query.special_populations,
-        )
-        QdrantKnowledgeStore._append_any_filter(
-            conditions,
-            "metadata.interaction_pair_keys",
-            search_query.interaction_pair_keys,
         )
         QdrantKnowledgeStore._append_any_filter(
             conditions,
@@ -196,7 +209,10 @@ class QdrantKnowledgeStore:
                 )
             )
 
-        return models.Filter(must=conditions)
+        return models.Filter(
+            must=conditions,
+            should=entity_conditions or None,
+        )
 
     @staticmethod
     def _append_any_filter(

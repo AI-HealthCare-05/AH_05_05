@@ -9,11 +9,11 @@ def test_core_package_uses_ai_worker_dependencies() -> None:
     assert setup_logger.__module__ == ("ai_worker.core.logger")
 
 
-def test_config_defaults_to_approved_knowledge_baseline() -> None:
+def test_config_defaults_to_approved_full_knowledge_release() -> None:
     settings = Config(_env_file=None)
 
-    assert settings.KNOWLEDGE_QDRANT_COLLECTION == ("medication_knowledge_baseline_v1")
-    assert settings.KNOWLEDGE_DATASET_VERSION == ("knowledge-baseline-v1")
+    assert settings.KNOWLEDGE_QDRANT_COLLECTION == ("medication_knowledge_full_v1")
+    assert settings.KNOWLEDGE_DATASET_VERSION == ("knowledge-full-v1")
 
 
 def test_config_reads_openai_chat_integration_settings(

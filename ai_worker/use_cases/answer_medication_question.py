@@ -39,6 +39,7 @@ MEDICATION_CHAT_SCHEMA_VERSION = "medication-chat-result-v1"
 
 
 class AnswerMedicationQuestionUseCase:
+    _MAX_PRODUCT_NAME_CANDIDATES = 12
     _EXACT_PRODUCT_REQUIRED_PATTERN = re.compile(
         r"복용법|사용법|어떻게\s*(?:먹|복용)|"
         r"몇\s*(?:정|캡슐|포)|용량|횟수|간격|"
@@ -273,16 +274,21 @@ class AnswerMedicationQuestionUseCase:
         *,
         context: ActiveIntakeContext,
     ) -> list[str]:
-        candidates = [
-            medication.name for medication in context.medications if medication.name in question or "이 약" in question
-        ]
+        candidates = [medication.name for medication in context.medications if medication.name in question]
+        if "이 약" in question and len(context.medications) == 1:
+            candidates.append(context.medications[0].name)
         stopwords = {
             "어떤",
+            "어떻게",
+            "약",
             "약인가요",
             "알려줘",
             "알려주세요",
             "주의사항",
             "복용법",
+            "복용",
+            "먹어",
+            "먹어야",
             "효능",
         }
         for token in re.findall(r"[가-힣A-Za-z0-9.+-]{2,}", question):
@@ -293,7 +299,7 @@ class AnswerMedicationQuestionUseCase:
             )
             if normalized and normalized not in stopwords:
                 candidates.append(normalized)
-        return list(dict.fromkeys(candidates))
+        return list(dict.fromkeys(candidates))[: AnswerMedicationQuestionUseCase._MAX_PRODUCT_NAME_CANDIDATES]
 
     @staticmethod
     def _is_interaction_question(question: str) -> bool:

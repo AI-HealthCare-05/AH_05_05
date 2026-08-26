@@ -430,3 +430,38 @@ async def test_supplement_pair_question_skips_medication_product_lookup() -> Non
     assert result.route == MedicationChatRoute.INTERACTION
     assert "검색된 상호작용 연구 근거" in result.answer
     assert "제품명을 확인" not in result.answer
+
+
+def test_product_name_candidates_are_bounded_for_long_questions() -> None:
+    candidates = AnswerMedicationQuestionUseCase._product_name_candidates(
+        " ".join(f"후보{index}" for index in range(100)),
+        context=ActiveIntakeContext(user_id=1),
+    )
+
+    assert len(candidates) <= 12
+
+
+def test_this_medicine_does_not_choose_between_multiple_active_medications() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=100,
+                name="아스피린",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=100,
+                name="타이레놀",
+            ),
+        ],
+    )
+
+    candidates = AnswerMedicationQuestionUseCase._product_name_candidates(
+        "이 약은 어떻게 먹어?",
+        context=context,
+    )
+
+    assert "아스피린" not in candidates
+    assert "타이레놀" not in candidates
