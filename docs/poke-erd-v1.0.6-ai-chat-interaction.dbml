@@ -1,0 +1,659 @@
+/***********************************************************
+* 포케 ERD v1.0.6 - AI / CHAT / 상호작용 파트 집중본
+* 기준 ERD 최종수정일 2026.08.25 20:11
+* AI 파트 재검토일 2026.08.25
+*
+* 목적
+*   - 팀원 테이블의 기존 컬럼과 기능은 최대한 유지한다.
+*   - 약·영양제·음식 상호작용을 성분 기준으로 정규화한다.
+*   - 사용자 확정 약명과 표준 성분이 매칭되지 않아도 기존 약 저장은 유지한다.
+*   - 승인된 RDBMS 규칙만 결정론적 상호작용 판정에 사용한다.
+*   - 상세 원문은 Qdrant 청크로 연결하고 LLM은 표현만 담당한다.
+*
+* 사용 방법
+*   이 파일은 AI 파트만 독립적으로 검토하기 위한 DBML이다.
+*   user, care_episodes, recovery_guides, medications, care_advices,
+*   follow_up_visits, supplement_nutrients, user_suppl_nutrient는
+*   관계 표시를 위한 최신 v1.0.6 최소 스텁이며, 최종 ERD 병합 시 팀원 원본 테이블에
+*   AI 소유 테이블·ENUM 값·CHAT 추가 컬럼만 반영하고 스텁 전체로 교체하지 않는다.
+*
+* 유지 결정
+*   recovery_guides와 recovery_guide_sources는 GUIDE_CHECK 알람이
+*   참조하므로 이번 범위에서 삭제하지 않는다.
+***********************************************************/
+
+/* =========================================================
+   ENUM
+   ========================================================= */
+
+Enum interaction_entity_kind {
+  DRUG
+  SUPPLEMENT
+  FOOD
+}
+
+Enum interaction_alias_type {
+  INGREDIENT_NAME
+  PRODUCT_NAME
+  SYNONYM
+  SOURCE_NAME
+}
+
+Enum interaction_mapping_status {
+  PENDING
+  MATCHED
+  FAILED
+}
+
+Enum interaction_match_method {
+  SOURCE_CODE
+  EXACT_NAME
+  ALIAS
+  MANUAL
+}
+
+Enum interaction_extraction_method {
+  DETERMINISTIC_STRUCTURED
+  MANUAL_ANNOTATION
+}
+
+Enum interaction_pair_type {
+  DRUG_DRUG
+  DRUG_SUPPLEMENT
+  SUPPLEMENT_SUPPLEMENT
+  DRUG_FOOD
+}
+
+Enum interaction_risk_level {
+  CONTRAINDICATED
+  HIGH_CAUTION
+  CAUTION
+  INFORMATIONAL
+  UNKNOWN
+}
+
+Enum interaction_review_status {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+Enum chat_session_status {
+  ACTIVE
+  DELETED
+}
+
+Enum chat_message_role {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+Enum chat_message_status {
+  PENDING
+  STREAMING
+  COMPLETED
+  FAILED
+}
+
+Enum chat_route_type {
+  PATIENT_DB
+  PUBLIC_RAG
+  PATIENT_AND_PUBLIC
+  GENERAL_LIFESTYLE
+  INTERACTION
+  SAFETY_RESPONSE
+  OUT_OF_SCOPE_RESPONSE
+}
+
+Enum chat_safety_status {
+  PENDING
+  SAFE
+  RESTRICTED
+  BLOCKED
+  VALIDATION_FAILED
+}
+
+Enum chat_verification_status {
+  NOT_REQUIRED
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+Enum chat_conflict_status {
+  NOT_APPLICABLE
+  NO_CONFLICT
+  PATIENT_DATA_PRIORITY
+  PUBLIC_SOURCE_EXCLUDED
+  REVIEW_REQUIRED
+}
+
+Enum patient_source_kind {
+  CARE_EPISODE_FIELD
+  MEDICATION
+  CARE_ADVICE
+  FOLLOW_UP_VISIT
+}
+
+Enum care_episode_source_field {
+  DIAGNOSIS
+  SURGERY
+  DISCHARGE_DATE
+  MEDICATION_DAYS
+}
+
+Enum chat_source_type {
+  PATIENT_SAVED_FIELD
+  PUBLIC_RAG_CHUNK
+  USER_SUPPLEMENT
+  INTERACTION_RULE
+}
+
+Enum supplement_status {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+/* =========================================================
+   팀원 테이블 연결용 최소 스텁
+   최종 병합 시 기존 v1.0.6 테이블을 유지하고 [AI 추가] 컬럼만 반영한다.
+   ========================================================= */
+
+Table user {
+  id bigint [pk, increment]
+}
+
+Table care_episodes {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+}
+
+Ref: care_episodes.user_id > user.id [delete: cascade]
+
+Table recovery_guides {
+  id bigint [pk, increment]
+}
+
+Table care_advices {
+  id bigint [pk, increment]
+  care_episode_id bigint [not null]
+}
+
+Table follow_up_visits {
+  id bigint [pk, increment]
+  care_episode_id bigint [not null]
+}
+
+Table medications {
+  id bigint [pk, increment]
+  care_episode_id bigint [not null]
+  name varchar(255) [not null]
+  prescribed_at date [note: '처방일. 같은 케어의 처방 회차 정렬에 사용한다.']
+}
+
+Ref: medications.care_episode_id > care_episodes.id [delete: cascade]
+Ref: care_advices.care_episode_id > care_episodes.id [delete: cascade]
+Ref: follow_up_visits.care_episode_id > care_episodes.id [delete: cascade]
+
+Table medication_product_guides {
+  id bigint [pk, increment]
+  item_seq varchar(20) [not null, unique, note: '식약처 e약은요 품목일련번호']
+  product_name varchar(255) [not null]
+  manufacturer_name varchar(255) [not null]
+  efficacy text [not null]
+  usage_instructions text [not null]
+  pre_use_warning text [not null]
+  precautions text [not null]
+  drug_food_interactions text [not null]
+  adverse_reactions text [not null]
+  storage_instructions text [not null]
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime [not null]
+
+  indexes {
+    product_name
+  }
+
+  Note: '''
+  식약처 e약은요 CSV에서 사용자에게 필요한 제품 가이드 10개 필드만 보존한다.
+  이미지 URL·공개일자 등 현재 서비스에서 사용하지 않는 중복 필드는 적재하지 않는다.
+  품목일련번호가 같은 완전 중복 행은 하나로 병합하고 내용 충돌은 적재 전에 차단한다.
+  '''
+}
+
+Table supplement_nutrients {
+  id bigint [pk, increment]
+  food_code varchar(20) [not null, unique]
+  name varchar(100) [not null]
+}
+
+Table user_suppl_nutrient {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  supplement_nutrient_id bigint [note: '표준 영양제이면 참조하고 직접 입력 제품이면 null']
+  custom_name varchar(255) [note: '직접 입력 제품명. supplement_nutrient_id가 null일 때만 사용']
+  start_date date [not null]
+  end_date date
+  status supplement_status [not null, default: 'ACTIVE']
+
+  checks {
+    `(supplement_nutrient_id IS NOT NULL AND custom_name IS NULL)
+      OR (supplement_nutrient_id IS NULL AND custom_name IS NOT NULL)`
+  }
+
+  Note: '''
+  최신 v1.0.6의 직접 입력 제품 계약을 반영한 연결용 스텁이다.
+  직접 입력 제품은 성분 정보가 없으므로 결정론적 상호작용 판정에서 제외하고
+  사용자에게 "성분 정보 없음"을 명시한다.
+  '''
+}
+
+Ref: user_suppl_nutrient.user_id > user.id [delete: cascade]
+Ref: user_suppl_nutrient.supplement_nutrient_id > supplement_nutrients.id [delete: restrict]
+
+/* =========================================================
+   성분 정규화 계층
+   ========================================================= */
+
+Table interaction_entities {
+  id bigint [pk, increment]
+  entity_kind interaction_entity_kind [not null]
+  canonical_name varchar(255) [not null, note: '사용자 화면과 출처에 표시할 표준 성분·음식 이름']
+  normalized_name varchar(255) [not null, note: 'NFKC·공백 정규화·casefold를 적용한 검색 및 pair key 생성용 이름']
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (entity_kind, normalized_name) [unique]
+    canonical_name
+  }
+
+  Note: '''
+  약, 영양제 성분, 상호작용 대상 음식을 하나의 공통 주체로 관리한다.
+  제품명은 이 테이블의 표준 이름으로 사용하지 않고 aliases에 둔다.
+  LLM이 새 성분을 임의 생성하지 않으며 importer 또는 관리자 검수로만 추가한다.
+  '''
+}
+
+Table interaction_entity_aliases {
+  id bigint [pk, increment]
+  interaction_entity_id bigint [not null]
+  alias_type interaction_alias_type [not null]
+  alias varchar(255) [not null, note: '표준명과 실제로 다른 성분명·제품명·동의어만 저장']
+  normalized_alias varchar(255) [not null, note: '사용자 확정 약명과 비교하기 위한 정규화 별칭']
+  is_preferred boolean [not null, default: false]
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (interaction_entity_id, normalized_alias) [unique]
+    normalized_alias
+  }
+
+  Note: '''
+  표준명과 다른 문자열만 저장하며 canonical_name과 같은 별칭은 만들지 않는다.
+  사용자 확정 제품명과 출처 성분명이 다른 경우 성분 매칭에 사용한다.
+  '''
+}
+
+Ref: interaction_entity_aliases.interaction_entity_id > interaction_entities.id [delete: cascade]
+
+Table interaction_entity_identifiers {
+  id bigint [pk, increment]
+  interaction_entity_id bigint [not null]
+  source_id varchar(100) [not null, note: '외부 식별자 제공 데이터셋. 예: MFDS_DUR']
+  source_code varchar(100) [not null, note: 'DUR 성분코드 등 출처가 제공한 식별자']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (source_id, source_code) [unique]
+  }
+
+  Note: '''
+  출처 코드를 저장하기 위해 표준 성분명과 동일한 별칭을 중복 생성하지 않는다.
+  출처 코드가 있으면 이름·별칭 매칭보다 우선한다.
+  같은 정규화 성분에 출처 코드가 여러 개일 수 있으므로 성분·출처 조합은 유일하지 않다.
+  대신 하나의 출처 코드는 하나의 성분에만 연결되도록 source_id·source_code를 유일하게 둔다.
+  '''
+}
+
+Ref: interaction_entity_identifiers.interaction_entity_id > interaction_entities.id [delete: cascade]
+
+/* =========================================================
+   사용자 약·영양제와 표준 성분 연결
+   ========================================================= */
+
+Table medication_interaction_mappings {
+  id bigint [pk, increment]
+  medication_id bigint [not null, unique]
+  mapping_status interaction_mapping_status [not null, default: 'PENDING']
+  error_code varchar(100) [note: '약 원문이나 개인정보를 포함하지 않는 성분 매핑 실패 코드']
+  mapped_at datetime [note: '성분 매핑을 마지막으로 완료한 시각']
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    mapping_status
+  }
+
+  Note: '''
+  기존 medications 테이블을 변경하지 않고 AI 성분 매핑 상태를 관리한다.
+  PENDING·FAILED여도 사용자 확정 약은 유지하며 MATCHED만 결정론적 상호작용 검사에 사용한다.
+  '''
+}
+
+Table medication_interaction_entities {
+  id bigint [pk, increment]
+  medication_id bigint [not null]
+  interaction_entity_id bigint [not null]
+  match_method interaction_match_method [not null]
+  match_confidence decimal(5,4) [note: '자동 이름 매칭 신뢰도. SOURCE_CODE·MANUAL이면 null 가능']
+  matched_source_text varchar(255) [not null, note: '매칭 당시 사용한 사용자 확정 약명 또는 성분 문자열']
+  reviewed_at datetime [note: '수동 검수한 경우 검수 완료 시각']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (medication_id, interaction_entity_id) [unique]
+    interaction_entity_id
+  }
+
+  checks {
+    `match_confidence IS NULL OR (match_confidence >= 0 AND match_confidence <= 1)`
+  }
+
+  Note: '''
+  한 약에 여러 유효성분이 있을 수 있으므로 다대다 연결로 둔다.
+  medication_interaction_mappings.mapping_status=MATCHED인 약만 상호작용 검사에 사용한다.
+  매칭되지 않은 약은 medications에는 남고 챗봇은 "성분을 확인할 수 없음"이라고 안내한다.
+  '''
+}
+
+Table supplement_interaction_entities {
+  id bigint [pk, increment]
+  supplement_nutrient_id bigint [not null]
+  interaction_entity_id bigint [not null]
+  amount decimal(12,4) [note: '원본이 제공한 기준량당 성분 함량. 상호작용 판정에 필요하지 않으면 null 가능']
+  unit varchar(30) [note: 'mg, μg RAE 등 원본 단위']
+  source_field varchar(100) [note: 'vitamin_c_mg 등 원본 표의 성분 필드명']
+  match_method interaction_match_method [not null, default: 'SOURCE_CODE']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (supplement_nutrient_id, interaction_entity_id) [unique]
+    interaction_entity_id
+  }
+
+  checks {
+    `amount IS NULL OR amount > 0`
+    `(amount IS NULL AND unit IS NULL) OR (amount IS NOT NULL AND unit IS NOT NULL)`
+  }
+
+  Note: '''
+  기존 supplement_nutrients의 고정 영양성분 컬럼을 삭제하지 않고
+  상호작용 검색에 필요한 성분 정규화 행을 추가한다.
+  user_suppl_nutrient의 표준데이터 제품만 이 매핑을 통해 성분 판정에 사용한다.
+  custom_name으로 저장한 직접 입력 제품은 복용 목록에는 유지하지만
+  성분이 없으므로 상호작용 판정에서 제외하고 "성분 정보 없음"을 안내한다.
+  '''
+}
+
+Ref: medication_interaction_mappings.medication_id > medications.id [delete: cascade]
+Ref: medication_interaction_entities.medication_id > medications.id [delete: cascade]
+Ref: medication_interaction_entities.interaction_entity_id > interaction_entities.id [delete: restrict]
+Ref: supplement_interaction_entities.supplement_nutrient_id > supplement_nutrients.id [delete: cascade]
+Ref: supplement_interaction_entities.interaction_entity_id > interaction_entities.id [delete: restrict]
+
+/* =========================================================
+   결정론적 상호작용 규칙
+   ========================================================= */
+
+Table interaction_rules {
+  id bigint [pk, increment]
+  pair_key char(64) [not null, note: '두 주체의 kind·normalized_name을 정렬해 만든 SHA-256']
+  pair_type interaction_pair_type [not null]
+  left_entity_id bigint [not null]
+  right_entity_id bigint [not null]
+  risk_level interaction_risk_level [not null]
+  review_status interaction_review_status [not null, default: 'PENDING']
+  rule_dataset_version varchar(100) [not null, note: 'RDBMS 규칙 데이터셋의 불변 버전']
+  extraction_method interaction_extraction_method [not null]
+  approved_at datetime
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (pair_key, rule_dataset_version) [unique]
+    (left_entity_id, right_entity_id)
+    (pair_type, review_status, risk_level)
+    rule_dataset_version
+  }
+
+  checks {
+    `left_entity_id <> right_entity_id`
+    `(review_status = 'APPROVED' AND approved_at IS NOT NULL) OR (review_status <> 'APPROVED' AND approved_at IS NULL)`
+  }
+
+  Note: '''
+  같은 조합도 데이터셋 버전별로 누적 저장한다.
+  pair_key 단독 전역 유일성은 새 버전 적재를 막으므로 사용하지 않는다.
+  런타임에서는 review_status=APPROVED 규칙만 사용한다.
+  PENDING staging 후보는 챗봇 답변이나 자동 경고에 사용하지 않는다.
+  금기·주의 문구는 interaction_rule_sources.raw_effect_text 한 곳에만 저장한다.
+  규칙을 찾지 못한 것은 "상호작용 없음"이 아니라 "확인 가능한 근거 없음"이다.
+  '''
+}
+
+Table interaction_rule_sources {
+  id bigint [pk, increment]
+  interaction_rule_id bigint [not null]
+  source_id varchar(100) [not null, note: '예: MFDS_DUR']
+  document_id varchar(150) [not null]
+  record_id varchar(150) [not null, note: '원본 행 식별자. 예: DUR일련번호']
+  raw_effect_text text [not null, note: '원본 효과·금기 문구를 변형하지 않고 보존']
+  source_published_at date [note: '고시일자 등 출처 정보의 기준일']
+  source_url text
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (interaction_rule_id, source_id, document_id, record_id) [unique]
+    (source_id, record_id)
+  }
+}
+
+Table interaction_rule_evidence_chunks {
+  id bigint [pk, increment]
+  interaction_rule_source_id bigint [not null]
+  dataset_key varchar(100) [not null, note: 'Qdrant knowledge 데이터셋 키']
+  dataset_version varchar(100) [not null, note: '검색·인덱싱에 사용한 불변 버전']
+  vector_chunk_id varchar(255) [not null, note: 'Qdrant point 또는 청크 ID. RDBMS FK가 아니다.']
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    (interaction_rule_source_id, dataset_version, vector_chunk_id) [unique]
+    vector_chunk_id
+  }
+
+  Note: '''
+  구조화된 조합·위험도는 interaction_rules가 정본이고,
+  상세 설명 원문은 이 링크를 통해 Qdrant에서 검색한다.
+  검수되지 않은 청크는 규칙과 연결하지 않는다.
+  '''
+}
+
+Ref: interaction_rules.left_entity_id > interaction_entities.id [delete: restrict]
+Ref: interaction_rules.right_entity_id > interaction_entities.id [delete: restrict]
+Ref: interaction_rule_sources.interaction_rule_id > interaction_rules.id [delete: cascade]
+Ref: interaction_rule_evidence_chunks.interaction_rule_source_id > interaction_rule_sources.id [delete: cascade]
+
+/* =========================================================
+   CHAT - 새 서비스 방향에 맞춘 내 파트 정리본
+   ========================================================= */
+
+Table chat_sessions {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: '세션 소유자. 답변 근거는 이 사용자의 활성 케어·약·영양제 전체에서 모은다.']
+  care_episode_id bigint [note: '세션을 시작한 케어. 계정 단위 일반 세션이면 null이며 grounding 범위가 아니다.']
+  status chat_session_status [not null, default: 'ACTIVE']
+  last_message_at datetime
+  deleted_at datetime
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (user_id, status, last_message_at)
+    (care_episode_id, status)
+    last_message_at
+  }
+
+  Note: '''
+  최신 ERD의 care_episode_id를 시작 화면 맥락으로 유지한다.
+  답변 근거는 care_episode_id 하나로 제한하지 않고 user_id 기준 활성 케어·약·영양제 전체에서 모은다.
+  '''
+}
+
+Table chat_messages {
+  id bigint [pk, increment]
+  chat_session_id bigint [not null]
+  reply_to_message_id bigint [note: 'ASSISTANT 메시지가 답변한 USER 메시지']
+  guide_id bigint [note: '답변 생성 시 참고한 회복 가이드. 사용하지 않았으면 null']
+  request_id varchar(100) [note: '중복 요청 방지와 실행 추적용 식별자']
+  sequence_no int [not null]
+  role chat_message_role [not null]
+  content text [not null]
+  status chat_message_status [not null, default: 'PENDING']
+  route_type chat_route_type
+  safety_status chat_safety_status [not null, default: 'PENDING']
+  safety_reason_code varchar(100) [note: '안전성 검사에서 선택한 대표 사유 코드']
+  verification_status chat_verification_status [not null, default: 'NOT_REQUIRED']
+  conflict_status chat_conflict_status [not null, default: 'NOT_APPLICABLE']
+  model_name varchar(100)
+  model_version varchar(100)
+  prompt_version varchar(100)
+  schema_version varchar(50)
+  patient_context_hash varchar(64) [note: '답변에 사용한 활성 케어·약·영양제 컨텍스트의 canonical SHA-256']
+  langsmith_trace_id varchar(100)
+  error_code varchar(100)
+  duration_ms int [note: '직접 처리한 채팅 응답의 전체 소요시간. P95 평가용']
+  started_at datetime
+  completed_at datetime
+  created_at datetime [not null, default: `current_timestamp`]
+  updated_at datetime
+
+  indexes {
+    (chat_session_id, sequence_no) [unique]
+    reply_to_message_id
+    guide_id
+    request_id
+    langsmith_trace_id
+    created_at
+  }
+
+  checks {
+    `duration_ms IS NULL OR duration_ms >= 0`
+  }
+
+  Note: '''
+  최신 ERD의 회복 가이드 연결, 검증 상태, 권고 충돌 상태를 유지한다.
+  INTERACTION 경로에서는 승인된 상호작용 규칙만 사용하고 안전하지 않은 답변은 safety_status로 차단한다.
+  duration_ms는 전체 채팅 API의 P95 응답시간을 측정하는 데 사용한다.
+  '''
+}
+
+Table chat_message_sources {
+  id bigint [pk, increment]
+  chat_message_id bigint [not null, note: '출처가 연결된 ASSISTANT 메시지']
+  source_type chat_source_type [not null]
+
+  patient_source_kind patient_source_kind [note: 'PATIENT_SAVED_FIELD인 경우 확정 데이터 종류']
+  patient_field care_episode_source_field [note: 'CARE_EPISODE_FIELD인 경우 사용한 필드']
+  care_episode_id bigint [note: 'CARE_EPISODE_FIELD 출처의 실제 케어 ID. 세션 시작 케어와 다를 수 있다']
+  medication_id bigint [note: 'patient_source_kind=MEDICATION인 경우 medications.id']
+  care_advice_id bigint [note: 'patient_source_kind=CARE_ADVICE인 경우 care_advices.id']
+  follow_up_visit_id bigint [note: 'patient_source_kind=FOLLOW_UP_VISIT인 경우 follow_up_visits.id']
+  user_suppl_nutrient_id bigint [note: 'USER_SUPPLEMENT 출처인 경우 사용자 영양제 등록 ID']
+  interaction_rule_id bigint [note: 'INTERACTION_RULE 출처인 경우 승인된 규칙 ID']
+
+  public_dataset_key varchar(100) [note: 'PUBLIC_RAG_CHUNK 데이터셋 키']
+  dataset_version varchar(100) [note: 'Qdrant 불변 데이터셋 버전']
+  vector_chunk_id varchar(255) [note: 'Qdrant point 또는 청크 ID']
+  source_record_key varchar(100) [note: '최신 v1.0.6과 동일한 원본 문서·레코드 식별자']
+  source_field varchar(100) [note: '문서 섹션 또는 원본 필드']
+  chunk_type varchar(100) [note: '정규화된 청크 정보 유형']
+  source_title varchar(255)
+  source_organization varchar(255)
+  source_url text
+  source_page_number int
+  source_license varchar(255)
+  similarity_score decimal(5,4)
+  citation_order int [not null]
+  created_at datetime [not null, default: `current_timestamp`]
+
+  indexes {
+    chat_message_id
+    care_episode_id
+    medication_id
+    care_advice_id
+    follow_up_visit_id
+    user_suppl_nutrient_id
+    interaction_rule_id
+    (chat_message_id, citation_order) [unique]
+    (public_dataset_key, source_record_key)
+    vector_chunk_id
+  }
+
+  checks {
+    `(source_type = 'PATIENT_SAVED_FIELD' AND patient_source_kind IS NOT NULL AND user_suppl_nutrient_id IS NULL AND interaction_rule_id IS NULL AND public_dataset_key IS NULL AND vector_chunk_id IS NULL)
+      OR (source_type = 'USER_SUPPLEMENT' AND patient_source_kind IS NULL AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL AND user_suppl_nutrient_id IS NOT NULL AND interaction_rule_id IS NULL AND public_dataset_key IS NULL AND vector_chunk_id IS NULL)
+      OR (source_type = 'INTERACTION_RULE' AND patient_source_kind IS NULL AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL AND user_suppl_nutrient_id IS NULL AND interaction_rule_id IS NOT NULL AND public_dataset_key IS NULL AND vector_chunk_id IS NULL)
+      OR (source_type = 'PUBLIC_RAG_CHUNK' AND patient_source_kind IS NULL AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL AND user_suppl_nutrient_id IS NULL AND interaction_rule_id IS NULL AND public_dataset_key IS NOT NULL AND dataset_version IS NOT NULL AND vector_chunk_id IS NOT NULL AND source_record_key IS NOT NULL)`
+    `(patient_source_kind = 'CARE_EPISODE_FIELD' AND patient_field IS NOT NULL AND care_episode_id IS NOT NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL)
+      OR (patient_source_kind = 'MEDICATION' AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NOT NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NULL)
+      OR (patient_source_kind = 'CARE_ADVICE' AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NOT NULL AND follow_up_visit_id IS NULL)
+      OR (patient_source_kind = 'FOLLOW_UP_VISIT' AND patient_field IS NULL AND care_episode_id IS NULL AND medication_id IS NULL AND care_advice_id IS NULL AND follow_up_visit_id IS NOT NULL)
+      OR patient_source_kind IS NULL`
+    `(source_type = 'PUBLIC_RAG_CHUNK' AND public_dataset_key IS NOT NULL AND dataset_version IS NOT NULL AND vector_chunk_id IS NOT NULL AND source_record_key IS NOT NULL)
+      OR (source_type <> 'PUBLIC_RAG_CHUNK' AND public_dataset_key IS NULL AND dataset_version IS NULL AND vector_chunk_id IS NULL AND source_record_key IS NULL AND source_field IS NULL AND chunk_type IS NULL AND source_title IS NULL AND source_organization IS NULL AND source_url IS NULL AND source_page_number IS NULL AND source_license IS NULL AND similarity_score IS NULL)`
+    `source_page_number IS NULL OR source_page_number >= 1`
+    `similarity_score IS NULL OR (similarity_score >= 0 AND similarity_score <= 1)`
+    `citation_order >= 1`
+  }
+
+  Note: '''
+  최신 ERD의 환자 확정정보와 공공 RAG 출처 구조를 유지한다.
+  사용자 영양제와 승인 상호작용 규칙 출처만 추가하여 실제 답변 근거를 추적한다.
+  계정 전체 활성 케어를 grounding하므로 CARE_EPISODE_FIELD는 care_episode_id로 실제 출처를 남긴다.
+  '''
+}
+
+Ref: chat_sessions.user_id > user.id [delete: cascade]
+Ref: chat_sessions.care_episode_id > care_episodes.id [delete: cascade]
+Ref: chat_sessions.id < chat_messages.chat_session_id [delete: cascade]
+Ref: chat_messages.id < chat_messages.reply_to_message_id [delete: set null]
+Ref: recovery_guides.id < chat_messages.guide_id [delete: set null]
+Ref: chat_messages.id < chat_message_sources.chat_message_id [delete: cascade]
+Ref: care_episodes.id < chat_message_sources.care_episode_id [delete: restrict]
+Ref: medications.id < chat_message_sources.medication_id [delete: restrict]
+Ref: care_advices.id < chat_message_sources.care_advice_id [delete: restrict]
+Ref: follow_up_visits.id < chat_message_sources.follow_up_visit_id [delete: restrict]
+Ref: user_suppl_nutrient.id < chat_message_sources.user_suppl_nutrient_id [delete: restrict]
+Ref: interaction_rules.id < chat_message_sources.interaction_rule_id [delete: restrict]
+
+/* =========================================================
+   런타임 조회 원칙
+   =========================================================
+
+   1. 사용자 질문 또는 DB에 저장된 사용자 확정 약 정보 변경
+   2. user_id 기준 활성 medications + user_suppl_nutrient 조회
+      (custom_name 직접 입력 제품은 목록에 표시하되 성분 판정에서는 제외)
+   3. medication_interaction_mappings.mapping_status=MATCHED인 약과 성분 연결 조회
+   4. 모든 조합의 pair_key 생성
+   5. 배포 설정의 활성 rule_dataset_version과 APPROVED를 함께 만족하는
+      interaction_rules만 단건·배치 조회
+   6. 연결된 Qdrant 청크로 상세 근거 보강
+   7. LLM은 검증된 사실을 친절한 한국어로 표현
+
+   PENDING·FAILED 매핑 약은 기존 medications에 유지하되 상호작용을 추측하지 않는다.
+   과거 rule_dataset_version은 답변 이력의 출처 보존용이며 새 답변 판정에는 사용하지 않는다.
+   규칙 없음은 안전함이 아니라 확인 가능한 근거가 없음을 의미한다.
+   ========================================================= */

@@ -127,6 +127,7 @@ class ChatRouteType(StrEnum):
     PUBLIC_RAG = "PUBLIC_RAG"
     PATIENT_AND_PUBLIC = "PATIENT_AND_PUBLIC"
     GENERAL_LIFESTYLE = "GENERAL_LIFESTYLE"
+    INTERACTION = "INTERACTION"
     SAFETY_RESPONSE = "SAFETY_RESPONSE"
     OUT_OF_SCOPE_RESPONSE = "OUT_OF_SCOPE_RESPONSE"
 
@@ -157,6 +158,60 @@ class ChatConflictStatus(StrEnum):
 class ChatSourceType(StrEnum):
     PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
     PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
+    USER_SUPPLEMENT = "USER_SUPPLEMENT"
+    INTERACTION_RULE = "INTERACTION_RULE"
+
+
+class InteractionEntityKind(StrEnum):
+    DRUG = "DRUG"
+    SUPPLEMENT = "SUPPLEMENT"
+    FOOD = "FOOD"
+
+
+class InteractionAliasType(StrEnum):
+    INGREDIENT_NAME = "INGREDIENT_NAME"
+    PRODUCT_NAME = "PRODUCT_NAME"
+    SYNONYM = "SYNONYM"
+    SOURCE_NAME = "SOURCE_NAME"
+
+
+class InteractionMappingStatus(StrEnum):
+    PENDING = "PENDING"
+    MATCHED = "MATCHED"
+    FAILED = "FAILED"
+
+
+class InteractionMatchMethod(StrEnum):
+    SOURCE_CODE = "SOURCE_CODE"
+    EXACT_NAME = "EXACT_NAME"
+    ALIAS = "ALIAS"
+    MANUAL = "MANUAL"
+
+
+class InteractionExtractionMethod(StrEnum):
+    DETERMINISTIC_STRUCTURED = "DETERMINISTIC_STRUCTURED"
+    MANUAL_ANNOTATION = "MANUAL_ANNOTATION"
+
+
+class InteractionPairType(StrEnum):
+    DRUG_DRUG = "DRUG_DRUG"
+    DRUG_SUPPLEMENT = "DRUG_SUPPLEMENT"
+    SUPPLEMENT_SUPPLEMENT = "SUPPLEMENT_SUPPLEMENT"
+    DRUG_FOOD = "DRUG_FOOD"
+
+
+class InteractionRiskLevel(StrEnum):
+    CONTRAINDICATED = "CONTRAINDICATED"
+    HIGH_CAUTION = "HIGH_CAUTION"
+    CAUTION = "CAUTION"
+    INFORMATIONAL = "INFORMATIONAL"
+    UNKNOWN = "UNKNOWN"
+
+
+class InteractionReviewStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 
 class CareAdviceCategory(StrEnum):

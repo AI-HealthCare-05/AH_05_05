@@ -8,9 +8,10 @@ import { MyPage, MyProfilePage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
-import { SupplementsPage } from '@/pages/supplements';
+import { SupplementsPage, type NutrientStandardProfile } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
+import type { ChatMessage } from '@/entities/chat';
 import {
   mockMedicationOverview,
   mockMedicationScheduleWithAutoAssigned,
@@ -21,6 +22,22 @@ import {
 import { DevGallery } from './DevGallery';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
+const EXISTING_CHAT_HISTORY: ChatMessage[] = [
+  { role: 'user', text: '이전에 물어본 질문이에요.', sources: [] },
+  {
+    role: 'assistant',
+    text: '이전에 받은 답변이에요.',
+    sources: [{ scope: 'official', title: 'e약은요', organization: '식품의약품안전처' }],
+  },
+];
+const DEV_NUTRIENT_PROFILE: NutrientStandardProfile = {
+  birthDate: '2000-08-25',
+  gender: 'female',
+};
+const MISSING_NUTRIENT_PROFILE: NutrientStandardProfile = {
+  birthDate: null,
+  gender: null,
+};
 const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
 const ACTIVE_MEDICATION_OVERVIEW = mockMedicationOverview();
 const EMPTY_MEDICATION_OVERVIEW: MedicationOverview = {
@@ -66,6 +83,10 @@ const failProfileSave = async (
 ): Promise<AccountProfile> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
+const loadExistingChatHistory = async () => EXISTING_CHAT_HISTORY;
+const failChatHistory = async (): Promise<ChatMessage[]> => {
+  throw new Error('잠시 후 다시 시도해주세요.');
+};
 
 /**
  * react-router v7, declarative mode (<BrowserRouter>/<Routes>/<Route>).
@@ -102,6 +123,14 @@ export function AppRouter() {
         />
         <Route path="/dev/medications" element={<MedicationsPage />} />
         <Route path="/dev/chat" element={<ChatPage />} />
+        <Route
+          path="/dev/chat-history"
+          element={<ChatPage historyLoader={loadExistingChatHistory} />}
+        />
+        <Route
+          path="/dev/chat-history-error"
+          element={<ChatPage historyLoader={failChatHistory} />}
+        />
         <Route path="/dev/my-guest" element={<MyPage authenticatedOverride={false} />} />
         <Route path="/dev/my-authenticated" element={<MyPage authenticatedOverride />} />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
@@ -109,10 +138,22 @@ export function AppRouter() {
           path="/dev/my-profile-save-error"
           element={<MyProfilePage profileSaver={failProfileSave} />}
         />
-        <Route path="/dev/supplements" element={<SupplementsPage />} />
+        <Route
+          path="/dev/supplements"
+          element={<SupplementsPage profileOverride={DEV_NUTRIENT_PROFILE} />}
+        />
+        <Route
+          path="/dev/supplements-profile-missing"
+          element={<SupplementsPage profileOverride={MISSING_NUTRIENT_PROFILE} />}
+        />
         <Route
           path="/dev/supplements-three-exceeded"
-          element={<SupplementsPage supplementsOverride={THREE_EXCEEDED_SUPPLEMENTS} />}
+          element={
+            <SupplementsPage
+              supplementsOverride={THREE_EXCEEDED_SUPPLEMENTS}
+              profileOverride={DEV_NUTRIENT_PROFILE}
+            />
+          }
         />
         <Route
           path="/dev/home-empty"

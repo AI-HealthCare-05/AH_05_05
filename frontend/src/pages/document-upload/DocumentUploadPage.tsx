@@ -40,7 +40,7 @@ export function DocumentUploadPage() {
         ref={cameraInputRef}
         className="sr-only"
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png"
         capture="environment"
         onChange={handleSelect}
         aria-label="카메라로 약봉투 촬영"
@@ -49,7 +49,7 @@ export function DocumentUploadPage() {
         ref={galleryInputRef}
         className="sr-only"
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png"
         onChange={handleSelect}
         aria-label="갤러리에서 약봉투 선택"
       />

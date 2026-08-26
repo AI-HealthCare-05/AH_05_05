@@ -24,9 +24,10 @@ def test_prompt_asset_loader_is_independent_of_working_directory(
     module = import_module("ai_worker.llm.prompts.prompt_assets")
     module.load_prompt_asset.cache_clear()
 
-    persona = module.load_prompt_asset("lifestyle_medicine_coach_persona.md")
+    persona = module.load_prompt_asset("medication_knowledge_coach_persona.md")
 
-    assert "생활습관의학 안내 코치" in persona
+    assert "친절한 임상영양사" in persona
+    assert "스스로 판단" in persona
     assert "추측하지" in persona
 
 
@@ -56,8 +57,10 @@ def test_chat_answer_prompt_uses_versioned_persona_and_principles() -> None:
 
     system_prompt = str(messages[0].content)
 
-    assert CHAT_ANSWER_PROMPT_VERSION == ("chat-answer-prompt-v2")
-    assert "생활습관의학 안내 코치" in system_prompt
+    assert CHAT_ANSWER_PROMPT_VERSION == ("chat-answer-prompt-v3")
+    assert "친절한 임상영양사" in system_prompt
     assert "환자 확정정보가 가장 높은 우선순위" in system_prompt
+    assert "복용 결정을 대신하지" in system_prompt
+    assert "검색된 근거" in system_prompt
     assert "간결하고 명확" in system_prompt
     assert "근거가 없으면 추측" in system_prompt

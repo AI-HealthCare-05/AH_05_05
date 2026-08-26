@@ -26,6 +26,8 @@ class Config(BaseSettings):
 
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "public_guidelines_small_v1"
+    KNOWLEDGE_QDRANT_COLLECTION: str = "medication_knowledge_baseline_v1"
+    KNOWLEDGE_DATASET_VERSION: str = "knowledge-baseline-v1"
     QDRANT_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0)
     RAG_MIN_SIMILARITY_SCORE: float = Field(
         default=0.65,

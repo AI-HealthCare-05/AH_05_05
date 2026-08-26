@@ -23,8 +23,7 @@ import {
  * [저장하고 복약 시간 설정]에서 일어납니다. 이 두 단계보다 저장 버튼을 더 늘리지 마세요.
  *
  * frequencyText의 "필요 시" 접두어 가드는 목록 시절의 표시 전용 로직이어서 제거됐지만,
- * OCR note 원문 자체는 draft에 보존합니다. 필요 시 약을 저장할 때 note가 사라지면 이후
- * 복약 시간 화면이 PRN 안내를 만들 근거를 잃습니다.
+ * 사용자가 열어보지 않은 약도 OCR의 효능·복용 방법·주의사항을 그대로 보존합니다.
  */
 
 export interface MedicationEditDialogProps {
@@ -39,9 +38,11 @@ export interface MedicationEditDialogProps {
 interface Draft {
   name: string;
   dose: string;
+  efficacy: string;
+  administration: string;
+  precautions: string;
   timesPerDay: number | null;
   days: number | null;
-  note: string;
 }
 
 const TIMES_PER_DAY_OPTIONS: Array<{ value: string; label: string }> = [
@@ -55,9 +56,11 @@ const TIMES_PER_DAY_OPTIONS: Array<{ value: string; label: string }> = [
 const EMPTY_DRAFT: Draft = {
   name: '',
   dose: '',
+  efficacy: '',
+  administration: '',
+  precautions: '',
   timesPerDay: 1,
   days: 1,
-  note: '',
 };
 
 function toDraft(medication: OcrMedication | null): Draft {
@@ -65,9 +68,11 @@ function toDraft(medication: OcrMedication | null): Draft {
   return {
     name: medication.name,
     dose: medication.dose,
+    efficacy: medication.efficacy,
+    administration: medication.administration,
+    precautions: medication.precautions,
     timesPerDay: medication.timesPerDay,
     days: medication.days,
-    note: medication.note,
   };
 }
 
@@ -102,9 +107,11 @@ export function MedicationEditDialog({
       tempId: medication?.tempId ?? `new_${Date.now()}`,
       name: draft.name.trim(),
       dose: draft.dose.trim(),
+      efficacy: draft.efficacy.trim(),
+      administration: draft.administration.trim(),
+      precautions: draft.precautions.trim(),
       timesPerDay: draft.timesPerDay,
       days: draft.days,
-      note: draft.note,
       confidence: medication?.confidence,
     });
   }
@@ -160,6 +167,24 @@ export function MedicationEditDialog({
                 value={draft.dose}
                 onChange={(event) => setDraft({ ...draft, dose: event.target.value })}
                 placeholder="예: 200mg"
+              />
+              <Input
+                label="효능"
+                value={draft.efficacy}
+                onChange={(event) => setDraft({ ...draft, efficacy: event.target.value })}
+                placeholder="예: 염증과 통증 완화"
+              />
+              <Input
+                label="복용 방법"
+                value={draft.administration}
+                onChange={(event) => setDraft({ ...draft, administration: event.target.value })}
+                placeholder="예: 아침·저녁 식후"
+              />
+              <Input
+                label="주의사항"
+                value={draft.precautions}
+                onChange={(event) => setDraft({ ...draft, precautions: event.target.value })}
+                placeholder="예: 음주를 피하세요"
               />
 
               <div className="flex flex-col gap-1.5">

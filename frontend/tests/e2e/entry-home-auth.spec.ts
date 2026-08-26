@@ -34,6 +34,13 @@ test('게스트 홈은 기능 중복 카드 없이 소개 배너와 탭바를 �
   await expect(page.getByRole('button', { name: /AI 상담/ })).toHaveCount(0);
 });
 
+test('로그인 홈도 복약 상태 위에 소개 배너를 유지한다', async ({ page }) => {
+  await page.goto('/dev/home-data-empty');
+
+  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+});
+
 test('게스트 탭은 조회 화면으로 가지 않고 같은 로그인 시트를 연다', async ({ page }) => {
   await page.goto('/home');
 
@@ -64,15 +71,17 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
   await page.getByRole('radio', { name: '여성' }).check();
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
-  await page.getByRole('button', { name: '회원가입 완료' }).click();
+  await Promise.all([
+    expect(page.getByRole('status', { name: '복약 정보 불러오는 중' })).toBeVisible(),
+    page.getByRole('button', { name: '회원가입 완료' }).click(),
+  ]);
 
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByRole('status', { name: '복약 정보 불러오는 중' })).toBeVisible();
   await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
   await expect(page.getByText('오늘의 복약')).toHaveCount(0);
 });
 
-test('신규 회원이 약봉투와 복약 시간을 저장하면 홈이 복약 중 상태로 바뀐다', async ({ page }) => {
+test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태가 된다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
   await page.getByLabel('이메일').fill('new-patient@example.com');
@@ -86,20 +95,17 @@ test('신규 회원이 약봉투와 복약 시간을 저장하면 홈이 복약 
   await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
 
   await page.getByRole('button', { name: '약봉투 등록', exact: true }).click();
-  await page.locator('input[type="file"]').nth(1).setInputFiles({
+  await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
     name: '조제약봉투_01.png',
     mimeType: 'image/png',
     buffer: Buffer.from('fake-png-for-medication-registration'),
   });
   await page.getByRole('button', { name: '등록하기' }).click();
-  await page.getByRole('button', { name: '저장하고 복약 시간 설정' }).click();
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible({ timeout: 7_000 });
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await page.getByRole('button', { name: '확인 후 저장' }).click();
-  await page.getByRole('button', { name: '기본 시간으로 건너뛰기' }).focus();
-  await page.keyboard.press('Enter');
-
-  await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByText('오늘의 복약')).toBeVisible();
-  await expect(page.getByText('약봉투를 등록해 주세요')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/medication-schedule$/);
+  await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
 });
 
 test('로그인 홈은 약 없음·복약 중·복약 종료 상태를 모두 표현한다', async ({ page }) => {
@@ -127,7 +133,6 @@ test('로그인 홈 헤더는 탭바와 중복되는 마이 버튼을 두지 않
 test('로그인 홈은 조회 중 등록 카드를 띄우지 않고 실제 복약 데이터로 바뀐다', async ({ page }) => {
   await logIn(page);
 
-  await expect(page.getByRole('status', { name: '복약 정보 불러오는 중' })).toBeVisible();
   await expect(page.getByText('약봉투를 등록해 주세요')).toHaveCount(0);
   await expect(page.getByText('오늘의 복약')).toBeVisible();
 });
@@ -156,7 +161,6 @@ test('시간 설정 저장 뒤 홈과 탭 재진입에서 복약 데이터를 �
   await page.getByRole('button', { name: '영양제', exact: true }).click();
   await expect(page).toHaveURL(/\/supplements$/);
   await page.getByRole('button', { name: '홈', exact: true }).click();
-  await expect(page.getByRole('status', { name: '복약 정보 불러오는 중' })).toBeVisible();
   await expect(page.getByText('오늘의 복약')).toBeVisible();
 });
 
@@ -209,7 +213,7 @@ test('복약 중 홈은 overview의 시각과 슬롯별 약만 타임라인에 �
   expect(currentStyle.borderTop).toBe('0px');
   expect(currentStyle.borderBottom).toBe('0px');
 
-  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
 });
 
 test('약 하나가 한 슬롯에만 있으면 타임라인도 한 칸과 실제 개수만 보여준다', async ({

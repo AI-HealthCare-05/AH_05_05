@@ -2,7 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { createAccount, type Gender } from '@/entities/account';
+import { login } from '@/entities/auth';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
+import { ApiError } from '@/shared/api/client';
 import {
   MIN_BIRTH_DATE,
   formatDateInputValue,
@@ -11,6 +13,9 @@ import {
 import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
+
+/** 서버가 오류 본문을 못 줄 때만 씁니다. 평소에는 서버 message 를 그대로 띄웁니다. */
+const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 시도해주세요.';
 
 export function AuthPage() {
   const navigate = useNavigate();
@@ -25,11 +30,14 @@ export function AuthPage() {
   const [gender, setGender] = useState<Gender | ''>('');
   const [birthDateError, setBirthDateError] = useState<string | null>(null);
   const [passwordConfirmError, setPasswordConfirmError] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const today = formatDateInputValue(new Date());
 
   async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setLoginError(null);
+
     if (mode === 'signup') {
       if (!recordTerms || !aiTerms || !gender) return;
       const nextBirthDateError = validateBirthDate(birthDate);
@@ -43,6 +51,19 @@ export function AuthPage() {
       try {
         await createAccount({ email, password, birthDate, gender });
         prepareMedicationStateForNewAccount();
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      setSaving(true);
+      try {
+        // 토큰은 login() 안에서 메모리에만 심습니다. 새로고침하면 사라집니다(유저플로우 v4).
+        await login({ email: email.trim(), password });
+      } catch (error) {
+        // 서버 문구를 그대로 씁니다. 400(자격증명)과 423(정지·탈퇴) 모두 마찬가지입니다.
+        // 프론트가 "이메일이 없습니다" 같은 문구를 만들면 가입 여부가 새어나갑니다.
+        setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
+        return;
       } finally {
         setSaving(false);
       }
@@ -66,7 +87,11 @@ export function AuthPage() {
                 className={`min-h-touch rounded-input text-sm font-bold ${
                   selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
                 }`}
-                onClick={() => setMode(item)}
+                onClick={() => {
+                  setMode(item);
+                  // 탭을 옮기면 지난 로그인 실패 문구를 지웁니다. 회원가입 폼에 남아 있으면 오해합니다.
+                  setLoginError(null);
+                }}
               >
                 {item === 'login' ? '로그인' : '회원가입'}
               </button>
@@ -101,6 +126,7 @@ export function AuthPage() {
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            error={loginError ?? undefined}
             required
           />
 

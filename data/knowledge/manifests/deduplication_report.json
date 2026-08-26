@@ -1,0 +1,67 @@
+{
+  "algorithm": "SHA-256 exact-content deduplication",
+  "retained_count": 1287,
+  "duplicate_count": 12,
+  "duplicates": [
+    {
+      "sha256": "2e9ef319ebedf2e6e709381de2fdae1c24b61d2dc59c2e8ba5a446565ee720ec",
+      "skipped_original_path": "RAG/VectorDB/영양제/건강기능식품원료별정보_식품안전나라/1-12_비타민_B12.pdf",
+      "kept_repo_path": "data/knowledge/raw/public/mfds/supplement_code/1-12_비타민_B12.pdf"
+    },
+    {
+      "sha256": "abedab5ac1da6530001745104458b7678a3f4688216589ce55df8af54ceb208c",
+      "skipped_original_path": "RAG/VectorDB/영양제/건강기능식품원료별정보_식품안전나라/1-27_단백질.pdf",
+      "kept_repo_path": "data/knowledge/raw/public/mfds/supplement_code/1-27_단백질.pdf"
+    },
+    {
+      "sha256": "25f49226d9062ff321c4dc8b8ff72a4a4d348a75979eccc56283f4c67327d7b9",
+      "skipped_original_path": "RAG/VectorDB/영양제/건강기능식품원료별정보_식품안전나라/2-64_유단백가수분해물.pdf",
+      "kept_repo_path": "data/knowledge/raw/public/mfds/supplement_code/2-64 유단백가수분해물.pdf"
+    },
+    {
+      "sha256": "3a16d124119a6845df4d9d02af2ed6f5d5a4385fdb4f9d682e6485f6cd26b4c2",
+      "skipped_original_path": "RAG/VectorDB/영양제/건강기능식품원료별정보_식품안전나라/p2-01 (3).pdf",
+      "kept_repo_path": "data/knowledge/raw/public/food_safety_korea/supplement_ingredients/p2-01 (2).pdf"
+    },
+    {
+      "sha256": "3a16d124119a6845df4d9d02af2ed6f5d5a4385fdb4f9d682e6485f6cd26b4c2",
+      "skipped_original_path": "RAG/VectorDB/영양제/건강기능식품원료별정보_식품안전나라/p2-01 (4).pdf",
+      "kept_repo_path": "data/knowledge/raw/public/food_safety_korea/supplement_ingredients/p2-01 (2).pdf"
+    },
+    {
+      "sha256": "3a16d124119a6845df4d9d02af2ed6f5d5a4385fdb4f9d682e6485f6cd26b4c2",
+      "skipped_original_path": "RAG/VectorDB/영양제/건강기능식품원료별정보_식품안전나라/p2-01.pdf",
+      "kept_repo_path": "data/knowledge/raw/public/food_safety_korea/supplement_ingredients/p2-01 (2).pdf"
+    },
+    {
+      "sha256": "3e9e81b8ddb37e1b928febed5dd4dea2c3d2efa685a687d31b84702823298a4c",
+      "skipped_original_path": "RAG/VectorDB/영양제/건강기능식품원료별정보_식품안전나라/제2023-4호_건강기능식품_기능성_원료_소비자_리포트_CJ저분자콜라겐펩타이드.pdf",
+      "kept_repo_path": "data/knowledge/raw/public/food_safety_korea/supplement_ingredients/제2023-4호_건강기능식품_기능성_원료_소비자_리포트_CJ저분자콜라겐펩타이드 (1).pdf"
+    },
+    {
+      "sha256": "7eaeaf36db4c1fd64d28cdc81534faf856fc2c5319b5c8f543a9859289f26e10",
+      "skipped_original_path": "RAG/VectorDB/약물백과/신경안정제1.pdf",
+      "kept_repo_path": "data/knowledge/raw/demo_restricted/kpicia/drug_encyclopedia/신경안정제.pdf"
+    },
+    {
+      "sha256": "91b1cd76cfccfb9c054bea62c33a989d0dc123fb81a8492fcb8f40834aacd30a",
+      "skipped_original_path": "RAG/VectorDB/약물백과/페라미비르(peramivir)(0).pdf",
+      "kept_repo_path": "data/knowledge/raw/demo_restricted/kpicia/drug_encyclopedia/페라미비르(peramivir)(0) (1).pdf"
+    },
+    {
+      "sha256": "903b3cd12c7351b7c500df540ba07af106a634f6edf9b1704381776db5fd5815",
+      "skipped_original_path": "RAG/VectorDB/약물백과/화상치료제.pdf",
+      "kept_repo_path": "data/knowledge/raw/demo_restricted/kpicia/drug_encyclopedia/화상치료제(0).pdf"
+    },
+    {
+      "sha256": "bc05f0f73af41e9e027c1090af3fb504e76d64f1fe31984abe81a49f687747c8",
+      "skipped_original_path": "RAG/VectorDB/부작용리포트/100_노르트립틸린_배뇨곤란_상당히확실함.pdf",
+      "kept_repo_path": "data/knowledge/raw/demo_restricted/kpicia/adverse_case_report/100_노르트립틸린_배뇨곤란_상당히확실함 (1).pdf"
+    },
+    {
+      "sha256": "21de708dabedb1797de5995018e0d259b8fe79d576b91c8fa353ad1d24d3408e",
+      "skipped_original_path": "RAG/VectorDB/부작용리포트/81_세레콕시브_(야간)요실금_가능성높음(한국형).pdf",
+      "kept_repo_path": "data/knowledge/raw/demo_restricted/kpicia/adverse_case_report/81_세레콕시브_(야간)요실금_가능성높음(한국형) (1).pdf"
+    }
+  ]
+}

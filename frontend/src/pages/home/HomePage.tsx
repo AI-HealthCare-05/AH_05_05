@@ -195,6 +195,8 @@ export function HomePage({
       )}
 
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
+        <PokeFeatureCarousel />
+
         {isAuthenticated ? (
           medicationLoadError || doseLoadError ? (
             <Card title="복약 정보를 불러오지 못했어요">
@@ -231,9 +233,7 @@ export function HomePage({
               className="min-h-84 animate-pulse rounded-card bg-muted-bg"
             />
           )
-        ) : (
-          <PokeFeatureCarousel />
-        )}
+        ) : null}
 
         {!isAuthenticated && (
           <p className="mt-auto py-4 text-center text-sm text-disabled-foreground">

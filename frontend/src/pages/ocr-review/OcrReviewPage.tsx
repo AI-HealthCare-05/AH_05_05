@@ -4,7 +4,9 @@ import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
   confirmOcrResult,
+  getOcrDocumentImageUrl,
   getOcrResult,
+  releaseOcrDocumentImageUrl,
   uploadDocument,
   type Confidence,
   type OcrMedication,
@@ -97,6 +99,17 @@ export function OcrReviewPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dismissedOcrFailure, setDismissedOcrFailure] = useState(false);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [documentImageUrl, setDocumentImageUrl] = useState<string | null>(null);
+  const [imageUnavailable, setImageUnavailable] = useState(false);
+
+  useEffect(() => {
+    setDocumentImageUrl(null);
+    setImageUnavailable(false);
+    setImageViewerOpen(false);
+    return () => {
+      if (batchId) releaseOcrDocumentImageUrl(batchId);
+    };
+  }, [batchId]);
 
   useEffect(() => {
     if (!state.file || batchId) return;
@@ -104,8 +117,13 @@ export function OcrReviewPage() {
     setReadingStage('uploading');
     setProgress(0);
     setUploadError(null);
-    uploadDocument(state.file, 'initial')
-      .then(({ batchId: uploadedBatchId }) => {
+    uploadDocument(state.file)
+      .then((uploaded) => {
+        const documentId = uploaded.documentIds[0];
+        if (documentId === undefined) {
+          throw new Error('업로드 응답에 문서 ID가 없어요. 다시 시도해주세요.');
+        }
+        const uploadedBatchId = String(documentId);
         if (cancelled) return;
         setBatchId(uploadedBatchId);
         setReadingStage('reading');
@@ -146,7 +164,7 @@ export function OcrReviewPage() {
         if (data.ocrStatus === 'queued' || data.ocrStatus === 'processing') {
           setResult(data);
           setReadingStage(data.ocrStatus === 'queued' ? 'reading' : 'organizing');
-          pollTimer = window.setTimeout(poll, 1_000);
+          pollTimer = window.setTimeout(poll, 2_000);
           return;
         }
 
@@ -160,6 +178,15 @@ export function OcrReviewPage() {
             setDispensedDate(data.fields.dispensedDate.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate.confidence);
             setMedications(data.medications);
+            if (data.ocrStatus === 'ready_for_review') {
+              void getOcrDocumentImageUrl(batchId, data.documentImageUrl)
+                .then((imageUrl) => {
+                  if (!cancelled) setDocumentImageUrl(imageUrl);
+                })
+                .catch(() => {
+                  if (!cancelled) setImageUnavailable(true);
+                });
+            }
             navigate(location.pathname, { replace: true, state: { batchId } });
           }, 400);
           return;
@@ -169,7 +196,7 @@ export function OcrReviewPage() {
       } catch (error: unknown) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '문서를 읽지 못했어요.');
-          setResult({ batchId, ocrStatus: 'failed' });
+          setResult({ batchId, ocrStatus: 'failed', errorCode: 'CLIENT_REQUEST_FAILED' });
         }
       }
     }
@@ -204,11 +231,11 @@ export function OcrReviewPage() {
   }
 
   const reviewItemNames: string[] = [];
-  if (dispensedDateConfidence && dispensedDateConfidence !== 'high') {
+  if (dispensedDateConfidence === 'low') {
     reviewItemNames.push('조제일');
   }
   for (const medication of medications) {
-    if (medication.confidence && medication.confidence !== 'high') {
+    if (medication.confidence === 'low') {
       reviewItemNames.push(medication.name || '복약 정보');
     }
   }
@@ -227,7 +254,7 @@ export function OcrReviewPage() {
   }
 
   async function save() {
-    if (!result || !batchId || !dispensedDate) return;
+    if (!result || result.ocrStatus !== 'ready_for_review' || !batchId || !dispensedDate) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -237,11 +264,14 @@ export function OcrReviewPage() {
           tempId: medication.tempId,
           name: medication.name,
           dose: medication.dose,
+          efficacy: medication.efficacy,
+          administration: medication.administration,
+          precautions: medication.precautions,
           timesPerDay: medication.timesPerDay,
           days: medication.days,
-          note: medication.note,
         })),
       });
+      releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
       if (hasMedication) {
         navigate('/medication-schedule', { state: { recordId, dispensedDate } });
@@ -253,6 +283,22 @@ export function OcrReviewPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (result?.ocrStatus === 'complete') {
+    return (
+      <PageFrame onBack={() => navigate(-1)}>
+        <Card tone="success" title="이미 등록된 약봉투예요">
+          이 약봉투는 이미 저장되었습니다. 저장된 내용은 곧 복용약 화면에서 볼 수 있어요.
+        </Card>
+        <div className="mt-auto flex flex-col gap-2 pb-4">
+          <Button onClick={() => navigate('/home', { replace: true })}>저장 완료</Button>
+          <Button variant="secondary" onClick={() => navigate('/document-upload')}>
+            다른 약봉투 저장
+          </Button>
+        </div>
+      </PageFrame>
+    );
   }
 
   if (
@@ -294,26 +340,9 @@ export function OcrReviewPage() {
     );
   }
 
-  if (result.ocrStatus === 'complete') {
-    return (
-      <PageFrame onBack={() => navigate(-1)}>
-        <Card tone="success" title="이미 등록된 약봉투예요">
-          이 약봉투는 확인과 저장이 끝났습니다. 등록된 내용은 복용약 화면에서 볼 수 있어요.
-        </Card>
-        <div className="mt-auto flex flex-col gap-2 pb-4">
-          <Button onClick={() => navigate('/home', { replace: true })}>홈으로</Button>
-          <Button variant="secondary" onClick={() => navigate('/document-upload')}>
-            다른 약봉투 등록
-          </Button>
-        </div>
-      </PageFrame>
-    );
-  }
-
   const ocrFailed = result.ocrStatus === 'failed';
   const ocrCancelled = result.ocrStatus === 'cancelled';
   const showOcrFailure = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
-  const documentImageUrl = 'documentImageUrl' in result ? result.documentImageUrl : null;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -336,6 +365,12 @@ export function OcrReviewPage() {
         ) : (
           <Card tone="info" title="내용을 잘 읽었어요">
             저장하기 전에 조제일과 약 정보를 한 번 확인해주세요.
+          </Card>
+        )}
+
+        {imageUnavailable && (
+          <Card tone="info" title="원본 미리보기를 불러오지 못했어요">
+            OCR 결과는 계속 확인하고 저장할 수 있어요.
           </Card>
         )}
 
@@ -575,7 +610,7 @@ function ReadingScreen({
 function PageFrame({ onBack, children }: { onBack: () => void; children: ReactNode }) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="확인해주세요" onBack={onBack} />
+      <Header title="저장 완료" onBack={onBack} />
       <main className="flex flex-1 flex-col gap-3 px-page-x py-5">{children}</main>
     </div>
   );

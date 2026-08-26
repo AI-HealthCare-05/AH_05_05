@@ -77,6 +77,7 @@ services:
     volumes:
       - ./app:/app/app  # 로컬의 app 디렉토리를 컨테이너의 /app/app에 마운트(수정사항 즉시 반영)
       - static_volume:/app/templates
+      - media_volume:/app/media
     restart: always
     ports:
       - "8000:8000"
@@ -117,7 +118,37 @@ services:
       redis:
         condition: service_healthy
 
-  # 5. AI Worker (Model 학습 및 추론)
+  # 5. OCR Worker (조제약 복약안내 OCR 비동기 처리)
+  ocr-worker:
+    container_name: ocr-worker
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
+    env_file: .env
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      TZ: Asia/Seoul
+    command: uv run --no-sync arq app.workers.medication_guide_ocr_worker.WorkerSettings
+    volumes:
+      - ./app:/app/app
+      - media_volume:/app/media
+    restart: always
+    networks:
+      - ws
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 6. AI Worker (Model 학습 및 추론)
   ai-worker:
     container_name: ai-worker
 
@@ -149,7 +180,7 @@ services:
       qdrant:
         condition: service_started
 
-  # 6. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
+  # 7. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
     container_name: nginx
     image: nginx:latest
@@ -167,6 +198,7 @@ volumes:
   mysql_data:
   qdrant_data:
   static_volume:
+  media_volume:
 
 networks:
   ws:
