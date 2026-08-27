@@ -9,6 +9,7 @@ import {
   type MedicationOverview,
   type MedicationOverviewItem,
 } from '@/entities/medication';
+import { mealSlotLabel } from '@/shared/model/mealSlot';
 import { BottomTabbar, Card, ErrorDialog, Header, type TabKey } from '@/shared/ui';
 import { MedicationSlotSheet } from './MedicationSlotSheet';
 
@@ -18,13 +19,6 @@ const TAB_ROUTES: Record<TabKey, string> = {
   supplement: '/supplements',
   chat: '/chat',
   my: '/my',
-};
-
-const SLOT_LABEL: Record<MealSlot, string> = {
-  morning: '아침',
-  lunch: '점심',
-  evening: '저녁',
-  bedtime: '취침 전',
 };
 
 export function MedicationEpisodePage() {
@@ -209,7 +203,7 @@ function MedicationCard({
                 key={slot}
                 className="rounded-pill bg-muted-bg px-3 py-1.5 text-sm text-muted-foreground"
               >
-                {SLOT_LABEL[slot]}
+                {mealSlotLabel(slot)}
               </span>
             ))}
             {medication.untilComplete && (

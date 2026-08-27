@@ -6,15 +6,8 @@ import type {
   MedicationOverview,
   MedicationOverviewItem,
 } from '@/entities/medication';
+import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Button } from '@/shared/ui';
-
-const SLOT_ORDER: MealSlot[] = ['morning', 'lunch', 'evening', 'bedtime'];
-const SLOT_LABEL: Record<MealSlot, string> = {
-  morning: '아침',
-  lunch: '점심',
-  evening: '저녁',
-  bedtime: '취침 전',
-};
 
 type TimelineStatus = 'completed' | 'current' | 'next' | 'missed';
 
@@ -216,7 +209,7 @@ function buildMedicationTimeline(
     const slotMedications = medications.filter((medication) => medication.slots.includes(slot));
     return {
       slot,
-      label: SLOT_LABEL[slot],
+      label: mealSlotLabel(slot, 'short'),
       time: firstOverview.mealTimes[slot],
       medications: slotMedications,
       recordIds: [...new Set(slotMedications.map((medication) => medication.recordId))],
