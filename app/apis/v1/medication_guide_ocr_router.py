@@ -122,8 +122,18 @@ async def submit_medication_guide_ocr(
     "/ocr/jobs/{ocrJobId}/image",
     response_class=Response,
     responses={
-        status.HTTP_200_OK: {"content": {"image/jpeg": {}, "image/png": {}}, "description": "원본 문서 이미지"},
+        status.HTTP_200_OK: {
+            "content": {
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+            },
+            "description": "원본 문서 이미지",
+        },
         status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음 (OCR_JOB_NOT_FOUND)"},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 작업 ID 검증 실패 (VALIDATION_ERROR)",
+        },
     },
     summary="조제약 복약안내 원본 이미지 조회",
 )
@@ -148,7 +158,11 @@ async def get_medication_guide_ocr_image(
     "/ocr/jobs/{ocrJobId}",
     response_model=DocumentOcrStatusResponse,
     responses={
-        status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음 (OCR_JOB_NOT_FOUND)"}
+        status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음 (OCR_JOB_NOT_FOUND)"},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 작업 ID 검증 실패 (VALIDATION_ERROR)",
+        },
     },
     summary="조제약 복약안내 OCR 작업 조회",
 )
@@ -170,6 +184,10 @@ async def get_medication_guide_ocr_job(
         status.HTTP_409_CONFLICT: {
             "model": OcrErrorResponse,
             "description": "OCR 작업 상태 충돌 (OCR_JOB_STATE_CONFLICT)",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 작업 ID 또는 확정 요청 검증 실패 (VALIDATION_ERROR)",
         },
     },
     summary="조제약 복약안내 OCR 결과 확정",

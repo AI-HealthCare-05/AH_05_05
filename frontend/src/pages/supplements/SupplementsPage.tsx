@@ -117,7 +117,14 @@ export function SupplementsPage({
   async function saveSupplement(payload: AddSupplementPayload) {
     try {
       const saved = await addSupplement(payload);
-      setSupplements((current) => [saved, ...(current ?? [])]);
+      setSupplements((current) => [
+        saved,
+        ...(current ?? []).filter(
+          (supplement) =>
+            supplement.supplementId !== saved.supplementId &&
+            (saved.productId === null || supplement.productId !== saved.productId),
+        ),
+      ]);
     } catch (error: unknown) {
       setSaveErrorTitle('영양제를 추가하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
@@ -208,7 +215,8 @@ export function SupplementsPage({
                       )}
                     </span>
                     <span className="block text-sm text-muted-foreground">
-                      1일 {supplement.dailyCount}정 ·{' '}
+                      하루 {supplement.slots.length}회 · 1회 {formatDoseAmount(supplement.doseAmount)}
+                      {supplement.doseUnit} ·{' '}
                       {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                     </span>
                   </span>
@@ -482,4 +490,8 @@ function standardSourceLabel(profile: NutrientStandardProfile | null): string {
   const age = calculateFullAge(profile.birthDate);
   const gender = profile.gender === 'female' ? '여성' : '남성';
   return `기준 · 2025 한국인 영양소 섭취기준 · 만 ${age}세 ${gender}`;
+}
+
+function formatDoseAmount(amount: number): string {
+  return numberFormat.format(amount);
 }

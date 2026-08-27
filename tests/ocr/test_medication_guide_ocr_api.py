@@ -201,6 +201,28 @@ def test_openapi_exposes_only_the_unified_ocr_contract() -> None:
     assert "/api/v1/ocr/jobs/{job_id}/confirm" not in paths
 
 
+def test_openapi_documents_ocr_path_validation_with_the_runtime_error_contract() -> None:
+    paths = app.openapi()["paths"]
+    expected_schema = {"$ref": "#/components/schemas/OcrErrorResponse"}
+
+    operations = (
+        paths["/api/v1/ocr/jobs/{ocrJobId}"]["get"],
+        paths["/api/v1/ocr/jobs/{ocrJobId}"]["patch"],
+        paths["/api/v1/ocr/jobs/{ocrJobId}/image"]["get"],
+    )
+
+    for operation in operations:
+        assert operation["responses"]["422"]["content"]["application/json"]["schema"] == expected_schema
+
+
+def test_openapi_documents_ocr_images_as_binary_responses() -> None:
+    image_content = app.openapi()["paths"]["/api/v1/ocr/jobs/{ocrJobId}/image"]["get"]["responses"]["200"]["content"]
+    expected_schema = {"type": "string", "format": "binary"}
+
+    assert image_content["image/jpeg"]["schema"] == expected_schema
+    assert image_content["image/png"]["schema"] == expected_schema
+
+
 def test_openapi_shows_a_realistic_confirmation_request_instead_of_placeholders() -> None:
     confirmation_content = app.openapi()["paths"]["/api/v1/ocr/jobs/{ocrJobId}"]["patch"]["requestBody"]["content"][
         "application/json"
