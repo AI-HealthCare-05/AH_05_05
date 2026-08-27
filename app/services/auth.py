@@ -1,8 +1,13 @@
+from datetime import datetime
+
 from fastapi.exceptions import HTTPException
 from pydantic import EmailStr
 from starlette import status
+from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
+from app.core import config
+from app.core.exceptions import SignupEmailAlreadyExistsError
 from app.core.jwt.tokens import AccessToken, RefreshToken
 from app.core.utils.common import normalize_phone_number
 from app.core.utils.security import hash_password, verify_password
@@ -25,21 +30,30 @@ class AuthService:
         # 입력받은 휴대폰 번호를 노말라이즈
         normalized_phone_number = normalize_phone_number(data.phone_number)
 
-        # 휴대폰 번호 중복 체크
-        await self.check_phone_number_exists(normalized_phone_number)
+        # 유저 생성. 사전 중복 조회 뒤 같은 이메일이 동시에 들어와도 DB unique
+        # 위반을 프론트 계약(409)으로 돌려준다.
+        try:
+            async with in_transaction():
+                user = await self.user_repo.create_user(
+                    email=data.email,
+                    hashed_password=hash_password(data.password),  # 해시화된 비밀번호를 사용
+                    name=data.name,
+                    phone=normalized_phone_number,
+                    birth_date=data.birth_date,
+                    gender=data.gender,
+                    status=AccountStatus.ACTIVE,
+                )
+                await UserSettings.create(
+                    user=user,
+                    is_terms_agreed=data.is_terms_agreed,
+                    terms_agreed_at=datetime.now(config.TIMEZONE),
+                )
 
-        # 유저 생성
-        async with in_transaction():
-            user = await self.user_repo.create_user(
-                email=data.email,
-                hashed_password=hash_password(data.password),  # 해시화된 비밀번호를 사용
-                name=data.name,
-                phone=normalized_phone_number,
-                status=AccountStatus.ACTIVE,
-            )
-            await UserSettings.create(user=user)
-
-            return user
+                return user
+        except IntegrityError:
+            if await self.user_repo.exists_by_email(data.email):
+                raise SignupEmailAlreadyExistsError() from None
+            raise
 
     async def authenticate(self, data: LoginRequest) -> User:
         # 이메일로 사용자 조회
@@ -67,8 +81,4 @@ class AuthService:
 
     async def check_email_exists(self, email: str | EmailStr) -> None:
         if await self.user_repo.exists_by_email(email):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 이메일입니다.")
-
-    async def check_phone_number_exists(self, phone_number: str) -> None:
-        if await self.user_repo.exists_by_phone_number(phone_number):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 휴대폰 번호입니다.")
+            raise SignupEmailAlreadyExistsError()

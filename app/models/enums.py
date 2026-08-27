@@ -8,6 +8,11 @@ class AccountStatus(StrEnum):
     WITHDRAWN = "WITHDRAWN"
 
 
+class Gender(StrEnum):
+    MALE = "MALE"
+    FEMALE = "FEMALE"
+
+
 class AdminRole(StrEnum):
     ADMIN = "ADMIN"
     STAFF = "STAFF"
