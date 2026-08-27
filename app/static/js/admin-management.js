@@ -46,13 +46,93 @@ export function updateAdminStatus(admins, adminId, status) {
 
 let currentItems = [];
 
-function rowMarkup(admin, canManage) {
+/**
+ * 역할을 바꿀 수 없는 이유. 없으면 바꿀 수 있다.
+ *
+ * 서버가 409 로 막는 조건을 화면에서 미리 알려준다. 409 를 받고 나서 알려주는 것보다
+ * 애초에 못 누르게 하는 편이 낫다. 대기(PENDING)는 막지 않는다 — 첫 로그인 전 역할
+ * 오지정을 정정할 유일한 경로로 서버가 일부러 열어둔 상태다.
+ */
+export function roleChangeBlockedReason(admin, currentAdminId) {
+  if (admin.adminId === currentAdminId) return "본인 역할은 변경할 수 없습니다";
+  if (admin.status === "SUSPENDED" || admin.status === "WITHDRAWN") {
+    return "정지된 계정은 역할을 변경할 수 없습니다";
+  }
+  return null;
+}
+
+/**
+ * 오버레이 HTML 은 openOverlay 가 fetch 로 가져온다. 그 경로에는 캐시 버스팅이 없어
+ * 파일을 고쳐도 브라우저가 옛 HTML 을 쓸 수 있다. 이 오버레이는 이번에 구성이 바뀌므로
+ * 호출부에서 쿼리를 붙인다. (js 모듈 import 경로 전반의 캐시 문제는 별도 사안이다)
+ */
+const ROLE_OVERLAY_URL = "overlay-admin-edit.html?v=20260827-3";
+
+/**
+ * 409 를 어디에 보여줄지 정한다. 역할 선택 자체의 문제면 오류칸, 그 외는 토스트다.
+ * 문구는 항상 서버 message 를 그대로 쓴다 — 화면에서 새로 만들면 서버와 어긋난다.
+ */
+const ROLE_ERROR_IN_FIELD = new Set(["SAME_ROLE", "CANNOT_CHANGE_OWN_ROLE"]);
+
+/** 역할 변경 오버레이를 연다. 성공하면 목록을 다시 읽는다. */
+async function openRoleOverlay(admin, reloadList) {
+  const overlay = await openOverlay(ROLE_OVERLAY_URL, {
+    onConfirm: async (panel) => {
+      const select = panel.querySelector("[name='role']");
+      const errorSlot = panel.querySelector("[data-error-for='role']");
+      const confirmButton = panel.querySelector("[data-overlay-confirm]");
+      const nextRole = roleValue(select.value);
+
+      errorSlot.textContent = "";
+      const originalLabel = confirmButton.textContent;
+      confirmButton.disabled = true;
+      confirmButton.textContent = "변경 중…";
+
+      try {
+        await patch(`/admin/accounts/${admin.adminId}/role`, { role: nextRole });
+        closeOverlay();
+        await reloadList();
+        showToast(`${admin.name}의 역할을 ${roleLabel(nextRole)}로 변경했습니다.`);
+      } catch (error) {
+        if (!(error instanceof ApiError)) {
+          showToast("역할을 변경하지 못했습니다.", "error");
+          return;
+        }
+        if (ROLE_ERROR_IN_FIELD.has(error.code)) errorSlot.textContent = error.message;
+        else showToast(error.message, "error");
+      } finally {
+        confirmButton.disabled = false;
+        confirmButton.textContent = originalLabel;
+      }
+    },
+  });
+
+  overlay.querySelector("[data-admin-name]").textContent = admin.name;
+  overlay.querySelector("[data-admin-email]").textContent = admin.email;
+
+  const select = overlay.querySelector("[name='role']");
+  const confirmButton = overlay.querySelector("[data-overlay-confirm]");
+  select.value = roleLabel(admin.role);
+
+  // 같은 역할이면 서버가 409 SAME_ROLE 로 막는다. 굳이 보게 하지 않는다.
+  const syncConfirmState = () => {
+    confirmButton.disabled = roleValue(select.value) === admin.role;
+  };
+  select.addEventListener("change", syncConfirmState);
+  syncConfirmState();
+
+  return overlay;
+}
+
+function rowMarkup(admin, canManage, currentAdminId) {
   // 되돌릴 수 없는 동작(재설정·정지)은 danger 로 갈라 둔다. 조회 동작과 같은 모양이면
   // 옆 버튼을 잘못 누른다. 비활성 색은 CSS 의 :disabled 가 danger 위에 덮는다.
   const suspended = admin.status === "SUSPENDED";
+  const blockedReason = roleChangeBlockedReason(admin, currentAdminId);
   const actions = canManage
-    ? `<button class="ui-link-button" data-admin-action="edit" data-admin-id="${admin.adminId}" disabled
-               title="역할 변경 API가 아직 없습니다">수정</button>
+    ? `<button class="ui-link-button" data-admin-action="edit" data-admin-id="${admin.adminId}"${
+         blockedReason ? ` disabled title="${escapeHtml(blockedReason)}"` : ""
+       }>수정</button>
        <button class="ui-link-button ui-link-button-danger" data-admin-action="reset" data-admin-id="${admin.adminId}">재설정</button>
        <button class="ui-link-button ui-link-button-danger" data-admin-action="stop" data-admin-id="${admin.adminId}"${
          suspended ? ' disabled title="이미 정지된 관리자입니다"' : ""
@@ -82,6 +162,8 @@ function initializeAdminManagement() {
   // 등록·정지는 ADMIN 전용이다(권한 매트릭스). STAFF 에게는 버튼을 숨긴다.
   const canManage = session.isAdminRole();
   if (!canManage && registerButton) registerButton.hidden = true;
+  // 본인 행의 「수정」을 잠그려면 내가 누구인지 알아야 한다. 로그인 때 저장한 프로필을 쓴다.
+  const currentAdminId = session.admin().adminId;
 
   const load = async () => {
     tableState.loading(tbody, COLUMN_COUNT);
@@ -100,7 +182,7 @@ function initializeAdminManagement() {
         tableState.empty(tbody, COLUMN_COUNT, "조건에 맞는 관리자가 없습니다.");
         return;
       }
-      tbody.innerHTML = currentItems.map((admin) => rowMarkup(admin, canManage)).join("");
+      tbody.innerHTML = currentItems.map((admin) => rowMarkup(admin, canManage, currentAdminId)).join("");
     } catch (error) {
       currentItems = [];
       const message = error instanceof ApiError ? error.message : "관리자 목록을 불러오지 못했습니다.";
@@ -208,9 +290,10 @@ function initializeAdminManagement() {
       return;
     }
 
-    // edit 은 역할 변경 API 가 없어 연동하지 않는다. 버튼이 disabled 라 여기까지 오지 않는다.
-    showToast("관리자 정보 수정은 아직 지원하지 않습니다.", "error");
-    if (admin) return;
+    if (button.dataset.adminAction === "edit") {
+      if (!admin) return;
+      await openRoleOverlay(admin, load);
+    }
   });
 
   load();
