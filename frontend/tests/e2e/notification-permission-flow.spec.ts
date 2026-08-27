@@ -109,7 +109,10 @@ test('마이페이지 허용에서는 누른 토글만 켜고 기존 알람 구�
   await page.getByRole('switch', { name: '복약 알림' }).click();
   await page.getByRole('dialog').getByRole('button', { name: '좋아요' }).click();
 
-  await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked();
+  // 설정 API의 400ms 목업 지연을 기다리지 않고 즉시 반영되어야 합니다.
+  await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked({
+    timeout: 200,
+  });
   await expect(page.getByRole('switch', { name: '영양제 알림' })).not.toBeChecked();
   expect(subscriptions).toEqual([
     {
@@ -125,7 +128,9 @@ test('마이페이지 허용에서는 누른 토글만 켜고 기존 알람 구�
   ]);
 
   await page.getByRole('switch', { name: '복약 알림' }).click();
-  await expect(page.getByRole('switch', { name: '복약 알림' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: '복약 알림' })).not.toBeChecked({
+    timeout: 200,
+  });
   expect(subscriptions).toHaveLength(1);
 });
 

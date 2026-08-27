@@ -65,6 +65,7 @@ export function MyPage({
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
   const [blockedDialogOpen, setBlockedDialogOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
+  const [pendingSettingKeys, setPendingSettingKeys] = useState<NotifySettingKey[]>([]);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
 
@@ -87,10 +88,6 @@ export function MyPage({
     };
   }, [isAuthenticated, notifySettingsLoader]);
 
-  function fieldFor(key: NotifySettingKey): NotifySettingKey {
-    return key;
-  }
-
   async function persistNotifySettings(
     payload: UpdateNotifySettingsPayload,
     retry: () => void,
@@ -112,22 +109,61 @@ export function MyPage({
     }
   }
 
-  async function enableNotification(key: NotifySettingKey) {
-    setNotificationBusy(true);
+  function setSettingPending(key: NotifySettingKey, pending: boolean) {
+    setPendingSettingKeys((current) =>
+      pending
+        ? current.includes(key)
+          ? current
+          : [...current, key]
+        : current.filter((pendingKey) => pendingKey !== key),
+    );
+  }
+
+  async function persistToggleOptimistically(
+    key: NotifySettingKey,
+    checked: boolean,
+    beforeSave: (() => Promise<void>) | undefined,
+    retry: () => void,
+  ) {
+    const previousValue = notifySettings?.[key];
+    if (previousValue === undefined) return;
+
+    setNotifySettings((current) => (current ? { ...current, [key]: checked } : current));
+    setSettingPending(key, true);
     setNotifyActionError(null);
     try {
-      await pushRegistrar();
-      const updated = await notifySettingsUpdater({ [fieldFor(key)]: true });
-      setNotifySettings(updated);
+      await beforeSave?.();
+      const updated = await notifySettingsUpdater({ [key]: checked });
+      setNotifySettings((current) =>
+        current
+          ? {
+              ...current,
+              [key]: updated[key],
+              notifyConsentedAt: updated.notifyConsentedAt,
+            }
+          : updated,
+      );
       setPendingToggle(null);
     } catch (error: unknown) {
+      setNotifySettings((current) =>
+        current ? { ...current, [key]: previousValue } : current,
+      );
       setNotifyActionError({
         message: error instanceof Error ? error.message : '알림 설정을 저장하지 못했어요.',
-        retry: () => void enableNotification(key),
+        retry,
       });
     } finally {
-      setNotificationBusy(false);
+      setSettingPending(key, false);
     }
+  }
+
+  function enableNotification(key: NotifySettingKey) {
+    return persistToggleOptimistically(
+      key,
+      true,
+      pushRegistrar,
+      () => void enableNotification(key),
+    );
   }
 
   async function acknowledgeConsentIfNeeded(): Promise<boolean> {
@@ -136,10 +172,13 @@ export function MyPage({
   }
 
   function handleNotificationChange(key: NotifySettingKey, checked: boolean) {
-    if (!notifySettings || notificationBusy || pushUnsupported) return;
+    if (!notifySettings || pendingSettingKeys.includes(key) || pushUnsupported) return;
     if (!checked) {
-      void persistNotifySettings({ [fieldFor(key)]: false }, () =>
-        handleNotificationChange(key, false),
+      void persistToggleOptimistically(
+        key,
+        false,
+        undefined,
+        () => handleNotificationChange(key, false),
       );
       return;
     }
@@ -262,7 +301,9 @@ export function MyPage({
                     <NotificationRow
                       label="복약 알림"
                       checked={notifySettings.notifyMedication}
-                      disabled={notificationBusy || pushUnsupported}
+                      disabled={
+                        pendingSettingKeys.includes('notifyMedication') || pushUnsupported
+                      }
                       onCheckedChange={(checked) =>
                         handleNotificationChange('notifyMedication', checked)
                       }
@@ -270,7 +311,9 @@ export function MyPage({
                     <NotificationRow
                       label="영양제 알림"
                       checked={notifySettings.notifySupplement}
-                      disabled={notificationBusy || pushUnsupported}
+                      disabled={
+                        pendingSettingKeys.includes('notifySupplement') || pushUnsupported
+                      }
                       onCheckedChange={(checked) =>
                         handleNotificationChange('notifySupplement', checked)
                       }
