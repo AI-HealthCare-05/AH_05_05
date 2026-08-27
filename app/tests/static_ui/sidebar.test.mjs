@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 test("markActiveNavigation marks only the current section", async () => {
   const { markActiveNavigation } = await import("../../static/js/sidebar.js");
@@ -57,6 +58,38 @@ test("loadSidebar replaces the placeholder and initializes the active link", asy
   assert.equal(link.classList.active, true);
   assert.equal(link.attributes.get("aria-current"), "page");
   assert.equal(link.href, "screen-4-admin-management.html");
+});
+
+test("loadSidebar bypasses stale browser cache for the shared partial", async () => {
+  const { loadSidebar } = await import("../../static/js/sidebar.js");
+  const sidebar = { tagName: "ASIDE", querySelectorAll: () => [] };
+  const placeholder = {
+    dataset: {},
+    replaceWith() {},
+  };
+  const root = {
+    location: { pathname: "/templates/dashboard.html" },
+    querySelector: () => placeholder,
+    createElement: () => ({ content: { firstElementChild: sidebar }, innerHTML: "" }),
+  };
+  let requestOptions;
+  const fetcher = async (_url, options) => {
+    requestOptions = options;
+    return { ok: true, text: async () => "<aside></aside>" };
+  };
+
+  await loadSidebar(root, fetcher);
+
+  assert.equal(requestOptions.cache, "no-store");
+});
+
+test("sidebar cache-busts the navigation module that owns menu targets", async () => {
+  const source = await readFile(
+    new URL("../../static/js/sidebar.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /from "\.\/navigation\.js\?v=[^"]+"/);
 });
 
 test("loadSidebar leaves a visible message when the partial request fails", async () => {
