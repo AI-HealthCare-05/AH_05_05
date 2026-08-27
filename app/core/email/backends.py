@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 
 SMTP_TIMEOUT_SECONDS = 10
 
+CONSOLE_BACKEND_WARNING = (
+    "개발 전용 콘솔 메일 백엔드입니다. 메일이 실제로 발송되지 않으며 "
+    "임시 비밀번호와 수신자 정보가 평문으로 로그에 기록됩니다."
+)
+
 
 class EmailSendError(Exception):
     """메일 발송 실패. 호출한 쪽에서 후속 처리를 정한다."""
@@ -39,7 +44,25 @@ class ConsoleEmailBackend(EmailBackend):
     임시 비밀번호 평문이 그대로 찍히므로 로컬 개발에서만 쓴다.
     """
 
+    # 첫 발송에서 한 번만 경고한다. 매 발송마다 찍으면 로그가 시끄러워져 무시하게 된다.
+    _warned = False
+
+    @classmethod
+    def _warn_once(cls) -> None:
+        """운영에 console 이 실려 나간 경우를 알아차리게 한다.
+
+        WARNING 이라 root 로거 설정이 없어도(기본 WARNING) 보인다.
+        `__init__` 이 아니라 첫 발송에서 찍는 이유는, 이 백엔드가 `state.py` 임포트
+        시점에 만들어지는데 그때는 `app/main.py` 의 configure_root_logging 이 아직
+        돌지 않아 포맷 없는 lastResort 출력으로 새기 때문이다.
+        """
+        if cls._warned:
+            return
+        cls._warned = True
+        logger.warning(CONSOLE_BACKEND_WARNING)
+
     def send(self, message: EmailMessage) -> None:
+        self._warn_once()
         logger.info(
             "[console email]\n  to: %s\n  subject: %s\n  ---\n%s\n  ---",
             message.to,
