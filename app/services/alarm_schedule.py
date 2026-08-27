@@ -14,10 +14,11 @@ def parse_timezone(name: str) -> ZoneInfo:
 
 
 def validate_alarm_shape(alarm_type: AlarmType, meal_slot: MealSlot | None) -> None:
-    if alarm_type == AlarmType.MEDICATION and meal_slot is None:
-        raise ValueError("meal_slot is required for medication alarms.")
-    if alarm_type != AlarmType.MEDICATION and meal_slot is not None:
-        raise ValueError("meal_slot is only allowed for medication alarms.")
+    slot_alarm_types = {AlarmType.MEDICATION, AlarmType.NUTRIENT}
+    if alarm_type in slot_alarm_types and meal_slot is None:
+        raise ValueError("meal_slot is required for medication and nutrient alarms.")
+    if alarm_type not in slot_alarm_types and meal_slot is not None:
+        raise ValueError("meal_slot is only allowed for medication and nutrient alarms.")
 
 
 def next_occurrence(rule: str, dtstart: datetime, after: datetime) -> datetime | None:

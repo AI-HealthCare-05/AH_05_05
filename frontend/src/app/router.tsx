@@ -20,6 +20,7 @@ import {
   type MedicationOverview,
   type SaveDoseTakenPayload,
 } from '@/entities/medication';
+import { registerPushNotifications } from '@/shared/push/register';
 import { DevGallery } from './DevGallery';
 import { ChatSessionProvider } from './ChatSessionContext';
 import { useSession } from './SessionContext';
@@ -89,6 +90,9 @@ const failProfileSave = async (
 ): Promise<AccountProfile> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
+const failMedicationScheduleSave = async (): Promise<never> => {
+  throw new Error('잠시 후 다시 시도해주세요.');
+};
 const loadExistingChatHistory = async () => EXISTING_CHAT_HISTORY;
 const failChatHistory = async (): Promise<ChatMessage[]> => {
   throw new Error('잠시 후 다시 시도해주세요.');
@@ -143,7 +147,27 @@ export function AppRouter() {
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route
           path="/dev/medication-schedule"
-          element={<MedicationSchedulePage defaultRecordId={12} />}
+          element={
+            <MedicationSchedulePage defaultRecordId={12} />
+          }
+        />
+        <Route
+          path="/dev/medication-schedule-save-error"
+          element={
+            <MedicationSchedulePage
+              defaultRecordId={12}
+              scheduleSaver={failMedicationScheduleSave}
+            />
+          }
+        />
+        <Route
+          path="/dev/medication-schedule-no-vapid"
+          element={
+            <MedicationSchedulePage
+              defaultRecordId={12}
+              pushRegistrar={() => registerPushNotifications('')}
+            />
+          }
         />
         <Route path="/dev/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route
@@ -181,7 +205,10 @@ export function AppRouter() {
           }
         />
         <Route path="/dev/my-guest" element={<MyPage authenticatedOverride={false} />} />
-        <Route path="/dev/my-authenticated" element={<MyPage authenticatedOverride />} />
+        <Route
+          path="/dev/my-authenticated"
+          element={<MyPage authenticatedOverride />}
+        />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
         <Route
           path="/dev/my-profile-save-error"

@@ -16,9 +16,21 @@ export default defineConfig(({ mode }) => {
   // 무엇을 적든 위 기본값으로만 붙었습니다.
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   const API_PROXY_TARGET = env.VITE_API_PROXY_TARGET || DEFAULT_API_PROXY_TARGET;
+  const USE_MOCK =
+    mode === 'e2e-real'
+      ? 'false'
+      : mode === 'e2e-mock'
+        ? 'true'
+        : process.env.VITE_USE_MOCK ?? env.VITE_USE_MOCK;
+  const VAPID_PUBLIC_KEY = process.env.VITE_VAPID_PUBLIC_KEY ?? env.VITE_VAPID_PUBLIC_KEY;
 
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      // Playwright 등 부모 프로세스가 넘긴 값이 .env.local 보다 우선하도록 명시합니다.
+      'import.meta.env.VITE_USE_MOCK': JSON.stringify(USE_MOCK ?? ''),
+      'import.meta.env.VITE_VAPID_PUBLIC_KEY': JSON.stringify(VAPID_PUBLIC_KEY ?? ''),
+    },
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

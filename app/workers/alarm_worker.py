@@ -21,6 +21,7 @@ from app.services.web_push import PushResult, PushResultKind, WebPushService
 
 _NOTIFICATION_SETTING_BY_ALARM_TYPE = {
     AlarmType.MEDICATION: "is_notify_medication",
+    AlarmType.NUTRIENT: "is_notify_supplement",
     AlarmType.FOLLOW_UP_VISIT: "is_notify_schedule",
     AlarmType.GUIDE_CHECK: "is_notify_guide",
 }
@@ -143,6 +144,8 @@ async def send_alarm_push(
     if alarm is None or subscription is None or not subscription.is_active or alarm.status != AlarmStatus.ACTIVE:
         await _cancel_claimed_job(job)
         return
+    if await _skip_claimed_job_when_notification_disabled(job, alarm):
+        return
 
     medications: list[Medication] = []
     if alarm.care_episode_id is not None and alarm.meal_slot is not None:
@@ -178,6 +181,29 @@ async def _cancel_claimed_job(job: BackgroundJob) -> None:
     job.updated_at = now
     job.duration_ms = _duration_ms(job.started_at, now)
     await job.save(update_fields=["status", "completed_at", "updated_at", "duration_ms"])
+
+
+async def _skip_claimed_job_when_notification_disabled(job: BackgroundJob, alarm: Alarm) -> bool:
+    now = datetime.now(config.TIMEZONE)
+    async with in_transaction() as connection:
+        if await _notification_enabled(alarm, connection):
+            return False
+        await AlarmEvent.create(
+            using_db=connection,
+            alarm_id=alarm.id,
+            event_type=AlarmEventType.SKIPPED,
+            event_at=now,
+            payload={"reason": "USER_NOTIFICATION_DISABLED"},
+        )
+        job.status = BackgroundJobStatus.CANCELLED
+        job.completed_at = now
+        job.updated_at = now
+        job.duration_ms = _duration_ms(job.started_at, now)
+        await job.save(
+            using_db=connection,
+            update_fields=["status", "completed_at", "updated_at", "duration_ms"],
+        )
+    return True
 
 
 async def _complete_push(
