@@ -21,6 +21,19 @@
 .ui-button-primary:hover { background: #1554d1; }
 .ui-button-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
 .ui-link-button { border: 0; background: #f7f8fa; color: #1c64f2; border-radius: 6px; padding: 5px 9px; cursor: pointer; font-weight: 600; }
+/* 되돌릴 수 없는 동작(정지·비밀번호 재설정). 조회 동작과 한눈에 갈라 보이게 한다. */
+.ui-link-button-danger { background: #fee2e2; color: #b91c1c; }
+.ui-link-button-danger:hover { background: #fecaca; }
+/* 비활성은 danger 색을 덮는다. 빨간 채로 두면 눌러도 되는 것처럼 보인다.
+   :disabled 는 .ui-link-button-danger 와 명시도가 같아 뒤에 와야 이긴다. */
+.ui-button:disabled, .ui-link-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #e5e7eb;
+}
+.ui-button:disabled:hover, .ui-link-button:disabled:hover { background: #f3f4f6; }
 .management-table-wrap { overflow: auto; }
 .management-table tbody tr { transition: background .15s; }
 .management-table tbody tr:hover { background: rgba(28,100,242,.035); }
