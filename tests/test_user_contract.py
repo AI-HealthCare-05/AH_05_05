@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.core import config
 from app.core.utils.security import hash_password
+from app.main import app
 from app.models.enums import AccountStatus
 
 
@@ -146,3 +147,37 @@ async def test_suspended_user_cannot_authenticate() -> None:
         await service.authenticate(auth_dtos.LoginRequest(email="user@example.com", password="Password123!"))
 
     assert exc_info.value.status_code == 423
+
+
+def test_signup_openapi_documents_response_schemas() -> None:
+    openapi = app.openapi()
+    responses = openapi["paths"]["/api/v1/auth/signup"]["post"]["responses"]
+
+    assert responses["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/SignUpResponse"
+    }
+    assert responses["409"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AuthErrorResponse"
+    }
+    assert responses["422"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AuthErrorResponse"
+    }
+
+    schemas = openapi["components"]["schemas"]
+    assert schemas["SignUpResponse"]["required"] == ["detail"]
+    assert schemas["AuthErrorResponse"]["required"] == ["code", "message"]
+
+
+def test_signup_openapi_documents_error_examples() -> None:
+    responses = app.openapi()["paths"]["/api/v1/auth/signup"]["post"]["responses"]
+
+    assert responses["409"]["content"]["application/json"]["example"] == {
+        "code": "EMAIL_ALREADY_EXISTS",
+        "message": "이미 사용중인 이메일입니다.",
+        "field": "email",
+    }
+    assert responses["422"]["content"]["application/json"]["example"] == {
+        "code": "VALIDATION_ERROR",
+        "message": "입력값이 올바르지 않습니다.",
+        "field": "email",
+    }

@@ -120,7 +120,7 @@ test('검색 결과는 20개씩 불러와 끝까지 내리면 다음 결과를 �
   await expect(results.getByRole('listitem')).toHaveCount(24);
 });
 
-test('제품을 고르면 하나의 행만 펼쳐지고 표준 섭취 정수를 확인한다', async ({ page }) => {
+test('제품을 고르면 하나의 행만 펼쳐지고 1회 섭취량과 추천 슬롯을 확인한다', async ({ page }) => {
   await page.goto('/dev/supplements');
   await page.getByRole('button', { name: '영양제 추가' }).click();
   const sheet = page.getByRole('dialog');
@@ -131,7 +131,7 @@ test('제품을 고르면 하나의 행만 펼쳐지고 표준 섭취 정수를 
   const first = results.getByRole('listitem').filter({ hasText: '센트룸 실버 우먼' });
   const second = results.getByRole('listitem').filter({ hasText: '고려은단 멀티비타민 올인원' });
   await first.getByRole('button', { name: /센트룸 실버 우먼/ }).click();
-  await expect(first.getByText('하루에')).toBeVisible();
+  await expect(first.getByText('1회에')).toBeVisible();
   await expect(first.getByText('1 정', { exact: true })).toBeVisible();
   const slots = first.getByRole('group', { name: '복용 시간' });
   await expect(slots.getByRole('button')).toHaveCount(4);
@@ -141,13 +141,13 @@ test('제품을 고르면 하나의 행만 펼쳐지고 표준 섭취 정수를 
   await expect(first.getByText('제품 표시사항의 섭취방법을 채워놨어요.')).toBeVisible();
 
   await second.getByRole('button', { name: /고려은단 멀티비타민 올인원/ }).click();
-  await expect(first.getByText('하루에')).toHaveCount(0);
+  await expect(first.getByText('1회에')).toHaveCount(0);
   await expect(second.getByText('2 정', { exact: true })).toBeVisible();
-  await expect(second.getByRole('button', { name: '하루 섭취량 늘리기' })).toBeVisible();
-  await expect(second.getByRole('button', { name: '하루 섭취량 줄이기' })).toBeVisible();
+  await expect(second.getByRole('button', { name: '1회 섭취량 늘리기' })).toBeVisible();
+  await expect(second.getByRole('button', { name: '1회 섭취량 줄이기' })).toBeVisible();
 });
 
-test('슬롯 수가 하루 정수보다 많아지면 정수를 맞추고 그 아래로 줄이지 못한다', async ({ page }) => {
+test('복용 슬롯은 1회 섭취량과 독립적으로 선택하고 최소 하나를 강제한다', async ({ page }) => {
   await page.goto('/dev/supplements');
   await page.getByRole('button', { name: '영양제 추가' }).click();
   const sheet = page.getByRole('dialog');
@@ -157,14 +157,12 @@ test('슬롯 수가 하루 정수보다 많아지면 정수를 맞추고 그 아
 
   const slots = product.getByRole('group', { name: '복용 시간' });
   await slots.getByRole('button', { name: '저녁' }).click();
-  await expect(product.getByText('2 정', { exact: true })).toBeVisible();
-  await expect(product.getByText('하루 2정으로 맞췄어요')).toBeVisible();
-  await expect(product.getByRole('button', { name: '하루 섭취량 줄이기' })).toBeDisabled();
+  await expect(product.getByText('1 정', { exact: true })).toBeVisible();
+  await expect(product.getByRole('button', { name: '1회 섭취량 줄이기' })).toBeDisabled();
 
   await slots.getByRole('button', { name: '아침' }).click();
-  await product.getByRole('button', { name: '하루 섭취량 줄이기' }).click();
-  await expect(product.getByText('1 정', { exact: true })).toBeVisible();
   await slots.getByRole('button', { name: '저녁' }).click();
+  await expect(product.getByText('복용 시간을 하나 이상 선택해주세요.')).toBeVisible();
   await expect(product.getByRole('button', { name: '추가하기' })).toBeDisabled();
 });
 
@@ -178,15 +176,14 @@ test('표준 섭취량이 없으면 1정으로 시작하고 프리필 안내를 
 
   await expect(product.getByText('1 정', { exact: true })).toBeVisible();
   await expect(product.getByText('제품 표시사항의 섭취방법을 채워놨어요.')).toHaveCount(0);
-  await expect(product.getByRole('button', { name: '하루 섭취량 줄이기' })).toBeDisabled();
+  await expect(product.getByRole('button', { name: '1회 섭취량 줄이기' })).toBeDisabled();
 
-  const increase = product.getByRole('button', { name: '하루 섭취량 늘리기' });
-  for (let count = 1; count < 20; count += 1) await increase.click();
-  await expect(product.getByText('20 정', { exact: true })).toBeVisible();
-  await expect(increase).toBeDisabled();
+  const increase = product.getByRole('button', { name: '1회 섭취량 늘리기' });
+  await increase.click();
+  await expect(product.getByText('2 정', { exact: true })).toBeVisible();
 });
 
-test('표준 제품을 추가하면 1일 정수를 합계에 곱하고 토스트 없이 목록 맨 위에 놓는다', async ({ page }) => {
+test('표준 제품을 추가하면 회당 수량과 슬롯 수를 합계에 곱하고 목록 맨 위에 놓는다', async ({ page }) => {
   await page.goto('/dev/supplements');
   await page.getByRole('button', { name: '영양제 추가' }).click();
   const sheet = page.getByRole('dialog');
@@ -199,7 +196,9 @@ test('표준 제품을 추가하면 1일 정수를 합계에 곱하고 토스트
   await expect(sheet).toBeHidden();
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   await expect(supplementList.getByRole('button').first()).toContainText('고려은단 멀티비타민 올인원');
-  await expect(supplementList.getByRole('button').first()).toContainText('1일 2정 · 아침');
+  await expect(supplementList.getByRole('button').first()).toContainText(
+    '하루 1회 · 1회 2정 · 아침',
+  );
   await expect(page.getByText('4,000', { exact: true })).toBeVisible();
   await expect(page.getByText('추가했어요')).toHaveCount(0);
 });
@@ -217,7 +216,6 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   await expect(slots.getByRole('button')).toHaveCount(4);
   await slots.getByRole('button', { name: '취침' }).click();
   await slots.getByRole('button', { name: '아침' }).click();
-  await sheet.getByRole('button', { name: '하루 섭취량 줄이기' }).click();
   await expect(sheet.getByText('성분을 입력', { exact: false })).toHaveCount(0);
   await sheet.getByRole('textbox', { name: '직접 입력 제품명' }).fill('우리집 영양제');
   await sheet.getByRole('button', { name: '추가하기' }).click();
@@ -226,7 +224,7 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   const manual = supplementList.getByRole('button').first();
   await expect(manual).toContainText('우리집 영양제');
   await expect(manual).toContainText('성분 정보 없음');
-  await expect(manual).toContainText('1일 1정 · 취침');
+  await expect(manual).toContainText('하루 1회 · 1회 1정 · 취침');
   await expect(
     page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
   ).toBeVisible();
@@ -237,13 +235,13 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   ).toBeVisible();
 });
 
-test('목록 카드에서 하루 정수와 슬롯을 편집하면 카드와 성분 합계가 즉시 바뀐다', async ({ page }) => {
+test('목록 카드에서 회당 수량과 슬롯을 편집하면 카드와 성분 합계가 즉시 바뀐다', async ({ page }) => {
   await page.goto('/dev/supplements');
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   await supplementList.getByRole('button', { name: /오메가3/ }).click();
 
   const sheet = page.getByRole('dialog', { name: '오메가3' });
-  await expect(sheet.getByText('2 정', { exact: true })).toBeVisible();
+  await expect(sheet.getByText('1 정', { exact: true })).toBeVisible();
   const slots = sheet.getByRole('group', { name: '복용 시간' });
   await expect(slots.getByRole('button', { name: '아침' })).toHaveAttribute('aria-pressed', 'true');
   await expect(slots.getByRole('button', { name: '저녁' })).toHaveAttribute('aria-pressed', 'true');
@@ -251,7 +249,7 @@ test('목록 카드에서 하루 정수와 슬롯을 편집하면 카드와 성�
   await sheet.getByRole('button', { name: '저장' }).click();
 
   const omega = supplementList.getByRole('button', { name: /오메가3/ });
-  await expect(omega).toContainText('1일 3정 · 아침 · 점심 · 저녁');
+  await expect(omega).toContainText('하루 3회 · 1회 1정 · 아침 · 점심 · 저녁');
   await expect(page.getByText('3,500', { exact: true })).toBeVisible();
 });
 

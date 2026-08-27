@@ -27,6 +27,16 @@ class SignUpRequest(BaseModel):
         return value
 
 
+class SignUpResponse(BaseModel):
+    detail: str
+
+
+class AuthErrorResponse(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: Annotated[str, Field(min_length=8)]

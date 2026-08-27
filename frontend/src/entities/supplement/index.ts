@@ -17,5 +17,6 @@ export type {
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementSearchPage,
+  SupplementSlot,
   UpdateSupplementPayload,
 } from './types';
