@@ -16,6 +16,9 @@ class TestNotifySettingsApis(TestCase):
                 "password": "Password123!",
                 "name": "알림테스터",
                 "phone_number": "01012345678",
+                "birth_date": "1990-01-01",
+                "gender": "FEMALE",
+                "is_terms_agreed": True,
             },
         )
         assert signup_response.status_code == status.HTTP_201_CREATED
