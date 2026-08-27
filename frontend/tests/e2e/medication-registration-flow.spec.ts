@@ -392,7 +392,7 @@ test('복약 시간 저장 실패 후 같은 path와 본문으로 재시도한�
   });
 
   await page.goto('/medication-schedule?recordId=904&ocrJobId=b_mock_9f21');
-  await page.getByRole('button', { name: '기본 시간으로 건너뛰기' }).click();
+  await page.getByRole('button', { name: '알람 없이 저장' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('dialog').getByRole('button', { name: '다시 시도' }).click();
 
@@ -405,6 +405,18 @@ test('복약 시간 저장 실패 후 같은 path와 본문으로 재시도한�
   const payloads = putRequests.map((request) => JSON.parse(request.body) as Record<string, unknown>);
   expect(payloads[0]).toEqual(payloads[1]);
   expect(payloads.every((payload) => !('recordId' in payload))).toBe(true);
+  expect(payloads.every((payload) => !('isNotifyMedication' in payload))).toBe(true);
+  expect(payloads[0].mealTimes).toEqual({
+    morning: '08:00',
+    lunch: '13:00',
+    evening: '19:00',
+    bedtime: '22:00',
+  });
+  expect(
+    (payloads[0].medications as Array<{ slots: string[] }>).every(
+      (medication) => medication.slots.length > 0,
+    ),
+  ).toBe(true);
 });
 
 test('복약 시간 설정의 뒤로가기는 완료된 OCR의 4개 약 검토 화면으로 돌아간다', async ({
@@ -457,6 +469,57 @@ test('복약 시간 설정의 뒤로가기는 완료된 OCR의 4개 약 검토 �
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
   await expect(page.getByText('이미 등록된 약봉투예요')).toHaveCount(0);
+
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await expect(page).toHaveURL(
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21',
+  );
+  await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
+});
+
+test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 유지된다', async ({ page }) => {
+  await authenticate(page);
+  let confirmed = false;
+
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      confirmed = true;
+      await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
+      return;
+    }
+    await fulfillJson(route, {
+      ...readyOcrResult,
+      batchId: 'b_mock_9f21',
+      ocrStatus: confirmed ? 'complete' : 'ready_for_review',
+      medications: readyOcrResult.medications.map((medication) => ({
+        ...medication,
+        confidence: 'high',
+      })),
+      lowConfidenceCount: 0,
+    });
+  });
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/image', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+  });
+  await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
+    await fulfillJson(route, {
+      start: null,
+      mealTimes: null,
+      medications: template04ScheduleMedications,
+    });
+  });
+
+  await page.goto('/dev/ocr-review');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
+
+  await page.getByLabel('복용 시작 날짜').fill('2026-08-20');
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+
+  await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-20');
 });
 
 function expectAuthenticated(requests: CapturedRequest[]) {

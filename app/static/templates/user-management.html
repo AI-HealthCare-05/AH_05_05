@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>회원 관리</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="../css/styles.css">
-    <link rel="stylesheet" href="../css/management.css?v=20260825-2">
-    <link rel="stylesheet" href="../css/overlays.css">
+    <link rel="stylesheet" href="../css/styles.css?v=20260827-1">
+    <link rel="stylesheet" href="../css/management.css?v=20260827-1">
+    <link rel="stylesheet" href="../css/overlays.css?v=20260827-1">
     <script type="module" src="../js/navigation.js"></script>
     <script type="module" src="../js/sidebar.js?v=20260825-2"></script>
-    <script type="module" src="../js/user-management.js"></script>
+    <script type="module" src="../js/user-management.js?v=20260827-1"></script>
 </head>
 <body class="management-page flex min-h-screen">
 <!-- sidebar -->
@@ -24,7 +24,7 @@
     </header>
     <section class="p-6">
         <div class="management-toolbar flex justify-between gap-3 mb-5">
-            <div class="flex gap-3 flex-wrap"><input data-user-search class="ui-control w-60" type="search"
+            <div class="flex gap-3 flex-wrap console-filters"><input data-user-search class="ui-control" type="search"
                                                      placeholder="이름, 이메일 검색" aria-label="회원 검색"><select
                     data-user-status class="ui-control" aria-label="회원 상태">
                 <option>전체</option>
@@ -35,10 +35,9 @@
             </div>
         </div>
         <div class="management-table-wrap bg-white rounded-xl border">
-            <table class="management-table w-full text-sm">
+            <table class="management-table console-table w-full text-sm">
                 <thead class="bg-gray-50">
                 <tr>
-                    <th class="p-3">선택</th>
                     <th>회원 ID</th>
                     <th>이름</th>
                     <th>이메일</th>

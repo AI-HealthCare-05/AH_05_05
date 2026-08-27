@@ -10,9 +10,9 @@ import {
   statusValue,
   tableState,
 } from "./api.js";
-import { closeOverlay, openOverlay, showToast } from "./overlay.js";
+import { openOverlay, showToast } from "./overlay.js";
 
-const COLUMN_COUNT = 8;
+const COLUMN_COUNT = 7;
 // 화면에 페이지 이동 UI 가 없어 1페이지만 보여준다. 디자인을 바꾸지 않기 위한 선택이다.
 const PAGE_SIZE = 50;
 
@@ -35,19 +35,89 @@ export function suspendUser(users, memberId) {
 /** 화면에 그려진 현재 페이지. */
 let currentItems = [];
 
+/** 값이 없는 칸의 표기. 빈 칸으로 두면 조회가 안 된 것인지 값이 없는 것인지 구분되지 않는다. */
+const EMPTY_CELL = "-";
+
+/**
+ * 상세 패널의 상태 문구. 목록은 "활성"·"정지" 로 짧게 쓰지만 패널은 "회원"을 붙인다.
+ * 색 규칙은 목록과 같은 statusBadgeClass 를 쓴다.
+ */
+const DETAIL_STATUS_LABELS = {
+  ACTIVE: "활성 회원",
+  SUSPENDED: "정지 회원",
+  PENDING: "대기 회원",
+  WITHDRAWN: "탈퇴 회원",
+};
+
+function detailStatusLabel(status) {
+  return DETAIL_STATUS_LABELS[status] ?? statusLabel(status);
+}
+
 function rowMarkup(user) {
   const label = statusLabel(user.status);
   return `
       <tr data-member-id="${user.userId}">
-        <td><input type="checkbox" aria-label="${escapeHtml(user.name)} 선택"></td>
         <td>${user.userId}</td>
         <td><strong>${escapeHtml(user.name)}</strong></td>
         <td>${escapeHtml(user.email)}</td>
-        <td>-</td>
+        <td>${user.phone ? escapeHtml(user.phone) : EMPTY_CELL}</td>
         <td>${formatDate(user.createdAt)}</td>
         <td><span class="status-badge status-${statusBadgeClass(user.status)}">${label}</span></td>
-        <td><button class="ui-link-button" type="button" data-user-detail="${user.userId}">상세 보기</button></td>
+        <td class="flex gap-1 py-2"><button class="ui-link-button" type="button" data-user-detail="${user.userId}">상세 보기</button></td>
       </tr>`;
+}
+
+/**
+ * 회원 상세 패널을 연다.
+ *
+ * 정지에 성공하면 같은 함수를 다시 불러 새 데이터로 패널을 그린다. 배지와 버튼이
+ * 즉시 바뀌어야 하는데, openOverlay 가 열 때 이전 패널을 닫으므로 별도 정리는 없다.
+ * 목록도 함께 다시 읽는다 — 패널만 갱신하면 뒤의 목록이 옛 상태로 남는다.
+ */
+async function openUserDetail(userId, reloadList) {
+  const user = await get(`/admin/users/${userId}`);
+
+  const overlay = await openOverlay("overlay-user-detail.html", {
+    onConfirm: async () => {
+      await openOverlay("overlay-user-suspend-confirm.html", {
+        onConfirm: async () => {
+          try {
+            await patch("/admin/users/status", { userIds: [userId], status: "SUSPENDED" });
+            await reloadList();
+            await openUserDetail(userId, reloadList);
+            showToast(`${user.name} 계정을 정지했습니다.`);
+          } catch (error) {
+            const message = error instanceof ApiError ? error.message : "정지 처리에 실패했습니다.";
+            showToast(message, "error");
+          }
+        },
+      });
+    },
+  });
+
+  const badge = overlay.querySelector("[data-user-status]");
+  badge.textContent = detailStatusLabel(user.status);
+  badge.className = `status-badge status-${statusBadgeClass(user.status)}`;
+
+  overlay.querySelector("[data-user-name]").textContent = user.name;
+  overlay.querySelector("[data-user-id]").textContent = user.userId;
+  overlay.querySelector("[data-user-email]").textContent = user.email;
+  overlay.querySelector("[data-user-phone]").textContent = user.phone || EMPTY_CELL;
+  overlay.querySelector("[data-user-joined]").textContent = formatDate(user.createdAt) || EMPTY_CELL;
+
+  // 정지는 ACTIVE 인 회원에게만 걸 수 있다. 나머지 상태는 서버가 막으므로 버튼을 잠근다.
+  const suspendButton = overlay.querySelector("[data-overlay-confirm]");
+  if (user.status !== "ACTIVE") {
+    suspendButton.disabled = true;
+    if (user.status === "SUSPENDED") {
+      suspendButton.textContent = "정지됨";
+      suspendButton.title = "이미 정지된 회원입니다";
+    } else {
+      suspendButton.title = "정지할 수 있는 상태가 아닙니다";
+    }
+  }
+
+  return overlay;
 }
 
 function initializeUserManagement() {
@@ -105,29 +175,7 @@ function initializeUserManagement() {
     const userId = Number(button.dataset.userDetail);
 
     try {
-      const user = await get(`/admin/users/${userId}`);
-      const overlay = await openOverlay("overlay-user-detail.html", {
-        onConfirm: async () => {
-          await openOverlay("overlay-user-suspend-confirm.html", {
-            onConfirm: async () => {
-              try {
-                await patch("/admin/users/status", { userIds: [userId], status: "SUSPENDED" });
-                closeOverlay();
-                // 로컬 배열을 고치지 않고 서버 상태를 다시 읽는다.
-                await load();
-                showToast(`${user.name} 계정을 정지했습니다.`);
-              } catch (error) {
-                const message = error instanceof ApiError ? error.message : "정지 처리에 실패했습니다.";
-                showToast(message, "error");
-              }
-            },
-          });
-        },
-      });
-      // 오버레이에 자리가 있는 항목만 채운다. 새 항목을 만들지 않는다.
-      overlay.querySelector("[data-user-name]").textContent = user.name;
-      overlay.querySelector("[data-user-id]").textContent = user.userId;
-      overlay.querySelector("[data-user-email]").textContent = user.email;
+      await openUserDetail(userId, load);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : "회원 정보를 불러오지 못했습니다.";
       showToast(message, "error");

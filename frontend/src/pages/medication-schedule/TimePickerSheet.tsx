@@ -13,8 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/shared/ui';
-import { cn } from '@/shared/lib/cn';
-import { HOUR_OPTIONS, MINUTE_OPTIONS, TIME_PRESETS } from './timePresets';
+import { HOUR_OPTIONS, MINUTE_OPTIONS } from './timePresets';
 
 /**
  * `09-A 시간 선택` (Figma node 114:11)의 하단 시트.
@@ -22,8 +21,7 @@ import { HOUR_OPTIONS, MINUTE_OPTIONS, TIME_PRESETS } from './timePresets';
  * Figma는 시·분 휠(스크롤 피커)로 그려져 있지만, REQ-CARE-003이 "시·분 선택 박스
  * (30분 단위, 00분·30분만 선택)"라고 정하고 있어 Select로 구현했습니다.
  *
- * 프리셋 칩(아침/점심/저녁/자기 전)은 REQ에는 있는데 Figma 시트에는 빠져 있어
- * 기획 확인 후 추가했습니다. 칩을 누르면 해당 시각으로 시·분이 함께 채워집니다.
+ * 현재 저장된 시각으로 시작하고, 사용자가 시·분을 직접 고릅니다.
  */
 
 export interface TimePickerSheetProps {
@@ -66,32 +64,6 @@ export function TimePickerSheet({
           <DialogTitle>시간 선택</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-
-        <div className="flex flex-wrap gap-2">
-          {TIME_PRESETS.map((preset) => {
-            const selected = preset.time === current;
-            return (
-              <button
-                key={preset.label}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => {
-                  const [h, m] = preset.time.split(':');
-                  setHour(h);
-                  setMinute(m);
-                }}
-                className={cn(
-                  'min-h-touch rounded-pill border px-4 text-sm transition-colors',
-                  selected
-                    ? 'border-primary bg-primary-bg font-bold text-primary-strong'
-                    : 'border-border bg-card text-foreground hover:bg-muted-bg',
-                )}
-              >
-                {preset.label} {preset.time}
-              </button>
-            );
-          })}
-        </div>
 
         <div className="flex items-center gap-2">
           <Select value={hour} onValueChange={setHour}>

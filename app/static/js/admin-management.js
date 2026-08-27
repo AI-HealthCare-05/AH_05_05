@@ -47,12 +47,16 @@ export function updateAdminStatus(admins, adminId, status) {
 let currentItems = [];
 
 function rowMarkup(admin, canManage) {
-  // 역할 변경 API 가 없어 수정은 연동하지 않는다. 버튼은 남기되 비활성화한다.
+  // 되돌릴 수 없는 동작(재설정·정지)은 danger 로 갈라 둔다. 조회 동작과 같은 모양이면
+  // 옆 버튼을 잘못 누른다. 비활성 색은 CSS 의 :disabled 가 danger 위에 덮는다.
+  const suspended = admin.status === "SUSPENDED";
   const actions = canManage
     ? `<button class="ui-link-button" data-admin-action="edit" data-admin-id="${admin.adminId}" disabled
                title="역할 변경 API가 아직 없습니다">수정</button>
-       <button class="ui-link-button" data-admin-action="reset" data-admin-id="${admin.adminId}">재설정</button>
-       <button class="ui-link-button" data-admin-action="stop" data-admin-id="${admin.adminId}">정지</button>`
+       <button class="ui-link-button ui-link-button-danger" data-admin-action="reset" data-admin-id="${admin.adminId}">재설정</button>
+       <button class="ui-link-button ui-link-button-danger" data-admin-action="stop" data-admin-id="${admin.adminId}"${
+         suspended ? ' disabled title="이미 정지된 관리자입니다"' : ""
+       }>${suspended ? "정지됨" : "정지"}</button>`
     : "";
 
   return `<tr>

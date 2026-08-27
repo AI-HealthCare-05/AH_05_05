@@ -1,4 +1,12 @@
-import { expect, test } from 'playwright/test';
+import { expect, test, type Page } from 'playwright/test';
+
+async function chooseAlarmTime(page: Page, hour: string, minute: string) {
+  const sheet = page.getByRole('dialog');
+  await sheet.getByLabel('시').click();
+  await page.getByRole('option', { name: `${hour}시`, exact: true }).click();
+  await sheet.getByLabel('분').click();
+  await page.getByRole('option', { name: `${minute}분`, exact: true }).click();
+}
 
 test.setTimeout(20_000);
 
@@ -167,15 +175,90 @@ test('복용약의 알림 시간은 시간 네 개만 있는 전용 화면으로
   await expect(page.getByRole('button', { name: /저장하고|건너뛰기/ })).toHaveCount(0);
 });
 
-test('알림 시각을 고치면 즉시 저장하고 같은 화면에 남는다', async ({ page }) => {
+test('시간 선택 시트는 기본 시간 프리셋을 보여주지 않는다', async ({ page }) => {
   await page.goto('/dev/medication-alarm-times');
   await page.getByRole('button', { name: /취침약 22:30/ }).click();
-  await page.getByRole('button', { name: '취침약 22:00' }).click();
+
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('button', { name: '아침약 08:00' })).toHaveCount(0);
+  await expect(sheet.getByRole('button', { name: '점심약 13:00' })).toHaveCount(0);
+  await expect(sheet.getByRole('button', { name: '저녁약 19:00' })).toHaveCount(0);
+  await expect(sheet.getByRole('button', { name: '취침약 22:00' })).toHaveCount(0);
+});
+
+test('앞뒤 시간보다 같거나 넘어가면 팝업을 띄우고 적용하지 않는다', async ({ page }) => {
+  await page.goto('/dev/medication-alarm-times');
+  await page.getByRole('button', { name: /점심약 13:00/ }).click();
+  await chooseAlarmTime(page, '19', '00');
+  await page.getByRole('button', { name: '이 시간 적용' }).click();
+
+  await expect(page.getByRole('heading', { name: '시간을 적용할 수 없어요' })).toBeVisible();
+  await expect(
+    page.getByText('복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: '확인' }).click();
+  await expect(page.getByRole('heading', { name: '시간 선택' })).toBeVisible();
+  await page.getByRole('button', { name: '취소' }).click();
+  await expect(page.getByRole('button', { name: /점심약 13:00/ })).toBeVisible();
+  await expect(page.getByText('알림 시간을 바꿨어요.')).toHaveCount(0);
+});
+
+test('3시간 미만이어도 앞뒤 순서만 맞으면 즉시 저장한다', async ({ page }) => {
+  await page.goto('/dev/medication-alarm-times');
+  await page.getByRole('button', { name: /아침약 08:00/ }).click();
+  await chooseAlarmTime(page, '12', '30');
   await page.getByRole('button', { name: '이 시간 적용' }).click();
 
   await expect(page).toHaveURL(/\/dev\/medication-alarm-times$/);
-  await expect(page.getByRole('button', { name: /취침약 22:00/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /아침약 12:30/ })).toBeVisible();
   await expect(page.getByText('알림 시간을 바꿨어요.')).toBeVisible();
+});
+
+test('최초 복약 시간 설정에서도 순서가 겹치는 시각은 적용하지 않는다', async ({ page }) => {
+  await page.goto('/dev/medication-schedule');
+  await page.getByRole('button', { name: /점심약 13:00/ }).click();
+  await chooseAlarmTime(page, '19', '00');
+  await page.getByRole('button', { name: '이 시간 적용' }).click();
+
+  await expect(page.getByRole('heading', { name: '시간을 적용할 수 없어요' })).toBeVisible();
+  await expect(
+    page.getByText('아침약 → 점심약 → 저녁약 → 취침약 순서로 정해주세요.'),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: '확인' }).click();
+  await page.getByRole('button', { name: '취소' }).click();
+  await expect(page.getByRole('button', { name: /점심약 13:00/ })).toBeVisible();
+});
+
+test('복약 시간 설정은 약별 시간, 시작일, 알림 시각, 저장 순서로 보여준다', async ({ page }) => {
+  await page.goto('/dev/medication-schedule');
+
+  const medicationSection = page.getByText('약마다 먹는 시간을 확인해주세요', { exact: true });
+  const startSection = page.getByText('처음 약을 언제부터 드셨나요?', { exact: true });
+  const alarmSection = page.getByText('어느 시간에 알람을 드릴까요?', { exact: true });
+  const saveSection = page.getByRole('button', { name: '저장하고 계속' });
+  const positions = await Promise.all(
+    [medicationSection, startSection, alarmSection, saveSection].map(async (locator) => {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      return box!.y;
+    }),
+  );
+
+  expect(positions[0]).toBeLessThan(positions[1]);
+  expect(positions[1]).toBeLessThan(positions[2]);
+  expect(positions[2]).toBeLessThan(positions[3]);
+});
+
+test('복약 시작 시간대는 알림을 위한 필수 선택임을 표시한다', async ({ page }) => {
+  await page.goto('/dev/medication-schedule');
+
+  const startSlotGroup = page.getByRole('group', { name: '복약 시작 시간대 (필수)' });
+  await expect(startSlotGroup).toBeVisible();
+  await expect(startSlotGroup.getByRole('button')).toHaveCount(4);
+  await expect(page.getByText('필수', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('알림을 받으려면 복약 시작 시간대를 선택해주세요.', { exact: true }),
+  ).toBeVisible();
 });
 
 test('복용약 카드를 누르면 그 약의 시간대만 시트에서 바꾼다', async ({ page }) => {

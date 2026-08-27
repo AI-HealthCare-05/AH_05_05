@@ -54,6 +54,7 @@ import {
 interface ScheduleLocationState {
   recordId?: number;
   dispensedDate?: string;
+  draftStartDate?: string;
   ocrJobId?: string;
 }
 
@@ -159,6 +160,7 @@ export function MedicationSchedulePage({
   const queryOcrJobId = searchParams.get('ocrJobId')?.trim() || null;
   const recordId = state.recordId ?? queryRecordId ?? defaultRecordId ?? (scheduleOverride ? 12 : null);
   const dispensedDate = state.dispensedDate;
+  const draftStartDate = state.draftStartDate;
   const ocrJobId = state.ocrJobId ?? queryOcrJobId;
 
   const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
@@ -166,6 +168,7 @@ export function MedicationSchedulePage({
   /** medicationId → 시간대 */
   const [slots, setSlots] = useState<Record<number, MealSlot[]>>({});
   const [startDate, setStartDate] = useState('');
+  const [startDateEdited, setStartDateEdited] = useState(draftStartDate !== undefined);
   const [startSlot, setStartSlot] = useState<MealSlot | null>(null);
   /** 시각 편집 대상 시간대 */
   const [editingSlot, setEditingSlot] = useState<MealSlot | null>(null);
@@ -180,13 +183,15 @@ export function MedicationSchedulePage({
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState(false);
   const [savedMealTimes, setSavedMealTimes] = useState<MealTimes | null>(null);
+  const [timeOrderError, setTimeOrderError] = useState(false);
 
   useEffect(() => {
     const applySchedule = (data: MedicationSchedule) => {
       setSchedule(data);
       setMealTimes(data.mealTimes ?? DEFAULT_MEAL_TIMES);
       // 저장값 우선. 최초 등록이면 바로 전 화면에서 확인한 조제일을 채워 사용자가 고칩니다.
-      setStartDate(data.start?.date ?? dispensedDate ?? todayISO());
+      setStartDate(data.start?.date ?? draftStartDate ?? dispensedDate ?? todayISO());
+      setStartDateEdited(data.start === null && draftStartDate !== undefined);
       setStartSlot(data.start?.slot ?? null);
 
       const next: Record<number, MealSlot[]> = {};
@@ -219,7 +224,7 @@ export function MedicationSchedulePage({
     return () => {
       cancelled = true;
     };
-  }, [dispensedDate, recordId, scheduleOverride]);
+  }, [dispensedDate, draftStartDate, recordId, scheduleOverride]);
 
   /** 토글. SLOT_ORDER 순서를 유지해 담습니다 — 클릭 순서대로 쌓으면 재진입 시 표시가 흔들립니다. */
   function toggleSlot(medicationId: number, slot: MealSlot) {
@@ -237,7 +242,12 @@ export function MedicationSchedulePage({
 
   function applyTime(time: string) {
     if (!editingSlot) return;
-    setMealTimes((prev) => ({ ...prev, [editingSlot]: time }));
+    const nextMealTimes = { ...mealTimes, [editingSlot]: time };
+    if (!isMealTimeOrderValid(nextMealTimes)) {
+      setTimeOrderError(true);
+      return;
+    }
+    setMealTimes(nextMealTimes);
     setEditingSlot(null);
   }
 
@@ -414,7 +424,13 @@ export function MedicationSchedulePage({
         recordId: String(recordId),
         mode: 'confirmed',
       });
-      navigate(`/ocr-review?${params.toString()}`, { replace: true });
+      navigate(`/ocr-review?${params.toString()}`, {
+        replace: true,
+        state: {
+          batchId: ocrJobId,
+          ...(startDateEdited ? { scheduleStartDate: startDate } : {}),
+        },
+      });
       return;
     }
     navigate(-1);
@@ -491,7 +507,7 @@ export function MedicationSchedulePage({
           tone: 'error',
         }
       : !startSlot
-        ? { message: '처음 약을 드신 시간을 선택해주세요.', tone: 'info' }
+        ? { message: '알림을 받으려면 복약 시작 시간대를 선택해주세요.', tone: 'info' }
         : null;
 
   const blocker: Blocker | null =
@@ -509,104 +525,7 @@ export function MedicationSchedulePage({
       <Header title="복약 시간 설정" onBack={handleBack} />
 
       <main className="flex flex-1 flex-col gap-5 px-page-x py-4">
-        {/* [1] 시간대 카드 — 화면의 주인공 */}
-        <div className="flex flex-col gap-2">
-          <p className="text-base font-bold text-foreground">어느 시간에 알람을 드릴까요?</p>
-          <div className="overflow-hidden rounded-card border border-border bg-card">
-            {MEAL_SLOTS.map((slot, index) => {
-              const unused = !usedSlots.has(slot.value);
-              return (
-                <button
-                  key={slot.value}
-                  type="button"
-                  onClick={() => setEditingSlot(slot.value)}
-                  className={cn(
-                    'flex min-h-touch w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-muted-bg',
-                    index > 0 && 'border-t border-border',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'w-16 shrink-0 text-sm font-bold',
-                      unused ? 'text-disabled-foreground' : 'text-foreground',
-                    )}
-                  >
-                    {slot.label}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-base',
-                      unused ? 'text-disabled-foreground' : 'text-foreground',
-                    )}
-                  >
-                    {mealTimes[slot.value]}
-                  </span>
-                  {unused && (
-                    <span className="text-sm text-disabled-foreground">이 시간에 먹는 약 없음</span>
-                  )}
-                  <span aria-hidden className="ml-auto text-muted-foreground">
-                    ›
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {!orderValid && (
-            <p className="text-sm text-danger-strong">
-              아침약 → 점심약 → 저녁약 → 취침약 순서로 정해주세요.
-            </p>
-          )}
-        </div>
-
-        {/* [2] 복용 시작 시점 — 날짜와 시간대를 직접 고릅니다 */}
-        <div className="flex flex-col gap-2">
-          <p className="text-base font-bold text-foreground">처음 약을 언제부터 드셨나요?</p>
-          {/*
-            min·max 는 달력 UI와 :invalid 상태만 제한합니다. 키보드로 넣은 범위 밖 값은
-            그대로 올라오므로 blocker(→ canSave)에서 같은 조건을 한 번 더 검사합니다.
-          */}
-          <Input
-            aria-label="복용 시작 날짜"
-            type="date"
-            min={minDate}
-            max={maxDate}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            onClick={openDatePicker}
-          />
-          <div className="flex flex-wrap gap-2">
-            {MEAL_SLOTS.map((slot) => {
-              const selected = slot.value === startSlot;
-              return (
-                <button
-                  key={slot.value}
-                  type="button"
-                  aria-pressed={selected}
-                  aria-label={`시작 ${slot.label}`}
-                  onClick={() => setStartSlot(slot.value)}
-                  className={cn(
-                    'min-h-touch rounded-pill border px-4 text-sm transition-colors',
-                    selected
-                      ? 'border-primary bg-primary-bg font-bold text-primary-strong'
-                      : 'border-border bg-card text-foreground hover:bg-muted-bg',
-                  )}
-                >
-                  {slot.label}
-                </button>
-              );
-            })}
-          </div>
-          {/* 문구는 blocker 한 곳에서만 만듭니다. 두 벌로 두면 한쪽만 고쳐지는 날이 옵니다. */}
-          {startPointBlocker ? (
-            <p className={blockerClass(startPointBlocker.tone)}>{startPointBlocker.message}</p>
-          ) : startDate && startSlot ? (
-            <p className="text-sm text-muted-foreground">
-              {formatStartPoint(startDate, startSlot)}부터 복용을 시작한 것으로 기록합니다.
-            </p>
-          ) : null}
-        </div>
-
-        {/* [3] 자동 배정 여부와 무관하게 모든 정기약의 시간대를 보여줍니다. */}
+        {/* [1] 자동 배정 여부와 무관하게 모든 정기약의 시간대를 보여줍니다. */}
         {scheduledMeds.length > 0 && (
           <section aria-label="약별 복용 시간 확인" className="flex flex-col gap-2">
             <div>
@@ -675,6 +594,108 @@ export function MedicationSchedulePage({
           </section>
         )}
 
+        {/* [2] 복용 시작 시점 — 날짜와 시간대를 직접 고릅니다 */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <p className="text-base font-bold text-foreground">처음 약을 언제부터 드셨나요?</p>
+            <span className="text-sm font-bold text-danger-strong">필수</span>
+          </div>
+          {/*
+            min·max 는 달력 UI와 :invalid 상태만 제한합니다. 키보드로 넣은 범위 밖 값은
+            그대로 올라오므로 blocker(→ canSave)에서 같은 조건을 한 번 더 검사합니다.
+          */}
+          <Input
+            aria-label="복용 시작 날짜"
+            type="date"
+            min={minDate}
+            max={maxDate}
+            value={startDate}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              setStartDateEdited(true);
+            }}
+            onClick={openDatePicker}
+          />
+          <div
+            role="group"
+            aria-label="복약 시작 시간대 (필수)"
+            className="flex flex-wrap gap-2"
+          >
+            {MEAL_SLOTS.map((slot) => {
+              const selected = slot.value === startSlot;
+              return (
+                <button
+                  key={slot.value}
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={`시작 ${slot.label}`}
+                  onClick={() => setStartSlot(slot.value)}
+                  className={cn(
+                    'min-h-touch rounded-pill border px-4 text-sm transition-colors',
+                    selected
+                      ? 'border-primary bg-primary-bg font-bold text-primary-strong'
+                      : 'border-border bg-card text-foreground hover:bg-muted-bg',
+                  )}
+                >
+                  {slot.label}
+                </button>
+              );
+            })}
+          </div>
+          {/* 문구는 blocker 한 곳에서만 만듭니다. 두 벌로 두면 한쪽만 고쳐지는 날이 옵니다. */}
+          {startPointBlocker ? (
+            <p className={blockerClass(startPointBlocker.tone)}>{startPointBlocker.message}</p>
+          ) : startDate && startSlot ? (
+            <p className="text-sm text-muted-foreground">
+              {formatStartPoint(startDate, startSlot)}부터 복용을 시작한 것으로 기록합니다.
+            </p>
+          ) : null}
+        </div>
+
+        {/* [3] 시간대 카드 */}
+        <div className="flex flex-col gap-2">
+          <p className="text-base font-bold text-foreground">어느 시간에 알람을 드릴까요?</p>
+          <div className="overflow-hidden rounded-card border border-border bg-card">
+            {MEAL_SLOTS.map((slot, index) => {
+              const unused = !usedSlots.has(slot.value);
+              return (
+                <button
+                  key={slot.value}
+                  type="button"
+                  onClick={() => setEditingSlot(slot.value)}
+                  className={cn(
+                    'flex min-h-touch w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-muted-bg',
+                    index > 0 && 'border-t border-border',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'w-16 shrink-0 text-sm font-bold',
+                      unused ? 'text-disabled-foreground' : 'text-foreground',
+                    )}
+                  >
+                    {slot.label}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-base',
+                      unused ? 'text-disabled-foreground' : 'text-foreground',
+                    )}
+                  >
+                    {mealTimes[slot.value]}
+                  </span>
+                  {unused && (
+                    <span className="text-sm text-disabled-foreground">이 시간에 먹는 약 없음</span>
+                  )}
+                  <span aria-hidden className="ml-auto text-muted-foreground">
+                    ›
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <p className="text-sm text-muted-foreground">
           저장한 시간에 알림을 보내요. 나중에 복용약 화면에서 바꿀 수 있어요.
         </p>
@@ -686,7 +707,7 @@ export function MedicationSchedulePage({
             {saving ? '저장 중...' : '저장하고 계속'}
           </Button>
           <Button variant="secondary" onClick={handleSkip} disabled={saving}>
-            기본 시간으로 건너뛰기
+            알람 없이 저장
           </Button>
         </div>
       </main>
@@ -727,6 +748,13 @@ export function MedicationSchedulePage({
         value={editingSlot ? mealTimes[editingSlot] : '08:00'}
         onApply={applyTime}
         onCancel={() => setEditingSlot(null)}
+      />
+      <ErrorDialog
+        open={timeOrderError}
+        title="시간을 적용할 수 없어요"
+        message="복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요."
+        retryLabel="확인"
+        onRetry={() => setTimeOrderError(false)}
       />
     </div>
   );

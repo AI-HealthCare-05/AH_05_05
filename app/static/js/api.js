@@ -192,9 +192,22 @@ export function roleValue(label) {
   return Object.keys(ROLE_LABELS).find((key) => ROLE_LABELS[key] === label) ?? "";
 }
 
-/** 상태 배지 CSS 클래스. 기존 화면이 active/stopped 두 가지만 쓴다. */
+/**
+ * 상태 배지 CSS 클래스.
+ *
+ * 정지는 회색(stopped)을 유지한다. 오류가 아니라 관리자가 의도적으로 만든 정상 상태이고,
+ * 같은 화면에서 파괴적 동작 버튼이 빨강을 쓰므로 배지까지 빨강이면 뜻이 겹친다.
+ * 대기(PENDING)만 호박색으로 떼어내 "조치가 남았다"를 구분한다.
+ * WITHDRAWN 처럼 화면에서 따로 다루지 않는 값은 기존대로 회색으로 떨어뜨린다.
+ */
+const STATUS_BADGE_CLASSES = {
+  ACTIVE: "active",
+  SUSPENDED: "stopped",
+  PENDING: "processing",
+};
+
 export function statusBadgeClass(value) {
-  return value === "ACTIVE" ? "active" : "stopped";
+  return STATUS_BADGE_CLASSES[value] ?? "stopped";
 }
 
 /** ISO datetime -> 화면 표기(2024.11.02). 기존 목 데이터 형식을 유지한다. */
