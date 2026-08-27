@@ -29,6 +29,7 @@ import { MedicationEditDialog } from './MedicationEditDialog';
 interface OcrReviewLocationState {
   batchId?: string;
   file?: File;
+  scheduleStartDate?: string;
 }
 
 type ReadingStage = 'uploading' | 'reading' | 'organizing' | 'complete';
@@ -193,7 +194,12 @@ export function OcrReviewPage() {
             }
             navigate(`${location.pathname}${location.search}`, {
               replace: true,
-              state: { batchId },
+              state: {
+                batchId,
+                ...(state.scheduleStartDate !== undefined
+                  ? { scheduleStartDate: state.scheduleStartDate }
+                  : {}),
+              },
             });
           }, 400);
           return;
@@ -364,7 +370,17 @@ export function OcrReviewPage() {
         }).toString()}`
       : null;
   const returnToSchedule = () => {
-    if (scheduleReturnUrl) navigate(scheduleReturnUrl, { replace: true });
+    if (!scheduleReturnUrl) return;
+    navigate(scheduleReturnUrl, {
+      replace: true,
+      state: {
+        dispensedDate,
+        ocrJobId: batchId ?? undefined,
+        ...(state.scheduleStartDate !== undefined
+          ? { draftStartDate: state.scheduleStartDate }
+          : {}),
+      },
+    });
   };
 
   return (
