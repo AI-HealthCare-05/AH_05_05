@@ -33,6 +33,12 @@ class TestTemporaryPasswordMail:
 
 class TestConsoleEmailBackend:
     def test_logs_message_body(self, caplog: object) -> None:
+        """백엔드가 본문을 로그로 만든다는 것만 확인한다.
+
+        **caplog.at_level 로 대상 로거 레벨을 강제하므로 root 전파는 검증하지 않는다.**
+        root 가 WARNING 이라 실제로는 아무것도 출력되지 않던 시절에도 이 테스트는 통과했다.
+        실운영 경로 재현은 app/tests/test_root_logging.py 가 맡는다 (#137).
+        """
         message = EmailMessage(to="jisu@ozcoding.ai", subject="제목", body="본문 Temp1234!")
 
         with caplog.at_level(logging.INFO, logger="app.core.email.backends"):  # type: ignore[attr-defined]

@@ -33,6 +33,10 @@ class Config(BaseSettings):
     DB_CONNECTION_POOL_MAXSIZE: int = 10
     DB_QUERY_LOG_ENABLED: bool = False
 
+    # root 로거 레벨. uvicorn 은 uvicorn* 로거만 설정하고 root 는 그대로 두기 때문에
+    # 이 값을 반영해 주지 않으면 앱 코드의 logger.info 가 전부 버려진다.
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
