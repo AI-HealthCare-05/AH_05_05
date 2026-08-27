@@ -9,6 +9,9 @@ export type { InputProps } from './Input';
 
 export { GenderRadioGroup } from './GenderRadioGroup';
 
+export { DoseSlotFields } from './DoseSlotFields';
+export type { DoseSlotFieldsProps } from './DoseSlotFields';
+
 export { StatusBadge } from './StatusBadge';
 export type { StatusBadgeProps, StatusBadgeType } from './StatusBadge';
 
