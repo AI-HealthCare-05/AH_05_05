@@ -23,7 +23,7 @@
     <header class="bg-white h-16 px-6 flex items-center border-b"><h1 class="text-xl font-semibold">관리자 관리</h1></header>
     <section class="p-6">
         <div class="management-toolbar flex justify-between gap-3 mb-5">
-            <div class="flex gap-3 flex-wrap"><input data-admin-search class="ui-control" type="search"
+            <div class="flex gap-3 flex-wrap console-filters"><input data-admin-search class="ui-control" type="search"
                                                      placeholder="이름, 이메일 검색" aria-label="관리자 검색"><select
                     data-admin-role class="ui-control" aria-label="권한 역할">
                 <option>전체</option>
@@ -41,7 +41,7 @@
             </div>
         </div>
         <div class="management-table-wrap bg-white rounded-xl border">
-            <table class="management-table w-full text-sm">
+            <table class="management-table console-table w-full text-sm">
                 <thead class="bg-gray-50">
                 <tr>
                     <th>관리자 ID</th>

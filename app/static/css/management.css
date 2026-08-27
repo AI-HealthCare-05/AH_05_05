@@ -34,6 +34,17 @@
   border-color: #e5e7eb;
 }
 .ui-button:disabled:hover, .ui-link-button:disabled:hover { background: #f3f4f6; }
+/* 회원 관리·관리자 관리 공통 정렬.
+   작업 모니터링은 필터 구성이 달라(조회 기간 등) 이 규칙을 쓰지 않는다. */
+.console-filters .ui-control[type="search"] { width: 240px; }
+/* select 는 옵션 길이만큼 늘어난다. 그대로 두면 "최고 관리자" 가 있는 관리자 관리만 넓어진다.
+   가장 긴 옵션의 실측 폭(127px)에 여유를 둔 값이다. */
+.console-filters select.ui-control { width: 140px; }
+/* "관리자 ID" 가 "회원 ID" 보다 길어 첫 열이 넓어지면 뒤 열이 통째로 밀린다.
+   앞 두 열을 같은 폭으로 고정해 이름·이메일이 두 화면에서 같은 자리에서 시작하게 한다.
+   이메일은 남는 공간을 가져간다. 뒤쪽 열은 화면마다 달라 맞추지 않는다. */
+.console-table th:nth-child(1) { width: 140px; }
+.console-table th:nth-child(2) { width: 200px; }
 .management-table-wrap { overflow: auto; }
 .management-table tbody tr { transition: background .15s; }
 .management-table tbody tr:hover { background: rgba(28,100,242,.035); }
