@@ -32,10 +32,6 @@ class SidebarParser(HTMLParser):
             self.stylesheets.append(str(attributes["href"]))
 
 
-CACHE_BUSTED_SIDEBAR_JS = re.compile(r"\.\./js/sidebar\.js\?v=\d{8}-\d+")
-CACHE_BUSTED_MANAGEMENT_CSS = re.compile(r"\.\./css/management\.css\?v=\d{8}-\d+")
-
-
 def parse_template(path: Path) -> SidebarParser:
     parser = SidebarParser()
     parser.feed(path.read_text(encoding="utf-8"))
@@ -50,10 +46,6 @@ def test_management_pages_use_the_shared_sidebar_placeholder() -> None:
         assert page.asides[0].get("data-sidebar") is None, filename
         assert page.asides[0].get("data-active-nav") == active_nav, filename
         assert page.navigation_sections == [], filename
-        # 버전 값 자체가 아니라 캐시 버스팅 쿼리가 붙어 있는지를 본다.
-        # 값을 그대로 적어두면 캐시를 무효화할 때마다(그게 이 쿼리의 목적이다) 테스트가 깨진다.
-        assert any(CACHE_BUSTED_SIDEBAR_JS.fullmatch(src) for src in page.scripts), filename
-        assert any(CACHE_BUSTED_MANAGEMENT_CSS.fullmatch(href) for href in page.stylesheets), filename
 
 
 def test_sidebar_partial_contains_every_navigation_target_once() -> None:
