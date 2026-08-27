@@ -44,6 +44,21 @@ export interface SupplementSearchPage {
   nextOffset: number | null;
 }
 
+export interface SupplementRankingItem {
+  rank: number;
+  productId: string;
+  productName: string;
+  registeredCount: number;
+  alreadyRegistered: boolean;
+}
+
+export interface SupplementRanking {
+  /** 서버가 집계 기준을 설명하는 문장. 화면에서 그대로 표시합니다. */
+  basis: string;
+  periodDays: number;
+  items: SupplementRankingItem[];
+}
+
 export interface SearchSupplementProductsParams {
   query: string;
   offset?: number;

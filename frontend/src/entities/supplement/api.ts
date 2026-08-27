@@ -4,6 +4,7 @@ import {
   mockAddSupplement,
   mockSearchSupplementProducts,
   mockStopSupplement,
+  mockSupplementRanking,
   mockSupplements,
   mockUpdateSupplement,
 } from './api.mock';
@@ -11,6 +12,7 @@ import type {
   AddSupplementPayload,
   SearchSupplementProductsParams,
   Supplement,
+  SupplementRanking,
   SupplementSearchPage,
   UpdateSupplementPayload,
 } from './types';
@@ -21,6 +23,14 @@ export async function getSupplements(): Promise<Supplement[]> {
     return mockSupplements();
   }
   return http.get<Supplement[]>('/supplements');
+}
+
+export async function getSupplementRanking(limit = 5): Promise<SupplementRanking> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockSupplementRanking(limit);
+  }
+  return http.get<SupplementRanking>(`/v1/supplements/ranking?limit=${limit}`);
 }
 
 export async function addSupplement(payload: AddSupplementPayload): Promise<Supplement> {

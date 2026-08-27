@@ -4,6 +4,8 @@ import type {
   Supplement,
   SupplementNutrientAmount,
   SupplementProduct,
+  SupplementRanking,
+  SupplementRankingItem,
   SupplementSearchPage,
   UpdateSupplementPayload,
 } from './types';
@@ -74,6 +76,52 @@ const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
   product('sp-023', '대상웰라이프 뉴케어 멀티비타민', '뉴케어', '대상웰라이프', '60정', 1),
   product('sp-024', '풀무원 그린체 멀티비타민', '그린체', '풀무원건강생활', '60정', 2),
 ];
+
+const SUPPLEMENT_RANKING_ITEMS: SupplementRankingItem[] = [
+  {
+    rank: 1,
+    productId: 'P00123',
+    productName: '오메가3',
+    registeredCount: 1240,
+    alreadyRegistered: false,
+  },
+  {
+    rank: 2,
+    productId: 'P00456',
+    productName: '종합비타민',
+    registeredCount: 980,
+    alreadyRegistered: false,
+  },
+  {
+    rank: 3,
+    productId: 'P00777',
+    productName: '비타민D',
+    registeredCount: 870,
+    alreadyRegistered: true,
+  },
+  {
+    rank: 4,
+    productId: 'P00901',
+    productName: '마그네슘',
+    registeredCount: 760,
+    alreadyRegistered: false,
+  },
+  {
+    rank: 5,
+    productId: 'P01111',
+    productName: '유산균',
+    registeredCount: 650,
+    alreadyRegistered: false,
+  },
+];
+
+export function mockSupplementRanking(limit = 5): SupplementRanking {
+  return {
+    basis: '최근 7일 등록 수',
+    periodDays: 7,
+    items: SUPPLEMENT_RANKING_ITEMS.slice(0, limit).map((item) => ({ ...item })),
+  };
+}
 
 function normalized(value: string): string {
   return value.toLocaleLowerCase('ko-KR').replace(/\s+/g, '');

@@ -230,7 +230,7 @@ export function HomePage({
       )}
 
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
-        <PokeFeatureCarousel autoAdvanceMs={3_000} />
+        <PokeFeatureCarousel autoAdvanceMs={3_000} size="compact" />
 
         {isAuthenticated ? (
           medicationLoadError || doseLoadError ? (
