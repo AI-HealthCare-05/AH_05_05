@@ -1,10 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import EmailStr
 
 from app.core import config
-from app.models.enums import AccountStatus
+from app.models.enums import AccountStatus, Gender
 from app.models.users import User
 
 ALLOWED_UPDATE_FIELDS = ["name", "email", "phone"]
@@ -27,6 +27,8 @@ class UserRepository:
         hashed_password: str,
         name: str,
         phone: str,
+        birth_date: date,
+        gender: Gender,
         *,
         status: AccountStatus = AccountStatus.ACTIVE,
     ) -> User:
@@ -35,6 +37,8 @@ class UserRepository:
             hashed_password=hashed_password,
             name=name,
             phone=phone,
+            birth_date=birth_date,
+            gender=gender,
             status=status,
         )
 
