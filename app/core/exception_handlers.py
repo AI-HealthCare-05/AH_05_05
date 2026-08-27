@@ -16,9 +16,12 @@ _VALUE_ERROR_PREFIX = "Value error, "
 
 async def app_error_handler(request: Request, exc: Exception) -> ORJSONResponse:
     error = exc if isinstance(exc, AppError) else AppError()
+    content: dict[str, Any] = {"code": error.code, "message": error.message}
+    if error.field is not None:
+        content["field"] = error.field
     return ORJSONResponse(
         status_code=error.status_code,
-        content={"code": error.code, "message": error.message},
+        content=content,
     )
 
 
