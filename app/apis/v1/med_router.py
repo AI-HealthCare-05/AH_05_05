@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.dependencies.security import get_request_user
 from app.dtos.nutrient_standards import NutrientStandardListResponse, NutrientStandardResponse
-from app.dtos.supplement_nutrients import SupplementNutrientListResponse, SupplementNutrientResponse
+from app.dtos.supplement_nutrients import (
+    PopularSupplementNutrientResponse,
+    SupplementNutrientListResponse,
+    SupplementNutrientResponse,
+)
 from app.dtos.user_supplement_nutrients import (
     UserSupplementNutrientListResponse,
     UserSupplementNutrientResponse,
@@ -75,6 +79,20 @@ async def search_supplement_nutrients(
         offset=offset,
         limit=limit,
     )
+
+
+@med_router.get(
+    "/nutr/popular",
+    response_model=list[PopularSupplementNutrientResponse],
+    summary="현재 가장 많이 복용 중인 영양제 조회",
+)
+async def list_popular_supplement_nutrients(
+    _user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
+) -> list[PopularSupplementNutrientResponse]:
+    """현재 복용 중인 사용자 수가 많은 영양제 상위 5개의 ID와 이름을 조회한다."""
+    products = await service.list_popular()
+    return [PopularSupplementNutrientResponse(id=product.id, name=product.name) for product in products]
 
 
 @med_router.get(

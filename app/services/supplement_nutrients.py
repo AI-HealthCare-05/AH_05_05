@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from fastapi import HTTPException, status
 
+from app.core import config
 from app.models.supplement_nutrients import SupplementNutrient
 from app.repositories.supplement_nutrient_repository import SupplementNutrientRepository
 
@@ -31,3 +34,6 @@ class SupplementNutrientService:
                 detail="Supplement nutrient not found.",
             )
         return product
+
+    async def list_popular(self, *, limit: int = 5) -> list[SupplementNutrient]:
+        return await self.repository.list_popular(datetime.now(config.TIMEZONE).date(), limit=limit)

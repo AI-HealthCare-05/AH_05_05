@@ -9,6 +9,7 @@ PAGE_ACTIVE_NAV = {
     "user-management.html": "users",
     "screen-4-admin-management.html": "admins",
     "screen-5-task-management.html": "tasks",
+    "supplement-ranking.html": "supplement-ranking",
 }
 
 
@@ -46,13 +47,15 @@ def test_management_pages_use_the_shared_sidebar_placeholder() -> None:
         assert page.asides[0].get("data-sidebar") is None, filename
         assert page.asides[0].get("data-active-nav") == active_nav, filename
         assert page.navigation_sections == [], filename
+        assert any(script.startswith("../js/sidebar.js?v=") for script in page.scripts), filename
+        assert any(stylesheet.startswith("../css/management.css?v=") for stylesheet in page.stylesheets), filename
 
 
 def test_sidebar_partial_contains_every_navigation_target_once() -> None:
     sidebar = parse_template(TEMPLATE_DIR / "partials" / "sidebar.html")
 
     assert len(sidebar.asides) == 1
-    assert sidebar.navigation_sections == ["dashboard", "users", "admins", "tasks", "logout"]
+    assert sidebar.navigation_sections == ["dashboard", "users", "admins", "tasks", "supplement-ranking", "logout"]
 
 
 def test_active_sidebar_link_uses_reference_colors_and_bold_weight() -> None:

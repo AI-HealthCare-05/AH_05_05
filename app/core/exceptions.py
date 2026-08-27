@@ -44,6 +44,24 @@ class UserNotFoundError(AppError):
     message = "사용자를 찾을 수 없습니다."
 
 
+class SupplementRankDisplayNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "SUPPLEMENT_RANK_DISPLAY_NOT_FOUND"
+    message = "영양제 랭킹 전시를 찾을 수 없습니다."
+
+
+class SupplementRankPeriodConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "SUPPLEMENT_RANK_PERIOD_CONFLICT"
+    message = "활성화된 영양제 랭킹 전시 기간이 겹칩니다."
+
+
+class SupplementNutrientNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "SUPPLEMENT_NUTRIENT_NOT_FOUND"
+    message = "등록할 영양제 정보를 찾을 수 없습니다."
+
+
 class InvalidCredentialsError(AppError):
     """이메일 열거를 막기 위해 계정 없음과 비밀번호 불일치를 구분하지 않는다."""
 
