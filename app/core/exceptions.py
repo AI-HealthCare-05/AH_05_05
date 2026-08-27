@@ -12,6 +12,7 @@ class AppError(Exception):
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "INTERNAL_ERROR"
     message: str = "서버에서 알 수 없는 오류가 발생했습니다."
+    field: str | None = None
 
     def __init__(self, message: str | None = None) -> None:
         if message is not None:
@@ -85,6 +86,13 @@ class EmailAlreadyExistsError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "EMAIL_ALREADY_EXISTS"
     message = "이미 등록된 이메일입니다."
+
+
+class SignupEmailAlreadyExistsError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "EMAIL_ALREADY_EXISTS"
+    message = "이미 사용중인 이메일입니다."
+    field = "email"
 
 
 class CannotResetSuspendedError(AppError):

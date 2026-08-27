@@ -28,6 +28,9 @@ class TestJWTTokenRefreshAPI(TestCase):
             "password": "Password123!",
             "name": "리프레시테스터",
             "phone_number": "01099998888",
+            "birth_date": "1990-01-01",
+            "gender": "FEMALE",
+            "is_terms_agreed": True,
         }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await client.post("/api/v1/auth/signup", json=signup_data)

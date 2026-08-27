@@ -98,11 +98,16 @@ def test_user_matches_merged_account_schema() -> None:
         "status",
         "name",
         "phone",
+        "birth_date",
+        "gender",
         "created_at",
         "updated_at",
     }
     assert user_model._meta.fields_map["email"].unique is True
     assert user_model._meta.fields_map["status"].default == enums.AccountStatus.PENDING
+    assert user_model._meta.fields_map["birth_date"].null is True
+    assert user_model._meta.fields_map["gender"].null is True
+    assert user_model._meta.fields_map["gender"].enum_type is enums.Gender
 
 
 def test_user_settings_are_one_to_one_and_have_default_times() -> None:
