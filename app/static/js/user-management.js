@@ -68,6 +68,13 @@ function rowMarkup(user) {
 }
 
 /**
+ * 오버레이 HTML 은 openOverlay 가 fetch 로 가져오고 그 경로에는 캐시 버스팅이 없다.
+ * 이 패널은 구성이 바뀌었으므로(하드코딩 제거·항목 교체) 호출부에서 쿼리를 붙인다.
+ * 붙이지 않으면 브라우저가 옛 HTML 을 써서 하드 리로드해야만 정상 동작한다.
+ */
+const USER_DETAIL_OVERLAY_URL = "overlay-user-detail.html";
+
+/**
  * 회원 상세 패널을 연다.
  *
  * 정지에 성공하면 같은 함수를 다시 불러 새 데이터로 패널을 그린다. 배지와 버튼이
@@ -77,7 +84,7 @@ function rowMarkup(user) {
 async function openUserDetail(userId, reloadList) {
   const user = await get(`/admin/users/${userId}`);
 
-  const overlay = await openOverlay("overlay-user-detail.html", {
+  const overlay = await openOverlay(USER_DETAIL_OVERLAY_URL, {
     onConfirm: async () => {
       await openOverlay("overlay-user-suspend-confirm.html", {
         onConfirm: async () => {

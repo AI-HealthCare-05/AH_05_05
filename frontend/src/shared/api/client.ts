@@ -99,14 +99,35 @@ async function toApiError(res: Response): Promise<ApiError> {
   let message = FALLBACK_MESSAGE;
   let field: string | undefined;
   try {
-    const body = (await res.json()) as { code?: string; message?: string; field?: string };
+    const body = (await res.json()) as {
+      code?: string;
+      message?: string;
+      detail?: unknown;
+      field?: string;
+    };
     if (body.code) code = body.code;
     if (body.message) message = body.message;
+    else {
+      const detailMessage = apiDetailMessage(body.detail);
+      if (detailMessage) message = detailMessage;
+    }
     if (body.field) field = body.field;
   } catch {
     // 본문이 JSON이 아니면 기본 문구를 씁니다.
   }
   return new ApiError(res.status, code, message, field);
+}
+
+function apiDetailMessage(detail: unknown): string | null {
+  if (typeof detail === 'string') return detail.trim() || null;
+  const entries = Array.isArray(detail) ? detail : [detail];
+  const messages = entries.flatMap((entry) => {
+    if (typeof entry === 'string') return entry.trim() ? [entry.trim()] : [];
+    if (entry === null || typeof entry !== 'object' || !('msg' in entry)) return [];
+    const message = (entry as { msg?: unknown }).msg;
+    return typeof message === 'string' && message.trim() ? [message.trim()] : [];
+  });
+  return messages.length > 0 ? messages.join('\n') : null;
 }
 
 async function request<T>(

@@ -14,17 +14,32 @@ import type {
   UpdateAccountProfilePayload,
 } from './types';
 
-export async function createAccount(payload: CreateAccountPayload): Promise<AccountProfile> {
+interface SignupResponseBody {
+  detail: string;
+}
+
+export async function createAccount(payload: CreateAccountPayload): Promise<void> {
   const normalizedPayload = {
     ...payload,
+    email: payload.email.trim(),
     name: payload.name.trim(),
     phoneNumber: normalizePhoneNumber(payload.phoneNumber),
   };
   if (USE_MOCK) {
     await mockDelay();
-    return mockCreateAccount(normalizedPayload);
+    mockCreateAccount(normalizedPayload);
+    return;
   }
-  return http.post<AccountProfile>('/v1/accounts', normalizedPayload);
+  await http.post<SignupResponseBody>('/v1/auth/signup', {
+    email: normalizedPayload.email,
+    password: normalizedPayload.password,
+    name: normalizedPayload.name,
+    phone_number: normalizedPayload.phoneNumber,
+    birth_date: normalizedPayload.birthDate,
+    gender: normalizedPayload.gender === 'male' ? 'MALE' : 'FEMALE',
+    // AuthPage는 두 필수 동의가 모두 체크된 경우에만 createAccount를 호출합니다.
+    is_terms_agreed: true,
+  });
 }
 
 export async function getMyProfile(): Promise<AccountProfile> {

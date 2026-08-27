@@ -12,6 +12,7 @@ class AppError(Exception):
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "INTERNAL_ERROR"
     message: str = "서버에서 알 수 없는 오류가 발생했습니다."
+    field: str | None = None
 
     def __init__(self, message: str | None = None) -> None:
         if message is not None:
@@ -105,6 +106,13 @@ class EmailAlreadyExistsError(AppError):
     message = "이미 등록된 이메일입니다."
 
 
+class SignupEmailAlreadyExistsError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "EMAIL_ALREADY_EXISTS"
+    message = "이미 사용중인 이메일입니다."
+    field = "email"
+
+
 class CannotResetSuspendedError(AppError):
     """정지를 풀지 않고 비밀번호만 재발급하면 정지가 무의미해진다."""
 
@@ -135,6 +143,36 @@ class CannotSuspendSelfError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "CANNOT_SUSPEND_SELF"
     message = "본인 계정은 정지할 수 없습니다."
+
+
+class CannotChangeOwnRoleError(AppError):
+    """본인 역할 변경을 막는다.
+
+    권한 검사가 매 요청 DB 를 보므로 스스로를 STAFF 로 낮추면 그 즉시 ADMIN 전용 API 에
+    접근할 수 없다. 되돌릴 API 도 그 안에 있어 복구 수단이 없다.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_CHANGE_OWN_ROLE"
+    message = "본인 역할은 변경할 수 없습니다."
+
+
+class SameRoleError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "SAME_ROLE"
+    message = "이미 해당 역할입니다."
+
+
+class CannotChangeInactiveAdminError(AppError):
+    """정지·탈퇴 계정의 역할 변경을 막는다.
+
+    역할은 로그인해서 쓸 수 있는 권한을 뜻한다. 쓸 수 없는 계정의 권한을 손대면
+    나중에 해제될 때 의도하지 않은 권한으로 살아난다.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_CHANGE_INACTIVE_ADMIN"
+    message = "정지·탈퇴한 계정은 역할을 변경할 수 없습니다."
 
 
 class CannotReactivateWithdrawnError(AppError):

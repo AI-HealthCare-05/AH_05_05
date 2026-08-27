@@ -2,7 +2,7 @@ from datetime import time
 
 from tortoise import fields, models
 
-from app.models.enums import AccountStatus, NotifySettingKey
+from app.models.enums import AccountStatus, Gender, NotifySettingKey
 
 
 class User(models.Model):
@@ -12,6 +12,8 @@ class User(models.Model):
     status = fields.CharEnumField(AccountStatus, default=AccountStatus.PENDING)
     name = fields.CharField(max_length=100)
     phone = fields.TextField(null=True)
+    birth_date = fields.DateField(null=True)
+    gender = fields.CharEnumField(Gender, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True, null=True)
 
@@ -28,6 +30,7 @@ class UserSettings(models.Model):
         on_delete=fields.CASCADE,
     )
     is_notify_medication = fields.BooleanField(default=False)
+    is_notify_supplement = fields.BooleanField(default=False)
     is_notify_schedule = fields.BooleanField(default=False)
     is_notify_guide = fields.BooleanField(default=False)
     is_terms_agreed = fields.BooleanField(default=False)

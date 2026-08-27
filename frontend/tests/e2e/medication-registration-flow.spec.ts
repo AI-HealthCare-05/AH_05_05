@@ -134,6 +134,7 @@ function capture(route: Route): CapturedRequest {
 async function authenticate(page: Page) {
   await page.addInitScript((token) => {
     window.sessionStorage.setItem('poke.access-token', token);
+    window.sessionStorage.setItem('poke.account-principal', 'ocr-e2e@example.com');
   }, ACCESS_TOKEN);
 }
 
@@ -364,6 +365,8 @@ test('복약 시간 설정은 봉투에서 시간대를 읽은 약도 숨기지 
 
 test('복약 시간 저장 실패 후 같은 path와 본문으로 재시도한다', async ({ page }) => {
   await authenticate(page);
+  // 이 테스트는 저장 재시도 계약만 검증합니다. 알림 권한 흐름은 별도 테스트에서 다룹니다.
+  await page.addInitScript(() => Reflect.deleteProperty(window, 'Notification'));
   const putRequests: CapturedRequest[] = [];
 
   await page.route('**/api/v1/med/medication/schedule/**', async (route) => {

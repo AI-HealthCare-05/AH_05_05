@@ -1,13 +1,6 @@
 import type { DoseRecord, MealSlot, MedicationOverview } from '@/entities/medication';
+import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Card } from '@/shared/ui';
-
-const SLOT_ORDER: MealSlot[] = ['morning', 'lunch', 'evening', 'bedtime'];
-const SLOT_LABEL: Record<MealSlot, string> = {
-  morning: '아침',
-  lunch: '점심',
-  evening: '저녁',
-  bedtime: '취침 전',
-};
 
 interface MedicationRecordGridProps {
   overviews: MedicationOverview[];
@@ -79,12 +72,12 @@ export function MedicationRecordGrid({
             ))}
 
             {slots.map((slot) => (
-              <div key={slot} role="row" aria-label={SLOT_LABEL[slot]} className="contents">
+              <div key={slot} role="row" aria-label={mealSlotLabel(slot)} className="contents">
                 <span
                   role="rowheader"
                   className="self-center whitespace-nowrap text-sm text-muted-foreground"
                 >
-                  {SLOT_LABEL[slot]}
+                  {mealSlotLabel(slot)}
                 </span>
                 {dates.map((date) => {
                   const recordIds = episodeTargetsForCell(overviews, date, slot);
@@ -96,7 +89,7 @@ export function MedicationRecordGrid({
                     now,
                     takenRecords,
                   });
-                  const label = `${formatDateLabel(date)} ${SLOT_LABEL[slot]} ${CELL_LABEL[state]}`;
+                  const label = `${formatDateLabel(date)} ${mealSlotLabel(slot)} ${CELL_LABEL[state]}`;
 
                   if (state === 'missing') {
                     return (

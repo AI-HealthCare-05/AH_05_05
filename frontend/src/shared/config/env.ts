@@ -17,3 +17,6 @@ export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '/api';
  * 넣고, 아직 안 된 엔드포인트는 각 api.ts 의 USE_MOCK 분기를 개별로 남겨두면 됩니다.
  */
 export const USE_MOCK: boolean = (import.meta.env.VITE_USE_MOCK ?? 'true') !== 'false';
+
+/** Web Push 구독 생성에 쓰는 VAPID 공개키. 개인키는 프론트에 두지 않습니다. */
+export const VAPID_PUBLIC_KEY: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '';

@@ -27,6 +27,8 @@ from app.dtos.admins import (
     AdminListItem,
     AdminListQuery,
     AdminPasswordResetResponse,
+    AdminRoleUpdateRequest,
+    AdminRoleUpdateResponse,
     AdminStatusUpdateRequest,
     AdminStatusUpdateResponse,
 )
@@ -396,6 +398,49 @@ async def update_admin_status(
     - **404 ADMIN_NOT_FOUND** — 존재하지 않는 ID 포함
     """
     return await service.update_status(request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.patch(
+    "/accounts/{admin_id}/role",
+    response_model=AdminRoleUpdateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="관리자 역할 변경",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "UNAUTHORIZED — 토큰 없음·만료"},
+        status.HTTP_403_FORBIDDEN: {"description": "FORBIDDEN — ADMIN 이 아님"},
+        status.HTTP_404_NOT_FOUND: {"description": "ADMIN_NOT_FOUND"},
+        status.HTTP_409_CONFLICT: {
+            "description": ("CANNOT_CHANGE_OWN_ROLE / SAME_ROLE / LAST_ACTIVE_ADMIN / CANNOT_CHANGE_INACTIVE_ADMIN")
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"description": "VALIDATION_ERROR — role 이 enum 밖"},
+    },
+)
+async def update_admin_role(
+    actor: AdminOnly,
+    admin_id: Annotated[int, Path(ge=1)],
+    request: AdminRoleUpdateRequest,
+    service: Annotated[AdminQueryService, Depends(AdminQueryService)],
+) -> AdminRoleUpdateResponse:
+    """관리자의 역할을 바꾼다. ADMIN 전용. 한 번에 한 명이다. (REQ-ADMIN-011)
+
+    상태 변경(정지·해제)은 `PATCH /accounts/status` 가 일괄로 처리한다. 역할은 그쪽과
+    분리해 이 엔드포인트에서만 다룬다.
+
+    **권한 검사는 매 요청 DB 를 보므로 변경이 다음 요청부터 즉시 반영된다.** 강등된
+    관리자는 액세스 토큰이 남아 있어도 ADMIN 전용 API 에서 곧바로 403 을 받는다.
+    그래서 아래 두 검사를 서버가 반드시 막는다.
+
+    - **409 CANNOT_CHANGE_OWN_ROLE** — 본인 역할. 스스로를 낮추면 되돌릴 API 에도
+      접근할 수 없어 복구 수단이 없다
+    - **409 LAST_ACTIVE_ADMIN** — 마지막 활성 ADMIN 강등. 아무도 관리자 기능을 쓸 수
+      없게 되고 DB 를 직접 고치는 것 외에 복구 수단이 없다
+    - **409 SAME_ROLE** — 현재와 같은 역할
+    - **409 CANNOT_CHANGE_INACTIVE_ADMIN** — 정지·탈퇴 계정. 해제될 때 의도하지 않은
+      권한으로 살아나는 것을 막는다. **PENDING 은 허용한다** — 첫 로그인 전 역할
+      오지정을 정정할 유일한 경로다
+    - **404 ADMIN_NOT_FOUND** — 존재하지 않는 ID
+    """
+    return await service.update_role(admin_id, request, actor_admin_id=actor.admin_id)
 
 
 @admin_router.post(

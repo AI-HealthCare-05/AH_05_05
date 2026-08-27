@@ -1,13 +1,14 @@
 import asyncio
-from datetime import date, time
+from datetime import date, datetime, time
 
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase, TruncationTestCase
 
 from app.main import app
+from app.models.alarms import Alarm
 from app.models.care import CareEpisode
-from app.models.enums import MealSlot
+from app.models.enums import AlarmStatus, AlarmType, MealSlot
 from app.models.medications import Medication, MedicationSlot
 from app.models.users import User, UserSettings
 from app.tests.med_apis.helpers import authentication_headers
@@ -220,6 +221,32 @@ class TestMedicationScheduleAPI(TestCase):
         assert stored_episode.medication_start_date == date(2026, 8, 25)
         assert stored_episode.medication_start_slot == MealSlot.MORNING
         assert await MedicationSlot.filter(medication=scheduled).count() == 2
+
+    async def test_save_creates_active_user_slot_medication_alarms(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "schedule-alarm-create@example.com"
+            headers = await authentication_headers(client, email, "01022000012")
+            user = await User.get(email=email)
+            episode, scheduled, _ = await create_ocr_medications(user)
+            payload = schedule_payload(scheduled.id)
+            payload["start"]["date"] = datetime.now().date().isoformat()  # type: ignore[index]
+
+            response = await client.put(
+                schedule_url(episode.id),
+                json=payload,
+                headers=headers,
+            )
+
+        alarms = await Alarm.filter(user=user, alarm_type=AlarmType.MEDICATION).order_by("meal_slot")
+        assert response.status_code == status.HTTP_200_OK
+        assert {alarm.meal_slot for alarm in alarms} == {MealSlot.MORNING, MealSlot.EVENING}
+        assert all(alarm.status == AlarmStatus.ACTIVE for alarm in alarms)
+        assert all(alarm.care_episode_id is None for alarm in alarms)
+        assert all(alarm.title == "복약 알림" for alarm in alarms)
+        assert all(alarm.message == "약을 복용할 시간입니다." for alarm in alarms)
+        assert all(alarm.recurrence_rule and alarm.recurrence_rule.startswith("FREQ=DAILY;COUNT=") for alarm in alarms)
+        assert {alarm.scheduled_at.strftime("%H:%M") for alarm in alarms} == {"08:00", "18:30"}
+        assert all(alarm.next_trigger_at == alarm.scheduled_at for alarm in alarms)
 
     async def test_save_updates_existing_user_settings_times(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

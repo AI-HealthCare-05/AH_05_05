@@ -9,11 +9,20 @@ export type { InputProps } from './Input';
 
 export { GenderRadioGroup } from './GenderRadioGroup';
 
+export { DoseSlotFields } from './DoseSlotFields';
+export type { DoseSlotFieldsProps } from './DoseSlotFields';
+
 export { StatusBadge } from './StatusBadge';
 export type { StatusBadgeProps, StatusBadgeType } from './StatusBadge';
 
 export { ErrorDialog } from './ErrorDialog';
 export type { ErrorDialogProps } from './ErrorDialog';
+
+export { NotifyPermissionDialog } from './NotifyPermissionDialog';
+export type { NotifyPermissionDialogProps } from './NotifyPermissionDialog';
+
+export { NotifyBlockedDialog } from './NotifyBlockedDialog';
+export type { NotifyBlockedDialogProps } from './NotifyBlockedDialog';
 
 export { PokeFeatureCarousel } from './PokeFeatureCarousel';
 

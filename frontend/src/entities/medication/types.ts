@@ -6,8 +6,9 @@
 //
 // 노션 API 명세 5-3 교체가 필요합니다(전달_통합슬롯_계약변경.md 참고).
 
-/** 통합 시간대. 4개로 확정(2026-08-14 기획 결정). */
-export type MealSlot = 'morning' | 'lunch' | 'evening' | 'bedtime';
+import type { MealSlot } from '@/shared/model/mealSlot';
+
+export type { MealSlot } from '@/shared/model/mealSlot';
 
 /**
  * 복용을 시작한 시점. 전체 약물 공통 1개.

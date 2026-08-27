@@ -5,7 +5,14 @@ from fastapi.responses import JSONResponse as Response
 
 from app.core import config
 from app.core.config import Env
-from app.dtos.auth import LoginRequest, LoginResponse, SignUpRequest, TokenRefreshResponse
+from app.dtos.auth import (
+    AuthErrorResponse,
+    LoginRequest,
+    LoginResponse,
+    SignUpRequest,
+    SignUpResponse,
+    TokenRefreshResponse,
+)
 from app.services.auth import AuthService
 from app.services.jwt import JwtService
 
@@ -40,7 +47,39 @@ def _login_error(exc: HTTPException) -> Response:
     return Response(content={"code": code, "message": str(exc.detail)}, status_code=exc.status_code)
 
 
-@auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
+@auth_router.post(
+    "/signup",
+    response_model=SignUpResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": AuthErrorResponse,
+            "description": "이미 사용 중인 이메일",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "EMAIL_ALREADY_EXISTS",
+                        "message": "이미 사용중인 이메일입니다.",
+                        "field": "email",
+                    }
+                }
+            },
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": AuthErrorResponse,
+            "description": "입력값 검증 실패",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "입력값이 올바르지 않습니다.",
+                        "field": "email",
+                    }
+                }
+            },
+        },
+    },
+)
 async def signup(
     request: SignUpRequest,
     auth_service: Annotated[AuthService, Depends(AuthService)],

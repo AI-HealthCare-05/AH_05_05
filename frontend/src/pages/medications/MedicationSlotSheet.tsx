@@ -1,16 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { MealSlot, MedicationOverviewItem } from '@/entities/medication';
 import { cn } from '@/shared/lib/cn';
+import { MEAL_SLOTS, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@/shared/ui';
-
-const SLOTS: Array<{ value: MealSlot; label: string }> = [
-  { value: 'morning', label: '아침약' },
-  { value: 'lunch', label: '점심약' },
-  { value: 'evening', label: '저녁약' },
-  { value: 'bedtime', label: '취침약' },
-];
-
-const SLOT_ORDER = SLOTS.map((slot) => slot.value);
 
 interface MedicationSlotSheetProps {
   open: boolean;
@@ -59,7 +51,7 @@ export function MedicationSlotSheet({
           </DialogDescription>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {SLOTS.map((slot) => {
+          {MEAL_SLOTS.map((slot) => {
             const selected = selectedSlots.includes(slot.value);
             return (
               <button

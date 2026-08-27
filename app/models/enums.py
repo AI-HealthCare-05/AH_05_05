@@ -8,6 +8,11 @@ class AccountStatus(StrEnum):
     WITHDRAWN = "WITHDRAWN"
 
 
+class Gender(StrEnum):
+    MALE = "MALE"
+    FEMALE = "FEMALE"
+
+
 class AdminRole(StrEnum):
     ADMIN = "ADMIN"
     STAFF = "STAFF"
@@ -53,6 +58,7 @@ class AlarmEventType(StrEnum):
 
 class AlarmType(StrEnum):
     MEDICATION = "MEDICATION"
+    NUTRIENT = "NUTRIENT"
     FOLLOW_UP_VISIT = "FOLLOW_UP_VISIT"
     GUIDE_CHECK = "GUIDE_CHECK"
 

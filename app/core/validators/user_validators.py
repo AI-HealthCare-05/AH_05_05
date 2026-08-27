@@ -6,6 +6,7 @@ from dateutil.relativedelta import relativedelta
 from app.core import config
 
 MIN_PASSWORD_LENGTH = 8
+MIN_BIRTH_DATE = date(1900, 1, 1)
 
 # 비밀번호에 반드시 포함되어야 하는 문자 종류.
 _PASSWORD_CHARACTER_RULES = (
@@ -34,9 +35,9 @@ def validate_password(password: str) -> str:
 
 def validate_phone_number(phone_number: str) -> str:
     patterns = [
-        r"010-\d{4}-\d{4}",  # 010-1234-5678
-        r"010\d{8}",  # 01012345678
-        r"\+8210\d{8}",  # +821012345678
+        r"01(?:0|1|[6-9])-\d{3,4}-\d{4}",  # 011-123-4567, 010-1234-5678
+        r"01(?:0|1|[6-9])\d{7,8}",  # 0111234567, 01012345678
+        r"\+821(?:0|1|[6-9])\d{7,8}",  # +821012345678
     ]
 
     if not any(re.fullmatch(p, phone_number) for p in patterns):
@@ -52,8 +53,12 @@ def validate_birthday(birthday: date | str) -> date:
         except ValueError as e:
             raise ValueError("올바르지 않은 날짜 형식입니다. format: YYYY-MM-DD") from e
 
-    is_over_14 = birthday < datetime.now(tz=config.TIMEZONE).date() - relativedelta(years=14)
-    if not is_over_14:
+    today = datetime.now(tz=config.TIMEZONE).date()
+    if birthday < MIN_BIRTH_DATE:
+        raise ValueError("1900년 1월 1일 이후의 날짜를 입력해주세요.")
+    if birthday > today:
+        raise ValueError("미래 날짜는 입력할 수 없습니다.")
+    if birthday > today - relativedelta(years=14):
         raise ValueError("서비스 약관에 따라 만14세 미만은 회원가입이 불가합니다.")
 
     return birthday
