@@ -63,10 +63,13 @@ export function roleChangeBlockedReason(admin, currentAdminId) {
 
 /**
  * 오버레이 HTML 은 openOverlay 가 fetch 로 가져온다. 그 경로에는 캐시 버스팅이 없어
- * 파일을 고쳐도 브라우저가 옛 HTML 을 쓸 수 있다. 이 오버레이는 이번에 구성이 바뀌므로
- * 호출부에서 쿼리를 붙인다. (js 모듈 import 경로 전반의 캐시 문제는 별도 사안이다)
+ * 파일을 고쳐도 브라우저가 옛 HTML 을 쓸 수 있다. 내용이 바뀐 오버레이만 호출부에서
+ * 쿼리를 붙인다. (js 모듈 import 경로 전반의 캐시 문제는 #128 에서 다룬다)
  */
 const ROLE_OVERLAY_URL = "overlay-admin-edit.html?v=20260827-3";
+// PR #118 에서 문구를 실제 동작에 맞게 고쳤다("재설정 링크 발송" -> 임시 비밀번호 발송).
+// 캐시 무효화가 없어 옛 문구가 그대로 노출된다. 기능은 동작하므로 긴급하지는 않았다.
+const PASSWORD_RESET_OVERLAY_URL = "overlay-password-reset.html?v=20260827-3";
 
 /**
  * 409 를 어디에 보여줄지 정한다. 역할 선택 자체의 문제면 오류칸, 그 외는 토스트다.
@@ -251,7 +254,7 @@ function initializeAdminManagement() {
     const admin = currentItems.find((item) => item.adminId === adminId);
 
     if (button.dataset.adminAction === "reset") {
-      await openOverlay("overlay-password-reset.html", {
+      await openOverlay(PASSWORD_RESET_OVERLAY_URL, {
         onConfirm: async () => {
           try {
             const result = await post(`/admin/accounts/${adminId}/password/reset`);
