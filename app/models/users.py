@@ -28,6 +28,7 @@ class UserSettings(models.Model):
         on_delete=fields.CASCADE,
     )
     is_notify_medication = fields.BooleanField(default=False)
+    is_notify_supplement = fields.BooleanField(default=False)
     is_notify_schedule = fields.BooleanField(default=False)
     is_notify_guide = fields.BooleanField(default=False)
     is_terms_agreed = fields.BooleanField(default=False)

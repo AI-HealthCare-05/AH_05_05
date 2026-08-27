@@ -57,7 +57,7 @@ class TestAlarmWorker(TestCase):
     async def assert_notification_setting_blocks_alarm(self, alarm_type: AlarmType, setting_name: str) -> None:
         self.alarm.alarm_type = alarm_type
         update_fields = ["alarm_type"]
-        if alarm_type != AlarmType.MEDICATION:
+        if alarm_type not in {AlarmType.MEDICATION, AlarmType.NUTRIENT}:
             self.alarm.meal_slot = None
             update_fields.append("meal_slot")
         await self.alarm.save(update_fields=update_fields)
@@ -97,6 +97,33 @@ class TestAlarmWorker(TestCase):
             AlarmType.GUIDE_CHECK,
             "is_notify_guide",
         )
+
+    async def test_disabled_nutrient_notification_skips_push_job(self):
+        await self.assert_notification_setting_blocks_alarm(
+            AlarmType.NUTRIENT,
+            "is_notify_supplement",
+        )
+
+    async def test_notification_disabled_after_queue_skips_send(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        await UserSettings.create(user=self.user, is_notify_medication=False)
+
+        await send_alarm_push(
+            self.context(),
+            job.id,
+            self.alarm.id,
+            subscription.id,
+            self.alarm.next_trigger_at.isoformat(),
+        )
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.CANCELLED
+        assert await AlarmEvent.filter(
+            alarm=self.alarm,
+            event_type=AlarmEventType.SKIPPED,
+        ).exists()
+        self.push_service.send.assert_not_awaited()
 
     async def test_successful_push_creates_sent_event_and_completes_job(self):
         subscription = await self.create_subscription()

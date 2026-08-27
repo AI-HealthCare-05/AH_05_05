@@ -19,6 +19,28 @@ def test_medication_requires_meal_slot():
         )
 
 
+def test_nutrient_requires_meal_slot():
+    with pytest.raises(ValidationError):
+        AlarmCreateRequest(
+            alarm_type=AlarmType.NUTRIENT,
+            title="아침 영양제",
+            scheduled_at="2026-08-20T08:00:00+09:00",
+            timezone="Asia/Seoul",
+        )
+
+
+def test_nutrient_accepts_meal_slot():
+    request = AlarmCreateRequest(
+        alarm_type=AlarmType.NUTRIENT,
+        meal_slot=MealSlot.MORNING,
+        title="아침 영양제",
+        scheduled_at="2026-08-20T08:00:00+09:00",
+        timezone="Asia/Seoul",
+    )
+
+    assert request.meal_slot == MealSlot.MORNING
+
+
 def test_non_medication_rejects_meal_slot():
     with pytest.raises(ValidationError):
         AlarmCreateRequest(
