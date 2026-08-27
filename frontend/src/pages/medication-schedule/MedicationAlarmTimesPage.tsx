@@ -21,6 +21,7 @@ export function MedicationAlarmTimesPage() {
   const [editingSlot, setEditingSlot] = useState<MealSlot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<{ message: string; retry: () => void } | null>(null);
+  const [timeOrderError, setTimeOrderError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,10 +68,7 @@ export function MedicationAlarmTimesPage() {
     if (!overview || !editingSlot) return;
     const nextMealTimes = { ...overview.mealTimes, [editingSlot]: time };
     if (!isMealTimeOrderValid(nextMealTimes)) {
-      setSaveError({
-        message: '시간을 아침약 → 점심약 → 저녁약 → 취침약 순서로 맞춰주세요.',
-        retry: () => setSaveError(null),
-      });
+      setTimeOrderError(true);
       return;
     }
     void persist(nextMealTimes);
@@ -134,6 +132,13 @@ export function MedicationAlarmTimesPage() {
           setSaveError(null);
           retry?.();
         }}
+      />
+      <ErrorDialog
+        open={timeOrderError}
+        title="시간을 적용할 수 없어요"
+        message="복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요."
+        retryLabel="확인"
+        onRetry={() => setTimeOrderError(false)}
       />
     </div>
   );
