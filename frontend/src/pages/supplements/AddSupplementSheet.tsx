@@ -1,16 +1,18 @@
 import { useEffect, useState, type UIEvent } from 'react';
-import { Check, Info, Minus, Plus, Search } from 'lucide-react';
+import { Check, Info, Search } from 'lucide-react';
 import {
   searchSupplementProducts,
   type AddSupplementPayload,
   type SupplementProduct,
 } from '@/entities/supplement';
+import type { MealSlot } from '@/shared/model/mealSlot';
 import {
   Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
+  DoseSlotFields,
   Input,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
@@ -23,7 +25,6 @@ interface AddSupplementSheetProps {
 
 const PAGE_SIZE = 20;
 const MIN_DAILY_COUNT = 1;
-const MAX_DAILY_COUNT = 20;
 
 export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplementSheetProps) {
   const [query, setQuery] = useState('');
@@ -33,6 +34,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [dailyCount, setDailyCount] = useState(MIN_DAILY_COUNT);
+  const [slots, setSlots] = useState<MealSlot[]>(['morning']);
   const [searching, setSearching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -95,6 +97,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
     setNextOffset(null);
     setSelectedProductId(null);
     setDailyCount(MIN_DAILY_COUNT);
+    setSlots(['morning']);
     setSearchError(null);
     setManualMode(false);
     setManualName('');
@@ -110,6 +113,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
     setManualMode(false);
     setSelectedProductId(product.productId);
     setDailyCount(product.recommendedDailyCount ?? MIN_DAILY_COUNT);
+    setSlots(['morning']);
   }
 
   async function loadMore() {
@@ -137,7 +141,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
   }
 
   async function addStandardProduct() {
-    if (!selectedProduct || saving) return;
+    if (!selectedProduct || slots.length === 0 || saving) return;
     setSaving(true);
     try {
       await onSave({
@@ -145,7 +149,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
         productId: selectedProduct.productId,
         name: selectedProduct.productName,
         dailyCount,
-        times: ['아침'],
+        slots,
       });
       changeOpen(false);
     } catch {
@@ -157,14 +161,14 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
 
   async function addManualProduct() {
     const name = manualName.trim();
-    if (!name || saving) return;
+    if (!name || slots.length === 0 || saving) return;
     setSaving(true);
     try {
       await onSave({
         source: 'manual',
         name,
-        dailyCount: MIN_DAILY_COUNT,
-        times: ['아침'],
+        dailyCount,
+        slots,
       });
       changeOpen(false);
     } catch {
@@ -231,11 +235,20 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
               placeholder="통 앞면의 제품명"
               autoFocus
             />
+            <DoseSlotFields
+              dailyCount={dailyCount}
+              slots={slots}
+              onDailyCountChange={setDailyCount}
+              onSlotsChange={setSlots}
+            />
             <div className="rounded-card bg-muted-bg p-4 text-sm text-muted-foreground">
               직접 입력한 제품은 성분을 확인할 수 없어 성분 합계에서 제외합니다.
             </div>
             <div className="mt-auto flex flex-col gap-2">
-              <Button disabled={!manualName.trim() || saving} onClick={() => void addManualProduct()}>
+              <Button
+                disabled={!manualName.trim() || slots.length === 0 || saving}
+                onClick={() => void addManualProduct()}
+              >
                 {saving ? '추가 중...' : '추가하기'}
               </Button>
               <Button variant="secondary" onClick={() => setManualMode(false)}>
@@ -313,46 +326,21 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
 
                           {selected && (
                             <div className="mx-4 flex flex-col gap-3 border-t border-border py-4">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-base text-muted-foreground">하루에</span>
-                                <div className="flex items-center gap-3">
-                                  <button
-                                    type="button"
-                                    aria-label="하루 섭취량 줄이기"
-                                    disabled={dailyCount <= MIN_DAILY_COUNT}
-                                    onClick={() =>
-                                      setDailyCount((count) =>
-                                        Math.max(MIN_DAILY_COUNT, count - 1),
-                                      )
-                                    }
-                                    className="flex size-touch items-center justify-center rounded-pill border border-border text-foreground disabled:text-disabled-foreground"
-                                  >
-                                    <Minus aria-hidden className="size-5" />
-                                  </button>
-                                  <strong className="min-w-12 text-center text-xl font-bold text-foreground tnum">
-                                    {dailyCount} 정
-                                  </strong>
-                                  <button
-                                    type="button"
-                                    aria-label="하루 섭취량 늘리기"
-                                    disabled={dailyCount >= MAX_DAILY_COUNT}
-                                    onClick={() =>
-                                      setDailyCount((count) =>
-                                        Math.min(MAX_DAILY_COUNT, count + 1),
-                                      )
-                                    }
-                                    className="flex size-touch items-center justify-center rounded-pill border border-border text-foreground disabled:text-disabled-foreground"
-                                  >
-                                    <Plus aria-hidden className="size-5" />
-                                  </button>
-                                </div>
-                              </div>
+                              <DoseSlotFields
+                                dailyCount={dailyCount}
+                                slots={slots}
+                                onDailyCountChange={setDailyCount}
+                                onSlotsChange={setSlots}
+                              />
                               {product.recommendedDailyCount !== null && (
                                 <p className="text-sm text-muted-foreground">
                                   제품 표시사항의 섭취방법을 채워놨어요.
                                 </p>
                               )}
-                              <Button disabled={saving} onClick={() => void addStandardProduct()}>
+                              <Button
+                                disabled={slots.length === 0 || saving}
+                                onClick={() => void addStandardProduct()}
+                              >
                                 {saving ? '추가 중...' : '추가하기'}
                               </Button>
                             </div>
@@ -382,6 +370,8 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
                 onClick={() => {
                   setSelectedProductId(null);
                   setManualName('');
+                  setDailyCount(MIN_DAILY_COUNT);
+                  setSlots(['morning']);
                   setManualMode(true);
                 }}
               >

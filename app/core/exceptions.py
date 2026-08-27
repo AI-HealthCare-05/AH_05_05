@@ -127,6 +127,36 @@ class CannotSuspendSelfError(AppError):
     message = "본인 계정은 정지할 수 없습니다."
 
 
+class CannotChangeOwnRoleError(AppError):
+    """본인 역할 변경을 막는다.
+
+    권한 검사가 매 요청 DB 를 보므로 스스로를 STAFF 로 낮추면 그 즉시 ADMIN 전용 API 에
+    접근할 수 없다. 되돌릴 API 도 그 안에 있어 복구 수단이 없다.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_CHANGE_OWN_ROLE"
+    message = "본인 역할은 변경할 수 없습니다."
+
+
+class SameRoleError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "SAME_ROLE"
+    message = "이미 해당 역할입니다."
+
+
+class CannotChangeInactiveAdminError(AppError):
+    """정지·탈퇴 계정의 역할 변경을 막는다.
+
+    역할은 로그인해서 쓸 수 있는 권한을 뜻한다. 쓸 수 없는 계정의 권한을 손대면
+    나중에 해제될 때 의도하지 않은 권한으로 살아난다.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "CANNOT_CHANGE_INACTIVE_ADMIN"
+    message = "정지·탈퇴한 계정은 역할을 변경할 수 없습니다."
+
+
 class CannotReactivateWithdrawnError(AppError):
     """탈퇴한 계정을 관리자가 되살리는 것을 막는다.
 
