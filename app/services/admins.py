@@ -6,11 +6,14 @@ from tortoise.transactions import in_transaction
 
 from app.core.exceptions import (
     AdminNotFoundError,
+    CannotChangeInactiveAdminError,
+    CannotChangeOwnRoleError,
     CannotResetSuspendedError,
     CannotResetWithdrawnError,
     CannotSuspendSelfError,
     EmailAlreadyExistsError,
     LastActiveAdminError,
+    SameRoleError,
 )
 from app.dtos.admins import (
     AdminCreateRequest,
@@ -19,6 +22,8 @@ from app.dtos.admins import (
     AdminListItem,
     AdminListQuery,
     AdminPasswordResetResponse,
+    AdminRoleUpdateRequest,
+    AdminRoleUpdateResponse,
     AdminStatusUpdateRequest,
     AdminStatusUpdateResponse,
 )
@@ -186,6 +191,73 @@ class AdminQueryService:
             status=request.status,
             admin_ids=admin_ids,
         )
+
+    async def update_role(
+        self, admin_id: int, request: AdminRoleUpdateRequest, actor_admin_id: int
+    ) -> AdminRoleUpdateResponse:
+        """REQ-ADMIN-011 관리자 역할 변경. ADMIN 전용이며 한 명씩 바꾼다.
+
+        권한 검사가 매 요청 DB 를 보므로(dependencies/admin.py 의 _authenticate) 변경은
+        다음 요청부터 즉시 반영된다. 그래서 본인·마지막 ADMIN 검사가 필수다.
+        """
+        if admin_id == actor_admin_id:
+            raise CannotChangeOwnRoleError()
+
+        async with in_transaction():
+            # 검사와 UPDATE 사이에 다른 요청이 끼어들면 활성 ADMIN 이 0명이 될 수 있다.
+            # 두 ADMIN 이 동시에 서로를 강등하는 경우가 그렇다. 대상 행을 잠근 뒤 검사한다.
+            target = await Admin.filter(id=admin_id).select_for_update().first()
+            if target is None:
+                raise AdminNotFoundError()
+
+            # 역할은 로그인해서 쓸 수 있는 권한이다. 쓸 수 없는 계정의 권한을 손대면
+            # 나중에 해제될 때 의도하지 않은 권한으로 살아난다.
+            # PENDING 은 허용한다 — 첫 로그인 전 역할 오지정을 정정할 유일한 경로다.
+            if target.status in {AccountStatus.SUSPENDED, AccountStatus.WITHDRAWN}:
+                raise CannotChangeInactiveAdminError()
+
+            if target.role == request.role:
+                raise SameRoleError()
+
+            await self._ensure_active_admin_remains_after_role_change(target, request.role)
+
+            target.role = request.role
+            await target.save()
+
+        logger.info(
+            "admin role changed: id=%s role=%s by=%s",
+            admin_id,
+            request.role,
+            actor_admin_id,
+        )
+        return AdminRoleUpdateResponse(admin_id=target.id, role=target.role)
+
+    @staticmethod
+    async def _ensure_active_admin_remains_after_role_change(target: Admin, new_role: AdminRole) -> None:
+        """강등 후에도 활성 ADMIN 이 최소 1명 남는지 확인한다.
+
+        _ensure_active_admin_remains 와 같은 목적이지만 조건이 다르다. 그쪽은 상태 변경을
+        보고 이쪽은 역할 변경을 본다. 정지 API 는 화면에 이미 연동돼 있어 건드리지 않았다.
+
+        **이 검사를 지우지 말 것.** HTTP 경로만 보면 도달하지 않는 것처럼 보인다 —
+        주체가 ACTIVE ADMIN 이어야 API 를 부를 수 있고(require_admin) 본인은
+        CANNOT_CHANGE_OWN_ROLE 로 먼저 막히므로, 남을 강등해도 주체가 활성 ADMIN 으로
+        남는다. 하지만 아래 두 경우에 실제로 필요하다.
+
+        1. ACTIVE ADMIN 이 정확히 2명일 때 두 사람이 동시에 서로를 강등하면 각자의 검사가
+           모두 통과해 0명이 될 수 있다. select_for_update 는 대상 행만 잠그고 여기의
+           카운트 쿼리는 MVCC 로 읽으므로, 상대의 커밋 전 스냅샷을 보고 판단한다.
+           (관리자 정지 API 도 같은 구조다 — 근본 해결은 두 API 를 함께 다뤄야 한다)
+        2. 나중에 본인 강등을 허용하거나 사람이 아닌 주체(배치·스크립트)가 이 서비스를
+           직접 부르게 되면 곧바로 유일한 방어선이 된다.
+        """
+        demoting = target.role == AdminRole.ADMIN and new_role != AdminRole.ADMIN
+        if not demoting:
+            return
+
+        remaining = Admin.filter(role=AdminRole.ADMIN, status=AccountStatus.ACTIVE).exclude(id=target.id)
+        if not await remaining.exists():
+            raise LastActiveAdminError("마지막 활성 관리자는 역할을 변경할 수 없습니다.")
 
     @staticmethod
     async def _ensure_active_admin_remains(new_status: AccountStatus, admin_ids: list[int]) -> None:

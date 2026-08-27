@@ -36,6 +36,21 @@ class AdminStatusUpdateRequest(CamelModel):
     status: Literal[AccountStatus.SUSPENDED, AccountStatus.ACTIVE]
 
 
+class AdminRoleUpdateRequest(CamelModel):
+    """REQ-ADMIN-011 관리자 역할 변경 요청.
+
+    상태 변경(정지·해제)은 PATCH /accounts/status 가 일괄로 처리한다. 역할은 한 명씩
+    바꾸므로 대상을 경로 파라미터로 받고 본문에는 새 역할만 담는다.
+    """
+
+    role: AdminRole
+
+
+class AdminRoleUpdateResponse(CamelModel):
+    admin_id: int
+    role: AdminRole
+
+
 class AdminPasswordResetResponse(CamelModel):
     """REQ-ADMIN-003 임시 비밀번호 재발송 결과."""
 
