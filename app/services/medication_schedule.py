@@ -1,6 +1,7 @@
 import re
 from datetime import date, datetime, time, timedelta
 
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
 from app.core import config
@@ -12,8 +13,9 @@ from app.dtos.medication_schedule import (
     MedicationScheduleStart,
     SaveMedicationScheduleRequest,
 )
+from app.models.alarms import Alarm
 from app.models.care import CareEpisode
-from app.models.enums import MealSlot
+from app.models.enums import AlarmStatus, AlarmType, CareEpisodeStatus, MealSlot
 from app.models.medications import Medication, MedicationSlot
 from app.models.users import User, UserSettings
 
@@ -32,6 +34,8 @@ SLOT_TIME_FIELDS = {
 }
 TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+MEDICATION_ALARM_TITLE = "복약 알림"
+MEDICATION_ALARM_MESSAGE = "약을 복용할 시간입니다."
 
 
 class MedicationScheduleService:
@@ -89,6 +93,137 @@ class MedicationScheduleService:
             ]
             if slot_rows:
                 await MedicationSlot.bulk_create(slot_rows, using_db=connection)
+            await self._sync_medication_alarms(user.id, meal_times, connection)
+
+    @classmethod
+    async def _sync_medication_alarms(
+        cls,
+        user_id: int,
+        meal_times: dict[MealSlot, time],
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        now = datetime.now(config.TIMEZONE)
+        medications = (
+            await Medication.filter(
+                care_episode__user_id=user_id,
+                care_episode__status=CareEpisodeStatus.ACTIVE,
+            )
+            .using_db(connection)
+            .prefetch_related("care_episode", "slots")
+        )
+        windows = cls._medication_windows(medications)
+        existing = {
+            alarm.meal_slot: alarm
+            for alarm in await Alarm.filter(user_id=user_id, alarm_type=AlarmType.MEDICATION)
+            .using_db(connection)
+            .select_for_update()
+        }
+
+        for slot in SLOT_ORDER:
+            await cls._sync_slot_alarm(
+                user_id=user_id,
+                slot=slot,
+                alarm_time=meal_times[slot],
+                windows=windows[slot],
+                alarm=existing.get(slot),
+                now=now,
+                connection=connection,
+            )
+
+    @staticmethod
+    def _medication_windows(
+        medications: list[Medication],
+    ) -> dict[MealSlot, list[tuple[date, date]]]:
+        windows: dict[MealSlot, list[tuple[date, date]]] = {slot: [] for slot in SLOT_ORDER}
+        for medication in medications:
+            episode = medication.care_episode
+            start_date = episode.medication_start_date
+            start_slot = episode.medication_start_slot
+            days = medication.days or episode.medication_days
+            if start_date is None or start_slot is None or days is None:
+                continue
+
+            end_date = start_date + timedelta(days=days - 1)
+            for medication_slot in medication.slots:
+                slot = medication_slot.slot
+                first_date = start_date
+                if SLOT_ORDER.index(slot) < SLOT_ORDER.index(start_slot):
+                    first_date += timedelta(days=1)
+                if first_date <= end_date:
+                    windows[slot].append((first_date, end_date))
+        return windows
+
+    @classmethod
+    async def _sync_slot_alarm(
+        cls,
+        *,
+        user_id: int,
+        slot: MealSlot,
+        alarm_time: time,
+        windows: list[tuple[date, date]],
+        alarm: Alarm | None,
+        now: datetime,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        schedule = cls._next_alarm_schedule(windows, alarm_time, now)
+        if schedule is None:
+            if alarm is not None and alarm.status != AlarmStatus.CANCELLED:
+                alarm.status = AlarmStatus.CANCELLED
+                alarm.cancelled_at = now
+                alarm.updated_at = now
+                await alarm.save(
+                    using_db=connection,
+                    update_fields=["status", "cancelled_at", "updated_at"],
+                )
+            return
+
+        next_trigger_at, last_date = schedule
+        occurrence_count = (last_date - next_trigger_at.date()).days + 1
+        values = {
+            "care_episode_id": None,
+            "title": MEDICATION_ALARM_TITLE,
+            "message": MEDICATION_ALARM_MESSAGE,
+            "scheduled_at": next_trigger_at,
+            "recurrence_rule": f"FREQ=DAILY;COUNT={occurrence_count}",
+            "timezone": str(config.TIMEZONE),
+            "next_trigger_at": next_trigger_at,
+            "status": AlarmStatus.ACTIVE,
+            "last_triggered_at": None,
+            "completed_at": None,
+            "cancelled_at": None,
+            "updated_at": now,
+        }
+        if alarm is None:
+            await Alarm.create(
+                using_db=connection,
+                user_id=user_id,
+                alarm_type=AlarmType.MEDICATION,
+                meal_slot=slot,
+                **values,
+            )
+            return
+
+        for field_name, value in values.items():
+            setattr(alarm, field_name, value)
+        await alarm.save(using_db=connection, update_fields=list(values))
+
+    @staticmethod
+    def _next_alarm_schedule(
+        windows: list[tuple[date, date]],
+        alarm_time: time,
+        now: datetime,
+    ) -> tuple[datetime, date] | None:
+        candidates: list[tuple[datetime, date]] = []
+        for first_date, last_date in windows:
+            candidate_date = max(first_date, now.date())
+            candidate = datetime.combine(candidate_date, alarm_time, tzinfo=config.TIMEZONE)
+            if candidate <= now:
+                candidate += timedelta(days=1)
+            if candidate.date() <= last_date:
+                candidates.append((candidate, last_date))
+        if not candidates:
+            return None
+        return min(candidate for candidate, _ in candidates), max(last_date for _, last_date in candidates)
 
     @staticmethod
     def _start_response(episode: CareEpisode) -> MedicationScheduleStart | None:
