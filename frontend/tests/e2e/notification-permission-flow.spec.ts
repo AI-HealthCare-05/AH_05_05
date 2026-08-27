@@ -174,6 +174,18 @@ test('복약시간 저장 성공 뒤 방금 정한 네 시각으로 최초 권�
   await expect(dialog).toContainText('아침 08:00 · 점심 13:00 · 저녁 19:00 · 취침 22:00');
 });
 
+test('목업 모드에서는 공개키가 없어도 이미 허용된 사용자의 복약 저장을 막지 않는다', async ({
+  page,
+}) => {
+  await stubNotificationPermission(page, 'granted');
+  await page.goto('/dev/medication-schedule-no-vapid');
+  await page.getByRole('button', { name: '시작 아침' }).click();
+  await page.getByRole('button', { name: '저장하고 계속' }).click();
+
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByRole('dialog', { name: '알림 설정을 저장하지 못했어요' })).toHaveCount(0);
+});
+
 test('복약시간 저장이 실패하면 권한 팝업을 열지 않는다', async ({ page }) => {
   await stubNotificationPermission(page, 'default');
   await page.goto('/dev/medication-schedule-save-error');

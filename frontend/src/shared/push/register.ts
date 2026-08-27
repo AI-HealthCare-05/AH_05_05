@@ -1,5 +1,5 @@
 import { http } from '@/shared/api/client';
-import { VAPID_PUBLIC_KEY } from '@/shared/config/env';
+import { USE_MOCK, VAPID_PUBLIC_KEY } from '@/shared/config/env';
 import { getPushPermission } from './permission';
 
 function decodeVapidPublicKey(value: string): Uint8Array<ArrayBuffer> {
@@ -22,6 +22,8 @@ export async function registerPushNotifications(
     throw new Error('알림 권한을 허용한 뒤 다시 시도해주세요.');
   }
   if (!vapidPublicKey) {
+    // 목업 화면 검증에서는 실 Push 서버나 공개키가 없어도 설정 저장 흐름을 이어갑니다.
+    if (USE_MOCK) return;
     throw new Error('알림 공개키가 설정되지 않았어요.');
   }
 

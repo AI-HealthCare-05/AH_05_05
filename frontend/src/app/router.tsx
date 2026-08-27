@@ -20,6 +20,7 @@ import {
   type MedicationOverview,
   type SaveDoseTakenPayload,
 } from '@/entities/medication';
+import { registerPushNotifications } from '@/shared/push/register';
 import { DevGallery } from './DevGallery';
 import { ChatSessionProvider } from './ChatSessionContext';
 import { useSession } from './SessionContext';
@@ -156,6 +157,15 @@ export function AppRouter() {
             <MedicationSchedulePage
               defaultRecordId={12}
               scheduleSaver={failMedicationScheduleSave}
+            />
+          }
+        />
+        <Route
+          path="/dev/medication-schedule-no-vapid"
+          element={
+            <MedicationSchedulePage
+              defaultRecordId={12}
+              pushRegistrar={() => registerPushNotifications('')}
             />
           }
         />
