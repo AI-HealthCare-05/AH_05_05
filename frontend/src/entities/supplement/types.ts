@@ -1,4 +1,4 @@
-export type SupplementTime = '아침' | '점심' | '저녁';
+import type { MealSlot } from '@/shared/model/mealSlot';
 
 export interface SupplementNutrientAmount {
   nutrientId: string;
@@ -17,7 +17,7 @@ export interface Supplement {
   supplementId: number;
   name: string;
   dailyCount: number;
-  times: SupplementTime[];
+  slots: MealSlot[];
   /** false면 직접 입력 제품으로, 성분 합계에서 제외합니다. */
   nutrientDataAvailable: boolean;
   nutrients: SupplementNutrientAmount[];
@@ -67,5 +67,10 @@ export interface AddSupplementPayload {
   productId?: string;
   name: string;
   dailyCount: number;
-  times: SupplementTime[];
+  slots: MealSlot[];
+}
+
+export interface UpdateSupplementPayload {
+  dailyCount: number;
+  slots: MealSlot[];
 }

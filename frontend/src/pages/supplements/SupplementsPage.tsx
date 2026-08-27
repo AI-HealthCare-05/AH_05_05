@@ -6,12 +6,16 @@ import {
   addSupplement,
   evaluateNutrientStandard,
   getSupplements,
+  stopSupplement,
   summarizeNutrients,
+  updateSupplement,
   type AddSupplementPayload,
   type NutrientTotal,
   type Supplement,
+  type UpdateSupplementPayload,
 } from '@/entities/supplement';
 import { calculateFullAge } from '@/shared/lib/birthDate';
+import { mealSlotLabel } from '@/shared/model/mealSlot';
 import {
   BottomTabbar,
   Button,
@@ -22,6 +26,7 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
+import { EditSupplementSheet } from './EditSupplementSheet';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -55,7 +60,9 @@ export function SupplementsPage({
   const [profileResolved, setProfileResolved] = useState(profileOverride !== undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editingSupplement, setEditingSupplement] = useState<Supplement | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveErrorTitle, setSaveErrorTitle] = useState('영양제를 추가하지 못했어요');
   const totals = useMemo(() => summarizeNutrients(supplements ?? []), [supplements]);
   const hasStandardProfile = Boolean(profile?.birthDate && profile.gender);
   const exceeded = hasStandardProfile ? totals.filter((total) => total.exceeded) : [];
@@ -112,7 +119,39 @@ export function SupplementsPage({
       const saved = await addSupplement(payload);
       setSupplements((current) => [saved, ...(current ?? [])]);
     } catch (error: unknown) {
+      setSaveErrorTitle('영양제를 추가하지 못했어요');
       setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
+      throw error;
+    }
+  }
+
+  async function editSupplement(
+    supplementId: number,
+    payload: UpdateSupplementPayload,
+  ) {
+    try {
+      const updated = await updateSupplement(supplementId, payload);
+      setSupplements((current) =>
+        (current ?? []).map((supplement) =>
+          supplement.supplementId === supplementId ? updated : supplement,
+        ),
+      );
+    } catch (error: unknown) {
+      setSaveErrorTitle('영양제 정보를 저장하지 못했어요');
+      setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
+      throw error;
+    }
+  }
+
+  async function stopActiveSupplement(supplementId: number) {
+    try {
+      await stopSupplement(supplementId);
+      setSupplements((current) =>
+        (current ?? []).filter((supplement) => supplement.supplementId !== supplementId),
+      );
+    } catch (error: unknown) {
+      setSaveErrorTitle('영양제 복용을 중단하지 못했어요');
+      setSaveError(error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.');
       throw error;
     }
   }
@@ -154,6 +193,7 @@ export function SupplementsPage({
                   key={supplement.supplementId}
                   type="button"
                   className="flex min-h-20 items-center gap-4 rounded-card bg-card px-4 py-3 text-left shadow-card"
+                  onClick={() => setEditingSupplement(supplement)}
                 >
                   <span className="flex size-12 items-center justify-center rounded-pill bg-primary-bg text-primary-strong">
                     <Sprout aria-hidden className="size-6" />
@@ -168,7 +208,8 @@ export function SupplementsPage({
                       )}
                     </span>
                     <span className="block text-sm text-muted-foreground">
-                      1일 {supplement.dailyCount}정 · {supplement.times.join(' · ')}
+                      1일 {supplement.dailyCount}정 ·{' '}
+                      {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                     </span>
                   </span>
                   <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
@@ -237,9 +278,18 @@ export function SupplementsPage({
         className="border-t border-border"
       />
       <AddSupplementSheet open={addOpen} onOpenChange={setAddOpen} onSave={saveSupplement} />
+      <EditSupplementSheet
+        open={editingSupplement !== null}
+        supplement={editingSupplement}
+        onOpenChange={(open) => {
+          if (!open) setEditingSupplement(null);
+        }}
+        onSave={editSupplement}
+        onStop={stopActiveSupplement}
+      />
       <ErrorDialog
         open={saveError !== null}
-        title="영양제를 추가하지 못했어요"
+        title={saveErrorTitle}
         message={saveError ?? ''}
         retryLabel="확인"
         onRetry={() => setSaveError(null)}

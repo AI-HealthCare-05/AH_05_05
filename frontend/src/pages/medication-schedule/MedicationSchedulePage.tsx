@@ -39,7 +39,7 @@ import {
   exceedsSlotCapacity,
   isMealTimeOrderValid,
   needsSlotConfirmation,
-} from './slotAssignment';
+} from '@/shared/model/mealSlot';
 
 /**
  * REQ-CARE-003 · 통합 슬롯 구조 (2026-08-14 기획 결정)
