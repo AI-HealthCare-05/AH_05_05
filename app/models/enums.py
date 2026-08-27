@@ -58,6 +58,7 @@ class AlarmEventType(StrEnum):
 
 class AlarmType(StrEnum):
     MEDICATION = "MEDICATION"
+    NUTRIENT = "NUTRIENT"
     FOLLOW_UP_VISIT = "FOLLOW_UP_VISIT"
     GUIDE_CHECK = "GUIDE_CHECK"
 

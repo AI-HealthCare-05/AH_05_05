@@ -1,6 +1,13 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { Button, Card, ErrorDialog, Header, Input } from '@/shared/ui';
+import {
+  Button,
+  Card,
+  ErrorDialog,
+  Header,
+  Input,
+  NotifyPermissionDialog,
+} from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
 import {
   getMedicationSchedule,
@@ -11,6 +18,18 @@ import {
   type MedicationStartPoint,
   type ScheduleMedication,
 } from '@/entities/medication';
+import {
+  getNotifySettings,
+  updateNotifySettings,
+  type NotifySettings,
+  type UpdateNotifySettingsPayload,
+} from '@/entities/settings';
+import {
+  getPushPermission,
+  requestPushPermission,
+  type PushPermission,
+} from '@/shared/push/permission';
+import { registerPushNotifications } from '@/shared/push/register';
 import { TimePickerSheet } from './TimePickerSheet';
 import {
   DEFAULT_MEAL_TIMES,
@@ -42,6 +61,12 @@ interface ScheduleLocationState {
 interface MedicationSchedulePageProps {
   scheduleOverride?: MedicationSchedule;
   defaultRecordId?: number;
+  scheduleSaver?: typeof saveMedicationSchedule;
+  notifySettingsLoader?: () => Promise<NotifySettings>;
+  notifySettingsUpdater?: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
+  permissionReader?: () => PushPermission;
+  permissionRequester?: () => Promise<PushPermission>;
+  pushRegistrar?: () => Promise<void>;
 }
 
 /** info = 아직 안 고른 것(안내), error = 잘못 고른 것(오류). */
@@ -120,6 +145,12 @@ function parseRecordId(value: string | null): number | null {
 export function MedicationSchedulePage({
   scheduleOverride,
   defaultRecordId,
+  scheduleSaver = saveMedicationSchedule,
+  notifySettingsLoader = getNotifySettings,
+  notifySettingsUpdater = updateNotifySettings,
+  permissionReader = getPushPermission,
+  permissionRequester = requestPushPermission,
+  pushRegistrar = registerPushNotifications,
 }: MedicationSchedulePageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -145,6 +176,13 @@ export function MedicationSchedulePage({
   const [loadError, setLoadError] = useState<string | null>(null);
   /** 저장 실패 팝업. 재시도가 같은 인자로 다시 보내야 해서 콜백을 함께 담습니다. */
   const [saveError, setSaveError] = useState<{ message: string; retry: () => void } | null>(null);
+  const [notifyError, setNotifyError] = useState<{
+    message: string;
+    retry: () => void;
+  } | null>(null);
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [permissionBusy, setPermissionBusy] = useState(false);
+  const [savedMealTimes, setSavedMealTimes] = useState<MealTimes | null>(null);
   const [timeOrderError, setTimeOrderError] = useState(false);
 
   useEffect(() => {
@@ -243,15 +281,15 @@ export function MedicationSchedulePage({
     setSaving(true);
     setSaveError(null);
     try {
-      await saveMedicationSchedule(recordId, {
+      await scheduleSaver(recordId, {
         start,
         mealTimes: times,
         medications: schedule.medications
           .filter((m) => m.timesPerDay !== null)
           .map((m) => ({ medicationId: m.medicationId, slots: payloadSlots[m.medicationId] ?? [] })),
       });
-      // 저장이 끝난 흐름으로 뒤로가기를 해도 시간 설정 화면으로 돌아오지 않게 교체합니다.
-      navigate('/home', { replace: true });
+      setSavedMealTimes(times);
+      await continueAfterScheduleSave(times);
     } catch (error: unknown) {
       setSaveError({
         message: error instanceof Error ? error.message : '복약 시간을 저장하지 못했어요.',
@@ -260,6 +298,104 @@ export function MedicationSchedulePage({
     } finally {
       setSaving(false);
     }
+  }
+
+  function finishScheduleFlow() {
+    // 저장이 끝난 흐름으로 뒤로가기를 해도 시간 설정 화면으로 돌아오지 않게 교체합니다.
+    navigate('/home', { replace: true });
+  }
+
+  function showNotifyError(error: unknown, retry: () => void) {
+    setNotifyError({
+      message: error instanceof Error ? error.message : '알림 설정을 저장하지 못했어요.',
+      retry,
+    });
+  }
+
+  async function enableInitialNotifications() {
+    setPermissionBusy(true);
+    setNotifyError(null);
+    try {
+      await pushRegistrar();
+      await notifySettingsUpdater({
+        notifyMedication: true,
+        notifySupplement: true,
+      });
+      finishScheduleFlow();
+    } catch (error: unknown) {
+      showNotifyError(error, () => void enableInitialNotifications());
+    } finally {
+      setPermissionBusy(false);
+    }
+  }
+
+  async function recordInitialNotificationChoice() {
+    setPermissionBusy(true);
+    setNotifyError(null);
+    try {
+      // notifyConsentedAt은 서버 응답 전용입니다. 빈 부분 수정 요청으로 최초 선택만 기록합니다.
+      await notifySettingsUpdater({});
+      finishScheduleFlow();
+    } catch (error: unknown) {
+      showNotifyError(error, () => void recordInitialNotificationChoice());
+    } finally {
+      setPermissionBusy(false);
+    }
+  }
+
+  async function continueAfterScheduleSave(times: MealTimes) {
+    if (permissionReader() === 'unsupported') {
+      finishScheduleFlow();
+      return;
+    }
+    try {
+      const settings = await notifySettingsLoader();
+      if (settings.notifyConsentedAt) {
+        finishScheduleFlow();
+        return;
+      }
+
+      const permission = permissionReader();
+      if (permission === 'default') {
+        setSavedMealTimes(times);
+        setPermissionDialogOpen(true);
+        return;
+      }
+      if (permission === 'granted') {
+        await enableInitialNotifications();
+        return;
+      }
+      await recordInitialNotificationChoice();
+    } catch (error: unknown) {
+      showNotifyError(error, () => void continueAfterScheduleSave(times));
+    }
+  }
+
+  async function handlePermissionAccept() {
+    setPermissionBusy(true);
+    let permission: PushPermission;
+    try {
+      permission = await permissionRequester();
+    } catch (error: unknown) {
+      setPermissionDialogOpen(false);
+      setPermissionBusy(false);
+      showNotifyError(error, () => void handlePermissionAccept());
+      return;
+    }
+    setPermissionDialogOpen(false);
+    setPermissionBusy(false);
+
+    if (permission === 'granted') {
+      await enableInitialNotifications();
+      return;
+    }
+    // 브라우저 프롬프트에서 차단하거나 닫은 것은 작업 실패가 아닙니다.
+    await recordInitialNotificationChoice();
+  }
+
+  async function handlePermissionDismiss() {
+    setPermissionDialogOpen(false);
+    await recordInitialNotificationChoice();
   }
 
   function handleSave() {
@@ -583,6 +719,25 @@ export function MedicationSchedulePage({
         onRetry={() => {
           const retry = saveError?.retry;
           setSaveError(null);
+          retry?.();
+        }}
+      />
+
+      <NotifyPermissionDialog
+        open={permissionDialogOpen}
+        mealTimes={savedMealTimes ?? mealTimes}
+        busy={permissionBusy}
+        onAccept={() => void handlePermissionAccept()}
+        onDismiss={() => void handlePermissionDismiss()}
+      />
+
+      <ErrorDialog
+        open={notifyError !== null}
+        title="알림 설정을 저장하지 못했어요"
+        message={notifyError?.message ?? ''}
+        onRetry={() => {
+          const retry = notifyError?.retry;
+          setNotifyError(null);
           retry?.();
         }}
       />

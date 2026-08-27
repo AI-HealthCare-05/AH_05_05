@@ -169,6 +169,10 @@ test('시간 설정 저장 뒤 홈과 탭 재진입에서 복약 데이터를 �
   await expect(page).toHaveURL(/\/dev\/medication-schedule$/);
   await page.getByRole('button', { name: '시작 아침' }).click();
   await page.getByRole('button', { name: '저장하고 계속' }).click();
+  await page
+    .getByRole('dialog', { name: '복약 시간에 알림을 보내드릴까요?' })
+    .getByRole('button', { name: '나중에' })
+    .click();
   await expect(page).toHaveURL(/\/home$/);
   await expect(page.getByText('오늘의 복약')).toBeVisible();
 

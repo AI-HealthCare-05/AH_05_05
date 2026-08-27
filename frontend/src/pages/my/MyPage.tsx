@@ -1,8 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
-import { BottomTabbar, Button, Card, Header, Switch, type TabKey } from '@/shared/ui';
+import {
+  BottomTabbar,
+  Button,
+  Card,
+  ErrorDialog,
+  Header,
+  NotifyBlockedDialog,
+  NotifyPermissionDialog,
+  Switch,
+  type TabKey,
+} from '@/shared/ui';
+import {
+  getNotifySettings,
+  updateNotifySettings,
+  type NotifySettingKey,
+  type NotifySettings,
+  type UpdateNotifySettingsPayload,
+} from '@/entities/settings';
+import {
+  getPushPermission,
+  requestPushPermission,
+  type PushPermission,
+} from '@/shared/push/permission';
+import { registerPushNotifications } from '@/shared/push/register';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -14,14 +37,203 @@ const TAB_ROUTES: Record<TabKey, string> = {
 
 interface MyPageProps {
   authenticatedOverride?: boolean;
+  notifySettingsLoader?: () => Promise<NotifySettings>;
+  notifySettingsUpdater?: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
+  permissionReader?: () => PushPermission;
+  permissionRequester?: () => Promise<PushPermission>;
+  pushRegistrar?: () => Promise<void>;
 }
 
-export function MyPage({ authenticatedOverride }: MyPageProps) {
+export function MyPage({
+  authenticatedOverride,
+  notifySettingsLoader = getNotifySettings,
+  notifySettingsUpdater = updateNotifySettings,
+  permissionReader = getPushPermission,
+  permissionRequester = requestPushPermission,
+  pushRegistrar = registerPushNotifications,
+}: MyPageProps) {
   const navigate = useNavigate();
   const { authenticated, signOut } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
-  const [medicationNotifications, setMedicationNotifications] = useState(true);
-  const [supplementNotifications, setSupplementNotifications] = useState(false);
+  const [notifySettings, setNotifySettings] = useState<NotifySettings | null>(null);
+  const [notifyLoadError, setNotifyLoadError] = useState<string | null>(null);
+  const [notifyActionError, setNotifyActionError] = useState<{
+    message: string;
+    retry: () => void;
+  } | null>(null);
+  const [pendingToggle, setPendingToggle] = useState<NotifySettingKey | null>(null);
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [blockedDialogOpen, setBlockedDialogOpen] = useState(false);
+  const [notificationBusy, setNotificationBusy] = useState(false);
+  const [pendingSettingKeys, setPendingSettingKeys] = useState<NotifySettingKey[]>([]);
+  const pushPermission = permissionReader();
+  const pushUnsupported = pushPermission === 'unsupported';
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    setNotifyLoadError(null);
+    notifySettingsLoader()
+      .then((settings) => {
+        if (!cancelled) setNotifySettings(settings);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setNotifyLoadError(
+          error instanceof Error ? error.message : '알림 설정을 불러오지 못했어요.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, notifySettingsLoader]);
+
+  async function persistNotifySettings(
+    payload: UpdateNotifySettingsPayload,
+    retry: () => void,
+  ): Promise<NotifySettings | null> {
+    setNotificationBusy(true);
+    setNotifyActionError(null);
+    try {
+      const updated = await notifySettingsUpdater(payload);
+      setNotifySettings(updated);
+      return updated;
+    } catch (error: unknown) {
+      setNotifyActionError({
+        message: error instanceof Error ? error.message : '알림 설정을 저장하지 못했어요.',
+        retry,
+      });
+      return null;
+    } finally {
+      setNotificationBusy(false);
+    }
+  }
+
+  function setSettingPending(key: NotifySettingKey, pending: boolean) {
+    setPendingSettingKeys((current) =>
+      pending
+        ? current.includes(key)
+          ? current
+          : [...current, key]
+        : current.filter((pendingKey) => pendingKey !== key),
+    );
+  }
+
+  async function persistToggleOptimistically(
+    key: NotifySettingKey,
+    checked: boolean,
+    beforeSave: (() => Promise<void>) | undefined,
+    retry: () => void,
+  ) {
+    const previousValue = notifySettings?.[key];
+    if (previousValue === undefined) return;
+
+    setNotifySettings((current) => (current ? { ...current, [key]: checked } : current));
+    setSettingPending(key, true);
+    setNotifyActionError(null);
+    try {
+      await beforeSave?.();
+      const updated = await notifySettingsUpdater({ [key]: checked });
+      setNotifySettings((current) =>
+        current
+          ? {
+              ...current,
+              [key]: updated[key],
+              notifyConsentedAt: updated.notifyConsentedAt,
+            }
+          : updated,
+      );
+      setPendingToggle(null);
+    } catch (error: unknown) {
+      setNotifySettings((current) =>
+        current ? { ...current, [key]: previousValue } : current,
+      );
+      setNotifyActionError({
+        message: error instanceof Error ? error.message : '알림 설정을 저장하지 못했어요.',
+        retry,
+      });
+    } finally {
+      setSettingPending(key, false);
+    }
+  }
+
+  function enableNotification(key: NotifySettingKey) {
+    return persistToggleOptimistically(
+      key,
+      true,
+      pushRegistrar,
+      () => void enableNotification(key),
+    );
+  }
+
+  async function acknowledgeConsentIfNeeded(): Promise<boolean> {
+    if (notifySettings?.notifyConsentedAt) return true;
+    return (await persistNotifySettings({}, () => void acknowledgeConsentIfNeeded())) !== null;
+  }
+
+  function handleNotificationChange(key: NotifySettingKey, checked: boolean) {
+    if (!notifySettings || pendingSettingKeys.includes(key) || pushUnsupported) return;
+    if (!checked) {
+      void persistToggleOptimistically(
+        key,
+        false,
+        undefined,
+        () => handleNotificationChange(key, false),
+      );
+      return;
+    }
+
+    const permission = permissionReader();
+    if (permission === 'granted') {
+      void enableNotification(key);
+      return;
+    }
+    if (permission === 'denied') {
+      setBlockedDialogOpen(true);
+      return;
+    }
+    if (permission === 'default') {
+      setPendingToggle(key);
+      setPermissionDialogOpen(true);
+    }
+  }
+
+  async function handlePermissionAccept() {
+    const key = pendingToggle;
+    if (!key) return;
+    setNotificationBusy(true);
+    let permission: PushPermission;
+    try {
+      permission = await permissionRequester();
+    } catch (error: unknown) {
+      setNotificationBusy(false);
+      setPermissionDialogOpen(false);
+      setNotifyActionError({
+        message: error instanceof Error ? error.message : '알림 권한을 확인하지 못했어요.',
+        retry: () => void handlePermissionAccept(),
+      });
+      return;
+    }
+    setPermissionDialogOpen(false);
+    setNotificationBusy(false);
+
+    if (permission === 'granted') {
+      await enableNotification(key);
+      return;
+    }
+
+    const acknowledged = await acknowledgeConsentIfNeeded();
+    if (!acknowledged) return;
+    setPendingToggle(null);
+    if (permission === 'denied') setBlockedDialogOpen(true);
+  }
+
+  async function handlePermissionDismiss() {
+    setPermissionDialogOpen(false);
+    const acknowledged = await acknowledgeConsentIfNeeded();
+    if (!acknowledged) return;
+    setPendingToggle(null);
+  }
 
   function handleTabChange(key: TabKey) {
     if (key === 'my') return;
@@ -79,18 +291,44 @@ export function MyPage({ authenticatedOverride }: MyPageProps) {
                 알림
               </h2>
               <Card className="gap-0 overflow-hidden p-0">
-                <NotificationRow
-                  label="복약 알림"
-                  checked={medicationNotifications}
-                  onCheckedChange={setMedicationNotifications}
-                />
-                <NotificationRow
-                  label="영양제 알림"
-                  checked={supplementNotifications}
-                  onCheckedChange={setSupplementNotifications}
-                  divided
-                />
+                {notifyLoadError ? (
+                  <div className="p-4">
+                    <p className="font-bold text-foreground">알림 설정을 불러오지 못했어요</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{notifyLoadError}</p>
+                  </div>
+                ) : notifySettings ? (
+                  <>
+                    <NotificationRow
+                      label="복약 알림"
+                      checked={notifySettings.notifyMedication}
+                      disabled={
+                        pendingSettingKeys.includes('notifyMedication') || pushUnsupported
+                      }
+                      onCheckedChange={(checked) =>
+                        handleNotificationChange('notifyMedication', checked)
+                      }
+                    />
+                    <NotificationRow
+                      label="영양제 알림"
+                      checked={notifySettings.notifySupplement}
+                      disabled={
+                        pendingSettingKeys.includes('notifySupplement') || pushUnsupported
+                      }
+                      onCheckedChange={(checked) =>
+                        handleNotificationChange('notifySupplement', checked)
+                      }
+                      divided
+                    />
+                  </>
+                ) : (
+                  <p className="p-4 text-sm text-muted-foreground">알림 설정을 불러오는 중...</p>
+                )}
               </Card>
+              {pushUnsupported && (
+                <p className="text-sm text-muted-foreground">
+                  이 브라우저에서는 알림을 지원하지 않아요
+                </p>
+              )}
             </section>
 
             <section className="flex flex-col gap-3" aria-labelledby="account-title">
@@ -141,6 +379,31 @@ export function MyPage({ authenticatedOverride }: MyPageProps) {
         onChange={handleTabChange}
         className="border-t border-border"
       />
+      <NotifyPermissionDialog
+        open={permissionDialogOpen}
+        title={
+          pendingToggle === 'notifySupplement'
+            ? '영양제 알림을 보내드릴까요?'
+            : '복약 시간에 알림을 보내드릴까요?'
+        }
+        busy={notificationBusy}
+        onAccept={() => void handlePermissionAccept()}
+        onDismiss={() => void handlePermissionDismiss()}
+      />
+      <NotifyBlockedDialog
+        open={blockedDialogOpen}
+        onConfirm={() => setBlockedDialogOpen(false)}
+      />
+      <ErrorDialog
+        open={notifyActionError !== null}
+        title="알림 설정을 저장하지 못했어요"
+        message={notifyActionError?.message ?? ''}
+        onRetry={() => {
+          const retry = notifyActionError?.retry;
+          setNotifyActionError(null);
+          retry?.();
+        }}
+      />
     </div>
   );
 }
@@ -180,11 +443,13 @@ function NotificationRow({
   label,
   checked,
   onCheckedChange,
+  disabled = false,
   divided = false,
 }: {
   label: string;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
   divided?: boolean;
 }) {
   return (
@@ -196,6 +461,7 @@ function NotificationRow({
         id={`notification-${label}`}
         aria-label={label}
         checked={checked}
+        disabled={disabled}
         onCheckedChange={onCheckedChange}
       />
     </div>

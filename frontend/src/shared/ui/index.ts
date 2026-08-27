@@ -15,6 +15,12 @@ export type { StatusBadgeProps, StatusBadgeType } from './StatusBadge';
 export { ErrorDialog } from './ErrorDialog';
 export type { ErrorDialogProps } from './ErrorDialog';
 
+export { NotifyPermissionDialog } from './NotifyPermissionDialog';
+export type { NotifyPermissionDialogProps } from './NotifyPermissionDialog';
+
+export { NotifyBlockedDialog } from './NotifyBlockedDialog';
+export type { NotifyBlockedDialogProps } from './NotifyBlockedDialog';
+
 export { PokeFeatureCarousel } from './PokeFeatureCarousel';
 
 export { ImageViewer } from './ImageViewer';
