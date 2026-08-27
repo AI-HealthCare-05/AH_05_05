@@ -8,12 +8,14 @@ from app.apis.v1 import v1_routers
 from app.core import config
 from app.core.db.databases import initialize_tortoise
 from app.core.exception_handlers import register_exception_handlers
-from app.core.logger import configure_db_query_logging
+from app.core.logger import configure_db_query_logging, configure_root_logging
 from app.core.ocr_upload_middleware import OcrUploadSizeLimitMiddleware
 from app.core.static_files import NoCacheStaticFiles
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+# root 먼저. 이걸 빼면 앱 코드의 logger.info 가 전부 버려진다.
+configure_root_logging(config.LOG_LEVEL)
 configure_db_query_logging(config.DB_QUERY_LOG_ENABLED)
 
 
