@@ -28,7 +28,8 @@ export function EditSupplementSheet({
   onSave,
   onStop,
 }: EditSupplementSheetProps) {
-  const [dailyCount, setDailyCount] = useState(1);
+  const [doseAmount, setDoseAmount] = useState(1);
+  const [doseStep, setDoseStep] = useState(1);
   const [slots, setSlots] = useState<MealSlot[]>(['morning']);
   const [saving, setSaving] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -36,7 +37,8 @@ export function EditSupplementSheet({
 
   useEffect(() => {
     if (!open || !supplement) return;
-    setDailyCount(supplement.dailyCount);
+    setDoseAmount(supplement.doseAmount);
+    setDoseStep(doseStepFor(supplement.doseAmount));
     setSlots([...supplement.slots]);
     setSaving(false);
     setStopping(false);
@@ -47,7 +49,7 @@ export function EditSupplementSheet({
     if (!supplement || slots.length === 0 || saving) return;
     setSaving(true);
     try {
-      await onSave(supplement.supplementId, { dailyCount, slots });
+      await onSave(supplement.supplementId, { doseAmount, slots });
       onOpenChange(false);
     } catch {
       // 저장 실패는 부모 화면의 ErrorDialog가 표시합니다.
@@ -77,7 +79,7 @@ export function EditSupplementSheet({
           <div className="pr-10">
             <DialogTitle className="text-xl">{supplement?.name ?? '영양제'}</DialogTitle>
             <DialogDescription id="supplement-edit-description" className="sr-only">
-              하루 섭취 정수와 복용 시간을 수정합니다.
+              1회 섭취량과 복용 시간을 수정합니다.
             </DialogDescription>
             {supplement && !supplement.nutrientDataAvailable && (
               <StatusBadge type="done" className="mt-2 px-2.5 py-1 text-sm">
@@ -87,9 +89,11 @@ export function EditSupplementSheet({
           </div>
 
           <DoseSlotFields
-            dailyCount={dailyCount}
+            doseAmount={doseAmount}
+            doseUnit={supplement?.doseUnit ?? '정'}
+            doseStep={doseStep}
             slots={slots}
-            onDailyCountChange={setDailyCount}
+            onDoseAmountChange={setDoseAmount}
             onSlotsChange={setSlots}
           />
 
@@ -126,4 +130,10 @@ export function EditSupplementSheet({
       </Dialog>
     </>
   );
+}
+
+function doseStepFor(amount: number): number {
+  if (!Number.isFinite(amount)) return 1;
+  const fraction = Math.round((amount % 1) * 1_000) / 1_000;
+  return fraction > 0 ? fraction : 1;
 }

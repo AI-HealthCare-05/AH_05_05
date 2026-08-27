@@ -41,7 +41,12 @@ function product(
     dosageForm: '정제',
     packageAmount,
     category: '종합비타민',
-    recommendedDailyCount,
+    servingDescription: `${recommendedDailyCount ?? 1}정`,
+    servingSize: packageAmount,
+    dailyFrequency: '1회',
+    recommendedDoseAmount: recommendedDailyCount,
+    doseUnit: '정',
+    recommendedSlots: ['morning'],
     nutrients: BASE_MULTIVITAMIN_NUTRIENTS.map((nutrient) => ({ ...nutrient })),
   };
 }
@@ -168,8 +173,10 @@ function initialSupplements(): Supplement[] {
   return [
     {
       supplementId: 501,
+      productId: 'mock-501',
       name: '오메가3',
-      dailyCount: 2,
+      doseAmount: 1,
+      doseUnit: '정',
       slots: ['morning', 'evening'],
       nutrientDataAvailable: true,
       nutrients: [
@@ -181,8 +188,10 @@ function initialSupplements(): Supplement[] {
     },
     {
       supplementId: 502,
+      productId: 'mock-502',
       name: '종합비타민',
-      dailyCount: 1,
+      doseAmount: 1,
+      doseUnit: '정',
       slots: ['morning'],
       nutrientDataAvailable: true,
       nutrients: [
@@ -222,8 +231,10 @@ function initialSupplements(): Supplement[] {
     },
     {
       supplementId: 503,
+      productId: 'mock-503',
       name: '비타민 D',
-      dailyCount: 1,
+      doseAmount: 1,
+      doseUnit: '정',
       slots: ['evening'],
       nutrientDataAvailable: true,
       nutrients: [
@@ -278,8 +289,10 @@ export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
       : undefined;
   const added: Supplement = {
     supplementId: Date.now(),
+    productId: standardProduct?.productId ?? null,
     name: standardProduct?.productName ?? payload.name,
-    dailyCount: payload.dailyCount,
+    doseAmount: payload.doseAmount,
+    doseUnit: payload.doseUnit,
     slots: [...payload.slots],
     nutrientDataAvailable: Boolean(standardProduct),
     nutrients: standardProduct
@@ -298,7 +311,7 @@ export function mockUpdateSupplement(
   if (index === -1) throw new Error('영양제를 찾지 못했어요.');
   const updated: Supplement = {
     ...supplementStore[index],
-    dailyCount: payload.dailyCount,
+    doseAmount: payload.doseAmount,
     slots: [...payload.slots],
   };
   supplementStore = supplementStore.map((supplement, itemIndex) =>

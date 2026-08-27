@@ -8,8 +8,9 @@
 - Swagger: `/api/docs`
 - OpenAPI JSON: `/api/openapi.json`
 
-> 이 문서는 OCR 담당 파트의 신규 명세다. 기존 `docs/medication-guide-ocr-api.md` 및 기존 기획 문서는
-> 수정하거나 삭제하지 않는다. 현재 실행 코드, Swagger/OpenAPI, 프론트 실 API 연결 결과를 기준으로 작성했다.
+> 이 문서는 OCR 서버 계약의 단일 기준 문서다. 기존 `docs/medication-guide-ocr-api.md`에는
+> 폐기된 동기 계약 대신 이 문서로 연결되는 전환 안내만 유지한다. 현재 실행 코드,
+> Swagger/OpenAPI, 프론트 실 API 연결 결과를 기준으로 작성했다.
 
 ---
 

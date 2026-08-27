@@ -18,8 +18,10 @@ from .medications import Medication, MedicationSlot
 from .ocr import OcrJob, OcrJobStatus
 from .recovery import RecoveryGuide, RecoveryGuideSource
 from .supplement_nutrients import (
+    DisplaySupplementNutrientRank,
     NutrientStandard,
     SupplementNutrient,
+    SupplementNutrientRankItem,
     UserSupplementNutrient,
     UserSupplementNutrientSlot,
 )

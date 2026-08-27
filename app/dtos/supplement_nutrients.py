@@ -45,3 +45,8 @@ class SupplementNutrientListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class PopularSupplementNutrientResponse(BaseModel):
+    id: int
+    name: str

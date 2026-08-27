@@ -65,6 +65,29 @@
 .sidebar-link { border: 2px solid transparent; color: #4b5563; font-weight: 500; text-decoration: none; transition: background .15s, border-color .15s, color .15s; }
 .sidebar-link:hover { background: #f3f4f6; }
 .sidebar-link.is-active { background: #eff6ff; border-color: #1d4ed8; color: #1d4ed8; font-weight: 700; }
+.sidebar-menu-group { margin-top: 4px; }
+.sidebar-group-label { color: #374151; font-weight: 700; }
+.sidebar-subnav { margin-top: 2px; padding-left: 14px; }
+.sidebar-sublink { position: relative; }
+.ranking-description { color: #6b7280; font-size: 14px; }
+.ranking-heading, .rank-form-heading, .rank-form-actions, .rank-search-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rank-display-form { padding: 20px; }
+.rank-form-grid { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(190px, 1fr)) auto; gap: 14px; align-items: end; margin: 18px 0; }
+.rank-form-grid label, .rank-product-search > label, .rank-field-label { display: grid; gap: 6px; color: #374151; font-size: 13px; font-weight: 600; }
+.rank-enabled { display: flex !important; align-items: center; min-height: 36px; white-space: nowrap; }
+.rank-product-search { margin-bottom: 18px; }
+.rank-search-row { justify-content: flex-start; margin-top: 6px; }
+.rank-search-row input { width: min(420px, 100%); }
+.rank-search-results { display: flex; flex-wrap: wrap; gap: 8px; min-height: 32px; margin-top: 10px; color: #6b7280; font-size: 13px; }
+.rank-product-result { border: 1px solid #dbe3ef; border-radius: 999px; background: #f8fafc; padding: 6px 10px; color: #1f2937; cursor: pointer; }
+.rank-product-result:hover { border-color: #1c64f2; color: #1c64f2; }
+.rank-selected-list { display: grid; gap: 7px; margin-top: 8px; }
+.rank-selected-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; border: 1px solid #e5e7eb; border-radius: 7px; padding: 6px 10px; }
+.rank-selected-list small, .rank-product-result small { color: #6b7280; }
+.rank-selected-list .rank-selected-empty { justify-content: center; color: #6b7280; border-style: dashed; }
+.rank-form-error { min-height: 21px; margin-top: 10px; color: #b91c1c; font-size: 13px; }
+.rank-form-actions { justify-content: flex-end; margin-top: 8px; }
 [data-sidebar-error="true"] { color: #b91c1c; font-size: 13px; padding: 24px 16px; }
 @media (max-width: 900px) { .desktop-sidebar { width: 190px !important; } .management-toolbar { align-items: stretch !important; flex-direction: column; } }
+@media (max-width: 1100px) { .rank-form-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 700px) { .desktop-sidebar { display: none !important; } .management-page main { width: 100%; } }
