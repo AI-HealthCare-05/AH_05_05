@@ -71,9 +71,7 @@ class TestAdminRoleUpdateAPI(AdminRoleTestBase):
 
     async def test_rejects_own_role_change(self) -> None:
         """스스로를 낮추면 되돌릴 API 에도 접근할 수 없어 복구 수단이 없다."""
-        response = await request(
-            "PATCH", role_url(self.super_admin.id), headers=self.headers, json={"role": "STAFF"}
-        )
+        response = await request("PATCH", role_url(self.super_admin.id), headers=self.headers, json={"role": "STAFF"})
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["code"] == "CANNOT_CHANGE_OWN_ROLE"
@@ -211,7 +209,5 @@ class TestAdminRoleTakesEffectImmediately(AdminRoleTestBase):
         assert after.status_code == status.HTTP_403_FORBIDDEN
 
         # 조회는 STAFF 도 허용이라 그대로 통한다(권한 매트릭스)
-        still_readable = await request(
-            "GET", ADMIN_ACCOUNTS_URL, headers=target_token, params={"page": 1, "size": 10}
-        )
+        still_readable = await request("GET", ADMIN_ACCOUNTS_URL, headers=target_token, params={"page": 1, "size": 10})
         assert still_readable.status_code == status.HTTP_200_OK

@@ -261,9 +261,7 @@ async def update_admin_status(
         status.HTTP_403_FORBIDDEN: {"description": "FORBIDDEN — ADMIN 이 아님"},
         status.HTTP_404_NOT_FOUND: {"description": "ADMIN_NOT_FOUND"},
         status.HTTP_409_CONFLICT: {
-            "description": (
-                "CANNOT_CHANGE_OWN_ROLE / SAME_ROLE / LAST_ACTIVE_ADMIN / CANNOT_CHANGE_INACTIVE_ADMIN"
-            )
+            "description": ("CANNOT_CHANGE_OWN_ROLE / SAME_ROLE / LAST_ACTIVE_ADMIN / CANNOT_CHANGE_INACTIVE_ADMIN")
         },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {"description": "VALIDATION_ERROR — role 이 enum 밖"},
     },
