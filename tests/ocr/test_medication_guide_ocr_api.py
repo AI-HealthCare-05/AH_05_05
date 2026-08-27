@@ -216,9 +216,7 @@ def test_openapi_documents_ocr_path_validation_with_the_runtime_error_contract()
 
 
 def test_openapi_documents_ocr_images_as_binary_responses() -> None:
-    image_content = app.openapi()["paths"]["/api/v1/ocr/jobs/{ocrJobId}/image"]["get"]["responses"]["200"][
-        "content"
-    ]
+    image_content = app.openapi()["paths"]["/api/v1/ocr/jobs/{ocrJobId}/image"]["get"]["responses"]["200"]["content"]
     expected_schema = {"type": "string", "format": "binary"}
 
     assert image_content["image/jpeg"]["schema"] == expected_schema

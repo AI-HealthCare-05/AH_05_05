@@ -153,9 +153,7 @@ def test_signup_openapi_documents_response_schemas() -> None:
     openapi = app.openapi()
     responses = openapi["paths"]["/api/v1/auth/signup"]["post"]["responses"]
 
-    assert responses["201"]["content"]["application/json"]["schema"] == {
-        "$ref": "#/components/schemas/SignUpResponse"
-    }
+    assert responses["201"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/SignUpResponse"}
     assert responses["409"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/AuthErrorResponse"
     }
