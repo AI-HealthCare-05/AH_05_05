@@ -112,42 +112,157 @@ export function statusAction(admin) {
  * 파일을 고쳐도 브라우저가 옛 HTML 을 쓸 수 있다. 내용이 바뀐 오버레이만 호출부에서
  * 쿼리를 붙인다. (js 모듈 import 경로 전반의 캐시 문제는 #128 에서 다룬다)
  */
-const ROLE_OVERLAY_URL = "overlay-admin-edit.html";
+const EDIT_OVERLAY_URL = "overlay-admin-edit.html";
 // PR #118 에서 문구를 실제 동작에 맞게 고쳤다("재설정 링크 발송" -> 임시 비밀번호 발송).
 // 캐시 무효화가 없어 옛 문구가 그대로 노출된다. 기능은 동작하므로 긴급하지는 않았다.
 const PASSWORD_RESET_OVERLAY_URL = "overlay-password-reset.html";
 
 /**
- * 409 를 어디에 보여줄지 정한다. 역할 선택 자체의 문제면 오류칸, 그 외는 토스트다.
+ * 서버 오류를 어느 칸에 붙일지 정한다. 해당 칸이 없으면 토스트로 흘린다.
  * 문구는 항상 서버 message 를 그대로 쓴다 — 화면에서 새로 만들면 서버와 어긋난다.
  */
-const ROLE_ERROR_IN_FIELD = new Set(["SAME_ROLE", "CANNOT_CHANGE_OWN_ROLE"]);
+const ERROR_FIELD_BY_CODE = {
+  SAME_ROLE: "role",
+  CANNOT_CHANGE_OWN_ROLE: "role",
+  INVALID_PASSWORD: "currentPassword",
+  SAME_AS_CURRENT: "newPassword",
+};
 
-/** 역할 변경 오버레이를 연다. 성공하면 목록을 다시 읽는다. */
-async function openRoleOverlay(admin, reloadList) {
-  const overlay = await openOverlay(ROLE_OVERLAY_URL, {
-    onConfirm: async (panel) => {
-      const select = panel.querySelector("[name='role']");
-      const errorSlot = panel.querySelector("[data-error-for='role']");
-      const confirmButton = panel.querySelector("[data-overlay-confirm]");
-      const nextRole = roleValue(select.value);
+const EDIT_FIELDS = ["name", "role", "currentPassword", "newPassword", "newPasswordConfirm"];
 
-      errorSlot.textContent = "";
-      const originalLabel = confirmButton.textContent;
-      confirmButton.disabled = true;
-      confirmButton.textContent = "변경 중…";
+/**
+ * 수정 오버레이의 프론트 검증.
+ *
+ * 비밀번호 정책(8자·대소문자·숫자·특수문자)은 서버가 판정한다. 같은 규칙을 여기서 다시
+ * 구현하면 정책이 바뀔 때 두 곳이 어긋난다. 비어 있는지와 확인 값이 맞는지만 본다.
+ *
+ * 비밀번호 세 칸은 **한 칸이라도 채워졌을 때만** 검사한다. 이름만 고치러 들어온 사람에게
+ * 비밀번호를 요구하면 안 된다.
+ */
+export function validateAdminEdit({ name, currentPassword, newPassword, newPasswordConfirm }) {
+  const errors = {};
+  if (!name.trim()) errors.name = "관리자 이름을 입력해주세요.";
 
+  if (currentPassword || newPassword || newPasswordConfirm) {
+    if (!currentPassword) errors.currentPassword = "현재 비밀번호를 입력해주세요.";
+    if (!newPassword) errors.newPassword = "새 비밀번호를 입력해주세요.";
+    if (!newPasswordConfirm) errors.newPasswordConfirm = "새 비밀번호를 한 번 더 입력해주세요.";
+    else if (newPassword && newPassword !== newPasswordConfirm) {
+      errors.newPasswordConfirm = "새 비밀번호가 일치하지 않습니다.";
+    }
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
+/**
+ * 오버레이에서 무엇을 보여줄지 정한다. 권한 매트릭스를 한 곳에 모아 둔다.
+ *
+ * 비밀번호 칸은 **본인 행에서만** 낸다. 변경 API 의 대상은 토큰의 sub 라 남의 행에서
+ * 열어두면 ADMIN 이 남의 비밀번호를 바꾸는 줄 알고 자기 것을 바꾸게 된다. 남의 비밀번호를
+ * 다루는 수단은 「재설정」(임시 비밀번호 재발송)뿐이다.
+ *
+ * 역할 칸은 ADMIN 이 남의 행을 볼 때만 낸다. 본인 역할은 서버가 409 로 막는다.
+ */
+export function editOverlayVisibility(admin, currentAdminId, currentRole) {
+  const isSelf = admin.adminId === currentAdminId;
+  const isAdmin = currentRole === "ADMIN";
+  return { role: isAdmin && !isSelf, password: isSelf, reset: isAdmin };
+}
+
+/**
+ * 임시 비밀번호를 재발송한다. 목록의 「재설정」과 수정 오버레이의 「재설정」이 함께 쓴다.
+ *
+ * 되돌릴 수 없는 동작이라 확인 오버레이를 먼저 띄운다. 성공하면 대상 계정은 PENDING 이
+ * 되고 기존 비밀번호는 못 쓴다.
+ */
+async function resetTemporaryPassword(adminId, reloadList) {
+  await openOverlay(PASSWORD_RESET_OVERLAY_URL, {
+    onConfirm: async () => {
       try {
-        await patch(`/admin/accounts/${admin.adminId}/role`, { role: nextRole });
+        const result = await post(`/admin/accounts/${adminId}/password/reset`);
         closeOverlay();
         await reloadList();
-        showToast(`${admin.name}의 역할을 ${roleLabel(nextRole)}로 변경했습니다.`);
+        // 재설정 "링크"가 아니라 임시 비밀번호를 보낸다. 문구를 실제 동작에 맞춘다.
+        if (result.emailSent) {
+          showToast(`${result.email}로 임시 비밀번호를 발송했습니다.`);
+        } else {
+          // "발송 실패"만 쓰면 상대가 잠겼다는 사실이 안 보인다. 서버는 발송에
+          // 실패해도 되돌리지 않고 비밀번호를 이미 바꿔놨다(reset_password).
+          showToast(RESET_MAIL_FAILED_MESSAGE, "error");
+        }
+      } catch (error) {
+        const message = error instanceof ApiError ? error.message : "임시 비밀번호 발송에 실패했습니다.";
+        showToast(message, "error");
+      }
+    },
+  });
+}
+
+/** 관리자 수정 오버레이를 연다. 성공하면 목록을 다시 읽는다. */
+async function openEditOverlay(admin, { currentAdminId, currentRole }, reloadList) {
+  const visibility = editOverlayVisibility(admin, currentAdminId, currentRole);
+
+  const overlay = await openOverlay(EDIT_OVERLAY_URL, {
+    onConfirm: async (panel) => {
+      const valueOf = (field) => panel.querySelector(`[name='${field}']`)?.value ?? "";
+      const setFieldError = (field, message = "") => {
+        const input = panel.querySelector(`[name='${field}']`);
+        const slot = panel.querySelector(`[data-error-for='${field}']`);
+        input?.setAttribute("aria-invalid", String(Boolean(message)));
+        if (slot) slot.textContent = message;
+      };
+
+      const name = valueOf("name");
+      const currentPassword = valueOf("currentPassword");
+      const newPassword = valueOf("newPassword");
+
+      const result = validateAdminEdit({
+        name,
+        currentPassword,
+        newPassword,
+        newPasswordConfirm: valueOf("newPasswordConfirm"),
+      });
+      EDIT_FIELDS.forEach((field) => setFieldError(field, result.errors[field]));
+      if (!result.valid) return;
+
+      const nextRole = visibility.role ? roleValue(valueOf("role")) : admin.role;
+      const changed = [];
+
+      const confirmButton = panel.querySelector("[data-overlay-confirm]");
+      const originalLabel = confirmButton.textContent;
+      confirmButton.disabled = true;
+      confirmButton.textContent = "저장 중…";
+
+      try {
+        // 하나씩 순서대로 보낸다. 첫 실패에서 멈추므로 앞의 것은 이미 반영돼 있다.
+        // 세 변경을 한 번에 담는 API 가 없어 원자성은 없다. 어디까지 됐는지는
+        // 목록을 다시 읽어 보여준다.
+        if (name.trim() !== admin.name) {
+          await patch(`/admin/accounts/${admin.adminId}/name`, { name: name.trim() });
+          changed.push("이름");
+        }
+        if (nextRole !== admin.role) {
+          await patch(`/admin/accounts/${admin.adminId}/role`, { role: nextRole });
+          changed.push("역할");
+        }
+        if (visibility.password && newPassword) {
+          // 확인 칸은 보내지 않는다. API 는 currentPassword·newPassword 만 받는다.
+          await patch("/admin/accounts/password", { currentPassword, newPassword });
+          changed.push("비밀번호");
+        }
+
+        closeOverlay();
+        await reloadList();
+        showToast(changed.length ? `${changed.join("·")}을(를) 변경했습니다.` : "변경한 내용이 없습니다.");
       } catch (error) {
         if (!(error instanceof ApiError)) {
-          showToast("역할을 변경하지 못했습니다.", "error");
+          showToast("수정하지 못했습니다.", "error");
           return;
         }
-        if (ROLE_ERROR_IN_FIELD.has(error.code)) errorSlot.textContent = error.message;
+        // 422 는 공통 핸들러가 field 를 함께 준다. 없으면 코드로 칸을 찾는다.
+        const field = ERROR_FIELD_BY_CODE[error.code] ?? (EDIT_FIELDS.includes(error.field) ? error.field : null);
+        if (field && panel.querySelector(`[data-error-for='${field}']`)) setFieldError(field, error.message);
         else showToast(error.message, "error");
       } finally {
         confirmButton.disabled = false;
@@ -156,19 +271,19 @@ async function openRoleOverlay(admin, reloadList) {
     },
   });
 
-  overlay.querySelector("[data-admin-name]").textContent = admin.name;
   overlay.querySelector("[data-admin-email]").textContent = admin.email;
+  overlay.querySelector("[name='name']").value = admin.name;
+  overlay.querySelector("[name='role']").value = roleLabel(admin.role);
 
-  const select = overlay.querySelector("[name='role']");
-  const confirmButton = overlay.querySelector("[data-overlay-confirm]");
-  select.value = roleLabel(admin.role);
+  // 권한 때문에 모든 행에서 균일하게 불가한 것은 비활성이 아니라 감춘다.
+  overlay.querySelector("[data-role-field]").hidden = !visibility.role;
+  overlay.querySelector("[data-password-section]").hidden = !visibility.password;
+  overlay.querySelector("[data-reset-section]").hidden = !visibility.reset;
 
-  // 같은 역할이면 서버가 409 SAME_ROLE 로 막는다. 굳이 보게 하지 않는다.
-  const syncConfirmState = () => {
-    confirmButton.disabled = roleValue(select.value) === admin.role;
-  };
-  select.addEventListener("change", syncConfirmState);
-  syncConfirmState();
+  overlay.querySelector("[data-admin-edit-reset]")?.addEventListener("click", async () => {
+    closeOverlay();
+    await resetTemporaryPassword(admin.adminId, reloadList);
+  });
 
   return overlay;
 }
@@ -328,26 +443,7 @@ function initializeAdminManagement() {
     const admin = currentItems.find((item) => item.adminId === adminId);
 
     if (button.dataset.adminAction === "reset") {
-      await openOverlay(PASSWORD_RESET_OVERLAY_URL, {
-        onConfirm: async () => {
-          try {
-            const result = await post(`/admin/accounts/${adminId}/password/reset`);
-            closeOverlay();
-            await load();
-            // 재설정 "링크"가 아니라 임시 비밀번호를 보낸다. 문구를 실제 동작에 맞춘다.
-            if (result.emailSent) {
-              showToast(`${result.email}로 임시 비밀번호를 발송했습니다.`);
-            } else {
-              // "발송 실패"만 쓰면 상대가 잠겼다는 사실이 안 보인다. 서버는 발송에
-              // 실패해도 되돌리지 않고 비밀번호를 이미 바꿔놨다(reset_password).
-              showToast(RESET_MAIL_FAILED_MESSAGE, "error");
-            }
-          } catch (error) {
-            const message = error instanceof ApiError ? error.message : "임시 비밀번호 발송에 실패했습니다.";
-            showToast(message, "error");
-          }
-        },
-      });
+      await resetTemporaryPassword(adminId, load);
       return;
     }
 
@@ -389,7 +485,7 @@ function initializeAdminManagement() {
 
     if (button.dataset.adminAction === "edit") {
       if (!admin) return;
-      await openRoleOverlay(admin, load);
+      await openEditOverlay(admin, { currentAdminId, currentRole }, load);
     }
   });
 

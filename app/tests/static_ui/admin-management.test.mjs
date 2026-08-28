@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
+  editOverlayVisibility,
+  validateAdminEdit,
   RESET_MAIL_FAILED_MESSAGE,
   editBlockedReason,
   filterAdmins,
@@ -111,6 +114,104 @@ test("statusAction offers nothing for withdrawn rows", () => {
 test("reset failure message says the target cannot log in", () => {
   // "발송 실패"만 쓰면 상대가 잠겼다는 사실이 안 보인다.
   assert.match(RESET_MAIL_FAILED_MESSAGE, /로그인할 수 없/);
+});
+
+test("editOverlayVisibility shows role only to an ADMIN looking at someone else", () => {
+  assert.equal(editOverlayVisibility({ adminId: 9 }, 3, "ADMIN").role, true);
+  // 본인 역할은 서버가 409 로 막는다.
+  assert.equal(editOverlayVisibility({ adminId: 3 }, 3, "ADMIN").role, false);
+  assert.equal(editOverlayVisibility({ adminId: 9 }, 3, "STAFF").role, false);
+});
+
+test("editOverlayVisibility shows the password fields only on your own row", () => {
+  // 변경 API 의 대상은 토큰의 sub 다. 남의 행에서 열어두면 자기 비밀번호를 바꾸게 된다.
+  assert.equal(editOverlayVisibility({ adminId: 3 }, 3, "ADMIN").password, true);
+  assert.equal(editOverlayVisibility({ adminId: 3 }, 3, "STAFF").password, true);
+  assert.equal(editOverlayVisibility({ adminId: 9 }, 3, "ADMIN").password, false);
+});
+
+test("editOverlayVisibility hides 재설정 from STAFF", () => {
+  assert.equal(editOverlayVisibility({ adminId: 9 }, 3, "ADMIN").reset, true);
+  assert.equal(editOverlayVisibility({ adminId: 3 }, 3, "STAFF").reset, false);
+});
+
+test("validateAdminEdit rejects a blank name", () => {
+  assert.deepEqual(validateAdminEdit({ name: "  ", currentPassword: "", newPassword: "", newPasswordConfirm: "" }), {
+    valid: false,
+    errors: { name: "관리자 이름을 입력해주세요." },
+  });
+});
+
+test("validateAdminEdit does not demand a password when only the name changes", () => {
+  assert.deepEqual(validateAdminEdit({ name: "한지수", currentPassword: "", newPassword: "", newPasswordConfirm: "" }), {
+    valid: true,
+    errors: {},
+  });
+});
+
+test("validateAdminEdit demands the whole trio once any password field is touched", () => {
+  const result = validateAdminEdit({
+    name: "한지수",
+    currentPassword: "",
+    newPassword: "NewPass1!",
+    newPasswordConfirm: "",
+  });
+
+  assert.equal(result.valid, false);
+  assert.equal(result.errors.currentPassword, "현재 비밀번호를 입력해주세요.");
+  assert.equal(result.errors.newPasswordConfirm, "새 비밀번호를 한 번 더 입력해주세요.");
+});
+
+test("validateAdminEdit rejects a mismatched confirmation", () => {
+  const result = validateAdminEdit({
+    name: "한지수",
+    currentPassword: "Temp1234!",
+    newPassword: "NewPass1!",
+    newPasswordConfirm: "NewPass2!",
+  });
+
+  assert.deepEqual(result.errors, { newPasswordConfirm: "새 비밀번호가 일치하지 않습니다." });
+});
+
+test("validateAdminEdit leaves the password policy to the server", () => {
+  // 8자 미만이지만 프론트는 막지 않는다. 정책 판정은 서버 몫이다.
+  assert.deepEqual(
+    validateAdminEdit({ name: "한지수", currentPassword: "Temp1234!", newPassword: "s", newPasswordConfirm: "s" }),
+    { valid: true, errors: {} },
+  );
+});
+
+test("edit overlay carries the fields the script fills in", async () => {
+  const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+
+  for (const hook of [
+    "data-admin-email",
+    "data-role-field",
+    "data-password-section",
+    "data-reset-section",
+    "data-admin-edit-reset",
+  ]) {
+    assert.match(html, new RegExp(hook), `${hook} 가 없으면 스크립트가 조용히 아무것도 못 한다`);
+  }
+  for (const field of ["name", "role", "currentPassword", "newPassword", "newPasswordConfirm"]) {
+    assert.match(html, new RegExp(`name="${field}"`));
+  }
+});
+
+test("edit overlay states the password policy", async () => {
+  const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+
+  assert.match(html, /8자 이상, 대문자·소문자·숫자·특수문자를 각각 1개 이상/);
+});
+
+test("edit overlay does not resurrect the account-active checkbox", async () => {
+  // 정지·활성화는 목록 버튼이 맡는다. 두 곳에서 상태를 바꾸면 서로 어긋난다.
+  const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+
+  assert.doesNotMatch(html, /type="checkbox"/);
 });
 
 test("updateAdminStatus changes only the matching admin", () => {
