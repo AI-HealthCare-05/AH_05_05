@@ -411,15 +411,15 @@ class TestDashboardPermissions(DashboardTestBase):
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["code"] == "UNAUTHORIZED"
 
-    async def test_pending_admin_is_forbidden(self) -> None:
+    async def test_pending_admin_is_allowed(self) -> None:
+        """비밀번호 변경이 선택제가 되면서 PENDING 도 열렸다(예전에는 403 이었다)."""
         pending = await create_admin(
             name="대기", email="pending@ozcoding.ai", role=AdminRole.ADMIN, status=AccountStatus.PENDING
         )
 
         response = await request("GET", DASHBOARD_SUMMARY_URL, headers=auth_header(pending.id))
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert response.json()["code"] == "FORBIDDEN"
+        assert response.status_code == status.HTTP_200_OK
 
     async def test_suspended_admin_is_forbidden(self) -> None:
         suspended = await create_admin(
