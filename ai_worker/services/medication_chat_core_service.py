@@ -5,6 +5,11 @@ from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.llm.generators.medication_answer_generator import (
     OpenAIMedicationAnswerGenerator,
 )
+from ai_worker.observability.chat_tracer import (
+    ChatTracer,
+    NoOpChatTracer,
+    build_chat_tracer,
+)
 from ai_worker.providers.db_active_intake_context_provider import (
     DbActiveIntakeContextProvider,
 )
@@ -41,8 +46,14 @@ class MedicationChatCoreService:
         self,
         *,
         use_case: AnswerMedicationQuestionUseCase,
+        tracer: ChatTracer | None = None,
     ) -> None:
         self._use_case = use_case
+        self._tracer = tracer or NoOpChatTracer()
+
+    @property
+    def tracer(self) -> ChatTracer:
+        return self._tracer
 
     async def answer(
         self,
@@ -62,9 +73,11 @@ def build_medication_chat_core_service(
     *,
     settings: Config,
     qdrant_client: AsyncQdrantClient,
+    tracer: ChatTracer | None = None,
 ) -> MedicationChatCoreService:
     if settings.OPENAI_API_KEY is None or not settings.OPENAI_API_KEY.get_secret_value().strip():
         raise AIConfigurationError("약·영양제 Chat Core를 구성하려면 OPENAI_API_KEY가 필요합니다.")
+    chat_tracer = tracer or build_chat_tracer(settings)
     embedding_provider = OpenAIEmbeddingProvider(
         model=settings.OPENAI_EMBEDDING_MODEL,
         dimensions=settings.OPENAI_EMBEDDING_DIMENSIONS,
@@ -94,5 +107,9 @@ def build_medication_chat_core_service(
             max_retries=settings.OPENAI_MAX_RETRIES,
         ),
         grounded_claim_validator=RuleBasedGroundedClaimValidator(),
+        tracer=chat_tracer,
     )
-    return MedicationChatCoreService(use_case=use_case)
+    return MedicationChatCoreService(
+        use_case=use_case,
+        tracer=chat_tracer,
+    )

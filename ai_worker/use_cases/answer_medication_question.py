@@ -13,6 +13,7 @@ from ai_worker.domain.interfaces import (
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
 )
+from ai_worker.observability.chat_tracer import ChatTracer, NoOpChatTracer
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     find_supplement_interaction_pair,
     known_supplement_names_in,
@@ -59,6 +60,7 @@ class AnswerMedicationQuestionUseCase:
         knowledge_retriever: MedicationKnowledgeRetriever,
         answer_generator: MedicationAnswerGenerator,
         grounded_claim_validator: GroundedClaimValidator,
+        tracer: ChatTracer | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -66,6 +68,7 @@ class AnswerMedicationQuestionUseCase:
         self._knowledge_retriever = knowledge_retriever
         self._answer_generator = answer_generator
         self._grounded_claim_validator = grounded_claim_validator
+        self._tracer = tracer or NoOpChatTracer()
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -79,13 +82,33 @@ class AnswerMedicationQuestionUseCase:
             progress_callback,
             MedicationChatProgressStage.QUESTION_CHECKING,
         )
-        context = await self._context_provider.get_active_context(
-            user_id=request.user_id,
-            care_episode_id=request.care_episode_id,
-        )
-        query_plan = MedicationKnowledgeQueryBuilder().build(
-            request.question,
-        )
+        async with self._tracer.span(
+            "patient_context.load",
+            run_type="tool",
+        ) as context_span:
+            context = await self._context_provider.get_active_context(
+                user_id=request.user_id,
+                care_episode_id=request.care_episode_id,
+            )
+            context_span.end(
+                {
+                    "medication_count": len(context.medications),
+                    "supplement_count": len(context.supplements),
+                    "context_hash": self._context_hash(context),
+                }
+            )
+        async with self._tracer.span("query.plan") as query_span:
+            query_plan = MedicationKnowledgeQueryBuilder().build(
+                request.question,
+            )
+            query_span.end(
+                {
+                    "entity_count": len(query_plan.entity_names),
+                    "section_count": len(query_plan.section_types),
+                    "interaction_pair_present": (query_plan.interaction_pair is not None),
+                    "medication_product_cue": (query_plan.has_medication_product_cue),
+                }
+            )
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
         )
@@ -93,44 +116,75 @@ class AnswerMedicationQuestionUseCase:
             progress_callback,
             MedicationChatProgressStage.EVIDENCE_SEARCHING,
         )
-        rules = await self._interaction_rule_repository.find_approved_rules(
-            context=context,
-        )
-        chunks, rag_unavailable = await self._retrieve_knowledge(
-            request=request,
-            context=context,
-            rules=rules,
-            limit=limit,
-        )
+        async with self._tracer.span(
+            "interaction_rules.search",
+            run_type="tool",
+        ) as rules_span:
+            rules = await self._interaction_rule_repository.find_approved_rules(
+                context=context,
+            )
+            rules_span.end({"approved_rule_count": len(rules)})
+        async with self._tracer.span(
+            "rag.retrieve",
+            run_type="retriever",
+        ) as rag_span:
+            chunks, rag_unavailable = await self._retrieve_knowledge(
+                request=request,
+                context=context,
+                rules=rules,
+                limit=limit,
+            )
+            rag_span.end(
+                {
+                    "accepted_count": len(chunks),
+                    "rag_unavailable": rag_unavailable,
+                    "max_score": max(
+                        (chunk.similarity_score for chunk in chunks),
+                        default=None,
+                    ),
+                }
+            )
         has_supplement_evidence = self._has_supplement_evidence(
             request.question,
             chunks=chunks,
         )
-        guide_lookup = (
-            MedicationGuideLookup()
+        async with self._tracer.span(
+            "medication_guide.lookup",
+            run_type="tool",
+        ) as guide_span:
+            guide_lookup = (
+                MedicationGuideLookup()
+                if (
+                    query_plan.interaction_pair is not None
+                    or (has_supplement_evidence and not query_plan.has_medication_product_cue)
+                )
+                else await self._find_guide(
+                    request=request,
+                    context=context,
+                    interaction_question=interaction_question,
+                )
+            )
+            family_reference = False
             if (
-                query_plan.interaction_pair is not None
-                or (has_supplement_evidence and not query_plan.has_medication_product_cue)
-            )
-            else await self._find_guide(
-                request=request,
-                context=context,
-                interaction_question=interaction_question,
-            )
-        )
-        family_reference = False
-        if (
-            guide_lookup.is_ambiguous
-            and guide_lookup.representative_guide is not None
-            and not self._EXACT_PRODUCT_REQUIRED_PATTERN.search(
-                request.question,
-            )
-        ):
-            family_reference = True
-            guide_lookup = guide_lookup.model_copy(
-                update={
-                    "guide": guide_lookup.representative_guide,
-                    "is_ambiguous": False,
+                guide_lookup.is_ambiguous
+                and guide_lookup.representative_guide is not None
+                and not self._EXACT_PRODUCT_REQUIRED_PATTERN.search(
+                    request.question,
+                )
+            ):
+                family_reference = True
+                guide_lookup = guide_lookup.model_copy(
+                    update={
+                        "guide": guide_lookup.representative_guide,
+                        "is_ambiguous": False,
+                    }
+                )
+            guide_span.end(
+                {
+                    "guide_found": guide_lookup.guide is not None,
+                    "ambiguous": guide_lookup.is_ambiguous,
+                    "candidate_count": len(guide_lookup.candidate_names),
+                    "family_reference": family_reference,
                 }
             )
         if guide_lookup.is_ambiguous and not self._has_supplement_evidence(
@@ -155,46 +209,69 @@ class AnswerMedicationQuestionUseCase:
         )
         safety_status = SafetyStatus.RESTRICTED if rag_unavailable else SafetyStatus.SAFE
         safety_reason_codes = ["RAG_UNAVAILABLE"] if rag_unavailable else []
-        draft = MedicationChatResult(
-            request_id=request.request_id,
-            answer=self._assembler.assemble(
-                context=context,
-                guide=guide_lookup.guide,
-                rules=rules,
-                chunks=chunks,
-                interaction_question=interaction_question,
-                family_reference=family_reference,
-            ),
-            route=route,
-            safety_status=safety_status,
-            safety_reason_codes=safety_reason_codes,
-            sources=self._build_sources(
-                context=context,
-                guide_lookup=guide_lookup,
-                rules=rules,
-                chunks=chunks,
-            ),
-            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
-            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
-            context_hash=self._context_hash(context),
-        )
+        async with self._tracer.span("answer.draft") as draft_span:
+            draft = MedicationChatResult(
+                request_id=request.request_id,
+                answer=self._assembler.assemble(
+                    context=context,
+                    guide=guide_lookup.guide,
+                    rules=rules,
+                    chunks=chunks,
+                    interaction_question=interaction_question,
+                    family_reference=family_reference,
+                ),
+                route=route,
+                safety_status=safety_status,
+                safety_reason_codes=safety_reason_codes,
+                sources=self._build_sources(
+                    context=context,
+                    guide_lookup=guide_lookup,
+                    rules=rules,
+                    chunks=chunks,
+                ),
+                prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+                schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+                context_hash=self._context_hash(context),
+            )
+            draft_span.end(
+                {
+                    "route": draft.route.value,
+                    "source_count": len(draft.sources),
+                    "safety_status": draft.safety_status.value,
+                }
+            )
         await self._report_progress(
             progress_callback,
             MedicationChatProgressStage.ANSWER_GENERATING,
         )
-        generated = await self._answer_generator.generate(
-            request=request,
-            context=context,
-            result=draft,
-        )
+        async with self._tracer.span("llm.generate", run_type="llm") as llm_span:
+            generated = await self._answer_generator.generate(
+                request=request,
+                context=context,
+                result=draft,
+            )
+            llm_span.end(
+                {
+                    "route": generated.route.value,
+                    "source_count": len(generated.sources),
+                }
+            )
         await self._report_progress(
             progress_callback,
             MedicationChatProgressStage.SAFETY_CHECKING,
         )
-        return await self._grounded_claim_validator.validate(
-            context=context,
-            result=generated,
-        )
+        async with self._tracer.span("safety.validate") as safety_span:
+            validated = await self._grounded_claim_validator.validate(
+                context=context,
+                result=generated,
+            )
+            safety_span.end(
+                {
+                    "status": validated.safety_status.value,
+                    "reason_codes": validated.safety_reason_codes,
+                }
+            )
+        return validated
 
     @staticmethod
     async def _report_progress(

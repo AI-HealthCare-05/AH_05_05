@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI):
     qdrant_client = getattr(app.state, "chat_qdrant_client", None)
     if qdrant_client is not None:
         await qdrant_client.close()
+    chat_tracer = getattr(app.state, "chat_tracer", None)
+    if chat_tracer is not None:
+        await chat_tracer.aclose()
 
 
 app = FastAPI(

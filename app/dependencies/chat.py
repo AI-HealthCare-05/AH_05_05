@@ -40,7 +40,9 @@ async def get_chat_application_service(
     service = ChatApplicationService(
         repository=ChatRepository(),
         core_service=core_service,
+        tracer=core_service.tracer,
     )
     request.app.state.chat_qdrant_client = qdrant_client
+    request.app.state.chat_tracer = core_service.tracer
     request.app.state.chat_application_service = service
     return service

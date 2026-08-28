@@ -20,6 +20,8 @@ from app.repositories.chat_repository import (
     ChatRequestPayloadMismatchError,
 )
 
+TRACE_ID = "11111111-1111-4111-8111-111111111111"
+
 
 async def create_user(user_id: int = 1) -> User:
     return await User.create(
@@ -93,6 +95,7 @@ async def test_complete_request_saves_sources_in_citation_order() -> None:
         assistant_message_id=accepted.assistant_message.id,
         result=build_core_result(),
         duration_ms=1234,
+        langsmith_trace_id=TRACE_ID,
     )
 
     sources = await ChatMessageSource.filter(
@@ -101,6 +104,7 @@ async def test_complete_request_saves_sources_in_citation_order() -> None:
     assert completed.status == ChatMessageStatus.COMPLETED
     assert completed.safety_status == ChatSafetyStatus.SAFE
     assert completed.duration_ms == 1234
+    assert completed.langsmith_trace_id == TRACE_ID
     assert [source.citation_order for source in sources] == [1]
     assert sources[0].vector_chunk_id == "point-1"
 
@@ -121,11 +125,13 @@ async def test_fail_request_never_leaves_pending_message() -> None:
         assistant_message_id=accepted.assistant_message.id,
         error_code="CHAT_UPSTREAM_UNAVAILABLE",
         duration_ms=1200,
+        langsmith_trace_id=TRACE_ID,
     )
 
     message = await ChatMessage.get(id=accepted.assistant_message.id)
     assert message.status == ChatMessageStatus.FAILED
     assert message.error_code == "CHAT_UPSTREAM_UNAVAILABLE"
+    assert message.langsmith_trace_id == TRACE_ID
     assert message.completed_at is not None
 
 

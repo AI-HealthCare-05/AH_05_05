@@ -1,3 +1,6 @@
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 
@@ -10,9 +13,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSource,
     MedicationChatSourceKind,
 )
+from app.dependencies import chat as chat_dependencies
 from app.dependencies.chat import get_chat_application_service
 from app.dependencies.security import get_request_user
-from app.main import app
+from app.main import app, lifespan
 from app.models.chat import ChatMessage, ChatMessageSource, ChatSession
 from app.models.enums import ChatMessageRole, ChatMessageStatus
 from app.models.users import User
@@ -58,6 +62,39 @@ class FakeMedicationChatCore:
         )
 
 
+class FixedTraceSpan:
+    trace_id = "11111111-1111-4111-8111-111111111111"
+
+    def end(self, outputs=None) -> None:
+        return None
+
+
+class FixedChatTracer:
+    capture_content = False
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    @asynccontextmanager
+    async def span(self, name, **kwargs):
+        yield FixedTraceSpan()
+
+    def anonymize_identifier(self, value):
+        return None
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class ClosableQdrantClient:
+    def __init__(self, events: list[str] | None = None, **kwargs) -> None:
+        self.events = events
+
+    async def close(self) -> None:
+        if self.events is not None:
+            self.events.append("qdrant")
+
+
 async def test_post_chat_persists_conversation_answer_and_sources() -> None:
     user = await User.create(
         id=1,
@@ -68,6 +105,7 @@ async def test_post_chat_persists_conversation_answer_and_sources() -> None:
     service = ChatApplicationService(
         repository=ChatRepository(),
         core_service=FakeMedicationChatCore(),
+        tracer=FixedChatTracer(),
     )
     app.dependency_overrides[get_request_user] = lambda: user
     app.dependency_overrides[get_chat_application_service] = lambda: service
@@ -109,6 +147,7 @@ async def test_post_chat_persists_conversation_answer_and_sources() -> None:
     ]
     assert messages[1].status == ChatMessageStatus.COMPLETED
     assert messages[1].content == body["answer"]
+    assert messages[1].langsmith_trace_id == FixedTraceSpan.trace_id
     assert await ChatMessageSource.filter(chat_message_id=body["messageId"]).count() == 1
 
 
@@ -122,6 +161,7 @@ async def test_post_chat_stream_persists_only_completed_answer() -> None:
     service = ChatApplicationService(
         repository=ChatRepository(),
         core_service=FakeMedicationChatCore(),
+        tracer=FixedChatTracer(),
     )
     app.dependency_overrides[get_request_user] = lambda: user
     app.dependency_overrides[get_chat_application_service] = lambda: service
@@ -152,3 +192,60 @@ async def test_post_chat_stream_persists_only_completed_answer() -> None:
     )
     assert assistant.status == ChatMessageStatus.COMPLETED
     assert "아세트아미노펜은 확인된 공공 의약품 정보" in assistant.content
+    assert assistant.langsmith_trace_id == FixedTraceSpan.trace_id
+
+
+async def test_chat_dependency_reuses_core_tracer(monkeypatch) -> None:
+    tracer = FixedChatTracer()
+    core_service = SimpleNamespace(tracer=tracer)
+    captured = {}
+
+    monkeypatch.setattr(
+        chat_dependencies,
+        "AsyncQdrantClient",
+        ClosableQdrantClient,
+    )
+    monkeypatch.setattr(
+        chat_dependencies,
+        "build_medication_chat_core_service",
+        lambda **kwargs: core_service,
+    )
+
+    class RecordingApplicationService:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        chat_dependencies,
+        "ChatApplicationService",
+        RecordingApplicationService,
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace()),
+    )
+
+    await get_chat_application_service(request)
+
+    assert captured["tracer"] is tracer
+    assert request.app.state.chat_tracer is tracer
+
+
+async def test_lifespan_closes_qdrant_before_chat_tracer() -> None:
+    events: list[str] = []
+    tracer = FixedChatTracer()
+
+    async def close_tracer() -> None:
+        events.append("tracer")
+
+    tracer.aclose = close_tracer
+    test_app = SimpleNamespace(
+        state=SimpleNamespace(
+            chat_qdrant_client=ClosableQdrantClient(events),
+            chat_tracer=tracer,
+        )
+    )
+
+    async with lifespan(test_app):
+        pass
+
+    assert events == ["qdrant", "tracer"]
