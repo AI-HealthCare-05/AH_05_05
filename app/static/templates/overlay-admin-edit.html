@@ -1,1 +1,37 @@
-<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>권한 역할 변경</title></head><body><form class="overlay-panel overlay-form" data-overlay-panel role="dialog" aria-modal="true" aria-labelledby="admin-edit-title"><h2 id="admin-edit-title" class="text-lg font-semibold">권한 역할 변경</h2><div class="grid gap-1"><p class="text-gray-500">대상 관리자</p><dl class="grid gap-1"><div class="flex gap-2"><dt class="text-gray-500 w-16 shrink-0">이름</dt><dd data-admin-name>관리자 이름</dd></div><div class="flex gap-2"><dt class="text-gray-500 w-16 shrink-0">이메일</dt><dd data-admin-email>email@example.com</dd></div></dl></div><div class="overlay-field"><label for="admin-edit-role">권한 역할</label><select id="admin-edit-role" name="role" class="ui-control"><option>일반 관리자</option><option>최고 관리자</option></select><span class="overlay-error" data-error-for="role"></span></div><div class="overlay-actions"><button data-overlay-close class="ui-button" type="button">취소</button><button data-overlay-confirm class="ui-button ui-button-primary" type="button">역할 변경</button></div></form></body></html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>권한 역할 변경</title>
+</head>
+<body>
+  <form class="overlay-panel overlay-form" data-overlay-panel role="dialog" aria-modal="true" aria-labelledby="admin-edit-title">
+    <h2 id="admin-edit-title" class="text-lg font-semibold">권한 역할 변경</h2>
+    <div class="grid gap-1">
+      <p class="text-gray-500">대상 관리자</p>
+      <dl class="grid gap-1">
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-16 shrink-0">이름</dt>
+          <dd data-admin-name>관리자 이름</dd>
+        </div>
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-16 shrink-0">이메일</dt>
+          <dd data-admin-email>email@example.com</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="overlay-field">
+      <label for="admin-edit-role">권한 역할</label>
+      <select id="admin-edit-role" name="role" class="ui-control">
+        <option>일반 관리자</option>
+        <option>최고 관리자</option>
+      </select>
+      <span class="overlay-error" data-error-for="role"></span>
+    </div>
+    <div class="overlay-actions">
+      <button data-overlay-close class="ui-button" type="button">취소</button>
+      <button data-overlay-confirm class="ui-button ui-button-primary" type="button">역할 변경</button>
+    </div>
+  </form>
+</body>
+</html>
