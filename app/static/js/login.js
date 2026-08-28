@@ -5,6 +5,8 @@ const REMEMBERED_LOGIN_ID_KEY = "rememberedLoginId";
 
 const PASSWORD_FIELDS = ["currentPassword", "newPassword", "newPasswordConfirm"];
 
+export const PASSWORD_HELP_MESSAGE = "비밀번호를 잊으셨다면 최고관리자에게 문의해 주세요. 임시 비밀번호를 재발송해 드립니다.";
+
 /**
  * 실패 코드를 입력칸에 매핑한다.
  *
@@ -88,12 +90,15 @@ function whenOverlayClosed(host, handler) {
 }
 
 /**
- * 임시 비밀번호로 로그인한 관리자에게 비밀번호 변경을 받는다. (REQ-ADMIN-009)
+ * 첫 로그인에 비밀번호 변경을 권유한다. (REQ-ADMIN-009)
  *
- * 변경 전에는 다른 관리자 API 가 전부 403 이라, 이 오버레이를 통과하지 못하면
- * 콘솔에 들어갈 수 없다. 그래서 어떤 방식으로 닫든 세션을 비우고 로그인 화면으로 되돌린다.
+ * **강제가 아니다.** 예전에는 PENDING 계정이 다른 관리자 API 에서 전부 403 이라 이
+ * 오버레이를 통과해야만 콘솔에 들어갈 수 있었고, 어떻게 닫든 세션을 비웠다. 변경이
+ * 선택제가 되면서 배경 클릭·ESC·취소 어느 쪽으로 닫아도 그대로 들어간다.
+ *
+ * onSuccess 는 방금 정한 새 비밀번호를 받는다. 호출부가 그것으로 세션을 되살린다.
  */
-async function requestPasswordChange({ onCancel, onSuccess }) {
+async function promptPasswordChange({ onDismiss, onSuccess }) {
   let settled = false;
 
   const overlay = await openOverlay("overlay-password-change.html", {
@@ -125,7 +130,7 @@ async function requestPasswordChange({ onCancel, onSuccess }) {
         await patch("/admin/accounts/password", { currentPassword, newPassword });
         settled = true;
         closeOverlay();
-        onSuccess();
+        await onSuccess(newPassword);
       } catch (error) {
         if (!(error instanceof ApiError)) {
           showToast("비밀번호를 변경하지 못했습니다.", "error");
@@ -146,8 +151,29 @@ async function requestPasswordChange({ onCancel, onSuccess }) {
 
   whenOverlayClosed(overlay, () => {
     if (settled) return;
-    onCancel();
+    onDismiss();
   });
+}
+
+/**
+ * 비밀번호 변경 직후 세션을 되살린다.
+ *
+ * 변경 API 는 이 브라우저의 리프레시 쿠키를 지운다(admin_routers.change_password).
+ * 그대로 두면 남은 액세스 토큰이 만료될 때 갱신하지 못해 작업 중에 튕긴다. 사용자에게
+ * 다시 로그인시키지 않기로 했으므로, 방금 정한 비밀번호로 조용히 다시 로그인해 쿠키를
+ * 받아 온다.
+ *
+ * 실패해도 진입은 막지 않는다. 액세스 토큰은 아직 살아 있어 당장은 쓸 수 있고,
+ * 만료되면 평소처럼 로그인 화면으로 돌아간다.
+ */
+async function restoreSessionAfterPasswordChange(email, password) {
+  try {
+    const body = await post("/admin/auth/login", { email, password });
+    session.save(body.accessToken, body.admin);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function initializeLoginForm() {
@@ -170,6 +196,14 @@ function initializeLoginForm() {
     passwordInput.type = isVisible ? "password" : "text";
     passwordToggle.setAttribute("aria-pressed", String(!isVisible));
     passwordToggle.setAttribute("aria-label", isVisible ? "비밀번호 표시" : "비밀번호 숨기기");
+  });
+
+  // 자가 재설정은 만들지 않았다. 최고관리자가 「재설정」으로 임시 비밀번호를 재발송하는
+  // 것이 유일한 복구 경로라 그리로 안내한다. 링크를 지우지 않는 이유는, 없으면 잊은
+  // 사람이 무엇을 해야 할지 알 방법이 없기 때문이다.
+  document.querySelector("[data-password-help]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    showToast(PASSWORD_HELP_MESSAGE);
   });
 
   form.addEventListener("submit", async (event) => {
@@ -195,30 +229,26 @@ function initializeLoginForm() {
       });
 
       session.save(body.accessToken, body.admin);
+      const enterConsole = () => {
+        window.location.href = form.dataset.dashboardUrl;
+      };
 
-      if (body.mustChangePassword) {
-        // 임시 비밀번호로 로그인한 상태다(계정 상태와는 무관).
-        // 여기서 세션을 비우면 안 된다 — 변경 API 도 Bearer 토큰을 요구한다.
-        // PENDING 계정도 그 엔드포인트만은 통과한다(get_current_admin_allow_pending).
-        await requestPasswordChange({
-          onCancel: () => {
-            session.clear();
-            passwordInput.value = "";
-            showToast("비밀번호를 변경해야 콘솔을 이용할 수 있습니다.", "error");
-          },
-          onSuccess: () => {
-            // 변경과 함께 이 브라우저의 리프레시 쿠키가 지워진다. 남은 액세스 토큰으로
-            // 들어가면 만료 뒤 갱신하지 못해 튕기므로, 새 비밀번호로 다시 로그인시킨다.
-            session.clear();
-            passwordInput.value = "";
-            showToast("비밀번호를 변경했습니다. 새 비밀번호로 다시 로그인해 주세요.");
-            passwordInput.focus();
+      if (body.isFirstLogin) {
+        // 임시 비밀번호로 처음 들어왔다. 변경을 권유하되 막지는 않는다 — 로그인과 함께
+        // 계정이 ACTIVE 가 되어 바꾸지 않아도 모든 기능을 쓸 수 있다.
+        // 어떻게 닫든 콘솔로 들어간다.
+        await promptPasswordChange({
+          onDismiss: enterConsole,
+          onSuccess: async (newPassword) => {
+            await restoreSessionAfterPasswordChange(loginIdInput.value.trim(), newPassword);
+            showToast("비밀번호를 변경했습니다.");
+            enterConsole();
           },
         });
         return;
       }
 
-      window.location.href = form.dataset.dashboardUrl;
+      enterConsole();
     } catch (error) {
       // 401 은 "계정 없음"과 "비밀번호 오류"를 구분하지 않는다.
       // 서버 문구를 그대로 띄운다 — 프론트가 구분 문구를 만들면 이메일 존재 여부가 새어나간다.

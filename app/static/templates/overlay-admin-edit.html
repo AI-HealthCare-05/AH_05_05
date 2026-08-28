@@ -1,1 +1,78 @@
-<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>권한 역할 변경</title></head><body><form class="overlay-panel overlay-form" data-overlay-panel role="dialog" aria-modal="true" aria-labelledby="admin-edit-title"><h2 id="admin-edit-title" class="text-lg font-semibold">권한 역할 변경</h2><div class="grid gap-1"><p class="text-gray-500">대상 관리자</p><dl class="grid gap-1"><div class="flex gap-2"><dt class="text-gray-500 w-16 shrink-0">이름</dt><dd data-admin-name>관리자 이름</dd></div><div class="flex gap-2"><dt class="text-gray-500 w-16 shrink-0">이메일</dt><dd data-admin-email>email@example.com</dd></div></dl></div><div class="overlay-field"><label for="admin-edit-role">권한 역할</label><select id="admin-edit-role" name="role" class="ui-control"><option>일반 관리자</option><option>최고 관리자</option></select><span class="overlay-error" data-error-for="role"></span></div><div class="overlay-actions"><button data-overlay-close class="ui-button" type="button">취소</button><button data-overlay-confirm class="ui-button ui-button-primary" type="button">역할 변경</button></div></form></body></html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>관리자 수정</title>
+</head>
+<body>
+  <form class="overlay-panel overlay-form" data-overlay-panel role="dialog" aria-modal="true" aria-labelledby="admin-edit-title">
+    <h2 id="admin-edit-title" class="text-lg font-semibold">관리자 수정</h2>
+    <div class="grid gap-1">
+      <p class="text-gray-500">대상 관리자</p>
+      <dl class="grid gap-1">
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-16 shrink-0">이메일</dt>
+          <dd data-admin-email>email@example.com</dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="overlay-field">
+      <label for="admin-edit-name">이름</label>
+      <input id="admin-edit-name" name="name" type="text" class="ui-control" maxlength="100" autocomplete="off">
+      <span class="overlay-error" data-error-for="name"></span>
+    </div>
+
+    <!-- 역할은 ADMIN 만 바꾼다. STAFF 에게는 JS 가 이 블록을 감춘다. 본인 행에서도 감춘다. -->
+    <div class="overlay-field" data-role-field>
+      <label for="admin-edit-role">권한 역할</label>
+      <select id="admin-edit-role" name="role" class="ui-control">
+        <option>일반 관리자</option>
+        <option>최고 관리자</option>
+      </select>
+      <span class="overlay-error" data-error-for="role"></span>
+    </div>
+
+    <!-- 본인 비밀번호만 바꿀 수 있다(API 대상이 토큰의 sub 다). 남의 행에서는 감춘다. -->
+    <div class="grid gap-1" data-password-section>
+      <p class="text-gray-500">비밀번호 변경</p>
+      <p class="text-sm text-gray-600">8자 이상, 대문자·소문자·숫자·특수문자를 각각 1개 이상 포함해야 합니다.</p>
+      <div class="overlay-field">
+        <label for="admin-edit-current-password">현재 비밀번호</label>
+        <input id="admin-edit-current-password" name="currentPassword" type="password" class="ui-control" autocomplete="current-password">
+        <span class="overlay-error" data-error-for="currentPassword"></span>
+      </div>
+      <div class="overlay-field">
+        <label for="admin-edit-new-password">새 비밀번호</label>
+        <input id="admin-edit-new-password" name="newPassword" type="password" class="ui-control" autocomplete="new-password">
+        <span class="overlay-error" data-error-for="newPassword"></span>
+      </div>
+      <div class="overlay-field">
+        <label for="admin-edit-new-password-confirm">새 비밀번호 확인</label>
+        <input id="admin-edit-new-password-confirm" name="newPasswordConfirm" type="password" class="ui-control" autocomplete="new-password">
+        <span class="overlay-error" data-error-for="newPasswordConfirm"></span>
+      </div>
+    </div>
+
+    <!--
+      임시 비밀번호 재발송. ADMIN 이 남의 행을 볼 때만 남는다(JS 가 나머지 경우 이 블록을 지운다).
+
+      되돌릴 수 없는 동작이라 「저장」·「취소」와 구분선으로 갈라 둔다. 전체 폭 빨강 버튼을
+      「저장」 바로 위에 두면 화면에서 가장 눈에 띄어, 저장하려다 잘못 눌러 상대 계정이
+      잠긴다. 이 저장소에 이미 그 전례가 있다. 목록 작업 열의 링크 버튼과 같은 크기·톤으로 낮췄다.
+    -->
+    <div class="overlay-danger-zone" data-reset-section>
+      <div class="grid gap-1">
+        <p class="text-gray-500">임시 비밀번호 재발송</p>
+        <p class="text-sm text-gray-600">기존 비밀번호는 즉시 못 쓰게 됩니다.</p>
+      </div>
+      <button data-admin-edit-reset class="ui-link-button ui-link-button-danger" type="button">재설정</button>
+    </div>
+
+    <div class="overlay-actions">
+      <button data-overlay-close class="ui-button" type="button">취소</button>
+      <button data-overlay-confirm class="ui-button ui-button-primary" type="button">저장</button>
+    </div>
+  </form>
+</body>
+</html>
