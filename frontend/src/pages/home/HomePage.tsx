@@ -13,6 +13,11 @@ import {
   type SaveDoseTakenPayload,
 } from '@/entities/medication';
 import {
+  getSupplementRanking,
+  getSupplements,
+  type SupplementRanking,
+} from '@/entities/supplement';
+import {
   BottomTabbar,
   Button,
   Card,
@@ -24,6 +29,7 @@ import {
 import { LoginPromptSheet } from './LoginPromptSheet';
 import { MedicationRecordGrid } from './MedicationRecordGrid';
 import { MedicationTimeline } from './MedicationTimeline';
+import { SupplementRankingCard } from './SupplementRankingCard';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
@@ -70,8 +76,56 @@ export function HomePage({
   const [doseLoadError, setDoseLoadError] = useState<string | null>(null);
   const [failedDoseChange, setFailedDoseChange] = useState<DoseBatchChange | null>(null);
   const [animatedDoseKey, setAnimatedDoseKey] = useState<string | null>(null);
+  const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
+  const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [supplementRegistrationPending, setSupplementRegistrationPending] = useState(false);
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSupplementRanking(null);
+      setRegisteredProductIds(new Set());
+      setSupplementRegistrationPending(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSupplementRegistrationPending(true);
+    getSupplementRanking()
+      .then((ranking) => {
+        if (!cancelled) {
+          setSupplementRanking(ranking && ranking.items.length > 0 ? ranking : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSupplementRanking(null);
+      });
+    getSupplements()
+      .then((supplements) => {
+        if (!cancelled) {
+          setRegisteredProductIds(
+            new Set(
+              supplements.flatMap((supplement) =>
+                supplement.productId === null ? [] : [supplement.productId],
+              ),
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRegisteredProductIds(new Set());
+      })
+      .finally(() => {
+        if (!cancelled) setSupplementRegistrationPending(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated || (medicationState !== undefined && medicationState !== 'active')) {
@@ -167,6 +221,15 @@ export function HomePage({
     medicationOverviews?.some((overview) => overview.medications.length > 0),
   );
   const pageDataReady = overviewDataReady && (!hasMedication || doseRecords !== null);
+  const visibleSupplementRanking = isAuthenticated && supplementRanking
+    ? {
+        ...supplementRanking,
+        items: supplementRanking.items.map((item) => ({
+          ...item,
+          alreadyRegistered: registeredProductIds.has(item.productId),
+        })),
+      }
+    : null;
 
   function openFeature(key: Exclude<TabKey, 'home' | 'my'>) {
     if (!isAuthenticated) {
@@ -230,7 +293,17 @@ export function HomePage({
       )}
 
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
-        <PokeFeatureCarousel autoAdvanceMs={3_000} />
+        <PokeFeatureCarousel autoAdvanceMs={3_000} size="compact" />
+
+        {visibleSupplementRanking && (
+          <SupplementRankingCard
+            ranking={visibleSupplementRanking}
+            registrationPending={supplementRegistrationPending}
+            onSelect={(productId) =>
+              navigate('/supplements', { state: { presetProductId: String(productId) } })
+            }
+          />
+        )}
 
         {isAuthenticated ? (
           medicationLoadError || doseLoadError ? (
