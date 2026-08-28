@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  RESET_MAIL_FAILED_MESSAGE,
+  editBlockedReason,
   filterAdmins,
   roleChangeBlockedReason,
+  statusAction,
   updateAdminStatus,
   validateAdminInput,
 } from "../../static/js/admin-management.js";
@@ -49,6 +52,65 @@ test("roleChangeBlockedReason allows pending accounts", () => {
 
 test("roleChangeBlockedReason allows other active accounts", () => {
   assert.equal(roleChangeBlockedReason({ adminId: 28, status: "ACTIVE" }, 3), null);
+});
+
+test("editBlockedReason lets an admin edit their own row", () => {
+  // 오버레이가 수정 화면으로 넓어져 본인 행도 열어야 한다. 역할 select 만 잠긴다.
+  assert.equal(editBlockedReason({ adminId: 3, status: "ACTIVE" }, 3, "ADMIN"), null);
+  assert.equal(editBlockedReason({ adminId: 3, status: "ACTIVE" }, 3, "STAFF"), null);
+});
+
+test("editBlockedReason lets an ADMIN edit other rows but blocks STAFF", () => {
+  assert.equal(editBlockedReason({ adminId: 9, status: "ACTIVE" }, 3, "ADMIN"), null);
+  assert.equal(
+    editBlockedReason({ adminId: 9, status: "ACTIVE" }, 3, "STAFF"),
+    "본인 계정만 수정할 수 있습니다",
+  );
+});
+
+test("editBlockedReason blocks suspended and withdrawn accounts for everyone", () => {
+  assert.equal(
+    editBlockedReason({ adminId: 3, status: "SUSPENDED" }, 3, "ADMIN"),
+    "정지된 계정은 수정할 수 없습니다",
+  );
+  assert.equal(
+    editBlockedReason({ adminId: 9, status: "WITHDRAWN" }, 3, "ADMIN"),
+    "정지된 계정은 수정할 수 없습니다",
+  );
+});
+
+test("editBlockedReason allows pending accounts", () => {
+  assert.equal(editBlockedReason({ adminId: 22, status: "PENDING" }, 3, "ADMIN"), null);
+});
+
+test("statusAction offers 정지 for active and pending rows", () => {
+  for (const status of ["ACTIVE", "PENDING"]) {
+    assert.deepEqual(statusAction({ status }), {
+      action: "suspend",
+      label: "정지",
+      nextStatus: "SUSPENDED",
+      danger: true,
+    });
+  }
+});
+
+test("statusAction offers 활성화 for suspended rows and sends PENDING", () => {
+  // ACTIVE 가 아니라 PENDING 이다. 해제된 계정은 본인이 로그인해야 ACTIVE 가 된다.
+  assert.deepEqual(statusAction({ status: "SUSPENDED" }), {
+    action: "activate",
+    label: "활성화",
+    nextStatus: "PENDING",
+    danger: false,
+  });
+});
+
+test("statusAction offers nothing for withdrawn rows", () => {
+  assert.equal(statusAction({ status: "WITHDRAWN" }), null);
+});
+
+test("reset failure message says the target cannot log in", () => {
+  // "발송 실패"만 쓰면 상대가 잠겼다는 사실이 안 보인다.
+  assert.match(RESET_MAIL_FAILED_MESSAGE, /로그인할 수 없/);
 });
 
 test("updateAdminStatus changes only the matching admin", () => {
