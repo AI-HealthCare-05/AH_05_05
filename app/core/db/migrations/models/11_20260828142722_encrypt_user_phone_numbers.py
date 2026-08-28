@@ -35,9 +35,7 @@ async def downgrade(db: BaseDBAsyncClient) -> str:
 
     rows = await db.execute_query_dict(_SELECT_PHONES_SQL)
     updates = [
-        (decrypt_phone_number(row["phone"]), row["id"])
-        for row in rows
-        if row["phone"].startswith(_FERNET_TOKEN_PREFIX)
+        (decrypt_phone_number(row["phone"]), row["id"]) for row in rows if row["phone"].startswith(_FERNET_TOKEN_PREFIX)
     ]
     if updates:
         await db.execute_many(_UPDATE_PHONE_SQL, updates)
