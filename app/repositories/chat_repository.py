@@ -209,6 +209,7 @@ class ChatRepository:
         assistant_message_id: int,
         result: MedicationChatResult,
         duration_ms: int,
+        langsmith_trace_id: str | None = None,
     ) -> ChatMessage:
         async with in_transaction() as connection:
             message = (
@@ -231,6 +232,7 @@ class ChatRepository:
             message.prompt_version = result.prompt_version
             message.schema_version = result.schema_version
             message.patient_context_hash = result.context_hash
+            message.langsmith_trace_id = langsmith_trace_id
             message.duration_ms = duration_ms
             message.completed_at = timestamp
             message.updated_at = timestamp
@@ -247,6 +249,7 @@ class ChatRepository:
                     "prompt_version",
                     "schema_version",
                     "patient_context_hash",
+                    "langsmith_trace_id",
                     "duration_ms",
                     "completed_at",
                     "updated_at",
@@ -285,6 +288,7 @@ class ChatRepository:
         assistant_message_id: int,
         error_code: str,
         duration_ms: int,
+        langsmith_trace_id: str | None = None,
     ) -> None:
         timestamp = now()
         await ChatMessage.filter(
@@ -294,6 +298,7 @@ class ChatRepository:
             status=ChatMessageStatus.FAILED,
             safety_status=ChatSafetyStatus.VALIDATION_FAILED,
             error_code=error_code,
+            langsmith_trace_id=langsmith_trace_id,
             duration_ms=duration_ms,
             completed_at=timestamp,
             updated_at=timestamp,

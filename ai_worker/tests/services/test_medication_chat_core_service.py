@@ -2,6 +2,7 @@ import pytest
 
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
+from ai_worker.observability.chat_tracer import NoOpChatTracer
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
     MedicationChatProgress,
@@ -78,3 +79,18 @@ def test_builder_rejects_missing_openai_key() -> None:
             settings=settings,
             qdrant_client=object(),
         )
+
+
+def test_builder_reuses_injected_chat_tracer() -> None:
+    tracer = NoOpChatTracer(hash_salt="test")
+
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+        tracer=tracer,
+    )
+
+    assert service.tracer is tracer

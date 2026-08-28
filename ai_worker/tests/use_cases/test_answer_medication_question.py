@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import date
 
 from ai_worker.schemas.enums import SafetyStatus
@@ -22,6 +23,40 @@ from ai_worker.schemas.medication_chat import (
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
+
+
+class RecordingSpan:
+    trace_id = None
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.outputs = None
+
+    def end(self, outputs=None) -> None:
+        self.outputs = outputs
+
+
+class RecordingChatTracer:
+    capture_content = False
+
+    def __init__(self) -> None:
+        self.spans = []
+
+    @property
+    def names(self) -> list[str]:
+        return [span.name for span in self.spans]
+
+    @asynccontextmanager
+    async def span(self, name, **kwargs):
+        span = RecordingSpan(name)
+        self.spans.append(span)
+        yield span
+
+    def anonymize_identifier(self, value):
+        return None
+
+    async def aclose(self) -> None:
+        return None
 
 
 class FakeContextProvider:
@@ -182,6 +217,7 @@ def build_use_case(
     lookup: MedicationGuideLookup | None = None,
     rules: list[InteractionRuleFact] | None = None,
     retriever: FakeKnowledgeRetriever | None = None,
+    tracer=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -190,6 +226,7 @@ def build_use_case(
         knowledge_retriever=retriever or FakeKnowledgeRetriever(),
         answer_generator=PassthroughGenerator(),
         grounded_claim_validator=PassthroughValidator(),
+        tracer=tracer,
     )
 
 
@@ -231,6 +268,44 @@ async def test_execute_reports_only_fixed_safe_progress_stages() -> None:
         "답변 정리 중",
         "안전 확인 중",
     ]
+
+
+async def test_execute_records_safe_stage_summaries_without_raw_content() -> None:
+    tracer = RecordingChatTracer()
+    use_case = build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        retriever=FakeKnowledgeRetriever(chunks=[build_chunk()]),
+        tracer=tracer,
+    )
+
+    await use_case.execute(
+        build_request("타이레놀정500밀리그람은 어떤 약인가요?"),
+    )
+
+    assert tracer.names == [
+        "patient_context.load",
+        "query.plan",
+        "interaction_rules.search",
+        "rag.retrieve",
+        "medication_guide.lookup",
+        "answer.draft",
+        "llm.generate",
+        "safety.validate",
+    ]
+    serialized_outputs = repr(
+        [span.outputs for span in tracer.spans],
+    )
+    assert "타이레놀정500밀리그람" not in serialized_outputs
+    assert build_chunk().content not in serialized_outputs
+    assert tracer.spans[3].outputs == {
+        "accepted_count": 1,
+        "rag_unavailable": False,
+        "max_score": 0.82,
+    }
+    assert tracer.spans[-1].outputs == {
+        "status": "SAFE",
+        "reason_codes": [],
+    }
 
 
 async def test_confirmed_medication_precedes_general_guide_and_rag() -> None:

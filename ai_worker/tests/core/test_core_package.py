@@ -64,3 +64,34 @@ def test_config_reads_openai_chat_integration_settings(
     assert settings.RAG_MIN_SIMILARITY_SCORE == 0.7
     assert settings.OPENAI_TIMEOUT_SECONDS == 20
     assert settings.OPENAI_MAX_RETRIES == 4
+
+
+def test_config_disables_langsmith_content_capture_by_default() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.LANGSMITH_TRACING is False
+    assert settings.LANGSMITH_CAPTURE_CONTENT is False
+    assert settings.RUN_LANGSMITH_INTEGRATION_TESTS is False
+
+
+def test_config_reads_langsmith_settings(monkeypatch) -> None:
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGSMITH_PROJECT", "ai-health-test")
+    monkeypatch.setenv("LANGSMITH_ENVIRONMENT", "test")
+    monkeypatch.setenv("LANGSMITH_CAPTURE_CONTENT", "true")
+    monkeypatch.setenv(
+        "LANGSMITH_HASH_SALT",
+        "test-observability-salt",
+    )
+
+    settings = Config(_env_file=None)
+
+    assert settings.LANGSMITH_TRACING is True
+    assert settings.LANGSMITH_API_KEY is not None
+    assert settings.LANGSMITH_API_KEY.get_secret_value() == ("test-langsmith-key")
+    assert settings.LANGSMITH_PROJECT == "ai-health-test"
+    assert settings.LANGSMITH_ENVIRONMENT == "test"
+    assert settings.LANGSMITH_CAPTURE_CONTENT is True
+    assert settings.LANGSMITH_HASH_SALT is not None
+    assert settings.LANGSMITH_HASH_SALT.get_secret_value() == ("test-observability-salt")

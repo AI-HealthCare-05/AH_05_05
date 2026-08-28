@@ -24,6 +24,20 @@ class Config(BaseSettings):
     OPENAI_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0)
     OPENAI_MAX_RETRIES: int = Field(default=2, ge=0)
 
+    LANGSMITH_TRACING: bool = False
+    LANGSMITH_API_KEY: SecretStr | None = None
+    LANGSMITH_PROJECT: str = "ai-health-medication-chat"
+    LANGSMITH_ENVIRONMENT: str = "local"
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+    LANGSMITH_WORKSPACE_ID: str | None = None
+    LANGSMITH_CAPTURE_CONTENT: bool = False
+    LANGSMITH_HASH_SALT: SecretStr | None = None
+    LANGSMITH_CLOSE_TIMEOUT_SECONDS: float = Field(
+        default=2.0,
+        gt=0,
+    )
+    RUN_LANGSMITH_INTEGRATION_TESTS: bool = False
+
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "public_guidelines_small_v1"
     KNOWLEDGE_QDRANT_COLLECTION: str = "medication_knowledge_full_v1"

@@ -4,6 +4,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ai_worker.domain.errors import AIWorkerError
+from ai_worker.observability.chat_tracer import (
+    ChatSpan,
+    ChatTracer,
+    NoOpChatTracer,
+)
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import ChatRole
 from ai_worker.schemas.medication_chat import (
@@ -68,10 +73,12 @@ class ChatApplicationService:
         *,
         repository: ChatRepository,
         core_service: MedicationChatCoreService,
+        tracer: ChatTracer | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self._repository = repository
         self._core_service = core_service
+        self._tracer = tracer or NoOpChatTracer()
         self._clock = clock
 
     async def send(
@@ -80,6 +87,48 @@ class ChatApplicationService:
         user: User,
         command: SendChatCommand,
         progress_callback: MedicationChatProgressCallback | None = None,
+    ) -> SendChatResult:
+        inputs = (
+            {"question": command.message} if self._tracer.capture_content else {"question_length": len(command.message)}
+        )
+        metadata = {
+            "request_key": self._tracer.anonymize_identifier(
+                command.request_id,
+            ),
+            "user_key": self._tracer.anonymize_identifier(user.id),
+            "care_episode_present": command.record_id is not None,
+            "conversation_present": command.conversation_id is not None,
+            "streaming": progress_callback is not None,
+        }
+        async with self._tracer.span(
+            "chat.answer",
+            root=True,
+            inputs=inputs,
+            metadata={key: value for key, value in metadata.items() if value is not None},
+        ) as root_span:
+            try:
+                return await self._send_in_trace(
+                    user=user,
+                    command=command,
+                    progress_callback=progress_callback,
+                    root_span=root_span,
+                )
+            except BaseException as error:
+                root_span.end(
+                    {
+                        "status": "FAILED",
+                        "error_type": type(error).__name__,
+                    }
+                )
+                raise
+
+    async def _send_in_trace(
+        self,
+        *,
+        user: User,
+        command: SendChatCommand,
+        progress_callback: MedicationChatProgressCallback | None,
+        root_span: ChatSpan,
     ) -> SendChatResult:
         accepted = await self._accept_request(
             user=user,
@@ -90,6 +139,13 @@ class ChatApplicationService:
             saved_message = accepted.reused_assistant_message
             saved_sources = await self._repository.get_message_sources(
                 message_id=saved_message.id,
+            )
+            root_span.end(
+                {
+                    "status": "COMPLETED",
+                    "cache_hit": True,
+                    "source_count": len(saved_sources),
+                }
             )
             return SendChatResult(
                 conversation_id=accepted.session.id,
@@ -124,6 +180,7 @@ class ChatApplicationService:
                 assistant_message_id=accepted.assistant_message.id,
                 result=core_result,
                 duration_ms=duration_ms,
+                langsmith_trace_id=root_span.trace_id,
             )
         except asyncio.CancelledError:
             duration_ms = self._duration_ms(started_at)
@@ -131,6 +188,7 @@ class ChatApplicationService:
                 assistant_message_id=accepted.assistant_message.id,
                 error_code="CHAT_REQUEST_CANCELLED",
                 duration_ms=duration_ms,
+                langsmith_trace_id=root_span.trace_id,
             )
             raise
         except AIWorkerError as error:
@@ -139,6 +197,7 @@ class ChatApplicationService:
                 assistant_message_id=accepted.assistant_message.id,
                 error_code=error.code,
                 duration_ms=duration_ms,
+                langsmith_trace_id=root_span.trace_id,
             )
             raise ChatUpstreamUnavailableError from error
         except Exception as error:
@@ -147,15 +206,26 @@ class ChatApplicationService:
                 assistant_message_id=accepted.assistant_message.id,
                 error_code="CHAT_PROCESSING_FAILED",
                 duration_ms=duration_ms,
+                langsmith_trace_id=root_span.trace_id,
             )
             raise ChatProcessingFailedError from error
 
-        return SendChatResult(
+        result = SendChatResult(
             conversation_id=accepted.session.id,
             message_id=completed.id,
             answer=core_result.answer,
             sources=[self._core_source_view(source) for source in core_result.sources],
         )
+        root_span.end(
+            {
+                "status": "COMPLETED",
+                "cache_hit": False,
+                "source_count": len(result.sources),
+                "route": core_result.route.value,
+                "safety_status": core_result.safety_status.value,
+            }
+        )
+        return result
 
     async def _accept_request(
         self,

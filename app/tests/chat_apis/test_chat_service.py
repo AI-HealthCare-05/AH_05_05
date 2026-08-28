@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +22,38 @@ from app.services.chat import (
     ChatApplicationService,
     SendChatCommand,
 )
+
+TRACE_ID = "11111111-1111-4111-8111-111111111111"
+
+
+class RecordingSpan:
+    def __init__(self, trace_id: str | None) -> None:
+        self.trace_id = trace_id
+        self.outputs = None
+
+    def end(self, outputs=None) -> None:
+        self.outputs = outputs
+
+
+class RecordingChatTracer:
+    capture_content = False
+
+    def __init__(self, trace_id: str = TRACE_ID) -> None:
+        self.trace_id = trace_id
+        self.names = []
+
+    @asynccontextmanager
+    async def span(self, name, **kwargs):
+        self.names.append(name)
+        yield RecordingSpan(
+            self.trace_id if kwargs.get("root") else None,
+        )
+
+    def anonymize_identifier(self, value):
+        return f"key-{value}"
+
+    async def aclose(self) -> None:
+        return None
 
 
 class FakeRepository:
@@ -151,11 +184,32 @@ async def test_send_forwards_progress_callback_to_core() -> None:
     assert core.progress_callback is callback
 
 
+async def test_send_persists_root_trace_id_on_success() -> None:
+    repository = FakeRepository()
+    tracer = RecordingChatTracer()
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=FakeCore(result=build_result()),
+        tracer=tracer,
+    )
+
+    await service.send(
+        user=SimpleNamespace(id=1),
+        command=build_command(),
+    )
+
+    assert repository.completed is not None
+    assert repository.completed["langsmith_trace_id"] == TRACE_ID
+    assert tracer.names == ["chat.answer"]
+
+
 async def test_send_marks_assistant_failed_before_raising_503() -> None:
     repository = FakeRepository()
+    tracer = RecordingChatTracer()
     service = ChatApplicationService(
         repository=repository,
         core_service=FakeCore(error=ChatAnswerGenerationError("OpenAI 호출 실패")),
+        tracer=tracer,
         clock=iter([1.0, 2.2]).__next__,
     )
 
@@ -169,14 +223,17 @@ async def test_send_marks_assistant_failed_before_raising_503() -> None:
         "assistant_message_id": 101,
         "error_code": "CHAT_ANSWER_GENERATION_FAILED",
         "duration_ms": 1200,
+        "langsmith_trace_id": TRACE_ID,
     }
 
 
 async def test_send_marks_assistant_failed_after_unexpected_error() -> None:
     repository = FakeRepository()
+    tracer = RecordingChatTracer()
     service = ChatApplicationService(
         repository=repository,
         core_service=FakeCore(error=RuntimeError("unexpected")),
+        tracer=tracer,
         clock=iter([1.0, 2.2]).__next__,
     )
 
@@ -190,14 +247,17 @@ async def test_send_marks_assistant_failed_after_unexpected_error() -> None:
         "assistant_message_id": 101,
         "error_code": "CHAT_PROCESSING_FAILED",
         "duration_ms": 1200,
+        "langsmith_trace_id": TRACE_ID,
     }
 
 
 async def test_send_marks_assistant_failed_when_stream_is_cancelled() -> None:
     repository = FakeRepository()
+    tracer = RecordingChatTracer()
     service = ChatApplicationService(
         repository=repository,
         core_service=FakeCore(error=asyncio.CancelledError()),
+        tracer=tracer,
         clock=iter([1.0, 2.2]).__next__,
     )
 
@@ -211,4 +271,5 @@ async def test_send_marks_assistant_failed_when_stream_is_cancelled() -> None:
         "assistant_message_id": 101,
         "error_code": "CHAT_REQUEST_CANCELLED",
         "duration_ms": 1200,
+        "langsmith_trace_id": TRACE_ID,
     }
