@@ -32,8 +32,14 @@ class AdminStatusUpdateRequest(CamelModel):
     """REQ-ADMIN-011 관리자 정지·해제 요청. 화면에서 체크박스로 여러 명을 선택한다."""
 
     admin_ids: list[int] = Field(min_length=1, max_length=100)
-    # 계정 삭제는 제공하지 않는다. 정지·해제만 가능하다.
-    status: Literal[AccountStatus.SUSPENDED, AccountStatus.ACTIVE]
+    # 계정 삭제(WITHDRAWN)는 제공하지 않는다.
+    #
+    # 화면의 「활성화」는 ACTIVE 가 아니라 **PENDING 을 보낸다.** 정지 해제된 계정은
+    # 본인이 로그인해야 ACTIVE 가 된다는 결정 때문이다(전환은 login 에서 일어난다).
+    # 서비스에서 몰래 바꾸지 않고 요청 값을 그대로 저장하는 이유는, 응답이 요청 값을
+    # 되돌려주는 구조(update_status)라 요청과 저장이 다르면 화면이 틀린 상태로 행을
+    # 그리기 때문이다.
+    status: Literal[AccountStatus.SUSPENDED, AccountStatus.ACTIVE, AccountStatus.PENDING]
 
 
 class AdminRoleUpdateRequest(CamelModel):
@@ -49,6 +55,20 @@ class AdminRoleUpdateRequest(CamelModel):
 class AdminRoleUpdateResponse(CamelModel):
     admin_id: int
     role: AdminRole
+
+
+class AdminNameUpdateRequest(CamelModel):
+    """관리자 이름 변경 요청.
+
+    이메일은 로그인 식별자라 바꾸지 않는다. 역할은 PATCH /accounts/{id}/role 이 맡는다.
+    """
+
+    name: str = Field(min_length=1, max_length=100)
+
+
+class AdminNameUpdateResponse(CamelModel):
+    admin_id: int
+    name: str
 
 
 class AdminPasswordResetResponse(CamelModel):
