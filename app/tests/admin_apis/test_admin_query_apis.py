@@ -1,6 +1,7 @@
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.core.phone_encryption import encrypt_phone_number
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
 from app.tests.admin_apis.conftest import (
@@ -115,7 +116,10 @@ class TestUserListAPI(AdminQueryTestBase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.active_user = await create_user(
-            name="홍길동", email="user@mail.com", phone="010-1234-5678", is_terms_agreed=True
+            name="홍길동",
+            email="user@mail.com",
+            phone=encrypt_phone_number("01012345678"),
+            is_terms_agreed=True,
         )
         # 설정 행이 없는 가입 직후 사용자
         self.pending_user = await create_user(name="김퇴원", email="discharged@mail.com", status=AccountStatus.PENDING)
@@ -126,7 +130,14 @@ class TestUserListAPI(AdminQueryTestBase):
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["totalCount"] == 2
-        assert set(body["items"][0]) == {"userId", "name", "email", "status", "createdAt"}
+        assert set(body["items"][0]) == {"userId", "name", "email", "phone", "status", "createdAt"}
+
+    async def test_returns_decrypted_and_dot_masked_phone_in_user_list(self) -> None:
+        response = await request("GET", ADMIN_USERS_URL, headers=self.headers)
+
+        items = {item["userId"]: item for item in response.json()["items"]}
+        assert items[self.active_user.id]["phone"] == "010-••••-5678"
+        assert items[self.pending_user.id]["phone"] is None
 
     async def test_filters_by_status(self) -> None:
         response = await request("GET", ADMIN_USERS_URL, headers=self.headers, params={"status": "PENDING"})
@@ -139,6 +150,27 @@ class TestUserListAPI(AdminQueryTestBase):
         response = await request("GET", ADMIN_USERS_URL, headers=self.headers, params={"keyword": "홍길동"})
 
         assert response.json()["totalCount"] == 1
+
+    async def test_filters_by_name(self) -> None:
+        response = await request("GET", ADMIN_USERS_URL, headers=self.headers, params={"name": "길동"})
+
+        body = response.json()
+        assert body["totalCount"] == 1
+        assert body["items"][0]["userId"] == self.active_user.id
+
+    async def test_filters_by_email(self) -> None:
+        response = await request("GET", ADMIN_USERS_URL, headers=self.headers, params={"email": "discharged@"})
+
+        body = response.json()
+        assert body["totalCount"] == 1
+        assert body["items"][0]["userId"] == self.pending_user.id
+
+    async def test_combines_name_and_email_filters(self) -> None:
+        response = await request(
+            "GET", ADMIN_USERS_URL, headers=self.headers, params={"name": "홍길동", "email": "discharged@"}
+        )
+
+        assert response.json()["totalCount"] == 0
 
     async def test_includes_signup_date_boundary(self) -> None:
         """종료일 당일에 가입한 사용자도 결과에 포함되어야 한다."""
@@ -174,7 +206,10 @@ class TestUserDetailAPI(AdminQueryTestBase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.agreed_user = await create_user(
-            name="홍길동", email="user@mail.com", phone="010-1234-5678", is_terms_agreed=True
+            name="홍길동",
+            email="user@mail.com",
+            phone=encrypt_phone_number("01012345678"),
+            is_terms_agreed=True,
         )
         self.no_settings_user = await create_user(name="김퇴원", email="discharged@mail.com")
 
@@ -182,6 +217,7 @@ class TestUserDetailAPI(AdminQueryTestBase):
         response = await request("GET", f"{ADMIN_USERS_URL}/{self.agreed_user.id}", headers=self.headers)
 
         assert response.status_code == status.HTTP_200_OK
+        assert response.json()["phone"] == "010-1234-5678"
         assert set(response.json()) == {
             "userId",
             "name",
@@ -197,6 +233,17 @@ class TestUserDetailAPI(AdminQueryTestBase):
         response = await request("GET", f"{ADMIN_USERS_URL}/{self.agreed_user.id}", headers=self.headers)
 
         assert response.json()["isTermsAgreed"] is True
+
+    async def test_formats_ten_digit_phone_without_changing_digits(self) -> None:
+        user = await create_user(
+            name="구형번호",
+            email="legacy-phone@mail.com",
+            phone=encrypt_phone_number("0111234567"),
+        )
+
+        response = await request("GET", f"{ADMIN_USERS_URL}/{user.id}", headers=self.headers)
+
+        assert response.json()["phone"] == "011-123-4567"
 
     async def test_treats_missing_settings_as_not_agreed(self) -> None:
         """설정 행이 아직 없는 가입 직후 사용자는 미동의로 본다."""
@@ -248,11 +295,15 @@ class TestAdminApiAuthorization(AdminQueryTestBase):
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    async def test_rejects_pending_admin(self) -> None:
-        """임시 비밀번호를 아직 바꾸지 않은 계정(PENDING)도 막는다."""
+    async def test_allows_pending_admin(self) -> None:
+        """PENDING 계정도 통과한다.
+
+        비밀번호 변경이 선택제가 되면서 열었다(예전에는 403). 임시 비밀번호로 로그인해도
+        모든 관리자 기능을 쓸 수 있어야 한다. 막는 것은 SUSPENDED·WITHDRAWN 뿐이다.
+        """
         response = await request("GET", ADMIN_ACCOUNTS_URL, headers=auth_header(self.staff.id))
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_200_OK
 
     async def test_staff_can_read(self) -> None:
         """조회는 ADMIN·STAFF 모두 허용한다(권한 매트릭스)."""

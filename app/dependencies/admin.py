@@ -63,12 +63,19 @@ async def _authenticate(
 async def get_current_admin(
     credential: Annotated[HTTPAuthorizationCredentials | None, Depends(admin_security)],
 ) -> AuthenticatedAdmin:
-    """관리자 API 의 기본 인증. ACTIVE 계정만 허용한다.
+    """관리자 API 의 기본 인증. ACTIVE 와 PENDING 을 허용한다.
 
-    정지(SUSPENDED)·탈퇴(WITHDRAWN)뿐 아니라 임시 비밀번호를 아직 바꾸지 않은
-    PENDING 계정도 막는다. PENDING 계정은 비밀번호를 변경해야 서비스를 쓸 수 있다.
+    비밀번호 변경이 선택제가 되면서 PENDING 을 열었다. 임시 비밀번호로 로그인해도
+    모든 관리자 기능을 쓸 수 있어야 한다. 예전에는 여기서 PENDING 을 막아, 비밀번호를
+    바꾸기 전에는 변경 API 하나만 통과했다.
+
+    PENDING 은 첫 로그인 시점에 ACTIVE 로 바뀐다(AdminAuthService.login). 그래서 이
+    상태로 남아 있는 계정은 발급받은 임시 비밀번호로 아직 한 번도 들어오지 않았거나,
+    정지에서 막 해제된 계정이다. 둘 다 사용을 막을 이유가 없다.
+
+    정지(SUSPENDED)·탈퇴(WITHDRAWN)는 계속 막는다.
     """
-    return await _authenticate(credential, frozenset({AccountStatus.ACTIVE}))
+    return await _authenticate(credential, frozenset({AccountStatus.ACTIVE, AccountStatus.PENDING}))
 
 
 async def get_current_admin_allow_pending(
@@ -76,9 +83,13 @@ async def get_current_admin_allow_pending(
 ) -> AuthenticatedAdmin:
     """비밀번호 변경 API 전용. ACTIVE 와 PENDING 을 허용한다.
 
-    PENDING 계정이 임시 비밀번호를 바꿀 유일한 경로라 예외적으로 열어둔다.
-    get_current_admin 에 옵션을 붙이지 않고 함수를 나눈 이유는, 어느 API 가
-    PENDING 을 허용하는지 호출부에서 바로 보이게 하기 위해서다.
+    **지금은 get_current_admin 과 완전히 같다.** 비밀번호 변경이 선택제가 되면서
+    get_current_admin 도 PENDING 을 허용하게 됐기 때문이다. 호출부는
+    admin_routers.change_password 한 곳뿐이다.
+
+    바로 지우지 않은 이유는, "이 API 는 PENDING 을 허용한다"는 의도가 호출부에서
+    보이는 편이 낫고, 앞으로 get_current_admin 이 다시 좁아질 때 여기가 기준점이
+    되기 때문이다. 정리한다면 별도 작업으로 한다.
 
     SUSPENDED·WITHDRAWN 은 여기서도 막는다. 정지된 계정이 비밀번호 변경으로
     되살아나면 안 된다.

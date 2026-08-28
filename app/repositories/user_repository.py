@@ -48,9 +48,6 @@ class UserRepository:
     async def exists_by_email(self, email: str) -> bool:
         return await self._model.filter(email=email).exists()
 
-    async def exists_by_phone_number(self, phone_number: str) -> bool:
-        return await self._model.filter(phone=phone_number).exists()
-
     async def update_instance(self, user: User, data: dict[str, Any]) -> None:
         update_fields = []
         for key, value in data.items():

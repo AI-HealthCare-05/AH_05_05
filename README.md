@@ -80,6 +80,17 @@ uv sync --group ai   # AI 워커용
 
 생성된 `env` 파일 내의 환경변수들은 프로젝트 상황에 맞게 수정하세요.
 
+전화번호는 Fernet 방식으로 암호화해 저장합니다. 최초 실행 전에 아래 명령으로
+`.env`에 `PHONE_ENCRYPTION_KEY`를 한 번 생성하세요.
+
+```bash
+uv run python scripts/generate_phone_encryption_key.py
+uv run aerich upgrade
+```
+
+이 키를 분실하거나 임의로 교체하면 기존 전화번호를 복호화할 수 없습니다. 운영 환경에서는
+키를 별도 보안 저장소에 백업하고 모든 API·마이그레이션 프로세스가 같은 키를 사용해야 합니다.
+
 ---
 
 ## 🏃 실행 방법

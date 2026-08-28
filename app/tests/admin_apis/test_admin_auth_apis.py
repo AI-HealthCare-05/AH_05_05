@@ -38,7 +38,7 @@ class TestAdminLoginAPI(AdminAuthTestBase):
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert set(body) == {"accessToken", "admin", "mustChangePassword"}
+        assert set(body) == {"accessToken", "admin", "isFirstLogin"}
         assert body["admin"] == {
             "adminId": self.admin.id,
             "name": "김은미",
@@ -49,12 +49,12 @@ class TestAdminLoginAPI(AdminAuthTestBase):
     async def test_never_returns_password(self) -> None:
         """비밀번호·해시가 응답에 실리지 않아야 한다.
 
-        mustChangePassword 는 정상 필드이므로 값이 아닌 키 이름만 검사한다.
+        isFirstLogin 은 정상 필드이므로 값이 아닌 키 이름만 검사한다.
         """
         response = await self.login()
 
         body = response.json()
-        assert set(body) == {"accessToken", "admin", "mustChangePassword"}
+        assert set(body) == {"accessToken", "admin", "isFirstLogin"}
         assert not any("password" in key.lower() for key in body["admin"])
         assert ADMIN_PASSWORD not in response.text
 
@@ -74,8 +74,8 @@ class TestAdminLoginAPI(AdminAuthTestBase):
         assert token.payload["scope"] == JwtScope.ADMIN
         assert int(token.payload["sub"]) == self.admin.id
 
-    async def test_pending_admin_can_login_with_must_change_password(self) -> None:
-        """임시 비밀번호 계정은 로그인만 허용하고 비밀번호 변경으로 유도한다."""
+    async def test_pending_admin_login_reports_first_login(self) -> None:
+        """임시 비밀번호로 처음 들어오면 비밀번호 변경을 권유한다(강제는 아니다)."""
         pending = await create_admin(
             name="한지수", email="jisu@ozcoding.ai", status=AccountStatus.PENDING, created_by_admin_id=self.admin.id
         )
@@ -83,12 +83,40 @@ class TestAdminLoginAPI(AdminAuthTestBase):
         response = await self.login(email=pending.email)
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["mustChangePassword"] is True
+        assert response.json()["isFirstLogin"] is True
 
-    async def test_active_admin_does_not_need_password_change(self) -> None:
+    async def test_login_activates_pending_admin(self) -> None:
+        """PENDING -> ACTIVE 전환 트리거는 첫 로그인이다(예전에는 비밀번호 변경이었다)."""
+        pending = await create_admin(
+            name="한지수", email="jisu@ozcoding.ai", status=AccountStatus.PENDING, created_by_admin_id=self.admin.id
+        )
+
+        await self.login(email=pending.email)
+
+        await pending.refresh_from_db()
+        assert pending.status == AccountStatus.ACTIVE
+        assert pending.approved_at is not None
+
+    async def test_second_login_is_not_first_login(self) -> None:
+        """첫 로그인에 ACTIVE 가 되므로 두 번째부터는 권유하지 않는다.
+
+        비밀번호를 바꾸지 않았어도 false 다. isFirstLogin 은 "임시 비밀번호 사용 중"을
+        뜻하지 않는다.
+        """
+        pending = await create_admin(
+            name="한지수", email="jisu@ozcoding.ai", status=AccountStatus.PENDING, created_by_admin_id=self.admin.id
+        )
+
+        first = await self.login(email=pending.email)
+        second = await self.login(email=pending.email)
+
+        assert first.json()["isFirstLogin"] is True
+        assert second.json()["isFirstLogin"] is False
+
+    async def test_active_admin_is_not_first_login(self) -> None:
         response = await self.login()
 
-        assert response.json()["mustChangePassword"] is False
+        assert response.json()["isFirstLogin"] is False
 
     async def test_suspended_admin_cannot_login(self) -> None:
         suspended = await create_admin(name="정지됨", email="suspended@ozcoding.ai", status=AccountStatus.SUSPENDED)

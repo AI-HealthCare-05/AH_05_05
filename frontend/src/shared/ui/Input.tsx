@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from 'react';
+import type { InputHTMLAttributes, Ref } from 'react';
 import { useId } from 'react';
 import { cn } from '@/shared/lib/cn';
 
@@ -14,10 +14,11 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   error?: string;
   /** 에러가 아닌 보조 설명 */
   hint?: string;
+  inputRef?: Ref<HTMLInputElement>;
   className?: string;
 }
 
-export function Input({ label, error, hint, className, id, ...rest }: InputProps) {
+export function Input({ label, error, hint, inputRef, className, id, ...rest }: InputProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
   const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
@@ -30,6 +31,7 @@ export function Input({ label, error, hint, className, id, ...rest }: InputProps
         </label>
       )}
       <input
+        ref={inputRef}
         id={inputId}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}

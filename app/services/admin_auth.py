@@ -48,13 +48,24 @@ class AdminAuthService:
         refresh_token = RefreshToken.for_admin(admin.id)
         access_token = refresh_token.access_token
 
-        logger.info("admin login: id=%s", admin.id)
+        # 전환보다 **먼저** 읽어야 한다. 아래에서 ACTIVE 로 바꾼 뒤에 보면 항상 false 가 된다.
+        is_first_login = admin.status == AccountStatus.PENDING
+
+        # PENDING -> ACTIVE 는 여기서 일어난다. 예전에는 change_password 가 했으나,
+        # 비밀번호 변경이 선택제가 되면서 "안 바꾸면 영영 PENDING" 이 되어버려 옮겼다.
+        # 정지에서 해제된 계정도 PENDING 으로 돌아오므로 같은 경로로 되살아난다.
+        if is_first_login:
+            admin.status = AccountStatus.ACTIVE
+            # approved_at 은 "현재 활성 상태가 된 시각"이다. 재설정으로 PENDING 이 되면
+            # reset_password 가 None 으로 지우고, 다시 로그인할 때 여기서 새로 찍힌다.
+            admin.approved_at = datetime.now(tz=config.TIMEZONE)
+            await admin.save(update_fields=["status", "approved_at"])
+
+        logger.info("admin login: id=%s first_login=%s", admin.id, is_first_login)
         response = AdminLoginResponse(
             access_token=str(access_token),
             admin=AdminInfo(admin_id=admin.id, name=admin.name, email=admin.email, role=admin.role),
-            # PENDING 은 로그인만 허용한다. 다른 관리자 API 는 get_current_admin 에서 막히므로
-            # 비밀번호를 바꿔야 실제로 사용할 수 있다.
-            must_change_password=admin.status == AccountStatus.PENDING,
+            is_first_login=is_first_login,
         )
         return response, refresh_token
 
@@ -94,11 +105,9 @@ class AdminAuthService:
         # 다른 기기에 남은 리프레시 토큰은 끊지 못한다. 발급된 JWT 를 개별 폐기할 수단이
         # 없어서이며, 노출 창은 리프레시 수명(REFRESH_TOKEN_EXPIRE_MINUTES)으로 제한한다.
 
-        # 상태는 PENDING 일 때만 바꾼다. 무조건 ACTIVE 로 덮어쓰면, 나중에 의존성이
-        # 느슨해졌을 때 정지된 계정이 비밀번호 변경만으로 되살아난다.
-        if admin.status == AccountStatus.PENDING:
-            admin.status = AccountStatus.ACTIVE
-            admin.approved_at = datetime.now(tz=config.TIMEZONE)
+        # **상태는 건드리지 않는다.** 예전에는 여기서 PENDING -> ACTIVE 로 올렸으나,
+        # 비밀번호 변경이 선택제가 되면서 전환 트리거를 첫 로그인(login)으로 옮겼다.
+        # 여기까지 왔다는 것은 이미 로그인했다는 뜻이라 상태는 ACTIVE 여야 정상이다.
 
         await admin.save()
 

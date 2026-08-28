@@ -9,6 +9,7 @@ from tortoise.transactions import in_transaction
 from app.core import config
 from app.core.exceptions import SignupEmailAlreadyExistsError
 from app.core.jwt.tokens import AccessToken, RefreshToken
+from app.core.phone_encryption import encrypt_phone_number
 from app.core.utils.common import normalize_phone_number
 from app.core.utils.security import hash_password, verify_password
 from app.dtos.auth import LoginRequest, SignUpRequest
@@ -38,7 +39,7 @@ class AuthService:
                     email=data.email,
                     hashed_password=hash_password(data.password),  # 해시화된 비밀번호를 사용
                     name=data.name,
-                    phone=normalized_phone_number,
+                    phone=encrypt_phone_number(normalized_phone_number),
                     birth_date=data.birth_date,
                     gender=data.gender,
                     status=AccountStatus.ACTIVE,

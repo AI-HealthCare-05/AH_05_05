@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
@@ -10,6 +11,7 @@ from tortoise.exceptions import IntegrityError
 from app.main import app
 from app.models.users import User, UserSettings
 from app.repositories.user_repository import UserRepository
+from app.tests.conftest import TEST_PHONE_ENCRYPTION_KEY
 
 
 class TestSignupAPI(TestCase):
@@ -37,6 +39,8 @@ class TestSignupAPI(TestCase):
 
         user = await User.get(email=signup_data["email"])
         settings = await UserSettings.get(user_id=user.id)
+        assert user.phone != signup_data["phone_number"]
+        assert Fernet(TEST_PHONE_ENCRYPTION_KEY).decrypt(user.phone.encode()).decode() == signup_data["phone_number"]
         assert user.birth_date.isoformat() == signup_data["birth_date"]
         assert user.gender.value == signup_data["gender"]
         assert settings.is_terms_agreed is True
@@ -75,7 +79,7 @@ class TestSignupAPI(TestCase):
 
         assert response.status_code == status.HTTP_201_CREATED
         user = await User.get(email=signup_data["email"])
-        assert user.phone == "0111234567"
+        assert Fernet(TEST_PHONE_ENCRYPTION_KEY).decrypt(user.phone.encode()).decode() == "0111234567"
 
     async def test_signup_returns_field_error_for_duplicate_email(self):
         signup_data = self.signup_data()
@@ -105,7 +109,11 @@ class TestSignupAPI(TestCase):
 
         assert first.status_code == status.HTTP_201_CREATED
         assert second.status_code == status.HTTP_201_CREATED
-        assert await User.filter(phone="01012345678").count() == 2
+        users = await User.filter(email__in=["test@example.com", "other@example.com"]).order_by("email")
+        assert users[0].phone != users[1].phone
+        assert {Fernet(TEST_PHONE_ENCRYPTION_KEY).decrypt(user.phone.encode()).decode() for user in users} == {
+            "01012345678"
+        }
 
     async def test_signup_maps_concurrent_email_unique_violation_to_conflict(self):
         email_exists = AsyncMock(side_effect=[False, True])

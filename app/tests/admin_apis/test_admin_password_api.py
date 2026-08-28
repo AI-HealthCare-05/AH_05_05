@@ -59,8 +59,13 @@ class TestAdminPasswordChangeAPI(AdminPasswordTestBase):
         assert NEW_PASSWORD not in response.text
         assert ADMIN_PASSWORD not in response.text
 
-    async def test_pending_admin_becomes_active(self) -> None:
-        """임시 비밀번호를 바꾸면 계정이 활성화된다(REQ-ADMIN-009)."""
+    async def test_password_change_does_not_change_status(self) -> None:
+        """비밀번호 변경은 더 이상 상태를 바꾸지 않는다.
+
+        예전에는 여기서 PENDING -> ACTIVE 로 올렸다. 변경이 선택제가 되면서
+        "안 바꾸면 영영 PENDING" 이 되어버려 전환 트리거를 첫 로그인으로 옮겼다.
+        (전환 자체는 test_admin_auth_apis.py::test_login_activates_pending_admin 이 본다.)
+        """
         pending = await create_admin(
             name="한지수",
             email="jisu@ozcoding.ai",
@@ -71,13 +76,16 @@ class TestAdminPasswordChangeAPI(AdminPasswordTestBase):
         response = await request("PATCH", ADMIN_PASSWORD_URL, headers=auth_header(pending.id), json=change_payload())
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["status"] == "ACTIVE"
+        assert response.json()["status"] == "PENDING"
         await pending.refresh_from_db()
-        assert pending.status == AccountStatus.ACTIVE
-        assert pending.approved_at is not None
+        assert pending.status == AccountStatus.PENDING
 
-    async def test_pending_admin_can_use_other_apis_after_change(self) -> None:
-        """변경 전에는 다른 관리자 API 가 막혀 있어야 하고, 변경 후에는 열려야 한다."""
+    async def test_pending_admin_can_use_other_apis_without_changing(self) -> None:
+        """PENDING 이어도 다른 관리자 API 를 쓸 수 있다.
+
+        예전에는 변경 전 403 / 변경 후 200 이었다. 비밀번호 변경이 선택제가 되면서
+        변경 여부와 무관하게 열린다.
+        """
         pending = await create_admin(
             name="한지수",
             email="jisu@ozcoding.ai",
@@ -87,7 +95,7 @@ class TestAdminPasswordChangeAPI(AdminPasswordTestBase):
         headers = auth_header(pending.id)
 
         before = await request("GET", "/api/v1/admin/accounts", headers=headers)
-        assert before.status_code == status.HTTP_403_FORBIDDEN
+        assert before.status_code == status.HTTP_200_OK
 
         await request("PATCH", ADMIN_PASSWORD_URL, headers=headers, json=change_payload())
 

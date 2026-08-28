@@ -12,15 +12,19 @@ from app.core.exceptions import (
     CannotResetWithdrawnError,
     CannotSuspendSelfError,
     EmailAlreadyExistsError,
+    ForbiddenError,
     LastActiveAdminError,
     SameRoleError,
 )
+from app.dependencies.admin import AuthenticatedAdmin
 from app.dtos.admins import (
     AdminCreateRequest,
     AdminCreateResponse,
     AdminDetailResponse,
     AdminListItem,
     AdminListQuery,
+    AdminNameUpdateRequest,
+    AdminNameUpdateResponse,
     AdminPasswordResetResponse,
     AdminRoleUpdateRequest,
     AdminRoleUpdateResponse,
@@ -231,6 +235,39 @@ class AdminQueryService:
             actor_admin_id,
         )
         return AdminRoleUpdateResponse(admin_id=target.id, role=target.role)
+
+    async def update_name(
+        self, admin_id: int, request: AdminNameUpdateRequest, actor: AuthenticatedAdmin
+    ) -> AdminNameUpdateResponse:
+        """관리자 이름을 바꾼다. 한 명씩 처리한다.
+
+        ADMIN 은 모든 관리자를, STAFF 는 본인만 바꿀 수 있다. 역할별 분기가 라우터의
+        의존성만으로 갈리지 않아(STAFF 도 통과해야 하고 대상은 본인이어야 한다) 여기서
+        본다. update_role 이 CannotChangeOwnRoleError 를 서비스에서 보는 것과 같은 이유다.
+
+        이메일은 바꾸지 않는다. 로그인 식별자이고, 바꾸면 기존 계정과 충돌하는지·메일을
+        다시 보내야 하는지까지 따라와서 이름 변경과 성격이 다르다.
+        """
+        if actor.role != AdminRole.ADMIN and admin_id != actor.admin_id:
+            raise ForbiddenError("본인 계정만 수정할 수 있습니다.")
+
+        async with in_transaction():
+            # 이름만 바꾸므로 불변식은 없지만, 같은 행을 동시에 고치면 나중 쓰기가 이긴다.
+            # update_role 과 같은 방식으로 대상 행을 잠근다.
+            target = await Admin.filter(id=admin_id).select_for_update().first()
+            if target is None:
+                raise AdminNotFoundError()
+
+            # 쓸 수 없는 계정은 손대지 않는다. update_role 과 같은 기준이며,
+            # PENDING 은 허용한다(첫 로그인 전 오타를 고칠 수 있어야 한다).
+            if target.status in {AccountStatus.SUSPENDED, AccountStatus.WITHDRAWN}:
+                raise CannotChangeInactiveAdminError()
+
+            target.name = request.name
+            await target.save(update_fields=["name"])
+
+        logger.info("admin name changed: id=%s by=%s", admin_id, actor.admin_id)
+        return AdminNameUpdateResponse(admin_id=target.id, name=target.name)
 
     @staticmethod
     async def _ensure_active_admin_remains_after_role_change(target: Admin, new_role: AdminRole) -> None:

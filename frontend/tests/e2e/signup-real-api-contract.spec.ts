@@ -52,3 +52,37 @@ test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 �
     .poll(() => page.evaluate(() => sessionStorage.getItem('poke.access-token')))
     .toBe('signup-access-token');
 });
+
+test('회원가입 이메일 API 검증 오류는 브라우저 검증 말풍선으로 안내한다', async ({ page }) => {
+  await page.route('**/api/v1/auth/signup', async (route) => {
+    await route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'VALIDATION_ERROR',
+        message:
+          'value is not a valid email address: The part after the @-sign is not valid. It should have a period.',
+        field: 'email',
+      }),
+    });
+  });
+
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+  const emailInput = page.getByLabel('이메일');
+  await emailInput.fill('patient@localhost');
+  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
+  await page.getByLabel('비밀번호 확인').fill('Password123!');
+  await page.getByLabel('이름').fill('테스트 회원');
+  await page.getByLabel('전화번호').fill('010-1234-5678');
+  await page.getByLabel('생년월일').fill('1990-01-01');
+  await page.getByRole('radio', { name: '여성' }).check();
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await expect
+    .poll(() => emailInput.evaluate((input: HTMLInputElement) => input.validationMessage))
+    .toBe('이메일 주소를 확인해주세요');
+  await expect(page.getByText(/value is not a valid email address/)).toHaveCount(0);
+});
