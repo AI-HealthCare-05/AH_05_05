@@ -10,7 +10,7 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
-import { EMAIL_MAX_LENGTH } from '@/shared/lib/email';
+import { EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
 import {
   PHONE_NUMBER_MAX_LENGTH,
   formatPhoneNumberInput,
@@ -37,6 +37,7 @@ export function AuthPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState<Gender | ''>('');
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [birthDateError, setBirthDateError] = useState<string | null>(null);
   const [passwordConfirmError, setPasswordConfirmError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -123,6 +124,7 @@ export function AuthPage() {
                   emailInputRef.current?.setCustomValidity('');
                   // 탭을 옮기면 지난 로그인 실패 문구를 지웁니다. 회원가입 폼에 남아 있으면 오해합니다.
                   setLoginError(null);
+                  setEmailError(null);
                 }}
               >
                 {item === 'login' ? '로그인' : '회원가입'}
@@ -153,9 +155,14 @@ export function AuthPage() {
             autoComplete="email"
             value={email}
             maxLength={EMAIL_MAX_LENGTH}
+            error={emailError ?? undefined}
             onChange={(event) => {
               event.currentTarget.setCustomValidity('');
-              setEmail(event.target.value);
+              const typed = event.target.value;
+              const sanitized = sanitizeEmailInput(typed);
+              // 조용히 지우면 왜 안 찍히는지 모른다. 지운 게 있을 때만 이유를 알린다.
+              setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
+              setEmail(sanitized);
             }}
             required
           />

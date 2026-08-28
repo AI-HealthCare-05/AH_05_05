@@ -53,6 +53,21 @@ test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 �
     .toBe('signup-access-token');
 });
 
+test('회원가입 이메일 칸은 한글을 지우고 이유를 알린다', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+
+  const emailInput = page.getByLabel('이메일');
+  await emailInput.fill('한글주소@예시.한국');
+  await expect(emailInput).toHaveValue('@.');
+  await expect(page.getByText('이메일은 영문, 숫자와 기호만 입력할 수 있어요.')).toBeVisible();
+
+  // 한글을 지운 뒤 정상 입력하면 안내 문구도 사라진다.
+  await emailInput.fill('patient@example.com');
+  await expect(emailInput).toHaveValue('patient@example.com');
+  await expect(page.getByText('이메일은 영문, 숫자와 기호만 입력할 수 있어요.')).toHaveCount(0);
+});
+
 test('회원가입 입력창은 DB 컬럼 폭까지만 받는다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
