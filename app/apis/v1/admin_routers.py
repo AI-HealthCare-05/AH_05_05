@@ -562,8 +562,11 @@ async def list_users(
 
     ADMIN·STAFF 모두 조회할 수 있다.
 
-    `keyword` 는 이름·이메일 부분 일치, `status` 는 계정 상태, `startDate`·`endDate` 는
-    가입일 범위다. 종료일은 **당일을 포함**한다. 정렬은 가입일 최신순 고정이다.
+    `name` 과 `email` 은 각 필드의 부분 일치 검색이며, 함께 보내면 두 조건을 모두 적용한다.
+    기존 `keyword` 이름·이메일 통합 검색도 호환성을 위해 유지한다. `status` 는 계정 상태,
+    `startDate`·`endDate` 는 가입일 범위다. 종료일은 **당일을 포함**한다. 정렬은 가입일 최신순 고정이다.
+    `phone` 은 DB 암호문을 복호화한 뒤 `010-••••-5678` 형식으로 가운데 자리를
+    마스킹해 반환한다.
 
     - **422 VALIDATION_ERROR** — 가입일 시작이 종료보다 늦은 경우
     """
@@ -617,20 +620,22 @@ async def update_user_status(
     summary="사용자 상세 조회",
 )
 async def get_user(
-    _: AdminOrStaff,
+    _: AdminOnly,
     user_id: Annotated[int, Path(ge=1)],
     service: Annotated[AdminUserQueryService, Depends(AdminUserQueryService)],
 ) -> AdminUserDetailResponse:
     """회원 한 명의 상세 정보를 조회한다. (REQ-ADMIN-010)
 
-    ADMIN·STAFF 모두 조회할 수 있다.
+    ADMIN 만 조회할 수 있다. STAFF 는 목록만 조회할 수 있으며 상세 조회는 403 으로 거부한다.
 
     `isTermsAgreed` 는 `user_settings` 를 조인해 가져온다. 가입 직후라 설정 행이 아직
     없는 회원은 미동의(false)로 본다.
+    `phone` 은 DB 암호문을 복호화한 뒤 `010-1234-5678` 형식으로 반환한다.
 
     `activeAlarmCount` 는 상태가 ACTIVE 인 알람 수다. 복약 알람이 (회원 x 시간대) 단위라
     회원당 최대 4건이며, 화면이 기대하는 "활성 알림 수"와 같은 기준인지는 알림 담당자 확인이 남아 있다.
 
+    - **403 FORBIDDEN** — STAFF 계정
     - **404 USER_NOT_FOUND**
     """
     return await service.get_user(user_id)

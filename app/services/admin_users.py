@@ -6,6 +6,8 @@ from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
 from app.core.exceptions import CannotReactivateWithdrawnError, UserNotFoundError
+from app.core.phone_encryption import decrypt_phone_number
+from app.core.utils.common import format_phone_number, mask_phone_number
 from app.dtos.admin_users import (
     AdminUserDetailResponse,
     AdminUserListItem,
@@ -40,6 +42,7 @@ class AdminUserQueryService:
                     user_id=user.id,
                     name=user.name,
                     email=user.email,
+                    phone=mask_phone_number(decrypt_phone_number(user.phone)),
                     status=user.status,
                     created_at=user.created_at,
                 )
@@ -64,7 +67,7 @@ class AdminUserQueryService:
             user_id=user.id,
             name=user.name,
             email=user.email,
-            phone=user.phone,
+            phone=format_phone_number(decrypt_phone_number(user.phone)),
             status=user.status,
             is_terms_agreed=is_terms_agreed,
             created_at=user.created_at,
@@ -109,6 +112,10 @@ class AdminUserQueryService:
     def _apply_filters(queryset: QuerySet[User], query: AdminUserListQuery) -> QuerySet[User]:
         if query.keyword:
             queryset = queryset.filter(Q(name__icontains=query.keyword) | Q(email__icontains=query.keyword))
+        if query.name:
+            queryset = queryset.filter(name__icontains=query.name)
+        if query.email:
+            queryset = queryset.filter(email__icontains=query.email)
         if query.status is not None:
             queryset = queryset.filter(status=query.status)
         if query.start_date:

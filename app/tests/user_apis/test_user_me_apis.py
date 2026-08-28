@@ -1,9 +1,11 @@
+from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
 from app.main import app
 from app.models.users import User
+from app.tests.conftest import TEST_PHONE_ENCRYPTION_KEY
 
 
 class TestUserMeApis(TestCase):
@@ -31,6 +33,9 @@ class TestUserMeApis(TestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["email"] == email
         assert response.json()["name"] == "내정보테스터"
+        assert response.json()["phone_number"] == signup_data["phone_number"]
+        stored_user = await User.get(email=email)
+        assert stored_user.phone != signup_data["phone_number"]
 
     async def test_update_user_me_success(self):
         # 사용자 등록 및 로그인
@@ -90,4 +95,8 @@ class TestUserMeApis(TestCase):
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["phone_number"] == "01033334444"
-        assert await User.filter(phone="01033334444").count() == 2
+        first_user = await User.get(email=first_signup["email"])
+        second_user = await User.get(email=second_signup["email"])
+        assert first_user.phone != second_user.phone
+        assert Fernet(TEST_PHONE_ENCRYPTION_KEY).decrypt(first_user.phone.encode()).decode() == "01033334444"
+        assert Fernet(TEST_PHONE_ENCRYPTION_KEY).decrypt(second_user.phone.encode()).decode() == "01033334444"

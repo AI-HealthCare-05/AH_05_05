@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { createAccount, type Gender } from '@/entities/account';
@@ -21,6 +21,7 @@ const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 �
 export function AuthPage() {
   const navigate = useNavigate();
   const { signIn } = useSession();
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<AuthMode>('login');
   const [recordTerms, setRecordTerms] = useState(false);
   const [aiTerms, setAiTerms] = useState(false);
@@ -42,6 +43,7 @@ export function AuthPage() {
   async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoginError(null);
+    emailInputRef.current?.setCustomValidity('');
 
     if (mode === 'signup') {
       if (!recordTerms || !aiTerms || !gender) return;
@@ -68,7 +70,12 @@ export function AuthPage() {
         // 회원가입 응답에는 액세스 토큰이 없으므로 같은 자격증명으로 로그인까지 완료합니다.
         await login({ email: email.trim(), password });
       } catch (error) {
-        setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
+        if (error instanceof ApiError && error.field === 'email') {
+          emailInputRef.current?.setCustomValidity('이메일 주소를 확인해주세요');
+          emailInputRef.current?.reportValidity();
+        } else {
+          setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
+        }
         return;
       } finally {
         setSaving(false);
@@ -108,6 +115,7 @@ export function AuthPage() {
                 }`}
                 onClick={() => {
                   setMode(item);
+                  emailInputRef.current?.setCustomValidity('');
                   // 탭을 옮기면 지난 로그인 실패 문구를 지웁니다. 회원가입 폼에 남아 있으면 오해합니다.
                   setLoginError(null);
                 }}
@@ -134,11 +142,15 @@ export function AuthPage() {
         <form className="mt-6 flex flex-1 flex-col gap-4" onSubmit={complete}>
           <Input
             label="이메일"
+            inputRef={emailInputRef}
             type="email"
             inputMode="email"
             autoComplete="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              event.currentTarget.setCustomValidity('');
+              setEmail(event.target.value);
+            }}
             required
           />
           <Input
