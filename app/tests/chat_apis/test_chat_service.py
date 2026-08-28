@@ -163,6 +163,81 @@ async def test_send_passes_server_loaded_history_to_core() -> None:
     assert response.sources[0].scope == "official"
 
 
+async def test_send_compacts_oversized_history_before_core() -> None:
+    long_history = "이전 답변 시작\n" + ("상세 근거 " * 900) + "\n이전 답변 끝"
+    repository = FakeRepository(
+        history=[
+            SimpleNamespace(
+                role=ChatMessageRole.ASSISTANT,
+                content=long_history,
+            )
+        ]
+    )
+    core = FakeCore(result=build_result())
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=core,
+    )
+
+    await service.send(
+        user=SimpleNamespace(id=1),
+        command=build_command(),
+    )
+
+    compacted = core.requests[0].history[0].content
+    assert len(compacted) <= 2000
+    assert compacted.startswith("이전 답변 시작")
+    assert "[이전 대화 축약]" in compacted
+    assert compacted.endswith("이전 답변 끝")
+
+
+async def test_send_preserves_core_validated_answer_when_persisting_and_returning() -> None:
+    validated_answer = "  검증된 최종 답변입니다.\n\n이 안내는 진료를 대체하지 않습니다.  "
+    result = build_result().model_copy(update={"answer": validated_answer})
+    repository = FakeRepository()
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=FakeCore(result=result),
+    )
+
+    response = await service.send(
+        user=SimpleNamespace(id=1),
+        command=build_command(),
+    )
+
+    persisted = repository.completed["result"].answer
+    assert response.answer == persisted
+    assert response.answer == validated_answer
+
+
+async def test_send_marks_assistant_failed_when_request_building_fails() -> None:
+    repository = FakeRepository()
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=FakeCore(result=build_result()),
+        clock=iter([1.0, 2.2]).__next__,
+    )
+    invalid_command = SendChatCommand(
+        request_id="not-a-uuid",
+        record_id=None,
+        conversation_id=None,
+        message="타이레놀은 어떤 약인가요?",
+    )
+
+    with pytest.raises(ChatProcessingFailedError):
+        await service.send(
+            user=SimpleNamespace(id=1),
+            command=invalid_command,
+        )
+
+    assert repository.failed == {
+        "assistant_message_id": 101,
+        "error_code": "CHAT_PROCESSING_FAILED",
+        "duration_ms": 1200,
+        "langsmith_trace_id": None,
+    }
+
+
 async def test_send_forwards_progress_callback_to_core() -> None:
     repository = FakeRepository()
     core = FakeCore(result=build_result())

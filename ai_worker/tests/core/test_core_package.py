@@ -16,6 +16,13 @@ def test_config_defaults_to_approved_full_knowledge_release() -> None:
     assert settings.KNOWLEDGE_DATASET_VERSION == ("knowledge-full-v1")
 
 
+def test_config_limits_openai_and_qdrant_calls_to_ten_seconds() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.OPENAI_TIMEOUT_SECONDS == 10.0
+    assert settings.QDRANT_TIMEOUT_SECONDS == 10.0
+
+
 def test_config_reads_openai_chat_integration_settings(
     monkeypatch,
 ) -> None:

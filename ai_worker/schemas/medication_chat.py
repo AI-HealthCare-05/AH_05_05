@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
 
@@ -63,7 +64,10 @@ class MedicationChatRequest(BaseModel):
     request_id: UUID
     user_id: int = Field(ge=1)
     care_episode_id: int | None = Field(default=None, ge=1)
-    question: str = Field(min_length=1, max_length=2000)
+    question: str = Field(
+        min_length=1,
+        max_length=CHAT_CONTENT_MAX_LENGTH,
+    )
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
 
     @field_validator("question", mode="before")

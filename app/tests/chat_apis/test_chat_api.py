@@ -196,3 +196,30 @@ async def test_post_chat_requires_authentication_in_common_error_format() -> Non
         "code": "UNAUTHORIZED",
         "message": "인증이 필요합니다.",
     }
+
+
+def test_chat_endpoints_extend_timeout_for_external_ai_calls() -> None:
+    chat_paths = {
+        "/api/v1/chat",
+        "/api/v1/chat/stream",
+    }
+    route_timeouts = {
+        route.path: getattr(
+            route.endpoint,
+            "__api_timeout_seconds__",
+            None,
+        )
+        for route in app.router.routes
+        if getattr(route, "path", None) in chat_paths
+    }
+
+    assert route_timeouts == {
+        "/api/v1/chat": 20.0,
+        "/api/v1/chat/stream": 20.0,
+    }
+
+
+def test_chat_openapi_documents_timeout_response() -> None:
+    response_spec = app.openapi()["paths"]["/api/v1/chat"]["post"]["responses"]
+
+    assert response_spec["504"]["description"] == ("20초 안에 답변 생성을 완료하지 못함")
