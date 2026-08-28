@@ -248,11 +248,15 @@ class TestAdminApiAuthorization(AdminQueryTestBase):
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    async def test_rejects_pending_admin(self) -> None:
-        """임시 비밀번호를 아직 바꾸지 않은 계정(PENDING)도 막는다."""
+    async def test_allows_pending_admin(self) -> None:
+        """PENDING 계정도 통과한다.
+
+        비밀번호 변경이 선택제가 되면서 열었다(예전에는 403). 임시 비밀번호로 로그인해도
+        모든 관리자 기능을 쓸 수 있어야 한다. 막는 것은 SUSPENDED·WITHDRAWN 뿐이다.
+        """
         response = await request("GET", ADMIN_ACCOUNTS_URL, headers=auth_header(self.staff.id))
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_200_OK
 
     async def test_staff_can_read(self) -> None:
         """조회는 ADMIN·STAFF 모두 허용한다(권한 매트릭스)."""

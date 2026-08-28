@@ -140,18 +140,21 @@ class TestAdminUserStatusValidation(AdminUserStatusTestBase):
 
 
 class TestAdminUserStatusPermissions(AdminUserStatusTestBase):
-    async def test_staff_cannot_change_user_status(self) -> None:
-        """조회는 STAFF 도 되지만 상태 변경은 ADMIN 전용이다(관리자 계정 정지와 동일)."""
+    async def test_staff_can_change_user_status(self) -> None:
+        """회원 대상 권한은 ADMIN 과 STAFF 가 같다.
+
+        예전에는 STAFF 를 403 으로 막았으나 회원 응대가 STAFF 의 일상 업무라 열었다.
+        ADMIN 전용으로 남는 것은 관리자 계정을 대상으로 하는 API 뿐이다.
+        """
         staff = await create_admin(name="스태프", email="staff@ozcoding.ai", role=AdminRole.STAFF)
 
         response = await request(
             "PATCH", ADMIN_USER_STATUS_URL, headers=auth_header(staff.id), json=payload([self.user.id])
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert response.json()["code"] == "FORBIDDEN"
+        assert response.status_code == status.HTTP_200_OK
         await self.user.refresh_from_db()
-        assert self.user.status == AccountStatus.ACTIVE
+        assert self.user.status == AccountStatus.SUSPENDED
 
     async def test_requires_authentication(self) -> None:
         response = await request("PATCH", ADMIN_USER_STATUS_URL, json=payload([self.user.id]))

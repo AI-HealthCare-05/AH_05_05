@@ -50,8 +50,12 @@ async def login(
     액세스 토큰은 본문으로, 리프레시 토큰은 `admin_refresh_token` http_only 쿠키로 내려간다.
     쿠키는 `/api/v1/admin/auth` 경로에서만 오간다.
 
-    임시 비밀번호를 아직 바꾸지 않은 계정(PENDING)도 로그인은 되며, 이때
-    `mustChangePassword` 가 true 다. 비밀번호 변경 외의 API 는 막힌다.
+    **로그인에 성공하면 PENDING 계정이 ACTIVE 로 바뀐다.** 임시 비밀번호를 받고 처음
+    들어온 계정과, 정지에서 해제돼 PENDING 으로 돌아온 계정이 여기서 되살아난다.
+
+    그 첫 로그인일 때 `isFirstLogin` 이 true 다. 비밀번호 변경을 권유하는 프롬프트를
+    한 번 띄우라는 신호이며, **강제가 아니다.** 닫아도 모든 관리자 API 를 쓸 수 있다.
+    로그인과 동시에 ACTIVE 가 되므로 두 번째 로그인부터는 false 다.
 
     - **401 INVALID_CREDENTIALS** — 이메일이 없거나 비밀번호가 틀림
       (이메일 존재 여부를 알 수 없도록 두 경우를 같은 응답으로 처리한다)

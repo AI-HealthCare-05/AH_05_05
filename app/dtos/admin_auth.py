@@ -24,8 +24,16 @@ class AdminLoginResponse(CamelModel):
 
     access_token: str
     admin: AdminInfo
-    # PENDING(임시 비밀번호 미변경) 계정이면 true. 프론트가 비밀번호 변경 화면으로 유도한다.
-    must_change_password: bool
+    # 로그인 직전 상태가 PENDING 이었으면 true. 즉 "이번이 첫 로그인"이다.
+    #
+    # 예전 이름은 must_change_password 였고 실제로 강제였다. 비밀번호 변경이 선택제가
+    # 되면서 must 가 거짓말이 돼 개명했다. 지금은 **권유 프롬프트를 한 번 띄우는 신호**일
+    # 뿐이고, 닫아도 모든 기능을 쓸 수 있다.
+    #
+    # "임시 비밀번호를 아직 쓰고 있는가"와는 다르다. 로그인과 동시에 ACTIVE 로 바뀌므로
+    # 두 번째 로그인부터는 비밀번호를 안 바꿨어도 false 다. 그 용도로는 쓸 수 없다.
+    # 「재설정」으로 임시 비밀번호를 재발급하면 다시 PENDING 이 되어 true 로 돌아온다.
+    is_first_login: bool
 
 
 class AdminTokenRefreshResponse(CamelModel):

@@ -188,6 +188,23 @@ class TestAdminStatusUpdateAPI(AdminWriteTestBase):
         await self.staff.refresh_from_db()
         assert self.staff.status == AccountStatus.ACTIVE
 
+    async def test_reactivation_can_target_pending(self) -> None:
+        """화면의 「활성화」는 ACTIVE 가 아니라 PENDING 을 보낸다.
+
+        해제된 계정은 본인이 로그인해야 ACTIVE 가 된다는 결정 때문이다. 요청 값을
+        그대로 저장하므로 응답도 PENDING 이어야 한다(화면이 응답으로 행을 다시 그린다).
+        """
+        await Admin.filter(id=self.staff.id).update(status=AccountStatus.SUSPENDED)
+
+        response = await request(
+            "PATCH", ADMIN_STATUS_URL, headers=self.headers, json={"adminIds": [self.staff.id], "status": "PENDING"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "PENDING"
+        await self.staff.refresh_from_db()
+        assert self.staff.status == AccountStatus.PENDING
+
     async def test_rejects_empty_id_list(self) -> None:
         response = await request(
             "PATCH", ADMIN_STATUS_URL, headers=self.headers, json={"adminIds": [], "status": "SUSPENDED"}
@@ -195,8 +212,11 @@ class TestAdminStatusUpdateAPI(AdminWriteTestBase):
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-    async def test_rejects_status_other_than_active_or_suspended(self) -> None:
-        """계정 삭제 기능은 없으므로 WITHDRAWN 등으로는 바꿀 수 없다."""
+    async def test_rejects_withdrawn_as_target_status(self) -> None:
+        """계정 삭제 기능은 없으므로 WITHDRAWN 으로는 바꿀 수 없다.
+
+        허용되는 값은 SUSPENDED·ACTIVE·PENDING 셋이다.
+        """
         response = await request(
             "PATCH", ADMIN_STATUS_URL, headers=self.headers, json={"adminIds": [self.staff.id], "status": "WITHDRAWN"}
         )

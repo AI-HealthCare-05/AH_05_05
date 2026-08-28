@@ -26,6 +26,8 @@ from app.dtos.admins import (
     AdminDetailResponse,
     AdminListItem,
     AdminListQuery,
+    AdminNameUpdateRequest,
+    AdminNameUpdateResponse,
     AdminPasswordResetResponse,
     AdminRoleUpdateRequest,
     AdminRoleUpdateResponse,
@@ -63,8 +65,10 @@ admin_router = APIRouter(prefix="/admin", tags=["admin"])
 AdminOrStaff = Annotated[AuthenticatedAdmin, Depends(require_admin_or_staff)]
 # 계정 생성·상태 변경은 ADMIN 전용.
 AdminOnly = Annotated[AuthenticatedAdmin, Depends(require_admin)]
-# 대시보드는 역할을 가리지 않고 ACTIVE 관리자면 통과한다.
-ActiveAdmin = Annotated[AuthenticatedAdmin, Depends(get_current_admin)]
+# 대시보드는 역할을 가리지 않는다. 사용 가능한 계정(ACTIVE·PENDING)이면 통과한다.
+# 이름은 "정지·탈퇴가 아닌" 정도로 읽으면 된다. PENDING 은 임시 비밀번호로 아직 한 번도
+# 로그인하지 않았거나 정지에서 막 해제된 계정이라 기능을 막지 않는다.
+UsableAdmin = Annotated[AuthenticatedAdmin, Depends(get_current_admin)]
 
 
 def get_background_job_service() -> BackgroundJobService:
@@ -250,7 +254,7 @@ async def delete_supplement_rank_display(
     summary="대시보드 요약 (회원 현황)",
 )
 async def get_dashboard_summary(
-    _: ActiveAdmin,
+    _: UsableAdmin,
     query: Annotated[DashboardSummaryQuery, Query()],
     service: Annotated[AdminDashboardService, Depends(AdminDashboardService)],
 ) -> DashboardSummaryResponse:
@@ -384,7 +388,14 @@ async def update_admin_status(
     """관리자 계정을 일괄 정지하거나 해제한다. ADMIN 전용. (REQ-ADMIN-011)
 
     화면에서 체크박스로 여러 명을 고르므로 한 번에 최대 100건까지 받는다.
-    `status` 는 `SUSPENDED` 또는 `ACTIVE` 만 가능하다. 계정 삭제는 제공하지 않는다.
+    `status` 는 `SUSPENDED` · `ACTIVE` · `PENDING` 중 하나다. 계정 삭제는 제공하지 않는다.
+
+    **화면의 「활성화」는 `PENDING` 을 보낸다.** 정지 해제된 계정은 본인이 로그인해야
+    `ACTIVE` 가 된다(전환은 로그인에서 일어난다). 그래서 해제 직후에는 목록에 「대기」로
+    보이며, 이는 의도된 동작이다. `ACTIVE` 를 직접 보내는 것도 막지는 않는다.
+
+    마지막 ADMIN 을 `PENDING` 으로 만들어도 콘솔이 잠기지 않는다. `PENDING` 계정도
+    모든 관리자 API 를 쓸 수 있기 때문이다(get_current_admin).
 
     **전부 성공하거나 전부 롤백된다.** 없는 ID 가 하나라도 섞이면 아무것도 바꾸지 않고
     404 로 거부한다. 부분 성공을 허용하면 무엇이 실패했는지 알 수 없기 때문이다.
@@ -441,6 +452,41 @@ async def update_admin_role(
     - **404 ADMIN_NOT_FOUND** — 존재하지 않는 ID
     """
     return await service.update_role(admin_id, request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.patch(
+    "/accounts/{admin_id}/name",
+    response_model=AdminNameUpdateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="관리자 이름 변경",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "UNAUTHORIZED — 토큰 없음·만료"},
+        status.HTTP_403_FORBIDDEN: {"description": "FORBIDDEN — STAFF 가 남의 계정을 지정"},
+        status.HTTP_404_NOT_FOUND: {"description": "ADMIN_NOT_FOUND"},
+        status.HTTP_409_CONFLICT: {"description": "CANNOT_CHANGE_INACTIVE_ADMIN"},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"description": "VALIDATION_ERROR — 이름이 비었거나 100자 초과"},
+    },
+)
+async def update_admin_name(
+    actor: AdminOrStaff,
+    admin_id: Annotated[int, Path(ge=1)],
+    request: AdminNameUpdateRequest,
+    service: Annotated[AdminQueryService, Depends(AdminQueryService)],
+) -> AdminNameUpdateResponse:
+    """관리자의 이름을 바꾼다. 한 번에 한 명이다.
+
+    **ADMIN 은 모든 관리자를, STAFF 는 본인만** 바꿀 수 있다. 정지·역할 변경과 달리
+    STAFF 도 통과해야 해서 의존성은 AdminOrStaff 이고, "본인인지"는 서비스가 본다.
+
+    이메일은 바꿀 수 없다. 로그인 식별자라 중복 검사와 재발송까지 딸려오므로 이름
+    변경과 성격이 다르다. 역할은 `PATCH /accounts/{admin_id}/role` 이 맡는다.
+
+    - **403 FORBIDDEN** — STAFF 가 자기 것이 아닌 계정을 지정
+    - **409 CANNOT_CHANGE_INACTIVE_ADMIN** — 정지·탈퇴 계정.
+      **PENDING 은 허용한다** — 첫 로그인 전 오타를 고칠 수 있어야 한다
+    - **404 ADMIN_NOT_FOUND** — 존재하지 않는 ID
+    """
+    return await service.update_name(admin_id, request, actor=actor)
 
 
 @admin_router.post(
@@ -531,11 +577,11 @@ async def list_users(
     summary="사용자 정지·해제 (일괄)",
 )
 async def update_user_status(
-    actor: AdminOnly,
+    actor: AdminOrStaff,
     request: AdminUserStatusUpdateRequest,
     service: Annotated[AdminUserQueryService, Depends(AdminUserQueryService)],
 ) -> AdminUserStatusUpdateResponse:
-    """회원 계정을 일괄 정지하거나 해제한다. ADMIN 전용. (REQ-ADMIN-006)
+    """회원 계정을 일괄 정지하거나 해제한다. ADMIN·STAFF 모두 가능하다. (REQ-ADMIN-006)
 
     화면에서 체크박스로 여러 명을 고르므로 한 번에 최대 100건까지 받는다.
     `status` 는 `SUSPENDED` 또는 `ACTIVE` 만 가능하다.
@@ -551,10 +597,13 @@ async def update_user_status(
     사용자 토큰 갱신은 계정 상태를 다시 확인하지 않아 리프레시 토큰이 만료될 때까지
     접근이 이어진다. 관리자 계정과 달리 아직 차단 수단이 없다.
 
+    **회원 대상 권한은 ADMIN 과 STAFF 가 같다.** 예전에는 STAFF 를 403 으로 막았으나,
+    회원 응대는 STAFF 의 일상 업무라 열었다. ADMIN 전용으로 남는 것은 관리자 계정을
+    대상으로 하는 API(정지·해제·역할 변경·등록)뿐이다.
+
     - **409 CANNOT_REACTIVATE_WITHDRAWN** — 탈퇴한 회원이 포함된 경우.
       되살리면 삭제 대기 중인 계정이 다시 살아난다
     - **404 USER_NOT_FOUND** — 존재하지 않는 ID 포함
-    - **403 FORBIDDEN** — STAFF 계정(조회는 되지만 상태 변경은 ADMIN 전용)
     """
     return await service.update_status(request, actor_admin_id=actor.admin_id)
 

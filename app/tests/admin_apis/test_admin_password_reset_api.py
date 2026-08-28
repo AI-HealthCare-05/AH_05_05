@@ -101,7 +101,8 @@ class TestAdminPasswordResetAPI(AdminPasswordResetTestBase):
         )
 
         assert login.status_code == status.HTTP_200_OK
-        assert login.json()["mustChangePassword"] is True
+        # 재설정으로 PENDING 이 됐으므로 이 로그인이 다시 "첫 로그인"으로 잡힌다.
+        assert login.json()["isFirstLogin"] is True
 
     async def test_keeps_new_password_when_sending_fails(self) -> None:
         """메일만 실패한 경우 비밀번호 변경은 되돌리지 않는다(등록 API 와 같은 정책)."""
