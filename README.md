@@ -173,5 +173,18 @@ chmod +x scripts/certbot.sh
 ## 📝 개발 가이드
 
 - **API 추가**: `app/apis/v1/` 아래에 새로운 라우터 파일을 생성하고 `app/apis/v1/__init__.py`에 등록하세요.
+- **API 처리 제한 시간**: `/api/v1/**` 요청에는 기본 3초 제한이 적용됩니다. 기본값은 `.env`의 `API_TIMEOUT_SECONDS`로 변경할 수 있습니다. 제한을 초과하면 HTTP 504와 `{"code":"API_TIMEOUT","message":"요청 처리 시간이 초과되었습니다."}`가 반환됩니다.
+- **개별 API 처리 제한 시간**: 기본값과 다른 제한이 필요한 엔드포인트는 아래처럼 `@api_timeout(초)`를 라우트 데코레이터 바로 아래에 추가하세요. 값은 0보다 큰 유한 숫자여야 합니다.
+
+    ```python
+    from app.core.api_timeout import api_timeout
+
+    @router.post("/long-running")
+    @api_timeout(10)
+    async def run_long_task():
+        ...
+    ```
+
+  비동기 작업 취소는 협력적으로 동작하므로, 이미 실행된 외부 시스템의 변경이나 별도 스레드에서 수행 중인 동기 작업까지 되돌리지는 않습니다.
 - **DB 모델 추가**: `app/models/`에 Tortoise 모델을 정의하고 `app/core/db/databases.py`의 `TORTOISE_APP_MODELS` 리스트에 추가하세요.
 - **AI 로직 추가**: `ai_worker/tasks/`에 새로운 처리 로직을 작성하고 `ai_worker/main.py`에서 호출하도록 구성하세요.
