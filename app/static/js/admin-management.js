@@ -97,12 +97,20 @@ export function editBlockedReason(admin, currentAdminId, currentRole) {
  * 관리자 계정에는 WITHDRAWN 을 쓰지 않지만, 값이 들어오면 서버가 어느 쪽으로도
  * 막으므로 버튼을 내지 않는다.
  */
-export function statusAction(admin) {
+export function statusAction(admin, currentAdminId) {
   if (admin.status === "SUSPENDED") {
-    return { action: "activate", label: "활성화", nextStatus: "PENDING", danger: false };
+    // 정지된 계정이 본인일 수는 없다. 정지되면 로그인 자체가 막힌다.
+    return { action: "activate", label: "활성화", nextStatus: "PENDING", danger: false, disabledReason: null };
   }
   if (admin.status === "ACTIVE" || admin.status === "PENDING") {
-    return { action: "suspend", label: "정지", nextStatus: "SUSPENDED", danger: true };
+    return {
+      action: "suspend",
+      label: "정지",
+      nextStatus: "SUSPENDED",
+      danger: true,
+      // 서버가 409 CANNOT_SUSPEND_SELF 로 막는다. 눌러봐야 항상 실패하므로 미리 잠근다.
+      disabledReason: admin.adminId === currentAdminId ? "본인 계정은 정지할 수 없습니다" : null,
+    };
   }
   return null;
 }
@@ -167,7 +175,34 @@ export function validateAdminEdit({ name, currentPassword, newPassword, newPassw
 export function editOverlayVisibility(admin, currentAdminId, currentRole) {
   const isSelf = admin.adminId === currentAdminId;
   const isAdmin = currentRole === "ADMIN";
-  return { role: isAdmin && !isSelf, password: isSelf, reset: isAdmin };
+  // 「재설정」도 본인 행에서는 감춘다. 자기 비밀번호를 임시 비밀번호로 갈아끼울 이유가 없고,
+  // 바로 위 비밀번호 칸에서 직접 바꾸면 된다.
+  return { role: isAdmin && !isSelf, password: isSelf, reset: isAdmin && !isSelf };
+}
+
+/** 권한별로 감출 블록과 그 선택자. applyEditOverlayVisibility 와 테스트가 함께 쓴다. */
+export const EDIT_OVERLAY_SECTIONS = [
+  ["role", "[data-role-field]"],
+  ["password", "[data-password-section]"],
+  ["reset", "[data-reset-section]"],
+];
+
+/**
+ * 권한상 보이면 안 되는 블록을 DOM 에서 **제거**한다.
+ *
+ * hidden 속성을 쓰지 않는다. hidden 은 UA 스타일시트의 `[hidden] { display: none }`
+ * 으로 동작하는데 작성자 스타일시트가 항상 이긴다. 이 블록들은 각각
+ * `.overlay-field`(display:grid) · Tailwind `.grid`(display:grid) ·
+ * `.overlay-actions`(display:flex) 를 달고 있어, hidden 을 걸어도 그대로 보였다.
+ * 실제로 남의 행 오버레이에 비밀번호 칸이 노출됐다.
+ *
+ * 제거하면 CSS 가 되살릴 수 없고 "요소가 없다"로 검증할 수 있다. 순수 함수의 반환값만
+ * 보는 테스트는 이 버그를 못 잡는다.
+ */
+export function applyEditOverlayVisibility(panel, visibility) {
+  for (const [key, selector] of EDIT_OVERLAY_SECTIONS) {
+    if (!visibility[key]) panel.querySelector(selector)?.remove();
+  }
 }
 
 /**
@@ -275,12 +310,12 @@ async function openEditOverlay(admin, { currentAdminId, currentRole }, reloadLis
   overlay.querySelector("[name='name']").value = admin.name;
   overlay.querySelector("[name='role']").value = roleLabel(admin.role);
 
-  // 권한 때문에 모든 행에서 균일하게 불가한 것은 비활성이 아니라 감춘다.
-  overlay.querySelector("[data-role-field]").hidden = !visibility.role;
-  overlay.querySelector("[data-password-section]").hidden = !visibility.password;
-  overlay.querySelector("[data-reset-section]").hidden = !visibility.reset;
+  // 권한 때문에 불가한 블록은 DOM 에서 지운다. hidden 은 CSS 에 짓밟힌다(위 주석 참고).
+  applyEditOverlayVisibility(overlay, visibility);
 
   overlay.querySelector("[data-admin-edit-reset]")?.addEventListener("click", async () => {
+    // 확인 오버레이가 열리면서 이 패널이 닫힌다. 입력하던 내용은 버려지므로,
+    // 확인 문구에서 무슨 일이 일어나는지 분명히 알려야 한다.
     closeOverlay();
     await resetTemporaryPassword(admin.adminId, reloadList);
   });
@@ -296,8 +331,12 @@ async function openEditOverlay(admin, { currentAdminId, currentRole }, reloadLis
  * - 역할 때문에 모든 행에서 균일하게 불가한 것(STAFF 의 정지·활성화·재설정)은 **숨긴다.**
  *   죽은 버튼이 열 전체를 채울 이유가 없다.
  *
- * 되돌릴 수 없는 동작(재설정·정지)은 danger 로 갈라 둔다. 조회 동작과 같은 모양이면
- * 옆 버튼을 잘못 누른다. 비활성 색은 CSS 의 :disabled 가 danger 위에 덮는다.
+ * 「재설정」은 여기 없다. 수정 오버레이 안으로 옮겼다. 목록에 두면 「수정」이 비활성인
+ * 정지 계정에서 「재설정」만 활성으로 남아 어긋나고, 되돌릴 수 없는 동작이 한 번의
+ * 클릭으로 닿는 자리에 있게 된다.
+ *
+ * 정지는 danger 로 갈라 둔다. 조회 동작과 같은 모양이면 옆 버튼을 잘못 누른다.
+ * 비활성 색은 CSS 의 :disabled 가 danger 위에 덮는다.
  */
 function actionsMarkup(admin, canManage, currentAdminId, currentRole) {
   const editBlocked = editBlockedReason(admin, currentAdminId, currentRole);
@@ -309,16 +348,14 @@ function actionsMarkup(admin, canManage, currentAdminId, currentRole) {
 
   if (!canManage) return buttons.join("\n       ");
 
-  buttons.push(
-    `<button class="ui-link-button ui-link-button-danger" data-admin-action="reset" data-admin-id="${admin.adminId}">재설정</button>`,
-  );
-
-  const transition = statusAction(admin);
+  const transition = statusAction(admin, currentAdminId);
   if (transition) {
     buttons.push(
       `<button class="ui-link-button${transition.danger ? " ui-link-button-danger" : ""}" data-admin-action="${
         transition.action
-      }" data-admin-id="${admin.adminId}">${transition.label}</button>`,
+      }" data-admin-id="${admin.adminId}"${
+        transition.disabledReason ? ` disabled title="${escapeHtml(transition.disabledReason)}"` : ""
+      }>${transition.label}</button>`,
     );
   }
 
@@ -442,11 +479,6 @@ function initializeAdminManagement() {
     const adminId = Number(button.dataset.adminId);
     const admin = currentItems.find((item) => item.adminId === adminId);
 
-    if (button.dataset.adminAction === "reset") {
-      await resetTemporaryPassword(adminId, load);
-      return;
-    }
-
     if (button.dataset.adminAction === "suspend") {
       await openOverlay("overlay-admin-status-confirm.html", {
         onConfirm: async () => {
@@ -473,7 +505,8 @@ function initializeAdminManagement() {
       try {
         // ACTIVE 가 아니라 PENDING 이다. statusAction() 의 주석 참고 —
         // 해제된 계정은 본인이 로그인해야 ACTIVE 가 된다.
-        await patch("/admin/accounts/status", { adminIds: [adminId], status: statusAction(admin).nextStatus });
+        const { nextStatus } = statusAction(admin, currentAdminId);
+        await patch("/admin/accounts/status", { adminIds: [adminId], status: nextStatus });
         await load();
         showToast("관리자 계정을 활성화했습니다. 본인이 로그인하면 「활성」으로 바뀝니다.");
       } catch (error) {

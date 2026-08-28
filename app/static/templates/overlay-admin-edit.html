@@ -54,9 +54,19 @@
       </div>
     </div>
 
-    <!-- 임시 비밀번호 재발송. ADMIN 전용이라 STAFF 에게는 감춘다. -->
-    <div class="overlay-actions" data-reset-section>
-      <button data-admin-edit-reset class="ui-button ui-button-danger" type="button">재설정</button>
+    <!--
+      임시 비밀번호 재발송. ADMIN 이 남의 행을 볼 때만 남는다(JS 가 나머지 경우 이 블록을 지운다).
+
+      되돌릴 수 없는 동작이라 「저장」·「취소」와 구분선으로 갈라 둔다. 전체 폭 빨강 버튼을
+      「저장」 바로 위에 두면 화면에서 가장 눈에 띄어, 저장하려다 잘못 눌러 상대 계정이
+      잠긴다. 이 저장소에 이미 그 전례가 있다. 목록 작업 열의 링크 버튼과 같은 크기·톤으로 낮췄다.
+    -->
+    <div class="overlay-danger-zone" data-reset-section>
+      <div class="grid gap-1">
+        <p class="text-gray-500">임시 비밀번호 재발송</p>
+        <p class="text-sm text-gray-600">기존 비밀번호는 즉시 못 쓰게 됩니다.</p>
+      </div>
+      <button data-admin-edit-reset class="ui-link-button ui-link-button-danger" type="button">재설정</button>
     </div>
 
     <div class="overlay-actions">

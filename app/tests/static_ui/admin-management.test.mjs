@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  EDIT_OVERLAY_SECTIONS,
+  applyEditOverlayVisibility,
   editOverlayVisibility,
   validateAdminEdit,
   RESET_MAIL_FAILED_MESSAGE,
@@ -88,27 +90,36 @@ test("editBlockedReason allows pending accounts", () => {
 
 test("statusAction offers 정지 for active and pending rows", () => {
   for (const status of ["ACTIVE", "PENDING"]) {
-    assert.deepEqual(statusAction({ status }), {
+    assert.deepEqual(statusAction({ adminId: 9, status }, 3), {
       action: "suspend",
       label: "정지",
       nextStatus: "SUSPENDED",
       danger: true,
+      disabledReason: null,
     });
   }
 });
 
+test("statusAction locks 정지 on your own row", () => {
+  // 서버가 409 CANNOT_SUSPEND_SELF 로 막는다. 눌러봐야 항상 실패한다.
+  const action = statusAction({ adminId: 3, status: "ACTIVE" }, 3);
+
+  assert.equal(action.disabledReason, "본인 계정은 정지할 수 없습니다");
+});
+
 test("statusAction offers 활성화 for suspended rows and sends PENDING", () => {
   // ACTIVE 가 아니라 PENDING 이다. 해제된 계정은 본인이 로그인해야 ACTIVE 가 된다.
-  assert.deepEqual(statusAction({ status: "SUSPENDED" }), {
+  assert.deepEqual(statusAction({ adminId: 9, status: "SUSPENDED" }, 3), {
     action: "activate",
     label: "활성화",
     nextStatus: "PENDING",
     danger: false,
+    disabledReason: null,
   });
 });
 
 test("statusAction offers nothing for withdrawn rows", () => {
-  assert.equal(statusAction({ status: "WITHDRAWN" }), null);
+  assert.equal(statusAction({ adminId: 9, status: "WITHDRAWN" }, 3), null);
 });
 
 test("reset failure message says the target cannot log in", () => {
@@ -130,9 +141,74 @@ test("editOverlayVisibility shows the password fields only on your own row", () 
   assert.equal(editOverlayVisibility({ adminId: 9 }, 3, "ADMIN").password, false);
 });
 
-test("editOverlayVisibility hides 재설정 from STAFF", () => {
+test("editOverlayVisibility hides 재설정 from STAFF and from your own row", () => {
   assert.equal(editOverlayVisibility({ adminId: 9 }, 3, "ADMIN").reset, true);
   assert.equal(editOverlayVisibility({ adminId: 3 }, 3, "STAFF").reset, false);
+  // 본인 것은 바로 위 비밀번호 칸에서 직접 바꾸면 된다.
+  assert.equal(editOverlayVisibility({ adminId: 3 }, 3, "ADMIN").reset, false);
+});
+
+/**
+ * querySelector/remove 만 흉내 내는 최소 패널.
+ *
+ * jsdom 이 없어 진짜 DOM 을 못 쓴다. 그래도 "어느 노드를 지웠는가"는 검증할 수 있고,
+ * 이번 버그(감춰야 할 블록이 화면에 남음)가 정확히 그 지점이다.
+ */
+function fakePanel() {
+  const present = new Set(EDIT_OVERLAY_SECTIONS.map(([, selector]) => selector));
+  return {
+    present,
+    querySelector(selector) {
+      if (!present.has(selector)) return null;
+      return {
+        remove() {
+          present.delete(selector);
+        },
+      };
+    },
+  };
+}
+
+test("applyEditOverlayVisibility removes the blocks that must not show", () => {
+  // hidden 속성은 쓰지 않는다. .overlay-field(display:grid) 등 작성자 CSS 가
+  // UA 의 [hidden]{display:none} 을 이겨 화면에 그대로 남았다. 실제로 남의 행
+  // 오버레이에 비밀번호 칸이 노출된 버그가 있었다.
+  const panel = fakePanel();
+
+  applyEditOverlayVisibility(panel, { role: true, password: false, reset: true });
+
+  assert.equal(panel.present.has("[data-password-section]"), false);
+  assert.equal(panel.present.has("[data-role-field]"), true);
+  assert.equal(panel.present.has("[data-reset-section]"), true);
+});
+
+test("applyEditOverlayVisibility strips password and reset on someone else's row", () => {
+  const panel = fakePanel();
+
+  applyEditOverlayVisibility(panel, editOverlayVisibility({ adminId: 9 }, 3, "ADMIN"));
+
+  assert.equal(panel.present.has("[data-password-section]"), false);
+  assert.equal(panel.present.has("[data-role-field]"), true);
+});
+
+test("applyEditOverlayVisibility leaves STAFF only the name fields on their own row", () => {
+  const panel = fakePanel();
+
+  applyEditOverlayVisibility(panel, editOverlayVisibility({ adminId: 3 }, 3, "STAFF"));
+
+  assert.equal(panel.present.has("[data-role-field]"), false);
+  assert.equal(panel.present.has("[data-reset-section]"), false);
+  assert.equal(panel.present.has("[data-password-section]"), true);
+});
+
+test("the script does not fall back to the hidden attribute for overlay sections", async () => {
+  // hidden 으로 되돌아가면 CSS 가 다시 이겨서 같은 버그가 재발한다.
+  const scriptUrl = new URL("../../static/js/admin-management.js", import.meta.url);
+  const source = await readFile(scriptUrl, "utf8");
+
+  for (const [, selector] of EDIT_OVERLAY_SECTIONS) {
+    assert.doesNotMatch(source, new RegExp(`querySelector\\("${selector.replace(/[[\]]/g, "\\$&")}"\\)\\.hidden`));
+  }
 });
 
 test("validateAdminEdit rejects a blank name", () => {
@@ -204,6 +280,23 @@ test("edit overlay states the password policy", async () => {
   const html = await readFile(templateUrl, "utf8");
 
   assert.match(html, /8자 이상, 대문자·소문자·숫자·특수문자를 각각 1개 이상/);
+});
+
+test("edit overlay keeps the reset button out of the save/cancel row", async () => {
+  // .overlay-actions 안에 두면 flex:1 로 전체 폭 빨강 버튼이 되어 「저장」보다 눈에 띈다.
+  // 저장하려다 잘못 누르면 상대 계정이 잠긴다.
+  const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+
+  assert.match(html, /class="overlay-danger-zone" data-reset-section/);
+  assert.doesNotMatch(html, /class="overlay-actions" data-reset-section/);
+});
+
+test("reset confirmation spells out that the target cannot log in", async () => {
+  const templateUrl = new URL("../../static/templates/overlay-password-reset.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+
+  assert.match(html, /메일을 받기 전까지 로그인할 수 없습니다/);
 });
 
 test("edit overlay does not resurrect the account-active checkbox", async () => {
