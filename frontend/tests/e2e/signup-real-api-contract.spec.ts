@@ -53,6 +53,19 @@ test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 �
     .toBe('signup-access-token');
 });
 
+test('회원가입 입력창은 DB 컬럼 폭까지만 받는다', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+
+  // user.email 은 varchar(255), user.name 은 varchar(100) 이다.
+  await expect(page.getByLabel('이메일')).toHaveAttribute('maxlength', '255');
+  await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '100');
+  await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');
+
+  await page.getByLabel('이름').fill('가'.repeat(120));
+  await expect(page.getByLabel('이름')).toHaveValue('가'.repeat(100));
+});
+
 test('회원가입 이메일 API 검증 오류는 브라우저 검증 말풍선으로 안내한다', async ({ page }) => {
   await page.route('**/api/v1/auth/signup', async (route) => {
     await route.fulfill({

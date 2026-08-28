@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
-import { createAccount, type Gender } from '@/entities/account';
+import { NAME_MAX_LENGTH, createAccount, type Gender } from '@/entities/account';
 import { login } from '@/entities/auth';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { ApiError } from '@/shared/api/client';
@@ -10,7 +10,12 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
-import { formatPhoneNumberInput, validatePhoneNumber } from '@/shared/lib/phoneNumber';
+import { EMAIL_MAX_LENGTH } from '@/shared/lib/email';
+import {
+  PHONE_NUMBER_MAX_LENGTH,
+  formatPhoneNumberInput,
+  validatePhoneNumber,
+} from '@/shared/lib/phoneNumber';
 import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
@@ -147,6 +152,7 @@ export function AuthPage() {
             inputMode="email"
             autoComplete="email"
             value={email}
+            maxLength={EMAIL_MAX_LENGTH}
             onChange={(event) => {
               event.currentTarget.setCustomValidity('');
               setEmail(event.target.value);
@@ -181,6 +187,7 @@ export function AuthPage() {
                 label="이름"
                 autoComplete="name"
                 value={name}
+                maxLength={NAME_MAX_LENGTH}
                 error={nameError ?? undefined}
                 onChange={(event) => {
                   setName(event.target.value);
@@ -194,6 +201,7 @@ export function AuthPage() {
                 inputMode="tel"
                 autoComplete="tel"
                 value={phoneNumber}
+                maxLength={PHONE_NUMBER_MAX_LENGTH}
                 error={phoneNumberError ?? undefined}
                 onChange={(event) => {
                   setPhoneNumber(formatPhoneNumberInput(event.target.value));
