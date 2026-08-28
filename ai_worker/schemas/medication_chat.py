@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import date
 from enum import StrEnum
 from typing import Any
@@ -17,6 +18,37 @@ class MedicationChatRoute(StrEnum):
     GENERAL_GUIDANCE = "GENERAL_GUIDANCE"
     CLARIFICATION = "CLARIFICATION"
     RESTRICTED = "RESTRICTED"
+
+
+class MedicationChatProgressStage(StrEnum):
+    QUESTION_CHECKING = "QUESTION_CHECKING"
+    EVIDENCE_SEARCHING = "EVIDENCE_SEARCHING"
+    ANSWER_GENERATING = "ANSWER_GENERATING"
+    SAFETY_CHECKING = "SAFETY_CHECKING"
+
+
+class MedicationChatProgress(BaseModel):
+    stage: MedicationChatProgressStage
+    message: str = Field(min_length=1)
+
+    @classmethod
+    def for_stage(
+        cls,
+        stage: MedicationChatProgressStage,
+    ) -> "MedicationChatProgress":
+        messages = {
+            MedicationChatProgressStage.QUESTION_CHECKING: "질문 확인 중",
+            MedicationChatProgressStage.EVIDENCE_SEARCHING: "근거 검색 중",
+            MedicationChatProgressStage.ANSWER_GENERATING: "답변 정리 중",
+            MedicationChatProgressStage.SAFETY_CHECKING: "안전 확인 중",
+        }
+        return cls(stage=stage, message=messages[stage])
+
+
+MedicationChatProgressCallback = Callable[
+    [MedicationChatProgress],
+    Awaitable[None],
+]
 
 
 class MedicationChatSourceKind(StrEnum):

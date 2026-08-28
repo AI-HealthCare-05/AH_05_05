@@ -143,11 +143,30 @@ async function requestBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+async function requestStream(
+  path: string,
+  body: unknown,
+): Promise<Response> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      ...authHeader(),
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await toApiError(res);
+  return res;
+}
+
 export const http = {
   get: <T>(path: string) => request<T>('GET', path),
   getBlob: (path: string) => requestBlob(path),
   post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     request<T>('POST', path, body, headers),
+  postStream: (path: string, body: unknown) => requestStream(path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),

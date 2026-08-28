@@ -27,6 +27,7 @@ from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
 from ai_worker.schemas.medication_chat import (
+    MedicationChatProgressCallback,
     MedicationChatRequest,
     MedicationChatResult,
 )
@@ -48,8 +49,13 @@ class MedicationChatCoreService:
         request: MedicationChatRequest,
         *,
         limit: int = 5,
+        progress_callback: MedicationChatProgressCallback | None = None,
     ) -> MedicationChatResult:
-        return await self._use_case.execute(request, limit=limit)
+        return await self._use_case.execute(
+            request,
+            limit=limit,
+            progress_callback=progress_callback,
+        )
 
 
 def build_medication_chat_core_service(

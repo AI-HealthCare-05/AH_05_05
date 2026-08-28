@@ -26,6 +26,9 @@ from ai_worker.schemas.knowledge import KnowledgeDocumentType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
+    MedicationChatProgress,
+    MedicationChatProgressCallback,
+    MedicationChatProgressStage,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -34,7 +37,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationGuideLookup,
 )
 
-MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v2"
+MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
 MEDICATION_CHAT_SCHEMA_VERSION = "medication-chat-result-v1"
 
 
@@ -70,7 +73,12 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         *,
         limit: int = 5,
+        progress_callback: MedicationChatProgressCallback | None = None,
     ) -> MedicationChatResult:
+        await self._report_progress(
+            progress_callback,
+            MedicationChatProgressStage.QUESTION_CHECKING,
+        )
         context = await self._context_provider.get_active_context(
             user_id=request.user_id,
             care_episode_id=request.care_episode_id,
@@ -80,6 +88,10 @@ class AnswerMedicationQuestionUseCase:
         )
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
+        )
+        await self._report_progress(
+            progress_callback,
+            MedicationChatProgressStage.EVIDENCE_SEARCHING,
         )
         rules = await self._interaction_rule_repository.find_approved_rules(
             context=context,
@@ -125,6 +137,10 @@ class AnswerMedicationQuestionUseCase:
             request.question,
             chunks=chunks,
         ):
+            await self._report_progress(
+                progress_callback,
+                MedicationChatProgressStage.SAFETY_CHECKING,
+            )
             return self._clarification_result(
                 request=request,
                 context=context,
@@ -162,15 +178,32 @@ class AnswerMedicationQuestionUseCase:
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=self._context_hash(context),
         )
+        await self._report_progress(
+            progress_callback,
+            MedicationChatProgressStage.ANSWER_GENERATING,
+        )
         generated = await self._answer_generator.generate(
             request=request,
             context=context,
             result=draft,
         )
+        await self._report_progress(
+            progress_callback,
+            MedicationChatProgressStage.SAFETY_CHECKING,
+        )
         return await self._grounded_claim_validator.validate(
             context=context,
             result=generated,
         )
+
+    @staticmethod
+    async def _report_progress(
+        callback: MedicationChatProgressCallback | None,
+        stage: MedicationChatProgressStage,
+    ) -> None:
+        if callback is None:
+            return
+        await callback(MedicationChatProgress.for_stage(stage))
 
     async def _find_guide(
         self,

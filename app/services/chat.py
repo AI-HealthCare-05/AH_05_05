@@ -1,3 +1,4 @@
+import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -6,6 +7,7 @@ from ai_worker.domain.errors import AIWorkerError
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import ChatRole
 from ai_worker.schemas.medication_chat import (
+    MedicationChatProgressCallback,
     MedicationChatRequest,
     MedicationChatSource,
     MedicationChatSourceKind,
@@ -26,6 +28,7 @@ from app.models.chat import ChatMessageSource
 from app.models.enums import ChatMessageRole, ChatSourceType
 from app.models.users import User
 from app.repositories.chat_repository import (
+    AcceptedChatRequest,
     CareEpisodeNotFoundError,
     ChatContextMismatchError,
     ChatRepository,
@@ -76,25 +79,12 @@ class ChatApplicationService:
         *,
         user: User,
         command: SendChatCommand,
+        progress_callback: MedicationChatProgressCallback | None = None,
     ) -> SendChatResult:
-        try:
-            accepted = await self._repository.accept_request(
-                user_id=user.id,
-                care_episode_id=command.record_id,
-                conversation_id=command.conversation_id,
-                request_id=command.request_id,
-                content=command.message,
-            )
-        except ChatSessionNotFoundError as error:
-            raise ChatConversationNotFoundError from error
-        except CareEpisodeNotFoundError as error:
-            raise ChatCareEpisodeNotFoundError from error
-        except ChatContextMismatchError as error:
-            raise ChatContextConflictError from error
-        except ChatRequestInProgressError as error:
-            raise ChatRequestConflictError from error
-        except ChatRequestPayloadMismatchError as error:
-            raise ChatIdempotencyConflictError from error
+        accepted = await self._accept_request(
+            user=user,
+            command=command,
+        )
 
         if accepted.reused_assistant_message is not None:
             saved_message = accepted.reused_assistant_message
@@ -125,13 +115,24 @@ class ChatApplicationService:
             ],
         )
         try:
-            core_result = await self._core_service.answer(request)
+            core_result = await self._core_service.answer(
+                request,
+                progress_callback=progress_callback,
+            )
             duration_ms = self._duration_ms(started_at)
             completed = await self._repository.complete_request(
                 assistant_message_id=accepted.assistant_message.id,
                 result=core_result,
                 duration_ms=duration_ms,
             )
+        except asyncio.CancelledError:
+            duration_ms = self._duration_ms(started_at)
+            await self._repository.fail_request(
+                assistant_message_id=accepted.assistant_message.id,
+                error_code="CHAT_REQUEST_CANCELLED",
+                duration_ms=duration_ms,
+            )
+            raise
         except AIWorkerError as error:
             duration_ms = self._duration_ms(started_at)
             await self._repository.fail_request(
@@ -155,6 +156,31 @@ class ChatApplicationService:
             answer=core_result.answer,
             sources=[self._core_source_view(source) for source in core_result.sources],
         )
+
+    async def _accept_request(
+        self,
+        *,
+        user: User,
+        command: SendChatCommand,
+    ) -> AcceptedChatRequest:
+        try:
+            return await self._repository.accept_request(
+                user_id=user.id,
+                care_episode_id=command.record_id,
+                conversation_id=command.conversation_id,
+                request_id=command.request_id,
+                content=command.message,
+            )
+        except ChatSessionNotFoundError as error:
+            raise ChatConversationNotFoundError from error
+        except CareEpisodeNotFoundError as error:
+            raise ChatCareEpisodeNotFoundError from error
+        except ChatContextMismatchError as error:
+            raise ChatContextConflictError from error
+        except ChatRequestInProgressError as error:
+            raise ChatRequestConflictError from error
+        except ChatRequestPayloadMismatchError as error:
+            raise ChatIdempotencyConflictError from error
 
     def _duration_ms(self, started_at: float) -> int:
         return max(0, round((self._clock() - started_at) * 1000))

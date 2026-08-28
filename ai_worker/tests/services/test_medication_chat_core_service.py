@@ -4,6 +4,7 @@ from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
+    MedicationChatProgress,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -23,8 +24,10 @@ class FakeUseCase:
         request: MedicationChatRequest,
         *,
         limit: int = 5,
+        progress_callback=None,
     ) -> MedicationChatResult:
         self.request = request
+        self.progress_callback = progress_callback
         return MedicationChatResult(
             request_id=request.request_id,
             answer="근거 기반 답변",
@@ -48,6 +51,23 @@ async def test_service_reuses_use_case_entrypoint() -> None:
 
     assert result.answer == "근거 기반 답변"
     assert use_case.request == request
+
+
+async def test_service_forwards_progress_callback() -> None:
+    use_case = FakeUseCase()
+    service = MedicationChatCoreService(use_case=use_case)
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="마그네슘은 어떤 영양제인가요?",
+    )
+
+    async def callback(progress: MedicationChatProgress) -> None:
+        return None
+
+    await service.answer(request, progress_callback=callback)
+
+    assert use_case.progress_callback is callback
 
 
 def test_builder_rejects_missing_openai_key() -> None:

@@ -46,3 +46,16 @@ export interface SendChatResult {
   answer: string;
   sources: ChatSource[];
 }
+
+export type ChatProgressStage =
+  | 'QUESTION_CHECKING'
+  | 'EVIDENCE_SEARCHING'
+  | 'ANSWER_GENERATING'
+  | 'SAFETY_CHECKING';
+
+export interface ChatProgress {
+  stage: ChatProgressStage;
+  message: string;
+}
+
+export type ChatProgressHandler = (progress: ChatProgress) => void;

@@ -54,7 +54,10 @@ test('자주 묻는 질문은 입력칸에 머물지 않고 바로 전송되며 
   await expect(page.getByText(question, { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: '자주 묻는 질문' })).toHaveCount(0);
-  await expect(page.getByText('답변을 준비하고 있어요...')).toBeVisible();
+  await expect(page.getByText('질문 확인 중')).toBeVisible();
+  await expect(page.getByText('근거 검색 중')).toBeVisible();
+  await expect(page.getByText('답변 정리 중')).toBeVisible();
+  await expect(page.getByText('안전 확인 중')).toBeVisible();
 });
 
 test('기존 대화 이력이 있으면 시작 가이드와 자주 묻는 질문을 처음부터 보이지 않는다', async ({ page }) => {
