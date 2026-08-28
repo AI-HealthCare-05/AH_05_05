@@ -75,11 +75,15 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-async function routeCommon(page: Page, options?: { supplementStatus?: number }) {
+async function routeCommon(
+  page: Page,
+  options?: { supplementStatus?: number; supplementGate?: Promise<void> },
+) {
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
     await fulfillJson(route, RANKING_RESPONSE);
   });
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await options?.supplementGate;
     if (options?.supplementStatus) {
       await fulfillJson(route, { code: 'SERVER_ERROR', message: '목록 오류' }, options.supplementStatus);
       return;
@@ -114,6 +118,24 @@ async function routeCommon(page: Page, options?: { supplementStatus?: number }) 
     });
   });
 }
+
+test('등록 목록을 확인하는 동안 랭킹 행을 추가 버튼으로 노출하지 않는다', async ({ page }) => {
+  await authenticate(page);
+  let releaseSupplements = () => {};
+  const supplementGate = new Promise<void>((resolve) => {
+    releaseSupplements = resolve;
+  });
+  await routeCommon(page, { supplementGate });
+  await page.goto('/dev/home-empty');
+
+  const ranking = page.getByRole('region', { name: '영양제 랭킹' });
+  await expect(ranking.getByText('튼튼 철분 캡슐', { exact: true })).toBeVisible();
+  await expect(ranking.getByRole('button', { name: /1위 튼튼 철분 캡슐/ })).toHaveCount(0);
+
+  releaseSupplements();
+  await expect(ranking.getByText('등록됨', { exact: true })).toBeVisible();
+  await expect(ranking.getByRole('button', { name: /1위 튼튼 철분 캡슐/ })).toHaveCount(0);
+});
 
 test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제품 ID로 판정한다', async ({ page }) => {
   await authenticate(page);

@@ -15,12 +15,28 @@ import type {
   Supplement,
   SupplementNutrientAmount,
   SupplementProduct,
-  SupplementRankingApiResponse,
   SupplementRanking,
   SupplementSearchPage,
   SupplementSlot,
   UpdateSupplementPayload,
 } from './types';
+
+/** 서버 응답 원형. snake_case와 관리자 메타데이터는 이 API 경계 밖으로 노출하지 않습니다. */
+interface SupplementRankingApiResponse {
+  display_id: number;
+  title: string;
+  start_at: string;
+  end_at: string;
+  is_enabled: boolean;
+  created_by_admin_id: number | null;
+  created_at: string;
+  updated_at: string | null;
+  items: Array<{
+    supplement_nutrient_id: number;
+    name: string;
+    rank_no: number;
+  }>;
+}
 
 type NumericApiValue = number | string | null;
 

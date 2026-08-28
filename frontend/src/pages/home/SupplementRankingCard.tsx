@@ -4,10 +4,15 @@ import { Card, StatusBadge } from '@/shared/ui';
 
 interface SupplementRankingCardProps {
   ranking: SupplementRanking;
+  registrationPending: boolean;
   onSelect: (productId: string) => void;
 }
 
-export function SupplementRankingCard({ ranking, onSelect }: SupplementRankingCardProps) {
+export function SupplementRankingCard({
+  ranking,
+  registrationPending,
+  onSelect,
+}: SupplementRankingCardProps) {
   return (
     <section
       aria-label="영양제 랭킹"
@@ -34,6 +39,16 @@ export function SupplementRankingCard({ ranking, onSelect }: SupplementRankingCa
                   <StatusBadge type="done" className="px-2.5 py-1 text-xs">
                     등록됨
                   </StatusBadge>
+                </div>
+              ) : registrationPending ? (
+                <div
+                  aria-busy="true"
+                  className="flex min-h-touch items-center gap-3 px-4 py-2"
+                >
+                  <RankNumber rank={item.rank} />
+                  <strong className="min-w-0 flex-1 truncate text-base text-foreground">
+                    {item.name}
+                  </strong>
                 </div>
               ) : (
                 <button

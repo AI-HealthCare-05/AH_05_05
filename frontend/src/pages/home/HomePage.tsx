@@ -80,6 +80,7 @@ export function HomePage({
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [supplementRegistrationPending, setSupplementRegistrationPending] = useState(false);
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -87,10 +88,12 @@ export function HomePage({
     if (!isAuthenticated) {
       setSupplementRanking(null);
       setRegisteredProductIds(new Set());
+      setSupplementRegistrationPending(false);
       return;
     }
 
     let cancelled = false;
+    setSupplementRegistrationPending(true);
     getSupplementRanking()
       .then((ranking) => {
         if (!cancelled) {
@@ -114,6 +117,9 @@ export function HomePage({
       })
       .catch(() => {
         if (!cancelled) setRegisteredProductIds(new Set());
+      })
+      .finally(() => {
+        if (!cancelled) setSupplementRegistrationPending(false);
       });
 
     return () => {
@@ -215,7 +221,7 @@ export function HomePage({
     medicationOverviews?.some((overview) => overview.medications.length > 0),
   );
   const pageDataReady = overviewDataReady && (!hasMedication || doseRecords !== null);
-  const visibleSupplementRanking = supplementRanking
+  const visibleSupplementRanking = isAuthenticated && supplementRanking
     ? {
         ...supplementRanking,
         items: supplementRanking.items.map((item) => ({
@@ -292,6 +298,7 @@ export function HomePage({
         {visibleSupplementRanking && (
           <SupplementRankingCard
             ranking={visibleSupplementRanking}
+            registrationPending={supplementRegistrationPending}
             onSelect={(productId) =>
               navigate('/supplements', { state: { presetProductId: String(productId) } })
             }
