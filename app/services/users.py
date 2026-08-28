@@ -1,5 +1,6 @@
 from tortoise.transactions import in_transaction
 
+from app.core.phone_encryption import encrypt_phone_number
 from app.core.utils.common import normalize_phone_number
 from app.dtos.users import UserUpdateRequest
 from app.models.users import User
@@ -18,7 +19,7 @@ class UserManageService:
         payload = data.model_dump(exclude_none=True)
         if data.phone_number:
             normalized_phone_number = normalize_phone_number(data.phone_number)
-            payload["phone"] = normalized_phone_number
+            payload["phone"] = encrypt_phone_number(normalized_phone_number)
             payload.pop("phone_number", None)
         async with in_transaction():
             await self.repo.update_instance(user=user, data=payload)

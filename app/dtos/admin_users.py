@@ -12,6 +12,8 @@ class AdminUserListQuery(PageQuery):
     """REQ-ADMIN-004 사용자 목록 조회 쿼리."""
 
     keyword: str | None = Field(default=None, description="이름·이메일 부분 일치")
+    name: str | None = Field(default=None, description="이름 부분 일치")
+    email: str | None = Field(default=None, description="이메일 부분 일치")
     status: AccountStatus | None = None
     start_date: date | None = Field(default=None, description="가입일 시작 (YYYY-MM-DD)")
     end_date: date | None = Field(default=None, description="가입일 종료 (YYYY-MM-DD)")
@@ -42,6 +44,7 @@ class AdminUserListItem(CamelModel):
     user_id: int
     name: str
     email: str
+    phone: str | None = None
     status: AccountStatus
     created_at: datetime
 

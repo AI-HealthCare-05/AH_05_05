@@ -59,6 +59,7 @@ class Config(BaseSettings):
     OCR_RETRY_BASE_SECONDS: int = Field(default=5, gt=0)
 
     INTERNAL_API_KEY: str = ""
+    PHONE_ENCRYPTION_KEY: SecretStr | None = None
     VAPID_PRIVATE_KEY: str = ""
     VAPID_PUBLIC_KEY: str = ""
     VAPID_SUBJECT: str = "mailto:blesseunmi82@gmail.com"

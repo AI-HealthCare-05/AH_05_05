@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from _pytest.fixtures import FixtureRequest
+from pydantic import SecretStr
 from tortoise import generate_config
 from tortoise.contrib.test import SimpleTestCase, finalizer, initializer
 
@@ -15,6 +16,10 @@ TEST_BASE_URL = "http://test"
 TEST_DB_LABEL = "models"
 TEST_DB_TZ = "Asia/Seoul"
 _TEST_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
+TEST_PHONE_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+# 테스트 DB에 저장된 전화번호도 운영과 같은 Fernet 경로를 사용한다.
+config.PHONE_ENCRYPTION_KEY = SecretStr(TEST_PHONE_ENCRYPTION_KEY)
 
 
 def _setup_tortoise_test_runner(test_case: SimpleTestCase) -> None:
