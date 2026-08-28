@@ -24,14 +24,19 @@ const BANNERS = [
 
 interface PokeFeatureCarouselProps {
   autoAdvanceMs?: number;
+  size?: 'full' | 'compact';
 }
 
 /** 비로그인 홈과 기다림 화면이 함께 쓰는 포케 기능 소개 배너. */
-export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps) {
+export function PokeFeatureCarousel({
+  autoAdvanceMs,
+  size = 'full',
+}: PokeFeatureCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [documentHidden, setDocumentHidden] = useState(false);
+  const isCompact = size === 'compact';
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -72,7 +77,10 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
   ]);
 
   return (
-    <section aria-label="포케 기능 소개" className="flex min-h-84 flex-col gap-3">
+    <section
+      aria-label="포케 기능 소개"
+      className={`flex flex-col ${isCompact ? 'min-h-42 gap-2' : 'min-h-84 gap-3'}`}
+    >
       <div
         ref={scrollerRef}
         className="-mr-page-x flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -114,13 +122,39 @@ export function PokeFeatureCarousel({ autoAdvanceMs }: PokeFeatureCarouselProps)
           <article
             aria-hidden={index === BANNERS.length || undefined}
             key={`${title}-${index}`}
-            className={`flex min-h-64 min-w-[88%] flex-1 snap-start flex-col rounded-card p-5 shadow-card ${tone}`}
+            className={`flex min-w-[88%] flex-1 snap-start rounded-card shadow-card ${tone} ${
+              isCompact
+                ? 'min-h-32 flex-row items-center gap-4 p-4'
+                : 'min-h-64 flex-col p-5'
+            }`}
           >
-            <span className="flex size-12 items-center justify-center rounded-pill bg-card/80">
-              <Icon aria-hidden className="size-6" />
+            <span
+              className={`flex shrink-0 items-center justify-center rounded-pill bg-card/80 ${
+                isCompact ? 'size-10' : 'size-12'
+              }`}
+            >
+              <Icon aria-hidden className={isCompact ? 'size-5' : 'size-6'} />
             </span>
-            <h2 className="mt-6 whitespace-pre-line text-2xl font-bold text-foreground">{title}</h2>
-            <p className="mt-auto text-base text-muted-foreground">{description}</p>
+            <div className={isCompact ? 'min-w-0 flex-1' : 'flex flex-1 flex-col'}>
+              <h2
+                className={
+                  isCompact
+                    ? 'line-clamp-2 text-lg font-bold text-foreground'
+                    : 'mt-6 whitespace-pre-line text-2xl font-bold text-foreground'
+                }
+              >
+                {isCompact ? title.replace('\n', ' ') : title}
+              </h2>
+              <p
+                className={
+                  isCompact
+                    ? 'mt-1 line-clamp-1 text-sm text-muted-foreground'
+                    : 'mt-auto text-base text-muted-foreground'
+                }
+              >
+                {description}
+              </p>
+            </div>
           </article>
         ))}
       </div>

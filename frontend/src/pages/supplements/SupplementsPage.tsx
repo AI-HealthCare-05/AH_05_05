@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ChevronRight, Plus, Sprout } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
 import {
   addSupplement,
@@ -53,13 +53,16 @@ export function SupplementsPage({
   profileOverride,
 }: SupplementsPageProps = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const routePresetProductId = presetProductIdFromState(location.state);
   const [supplements, setSupplements] = useState<Supplement[] | null>(supplementsOverride ?? null);
   const [profile, setProfile] = useState<NutrientStandardProfile | null>(
     profileOverride ?? null,
   );
   const [profileResolved, setProfileResolved] = useState(profileOverride !== undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(routePresetProductId !== null);
+  const [presetProductId, setPresetProductId] = useState<string | null>(routePresetProductId);
   const [editingSupplement, setEditingSupplement] = useState<Supplement | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveErrorTitle, setSaveErrorTitle] = useState('영양제를 추가하지 못했어요');
@@ -71,6 +74,23 @@ export function SupplementsPage({
     (supplement) => supplement.nutrientDataAvailable,
   ).length;
   const manuallyEnteredSupplements = (supplements ?? []).length - supplementsWithNutrients;
+
+  useEffect(() => {
+    if (routePresetProductId === null) return;
+    setPresetProductId(routePresetProductId);
+    setAddOpen(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, navigate, routePresetProductId]);
+
+  function openAddSheet() {
+    setPresetProductId(null);
+    setAddOpen(true);
+  }
+
+  function changeAddOpen(open: boolean) {
+    setAddOpen(open);
+    if (!open) setPresetProductId(null);
+  }
 
   useEffect(() => {
     if (supplementsOverride) {
@@ -173,7 +193,7 @@ export function SupplementsPage({
             type="button"
             aria-label="영양제 추가"
             className="flex size-touch items-center justify-center text-primary"
-            onClick={() => setAddOpen(true)}
+            onClick={openAddSheet}
           >
             <Plus aria-hidden className="size-6" />
           </button>
@@ -272,7 +292,7 @@ export function SupplementsPage({
               )}
             </div>
 
-            <Button variant="secondary" onClick={() => setAddOpen(true)}>
+            <Button variant="secondary" onClick={openAddSheet}>
               <Plus aria-hidden className="mr-2 size-5" />
               영양제 추가
             </Button>
@@ -285,7 +305,12 @@ export function SupplementsPage({
         onChange={(key) => navigate(TAB_ROUTES[key])}
         className="border-t border-border"
       />
-      <AddSupplementSheet open={addOpen} onOpenChange={setAddOpen} onSave={saveSupplement} />
+      <AddSupplementSheet
+        open={addOpen}
+        presetProductId={presetProductId}
+        onOpenChange={changeAddOpen}
+        onSave={saveSupplement}
+      />
       <EditSupplementSheet
         open={editingSupplement !== null}
         supplement={editingSupplement}
@@ -494,4 +519,10 @@ function standardSourceLabel(profile: NutrientStandardProfile | null): string {
 
 function formatDoseAmount(amount: number): string {
   return numberFormat.format(amount);
+}
+
+function presetProductIdFromState(state: unknown): string | null {
+  if (state === null || typeof state !== 'object' || !('presetProductId' in state)) return null;
+  const productId = (state as { presetProductId?: unknown }).presetProductId;
+  return typeof productId === 'string' && productId ? productId : null;
 }

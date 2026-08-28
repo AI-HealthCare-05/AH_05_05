@@ -1,9 +1,11 @@
-import { http, mockDelay } from '@/shared/api/client';
+import { ApiError, http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockAddSupplement,
   mockSearchSupplementProducts,
   mockStopSupplement,
+  mockSupplementProduct,
+  mockSupplementRanking,
   mockSupplements,
   mockUpdateSupplement,
 } from './api.mock';
@@ -13,10 +15,28 @@ import type {
   Supplement,
   SupplementNutrientAmount,
   SupplementProduct,
+  SupplementRanking,
   SupplementSearchPage,
   SupplementSlot,
   UpdateSupplementPayload,
 } from './types';
+
+/** 서버 응답 원형. snake_case와 관리자 메타데이터는 이 API 경계 밖으로 노출하지 않습니다. */
+interface SupplementRankingApiResponse {
+  display_id: number;
+  title: string;
+  start_at: string;
+  end_at: string;
+  is_enabled: boolean;
+  created_by_admin_id: number | null;
+  created_at: string;
+  updated_at: string | null;
+  items: Array<{
+    supplement_nutrient_id: number;
+    name: string;
+    rank_no: number;
+  }>;
+}
 
 type NumericApiValue = number | string | null;
 
@@ -133,6 +153,33 @@ export async function getSupplements(): Promise<Supplement[]> {
   return response.items.map(mapUserSupplement);
 }
 
+export async function getSupplementRanking(): Promise<SupplementRanking | null> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockSupplementRanking();
+  }
+  try {
+    const response = await http.get<SupplementRankingApiResponse>(
+      '/v1/display/med/nutr/rank',
+    );
+    return mapSupplementRanking(response);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function getSupplementProduct(productId: string): Promise<SupplementProduct> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockSupplementProduct(productId);
+  }
+  const response = await http.get<SupplementNutrientApiResponse>(
+    `/v1/med/nutr/${encodeURIComponent(productId)}`,
+  );
+  return mapSupplementProduct(response);
+}
+
 export async function addSupplement(payload: AddSupplementPayload): Promise<Supplement> {
   if (USE_MOCK) {
     await mockDelay();
@@ -237,6 +284,18 @@ function mapSupplementProduct(product: SupplementNutrientApiResponse): Supplemen
     doseUnit: serving.unit,
     recommendedSlots: defaultSlotsForDailyFrequency(product.daily_freq),
     nutrients: mapNutrients(product, serving.amount),
+  };
+}
+
+function mapSupplementRanking(response: SupplementRankingApiResponse): SupplementRanking {
+  return {
+    title: response.title,
+    items: response.items.map((item) => ({
+      productId: String(item.supplement_nutrient_id),
+      name: item.name,
+      rank: item.rank_no,
+      alreadyRegistered: false,
+    })),
   };
 }
 

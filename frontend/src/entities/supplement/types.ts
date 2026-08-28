@@ -55,6 +55,18 @@ export interface SupplementSearchPage {
   nextOffset: number | null;
 }
 
+export interface SupplementRankingItem {
+  rank: number;
+  productId: string;
+  name: string;
+  alreadyRegistered: boolean;
+}
+
+export interface SupplementRanking {
+  title: string;
+  items: SupplementRankingItem[];
+}
+
 export interface SearchSupplementProductsParams {
   query: string;
   offset?: number;
