@@ -6,6 +6,7 @@ from fastapi.responses import ORJSONResponse
 
 from app.apis.v1 import v1_routers
 from app.core import config
+from app.core.api_timeout import ApiTimeoutMiddleware
 from app.core.db.databases import initialize_tortoise
 from app.core.exception_handlers import register_exception_handlers
 from app.core.logger import configure_db_query_logging, configure_root_logging
@@ -36,6 +37,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(OcrUploadSizeLimitMiddleware)
+app.add_middleware(
+    ApiTimeoutMiddleware,
+    router=app.router,
+    default_timeout_seconds=config.API_TIMEOUT_SECONDS,
+    path_prefix="/api/v1/",
+)
 initialize_tortoise(app)
 register_exception_handlers(app)
 
