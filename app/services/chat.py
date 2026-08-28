@@ -89,9 +89,7 @@ class ChatApplicationService:
         progress_callback: MedicationChatProgressCallback | None = None,
     ) -> SendChatResult:
         inputs = (
-            {"question": command.message}
-            if self._tracer.capture_content
-            else {"question_length": len(command.message)}
+            {"question": command.message} if self._tracer.capture_content else {"question_length": len(command.message)}
         )
         metadata = {
             "request_key": self._tracer.anonymize_identifier(
@@ -106,11 +104,7 @@ class ChatApplicationService:
             "chat.answer",
             root=True,
             inputs=inputs,
-            metadata={
-                key: value
-                for key, value in metadata.items()
-                if value is not None
-            },
+            metadata={key: value for key, value in metadata.items() if value is not None},
         ) as root_span:
             try:
                 return await self._send_in_trace(

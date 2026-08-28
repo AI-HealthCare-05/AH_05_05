@@ -277,9 +277,7 @@ def build_chat_tracer(
 
     api_key = _secret_value(settings.LANGSMITH_API_KEY)
     if api_key is None:
-        logger.warning(
-            "LANGSMITH_TRACING이 켜졌지만 API Key가 없어 추적을 비활성화합니다."
-        )
+        logger.warning("LANGSMITH_TRACING이 켜졌지만 API Key가 없어 추적을 비활성화합니다.")
         return NoOpChatTracer(hash_salt=hash_salt)
 
     try:

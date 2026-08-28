@@ -6,4 +6,3 @@ from ai_worker.observability.chat_tracer import (
     SafeChatTracer,
     build_chat_tracer,
 )
-

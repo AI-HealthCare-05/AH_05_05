@@ -89,13 +89,9 @@ def test_config_reads_langsmith_settings(monkeypatch) -> None:
 
     assert settings.LANGSMITH_TRACING is True
     assert settings.LANGSMITH_API_KEY is not None
-    assert settings.LANGSMITH_API_KEY.get_secret_value() == (
-        "test-langsmith-key"
-    )
+    assert settings.LANGSMITH_API_KEY.get_secret_value() == ("test-langsmith-key")
     assert settings.LANGSMITH_PROJECT == "ai-health-test"
     assert settings.LANGSMITH_ENVIRONMENT == "test"
     assert settings.LANGSMITH_CAPTURE_CONTENT is True
     assert settings.LANGSMITH_HASH_SALT is not None
-    assert settings.LANGSMITH_HASH_SALT.get_secret_value() == (
-        "test-observability-salt"
-    )
+    assert settings.LANGSMITH_HASH_SALT.get_secret_value() == ("test-observability-salt")
