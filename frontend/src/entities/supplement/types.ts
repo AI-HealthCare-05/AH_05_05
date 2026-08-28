@@ -55,18 +55,32 @@ export interface SupplementSearchPage {
   nextOffset: number | null;
 }
 
+/** 서버 응답 원형. snake_case와 관리자 메타데이터는 API 매퍼 밖으로 노출하지 않습니다. */
+export interface SupplementRankingApiResponse {
+  display_id: number;
+  title: string;
+  start_at: string;
+  end_at: string;
+  is_enabled: boolean;
+  created_by_admin_id: number | null;
+  created_at: string;
+  updated_at: string | null;
+  items: Array<{
+    supplement_nutrient_id: number;
+    name: string;
+    rank_no: number;
+  }>;
+}
+
 export interface SupplementRankingItem {
   rank: number;
   productId: string;
-  productName: string;
-  registeredCount: number;
+  name: string;
   alreadyRegistered: boolean;
 }
 
 export interface SupplementRanking {
-  /** 서버가 집계 기준을 설명하는 문장. 화면에서 그대로 표시합니다. */
-  basis: string;
-  periodDays: number;
+  title: string;
   items: SupplementRankingItem[];
 }
 

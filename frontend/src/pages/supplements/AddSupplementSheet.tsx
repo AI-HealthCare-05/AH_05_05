@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type UIEvent } from 'react';
 import { Check, Info, Search } from 'lucide-react';
 import {
+  getSupplementProduct,
   searchSupplementProducts,
   type AddSupplementPayload,
   type SupplementProduct,
@@ -20,6 +21,7 @@ import { cn } from '@/shared/lib/cn';
 
 interface AddSupplementSheetProps {
   open: boolean;
+  presetProductId?: string | null;
   onOpenChange: (open: boolean) => void;
   onSave: (payload: AddSupplementPayload) => Promise<void>;
 }
@@ -27,7 +29,12 @@ interface AddSupplementSheetProps {
 const PAGE_SIZE = 20;
 const DEFAULT_DOSE_AMOUNT = 1;
 
-export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplementSheetProps) {
+export function AddSupplementSheet({
+  open,
+  presetProductId = null,
+  onOpenChange,
+  onSave,
+}: AddSupplementSheetProps) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [results, setResults] = useState<SupplementProduct[]>([]);
@@ -42,18 +49,56 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
   const [manualMode, setManualMode] = useState(false);
   const [manualName, setManualName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [presetMode, setPresetMode] = useState(false);
   const searchGenerationRef = useRef(0);
 
   useEffect(() => {
-    if (!open || manualMode) return;
+    if (!open || manualMode || presetMode) return;
     setDebouncedQuery('');
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return;
     const timer = window.setTimeout(() => setDebouncedQuery(trimmedQuery), 300);
     return () => window.clearTimeout(timer);
-  }, [manualMode, open, query]);
+  }, [manualMode, open, presetMode, query]);
 
   useEffect(() => {
+    if (!open || !presetProductId) return;
+    const generation = ++searchGenerationRef.current;
+    setPresetMode(true);
+    setManualMode(false);
+    setQuery('');
+    setDebouncedQuery('');
+    setResults([]);
+    setTotal(0);
+    setNextOffset(null);
+    setSelectedProductId(null);
+    setSearching(true);
+    setSearchError(null);
+    getSupplementProduct(presetProductId)
+      .then((product) => {
+        if (generation !== searchGenerationRef.current) return;
+        setResults([product]);
+        setTotal(1);
+        setSelectedProductId(product.productId);
+        setDoseAmount(product.recommendedDoseAmount ?? DEFAULT_DOSE_AMOUNT);
+        setSlots(product.recommendedSlots);
+      })
+      .catch((error: unknown) => {
+        if (generation !== searchGenerationRef.current) return;
+        setSearchError(
+          error instanceof Error ? error.message : '제품 정보를 불러오지 못했어요.',
+        );
+      })
+      .finally(() => {
+        if (generation === searchGenerationRef.current) setSearching(false);
+      });
+    return () => {
+      if (generation === searchGenerationRef.current) searchGenerationRef.current += 1;
+    };
+  }, [open, presetProductId]);
+
+  useEffect(() => {
+    if (presetMode || (presetProductId && !query.trim())) return;
     const generation = ++searchGenerationRef.current;
     setLoadingMore(false);
     if (!open || !debouncedQuery || manualMode) {
@@ -87,7 +132,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
     return () => {
       if (generation === searchGenerationRef.current) searchGenerationRef.current += 1;
     };
-  }, [debouncedQuery, manualMode, open]);
+  }, [debouncedQuery, manualMode, open, presetMode, presetProductId, query]);
 
   const selectedProduct =
     results.find((product) => product.productId === selectedProductId) ?? null;
@@ -106,6 +151,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
     setManualMode(false);
     setManualName('');
     setSaving(false);
+    setPresetMode(false);
   }
 
   function changeOpen(nextOpen: boolean) {
@@ -216,6 +262,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
               onChange={(event) => {
                 searchGenerationRef.current += 1;
                 setLoadingMore(false);
+                setPresetMode(false);
                 setQuery(event.target.value);
                 setSelectedProductId(null);
                 setManualMode(false);

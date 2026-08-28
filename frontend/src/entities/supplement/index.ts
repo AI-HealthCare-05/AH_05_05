@@ -1,5 +1,6 @@
 export {
   addSupplement,
+  getSupplementProduct,
   getSupplementRanking,
   getSupplements,
   searchSupplementProducts,

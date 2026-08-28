@@ -1,9 +1,10 @@
-import { http, mockDelay } from '@/shared/api/client';
+import { ApiError, http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockAddSupplement,
   mockSearchSupplementProducts,
   mockStopSupplement,
+  mockSupplementProduct,
   mockSupplementRanking,
   mockSupplements,
   mockUpdateSupplement,
@@ -14,6 +15,7 @@ import type {
   Supplement,
   SupplementNutrientAmount,
   SupplementProduct,
+  SupplementRankingApiResponse,
   SupplementRanking,
   SupplementSearchPage,
   SupplementSlot,
@@ -135,12 +137,31 @@ export async function getSupplements(): Promise<Supplement[]> {
   return response.items.map(mapUserSupplement);
 }
 
-export async function getSupplementRanking(limit = 5): Promise<SupplementRanking> {
+export async function getSupplementRanking(): Promise<SupplementRanking | null> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockSupplementRanking(limit);
+    return mockSupplementRanking();
   }
-  return http.get<SupplementRanking>(`/v1/supplements/ranking?limit=${limit}`);
+  try {
+    const response = await http.get<SupplementRankingApiResponse>(
+      '/v1/display/med/nutr/rank',
+    );
+    return mapSupplementRanking(response);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function getSupplementProduct(productId: string): Promise<SupplementProduct> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockSupplementProduct(productId);
+  }
+  const response = await http.get<SupplementNutrientApiResponse>(
+    `/v1/med/nutr/${encodeURIComponent(productId)}`,
+  );
+  return mapSupplementProduct(response);
 }
 
 export async function addSupplement(payload: AddSupplementPayload): Promise<Supplement> {
@@ -247,6 +268,18 @@ function mapSupplementProduct(product: SupplementNutrientApiResponse): Supplemen
     doseUnit: serving.unit,
     recommendedSlots: defaultSlotsForDailyFrequency(product.daily_freq),
     nutrients: mapNutrients(product, serving.amount),
+  };
+}
+
+function mapSupplementRanking(response: SupplementRankingApiResponse): SupplementRanking {
+  return {
+    title: response.title,
+    items: response.items.map((item) => ({
+      productId: String(item.supplement_nutrient_id),
+      name: item.name,
+      rank: item.rank_no,
+      alreadyRegistered: false,
+    })),
   };
 }
 

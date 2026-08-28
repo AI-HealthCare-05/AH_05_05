@@ -5,7 +5,6 @@ import type {
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementRanking,
-  SupplementRankingItem,
   SupplementSearchPage,
   UpdateSupplementPayload,
 } from './types';
@@ -82,49 +81,35 @@ const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
   product('sp-024', '풀무원 그린체 멀티비타민', '그린체', '풀무원건강생활', '60정', 2),
 ];
 
-const SUPPLEMENT_RANKING_ITEMS: SupplementRankingItem[] = [
-  {
-    rank: 1,
-    productId: 'P00123',
-    productName: '오메가3',
-    registeredCount: 1240,
-    alreadyRegistered: false,
-  },
-  {
-    rank: 2,
-    productId: 'P00456',
-    productName: '종합비타민',
-    registeredCount: 980,
-    alreadyRegistered: false,
-  },
-  {
-    rank: 3,
-    productId: 'P00777',
-    productName: '비타민D',
-    registeredCount: 870,
-    alreadyRegistered: true,
-  },
-  {
-    rank: 4,
-    productId: 'P00901',
-    productName: '마그네슘',
-    registeredCount: 760,
-    alreadyRegistered: false,
-  },
-  {
-    rank: 5,
-    productId: 'P01111',
-    productName: '유산균',
-    registeredCount: 650,
-    alreadyRegistered: false,
-  },
-];
-
-export function mockSupplementRanking(limit = 5): SupplementRanking {
+export function mockSupplementRanking(): SupplementRanking {
   return {
-    basis: '최근 7일 등록 수',
-    periodDays: 7,
-    items: SUPPLEMENT_RANKING_ITEMS.slice(0, limit).map((item) => ({ ...item })),
+    title: '9월 면역력 관리',
+    items: [
+      { rank: 1, productId: 'mock-501', name: '오메가3', alreadyRegistered: false },
+      {
+        rank: 2,
+        productId: 'sp-003',
+        name: '고려은단 멀티비타민 올인원',
+        alreadyRegistered: false,
+      },
+      { rank: 3, productId: 'sp-008', name: '오쏘몰 이뮨', alreadyRegistered: false },
+      { rank: 4, productId: 'sp-009', name: '세노비스 트리플러스', alreadyRegistered: false },
+      {
+        rank: 5,
+        productId: 'sp-015',
+        name: '닥터린 멀티비타민 미네랄',
+        alreadyRegistered: false,
+      },
+    ],
+  };
+}
+
+export function mockSupplementProduct(productId: string): SupplementProduct {
+  const found = SUPPLEMENT_PRODUCTS.find((item) => item.productId === productId);
+  if (!found) throw new Error('영양제를 찾지 못했어요.');
+  return {
+    ...found,
+    nutrients: found.nutrients.map((nutrient) => ({ ...nutrient })),
   };
 }
 
