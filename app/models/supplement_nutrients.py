@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from tortoise import fields, models
-from tortoise.validators import MinValueValidator
+from tortoise.validators import MaxValueValidator, MinValueValidator
 
 from app.models.enums import MealSlot, SupplementStatus
 
@@ -107,6 +107,55 @@ class NutrientStandard(models.Model):
     class Meta:
         table = "nutrient_standard"
         indexes = (("grp", "age"),)
+
+
+class DisplaySupplementNutrientRank(models.Model):
+    id = fields.BigIntField(primary_key=True, description="영양제 랭킹 전시 식별자")
+    title = fields.CharField(max_length=100, description="전시 제목")
+    start_at = fields.DatetimeField(description="전시 시작 일시")
+    end_at = fields.DatetimeField(description="전시 종료 일시")
+    is_enabled = fields.BooleanField(default=False, description="관리자 전시 활성화 여부")
+    created_by_admin = fields.ForeignKeyField(
+        "models.Admin",
+        related_name="supplement_rank_displays",
+        null=True,
+        on_delete=fields.SET_NULL,
+        description="전시를 생성한 관리자 식별자",
+    )
+    created_at = fields.DatetimeField(auto_now_add=True, description="전시 생성 일시")
+    updated_at = fields.DatetimeField(auto_now=True, null=True, description="전시 최종 수정 일시")
+
+    class Meta:
+        table = "display_suppl_nutr_rank"
+        indexes = (("is_enabled", "start_at", "end_at"), ("created_by_admin",))
+
+
+class SupplementNutrientRankItem(models.Model):
+    id = fields.BigIntField(primary_key=True, description="영양제 랭킹 전시 상품 식별자")
+    display = fields.ForeignKeyField(
+        "models.DisplaySupplementNutrientRank",
+        related_name="items",
+        on_delete=fields.CASCADE,
+        description="영양제 랭킹 전시 식별자",
+    )
+    supplement_nutrient = fields.ForeignKeyField(
+        "models.SupplementNutrient",
+        related_name="rank_items",
+        on_delete=fields.RESTRICT,
+        description="전시할 건강기능식품 식별자",
+    )
+    rank_no = fields.IntField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        description="전시 순위. 1부터 5까지 사용",
+    )
+    created_at = fields.DatetimeField(auto_now_add=True, description="전시 상품 생성 일시")
+
+    class Meta:
+        table = "suppl_nutr_rank_item"
+        unique_together = (
+            ("display", "supplement_nutrient"),
+            ("display", "rank_no"),
+        )
 
 
 class UserSupplementNutrient(models.Model):

@@ -15,6 +15,7 @@ def load_models():
     Tortoise.init_models(
         (
             "app.models.users",
+            "app.models.admins",
             "app.models.supplement_nutrients",
         ),
         "models",
@@ -56,3 +57,22 @@ def test_user_supplement_relationships_and_constraints() -> None:
     assert slot._meta.unique_together == (("user_suppl_nutrient", "slot"),)
     assert slot._meta.fields_map["slot"].enum_type is enums.MealSlot
     assert slot._meta.fields_map["user_suppl_nutrient"].on_delete == fields.CASCADE
+
+
+def test_supplement_ranking_display_relationships_and_constraints() -> None:
+    _, supplements = load_models()
+    display = supplements.DisplaySupplementNutrientRank
+    item = supplements.SupplementNutrientRankItem
+
+    assert display._meta.db_table == "display_suppl_nutr_rank"
+    assert display._meta.fields_map["title"].max_length == 100
+    assert display._meta.fields_map["is_enabled"].default is False
+    assert display._meta.fields_map["created_by_admin"].on_delete == fields.SET_NULL
+    assert item._meta.db_table == "suppl_nutr_rank_item"
+    assert item._meta.unique_together == (
+        ("display", "supplement_nutrient"),
+        ("display", "rank_no"),
+    )
+    assert item._meta.fields_map["display"].on_delete == fields.CASCADE
+    assert item._meta.fields_map["supplement_nutrient"].on_delete == fields.RESTRICT
+    assert item._meta.fields_map["rank_no"].validators[0].min_value == 1

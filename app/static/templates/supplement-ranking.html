@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>영양제 랭킹 - 포케 관리자</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/styles.css?v=20260827-1">
+    <link rel="stylesheet" href="../css/management.css?v=20260827-2">
+    <script type="module" src="../js/navigation.js?v=20260827-2"></script>
+    <script type="module" src="../js/sidebar.js?v=20260827-2"></script>
+    <script type="module" src="../js/supplement-ranking.js?v=20260827-4"></script>
+</head>
+<body class="management-page flex min-h-screen">
+<!-- sidebar -->
+<aside data-sidebar data-active-nav="supplement-ranking"
+       class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0"
+       aria-label="관리자 메뉴"><span class="text-sm text-gray-500">메뉴 불러오는 중...</span>
+</aside>
+<!-- //sidebar -->
+<main class="flex-1 min-w-0">
+    <header class="bg-white h-16 px-6 flex items-center border-b">
+        <h1 class="text-xl font-semibold">영양제 랭킹</h1>
+    </header>
+    <section class="p-6">
+        <div class="ranking-heading mb-5">
+            <div>
+                <h2 class="text-lg font-semibold mb-1">영양제 랭킹 전시 관리</h2>
+                <p class="ranking-description">노출 기간과 영양제 순위를 등록하고 관리합니다.</p>
+            </div>
+            <button type="button" class="ui-button ui-button-primary" data-create-display>전시 등록</button>
+        </div>
+
+        <form class="rank-display-form bg-white rounded-xl border mb-6" data-display-form hidden>
+            <div class="rank-form-heading">
+                <h3 class="font-semibold" data-form-title>전시 등록</h3>
+                <button type="button" class="ui-link-button" data-cancel-display>닫기</button>
+            </div>
+            <div class="rank-form-grid">
+                <label>전시 제목<input class="ui-control" name="title" maxlength="100" required></label>
+                <label>전시 시작일<input class="ui-control" type="datetime-local" name="startAt" required></label>
+                <label>전시 종료일<input class="ui-control" type="datetime-local" name="endAt" required></label>
+                <label class="rank-enabled"><input type="checkbox" name="isEnabled"> 전시 활성화</label>
+            </div>
+            <div class="rank-product-search">
+                <label>영양제 검색</label>
+                <div class="rank-search-row">
+                    <input class="ui-control" type="search" data-product-keyword placeholder="영양제명 입력">
+                    <button type="button" class="ui-button" data-search-product>검색</button>
+                </div>
+                <div class="rank-search-results" data-product-results></div>
+            </div>
+            <div>
+                <p class="rank-field-label">전시 순위 (최대 5개)</p>
+                <ol class="rank-selected-list" data-selected-products></ol>
+            </div>
+            <p class="rank-form-error" data-form-error role="alert"></p>
+            <div class="rank-form-actions">
+                <button type="submit" class="ui-button ui-button-primary">저장</button>
+                <button type="button" class="ui-button" data-cancel-display>취소</button>
+            </div>
+        </form>
+
+        <div class="management-table-wrap bg-white rounded-xl border mb-10">
+            <table class="management-table w-full text-sm">
+                <thead class="bg-gray-50">
+                <tr>
+                    <th>ID</th>
+                    <th>전시 제목</th>
+                    <th>전시 기간</th>
+                    <th>상품 수</th>
+                    <th>상태</th>
+                    <th>관리</th>
+                </tr>
+                </thead>
+                <tbody data-rank-display-rows></tbody>
+            </table>
+        </div>
+
+        <div class="mb-5">
+            <h2 class="text-lg font-semibold mb-1">현재 많이 복용 중인 영양제</h2>
+            <p class="ranking-description">전시 상품 선택 시 참고할 수 있도록 실제 복용 사용자 수 기준 상위 5개를 표시합니다.</p>
+        </div>
+        <div class="management-table-wrap bg-white rounded-xl border">
+            <table class="management-table w-full text-sm">
+                <thead class="bg-gray-50">
+                <tr>
+                    <th>순위</th>
+                    <th>영양제 ID</th>
+                    <th>영양제명</th>
+                </tr>
+                </thead>
+                <tbody data-supplement-ranking-rows></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>

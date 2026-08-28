@@ -5,6 +5,7 @@ import type {
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementSearchPage,
+  UpdateSupplementPayload,
 } from './types';
 
 const BASE_MULTIVITAMIN_NUTRIENTS: SupplementNutrientAmount[] = [
@@ -38,7 +39,12 @@ function product(
     dosageForm: '정제',
     packageAmount,
     category: '종합비타민',
-    recommendedDailyCount,
+    servingDescription: `${recommendedDailyCount ?? 1}정`,
+    servingSize: packageAmount,
+    dailyFrequency: '1회',
+    recommendedDoseAmount: recommendedDailyCount,
+    doseUnit: '정',
+    recommendedSlots: ['morning'],
     nutrients: BASE_MULTIVITAMIN_NUTRIENTS.map((nutrient) => ({ ...nutrient })),
   };
 }
@@ -115,13 +121,15 @@ export function mockSearchSupplementProducts({
   return { items, total: matches.length, nextOffset };
 }
 
-export function mockSupplements(): Supplement[] {
+function initialSupplements(): Supplement[] {
   return [
     {
       supplementId: 501,
+      productId: 'mock-501',
       name: '오메가3',
-      dailyCount: 2,
-      times: ['아침', '저녁'],
+      doseAmount: 1,
+      doseUnit: '정',
+      slots: ['morning', 'evening'],
       nutrientDataAvailable: true,
       nutrients: [
         {
@@ -132,9 +140,11 @@ export function mockSupplements(): Supplement[] {
     },
     {
       supplementId: 502,
+      productId: 'mock-502',
       name: '종합비타민',
-      dailyCount: 1,
-      times: ['아침'],
+      doseAmount: 1,
+      doseUnit: '정',
+      slots: ['morning'],
       nutrientDataAvailable: true,
       nutrients: [
         {
@@ -173,9 +183,11 @@ export function mockSupplements(): Supplement[] {
     },
     {
       supplementId: 503,
+      productId: 'mock-503',
       name: '비타민 D',
-      dailyCount: 1,
-      times: ['저녁'],
+      doseAmount: 1,
+      doseUnit: '정',
+      slots: ['evening'],
       nutrientDataAvailable: true,
       nutrients: [
         {
@@ -185,6 +197,20 @@ export function mockSupplements(): Supplement[] {
       ],
     },
   ];
+}
+
+let supplementStore = initialSupplements();
+
+function cloneSupplement(supplement: Supplement): Supplement {
+  return {
+    ...supplement,
+    slots: [...supplement.slots],
+    nutrients: supplement.nutrients.map((nutrient) => ({ ...nutrient })),
+  };
+}
+
+export function mockSupplements(): Supplement[] {
+  return supplementStore.map(cloneSupplement);
 }
 
 export function mockSupplementsWithThreeExceeded(): Supplement[] {
@@ -213,14 +239,41 @@ export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
     payload.source === 'standard'
       ? SUPPLEMENT_PRODUCTS.find((productItem) => productItem.productId === payload.productId)
       : undefined;
-  return {
+  const added: Supplement = {
     supplementId: Date.now(),
+    productId: standardProduct?.productId ?? null,
     name: standardProduct?.productName ?? payload.name,
-    dailyCount: payload.dailyCount,
-    times: payload.times,
+    doseAmount: payload.doseAmount,
+    doseUnit: payload.doseUnit,
+    slots: [...payload.slots],
     nutrientDataAvailable: Boolean(standardProduct),
     nutrients: standardProduct
       ? standardProduct.nutrients.map((nutrient) => ({ ...nutrient }))
       : [],
   };
+  supplementStore = [added, ...supplementStore];
+  return cloneSupplement(added);
+}
+
+export function mockUpdateSupplement(
+  supplementId: number,
+  payload: UpdateSupplementPayload,
+): Supplement {
+  const index = supplementStore.findIndex((supplement) => supplement.supplementId === supplementId);
+  if (index === -1) throw new Error('영양제를 찾지 못했어요.');
+  const updated: Supplement = {
+    ...supplementStore[index],
+    doseAmount: payload.doseAmount,
+    slots: [...payload.slots],
+  };
+  supplementStore = supplementStore.map((supplement, itemIndex) =>
+    itemIndex === index ? updated : supplement,
+  );
+  return cloneSupplement(updated);
+}
+
+export function mockStopSupplement(supplementId: number): void {
+  const exists = supplementStore.some((supplement) => supplement.supplementId === supplementId);
+  if (!exists) throw new Error('영양제를 찾지 못했어요.');
+  supplementStore = supplementStore.filter((supplement) => supplement.supplementId !== supplementId);
 }

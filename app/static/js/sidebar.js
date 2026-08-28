@@ -1,4 +1,4 @@
-import { initializeNavigation } from "./navigation.js";
+import { initializeNavigation } from "./navigation.js?v=20260827-2";
 
 const SIDEBAR_URL = new URL("../templates/partials/sidebar.html", import.meta.url);
 const PAGE_SECTIONS = Object.freeze({
@@ -6,6 +6,7 @@ const PAGE_SECTIONS = Object.freeze({
   "user-management.html": "users",
   "screen-4-admin-management.html": "admins",
   "screen-5-task-management.html": "tasks",
+  "supplement-ranking.html": "supplement-ranking",
 });
 
 export function getActiveSection(pathname, fallbackSection) {
@@ -30,7 +31,9 @@ export async function loadSidebar(root = document, fetcher = fetch) {
   if (!placeholder) return null;
 
   try {
-    const response = await fetcher(SIDEBAR_URL);
+    // 공통 partial은 메뉴 구성이 자주 바뀌므로 브라우저의 휴리스틱 캐시를 사용하지 않는다.
+    // 이전 sidebar.html이 남으면 새 메뉴가 소스와 컨테이너에 있어도 화면에는 보이지 않는다.
+    const response = await fetcher(SIDEBAR_URL, { cache: "no-store" });
     if (!response.ok) throw new Error(`sidebar request failed: ${response.status}`);
 
     const template = root.createElement("template");

@@ -1,4 +1,6 @@
-export type SupplementTime = '아침' | '점심' | '저녁';
+import type { MealSlot } from '@/shared/model/mealSlot';
+
+export type SupplementSlot = MealSlot;
 
 export interface SupplementNutrientAmount {
   nutrientId: string;
@@ -15,9 +17,12 @@ export interface SupplementNutrientAmount {
 
 export interface Supplement {
   supplementId: number;
+  productId: string | null;
   name: string;
-  dailyCount: number;
-  times: SupplementTime[];
+  /** 한 번 먹을 때 섭취하는 수량입니다. */
+  doseAmount: number;
+  doseUnit: string;
+  slots: SupplementSlot[];
   /** false면 직접 입력 제품으로, 성분 합계에서 제외합니다. */
   nutrientDataAvailable: boolean;
   nutrients: SupplementNutrientAmount[];
@@ -32,9 +37,15 @@ export interface SupplementProduct {
   dosageForm: string;
   packageAmount: string;
   category: string;
-  /** 표시사항에서 읽은 1일 섭취 정수. null이면 프리필할 수 없습니다. */
-  recommendedDailyCount: number | null;
-  /** 1정 기준 성분량. 합계에서 dailyCount를 곱합니다. */
+  /** RDB의 1회분량·중량·1일섭취횟수 원문입니다. */
+  servingDescription: string;
+  servingSize: string;
+  dailyFrequency: string;
+  /** 표시사항에서 읽은 1회 섭취 수량과 단위입니다. */
+  recommendedDoseAmount: number | null;
+  doseUnit: string;
+  recommendedSlots: SupplementSlot[];
+  /** 1개 단위 기준 성분량. 합계에서 회당 수량과 슬롯 수를 곱합니다. */
   nutrients: SupplementNutrientAmount[];
 }
 
@@ -62,10 +73,26 @@ export interface NutrientTotal {
   sourceNames: string[];
 }
 
-export interface AddSupplementPayload {
-  source: 'standard' | 'manual';
-  productId?: string;
+interface StandardSupplementPayload {
+  source: 'standard';
+  productId: string;
   name: string;
-  dailyCount: number;
-  times: SupplementTime[];
+  doseAmount: number;
+  doseUnit: string;
+  slots: SupplementSlot[];
+}
+
+interface ManualSupplementPayload {
+  source: 'manual';
+  name: string;
+  doseAmount: number;
+  doseUnit: string;
+  slots: SupplementSlot[];
+}
+
+export type AddSupplementPayload = StandardSupplementPayload | ManualSupplementPayload;
+
+export interface UpdateSupplementPayload {
+  doseAmount: number;
+  slots: SupplementSlot[];
 }

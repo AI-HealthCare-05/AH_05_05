@@ -38,11 +38,24 @@ from app.dtos.background_jobs import (
     AdminBackgroundJobStatsResponse,
 )
 from app.dtos.pagination import PageResponse
+from app.dtos.supplement_nutrients import (
+    PopularSupplementNutrientResponse,
+    SupplementNutrientListResponse,
+    SupplementNutrientResponse,
+)
+from app.dtos.supplement_rank_displays import (
+    SupplementRankDisplayListQuery,
+    SupplementRankDisplayListResponse,
+    SupplementRankDisplayResponse,
+    SupplementRankDisplayWriteRequest,
+)
 from app.services.admin_auth import AdminAuthService
 from app.services.admin_dashboard import AdminDashboardService
 from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
 from app.services.background_jobs import BackgroundJobService
+from app.services.supplement_nutrients import SupplementNutrientService
+from app.services.supplement_rank_displays import SupplementRankDisplayService
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -56,6 +69,14 @@ ActiveAdmin = Annotated[AuthenticatedAdmin, Depends(get_current_admin)]
 
 def get_background_job_service() -> BackgroundJobService:
     return BackgroundJobService()
+
+
+def get_supplement_nutrient_service() -> SupplementNutrientService:
+    return SupplementNutrientService()
+
+
+def get_supplement_rank_display_service() -> SupplementRankDisplayService:
+    return SupplementRankDisplayService()
 
 
 @admin_router.get(
@@ -92,6 +113,134 @@ async def get_background_job_stats_for_admin(
     """내부 API 키를 노출하지 않고 관리자 JWT로 작업 상태별 건수를 조회한다."""
     result = await service.stats(start_date, end_date)
     return AdminBackgroundJobStatsResponse.model_validate(result)
+
+
+@admin_router.get(
+    "/supplement-nutrients/popular",
+    response_model=list[PopularSupplementNutrientResponse],
+    status_code=status.HTTP_200_OK,
+    summary="관리자 영양제 복용 랭킹 조회",
+)
+async def list_popular_supplement_nutrients_for_admin(
+    _: AdminOrStaff,
+    service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
+) -> list[PopularSupplementNutrientResponse]:
+    """관리자 JWT로 현재 복용 사용자가 많은 영양제 상위 5개를 조회한다."""
+    products = await service.list_popular()
+    return [PopularSupplementNutrientResponse(id=product.id, name=product.name) for product in products]
+
+
+@admin_router.get(
+    "/supplement-nutrients",
+    response_model=SupplementNutrientListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="관리자 영양제 검색",
+)
+async def search_supplement_nutrients_for_admin(
+    _: AdminOrStaff,
+    name: Annotated[str, Query(min_length=1)],
+    service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> SupplementNutrientListResponse:
+    """랭킹 전시에 넣을 건강기능식품을 이름으로 검색한다."""
+    products, total = await service.search(name, offset=offset, limit=limit)
+    return SupplementNutrientListResponse(
+        items=[SupplementNutrientResponse.model_validate(product) for product in products],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@admin_router.get(
+    "/supplement-rank-displays",
+    response_model=SupplementRankDisplayListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="영양제 랭킹 전시 목록 조회",
+)
+async def list_supplement_rank_displays(
+    _: AdminOrStaff,
+    query: Annotated[SupplementRankDisplayListQuery, Query()],
+    service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
+) -> SupplementRankDisplayListResponse:
+    """등록된 영양제 랭킹 전시를 최신순으로 조회한다."""
+    return await service.list(query)
+
+
+@admin_router.post(
+    "/supplement-rank-displays",
+    response_model=SupplementRankDisplayResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="영양제 랭킹 전시 등록",
+)
+async def create_supplement_rank_display(
+    actor: AdminOnly,
+    request: SupplementRankDisplayWriteRequest,
+    service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
+) -> SupplementRankDisplayResponse:
+    """전시 기간과 최대 5개의 영양제를 순위대로 등록한다. ADMIN 전용."""
+    return await service.create(request, actor_admin_id=actor.admin_id)
+
+
+@admin_router.get(
+    "/supplement-rank-displays/current",
+    response_model=SupplementRankDisplayResponse,
+    status_code=status.HTTP_200_OK,
+    summary="현재 영양제 랭킹 전시 조회",
+)
+async def get_current_supplement_rank_display(
+    _: AdminOrStaff,
+    service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
+) -> SupplementRankDisplayResponse:
+    """현재 시각에 활성화된 영양제 랭킹 전시를 조회한다."""
+    return await service.current()
+
+
+@admin_router.get(
+    "/supplement-rank-displays/{display_id}",
+    response_model=SupplementRankDisplayResponse,
+    status_code=status.HTTP_200_OK,
+    summary="영양제 랭킹 전시 상세 조회",
+)
+async def get_supplement_rank_display(
+    _: AdminOrStaff,
+    display_id: Annotated[int, Path(gt=0)],
+    service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
+) -> SupplementRankDisplayResponse:
+    """영양제 랭킹 전시와 순위 상품을 함께 조회한다."""
+    return await service.get(display_id)
+
+
+@admin_router.put(
+    "/supplement-rank-displays/{display_id}",
+    response_model=SupplementRankDisplayResponse,
+    status_code=status.HTTP_200_OK,
+    summary="영양제 랭킹 전시 수정",
+)
+async def update_supplement_rank_display(
+    _: AdminOnly,
+    display_id: Annotated[int, Path(gt=0)],
+    request: SupplementRankDisplayWriteRequest,
+    service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
+) -> SupplementRankDisplayResponse:
+    """전시 정보와 순위 상품 전체를 교체한다. ADMIN 전용."""
+    return await service.update(display_id, request)
+
+
+@admin_router.delete(
+    "/supplement-rank-displays/{display_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="영양제 랭킹 전시 삭제",
+)
+async def delete_supplement_rank_display(
+    _: AdminOnly,
+    display_id: Annotated[int, Path(gt=0)],
+    service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
+) -> Response:
+    """영양제 랭킹 전시와 연결 상품을 삭제한다. ADMIN 전용."""
+    await service.delete(display_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @admin_router.get(

@@ -80,9 +80,11 @@ test("setRememberedLoginId clears the saved ID when remember is disabled", () =>
   assert.equal(values.has("rememberedLoginId"), false);
 });
 
-test("login page cache-busts the API-connected login script", async () => {
+test("login page loads the API-connected login script", async () => {
   const templateUrl = new URL("../../static/templates/login.html", import.meta.url);
   const html = await readFile(templateUrl, "utf8");
 
-  assert.match(html, /src="\.\.\/js\/login\.js\?v=\d{8}-\d+"/);
+  // ?v= 쿼리는 더 이상 쓰지 않는다. 서버가 Cache-Control: no-cache 를 주므로
+  // 캐시 무효화는 app/tests/test_static_cache_headers.py 가 검증한다.
+  assert.match(html, /src="\.\.\/js\/login\.js"/);
 });

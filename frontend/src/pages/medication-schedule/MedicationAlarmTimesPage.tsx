@@ -11,7 +11,7 @@ import {
 import { Card, ErrorDialog, Header } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
 import { TimePickerSheet } from './TimePickerSheet';
-import { MEAL_SLOTS, isMealTimeOrderValid } from './slotAssignment';
+import { MEAL_SLOTS, isMealTimeOrderValid } from '@/shared/model/mealSlot';
 
 export function MedicationAlarmTimesPage() {
   const navigate = useNavigate();

@@ -1,16 +1,19 @@
-import { useEffect, useState, type UIEvent } from 'react';
-import { Check, Info, Minus, Plus, Search } from 'lucide-react';
+import { useEffect, useRef, useState, type UIEvent } from 'react';
+import { Check, Info, Search } from 'lucide-react';
 import {
   searchSupplementProducts,
   type AddSupplementPayload,
   type SupplementProduct,
 } from '@/entities/supplement';
+import { USE_MOCK } from '@/shared/config/env';
+import type { MealSlot } from '@/shared/model/mealSlot';
 import {
   Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
+  DoseSlotFields,
   Input,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
@@ -22,8 +25,7 @@ interface AddSupplementSheetProps {
 }
 
 const PAGE_SIZE = 20;
-const MIN_DAILY_COUNT = 1;
-const MAX_DAILY_COUNT = 20;
+const DEFAULT_DOSE_AMOUNT = 1;
 
 export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplementSheetProps) {
   const [query, setQuery] = useState('');
@@ -32,13 +34,15 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
   const [total, setTotal] = useState(0);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const [dailyCount, setDailyCount] = useState(MIN_DAILY_COUNT);
+  const [doseAmount, setDoseAmount] = useState(DEFAULT_DOSE_AMOUNT);
+  const [slots, setSlots] = useState<MealSlot[]>(['morning']);
   const [searching, setSearching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [manualMode, setManualMode] = useState(false);
   const [manualName, setManualName] = useState('');
   const [saving, setSaving] = useState(false);
+  const searchGenerationRef = useRef(0);
 
   useEffect(() => {
     if (!open || manualMode) return;
@@ -50,6 +54,8 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
   }, [manualMode, open, query]);
 
   useEffect(() => {
+    const generation = ++searchGenerationRef.current;
+    setLoadingMore(false);
     if (!open || !debouncedQuery || manualMode) {
       setResults([]);
       setTotal(0);
@@ -59,7 +65,6 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
       return;
     }
 
-    let cancelled = false;
     setSearching(true);
     setSearchError(null);
     setResults([]);
@@ -67,20 +72,20 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
     setNextOffset(null);
     searchSupplementProducts({ query: debouncedQuery, limit: PAGE_SIZE })
       .then((page) => {
-        if (cancelled) return;
+        if (generation !== searchGenerationRef.current) return;
         setResults(page.items);
         setTotal(page.total);
         setNextOffset(page.nextOffset);
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (generation !== searchGenerationRef.current) return;
         setSearchError(error instanceof Error ? error.message : '제품을 검색하지 못했어요.');
       })
       .finally(() => {
-        if (!cancelled) setSearching(false);
+        if (generation === searchGenerationRef.current) setSearching(false);
       });
     return () => {
-      cancelled = true;
+      if (generation === searchGenerationRef.current) searchGenerationRef.current += 1;
     };
   }, [debouncedQuery, manualMode, open]);
 
@@ -88,13 +93,15 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
     results.find((product) => product.productId === selectedProductId) ?? null;
 
   function reset() {
+    searchGenerationRef.current += 1;
     setQuery('');
     setDebouncedQuery('');
     setResults([]);
     setTotal(0);
     setNextOffset(null);
     setSelectedProductId(null);
-    setDailyCount(MIN_DAILY_COUNT);
+    setDoseAmount(DEFAULT_DOSE_AMOUNT);
+    setSlots(['morning']);
     setSearchError(null);
     setManualMode(false);
     setManualName('');
@@ -109,24 +116,29 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
   function selectProduct(product: SupplementProduct) {
     setManualMode(false);
     setSelectedProductId(product.productId);
-    setDailyCount(product.recommendedDailyCount ?? MIN_DAILY_COUNT);
+    setDoseAmount(product.recommendedDoseAmount ?? DEFAULT_DOSE_AMOUNT);
+    setSlots(product.recommendedSlots);
   }
 
   async function loadMore() {
     if (nextOffset === null || loadingMore || !debouncedQuery) return;
+    const generation = searchGenerationRef.current;
+    const requestedQuery = debouncedQuery;
     setLoadingMore(true);
     try {
       const page = await searchSupplementProducts({
-        query: debouncedQuery,
+        query: requestedQuery,
         offset: nextOffset,
         limit: PAGE_SIZE,
       });
-      setResults((current) => [...current, ...page.items]);
+      if (generation !== searchGenerationRef.current) return;
+      setResults((current) => appendUniqueProducts(current, page.items));
       setNextOffset(page.nextOffset);
     } catch (error: unknown) {
+      if (generation !== searchGenerationRef.current) return;
       setSearchError(error instanceof Error ? error.message : '다음 제품을 불러오지 못했어요.');
     } finally {
-      setLoadingMore(false);
+      if (generation === searchGenerationRef.current) setLoadingMore(false);
     }
   }
 
@@ -137,15 +149,16 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
   }
 
   async function addStandardProduct() {
-    if (!selectedProduct || saving) return;
+    if (!selectedProduct || slots.length === 0 || saving) return;
     setSaving(true);
     try {
       await onSave({
         source: 'standard',
         productId: selectedProduct.productId,
         name: selectedProduct.productName,
-        dailyCount,
-        times: ['아침'],
+        doseAmount,
+        doseUnit: selectedProduct.doseUnit,
+        slots,
       });
       changeOpen(false);
     } catch {
@@ -157,14 +170,15 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
 
   async function addManualProduct() {
     const name = manualName.trim();
-    if (!name || saving) return;
+    if (!name || slots.length === 0 || saving) return;
     setSaving(true);
     try {
       await onSave({
         source: 'manual',
         name,
-        dailyCount: MIN_DAILY_COUNT,
-        times: ['아침'],
+        doseAmount,
+        doseUnit: '정',
+        slots,
       });
       changeOpen(false);
     } catch {
@@ -185,7 +199,7 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
         <div className="shrink-0 pr-10">
           <DialogTitle className="text-2xl">영양제 추가</DialogTitle>
           <DialogDescription id="supplement-add-description" className="sr-only">
-            제품명이나 브랜드로 검색하고 1일 섭취 정수를 확인합니다.
+            제품명으로 검색하고 1회 섭취량과 복용 시간대를 확인합니다.
           </DialogDescription>
         </div>
 
@@ -200,11 +214,13 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
               aria-label="영양제 제품 검색"
               value={query}
               onChange={(event) => {
+                searchGenerationRef.current += 1;
+                setLoadingMore(false);
                 setQuery(event.target.value);
                 setSelectedProductId(null);
                 setManualMode(false);
               }}
-              placeholder="제품명이나 브랜드를 입력해 주세요"
+              placeholder={USE_MOCK ? '제품명이나 브랜드를 입력해 주세요' : '제품명을 입력해 주세요'}
               className="[&_input]:pl-11"
             />
           </div>
@@ -231,11 +247,21 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
               placeholder="통 앞면의 제품명"
               autoFocus
             />
+            <DoseSlotFields
+              doseAmount={doseAmount}
+              doseUnit="정"
+              slots={slots}
+              onDoseAmountChange={setDoseAmount}
+              onSlotsChange={setSlots}
+            />
             <div className="rounded-card bg-muted-bg p-4 text-sm text-muted-foreground">
               직접 입력한 제품은 성분을 확인할 수 없어 성분 합계에서 제외합니다.
             </div>
             <div className="mt-auto flex flex-col gap-2">
-              <Button disabled={!manualName.trim() || saving} onClick={() => void addManualProduct()}>
+              <Button
+                disabled={!manualName.trim() || slots.length === 0 || saving}
+                onClick={() => void addManualProduct()}
+              >
                 {saving ? '추가 중...' : '추가하기'}
               </Button>
               <Button variant="secondary" onClick={() => setManualMode(false)}>
@@ -251,7 +277,9 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
                   <Info aria-hidden className="mt-0.5 size-5 shrink-0 text-primary-strong" />
                   <p>
                     <strong className="font-bold text-foreground">{total}개가 찾아졌어요.</strong>{' '}
-                    통 앞면의 브랜드를 함께 넣으면 빨리 찾아요 — 예: 센트룸 종합비타민
+                    {USE_MOCK
+                      ? '통 앞면의 브랜드를 함께 넣으면 빨리 찾아요 — 예: 센트룸 종합비타민'
+                      : '제품명 일부를 더 입력하면 결과를 좁힐 수 있어요.'}
                   </p>
                 </div>
               )}
@@ -268,7 +296,9 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
                 <div className="flex flex-1 flex-col items-center justify-center py-8 text-center">
                   <p className="text-lg font-bold text-foreground">찾지 못했어요</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    통 앞면의 제품명을 확인하거나 직접 입력해 주세요.
+                    {USE_MOCK
+                      ? '통 앞면의 제품명을 확인하거나 직접 입력해 주세요.'
+                      : '제품명을 다시 확인해 주세요.'}
                   </p>
                 </div>
               ) : results.length > 0 ? (
@@ -298,7 +328,9 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
                                 {product.productName}
                               </strong>
                               <span className="mt-1 block text-sm text-muted-foreground">
-                                {product.manufacturer} · {product.dosageForm} · {product.packageAmount}
+                                {USE_MOCK
+                                  ? `${product.manufacturer} · ${product.dosageForm} · ${product.packageAmount}`
+                                  : `${product.servingDescription} · ${product.servingSize} · 1일 ${product.dailyFrequency}`}
                               </span>
                             </span>
                             {selected && (
@@ -313,46 +345,23 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
 
                           {selected && (
                             <div className="mx-4 flex flex-col gap-3 border-t border-border py-4">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-base text-muted-foreground">하루에</span>
-                                <div className="flex items-center gap-3">
-                                  <button
-                                    type="button"
-                                    aria-label="하루 섭취량 줄이기"
-                                    disabled={dailyCount <= MIN_DAILY_COUNT}
-                                    onClick={() =>
-                                      setDailyCount((count) =>
-                                        Math.max(MIN_DAILY_COUNT, count - 1),
-                                      )
-                                    }
-                                    className="flex size-touch items-center justify-center rounded-pill border border-border text-foreground disabled:text-disabled-foreground"
-                                  >
-                                    <Minus aria-hidden className="size-5" />
-                                  </button>
-                                  <strong className="min-w-12 text-center text-xl font-bold text-foreground tnum">
-                                    {dailyCount} 정
-                                  </strong>
-                                  <button
-                                    type="button"
-                                    aria-label="하루 섭취량 늘리기"
-                                    disabled={dailyCount >= MAX_DAILY_COUNT}
-                                    onClick={() =>
-                                      setDailyCount((count) =>
-                                        Math.min(MAX_DAILY_COUNT, count + 1),
-                                      )
-                                    }
-                                    className="flex size-touch items-center justify-center rounded-pill border border-border text-foreground disabled:text-disabled-foreground"
-                                  >
-                                    <Plus aria-hidden className="size-5" />
-                                  </button>
-                                </div>
-                              </div>
-                              {product.recommendedDailyCount !== null && (
+                              <DoseSlotFields
+                                doseAmount={doseAmount}
+                                doseUnit={product.doseUnit}
+                                doseStep={doseStepFor(product.recommendedDoseAmount)}
+                                slots={slots}
+                                onDoseAmountChange={setDoseAmount}
+                                onSlotsChange={setSlots}
+                              />
+                              {product.recommendedDoseAmount !== null && (
                                 <p className="text-sm text-muted-foreground">
                                   제품 표시사항의 섭취방법을 채워놨어요.
                                 </p>
                               )}
-                              <Button disabled={saving} onClick={() => void addStandardProduct()}>
+                              <Button
+                                disabled={slots.length === 0 || saving}
+                                onClick={() => void addStandardProduct()}
+                              >
                                 {saving ? '추가 중...' : '추가하기'}
                               </Button>
                             </div>
@@ -369,12 +378,12 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
                 </ul>
               ) : (
                 <div className="flex flex-1 items-center justify-center text-center text-sm text-muted-foreground">
-                  제품명이나 통 앞면의 브랜드를 검색해 주세요.
+                  {USE_MOCK ? '제품명이나 통 앞면의 브랜드를 검색해 주세요.' : '제품명을 검색해 주세요.'}
                 </div>
               )}
             </div>
 
-            <div className="-mx-5 flex shrink-0 items-center justify-center gap-2 border-t border-border px-5 py-4 text-sm text-muted-foreground">
+            {USE_MOCK && <div className="-mx-5 flex shrink-0 items-center justify-center gap-2 border-t border-border px-5 py-4 text-sm text-muted-foreground">
               <span>찾는 제품이 없나요?</span>
               <button
                 type="button"
@@ -382,15 +391,31 @@ export function AddSupplementSheet({ open, onOpenChange, onSave }: AddSupplement
                 onClick={() => {
                   setSelectedProductId(null);
                   setManualName('');
+                  setDoseAmount(DEFAULT_DOSE_AMOUNT);
+                  setSlots(['morning']);
                   setManualMode(true);
                 }}
               >
                 직접 입력
               </button>
-            </div>
+            </div>}
           </>
         )}
       </DialogContent>
     </Dialog>
   );
+}
+
+function doseStepFor(recommendedAmount: number | null): number {
+  if (recommendedAmount === null || !Number.isFinite(recommendedAmount)) return 1;
+  const fraction = Math.round((recommendedAmount % 1) * 1_000) / 1_000;
+  return fraction > 0 ? fraction : 1;
+}
+
+function appendUniqueProducts(
+  current: SupplementProduct[],
+  incoming: SupplementProduct[],
+): SupplementProduct[] {
+  const productIds = new Set(current.map(({ productId }) => productId));
+  return [...current, ...incoming.filter(({ productId }) => !productIds.has(productId))];
 }
