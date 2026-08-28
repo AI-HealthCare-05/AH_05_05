@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -48,14 +49,21 @@ class FakeCore:
     def __init__(
         self,
         result: MedicationChatResult | None = None,
-        error: Exception | None = None,
+        error: BaseException | None = None,
     ) -> None:
         self.result = result
         self.error = error
         self.requests = []
 
-    async def answer(self, request, *, limit: int = 5):
+    async def answer(
+        self,
+        request,
+        *,
+        limit: int = 5,
+        progress_callback=None,
+    ):
         self.requests.append(request)
+        self.progress_callback = progress_callback
         if self.error is not None:
             raise self.error
         return self.result
@@ -122,6 +130,27 @@ async def test_send_passes_server_loaded_history_to_core() -> None:
     assert response.sources[0].scope == "official"
 
 
+async def test_send_forwards_progress_callback_to_core() -> None:
+    repository = FakeRepository()
+    core = FakeCore(result=build_result())
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=core,
+        clock=lambda: 1.0,
+    )
+
+    async def callback(progress) -> None:
+        return None
+
+    await service.send(
+        user=SimpleNamespace(id=1),
+        command=build_command(),
+        progress_callback=callback,
+    )
+
+    assert core.progress_callback is callback
+
+
 async def test_send_marks_assistant_failed_before_raising_503() -> None:
     repository = FakeRepository()
     service = ChatApplicationService(
@@ -160,5 +189,26 @@ async def test_send_marks_assistant_failed_after_unexpected_error() -> None:
     assert repository.failed == {
         "assistant_message_id": 101,
         "error_code": "CHAT_PROCESSING_FAILED",
+        "duration_ms": 1200,
+    }
+
+
+async def test_send_marks_assistant_failed_when_stream_is_cancelled() -> None:
+    repository = FakeRepository()
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=FakeCore(error=asyncio.CancelledError()),
+        clock=iter([1.0, 2.2]).__next__,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.send(
+            user=SimpleNamespace(id=1),
+            command=build_command(),
+        )
+
+    assert repository.failed == {
+        "assistant_message_id": 101,
+        "error_code": "CHAT_REQUEST_CANCELLED",
         "duration_ms": 1200,
     }

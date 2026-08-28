@@ -12,6 +12,7 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
     InteractionRuleFact,
+    MedicationChatProgressStage,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -203,6 +204,33 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "통증과 발열을 완화합니다" in result.answer
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
+
+
+async def test_execute_reports_only_fixed_safe_progress_stages() -> None:
+    stages: list[MedicationChatProgressStage] = []
+    messages: list[str] = []
+
+    async def record_progress(progress) -> None:
+        stages.append(progress.stage)
+        messages.append(progress.message)
+
+    await build_use_case().execute(
+        build_request("마그네슘은 왜 먹나요?"),
+        progress_callback=record_progress,
+    )
+
+    assert stages == [
+        MedicationChatProgressStage.QUESTION_CHECKING,
+        MedicationChatProgressStage.EVIDENCE_SEARCHING,
+        MedicationChatProgressStage.ANSWER_GENERATING,
+        MedicationChatProgressStage.SAFETY_CHECKING,
+    ]
+    assert messages == [
+        "질문 확인 중",
+        "근거 검색 중",
+        "답변 정리 중",
+        "안전 확인 중",
+    ]
 
 
 async def test_confirmed_medication_precedes_general_guide_and_rag() -> None:

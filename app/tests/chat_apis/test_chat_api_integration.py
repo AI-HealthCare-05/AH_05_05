@@ -3,6 +3,8 @@ from starlette import status
 
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
+    MedicationChatProgress,
+    MedicationChatProgressStage,
     MedicationChatResult,
     MedicationChatRoute,
     MedicationChatSource,
@@ -19,7 +21,19 @@ from app.services.chat import ChatApplicationService
 
 
 class FakeMedicationChatCore:
-    async def answer(self, request, *, limit: int = 5):
+    async def answer(
+        self,
+        request,
+        *,
+        limit: int = 5,
+        progress_callback=None,
+    ):
+        if progress_callback is not None:
+            await progress_callback(
+                MedicationChatProgress.for_stage(
+                    MedicationChatProgressStage.SAFETY_CHECKING,
+                )
+            )
         return MedicationChatResult(
             request_id=request.request_id,
             answer=(
@@ -96,3 +110,45 @@ async def test_post_chat_persists_conversation_answer_and_sources() -> None:
     assert messages[1].status == ChatMessageStatus.COMPLETED
     assert messages[1].content == body["answer"]
     assert await ChatMessageSource.filter(chat_message_id=body["messageId"]).count() == 1
+
+
+async def test_post_chat_stream_persists_only_completed_answer() -> None:
+    user = await User.create(
+        id=2,
+        email="chat-stream-api@example.com",
+        hashed_password="hashed-password",
+        name="스트림 사용자",
+    )
+    service = ChatApplicationService(
+        repository=ChatRepository(),
+        core_service=FakeMedicationChatCore(),
+    )
+    app.dependency_overrides[get_request_user] = lambda: user
+    app.dependency_overrides[get_chat_application_service] = lambda: service
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(
+                "/api/v1/chat/stream",
+                json={
+                    "requestId": "7925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+                    "recordId": None,
+                    "conversationId": None,
+                    "message": "타이레놀은 어떤 약인가요?",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert "event: progress" in response.text
+    assert "event: complete" in response.text
+    session = await ChatSession.get(user_id=user.id)
+    assistant = await ChatMessage.get(
+        chat_session_id=session.id,
+        role=ChatMessageRole.ASSISTANT,
+    )
+    assert assistant.status == ChatMessageStatus.COMPLETED
+    assert "아세트아미노펜은 확인된 공공 의약품 정보" in assistant.content

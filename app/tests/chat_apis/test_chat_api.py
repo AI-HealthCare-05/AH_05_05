@@ -3,6 +3,10 @@ from types import SimpleNamespace
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 
+from ai_worker.schemas.medication_chat import (
+    MedicationChatProgress,
+    MedicationChatProgressStage,
+)
 from app.dependencies.chat import get_chat_application_service
 from app.dependencies.security import get_request_user
 from app.main import app
@@ -14,9 +18,22 @@ class FakeChatApplicationService:
         self.received_user = None
         self.received_command = None
 
-    async def send(self, *, user, command) -> SendChatResult:
+    async def send(self, *, user, command, progress_callback=None) -> SendChatResult:
         self.received_user = user
         self.received_command = command
+        if progress_callback is not None:
+            await progress_callback(
+                MedicationChatProgress(
+                    stage=MedicationChatProgressStage.QUESTION_CHECKING,
+                    message="질문 확인 중",
+                )
+            )
+            await progress_callback(
+                MedicationChatProgress(
+                    stage=MedicationChatProgressStage.SAFETY_CHECKING,
+                    message="안전 확인 중",
+                )
+            )
         return SendChatResult(
             conversation_id=42,
             message_id=101,
@@ -73,6 +90,39 @@ async def test_post_chat_returns_camel_case_response() -> None:
     assert service.received_command.message == "타이레놀은 어떤 약인가요?"
 
 
+async def test_post_chat_stream_returns_progress_then_verified_final_answer() -> None:
+    service = FakeChatApplicationService()
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
+    app.dependency_overrides[get_chat_application_service] = lambda: service
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(
+                "/api/v1/chat/stream",
+                json={
+                    "requestId": "6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+                    "recordId": None,
+                    "conversationId": None,
+                    "message": "타이레놀은 어떤 약인가요?",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: progress\n" in response.text
+    assert '"message":"질문 확인 중"' in response.text
+    assert '"message":"안전 확인 중"' in response.text
+    assert "event: complete\n" in response.text
+    assert '"answer":"확인 가능한 근거를 바탕으로 안내합니다."' in response.text
+    assert response.text.index("질문 확인 중") < response.text.index("안전 확인 중")
+    assert response.text.index("안전 확인 중") < response.text.index("event: complete")
+
+
 async def test_post_chat_rejects_invalid_request_without_calling_service() -> None:
     service = FakeChatApplicationService()
     app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
@@ -109,6 +159,7 @@ async def test_chat_api_is_documented_in_openapi_and_redoc() -> None:
         redoc = await client.get("/api/redoc")
 
     operation = schema["paths"]["/api/v1/chat"]["post"]
+    stream_operation = schema["paths"]["/api/v1/chat/stream"]["post"]
     assert operation["summary"] == "약·영양제 근거 기반 답변 생성"
     assert set(operation["responses"]) >= {
         "200",
@@ -120,6 +171,8 @@ async def test_chat_api_is_documented_in_openapi_and_redoc() -> None:
     }
     assert operation["responses"]["200"]["description"] == ("근거 기반 채팅 답변 생성 및 저장 완료")
     assert operation["responses"]["409"]["description"] == ("기존 대화 정보 또는 동일 요청 식별자와 충돌")
+    assert stream_operation["summary"] == ("약·영양제 근거 기반 답변 진행 상태 전송")
+    assert "text/event-stream" in stream_operation["responses"]["200"]["content"]
     assert redoc.status_code == status.HTTP_200_OK
 
 

@@ -12,12 +12,14 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import {
+  ChatRequestAbortedError,
   ChatSessionNotFoundError,
   deleteChatSessions,
   getChatMessages,
   listChatSessions,
   sendChat,
   type ChatMessage,
+  type ChatProgressHandler,
   type ChatSessionSummary,
   type SendChatPayload,
   type SendChatResult,
@@ -40,7 +42,10 @@ interface ChatLocationState {
 }
 
 type ChatHistoryLoader = () => Promise<ChatMessage[]>;
-type ChatSender = (payload: SendChatPayload) => Promise<SendChatResult>;
+type ChatSender = (
+  payload: SendChatPayload,
+  onProgress?: ChatProgressHandler,
+) => Promise<SendChatResult>;
 type ChatSessionListLoader = () => Promise<ChatSessionSummary[]>;
 type ChatSessionHistoryLoader = (sessionId: number) => Promise<ChatMessage[]>;
 type ChatSessionDeleter = (sessionIds: readonly number[]) => Promise<void>;
@@ -87,6 +92,7 @@ export function ChatPage({
   const [draft, setDraft] = useState('');
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
+  const [progressMessage, setProgressMessage] = useState('질문 확인 중');
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<number>>(() => new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -211,13 +217,14 @@ export function ChatPage({
     setMessages((prev) => [...prev, { role: 'user', text: message, sources: [] }]);
     setDraft('');
     setPending(true);
+    setProgressMessage('질문 확인 중');
     try {
       const result = await chatSender({
         requestId,
         recordId,
         message,
         conversationId,
-      });
+      }, (progress) => setProgressMessage(progress.message));
       suppressNextSessionRefreshRef.current = true;
       setConversationId(result.conversationId);
       setNewChatRequested(false);
@@ -230,10 +237,13 @@ export function ChatPage({
     } catch (error: unknown) {
       // 목업은 실패하지 않지만 실 API(명세 15번)는 4xx·5xx 를 냅니다. catch 가 없으면
       // 질문만 남고 답변도 오류도 없는 상태로 끝나서 사용자가 원인을 알 수 없습니다.
-      toast.error(error instanceof Error ? error.message : '답변을 가져오지 못했어요.');
+      if (!(error instanceof ChatRequestAbortedError)) {
+        toast.error(error instanceof Error ? error.message : '답변을 가져오지 못했어요.');
+      }
     } finally {
       endChatRequest(requestId);
       setPending(false);
+      setProgressMessage('질문 확인 중');
     }
   }
 
@@ -461,7 +471,7 @@ export function ChatPage({
         {(chatRequestPending || pending) && (
           <div className="flex justify-start">
             <p className="max-w-[80%] rounded-card bg-muted-bg px-3.5 py-2.5 text-base text-muted-foreground">
-              답변을 준비하고 있어요...
+              {progressMessage}
             </p>
           </div>
         )}
