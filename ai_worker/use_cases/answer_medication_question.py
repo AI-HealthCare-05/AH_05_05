@@ -2,6 +2,10 @@ import hashlib
 import json
 import re
 
+from ai_worker.domain.chat_content_compactor import (
+    ANSWER_COMPACTION_MARKER,
+    compact_chat_content,
+)
 from ai_worker.domain.interfaces import (
     ActiveIntakeContextProvider,
     GroundedClaimValidator,
@@ -249,6 +253,14 @@ class AnswerMedicationQuestionUseCase:
                 request=request,
                 context=context,
                 result=draft,
+            )
+            generated = generated.model_copy(
+                update={
+                    "answer": compact_chat_content(
+                        generated.answer,
+                        marker=ANSWER_COMPACTION_MARKER,
+                    )
+                }
             )
             llm_span.end(
                 {

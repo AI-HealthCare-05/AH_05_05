@@ -3,6 +3,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ai_worker.domain.chat_content_compactor import (
+    HISTORY_COMPACTION_MARKER,
+    compact_chat_content,
+)
 from ai_worker.domain.errors import AIWorkerError
 from ai_worker.observability.chat_tracer import (
     ChatSpan,
@@ -157,20 +161,23 @@ class ChatApplicationService:
         if accepted.assistant_message is None:
             raise ChatProcessingFailedError
         started_at = self._clock()
-        request = MedicationChatRequest(
-            request_id=command.request_id,
-            user_id=user.id,
-            care_episode_id=(accepted.session.care_episode_id or command.record_id),
-            question=command.message,
-            history=[
-                ChatHistoryMessage(
-                    role=(ChatRole.USER if message.role == ChatMessageRole.USER else ChatRole.ASSISTANT),
-                    content=message.content,
-                )
-                for message in accepted.history
-            ],
-        )
         try:
+            request = MedicationChatRequest(
+                request_id=command.request_id,
+                user_id=user.id,
+                care_episode_id=(accepted.session.care_episode_id or command.record_id),
+                question=command.message,
+                history=[
+                    ChatHistoryMessage(
+                        role=(ChatRole.USER if message.role == ChatMessageRole.USER else ChatRole.ASSISTANT),
+                        content=compact_chat_content(
+                            message.content,
+                            marker=HISTORY_COMPACTION_MARKER,
+                        ),
+                    )
+                    for message in accepted.history
+                ],
+            )
             core_result = await self._core_service.answer(
                 request,
                 progress_callback=progress_callback,

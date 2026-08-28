@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from ai_worker.schemas.medication_chat import MedicationChatProgress
+from app.core.api_timeout import api_timeout
 from app.core.exceptions import AppError
 from app.dependencies.chat import get_chat_application_service
 from app.dependencies.security import get_request_user
@@ -88,6 +89,18 @@ _CHAT_RESPONSES = {
             }
         },
     },
+    504: {
+        "model": ChatErrorResponse,
+        "description": "20초 안에 답변 생성을 완료하지 못함",
+        "content": {
+            "application/json": {
+                "example": {
+                    "code": "API_TIMEOUT",
+                    "message": "요청 처리 시간이 초과되었습니다.",
+                }
+            }
+        },
+    },
 }
 
 
@@ -103,6 +116,7 @@ _CHAT_RESPONSES = {
     ),
     responses=_CHAT_RESPONSES,
 )
+@api_timeout(20)
 async def answer_chat_message(
     data: SendChatRequest,
     user: Annotated[User, Depends(get_request_user)],
@@ -237,6 +251,7 @@ async def _chat_event_stream(
         },
     },
 )
+@api_timeout(20)
 async def stream_chat_answer(
     data: SendChatRequest,
     user: Annotated[User, Depends(get_request_user)],

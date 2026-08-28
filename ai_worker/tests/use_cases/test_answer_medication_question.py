@@ -157,6 +157,34 @@ class PassthroughValidator:
         return result
 
 
+class LongAnswerGenerator:
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+
+    async def generate(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationChatResult:
+        return result.model_copy(update={"answer": self.answer})
+
+
+class RecordingValidator:
+    def __init__(self) -> None:
+        self.received: MedicationChatResult | None = None
+
+    async def validate(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationChatResult:
+        self.received = result
+        return result
+
+
 def build_request(
     question: str,
     *,
@@ -218,14 +246,16 @@ def build_use_case(
     rules: list[InteractionRuleFact] | None = None,
     retriever: FakeKnowledgeRetriever | None = None,
     tracer=None,
+    answer_generator=None,
+    grounded_claim_validator=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
         guide_repository=FakeGuideRepository(lookup or MedicationGuideLookup()),
         interaction_rule_repository=FakeRuleRepository(rules or []),
         knowledge_retriever=retriever or FakeKnowledgeRetriever(),
-        answer_generator=PassthroughGenerator(),
-        grounded_claim_validator=PassthroughValidator(),
+        answer_generator=answer_generator or PassthroughGenerator(),
+        grounded_claim_validator=(grounded_claim_validator or PassthroughValidator()),
         tracer=tracer,
     )
 
@@ -306,6 +336,27 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
         "status": "SAFE",
         "reason_codes": [],
     }
+
+
+async def test_execute_compacts_answer_before_final_safety_validation() -> None:
+    disclaimer = "이 안내는 의료진의 진료를 대체하지 않습니다."
+    evidence_sentence = ("가" * 190) + " 문장 끝입니다.\n"
+    validator = RecordingValidator()
+    use_case = build_use_case(
+        answer_generator=LongAnswerGenerator("핵심 문장입니다.\n" + (evidence_sentence * 30) + f"\n{disclaimer}"),
+        grounded_claim_validator=validator,
+    )
+
+    result = await use_case.execute(
+        build_request("마그네슘은 왜 먹나요?"),
+    )
+
+    assert validator.received is not None
+    assert result.answer == validator.received.answer
+    assert len(result.answer) <= 2000
+    visible_head = result.answer.split("[긴 답변 축약]", maxsplit=1)[0].rstrip()
+    assert visible_head.endswith("문장 끝입니다.")
+    assert result.answer.endswith(disclaimer)
 
 
 async def test_confirmed_medication_precedes_general_guide_and_rag() -> None:

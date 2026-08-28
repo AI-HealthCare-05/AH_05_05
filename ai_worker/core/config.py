@@ -21,7 +21,7 @@ class Config(BaseSettings):
     OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_DIMENSIONS: int = Field(default=1536, gt=0)
-    OPENAI_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0)
+    OPENAI_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     OPENAI_MAX_RETRIES: int = Field(default=2, ge=0)
 
     LANGSMITH_TRACING: bool = False
@@ -42,7 +42,7 @@ class Config(BaseSettings):
     QDRANT_COLLECTION: str = "public_guidelines_small_v1"
     KNOWLEDGE_QDRANT_COLLECTION: str = "medication_knowledge_full_v1"
     KNOWLEDGE_DATASET_VERSION: str = "knowledge-full-v1"
-    QDRANT_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0)
+    QDRANT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     RAG_MIN_SIMILARITY_SCORE: float = Field(
         default=0.65,
         ge=0.0,

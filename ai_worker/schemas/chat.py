@@ -8,6 +8,7 @@ from pydantic import (
     model_validator,
 )
 
+from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.enums import (
     ChatIntent,
     ChatRiskLevel,
@@ -22,7 +23,7 @@ class ChatHistoryMessage(BaseModel):
     role: ChatRole
     content: str = Field(
         min_length=1,
-        max_length=2000,
+        max_length=CHAT_CONTENT_MAX_LENGTH,
     )
 
     @field_validator(
@@ -60,7 +61,7 @@ class ChatAnswerRequest(BaseModel):
 
     question: str = Field(
         min_length=1,
-        max_length=2000,
+        max_length=CHAT_CONTENT_MAX_LENGTH,
     )
     history: list[ChatHistoryMessage] = Field(
         default_factory=list,
