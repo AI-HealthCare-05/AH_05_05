@@ -8,6 +8,7 @@ TORTOISE_APP_MODELS = [
     "aerich.models",
     "app.models.users",
     "app.models.admins",
+    "app.models.admin_settings",
     "app.models.care",
     "app.models.ocr",
     "app.models.recovery",

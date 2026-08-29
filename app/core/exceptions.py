@@ -106,6 +106,12 @@ class EmailAlreadyExistsError(AppError):
     message = "이미 등록된 이메일입니다."
 
 
+class SmtpPasswordRequiredError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "SMTP_PASSWORD_REQUIRED"
+    message = "최초 SMTP 설정 저장 시 비밀번호를 입력해 주세요."
+
+
 class SignupEmailAlreadyExistsError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "EMAIL_ALREADY_EXISTS"

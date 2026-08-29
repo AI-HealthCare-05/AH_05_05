@@ -6,11 +6,11 @@
     <title>관리자 관리 - Ozcoding_AI.health</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="../css/styles.css?v=20260827-1">
-    <link rel="stylesheet" href="../css/management.css?v=20260827-1">
+    <link rel="stylesheet" href="../css/management.css?v=20260829-2">
     <link rel="stylesheet" href="../css/overlays.css?v=20260827-1">
     <script type="module" src="../js/navigation.js?v=20260827-2"></script>
     <script type="module" src="../js/sidebar.js?v=20260827-2"></script>
-    <script type="module" src="../js/admin-management.js?v=20260827-1"></script>
+    <script type="module" src="../js/admin-management.js?v=20260829-3"></script>
 </head>
 <body class="management-page flex min-h-screen">
 <!-- sidebar -->
@@ -23,37 +23,53 @@
     <header class="bg-white h-16 px-6 flex items-center border-b"><h1 class="text-xl font-semibold">관리자 관리</h1></header>
     <section class="p-6">
         <div class="management-toolbar flex justify-between gap-3 mb-5">
-            <div class="flex gap-3 flex-wrap console-filters"><input data-admin-search class="ui-control" type="search"
-                                                     placeholder="이름, 이메일 검색" aria-label="관리자 검색"><select
-                    data-admin-role class="ui-control" aria-label="권한 역할">
-                <option>전체</option>
-                <option>일반 관리자</option>
-                <option>최고 관리자</option>
-            </select><select data-admin-status class="ui-control" aria-label="관리자 상태">
-                <option>전체</option>
-                <option>활성</option>
-                <option>정지</option>
-            </select>
-                <button data-admin-reset class="ui-button" type="button">필터 초기화</button>
+            <div class="flex gap-3 flex-wrap console-filters">
+                <input data-admin-name-search class="ui-control" type="search" placeholder="이름 검색" aria-label="관리자 이름 검색">
+                <input data-admin-email-search class="ui-control" type="search" placeholder="이메일 검색" aria-label="관리자 이메일 검색">
+                <select data-admin-role class="ui-control" aria-label="권한 역할">
+                    <option>권한</option>
+                    <option>일반 관리자</option>
+                    <option>최고 관리자</option>
+                </select>
+                <select data-admin-status class="ui-control" aria-label="관리자 상태">
+                    <option>상태</option>
+                    <option>활성</option>
+                    <option>정지</option>
+                </select>
+                <button data-admin-reset class="ui-button" type="button">초기화</button>
             </div>
             <div class="flex gap-2">
                 <button data-admin-register class="ui-button ui-button-primary">관리자 등록</button>
             </div>
         </div>
-        <div class="management-table-wrap bg-white rounded-xl border">
-            <table class="management-table console-table w-full text-sm">
-                <thead class="bg-gray-50">
-                <tr>
-                    <th>관리자 ID</th>
-                    <th>이름</th>
-                    <th>이메일</th>
-                    <th>역할</th>
-                    <th>상태</th>
-                    <th>작업</th>
-                </tr>
-                </thead>
-                <tbody data-admin-rows></tbody>
-            </table>
+        <div class="admin-list-card bg-white rounded-xl border">
+            <div class="management-table-wrap">
+                <table class="management-table console-table w-full text-sm">
+                    <thead class="bg-gray-50">
+                    <tr>
+                        <th>관리자 ID</th>
+                        <th>이름</th>
+                        <th>이메일</th>
+                        <th>역할</th>
+                        <th>상태</th>
+                        <th>작업</th>
+                    </tr>
+                    </thead>
+                    <tbody data-admin-rows></tbody>
+                </table>
+            </div>
+            <footer class="admin-list-footer">
+                <nav class="admin-pagination" data-admin-pagination aria-label="관리자 목록 페이지"></nav>
+                <div class="admin-page-size-control">
+                    <span class="admin-total" data-admin-total>총 -명</span>
+                    <label for="admin-page-size">페이지당</label>
+                    <select id="admin-page-size" data-admin-page-size class="ui-control" aria-label="페이지당 관리자 수">
+                        <option value="20" selected>20개</option>
+                        <option value="50">50개</option>
+                        <option value="100">100개</option>
+                    </select>
+                </div>
+            </footer>
         </div>
     </section>
 </main>

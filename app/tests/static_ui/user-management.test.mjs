@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import * as userManagement from "../../static/js/user-management.js";
 
 const { filterUsers, suspendUser } = userManagement;
@@ -77,4 +78,15 @@ test("formatUserTotal displays the filtered API total", () => {
 
 test("formatUserTotal displays a placeholder when loading fails", () => {
   assert.equal(userManagement.formatUserTotal?.(null), "총 -명");
+});
+
+test("user total and page size controls appear below the member list", async () => {
+  const templateUrl = new URL("../../static/templates/user-management.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+  const tableEnd = html.indexOf("</table>");
+
+  assert.match(html, /class="user-list-footer"/);
+  assert.ok(tableEnd < html.indexOf("data-user-pagination"));
+  assert.ok(tableEnd < html.indexOf("data-user-total"));
+  assert.ok(tableEnd < html.indexOf("data-user-page-size"));
 });

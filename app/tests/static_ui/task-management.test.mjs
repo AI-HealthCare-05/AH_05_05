@@ -28,7 +28,7 @@ test("buildTaskQuery converts every selected condition to admin API parameters",
 });
 
 test("buildTaskQuery maps every task type option to its API enum value", () => {
-  const types = ["전체", "OCR", "LLM", "CHAT", "ALARM"];
+  const types = ["전체", "OCR", "LLM", "CHAT", "ALARM", "EMAIL"];
 
   const values = types.map((type) => buildTaskQuery({
     keyword: "",
@@ -38,7 +38,7 @@ test("buildTaskQuery maps every task type option to its API enum value", () => {
     endDate: "2026-08-26",
   }).jobType);
 
-  assert.deepEqual(values, ["", "OCR", "LLM", "CHAT", "ALARM"]);
+  assert.deepEqual(values, ["", "OCR", "LLM", "CHAT", "ALARM", "EMAIL"]);
 });
 
 test("buildTaskQuery maps all task status labels to API enum values", () => {

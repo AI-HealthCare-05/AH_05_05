@@ -1,4 +1,6 @@
 import { initializeNavigation } from "./navigation.js?v=20260827-2";
+import { session } from "./api.js";
+import { openSmtpSettings } from "./smtp-settings.js";
 
 const SIDEBAR_URL = new URL("../templates/partials/sidebar.html", import.meta.url);
 const PAGE_SECTIONS = Object.freeze({
@@ -26,6 +28,21 @@ export function markActiveNavigation(sidebar, activeSection) {
   });
 }
 
+export function configureSettingsButton(
+  sidebar,
+  isAdmin = session.isAdminRole(),
+  opener = openSmtpSettings,
+) {
+  const button = sidebar.querySelector?.("[data-smtp-settings]");
+  if (!button) return;
+  if (!isAdmin) {
+    button.remove();
+    return;
+  }
+  if (button.style) button.style.display = "flex";
+  button.addEventListener("click", opener);
+}
+
 export async function loadSidebar(root = document, fetcher = fetch) {
   const placeholder = root.querySelector("[data-sidebar]");
   if (!placeholder) return null;
@@ -44,6 +61,7 @@ export async function loadSidebar(root = document, fetcher = fetch) {
     const activeSection = getActiveSection(root.location?.pathname, placeholder.dataset.activeNav);
     markActiveNavigation(sidebar, activeSection);
     initializeNavigation(sidebar);
+    configureSettingsButton(sidebar);
     placeholder.replaceWith(sidebar);
     return sidebar;
   } catch (error) {

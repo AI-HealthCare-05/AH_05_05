@@ -78,3 +78,20 @@ class TestBackgroundJobService(TestCase):
             await self.service.cancel(job.id)
 
         assert error.value.status_code == status.HTTP_409_CONFLICT
+
+    async def test_email_job_cannot_be_manually_retried(self):
+        failed = await BackgroundJob.create(
+            idempotency_key="failed-email-job",
+            job_type=BackgroundJobType.EMAIL,
+            status=BackgroundJobStatus.FAILED,
+            reference_table="admin",
+            reference_id=1,
+            max_retry_count=3,
+        )
+
+        with pytest.raises(HTTPException) as error:
+            await self.service.retry_failed(failed.id)
+
+        assert error.value.status_code == status.HTTP_409_CONFLICT
+        assert error.value.detail == "Job retry handler is not available."
+        self.redis_pool.enqueue_job.assert_not_awaited()

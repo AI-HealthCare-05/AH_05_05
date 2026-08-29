@@ -123,3 +123,25 @@ test("renderRankDisplayRows shows display state, item count and admin actions", 
   assert.match(tbody.innerHTML, /data-edit-display="11"/);
   assert.match(tbody.innerHTML, /data-delete-display="11"/);
 });
+
+test("renderRankDisplayRows shows edit and delete actions to STAFF", () => {
+  const tbody = { innerHTML: "" };
+
+  renderRankDisplayRows(
+    tbody,
+    [
+      {
+        display_id: 12,
+        title: "STAFF 조회 전시",
+        start_at: "2026-09-01T00:00:00+09:00",
+        end_at: "2026-09-30T23:59:00+09:00",
+        is_enabled: false,
+        item_count: 3,
+      },
+    ],
+    false,
+  );
+
+  assert.match(tbody.innerHTML, /data-edit-display="12"/);
+  assert.match(tbody.innerHTML, /data-delete-display="12"/);
+});

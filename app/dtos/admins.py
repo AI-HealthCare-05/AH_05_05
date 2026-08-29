@@ -5,13 +5,15 @@ from pydantic import EmailStr, Field
 
 from app.dtos.base import CamelModel
 from app.dtos.pagination import PageQuery
-from app.models.enums import AccountStatus, AdminRole
+from app.models.enums import AccountStatus, AdminRole, BackgroundJobStatus
 
 
 class AdminListQuery(PageQuery):
     """REQ-ADMIN-010 관리자 목록 조회 쿼리."""
 
     keyword: str | None = Field(default=None, description="이름·이메일 부분 일치")
+    name: str | None = Field(default=None, description="이름 부분 일치")
+    email: str | None = Field(default=None, description="이메일 부분 일치")
     role: AdminRole | None = None
     # 관리자 계정에는 WITHDRAWN을 쓰지 않는다(탈퇴는 사용자 전용).
     # AccountStatus를 공유하므로 값 자체는 통과하나 결과가 항상 비어 있다.
@@ -76,10 +78,10 @@ class AdminPasswordResetResponse(CamelModel):
 
     admin_id: int
     email: str
-    # 재발송하면 항상 PENDING 으로 돌아간다(임시 비밀번호를 다시 바꿔야 하므로).
+    # 임시 비밀번호 발송 전의 계정 상태를 그대로 반환한다.
     status: AccountStatus
-    # false 면 비밀번호는 바뀌었지만 새 임시 비밀번호가 전달되지 않은 상태다.
-    email_sent: bool
+    email_job_id: int
+    email_job_status: BackgroundJobStatus
 
 
 class AdminStatusUpdateResponse(CamelModel):
@@ -110,8 +112,8 @@ class AdminCreateResponse(CamelModel):
     created_by_admin_id: int | None = None
     approved_at: datetime | None = None
     created_at: datetime
-    # false 면 계정은 만들어졌지만 임시 비밀번호가 전달되지 않은 상태다.
-    email_sent: bool
+    email_job_id: int
+    email_job_status: BackgroundJobStatus
 
 
 class AdminDetailResponse(CamelModel):

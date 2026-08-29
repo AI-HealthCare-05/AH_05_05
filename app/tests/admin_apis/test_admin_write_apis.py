@@ -1,5 +1,8 @@
+from unittest.mock import AsyncMock, patch
+
 from starlette import status
 from tortoise.contrib.test import TestCase
+from tortoise.exceptions import IntegrityError
 
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
@@ -63,6 +66,24 @@ class TestAdminCreateAPI(AdminWriteTestBase):
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["code"] == "EMAIL_ALREADY_EXISTS"
         assert await Admin.all().count() == 2
+
+    async def test_translates_duplicate_email_insert_race_to_conflict(self) -> None:
+        class ExistsSequence:
+            def __init__(self) -> None:
+                self.results = iter((False, True))
+
+            async def exists(self) -> bool:
+                return next(self.results)
+
+        query = ExistsSequence()
+        with (
+            patch.object(Admin, "filter", return_value=query),
+            patch.object(Admin, "create", new=AsyncMock(side_effect=IntegrityError("duplicate email"))),
+        ):
+            response = await request("POST", ADMIN_ACCOUNTS_URL, headers=self.headers, json=CREATE_PAYLOAD)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["code"] == "EMAIL_ALREADY_EXISTS"
 
     async def test_rejects_invalid_email_format(self) -> None:
         payload = {**CREATE_PAYLOAD, "email": "not-an-email"}

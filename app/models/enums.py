@@ -68,6 +68,7 @@ class BackgroundJobType(StrEnum):
     LLM = "LLM"
     CHAT = "CHAT"
     ALARM = "ALARM"
+    EMAIL = "EMAIL"
     DATA_DELETION = "DATA_DELETION"
 
 
