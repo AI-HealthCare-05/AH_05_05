@@ -10,7 +10,7 @@
 .overlay-actions > * { flex: 1; }
 /* 되돌릴 수 없는 동작을 저장·취소에서 떼어 놓는 자리. .overlay-actions 와 달리 flex:1 을
    주지 않아 버튼이 전체 폭으로 늘어나지 않는다 — 그래야 「저장」보다 덜 눈에 띈다. */
-.overlay-danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+.overlay-danger-zone { display: grid; gap: 6px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
 @keyframes overlay-fade { from { opacity: 0; } }
 @keyframes overlay-rise { from { opacity: 0; transform: translateY(8px); } }
 @media (max-width: 480px) { .overlay-host { padding: 10px; } .overlay-panel { padding: 20px; } }

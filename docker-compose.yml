@@ -122,7 +122,36 @@ services:
       redis:
         condition: service_healthy
 
-  # 5. OCR Worker (조제약 복약안내 OCR 비동기 처리)
+  # 5. Email Worker (전용 ARQ 큐 소비 및 SMTP 발송)
+  email-worker:
+    container_name: email-worker
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
+    env_file: .env
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      TZ: Asia/Seoul
+    command: uv run --no-sync arq app.workers.email_worker.WorkerSettings
+    volumes:
+      - ./app:/app/app
+    restart: always
+    networks:
+      - ws
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 6. OCR Worker (조제약 복약안내 OCR 비동기 처리)
   ocr-worker:
     container_name: ocr-worker
     build:
@@ -152,7 +181,7 @@ services:
       redis:
         condition: service_healthy
 
-  # 6. AI Worker (Model 학습 및 추론)
+  # 7. AI Worker (Model 학습 및 추론)
   ai-worker:
     container_name: ai-worker
 
@@ -184,7 +213,7 @@ services:
       qdrant:
         condition: service_started
 
-  # 7. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
+  # 8. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
     container_name: nginx
     image: nginx:latest

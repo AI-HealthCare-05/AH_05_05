@@ -1,4 +1,4 @@
-import { ApiError, escapeHtml, get, post, request, requireLogin, session, tableState } from "./api.js";
+import { ApiError, escapeHtml, get, post, request, requireLogin, tableState } from "./api.js";
 
 const COLUMN_COUNT = 3;
 const DISPLAY_COLUMN_COUNT = 6;
@@ -54,7 +54,7 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
-export function renderRankDisplayRows(tbody, displays, canWrite) {
+export function renderRankDisplayRows(tbody, displays) {
   if (!displays.length) {
     tableState.empty(tbody, DISPLAY_COLUMN_COUNT, "등록된 영양제 랭킹 전시가 없습니다.");
     return;
@@ -67,12 +67,8 @@ export function renderRankDisplayRows(tbody, displays, canWrite) {
         <td>${escapeHtml(formatDateTime(display.start_at))} ~ ${escapeHtml(formatDateTime(display.end_at))}</td>
         <td>${escapeHtml(display.item_count)}개</td>
         <td><span class="status-badge ${display.is_enabled ? "status-active" : "status-stopped"}">${display.is_enabled ? "활성" : "비활성"}</span></td>
-        <td>${
-          canWrite
-            ? `<button type="button" class="ui-link-button" data-edit-display="${display.display_id}">수정</button>
-               <button type="button" class="ui-link-button ui-link-button-danger" data-delete-display="${display.display_id}">삭제</button>`
-            : "-"
-        }</td>
+        <td><button type="button" class="ui-link-button" data-edit-display="${display.display_id}">수정</button>
+            <button type="button" class="ui-link-button ui-link-button-danger" data-delete-display="${display.display_id}">삭제</button></td>
       </tr>`,
     )
     .join("");
@@ -91,7 +87,6 @@ function initializeSupplementRanking() {
   const form = document.querySelector("[data-display-form]");
   if (!tbody || !displayTbody || !form || !requireLogin()) return;
 
-  const canWrite = session.isAdminRole();
   const createButton = document.querySelector("[data-create-display]");
   const keyword = document.querySelector("[data-product-keyword]");
   const results = document.querySelector("[data-product-results]");
@@ -101,8 +96,6 @@ function initializeSupplementRanking() {
   let editingId = null;
   let popularLoadPromise = null;
   let formGeneration = 0;
-
-  if (!canWrite) createButton.hidden = true;
 
   const load = async () => {
     tableState.loading(tbody, COLUMN_COUNT, "영양제 랭킹을 불러오는 중…");
@@ -126,7 +119,7 @@ function initializeSupplementRanking() {
     tableState.loading(displayTbody, DISPLAY_COLUMN_COUNT, "전시 목록을 불러오는 중…");
     try {
       const response = await get("/admin/supplement-rank-displays", { page: 1, size: 100 });
-      renderRankDisplayRows(displayTbody, response.items, canWrite);
+      renderRankDisplayRows(displayTbody, response.items);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : "전시 목록을 불러오지 못했습니다.";
       tableState.error(displayTbody, DISPLAY_COLUMN_COUNT, message);

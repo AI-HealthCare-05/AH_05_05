@@ -2,26 +2,15 @@ from tortoise import BaseDBAsyncClient
 
 RUN_IN_TRANSACTION = True
 
-
-# 자동 생성 결과에 alarms.follow_up_visit_id 추가분이 함께 잡혀 있었으나 지웠다.
-# 그 변경은 3_20260821043505_add_alarm_follow_up_visit.py 가 이미 담고 있다.
-# 마이그레이션 번호가 3_ 로 겹쳐(session_salt 추가분과) aerich 가 그 파일을 적용된 것으로
-# 오인해 중복 생성한 것이며, 여기 남겨두면 이미 적용한 환경에서 컬럼 중복으로 실패한다.
-#
-# 추가는 NOT NULL 을 채우느라 3단계로 쪼갰지만 제거는 한 번에 된다.
+# 이미 적용된 Aerich 버전 식별자를 보존하기 위한 무동작 마이그레이션이다.
 
 
 async def upgrade(db: BaseDBAsyncClient) -> str:
-    return """
-        ALTER TABLE `admin` DROP COLUMN `session_salt`;"""
+    return ""
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
-    # 되돌릴 때는 기존 행을 채워야 하므로 NULL 허용으로 만든 뒤 값을 넣고 NOT NULL 로 바꾼다.
-    return """
-        ALTER TABLE `admin` ADD `session_salt` VARCHAR(32) NULL;
-        UPDATE `admin` SET `session_salt` = MD5(CONCAT(RAND(), `id`, NOW(6))) WHERE `session_salt` IS NULL;
-        ALTER TABLE `admin` MODIFY `session_salt` VARCHAR(32) NOT NULL;"""
+    return ""
 
 
 MODELS_STATE = (

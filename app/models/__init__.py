@@ -1,3 +1,4 @@
+from .admin_settings import AdminSetting
 from .admins import Admin
 from .alarms import Alarm, AlarmEvent
 from .background_jobs import BackgroundJob

@@ -7,10 +7,6 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
     return """
         ALTER TABLE `medications` ADD CONSTRAINT `chk_v4_up_medication_days_guard` CHECK (`days` IS NULL OR `days` BETWEEN 1 AND 365);
 
-        ALTER TABLE `admin` ADD `session_salt` VARCHAR(32) NULL;
-        UPDATE `admin` SET `session_salt` = MD5(CONCAT(RAND(), `id`, NOW(6))) WHERE `session_salt` IS NULL;
-        ALTER TABLE `admin` MODIFY COLUMN `session_salt` VARCHAR(32) NOT NULL;
-
         ALTER TABLE `user_settings` ADD `terms_agreed_at` DATETIME(6) NULL;
         ALTER TABLE `user_settings` ADD `notify_consented_at` DATETIME(6) NULL;
         CREATE TABLE IF NOT EXISTS `user_notify_histories` (
@@ -155,8 +151,6 @@ async def downgrade(db: BaseDBAsyncClient) -> str:
         DROP TABLE IF EXISTS `user_notify_histories`;
         ALTER TABLE `user_settings` DROP COLUMN `notify_consented_at`;
         ALTER TABLE `user_settings` DROP COLUMN `terms_agreed_at`;
-
-        ALTER TABLE `admin` DROP COLUMN `session_salt`;
 
         DROP TEMPORARY TABLE `_aerich_v4_downgrade_guard`;"""
 

@@ -5,7 +5,7 @@ const REMEMBERED_LOGIN_ID_KEY = "rememberedLoginId";
 
 const PASSWORD_FIELDS = ["currentPassword", "newPassword", "newPasswordConfirm"];
 
-export const PASSWORD_HELP_MESSAGE = "비밀번호를 잊으셨다면 최고관리자에게 문의해 주세요. 임시 비밀번호를 재발송해 드립니다.";
+export const PASSWORD_HELP_MESSAGE = "관리자에게 문의하세요.";
 
 /**
  * 실패 코드를 입력칸에 매핑한다.
@@ -30,6 +30,20 @@ export function validateCredentials(loginId, password) {
   }
 
   return { valid: Object.keys(errors).length === 0, errors };
+}
+
+export function handleLoginFailure(
+  error,
+  {
+    showFieldError,
+  } = {},
+) {
+  if (error instanceof ApiError && error.code === "INVALID_CREDENTIALS") {
+    showFieldError?.("아이디 또는 비밀번호가 올바르지 않습니다");
+    return;
+  }
+
+  showFieldError?.("관리자에게 문의하세요");
 }
 
 /**
@@ -250,11 +264,12 @@ function initializeLoginForm() {
 
       enterConsole();
     } catch (error) {
-      // 401 은 "계정 없음"과 "비밀번호 오류"를 구분하지 않는다.
-      // 서버 문구를 그대로 띄운다 — 프론트가 구분 문구를 만들면 이메일 존재 여부가 새어나간다.
-      const message = error instanceof ApiError ? error.message : "로그인에 실패했습니다.";
-      showToast(message, "error");
-      setFieldError(passwordInput, passwordError, message);
+      // 계정 없음과 비밀번호 오류는 같은 코드다. 둘을 구분하지 않고 동일한 경고를 띄워
+      // 이메일 존재 여부가 드러나지 않게 한다. 서버 장애 등 다른 오류도 같은 위치에서
+      // 관리자 문의 문구로 안내한다.
+      handleLoginFailure(error, {
+        showFieldError: (message) => setFieldError(passwordInput, passwordError, message),
+      });
     } finally {
       if (submitButton) {
         submitButton.disabled = false;

@@ -179,11 +179,11 @@ async def list_supplement_rank_displays(
     summary="영양제 랭킹 전시 등록",
 )
 async def create_supplement_rank_display(
-    actor: AdminOnly,
+    actor: AdminOrStaff,
     request: SupplementRankDisplayWriteRequest,
     service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
 ) -> SupplementRankDisplayResponse:
-    """전시 기간과 최대 5개의 영양제를 순위대로 등록한다. ADMIN 전용."""
+    """전시 기간과 최대 5개의 영양제를 순위대로 등록한다. ADMIN·STAFF 공용."""
     return await service.create(request, actor_admin_id=actor.admin_id)
 
 
@@ -223,12 +223,12 @@ async def get_supplement_rank_display(
     summary="영양제 랭킹 전시 수정",
 )
 async def update_supplement_rank_display(
-    _: AdminOnly,
+    _: AdminOrStaff,
     display_id: Annotated[int, Path(gt=0)],
     request: SupplementRankDisplayWriteRequest,
     service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
 ) -> SupplementRankDisplayResponse:
-    """전시 정보와 순위 상품 전체를 교체한다. ADMIN 전용."""
+    """전시 정보와 순위 상품 전체를 교체한다. ADMIN·STAFF 공용."""
     return await service.update(display_id, request)
 
 
@@ -238,11 +238,11 @@ async def update_supplement_rank_display(
     summary="영양제 랭킹 전시 삭제",
 )
 async def delete_supplement_rank_display(
-    _: AdminOnly,
+    _: AdminOrStaff,
     display_id: Annotated[int, Path(gt=0)],
     service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
 ) -> Response:
-    """영양제 랭킹 전시와 연결 상품을 삭제한다. ADMIN 전용."""
+    """영양제 랭킹 전시와 연결 상품을 삭제한다. ADMIN·STAFF 공용."""
     await service.delete(display_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -296,8 +296,9 @@ async def list_admins(
 
     ADMIN·STAFF 모두 조회할 수 있다.
 
-    `keyword` 는 이름·이메일 부분 일치이며, `role`·`status` 로 좁힐 수 있다.
-    정렬은 등록일 최신순 고정이다.
+    `name` 과 `email` 은 각 필드의 부분 일치 검색이며, 함께 보내면 두 조건을 모두 적용한다.
+    기존 `keyword` 이름·이메일 통합 검색도 호환성을 위해 유지한다. `role`·`status` 로
+    추가로 좁힐 수 있으며 정렬은 등록일 최신순 고정이다.
 
     관리자 계정에는 `WITHDRAWN` 을 쓰지 않는다(탈퇴는 사용자 전용).
     값을 넣어도 거부되지는 않지만 결과가 항상 비어 있다.
@@ -323,9 +324,9 @@ async def create_admin(
 
     `isActive` 가 false 면 PENDING 으로 만들어져 첫 로그인 후 비밀번호를 바꿔야 한다.
 
-    메일 발송이 실패해도 계정 생성은 되돌리지 않고 `emailSent: false` 로 알린다.
-    롤백하면 "계정이 안 만들어졌다"와 "메일만 실패했다"를 구분할 수 없기 때문이며,
-    실패 시에는 임시 비밀번호 재발송 API 로 복구한다.
+    이메일은 전용 worker가 비동기로 발송한다. 응답의 `emailJobId`와
+    `emailJobStatus`로 작업 등록 결과를 확인할 수 있다. 큐 등록이 실패해도 계정 생성은
+    되돌리지 않으며 상태는 `FAILED`로 반환한다.
 
     - **409 EMAIL_ALREADY_EXISTS** — 이미 등록된 이메일
     - **403 FORBIDDEN** — STAFF 계정
@@ -508,14 +509,15 @@ async def reset_admin_password(
     새 비밀번호는 해시로 저장하고 평문은 메일로만 전달한다.
     **응답에는 평문이 포함되지 않는다.**
 
-    발급하면 계정이 PENDING 으로 돌아가고 승인 시각이 비워진다. 비밀번호를 바꿔야
-    관리자 기능을 다시 쓸 수 있다.
+    발급해도 계정 상태와 승인 시각은 변경하지 않는다. 기존 비밀번호만 즉시 무효화되며
+    새 임시 비밀번호는 이메일로 전달한다.
 
     **이전 보유자의 리프레시 토큰은 남는다.** 계정을 넘겨받는 상황이라 끊는 게 맞지만
     발급된 JWT 를 개별 폐기할 수단이 없다. 수명이 다할 때까지 기다려야 한다.
 
-    등록과 같은 정책으로, 메일 발송이 실패해도 비밀번호 변경은 되돌리지 않고
-    `emailSent: false` 로 알린다.
+    등록과 같은 정책으로 이메일은 전용 worker가 비동기로 발송한다. 응답의
+    `emailJobId`와 `emailJobStatus`로 작업 등록 결과를 확인할 수 있으며, 작업 등록이
+    실패해도 비밀번호 변경은 되돌리지 않는다.
 
     - **409 CANNOT_RESET_SUSPENDED** — 정지를 풀지 않고 비밀번호만 주면 정지가 무의미해진다
     - **409 CANNOT_RESET_WITHDRAWN** — 탈퇴한 계정

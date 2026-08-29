@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import * as adminManagement from "../../static/js/admin-management.js";
 import {
   EDIT_OVERLAY_SECTIONS,
   applyEditOverlayVisibility,
@@ -25,11 +26,113 @@ test("filterAdmins combines search, role and status filters", () => {
   assert.deepEqual(filterAdmins(admins, "clinics", "전체", "전체").map((admin) => admin.id), ["ADM-1001"]);
 });
 
+test("buildAdminListQuery sends separate name and email filters with pagination", () => {
+  assert.deepEqual(
+    adminManagement.buildAdminListQuery?.(" 김은미 ", " eunmi@ozcoding.ai ", "일반 관리자", "활성", 2, 50),
+    {
+      name: "김은미",
+      email: "eunmi@ozcoding.ai",
+      role: "STAFF",
+      status: "ACTIVE",
+      page: 2,
+      size: 50,
+    },
+  );
+});
+
+test("getAdminPaginationState clamps the requested page and exposes five page buttons", () => {
+  assert.deepEqual(adminManagement.getAdminPaginationState?.(260, 99, 50), {
+    currentPage: 6,
+    totalPages: 6,
+    pages: [2, 3, 4, 5, 6],
+    hasPrevious: true,
+    hasNext: false,
+  });
+});
+
+test("formatAdminTotal formats a count and a failed-load placeholder", () => {
+  assert.equal(adminManagement.formatAdminTotal?.(27), "총 27명");
+  assert.equal(adminManagement.formatAdminTotal?.(null), "총 -명");
+});
+
+test("resetAdminFilters restores the role and status placeholder options", () => {
+  assert.equal(typeof adminManagement.resetAdminFilters, "function");
+  const nameSearch = { value: "김은미" };
+  const emailSearch = { value: "eunmi@ozcoding.ai" };
+  const role = { value: "최고 관리자" };
+  const status = { value: "활성" };
+
+  adminManagement.resetAdminFilters(nameSearch, emailSearch, role, status);
+
+  assert.equal(nameSearch.value, "");
+  assert.equal(emailSearch.value, "");
+  assert.equal(role.value, "권한");
+  assert.equal(status.value, "상태");
+});
+
+test("admin management screen separates searches and places paging controls below the list", async () => {
+  const templateUrl = new URL("../../static/templates/screen-4-admin-management.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+
+  for (const hook of [
+    "data-admin-name-search",
+    "data-admin-email-search",
+    "data-admin-pagination",
+    "data-admin-total",
+    "data-admin-page-size",
+  ]) {
+    assert.match(html, new RegExp(hook));
+  }
+
+  const tableEnd = html.indexOf("</table>");
+  assert.ok(tableEnd < html.indexOf("data-admin-pagination"));
+  assert.ok(tableEnd < html.indexOf("data-admin-total"));
+  assert.ok(tableEnd < html.indexOf("data-admin-page-size"));
+});
+
+test("admin management page size offers twenty, fifty and one hundred items", async () => {
+  const templateUrl = new URL("../../static/templates/screen-4-admin-management.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+  const select = html.match(/<select id="admin-page-size"[\s\S]*?<\/select>/)?.[0] ?? "";
+
+  assert.match(select, /<option value="20" selected>20개<\/option>/);
+  assert.match(select, /<option value="50">50개<\/option>/);
+  assert.match(select, /<option value="100">100개<\/option>/);
+  assert.doesNotMatch(select, /value="1"|value="2"|value="5"/);
+});
+
 test("validateAdminInput rejects blank names and malformed emails", () => {
   assert.deepEqual(validateAdminInput({ name: " ", email: "not-email" }), {
     valid: false,
     errors: { name: "관리자 이름을 입력해주세요.", email: "올바른 이메일 주소를 입력해주세요." },
   });
+});
+
+test("withSubmitLock ignores another submission while the first one is pending", async () => {
+  assert.equal(typeof adminManagement.withSubmitLock, "function");
+  const button = { disabled: false, textContent: "저장" };
+  let release;
+  let callCount = 0;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const submit = () => {
+    callCount += 1;
+    return pending;
+  };
+
+  const first = adminManagement.withSubmitLock(button, "등록 중…", submit);
+  const second = adminManagement.withSubmitLock(button, "등록 중…", submit);
+
+  assert.equal(button.disabled, true);
+  assert.equal(button.textContent, "등록 중…");
+  assert.equal(callCount, 1);
+  assert.equal(await second, undefined);
+
+  release("created");
+  assert.equal(await first, "created");
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, "저장");
 });
 
 test("roleChangeBlockedReason blocks the caller's own row", () => {
@@ -73,15 +176,9 @@ test("editBlockedReason lets an ADMIN edit other rows but blocks STAFF", () => {
   );
 });
 
-test("editBlockedReason blocks suspended and withdrawn accounts for everyone", () => {
-  assert.equal(
-    editBlockedReason({ adminId: 3, status: "SUSPENDED" }, 3, "ADMIN"),
-    "정지된 계정은 수정할 수 없습니다",
-  );
-  assert.equal(
-    editBlockedReason({ adminId: 9, status: "WITHDRAWN" }, 3, "ADMIN"),
-    "정지된 계정은 수정할 수 없습니다",
-  );
+test("editBlockedReason lets ADMIN edit every status", () => {
+  assert.equal(editBlockedReason({ adminId: 3, status: "SUSPENDED" }, 3, "ADMIN"), null);
+  assert.equal(editBlockedReason({ adminId: 9, status: "WITHDRAWN" }, 3, "ADMIN"), null);
 });
 
 test("editBlockedReason allows pending accounts", () => {
@@ -122,9 +219,64 @@ test("statusAction offers nothing for withdrawn rows", () => {
   assert.equal(statusAction({ adminId: 9, status: "WITHDRAWN" }, 3), null);
 });
 
-test("reset failure message says the target cannot log in", () => {
-  // "발송 실패"만 쓰면 상대가 잠겼다는 사실이 안 보인다.
-  assert.match(RESET_MAIL_FAILED_MESSAGE, /로그인할 수 없/);
+test("statusAction hides status changes for ADMIN-role rows", () => {
+  assert.equal(statusAction({ adminId: 9, role: "ADMIN", status: "ACTIVE" }, 3), null);
+  assert.equal(statusAction({ adminId: 10, role: "ADMIN", status: "SUSPENDED" }, 3), null);
+});
+
+test("ADMIN sees edit on every row but status actions only on STAFF-role rows", () => {
+  const adminRow = adminManagement.actionsMarkup?.(
+    { adminId: 9, role: "ADMIN", status: "ACTIVE" },
+    true,
+    3,
+    "ADMIN",
+  ) ?? "";
+  const staffRow = adminManagement.actionsMarkup?.(
+    { adminId: 10, role: "STAFF", status: "SUSPENDED" },
+    true,
+    3,
+    "ADMIN",
+  ) ?? "";
+
+  assert.match(adminRow, /data-admin-action="edit"/);
+  assert.doesNotMatch(adminRow, /data-admin-action="suspend"|data-admin-action="activate"/);
+  assert.match(staffRow, /data-admin-action="edit"/);
+  assert.match(staffRow, /data-admin-action="activate"/);
+});
+
+test("STAFF sees only their own edit action and no status action", () => {
+  const ownRow = adminManagement.actionsMarkup?.(
+    { adminId: 3, role: "STAFF", status: "ACTIVE" },
+    false,
+    3,
+    "STAFF",
+  ) ?? "";
+  const otherRow = adminManagement.actionsMarkup?.(
+    { adminId: 9, role: "STAFF", status: "ACTIVE" },
+    false,
+    3,
+    "STAFF",
+  ) ?? "";
+
+  assert.match(ownRow, /data-admin-action="edit"/);
+  assert.doesNotMatch(ownRow, /data-admin-action="suspend"|data-admin-action="activate"/);
+  assert.equal(otherRow, "");
+});
+
+test("admin rows keep the action table cell aligned when STAFF has no buttons", () => {
+  const row = adminManagement.rowMarkup?.(
+    { adminId: 9, name: "다른 관리자", email: "other@example.com", role: "STAFF", status: "ACTIVE" },
+    false,
+    3,
+    "STAFF",
+  ) ?? "";
+
+  assert.match(row, /<td class="admin-actions-cell">\s*<div class="admin-row-actions"><\/div>\s*<\/td>/);
+  assert.doesNotMatch(row, /<td[^>]*class="[^"]*\bflex\b/);
+});
+
+test("reset failure message warns that the previous password is unavailable", () => {
+  assert.match(RESET_MAIL_FAILED_MESSAGE, /기존 비밀번호.*사용할 수 없/);
 });
 
 test("editOverlayVisibility shows role only to an ADMIN looking at someone else", () => {
@@ -275,6 +427,35 @@ test("edit overlay carries the fields the script fills in", async () => {
   }
 });
 
+test("edit overlay shows email in a readonly control matching the name field", async () => {
+  const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+  const emailField = html.match(/<div class="overlay-field">[\s\S]*?id="admin-edit-email"[\s\S]*?<\/div>/)?.[0] ?? "";
+
+  assert.match(emailField, /<label for="admin-edit-email">이메일<\/label>/);
+  assert.match(emailField, /<input[^>]*data-admin-email[^>]*class="ui-control"[^>]*readonly/);
+  assert.doesNotMatch(emailField, /data-error-for="email"/);
+});
+
+test("populateAdminEditFields places email in the readonly control value", () => {
+  const controls = {
+    "[data-admin-email]": { value: "" },
+    "[name='name']": { value: "" },
+    "[name='role']": { value: "" },
+  };
+  const panel = { querySelector: (selector) => controls[selector] };
+
+  adminManagement.populateAdminEditFields?.(panel, {
+    email: "staff@example.com",
+    name: "일반 관리자",
+    role: "STAFF",
+  });
+
+  assert.equal(controls["[data-admin-email]"].value, "staff@example.com");
+  assert.equal(controls["[name='name']"].value, "일반 관리자");
+  assert.equal(controls["[name='role']"].value, "일반 관리자");
+});
+
 test("edit overlay states the password policy", async () => {
   const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
   const html = await readFile(templateUrl, "utf8");
@@ -292,11 +473,27 @@ test("edit overlay keeps the reset button out of the save/cancel row", async () 
   assert.doesNotMatch(html, /class="overlay-actions" data-reset-section/);
 });
 
-test("reset confirmation spells out that the target cannot log in", async () => {
+test("edit overlay puts the password label and temporary-password button on one row", async () => {
+  const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
+  const html = await readFile(templateUrl, "utf8");
+  const resetSection = html.slice(html.indexOf('class="overlay-danger-zone"'), html.indexOf('class="overlay-actions"'));
+  const firstRow = resetSection.match(/<div[^>]*data-reset-header[^>]*>[\s\S]*?<\/div>/)?.[0] ?? "";
+
+  assert.match(firstRow, />비밀번호<\/p>/);
+  assert.match(firstRow, /data-admin-edit-reset[^>]*>임시 비밀번호 발송<\/button>/);
+  assert.doesNotMatch(firstRow, /기존 비밀번호는 사용할 수 없습니다/);
+  assert.ok(
+    resetSection.indexOf(firstRow) <
+      resetSection.indexOf("임시 비밀번호 발송 시 기존 비밀번호는 사용할 수 없으며 계정 상태는 변경되지 않습니다."),
+  );
+});
+
+test("reset confirmation says the account status is preserved", async () => {
   const templateUrl = new URL("../../static/templates/overlay-password-reset.html", import.meta.url);
   const html = await readFile(templateUrl, "utf8");
 
-  assert.match(html, /메일을 받기 전까지 로그인할 수 없습니다/);
+  assert.match(html, /계정 상태는 변경되지 않습니다/);
+  assert.match(html, /기존 비밀번호는 사용할 수 없습니다/);
 });
 
 test("edit overlay does not resurrect the account-active checkbox", async () => {

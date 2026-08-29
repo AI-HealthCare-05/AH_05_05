@@ -1,5 +1,6 @@
 import logging
 
+from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
@@ -35,12 +36,16 @@ from app.dtos.pagination import PageResponse
 from app.models.admins import Admin
 from app.models.enums import AccountStatus, AdminRole
 from app.services.admin_credentials import issue_temporary_password
+from app.services.email_jobs import EmailJobService
 
 logger = logging.getLogger(__name__)
 
 
 class AdminQueryService:
     """REQ-ADMIN-008/010/011 관리자 계정 관리."""
+
+    def __init__(self) -> None:
+        self.email_job_service = EmailJobService()
 
     async def get_admins(self, query: AdminListQuery) -> PageResponse[AdminListItem]:
         queryset = self._apply_filters(Admin.all(), query)
@@ -75,32 +80,43 @@ class AdminQueryService:
         """REQ-ADMIN-008 관리자 등록. 임시 비밀번호는 서버가 만들어 메일로만 전달한다."""
         email = str(request.email)
 
-        async with in_transaction():
+        try:
+            async with in_transaction():
+                if await Admin.filter(email=email).exists():
+                    raise EmailAlreadyExistsError()
+
+                credential = issue_temporary_password()
+                admin = await Admin.create(
+                    email=email,
+                    hashed_password=credential.hashed_password,
+                    name=request.name,
+                    role=request.role,
+                    status=AccountStatus.ACTIVE if request.is_active else AccountStatus.PENDING,
+                    created_by_admin_id=actor_admin_id,
+                )
+        except IntegrityError:
+            # 사전 exists 검사와 INSERT 사이에 같은 이메일 요청이 들어올 수 있다.
+            # UNIQUE 위반만 도메인 오류로 변환하고 다른 제약 오류는 원인 그대로 올린다.
             if await Admin.filter(email=email).exists():
-                raise EmailAlreadyExistsError()
+                raise EmailAlreadyExistsError() from None
+            raise
 
-            credential = issue_temporary_password()
-            admin = await Admin.create(
-                email=email,
-                hashed_password=credential.hashed_password,
-                name=request.name,
-                role=request.role,
-                status=AccountStatus.ACTIVE if request.is_active else AccountStatus.PENDING,
-                created_by_admin_id=actor_admin_id,
-            )
-
-        # 발송은 트랜잭션 밖에서 한다. 실패해도 계정 생성을 되돌리지 않는다.
-        # 되돌리면 관리자는 "계정이 안 만들어졌다"고만 알게 되는데, 실제로는 메일만
-        # 실패한 것이라 상황을 구분할 수 없다. emailSent 로 알려주는 편이 낫다.
-        # 발송에 실패해도 재발송(REQ-ADMIN-003)으로 복구할 수 있다.
-        email_sent = credential.send_to(name=request.name, email=email)
+        # 이메일 작업은 트랜잭션 밖에서 만든다. 큐 등록에 실패해도 FAILED 작업을 남겨
+        # 계정 생성 성공과 이메일 전달 실패를 분리해 추적할 수 있다.
+        email_job = await self.email_job_service.enqueue_admin_temporary_password(
+            admin_id=admin.id,
+            recipient_email=email,
+            recipient_name=request.name,
+            temporary_password=credential.plaintext_for_delivery,
+        )
 
         logger.info(
-            "admin created: id=%s by=%s role=%s email_sent=%s",
+            "admin created: id=%s by=%s role=%s email_job_id=%s email_job_status=%s",
             admin.id,
             actor_admin_id,
             request.role,
-            email_sent,
+            email_job.id,
+            email_job.status,
         )
         return AdminCreateResponse(
             admin_id=admin.id,
@@ -111,7 +127,8 @@ class AdminQueryService:
             created_by_admin_id=admin.created_by_admin_id,  # type: ignore[attr-defined]
             approved_at=admin.approved_at,
             created_at=admin.created_at,
-            email_sent=email_sent,
+            email_job_id=email_job.id,
+            email_job_status=email_job.status,
         )
 
     async def reset_password(self, admin_id: int, actor_admin_id: int) -> AdminPasswordResetResponse:
@@ -132,30 +149,33 @@ class AdminQueryService:
 
         credential = issue_temporary_password()
         admin.hashed_password = credential.hashed_password
-        # 임시 비밀번호를 다시 받은 상태이므로 활성 계정도 PENDING 으로 돌린다.
-        # 비밀번호를 바꿔야 관리자 기능을 다시 쓸 수 있다.
-        admin.status = AccountStatus.PENDING
-        # approved_at 은 "현재 활성 상태가 된 시각"이다(change_password 가 전이할 때마다
-        # 덮어쓴다). PENDING 으로 돌아갔는데 값이 남아 있으면 목록에서 모순으로 보이므로 비운다.
-        admin.approved_at = None
+        # 임시 비밀번호 발급은 인증 정보만 교체한다. 계정 상태와 승인 시각은 관리자가
+        # 별도의 상태 변경 API로 관리하므로 여기서 함께 바꾸지 않는다.
         # 이전 보유자의 리프레시 토큰은 남는다. 계정을 넘겨받는 상황이라 끊는 게 맞지만
         # 발급된 JWT 를 개별 폐기할 수단이 없다. 리프레시 수명이 지나야 정리된다.
-        await admin.save()
+        await admin.save(update_fields=["hashed_password"])
 
-        # 등록과 같은 정책. 발송이 실패해도 되돌리지 않고 결과만 알린다.
-        email_sent = credential.send_to(name=admin.name, email=admin.email)
+        # 등록과 같은 정책. 작업 등록이 실패해도 비밀번호 변경은 되돌리지 않는다.
+        email_job = await self.email_job_service.enqueue_admin_temporary_password(
+            admin_id=admin.id,
+            recipient_email=admin.email,
+            recipient_name=admin.name,
+            temporary_password=credential.plaintext_for_delivery,
+        )
 
         logger.info(
-            "admin password reset: id=%s by=%s email_sent=%s",
+            "admin password reset: id=%s by=%s email_job_id=%s email_job_status=%s",
             admin.id,
             actor_admin_id,
-            email_sent,
+            email_job.id,
+            email_job.status,
         )
         return AdminPasswordResetResponse(
             admin_id=admin.id,
             email=admin.email,
             status=admin.status,
-            email_sent=email_sent,
+            email_job_id=email_job.id,
+            email_job_status=email_job.status,
         )
 
     async def update_status(self, request: AdminStatusUpdateRequest, actor_admin_id: int) -> AdminStatusUpdateResponse:
@@ -329,6 +349,10 @@ class AdminQueryService:
     def _apply_filters(queryset: QuerySet[Admin], query: AdminListQuery) -> QuerySet[Admin]:
         if query.keyword:
             queryset = queryset.filter(Q(name__icontains=query.keyword) | Q(email__icontains=query.keyword))
+        if query.name:
+            queryset = queryset.filter(name__icontains=query.name)
+        if query.email:
+            queryset = queryset.filter(email__icontains=query.email)
         if query.role is not None:
             queryset = queryset.filter(role=query.role)
         if query.status is not None:

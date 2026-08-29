@@ -8,6 +8,7 @@ import {
   validateCredentials,
   validatePasswordChange,
 } from "../../static/js/login.js";
+import { ApiError, post } from "../../static/js/api.js";
 
 test("validateCredentials rejects blank login fields", () => {
   assert.deepEqual(validateCredentials("  ", ""), {
@@ -24,6 +25,76 @@ test("validateCredentials accepts non-empty login fields", () => {
     valid: true,
     errors: {},
   });
+});
+
+test("invalid login credentials show the requested password field error without an alert", async () => {
+  const loginModule = await import("../../static/js/login.js");
+  assert.equal(typeof loginModule.handleLoginFailure, "function");
+
+  const alerts = [];
+  const fieldErrors = [];
+  loginModule.handleLoginFailure(
+    new ApiError(401, {
+      code: "INVALID_CREDENTIALS",
+      message: "이메일 또는 비밀번호가 일치하지 않습니다.",
+    }),
+    {
+      showAlert: (message) => alerts.push(message),
+      showFieldError: (message) => fieldErrors.push(message),
+    },
+  );
+
+  assert.deepEqual(fieldErrors, ["아이디 또는 비밀번호가 올바르지 않습니다"]);
+  assert.deepEqual(alerts, []);
+});
+
+test("other login failures show the administrator guidance as a password field error", async () => {
+  const loginModule = await import("../../static/js/login.js");
+  const alerts = [];
+  const fieldErrors = [];
+
+  loginModule.handleLoginFailure(new Error("network unavailable"), {
+    showAlert: (message) => alerts.push(message),
+    showFieldError: (message) => fieldErrors.push(message),
+  });
+
+  assert.deepEqual(fieldErrors, ["관리자에게 문의하세요"]);
+  assert.deepEqual(alerts, []);
+});
+
+test("login 401 preserves INVALID_CREDENTIALS without attempting token refresh", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  let fetchCalls = 0;
+
+  globalThis.window = {
+    location: { href: "login.html" },
+    sessionStorage: {
+      getItem: () => null,
+      removeItem: () => {},
+    },
+  };
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return new Response(
+      JSON.stringify({
+        code: "INVALID_CREDENTIALS",
+        message: "이메일 또는 비밀번호가 일치하지 않습니다.",
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  try {
+    await assert.rejects(post("/admin/auth/login", { email: "wrong@example.com", password: "wrong" }), (error) => {
+      assert.equal(error.code, "INVALID_CREDENTIALS");
+      return true;
+    });
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+  }
 });
 
 test("validatePasswordChange rejects blank password fields", () => {
@@ -101,9 +172,8 @@ test("password help link is wired for the script to hook", async () => {
   assert.match(html, /data-password-help/);
 });
 
-test("password help points to the super admin instead of self-service reset", () => {
-  // 자가 재설정은 만들지 않았다. 문구가 "직접 재설정" 쪽으로 바뀌면 없는 기능을 안내하게 된다.
-  assert.match(PASSWORD_HELP_MESSAGE, /최고관리자/);
+test("password help tells the user to contact an administrator", () => {
+  assert.equal(PASSWORD_HELP_MESSAGE, "관리자에게 문의하세요.");
 });
 
 test("login script reads isFirstLogin, not the removed mustChangePassword", async () => {

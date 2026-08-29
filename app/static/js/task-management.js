@@ -1,6 +1,6 @@
 import { escapeHtml, get, requireLogin, tableState } from "./api.js";
 
-const TYPE_VALUES = { OCR: "OCR", LLM: "LLM", CHAT: "CHAT", ALARM: "ALARM" };
+const TYPE_VALUES = { OCR: "OCR", LLM: "LLM", CHAT: "CHAT", ALARM: "ALARM", EMAIL: "EMAIL" };
 const STATUS_VALUES = {
   진행중: "PROCESSING",
   성공: "COMPLETED",
