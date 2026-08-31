@@ -171,6 +171,7 @@ test('같은 계정으로 다시 로그인하면 저장된 대화 목록을 복�
   await page.getByLabel('이메일').fill(MOCK_ACCOUNT);
   await page.getByLabel('비밀번호').fill('password1234');
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await expect(page).toHaveURL(/\/home$/);
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();
@@ -189,6 +190,7 @@ test('답변 대기 중 로그아웃해도 이전 질문이 다음 계정에 저
   await page.getByLabel('이메일').fill(OTHER_MOCK_ACCOUNT);
   await page.getByLabel('비밀번호').fill('password1234');
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await expect(page).toHaveURL(/\/home$/);
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
 
   await page.waitForTimeout(1_500);
@@ -207,6 +209,7 @@ test('삭제 대기 중 계정이 바뀌어도 다른 계정의 같은 ID 대화
   await page.getByLabel('이메일').fill(OTHER_MOCK_ACCOUNT);
   await page.getByLabel('비밀번호').fill('password1234');
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await expect(page).toHaveURL(/\/home$/);
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
   await createConversation(page, otherQuestion);
   await page.reload();
@@ -221,6 +224,7 @@ test('삭제 대기 중 계정이 바뀌어도 다른 계정의 같은 ID 대화
   await page.getByLabel('이메일').fill(MOCK_ACCOUNT);
   await page.getByLabel('비밀번호').fill('password1234');
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await expect(page).toHaveURL(/\/home$/);
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
 
   await expect(page.getByRole('button', { name: new RegExp(patientQuestion) })).toBeVisible();
