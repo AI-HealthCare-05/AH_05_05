@@ -190,3 +190,51 @@ def test_build_normalizes_vitamin_spacing() -> None:
     )
 
     assert plan.entity_names == ["와파린", "비타민 K"]
+
+
+def test_build_removes_choice_particle_from_food_name() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "펙소페나딘을 자몽주스나 사과주스와 함께 먹어도 되나요?",
+    )
+
+    assert plan.entity_names == [
+        "펙소페나딘",
+        "자몽주스",
+        "사과주스",
+    ]
+    assert [entity.kind for entity in plan.entities] == [
+        InteractionEntityKind.DRUG,
+        InteractionEntityKind.FOOD,
+        InteractionEntityKind.FOOD,
+    ]
+    assert plan.interaction_types == [InteractionPairType.DRUG_FOOD]
+
+
+def test_build_preserves_entity_name_that_ends_with_na() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "스피루리나는 왜 먹어?",
+    )
+
+    assert plan.entity_names == ["스피루리나"]
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_names"),
+    [
+        (
+            "아스피린이랑 와파린을 같이 먹어도 되나요?",
+            ["아스피린", "와파린"],
+        ),
+        (
+            "마그네슘하고 아연을 같이 먹어도 되나요?",
+            ["마그네슘", "아연"],
+        ),
+    ],
+)
+def test_build_removes_conjunction_particles_from_entity_names(
+    question: str,
+    expected_names: list[str],
+) -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(question)
+
+    assert plan.entity_names == expected_names

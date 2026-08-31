@@ -11,7 +11,7 @@ from ai_worker.schemas.guideline import (
     GuidelineSearchQuery,
     RetrievedGuidelineChunk,
 )
-from ai_worker.schemas.knowledge import RetrievedKnowledgeChunk
+from ai_worker.schemas.knowledge import KnowledgeRetrievalResult
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
@@ -141,7 +141,7 @@ class InteractionRuleRepository(Protocol):
 
 
 class MedicationKnowledgeRetriever(Protocol):
-    async def search(
+    async def search_with_diagnostics(
         self,
         *,
         question: str,
@@ -149,7 +149,7 @@ class MedicationKnowledgeRetriever(Protocol):
         supplement_names: list[str],
         interaction_pair_keys: list[str],
         limit: int,
-    ) -> list[RetrievedKnowledgeChunk]: ...
+    ) -> KnowledgeRetrievalResult: ...
 
 
 class MedicationAnswerGenerator(Protocol):

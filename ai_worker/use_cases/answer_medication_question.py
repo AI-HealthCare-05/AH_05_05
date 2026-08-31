@@ -28,9 +28,15 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
 )
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
+    MedicationKnowledgeQueryPlan,
 )
 from ai_worker.schemas.enums import SafetyStatus
-from ai_worker.schemas.knowledge import KnowledgeDocumentType
+from ai_worker.schemas.interaction import InteractionEntityKind
+from ai_worker.schemas.knowledge import (
+    KnowledgeDocumentType,
+    KnowledgeRetrievalDiagnostics,
+    KnowledgeRetrievalResult,
+)
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
@@ -135,20 +141,17 @@ class AnswerMedicationQuestionUseCase:
             "rag.retrieve",
             run_type="retriever",
         ) as rag_span:
-            chunks, rag_unavailable = await self._retrieve_knowledge(
+            retrieval, rag_unavailable = await self._retrieve_knowledge(
                 request=request,
                 context=context,
                 rules=rules,
                 limit=limit,
             )
+            chunks = retrieval.chunks
             rag_span.end(
                 {
-                    "accepted_count": len(chunks),
+                    **retrieval.diagnostics.model_dump(),
                     "rag_unavailable": rag_unavailable,
-                    "max_score": max(
-                        (chunk.similarity_score for chunk in chunks),
-                        default=None,
-                    ),
                 }
             )
         has_supplement_evidence = self._has_supplement_evidence(
@@ -168,6 +171,7 @@ class AnswerMedicationQuestionUseCase:
                 else await self._find_guide(
                     request=request,
                     context=context,
+                    query_plan=query_plan,
                     interaction_question=interaction_question,
                 )
             )
@@ -302,6 +306,7 @@ class AnswerMedicationQuestionUseCase:
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
+        query_plan: MedicationKnowledgeQueryPlan,
         interaction_question: bool,
     ) -> MedicationGuideLookup:
         if interaction_question:
@@ -309,6 +314,7 @@ class AnswerMedicationQuestionUseCase:
         for candidate in self._product_name_candidates(
             request.question,
             context=context,
+            query_plan=query_plan,
         ):
             lookup = await self._guide_repository.find_by_name(candidate)
             if lookup.guide is not None or lookup.is_ambiguous:
@@ -322,9 +328,9 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
         rules: list[InteractionRuleFact],
         limit: int,
-    ) -> tuple[list, bool]:
+    ) -> tuple[KnowledgeRetrievalResult, bool]:
         try:
-            chunks = await self._knowledge_retriever.search(
+            retrieval = await self._knowledge_retriever.search_with_diagnostics(
                 question=request.question,
                 medication_names=[item.name for item in context.medications],
                 supplement_names=[item.name for item in context.supplements],
@@ -332,8 +338,26 @@ class AnswerMedicationQuestionUseCase:
                 limit=limit,
             )
         except Exception:
-            return [], True
-        return chunks, False
+            return self._empty_retrieval_result(), True
+        return retrieval, False
+
+    @staticmethod
+    def _empty_retrieval_result() -> KnowledgeRetrievalResult:
+        return KnowledgeRetrievalResult(
+            diagnostics=KnowledgeRetrievalDiagnostics(
+                raw_candidate_count=0,
+                entity_filtered_count=0,
+                broad_candidate_count=0,
+                fallback_used=False,
+                eligible_candidate_count=0,
+                rejected_below_score_count=0,
+                rejected_entity_mismatch_count=0,
+                rejected_pair_mismatch_count=0,
+                accepted_count=0,
+                max_raw_score=None,
+                max_score=None,
+            )
+        )
 
     @staticmethod
     def _resolve_route(
@@ -398,32 +422,14 @@ class AnswerMedicationQuestionUseCase:
         question: str,
         *,
         context: ActiveIntakeContext,
+        query_plan: MedicationKnowledgeQueryPlan,
     ) -> list[str]:
         candidates = [medication.name for medication in context.medications if medication.name in question]
         if "이 약" in question and len(context.medications) == 1:
             candidates.append(context.medications[0].name)
-        stopwords = {
-            "어떤",
-            "어떻게",
-            "약",
-            "약인가요",
-            "알려줘",
-            "알려주세요",
-            "주의사항",
-            "복용법",
-            "복용",
-            "먹어",
-            "먹어야",
-            "효능",
-        }
-        for token in re.findall(r"[가-힣A-Za-z0-9.+-]{2,}", question):
-            normalized = re.sub(
-                r"(은|는|이|가|을|를|과|와|의|도)$",
-                "",
-                token,
-            )
-            if normalized and normalized not in stopwords:
-                candidates.append(normalized)
+        candidates.extend(
+            entity.canonical_name for entity in query_plan.entities if entity.kind == InteractionEntityKind.DRUG
+        )
         return list(dict.fromkeys(candidates))[: AnswerMedicationQuestionUseCase._MAX_PRODUCT_NAME_CANDIDATES]
 
     @staticmethod

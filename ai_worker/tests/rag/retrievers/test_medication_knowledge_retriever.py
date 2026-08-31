@@ -87,6 +87,59 @@ async def test_search_retries_without_entity_filters_when_filtered_search_is_emp
     assert store.queries[1].ingredient_names == []
 
 
+async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -> None:
+    accepted = build_chunk(
+        0.8,
+        chunk_id="a" * 64,
+        ingredient_names=["마그네슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+    )
+    below_score = build_chunk(
+        0.54,
+        chunk_id="b" * 64,
+        ingredient_names=["마그네슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+    )
+    entity_mismatch = build_chunk(
+        0.59,
+        chunk_id="c" * 64,
+        ingredient_names=["칼슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+    )
+    store = FakeKnowledgeStore(
+        responses=[[], [accepted, below_score, entity_mismatch]],
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v1",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        question="마그네슘은 왜 먹나요?",
+        medication_names=[],
+        supplement_names=["마그네슘"],
+        interaction_pair_keys=[],
+        limit=5,
+    )
+
+    assert result.chunks == [accepted]
+    assert result.diagnostics.model_dump() == {
+        "raw_candidate_count": 3,
+        "entity_filtered_count": 0,
+        "broad_candidate_count": 3,
+        "fallback_used": True,
+        "eligible_candidate_count": 1,
+        "rejected_below_score_count": 1,
+        "rejected_entity_mismatch_count": 1,
+        "rejected_pair_mismatch_count": 0,
+        "accepted_count": 1,
+        "max_raw_score": 0.8,
+        "max_score": 0.8,
+    }
+
+
 async def test_search_excludes_results_below_minimum_score() -> None:
     store = FakeKnowledgeStore(
         responses=[[build_chunk(0.64), build_chunk(0.8)]],
@@ -289,7 +342,7 @@ async def test_search_rejects_single_ingredient_chunk_for_pair_question() -> Non
         min_similarity_score=0.65,
     )
 
-    results = await retriever.search(
+    result = await retriever.search_with_diagnostics(
         question="아연을 복용하면 철분 수치가 낮아질 수 있나요?",
         medication_names=[],
         supplement_names=[],
@@ -297,7 +350,8 @@ async def test_search_rejects_single_ingredient_chunk_for_pair_question() -> Non
         limit=5,
     )
 
-    assert results == []
+    assert result.chunks == []
+    assert result.diagnostics.rejected_pair_mismatch_count == 1
 
 
 async def test_search_limits_results_from_one_document_to_two_chunks() -> None:

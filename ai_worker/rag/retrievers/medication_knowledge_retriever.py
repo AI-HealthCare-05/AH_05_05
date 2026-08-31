@@ -1,4 +1,6 @@
 import asyncio
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 
 from ai_worker.domain.interfaces import EmbeddingProvider
@@ -10,9 +12,26 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryPlan,
 )
 from ai_worker.schemas.knowledge import (
+    KnowledgeRetrievalDiagnostics,
+    KnowledgeRetrievalResult,
     KnowledgeSearchQuery,
     RetrievedKnowledgeChunk,
 )
+
+
+@dataclass(frozen=True)
+class _SearchBatch:
+    results: list[RetrievedKnowledgeChunk]
+    entity_filtered_count: int
+    broad_candidate_count: int
+    fallback_used: bool
+
+
+class _EligibilityReason(StrEnum):
+    ELIGIBLE = "ELIGIBLE"
+    BELOW_SCORE = "BELOW_SCORE"
+    ENTITY_MISMATCH = "ENTITY_MISMATCH"
+    PAIR_MISMATCH = "PAIR_MISMATCH"
 
 
 class MedicationKnowledgeSearchStore(Protocol):
@@ -59,6 +78,24 @@ class MedicationKnowledgeRetriever:
         interaction_pair_keys: list[str],
         limit: int,
     ) -> list[RetrievedKnowledgeChunk]:
+        result = await self.search_with_diagnostics(
+            question=question,
+            medication_names=medication_names,
+            supplement_names=supplement_names,
+            interaction_pair_keys=interaction_pair_keys,
+            limit=limit,
+        )
+        return result.chunks
+
+    async def search_with_diagnostics(
+        self,
+        *,
+        question: str,
+        medication_names: list[str],
+        supplement_names: list[str],
+        interaction_pair_keys: list[str],
+        limit: int,
+    ) -> KnowledgeRetrievalResult:
         plan = self._query_builder.build(question)
         candidate_limit = min(50, max(20, limit * 4))
         batches = await asyncio.gather(
@@ -73,8 +110,13 @@ class MedicationKnowledgeRetriever:
                 for query in [plan.expanded_query, *plan.alternate_queries]
             )
         )
-        results = [result for batch in batches for result in batch]
-        eligible = [result for result in results if self._is_eligible(result, plan=plan)]
+        results = [result for batch in batches for result in batch.results]
+        eligibility_reasons = [self._eligibility_reason(result, plan=plan) for result in results]
+        eligible = [
+            result
+            for result, reason in zip(results, eligibility_reasons, strict=True)
+            if reason == _EligibilityReason.ELIGIBLE
+        ]
         unique = self._deduplicate(eligible)
         ranked = sorted(
             unique,
@@ -84,7 +126,30 @@ class MedicationKnowledgeRetriever:
             ),
             reverse=True,
         )
-        return self._select_diverse(ranked, limit=limit)
+        selected = self._select_diverse(ranked, limit=limit)
+        diagnostics = KnowledgeRetrievalDiagnostics(
+            raw_candidate_count=len(results),
+            entity_filtered_count=sum(batch.entity_filtered_count for batch in batches),
+            broad_candidate_count=sum(batch.broad_candidate_count for batch in batches),
+            fallback_used=any(batch.fallback_used for batch in batches),
+            eligible_candidate_count=len(eligible),
+            rejected_below_score_count=eligibility_reasons.count(_EligibilityReason.BELOW_SCORE),
+            rejected_entity_mismatch_count=eligibility_reasons.count(_EligibilityReason.ENTITY_MISMATCH),
+            rejected_pair_mismatch_count=eligibility_reasons.count(_EligibilityReason.PAIR_MISMATCH),
+            accepted_count=len(selected),
+            max_raw_score=max(
+                (result.similarity_score for result in results),
+                default=None,
+            ),
+            max_score=max(
+                (result.similarity_score for result in selected),
+                default=None,
+            ),
+        )
+        return KnowledgeRetrievalResult(
+            chunks=selected,
+            diagnostics=diagnostics,
+        )
 
     @classmethod
     def _select_diverse(
@@ -114,7 +179,7 @@ class MedicationKnowledgeRetriever:
         supplement_names: list[str],
         interaction_pair_keys: list[str],
         candidate_limit: int,
-    ) -> list[RetrievedKnowledgeChunk]:
+    ) -> _SearchBatch:
         query_vector = await self._embedding_provider.embed_query(query)
         filtered_query = KnowledgeSearchQuery(
             query=query,
@@ -129,16 +194,34 @@ class MedicationKnowledgeRetriever:
             search_query=filtered_query,
         )
         has_entity_filter = bool(medication_names or supplement_names or interaction_pair_keys)
-        if results or not has_entity_filter:
-            return results
+        if not has_entity_filter:
+            return _SearchBatch(
+                results=results,
+                entity_filtered_count=0,
+                broad_candidate_count=len(results),
+                fallback_used=False,
+            )
+        if results:
+            return _SearchBatch(
+                results=results,
+                entity_filtered_count=len(results),
+                broad_candidate_count=0,
+                fallback_used=False,
+            )
         fallback_query = KnowledgeSearchQuery(
             query=query,
             dataset_version=self._dataset_version,
             limit=candidate_limit,
         )
-        return await self._vector_store.search(
+        fallback_results = await self._vector_store.search(
             query_vector=query_vector,
             search_query=fallback_query,
+        )
+        return _SearchBatch(
+            results=fallback_results,
+            entity_filtered_count=0,
+            broad_candidate_count=len(fallback_results),
+            fallback_used=True,
         )
 
     @staticmethod
@@ -170,31 +253,33 @@ class MedicationKnowledgeRetriever:
             result.chunk_id,
         )
 
-    def _is_eligible(
+    def _eligibility_reason(
         self,
         result: RetrievedKnowledgeChunk,
         *,
         plan: MedicationKnowledgeQueryPlan,
-    ) -> bool:
+    ) -> _EligibilityReason:
         if plan.interaction_pair is not None and not supplement_pair_matches_text(
             plan.interaction_pair,
             result.metadata.title,
             result.content,
             *result.metadata.ingredient_names,
         ):
-            return False
+            return _EligibilityReason.PAIR_MISMATCH
         if result.similarity_score >= self._min_similarity_score:
-            return True
+            return _EligibilityReason.ELIGIBLE
 
         minimum_raw_score = max(
             0.0,
             self._min_similarity_score - self._BOOST_ELIGIBILITY_MARGIN,
         )
         if result.similarity_score < minimum_raw_score:
-            return False
+            return _EligibilityReason.BELOW_SCORE
         if self._entity_match_bonus(result, plan=plan) <= 0.0:
-            return False
-        return self._relevance_score(result, plan=plan) >= self._min_similarity_score
+            return _EligibilityReason.ENTITY_MISMATCH
+        if self._relevance_score(result, plan=plan) < self._min_similarity_score:
+            return _EligibilityReason.BELOW_SCORE
+        return _EligibilityReason.ELIGIBLE
 
     @classmethod
     def _relevance_score(

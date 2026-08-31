@@ -58,7 +58,7 @@ class MedicationQueryEntityNormalizer:
     )
     _TRAILING_PARTICLE = re.compile(
         r"(?:으로|에서|부터|까지|처럼|보다|에게|한테|하고|이며|이나|"
-        r"은|는|이|가|을|를|과|와|도|의|로)$"
+        r"이랑|랑|은|는|이|가|을|를|과|와|도|의|로)$"
     )
     _NON_ENTITY_PREDICATE = re.compile(
         r"^(?:"
@@ -182,6 +182,15 @@ class MedicationQueryEntityNormalizer:
         while previous != normalized:
             previous = normalized
             normalized = cls._TRAILING_PARTICLE.sub("", normalized)
+        if normalized.endswith("나"):
+            candidate = normalized[:-1]
+            if (
+                cls._is_food(candidate)
+                or cls._is_supplement(candidate)
+                or candidate in cls._BRAND_ALIASES
+                or cls._MEDICATION_PRODUCT_CUE.fullmatch(candidate)
+            ):
+                normalized = candidate
         return normalized.strip()
 
     @classmethod

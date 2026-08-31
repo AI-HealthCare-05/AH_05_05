@@ -1,11 +1,16 @@
 from contextlib import asynccontextmanager
 from datetime import date
 
+from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
+    MedicationKnowledgeQueryBuilder,
+)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunkMetadata,
     KnowledgeDocumentType,
+    KnowledgeRetrievalDiagnostics,
+    KnowledgeRetrievalResult,
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
@@ -96,6 +101,15 @@ class ExactNameGuideRepository:
         return MedicationGuideLookup()
 
 
+class RecordingGuideRepository:
+    def __init__(self) -> None:
+        self.requested_names: list[str] = []
+
+    async def find_by_name(self, product_name: str) -> MedicationGuideLookup:
+        self.requested_names.append(product_name)
+        return MedicationGuideLookup()
+
+
 class UnexpectedGuideRepository:
     async def find_by_name(self, product_name: str) -> MedicationGuideLookup:
         raise AssertionError(f"영양제 상호작용 질문에서 의약품 제품 조회를 호출했습니다: {product_name}")
@@ -118,9 +132,29 @@ class FakeKnowledgeRetriever:
         self,
         chunks: list[RetrievedKnowledgeChunk] | None = None,
         error: Exception | None = None,
+        diagnostics: KnowledgeRetrievalDiagnostics | None = None,
     ) -> None:
         self.chunks = chunks or []
         self.error = error
+        self.diagnostics = diagnostics or KnowledgeRetrievalDiagnostics(
+            raw_candidate_count=len(self.chunks),
+            entity_filtered_count=0,
+            broad_candidate_count=len(self.chunks),
+            fallback_used=False,
+            eligible_candidate_count=len(self.chunks),
+            rejected_below_score_count=0,
+            rejected_entity_mismatch_count=0,
+            rejected_pair_mismatch_count=0,
+            accepted_count=len(self.chunks),
+            max_raw_score=max(
+                (chunk.similarity_score for chunk in self.chunks),
+                default=None,
+            ),
+            max_score=max(
+                (chunk.similarity_score for chunk in self.chunks),
+                default=None,
+            ),
+        )
 
     async def search(
         self,
@@ -134,6 +168,22 @@ class FakeKnowledgeRetriever:
         if self.error is not None:
             raise self.error
         return self.chunks
+
+    async def search_with_diagnostics(
+        self,
+        *,
+        question: str,
+        medication_names: list[str],
+        supplement_names: list[str],
+        interaction_pair_keys: list[str],
+        limit: int,
+    ) -> KnowledgeRetrievalResult:
+        if self.error is not None:
+            raise self.error
+        return KnowledgeRetrievalResult(
+            chunks=self.chunks,
+            diagnostics=self.diagnostics,
+        )
 
 
 class PassthroughGenerator:
@@ -328,8 +378,17 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert "타이레놀정500밀리그람" not in serialized_outputs
     assert build_chunk().content not in serialized_outputs
     assert tracer.spans[3].outputs == {
+        "raw_candidate_count": 1,
+        "entity_filtered_count": 0,
+        "broad_candidate_count": 1,
+        "fallback_used": False,
+        "eligible_candidate_count": 1,
+        "rejected_below_score_count": 0,
+        "rejected_entity_mismatch_count": 0,
+        "rejected_pair_mismatch_count": 0,
         "accepted_count": 1,
         "rag_unavailable": False,
+        "max_raw_score": 0.82,
         "max_score": 0.82,
     }
     assert tracer.spans[-1].outputs == {
@@ -505,6 +564,28 @@ async def test_general_brand_name_removes_possessive_particle_before_lookup() ->
     assert "통증과 발열을 완화합니다" in result.answer
 
 
+async def test_guide_lookup_uses_only_normalized_drug_entity() -> None:
+    guide_repository = RecordingGuideRepository()
+    use_case = AnswerMedicationQuestionUseCase(
+        context_provider=FakeContextProvider(
+            ActiveIntakeContext(user_id=1),
+        ),
+        guide_repository=guide_repository,
+        interaction_rule_repository=FakeRuleRepository([]),
+        knowledge_retriever=FakeKnowledgeRetriever(),
+        answer_generator=PassthroughGenerator(),
+        grounded_claim_validator=PassthroughValidator(),
+    )
+
+    await use_case.execute(
+        build_request(
+            "내가 복용 중인 로사르탄의 복용법과 주의사항을 알려줘.",
+        )
+    )
+
+    assert guide_repository.requested_names == ["로사르탄"]
+
+
 async def test_supplement_evidence_prevents_partial_drug_name_clarification() -> None:
     supplement_chunk = build_chunk().model_copy(
         update={
@@ -587,9 +668,11 @@ async def test_supplement_pair_question_skips_medication_product_lookup() -> Non
 
 
 def test_product_name_candidates_are_bounded_for_long_questions() -> None:
+    question = " ".join(f"후보{index}" for index in range(100))
     candidates = AnswerMedicationQuestionUseCase._product_name_candidates(
-        " ".join(f"후보{index}" for index in range(100)),
+        question,
         context=ActiveIntakeContext(user_id=1),
+        query_plan=MedicationKnowledgeQueryBuilder().build(question),
     )
 
     assert len(candidates) <= 12
@@ -615,6 +698,9 @@ def test_this_medicine_does_not_choose_between_multiple_active_medications() -> 
     candidates = AnswerMedicationQuestionUseCase._product_name_candidates(
         "이 약은 어떻게 먹어?",
         context=context,
+        query_plan=MedicationKnowledgeQueryBuilder().build(
+            "이 약은 어떻게 먹어?",
+        ),
     )
 
     assert "아스피린" not in candidates
@@ -629,10 +715,7 @@ def test_avoidance_question_uses_interaction_route_without_assuming_pair_type() 
         "마그네슘 복용 중 아연을 피해야 하나요?",
     ]
 
-    assert all(
-        AnswerMedicationQuestionUseCase._is_interaction_question(question)
-        for question in questions
-    )
+    assert all(AnswerMedicationQuestionUseCase._is_interaction_question(question) for question in questions)
 
 
 def test_single_drug_contraindication_does_not_use_interaction_route() -> None:
