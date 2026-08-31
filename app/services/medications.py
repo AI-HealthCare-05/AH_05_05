@@ -36,12 +36,16 @@ DEFAULT_MEAL_TIMES = {
 
 class MedicationService:
     async def list_overviews(self, user: User) -> list[MedicationOverview]:
-        episodes = await CareEpisode.filter(
-            user_id=user.id,
-            status=CareEpisodeStatus.ACTIVE,
-            source_ocr_job_id__isnull=False,
-            medication_start_date__isnull=False,
-        ).prefetch_related("medications__slots").order_by("id")
+        episodes = (
+            await CareEpisode.filter(
+                user_id=user.id,
+                status=CareEpisodeStatus.ACTIVE,
+                source_ocr_job_id__isnull=False,
+                medication_start_date__isnull=False,
+            )
+            .prefetch_related("medications__slots")
+            .order_by("id")
+        )
         settings = await UserSettings.get_or_none(user_id=user.id)
         meal_times = self._meal_times(settings)
         today = datetime.now(config.TIMEZONE).date()
@@ -158,7 +162,9 @@ class MedicationService:
             raise ValueError("Medication overview requires a start date")
         start_slot = episode.medication_start_slot or MealSlot.MORNING
 
-        items = [MedicationService._medication_item(episode, medication, start_date, today) for medication in medications]
+        items = [
+            MedicationService._medication_item(episode, medication, start_date, today) for medication in medications
+        ]
         scheduled = [item for item in items if not item.as_needed]
         longest_days = max(
             (item.days for item in scheduled),

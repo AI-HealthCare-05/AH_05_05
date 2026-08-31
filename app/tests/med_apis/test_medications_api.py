@@ -284,12 +284,15 @@ class TestMedicationDoseAPI(TestCase):
 
             from app.models.medications import MedicationDose
 
-            assert await MedicationDose.filter(
-                user=user,
-                care_episode=episode,
-                dose_date=target_date,
-                slot=MealSlot.MORNING,
-            ).count() == 1
+            assert (
+                await MedicationDose.filter(
+                    user=user,
+                    care_episode=episode,
+                    dose_date=target_date,
+                    slot=MealSlot.MORNING,
+                ).count()
+                == 1
+            )
 
             payload["taken"] = False
             deleted = await client.post(DOSES_URL, json=payload, headers=headers)
