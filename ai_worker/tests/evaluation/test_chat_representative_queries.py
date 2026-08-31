@@ -1,0 +1,57 @@
+from collections import Counter
+from pathlib import Path
+
+import yaml
+
+from ai_worker.schemas.medication_chat import (
+    MedicationChatRoute,
+    MedicationChatSourceKind,
+)
+
+EVALUATION_PATH = (
+    Path(__file__).resolve().parents[3] / "data" / "knowledge" / "evaluation" / "chat_representative_queries.yaml"
+)
+
+
+def test_chat_representative_queries_define_balanced_source_contracts() -> None:
+    manifest = yaml.safe_load(EVALUATION_PATH.read_text(encoding="utf-8"))
+    cases = manifest["cases"]
+
+    assert manifest["schema_version"] == "chat-evaluation-v1"
+    assert manifest["dataset_version"] == "chat-representative-v1"
+    assert manifest["frontend_preset"] is False
+    assert len(cases) == 10
+    assert Counter(case["category"] for case in cases) == {
+        "RDB_ONLY": 3,
+        "VECTOR_ONLY": 3,
+        "RDB_AND_VECTOR": 4,
+    }
+
+    query_ids = [case["query_id"] for case in cases]
+    questions = [case["question"] for case in cases]
+    assert len(query_ids) == len(set(query_ids))
+    assert len(questions) == len(set(questions))
+
+    valid_routes = {route.value for route in MedicationChatRoute}
+    valid_sources = {kind.value for kind in MedicationChatSourceKind}
+
+    for case in cases:
+        expected = case["expected"]
+        required_sources = set(expected["required_source_kinds"])
+
+        assert case["preconditions"]
+        assert expected["route"] in valid_routes
+        assert expected["intent_tags"]
+        assert expected["normalized_entities"]
+        assert required_sources
+        assert required_sources <= valid_sources
+        assert expected["answer_requirements"]
+        assert expected["forbidden_claims"]
+
+        if case["category"] == "RDB_ONLY":
+            assert "PUBLIC_KNOWLEDGE" not in required_sources
+        elif case["category"] == "VECTOR_ONLY":
+            assert required_sources == {"PUBLIC_KNOWLEDGE"}
+        else:
+            assert "PUBLIC_KNOWLEDGE" in required_sources
+            assert required_sources - {"PUBLIC_KNOWLEDGE"}

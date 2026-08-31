@@ -7,10 +7,15 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatProgress,
     MedicationChatProgressStage,
 )
+from app.core.exceptions import ChatAnswerTimeoutError
 from app.dependencies.chat import get_chat_application_service
 from app.dependencies.security import get_request_user
 from app.main import app
-from app.services.chat import ChatSourceView, SendChatResult
+from app.services.chat import (
+    CHAT_ANSWER_TIMEOUT_SECONDS,
+    ChatSourceView,
+    SendChatResult,
+)
 
 
 class FakeChatApplicationService:
@@ -47,6 +52,11 @@ class FakeChatApplicationService:
                 )
             ],
         )
+
+
+class TimeoutChatApplicationService:
+    async def send(self, *, user, command, progress_callback=None):
+        raise ChatAnswerTimeoutError
 
 
 async def test_post_chat_returns_camel_case_response() -> None:
@@ -121,6 +131,34 @@ async def test_post_chat_stream_returns_progress_then_verified_final_answer() ->
     assert '"answer":"확인 가능한 근거를 바탕으로 안내합니다."' in response.text
     assert response.text.index("질문 확인 중") < response.text.index("안전 확인 중")
     assert response.text.index("안전 확인 중") < response.text.index("event: complete")
+
+
+async def test_post_chat_stream_returns_user_safe_timeout_event() -> None:
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
+    app.dependency_overrides[get_chat_application_service] = lambda: (TimeoutChatApplicationService())
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(
+                "/api/v1/chat/stream",
+                json={
+                    "requestId": "6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+                    "recordId": None,
+                    "conversationId": None,
+                    "message": "타이레놀은 어떤 약인가요?",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "event: error\n" in response.text
+    assert '"code":"API_TIMEOUT"' in response.text
+    assert ('"message":"답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."') in response.text
+    assert "event: complete\n" not in response.text
 
 
 async def test_post_chat_rejects_invalid_request_without_calling_service() -> None:
@@ -214,12 +252,13 @@ def test_chat_endpoints_extend_timeout_for_external_ai_calls() -> None:
     }
 
     assert route_timeouts == {
-        "/api/v1/chat": 20.0,
-        "/api/v1/chat/stream": 20.0,
+        "/api/v1/chat": 31.0,
+        "/api/v1/chat/stream": 31.0,
     }
+    assert CHAT_ANSWER_TIMEOUT_SECONDS == 30.0
 
 
 def test_chat_openapi_documents_timeout_response() -> None:
     response_spec = app.openapi()["paths"]["/api/v1/chat"]["post"]["responses"]
 
-    assert response_spec["504"]["description"] == ("20초 안에 답변 생성을 완료하지 못함")
+    assert response_spec["504"]["description"] == ("30초 안에 답변 생성을 완료하지 못함")
