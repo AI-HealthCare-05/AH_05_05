@@ -16,6 +16,37 @@ export function getActiveSection(pathname, fallbackSection) {
   return PAGE_SECTIONS[filename] ?? fallbackSection;
 }
 
+export function getAdminDisplayName(admin = {}) {
+  const name = typeof admin.name === "string" ? admin.name.trim() : "";
+  const email = typeof admin.email === "string" ? admin.email.trim() : "";
+  return name || email || "관리자";
+}
+
+export function renderAdminTopbar(root = document, admin = session.admin()) {
+  const existing = root.querySelector?.("[data-admin-topbar]");
+  if (existing) return existing;
+  if (!root.body?.prepend || !root.createElement) return null;
+
+  const topbar = root.createElement("header");
+  topbar.className = "admin-topbar";
+  topbar.setAttribute("data-admin-topbar", "");
+  topbar.setAttribute("aria-label", "관리자 상단 영역");
+
+  const user = root.createElement("div");
+  user.className = "admin-topbar-user";
+  user.setAttribute("aria-label", "로그인 사용자");
+
+  const userName = root.createElement("strong");
+  userName.className = "admin-topbar-user-name";
+  userName.setAttribute("data-login-user-name", "");
+  userName.textContent = getAdminDisplayName(admin);
+
+  user.append(userName);
+  topbar.append(user);
+  root.body.prepend(topbar);
+  return topbar;
+}
+
 export function markActiveNavigation(sidebar, activeSection) {
   sidebar.querySelectorAll("[data-nav]").forEach((link) => {
     const isActive = link.dataset.nav === activeSection;
@@ -73,9 +104,13 @@ export async function loadSidebar(root = document, fetcher = fetch) {
 }
 
 if (typeof document !== "undefined") {
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => loadSidebar(), { once: true });
-  } else {
+  const initializeAdminChrome = () => {
+    renderAdminTopbar();
     loadSidebar();
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeAdminChrome, { once: true });
+  } else {
+    initializeAdminChrome();
   }
 }

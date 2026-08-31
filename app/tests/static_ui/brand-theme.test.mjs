@@ -52,7 +52,7 @@ test("every administrator entry page loads the same stylesheet cache version", a
   for (const page of pages) {
     const html = await readStatic(page);
     for (const stylesheet of ["styles", "management", "overlays"]) {
-      assert.match(html, new RegExp(`href="\\.\\.\\/css\\/${stylesheet}\\.css\\?v=20260831-3"`), page);
+      assert.match(html, new RegExp(`href="\\.\\.\\/css\\/${stylesheet}\\.css\\?v=20260831-4"`), page);
     }
   }
 });
