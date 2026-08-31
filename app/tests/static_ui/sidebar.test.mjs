@@ -178,6 +178,7 @@ test("administrator pages expose a shared fixed top area", async () => {
   assert.match(source, /userRole\.textContent\s*=\s*`\(\$\{getAdminRoleLabel\(admin\.role\)\}\)`/);
   assert.match(source, /relocateSidebarBrand\(sidebar, root\)/);
   assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*right:\s*0;/s);
+  assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*background:\s*var\(--brand-primary-soft\);[^}]*border-bottom:\s*1px solid #cceeea;/s);
   assert.match(managementStyles, /\.admin-topbar-brand\s*\{[^}]*display:\s*flex;/s);
   assert.match(managementStyles, /\.admin-topbar\s+\.sidebar-brand\s*\{[^}]*width:\s*auto;/s);
   assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*font-weight:\s*800;/s);
