@@ -249,6 +249,103 @@ a {
   font-weight: 600;
 }
 
+.member-trend {
+  align-items: stretch;
+  background: #f7f8fa;
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  height: 94px;
+  overflow: visible;
+  padding: 8px;
+}
+
+.alarm-trend {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.member-trend-column {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  outline: none;
+  position: relative;
+}
+
+.member-trend-bar-area {
+  align-items: flex-end;
+  display: flex;
+  height: 54px;
+  justify-content: center;
+  width: 100%;
+}
+
+.member-trend-bar {
+  background: #1c64f2;
+  border-radius: 4px;
+  width: 8px;
+}
+
+.alarm-trend-bar {
+  background: #0e9384;
+  border-radius: 4px;
+  width: 8px;
+}
+
+.member-trend-date {
+  color: #6b7280;
+  font-size: 9px;
+  line-height: 1;
+  margin-top: 8px;
+  transform: rotate(-35deg);
+  white-space: nowrap;
+}
+
+.member-trend-tooltip {
+  background: #111827;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  left: 50%;
+  line-height: 1.4;
+  opacity: 0;
+  padding: 6px 8px;
+  pointer-events: none;
+  position: absolute;
+  top: -34px;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+  visibility: hidden;
+  white-space: nowrap;
+  z-index: 20;
+}
+
+.member-trend-column:first-child .member-trend-tooltip {
+  left: 0;
+  transform: translate(0, 4px);
+}
+
+.member-trend-column:last-child .member-trend-tooltip {
+  left: auto;
+  right: 0;
+  transform: translate(0, 4px);
+}
+
+.member-trend-column:hover .member-trend-tooltip,
+.member-trend-column:focus .member-trend-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+
+.member-trend-column:first-child:hover .member-trend-tooltip,
+.member-trend-column:first-child:focus .member-trend-tooltip,
+.member-trend-column:last-child:hover .member-trend-tooltip,
+.member-trend-column:last-child:focus .member-trend-tooltip {
+  transform: translate(0, 0);
+}
+
 @media (max-width: 480px) {
   .login-page {
     padding: 16px;

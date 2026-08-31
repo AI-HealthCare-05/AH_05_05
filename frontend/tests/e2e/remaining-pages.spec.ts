@@ -61,14 +61,44 @@ test('챗봇 답변의 문단 줄바꿈을 화면에서도 유지한다', async 
   await expect(answer).toContainText(/알려주세요\.\n\n임의로 중단하지 마세요\./);
 });
 
-test('게스트 마이페이지는 로그인 유도와 약관·개인정보만 보여준다', async ({ page }) => {
+test('로그인하지 않은 마이 방문은 뒤로 가도 마이페이지를 복원하지 않고 로그인으로 이동한다', async ({ page }) => {
+  await page.goto('/home');
+  await page.getByRole('button', { name: '마이', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/login$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/home$/);
+});
+
+test('개발용 게스트 마이페이지는 리디렉션하지 않고 로그인 유도 카드를 보여주지 않는다', async ({ page }) => {
   await page.goto('/dev/my-guest');
 
-  await expect(page.getByText('로그인하지 않았어요')).toBeVisible();
-  await expect(page.getByText('이용약관')).toBeVisible();
-  await expect(page.getByText('개인정보 처리 안내')).toBeVisible();
+  await expect(page).toHaveURL(/\/dev\/my-guest$/);
+  await expect(page.getByRole('heading', { name: '마이페이지' })).toBeVisible();
+  await expect(page.getByText('로그인하지 않았어요')).toHaveCount(0);
+  await expect(page.getByText('이용약관')).toHaveCount(0);
+  await expect(page.getByText('개인정보 처리 안내')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '내 관리' })).toHaveCount(0);
   await expect(page.getByRole('switch')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: '주요 화면' })).toBeVisible();
+});
+
+test('로그인 페이지는 법적 안내와 게스트 안전 하단 탭을 제공한다', async ({ page }) => {
+  await page.goto('/login');
+
+  await expect(page.getByRole('link', { name: '이용약관' })).toHaveAttribute('href', '/terms');
+  await expect(page.getByRole('link', { name: '개인정보 처리 안내' })).toHaveAttribute(
+    'href',
+    '/privacy',
+  );
+  await expect(page.getByRole('button', { name: '마이', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.getByRole('button', { name: '복약', exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.getByRole('button', { name: '홈', exact: true }).click();
+  await expect(page).toHaveURL(/\/home$/);
 });
 
 test('로그인 마이페이지는 내 관리와 알림 토글, 계정을 보여준다', async ({ page }) => {

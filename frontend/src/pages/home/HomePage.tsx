@@ -391,14 +391,11 @@ function LoggedInMedicationContent({
 }) {
   if (state === 'empty') {
     return (
-      <Card className="gap-4 bg-primary-bg p-5">
-        <div>
-          <p className="text-xl font-bold text-foreground">약봉투를 등록해 주세요</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            사진 한 장이면 오늘부터 알림을 드릴게요.
-          </p>
-        </div>
-        <Button onClick={onUpload}>약봉투 등록</Button>
+      <Card title="오늘의 복약" className="gap-4 bg-primary-bg p-5">
+        <p className="text-sm text-muted-foreground">
+          복약정보를 등록하시면 시간에 맞춰 알림을 받으실 수 있어요.
+        </p>
+        <Button onClick={onUpload}>약봉투 등록하기</Button>
       </Card>
     );
   }

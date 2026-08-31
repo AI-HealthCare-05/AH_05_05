@@ -5,7 +5,7 @@ import {
   getMedicationOverviews,
   type MedicationOverview,
 } from '@/entities/medication';
-import { BottomTabbar, Card, Header, type TabKey } from '@/shared/ui';
+import { BottomTabbar, Button, Card, Header, type TabKey } from '@/shared/ui';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -69,9 +69,8 @@ export function MedicationsPage({
             className="min-h-44 animate-pulse rounded-card bg-muted-bg"
           />
         ) : overviews.length === 0 ? (
-          <Card className="gap-3 p-5">
-            <p className="text-xl font-bold text-foreground">등록한 처방이 없어요</p>
-            <p className="text-sm text-muted-foreground">약봉투를 등록하면 회차별로 모아볼 수 있어요.</p>
+          <Card title="복용약을 등록해 주세요." className="gap-4 p-5">
+            <Button onClick={() => navigate('/document-upload')}>약봉투 등록하기</Button>
           </Card>
         ) : (
           <section className="flex flex-col gap-3" aria-labelledby="episode-list-title">

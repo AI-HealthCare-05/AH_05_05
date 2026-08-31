@@ -273,8 +273,9 @@ async def get_dashboard_summary(
     - `signupTrend` 는 기간과 무관하게 항상 최근 14일이고, 가입자가 없는 날도 0 으로 포함된다.
     - `status` 는 정지 비율 기준 경보 단계다(NORMAL / WARNING / DANGER).
 
-    OCR·챗봇·알림·시스템 지표는 아직 데이터가 없어 응답에 넣지 않았다.
-    0 으로 채우면 화면이 정상값으로 그려 오해를 부른다.
+    알림 발송 현황은 ALARM 백그라운드 작업의 대기·성공·실패 및 최근 7일 성공 건수를 제공한다.
+    OCR 문서 처리 현황은 `ocr_jobs`의 전체 상태 합계와 `QUEUED`·`COMPLETE`·`FAILED`
+    상태별 건수를 제공한다. 챗봇 지표는 아직 데이터가 없어 응답에 넣지 않았다.
 
     - **422 VALIDATION_ERROR** — 지원하지 않는 `period`
     """

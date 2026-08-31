@@ -1,8 +1,8 @@
 /**
  * 운영 대시보드.
  *
- * 회원 현황 카드만 GET /api/v1/admin/dashboard/summary 에 연결한다.
- * OCR·챗봇·알림·시스템 카드는 백엔드에 지표가 없어 목 데이터를 그대로 둔다 —
+ * 회원 현황, 알림 발송 현황과 OCR 문서 처리를 GET /api/v1/admin/dashboard/summary 에 연결한다.
+ * 챗봇 카드는 백엔드에 지표가 없어 목 데이터를 그대로 둔다 —
  * 0 으로 채우면 화면이 정상값으로 그려 "기능이 죽었다"는 오해를 부른다.
  */
 
@@ -31,14 +31,6 @@ export function signupsLabel(periodLabel) {
 // 카드 안에서 이미 쓰고 있는 색이다. 새 색을 만들지 않는다.
 const CHANGE_COLORS = { up: "#16a34a", down: "#dc2626", flat: "#6b7280" };
 
-/**
- * 정지 비율 경보 단계별 색.
- *
- * 단계는 서버가 판정한 status 를 그대로 쓴다. 임계치를 프론트에서 다시 계산하면
- * config 값을 바꿨을 때 화면과 서버 판단이 어긋난다.
- */
-const ALERT_COLORS = { NORMAL: "#6b7280", WARNING: "#d97706", DANGER: "#dc2626" };
-
 // 막대 높이. 컨테이너가 70px 이고 패딩이 8px 씩이라 목 데이터의 최대 막대와 같은 52px 로 맞춘다.
 const TREND_MAX_HEIGHT = 52;
 // 0 명인 날도 축이 보이게 남기는 최소 높이. 전부 0 이면 빈 상자로 보인다.
@@ -46,14 +38,29 @@ const TREND_MIN_HEIGHT = 2;
 
 const PLACEHOLDER = "—";
 
-export function selectPeriod(periods, selected) {
-  return periods.map((period) => (period === selected ? "active" : "inactive"));
+/** 가입 추이 API 데이터를 날짜 축·막대·도움말에 공통으로 사용할 표시 데이터로 바꾼다. */
+export function buildTrendItems(points, unit = "명") {
+  const max = Math.max(...points.map((point) => Number(point.count) || 0), 0);
+
+  return points.map((point) => {
+    const count = Number(point.count) || 0;
+    const fullDate = formatDate(point.date);
+    const scaled = max > 0 ? Math.round((count / max) * TREND_MAX_HEIGHT) : 0;
+
+    return {
+      dateLabel: fullDate.slice(5),
+      tooltip: `${fullDate} · ${count}${unit}`,
+      height: Math.max(TREND_MIN_HEIGHT, scaled),
+    };
+  });
 }
 
-export function formatRefreshTime(date) {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `최종 점검: ${hours}:${minutes}`;
+export function buildAlarmTrendItems(points) {
+  return buildTrendItems(points, "건");
+}
+
+export function selectPeriod(periods, selected) {
+  return periods.map((period) => (period === selected ? "active" : "inactive"));
 }
 
 /**
@@ -64,16 +71,21 @@ export function changeBadge(rate) {
   if (rate === null || rate === undefined) return { text: PLACEHOLDER, color: CHANGE_COLORS.flat };
   if (rate > 0) return { text: `▲ +${rate}%`, color: CHANGE_COLORS.up };
   if (rate < 0) return { text: `▼ ${rate}%`, color: CHANGE_COLORS.down };
-  return { text: "— 0%", color: CHANGE_COLORS.flat };
+  return { text: "0%", color: CHANGE_COLORS.flat };
 }
 
-/**
- * 활성·정지 비율(%). total = active + suspended 라서 두 값의 합이 100 이 된다.
- * 회원이 0명이면 나눌 수 없다.
- */
+/** 비율(%). 분모가 0이면 나눌 수 없다. */
 export function shareOfTotal(value, total) {
   if (!total) return null;
   return Math.round((value / total) * 100);
+}
+
+/** 탈퇴율 분모. API가 제공하는 네 계정 상태를 모두 포함한다. */
+export function accountTotal(members) {
+  return [members.active, members.pending, members.suspended, members.withdrawn].reduce(
+    (total, value) => total + (Number(value) || 0),
+    0,
+  );
 }
 
 function formatCount(value) {
@@ -86,26 +98,45 @@ function setBadge(element, { text, color }) {
   element.style.color = color;
 }
 
-/**
- * 14일 가입 추이. 막대는 HTML 에 이미 14개 있고 높이만 바꾼다.
- * 요소를 새로 만들면 승인받은 태그 구조를 건드리게 된다.
- */
-function renderTrend(container, points) {
-  const bars = [...container.children];
-  if (!bars.length) return;
+/** 14일 가입 추이. 날짜가 표시된 전체 열에서 도움말을 열 수 있게 동적으로 구성한다. */
+function renderTrend(
+  container,
+  points,
+  {
+    itemBuilder = buildTrendItems,
+    barClassName = "member-trend-bar",
+    tooltipIdPrefix = "member-trend-tooltip",
+  } = {},
+) {
+  container.replaceChildren();
 
-  const max = Math.max(...points.map((point) => point.count), 0);
+  itemBuilder(points).forEach((item, index) => {
+    const column = document.createElement("div");
+    column.className = "member-trend-column";
+    column.tabIndex = 0;
+    column.setAttribute("aria-label", item.tooltip);
 
-  bars.forEach((bar, index) => {
-    const point = points[index];
-    if (!point) {
-      bar.style.height = `${TREND_MIN_HEIGHT}px`;
-      bar.removeAttribute("title");
-      return;
-    }
-    const scaled = max > 0 ? Math.round((point.count / max) * TREND_MAX_HEIGHT) : 0;
-    bar.style.height = `${Math.max(TREND_MIN_HEIGHT, scaled)}px`;
-    bar.title = `${formatDate(point.date)} · ${point.count}명`;
+    const barArea = document.createElement("div");
+    barArea.className = "member-trend-bar-area";
+
+    const bar = document.createElement("div");
+    bar.className = barClassName;
+    bar.style.height = `${item.height}px`;
+    barArea.append(bar);
+
+    const date = document.createElement("span");
+    date.className = "member-trend-date";
+    date.textContent = item.dateLabel;
+
+    const tooltip = document.createElement("span");
+    tooltip.className = "member-trend-tooltip";
+    tooltip.id = `${tooltipIdPrefix}-${index}`;
+    tooltip.role = "tooltip";
+    tooltip.textContent = item.tooltip;
+    column.setAttribute("aria-describedby", tooltip.id);
+
+    column.append(barArea, date, tooltip);
+    container.append(column);
   });
 }
 
@@ -121,12 +152,19 @@ function initializeDashboard() {
     signupsRate: document.querySelector("[data-member-signups-rate]"),
     active: document.querySelector("[data-member-active]"),
     activeRatio: document.querySelector("[data-member-active-ratio]"),
-    suspended: document.querySelector("[data-member-suspended]"),
-    suspendedRatio: document.querySelector("[data-member-suspended-ratio]"),
+    withdrawn: document.querySelector("[data-member-withdrawn]"),
+    withdrawnRatio: document.querySelector("[data-member-withdrawn-ratio]"),
     signupsLabel: document.querySelector("[data-member-signups-label]"),
+    alarmQueued: document.querySelector("[data-alarm-queued]"),
+    alarmCompleted: document.querySelector("[data-alarm-completed]"),
+    alarmFailed: document.querySelector("[data-alarm-failed]"),
+    ocrTotal: document.querySelector("[data-ocr-total]"),
+    ocrQueued: document.querySelector("[data-ocr-queued]"),
+    ocrCompleted: document.querySelector("[data-ocr-completed]"),
+    ocrFailed: document.querySelector("[data-ocr-failed]"),
   };
   const trend = document.querySelector("[data-member-trend]");
-  const refreshTime = document.querySelector("[data-refresh-time]");
+  const alarmTrend = document.querySelector("[data-alarm-trend]");
 
   const periodButtons = [...document.querySelectorAll("[data-period]")];
   const periodLabels = periodButtons.map((button) => button.dataset.period);
@@ -141,14 +179,27 @@ function initializeDashboard() {
   };
 
   const clearNumbers = () => {
-    [slots.total, slots.signups, slots.active, slots.suspended].forEach((slot) => {
+    [
+      slots.total,
+      slots.signups,
+      slots.active,
+      slots.withdrawn,
+      slots.alarmQueued,
+      slots.alarmCompleted,
+      slots.alarmFailed,
+      slots.ocrTotal,
+      slots.ocrQueued,
+      slots.ocrCompleted,
+      slots.ocrFailed,
+    ].forEach((slot) => {
       if (slot) slot.textContent = PLACEHOLDER;
     });
-    [slots.totalRate, slots.signupsRate, slots.activeRatio, slots.suspendedRatio].forEach((slot) =>
+    [slots.totalRate, slots.signupsRate, slots.activeRatio, slots.withdrawnRatio].forEach((slot) =>
       setBadge(slot, { text: PLACEHOLDER, color: CHANGE_COLORS.flat }),
     );
     // 숫자만 비우고 차트를 두면 목 데이터 막대가 실제 추이처럼 남는다.
     if (trend) renderTrend(trend, []);
+    if (alarmTrend) renderTrend(alarmTrend, []);
   };
 
   const render = (body) => {
@@ -157,26 +208,39 @@ function initializeDashboard() {
     if (slots.total) slots.total.textContent = formatCount(members.total);
     if (slots.signups) slots.signups.textContent = formatCount(members.newSignups);
     if (slots.active) slots.active.textContent = formatCount(members.active);
-    if (slots.suspended) slots.suspended.textContent = formatCount(members.suspended);
+    if (slots.withdrawn) slots.withdrawn.textContent = formatCount(members.withdrawn);
 
     setBadge(slots.totalRate, changeBadge(members.totalChangeRate));
     setBadge(slots.signupsRate, changeBadge(members.newSignupsChangeRate));
 
     const activeShare = shareOfTotal(members.active, members.total);
-    const suspendedShare = shareOfTotal(members.suspended, members.total);
+    const withdrawnShare = shareOfTotal(members.withdrawn, accountTotal(members));
     setBadge(slots.activeRatio, {
-      text: activeShare === null ? PLACEHOLDER : `— ${activeShare}%`,
+      text: activeShare === null ? PLACEHOLDER : `${activeShare}%`,
       color: CHANGE_COLORS.flat,
     });
-    setBadge(slots.suspendedRatio, {
-      text: suspendedShare === null ? PLACEHOLDER : `— ${suspendedShare}%`,
-      color: ALERT_COLORS[members.status] ?? CHANGE_COLORS.flat,
+    setBadge(slots.withdrawnRatio, {
+      text: withdrawnShare === null ? PLACEHOLDER : `${withdrawnShare}%`,
+      color: CHANGE_COLORS.flat,
     });
 
     if (trend) renderTrend(trend, members.signupTrend);
-    // 시각은 서버가 집계한 시점(generatedAt)이다. 브라우저 시계를 쓰면 실제 집계 시점과 벌어진다.
-    if (refreshTime) refreshTime.textContent = formatRefreshTime(new Date(body.generatedAt));
-
+    const notifications = body.alarmNotifications;
+    if (slots.alarmQueued) slots.alarmQueued.textContent = formatCount(notifications.queued);
+    if (slots.alarmCompleted) slots.alarmCompleted.textContent = formatCount(notifications.completed);
+    if (slots.alarmFailed) slots.alarmFailed.textContent = formatCount(notifications.failed);
+    if (alarmTrend) {
+      renderTrend(alarmTrend, notifications.completedTrend, {
+        itemBuilder: buildAlarmTrendItems,
+        barClassName: "alarm-trend-bar",
+        tooltipIdPrefix: "alarm-trend-tooltip",
+      });
+    }
+    const ocrDocuments = body.ocrDocuments;
+    if (slots.ocrTotal) slots.ocrTotal.textContent = formatCount(ocrDocuments.total);
+    if (slots.ocrQueued) slots.ocrQueued.textContent = formatCount(ocrDocuments.queued);
+    if (slots.ocrCompleted) slots.ocrCompleted.textContent = formatCount(ocrDocuments.completed);
+    if (slots.ocrFailed) slots.ocrFailed.textContent = formatCount(ocrDocuments.failed);
     setState(members.total === 0 ? "집계된 회원이 없습니다" : "");
   };
 
