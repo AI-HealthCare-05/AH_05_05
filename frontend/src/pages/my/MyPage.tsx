@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
@@ -55,6 +55,7 @@ export function MyPage({
   const navigate = useNavigate();
   const { authenticated, signOut } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
+  const logoutNavigationRef = useRef(false);
   const [notifySettings, setNotifySettings] = useState<NotifySettings | null>(null);
   const [notifyLoadError, setNotifyLoadError] = useState<string | null>(null);
   const [notifyActionError, setNotifyActionError] = useState<{
@@ -70,7 +71,11 @@ export function MyPage({
   const pushUnsupported = pushPermission === 'unsupported';
 
   useEffect(() => {
-    if (authenticatedOverride === undefined && !authenticated) {
+    if (
+      authenticatedOverride === undefined &&
+      !authenticated &&
+      !logoutNavigationRef.current
+    ) {
       navigate('/login', { replace: true });
     }
   }, [authenticated, authenticatedOverride, navigate]);
@@ -250,6 +255,12 @@ export function MyPage({
     navigate(TAB_ROUTES[key]);
   }
 
+  function handleSignOut() {
+    logoutNavigationRef.current = true;
+    signOut();
+    navigate('/home', { replace: true });
+  }
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="마이페이지" />
@@ -344,10 +355,7 @@ export function MyPage({
               <Card className="p-4">
                 <Button
                   variant="secondary"
-                  onClick={() => {
-                    signOut();
-                    navigate('/home', { replace: true });
-                  }}
+                  onClick={handleSignOut}
                 >
                   로그아웃
                 </Button>

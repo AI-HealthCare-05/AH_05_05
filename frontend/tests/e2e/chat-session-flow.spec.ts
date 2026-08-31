@@ -146,12 +146,14 @@ test('로그아웃 뒤 다른 계정으로 로그인하면 이전 계정 대화�
   await createConversation(page, '로그아웃 전 상담 질문');
   await page.getByRole('button', { name: '마이', exact: true }).click();
   await page.getByRole('button', { name: '로그아웃' }).click();
+  await expect(page).toHaveURL(/\/home$/);
 
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
   await page.getByRole('button', { name: '로그인 · 회원가입' }).click();
   await page.getByLabel('이메일').fill(OTHER_MOCK_ACCOUNT);
   await page.getByLabel('비밀번호').fill('password1234');
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+  await expect(page).toHaveURL(/\/home$/);
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
 
   await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
