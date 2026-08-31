@@ -359,13 +359,13 @@ export function MyPage({
                   <Button variant="secondary" onClick={handleSignOut}>
                     로그아웃
                   </Button>
-                  <button
-                    type="button"
-                    className="min-h-touch self-center px-4 text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  <Button
+                    variant="secondary"
+                    className="text-danger-strong"
                     onClick={() => setWithdrawDialogOpen(true)}
                   >
                     회원 탈퇴
-                  </button>
+                  </Button>
                 </div>
               </Card>
             </section>
