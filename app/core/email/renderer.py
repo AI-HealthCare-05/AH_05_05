@@ -5,7 +5,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from app.core.email.payload import EmailJobPayload, EmailTemplate
 from app.core.email.smtp_sender import EmailMessage
 
-ADMIN_TEMPORARY_PASSWORD_SUBJECT = "[Ozcoding AI Health] 임시비밀번호 안내"
+ADMIN_TEMPORARY_PASSWORD_SUBJECT = "[RxVita] 임시비밀번호 안내"
 
 
 class EmailTemplateRenderer:
