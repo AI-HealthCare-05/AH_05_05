@@ -153,8 +153,8 @@ test("administrator display name prefers the signed-in profile name", async () =
   assert.equal(getAdminDisplayName({ name: "김관리" }), "김관리");
   assert.equal(getAdminDisplayName({ email: "admin@rxvita.test" }), "admin@rxvita.test");
   assert.equal(getAdminDisplayName({}), "관리자");
-  assert.equal(getAdminRoleLabel("ADMIN"), "최고 관리자");
-  assert.equal(getAdminRoleLabel("STAFF"), "일반 관리자");
+  assert.equal(getAdminRoleLabel("ADMIN"), "ADMIN");
+  assert.equal(getAdminRoleLabel("STAFF"), "STAFF");
   assert.equal(getAdminRoleLabel("AUDITOR"), "AUDITOR");
   assert.equal(getAdminRoleLabel(), "권한 미지정");
 });
@@ -185,7 +185,7 @@ test("administrator pages expose a shared fixed top area", async () => {
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-6"/, page);
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-7"/, page);
   }
 });
 

@@ -23,8 +23,6 @@ export function getAdminDisplayName(admin = {}) {
 }
 
 export function getAdminRoleLabel(role) {
-  if (role === "ADMIN") return "최고 관리자";
-  if (role === "STAFF") return "일반 관리자";
   return role || "권한 미지정";
 }
 
