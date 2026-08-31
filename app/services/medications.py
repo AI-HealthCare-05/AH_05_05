@@ -41,7 +41,6 @@ class MedicationService:
             status=CareEpisodeStatus.ACTIVE,
             source_ocr_job_id__isnull=False,
             medication_start_date__isnull=False,
-            medication_start_slot__isnull=False,
         ).prefetch_related("medications__slots").order_by("id")
         settings = await UserSettings.get_or_none(user_id=user.id)
         meal_times = self._meal_times(settings)
@@ -155,12 +154,16 @@ class MedicationService:
         today: date,
     ) -> MedicationOverview:
         start_date = episode.medication_start_date
-        start_slot = episode.medication_start_slot
-        if start_date is None or start_slot is None:
-            raise ValueError("Medication overview requires a saved start point")
+        if start_date is None:
+            raise ValueError("Medication overview requires a start date")
+        start_slot = episode.medication_start_slot or MealSlot.MORNING
 
         items = [MedicationService._medication_item(episode, medication, start_date, today) for medication in medications]
-        longest_days = max(item.days for item in items)
+        scheduled = [item for item in items if not item.as_needed]
+        longest_days = max(
+            (item.days for item in scheduled),
+            default=max(item.days for item in items),
+        )
         end_date = start_date + timedelta(days=longest_days - 1)
         return MedicationOverview(
             record_id=episode.id,
