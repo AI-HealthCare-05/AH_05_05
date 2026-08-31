@@ -1,6 +1,10 @@
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { DoseRecord, MealSlot, MedicationOverview } from '@/entities/medication';
 import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Card } from '@/shared/ui';
+
+const DAYS_PER_PAGE = 10;
 
 interface MedicationRecordGridProps {
   overviews: MedicationOverview[];
@@ -19,10 +23,17 @@ export function MedicationRecordGrid({
   animatedRecordKey,
   onMarkTaken,
 }: MedicationRecordGridProps) {
-  const dates = getDateRange(
+  const allDates = getDateRange(
     overviews.map((overview) => overview.start.date).sort()[0] ?? '',
     overviews.map((overview) => overview.endDate).sort().at(-1) ?? '',
   );
+  const today = formatLocalIsoDate(now);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const datePages = getDatePages(allDates);
+  const pageIndex = getDatePageIndex(allDates, selectedDate);
+  const dates = datePages[pageIndex] ?? [];
+  const hasPreviousPage = pageIndex > 0;
+  const hasNextPage = pageIndex < datePages.length - 1;
   const slots = SLOT_ORDER.filter((slot) =>
     overviews.some((overview) =>
       overview.medications.some(
@@ -35,8 +46,7 @@ export function MedicationRecordGrid({
       .filter((record) => record.taken)
       .map((record) => `${record.recordId}:${record.date}:${record.slot}`),
   );
-  const today = formatLocalIsoDate(now);
-  const gridTemplateColumns = `minmax(2.75rem, auto) repeat(${dates.length}, minmax(0, var(--spacing-record-cell-w)))`;
+  const gridTemplateColumns = `max-content repeat(${dates.length}, minmax(0, var(--spacing-record-cell-w)))`;
 
   return (
     <section aria-label="복약 기록">
@@ -44,9 +54,38 @@ export function MedicationRecordGrid({
         <div className="flex flex-col gap-4">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-xl font-bold text-foreground">복약 기록</h2>
-            <p className="text-sm text-muted-foreground tnum">
-              {formatPeriod(dates[0] ?? '', dates.at(-1) ?? '')}
-            </p>
+            <nav aria-label="복약 기록 기간 이동" className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="이전 10일"
+                disabled={!hasPreviousPage}
+                className="flex size-10 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-muted-bg disabled:text-disabled-foreground disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  const previousDate = datePages[pageIndex - 1]?.[0];
+                  if (previousDate) setSelectedDate(previousDate);
+                }}
+              >
+                <ChevronLeft aria-hidden className="size-5" />
+              </button>
+              <p
+                aria-live="polite"
+                className="min-w-28 text-center text-sm text-muted-foreground tnum"
+              >
+                {formatPeriod(dates[0] ?? '', dates.at(-1) ?? '')}
+              </p>
+              <button
+                type="button"
+                aria-label="다음 10일"
+                disabled={!hasNextPage}
+                className="flex size-10 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-muted-bg disabled:text-disabled-foreground disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  const nextDate = datePages[pageIndex + 1]?.[0];
+                  if (nextDate) setSelectedDate(nextDate);
+                }}
+              >
+                <ChevronRight aria-hidden className="size-5" />
+              </button>
+            </nav>
           </div>
 
           <div
@@ -232,6 +271,21 @@ function getDateRange(from: string, to: string): string[] {
     dates.push(formatLocalIsoDate(cursor));
   }
   return dates;
+}
+
+function getDatePages(dates: string[]): string[][] {
+  const pages: string[][] = [];
+  for (let index = 0; index < dates.length; index += DAYS_PER_PAGE) {
+    pages.push(dates.slice(index, index + DAYS_PER_PAGE));
+  }
+  return pages;
+}
+
+function getDatePageIndex(dates: string[], selectedDate: string): number {
+  if (dates.length === 0) return 0;
+  const selectedIndex = dates.findIndex((date) => date >= selectedDate);
+  const nearestIndex = selectedIndex === -1 ? dates.length - 1 : selectedIndex;
+  return Math.floor(nearestIndex / DAYS_PER_PAGE);
 }
 
 function daysBetween(from: string, to: string): number {
