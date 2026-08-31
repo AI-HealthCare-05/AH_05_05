@@ -122,6 +122,7 @@ class FakeRuleRepository:
         self,
         *,
         context: ActiveIntakeContext,
+        query_entity_names: list[str] | None = None,
     ) -> list[InteractionRuleFact]:
         return self.rules
 

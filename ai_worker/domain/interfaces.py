@@ -137,6 +137,7 @@ class InteractionRuleRepository(Protocol):
         self,
         *,
         context: ActiveIntakeContext,
+        query_entity_names: list[str] | None = None,
     ) -> list[InteractionRuleFact]: ...
 
 

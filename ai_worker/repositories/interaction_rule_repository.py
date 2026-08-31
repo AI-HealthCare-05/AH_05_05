@@ -1,9 +1,11 @@
+from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
 )
 from app.models.enums import InteractionReviewStatus
 from app.models.interactions import (
+    InteractionEntity,
     InteractionRule,
     MedicationInteractionEntity,
     SupplementInteractionEntity,
@@ -11,17 +13,25 @@ from app.models.interactions import (
 
 
 class DbInteractionRuleRepository:
+    def __init__(self, *, active_dataset_version: str) -> None:
+        self._active_dataset_version = active_dataset_version.strip()
+
     async def find_approved_rules(
         self,
         *,
         context: ActiveIntakeContext,
+        query_entity_names: list[str] | None = None,
     ) -> list[InteractionRuleFact]:
         entity_ids = await self._resolve_active_entity_ids(context)
+        entity_ids.update(
+            await self._resolve_query_entity_ids(query_entity_names or []),
+        )
         if len(entity_ids) < 2:
             return []
 
         rules = await InteractionRule.filter(
             review_status=InteractionReviewStatus.APPROVED,
+            rule_dataset_version=self._active_dataset_version,
             left_entity_id__in=entity_ids,
             right_entity_id__in=entity_ids,
         ).prefetch_related(
@@ -60,6 +70,23 @@ class DbInteractionRuleRepository:
             else []
         )
         return set(medication_entities) | set(supplement_entities)
+
+    @staticmethod
+    async def _resolve_query_entity_ids(
+        query_entity_names: list[str],
+    ) -> set[int]:
+        normalized_names = {
+            normalize_interaction_name(name).casefold()
+            for name in query_entity_names
+            if normalize_interaction_name(name)
+        }
+        if not normalized_names:
+            return set()
+        return set(
+            await InteractionEntity.filter(
+                normalized_name__in=normalized_names,
+            ).values_list("id", flat=True)
+        )
 
     @staticmethod
     def _pair_priority(pair_type: str) -> int:

@@ -144,6 +144,7 @@ class AnswerMedicationQuestionUseCase:
         ) as rules_span:
             rules = await self._interaction_rule_repository.find_approved_rules(
                 context=context,
+                query_entity_names=query_plan.entity_names,
             )
             rules_span.end({"approved_rule_count": len(rules)})
         async with self._tracer.span(
