@@ -179,10 +179,12 @@ test("administrator pages expose a shared fixed top area", async () => {
   assert.match(source, /relocateSettingsButtonToTopbar\(sidebar, root\)/);
   assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*right:\s*0;/s);
   assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*background:\s*var\(--brand-navy\);[^}]*border-bottom:\s*1px solid #052b5a;/s);
+  assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*height:\s*56px;/s);
   assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*16px;[^}]*font-weight:\s*800;/s);
   assert.match(managementStyles, /\.admin-topbar-user-role\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*16px;/s);
   assert.match(managementStyles, /\.admin-topbar\s+\[data-smtp-settings\]\s*\{[^}]*color:\s*#d1d5db;/s);
-  assert.match(managementStyles, /body\.management-page,[^}]*body\.dashboard-page\s*\{[^}]*padding-top:\s*64px;/s);
+  assert.match(managementStyles, /body\.management-page,[^}]*body\.dashboard-page\s*\{[^}]*padding-top:\s*56px;/s);
+  assert.match(managementStyles, /height:\s*calc\(100vh - 56px\)\s*!important;/s);
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
