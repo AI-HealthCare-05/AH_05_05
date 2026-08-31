@@ -123,6 +123,13 @@ class AnswerMedicationQuestionUseCase:
             }
             if self._tracer.capture_content:
                 query_outputs["entity_names"] = query_plan.entity_names
+                query_outputs["entity_roles"] = [entity.entity_type.value for entity in query_plan.entities]
+                query_outputs["entity_role_candidates"] = [
+                    [candidate.value for candidate in entity.candidate_types] for entity in query_plan.entities
+                ]
+            query_outputs["interaction_pair_count"] = len(
+                query_plan.interaction_pairs,
+            )
             query_span.end(query_outputs)
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
@@ -228,8 +235,16 @@ class AnswerMedicationQuestionUseCase:
         answer_chunks = self._authoritative_chunks(
             guide_lookup=guide_lookup,
             chunks=chunks,
+            prefer_supplement=(
+                has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
+            ),
         )
         ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
+        unsupported_pairs = self._unsupported_interaction_pairs(
+            query_plan=query_plan,
+            rules=rules,
+            chunks=answer_chunks,
+        )
         route = self._resolve_route(
             request=request,
             context=context,
@@ -250,6 +265,7 @@ class AnswerMedicationQuestionUseCase:
                     interaction_question=interaction_question,
                     family_reference=family_reference,
                     ingredient_family_reference=(ingredient_family_reference),
+                    unsupported_pairs=unsupported_pairs,
                 ),
                 route=route,
                 safety_status=safety_status,
@@ -394,15 +410,15 @@ class AnswerMedicationQuestionUseCase:
             return MedicationChatRoute.ACTIVE_INTAKE
         if guide_lookup.guide is not None:
             return MedicationChatRoute.MEDICATION_GUIDE
-        if AnswerMedicationQuestionUseCase._has_drug_encyclopedia_evidence(
-            chunks,
-        ):
-            return MedicationChatRoute.MEDICATION_GUIDE
         if AnswerMedicationQuestionUseCase._has_supplement_evidence(
             request.question,
             chunks=chunks,
         ):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
+        if AnswerMedicationQuestionUseCase._has_drug_encyclopedia_evidence(
+            chunks,
+        ):
+            return MedicationChatRoute.MEDICATION_GUIDE
         if AnswerMedicationQuestionUseCase._is_supplement_question(request.question):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
         return MedicationChatRoute.GENERAL_GUIDANCE
@@ -416,7 +432,12 @@ class AnswerMedicationQuestionUseCase:
         *,
         guide_lookup: MedicationGuideLookup,
         chunks: list,
+        prefer_supplement: bool = False,
     ) -> list:
+        if prefer_supplement:
+            return [
+                chunk for chunk in chunks if chunk.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA
+            ]
         if guide_lookup.guide is None:
             return chunks
         product_claim_sections = {
@@ -500,6 +521,55 @@ class AnswerMedicationQuestionUseCase:
                 "프로바이오틱스",
             )
         )
+
+    @classmethod
+    def _unsupported_interaction_pairs(
+        cls,
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        rules: list[InteractionRuleFact],
+        chunks: list,
+    ) -> list[str]:
+        if len(query_plan.interaction_pairs) <= 1:
+            return []
+
+        evidence_texts = [
+            " ".join(
+                [
+                    chunk.metadata.title,
+                    chunk.content,
+                    *chunk.metadata.drug_names,
+                    *chunk.metadata.ingredient_names,
+                ]
+            )
+            for chunk in chunks
+        ]
+        rule_pairs = [
+            {
+                cls._normalize_entity_name(rule.left_name),
+                cls._normalize_entity_name(rule.right_name),
+            }
+            for rule in rules
+        ]
+        unsupported: list[str] = []
+        for pair in query_plan.interaction_pairs:
+            pair_names = {
+                cls._normalize_entity_name(pair.left_name),
+                cls._normalize_entity_name(pair.right_name),
+            }
+            has_rule = pair_names in rule_pairs
+            has_chunk = any(
+                all(name in cls._normalize_entity_name(text) for name in pair_names) for text in evidence_texts
+            )
+            if not has_rule and not has_chunk:
+                unsupported.append(
+                    f"{pair.left_name} ↔ {pair.right_name}",
+                )
+        return unsupported
+
+    @staticmethod
+    def _normalize_entity_name(value: str) -> str:
+        return "".join(value.casefold().split())
 
     @staticmethod
     def _context_hash(context: ActiveIntakeContext) -> str:

@@ -139,7 +139,11 @@ class MedicationKnowledgeRetriever:
             ),
             reverse=True,
         )
-        selected = self._select_diverse(ranked, limit=limit)
+        selected = self._select_diverse(
+            ranked,
+            plan=plan,
+            limit=limit,
+        )
         diagnostics = KnowledgeRetrievalDiagnostics(
             raw_candidate_count=len(results),
             entity_filtered_count=sum(batch.entity_filtered_count for batch in batches),
@@ -169,17 +173,48 @@ class MedicationKnowledgeRetriever:
         cls,
         results: list[RetrievedKnowledgeChunk],
         *,
+        plan: MedicationKnowledgeQueryPlan,
         limit: int,
     ) -> list[RetrievedKnowledgeChunk]:
         selected: list[RetrievedKnowledgeChunk] = []
+        selected_chunk_ids: set[str] = set()
         document_counts: dict[str, int] = {}
-        for result in results:
+
+        def add(result: RetrievedKnowledgeChunk) -> bool:
+            if result.chunk_id in selected_chunk_ids:
+                return False
             document_id = result.metadata.document_id
             count = document_counts.get(document_id, 0)
             if count >= cls._MAX_CHUNKS_PER_DOCUMENT:
-                continue
+                return False
             selected.append(result)
+            selected_chunk_ids.add(result.chunk_id)
             document_counts[document_id] = count + 1
+            return True
+
+        for section_type in plan.section_types:
+            for explicit_only in (True, False):
+                section_result = next(
+                    (
+                        result
+                        for result in results
+                        if result.chunk_id not in selected_chunk_ids
+                        and section_type
+                        in (
+                            cls._explicit_legacy_section_types(result)
+                            if explicit_only
+                            else cls._effective_section_types(result)
+                        )
+                    ),
+                    None,
+                )
+                if section_result is not None and add(section_result):
+                    break
+            if len(selected) >= limit:
+                return selected
+
+        for result in results:
+            add(result)
             if len(selected) >= limit:
                 break
         return selected
@@ -282,7 +317,7 @@ class MedicationKnowledgeRetriever:
         if (
             plan.interaction_pair is None
             and self._requires_entity_pair_match(plan)
-            and not self._all_query_entities_match_text(result, plan=plan)
+            and not self._matches_any_interaction_pair(result, plan=plan)
         ):
             return _EligibilityReason.PAIR_MISMATCH
         if result.similarity_score >= self._min_similarity_score:
@@ -290,9 +325,14 @@ class MedicationKnowledgeRetriever:
 
         eligibility_margin = (
             self._PAIR_BOOST_ELIGIBILITY_MARGIN
-            if self._requires_entity_pair_match(plan) and self._all_query_entities_match_text(result, plan=plan)
+            if self._requires_entity_pair_match(plan) and self._matches_any_interaction_pair(result, plan=plan)
             else self._BOOST_ELIGIBILITY_MARGIN
         )
+        if self._has_exact_drug_section_match(result, plan=plan):
+            eligibility_margin = max(
+                eligibility_margin,
+                self._PAIR_BOOST_ELIGIBILITY_MARGIN,
+            )
         minimum_raw_score = max(
             0.0,
             self._min_similarity_score - eligibility_margin,
@@ -329,6 +369,18 @@ class MedicationKnowledgeRetriever:
         if result.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
             return {result.metadata.section_type}
 
+        return cls._explicit_legacy_section_types(result) or {
+            result.metadata.section_type,
+        }
+
+    @classmethod
+    def _explicit_legacy_section_types(
+        cls,
+        result: RetrievedKnowledgeChunk,
+    ) -> set[KnowledgeSectionType]:
+        if result.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
+            return set()
+
         section_types: set[KnowledgeSectionType] = set()
         for match in cls._LEGACY_SECTION_HEADING.finditer(result.content):
             boundary = match.group("boundary")
@@ -347,7 +399,26 @@ class MedicationKnowledgeRetriever:
             else:
                 section_types.add(KnowledgeSectionType.CAUTION)
 
-        return section_types or {result.metadata.section_type}
+        return section_types
+
+    @classmethod
+    def _has_exact_drug_section_match(
+        cls,
+        result: RetrievedKnowledgeChunk,
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        if result.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
+            return False
+        if not cls._normalized_query_entities(plan).intersection(
+            cls._metadata_entity_aliases(result),
+        ):
+            return False
+        return bool(
+            set(plan.section_types).intersection(
+                cls._explicit_legacy_section_types(result),
+            )
+        )
 
     @classmethod
     def _entity_match_bonus(
@@ -358,7 +429,7 @@ class MedicationKnowledgeRetriever:
     ) -> float:
         query_entities = cls._normalized_query_entities(plan)
         metadata_entities = cls._metadata_entity_aliases(result)
-        if len(query_entities) >= 2 and cls._all_query_entities_match_text(result, plan=plan):
+        if len(query_entities) >= 2 and cls._matches_any_interaction_pair(result, plan=plan):
             return cls._PAIR_ENTITY_BONUS
         if query_entities.intersection(metadata_entities):
             return cls._EXACT_ENTITY_BONUS
@@ -398,20 +469,17 @@ class MedicationKnowledgeRetriever:
         plan: MedicationKnowledgeQueryPlan,
     ) -> bool:
         return (
-            len(MedicationKnowledgeRetriever._normalized_query_entities(plan)) == 2
+            len(MedicationKnowledgeRetriever._normalized_query_entities(plan)) >= 2
             and KnowledgeSectionType.INTERACTION in plan.section_types
         )
 
     @classmethod
-    def _all_query_entities_match_text(
+    def _matches_any_interaction_pair(
         cls,
         result: RetrievedKnowledgeChunk,
         *,
         plan: MedicationKnowledgeQueryPlan,
     ) -> bool:
-        query_entities = cls._normalized_query_entities(plan)
-        if not query_entities:
-            return False
         searchable_text = cls._normalize_name(
             " ".join(
                 [
@@ -422,7 +490,11 @@ class MedicationKnowledgeRetriever:
                 ]
             )
         )
-        return all(entity in searchable_text for entity in query_entities)
+        return any(
+            cls._normalize_name(pair.left_name) in searchable_text
+            and cls._normalize_name(pair.right_name) in searchable_text
+            for pair in plan.interaction_pairs
+        )
 
     @classmethod
     def _normalized_query_entities(

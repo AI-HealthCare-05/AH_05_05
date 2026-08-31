@@ -61,6 +61,18 @@ def test_build_treats_pair_effect_question_as_interaction_without_explicit_keywo
 
     assert plan.section_types == [KnowledgeSectionType.INTERACTION]
     assert plan.interaction_pair is not None
+    assert plan.entity_names == ["칼슘", "철분"]
+
+
+def test_build_removes_measurement_and_predicate_noise_from_pair_question() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "아연을 복용하면 철분 수치가 낮아질 수 있나요?",
+    )
+
+    assert plan.entity_names == ["아연", "철분"]
+    assert plan.alternate_queries == [
+        "zinc iron status interaction supplementation",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -176,6 +188,30 @@ def test_build_preserves_every_entity_when_known_pair_is_part_of_larger_question
         InteractionPairType.DRUG_SUPPLEMENT,
         InteractionPairType.SUPPLEMENT_SUPPLEMENT,
     }
+    assert {(pair.left_name, pair.right_name) for pair in plan.interaction_pairs} == {
+        ("와파린", "비타민 K"),
+        ("와파린", "칼슘"),
+        ("와파린", "철분"),
+        ("비타민 K", "칼슘"),
+        ("비타민 K", "철분"),
+        ("칼슘", "철분"),
+    }
+    assert "와파린 비타민 K 상호작용" in plan.alternate_queries
+    assert "와파린 칼슘 상호작용" in plan.alternate_queries
+    assert "calcium iron absorption interaction" in plan.alternate_queries
+
+
+def test_build_limits_multi_entity_pairs_and_prioritizes_drug_drug() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "아스피린, 와파린, 비타민 K, 칼슘, 철분의 상호작용을 알려줘.",
+    )
+
+    assert len(plan.interaction_pairs) == 6
+    assert plan.interaction_pairs[0].pair_type == InteractionPairType.DRUG_DRUG
+    assert (
+        plan.interaction_pairs[0].left_name,
+        plan.interaction_pairs[0].right_name,
+    ) == ("아스피린", "와파린")
 
 
 def test_build_does_not_treat_interaction_instruction_as_drug_entity() -> None:
@@ -196,10 +232,70 @@ def test_build_keeps_multiple_requested_sections() -> None:
 
     assert plan.entity_names == ["타이레놀"]
     assert plan.entities[0].entity_type == MedicationQueryEntityType.BRAND_ALIAS
+    assert plan.entities[0].candidate_types == [
+        MedicationQueryEntityType.PRODUCT_NAME,
+        MedicationQueryEntityType.BRAND_ALIAS,
+        MedicationQueryEntityType.INGREDIENT_NAME,
+    ]
     assert plan.section_types == [
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.CAUTION,
     ]
+
+
+def test_build_resolves_common_brand_to_ingredient_for_interaction_search() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "타이레놀과 와파린을 같이 먹어도 되나요?",
+    )
+
+    assert plan.entity_names == ["아세트아미노펜", "와파린"]
+    assert plan.entities[0].surface == "타이레놀"
+    assert plan.entities[0].entity_type == MedicationQueryEntityType.INGREDIENT_NAME
+    assert plan.entities[0].candidate_types == [
+        MedicationQueryEntityType.PRODUCT_NAME,
+        MedicationQueryEntityType.BRAND_ALIAS,
+        MedicationQueryEntityType.INGREDIENT_NAME,
+    ]
+    assert plan.alternate_queries == [
+        "아세트아미노펜 와파린 상호작용",
+    ]
+
+
+def test_build_keeps_exact_tylenol_product_as_product_name() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "타이레놀정500밀리그람의 복용법을 알려줘.",
+    )
+
+    assert plan.entity_names == ["타이레놀정500밀리그람"]
+    assert plan.entities[0].entity_type == MedicationQueryEntityType.PRODUCT_NAME
+    assert plan.entities[0].candidate_types == [
+        MedicationQueryEntityType.PRODUCT_NAME,
+    ]
+
+
+def test_build_adds_concise_ingredient_query_for_general_drug_question() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "내가 복용 중인 로사르탄의 복용법과 주의사항을 알려줘.",
+    )
+
+    assert plan.alternate_queries == [
+        "로사르탄 용법 용량",
+        "로사르탄 주의사항 부작용",
+    ]
+
+
+def test_build_uses_drug_terms_for_ingredient_function_and_caution() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "로사르탄의 효능과 주의사항을 알려줘.",
+    )
+
+    assert plan.alternate_queries == [
+        "로사르탄 효능 효과",
+        "로사르탄 주의사항 부작용",
+    ]
+    assert "건강기능식품" not in plan.expanded_query
+    assert "기능성" not in plan.expanded_query
+    assert "섭취 목적" not in plan.expanded_query
 
 
 def test_build_preserves_exact_product_name_without_instruction_noise() -> None:
@@ -243,6 +339,14 @@ def test_build_preserves_entity_name_that_ends_with_na() -> None:
     )
 
     assert plan.entity_names == ["스피루리나"]
+
+
+def test_build_preserves_ingredient_name_that_ends_with_e() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "알로에는 왜 먹어?",
+    )
+
+    assert plan.entity_names == ["알로에"]
 
 
 @pytest.mark.parametrize(

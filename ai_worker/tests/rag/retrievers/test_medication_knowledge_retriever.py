@@ -235,7 +235,7 @@ async def test_search_reranks_verified_bilingual_drug_alias_above_substring_matc
         "로사르탄 복합제(losartan combination)",
     ]
     store = FakeKnowledgeStore(
-        responses=[[substring_only, exact_family]],
+        responses=[[substring_only, exact_family], []],
     )
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
@@ -264,7 +264,7 @@ async def test_search_does_not_rescue_low_score_alias_from_wrong_section() -> No
         section_type=KnowledgeSectionType.FUNCTION,
     )
     wrong_section.metadata.drug_names = ["로사르탄(losartan)"]
-    store = FakeKnowledgeStore(responses=[[wrong_section]])
+    store = FakeKnowledgeStore(responses=[[wrong_section], []])
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
         vector_store=store,
@@ -294,7 +294,7 @@ async def test_search_rescues_legacy_encyclopedia_chunk_from_attached_heading() 
         section_type=KnowledgeSectionType.FUNCTION,
     )
     legacy_caution.metadata.drug_names = ["로사르탄(losartan)"]
-    store = FakeKnowledgeStore(responses=[[legacy_caution]])
+    store = FakeKnowledgeStore(responses=[[legacy_caution], []])
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
         vector_store=store,
@@ -313,6 +313,89 @@ async def test_search_rescues_legacy_encyclopedia_chunk_from_attached_heading() 
     assert results == [legacy_caution]
 
 
+async def test_search_rescues_lower_score_exact_drug_function_heading() -> None:
+    exact_function = build_chunk(
+        0.536,
+        title="로사르탄(losartan)",
+        content=("효능.효과로사르탄 단일제는 고혈압과 고혈압이 있는 제2형 당뇨병 환자의 신장병 치료에 사용됩니다."),
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        section_type=KnowledgeSectionType.FUNCTION,
+    )
+    exact_function.metadata.drug_names = ["로사르탄(losartan)"]
+    store = FakeKnowledgeStore(responses=[[exact_function], [exact_function]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v1",
+        min_similarity_score=0.65,
+    )
+
+    results = await retriever.search(
+        question="로사르탄의 효능을 알려줘",
+        medication_names=[],
+        supplement_names=[],
+        interaction_pair_keys=[],
+        limit=5,
+    )
+
+    assert results == [exact_function]
+
+
+async def test_search_prefers_explicit_requested_section_coverage() -> None:
+    explicit_caution = build_chunk(
+        0.62,
+        chunk_id="1" * 64,
+        title="로사르탄(losartan)",
+        content="주의사항로사르탄 단일제의 주의사항입니다.",
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        section_type=KnowledgeSectionType.FUNCTION,
+        document_id="losartan",
+    )
+    ambiguous_continuation = build_chunk(
+        0.604,
+        chunk_id="2" * 64,
+        title="로사르탄(losartan)",
+        content="고칼륨혈증이 유발될 수 있으므로 주의합니다.",
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        section_type=KnowledgeSectionType.FUNCTION,
+        document_id="losartan",
+    )
+    explicit_function = build_chunk(
+        0.536,
+        chunk_id="3" * 64,
+        title="로사르탄(losartan)",
+        content="효능.효과로사르탄 단일제는 고혈압 치료에 사용됩니다.",
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        section_type=KnowledgeSectionType.FUNCTION,
+        document_id="losartan",
+    )
+    for chunk in (explicit_caution, ambiguous_continuation, explicit_function):
+        chunk.metadata.drug_names = ["로사르탄(losartan)"]
+    store = FakeKnowledgeStore(
+        responses=[
+            [explicit_caution, ambiguous_continuation, explicit_function],
+            [],
+            [],
+        ],
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v1",
+        min_similarity_score=0.65,
+    )
+
+    results = await retriever.search(
+        question="로사르탄의 효능과 주의사항을 알려줘",
+        medication_names=[],
+        supplement_names=[],
+        interaction_pair_keys=[],
+        limit=5,
+    )
+
+    assert results == [explicit_function, explicit_caution]
+
+
 async def test_search_does_not_keep_wrong_legacy_section_after_heading_recovery() -> None:
     legacy_caution = build_chunk(
         0.5668,
@@ -322,7 +405,7 @@ async def test_search_does_not_keep_wrong_legacy_section_after_heading_recovery(
         section_type=KnowledgeSectionType.FUNCTION,
     )
     legacy_caution.metadata.drug_names = ["로사르탄(losartan)"]
-    store = FakeKnowledgeStore(responses=[[legacy_caution]])
+    store = FakeKnowledgeStore(responses=[[legacy_caution], []])
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
         vector_store=store,
@@ -354,7 +437,7 @@ async def test_search_rescues_legacy_usage_heading_after_previous_sentence() -> 
         section_type=KnowledgeSectionType.FUNCTION,
     )
     legacy_usage.metadata.drug_names = ["로사르탄(losartan)"]
-    store = FakeKnowledgeStore(responses=[[legacy_usage]])
+    store = FakeKnowledgeStore(responses=[[legacy_usage], []])
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
         vector_store=store,
@@ -382,7 +465,7 @@ async def test_search_does_not_treat_body_word_as_legacy_section_heading() -> No
         section_type=KnowledgeSectionType.FUNCTION,
     )
     ordinary_function.metadata.drug_names = ["로사르탄(losartan)"]
-    store = FakeKnowledgeStore(responses=[[ordinary_function]])
+    store = FakeKnowledgeStore(responses=[[ordinary_function], []])
     retriever = MedicationKnowledgeRetriever(
         embedding_provider=FakeEmbeddingProvider(),
         vector_store=store,
@@ -599,6 +682,52 @@ async def test_search_rejects_single_ingredient_chunk_for_pair_question() -> Non
     )
 
     assert result.chunks == []
+    assert result.diagnostics.rejected_pair_mismatch_count == 1
+
+
+async def test_search_multi_entity_question_accepts_only_chunks_matching_a_pair() -> None:
+    supported_pair = build_chunk(
+        0.56,
+        chunk_id="7" * 64,
+        ingredient_names=["비타민 K"],
+        title="와파린과 비타민 K",
+        content="와파린과 비타민 K 섭취의 상호작용을 설명합니다.",
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    supported_pair.metadata.drug_names = ["와파린"]
+    single_entity = build_chunk(
+        0.82,
+        chunk_id="8" * 64,
+        ingredient_names=["칼슘"],
+        title="칼슘",
+        content="칼슘의 기능을 설명합니다.",
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    store = FakeKnowledgeStore(
+        responses=[
+            [single_entity, supported_pair],
+            [supported_pair],
+            [],
+            [],
+        ],
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v1",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        question="와파린, 비타민 K, 칼슘의 상호작용을 알려줘",
+        medication_names=[],
+        supplement_names=[],
+        interaction_pair_keys=[],
+        limit=5,
+    )
+
+    assert result.chunks == [supported_pair]
     assert result.diagnostics.rejected_pair_mismatch_count == 1
 
 

@@ -499,6 +499,30 @@ async def test_execute_records_losartan_search_diagnostics_in_content_mode() -> 
     assert tracer.spans[3].outputs["drug_encyclopedia_evidence_count"] == 1
 
 
+async def test_execute_records_selected_and_candidate_entity_roles() -> None:
+    tracer = RecordingChatTracer(capture_content=True)
+    await build_use_case(
+        lookup=MedicationGuideLookup(
+            is_ambiguous=True,
+            representative_guide=build_guide(),
+            candidate_names=[
+                "타이레놀정500밀리그람",
+                "타이레놀8시간이알서방정",
+            ],
+        ),
+        tracer=tracer,
+    ).execute(
+        build_request("타이레놀의 효능과 주의사항을 알려줘."),
+    )
+
+    query_outputs = tracer.spans[1].outputs
+    assert query_outputs["entity_names"] == ["타이레놀"]
+    assert query_outputs["entity_roles"] == ["BRAND_ALIAS"]
+    assert query_outputs["entity_role_candidates"] == [
+        ["PRODUCT_NAME", "BRAND_ALIAS", "INGREDIENT_NAME"],
+    ]
+
+
 async def test_execute_compacts_answer_before_final_safety_validation() -> None:
     disclaimer = "이 안내는 의료진의 진료를 대체하지 않습니다."
     evidence_sentence = ("가" * 190) + " 문장 끝입니다.\n"
@@ -746,6 +770,45 @@ async def test_supplement_evidence_precedes_single_partial_medication_match() ->
     assert all(source.medication_guide_id is None for source in result.sources)
 
 
+async def test_supplement_function_route_ignores_co_retrieved_drug_encyclopedia() -> None:
+    supplement_chunk = build_chunk().model_copy(
+        update={
+            "content": "마그네슘은 에너지 이용과 신경·근육 기능 유지에 필요합니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_CODE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    medication_chunk = build_losartan_chunk(
+        section_type=KnowledgeSectionType.FUNCTION,
+        content="산화마그네슘 의약품은 제품별 허가사항을 확인합니다.",
+    ).model_copy(
+        update={
+            "metadata": build_losartan_chunk().metadata.model_copy(
+                update={
+                    "title": "산화마그네슘",
+                    "drug_names": ["산화마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            )
+        }
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(
+            chunks=[medication_chunk, supplement_chunk],
+        ),
+    ).execute(build_request("마그네슘은 왜 먹어?"))
+
+    assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert "에너지 이용" in result.answer
+    assert "산화마그네슘 의약품" not in result.answer
+
+
 async def test_supplement_pair_question_skips_medication_product_lookup() -> None:
     interaction_chunk = build_chunk().model_copy(
         update={
@@ -776,6 +839,42 @@ async def test_supplement_pair_question_skips_medication_product_lookup() -> Non
     assert result.route == MedicationChatRoute.INTERACTION
     assert "검색된 상호작용 연구 근거" in result.answer
     assert "제품명을 확인" not in result.answer
+
+
+async def test_multi_entity_answer_separates_supported_and_unverified_pairs() -> None:
+    calcium_iron_chunk = build_chunk().model_copy(
+        update={
+            "content": "칼슘은 한 끼 식사에서 철 흡수에 영향을 줄 수 있습니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "title": "Calcium and Iron Absorption",
+                    "document_type": KnowledgeDocumentType.RESEARCH_ARTICLE,
+                    "ingredient_names": ["칼슘", "철분"],
+                    "section_type": KnowledgeSectionType.SUMMARY,
+                }
+            ),
+        }
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(chunks=[calcium_iron_chunk]),
+    ).execute(
+        build_request(
+            "와파린, 비타민 K, 칼슘, 철분의 상호작용을 우선순위로 요약해줘.",
+        )
+    )
+
+    assert result.route == MedicationChatRoute.INTERACTION
+    assert "검색된 상호작용 연구 근거" in result.answer
+    assert "근거를 확인하지 못한 조합" in result.answer
+    assert "와파린 ↔ 비타민 K" in result.answer
+    assert (
+        "칼슘 ↔ 철분"
+        not in result.answer.split(
+            "근거를 확인하지 못한 조합",
+            maxsplit=1,
+        )[1]
+    )
 
 
 def test_product_name_candidates_are_bounded_for_long_questions() -> None:
