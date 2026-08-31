@@ -36,10 +36,6 @@ export function renderAdminTopbar(root = document, admin = session.admin()) {
   topbar.setAttribute("data-admin-topbar", "");
   topbar.setAttribute("aria-label", "관리자 상단 영역");
 
-  const brandSlot = root.createElement("div");
-  brandSlot.className = "admin-topbar-brand";
-  brandSlot.setAttribute("data-admin-topbar-brand", "");
-
   const user = root.createElement("div");
   user.className = "admin-topbar-user";
   user.setAttribute("aria-label", "로그인 사용자");
@@ -56,22 +52,17 @@ export function renderAdminTopbar(root = document, admin = session.admin()) {
   userRole.textContent = `(${getAdminRoleLabel(admin.role)})`;
 
   user.append(userName, userRole);
-  topbar.append(brandSlot, user);
+  topbar.append(user);
   root.body.prepend(topbar);
   return topbar;
 }
 
-export function relocateSidebarBrand(sidebar, root = document) {
-  const brand = sidebar?.querySelector?.(".sidebar-brand");
+export function relocateSettingsButtonToTopbar(sidebar, root = document) {
   const settingsButton = sidebar?.querySelector?.("[data-smtp-settings]");
-  const brandTarget = root.querySelector?.("[data-admin-topbar-brand]");
   const userTarget = root.querySelector?.(".admin-topbar-user");
-  if (!brand || !brandTarget?.append) return false;
-  brandTarget.append(brand);
-  if (settingsButton && userTarget?.append) {
-    if (settingsButton.style) settingsButton.style.marginLeft = "0px";
-    userTarget.append(settingsButton);
-  }
+  if (!settingsButton || !userTarget?.append) return false;
+  if (settingsButton.style) settingsButton.style.marginLeft = "0px";
+  userTarget.append(settingsButton);
   return true;
 }
 
@@ -121,7 +112,7 @@ export async function loadSidebar(root = document, fetcher = fetch) {
     markActiveNavigation(sidebar, activeSection);
     initializeNavigation(sidebar);
     configureSettingsButton(sidebar);
-    relocateSidebarBrand(sidebar, root);
+    relocateSettingsButtonToTopbar(sidebar, root);
     placeholder.replaceWith(sidebar);
     return sidebar;
   } catch (error) {

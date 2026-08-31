@@ -171,37 +171,36 @@ test("administrator pages expose a shared fixed top area", async () => {
   ];
 
   assert.match(source, /data-admin-topbar/);
-  assert.match(source, /data-admin-topbar-brand/);
+  assert.doesNotMatch(source, /data-admin-topbar-brand/);
   assert.match(source, /data-login-user-name/);
   assert.match(source, /data-login-user-role/);
   assert.match(source, /userName\.textContent\s*=\s*getAdminDisplayName\(admin\)/);
   assert.match(source, /userRole\.textContent\s*=\s*`\(\$\{getAdminRoleLabel\(admin\.role\)\}\)`/);
-  assert.match(source, /relocateSidebarBrand\(sidebar, root\)/);
+  assert.match(source, /relocateSettingsButtonToTopbar\(sidebar, root\)/);
   assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*right:\s*0;/s);
-  assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*background:\s*var\(--brand-primary-soft\);[^}]*border-bottom:\s*1px solid #cceeea;/s);
-  assert.match(managementStyles, /\.admin-topbar-brand\s*\{[^}]*display:\s*flex;/s);
-  assert.match(managementStyles, /\.admin-topbar\s+\.sidebar-brand\s*\{[^}]*width:\s*auto;/s);
-  assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*font-size:\s*16px;[^}]*font-weight:\s*800;/s);
-  assert.match(managementStyles, /\.admin-topbar-user-role\s*\{[^}]*font-size:\s*16px;/s);
+  assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*background:\s*var\(--brand-navy\);[^}]*border-bottom:\s*1px solid #052b5a;/s);
+  assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*16px;[^}]*font-weight:\s*800;/s);
+  assert.match(managementStyles, /\.admin-topbar-user-role\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*16px;/s);
+  assert.match(managementStyles, /\.admin-topbar\s+\[data-smtp-settings\]\s*\{[^}]*color:\s*#d1d5db;/s);
   assert.match(managementStyles, /body\.management-page,[^}]*body\.dashboard-page\s*\{[^}]*padding-top:\s*64px;/s);
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-7"/, page);
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-8"/, page);
   }
 });
 
-test("sidebar brand moves into the left side of the top area", async () => {
-  const { relocateSidebarBrand } = await import("../../static/js/sidebar.js");
+test("sidebar brand stays in the sidebar while settings moves to the top area", async () => {
+  const { relocateSettingsButtonToTopbar } = await import("../../static/js/sidebar.js");
   const settingsButton = { style: { marginLeft: "auto" } };
   const brand = { id: "brand" };
   const moved = [];
   const sidebar = { querySelector: (selector) => ({ ".sidebar-brand": brand, "[data-smtp-settings]": settingsButton })[selector] ?? null };
-  const brandTarget = { append(element) { moved.push(["left", element]); } };
   const userTarget = { append(element) { moved.push(["right", element]); } };
-  const root = { querySelector: (selector) => ({ "[data-admin-topbar-brand]": brandTarget, ".admin-topbar-user": userTarget })[selector] ?? null };
+  const root = { querySelector: (selector) => selector === ".admin-topbar-user" ? userTarget : null };
 
-  assert.equal(relocateSidebarBrand(sidebar, root), true);
-  assert.deepEqual(moved, [["left", brand], ["right", settingsButton]]);
+  assert.equal(relocateSettingsButtonToTopbar(sidebar, root), true);
+  assert.deepEqual(moved, [["right", settingsButton]]);
+  assert.equal(sidebar.querySelector(".sidebar-brand"), brand);
   assert.equal(settingsButton.style.marginLeft, "0px");
 });
