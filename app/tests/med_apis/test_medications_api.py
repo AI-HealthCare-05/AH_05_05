@@ -61,6 +61,55 @@ class TestMedicationOverviewAPI(TestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
+    async def test_overview_includes_episode_without_start_slot(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-no-slot@example.com"
+            headers = await authentication_headers(client, email, "01023000009")
+            user = await User.get(email=email)
+            episode = await create_episode(user, start_date=today, source_ocr_job_id=101)
+            episode.medication_start_slot = None
+            await episode.save(update_fields=["medication_start_slot"])
+            medication = await Medication.create(
+                care_episode=episode,
+                name="세레콕시브",
+                times_per_day=2,
+                days=7,
+            )
+            await MedicationSlot.create(medication=medication, slot=MealSlot.MORNING)
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["recordId"] == episode.id
+        assert response.json()[0]["start"]["slot"] == "morning"
+
+    async def test_end_date_excludes_as_needed_medication(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-prn-end@example.com"
+            headers = await authentication_headers(client, email, "01023000010")
+            user = await User.get(email=email)
+            episode = await create_episode(user, start_date=today, source_ocr_job_id=102)
+            scheduled = await Medication.create(
+                care_episode=episode,
+                name="세레콕시브",
+                times_per_day=2,
+                days=7,
+            )
+            await MedicationSlot.create(medication=scheduled, slot=MealSlot.MORNING)
+            await Medication.create(
+                care_episode=episode,
+                name="아세트아미노펜",
+                times_per_day=None,
+                days=30,
+            )
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["endDate"] == (today + timedelta(days=6)).isoformat()
+
     async def test_returns_all_active_episodes_with_frontend_contract_and_hand_checked_dates(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
