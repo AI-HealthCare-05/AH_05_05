@@ -134,3 +134,12 @@ test("configureSettingsButton lets ADMIN open SMTP settings", async () => {
 
   assert.equal(opened, true);
 });
+
+test("shared sidebar uses the approved full RxVita logo", async () => {
+  const html = await readFile(new URL("../../static/templates/partials/sidebar.html", import.meta.url), "utf8");
+
+  assert.match(html, /<img[^>]+class="sidebar-brand-logo"[^>]+src="\.\.\/images\/rxvita-logo-ai-chat-navy\.png"[^>]+alt="RxVita">/);
+  assert.match(html, /data-smtp-settings/);
+  assert.doesNotMatch(html, /포케 관리자/);
+  assert.doesNotMatch(html, /background:#1c64f2/);
+});

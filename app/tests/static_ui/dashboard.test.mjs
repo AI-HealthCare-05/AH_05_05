@@ -111,3 +111,13 @@ test("OCR document card exposes API count slots without change badges", async ()
   assert.match(ocrCard, /OCR 추출 정확도/);
   assert.doesNotMatch(ocrCard, /[▲▼—]/);
 });
+
+test("OCR accuracy uses the shared RxVita accent tokens", async () => {
+  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+  const accuracyIndex = html.indexOf("OCR 추출 정확도");
+  const accuracyCard = html.slice(Math.max(0, accuracyIndex - 900), accuracyIndex + 200);
+
+  assert.match(accuracyCard, /border:6px solid var\(--brand-primary\)/);
+  assert.match(accuracyCard, /color:var\(--brand-primary-strong\)/);
+  assert.doesNotMatch(accuracyCard, /#1c64f2/);
+});

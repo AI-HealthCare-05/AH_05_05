@@ -74,6 +74,8 @@
 .toast { min-width: 240px; max-width: 360px; padding: 12px 16px; border-radius: 8px; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,.18); }
 .toast-success { background: #166534; }
 .toast-error { background: #b91c1c; }
+.sidebar-brand { align-items: center; display: flex; gap: 8px; width: 100%; }
+.sidebar-brand-logo { display: block; height: auto; max-width: calc(100% - 40px); width: 180px; }
 .sidebar-logo { width: 32px; height: 32px; }
 .sidebar-shell { border-right: 1px solid #e5e7eb; }
 .sidebar-link { border: 2px solid transparent; color: #4b5563; font-weight: 500; text-decoration: none; transition: background .15s, border-color .15s, color .15s; }
