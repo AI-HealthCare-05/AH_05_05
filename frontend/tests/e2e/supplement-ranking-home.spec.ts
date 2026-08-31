@@ -164,7 +164,7 @@ test('등록 목록 조회가 실패해도 랭킹은 배지 없이 표시한다'
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
   await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
   await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 });
 
 test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지한다', async ({ page }) => {
@@ -181,7 +181,7 @@ test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지�
   await page.goto('/dev/home-empty');
 
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
-  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 
   await page.unroute('**/api/v1/display/med/nutr/rank');
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
@@ -190,7 +190,7 @@ test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지�
   await page.reload();
 
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
-  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 });
 
 test('미등록 랭킹 행은 검색 없이 상세 API로 제품을 채운 추가 시트를 연다', async ({ page }) => {
