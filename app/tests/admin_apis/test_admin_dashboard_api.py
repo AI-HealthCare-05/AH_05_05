@@ -8,12 +8,15 @@ from tortoise.contrib.test import TestCase
 
 from app.core import config
 from app.core.jwt.tokens import AccessToken
-from app.models.enums import AccountStatus, AdminRole
+from app.models.background_jobs import BackgroundJob
+from app.models.enums import AccountStatus, AdminRole, BackgroundJobStatus, BackgroundJobType, OcrJobStatus
+from app.models.ocr import OcrJob
 from app.models.users import User
 from app.tests.admin_apis.conftest import auth_header, create_admin, create_user, request
 
 DASHBOARD_SUMMARY_URL = "/api/v1/admin/dashboard/summary"
 TREND_DAYS = 14
+ALARM_TREND_DAYS = 7
 
 _sequence = counter(1)
 
@@ -375,11 +378,10 @@ class TestDashboardContract(DashboardTestBase):
         assert body["generatedAt"].endswith("+09:00")
         assert datetime.fromisoformat(body["generatedAt"]).utcoffset() == timedelta(hours=9)
 
-    async def test_response_has_only_the_member_block(self) -> None:
-        """미구현 지표를 0으로 채워 내보내면 프론트가 정상값으로 렌더링한다."""
+    async def test_response_has_dashboard_stat_blocks(self) -> None:
         body = await self.fetch()
 
-        assert set(body) == {"period", "generatedAt", "members"}
+        assert set(body) == {"period", "generatedAt", "members", "alarmNotifications", "ocrDocuments"}
 
     async def test_member_block_fields(self) -> None:
         assert set(await self.members()) == {
@@ -394,6 +396,85 @@ class TestDashboardContract(DashboardTestBase):
             "signupTrend",
             "status",
         }
+
+
+class TestDashboardAlarmNotifications(DashboardTestBase):
+    async def create_job(
+        self,
+        job_status: BackgroundJobStatus,
+        *,
+        job_type: BackgroundJobType = BackgroundJobType.ALARM,
+        completed_at: datetime | None = None,
+    ) -> BackgroundJob:
+        return await BackgroundJob.create(
+            idempotency_key=f"dashboard-alarm-{next(_sequence)}",
+            job_type=job_type,
+            status=job_status,
+            completed_at=completed_at,
+        )
+
+    async def test_counts_only_alarm_jobs_in_requested_statuses(self) -> None:
+        await self.create_job(BackgroundJobStatus.QUEUED)
+        await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(0))
+        await self.create_job(BackgroundJobStatus.FAILED)
+        await self.create_job(
+            BackgroundJobStatus.COMPLETED,
+            job_type=BackgroundJobType.EMAIL,
+            completed_at=at(0),
+        )
+
+        notifications = (await self.fetch())["alarmNotifications"]
+
+        assert notifications["queued"] == 1
+        assert notifications["completed"] == 1
+        assert notifications["failed"] == 1
+
+    async def test_completed_trend_returns_seven_days_and_uses_completed_at(self) -> None:
+        await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(0))
+        await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(2))
+        await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(7))
+        await self.create_job(BackgroundJobStatus.FAILED, completed_at=at(1))
+
+        trend = (await self.fetch())["alarmNotifications"]["completedTrend"]
+        today = now_kst().date()
+
+        assert len(trend) == ALARM_TREND_DAYS
+        assert [point["date"] for point in trend] == sorted(point["date"] for point in trend)
+        assert trend[-1]["date"] == today.isoformat()
+        assert trend[0]["date"] == (today - timedelta(days=ALARM_TREND_DAYS - 1)).isoformat()
+        assert sum(point["count"] for point in trend) == 2
+
+
+class TestDashboardOcrDocuments(DashboardTestBase):
+    async def create_ocr_job(self, job_status: OcrJobStatus, user: User) -> OcrJob:
+        return await OcrJob.create(
+            user=user,
+            status=job_status,
+            idempotency_key=f"dashboard-ocr-{next(_sequence)}",
+            input_manifest={},
+            ocr_model="clova-template",
+            structuring_model="rule-based",
+            prompt_version="v1",
+            schema_version="v1",
+        )
+
+    async def test_total_includes_every_status_and_cards_count_selected_statuses(self) -> None:
+        user = await create_user(name="OCR 회원", email=unique_email("ocr"))
+        statuses = [
+            OcrJobStatus.QUEUED,
+            OcrJobStatus.PROCESSING,
+            OcrJobStatus.READY_FOR_REVIEW,
+            OcrJobStatus.COMPLETE,
+            OcrJobStatus.COMPLETE,
+            OcrJobStatus.FAILED,
+            OcrJobStatus.CANCELLED,
+        ]
+        for job_status in statuses:
+            await self.create_ocr_job(job_status, user)
+
+        documents = (await self.fetch())["ocrDocuments"]
+
+        assert documents == {"total": 7, "queued": 1, "completed": 2, "failed": 1}
 
 
 class TestDashboardPermissions(DashboardTestBase):

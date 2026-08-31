@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
+  NAME_MAX_LENGTH,
   getMyProfile,
   updateMyProfile,
   type AccountProfile,
@@ -13,7 +14,11 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
-import { formatPhoneNumberInput, validatePhoneNumber } from '@/shared/lib/phoneNumber';
+import {
+  PHONE_NUMBER_MAX_LENGTH,
+  formatPhoneNumberInput,
+  validatePhoneNumber,
+} from '@/shared/lib/phoneNumber';
 import { Button, Card, ErrorDialog, GenderRadioGroup, Header, Input } from '@/shared/ui';
 import { PasswordChangeSheet } from './PasswordChangeSheet';
 
@@ -118,6 +123,7 @@ export function MyProfilePage({
                 label="이름"
                 autoComplete="name"
                 value={name}
+                maxLength={NAME_MAX_LENGTH}
                 error={nameError ?? undefined}
                 onChange={(event) => {
                   setName(event.target.value);
@@ -131,6 +137,7 @@ export function MyProfilePage({
                 inputMode="tel"
                 autoComplete="tel"
                 value={phoneNumber}
+                maxLength={PHONE_NUMBER_MAX_LENGTH}
                 error={phoneNumberError ?? undefined}
                 onChange={(event) => {
                   setPhoneNumber(formatPhoneNumberInput(event.target.value));

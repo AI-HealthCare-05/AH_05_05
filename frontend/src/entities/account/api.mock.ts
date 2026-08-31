@@ -4,6 +4,7 @@ import type {
   ChangePasswordPayload,
   CreateAccountPayload,
   UpdateAccountProfilePayload,
+  WithdrawAccountPayload,
 } from './types';
 
 let currentProfile: AccountProfile = {
@@ -44,4 +45,10 @@ export function mockChangePassword(payload: ChangePasswordPayload): void {
     );
   }
   currentPassword = payload.newPassword;
+}
+
+export function mockWithdrawAccount({ password }: WithdrawAccountPayload): void {
+  if (password === 'wrong') {
+    throw new ApiError(400, 'invalid_password', '비밀번호가 일치하지 않아요.');
+  }
 }
