@@ -16,7 +16,9 @@ def _user_info_response(user: User) -> Response:
     response = UserInfoResponse.model_validate(user).model_copy(
         update={"phone_number": decrypt_phone_number(user.phone)}
     )
-    return Response(response.model_dump(), status_code=status.HTTP_200_OK)
+    # by_alias 가 없으면 CamelModel 이라도 snake_case 로 나간다. 여기서는 응답을 직접
+    # 만들어 FastAPI 의 직렬화(기본 by_alias=True)를 거치지 않기 때문이다.
+    return Response(response.model_dump(by_alias=True), status_code=status.HTTP_200_OK)
 
 
 @user_router.get("/me", response_model=UserInfoResponse, status_code=status.HTTP_200_OK)
@@ -60,6 +62,8 @@ async def change_my_password(
     """
     await user_manage_service.change_password(user=user, data=request)
     return Response(
-        PasswordChangeResponse(detail="비밀번호가 변경되었습니다.").model_dump(),
+        # detail 은 한 단어라 지금은 차이가 없지만, 필드가 늘 때 조용히 snake 로
+        # 나가지 않도록 위 응답과 같은 방식을 쓴다.
+        PasswordChangeResponse(detail="비밀번호가 변경되었습니다.").model_dump(by_alias=True),
         status_code=status.HTTP_200_OK,
     )

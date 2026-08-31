@@ -33,7 +33,7 @@ class TestUserMeApis(TestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["email"] == email
         assert response.json()["name"] == "내정보테스터"
-        assert response.json()["phone_number"] == signup_data["phone_number"]
+        assert response.json()["phoneNumber"] == signup_data["phone_number"]
         stored_user = await User.get(email=email)
         assert stored_user.phone != signup_data["phone_number"]
 
@@ -61,7 +61,7 @@ class TestUserMeApis(TestCase):
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["birth_date"] == "1988-03-14"
+        assert body["birthDate"] == "1988-03-14"
         assert body["gender"] == "FEMALE"
 
     async def test_update_user_me_success(self):
@@ -108,13 +108,13 @@ class TestUserMeApis(TestCase):
 
             response = await client.patch(
                 "/api/v1/users/me",
-                json={"birth_date": "1985-12-25", "gender": "FEMALE"},
+                json={"birthDate": "1985-12-25", "gender": "FEMALE"},
                 headers=headers,
             )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["birth_date"] == "1985-12-25"
+        assert body["birthDate"] == "1985-12-25"
         assert body["gender"] == "FEMALE"
         stored_user = await User.get(email=email)
         assert str(stored_user.birth_date) == "1985-12-25"
@@ -140,7 +140,7 @@ class TestUserMeApis(TestCase):
 
         body = response.json()
         assert body["name"] == "이름만"
-        assert body["birth_date"] == "1992-07-07"
+        assert body["birthDate"] == "1992-07-07"
         assert body["gender"] == "MALE"
 
     async def test_get_user_me_unauthorized(self):
@@ -170,12 +170,12 @@ class TestUserMeApis(TestCase):
             headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
             response = await client.patch(
                 "/api/v1/users/me",
-                json={"phone_number": "010-3333-4444"},
+                json={"phoneNumber": "010-3333-4444"},
                 headers=headers,
             )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["phone_number"] == "01033334444"
+        assert response.json()["phoneNumber"] == "01033334444"
         first_user = await User.get(email=first_signup["email"])
         second_user = await User.get(email=second_signup["email"])
         assert first_user.phone != second_user.phone

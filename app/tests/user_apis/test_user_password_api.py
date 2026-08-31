@@ -39,7 +39,7 @@ class TestUserPasswordApi(TestCase):
             response = await client.patch(
                 "/api/v1/users/me/password",
                 headers=headers,
-                json={"current_password": CURRENT_PASSWORD, "new_password": NEW_PASSWORD},
+                json={"currentPassword": CURRENT_PASSWORD, "newPassword": NEW_PASSWORD},
             )
 
             assert response.status_code == status.HTTP_200_OK
@@ -66,7 +66,7 @@ class TestUserPasswordApi(TestCase):
             response = await client.patch(
                 "/api/v1/users/me/password",
                 headers=headers,
-                json={"current_password": "WrongPassword123!", "new_password": NEW_PASSWORD},
+                json={"currentPassword": "WrongPassword123!", "newPassword": NEW_PASSWORD},
             )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -80,7 +80,7 @@ class TestUserPasswordApi(TestCase):
             response = await client.patch(
                 "/api/v1/users/me/password",
                 headers=headers,
-                json={"current_password": CURRENT_PASSWORD, "new_password": CURRENT_PASSWORD},
+                json={"currentPassword": CURRENT_PASSWORD, "newPassword": CURRENT_PASSWORD},
             )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -105,11 +105,13 @@ class TestUserPasswordApi(TestCase):
                 response = await client.patch(
                     "/api/v1/users/me/password",
                     headers=headers,
-                    json={"current_password": CURRENT_PASSWORD, "new_password": weak},
+                    json={"currentPassword": CURRENT_PASSWORD, "newPassword": weak},
                 )
                 assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, weak
                 assert response.json()["code"] == "VALIDATION_ERROR", weak
-                assert response.json()["field"] == "new_password", weak
+                # field 는 클라이언트가 보낸 표기법을 그대로 돌려준다. camelCase 로 보냈으니
+                # newPassword 다. 화면이 이 값으로 오류를 붙일 칸을 고른다(PasswordChangeSheet).
+                assert response.json()["field"] == "newPassword", weak
 
         assert (await User.get(email=EMAIL)).hashed_password == before
 
@@ -117,21 +119,40 @@ class TestUserPasswordApi(TestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.patch(
                 "/api/v1/users/me/password",
-                json={"current_password": CURRENT_PASSWORD, "new_password": NEW_PASSWORD},
+                json={"currentPassword": CURRENT_PASSWORD, "newPassword": NEW_PASSWORD},
             )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    async def test_change_password_rejects_camel_case_body(self):
-        # 프론트가 payload 를 그대로 보내던 시절의 표기법이다.
-        # 사용자 API 는 snake_case 라 여기서 걸러져야 한다.
+    async def test_change_password_accepts_both_spellings(self):
+        # CamelModel 은 populate_by_name=True 라 별칭(camel)과 필드명(snake)을 둘 다 받는다.
+        # 이관(#172) 중에도 기존 snake_case 요청이 계속 통해야 한다.
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await self._signed_in_client(client)
+
+            camel = await client.patch(
+                "/api/v1/users/me/password",
+                headers=headers,
+                json={"currentPassword": CURRENT_PASSWORD, "newPassword": NEW_PASSWORD},
+            )
+            snake = await client.patch(
+                "/api/v1/users/me/password",
+                headers=headers,
+                json={"current_password": NEW_PASSWORD, "new_password": CURRENT_PASSWORD},
+            )
+
+        assert camel.status_code == status.HTTP_200_OK
+        assert snake.status_code == status.HTTP_200_OK
+
+    async def test_change_password_rejects_unknown_field_name(self):
+        # 이름 자체가 틀린 키는 어느 표기법으로도 통하면 안 된다.
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await self._signed_in_client(client)
 
             response = await client.patch(
                 "/api/v1/users/me/password",
                 headers=headers,
-                json={"currentPassword": CURRENT_PASSWORD, "newPassword": NEW_PASSWORD},
+                json={"currentPasword": CURRENT_PASSWORD, "newPassword": NEW_PASSWORD},
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

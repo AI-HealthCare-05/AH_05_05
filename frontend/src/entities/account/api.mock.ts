@@ -50,7 +50,8 @@ export function mockChangePassword(payload: ChangePasswordPayload): void {
   }
   // 서버는 validate_password 로 검사하고 422 에 field 를 실어 보냅니다.
   if (payload.newPassword.length < 8) {
-    throw new ApiError(422, 'VALIDATION_ERROR', '비밀번호는 8자 이상이어야 합니다.', 'new_password');
+    // field 는 보낸 표기법을 그대로 돌려준다. 지금은 camelCase 로 보낸다(#172).
+    throw new ApiError(422, 'VALIDATION_ERROR', '비밀번호는 8자 이상이어야 합니다.', 'newPassword');
   }
   currentPassword = payload.newPassword;
 }
