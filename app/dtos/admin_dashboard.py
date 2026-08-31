@@ -52,6 +52,24 @@ class SignupTrendPoint(CamelModel):
     count: int
 
 
+class AlarmNotificationStats(CamelModel):
+    """ALARM 백그라운드 작업의 현재 상태와 최근 성공 발송 추이."""
+
+    queued: int
+    completed: int
+    failed: int
+    completed_trend: list[SignupTrendPoint]
+
+
+class OcrDocumentStats(CamelModel):
+    """OCR 작업의 전체 건수와 대시보드에 노출하는 주요 상태별 건수."""
+
+    total: int
+    queued: int
+    completed: int
+    failed: int
+
+
 class MemberStats(CamelModel):
     """회원 현황.
 
@@ -81,10 +99,11 @@ class MemberStats(CamelModel):
 class DashboardSummaryResponse(CamelModel):
     """REQ-DASH-001 대시보드 요약.
 
-    1차는 회원 현황 블록 하나다. OCR·챗봇·알림·시스템·보안은 타 담당 데이터와
-    로그 테이블이 생긴 뒤 같은 응답에 블록을 추가하는 방식으로 확장한다.
+    회원 현황, ALARM 백그라운드 작업 및 OCR 문서 처리 현황을 반환한다.
     """
 
     period: DashboardPeriod
     generated_at: datetime
     members: MemberStats
+    alarm_notifications: AlarmNotificationStats
+    ocr_documents: OcrDocumentStats
