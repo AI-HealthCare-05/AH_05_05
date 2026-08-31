@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.dtos.supplement_nutrients import SupplementNutrientResponse
 from app.models.enums import MealSlot, SupplementStatus
@@ -44,6 +44,9 @@ class UserSupplementNutrientUpsertRequest(BaseModel):
 
 
 class UserSupplementNutrientUpdateRequest(BaseModel):
+    # 전 필드가 선택이라 모르는 키를 무시하면 아무것도 안 바뀌고 성공 응답이 나간다.
+    model_config = ConfigDict(extra="forbid")
+
     dose_amount: Decimal | None = Field(default=None, gt=0, max_digits=8, decimal_places=3)
     dose_unit: str | None = Field(default=None, min_length=1, max_length=20)
     start_date: date | None = None

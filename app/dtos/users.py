@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.validators import optional_after_validator, validate_password, validate_phone_number
 from app.dtos.base import BaseSerializerModel
@@ -10,6 +10,10 @@ from app.models.enums import AccountStatus, Gender
 
 class UserUpdateRequest(BaseModel):
     """마이페이지 「기본정보 수정」이 보내는 값. 보낸 항목만 바뀐다(exclude_none)."""
+
+    # 전 필드가 선택이라 모르는 키를 무시하면 "바꿀 항목 0개"가 되어 200 이 나간다.
+    # 오타(phone_nubmer)나 표기법 실수(phoneNumber)가 저장 성공으로 보였다.
+    model_config = ConfigDict(extra="forbid")
 
     name: Annotated[str | None, Field(None, min_length=2, max_length=100)]
     email: Annotated[

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core import config
 from app.dtos.base import BaseSerializerModel
@@ -37,6 +37,9 @@ class AlarmCreateRequest(BaseModel):
 
 
 class AlarmUpdateRequest(BaseModel):
+    # 전 필드가 선택이라 모르는 키를 무시하면 아무것도 안 바뀌고 성공 응답이 나간다.
+    model_config = ConfigDict(extra="forbid")
+
     care_episode_id: Annotated[int | None, Field(gt=0)] = None
     source_guide_id: Annotated[int | None, Field(gt=0)] = None
     follow_up_visit_id: Annotated[int | None, Field(gt=0)] = None
