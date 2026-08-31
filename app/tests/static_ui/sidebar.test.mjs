@@ -167,14 +167,30 @@ test("administrator pages expose a shared fixed top area", async () => {
   ];
 
   assert.match(source, /data-admin-topbar/);
+  assert.match(source, /data-admin-topbar-brand/);
   assert.match(source, /data-login-user-name/);
   assert.match(source, /userName\.textContent\s*=\s*getAdminDisplayName\(admin\)/);
+  assert.match(source, /relocateSidebarBrand\(sidebar, root\)/);
   assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*right:\s*0;/s);
+  assert.match(managementStyles, /\.admin-topbar-brand\s*\{[^}]*display:\s*flex;/s);
+  assert.match(managementStyles, /\.admin-topbar\s+\.sidebar-brand\s*\{[^}]*width:\s*auto;/s);
   assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*font-weight:\s*800;/s);
   assert.match(managementStyles, /body\.management-page,[^}]*body\.dashboard-page\s*\{[^}]*padding-top:\s*64px;/s);
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-4"/, page);
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-5"/, page);
   }
+});
+
+test("sidebar brand moves into the left side of the top area", async () => {
+  const { relocateSidebarBrand } = await import("../../static/js/sidebar.js");
+  const brand = { id: "brand" };
+  let moved = null;
+  const sidebar = { querySelector: (selector) => selector === ".sidebar-brand" ? brand : null };
+  const target = { append(element) { moved = element; } };
+  const root = { querySelector: (selector) => selector === "[data-admin-topbar-brand]" ? target : null };
+
+  assert.equal(relocateSidebarBrand(sidebar, root), true);
+  assert.equal(moved, brand);
 });

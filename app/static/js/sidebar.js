@@ -32,6 +32,10 @@ export function renderAdminTopbar(root = document, admin = session.admin()) {
   topbar.setAttribute("data-admin-topbar", "");
   topbar.setAttribute("aria-label", "관리자 상단 영역");
 
+  const brandSlot = root.createElement("div");
+  brandSlot.className = "admin-topbar-brand";
+  brandSlot.setAttribute("data-admin-topbar-brand", "");
+
   const user = root.createElement("div");
   user.className = "admin-topbar-user";
   user.setAttribute("aria-label", "로그인 사용자");
@@ -42,9 +46,17 @@ export function renderAdminTopbar(root = document, admin = session.admin()) {
   userName.textContent = getAdminDisplayName(admin);
 
   user.append(userName);
-  topbar.append(user);
+  topbar.append(brandSlot, user);
   root.body.prepend(topbar);
   return topbar;
+}
+
+export function relocateSidebarBrand(sidebar, root = document) {
+  const brand = sidebar?.querySelector?.(".sidebar-brand");
+  const target = root.querySelector?.("[data-admin-topbar-brand]");
+  if (!brand || !target?.append) return false;
+  target.append(brand);
+  return true;
 }
 
 export function markActiveNavigation(sidebar, activeSection) {
@@ -93,6 +105,7 @@ export async function loadSidebar(root = document, fetcher = fetch) {
     markActiveNavigation(sidebar, activeSection);
     initializeNavigation(sidebar);
     configureSettingsButton(sidebar);
+    relocateSidebarBrand(sidebar, root);
     placeholder.replaceWith(sidebar);
     return sidebar;
   } catch (error) {
