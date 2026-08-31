@@ -53,6 +53,53 @@ test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 �
     .toBe('signup-access-token');
 });
 
+test('이메일 pattern 은 브라우저가 실제로 컴파일하고 적용한다', async ({ page }) => {
+  // 크롬은 pattern 을 v 플래그로 컴파일한다. 문자 클래스 안의 `/ { | }` 를 이스케이프하지
+  // 않으면 컴파일에 실패하고 **속성이 통째로 무시된다**(#180). 잠금장치가 안 붙었는데
+  // 아무도 모르던 것이 이번 문제의 본질이라, 붙었는지부터 확인한다.
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+  const emailInput = page.getByLabel('이메일');
+
+  expect(consoleErrors.filter((text) => text.includes('Pattern attribute value'))).toEqual([]);
+
+  // 화면에 실제로 붙은 속성값을 그대로 컴파일해 본다. 상수를 import 해서 보면
+  // 브라우저에 전달된 값이 아니라 소스를 검사하게 된다.
+  const matches = await emailInput.evaluate((element: HTMLInputElement) => {
+    const attribute = element.getAttribute('pattern') ?? '';
+    // pattern 속성은 브라우저가 앞뒤에 ^(?: )$ 를 붙여 쓴다. 그대로 흉내낸다.
+    const pattern = new RegExp(`^(?:${attribute})$`, 'v');
+    return {
+      korean: pattern.test('한글@example.com'),
+      koreanDomain: pattern.test('a@한글.com'),
+      plain: pattern.test('user@example.com'),
+      punctuated: pattern.test("a.b'c+d@sub.example.co.kr"),
+    };
+  });
+  expect(matches).toEqual({
+    korean: false,
+    koreanDomain: false,
+    plain: true,
+    punctuated: true,
+  });
+
+  // 브라우저가 실제로 막는지. 예전에는 checkValidity() 가 그냥 true 였다.
+  await emailInput.fill('abc');
+  expect(
+    await emailInput.evaluate((element: HTMLInputElement) => element.validity.patternMismatch),
+  ).toBe(true);
+
+  await emailInput.fill('user@example.com');
+  expect(await emailInput.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(
+    true,
+  );
+});
+
 test('회원가입 이메일 칸은 한글을 지우고 이유를 알린다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
