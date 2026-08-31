@@ -138,9 +138,9 @@ async function authenticate(page: Page) {
   }, ACCESS_TOKEN);
 }
 
-async function fulfillJson(route: Route, body: unknown) {
+async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
-    status: 200,
+    status,
     contentType: 'application/json',
     body: JSON.stringify(body),
   });
@@ -709,6 +709,159 @@ test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여
 
   await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
   await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
+});
+
+test('활성 처방이 두 건이어도 복용 기록은 사용자 단위로 한 번만 조회하고 저장한다', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await authenticate(page);
+  const doseGets: string[] = [];
+  const dosePosts: Array<Record<string, unknown>> = [];
+  const overviews = [
+    {
+      recordId: 12,
+      documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2026-08-22', slot: 'morning' },
+      endDate: '2026-08-31',
+      daysRemaining: 7,
+      mealTimes: {
+        morning: '08:00',
+        lunch: '13:00',
+        evening: '19:00',
+        bedtime: '22:30',
+      },
+      medications: [
+        {
+          medicationId: 301,
+          name: '셀레콕시브',
+          dose: '200mg',
+          days: 10,
+          daysRemaining: 7,
+          slots: ['morning'],
+          asNeeded: false,
+        },
+      ],
+    },
+    {
+      recordId: 24,
+      documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2026-08-24', slot: 'morning' },
+      endDate: '2026-08-28',
+      daysRemaining: 3,
+      mealTimes: {
+        morning: '08:00',
+        lunch: '13:00',
+        evening: '19:00',
+        bedtime: '22:30',
+      },
+      medications: [
+        {
+          medicationId: 501,
+          name: '아목시실린',
+          dose: '500mg',
+          days: 5,
+          daysRemaining: 3,
+          slots: ['morning'],
+          asNeeded: false,
+        },
+      ],
+    },
+  ];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      doseGets.push(request.url());
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    dosePosts.push(request.postDataJSON() as Record<string, unknown>);
+    await fulfillJson(route, request.postDataJSON(), 200);
+  });
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, overviews, 200));
+
+  await page.goto('/home');
+  await page.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
+  await page.getByRole('button', { name: '2개 먹었어요' }).click();
+
+  await expect(page.getByLabel('8월 25일 아침 먹은 기록')).toBeVisible();
+  expect(doseGets).toHaveLength(1);
+  expect(new URL(doseGets[0]).searchParams.has('recordId')).toBe(false);
+  expect(dosePosts).toEqual([
+    { date: '2026-08-25', slot: 'morning', taken: true },
+  ]);
+});
+
+test('복약 정보 삭제는 오류를 팝업에 남기고 성공하면 목록으로 이동한다', async ({ page }) => {
+  await authenticate(page);
+  let deleteAttempts = 0;
+  let deleted = false;
+  const overview = {
+    recordId: 12,
+    documentImageUrl: '/mock/medication-envelope.svg',
+    start: { date: '2026-08-22', slot: 'morning' },
+    endDate: '2026-08-31',
+    daysRemaining: 7,
+    mealTimes: {
+      morning: '08:00',
+      lunch: '13:00',
+      evening: '19:00',
+      bedtime: '22:30',
+    },
+    medications: [
+      {
+        medicationId: 301,
+        name: '셀레콕시브',
+        dose: '200mg',
+        days: 10,
+        daysRemaining: 7,
+        slots: ['morning'],
+        asNeeded: false,
+      },
+    ],
+  };
+  await page.route('**/api/v1/medications/12', async (route) => {
+    deleteAttempts += 1;
+    if (deleteAttempts === 1) {
+      await fulfillJson(route, { code: 'MEDICATION_RECORD_FORBIDDEN', message: '금지됨' }, 403);
+      return;
+    }
+    if (deleteAttempts === 2) {
+      await fulfillJson(route, { code: 'SERVER_ERROR', message: '삭제 서버 오류' }, 500);
+      return;
+    }
+    deleted = true;
+    await route.fulfill({ status: 204 });
+  });
+  await page.route('**/api/v1/medications', (route) =>
+    fulfillJson(route, deleted ? [] : [overview], 200),
+  );
+
+  await page.goto('/medications/12');
+  const deleteButton = page.getByRole('button', { name: '복약 정보 삭제' });
+  await expect(deleteButton).toBeVisible();
+  const deleteButtonBox = await deleteButton.boundingBox();
+  const viewport = page.viewportSize();
+  expect(deleteButtonBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(deleteButtonBox!.x + deleteButtonBox!.width / 2).toBeCloseTo(viewport!.width / 2, 0);
+
+  await deleteButton.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: '이 복약 정보를 삭제할까요?' })).toBeVisible();
+  await expect(dialog).toContainText('다시 등록하려면 약봉투를 다시 찍어야 해요.');
+  await expect(dialog).not.toContainText('복용 기록도');
+  await dialog.getByRole('button', { name: '삭제하기' }).click();
+  await expect(dialog).toContainText('복약 정보를 찾지 못했어요');
+  await dialog.getByRole('button', { name: '삭제하기' }).click();
+  await expect(dialog).toContainText('삭제 서버 오류');
+  await dialog.getByRole('button', { name: '삭제하기' }).click();
+
+  await expect(page).toHaveURL('/medications');
+  await expect(page.getByText('복약 정보를 삭제했어요.')).toBeVisible();
+  await expect(page.getByRole('button', { name: '되돌리기' })).toHaveCount(0);
+  await page.goBack();
+  await expect(page).not.toHaveURL(/\/medications\/12$/);
 });
 
 test('업로드 응답에 문서 ID가 없으면 polling을 시작하지 않는다', async ({ page }) => {

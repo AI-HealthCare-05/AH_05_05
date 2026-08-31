@@ -44,7 +44,7 @@ export function MedicationRecordGrid({
   const takenRecords = new Set(
     records
       .filter((record) => record.taken)
-      .map((record) => `${record.recordId}:${record.date}:${record.slot}`),
+      .map((record) => `${record.date}:${record.slot}`),
   );
   const gridTemplateColumns = `max-content repeat(${dates.length}, minmax(0, var(--spacing-record-cell-w)))`;
 
@@ -222,9 +222,7 @@ function getCellState({
   takenRecords: Set<string>;
 }): RecordCellState {
   if (recordIds.length === 0) return 'empty';
-  const allTaken = recordIds.every((recordId) =>
-    takenRecords.has(`${recordId}:${date}:${slot}`),
-  );
+  const allTaken = takenRecords.has(`${date}:${slot}`);
   if (allTaken) return 'taken';
   const overview = overviews.find((item) => recordIds.includes(item.recordId));
   return overview && hasSlotTimePassed(date, slot, overview, now) ? 'missing' : 'future';

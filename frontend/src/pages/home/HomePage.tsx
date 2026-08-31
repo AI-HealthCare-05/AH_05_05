@@ -44,7 +44,6 @@ interface HomePageProps {
 }
 
 interface DoseBatchChange {
-  recordIds: number[];
   date: string;
   slot: MealSlot;
   taken: boolean;
@@ -175,17 +174,18 @@ export function HomePage({
     let cancelled = false;
     setDoseRecords(null);
     setDoseLoadError(null);
-    Promise.all(
-      withMedication.map((overview) =>
-        doseRecordsLoader({
-          recordId: overview.recordId,
-          from: overview.start.date,
-          to: overview.endDate,
-        }),
-      ),
-    )
+    const firstOverview = withMedication[0];
+    const from = withMedication.reduce(
+      (minimum, overview) => overview.start.date < minimum ? overview.start.date : minimum,
+      firstOverview.start.date,
+    );
+    const to = withMedication.reduce(
+      (maximum, overview) => overview.endDate > maximum ? overview.endDate : maximum,
+      firstOverview.endDate,
+    );
+    doseRecordsLoader({ from, to })
       .then((records) => {
-        if (!cancelled) setDoseRecords(records.flat());
+        if (!cancelled) setDoseRecords(records);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -249,15 +249,13 @@ export function HomePage({
   }
 
   async function changeDose(change: DoseBatchChange, showUndo = true) {
-    if (!doseRecords || change.recordIds.length === 0) return;
+    if (!doseRecords) return;
     const previousRecords = doseRecords;
     setFailedDoseChange(null);
     setAnimatedDoseKey(change.taken ? doseKey(change.date, change.slot) : null);
     setDoseRecords(updateDoseRecords(previousRecords, change));
     try {
-      await Promise.all(
-        change.recordIds.map((recordId) => doseRecordSaver({ ...change, recordId })),
-      );
+      await doseRecordSaver(change);
       if (showUndo) {
         toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
           action: {
@@ -318,7 +316,9 @@ export function HomePage({
                 doseRecords={doseRecords ?? []}
                 currentDate={currentDate}
                 onDoseChange={(recordIds, slot, taken) =>
-                  void changeDose({ recordIds, date: currentDate, slot, taken })
+                  recordIds.length > 0
+                    ? void changeDose({ date: currentDate, slot, taken })
+                    : undefined
                 }
                 onUpload={() => navigate('/document-upload')}
               />
@@ -329,7 +329,9 @@ export function HomePage({
                   now={new Date()}
                   animatedRecordKey={animatedDoseKey}
                   onMarkTaken={(date, slot, recordIds) =>
-                    void changeDose({ recordIds, date, slot, taken: true })
+                    recordIds.length > 0
+                      ? void changeDose({ date, slot, taken: true })
+                      : undefined
                   }
                 />
               ) : null}
@@ -427,23 +429,11 @@ function LoggedInMedicationContent({
 }
 
 function updateDoseRecords(records: DoseRecord[], change: DoseBatchChange): DoseRecord[] {
-  const recordIds = new Set(change.recordIds);
   const remaining = records.filter(
-    (record) =>
-      !recordIds.has(record.recordId) ||
-      record.date !== change.date ||
-      record.slot !== change.slot,
+    (record) => record.date !== change.date || record.slot !== change.slot,
   );
   if (!change.taken) return remaining;
-  return [
-    ...remaining,
-    ...change.recordIds.map((recordId) => ({
-      recordId,
-      date: change.date,
-      slot: change.slot,
-      taken: true,
-    })),
-  ];
+  return [...remaining, { date: change.date, slot: change.slot, taken: true }];
 }
 
 function doseKey(date: string, slot: MealSlot): string {

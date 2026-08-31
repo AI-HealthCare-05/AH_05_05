@@ -29,17 +29,18 @@ import type {
 } from './types';
 
 let hasRegisteredMedication = true;
+const cancelledMedicationRecordIds = new Set<number>();
 let doseRecords: DoseRecord[] = [
-  { recordId: 12, date: '2026-08-22', slot: 'morning', taken: true },
-  { recordId: 12, date: '2026-08-22', slot: 'evening', taken: true },
-  { recordId: 12, date: '2026-08-23', slot: 'morning', taken: true },
-  { recordId: 12, date: '2026-08-23', slot: 'evening', taken: true },
-  { recordId: 12, date: '2026-08-24', slot: 'morning', taken: true },
-  { recordId: 24, date: '2026-08-24', slot: 'morning', taken: true },
+  { date: '2026-08-22', slot: 'morning', taken: true },
+  { date: '2026-08-22', slot: 'evening', taken: true },
+  { date: '2026-08-23', slot: 'morning', taken: true },
+  { date: '2026-08-23', slot: 'evening', taken: true },
+  { date: '2026-08-24', slot: 'morning', taken: true },
 ];
 
 export function resetMockMedicationForNewAccount(): void {
   hasRegisteredMedication = false;
+  cancelledMedicationRecordIds.clear();
   doseRecords = [];
 }
 
@@ -93,15 +94,16 @@ function secondaryMedicationOverview(): MedicationOverview {
 }
 
 export function mockMedicationOverviews(): MedicationOverview[] {
-  return hasRegisteredMedication
-    ? [primaryMedicationOverview(), secondaryMedicationOverview()]
-    : [];
+  if (!hasRegisteredMedication) return [];
+  return [primaryMedicationOverview(), secondaryMedicationOverview()].filter(
+    (overview) => !cancelledMedicationRecordIds.has(overview.recordId),
+  );
 }
 
 export function mockMedicationOverview(recordId = 12): MedicationOverview {
   const overview = mockMedicationOverviews().find((item) => item.recordId === recordId);
   if (overview) return overview;
-  return { ...primaryMedicationOverview(), medications: [] };
+  throw new Error('복약 기록을 찾지 못했어요.');
 }
 
 function medicationEndDate(
@@ -154,23 +156,23 @@ export function mockSaveMedicationSchedule(
 
 export function mockSaveDoseTaken(payload: SaveDoseTakenPayload): DoseRecord {
   doseRecords = doseRecords.filter(
-    (record) =>
-      record.recordId !== payload.recordId ||
-      record.date !== payload.date ||
-      record.slot !== payload.slot,
+    (record) => record.date !== payload.date || record.slot !== payload.slot,
   );
   if (payload.taken) doseRecords.push({ ...payload });
   return { ...payload };
 }
 
-export function mockGetDoseRecords({ recordId, from, to }: DoseRecordRange): DoseRecord[] {
+export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] {
   return doseRecords
     .filter(
       (record) =>
-        record.recordId === recordId &&
         record.taken &&
         record.date >= from &&
         record.date <= to,
     )
     .map((record) => ({ ...record }));
+}
+
+export function mockCancelMedication(recordId: number): void {
+  cancelledMedicationRecordIds.add(recordId);
 }

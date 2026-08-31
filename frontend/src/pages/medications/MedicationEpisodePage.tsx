@@ -3,14 +3,17 @@ import { ChevronRight } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import {
+  cancelMedication,
   getMedicationOverview,
   saveMedicationSchedule,
   type MealSlot,
   type MedicationOverview,
   type MedicationOverviewItem,
 } from '@/entities/medication';
+import { ApiError } from '@/shared/api/client';
 import { mealSlotLabel } from '@/shared/model/mealSlot';
 import { BottomTabbar, Card, ErrorDialog, Header, type TabKey } from '@/shared/ui';
+import { MedicationCancelDialog } from './MedicationCancelDialog';
 import { MedicationSlotSheet } from './MedicationSlotSheet';
 
 const TAB_ROUTES: Record<TabKey, string> = {
@@ -29,6 +32,9 @@ export function MedicationEpisodePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingMedication, setEditingMedication] = useState<MedicationOverviewItem | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!Number.isInteger(recordId) || recordId <= 0) {
@@ -74,6 +80,28 @@ export function MedicationEpisodePage() {
       toast.success('복용 시간을 바꿨어요.');
     } catch (error: unknown) {
       setSaveError(error instanceof Error ? error.message : '복용 시간을 저장하지 못했어요.');
+    }
+  }
+
+  async function cancelCurrentMedication() {
+    if (!overview || cancelPending) return;
+    setCancelPending(true);
+    setCancelError(null);
+    try {
+      await cancelMedication(overview.recordId);
+      setCancelOpen(false);
+      navigate('/medications', { replace: true });
+      toast.success('복약 정보를 삭제했어요.');
+    } catch (error: unknown) {
+      if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+        setCancelError('복약 정보를 찾지 못했어요');
+      } else {
+        setCancelError(
+          error instanceof Error ? error.message : '복약 정보를 삭제하지 못했어요.',
+        );
+      }
+    } finally {
+      setCancelPending(false);
     }
   }
 
@@ -138,6 +166,17 @@ export function MedicationEpisodePage() {
                 />
               ))}
             </section>
+
+            <button
+              type="button"
+              className="mt-auto min-h-touch self-center px-4 text-center text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => {
+                setCancelError(null);
+                setCancelOpen(true);
+              }}
+            >
+              복약 정보 삭제
+            </button>
           </>
         )}
       </main>
@@ -154,6 +193,16 @@ export function MedicationEpisodePage() {
           if (!open) setEditingMedication(null);
         }}
         onSave={saveMedicationSlots}
+      />
+      <MedicationCancelDialog
+        open={cancelOpen}
+        pending={cancelPending}
+        error={cancelError}
+        onOpenChange={(open) => {
+          setCancelOpen(open);
+          if (!open) setCancelError(null);
+        }}
+        onConfirm={() => void cancelCurrentMedication()}
       />
       <ErrorDialog
         open={saveError !== null}
