@@ -22,11 +22,14 @@ type ErrorTarget = 'current' | 'new' | 'form';
  *
  * 422 는 서버가 `field` 를 실어 보냅니다(exception_handlers 가 loc 에서 뽑습니다).
  * 400 은 `field` 가 없어 code 로 가릅니다.
+ *
+ * `field` 는 **보낸 표기법을 그대로 되돌려줍니다.** 지금은 camelCase 로 보내지만,
+ * 서버가 두 표기법을 모두 받으므로(populate_by_name) 양쪽을 다 봅니다.
  */
 function errorTarget(error: unknown): ErrorTarget {
   if (!(error instanceof ApiError)) return 'form';
-  if (error.field === 'new_password') return 'new';
-  if (error.field === 'current_password') return 'current';
+  if (error.field === 'newPassword' || error.field === 'new_password') return 'new';
+  if (error.field === 'currentPassword' || error.field === 'current_password') return 'current';
   if (error.code === 'SAME_AS_CURRENT') return 'new';
   if (error.code === 'INVALID_PASSWORD') return 'current';
   // 네트워크 오류나 5xx 처럼 특정 칸의 문제가 아닌 것들.
