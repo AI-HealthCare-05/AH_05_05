@@ -20,7 +20,7 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
     validated = ChatEvaluationManifest.model_validate(manifest)
 
     assert manifest["schema_version"] == "chat-evaluation-v1"
-    assert manifest["dataset_version"] == "chat-representative-v1"
+    assert manifest["dataset_version"] == "chat-representative-v2"
     assert manifest["frontend_preset"] is False
     assert len(cases) == 10
     assert len(validated.cases) == 10

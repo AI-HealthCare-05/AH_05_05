@@ -1,5 +1,5 @@
 schema_version: chat-evaluation-v1
-dataset_version: chat-representative-v1
+dataset_version: chat-representative-v2
 frontend_preset: false
 max_case_latency_ms: 30000
 description: >-
@@ -146,7 +146,7 @@ cases:
 
   - query_id: mixed-active-medication-public-caution
     category: RDB_AND_VECTOR
-    question: 내가 복용 중인 로사르탄의 복용법과 공공자료의 추가 주의사항을 함께 알려줘.
+    question: 내가 복용 중인 로사르탄의 복용법과 주의사항을 알려줘.
     preconditions:
       - 사용자에게 로사르탄이 활성 복용 약으로 등록되어 있다.
       - 로사르탄 관련 공공 지식 청크가 Qdrant에 존재한다.
