@@ -1,7 +1,5 @@
 from datetime import date
 
-from pydantic import Field
-
 from app.dtos.base import CamelModel
 
 
@@ -39,14 +37,12 @@ class MedicationOverview(CamelModel):
 
 
 class SaveMedicationDoseRequest(CamelModel):
-    record_id: int = Field(gt=0)
     date: date
     slot: str
     taken: bool
 
 
 class MedicationDoseResponse(CamelModel):
-    record_id: int
     date: date
     slot: str
     taken: bool

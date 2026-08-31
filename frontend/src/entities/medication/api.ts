@@ -5,6 +5,7 @@
 import { ApiError, http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
+  mockCancelMedication,
   mockMedicationOverview,
   mockMedicationOverviews,
   mockMedicationSchedule,
@@ -96,9 +97,17 @@ export async function getDoseRecords(range: DoseRecordRange): Promise<DoseRecord
     return mockGetDoseRecords(range);
   }
   const query = new URLSearchParams({
-    recordId: String(range.recordId),
     from: range.from,
     to: range.to,
   });
   return http.get<DoseRecord[]>(`/v1/medications/doses?${query.toString()}`);
+}
+
+export async function cancelMedication(recordId: number): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay();
+    mockCancelMedication(recordId);
+    return;
+  }
+  await http.delete<void>(`/v1/medications/${recordId}`);
 }

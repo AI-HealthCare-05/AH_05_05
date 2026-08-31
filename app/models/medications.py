@@ -67,11 +67,6 @@ class MedicationDose(models.Model):
         related_name="medication_doses",
         on_delete=fields.CASCADE,
     )
-    care_episode: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
-        "models.CareEpisode",
-        related_name="doses",
-        on_delete=fields.CASCADE,
-    )
     dose_date = fields.DateField()
     slot = fields.CharEnumField(MealSlot)
     taken_at = fields.DatetimeField(auto_now_add=True)
@@ -79,5 +74,5 @@ class MedicationDose(models.Model):
 
     class Meta:
         table = "medication_doses"
-        unique_together = (("user", "care_episode", "dose_date", "slot"),)
-        indexes = (("care_episode", "dose_date"),)
+        unique_together = (("user", "dose_date", "slot"),)
+        indexes = (("user", "dose_date"),)
