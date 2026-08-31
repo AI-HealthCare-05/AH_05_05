@@ -619,3 +619,23 @@ def test_this_medicine_does_not_choose_between_multiple_active_medications() -> 
 
     assert "아스피린" not in candidates
     assert "타이레놀" not in candidates
+
+
+def test_avoidance_question_uses_interaction_route_without_assuming_pair_type() -> None:
+    questions = [
+        "펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
+        "케토롤락 복용 중 아스피린을 피해야 하나요?",
+        "와파린 복용 중 비타민 K를 피해야 하나요?",
+        "마그네슘 복용 중 아연을 피해야 하나요?",
+    ]
+
+    assert all(
+        AnswerMedicationQuestionUseCase._is_interaction_question(question)
+        for question in questions
+    )
+
+
+def test_single_drug_contraindication_does_not_use_interaction_route() -> None:
+    assert not AnswerMedicationQuestionUseCase._is_interaction_question(
+        "아스피린은 임신 중 피해야 하나요?",
+    )

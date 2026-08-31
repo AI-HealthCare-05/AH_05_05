@@ -6,6 +6,9 @@ from ai_worker.domain.chat_content_compactor import (
     ANSWER_COMPACTION_MARKER,
     compact_chat_content,
 )
+from ai_worker.domain.interaction_question_detector import (
+    is_interaction_question,
+)
 from ai_worker.domain.interfaces import (
     ActiveIntakeContextProvider,
     GroundedClaimValidator,
@@ -425,16 +428,7 @@ class AnswerMedicationQuestionUseCase:
 
     @staticmethod
     def _is_interaction_question(question: str) -> bool:
-        return any(
-            keyword in question
-            for keyword in (
-                "상호작용",
-                "같이 먹",
-                "함께 먹",
-                "병용",
-                "조합",
-            )
-        )
+        return is_interaction_question(question)
 
     @staticmethod
     def _is_supplement_question(question: str) -> bool:

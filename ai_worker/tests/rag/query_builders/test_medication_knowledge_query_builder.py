@@ -1,3 +1,5 @@
+import pytest
+
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
@@ -54,3 +56,37 @@ def test_build_treats_pair_effect_question_as_interaction_without_explicit_keywo
 
     assert plan.section_types == [KnowledgeSectionType.INTERACTION]
     assert plan.interaction_pair is not None
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
+        "케토롤락 복용 중 아스피린을 피해야 하나요?",
+        "와파린 복용 중 비타민 K를 피해야 하나요?",
+        "마그네슘 복용 중 아연을 피해야 하나요?",
+        "약과 함께 피해야 할 음식이 있나요?",
+    ],
+)
+def test_build_treats_avoidance_between_intake_targets_as_interaction(
+    question: str,
+) -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(question)
+
+    assert plan.section_types == [KnowledgeSectionType.INTERACTION]
+    assert "상호작용" in plan.expanded_query
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "아스피린은 임신 중 피해야 하나요?",
+        "임신 중 피해야 할 약이 있나요?",
+    ],
+)
+def test_build_does_not_treat_single_target_contraindication_as_interaction(
+    question: str,
+) -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(question)
+
+    assert KnowledgeSectionType.INTERACTION not in plan.section_types

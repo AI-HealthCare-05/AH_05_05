@@ -2,6 +2,9 @@ import re
 
 from pydantic import BaseModel, Field
 
+from ai_worker.domain.interaction_question_detector import (
+    is_interaction_question,
+)
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     SupplementInteractionPair,
     find_supplement_interaction_pair,
@@ -101,18 +104,7 @@ class MedicationKnowledgeQueryBuilder:
         *,
         has_interaction_pair: bool = False,
     ) -> tuple[list[KnowledgeSectionType], list[str]]:
-        if has_interaction_pair or any(
-            keyword in question
-            for keyword in (
-                "상호작용",
-                "같이 먹",
-                "함께 먹",
-                "병용",
-                "조합",
-                "시간을 띄",
-                "시간 띄",
-            )
-        ):
+        if has_interaction_pair or is_interaction_question(question):
             return [KnowledgeSectionType.INTERACTION], ["상호작용", "병용 주의"]
         if any(keyword in question for keyword in ("하루", "얼마", "섭취량", "복용량", "용량")):
             return [KnowledgeSectionType.DAILY_INTAKE], ["일일섭취량", "섭취 기준"]
