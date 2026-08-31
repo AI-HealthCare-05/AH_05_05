@@ -37,7 +37,7 @@ class TestUserPasswordApi(TestCase):
             before = (await User.get(email=EMAIL)).hashed_password
 
             response = await client.patch(
-                "/api/v1/me/password",
+                "/api/v1/users/me/password",
                 headers=headers,
                 json={"current_password": CURRENT_PASSWORD, "new_password": NEW_PASSWORD},
             )
@@ -64,7 +64,7 @@ class TestUserPasswordApi(TestCase):
             before = (await User.get(email=EMAIL)).hashed_password
 
             response = await client.patch(
-                "/api/v1/me/password",
+                "/api/v1/users/me/password",
                 headers=headers,
                 json={"current_password": "WrongPassword123!", "new_password": NEW_PASSWORD},
             )
@@ -78,7 +78,7 @@ class TestUserPasswordApi(TestCase):
             headers = await self._signed_in_client(client)
 
             response = await client.patch(
-                "/api/v1/me/password",
+                "/api/v1/users/me/password",
                 headers=headers,
                 json={"current_password": CURRENT_PASSWORD, "new_password": CURRENT_PASSWORD},
             )
@@ -103,7 +103,7 @@ class TestUserPasswordApi(TestCase):
 
             for weak in weak_passwords:
                 response = await client.patch(
-                    "/api/v1/me/password",
+                    "/api/v1/users/me/password",
                     headers=headers,
                     json={"current_password": CURRENT_PASSWORD, "new_password": weak},
                 )
@@ -116,7 +116,7 @@ class TestUserPasswordApi(TestCase):
     async def test_change_password_requires_authentication(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.patch(
-                "/api/v1/me/password",
+                "/api/v1/users/me/password",
                 json={"current_password": CURRENT_PASSWORD, "new_password": NEW_PASSWORD},
             )
 
@@ -129,7 +129,7 @@ class TestUserPasswordApi(TestCase):
             headers = await self._signed_in_client(client)
 
             response = await client.patch(
-                "/api/v1/me/password",
+                "/api/v1/users/me/password",
                 headers=headers,
                 json={"currentPassword": CURRENT_PASSWORD, "newPassword": NEW_PASSWORD},
             )

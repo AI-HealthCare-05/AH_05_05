@@ -114,9 +114,11 @@ export async function changePassword(payload: ChangePasswordPayload): Promise<vo
     await mockDelay();
     return mockChangePassword(payload);
   }
+  // 조회·수정·탈퇴와 같은 user 리소스라 `/v1/users/me` 아래다.
+  // (`/v1/me/settings` 는 user_settings 라는 다른 테이블이라 경로가 따로다.)
+  //
   // 사용자 API 는 snake_case 다. payload 를 그대로 보내면 camelCase 라 422 가 난다.
-  // (`/v1/me/settings` 는 별도 라우터지만 표기법은 같다. 관리자 API 만 CamelModel 이다.)
-  return http.patch<void>('/v1/me/password', {
+  return http.patch<void>(`${MY_PROFILE_PATH}/password`, {
     current_password: payload.currentPassword,
     new_password: payload.newPassword,
   });

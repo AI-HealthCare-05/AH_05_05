@@ -10,10 +10,6 @@ from app.models.users import User
 from app.services.users import UserManageService
 
 user_router = APIRouter(prefix="/users", tags=["users"])
-# 비밀번호 변경은 `/me/password` 다. user_router 의 prefix 가 `/users` 라 여기 붙이면
-# `/users/me/password` 가 되어 프론트(entities/account/api.ts)와 어긋난다.
-# `/me/settings` 도 같은 이유로 별도 라우터(settings_router)를 쓴다.
-me_router = APIRouter(prefix="/me", tags=["users"])
 
 
 def _user_info_response(user: User) -> Response:
@@ -40,7 +36,7 @@ async def update_user_me_info(
     return _user_info_response(updated_user)
 
 
-@me_router.patch("/password", response_model=PasswordChangeResponse, status_code=status.HTTP_200_OK)
+@user_router.patch("/me/password", response_model=PasswordChangeResponse, status_code=status.HTTP_200_OK)
 async def change_my_password(
     request: PasswordChangeRequest,
     user: Annotated[User, Depends(get_request_user)],
@@ -49,6 +45,9 @@ async def change_my_password(
     """로그인한 본인의 비밀번호를 바꾼다.
 
     대상은 토큰의 사용자로 정한다. 다른 사용자 ID 를 받는 파라미터는 없다.
+
+    조회(GET)·수정(PATCH)·탈퇴(DELETE)와 같은 `user` 리소스라 `/users/me` 아래에 둔다.
+    `/me/settings` 는 `user_settings` 라는 다른 테이블을 다뤄 경로가 따로다.
     새 비밀번호는 회원가입과 같은 정책을 따른다 —
     8자 이상, 대문자·소문자·숫자·특수문자 각 1개 이상.
 
