@@ -7,16 +7,19 @@ from tortoise.transactions import in_transaction
 from app.core import config
 from app.dtos.supplement_nutrients import SupplementNutrientResponse
 from app.dtos.user_supplement_nutrients import (
+    NutrientStandardValues,
     SupplementSlotResponse,
+    UserNutrientStandardResponse,
     UserSupplementNutrientListResponse,
     UserSupplementNutrientResponse,
     UserSupplementNutrientUpdateRequest,
     UserSupplementNutrientUpsertRequest,
 )
-from app.models.enums import MealSlot, SupplementStatus
-from app.models.supplement_nutrients import UserSupplementNutrient
+from app.models.enums import Gender, MealSlot, SupplementStatus
+from app.models.supplement_nutrients import NutrientStandard, UserSupplementNutrient
 from app.models.users import User, UserSettings
 from app.repositories.user_supplement_nutrient_repository import UserSupplementNutrientRepository
+from app.services.nutrient_standards import resolve_age_range
 
 SLOT_ORDER = {
     MealSlot.MORNING: 0,
@@ -111,11 +114,13 @@ class UserSupplementNutrientService:
             limit=limit,
         )
         settings = await self.repository.get_or_create_settings(user.id)
+        standard = await self._resolve_nutrient_standard(user)
         return UserSupplementNutrientListResponse(
             items=[self._to_response(registration, settings) for registration in registrations],
             total=total,
             offset=offset,
             limit=limit,
+            nutrient_standard=standard,
         )
 
     async def get(self, user: User, registration_id: int) -> UserSupplementNutrientResponse:
@@ -180,6 +185,57 @@ class UserSupplementNutrientService:
                 using_db=connection,
                 update_fields=["status", "end_date", "updated_at"],
             )
+
+    @staticmethod
+    async def _resolve_nutrient_standard(user: User) -> UserNutrientStandardResponse | None:
+        if user.birth_date is None or user.gender is None:
+            return None
+
+        group_by_gender = {
+            Gender.MALE: "남자",
+            Gender.FEMALE: "여자",
+        }
+        group = group_by_gender.get(user.gender)
+        if group is None:
+            return None
+
+        today = datetime.now(config.TIMEZONE).date()
+        age = (
+            today.year
+            - user.birth_date.year
+            - ((today.month, today.day) < (user.birth_date.month, user.birth_date.day))
+        )
+        age_range = resolve_age_range(age)
+        standard = await NutrientStandard.get_or_none(grp=group, age=age_range)
+        if standard is None:
+            return None
+
+        def values(prefix: str) -> NutrientStandardValues:
+            return NutrientStandardValues(
+                rni=getattr(standard, f"{prefix}_rni"),
+                ai=getattr(standard, f"{prefix}_ai"),
+                ul=getattr(standard, f"{prefix}_ul"),
+            )
+
+        return UserNutrientStandardResponse(
+            grp=standard.grp,
+            age=standard.age,
+            protein_g=values("protein_g"),
+            carb_g=values("carb_g"),
+            fat_g=values("fat_g"),
+            fiber_g=values("fiber_g"),
+            calcium_mg=values("calcium_mg"),
+            iron_mg=values("iron_mg"),
+            phosphorus_mg=values("phosphorus_mg"),
+            potassium_mg=values("potassium_mg"),
+            sodium_mg=values("sodium_mg"),
+            vitamin_a_ug_rae=values("vitamin_a_ug_rae"),
+            thiamine_mg=values("thiamine_mg"),
+            riboflavin_mg=values("riboflavin_mg"),
+            niacin_mg=values("niacin_mg"),
+            vitamin_c_mg=values("vitamin_c_mg"),
+            vitamin_d_ug=values("vitamin_d_ug"),
+        )
 
     @staticmethod
     def _to_response(
