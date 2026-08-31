@@ -33,6 +33,7 @@ class MedicationAnswerAssembler:
         chunks: list[RetrievedKnowledgeChunk],
         interaction_question: bool,
         family_reference: bool = False,
+        ingredient_family_reference: bool = False,
     ) -> str:
         sections: list[str] = []
         patient_lines = self._patient_lines(context)
@@ -88,7 +89,20 @@ class MedicationAnswerAssembler:
             sections.append(section_title + "\n" + "\n".join(guide_lines))
         if chunks:
             public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
-            section_title = "검색된 상호작용 연구 근거" if interaction_question else "공공자료 추가 설명"
+            if interaction_question:
+                section_title = "검색된 상호작용 연구 근거"
+            elif ingredient_family_reference:
+                section_title = "성분 계열 일반 정보"
+                public_lines.insert(
+                    0,
+                    (
+                        "- 아래 내용은 단일제의 일반 정보입니다. 정확한 제품의 "
+                        "성분·함량·제형에 따라 제품·복합제별 안내가 다를 수 "
+                        "있으므로 제품명을 함께 확인하세요."
+                    ),
+                )
+            else:
+                section_title = "공공자료 추가 설명"
             sections.append(section_title + "\n" + "\n".join(public_lines))
         if not sections:
             sections.append(

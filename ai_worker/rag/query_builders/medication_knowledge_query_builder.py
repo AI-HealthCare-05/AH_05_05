@@ -87,6 +87,7 @@ class MedicationQueryEntityNormalizer:
         "먹나요",
         "복용",
         "복용법",
+        "복용하나요",
         "섭취",
         "섭취법",
         "알려줘",
@@ -94,6 +95,9 @@ class MedicationQueryEntityNormalizer:
         "요약",
         "요약해줘",
         "얼마나",
+        "어떻게",
+        "일반적",
+        "일반적으로",
         "흡수",
         "하루에",
         "하나요",
@@ -109,6 +113,8 @@ class MedicationQueryEntityNormalizer:
         "주의사항",
         "부작용",
         "상호작용",
+        "단일제",
+        "복합제",
         "같이",
         "함께",
         "영양제",
@@ -271,6 +277,13 @@ class MedicationKnowledgeQueryBuilder:
         )
         entities = self._entity_normalizer.normalize(normalized)
         entity_names = [entity.canonical_name for entity in entities]
+        alternate_queries: list[str] = []
+        if interaction_pair is not None:
+            alternate_queries.append(interaction_pair.english_query)
+        elif KnowledgeSectionType.INTERACTION in section_types and len(entity_names) >= 2:
+            alternate_queries.append(
+                " ".join([*entity_names, "상호작용"]),
+            )
         expanded_query = " ".join(
             dict.fromkeys(
                 [
@@ -286,7 +299,7 @@ class MedicationKnowledgeQueryBuilder:
             entity_names=entity_names,
             entities=entities,
             section_types=section_types,
-            alternate_queries=([interaction_pair.english_query] if interaction_pair is not None else []),
+            alternate_queries=alternate_queries,
             interaction_pair=interaction_pair,
             interaction_types=(
                 self._interaction_types(entities) if KnowledgeSectionType.INTERACTION in section_types else []
@@ -334,7 +347,20 @@ class MedicationKnowledgeQueryBuilder:
         if any(keyword in question for keyword in ("효능", "효과", "기능", "왜 먹")):
             section_types.append(KnowledgeSectionType.FUNCTION)
             expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
-        if any(keyword in question for keyword in ("하루", "얼마", "섭취량", "복용량", "용량")):
+        if any(
+            keyword in question
+            for keyword in (
+                "하루",
+                "얼마",
+                "섭취량",
+                "복용량",
+                "용량",
+                "복용법",
+                "사용법",
+                "복용하",
+                "어떻게 먹",
+            )
+        ):
             section_types.append(KnowledgeSectionType.DAILY_INTAKE)
             expansion_terms.extend(["일일섭취량", "섭취 기준"])
         if any(keyword in question for keyword in ("주의", "부작용", "조심", "위험")):

@@ -16,6 +16,9 @@ class ExtractedKnowledgeEntities(BaseModel):
 
 
 class KnowledgeEntityExtractor:
+    _BILINGUAL_DRUG_NAME = re.compile(
+        r"^\s*([^()]*[가-힣][^()]*)\s*\(\s*([A-Za-z][A-Za-z0-9 .,+/-]*)\s*\)\s*$",
+    )
     _TRAILING_VERSION = re.compile(
         r"(?:[_\s]*20\d{6}|\s*\(\s*\d+\s*페이지\s*\)|"
         r"\s*\(\s*20\d{2}[^)]*시행[^)]*\))+$",
@@ -42,6 +45,15 @@ class KnowledgeEntityExtractor:
                 drug_names=[normalized.split(maxsplit=1)[0]],
             )
         if document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
+            bilingual_name = self._BILINGUAL_DRUG_NAME.fullmatch(normalized)
+            if bilingual_name is not None:
+                return ExtractedKnowledgeEntities(
+                    drug_names=[
+                        normalized,
+                        bilingual_name.group(1).strip(),
+                        bilingual_name.group(2).strip(),
+                    ],
+                )
             return ExtractedKnowledgeEntities(
                 drug_names=[normalized],
             )

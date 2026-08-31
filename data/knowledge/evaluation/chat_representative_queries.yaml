@@ -144,27 +144,26 @@ cases:
       forbidden_claims:
         - 근거에 없는 모든 과일과 음식을 금지하지 않는다.
 
-  - query_id: mixed-active-medication-public-caution
-    category: RDB_AND_VECTOR
-    question: 내가 복용 중인 로사르탄의 복용법과 주의사항을 알려줘.
+  - query_id: vector-losartan-ingredient-family
+    category: VECTOR_ONLY
+    question: 로사르탄의 효능과 주의사항을 알려줘.
     preconditions:
-      - 사용자에게 로사르탄이 활성 복용 약으로 등록되어 있다.
-      - 로사르탄 관련 공공 지식 청크가 Qdrant에 존재한다.
+      - Qdrant 활성 지식베이스에 로사르탄 약물백과의 FUNCTION·CAUTION 청크가 존재한다.
     expected:
       route: MEDICATION_GUIDE
-      intent_tags: [ACTIVE_MEDICATION_GUIDE, MEDICATION_CAUTION]
+      intent_tags: [MEDICATION_EFFICACY, MEDICATION_CAUTION]
       normalized_entities:
         - entity_type: INGREDIENT_NAME
           canonical_name: 로사르탄
-      section_types: [CAUTION]
-      required_source_kinds: [PATIENT_MEDICATION, PUBLIC_KNOWLEDGE]
+      section_types: [FUNCTION, CAUTION]
+      required_source_kinds: [PUBLIC_KNOWLEDGE]
       safety_status: SAFE
       require_langsmith_trace: true
       answer_requirements:
-        - 사용자 등록 정보와 공공자료 설명을 구분한다.
-        - 서로 충돌하면 사용자에게 임의 결론을 주지 않고 확인을 안내한다.
+        - 약물백과 근거를 한국어 핵심 내용으로 요약한다.
+        - 단일제 일반 정보와 제품·복합제별 차이를 구분한다.
       forbidden_claims:
-        - 공공자료 내용을 사용자에게 확정 처방된 복용법처럼 표현하지 않는다.
+        - 공공자료를 사용자에게 확정 처방된 제품·용량처럼 표현하지 않는다.
 
   - query_id: mixed-drug-supplement-interaction
     category: RDB_AND_VECTOR

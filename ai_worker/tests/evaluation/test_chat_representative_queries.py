@@ -26,14 +26,19 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
     assert len(validated.cases) == 10
     assert Counter(case["category"] for case in cases) == {
         "RDB_ONLY": 3,
-        "VECTOR_ONLY": 3,
-        "RDB_AND_VECTOR": 4,
+        "VECTOR_ONLY": 4,
+        "RDB_AND_VECTOR": 3,
     }
 
     query_ids = [case["query_id"] for case in cases]
     questions = [case["question"] for case in cases]
     assert len(query_ids) == len(set(query_ids))
     assert len(questions) == len(set(questions))
+    losartan_case = next(case for case in cases if case["query_id"] == "vector-losartan-ingredient-family")
+    assert losartan_case["expected"]["route"] == "MEDICATION_GUIDE"
+    assert losartan_case["expected"]["required_source_kinds"] == [
+        "PUBLIC_KNOWLEDGE",
+    ]
     interaction_tags = {tag for case in cases for tag in case["expected"]["intent_tags"]}
     assert {
         "DRUG_DRUG_INTERACTION",

@@ -36,6 +36,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeRetrievalDiagnostics,
     KnowledgeRetrievalResult,
+    KnowledgeSectionType,
 )
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -114,14 +115,15 @@ class AnswerMedicationQuestionUseCase:
             query_plan = MedicationKnowledgeQueryBuilder().build(
                 request.question,
             )
-            query_span.end(
-                {
-                    "entity_count": len(query_plan.entity_names),
-                    "section_count": len(query_plan.section_types),
-                    "interaction_pair_present": (query_plan.interaction_pair is not None),
-                    "medication_product_cue": (query_plan.has_medication_product_cue),
-                }
-            )
+            query_outputs = {
+                "entity_count": len(query_plan.entity_names),
+                "section_count": len(query_plan.section_types),
+                "interaction_pair_present": (query_plan.interaction_pair is not None),
+                "medication_product_cue": (query_plan.has_medication_product_cue),
+            }
+            if self._tracer.capture_content:
+                query_outputs["entity_names"] = query_plan.entity_names
+            query_span.end(query_outputs)
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
         )
@@ -152,6 +154,10 @@ class AnswerMedicationQuestionUseCase:
                 {
                     **retrieval.diagnostics.model_dump(),
                     "rag_unavailable": rag_unavailable,
+                    "document_types": sorted({chunk.metadata.document_type.value for chunk in chunks}),
+                    "drug_encyclopedia_evidence_count": sum(
+                        chunk.metadata.document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA for chunk in chunks
+                    ),
                 }
             )
         has_supplement_evidence = self._has_supplement_evidence(
@@ -198,9 +204,17 @@ class AnswerMedicationQuestionUseCase:
                     "family_reference": family_reference,
                 }
             )
-        if guide_lookup.is_ambiguous and not self._has_supplement_evidence(
-            request.question,
-            chunks=chunks,
+        has_drug_encyclopedia_evidence = self._has_drug_encyclopedia_evidence(chunks)
+        can_use_ingredient_family_fallback = (
+            has_drug_encyclopedia_evidence and not query_plan.has_medication_product_cue
+        )
+        if (
+            guide_lookup.is_ambiguous
+            and not self._has_supplement_evidence(
+                request.question,
+                chunks=chunks,
+            )
+            and not can_use_ingredient_family_fallback
         ):
             await self._report_progress(
                 progress_callback,
@@ -211,12 +225,17 @@ class AnswerMedicationQuestionUseCase:
                 context=context,
                 guide_lookup=guide_lookup,
             )
+        answer_chunks = self._authoritative_chunks(
+            guide_lookup=guide_lookup,
+            chunks=chunks,
+        )
+        ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
         route = self._resolve_route(
             request=request,
             context=context,
             guide_lookup=guide_lookup,
             interaction_question=interaction_question,
-            chunks=chunks,
+            chunks=answer_chunks,
         )
         safety_status = SafetyStatus.RESTRICTED if rag_unavailable else SafetyStatus.SAFE
         safety_reason_codes = ["RAG_UNAVAILABLE"] if rag_unavailable else []
@@ -227,9 +246,10 @@ class AnswerMedicationQuestionUseCase:
                     context=context,
                     guide=guide_lookup.guide,
                     rules=rules,
-                    chunks=chunks,
+                    chunks=answer_chunks,
                     interaction_question=interaction_question,
                     family_reference=family_reference,
+                    ingredient_family_reference=(ingredient_family_reference),
                 ),
                 route=route,
                 safety_status=safety_status,
@@ -238,7 +258,7 @@ class AnswerMedicationQuestionUseCase:
                     context=context,
                     guide_lookup=guide_lookup,
                     rules=rules,
-                    chunks=chunks,
+                    chunks=answer_chunks,
                 ),
                 prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
                 schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
@@ -374,6 +394,10 @@ class AnswerMedicationQuestionUseCase:
             return MedicationChatRoute.ACTIVE_INTAKE
         if guide_lookup.guide is not None:
             return MedicationChatRoute.MEDICATION_GUIDE
+        if AnswerMedicationQuestionUseCase._has_drug_encyclopedia_evidence(
+            chunks,
+        ):
+            return MedicationChatRoute.MEDICATION_GUIDE
         if AnswerMedicationQuestionUseCase._has_supplement_evidence(
             request.question,
             chunks=chunks,
@@ -382,6 +406,33 @@ class AnswerMedicationQuestionUseCase:
         if AnswerMedicationQuestionUseCase._is_supplement_question(request.question):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
         return MedicationChatRoute.GENERAL_GUIDANCE
+
+    @staticmethod
+    def _has_drug_encyclopedia_evidence(chunks: list) -> bool:
+        return any(chunk.metadata.document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA for chunk in chunks)
+
+    @staticmethod
+    def _authoritative_chunks(
+        *,
+        guide_lookup: MedicationGuideLookup,
+        chunks: list,
+    ) -> list:
+        if guide_lookup.guide is None:
+            return chunks
+        product_claim_sections = {
+            KnowledgeSectionType.FUNCTION,
+            KnowledgeSectionType.DAILY_INTAKE,
+            KnowledgeSectionType.CAUTION,
+            KnowledgeSectionType.ADVERSE_EVENT,
+        }
+        return [
+            chunk
+            for chunk in chunks
+            if not (
+                chunk.metadata.document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA
+                and chunk.metadata.section_type in product_claim_sections
+            )
+        ]
 
     @staticmethod
     def _has_supplement_evidence(

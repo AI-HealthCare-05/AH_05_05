@@ -42,9 +42,8 @@ class RecordingSpan:
 
 
 class RecordingChatTracer:
-    capture_content = False
-
-    def __init__(self) -> None:
+    def __init__(self, *, capture_content: bool = False) -> None:
+        self.capture_content = capture_content
         self.spans = []
 
     @property
@@ -289,6 +288,32 @@ def build_chunk() -> RetrievedKnowledgeChunk:
     )
 
 
+def build_losartan_chunk(
+    *,
+    section_type: KnowledgeSectionType = KnowledgeSectionType.CAUTION,
+    content: str = "로사르탄 단일제는 제품별 주의사항을 확인해야 합니다.",
+) -> RetrievedKnowledgeChunk:
+    chunk = build_chunk().model_copy(
+        update={
+            "content": content,
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_id": "losartan-encyclopedia",
+                    "title": "로사르탄(losartan)",
+                    "document_type": KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+                    "drug_names": [
+                        "로사르탄(losartan)",
+                        "로사르탄",
+                        "losartan",
+                    ],
+                    "section_type": section_type,
+                }
+            ),
+        }
+    )
+    return chunk
+
+
 def build_use_case(
     *,
     context: ActiveIntakeContext | None = None,
@@ -321,6 +346,61 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "통증과 발열을 완화합니다" in result.answer
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
+
+
+async def test_drug_encyclopedia_evidence_uses_medication_guide_route() -> None:
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(
+            chunks=[build_losartan_chunk()],
+        ),
+    ).execute(
+        build_request("로사르탄의 주의사항을 알려줘"),
+    )
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert "성분 계열 일반 정보" in result.answer
+    assert "제품·복합제별" in result.answer
+    assert "사용자 확정 복약정보" not in result.answer
+    assert any(source.kind.value == "PUBLIC_KNOWLEDGE" for source in result.sources)
+
+
+async def test_general_ingredient_evidence_bypasses_product_ambiguity() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(
+            is_ambiguous=True,
+            candidate_names=["코자정", "로자탄정"],
+        ),
+        retriever=FakeKnowledgeRetriever(
+            chunks=[build_losartan_chunk()],
+        ),
+    ).execute(
+        build_request("로사르탄의 주의사항을 알려줘"),
+    )
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert "제품명을 확인해 주세요" not in result.answer
+    assert "성분 계열 일반 정보" in result.answer
+
+
+async def test_exact_product_guide_suppresses_conflicting_encyclopedia_claim() -> None:
+    conflicting_claim = "로사르탄은 한 번에 99정을 복용합니다."
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        retriever=FakeKnowledgeRetriever(
+            chunks=[
+                build_losartan_chunk(
+                    section_type=KnowledgeSectionType.DAILY_INTAKE,
+                    content=conflicting_claim,
+                )
+            ],
+        ),
+    ).execute(
+        build_request("타이레놀정500밀리그람 복용법을 알려줘"),
+    )
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert "제품 설명서와 전문가의 안내를 따릅니다" in result.answer
+    assert conflicting_claim not in result.answer
 
 
 async def test_execute_reports_only_fixed_safe_progress_stages() -> None:
@@ -388,6 +468,8 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
         "rejected_pair_mismatch_count": 0,
         "accepted_count": 1,
         "rag_unavailable": False,
+        "document_types": ["DRUG_ENCYCLOPEDIA"],
+        "drug_encyclopedia_evidence_count": 1,
         "max_raw_score": 0.82,
         "max_score": 0.82,
     }
@@ -395,6 +477,26 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
         "status": "SAFE",
         "reason_codes": [],
     }
+
+
+async def test_execute_records_losartan_search_diagnostics_in_content_mode() -> None:
+    tracer = RecordingChatTracer(capture_content=True)
+    use_case = build_use_case(
+        retriever=FakeKnowledgeRetriever(
+            chunks=[build_losartan_chunk()],
+        ),
+        tracer=tracer,
+    )
+
+    await use_case.execute(
+        build_request("로사르탄의 주의사항을 알려줘"),
+    )
+
+    assert tracer.spans[1].outputs["entity_names"] == ["로사르탄"]
+    assert tracer.spans[3].outputs["document_types"] == [
+        "DRUG_ENCYCLOPEDIA",
+    ]
+    assert tracer.spans[3].outputs["drug_encyclopedia_evidence_count"] == 1
 
 
 async def test_execute_compacts_answer_before_final_safety_validation() -> None:
@@ -434,10 +536,19 @@ async def test_confirmed_medication_precedes_general_guide_and_rag() -> None:
             )
         ],
     )
+    background_chunk = build_chunk().model_copy(
+        update={
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "section_type": KnowledgeSectionType.OVERVIEW,
+                }
+            )
+        }
+    )
     result = await build_use_case(
         context=context,
         lookup=MedicationGuideLookup(guide=build_guide()),
-        retriever=FakeKnowledgeRetriever(chunks=[build_chunk()]),
+        retriever=FakeKnowledgeRetriever(chunks=[background_chunk]),
     ).execute(
         build_request(
             "이 약을 어떻게 먹어야 하나요?",

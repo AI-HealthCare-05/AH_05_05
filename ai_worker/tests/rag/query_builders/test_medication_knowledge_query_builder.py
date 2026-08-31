@@ -139,6 +139,33 @@ def test_build_normalizes_interaction_entities_and_pair_types(
     assert plan.interaction_types == expected_pair_types
 
 
+def test_build_adds_concise_entity_query_for_unregistered_interaction_pair() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
+    )
+
+    assert plan.alternate_queries == [
+        "펙소페나딘 과일주스 상호작용",
+    ]
+
+
+def test_build_does_not_treat_drug_form_descriptor_as_separate_entity() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "로사르탄 복합제의 주의사항을 알려줘",
+    )
+
+    assert plan.entity_names == ["로사르탄"]
+
+
+def test_build_classifies_general_drug_usage_without_filler_entities() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "로사르탄은 일반적으로 어떻게 복용하나요?",
+    )
+
+    assert plan.entity_names == ["로사르탄"]
+    assert plan.section_types == [KnowledgeSectionType.DAILY_INTAKE]
+
+
 def test_build_preserves_every_entity_when_known_pair_is_part_of_larger_question() -> None:
     plan = MedicationKnowledgeQueryBuilder().build(
         "내가 복용 중인 와파린, 비타민 K, 칼슘, 철분의 상호작용을 우선순위로 요약해줘.",

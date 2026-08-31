@@ -1,4 +1,5 @@
 import asyncio
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -12,9 +13,11 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryPlan,
 )
 from ai_worker.schemas.knowledge import (
+    KnowledgeDocumentType,
     KnowledgeRetrievalDiagnostics,
     KnowledgeRetrievalResult,
     KnowledgeSearchQuery,
+    KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
 
@@ -44,10 +47,20 @@ class MedicationKnowledgeSearchStore(Protocol):
 
 
 class MedicationKnowledgeRetriever:
+    _BILINGUAL_DRUG_NAME = re.compile(
+        r"^\s*([^()]*[가-힣][^()]*)\s*\(\s*([A-Za-z][A-Za-z0-9 .,+/-]*)\s*\)\s*$",
+    )
+    _LEGACY_SECTION_HEADING = re.compile(
+        r"(?P<boundary>\A|(?:\r?\n){2,}|[.!?]\s+)"
+        r"(?P<heading>효능[·․.]효과|용법(?:[·․.]용량)?|경고|금기|주의사항|부작용|이상반응)"
+        r"(?=\S)",
+    )
     _EXACT_ENTITY_BONUS = 0.12
     _CONTAINED_ENTITY_BONUS = 0.08
+    _PAIR_ENTITY_BONUS = 0.12
     _SECTION_BONUS = 0.05
     _BOOST_ELIGIBILITY_MARGIN = 0.10
+    _PAIR_BOOST_ELIGIBILITY_MARGIN = 0.15
     _MAX_CHUNKS_PER_DOCUMENT = 2
 
     def __init__(
@@ -266,14 +279,29 @@ class MedicationKnowledgeRetriever:
             *result.metadata.ingredient_names,
         ):
             return _EligibilityReason.PAIR_MISMATCH
+        if (
+            plan.interaction_pair is None
+            and self._requires_entity_pair_match(plan)
+            and not self._all_query_entities_match_text(result, plan=plan)
+        ):
+            return _EligibilityReason.PAIR_MISMATCH
         if result.similarity_score >= self._min_similarity_score:
             return _EligibilityReason.ELIGIBLE
 
+        eligibility_margin = (
+            self._PAIR_BOOST_ELIGIBILITY_MARGIN
+            if self._requires_entity_pair_match(plan) and self._all_query_entities_match_text(result, plan=plan)
+            else self._BOOST_ELIGIBILITY_MARGIN
+        )
         minimum_raw_score = max(
             0.0,
-            self._min_similarity_score - self._BOOST_ELIGIBILITY_MARGIN,
+            self._min_similarity_score - eligibility_margin,
         )
         if result.similarity_score < minimum_raw_score:
+            return _EligibilityReason.BELOW_SCORE
+        if plan.section_types and not set(plan.section_types).intersection(
+            self._effective_section_types(result),
+        ):
             return _EligibilityReason.BELOW_SCORE
         if self._entity_match_bonus(result, plan=plan) <= 0.0:
             return _EligibilityReason.ENTITY_MISMATCH
@@ -288,8 +316,38 @@ class MedicationKnowledgeRetriever:
         *,
         plan: MedicationKnowledgeQueryPlan,
     ) -> float:
-        section_bonus = cls._SECTION_BONUS if result.metadata.section_type in plan.section_types else 0.0
+        section_bonus = (
+            cls._SECTION_BONUS if set(plan.section_types).intersection(cls._effective_section_types(result)) else 0.0
+        )
         return result.similarity_score + cls._entity_match_bonus(result, plan=plan) + section_bonus
+
+    @classmethod
+    def _effective_section_types(
+        cls,
+        result: RetrievedKnowledgeChunk,
+    ) -> set[KnowledgeSectionType]:
+        if result.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
+            return {result.metadata.section_type}
+
+        section_types: set[KnowledgeSectionType] = set()
+        for match in cls._LEGACY_SECTION_HEADING.finditer(result.content):
+            boundary = match.group("boundary")
+            if boundary and not boundary.startswith(("\n", "\r")):
+                suffix = cls._normalize_name(result.content[match.end() :])
+                if not any(suffix.startswith(alias) for alias in cls._metadata_entity_aliases(result)):
+                    continue
+
+            heading = match.group("heading")
+            if heading.startswith("효능"):
+                section_types.add(KnowledgeSectionType.FUNCTION)
+            elif heading.startswith("용법"):
+                section_types.add(KnowledgeSectionType.DAILY_INTAKE)
+            elif heading in {"부작용", "이상반응"}:
+                section_types.add(KnowledgeSectionType.ADVERSE_EVENT)
+            else:
+                section_types.add(KnowledgeSectionType.CAUTION)
+
+        return section_types or {result.metadata.section_type}
 
     @classmethod
     def _entity_match_bonus(
@@ -298,17 +356,10 @@ class MedicationKnowledgeRetriever:
         *,
         plan: MedicationKnowledgeQueryPlan,
     ) -> float:
-        query_entities = {
-            cls._normalize_name(name) for name in plan.entity_names if len(cls._normalize_name(name)) >= 2
-        }
-        metadata_entities = {
-            cls._normalize_name(name)
-            for name in [
-                *result.metadata.ingredient_names,
-                *result.metadata.drug_names,
-            ]
-            if len(cls._normalize_name(name)) >= 2
-        }
+        query_entities = cls._normalized_query_entities(plan)
+        metadata_entities = cls._metadata_entity_aliases(result)
+        if len(query_entities) >= 2 and cls._all_query_entities_match_text(result, plan=plan):
+            return cls._PAIR_ENTITY_BONUS
         if query_entities.intersection(metadata_entities):
             return cls._EXACT_ENTITY_BONUS
         if any(
@@ -316,6 +367,69 @@ class MedicationKnowledgeRetriever:
         ):
             return cls._CONTAINED_ENTITY_BONUS
         return 0.0
+
+    @classmethod
+    def _metadata_entity_aliases(
+        cls,
+        result: RetrievedKnowledgeChunk,
+    ) -> set[str]:
+        aliases = {
+            cls._normalize_name(name)
+            for name in [
+                *result.metadata.ingredient_names,
+                *result.metadata.drug_names,
+            ]
+            if len(cls._normalize_name(name)) >= 2
+        }
+        if result.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
+            return aliases
+
+        for name in result.metadata.drug_names:
+            match = cls._BILINGUAL_DRUG_NAME.fullmatch(name)
+            if match is None:
+                continue
+            aliases.update(
+                cls._normalize_name(alias) for alias in match.groups() if len(cls._normalize_name(alias)) >= 2
+            )
+        return aliases
+
+    @staticmethod
+    def _requires_entity_pair_match(
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        return (
+            len(MedicationKnowledgeRetriever._normalized_query_entities(plan)) == 2
+            and KnowledgeSectionType.INTERACTION in plan.section_types
+        )
+
+    @classmethod
+    def _all_query_entities_match_text(
+        cls,
+        result: RetrievedKnowledgeChunk,
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        query_entities = cls._normalized_query_entities(plan)
+        if not query_entities:
+            return False
+        searchable_text = cls._normalize_name(
+            " ".join(
+                [
+                    result.metadata.title,
+                    result.content,
+                    *result.metadata.drug_names,
+                    *result.metadata.ingredient_names,
+                ]
+            )
+        )
+        return all(entity in searchable_text for entity in query_entities)
+
+    @classmethod
+    def _normalized_query_entities(
+        cls,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> set[str]:
+        return {cls._normalize_name(name) for name in plan.entity_names if len(cls._normalize_name(name)) >= 2}
 
     @staticmethod
     def _normalize_name(value: str) -> str:
