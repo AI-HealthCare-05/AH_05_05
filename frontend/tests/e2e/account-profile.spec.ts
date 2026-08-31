@@ -137,6 +137,7 @@ test('마이페이지의 기본정보에서 가입 때 저장한 생년월일과
   await page.getByLabel('생년월일').fill('1991-03-15');
   await page.getByRole('radio', { name: '남성' }).check();
   await page.getByRole('button', { name: '회원가입 완료' }).click();
+  await expect(page).toHaveURL(/\/home$/);
 
   await page.getByRole('button', { name: '마이', exact: true }).click();
   await page.getByRole('button', { name: /기본정보/ }).click();

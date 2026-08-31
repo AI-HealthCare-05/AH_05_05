@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
@@ -56,6 +56,7 @@ export function MyPage({
   const navigate = useNavigate();
   const { authenticated, signOut } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
+  const logoutNavigationRef = useRef(false);
   const [notifySettings, setNotifySettings] = useState<NotifySettings | null>(null);
   const [notifyLoadError, setNotifyLoadError] = useState<string | null>(null);
   const [notifyActionError, setNotifyActionError] = useState<{
@@ -70,6 +71,16 @@ export function MyPage({
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
+
+  useEffect(() => {
+    if (
+      authenticatedOverride === undefined &&
+      !authenticated &&
+      !logoutNavigationRef.current
+    ) {
+      navigate('/login', { replace: true });
+    }
+  }, [authenticated, authenticatedOverride, navigate]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -246,6 +257,12 @@ export function MyPage({
     navigate(TAB_ROUTES[key]);
   }
 
+  function handleSignOut() {
+    logoutNavigationRef.current = true;
+    signOut();
+    navigate('/home', { replace: true });
+  }
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="마이페이지" />
@@ -340,10 +357,7 @@ export function MyPage({
               <Card className="gap-4 p-4">
                 <Button
                   variant="secondary"
-                  onClick={() => {
-                    signOut();
-                    navigate('/home', { replace: true });
-                  }}
+                  onClick={handleSignOut}
                 >
                   로그아웃
                 </Button>
@@ -357,31 +371,7 @@ export function MyPage({
               </Card>
             </section>
           </>
-        ) : (
-          <>
-            <Card className="flex-row items-center gap-4 p-5">
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-muted-foreground">
-                <UserRound aria-hidden className="size-6" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-lg font-bold text-foreground">로그인하지 않았어요</p>
-                <p className="text-sm text-muted-foreground">저장한 기록을 이어서 보려면 로그인해 주세요.</p>
-              </div>
-              <Button fullWidth={false} className="px-4" onClick={() => navigate('/login')}>
-                로그인
-              </Button>
-            </Card>
-
-            <nav className="mt-auto flex flex-col" aria-label="법적 안내">
-              <a href="/terms" className="flex min-h-touch items-center text-sm text-muted-foreground">
-                이용약관
-              </a>
-              <a href="/privacy" className="flex min-h-touch items-center text-sm text-muted-foreground">
-                개인정보 처리 안내
-              </a>
-            </nav>
-          </>
-        )}
+        ) : null}
       </main>
       <BottomTabbar
         active="my"
@@ -417,6 +407,7 @@ export function MyPage({
         open={withdrawDialogOpen}
         onOpenChange={setWithdrawDialogOpen}
         onWithdrawn={() => {
+          logoutNavigationRef.current = true;
           signOut();
           navigate('/', { replace: true });
         }}
