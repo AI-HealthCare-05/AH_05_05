@@ -58,6 +58,7 @@ class MedicationKnowledgeRetriever:
     _EXACT_ENTITY_BONUS = 0.12
     _CONTAINED_ENTITY_BONUS = 0.08
     _PAIR_ENTITY_BONUS = 0.12
+    _PAIR_SAME_SENTENCE_BONUS = 0.04
     _SECTION_BONUS = 0.05
     _BOOST_ELIGIBILITY_MARGIN = 0.10
     _PAIR_BOOST_ELIGIBILITY_MARGIN = 0.15
@@ -359,7 +360,15 @@ class MedicationKnowledgeRetriever:
         section_bonus = (
             cls._SECTION_BONUS if set(plan.section_types).intersection(cls._effective_section_types(result)) else 0.0
         )
-        return result.similarity_score + cls._entity_match_bonus(result, plan=plan) + section_bonus
+        pair_relationship_bonus = (
+            cls._PAIR_SAME_SENTENCE_BONUS if cls._has_same_sentence_interaction_pair(result, plan=plan) else 0.0
+        )
+        return (
+            result.similarity_score
+            + cls._entity_match_bonus(result, plan=plan)
+            + section_bonus
+            + pair_relationship_bonus
+        )
 
     @classmethod
     def _effective_section_types(
@@ -494,6 +503,26 @@ class MedicationKnowledgeRetriever:
             cls._normalize_name(pair.left_name) in searchable_text
             and cls._normalize_name(pair.right_name) in searchable_text
             for pair in plan.interaction_pairs
+        )
+
+    @classmethod
+    def _has_same_sentence_interaction_pair(
+        cls,
+        result: RetrievedKnowledgeChunk,
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        if KnowledgeSectionType.INTERACTION not in plan.section_types:
+            return False
+        sentences = [
+            cls._normalize_name(sentence)
+            for sentence in re.split(r"[.!?。！？\n]+", result.content)
+            if sentence.strip()
+        ]
+        return any(
+            cls._normalize_name(pair.left_name) in sentence and cls._normalize_name(pair.right_name) in sentence
+            for pair in plan.interaction_pairs
+            for sentence in sentences
         )
 
     @classmethod

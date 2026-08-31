@@ -731,6 +731,53 @@ async def test_search_multi_entity_question_accepts_only_chunks_matching_a_pair(
     assert result.diagnostics.rejected_pair_mismatch_count == 1
 
 
+async def test_search_prioritizes_pair_relationship_in_same_sentence() -> None:
+    scattered_mentions = build_chunk(
+        0.61,
+        chunk_id="4" * 64,
+        title="약과 음식 상호작용 안내",
+        content=(
+            "비타민 K가 많은 식품은 섭취량을 일정하게 유지합니다. "
+            "다른 건강기능식품도 확인해야 합니다. "
+            "와파린의 효능에 영향을 주는 음식이 있을 수 있습니다."
+        ),
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    direct_relationship = build_chunk(
+        0.59,
+        chunk_id="5" * 64,
+        title="약과 음식 상호작용 안내",
+        content=(
+            "비타민 K는 와파린과 반대로 피가 잘 응고하도록 하므로 섭취량 변화가 와파린 작용에 영향을 줄 수 있습니다."
+        ),
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    store = FakeKnowledgeStore(
+        responses=[
+            [scattered_mentions, direct_relationship],
+            [],
+        ],
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v1",
+        min_similarity_score=0.65,
+    )
+
+    results = await retriever.search(
+        question="와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
+        medication_names=[],
+        supplement_names=[],
+        interaction_pair_keys=[],
+        limit=5,
+    )
+
+    assert results == [direct_relationship, scattered_mentions]
+
+
 async def test_search_limits_results_from_one_document_to_two_chunks() -> None:
     results_from_one_paper = [
         build_chunk(
