@@ -58,3 +58,26 @@ class MedicationSlot(models.Model):
         table = "medication_slots"
         indexes = (("slot",),)
         unique_together = (("medication", "slot"),)
+
+
+class MedicationDose(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    user: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
+        "models.User",
+        related_name="medication_doses",
+        on_delete=fields.CASCADE,
+    )
+    care_episode: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
+        "models.CareEpisode",
+        related_name="doses",
+        on_delete=fields.CASCADE,
+    )
+    dose_date = fields.DateField()
+    slot = fields.CharEnumField(MealSlot)
+    taken_at = fields.DatetimeField(auto_now_add=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "medication_doses"
+        unique_together = (("user", "care_episode", "dose_date", "slot"),)
+        indexes = (("care_episode", "dose_date"),)

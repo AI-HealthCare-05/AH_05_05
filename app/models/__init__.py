@@ -15,7 +15,7 @@ from .interactions import (
     MedicationInteractionMapping,
     SupplementInteractionEntity,
 )
-from .medications import Medication, MedicationSlot
+from .medications import Medication, MedicationDose, MedicationSlot
 from .ocr import OcrJob, OcrJobStatus
 from .recovery import RecoveryGuide, RecoveryGuideSource
 from .supplement_nutrients import (
