@@ -3,6 +3,7 @@ from pathlib import Path
 
 import yaml
 
+from ai_worker.schemas.chat_evaluation import ChatEvaluationManifest
 from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
     MedicationChatSourceKind,
@@ -16,11 +17,13 @@ EVALUATION_PATH = (
 def test_chat_representative_queries_define_balanced_source_contracts() -> None:
     manifest = yaml.safe_load(EVALUATION_PATH.read_text(encoding="utf-8"))
     cases = manifest["cases"]
+    validated = ChatEvaluationManifest.model_validate(manifest)
 
     assert manifest["schema_version"] == "chat-evaluation-v1"
     assert manifest["dataset_version"] == "chat-representative-v1"
     assert manifest["frontend_preset"] is False
     assert len(cases) == 10
+    assert len(validated.cases) == 10
     assert Counter(case["category"] for case in cases) == {
         "RDB_ONLY": 3,
         "VECTOR_ONLY": 3,
@@ -31,6 +34,12 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
     questions = [case["question"] for case in cases]
     assert len(query_ids) == len(set(query_ids))
     assert len(questions) == len(set(questions))
+    interaction_tags = {tag for case in cases for tag in case["expected"]["intent_tags"]}
+    assert {
+        "DRUG_DRUG_INTERACTION",
+        "DRUG_SUPPLEMENT_INTERACTION",
+        "SUPPLEMENT_SUPPLEMENT_INTERACTION",
+    } <= interaction_tags
 
     valid_routes = {route.value for route in MedicationChatRoute}
     valid_sources = {kind.value for kind in MedicationChatSourceKind}
@@ -43,8 +52,11 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
         assert expected["route"] in valid_routes
         assert expected["intent_tags"]
         assert expected["normalized_entities"]
+        assert expected["section_types"]
         assert required_sources
         assert required_sources <= valid_sources
+        assert expected["safety_status"] in {"SAFE", "RESTRICTED", "BLOCKED"}
+        assert expected["require_langsmith_trace"] is True
         assert expected["answer_requirements"]
         assert expected["forbidden_claims"]
 

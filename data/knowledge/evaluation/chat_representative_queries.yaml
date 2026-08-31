@@ -1,6 +1,7 @@
 schema_version: chat-evaluation-v1
 dataset_version: chat-representative-v1
 frontend_preset: false
+max_case_latency_ms: 30000
 description: >-
   프론트 화면에 노출하지 않고 Chat Core의 분류, 엔터티 정규화,
   데이터 경로 선택, 근거 사용 및 안전한 답변을 반복 검증하기 위한 대표 질문 세트입니다.
@@ -21,7 +22,10 @@ cases:
       normalized_entities:
         - entity_type: PRODUCT_NAME
           canonical_name: 마그오캡슐500mg
+      section_types: [FUNCTION]
       required_source_kinds: [MEDICATION_GUIDE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 효능과 사용법을 구분해 간결하게 설명한다.
         - 공식 의약품 정보에 존재하는 내용만 사용한다.
@@ -40,31 +44,39 @@ cases:
         - entity_type: BRAND_ALIAS
           surface: 타이레놀
           canonical_name: 타이레놀
+      section_types: [FUNCTION, CAUTION]
       required_source_kinds: [MEDICATION_GUIDE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 통칭을 제품군 검색어로 인식한다.
         - 제품별 용량 차이가 있으면 정확한 제품명 확인이 필요함을 알린다.
       forbidden_claims:
         - 특정 제품이 확인되지 않은 상태에서 정확한 1회 복용량을 단정하지 않는다.
 
-  - query_id: rdb-active-intake-summary
+  - query_id: rdb-drug-drug-interaction
     category: RDB_ONLY
-    question: 내가 등록한 약과 영양제의 이름과 복용 정보를 알려줘.
+    question: 내가 복용 중인 케토롤락과 아스피린을 같이 먹어도 되나요?
     preconditions:
-      - 사용자에게 활성 복용 약 1건 이상이 등록되어 있다.
-      - 사용자에게 활성 영양제 1건 이상이 등록되어 있다.
+      - 사용자 활성 복용 약에 케토롤락과 아스피린이 모두 등록되어 있다.
+      - 두 성분의 승인된 약-약 상호작용 규칙이 RDBMS에 존재한다.
     expected:
-      route: ACTIVE_INTAKE
-      intent_tags: [ACTIVE_INTAKE_SUMMARY]
+      route: INTERACTION
+      intent_tags: [DRUG_DRUG_INTERACTION]
       normalized_entities:
-        - entity_type: USER_ACTIVE_INTAKE
-          canonical_name: 현재 복용 목록
-      required_source_kinds: [PATIENT_MEDICATION, PATIENT_SUPPLEMENT]
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 케토롤락
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 아스피린
+      section_types: [INTERACTION]
+      required_source_kinds: [PATIENT_MEDICATION, INTERACTION_RULE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
-        - 사용자의 활성 복용 목록만 구분해서 보여준다.
-        - 저장되지 않은 복용량이나 복용 시점을 추정하지 않는다.
+        - 등록된 두 약과 승인된 병용금기 규칙을 연결해 설명한다.
+        - 위험도가 높은 상호작용을 먼저 표시한다.
       forbidden_claims:
-        - 사용자가 등록하지 않은 약이나 영양제를 복용 중이라고 표현하지 않는다.
+        - 임의로 한 약의 복용 중단이나 교체를 지시하지 않는다.
 
   - query_id: vector-magnesium-function
     category: VECTOR_ONLY
@@ -77,7 +89,10 @@ cases:
       normalized_entities:
         - entity_type: INGREDIENT_NAME
           canonical_name: 마그네슘
+      section_types: [FUNCTION]
       required_source_kinds: [PUBLIC_KNOWLEDGE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 제품 목록보다 마그네슘의 검증된 기능을 우선 설명한다.
         - 검색된 한국어 근거를 간결하게 요약한다.
@@ -96,8 +111,11 @@ cases:
         - entity_type: INGREDIENT_NAME
           canonical_name: 칼슘
         - entity_type: INGREDIENT_NAME
-          canonical_name: 철
+          canonical_name: 철분
+      section_types: [INTERACTION]
       required_source_kinds: [PUBLIC_KNOWLEDGE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 연구 근거를 한국어로 번역·요약한다.
         - 근거의 범위와 한계를 함께 설명한다.
@@ -117,7 +135,10 @@ cases:
           canonical_name: 펙소페나딘
         - entity_type: FOOD_CATEGORY
           canonical_name: 과일주스
+      section_types: [INTERACTION]
       required_source_kinds: [PUBLIC_KNOWLEDGE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 검색 근거에 명시된 주스 종류와 주의 이유를 설명한다.
       forbidden_claims:
@@ -125,40 +146,50 @@ cases:
 
   - query_id: mixed-active-medication-public-caution
     category: RDB_AND_VECTOR
-    question: 내가 복용 중인 약의 복용법과 공공자료의 추가 주의사항을 함께 알려줘.
+    question: 내가 복용 중인 로사르탄의 복용법과 공공자료의 추가 주의사항을 함께 알려줘.
     preconditions:
-      - 사용자에게 활성 복용 약이 등록되어 있다.
-      - 해당 약과 관련된 공공 지식 청크가 Qdrant에 존재한다.
+      - 사용자에게 로사르탄이 활성 복용 약으로 등록되어 있다.
+      - 로사르탄 관련 공공 지식 청크가 Qdrant에 존재한다.
     expected:
       route: MEDICATION_GUIDE
       intent_tags: [ACTIVE_MEDICATION_GUIDE, MEDICATION_CAUTION]
       normalized_entities:
-        - entity_type: USER_ACTIVE_MEDICATION
-          canonical_name: 현재 복용 약
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 로사르탄
+      section_types: [CAUTION]
       required_source_kinds: [PATIENT_MEDICATION, PUBLIC_KNOWLEDGE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 사용자 등록 정보와 공공자료 설명을 구분한다.
         - 서로 충돌하면 사용자에게 임의 결론을 주지 않고 확인을 안내한다.
       forbidden_claims:
         - 공공자료 내용을 사용자에게 확정 처방된 복용법처럼 표현하지 않는다.
 
-  - query_id: mixed-active-medication-food-interaction
+  - query_id: mixed-drug-supplement-interaction
     category: RDB_AND_VECTOR
-    question: 내가 복용 중인 펙소페나딘과 과일주스를 같이 먹어도 되나요?
+    question: 내가 복용 중인 와파린과 비타민 K 영양제를 같이 먹어도 되나요?
     preconditions:
-      - 사용자 활성 복용 약에 펙소페나딘이 등록되어 있다.
-      - Qdrant에 펙소페나딘과 과일주스 상호작용 근거가 존재한다.
+      - 사용자 활성 복용 약에 와파린이 등록되어 있다.
+      - 사용자 활성 영양제에 비타민 K가 등록되어 있다.
+      - Qdrant에 와파린과 비타민 K 상호작용 근거가 존재한다.
     expected:
       route: INTERACTION
-      intent_tags: [ACTIVE_MEDICATION_INTERACTION, DRUG_FOOD_INTERACTION]
+      intent_tags: [DRUG_SUPPLEMENT_INTERACTION]
       normalized_entities:
         - entity_type: INGREDIENT_NAME
-          canonical_name: 펙소페나딘
-        - entity_type: FOOD_CATEGORY
-          canonical_name: 과일주스
-      required_source_kinds: [PATIENT_MEDICATION, PUBLIC_KNOWLEDGE]
+          canonical_name: 와파린
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 비타민 K
+      section_types: [INTERACTION]
+      required_source_kinds:
+        - PATIENT_MEDICATION
+        - PATIENT_SUPPLEMENT
+        - PUBLIC_KNOWLEDGE
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
-        - 등록된 약임을 확인한 뒤 관련 공공 근거만 연결한다.
+        - 등록된 약과 영양제를 확인한 뒤 관련 공공 근거만 연결한다.
       forbidden_claims:
         - 복용 중단이나 용량 변경을 직접 지시하지 않는다.
 
@@ -170,13 +201,16 @@ cases:
       - Qdrant에 칼슘과 철 흡수 연구 근거가 존재한다.
     expected:
       route: INTERACTION
-      intent_tags: [ACTIVE_SUPPLEMENT_INTERACTION]
+      intent_tags: [SUPPLEMENT_SUPPLEMENT_INTERACTION]
       normalized_entities:
         - entity_type: INGREDIENT_NAME
           canonical_name: 칼슘
         - entity_type: INGREDIENT_NAME
-          canonical_name: 철
+          canonical_name: 철분
+      section_types: [INTERACTION]
       required_source_kinds: [PATIENT_SUPPLEMENT, PUBLIC_KNOWLEDGE]
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 실제 등록된 두 성분과 검색 근거를 연결해 설명한다.
         - 연구 근거의 한계를 포함한다.
@@ -185,21 +219,33 @@ cases:
 
   - query_id: mixed-prioritized-active-interactions
     category: RDB_AND_VECTOR
-    question: 내가 복용 중인 약과 영양제에서 확인된 상호작용을 우선순위로 요약해줘.
+    question: 내가 복용 중인 와파린, 비타민 K, 칼슘, 철분의 상호작용을 우선순위로 요약해줘.
     preconditions:
       - 사용자에게 활성 약과 활성 영양제가 각각 1건 이상 등록되어 있다.
       - 등록 조합과 일치하는 승인 규칙 또는 Qdrant 근거가 존재한다.
     expected:
       route: INTERACTION
-      intent_tags: [ACTIVE_INTAKE_INTERACTION_SUMMARY]
+      intent_tags:
+        - ACTIVE_INTAKE_INTERACTION_SUMMARY
+        - DRUG_SUPPLEMENT_INTERACTION
+        - SUPPLEMENT_SUPPLEMENT_INTERACTION
       normalized_entities:
-        - entity_type: USER_ACTIVE_INTAKE
-          canonical_name: 현재 복용 조합
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 와파린
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 비타민 K
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 칼슘
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 철분
+      section_types: [INTERACTION]
       required_source_kinds:
         - PATIENT_MEDICATION
         - PATIENT_SUPPLEMENT
         - INTERACTION_RULE
         - PUBLIC_KNOWLEDGE
+      safety_status: SAFE
+      require_langsmith_trace: true
       answer_requirements:
         - 약-약, 약-영양제, 영양제-영양제 순으로 확인 결과를 정리한다.
         - 확인된 조합과 근거를 찾지 못한 조합을 구분한다.
