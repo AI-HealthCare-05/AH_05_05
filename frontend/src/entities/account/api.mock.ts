@@ -35,14 +35,22 @@ export function mockUpdateMyProfile(payload: UpdateAccountProfilePayload): Accou
   return { ...currentProfile };
 }
 
+/**
+ * 실서버 `PATCH /v1/users/me/password` 의 오류 계약을 그대로 흉내냅니다.
+ *
+ * code 와 field 가 다르면 화면이 문구를 엉뚱한 칸에 붙입니다
+ * (PasswordChangeSheet 의 errorTarget 이 이 둘로 칸을 고릅니다).
+ */
 export function mockChangePassword(payload: ChangePasswordPayload): void {
   if (payload.currentPassword !== currentPassword) {
-    throw new ApiError(
-      400,
-      'invalid_current_password',
-      '현재 비밀번호가 맞지 않아요.',
-      'currentPassword',
-    );
+    throw new ApiError(400, 'INVALID_PASSWORD', '현재 비밀번호가 맞지 않아요.');
+  }
+  if (payload.newPassword === currentPassword) {
+    throw new ApiError(400, 'SAME_AS_CURRENT', '현재 비밀번호와 다른 비밀번호를 입력해주세요.');
+  }
+  // 서버는 validate_password 로 검사하고 422 에 field 를 실어 보냅니다.
+  if (payload.newPassword.length < 8) {
+    throw new ApiError(422, 'VALIDATION_ERROR', '비밀번호는 8자 이상이어야 합니다.', 'new_password');
   }
   currentPassword = payload.newPassword;
 }

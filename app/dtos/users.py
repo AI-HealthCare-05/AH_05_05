@@ -1,9 +1,9 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app.core.validators import optional_after_validator, validate_phone_number
+from app.core.validators import optional_after_validator, validate_password, validate_phone_number
 from app.dtos.base import BaseSerializerModel
 from app.models.enums import AccountStatus, Gender
 
@@ -25,6 +25,19 @@ class UserUpdateRequest(BaseModel):
     # 둘이라 여기 없으면 생년월일·성별을 고칠 방법이 아예 없다.
     birth_date: date | None = None
     gender: Gender | None = None
+
+
+class PasswordChangeRequest(BaseModel):
+    """마이페이지 「비밀번호 변경」. 대상은 토큰의 사용자이고 사용자 ID 는 받지 않는다."""
+
+    current_password: Annotated[str, Field(min_length=1)]
+    # 관리자 쪽(AdminPasswordChangeRequest)과 같은 검증기를 쓴다.
+    # 함수를 공유하면 두 곳의 비밀번호 정책이 어긋날 일이 없다.
+    new_password: Annotated[str, AfterValidator(validate_password)]
+
+
+class PasswordChangeResponse(BaseModel):
+    detail: str
 
 
 class UserInfoResponse(BaseSerializerModel):
