@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.dependencies.security import get_request_user
 from app.dtos.medications import MedicationDoseResponse, MedicationOverview, SaveMedicationDoseRequest
@@ -36,11 +36,10 @@ async def get_medications(
 async def get_medication_doses(
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[MedicationService, Depends(get_medication_service)],
-    record_id: Annotated[int, Query(alias="recordId", gt=0)],
     from_date: Annotated[date, Query(alias="from")],
     to_date: Annotated[date, Query(alias="to")],
 ) -> list[MedicationDoseResponse]:
-    return await service.list_doses(user, record_id, from_date, to_date)
+    return await service.list_doses(user, from_date, to_date)
 
 
 @medication_router.post(
@@ -54,3 +53,18 @@ async def save_medication_dose(
     service: Annotated[MedicationService, Depends(get_medication_service)],
 ) -> MedicationDoseResponse:
     return await service.save_dose(user, request)
+
+
+@medication_router.delete(
+    "/{record_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="복약 정보 취소",
+)
+async def cancel_medication(
+    record_id: Annotated[int, Path(gt=0)],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[MedicationService, Depends(get_medication_service)],
+) -> Response:
+    await service.cancel(user, record_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

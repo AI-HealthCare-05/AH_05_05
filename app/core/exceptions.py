@@ -272,7 +272,7 @@ class InvalidMedicationScheduleError(AppError):
 class InvalidDoseDateError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "invalid_dose_date"
-    message = "복용 날짜가 복약 기간을 벗어났습니다."
+    message = "복용 날짜는 오늘 또는 지난 365일 이내여야 합니다."
 
 
 class InvalidDoseSlotError(AppError):
@@ -283,13 +283,13 @@ class InvalidDoseSlotError(AppError):
 
 class MedicationRecordForbiddenError(AppError):
     status_code = status.HTTP_403_FORBIDDEN
-    code = "forbidden"
+    code = "MEDICATION_RECORD_FORBIDDEN"
     message = "다른 사용자의 복약 기록에는 접근할 수 없습니다."
 
 
 class MedicationRecordNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
-    code = "record_not_found"
+    code = "MEDICATION_RECORD_NOT_FOUND"
     message = "복약 기록을 찾을 수 없습니다."
 
 
