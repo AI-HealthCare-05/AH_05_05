@@ -354,20 +354,19 @@ export function MyPage({
               <h2 id="account-title" className="text-xl font-bold text-foreground">
                 계정
               </h2>
-              <Card className="gap-4 p-4">
-                <Button
-                  variant="secondary"
-                  onClick={handleSignOut}
-                >
-                  로그아웃
-                </Button>
-                <button
-                  type="button"
-                  className="mx-auto min-h-touch px-4 text-sm text-muted-foreground underline-offset-4 hover:underline"
-                  onClick={() => setWithdrawDialogOpen(true)}
-                >
-                  회원 탈퇴
-                </button>
+              <Card className="p-4">
+                <div className="flex flex-col gap-4">
+                  <Button variant="secondary" onClick={handleSignOut}>
+                    로그아웃
+                  </Button>
+                  <button
+                    type="button"
+                    className="min-h-touch self-center px-4 text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
+                    onClick={() => setWithdrawDialogOpen(true)}
+                  >
+                    회원 탈퇴
+                  </button>
+                </div>
               </Card>
             </section>
           </>

@@ -21,7 +21,7 @@ async def create_episode(
     *,
     start_date: date,
     start_slot: MealSlot = MealSlot.MORNING,
-    medication_days: int = 7,
+    medication_days: int | None = 7,
     source_ocr_job_id: int | None = None,
     episode_status: CareEpisodeStatus = CareEpisodeStatus.ACTIVE,
 ) -> CareEpisode:
@@ -109,6 +109,79 @@ class TestMedicationOverviewAPI(TestCase):
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["endDate"] == (today + timedelta(days=6)).isoformat()
+
+    async def test_overview_when_all_medication_days_unknown(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-unknown-days@example.com"
+            headers = await authentication_headers(client, email, "01023000011")
+            user = await User.get(email=email)
+            episode = await create_episode(
+                user,
+                start_date=today,
+                medication_days=None,
+                source_ocr_job_id=103,
+            )
+            first = await Medication.create(
+                care_episode=episode,
+                name="일수 미상 약 1",
+                times_per_day=1,
+                days=None,
+            )
+            second = await Medication.create(
+                care_episode=episode,
+                name="일수 미상 약 2",
+                times_per_day=1,
+                days=None,
+            )
+            await MedicationSlot.create(medication=first, slot=MealSlot.MORNING)
+            await MedicationSlot.create(medication=second, slot=MealSlot.EVENING)
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        overview = response.json()[0]
+        assert overview["endDate"] == today.isoformat()
+        assert overview["daysRemaining"] == 1
+        assert all(item["days"] == 1 for item in overview["medications"])
+        assert all(item["daysRemaining"] == 1 for item in overview["medications"])
+        assert all(item["untilComplete"] is True for item in overview["medications"])
+
+    async def test_overview_returns_other_episodes_when_one_has_unknown_days(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-mixed-days@example.com"
+            headers = await authentication_headers(client, email, "01023000012")
+            user = await User.get(email=email)
+            unknown = await create_episode(
+                user,
+                start_date=today,
+                medication_days=None,
+                source_ocr_job_id=104,
+            )
+            await Medication.create(
+                care_episode=unknown,
+                name="일수 미상 약",
+                times_per_day=1,
+                days=None,
+            )
+            normal = await create_episode(
+                user,
+                start_date=today,
+                medication_days=7,
+                source_ocr_job_id=105,
+            )
+            await Medication.create(
+                care_episode=normal,
+                name="7일 약",
+                times_per_day=1,
+                days=7,
+            )
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert {overview["recordId"] for overview in response.json()} == {unknown.id, normal.id}
 
     async def test_returns_all_active_episodes_with_frontend_contract_and_hand_checked_dates(self) -> None:
         today = datetime.now(config.TIMEZONE).date()

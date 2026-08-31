@@ -23,6 +23,7 @@ from app.models.medications import Medication, MedicationDose
 from app.models.users import User, UserSettings
 
 MAX_DOSE_HISTORY_DAYS = 93
+UNKNOWN_DAYS = 1
 SLOT_ORDER = (MealSlot.MORNING, MealSlot.LUNCH, MealSlot.EVENING, MealSlot.BEDTIME)
 SLOT_BY_API_NAME = {slot.value.lower(): slot for slot in SLOT_ORDER}
 SLOT_POSITION = {slot: position for position, slot in enumerate(SLOT_ORDER)}
@@ -162,8 +163,12 @@ class MedicationService:
             raise ValueError("Medication overview requires a start date")
         start_slot = episode.medication_start_slot or MealSlot.MORNING
 
+        known_days = [medication.days for medication in medications if medication.days is not None]
+        fallback_days = episode.medication_days or (max(known_days) if known_days else UNKNOWN_DAYS)
+
         items = [
-            MedicationService._medication_item(episode, medication, start_date, today) for medication in medications
+            MedicationService._medication_item(medication, start_date, today, fallback_days)
+            for medication in medications
         ]
         scheduled = [item for item in items if not item.as_needed]
         longest_days = max(
@@ -185,17 +190,13 @@ class MedicationService:
 
     @staticmethod
     def _medication_item(
-        episode: CareEpisode,
         medication: Medication,
         start_date: date,
         today: date,
+        fallback_days: int,
     ) -> MedicationOverviewItem:
         until_complete = medication.days is None
-        days = medication.days
-        if days is None:
-            days = episode.medication_days
-        if days is None:
-            raise ValueError("Medication days require a care episode fallback")
+        days = medication.days if medication.days is not None else fallback_days
         as_needed = medication.times_per_day is None
         end_date = start_date + timedelta(days=days - 1)
         slots = (
