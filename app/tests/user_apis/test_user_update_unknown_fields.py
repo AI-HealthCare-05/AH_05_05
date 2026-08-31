@@ -32,22 +32,19 @@ class TestUserUpdateRejectsUnknownFields(TestCase):
         login = await client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
         return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-    async def test_camel_case_body_is_rejected_instead_of_silently_ignored(self):
-        # 프론트가 표기법을 잘못 보내면 저장이 안 된 채 성공으로 보였다.
+    async def test_both_spellings_are_accepted(self):
+        # CamelModel 은 populate_by_name=True 라 별칭(camel)과 필드명(snake)을 둘 다 받는다.
+        # 이관(#172) 중에도 기존 snake_case 요청이 계속 통해야 한다.
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await self._signed_in(client)
 
-            response = await client.patch(
-                "/api/v1/users/me",
-                headers=headers,
-                json={"birthDate": "1985-03-03", "phoneNumber": "01011112222"},
-            )
+            camel = await client.patch("/api/v1/users/me", headers=headers, json={"birthDate": "1985-03-03"})
+            snake = await client.patch("/api/v1/users/me", headers=headers, json={"birth_date": "1986-04-04"})
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["code"] == "VALIDATION_ERROR"
-
-        user = await User.get(email=EMAIL)
-        assert user.birth_date.isoformat() == "1990-01-01"
+        assert camel.status_code == status.HTTP_200_OK
+        assert snake.status_code == status.HTTP_200_OK
+        # 무시되지 않고 실제로 반영돼야 한다. 예전엔 200 만 주고 값이 그대로였다.
+        assert (await User.get(email=EMAIL)).birth_date.isoformat() == "1986-04-04"
 
     async def test_misspelled_field_is_rejected(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -56,7 +53,7 @@ class TestUserUpdateRejectsUnknownFields(TestCase):
             response = await client.patch(
                 "/api/v1/users/me",
                 headers=headers,
-                json={"name": "새이름", "phone_nubmer": "01011112222"},
+                json={"name": "새이름", "phoneNumbr": "01011112222"},
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -80,7 +77,7 @@ class TestUserUpdateRejectsUnknownFields(TestCase):
             response = await client.patch(
                 "/api/v1/users/me",
                 headers=headers,
-                json={"name": "바뀐이름", "birth_date": "1985-03-03"},
+                json={"name": "바뀐이름", "birthDate": "1985-03-03"},
             )
 
         assert response.status_code == status.HTTP_200_OK

@@ -1,18 +1,21 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, ConfigDict, EmailStr, Field
 
 from app.core.validators import optional_after_validator, validate_password, validate_phone_number
-from app.dtos.base import BaseSerializerModel
+from app.dtos.base import CamelModel
 from app.models.enums import AccountStatus, Gender
 
 
-class UserUpdateRequest(BaseModel):
+class UserUpdateRequest(CamelModel):
     """마이페이지 「기본정보 수정」이 보내는 값. 보낸 항목만 바뀐다(exclude_none)."""
 
     # 전 필드가 선택이라 모르는 키를 무시하면 "바꿀 항목 0개"가 되어 200 이 나간다.
-    # 오타(phone_nubmer)나 표기법 실수(phoneNumber)가 저장 성공으로 보였다.
+    # 오타(phoneNumbr)가 저장 성공으로 보였다.
+    #
+    # CamelModel 의 설정(alias_generator·populate_by_name)은 부모에서 상속되므로
+    # 여기서 extra 만 더해도 별칭 변환은 그대로 살아 있다.
     model_config = ConfigDict(extra="forbid")
 
     name: Annotated[str | None, Field(None, min_length=2, max_length=100)]
@@ -31,7 +34,7 @@ class UserUpdateRequest(BaseModel):
     gender: Gender | None = None
 
 
-class PasswordChangeRequest(BaseModel):
+class PasswordChangeRequest(CamelModel):
     """마이페이지 「비밀번호 변경」. 대상은 토큰의 사용자이고 사용자 ID 는 받지 않는다."""
 
     current_password: Annotated[str, Field(min_length=1)]
@@ -40,14 +43,16 @@ class PasswordChangeRequest(BaseModel):
     new_password: Annotated[str, AfterValidator(validate_password)]
 
 
-class PasswordChangeResponse(BaseModel):
+class PasswordChangeResponse(CamelModel):
     detail: str
 
 
-class UserInfoResponse(BaseSerializerModel):
+class UserInfoResponse(CamelModel):
     id: int
     name: str
     email: str
+    # validation_alias 는 입력에만 걸린다. DB 컬럼이 phone 이라 여기서 읽고,
+    # 응답 키는 CamelModel 의 별칭 생성기가 phoneNumber 로 만든다. 둘이 충돌하지 않는다.
     phone_number: Annotated[str | None, Field(validation_alias="phone")]
     # 모델에는 있었으나 응답에 싣지 않아, 화면이 폼을 채우지 못했다.
     # 가입 시 선택 항목이라 기존 회원은 null 일 수 있다.
