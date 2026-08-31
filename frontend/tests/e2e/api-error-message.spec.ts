@@ -48,6 +48,27 @@ test('404 string detail renders the Korean fallback instead of exposing detail',
   await expect(page.getByText('Not Found')).toHaveCount(0);
 });
 
+test('development warning keeps an API diagnostic detail out of the UI', async ({ page }) => {
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning') warnings.push(message.text());
+  });
+
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', (route) =>
+    fulfillJson(route, { detail: 'diagnostic-request-id-404' }, 404),
+  );
+  await setupProfile(page);
+
+  await page.goto('/supplements');
+
+  await expect(page.getByText(FALLBACK)).toBeVisible();
+  await expect(page.getByText('diagnostic-request-id-404')).toHaveCount(0);
+  await expect.poll(() =>
+    warnings.some((warning) => warning.includes('diagnostic-request-id-404')),
+  ).toBe(true);
+});
+
 test('422 validation-array detail renders the Korean fallback instead of exposing detail', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', (route) =>
