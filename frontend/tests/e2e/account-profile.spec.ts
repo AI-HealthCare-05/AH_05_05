@@ -205,6 +205,39 @@ test('비밀번호 변경은 별도 시트에서 입력 오류를 인라인으�
   await expect(page.getByRole('dialog')).toHaveCount(1);
 });
 
+test('비밀번호 변경 오류는 잘못 입력한 칸 아래에 붙는다', async ({ page }) => {
+  // 예전에는 서버가 어느 칸 문제인지 알려줘도 전부 「현재 비밀번호」 아래에 붙어서,
+  // 새 비밀번호 정책 위반인데 엉뚱한 칸이 빨갛게 됐다.
+  await page.goto('/dev/my-profile');
+  await page.getByRole('button', { name: '비밀번호 변경' }).click();
+  const sheet = page.getByRole('dialog');
+  const current = sheet.getByLabel('현재 비밀번호');
+  const next = sheet.getByLabel('새 비밀번호', { exact: true });
+
+  /** 해당 입력칸에 연결된 오류 문구(Input 이 `${id}-error` 로 붙인다). */
+  const errorOf = async (input: typeof current) => {
+    const id = await input.getAttribute('id');
+    const message = page.locator(`#${id}-error`);
+    return (await message.count()) ? message.innerText() : '';
+  };
+
+  // 1) 새 비밀번호 정책 위반 -> 새 비밀번호 아래
+  await current.fill('password1234');
+  await next.fill('short');
+  await sheet.getByLabel('새 비밀번호 확인').fill('short');
+  await sheet.getByRole('button', { name: '변경', exact: true }).click();
+  await expect.poll(() => errorOf(next)).toContain('8자 이상');
+  expect(await errorOf(current)).toBe('');
+
+  // 2) 현재 비밀번호 불일치 -> 현재 비밀번호 아래
+  await current.fill('wrong-password');
+  await next.fill('new-password1234');
+  await sheet.getByLabel('새 비밀번호 확인').fill('new-password1234');
+  await sheet.getByRole('button', { name: '변경', exact: true }).click();
+  await expect.poll(() => errorOf(current)).toContain('현재 비밀번호가 맞지 않아요.');
+  expect(await errorOf(next)).toBe('');
+});
+
 test('비밀번호 변경 성공은 시트를 닫고 토스트만 보여준다', async ({ page }) => {
   await page.goto('/dev/my-profile');
   await page.getByRole('button', { name: '비밀번호 변경' }).click();
