@@ -76,7 +76,7 @@ class TestAdminSupplementRankDisplayAPI(TestCase):
         assert second.status_code == status.HTTP_409_CONFLICT
         assert second.json()["code"] == "SUPPLEMENT_RANK_PERIOD_CONFLICT"
 
-    async def test_staff_can_read_but_cannot_write_rank_displays(self) -> None:
+    async def test_staff_can_read_and_create_rank_displays(self) -> None:
         listed = await request("GET", DISPLAY_URL, headers=self.staff_headers)
         created = await request(
             "POST",
@@ -86,7 +86,8 @@ class TestAdminSupplementRankDisplayAPI(TestCase):
         )
 
         assert listed.status_code == status.HTTP_200_OK
-        assert created.status_code == status.HTTP_403_FORBIDDEN
+        assert created.status_code == status.HTTP_201_CREATED
+        assert created.json()["created_by_admin_id"] == self.staff.id
 
     async def test_admin_can_replace_items_and_delete_the_display(self) -> None:
         created = await request(

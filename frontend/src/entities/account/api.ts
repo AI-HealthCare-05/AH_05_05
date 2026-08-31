@@ -6,6 +6,7 @@ import {
   mockCreateAccount,
   mockGetMyProfile,
   mockUpdateMyProfile,
+  mockWithdrawAccount,
 } from './api.mock';
 import type {
   AccountProfile,
@@ -13,6 +14,7 @@ import type {
   CreateAccountPayload,
   Gender,
   UpdateAccountProfilePayload,
+  WithdrawAccountPayload,
 } from './types';
 
 interface SignupResponseBody {
@@ -113,4 +115,12 @@ export async function changePassword(payload: ChangePasswordPayload): Promise<vo
     return mockChangePassword(payload);
   }
   return http.patch<void>('/v1/me/password', payload);
+}
+
+export async function withdrawAccount(payload: WithdrawAccountPayload): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockWithdrawAccount(payload);
+  }
+  return http.delete<void>('/v1/users/me', payload);
 }

@@ -26,6 +26,7 @@ import {
   type PushPermission,
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
+import { WithdrawAccountDialog } from './WithdrawAccountDialog';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -66,6 +67,7 @@ export function MyPage({
   const [blockedDialogOpen, setBlockedDialogOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [pendingSettingKeys, setPendingSettingKeys] = useState<NotifySettingKey[]>([]);
+  const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
 
@@ -335,7 +337,7 @@ export function MyPage({
               <h2 id="account-title" className="text-xl font-bold text-foreground">
                 계정
               </h2>
-              <Card className="p-4">
+              <Card className="gap-4 p-4">
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -345,6 +347,13 @@ export function MyPage({
                 >
                   로그아웃
                 </Button>
+                <button
+                  type="button"
+                  className="mx-auto min-h-touch px-4 text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  onClick={() => setWithdrawDialogOpen(true)}
+                >
+                  회원 탈퇴
+                </button>
               </Card>
             </section>
           </>
@@ -402,6 +411,14 @@ export function MyPage({
           const retry = notifyActionError?.retry;
           setNotifyActionError(null);
           retry?.();
+        }}
+      />
+      <WithdrawAccountDialog
+        open={withdrawDialogOpen}
+        onOpenChange={setWithdrawDialogOpen}
+        onWithdrawn={() => {
+          signOut();
+          navigate('/', { replace: true });
         }}
       />
     </div>
