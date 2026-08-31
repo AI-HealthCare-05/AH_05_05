@@ -22,6 +22,12 @@ export function getAdminDisplayName(admin = {}) {
   return name || email || "관리자";
 }
 
+export function getAdminRoleLabel(role) {
+  if (role === "ADMIN") return "최고 관리자";
+  if (role === "STAFF") return "일반 관리자";
+  return role || "권한 미지정";
+}
+
 export function renderAdminTopbar(root = document, admin = session.admin()) {
   const existing = root.querySelector?.("[data-admin-topbar]");
   if (existing) return existing;
@@ -39,13 +45,19 @@ export function renderAdminTopbar(root = document, admin = session.admin()) {
   const user = root.createElement("div");
   user.className = "admin-topbar-user";
   user.setAttribute("aria-label", "로그인 사용자");
+  user.style.gap = "8px";
 
   const userName = root.createElement("strong");
   userName.className = "admin-topbar-user-name";
   userName.setAttribute("data-login-user-name", "");
   userName.textContent = getAdminDisplayName(admin);
 
-  user.append(userName);
+  const userRole = root.createElement("span");
+  userRole.className = "admin-topbar-user-role";
+  userRole.setAttribute("data-login-user-role", "");
+  userRole.textContent = `(${getAdminRoleLabel(admin.role)})`;
+
+  user.append(userName, userRole);
   topbar.append(brandSlot, user);
   root.body.prepend(topbar);
   return topbar;
@@ -53,9 +65,15 @@ export function renderAdminTopbar(root = document, admin = session.admin()) {
 
 export function relocateSidebarBrand(sidebar, root = document) {
   const brand = sidebar?.querySelector?.(".sidebar-brand");
-  const target = root.querySelector?.("[data-admin-topbar-brand]");
-  if (!brand || !target?.append) return false;
-  target.append(brand);
+  const settingsButton = sidebar?.querySelector?.("[data-smtp-settings]");
+  const brandTarget = root.querySelector?.("[data-admin-topbar-brand]");
+  const userTarget = root.querySelector?.(".admin-topbar-user");
+  if (!brand || !brandTarget?.append) return false;
+  brandTarget.append(brand);
+  if (settingsButton && userTarget?.append) {
+    if (settingsButton.style) settingsButton.style.marginLeft = "0px";
+    userTarget.append(settingsButton);
+  }
   return true;
 }
 

@@ -148,11 +148,15 @@ test("shared sidebar uses the RxVita symbol with an administrator label", async 
 });
 
 test("administrator display name prefers the signed-in profile name", async () => {
-  const { getAdminDisplayName } = await import("../../static/js/sidebar.js");
+  const { getAdminDisplayName, getAdminRoleLabel } = await import("../../static/js/sidebar.js");
 
   assert.equal(getAdminDisplayName({ name: "김관리" }), "김관리");
   assert.equal(getAdminDisplayName({ email: "admin@rxvita.test" }), "admin@rxvita.test");
   assert.equal(getAdminDisplayName({}), "관리자");
+  assert.equal(getAdminRoleLabel("ADMIN"), "최고 관리자");
+  assert.equal(getAdminRoleLabel("STAFF"), "일반 관리자");
+  assert.equal(getAdminRoleLabel("AUDITOR"), "AUDITOR");
+  assert.equal(getAdminRoleLabel(), "권한 미지정");
 });
 
 test("administrator pages expose a shared fixed top area", async () => {
@@ -169,7 +173,9 @@ test("administrator pages expose a shared fixed top area", async () => {
   assert.match(source, /data-admin-topbar/);
   assert.match(source, /data-admin-topbar-brand/);
   assert.match(source, /data-login-user-name/);
+  assert.match(source, /data-login-user-role/);
   assert.match(source, /userName\.textContent\s*=\s*getAdminDisplayName\(admin\)/);
+  assert.match(source, /userRole\.textContent\s*=\s*`\(\$\{getAdminRoleLabel\(admin\.role\)\}\)`/);
   assert.match(source, /relocateSidebarBrand\(sidebar, root\)/);
   assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*right:\s*0;/s);
   assert.match(managementStyles, /\.admin-topbar-brand\s*\{[^}]*display:\s*flex;/s);
@@ -179,18 +185,21 @@ test("administrator pages expose a shared fixed top area", async () => {
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-5"/, page);
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-6"/, page);
   }
 });
 
 test("sidebar brand moves into the left side of the top area", async () => {
   const { relocateSidebarBrand } = await import("../../static/js/sidebar.js");
+  const settingsButton = { style: { marginLeft: "auto" } };
   const brand = { id: "brand" };
-  let moved = null;
-  const sidebar = { querySelector: (selector) => selector === ".sidebar-brand" ? brand : null };
-  const target = { append(element) { moved = element; } };
-  const root = { querySelector: (selector) => selector === "[data-admin-topbar-brand]" ? target : null };
+  const moved = [];
+  const sidebar = { querySelector: (selector) => ({ ".sidebar-brand": brand, "[data-smtp-settings]": settingsButton })[selector] ?? null };
+  const brandTarget = { append(element) { moved.push(["left", element]); } };
+  const userTarget = { append(element) { moved.push(["right", element]); } };
+  const root = { querySelector: (selector) => ({ "[data-admin-topbar-brand]": brandTarget, ".admin-topbar-user": userTarget })[selector] ?? null };
 
   assert.equal(relocateSidebarBrand(sidebar, root), true);
-  assert.equal(moved, brand);
+  assert.deepEqual(moved, [["left", brand], ["right", settingsButton]]);
+  assert.equal(settingsButton.style.marginLeft, "0px");
 });
