@@ -80,19 +80,22 @@ test('이메일 @ 뒤에 한글을 조합해도 앞서 입력한 주소가 남�
   await emailInput.click();
   await page.keyboard.type('ddfdd@ddadf');
 
+  // 조합 중인 글자는 IME 가 그리는 것이라 화면에 잠깐 보인다. 그건 막을 수 없다.
+  // 여기서 확인할 것은 앞서 입력해 둔 영문이 그대로 붙어 있는가다.
   for (const composing of ['ㅇ', '오', '올']) {
     await cdp.send('Input.imeSetComposition', {
       text: composing,
       selectionStart: composing.length,
       selectionEnd: composing.length,
     });
-    // 조합 중에도 앞서 입력한 영문이 사라지면 안 된다.
-    await expect(emailInput).toHaveValue('ddfdd@ddadf');
+    await expect(emailInput).toHaveValue(`ddfdd@ddadf${composing}`);
   }
-  await cdp.send('Input.insertText', { text: '올' });
+
+  // 조합이 끝나면 한글만 사라지고 영문은 남는다.
+  await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 });
   await expect(emailInput).toHaveValue('ddfdd@ddadf');
 
-  // 조합 뒤에도 이어서 정상 입력이 된다.
+  // 조합 뒤에도 입력이 얼지 않는다. (조합 상태를 플래그로 들고 있으면 여기서 막힌다)
   await page.keyboard.type('.net');
   await expect(emailInput).toHaveValue('ddfdd@ddadf.net');
 });

@@ -49,11 +49,12 @@ export function AuthPage() {
   /**
    * 이메일 칸에서 쓸 수 없는 문자를 지웁니다.
    *
-   * setEmail 만으로는 부족합니다. 정리한 값이 직전 state 와 같으면 리렌더가 일어나지 않아,
-   * 한글 IME 가 DOM 에 넣어둔 조합 문자가 화면에 그대로 남습니다. 반대로 리렌더가 일어나면
-   * 조합 중인 버퍼를 덮어써서 앞서 입력한 글자까지 날아갑니다.
-   * 그래서 DOM 값을 직접 되돌려 조합을 끊습니다. 되돌리는 값에 앞 글자가 모두 들어 있으므로
-   * 지워지는 건 한글뿐입니다. 되돌린 뒤 커서는 끝으로 갑니다.
+   * setEmail 만으로는 부족합니다. 정리한 값이 직전 state 와 같으면 리렌더가 일어나지 않아
+   * IME 가 DOM 에 넣어둔 조합 문자가 화면에 그대로 남습니다. 그래서 값을 직접 되돌립니다.
+   * 되돌리는 문자열에 앞 글자가 모두 들어 있으므로 지워지는 건 한글뿐입니다.
+   *
+   * 단, 조합이 끝난 뒤에만 불러야 합니다. 조합 도중에 값을 건드리면 IME 버퍼와 충돌해
+   * 앞서 입력해 둔 영문까지 함께 날아갑니다.
    */
   function applyEmailInput(input: HTMLInputElement) {
     const typed = input.value;
@@ -182,10 +183,18 @@ export function AuthPage() {
             error={emailError ?? undefined}
             onChange={(event) => {
               event.currentTarget.setCustomValidity('');
+              // 조합 중에는 들어온 값을 그대로 state 에 넣습니다. 정리는 조합이 끝난 뒤 합니다.
+              // state 를 그대로 두면 React 가 controlled input 값을 되돌리는데, 그 복원이
+              // IME 버퍼와 충돌해 앞서 입력해 둔 영문까지 지워버립니다.
+              //
+              // 플래그를 따로 들지 않고 이벤트의 isComposing 을 씁니다. 플래그를 쓰면
+              // compositionend 를 한 번이라도 놓쳤을 때 칸이 영영 얼어붙습니다.
+              if ((event.nativeEvent as InputEvent).isComposing) {
+                setEmail(event.currentTarget.value);
+                return;
+              }
               applyEmailInput(event.currentTarget);
             }}
-            // IME 는 조합이 끝나는 순간 값을 다시 밀어 넣습니다. onChange 만으로는
-            // 그때 들어온 한글이 남을 수 있어 조합 종료 시점에 한 번 더 정리합니다.
             onCompositionEnd={(event) => applyEmailInput(event.currentTarget)}
             required
           />
