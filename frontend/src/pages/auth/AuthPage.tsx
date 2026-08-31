@@ -10,7 +10,7 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
-import { EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
+import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
 import {
   PHONE_NUMBER_MAX_LENGTH,
   formatPhoneNumberInput,
@@ -45,6 +45,24 @@ export function AuthPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const today = formatDateInputValue(new Date());
+
+  /**
+   * 이메일 칸에서 쓸 수 없는 문자를 지웁니다.
+   *
+   * setEmail 만으로는 부족합니다. 정리한 값이 직전 state 와 같으면 리렌더가 일어나지 않아,
+   * 한글 IME 가 DOM 에 넣어둔 조합 문자가 화면에 그대로 남습니다. 반대로 리렌더가 일어나면
+   * 조합 중인 버퍼를 덮어써서 앞서 입력한 글자까지 날아갑니다.
+   * 그래서 DOM 값을 직접 되돌려 조합을 끊습니다. 되돌리는 값에 앞 글자가 모두 들어 있으므로
+   * 지워지는 건 한글뿐입니다. 되돌린 뒤 커서는 끝으로 갑니다.
+   */
+  function applyEmailInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizeEmailInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    // 조용히 지우면 왜 안 찍히는지 모른다. 지운 게 있을 때만 이유를 알린다.
+    setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
+    setEmail(sanitized);
+  }
 
   async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -150,20 +168,25 @@ export function AuthPage() {
           <Input
             label="이메일"
             inputRef={emailInputRef}
-            type="email"
+            // type="email" 이 아닙니다. 크롬이 그 타입에서 도메인을 퓨니코드로 바꿔 값을 주는 탓에
+            // 화면의 한글을 코드가 볼 수 없습니다. 자세한 이유는 EMAIL_INPUT_PATTERN 주석 참고.
+            type="text"
             inputMode="email"
+            pattern={EMAIL_INPUT_PATTERN}
             autoComplete="email"
+            // text 로 바뀌면서 모바일 자동 대문자·맞춤법 교정이 붙습니다. 이메일에는 방해가 됩니다.
+            autoCapitalize="none"
+            spellCheck={false}
             value={email}
             maxLength={EMAIL_MAX_LENGTH}
             error={emailError ?? undefined}
             onChange={(event) => {
               event.currentTarget.setCustomValidity('');
-              const typed = event.target.value;
-              const sanitized = sanitizeEmailInput(typed);
-              // 조용히 지우면 왜 안 찍히는지 모른다. 지운 게 있을 때만 이유를 알린다.
-              setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
-              setEmail(sanitized);
+              applyEmailInput(event.currentTarget);
             }}
+            // IME 는 조합이 끝나는 순간 값을 다시 밀어 넣습니다. onChange 만으로는
+            // 그때 들어온 한글이 남을 수 있어 조합 종료 시점에 한 번 더 정리합니다.
+            onCompositionEnd={(event) => applyEmailInput(event.currentTarget)}
             required
           />
           <Input

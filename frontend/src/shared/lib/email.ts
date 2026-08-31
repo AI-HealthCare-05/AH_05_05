@@ -14,3 +14,14 @@ const NOT_ALLOWED_IN_EMAIL = /[^!-~]/g;
 export function sanitizeEmailInput(value: string): string {
   return value.replace(NOT_ALLOWED_IN_EMAIL, '').slice(0, EMAIL_MAX_LENGTH);
 }
+
+/**
+ * `type="text"` 로 쓰는 이메일 칸의 형식 검증.
+ *
+ * `type="email"` 을 못 쓴다. 크롬은 그 타입에서 도메인을 퓨니코드로 바꿔 `.value` 로 준다.
+ * 화면에는 `ddadf한글` 이 보이는데 값은 `xn--ddadf-...` 라 한글을 걸러낼 수가 없다.
+ * 대신 브라우저 기본 검증을 잃지 않도록 HTML 명세의 이메일 정규식을 그대로 pattern 에 준다.
+ * (명세 정규식이라 ASCII 만 통과한다. 한글이 남더라도 제출 단계에서 한 번 더 걸린다.)
+ */
+export const EMAIL_INPUT_PATTERN =
+  "[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*";

@@ -68,6 +68,35 @@ test('회원가입 이메일 칸은 한글을 지우고 이유를 알린다', as
   await expect(page.getByText('이메일은 영문, 숫자와 기호만 입력할 수 있어요.')).toHaveCount(0);
 });
 
+test('이메일 @ 뒤에 한글을 조합해도 앞서 입력한 주소가 남는다', async ({ page }) => {
+  // type="email" 이던 시절 크롬이 도메인을 퓨니코드(xn--...)로 바꿔 값을 넘겨준 탓에
+  // 화면에는 한글이 보이는데 코드는 ASCII 만 보고 통과시켰다. fill() 로는 재현되지 않아
+  // CDP 로 실제 IME 조합을 흉내낸다.
+  const cdp = await page.context().newCDPSession(page);
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+
+  const emailInput = page.getByLabel('이메일');
+  await emailInput.click();
+  await page.keyboard.type('ddfdd@ddadf');
+
+  for (const composing of ['ㅇ', '오', '올']) {
+    await cdp.send('Input.imeSetComposition', {
+      text: composing,
+      selectionStart: composing.length,
+      selectionEnd: composing.length,
+    });
+    // 조합 중에도 앞서 입력한 영문이 사라지면 안 된다.
+    await expect(emailInput).toHaveValue('ddfdd@ddadf');
+  }
+  await cdp.send('Input.insertText', { text: '올' });
+  await expect(emailInput).toHaveValue('ddfdd@ddadf');
+
+  // 조합 뒤에도 이어서 정상 입력이 된다.
+  await page.keyboard.type('.net');
+  await expect(emailInput).toHaveValue('ddfdd@ddadf.net');
+});
+
 test('회원가입 입력창은 DB 컬럼 폭까지만 받는다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
