@@ -135,11 +135,14 @@ test("configureSettingsButton lets ADMIN open SMTP settings", async () => {
   assert.equal(opened, true);
 });
 
-test("shared sidebar uses the approved full RxVita logo", async () => {
+test("shared sidebar uses the RxVita symbol with an administrator label", async () => {
   const html = await readFile(new URL("../../static/templates/partials/sidebar.html", import.meta.url), "utf8");
+  const managementStyles = await readFile(new URL("../../static/css/management.css", import.meta.url), "utf8");
 
+  assert.match(html, /class="sidebar-brand-logo-frame"/);
   assert.match(html, /<img[^>]+class="sidebar-brand-logo"[^>]+src="\.\.\/images\/rxvita-logo-ai-chat-navy\.png"[^>]+alt="RxVita">/);
+  assert.match(html, /<span class="sidebar-brand-title">관리자<\/span>/);
   assert.match(html, /data-smtp-settings/);
-  assert.doesNotMatch(html, /포케 관리자/);
-  assert.doesNotMatch(html, /background:#1c64f2/);
+  assert.match(managementStyles, /\.sidebar-brand-logo-frame\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(managementStyles, /\.sidebar-brand-logo\s*\{[^}]*position:\s*absolute;[^}]*width:\s*auto;/s);
 });
