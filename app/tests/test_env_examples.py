@@ -1,9 +1,4 @@
-"""envs/example.*.env 의 메일 설정을 고정한다 (#137).
-
-example.prod.env 가 console 이면 배포 시 메일이 나가지 않고 임시 비밀번호와 수신자
-PII 가 운영 로그에 평문으로 남는다. Config 기본값도 console 이라 값을 지우는 것으로도
-같은 사고가 나므로, 이 예시 파일이 사실상 유일한 방어선이다. 누가 되돌리면 CI 가 잡는다.
-"""
+"""envs/example.*.env 의 전용 email-worker 설정을 고정한다."""
 
 from pathlib import Path
 
@@ -24,20 +19,34 @@ def read_env(path: Path) -> dict[str, str]:
 
 
 class TestExampleProdEnv:
-    def test_does_not_use_console_email_backend(self) -> None:
-        backend = read_env(EXAMPLE_PROD_ENV)["EMAIL_BACKEND"]
+    def test_configures_dedicated_email_worker_queue_and_retry(self) -> None:
+        values = read_env(EXAMPLE_PROD_ENV)
 
-        assert backend != "console", (
-            "운영에서 console 을 쓰면 메일이 발송되지 않고 임시 비밀번호가 평문으로 로그에 남는다"
-        )
-        assert backend == "smtp"
+        assert values["EMAIL_QUEUE_NAME"] == "arq:email"
+        assert values["EMAIL_MAX_RETRY_COUNT"] == "3"
+        assert values["EMAIL_RETRY_BASE_SECONDS"] == "30"
+        assert "EMAIL_BACKEND" not in values
 
     def test_keeps_smtp_password_empty(self) -> None:
         """예시 파일에 시크릿을 두지 않는다. 배포 시 주입한다."""
-        assert read_env(EXAMPLE_PROD_ENV)["SMTP_PASSWORD"] == ""
+        values = read_env(EXAMPLE_PROD_ENV)
+
+        assert values["SMTP_PASSWORD"] == ""
+        assert values["EMAIL_PAYLOAD_ENCRYPTION_KEY"] == ""
+        assert values["SMTP_SETTINGS_ENCRYPTION_KEY"] == ""
+        assert values["SMTP_FROM_EMAIL"] == "replace-with-smtp-account@example.com"
+        assert "SMTP_FROM" not in values
 
 
 class TestExampleLocalEnv:
-    def test_keeps_console_email_backend(self) -> None:
-        """로컬은 console 이 맞다. 실제 발송 없이 메일 내용을 확인하기 위함이다."""
-        assert read_env(EXAMPLE_LOCAL_ENV)["EMAIL_BACKEND"] == "console"
+    def test_uses_same_dedicated_queue_contract_without_console_backend(self) -> None:
+        values = read_env(EXAMPLE_LOCAL_ENV)
+
+        assert values["EMAIL_QUEUE_NAME"] == "arq:email"
+        assert values["EMAIL_MAX_RETRY_COUNT"] == "3"
+        assert values["EMAIL_RETRY_BASE_SECONDS"] == "30"
+        assert values["EMAIL_PAYLOAD_ENCRYPTION_KEY"] == ""
+        assert values["SMTP_SETTINGS_ENCRYPTION_KEY"] == ""
+        assert values["SMTP_FROM_EMAIL"] == ""
+        assert "SMTP_FROM" not in values
+        assert "EMAIL_BACKEND" not in values

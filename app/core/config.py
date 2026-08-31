@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -72,13 +72,19 @@ class Config(BaseSettings):
 
     COOKIE_DOMAIN: str = "localhost"
 
-    # 메일 발송 방식. console 은 로그로만 출력하고 실제로 보내지 않는다.
-    EMAIL_BACKEND: Literal["console", "smtp"] = "console"
+    EMAIL_QUEUE_NAME: str = "arq:email"
+    EMAIL_MAX_RETRY_COUNT: int = Field(default=3, ge=0)
+    EMAIL_RETRY_BASE_SECONDS: int = Field(default=30, gt=0)
+    EMAIL_PAYLOAD_ENCRYPTION_KEY: SecretStr | None = None
+    SMTP_SETTINGS_ENCRYPTION_KEY: SecretStr | None = None
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USER: str | None = None
-    SMTP_PASSWORD: str | None = None
-    SMTP_FROM: str | None = None
+    SMTP_PASSWORD: SecretStr | None = None
+    SMTP_FROM_EMAIL: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMTP_FROM_EMAIL", "SMTP_FROM"),
+    )
 
     JWT_ALGORITHM: str = "HS256"
     # NFR-ADMIN-001 은 액세스 30분·리프레시 7일이었으나, 세션 무효화 수단을 두지 않기로

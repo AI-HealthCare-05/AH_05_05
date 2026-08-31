@@ -14,7 +14,6 @@
 - `FollowUpVisit.visit_at`을 필수 `visit_date`와 nullable `visit_time`으로 분리하고 nullable `source_ocr_job` FK를 추가한다. `department`와 `doctor_name`은 255자로 확장한다.
 - `RecoveryGuideSource`와 `ChatMessageSource`가 참조하는 medication/care advice/follow-up visit FK 삭제 정책을 `RESTRICT`로 변경한다.
 - 이미 반영된 `Alarm.follow_up_visit` 관계는 유지한다.
-- 관리자 세션 무효화에 사용되는 `Admin.session_salt`는 ERD 외 애플리케이션 필드로 유지하고 실제 DB에 반영한다.
 
 ## Data Migration
 
@@ -34,13 +33,9 @@
 
 `visit_date`, `visit_time`을 먼저 nullable로 추가한다. 기존 `visit_at`은 `DATE(visit_at)`과 `TIME(visit_at)`으로 보존하여 백필한다. `visit_date`를 NOT NULL로 변경한 뒤 기존 `visit_at` 컬럼과 인덱스를 제거한다. 날짜·시간·PK 복합 인덱스와 OCR 작업 SET NULL FK를 추가한다.
 
-### Admin session salt
-
-실제 DB에 없는 `session_salt`를 nullable로 추가한 뒤 관리자별로 서로 다른 32자 값을 생성해 백필하고 NOT NULL로 변경한다. 기존 중복 번호 마이그레이션의 SQL은 새 통합 마이그레이션에 포함하고 중복 파일은 제거한다.
-
 ## Migration Ordering
 
-현재 적용된 Aerich head는 `3_20260821043505_add_alarm_follow_up_visit.py`다. 적용되지 않은 `3_20260820102428_add_admin_session_salt.py`는 같은 버전 번호를 사용해 충돌하므로 제거하고, 다음 번호의 단일 v4 마이그레이션에 `session_salt`와 ERD 변경을 함께 담는다.
+현재 적용된 Aerich head는 `3_20260821043505_add_alarm_follow_up_visit.py`다. 다음 번호의 단일 v4 마이그레이션에 ERD 변경을 함께 담는다.
 
 Aerich 자동 생성 결과를 기준으로 하되, 데이터 백필과 MySQL CHECK/FK 변경처럼 모델 상태만으로 안전하게 만들 수 없는 SQL은 마이그레이션 파일에서 명시적으로 보완한다.
 

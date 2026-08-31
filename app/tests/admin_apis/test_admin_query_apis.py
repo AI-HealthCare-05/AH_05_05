@@ -65,6 +65,18 @@ class TestAdminListAPI(AdminQueryTestBase):
         assert body["totalCount"] == 1
         assert body["items"][0]["email"] == "eunmi@ozcoding.ai"
 
+    async def test_filters_by_name_and_email(self) -> None:
+        response = await request(
+            "GET",
+            ADMIN_ACCOUNTS_URL,
+            headers=self.headers,
+            params={"name": "김은", "email": "eunmi@"},
+        )
+
+        body = response.json()
+        assert body["totalCount"] == 1
+        assert body["items"][0]["adminId"] == self.super_admin.id
+
     async def test_paginates(self) -> None:
         response = await request("GET", ADMIN_ACCOUNTS_URL, headers=self.headers, params={"page": 2, "size": 1})
 

@@ -3,7 +3,6 @@ import string
 from dataclasses import dataclass, field
 
 from app.core.utils.security import hash_password
-from app.services.admin_email import send_temporary_password
 
 TEMPORARY_PASSWORD_LENGTH = 12
 
@@ -45,17 +44,18 @@ class TemporaryCredential:
     hashed_password: str
     _plaintext: str = field(repr=False)
 
-    def send_to(self, *, name: str, email: str) -> bool:
-        """안내 메일을 보내고 성공 여부를 돌려준다. 실패해도 예외를 올리지 않는다."""
-        return send_temporary_password(name=name, email=email, temporary_password=self._plaintext)
+    @property
+    def plaintext_for_delivery(self) -> str:
+        """암호화된 이메일 작업 payload를 만드는 짧은 구간에서만 평문을 제공한다."""
+        return self._plaintext
 
 
 def issue_temporary_password() -> TemporaryCredential:
     """임시 비밀번호를 만들어 해시와 함께 돌려준다.
 
     등록(REQ-ADMIN-008)과 재발송(REQ-ADMIN-003)이 같은 방식을 써야 하므로 한곳에 둔다.
-    발송은 호출부가 계정을 저장한 뒤 send_to 로 따로 부른다. 저장보다 먼저 보내면
-    저장이 실패했을 때 존재하지 않는 계정의 비밀번호를 보내게 된다.
+    이메일 작업 등록은 호출부가 계정을 저장한 뒤 별도로 한다. 저장보다 먼저 등록하면
+    저장이 실패했을 때 존재하지 않는 계정의 비밀번호 발송 작업이 남게 된다.
     """
     plaintext = generate_temporary_password()
     return TemporaryCredential(hashed_password=hash_password(plaintext), _plaintext=plaintext)

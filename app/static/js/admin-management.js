@@ -16,14 +16,49 @@ import {
 import { closeOverlay, openOverlay, showToast } from "./overlay.js";
 
 const COLUMN_COUNT = 6;
-// 화면에 페이지 이동 UI 가 없어 1페이지만 보여준다.
-const PAGE_SIZE = 50;
 
-// 재설정은 메일 발송에 실패해도 되돌리지 않는다. 비밀번호는 이미 바뀌었고 상태도
-// PENDING 으로 내려가 있어, 대상자는 새 임시 비밀번호를 모르면 로그인할 수 없다.
-// 그 사실을 문구에 담지 않으면 "메일만 안 갔구나" 로 읽고 넘어간다.
+export function getAdminPaginationState(totalCount, requestedPage, pageSize) {
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const currentPage = Math.min(Math.max(1, requestedPage), totalPages);
+  const firstPage = Math.min(Math.max(1, currentPage - 2), Math.max(1, totalPages - 4));
+  const lastPage = Math.min(totalPages, firstPage + 4);
+  const pages = Array.from({ length: lastPage - firstPage + 1 }, (_, index) => firstPage + index);
+
+  return {
+    currentPage,
+    totalPages,
+    pages,
+    hasPrevious: currentPage > 1,
+    hasNext: currentPage < totalPages,
+  };
+}
+
+export function buildAdminListQuery(name, email, role, status, page, size) {
+  return {
+    name: name.trim(),
+    email: email.trim(),
+    role: roleValue(role),
+    status: statusValue(status),
+    page,
+    size,
+  };
+}
+
+export function formatAdminTotal(totalCount) {
+  return typeof totalCount === "number" ? `총 ${totalCount}명` : "총 -명";
+}
+
+export function resetAdminFilters(nameSearch, emailSearch, role, status) {
+  nameSearch.value = "";
+  emailSearch.value = "";
+  role.value = "권한";
+  status.value = "상태";
+}
+
+// 재설정은 메일 발송에 실패해도 되돌리지 않는다. 상태는 유지되지만 기존 비밀번호는
+// 이미 무효화됐으므로, 새 임시 비밀번호를 전달하지 못했다는 사실을 분명히 알린다.
 export const RESET_MAIL_FAILED_MESSAGE =
-  "비밀번호는 재설정되었으나 메일 발송에 실패했습니다. 대상 관리자는 현재 로그인할 수 없으니 「재설정」을 다시 눌러 주세요.";
+  "비밀번호는 재설정되었으나 메일 발송에 실패했습니다. 기존 비밀번호는 사용할 수 없으니 「재설정」을 다시 눌러 주세요.";
 
 /**
  * 목 데이터 시절의 클라이언트 필터·변형 함수들.
@@ -44,6 +79,21 @@ export function validateAdminInput({ name, email }) {
   if (!name.trim()) errors.name = "관리자 이름을 입력해주세요.";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "올바른 이메일 주소를 입력해주세요.";
   return { valid: Object.keys(errors).length === 0, errors };
+}
+
+/** 비동기 제출 중 버튼을 잠가 연속 클릭으로 같은 요청이 중복 실행되는 것을 막는다. */
+export async function withSubmitLock(button, pendingLabel, action) {
+  if (button.disabled) return undefined;
+
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = pendingLabel;
+  try {
+    return await action();
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
 }
 
 export function updateAdminStatus(admins, adminId, status) {
@@ -74,14 +124,12 @@ export function roleChangeBlockedReason(admin, currentAdminId) {
  * **본인 행도 열어야 한다** — 이름과 비밀번호는 본인이 바꾸는 것이 정상이다.
  * 역할 select 만 본인일 때 잠기며, 그 판정은 roleChangeBlockedReason 이 맡는다.
  *
- * STAFF 는 남의 행을 못 고친다(서버도 403 으로 막는다). 숨기지 않고 비활성으로 두는
- * 이유는 행마다 갈리는 제약이라 숨기면 작업 열 정렬이 행마다 흔들리기 때문이다.
+ * ADMIN 은 계정 상태와 관계없이 모든 행의 수정 화면을 열 수 있다. STAFF 는 본인 행만
+ * 수정할 수 있고 다른 행에서는 수정 버튼 자체를 노출하지 않는다.
  */
 export function editBlockedReason(admin, currentAdminId, currentRole) {
-  if (admin.status === "SUSPENDED" || admin.status === "WITHDRAWN") {
-    return "정지된 계정은 수정할 수 없습니다";
-  }
-  if (currentRole !== "ADMIN" && admin.adminId !== currentAdminId) {
+  if (currentRole === "ADMIN") return null;
+  if (admin.adminId !== currentAdminId) {
     return "본인 계정만 수정할 수 있습니다";
   }
   return null;
@@ -98,6 +146,10 @@ export function editBlockedReason(admin, currentAdminId, currentRole) {
  * 막으므로 버튼을 내지 않는다.
  */
 export function statusAction(admin, currentAdminId) {
+  // ADMIN 역할 계정은 정지·활성화 대상이 아니다. 로그인한 사용자의 권한과 별개로
+  // 대상 행의 역할을 기준으로 상태 전환 버튼을 숨긴다.
+  if (admin.role === "ADMIN") return null;
+
   if (admin.status === "SUSPENDED") {
     // 정지된 계정이 본인일 수는 없다. 정지되면 로그인 자체가 막힌다.
     return { action: "activate", label: "활성화", nextStatus: "PENDING", danger: false, disabledReason: null };
@@ -205,11 +257,18 @@ export function applyEditOverlayVisibility(panel, visibility) {
   }
 }
 
+/** 수정 오버레이의 기본 정보를 채운다. 이메일은 읽기 전용 input 이므로 value 로 표시한다. */
+export function populateAdminEditFields(panel, admin) {
+  panel.querySelector("[data-admin-email]").value = admin.email;
+  panel.querySelector("[name='name']").value = admin.name;
+  panel.querySelector("[name='role']").value = roleLabel(admin.role);
+}
+
 /**
  * 임시 비밀번호를 재발송한다. 목록의 「재설정」과 수정 오버레이의 「재설정」이 함께 쓴다.
  *
- * 되돌릴 수 없는 동작이라 확인 오버레이를 먼저 띄운다. 성공하면 대상 계정은 PENDING 이
- * 되고 기존 비밀번호는 못 쓴다.
+ * 되돌릴 수 없는 동작이라 확인 오버레이를 먼저 띄운다. 성공하면 계정 상태는 유지되고
+ * 기존 비밀번호만 사용할 수 없게 된다.
  */
 async function resetTemporaryPassword(adminId, reloadList) {
   await openOverlay(PASSWORD_RESET_OVERLAY_URL, {
@@ -219,11 +278,10 @@ async function resetTemporaryPassword(adminId, reloadList) {
         closeOverlay();
         await reloadList();
         // 재설정 "링크"가 아니라 임시 비밀번호를 보낸다. 문구를 실제 동작에 맞춘다.
-        if (result.emailSent) {
-          showToast(`${result.email}로 임시 비밀번호를 발송했습니다.`);
+        if (result.emailJobStatus === "QUEUED") {
+          showToast(`${result.email}로 보낼 임시 비밀번호 이메일을 등록했습니다.`);
         } else {
-          // "발송 실패"만 쓰면 상대가 잠겼다는 사실이 안 보인다. 서버는 발송에
-          // 실패해도 되돌리지 않고 비밀번호를 이미 바꿔놨다(reset_password).
+          // 서버는 발송에 실패해도 되돌리지 않고 비밀번호를 이미 바꿔놨다(reset_password).
           showToast(RESET_MAIL_FAILED_MESSAGE, "error");
         }
       } catch (error) {
@@ -306,9 +364,7 @@ async function openEditOverlay(admin, { currentAdminId, currentRole }, reloadLis
     },
   });
 
-  overlay.querySelector("[data-admin-email]").textContent = admin.email;
-  overlay.querySelector("[name='name']").value = admin.name;
-  overlay.querySelector("[name='role']").value = roleLabel(admin.role);
+  populateAdminEditFields(overlay, admin);
 
   // 권한 때문에 불가한 블록은 DOM 에서 지운다. hidden 은 CSS 에 짓밟힌다(위 주석 참고).
   applyEditOverlayVisibility(overlay, visibility);
@@ -324,12 +380,10 @@ async function openEditOverlay(admin, { currentAdminId, currentRole }, reloadLis
 }
 
 /**
- * 작업 열 버튼들. 노출 규칙이 두 가지로 갈린다.
+ * 작업 열 버튼들. 로그인 권한과 대상 행의 역할에 따라 노출한다.
  *
- * - 행마다 갈리는 제약(STAFF 가 보는 남의 행 「수정」)은 **비활성화**한다. 숨기면 작업
- *   열의 버튼 수가 행마다 달라져 정렬이 흔들린다.
- * - 역할 때문에 모든 행에서 균일하게 불가한 것(STAFF 의 정지·활성화·재설정)은 **숨긴다.**
- *   죽은 버튼이 열 전체를 채울 이유가 없다.
+ * - ADMIN: 모든 행에 「수정」을 표시하고, STAFF 역할 행에만 정지·활성화를 표시한다.
+ * - STAFF: 본인 행에만 「수정」을 표시하고 정지·활성화는 모두 숨긴다.
  *
  * 「재설정」은 여기 없다. 수정 오버레이 안으로 옮겼다. 목록에 두면 「수정」이 비활성인
  * 정지 계정에서 「재설정」만 활성으로 남아 어긋나고, 되돌릴 수 없는 동작이 한 번의
@@ -338,13 +392,15 @@ async function openEditOverlay(admin, { currentAdminId, currentRole }, reloadLis
  * 정지는 danger 로 갈라 둔다. 조회 동작과 같은 모양이면 옆 버튼을 잘못 누른다.
  * 비활성 색은 CSS 의 :disabled 가 danger 위에 덮는다.
  */
-function actionsMarkup(admin, canManage, currentAdminId, currentRole) {
+export function actionsMarkup(admin, canManage, currentAdminId, currentRole) {
   const editBlocked = editBlockedReason(admin, currentAdminId, currentRole);
-  const buttons = [
-    `<button class="ui-link-button" data-admin-action="edit" data-admin-id="${admin.adminId}"${
-      editBlocked ? ` disabled title="${escapeHtml(editBlocked)}"` : ""
-    }>수정</button>`,
-  ];
+  const buttons = [];
+
+  if (!editBlocked) {
+    buttons.push(
+      `<button class="ui-link-button" data-admin-action="edit" data-admin-id="${admin.adminId}">수정</button>`,
+    );
+  }
 
   if (!canManage) return buttons.join("\n       ");
 
@@ -362,14 +418,16 @@ function actionsMarkup(admin, canManage, currentAdminId, currentRole) {
   return buttons.join("\n       ");
 }
 
-function rowMarkup(admin, canManage, currentAdminId, currentRole) {
+export function rowMarkup(admin, canManage, currentAdminId, currentRole) {
   return `<tr>
       <td>${admin.adminId}</td>
       <td><strong>${escapeHtml(admin.name)}</strong></td>
       <td>${escapeHtml(admin.email)}</td>
       <td>${roleLabel(admin.role)}</td>
       <td><span class="status-badge status-${statusBadgeClass(admin.status)}">${statusLabel(admin.status)}</span></td>
-      <td class="flex gap-1 py-2">${actionsMarkup(admin, canManage, currentAdminId, currentRole)}</td>
+      <td class="admin-actions-cell">
+        <div class="admin-row-actions">${actionsMarkup(admin, canManage, currentAdminId, currentRole)}</div>
+      </td>
     </tr>`;
 }
 
@@ -378,10 +436,15 @@ function initializeAdminManagement() {
   if (!tbody) return;
   if (!requireLogin()) return;
 
-  const search = document.querySelector("[data-admin-search]");
+  const nameSearch = document.querySelector("[data-admin-name-search]");
+  const emailSearch = document.querySelector("[data-admin-email-search]");
   const role = document.querySelector("[data-admin-role]");
   const status = document.querySelector("[data-admin-status]");
+  const pageSizeSelect = document.querySelector("[data-admin-page-size]");
+  const total = document.querySelector("[data-admin-total]");
+  const pagination = document.querySelector("[data-admin-pagination]");
   const registerButton = document.querySelector("[data-admin-register]");
+  let currentPage = 1;
 
   // 등록·정지·활성화·재설정은 ADMIN 전용이다(권한 매트릭스). STAFF 에게는 숨긴다.
   // **「수정」은 여기서 걸러내지 않는다.** STAFF 도 본인 것은 고칠 수 있어야 하는데,
@@ -392,18 +455,39 @@ function initializeAdminManagement() {
   const currentAdminId = session.admin().adminId;
   const currentRole = session.admin().role;
 
+  const renderPagination = (totalCount) => {
+    const state = getAdminPaginationState(totalCount, currentPage, Number(pageSizeSelect.value));
+    pagination.innerHTML = `
+      <button class="ui-button" type="button" data-admin-page="${state.currentPage - 1}" ${state.hasPrevious ? "" : "disabled"}>이전</button>
+      <div class="admin-pagination-pages">
+        ${state.pages
+          .map(
+            (pageNumber) =>
+              `<button class="ui-button admin-page-button${pageNumber === state.currentPage ? " is-active" : ""}" type="button" data-admin-page="${pageNumber}" ${pageNumber === state.currentPage ? 'aria-current="page"' : ""}>${pageNumber}</button>`,
+          )
+          .join("")}
+      </div>
+      <button class="ui-button" type="button" data-admin-page="${state.currentPage + 1}" ${state.hasNext ? "" : "disabled"}>다음</button>`;
+  };
+
   const load = async () => {
     tableState.loading(tbody, COLUMN_COUNT);
     try {
-      const page = await get("/admin/accounts", {
-        keyword: search.value.trim(),
-        role: roleValue(role.value),
-        // 관리자에는 WITHDRAWN 을 쓰지 않는다. 화면 선택지도 활성·정지뿐이다.
-        status: statusValue(status.value),
-        page: 1,
-        size: PAGE_SIZE,
-      });
+      const pageSize = Number(pageSizeSelect.value);
+      const page = await get(
+        "/admin/accounts",
+        buildAdminListQuery(nameSearch.value, emailSearch.value, role.value, status.value, currentPage, pageSize),
+      );
+      const paginationState = getAdminPaginationState(page.totalCount, currentPage, pageSize);
+      if (paginationState.currentPage !== currentPage) {
+        currentPage = paginationState.currentPage;
+        await load();
+        return;
+      }
+
       currentItems = page.items;
+      total.textContent = formatAdminTotal(page.totalCount);
+      renderPagination(page.totalCount);
 
       if (!currentItems.length) {
         tableState.empty(tbody, COLUMN_COUNT, "조건에 맞는 관리자가 없습니다.");
@@ -414,24 +498,46 @@ function initializeAdminManagement() {
         .join("");
     } catch (error) {
       currentItems = [];
+      total.textContent = formatAdminTotal(null);
+      pagination.innerHTML = "";
       const message = error instanceof ApiError ? error.message : "관리자 목록을 불러오지 못했습니다.";
       tableState.error(tbody, COLUMN_COUNT, message);
     }
   };
 
   let searchTimer;
-  search.addEventListener("input", () => {
+  const scheduleSearch = () => {
     window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(load, 300);
+    searchTimer = window.setTimeout(() => {
+      currentPage = 1;
+      load();
+    }, 300);
+  };
+  nameSearch.addEventListener("input", scheduleSearch);
+  emailSearch.addEventListener("input", scheduleSearch);
+  [role, status].forEach((control) =>
+    control.addEventListener("change", () => {
+      currentPage = 1;
+      load();
+    }),
+  );
+  pageSizeSelect.addEventListener("change", () => {
+    currentPage = 1;
+    load();
   });
-  [role, status].forEach((control) => control.addEventListener("change", load));
 
   document.querySelector("[data-admin-reset]")?.addEventListener("click", () => {
-    search.value = "";
-    role.value = "전체";
-    status.value = "전체";
+    resetAdminFilters(nameSearch, emailSearch, role, status);
+    currentPage = 1;
     // 입력 디바운스가 걸려 있으면 방금 지운 값으로 한 번 더 조회된다.
     window.clearTimeout(searchTimer);
+    load();
+  });
+
+  pagination.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-admin-page]");
+    if (!button || button.disabled) return;
+    currentPage = Number(button.dataset.adminPage);
     load();
   });
 
@@ -445,25 +551,31 @@ function initializeAdminManagement() {
         overlay.querySelector("[data-error-for='email']").textContent = result.errors.email ?? "";
         if (!result.valid) return;
 
-        try {
-          const created = await post("/admin/accounts", {
-            name: name.trim(),
-            email: email.trim(),
-            role: roleValue(overlay.querySelector("[name='role']").value) || "STAFF",
-          });
-          closeOverlay();
-          await load();
+        const confirmButton = overlay.querySelector("[data-overlay-confirm]");
+        await withSubmitLock(confirmButton, "등록 중…", async () => {
+          try {
+            const created = await post("/admin/accounts", {
+              name: name.trim(),
+              email: email.trim(),
+              role: roleValue(overlay.querySelector("[name='role']").value) || "STAFF",
+            });
+            closeOverlay();
+            await load();
 
-          // 계정은 만들어졌지만 임시 비밀번호를 전달할 방법이 없는 상태다. 반드시 알린다.
-          if (created.emailSent) {
-            showToast(`관리자를 등록했습니다. 임시 비밀번호를 ${created.email}로 보냈습니다.`);
-          } else {
-            showToast("관리자는 등록됐지만 메일 발송에 실패했습니다. 임시 비밀번호 재발송이 필요합니다.", "error");
+            // 계정은 만들어졌지만 임시 비밀번호를 전달할 방법이 없는 상태다. 반드시 알린다.
+            if (created.emailJobStatus === "QUEUED") {
+              showToast(`관리자를 등록했습니다. ${created.email}의 이메일 발송 작업을 등록했습니다.`);
+            } else {
+              showToast(
+                "관리자는 등록됐지만 메일 발송에 실패했습니다. 임시 비밀번호 재발송이 필요합니다.",
+                "error",
+              );
+            }
+          } catch (error) {
+            const message = error instanceof ApiError ? error.message : "관리자 등록에 실패했습니다.";
+            showToast(message, "error");
           }
-        } catch (error) {
-          const message = error instanceof ApiError ? error.message : "관리자 등록에 실패했습니다.";
-          showToast(message, "error");
-        }
+        });
       },
     });
   });

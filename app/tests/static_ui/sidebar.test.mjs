@@ -110,3 +110,27 @@ test("loadSidebar leaves a visible message when the partial request fails", asyn
     console.error = originalConsoleError;
   }
 });
+
+test("configureSettingsButton removes the settings control for STAFF", async () => {
+  const { configureSettingsButton } = await import("../../static/js/sidebar.js");
+  let removed = false;
+  const button = { remove() { removed = true; } };
+  const sidebar = { querySelector: () => button };
+
+  configureSettingsButton(sidebar, false, () => assert.fail("STAFF must not open settings"));
+
+  assert.equal(removed, true);
+});
+
+test("configureSettingsButton lets ADMIN open SMTP settings", async () => {
+  const { configureSettingsButton } = await import("../../static/js/sidebar.js");
+  let clickHandler;
+  let opened = false;
+  const button = { addEventListener(_event, handler) { clickHandler = handler; } };
+  const sidebar = { querySelector: () => button };
+
+  configureSettingsButton(sidebar, true, () => { opened = true; });
+  clickHandler();
+
+  assert.equal(opened, true);
+});

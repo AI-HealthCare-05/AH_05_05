@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>SMTP 설정</title>
+</head>
+<body>
+  <form class="overlay-panel overlay-form" data-overlay-panel role="dialog" aria-modal="true" aria-labelledby="smtp-settings-title">
+    <h2 id="smtp-settings-title" class="text-lg font-semibold">SMTP 설정</h2>
+
+    <div class="grid gap-1">
+      <p class="text-gray-500">이메일 발송 설정</p>
+      <p class="text-sm text-gray-600">이메일 worker가 사용할 SMTP 연결 정보를 설정합니다.</p>
+    </div>
+
+    <div class="overlay-field">
+      <label for="smtp-host">SMTP_HOST</label>
+      <input id="smtp-host" name="smtpHost" class="ui-control" type="text" maxlength="255" required autocomplete="off" placeholder="smtp.gmail.com">
+      <span class="overlay-error" data-error-for="smtpHost"></span>
+    </div>
+
+    <div class="overlay-field">
+      <label for="smtp-port">SMTP_PORT</label>
+      <input id="smtp-port" name="smtpPort" class="ui-control" type="text" inputmode="numeric" maxlength="5" pattern="[0-9]{1,5}" required value="587">
+      <span class="overlay-error" data-error-for="smtpPort"></span>
+    </div>
+
+    <div class="overlay-field">
+      <label for="smtp-user">SMTP_USER</label>
+      <input id="smtp-user" name="smtpUser" class="ui-control" type="text" maxlength="255" required autocomplete="username">
+      <span class="overlay-error" data-error-for="smtpUser"></span>
+    </div>
+
+    <div class="overlay-field">
+      <label for="smtp-password">SMTP_PASSWORD</label>
+      <input id="smtp-password" name="smtpPassword" class="ui-control" type="password" maxlength="255" autocomplete="new-password">
+      <span data-smtp-password-hint class="text-sm text-gray-600"></span>
+      <span class="overlay-error" data-error-for="smtpPassword"></span>
+    </div>
+
+    <div class="overlay-field">
+      <label for="smtp-from-email">SMTP_FROM_EMAIL</label>
+      <input id="smtp-from-email" name="smtpFromEmail" class="ui-control" type="email" maxlength="255" required autocomplete="email">
+      <span class="overlay-error" data-error-for="smtpFromEmail"></span>
+    </div>
+
+    <div class="overlay-actions">
+      <button data-overlay-close class="ui-button" type="button">취소</button>
+      <button data-overlay-confirm class="ui-button ui-button-primary" type="button">저장</button>
+    </div>
+  </form>
+</body>
+</html>

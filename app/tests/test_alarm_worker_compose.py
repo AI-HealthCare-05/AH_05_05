@@ -51,6 +51,18 @@ def test_alarm_worker_has_required_dependencies():
     assert worker["environment"]["TZ"] == "Asia/Seoul"
 
 
+def test_email_worker_has_required_dependencies():
+    compose = _load_compose_config()
+    worker = compose["services"]["email-worker"]
+
+    assert "app.workers.email_worker.WorkerSettings" in str(worker["command"])
+    assert set(worker["depends_on"]) >= {"mysql", "redis"}
+    assert "ws" in worker["networks"]
+    assert worker["environment"]["DB_HOST"] == "mysql"
+    assert worker["environment"]["REDIS_HOST"] == "redis"
+    assert worker["environment"]["TZ"] == "Asia/Seoul"
+
+
 def test_fastapi_uses_mysql_and_redis_services_inside_compose_network():
     compose = _load_compose_config()
     environment = compose["services"]["fastapi"]["environment"]

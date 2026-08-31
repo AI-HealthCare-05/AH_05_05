@@ -6,7 +6,7 @@
     <title>회원 관리</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="../css/styles.css?v=20260827-1">
-    <link rel="stylesheet" href="../css/management.css?v=20260828-4">
+    <link rel="stylesheet" href="../css/management.css?v=20260829-2">
     <link rel="stylesheet" href="../css/overlays.css?v=20260827-1">
     <script type="module" src="../js/navigation.js?v=20260827-2"></script>
     <script type="module" src="../js/sidebar.js?v=20260827-2"></script>
@@ -24,26 +24,16 @@
     </header>
     <section class="p-6">
         <div class="management-toolbar flex justify-between gap-3 mb-5">
-            <div class="flex gap-3 flex-wrap console-filters"><input data-user-name-search class="ui-control" type="search"
-                                                     placeholder="이름 검색" aria-label="회원 이름 검색"><input
-                    data-user-email-search class="ui-control" type="search" placeholder="이메일 검색"
-                    aria-label="회원 이메일 검색"><select
-                    data-user-status class="ui-control" aria-label="회원 상태">
-                <option>상태</option>
-                <option>활성</option>
-                <option>정지</option>
-                <option>탈퇴</option>
-            </select>
-                <button data-user-reset class="ui-button" type="button">필터 초기화</button>
-            </div>
-            <div class="user-page-size-control">
-                <span class="user-total" data-user-total>총 -명</span>
-                <label for="user-page-size">페이지당</label>
-                <select id="user-page-size" data-user-page-size class="ui-control" aria-label="페이지당 회원 수">
-                    <option value="20" selected>20개</option>
-                    <option value="50">50개</option>
-                    <option value="100">100개</option>
+            <div class="flex gap-3 flex-wrap console-filters">
+                <input data-user-name-search class="ui-control" type="search" placeholder="이름 검색" aria-label="회원 이름 검색">
+                <input data-user-email-search class="ui-control" type="search" placeholder="이메일 검색" aria-label="회원 이메일 검색">
+                <select data-user-status class="ui-control" aria-label="회원 상태">
+                    <option>상태</option>
+                    <option>활성</option>
+                    <option>정지</option>
+                    <option>탈퇴</option>
                 </select>
+                <button data-user-reset class="ui-button" type="button">초기화</button>
             </div>
         </div>
         <div class="user-list-card bg-white rounded-xl border">
@@ -63,7 +53,18 @@
                     <tbody data-user-rows></tbody>
                 </table>
             </div>
-            <nav class="user-pagination" data-user-pagination aria-label="회원 목록 페이지"></nav>
+            <footer class="user-list-footer">
+                <nav class="user-pagination" data-user-pagination aria-label="회원 목록 페이지"></nav>
+                <div class="user-page-size-control">
+                    <span class="user-total" data-user-total>총 -명</span>
+                    <label for="user-page-size">페이지당</label>
+                    <select id="user-page-size" data-user-page-size class="ui-control" aria-label="페이지당 회원 수">
+                        <option value="20" selected>20개</option>
+                        <option value="50">50개</option>
+                        <option value="100">100개</option>
+                    </select>
+                </div>
+            </footer>
         </div>
     </section>
 </main>

@@ -112,10 +112,14 @@ async function refreshAccessToken() {
  */
 export async function request(path, options = {}) {
   const url = path.startsWith("/api/") ? path : `${API_BASE}${path}`;
+  const isLoginRequest = url.split("?", 1)[0] === `${API_BASE}/admin/auth/login`;
 
   let response = await fetch(url, withAuth(options));
 
-  if (response.status === 401) {
+  // 로그인 실패의 401은 만료된 액세스 토큰이 아니라 입력한 인증정보 오류다.
+  // 갱신을 시도하면 서버의 INVALID_CREDENTIALS가 UNAUTHORIZED로 바뀌어 화면에서
+  // 올바른 로그인 실패 안내를 표시할 수 없다.
+  if (response.status === 401 && !isLoginRequest) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) {
       redirectToLogin();
@@ -144,6 +148,10 @@ export function post(path, payload) {
 
 export function patch(path, payload) {
   return request(path, { method: "PATCH", body: JSON.stringify(payload ?? {}) });
+}
+
+export function put(path, payload) {
+  return request(path, { method: "PUT", body: JSON.stringify(payload ?? {}) });
 }
 
 /** 빈 값은 쿼리에서 뺀다. status="" 를 그대로 보내면 422 가 난다. */

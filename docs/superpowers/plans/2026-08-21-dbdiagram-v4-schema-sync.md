@@ -15,7 +15,6 @@
 - 프로젝트 루트는 `/Users/admin/PycharmProjects/FinalProject`이다.
 - 기존 데이터와 기존 사용자의 변경사항을 보존한다.
 - DB를 재생성하지 않고 Aerich upgrade로 반영한다.
-- `Admin.session_salt`는 ERD 외 보안 필드로 유지한다.
 - 신규 CRUD/API 업무 로직은 추가하지 않는다.
 - Git 커밋을 생성하지 않는다.
 
@@ -219,18 +218,13 @@ Expected: 전체 통과.
 ### Task 5: Create and harden the Aerich migration
 
 **Files:**
-- Delete: `app/core/db/migrations/models/3_20260820102428_add_admin_session_salt.py`
 - Create: `app/core/db/migrations/models/4_<timestamp>_sync_dbdiagram_v4.py`
 
 **Interfaces:**
 - Consumes: 적용된 head `3_20260821043505_add_alarm_follow_up_visit.py`
 - Produces: 재실행 가능한 단일 v4 upgrade/downgrade
 
-- [ ] **Step 1: Remove the unapplied duplicate-number migration**
-
-내용을 새 migration으로 이전할 준비가 된 뒤 적용되지 않은 `3_20260820102428_add_admin_session_salt.py`를 삭제한다. 이미 적용된 follow-up migration은 유지한다.
-
-- [ ] **Step 2: Generate migration**
+- [ ] **Step 1: Generate migration**
 
 ```bash
 docker compose exec -T fastapi uv run --no-sync aerich migrate --name sync_dbdiagram_v4
@@ -238,23 +232,22 @@ docker compose exec -T fastapi uv run --no-sync aerich migrate --name sync_dbdia
 
 Expected: 버전 4 migration 한 개 생성.
 
-- [ ] **Step 3: Harden upgrade SQL**
+- [ ] **Step 2: Harden upgrade SQL**
 
 자동 SQL을 다음 순서로 보완한다.
 
-1. `admin.session_salt` nullable 추가 → 관리자별 32자 값 백필 → NOT NULL.
-2. user settings 두 datetime 추가 및 history table 생성.
-3. chat session user nullable 추가 → care episode join 백필 → NOT NULL/FK → care episode nullable.
-4. care advice category nullable 추가 → `OTHER` 백필 → NOT NULL.
-5. medication 상세 컬럼/note 길이 추가 및 `chk_medications_days`를 BETWEEN 1 AND 365로 교체.
-6. follow-up의 date/time/source columns 추가 → `visit_at` 백필 → date NOT NULL → 기존 visit_at/index 제거 → 새 FK/index 추가.
-7. 두 source table의 여섯 FK를 삭제하고 ON DELETE RESTRICT로 재생성.
+1. user settings 두 datetime 추가 및 history table 생성.
+2. chat session user nullable 추가 → care episode join 백필 → NOT NULL/FK → care episode nullable.
+3. care advice category nullable 추가 → `OTHER` 백필 → NOT NULL.
+4. medication 상세 컬럼/note 길이 추가 및 `chk_medications_days`를 BETWEEN 1 AND 365로 교체.
+5. follow-up의 date/time/source columns 추가 → `visit_at` 백필 → date NOT NULL → 기존 visit_at/index 제거 → 새 FK/index 추가.
+6. 두 source table의 여섯 FK를 삭제하고 ON DELETE RESTRICT로 재생성.
 
-- [ ] **Step 4: Harden downgrade SQL**
+- [ ] **Step 3: Harden downgrade SQL**
 
 FK와 인덱스를 역순으로 복원하고 `visit_at`은 `TIMESTAMP(visit_date, COALESCE(visit_time, '00:00:00'))`로 재구성한다. 신규 테이블/컬럼을 제거하고 source FK를 CASCADE로 되돌린다. `chat_sessions.care_episode_id IS NULL` 데이터가 존재하면 손실 없이 다운그레이드할 수 없으므로 NOT NULL 변경에서 명시적으로 실패하도록 둔다.
 
-- [ ] **Step 5: Review SQL without applying**
+- [ ] **Step 4: Review SQL without applying**
 
 마이그레이션 파일에서 컬럼/제약 이름 중복, SQL 순서, upgrade/downgrade 대칭성을 검토한다.
 
@@ -290,7 +283,6 @@ Expected: v4 migration 성공.
 - medication 신규 필드/길이/CHECK
 - follow-up date/time/source FK/복합 인덱스와 기존 visit_at 제거
 - source FK 여섯 개의 DELETE_RULE=RESTRICT
-- admin session_salt NOT NULL
 - Aerich version 4 기록
 
 - [ ] **Step 4: Verify preserved test data**
