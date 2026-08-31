@@ -33,6 +33,18 @@ def validate_password(password: str) -> str:
     return password
 
 
+def validate_ascii_email(email: str) -> str:
+    """한글 같은 비 ASCII 이메일을 막는다.
+
+    pydantic EmailStr 은 SMTPUTF8 주소를 허용해 `한글@example.com` 도 그대로 통과시킨다.
+    프론트에서 한글 입력을 걸러도 API 를 직접 부르면 들어오므로 여기서도 막는다.
+    """
+    if isinstance(email, str) and not email.isascii():
+        raise ValueError("이메일은 영문, 숫자와 기호만 사용할 수 있습니다.")
+
+    return email
+
+
 def validate_phone_number(phone_number: str) -> str:
     patterns = [
         r"01(?:0|1|[6-9])-\d{3,4}-\d{4}",  # 011-123-4567, 010-1234-5678
