@@ -134,3 +134,75 @@ test("configureSettingsButton lets ADMIN open SMTP settings", async () => {
 
   assert.equal(opened, true);
 });
+
+test("shared sidebar uses the RxVita symbol with an administrator label", async () => {
+  const html = await readFile(new URL("../../static/templates/partials/sidebar.html", import.meta.url), "utf8");
+  const managementStyles = await readFile(new URL("../../static/css/management.css", import.meta.url), "utf8");
+
+  assert.match(html, /class="sidebar-brand-logo-frame"/);
+  assert.match(html, /<img[^>]+class="sidebar-brand-logo"[^>]+src="\.\.\/images\/rxvita-logo-ai-chat-navy\.png"[^>]+alt="RxVita">/);
+  assert.match(html, /<span class="sidebar-brand-title">관리자<\/span>/);
+  assert.match(html, /data-smtp-settings/);
+  assert.match(managementStyles, /\.sidebar-brand-logo-frame\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(managementStyles, /\.sidebar-brand-logo\s*\{[^}]*position:\s*absolute;[^}]*width:\s*auto;/s);
+});
+
+test("administrator display name prefers the signed-in profile name", async () => {
+  const { getAdminDisplayName, getAdminRoleLabel } = await import("../../static/js/sidebar.js");
+
+  assert.equal(getAdminDisplayName({ name: "김관리" }), "김관리");
+  assert.equal(getAdminDisplayName({ email: "admin@rxvita.test" }), "admin@rxvita.test");
+  assert.equal(getAdminDisplayName({}), "관리자");
+  assert.equal(getAdminRoleLabel("ADMIN"), "ADMIN");
+  assert.equal(getAdminRoleLabel("STAFF"), "STAFF");
+  assert.equal(getAdminRoleLabel("AUDITOR"), "AUDITOR");
+  assert.equal(getAdminRoleLabel(), "권한 미지정");
+});
+
+test("administrator pages expose a shared fixed top area", async () => {
+  const source = await readFile(new URL("../../static/js/sidebar.js", import.meta.url), "utf8");
+  const managementStyles = await readFile(new URL("../../static/css/management.css", import.meta.url), "utf8");
+  const pages = [
+    "dashboard.html",
+    "user-management.html",
+    "screen-4-admin-management.html",
+    "screen-5-task-management.html",
+    "supplement-ranking.html",
+  ];
+
+  assert.match(source, /data-admin-topbar/);
+  assert.doesNotMatch(source, /data-admin-topbar-brand/);
+  assert.match(source, /data-login-user-name/);
+  assert.match(source, /data-login-user-role/);
+  assert.match(source, /userName\.textContent\s*=\s*getAdminDisplayName\(admin\)/);
+  assert.match(source, /userRole\.textContent\s*=\s*`\(\$\{getAdminRoleLabel\(admin\.role\)\}\)`/);
+  assert.match(source, /relocateSettingsButtonToTopbar\(sidebar, root\)/);
+  assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*right:\s*0;/s);
+  assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*background:\s*var\(--brand-navy\);[^}]*border-bottom:\s*1px solid #052b5a;/s);
+  assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*height:\s*56px;/s);
+  assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*16px;[^}]*font-weight:\s*800;/s);
+  assert.match(managementStyles, /\.admin-topbar-user-role\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*16px;/s);
+  assert.match(managementStyles, /\.admin-topbar\s+\[data-smtp-settings\]\s*\{[^}]*color:\s*#d1d5db;/s);
+  assert.match(managementStyles, /body\.management-page,[^}]*body\.dashboard-page\s*\{[^}]*padding-top:\s*56px;/s);
+  assert.match(managementStyles, /height:\s*calc\(100vh - 56px\)\s*!important;/s);
+
+  for (const page of pages) {
+    const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-8"/, page);
+  }
+});
+
+test("sidebar brand stays in the sidebar while settings moves to the top area", async () => {
+  const { relocateSettingsButtonToTopbar } = await import("../../static/js/sidebar.js");
+  const settingsButton = { style: { marginLeft: "auto" } };
+  const brand = { id: "brand" };
+  const moved = [];
+  const sidebar = { querySelector: (selector) => ({ ".sidebar-brand": brand, "[data-smtp-settings]": settingsButton })[selector] ?? null };
+  const userTarget = { append(element) { moved.push(["right", element]); } };
+  const root = { querySelector: (selector) => selector === ".admin-topbar-user" ? userTarget : null };
+
+  assert.equal(relocateSettingsButtonToTopbar(sidebar, root), true);
+  assert.deepEqual(moved, [["right", settingsButton]]);
+  assert.equal(sidebar.querySelector(".sidebar-brand"), brand);
+  assert.equal(settingsButton.style.marginLeft, "0px");
+});
