@@ -70,6 +70,12 @@ export function MyPage({
   const pushUnsupported = pushPermission === 'unsupported';
 
   useEffect(() => {
+    if (authenticatedOverride === undefined && !authenticated) {
+      navigate('/login', { replace: true });
+    }
+  }, [authenticated, authenticatedOverride, navigate]);
+
+  useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
     setNotifyLoadError(null);
@@ -348,31 +354,7 @@ export function MyPage({
               </Card>
             </section>
           </>
-        ) : (
-          <>
-            <Card className="flex-row items-center gap-4 p-5">
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-muted-foreground">
-                <UserRound aria-hidden className="size-6" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-lg font-bold text-foreground">로그인하지 않았어요</p>
-                <p className="text-sm text-muted-foreground">저장한 기록을 이어서 보려면 로그인해 주세요.</p>
-              </div>
-              <Button fullWidth={false} className="px-4" onClick={() => navigate('/login')}>
-                로그인
-              </Button>
-            </Card>
-
-            <nav className="mt-auto flex flex-col" aria-label="법적 안내">
-              <a href="/terms" className="flex min-h-touch items-center text-sm text-muted-foreground">
-                이용약관
-              </a>
-              <a href="/privacy" className="flex min-h-touch items-center text-sm text-muted-foreground">
-                개인정보 처리 안내
-              </a>
-            </nav>
-          </>
-        )}
+        ) : null}
       </main>
       <BottomTabbar
         active="my"

@@ -11,7 +11,15 @@ import {
   validateBirthDate,
 } from '@/shared/lib/birthDate';
 import { formatPhoneNumberInput, validatePhoneNumber } from '@/shared/lib/phoneNumber';
-import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
+import {
+  BottomTabbar,
+  Button,
+  CheckboxField,
+  GenderRadioGroup,
+  Header,
+  Input,
+  type TabKey,
+} from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
 
@@ -96,6 +104,10 @@ export function AuthPage() {
     }
     signIn(email);
     navigate('/home', { replace: true });
+  }
+
+  function handleTabChange(key: TabKey) {
+    if (key === 'home') navigate('/home');
   }
 
   return (
@@ -241,7 +253,16 @@ export function AuthPage() {
             {mode === 'login' ? '로그인' : '회원가입 완료'}
           </Button>
         </form>
+        <nav className="mt-6 flex flex-col" aria-label="법적 안내">
+          <a href="/terms" className="flex min-h-touch items-center text-sm text-muted-foreground">
+            이용약관
+          </a>
+          <a href="/privacy" className="flex min-h-touch items-center text-sm text-muted-foreground">
+            개인정보 처리 안내
+          </a>
+        </nav>
       </main>
+      <BottomTabbar active="my" onChange={handleTabChange} className="border-t border-border" />
     </div>
   );
 }
