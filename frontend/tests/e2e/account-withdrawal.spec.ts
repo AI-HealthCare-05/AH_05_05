@@ -15,11 +15,15 @@ async function openWithdrawalDialog(page: Page) {
   return page.getByRole('dialog', { name: '정말 탈퇴하시겠어요?' });
 }
 
-test('회원 탈퇴는 중립 텍스트에서 구체적인 경고 팝업으로 들어간다', async ({ page }) => {
+test('회원 탈퇴는 로그아웃과 같은 외곽선 버튼에서 빨간 글씨로 경고 팝업에 들어간다', async ({
+  page,
+}) => {
   await authenticate(page);
 
   const entry = page.getByRole('button', { name: '회원 탈퇴' });
-  await expect(entry).toHaveClass(/text-muted-foreground/);
+  await expect(entry).toHaveClass(/w-full/);
+  await expect(entry).toHaveClass(/border-border/);
+  await expect(entry).toHaveClass(/text-danger-strong/);
   await expect(entry).not.toHaveClass(/bg-danger/);
 
   const dialog = await openWithdrawalDialog(page);
