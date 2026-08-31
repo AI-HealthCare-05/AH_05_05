@@ -181,7 +181,8 @@ test("administrator pages expose a shared fixed top area", async () => {
   assert.match(managementStyles, /\.admin-topbar\s*\{[^}]*background:\s*var\(--brand-primary-soft\);[^}]*border-bottom:\s*1px solid #cceeea;/s);
   assert.match(managementStyles, /\.admin-topbar-brand\s*\{[^}]*display:\s*flex;/s);
   assert.match(managementStyles, /\.admin-topbar\s+\.sidebar-brand\s*\{[^}]*width:\s*auto;/s);
-  assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*font-weight:\s*800;/s);
+  assert.match(managementStyles, /\.admin-topbar-user-name\s*\{[^}]*font-size:\s*16px;[^}]*font-weight:\s*800;/s);
+  assert.match(managementStyles, /\.admin-topbar-user-role\s*\{[^}]*font-size:\s*16px;/s);
   assert.match(managementStyles, /body\.management-page,[^}]*body\.dashboard-page\s*\{[^}]*padding-top:\s*64px;/s);
 
   for (const page of pages) {

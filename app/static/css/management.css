@@ -78,7 +78,8 @@
 .admin-topbar-brand { align-items: center; display: flex; min-width: 0; }
 .admin-topbar .sidebar-brand { min-height: 52px; width: auto; }
 .admin-topbar-user { align-items: center; color: #4b5563; display: flex; min-width: 0; }
-.admin-topbar-user-name { color: var(--brand-navy); font-size: 14px; font-weight: 800; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-topbar-user-name { color: var(--brand-navy); font-size: 16px; font-weight: 800; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-topbar-user-role { font-size: 16px; }
 body.management-page, body.dashboard-page { padding-top: 64px; }
 body.management-page > .desktop-sidebar, body.management-page > [data-sidebar], body.dashboard-page > .desktop-sidebar, body.dashboard-page > [data-sidebar] { height: calc(100vh - 64px) !important; }
 body.dashboard-page > main { height: calc(100vh - 64px) !important; }
