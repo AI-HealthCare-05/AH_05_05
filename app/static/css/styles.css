@@ -1,4 +1,13 @@
 :root {
+  --brand-primary: #18bfb3;
+  --brand-primary-hover: #0e9384;
+  --brand-primary-strong: #0b7f75;
+  --brand-primary-strong-hover: #096c64;
+  --brand-primary-soft: #e8f9f7;
+  --brand-primary-faint: rgba(24, 191, 179, 0.06);
+  --brand-focus: rgba(24, 191, 179, 0.18);
+  --brand-hover-row: rgba(24, 191, 179, 0.04);
+  --brand-navy: #06356f;
   color: #111827;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
   font-synthesis: none;
@@ -47,9 +56,16 @@ a {
   text-align: center;
 }
 
+.brand-logo {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  width: 240px;
+}
+
 .brand-mark {
   align-items: center;
-  background: #1c64f2;
+  background: var(--brand-primary);
   border-radius: 10px;
   color: #fff;
   display: flex;
@@ -113,8 +129,8 @@ a {
 }
 
 .input-wrap:focus-within {
-  border-color: #1c64f2;
-  box-shadow: 0 0 0 3px rgba(28, 100, 242, 0.12);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .text-input {
@@ -170,13 +186,13 @@ a {
 }
 
 .remember-option input {
-  accent-color: #1c64f2;
+  accent-color: var(--brand-primary-strong);
   height: 16px;
   width: 16px;
 }
 
 .password-help {
-  color: #1c64f2;
+  color: var(--brand-primary-strong);
   text-decoration: none;
 }
 
@@ -185,7 +201,7 @@ a {
 }
 
 .login-button {
-  background: #1c64f2;
+  background: var(--brand-primary-strong);
   border: 0;
   border-radius: 7px;
   color: #fff;
@@ -197,7 +213,12 @@ a {
 }
 
 .login-button:hover {
-  background: #1554d1;
+  background: var(--brand-primary-strong-hover);
+}
+
+.login-button:focus-visible {
+  outline: 3px solid var(--brand-focus);
+  outline-offset: 2px;
 }
 
 .login-button:active {
@@ -244,8 +265,8 @@ a {
 }
 
 .period-button.is-active {
-  background: rgba(28, 100, 242, 0.06);
-  color: #1c64f2;
+  background: var(--brand-primary-faint);
+  color: var(--brand-primary-strong);
   font-weight: 600;
 }
 
@@ -282,7 +303,7 @@ a {
 }
 
 .member-trend-bar {
-  background: #1c64f2;
+  background: var(--brand-primary);
   border-radius: 4px;
   width: 8px;
 }

@@ -1,7 +1,7 @@
 .management-page { background: #f7f8fa; color: #111827; }
 .management-page button, .management-page input, .management-page select { font: inherit; }
 .ui-control { min-height: 36px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #111827; padding: 0 10px; }
-.ui-control:focus { outline: 3px solid rgba(28,100,242,.16); border-color: #1c64f2; }
+.ui-control:focus { outline: 3px solid var(--brand-focus); border-color: var(--brand-primary); }
 .task-date-range { display: flex; align-items: center; gap: 8px; color: #374151; font-size: 14px; }
 .task-date-range input[type="date"] { width: 150px; }
 .task-status-grid, .management-table-wrap { width: 100%; }
@@ -11,17 +11,17 @@
 .task-status-label { display: flex; align-items: center; gap: 4px; min-width: 0; white-space: nowrap; }
 .task-status-label small { overflow: hidden; text-overflow: ellipsis; }
 .task-status-help { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid #94a3b8; border-radius: 999px; color: #64748b; font-size: 11px; font-weight: 800; line-height: 1; cursor: help; }
-.task-status-help:focus { outline: 2px solid rgba(28,100,242,.35); outline-offset: 2px; }
+.task-status-help:focus { outline: 2px solid var(--brand-focus); outline-offset: 2px; }
 .task-status-tooltip { position: absolute; z-index: 30; left: 12px; top: 34px; width: max-content; max-width: 290px; padding: 7px 10px; border-radius: 7px; background: #111827; color: #fff; box-shadow: 0 6px 18px rgba(15,23,42,.2); font-size: 12px; line-height: 1.4; opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity .15s, transform .15s, visibility .15s; pointer-events: none; }
 .task-status-tooltip::before { content: ""; position: absolute; left: 38px; top: -5px; width: 10px; height: 10px; background: #111827; transform: rotate(45deg); }
 .task-status-help:hover + .task-status-tooltip, .task-status-help:focus + .task-status-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
 .ui-button { min-height: 36px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #111827; padding: 0 12px; cursor: pointer; font-weight: 600; }
 .ui-button:hover { background: #f3f4f6; }
-.ui-button-primary { background: #1c64f2; border-color: #1c64f2; color: #fff; }
-.ui-button-primary:hover { background: #1554d1; }
+.ui-button-primary { background: var(--brand-primary-strong); border-color: var(--brand-primary-strong); color: #fff; }
+.ui-button-primary:hover { background: var(--brand-primary-strong-hover); }
 .ui-button-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
 .ui-button-danger:hover:not(:disabled) { background: #ef4444; border-color: #ef4444; }
-.ui-link-button { border: 0; background: #f7f8fa; color: #1c64f2; border-radius: 6px; padding: 5px 9px; cursor: pointer; font-weight: 600; }
+.ui-link-button { border: 0; background: #f7f8fa; color: var(--brand-primary-strong); border-radius: 6px; padding: 5px 9px; cursor: pointer; font-weight: 600; }
 /* 되돌릴 수 없는 동작(정지·비밀번호 재설정). 조회 동작과 한눈에 갈라 보이게 한다. */
 .ui-link-button-danger { background: #fee2e2; color: #b91c1c; }
 .ui-link-button-danger:hover { background: #fecaca; }
@@ -48,7 +48,7 @@
 .console-table th:nth-child(2) { width: 200px; }
 .management-table-wrap { overflow: auto; }
 .management-table tbody tr { transition: background .15s; }
-.management-table tbody tr:hover { background: rgba(28,100,242,.035); }
+.management-table tbody tr:hover { background: var(--brand-hover-row); }
 .management-table th, .management-table td { padding: 12px; text-align: left; border-bottom: 1px solid #f0f1f3; white-space: nowrap; }
 .admin-actions-cell { vertical-align: middle; }
 .admin-row-actions { display: flex; align-items: center; gap: 4px; min-height: 29px; }
@@ -62,8 +62,8 @@
 .user-page-size-control, .admin-page-size-control { grid-column: 3; justify-self: end; }
 .user-pagination-pages, .admin-pagination-pages { display: flex; gap: 6px; }
 .user-page-button, .admin-page-button { min-width: 36px; padding: 0 8px; }
-.user-page-button.is-active, .admin-page-button.is-active { background: #1c64f2; border-color: #1c64f2; color: #fff; }
-.user-page-button.is-active:hover, .admin-page-button.is-active:hover { background: #1554d1; }
+.user-page-button.is-active, .admin-page-button.is-active { background: var(--brand-primary-strong); border-color: var(--brand-primary-strong); color: #fff; }
+.user-page-button.is-active:hover, .admin-page-button.is-active:hover { background: var(--brand-primary-strong-hover); }
 .user-total, .admin-total { margin-right: 8px; color: #6b7280; font-size: 13px; }
 .status-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
 .status-active { background: #dcfce7; color: #166534; }
@@ -78,7 +78,7 @@
 .sidebar-shell { border-right: 1px solid #e5e7eb; }
 .sidebar-link { border: 2px solid transparent; color: #4b5563; font-weight: 500; text-decoration: none; transition: background .15s, border-color .15s, color .15s; }
 .sidebar-link:hover { background: #f3f4f6; }
-.sidebar-link.is-active { background: #eff6ff; border-color: #1d4ed8; color: #1d4ed8; font-weight: 700; }
+.sidebar-link.is-active { background: var(--brand-primary-soft); border-color: var(--brand-primary); color: var(--brand-primary-strong); font-weight: 700; }
 .sidebar-menu-group { margin-top: 4px; }
 .sidebar-group-label { color: #374151; font-weight: 700; }
 .sidebar-subnav { margin-top: 2px; padding-left: 14px; }
@@ -94,7 +94,7 @@
 .rank-search-row input { width: min(420px, 100%); }
 .rank-search-results { display: flex; flex-wrap: wrap; gap: 8px; min-height: 32px; margin-top: 10px; color: #6b7280; font-size: 13px; }
 .rank-product-result { border: 1px solid #dbe3ef; border-radius: 999px; background: #f8fafc; padding: 6px 10px; color: #1f2937; cursor: pointer; }
-.rank-product-result:hover { border-color: #1c64f2; color: #1c64f2; }
+.rank-product-result:hover { border-color: var(--brand-primary); color: var(--brand-primary-strong); }
 .rank-selected-list { display: grid; gap: 7px; margin-top: 8px; }
 .rank-selected-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; border: 1px solid #e5e7eb; border-radius: 7px; padding: 6px 10px; }
 .rank-selected-list small, .rank-product-result small { color: #6b7280; }

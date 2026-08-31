@@ -165,6 +165,21 @@ test("login page loads the API-connected login script", async () => {
   assert.match(html, /src="\.\.\/js\/login\.js"/);
 });
 
+test("login page presents the RxVita AI Health Assistant brand", async () => {
+  const templateUrl = new URL("../../static/templates/login.html", import.meta.url);
+  const stylesUrl = new URL("../../static/css/styles.css", import.meta.url);
+  const [html, styles] = await Promise.all([
+    readFile(templateUrl, "utf8"),
+    readFile(stylesUrl, "utf8"),
+  ]);
+
+  assert.match(html, /<title>관리자 로그인 - AI HEALTH ASSISTANT<\/title>/);
+  assert.match(html, /<img[^>]+class="brand-logo"[^>]+src="\.\.\/images\/rxvita-logo-ai-chat-navy\.png"[^>]+alt="RxVita">/);
+  assert.match(html, /<p class="brand-name">AI HEALTH ASSISTANT<\/p>/);
+  assert.doesNotMatch(html, /기업 관리 포털/);
+  assert.match(styles, /\.login-button\s*\{[^}]*background:\s*var\(--brand-primary-strong\);/s);
+});
+
 test("password help link is wired for the script to hook", async () => {
   const templateUrl = new URL("../../static/templates/login.html", import.meta.url);
   const html = await readFile(templateUrl, "utf8");
