@@ -285,13 +285,13 @@ class InvalidMedicationScheduleError(AppError):
 
 class InvalidDoseDateError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
-    code = "invalid_dose_date"
+    code = "INVALID_DOSE_DATE"
     message = "복용 날짜는 오늘 또는 지난 365일 이내여야 합니다."
 
 
 class InvalidDoseSlotError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
-    code = "invalid_slot"
+    code = "INVALID_SLOT"
     message = "복용 시간대가 올바르지 않습니다."
 
 
@@ -309,7 +309,7 @@ class MedicationRecordNotFoundError(AppError):
 
 class InvalidDoseDateRangeError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
-    code = "invalid_dose_date_range"
+    code = "INVALID_DOSE_DATE_RANGE"
     message = "복용 기록 조회 기간이 올바르지 않습니다."
 
 

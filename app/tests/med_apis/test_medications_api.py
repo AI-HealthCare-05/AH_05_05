@@ -439,11 +439,11 @@ class TestMedicationDoseAPI(TestCase):
 
         assert earliest.status_code == status.HTTP_200_OK
         assert too_old.status_code == status.HTTP_400_BAD_REQUEST
-        assert too_old.json()["code"] == "invalid_dose_date"
+        assert too_old.json()["code"] == "INVALID_DOSE_DATE"
         assert future.status_code == status.HTTP_400_BAD_REQUEST
-        assert future.json()["code"] == "invalid_dose_date"
+        assert future.json()["code"] == "INVALID_DOSE_DATE"
         assert invalid_slot.status_code == status.HTTP_400_BAD_REQUEST
-        assert invalid_slot.json()["code"] == "invalid_slot"
+        assert invalid_slot.json()["code"] == "INVALID_SLOT"
 
     async def test_history_returns_all_user_records_in_range_without_record_id(self) -> None:
         start_date = datetime.now(config.TIMEZONE).date() - timedelta(days=5)
@@ -518,9 +518,9 @@ class TestMedicationDoseAPI(TestCase):
         assert valid.status_code == status.HTTP_200_OK
         assert valid.json() == []
         assert too_wide.status_code == status.HTTP_400_BAD_REQUEST
-        assert too_wide.json()["code"] == "invalid_dose_date_range"
+        assert too_wide.json()["code"] == "INVALID_DOSE_DATE_RANGE"
         assert reversed_range.status_code == status.HTTP_400_BAD_REQUEST
-        assert reversed_range.json()["code"] == "invalid_dose_date_range"
+        assert reversed_range.json()["code"] == "INVALID_DOSE_DATE_RANGE"
 
 
 class TestMedicationCancellationAPI(TestCase):

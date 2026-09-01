@@ -609,7 +609,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   expect(listRequests.every((request) => request.searchParams.get('limit') === '100')).toBe(true);
 });
 
-test('검색 실패 시 FastAPI detail 메시지를 시트 안에 표시한다', async ({ page }) => {
+test('검색 실패 시 서버 detail 을 숨기고 기본 문구를 시트 안에 표시한다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
     await fulfillJson(route, { items: [], total: 0, offset: 0, limit: 100 });
@@ -631,11 +631,13 @@ test('검색 실패 시 FastAPI detail 메시지를 시트 안에 표시한다',
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('철분');
 
-  await expect(sheet.getByText('영양제 검색 서버가 응답하지 않았습니다.')).toBeVisible();
+  const FALLBACK = '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+  await expect(sheet.getByText(FALLBACK)).toBeVisible();
+  await expect(sheet.getByText('영양제 검색 서버가 응답하지 않았습니다.')).toHaveCount(0);
   await expect(sheet).toBeVisible();
 });
 
-test('저장 실패 시 FastAPI detail 메시지를 보여주고 선택 시트를 유지한다', async ({ page }) => {
+test('저장 실패 시 서버 detail 을 숨기고 기본 문구를 보여주며 선택 시트를 유지한다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
     if (route.request().method() === 'GET') {
@@ -677,9 +679,10 @@ test('저장 실패 시 FastAPI detail 메시지를 보여주고 선택 시트�
   await product.getByRole('button', { name: /튼튼 철분 캡슐/ }).click();
   await product.getByRole('button', { name: '추가하기' }).click();
 
-  await expect(
-    page.getByRole('dialog', { name: '영양제를 추가하지 못했어요' }),
-  ).toContainText('Input should be greater than 0');
+  const FALLBACK = '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+  const errorDialog = page.getByRole('dialog', { name: '영양제를 추가하지 못했어요' });
+  await expect(errorDialog.getByText(FALLBACK)).toBeVisible();
+  await expect(page.getByText('Input should be greater than 0')).toHaveCount(0);
   await expect(sheet).toBeVisible();
 });
 

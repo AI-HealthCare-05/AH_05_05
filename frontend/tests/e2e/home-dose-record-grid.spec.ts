@@ -1,9 +1,76 @@
-import { expect, test } from 'playwright/test';
+import { expect, test, type Page, type Route } from 'playwright/test';
 
-async function expandMorningMedication(page: import('playwright/test').Page) {
+async function expandMorningMedication(page: Page) {
   await page.getByRole('button', { name: /아침약 \d+개.*자세히 보기/ }).click();
 }
 
+async function fulfillJson(route: Route, body: unknown) {
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+}
+
+test('400일 전 ACTIVE 회차는 from을 처방 시작일로 유지한다', async ({ page }) => {
+  test.skip(process.env.VITE_USE_MOCK !== 'false', '실제 API 요청 범위를 검증합니다.');
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem('poke.access-token', 'home-range-token');
+    window.sessionStorage.setItem('poke.account-principal', 'home-range@example.com');
+  });
+  const ranges: URL[] = [];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    ranges.push(new URL(route.request().url()));
+    await fulfillJson(route, []);
+  });
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [
+    {
+      recordId: 400, documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2025-07-21', slot: 'morning' }, endDate: '2025-08-10', daysRemaining: 0,
+      mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+      medications: [{ medicationId: 400, name: '지난 처방', dose: '1정', days: 21, daysRemaining: 0, slots: ['morning'], asNeeded: false }],
+    },
+  ]));
+
+  await page.goto('/home');
+  await expect(page.getByRole('region', { name: '복약 기록' })).toBeVisible();
+  expect(ranges).toHaveLength(1);
+  expect(ranges[0].searchParams.get('from')).toBe('2025-07-21');
+  expect(ranges[0].searchParams.get('to')).toBe('2025-08-10');
+  await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
+});
+
+test('365일 처방과 새 30일 회차는 정확히 366일 범위로 복약 기록을 조회한다', async ({ page }) => {
+  test.skip(process.env.VITE_USE_MOCK !== 'false', '실제 API 요청 범위를 검증합니다.');
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem('poke.access-token', 'home-range-token');
+    window.sessionStorage.setItem('poke.account-principal', 'home-range@example.com');
+  });
+  const ranges: URL[] = [];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    ranges.push(new URL(route.request().url()));
+    await fulfillJson(route, []);
+  });
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [
+    {
+      recordId: 365, documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2025-08-25', slot: 'morning' }, endDate: '2026-08-24', daysRemaining: 0,
+      mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+      medications: [{ medicationId: 365, name: '365일 처방', dose: '1정', days: 365, daysRemaining: 0, slots: ['morning'], asNeeded: false }],
+    },
+    {
+      recordId: 366, documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2026-08-25', slot: 'morning' }, endDate: '2026-09-23', daysRemaining: 30,
+      mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+      medications: [{ medicationId: 366, name: '새 처방', dose: '1정', days: 30, daysRemaining: 30, slots: ['morning'], asNeeded: false }],
+    },
+  ]));
+
+  await page.goto('/home');
+  await expect(page.getByRole('region', { name: '복약 기록' })).toBeVisible();
+  expect(ranges).toHaveLength(1);
+  expect(ranges[0].searchParams.get('from')).toBe('2025-09-23');
+  expect(ranges[0].searchParams.get('to')).toBe('2026-09-23');
+  await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
+});
 test('다중 care episode 목업은 서로 다른 회차의 약을 같은 홈에 제공한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/dev/home-multiple-episodes');
