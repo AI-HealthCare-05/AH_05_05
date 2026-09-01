@@ -51,7 +51,6 @@ function product(
  * 실제 제품 동기화가 아니라 과다 결과·브랜드 검색·페이지네이션을 검증하는 고정 픽스처입니다.
  */
 const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
-  product('mock-501', '오메가3', 'RxVita 목업', 'RxVita', '60캡슐', 1, 4.8, 32),
   product('sp-001', '센트룸 실버 우먼', '센트룸', '한국화이자', '90정', 1, 4.2, 12),
   product('sp-002', '센트룸 실버 맨', '센트룸', '한국화이자', '90정', 1),
   product('sp-003', '고려은단 멀티비타민 올인원', '고려은단', '고려은단헬스케어', '60정', 2, 5, 1),
@@ -78,6 +77,17 @@ const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
   product('sp-024', '풀무원 그린체 멀티비타민', '그린체', '풀무원건강생활', '60정', 2),
 ];
 
+const REGISTERED_MOCK_PRODUCT = product(
+  'mock-501',
+  '오메가3',
+  'RxVita 목업',
+  'RxVita',
+  '60캡슐',
+  1,
+  4.8,
+  32,
+);
+
 export function mockSupplementRanking(): SupplementRanking {
   return {
     title: '9월 면역력 관리',
@@ -102,7 +112,10 @@ export function mockSupplementRanking(): SupplementRanking {
 }
 
 export function mockSupplementProduct(productId: string): SupplementProduct {
-  const found = SUPPLEMENT_PRODUCTS.find((item) => item.productId === productId);
+  const found =
+    productId === REGISTERED_MOCK_PRODUCT.productId
+      ? REGISTERED_MOCK_PRODUCT
+      : SUPPLEMENT_PRODUCTS.find((item) => item.productId === productId);
   if (!found) throw new Error('영양제를 찾지 못했어요.');
   return {
     ...found,
@@ -112,6 +125,22 @@ export function mockSupplementProduct(productId: string): SupplementProduct {
 
 function normalized(value: string): string {
   return value.toLocaleLowerCase('ko-KR').replace(/\s+/g, '');
+}
+
+function relevance(productItem: SupplementProduct, query: string): number {
+  const fields = [
+    productItem.productName,
+    productItem.brand,
+    productItem.manufacturer,
+    productItem.category,
+  ].map(normalized);
+  const normalizedQuery = normalized(query);
+  return fields.reduce((score, field, index) => {
+    if (field === normalizedQuery) return score + 100 - index;
+    if (field.startsWith(normalizedQuery)) return score + 60 - index;
+    if (field.includes(normalizedQuery)) return score + 30 - index;
+    return score;
+  }, 0);
 }
 
 const MOCK_REGISTRATION_COUNTS: Record<string, number> = {
@@ -127,7 +156,7 @@ function compareName(left: SupplementProduct, right: SupplementProduct): number 
 
 export function mockSearchSupplementProducts({
   query,
-  sort = 'name',
+  sort,
   offset = 0,
   limit = 20,
 }: SearchSupplementProductsParams): SupplementSearchPage {
@@ -135,8 +164,19 @@ export function mockSearchSupplementProducts({
   if (!trimmedQuery) return { items: [], total: 0, nextOffset: null };
 
   const matches = SUPPLEMENT_PRODUCTS.filter((productItem) =>
-    normalized(productItem.productName).includes(trimmedQuery),
+    [
+      productItem.productName,
+      productItem.brand,
+      productItem.manufacturer,
+      productItem.category,
+    ].some((field) => normalized(field).includes(trimmedQuery)),
   ).sort((left, right) => {
+    if (sort === undefined) {
+      return (
+        relevance(right, trimmedQuery) - relevance(left, trimmedQuery) ||
+        SUPPLEMENT_PRODUCTS.indexOf(left) - SUPPLEMENT_PRODUCTS.indexOf(right)
+      );
+    }
     if (sort === 'registered') {
       return (
         (MOCK_REGISTRATION_COUNTS[right.productId] ?? 0) -
