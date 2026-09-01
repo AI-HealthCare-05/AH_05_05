@@ -128,18 +128,8 @@ class ChatAnswerAssembler:
         if schedule.visit_at is not None:
             parts.append(schedule.visit_at.strftime("%Y-%m-%d %H:%M"))
 
-        if schedule.department:
-            parts.append(schedule.department)
-
-        if schedule.doctor_name:
-            parts.append(schedule.doctor_name)
-
-        if schedule.purpose:
-            parts.append(schedule.purpose)
-
-        place = schedule.place or schedule.institution_name
-        if place:
-            parts.append(place)
+        if schedule.hospital:
+            parts.append(schedule.hospital)
 
         return " · ".join(parts)
 

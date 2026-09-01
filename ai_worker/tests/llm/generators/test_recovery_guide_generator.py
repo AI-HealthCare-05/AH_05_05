@@ -68,9 +68,8 @@ def build_patient_context() -> PatientContext:
         follow_up_schedules=[
             FollowUpSchedule(
                 follow_up_visit_id=301,
-                purpose="신경과 외래 진료",
                 visit_at=("2026-08-20T10:00:00+09:00"),
-                institution_name="테스트병원",
+                hospital="테스트병원",
             )
         ],
     )
@@ -229,7 +228,7 @@ async def test_generate_does_not_use_llm_patient_facts() -> None:
 
     assert result.guide_content.medication_guide == [("아스피린 · 1정 · 1일 1회 · 아침 식후 복용 · 7일")]
     assert result.guide_content.patient_instructions == ["무리한 활동은 피하세요."]
-    assert result.guide_content.follow_up_schedule == [("2026-08-20 10:00 · 신경과 외래 진료 · 테스트병원")]
+    assert result.guide_content.follow_up_schedule == [("2026-08-20 10:00 · 테스트병원")]
     assert result.guide_content.warning_signs == []
     assert result.guide_content.public_information == ["공공자료에 따른 추가 설명입니다."]
     assert result.guide_content.lifestyle_guide == ["충분히 휴식하세요."]

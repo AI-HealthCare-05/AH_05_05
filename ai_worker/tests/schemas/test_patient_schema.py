@@ -42,10 +42,7 @@ def test_patient_context_represents_confirmed_erd_data() -> None:
             FollowUpSchedule(
                 follow_up_visit_id=301,
                 visit_at=datetime(2026, 8, 20, 10, 0),
-                department="정형외과",
-                doctor_name="담당의",
-                place="본관 2층",
-                purpose="수술 후 경과 확인",
+                hospital="테스트병원",
             )
         ],
     )
@@ -79,5 +76,4 @@ def test_patient_context_represents_confirmed_erd_data() -> None:
 
     follow_up = context.follow_up_schedules[0]
     assert follow_up.follow_up_visit_id == 301
-    assert follow_up.department == "정형외과"
-    assert follow_up.purpose == "수술 후 경과 확인"
+    assert follow_up.hospital == "테스트병원"

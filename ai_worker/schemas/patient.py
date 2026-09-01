@@ -108,44 +108,8 @@ class FollowUpSchedule(BaseModel):
     """외래 진료 또는 검사 일정."""
 
     follow_up_visit_id: int | None = None
-    visit_at: datetime | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "visit_at",
-            "scheduled_at",
-        ),
-    )
-    department: str | None = None
-    doctor_name: str | None = None
-    place: str | None = None
-    purpose: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "purpose",
-            "description",
-        ),
-    )
-
-    # 기존 테스트 데이터와 출처 연결을 위한 임시 호환 필드
-    institution_name: str | None = Field(
-        default=None,
-        exclude=True,
-    )
-
-    @property
-    def description(self) -> str:
-        """기존 프롬프트에서 사용하는 일정 설명."""
-
-        return self.purpose or ""
-
-    @property
-    def scheduled_at(self) -> str | None:
-        """기존 프롬프트가 JSON으로 전달하는 일정 시각."""
-
-        if self.visit_at is None:
-            return None
-
-        return self.visit_at.isoformat()
+    visit_at: datetime | None = None
+    hospital: str | None = None
 
 
 class PatientContext(BaseModel):

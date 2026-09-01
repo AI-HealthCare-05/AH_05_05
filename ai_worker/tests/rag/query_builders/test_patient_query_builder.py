@@ -28,9 +28,8 @@ def build_patient_context() -> PatientContext:
         ],
         follow_up_schedules=[
             FollowUpSchedule(
-                description="신경과 외래 진료",
-                scheduled_at=("2026-08-20T10:00:00+09:00"),
-                institution_name="테스트병원",
+                visit_at=("2026-08-20T10:00:00+09:00"),
+                hospital="테스트병원",
             )
         ],
     )
