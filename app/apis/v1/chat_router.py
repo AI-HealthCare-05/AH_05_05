@@ -18,7 +18,11 @@ from app.dtos.chat import (
     SendChatResponse,
 )
 from app.models.users import User
-from app.services.chat import ChatApplicationService, SendChatCommand
+from app.services.chat import (
+    CHAT_API_GUARD_TIMEOUT_SECONDS,
+    ChatApplicationService,
+    SendChatCommand,
+)
 
 chat_router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -91,12 +95,12 @@ _CHAT_RESPONSES = {
     },
     504: {
         "model": ChatErrorResponse,
-        "description": "20초 안에 답변 생성을 완료하지 못함",
+        "description": "30초 안에 답변 생성을 완료하지 못함",
         "content": {
             "application/json": {
                 "example": {
                     "code": "API_TIMEOUT",
-                    "message": "요청 처리 시간이 초과되었습니다.",
+                    "message": ("답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."),
                 }
             }
         },
@@ -116,7 +120,7 @@ _CHAT_RESPONSES = {
     ),
     responses=_CHAT_RESPONSES,
 )
-@api_timeout(20)
+@api_timeout(CHAT_API_GUARD_TIMEOUT_SECONDS)
 async def answer_chat_message(
     data: SendChatRequest,
     user: Annotated[User, Depends(get_request_user)],
@@ -251,7 +255,7 @@ async def _chat_event_stream(
         },
     },
 )
-@api_timeout(20)
+@api_timeout(CHAT_API_GUARD_TIMEOUT_SECONDS)
 async def stream_chat_answer(
     data: SendChatRequest,
     user: Annotated[User, Depends(get_request_user)],

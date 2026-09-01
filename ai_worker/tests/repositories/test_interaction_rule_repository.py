@@ -108,6 +108,18 @@ async def test_interaction_repository_returns_only_approved_rules(
         rule_dataset_version="dur-v2",
         extraction_method=InteractionExtractionMethod.DETERMINISTIC_STRUCTURED,
     )
+    inactive_approved = await InteractionRule.create(
+        id=5000,
+        pair_key="c" * 64,
+        pair_type=InteractionPairType.DRUG_DRUG,
+        left_entity=aspirin_entity,
+        right_entity=warfarin_entity,
+        risk_level=InteractionRiskLevel.CONTRAINDICATED,
+        review_status=InteractionReviewStatus.APPROVED,
+        rule_dataset_version="dur-v2",
+        extraction_method=InteractionExtractionMethod.DETERMINISTIC_STRUCTURED,
+        approved_at=datetime(2026, 8, 25, 11, 0),
+    )
     await InteractionRuleSource.create(
         interaction_rule=approved,
         source_id="MFDS_DUR",
@@ -122,6 +134,13 @@ async def test_interaction_repository_returns_only_approved_rules(
         document_id="dur-ddi",
         record_id="row-2",
         raw_effect_text="검수 전 규칙입니다.",
+    )
+    await InteractionRuleSource.create(
+        interaction_rule=inactive_approved,
+        source_id="MFDS_DUR",
+        document_id="dur-ddi",
+        record_id="row-3",
+        raw_effect_text="활성화되지 않은 이전 또는 다음 버전입니다.",
     )
 
     context = ActiveIntakeContext(
@@ -140,9 +159,93 @@ async def test_interaction_repository_returns_only_approved_rules(
         ],
     )
 
-    rules = await DbInteractionRuleRepository().find_approved_rules(
+    rules = await DbInteractionRuleRepository(
+        active_dataset_version="dur-v1",
+    ).find_approved_rules(
         context=context,
     )
 
     assert [rule.interaction_rule_id for rule in rules] == [approved.id]
     assert rules[0].effect_texts == ["출혈 위험이 증가할 수 있어 전문가 확인이 필요합니다."]
+
+
+@pytest.mark.asyncio
+async def test_interaction_repository_resolves_general_question_entities(
+    initialized_db: None,
+) -> None:
+    ketorolac = await InteractionEntity.create(
+        entity_kind=InteractionEntityKind.DRUG,
+        canonical_name="케토롤락",
+        normalized_name="케토롤락",
+    )
+    aspirin = await InteractionEntity.create(
+        entity_kind=InteractionEntityKind.DRUG,
+        canonical_name="아스피린",
+        normalized_name="아스피린",
+    )
+    approved = await InteractionRule.create(
+        pair_key="d" * 64,
+        pair_type=InteractionPairType.DRUG_DRUG,
+        left_entity=ketorolac,
+        right_entity=aspirin,
+        risk_level=InteractionRiskLevel.CONTRAINDICATED,
+        review_status=InteractionReviewStatus.APPROVED,
+        rule_dataset_version="interaction-pilot-v1",
+        extraction_method=InteractionExtractionMethod.DETERMINISTIC_STRUCTURED,
+        approved_at=datetime(2026, 8, 25, 12, 0),
+    )
+    await InteractionRuleSource.create(
+        interaction_rule=approved,
+        source_id="MFDS_DUR",
+        document_id="dur-ddi",
+        record_id="335",
+        raw_effect_text="중증의 위장관계 이상반응 위험",
+    )
+    context = ActiveIntakeContext(user_id=1)
+    repository = DbInteractionRuleRepository(
+        active_dataset_version="interaction-pilot-v1",
+    )
+
+    rules = await repository.find_approved_rules(
+        context=context,
+        query_entity_names=["케토롤락", "아스피린"],
+    )
+
+    assert [rule.interaction_rule_id for rule in rules] == [approved.id]
+
+
+@pytest.mark.asyncio
+async def test_interaction_repository_rejects_partial_question_entity_match(
+    initialized_db: None,
+) -> None:
+    ketorolac = await InteractionEntity.create(
+        entity_kind=InteractionEntityKind.DRUG,
+        canonical_name="케토롤락",
+        normalized_name="케토롤락",
+    )
+    aspirin = await InteractionEntity.create(
+        entity_kind=InteractionEntityKind.DRUG,
+        canonical_name="아스피린",
+        normalized_name="아스피린",
+    )
+    await InteractionRule.create(
+        pair_key="e" * 64,
+        pair_type=InteractionPairType.DRUG_DRUG,
+        left_entity=ketorolac,
+        right_entity=aspirin,
+        risk_level=InteractionRiskLevel.CONTRAINDICATED,
+        review_status=InteractionReviewStatus.APPROVED,
+        rule_dataset_version="interaction-pilot-v1",
+        extraction_method=InteractionExtractionMethod.DETERMINISTIC_STRUCTURED,
+        approved_at=datetime(2026, 8, 25, 12, 0),
+    )
+    context = ActiveIntakeContext(user_id=1)
+
+    rules = await DbInteractionRuleRepository(
+        active_dataset_version="interaction-pilot-v1",
+    ).find_approved_rules(
+        context=context,
+        query_entity_names=["케토롤락"],
+    )
+
+    assert rules == []

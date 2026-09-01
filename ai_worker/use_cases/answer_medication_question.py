@@ -6,6 +6,9 @@ from ai_worker.domain.chat_content_compactor import (
     ANSWER_COMPACTION_MARKER,
     compact_chat_content,
 )
+from ai_worker.domain.interaction_question_detector import (
+    is_interaction_question,
+)
 from ai_worker.domain.interfaces import (
     ActiveIntakeContextProvider,
     GroundedClaimValidator,
@@ -25,9 +28,16 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
 )
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
+    MedicationKnowledgeQueryPlan,
 )
 from ai_worker.schemas.enums import SafetyStatus
-from ai_worker.schemas.knowledge import KnowledgeDocumentType
+from ai_worker.schemas.interaction import InteractionEntityKind
+from ai_worker.schemas.knowledge import (
+    KnowledgeDocumentType,
+    KnowledgeRetrievalDiagnostics,
+    KnowledgeRetrievalResult,
+    KnowledgeSectionType,
+)
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
@@ -105,14 +115,22 @@ class AnswerMedicationQuestionUseCase:
             query_plan = MedicationKnowledgeQueryBuilder().build(
                 request.question,
             )
-            query_span.end(
-                {
-                    "entity_count": len(query_plan.entity_names),
-                    "section_count": len(query_plan.section_types),
-                    "interaction_pair_present": (query_plan.interaction_pair is not None),
-                    "medication_product_cue": (query_plan.has_medication_product_cue),
-                }
+            query_outputs = {
+                "entity_count": len(query_plan.entity_names),
+                "section_count": len(query_plan.section_types),
+                "interaction_pair_present": (query_plan.interaction_pair is not None),
+                "medication_product_cue": (query_plan.has_medication_product_cue),
+            }
+            if self._tracer.capture_content:
+                query_outputs["entity_names"] = query_plan.entity_names
+                query_outputs["entity_roles"] = [entity.entity_type.value for entity in query_plan.entities]
+                query_outputs["entity_role_candidates"] = [
+                    [candidate.value for candidate in entity.candidate_types] for entity in query_plan.entities
+                ]
+            query_outputs["interaction_pair_count"] = len(
+                query_plan.interaction_pairs,
             )
+            query_span.end(query_outputs)
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
         )
@@ -126,25 +144,27 @@ class AnswerMedicationQuestionUseCase:
         ) as rules_span:
             rules = await self._interaction_rule_repository.find_approved_rules(
                 context=context,
+                query_entity_names=query_plan.entity_names,
             )
             rules_span.end({"approved_rule_count": len(rules)})
         async with self._tracer.span(
             "rag.retrieve",
             run_type="retriever",
         ) as rag_span:
-            chunks, rag_unavailable = await self._retrieve_knowledge(
+            retrieval, rag_unavailable = await self._retrieve_knowledge(
                 request=request,
                 context=context,
                 rules=rules,
                 limit=limit,
             )
+            chunks = retrieval.chunks
             rag_span.end(
                 {
-                    "accepted_count": len(chunks),
+                    **retrieval.diagnostics.model_dump(),
                     "rag_unavailable": rag_unavailable,
-                    "max_score": max(
-                        (chunk.similarity_score for chunk in chunks),
-                        default=None,
+                    "document_types": sorted({chunk.metadata.document_type.value for chunk in chunks}),
+                    "drug_encyclopedia_evidence_count": sum(
+                        chunk.metadata.document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA for chunk in chunks
                     ),
                 }
             )
@@ -165,6 +185,7 @@ class AnswerMedicationQuestionUseCase:
                 else await self._find_guide(
                     request=request,
                     context=context,
+                    query_plan=query_plan,
                     interaction_question=interaction_question,
                 )
             )
@@ -191,9 +212,17 @@ class AnswerMedicationQuestionUseCase:
                     "family_reference": family_reference,
                 }
             )
-        if guide_lookup.is_ambiguous and not self._has_supplement_evidence(
-            request.question,
-            chunks=chunks,
+        has_drug_encyclopedia_evidence = self._has_drug_encyclopedia_evidence(chunks)
+        can_use_ingredient_family_fallback = (
+            has_drug_encyclopedia_evidence and not query_plan.has_medication_product_cue
+        )
+        if (
+            guide_lookup.is_ambiguous
+            and not self._has_supplement_evidence(
+                request.question,
+                chunks=chunks,
+            )
+            and not can_use_ingredient_family_fallback
         ):
             await self._report_progress(
                 progress_callback,
@@ -204,12 +233,25 @@ class AnswerMedicationQuestionUseCase:
                 context=context,
                 guide_lookup=guide_lookup,
             )
+        answer_chunks = self._authoritative_chunks(
+            guide_lookup=guide_lookup,
+            chunks=chunks,
+            prefer_supplement=(
+                has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
+            ),
+        )
+        ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
+        unsupported_pairs = self._unsupported_interaction_pairs(
+            query_plan=query_plan,
+            rules=rules,
+            chunks=answer_chunks,
+        )
         route = self._resolve_route(
             request=request,
             context=context,
             guide_lookup=guide_lookup,
             interaction_question=interaction_question,
-            chunks=chunks,
+            chunks=answer_chunks,
         )
         safety_status = SafetyStatus.RESTRICTED if rag_unavailable else SafetyStatus.SAFE
         safety_reason_codes = ["RAG_UNAVAILABLE"] if rag_unavailable else []
@@ -220,9 +262,11 @@ class AnswerMedicationQuestionUseCase:
                     context=context,
                     guide=guide_lookup.guide,
                     rules=rules,
-                    chunks=chunks,
+                    chunks=answer_chunks,
                     interaction_question=interaction_question,
                     family_reference=family_reference,
+                    ingredient_family_reference=(ingredient_family_reference),
+                    unsupported_pairs=unsupported_pairs,
                 ),
                 route=route,
                 safety_status=safety_status,
@@ -231,7 +275,7 @@ class AnswerMedicationQuestionUseCase:
                     context=context,
                     guide_lookup=guide_lookup,
                     rules=rules,
-                    chunks=chunks,
+                    chunks=answer_chunks,
                 ),
                 prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
                 schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
@@ -299,6 +343,7 @@ class AnswerMedicationQuestionUseCase:
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
+        query_plan: MedicationKnowledgeQueryPlan,
         interaction_question: bool,
     ) -> MedicationGuideLookup:
         if interaction_question:
@@ -306,6 +351,7 @@ class AnswerMedicationQuestionUseCase:
         for candidate in self._product_name_candidates(
             request.question,
             context=context,
+            query_plan=query_plan,
         ):
             lookup = await self._guide_repository.find_by_name(candidate)
             if lookup.guide is not None or lookup.is_ambiguous:
@@ -319,9 +365,9 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
         rules: list[InteractionRuleFact],
         limit: int,
-    ) -> tuple[list, bool]:
+    ) -> tuple[KnowledgeRetrievalResult, bool]:
         try:
-            chunks = await self._knowledge_retriever.search(
+            retrieval = await self._knowledge_retriever.search_with_diagnostics(
                 question=request.question,
                 medication_names=[item.name for item in context.medications],
                 supplement_names=[item.name for item in context.supplements],
@@ -329,8 +375,26 @@ class AnswerMedicationQuestionUseCase:
                 limit=limit,
             )
         except Exception:
-            return [], True
-        return chunks, False
+            return self._empty_retrieval_result(), True
+        return retrieval, False
+
+    @staticmethod
+    def _empty_retrieval_result() -> KnowledgeRetrievalResult:
+        return KnowledgeRetrievalResult(
+            diagnostics=KnowledgeRetrievalDiagnostics(
+                raw_candidate_count=0,
+                entity_filtered_count=0,
+                broad_candidate_count=0,
+                fallback_used=False,
+                eligible_candidate_count=0,
+                rejected_below_score_count=0,
+                rejected_entity_mismatch_count=0,
+                rejected_pair_mismatch_count=0,
+                accepted_count=0,
+                max_raw_score=None,
+                max_score=None,
+            )
+        )
 
     @staticmethod
     def _resolve_route(
@@ -352,9 +416,45 @@ class AnswerMedicationQuestionUseCase:
             chunks=chunks,
         ):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
+        if AnswerMedicationQuestionUseCase._has_drug_encyclopedia_evidence(
+            chunks,
+        ):
+            return MedicationChatRoute.MEDICATION_GUIDE
         if AnswerMedicationQuestionUseCase._is_supplement_question(request.question):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
         return MedicationChatRoute.GENERAL_GUIDANCE
+
+    @staticmethod
+    def _has_drug_encyclopedia_evidence(chunks: list) -> bool:
+        return any(chunk.metadata.document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA for chunk in chunks)
+
+    @staticmethod
+    def _authoritative_chunks(
+        *,
+        guide_lookup: MedicationGuideLookup,
+        chunks: list,
+        prefer_supplement: bool = False,
+    ) -> list:
+        if prefer_supplement:
+            return [
+                chunk for chunk in chunks if chunk.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA
+            ]
+        if guide_lookup.guide is None:
+            return chunks
+        product_claim_sections = {
+            KnowledgeSectionType.FUNCTION,
+            KnowledgeSectionType.DAILY_INTAKE,
+            KnowledgeSectionType.CAUTION,
+            KnowledgeSectionType.ADVERSE_EVENT,
+        }
+        return [
+            chunk
+            for chunk in chunks
+            if not (
+                chunk.metadata.document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA
+                and chunk.metadata.section_type in product_claim_sections
+            )
+        ]
 
     @staticmethod
     def _has_supplement_evidence(
@@ -395,46 +495,19 @@ class AnswerMedicationQuestionUseCase:
         question: str,
         *,
         context: ActiveIntakeContext,
+        query_plan: MedicationKnowledgeQueryPlan,
     ) -> list[str]:
         candidates = [medication.name for medication in context.medications if medication.name in question]
         if "이 약" in question and len(context.medications) == 1:
             candidates.append(context.medications[0].name)
-        stopwords = {
-            "어떤",
-            "어떻게",
-            "약",
-            "약인가요",
-            "알려줘",
-            "알려주세요",
-            "주의사항",
-            "복용법",
-            "복용",
-            "먹어",
-            "먹어야",
-            "효능",
-        }
-        for token in re.findall(r"[가-힣A-Za-z0-9.+-]{2,}", question):
-            normalized = re.sub(
-                r"(은|는|이|가|을|를|과|와|의|도)$",
-                "",
-                token,
-            )
-            if normalized and normalized not in stopwords:
-                candidates.append(normalized)
+        candidates.extend(
+            entity.canonical_name for entity in query_plan.entities if entity.kind == InteractionEntityKind.DRUG
+        )
         return list(dict.fromkeys(candidates))[: AnswerMedicationQuestionUseCase._MAX_PRODUCT_NAME_CANDIDATES]
 
     @staticmethod
     def _is_interaction_question(question: str) -> bool:
-        return any(
-            keyword in question
-            for keyword in (
-                "상호작용",
-                "같이 먹",
-                "함께 먹",
-                "병용",
-                "조합",
-            )
-        )
+        return is_interaction_question(question)
 
     @staticmethod
     def _is_supplement_question(question: str) -> bool:
@@ -449,6 +522,55 @@ class AnswerMedicationQuestionUseCase:
                 "프로바이오틱스",
             )
         )
+
+    @classmethod
+    def _unsupported_interaction_pairs(
+        cls,
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        rules: list[InteractionRuleFact],
+        chunks: list,
+    ) -> list[str]:
+        if len(query_plan.interaction_pairs) <= 1:
+            return []
+
+        evidence_texts = [
+            " ".join(
+                [
+                    chunk.metadata.title,
+                    chunk.content,
+                    *chunk.metadata.drug_names,
+                    *chunk.metadata.ingredient_names,
+                ]
+            )
+            for chunk in chunks
+        ]
+        rule_pairs = [
+            {
+                cls._normalize_entity_name(rule.left_name),
+                cls._normalize_entity_name(rule.right_name),
+            }
+            for rule in rules
+        ]
+        unsupported: list[str] = []
+        for pair in query_plan.interaction_pairs:
+            pair_names = {
+                cls._normalize_entity_name(pair.left_name),
+                cls._normalize_entity_name(pair.right_name),
+            }
+            has_rule = pair_names in rule_pairs
+            has_chunk = any(
+                all(name in cls._normalize_entity_name(text) for name in pair_names) for text in evidence_texts
+            )
+            if not has_rule and not has_chunk:
+                unsupported.append(
+                    f"{pair.left_name} ↔ {pair.right_name}",
+                )
+        return unsupported
+
+    @staticmethod
+    def _normalize_entity_name(value: str) -> str:
+        return "".join(value.casefold().split())
 
     @staticmethod
     def _context_hash(context: ActiveIntakeContext) -> str:

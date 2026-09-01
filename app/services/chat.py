@@ -25,6 +25,7 @@ from ai_worker.services.medication_chat_core_service import (
     MedicationChatCoreService,
 )
 from app.core.exceptions import (
+    ChatAnswerTimeoutError,
     ChatCareEpisodeNotFoundError,
     ChatContextConflictError,
     ChatConversationNotFoundError,
@@ -45,6 +46,9 @@ from app.repositories.chat_repository import (
     ChatRequestPayloadMismatchError,
     ChatSessionNotFoundError,
 )
+
+CHAT_ANSWER_TIMEOUT_SECONDS = 30.0
+CHAT_API_GUARD_TIMEOUT_SECONDS = 31.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,11 +83,13 @@ class ChatApplicationService:
         core_service: MedicationChatCoreService,
         tracer: ChatTracer | None = None,
         clock: Callable[[], float] = time.perf_counter,
+        answer_timeout_seconds: float = CHAT_ANSWER_TIMEOUT_SECONDS,
     ) -> None:
         self._repository = repository
         self._core_service = core_service
         self._tracer = tracer or NoOpChatTracer()
         self._clock = clock
+        self._answer_timeout_seconds = answer_timeout_seconds
 
     async def send(
         self,
@@ -178,10 +184,11 @@ class ChatApplicationService:
                     for message in accepted.history
                 ],
             )
-            core_result = await self._core_service.answer(
-                request,
-                progress_callback=progress_callback,
-            )
+            async with asyncio.timeout(self._answer_timeout_seconds):
+                core_result = await self._core_service.answer(
+                    request,
+                    progress_callback=progress_callback,
+                )
             duration_ms = self._duration_ms(started_at)
             completed = await self._repository.complete_request(
                 assistant_message_id=accepted.assistant_message.id,
@@ -189,6 +196,15 @@ class ChatApplicationService:
                 duration_ms=duration_ms,
                 langsmith_trace_id=root_span.trace_id,
             )
+        except TimeoutError as error:
+            duration_ms = self._duration_ms(started_at)
+            await self._repository.fail_request(
+                assistant_message_id=accepted.assistant_message.id,
+                error_code="API_TIMEOUT",
+                duration_ms=duration_ms,
+                langsmith_trace_id=root_span.trace_id,
+            )
+            raise ChatAnswerTimeoutError from error
         except asyncio.CancelledError:
             duration_ms = self._duration_ms(started_at)
             await self._repository.fail_request(

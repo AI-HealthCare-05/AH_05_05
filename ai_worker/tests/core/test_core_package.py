@@ -14,6 +14,7 @@ def test_config_defaults_to_approved_full_knowledge_release() -> None:
 
     assert settings.KNOWLEDGE_QDRANT_COLLECTION == ("medication_knowledge_full_v1")
     assert settings.KNOWLEDGE_DATASET_VERSION == ("knowledge-full-v1")
+    assert settings.INTERACTION_RULE_DATASET_VERSION == ("interaction-pilot-v1")
 
 
 def test_config_limits_openai_and_qdrant_calls_to_ten_seconds() -> None:
@@ -50,6 +51,10 @@ def test_config_reads_openai_chat_integration_settings(
         "KNOWLEDGE_DATASET_VERSION",
         "knowledge-test-v1",
     )
+    monkeypatch.setenv(
+        "INTERACTION_RULE_DATASET_VERSION",
+        "interaction-test-v1",
+    )
     monkeypatch.setenv("RAG_MIN_SIMILARITY_SCORE", "0.7")
     monkeypatch.setenv("OPENAI_TIMEOUT_SECONDS", "20")
     monkeypatch.setenv("OPENAI_MAX_RETRIES", "4")
@@ -68,6 +73,7 @@ def test_config_reads_openai_chat_integration_settings(
     assert settings.QDRANT_COLLECTION == "public-guidelines-test"
     assert settings.KNOWLEDGE_QDRANT_COLLECTION == "medication-knowledge-test"
     assert settings.KNOWLEDGE_DATASET_VERSION == "knowledge-test-v1"
+    assert settings.INTERACTION_RULE_DATASET_VERSION == "interaction-test-v1"
     assert settings.RAG_MIN_SIMILARITY_SCORE == 0.7
     assert settings.OPENAI_TIMEOUT_SECONDS == 20
     assert settings.OPENAI_MAX_RETRIES == 4

@@ -13,6 +13,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSourceKind,
 )
 from app.core.exceptions import (
+    AppError,
     ChatProcessingFailedError,
     ChatUpstreamUnavailableError,
 )
@@ -100,6 +101,17 @@ class FakeCore:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+class SlowCore:
+    async def answer(
+        self,
+        request,
+        *,
+        limit: int = 5,
+        progress_callback=None,
+    ):
+        await asyncio.Event().wait()
 
 
 def build_result() -> MedicationChatResult:
@@ -346,5 +358,34 @@ async def test_send_marks_assistant_failed_when_stream_is_cancelled() -> None:
         "assistant_message_id": 101,
         "error_code": "CHAT_REQUEST_CANCELLED",
         "duration_ms": 1200,
+        "langsmith_trace_id": TRACE_ID,
+    }
+
+
+async def test_send_records_api_timeout_and_raises_user_safe_error() -> None:
+    repository = FakeRepository()
+    tracer = RecordingChatTracer()
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=SlowCore(),
+        tracer=tracer,
+        clock=iter([1.0, 1.03]).__next__,
+        answer_timeout_seconds=0.001,
+    )
+
+    async with asyncio.timeout(0.1):
+        with pytest.raises(AppError) as error_info:
+            await service.send(
+                user=SimpleNamespace(id=1),
+                command=build_command(),
+            )
+
+    assert error_info.value.status_code == 504
+    assert error_info.value.code == "API_TIMEOUT"
+    assert error_info.value.message == ("답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.")
+    assert repository.failed == {
+        "assistant_message_id": 101,
+        "error_code": "API_TIMEOUT",
+        "duration_ms": 30,
         "langsmith_trace_id": TRACE_ID,
     }

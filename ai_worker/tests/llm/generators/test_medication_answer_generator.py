@@ -140,7 +140,7 @@ async def test_generator_removes_markdown_heading_and_bold_markers() -> None:
     assert "사용법: 1일 1~2캡슐" in generated.answer
 
 
-async def test_generator_rejects_unsupported_dosage_and_safety_claim() -> None:
+async def test_generator_falls_back_to_safe_draft_when_rewrite_adds_claims() -> None:
     initial = build_result()
     generator = OpenAIMedicationAnswerGenerator(
         model="gpt-4o-mini",
@@ -156,5 +156,6 @@ async def test_generator_rejects_unsupported_dosage_and_safety_claim() -> None:
     )
 
     assert generated.answer == initial.answer
-    assert generated.safety_status == SafetyStatus.RESTRICTED
-    assert "UNSUPPORTED_GENERATED_CLAIM" in generated.safety_reason_codes
+    assert generated.safety_status == SafetyStatus.SAFE
+    assert generated.safety_reason_codes == []
+    assert generated.model_name == "gpt-4o-mini"

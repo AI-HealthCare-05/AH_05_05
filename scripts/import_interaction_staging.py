@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import sys
 from dataclasses import asdict, dataclass
@@ -45,6 +46,8 @@ class InteractionStagingDataset:
     generation_id: str
     candidates: list[InteractionRuleCandidate]
     ready_for_rdb_import: bool
+    candidate_sha256: str = ""
+    candidates_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,8 @@ def load_staging_dataset(
         generation_id=generation_id,
         candidates=candidates,
         ready_for_rdb_import=ready,
+        candidate_sha256=_sha256_file(candidates_path),
+        candidates_path=candidates_path,
     )
 
 
@@ -578,6 +583,17 @@ def _read_candidates(path: Path) -> list[InteractionRuleCandidate]:
     return candidates
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as error:
+        raise ImportValidationError(f"상호작용 후보 파일의 SHA-256을 계산할 수 없습니다: {path}") from error
+    return digest.hexdigest()
+
+
 def _read_json_object(path: Path) -> dict[str, object]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -654,6 +670,7 @@ def main() -> int:
         "dataset_version": dataset.dataset_version,
         "generation_id": dataset.generation_id,
         "candidate_count": len(dataset.candidates),
+        "candidate_sha256": dataset.candidate_sha256,
         "ready_for_rdb_import": dataset.ready_for_rdb_import,
         "dry_run": args.dry_run,
     }

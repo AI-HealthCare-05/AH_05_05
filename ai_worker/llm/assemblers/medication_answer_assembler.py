@@ -33,6 +33,8 @@ class MedicationAnswerAssembler:
         chunks: list[RetrievedKnowledgeChunk],
         interaction_question: bool,
         family_reference: bool = False,
+        ingredient_family_reference: bool = False,
+        unsupported_pairs: list[str] | None = None,
     ) -> str:
         sections: list[str] = []
         patient_lines = self._patient_lines(context)
@@ -88,8 +90,25 @@ class MedicationAnswerAssembler:
             sections.append(section_title + "\n" + "\n".join(guide_lines))
         if chunks:
             public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
-            section_title = "검색된 상호작용 연구 근거" if interaction_question else "공공자료 추가 설명"
+            if interaction_question:
+                section_title = "검색된 상호작용 연구 근거"
+            elif ingredient_family_reference:
+                section_title = "성분 계열 일반 정보"
+                public_lines.insert(
+                    0,
+                    (
+                        "- 아래 내용은 단일제의 일반 정보입니다. 정확한 제품의 "
+                        "성분·함량·제형에 따라 제품·복합제별 안내가 다를 수 "
+                        "있으므로 제품명을 함께 확인하세요."
+                    ),
+                )
+            else:
+                section_title = "공공자료 추가 설명"
             sections.append(section_title + "\n" + "\n".join(public_lines))
+        unsupported_section = self._unsupported_pairs_section(
+            unsupported_pairs or [],
+        )
+        sections.extend([unsupported_section] if unsupported_section else [])
         if not sections:
             sections.append(
                 "현재 보유한 RDBMS와 공공자료에서 질문에 답할 근거를 "
@@ -106,6 +125,17 @@ class MedicationAnswerAssembler:
     @staticmethod
     def _guide_line(label: str, value: str) -> str:
         return f"- {label}: {value.strip()}"
+
+    @staticmethod
+    def _unsupported_pairs_section(pairs: list[str]) -> str:
+        if not pairs:
+            return ""
+        return "근거를 확인하지 못한 조합\n" + "\n".join(
+            f"- {pair}: 현재 승인 규칙과 검색 근거에서 확인하지 "
+            "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 "
+            "아닙니다."
+            for pair in pairs
+        )
 
     @staticmethod
     def _patient_lines(context: ActiveIntakeContext) -> list[str]:
