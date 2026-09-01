@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from tortoise import Tortoise
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -129,27 +130,68 @@ async def upsert_records(records: list[dict[str, object]]) -> ImportResult:
                 fields=list(EXPECTED_HEADERS),
                 using_db=connection,
             )
+        await verify_stored_records(records, connection=connection)
     return ImportResult(total=len(records), created=len(to_create), updated=len(to_update))
 
 
-async def _run_import(path: Path) -> ImportResult:
+async def verify_stored_records(
+    records: list[dict[str, object]],
+    *,
+    connection: BaseDBAsyncClient | None = None,
+) -> None:
+    expected_keys = {
+        (str(record["grp"]), record["age"])
+        for record in records
+    }
+    query = NutrientStandard.all()
+    if connection is not None:
+        query = query.using_db(connection)
+    stored_keys = set(await query.values_list("grp", "age"))
+    missing_keys = expected_keys.difference(stored_keys)
+    if missing_keys:
+        raise RuntimeError(
+            "영양소 섭취기준 원본 키가 DB에 모두 저장되지 않았습니다: "
+            f"missing={len(missing_keys)}"
+        )
+
+
+async def _run_import(
+    path: Path,
+    *,
+    dry_run: bool,
+) -> tuple[list[dict[str, object]], ImportResult | None]:
     records = parse_csv(path)
+    if dry_run:
+        return records, None
     await Tortoise.init(config=TORTOISE_ORM)
     try:
-        return await upsert_records(records)
+        return records, await upsert_records(records)
     finally:
         await Tortoise.close_connections()
 
 
-def main() -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="2025 한국인 영양소 섭취기준 CSV를 MySQL에 적재합니다.")
     parser.add_argument("path", nargs="?", type=Path, default=DEFAULT_PATH)
-    args = parser.parse_args()
+    parser.add_argument("--dry-run", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     try:
-        result = asyncio.run(_run_import(args.path))
+        records, result = asyncio.run(
+            _run_import(
+                args.path,
+                dry_run=args.dry_run,
+            )
+        )
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    if result is None:
+        print(f"total={len(records)} dry_run=true")
+        return 0
     print(f"total={result.total} created={result.created} updated={result.updated}")
     return 0
 
