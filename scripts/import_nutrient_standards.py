@@ -139,20 +139,14 @@ async def verify_stored_records(
     *,
     connection: BaseDBAsyncClient | None = None,
 ) -> None:
-    expected_keys = {
-        (str(record["grp"]), record["age"])
-        for record in records
-    }
+    expected_keys = {(str(record["grp"]), record["age"]) for record in records}
     query = NutrientStandard.all()
     if connection is not None:
         query = query.using_db(connection)
     stored_keys = set(await query.values_list("grp", "age"))
     missing_keys = expected_keys.difference(stored_keys)
     if missing_keys:
-        raise RuntimeError(
-            "영양소 섭취기준 원본 키가 DB에 모두 저장되지 않았습니다: "
-            f"missing={len(missing_keys)}"
-        )
+        raise RuntimeError(f"영양소 섭취기준 원본 키가 DB에 모두 저장되지 않았습니다: missing={len(missing_keys)}")
 
 
 async def _run_import(

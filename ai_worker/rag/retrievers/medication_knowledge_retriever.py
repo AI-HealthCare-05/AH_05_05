@@ -418,8 +418,7 @@ class MedicationKnowledgeRetriever:
     ) -> float:
         margin = (
             cls._PAIR_BOOST_ELIGIBILITY_MARGIN
-            if cls._requires_entity_pair_match(plan)
-            and cls._matches_any_interaction_pair(result, plan=plan)
+            if cls._requires_entity_pair_match(plan) and cls._matches_any_interaction_pair(result, plan=plan)
             else cls._BOOST_ELIGIBILITY_MARGIN
         )
         if cls._has_exact_drug_section_match(
@@ -672,10 +671,7 @@ class MedicationKnowledgeRetriever:
         aliases = cls._GENERIC_FOOD_ALIASES.get(normalized_name)
         if aliases is None:
             return normalized_name in normalized_text
-        return any(
-            cls._normalize_name(alias) in normalized_text
-            for alias in aliases
-        )
+        return any(cls._normalize_name(alias) in normalized_text for alias in aliases)
 
     @classmethod
     def _has_topic_title_prefix_match(

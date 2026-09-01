@@ -130,9 +130,7 @@ def test_generation_outcome_keeps_observation_out_of_chat_result() -> None:
         observation=MedicationAnswerGenerationObservation(
             status=MedicationAnswerRewriteStatus.DRAFT_FALLBACK,
             fallback_used=True,
-            fallback_reason=(
-                MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
-            ),
+            fallback_reason=(MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT),
             draft_answer_hash="a" * 64,
             generated_answer_hash="b" * 64,
         ),

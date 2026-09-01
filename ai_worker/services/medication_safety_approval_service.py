@@ -97,10 +97,7 @@ def validate_rule_for_approval(
     elif any(not _source_is_valid(source) for source in source_list):
         issues.append("INVALID_SOURCE")
 
-    if (
-        _enum_value(getattr(rule, "review_status", "")) == "APPROVED"
-        and getattr(rule, "approved_at", None) is None
-    ):
+    if _enum_value(getattr(rule, "review_status", "")) == "APPROVED" and getattr(rule, "approved_at", None) is None:
         issues.append("APPROVED_AT_REQUIRED")
     return list(dict.fromkeys(issues))
 

@@ -76,8 +76,7 @@ async def approve_dataset(
         )
         if len(rules) != expected_count:
             raise MedicationSafetyApprovalError(
-                "DB 규칙 건수가 예상 건수와 일치하지 않습니다: "
-                f"expected={expected_count}, actual={len(rules)}"
+                f"DB 규칙 건수가 예상 건수와 일치하지 않습니다: expected={expected_count}, actual={len(rules)}"
             )
 
         report, issues = build_approval_report(
@@ -87,8 +86,7 @@ async def approve_dataset(
         if report.invalid_count:
             sample = ", ".join(f"{issue.rule_key}:{issue.code}" for issue in issues[:5])
             raise MedicationSafetyApprovalError(
-                "승인 전 규칙 검증에 실패했습니다: "
-                f"invalid={report.invalid_count}, sample={sample}"
+                f"승인 전 규칙 검증에 실패했습니다: invalid={report.invalid_count}, sample={sample}"
             )
         if report.valid_count != expected_count:
             raise MedicationSafetyApprovalError(
@@ -96,11 +94,7 @@ async def approve_dataset(
                 f"expected={expected_count}, actual={report.valid_count}"
             )
 
-        pending_ids = [
-            rule.id
-            for rule in rules
-            if rule.review_status == InteractionReviewStatus.PENDING
-        ]
+        pending_ids = [rule.id for rule in rules if rule.review_status == InteractionReviewStatus.PENDING]
         if apply and pending_ids:
             await (
                 MedicationSafetyRule.filter(id__in=pending_ids)
@@ -112,9 +106,7 @@ async def approve_dataset(
                 )
             )
 
-        approved_count = sum(
-            rule.review_status == InteractionReviewStatus.APPROVED for rule in rules
-        )
+        approved_count = sum(rule.review_status == InteractionReviewStatus.APPROVED for rule in rules)
         if apply:
             approved_count += len(pending_ids)
             if approved_count != expected_count:
@@ -124,9 +116,7 @@ async def approve_dataset(
                 .using_db(connection)
                 .values_list("approved_at", flat=True)
             )
-            effective_approved_at = max(
-                value for value in approved_times if value is not None
-            )
+            effective_approved_at = max(value for value in approved_times if value is not None)
         else:
             effective_approved_at = None
 

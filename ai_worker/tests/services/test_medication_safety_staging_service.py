@@ -280,16 +280,8 @@ def test_build_converts_integer_months_to_days_and_skips_unsafe_rows(
         "UNSUPPORTED_AGE_MONTH_UNIT": 1,
     }
     candidates = load_candidates(tmp_path / "processed", result.candidates_path)
-    six_month_candidate = next(
-        item
-        for item in candidates
-        if item.entity.source_code == "D1"
-    )
-    twelve_month_candidate = next(
-        item
-        for item in candidates
-        if item.entity.source_code == "D2"
-    )
+    six_month_candidate = next(item for item in candidates if item.entity.source_code == "D1")
+    twelve_month_candidate = next(item for item in candidates if item.entity.source_code == "D2")
     assert six_month_candidate.conditions[0].condition_kind == SafetyConditionKind.AGE_DAYS
     assert six_month_candidate.conditions[0].value_min == 180
     assert six_month_candidate.conditions[0].unit == "day"

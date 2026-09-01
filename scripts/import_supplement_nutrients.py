@@ -232,9 +232,7 @@ def validate_mfds_rows(
     required_headers = set(MFDS_HEADER_BY_FIELD.values())
     missing_headers = sorted(required_headers.difference(header_indexes))
     if missing_headers:
-        raise ImportValidationError(
-            f"header mismatch at row {header_row_number}: missing={','.join(missing_headers)}"
-        )
+        raise ImportValidationError(f"header mismatch at row {header_row_number}: missing={','.join(missing_headers)}")
 
     selected_rows = [
         [
@@ -338,17 +336,12 @@ async def verify_stored_records(
     stored_codes = set(await query.values_list("food_code", flat=True))
     missing_codes = expected_codes.difference(stored_codes)
     if missing_codes:
-        raise RuntimeError(
-            "건강기능식품 원본 식품코드가 DB에 모두 저장되지 않았습니다: "
-            f"missing={len(missing_codes)}"
-        )
+        raise RuntimeError(f"건강기능식품 원본 식품코드가 DB에 모두 저장되지 않았습니다: missing={len(missing_codes)}")
 
 
 def _validate_expected_count(records: list[dict[str, object]], expected_count: int | None) -> None:
     if expected_count is not None and len(records) != expected_count:
-        raise ImportValidationError(
-            f"expected {expected_count} records, received {len(records)}"
-        )
+        raise ImportValidationError(f"expected {expected_count} records, received {len(records)}")
 
 
 async def _run_import(

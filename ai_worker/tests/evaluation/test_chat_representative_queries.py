@@ -40,9 +40,7 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
     assert losartan_case["expected"]["required_source_kinds"] == [
         "PUBLIC_KNOWLEDGE",
     ]
-    vitamin_b_function_case = next(
-        case for case in cases if case["query_id"] == "vector-vitamin-b-family-function"
-    )
+    vitamin_b_function_case = next(case for case in cases if case["query_id"] == "vector-vitamin-b-family-function")
     assert vitamin_b_function_case["expected"]["route"] == "SUPPLEMENT_GUIDE"
     assert vitamin_b_function_case["expected"]["normalized_entities"] == [
         {
@@ -50,14 +48,10 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
             "canonical_name": "비타민 B",
         }
     ]
-    vitamin_b_intake_case = next(
-        case for case in cases if case["query_id"] == "clarification-vitamin-b-family-intake"
-    )
+    vitamin_b_intake_case = next(case for case in cases if case["query_id"] == "clarification-vitamin-b-family-intake")
     assert vitamin_b_intake_case["expected"]["route"] == "CLARIFICATION"
     assert vitamin_b_intake_case["expected"]["required_source_kinds"] == []
-    vitamin_b6_case = next(
-        case for case in cases if case["query_id"] == "vector-vitamin-b6-intake"
-    )
+    vitamin_b6_case = next(case for case in cases if case["query_id"] == "vector-vitamin-b6-intake")
     assert vitamin_b6_case["expected"]["normalized_entities"] == [
         {
             "entity_type": "INGREDIENT_NAME",

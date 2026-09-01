@@ -226,9 +226,7 @@ async def test_search_rescues_verified_drug_food_relation_with_food_alias() -> N
     target = build_chunk(
         0.49,
         title="비스포스포네이트 복약 안내",
-        content=(
-            "알렌드로네이트는 아침 공복에 충분한 물과 함께 복용해야 합니다."
-        ),
+        content=("알렌드로네이트는 아침 공복에 충분한 물과 함께 복용해야 합니다."),
         document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
         section_type=KnowledgeSectionType.INTERACTION,
     )

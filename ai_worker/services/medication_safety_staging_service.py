@@ -560,12 +560,7 @@ def _parse_age_condition(value: str) -> MedicationSafetyConditionCandidate:
 
 
 def _parse_amount(value: str) -> tuple[Decimal, str]:
-    compact = (
-        _compact(value)
-        .replace("|", "")
-        .replace(",", "")
-        .replace("mg밀리그램", "mg")
-    )
+    compact = _compact(value).replace("|", "").replace(",", "").replace("mg밀리그램", "mg")
     matches = list(_AMOUNT_PATTERN.finditer(compact))
     if not matches:
         raise _SkipRowError("UNSUPPORTED_DOSE_EXPRESSION", value)
