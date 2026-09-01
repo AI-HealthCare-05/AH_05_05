@@ -194,10 +194,18 @@ def test_care_v4_metadata() -> None:
     assert ("care_episode", "category") in care.CareAdvice._meta.indexes
     assert care.FollowUpVisit._meta.fields_map["visit_date"].null is False
     assert care.FollowUpVisit._meta.fields_map["visit_time"].null is True
-    assert care.FollowUpVisit._meta.fields_map["source_ocr_job"].on_delete == fields.SET_NULL
-    assert care.FollowUpVisit._meta.fields_map["source_ocr_job"].model_name == "models.OcrJob"
-    assert care.FollowUpVisit._meta.fields_map["department"].max_length == 255
-    assert care.FollowUpVisit._meta.fields_map["doctor_name"].max_length == 255
+    assert "source_ocr_job" not in care.FollowUpVisit._meta.fields_map
+    assert "source_ocr_job_id" not in care.FollowUpVisit._meta.db_fields
+    assert care.FollowUpVisit._meta.fields_map["user"].model_name == "models.User"
+    assert care.FollowUpVisit._meta.fields_map["user"].on_delete == fields.CASCADE
+    assert care.FollowUpVisit._meta.fields_map["user"].null is False
+    assert care.FollowUpVisit._meta.fields_map["hospital"].max_length == 255
+    assert care.FollowUpVisit._meta.fields_map["hospital"].null is True
+    assert "department" not in care.FollowUpVisit._meta.fields_map
+    assert {"care_episode", "care_episode_id", "doctor_name", "place", "purpose"}.isdisjoint(
+        care.FollowUpVisit._meta.fields_map
+    )
+    assert ("user",) in care.FollowUpVisit._meta.indexes
     assert ("visit_date", "visit_time", "id") in care.FollowUpVisit._meta.indexes
     assert "visit_at" not in care.FollowUpVisit._meta.fields_map
 

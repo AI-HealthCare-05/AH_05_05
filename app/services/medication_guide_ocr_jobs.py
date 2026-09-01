@@ -408,10 +408,8 @@ class MedicationGuideOcrJobService:
             if request.next_visit_date is not None:
                 await FollowUpVisit.create(
                     using_db=connection,
-                    care_episode_id=episode.id,
-                    source_ocr_job_id=job.id,
+                    user_id=user.id,
                     visit_date=request.next_visit_date,
-                    purpose="다음 내방일",
                 )
 
             job.status = OcrJobStatus.COMPLETE

@@ -464,9 +464,9 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert medications[0].note == "식후 복용"
             assert medications[2].note == "필요 시 복용"
             assert all(item.source_ocr_job_id == job.id for item in medications)
-            visit = await FollowUpVisit.get(care_episode=episode)
+            visit = await FollowUpVisit.get(user=user)
             assert visit.visit_date == date(2026, 9, 1)
-            assert visit.source_ocr_job_id == job.id
+            assert visit.user_id == user.id
             stored_job = await OcrJob.get(id=job.id)
             assert stored_job.status is OcrJobStatus.COMPLETE
             assert stored_job.care_episode_id == episode.id
