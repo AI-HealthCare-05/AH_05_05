@@ -42,4 +42,3 @@
 - 375px에서 정렬 칩과 화면 오버플로우를 확인한다.
 - 목업과 실 API 모드 E2E를 각각 실행한다.
 - TypeScript, Vite build, Ruff, 마이그레이션·모델·금지 파일 diff를 확인한다.
-
