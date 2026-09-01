@@ -86,7 +86,7 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
   await page.getByLabel('비밀번호 확인').fill('password1234');
-  await page.getByLabel('이름').fill('신규 사용자');
+  await page.getByLabel('이름').fill('신규사용자');
   await page.getByLabel('전화번호').fill('01012345678');
   await page.getByLabel('생년월일').fill('1990-01-01');
   await page.getByRole('radio', { name: '여성' }).check();
@@ -104,7 +104,7 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
   await page.getByLabel('비밀번호 확인').fill('password1234');
-  await page.getByLabel('이름').fill('신규 사용자');
+  await page.getByLabel('이름').fill('신규사용자');
   await page.getByLabel('전화번호').fill('01012345678');
   await page.getByLabel('생년월일').fill('1990-01-01');
   await page.getByRole('radio', { name: '여성' }).check();

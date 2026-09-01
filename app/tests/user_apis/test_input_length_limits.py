@@ -6,10 +6,11 @@ from app.main import app
 from app.models.enums import AccountStatus
 from app.models.users import User
 
-# 정책이 생기기 전에 가입한 계정을 흉내낸다. 상한(32)보다 길다.
+# 정책이 생기기 전에 가입한 계정을 흉내낸다. 상한(30)보다 길다.
+# 33자 그대로 둔다 — 30자 상한에서도 초과값이라 테스트 의미가 유지된다.
 LEGACY_PASSWORD = "LegacyPassword1234567890!@#$%^&*()"
-LIMIT_PASSWORD = "Aa1!" + "b" * 28  # 정확히 32자
-OVER_PASSWORD = LIMIT_PASSWORD + "c"  # 33자
+LIMIT_PASSWORD = "Aa1!" + "b" * 26  # 정확히 30자
+OVER_PASSWORD = LIMIT_PASSWORD + "c"  # 31자
 
 
 def signup_data(email: str, **overrides):
