@@ -47,6 +47,16 @@ class PasswordChangeResponse(CamelModel):
     detail: str
 
 
+class WithdrawRequest(CamelModel):
+    """마이페이지 「회원 탈퇴」. 본인 확인용이라 비밀번호 하나만 받는다.
+
+    validate_password 를 붙이지 않는다. 새로 정하는 비밀번호가 아니라 대조용이고,
+    정책이 바뀌기 전에 가입한 계정이 자기 비밀번호로 탈퇴하지 못하게 된다.
+    """
+
+    password: Annotated[str, Field(min_length=1)]
+
+
 class UserInfoResponse(CamelModel):
     id: int
     name: str
