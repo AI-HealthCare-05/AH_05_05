@@ -7,6 +7,7 @@ from tortoise.transactions import in_transaction
 from app.core import config
 from app.dtos.supplement_nutrients import SupplementNutrientResponse
 from app.dtos.user_supplement_nutrients import (
+    ManualSupplementNutrientCreateRequest,
     NutrientStandardValues,
     SupplementSlotResponse,
     UserNutrientStandardResponse,
@@ -64,6 +65,25 @@ class UserSupplementNutrientService:
             registration_id = await self._write_upsert(user.id, supplement_nutrient_id, data)
         except IntegrityError:
             registration_id = await self._write_upsert(user.id, supplement_nutrient_id, data)
+        return await self.get(user, registration_id)
+
+    async def create_manual(
+        self,
+        user: User,
+        data: ManualSupplementNutrientCreateRequest,
+    ) -> UserSupplementNutrientResponse:
+        async with in_transaction() as connection:
+            await self.repository.get_or_create_settings(user.id, connection)
+            values = data.model_dump(exclude={"slots"})
+            registration = await UserSupplementNutrient.create(
+                user_id=user.id,
+                supplement_nutrient_id=None,
+                status=SupplementStatus.ACTIVE,
+                using_db=connection,
+                **values,
+            )
+            await self.repository.replace_slots(registration.id, data.slots, connection)
+            registration_id = registration.id
         return await self.get(user, registration_id)
 
     async def _write_upsert(
@@ -245,12 +265,14 @@ class UserSupplementNutrientService:
         slots = sorted(registration.slots, key=lambda item: SLOT_ORDER[item.slot])
         return UserSupplementNutrientResponse(
             id=registration.id,
+            custom_name=registration.custom_name,
             dose_amount=registration.dose_amount,
             dose_unit=registration.dose_unit,
             start_date=registration.start_date,
             end_date=registration.end_date,
             status=registration.status,
             note=registration.note,
+            score=registration.score,
             created_at=registration.created_at,
             updated_at=registration.updated_at,
             slots=[
@@ -260,5 +282,9 @@ class UserSupplementNutrientService:
                 )
                 for slot in slots
             ],
-            supplement=SupplementNutrientResponse.model_validate(registration.supplement_nutrient),
+            supplement=(
+                SupplementNutrientResponse.model_validate(registration.supplement_nutrient)
+                if registration.supplement_nutrient is not None
+                else None
+            ),
         )

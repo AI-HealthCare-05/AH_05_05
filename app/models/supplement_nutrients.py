@@ -169,7 +169,9 @@ class UserSupplementNutrient(models.Model):
         "models.SupplementNutrient",
         related_name="user_registrations",
         on_delete=fields.RESTRICT,
+        null=True,
     )
+    custom_name = fields.CharField(max_length=255, null=True)
     dose_amount = fields.DecimalField(
         max_digits=8,
         decimal_places=3,
@@ -180,6 +182,11 @@ class UserSupplementNutrient(models.Model):
     end_date = fields.DateField(null=True)
     status = fields.CharEnumField(SupplementStatus, default=SupplementStatus.ACTIVE)
     note = fields.CharField(max_length=500, null=True)
+    score = fields.IntField(
+        null=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        description="사용자가 남긴 별점 1~5",
+    )
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True, null=True)
 

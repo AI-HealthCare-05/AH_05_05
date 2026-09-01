@@ -75,23 +75,52 @@ class AdminDashboardService:
             generated_at=now,
             members=await self._members(now, start, previous_start, previous_end),
             alarm_notifications=await self._alarm_notifications(now.date()),
-            ocr_documents=await self._ocr_documents(),
+            ocr_documents=await self._ocr_documents(start, now),
         )
 
     @staticmethod
-    async def _ocr_documents() -> OcrDocumentStats:
-        """OCR 모든 상태의 합계와 화면에 노출하는 주요 상태를 한 번에 집계한다."""
+    async def _ocr_documents(start: datetime, end: datetime) -> OcrDocumentStats:
+        """OCR 상태 건수와 선택 기간의 작업별 필드 confidence 평균을 집계한다."""
         rows: list[dict[str, Any]] = (
             await OcrJob.all().annotate(total=Count("id")).group_by("status").values("status", "total")
         )
         counts = {OcrJobStatus(row["status"]): row["total"] for row in rows}
+        payloads = await OcrJob.filter(created_at__gte=start, created_at__lte=end).values_list(
+            "structured_result", flat=True
+        )
+        job_confidences = [
+            average
+            for payload in payloads
+            if (average := AdminDashboardService._field_confidence_average(payload)) is not None
+        ]
 
         return OcrDocumentStats(
             total=sum(counts.values()),
             queued=counts.get(OcrJobStatus.QUEUED, 0),
             completed=counts.get(OcrJobStatus.COMPLETE, 0),
             failed=counts.get(OcrJobStatus.FAILED, 0),
+            avg_field_confidence=(round(sum(job_confidences) / len(job_confidences), 6) if job_confidences else None),
         )
+
+    @staticmethod
+    def _field_confidence_average(payload: object) -> float | None:
+        if not isinstance(payload, dict):
+            return None
+        fields = payload.get("ocrFields")
+        if not isinstance(fields, list):
+            return None
+
+        confidences: list[float] = []
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            value = field.get("confidence")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            confidence = float(value)
+            if 0.0 <= confidence <= 1.0:
+                confidences.append(confidence)
+        return sum(confidences) / len(confidences) if confidences else None
 
     @staticmethod
     async def _alarm_notifications(today: date) -> AlarmNotificationStats:

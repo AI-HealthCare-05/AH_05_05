@@ -177,6 +177,31 @@ async def test_provider_returns_only_current_user_active_intakes(
 
 
 @pytest.mark.asyncio
+async def test_ai_context_excludes_manual_registrations(
+    initialized_db: None,
+) -> None:
+    user = await _create_user(1, "manual-supplement@example.com")
+    await UserSupplementNutrient.create(
+        user=user,
+        supplement_nutrient_id=None,
+        custom_name="직접 입력 영양제",
+        dose_amount="1",
+        dose_unit="정",
+        start_date=date(2026, 8, 1),
+        status=SupplementStatus.ACTIVE,
+    )
+
+    context = await DbActiveIntakeContextProvider(
+        today_provider=lambda: date(2026, 8, 25),
+    ).get_active_context(
+        user_id=user.id,
+        care_episode_id=None,
+    )
+
+    assert context.supplements == []
+
+
+@pytest.mark.asyncio
 async def test_provider_rejects_unowned_episode(
     initialized_db: None,
 ) -> None:
