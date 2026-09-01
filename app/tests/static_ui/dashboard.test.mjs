@@ -108,8 +108,18 @@ test("OCR document card exposes API count slots without change badges", async ()
   assert.match(ocrCard, /data-ocr-queued/);
   assert.match(ocrCard, /data-ocr-completed/);
   assert.match(ocrCard, /data-ocr-failed/);
+  assert.match(ocrCard, /data-ocr-accuracy/);
   assert.match(ocrCard, /OCR 추출 정확도/);
+  assert.match(ocrCard, /각 필드의 confidence 평균을 나타냅니다\./);
   assert.doesNotMatch(ocrCard, /[▲▼—]/);
+});
+
+test("OCR field confidence is formatted as one decimal percent or no-data text", async () => {
+  const dashboard = await import("../../static/js/dashboard.js");
+
+  assert.equal(typeof dashboard.formatOcrConfidence, "function");
+  assert.equal(dashboard.formatOcrConfidence(0.9846), "98.5%");
+  assert.equal(dashboard.formatOcrConfidence(null), "데이터 없음");
 });
 
 test("OCR accuracy uses the shared RxVita accent tokens", async () => {
@@ -120,4 +130,23 @@ test("OCR accuracy uses the shared RxVita accent tokens", async () => {
   assert.match(accuracyCard, /border:6px solid var\(--brand-primary\)/);
   assert.match(accuracyCard, /color:var\(--brand-primary-strong\)/);
   assert.doesNotMatch(accuracyCard, /#1c64f2/);
+});
+
+test("dashboard uses blue for successful states and red for negative states", async () => {
+  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+
+  assert.match(html, /style="color:#2563eb;">활성<\/p>/);
+  assert.match(html, /data-member-active[^>]+style="color:#2563eb;"/);
+  assert.match(html, /style="color:#dc2626;">탈퇴<\/p>/);
+  assert.match(html, /data-member-withdrawn[^>]+style="color:#dc2626;"/);
+
+  for (const slot of ["ocr-completed", "alarm-completed"]) {
+    assert.match(html, new RegExp(`data-${slot}[^>]+style="color:#2563eb;"`));
+  }
+  for (const slot of ["ocr-failed", "alarm-failed"]) {
+    assert.match(html, new RegExp(`data-${slot}[^>]+style="color:#dc2626;"`));
+  }
+
+  assert.match(html, /style="color:#2563eb;">응답 성공<\/p>/);
+  assert.match(html, /style="color:#dc2626;">응답 실패<\/p>/);
 });
