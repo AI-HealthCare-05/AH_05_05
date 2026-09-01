@@ -119,6 +119,37 @@ async def test_run_cli_writes_report_and_closes_client(
     assert KnowledgeEvaluationReport.model_validate_json(output_path.read_text(encoding="utf-8")) == report
 
 
+async def test_run_cli_reuses_same_questions_with_cli_dataset_version(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    args = Namespace(
+        evaluation_file=tmp_path / "queries.yaml",
+        dataset_version="knowledge-full-v2-interaction-metadata",
+        collection="medication_knowledge_full_v2",
+        output=tmp_path / "candidate.json",
+    )
+    settings = module.Config(
+        _env_file=None,
+        OPENAI_API_KEY=SecretStr("test-key"),
+    )
+    report = build_report(passed=True).model_copy(
+        update={
+            "dataset_version": args.dataset_version,
+            "collection_name": args.collection,
+        }
+    )
+    evaluator = FakeEvaluator(report)
+    monkeypatch.setattr(module, "load_evaluation_manifest", lambda path: build_manifest())
+    monkeypatch.setattr(module, "create_qdrant_client", lambda settings: FakeClient())
+    monkeypatch.setattr(module, "build_evaluator", lambda **kwargs: evaluator)
+
+    await module.run_cli(args=args, settings=settings)
+
+    assert evaluator.received_manifest is not None
+    assert evaluator.received_manifest.dataset_version == args.dataset_version
+
+
 def test_exit_code_is_two_when_quality_gate_fails() -> None:
     assert module.exit_code_for(build_report(passed=False)) == 2
     assert module.exit_code_for(build_report(passed=True)) == 0

@@ -1,9 +1,13 @@
-import math
+import hashlib
+import json
 from collections.abc import Callable
 from time import perf_counter
 from typing import Protocol
 
 from ai_worker.domain.interfaces import EmbeddingProvider
+from ai_worker.rag.evaluators.knowledge_evaluation_metrics import (
+    calculate_knowledge_evaluation_metrics,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchQuery,
     RetrievedKnowledgeChunk,
@@ -29,6 +33,8 @@ class KnowledgeSearchStore(Protocol):
 
 
 class KnowledgeRetrievalEvaluator:
+    _EVALUATOR_VERSION = "knowledge-retrieval-evaluator-v2"
+
     def __init__(
         self,
         *,
@@ -65,37 +71,63 @@ class KnowledgeRetrievalEvaluator:
                 )
             )
 
-        query_count = len(query_results)
-        total_retrieved = sum(result.retrieved_count for result in query_results)
-        total_relevant = sum(result.relevant_count for result in query_results)
-        total_duplicates = sum(result.duplicate_count for result in query_results)
-        wrong_entity_mixing_count = sum(result.wrong_entity_mixing_count for result in query_results)
-        hit_at_5 = sum(result.hit_at_5 for result in query_results) / query_count
-        mrr = sum(result.reciprocal_rank for result in query_results) / query_count
-        citation_accuracy = total_relevant / total_retrieved if total_retrieved else 0.0
-        duplicate_rate = total_duplicates / total_retrieved if total_retrieved else 0.0
-        search_p95_ms = self._nearest_rank_p95([result.search_latency_ms for result in query_results])
+        metrics = calculate_knowledge_evaluation_metrics(query_results)
         thresholds = manifest.thresholds
-        passed = (
-            hit_at_5 >= thresholds.min_hit_at_5
-            and citation_accuracy >= thresholds.min_citation_accuracy
-            and wrong_entity_mixing_count <= thresholds.max_wrong_entity_mixing_count
-            and search_p95_ms <= thresholds.max_search_p95_ms
+        accuracy_passed = (
+            metrics.hit_at_5 >= thresholds.min_hit_at_5
+            and metrics.citation_accuracy >= thresholds.min_citation_accuracy
+            and metrics.wrong_entity_mixing_count <= thresholds.max_wrong_entity_mixing_count
         )
+        latency_passed = metrics.search_p95_ms <= thresholds.max_search_p95_ms
 
         return KnowledgeEvaluationReport(
             dataset_version=manifest.dataset_version,
             collection_name=self._vector_store.collection_name,
-            query_count=query_count,
-            hit_at_5=round(hit_at_5, 6),
-            mrr=round(mrr, 6),
-            citation_accuracy=round(citation_accuracy, 6),
-            duplicate_retrieval_rate=round(duplicate_rate, 6),
-            wrong_entity_mixing_count=wrong_entity_mixing_count,
-            search_p95_ms=round(search_p95_ms, 3),
-            passed=passed,
+            query_count=len(query_results),
+            hit_at_5=metrics.hit_at_5,
+            mrr=metrics.mrr,
+            citation_accuracy=metrics.citation_accuracy,
+            duplicate_retrieval_rate=metrics.duplicate_retrieval_rate,
+            wrong_entity_mixing_count=metrics.wrong_entity_mixing_count,
+            search_p95_ms=metrics.search_p95_ms,
+            evaluation_contract_hash=self._evaluation_contract_hash(
+                manifest,
+                embedding_model_name=self._embedding_provider.model_name,
+                embedding_dimension=self._embedding_provider.dimension,
+            ),
+            accuracy_passed=accuracy_passed,
+            latency_passed=latency_passed,
+            passed=accuracy_passed and latency_passed,
             query_results=query_results,
         )
+
+    @staticmethod
+    def _evaluation_contract_hash(
+        manifest: KnowledgeEvaluationManifest,
+        *,
+        embedding_model_name: str,
+        embedding_dimension: int,
+    ) -> str:
+        contract = manifest.model_dump(
+            mode="json",
+            exclude={"dataset_version"},
+        )
+        contract["cases"] = sorted(
+            contract["cases"],
+            key=lambda case: case["query_id"],
+        )
+        contract["evaluator_version"] = (
+            KnowledgeRetrievalEvaluator._EVALUATOR_VERSION
+        )
+        contract["embedding_model_name"] = embedding_model_name
+        contract["embedding_dimension"] = embedding_dimension
+        canonical = json.dumps(
+            contract,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _build_search_query(
@@ -184,9 +216,3 @@ class KnowledgeRetrievalEvaluator:
             return False
         actual = set(result.metadata.drug_names) | set(result.metadata.ingredient_names)
         return bool(actual) and actual.isdisjoint(expected)
-
-    @staticmethod
-    def _nearest_rank_p95(values: list[float]) -> float:
-        ordered = sorted(values)
-        rank = max(math.ceil(0.95 * len(ordered)) - 1, 0)
-        return ordered[rank]

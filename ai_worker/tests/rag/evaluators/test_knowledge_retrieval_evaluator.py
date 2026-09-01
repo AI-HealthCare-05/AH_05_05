@@ -1,5 +1,8 @@
 from collections.abc import Callable
 
+import pytest
+from pydantic import ValidationError
+
 from ai_worker.rag.evaluators.knowledge_retrieval_evaluator import (
     KnowledgeRetrievalEvaluator,
 )
@@ -136,6 +139,9 @@ async def test_evaluate_computes_retrieval_metrics() -> None:
     assert report.citation_accuracy == 0.5
     assert report.duplicate_retrieval_rate == 0.25
     assert report.search_p95_ms == 40.0
+    assert report.evaluation_contract_hash
+    assert report.accuracy_passed is False
+    assert report.latency_passed is True
     assert report.passed is False
     assert [query.dataset_version for query in store.received_queries] == [
         "knowledge-pilot-v1",
@@ -249,3 +255,160 @@ async def test_evaluate_requires_expected_section_for_relevance() -> None:
 
     assert report.hit_at_5 == 0.0
     assert report.citation_accuracy == 0.0
+
+
+async def test_evaluate_separates_accuracy_and_latency_gates() -> None:
+    store = SequenceKnowledgeStore(responses=[[build_result("a", document_id="document-a")]])
+    evaluator = KnowledgeRetrievalEvaluator(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        timer=sequence_timer([0.0, 0.5]),
+    )
+    manifest = KnowledgeEvaluationManifest(
+        dataset_version="knowledge-pilot-v1",
+        thresholds={
+            "min_hit_at_5": 1.0,
+            "min_citation_accuracy": 1.0,
+            "max_wrong_entity_mixing_count": 0,
+            "max_search_p95_ms": 100.0,
+        },
+        cases=[
+            KnowledgeEvaluationCase(
+                query_id="slow-but-accurate",
+                query="정확한 근거",
+                expected_document_ids=["document-a"],
+            )
+        ],
+    )
+
+    report = await evaluator.evaluate(manifest)
+
+    assert report.accuracy_passed is True
+    assert report.latency_passed is False
+    assert report.passed is False
+
+
+def test_manifest_rejects_duplicate_query_ids() -> None:
+    case = {
+        "query_id": "duplicate-query",
+        "query": "칼슘과 철분을 같이 먹어도 되나요?",
+        "expected_document_ids": ["calcium-iron-paper"],
+    }
+
+    with pytest.raises(ValidationError, match="query_id"):
+        KnowledgeEvaluationManifest.model_validate(
+            {
+                "dataset_version": "knowledge-full-v1",
+                "cases": [case, case],
+            }
+        )
+
+
+def test_evaluation_contract_hash_ignores_dataset_version_and_case_order() -> None:
+    first = KnowledgeEvaluationManifest(
+        dataset_version="knowledge-full-v1",
+        cases=[
+            KnowledgeEvaluationCase(
+                query_id="b",
+                query="비타민 K와 와파린",
+                expected_document_ids=["warfarin-vitamin-k"],
+            ),
+            KnowledgeEvaluationCase(
+                query_id="a",
+                query="칼슘과 철분",
+                expected_document_ids=["calcium-iron"],
+            ),
+        ],
+    )
+    second = first.model_copy(
+        update={
+            "dataset_version": "knowledge-full-v2",
+            "cases": list(reversed(first.cases)),
+        }
+    )
+
+    assert KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+        first,
+        embedding_model_name="test-embedding",
+        embedding_dimension=3,
+    ) == KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+        second,
+        embedding_model_name="test-embedding",
+        embedding_dimension=3,
+    )
+
+
+def test_evaluation_contract_hash_changes_with_query_or_threshold() -> None:
+    manifest = KnowledgeEvaluationManifest(
+        dataset_version="knowledge-full-v1",
+        cases=[
+            KnowledgeEvaluationCase(
+                query_id="calcium-iron",
+                query="칼슘과 철분",
+                expected_document_ids=["calcium-iron"],
+            )
+        ],
+    )
+    changed_query = manifest.model_copy(
+        update={"cases": [manifest.cases[0].model_copy(update={"query": "칼슘과 철분을 함께 먹어도 되나요?"})]}
+    )
+    changed_threshold = manifest.model_copy(
+        update={"thresholds": manifest.thresholds.model_copy(update={"min_citation_accuracy": 0.95})}
+    )
+
+    baseline_hash = KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+        manifest,
+        embedding_model_name="test-embedding",
+        embedding_dimension=3,
+    )
+    assert (
+        KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+            changed_query,
+            embedding_model_name="test-embedding",
+            embedding_dimension=3,
+        )
+        != baseline_hash
+    )
+    assert (
+        KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+            changed_threshold,
+            embedding_model_name="test-embedding",
+            embedding_dimension=3,
+        )
+        != baseline_hash
+    )
+
+
+def test_evaluation_contract_hash_changes_with_embedding_provenance() -> None:
+    manifest = KnowledgeEvaluationManifest(
+        dataset_version="knowledge-full-v1",
+        cases=[
+            KnowledgeEvaluationCase(
+                query_id="calcium-iron",
+                query="칼슘과 철분",
+                expected_document_ids=["calcium-iron"],
+            )
+        ],
+    )
+    baseline_hash = KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+        manifest,
+        embedding_model_name="text-embedding-3-small",
+        embedding_dimension=1536,
+    )
+
+    assert (
+        KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+            manifest,
+            embedding_model_name="text-embedding-3-large",
+            embedding_dimension=1536,
+        )
+        != baseline_hash
+    )
+    assert (
+        KnowledgeRetrievalEvaluator._evaluation_contract_hash(
+            manifest,
+            embedding_model_name="text-embedding-3-small",
+            embedding_dimension=3072,
+        )
+        != baseline_hash
+    )

@@ -14,6 +14,7 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
 from ai_worker.schemas.interaction import (
     InteractionEntityKind,
     InteractionPairType,
+    interaction_pair_type_for_kinds,
 )
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 
@@ -311,22 +312,6 @@ class MedicationQueryEntityNormalizer:
 class MedicationKnowledgeQueryBuilder:
     _MEDICATION_PRODUCT_CUE = MedicationQueryEntityNormalizer._MEDICATION_PRODUCT_CUE
     _MAX_INTERACTION_PAIRS = 6
-    _PAIR_TYPE_BY_KINDS = {
-        frozenset({InteractionEntityKind.DRUG}): InteractionPairType.DRUG_DRUG,
-        frozenset(
-            {
-                InteractionEntityKind.DRUG,
-                InteractionEntityKind.SUPPLEMENT,
-            }
-        ): InteractionPairType.DRUG_SUPPLEMENT,
-        frozenset({InteractionEntityKind.SUPPLEMENT}): InteractionPairType.SUPPLEMENT_SUPPLEMENT,
-        frozenset(
-            {
-                InteractionEntityKind.DRUG,
-                InteractionEntityKind.FOOD,
-            }
-        ): InteractionPairType.DRUG_FOOD,
-    }
     _PAIR_TYPE_PRIORITY = {
         InteractionPairType.DRUG_DRUG: 0,
         InteractionPairType.DRUG_SUPPLEMENT: 1,
@@ -450,7 +435,10 @@ class MedicationKnowledgeQueryBuilder:
     ) -> list[MedicationInteractionQueryPair]:
         pairs: list[MedicationInteractionQueryPair] = []
         for left_entity, right_entity in combinations(entities, 2):
-            pair_type = cls._PAIR_TYPE_BY_KINDS.get(frozenset({left_entity.kind, right_entity.kind}))
+            pair_type = interaction_pair_type_for_kinds(
+                left_entity.kind,
+                right_entity.kind,
+            )
             if pair_type is None:
                 continue
             pairs.append(

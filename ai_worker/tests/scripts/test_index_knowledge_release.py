@@ -49,6 +49,7 @@ async def test_run_cli_loads_release_and_closes_client(
         embedding_batch_size=64,
         upsert_batch_size=64,
         allow_demo_restricted=False,
+        interaction_annotations=None,
     )
     settings = module.Config(
         _env_file=None,
@@ -98,6 +99,11 @@ async def test_run_cli_loads_release_and_closes_client(
         "ensure_preprocessing_approved",
         lambda chunks, **kwargs: None,
     )
+    monkeypatch.setattr(
+        module,
+        "ensure_interaction_annotations_applied",
+        lambda chunks, **kwargs: None,
+    )
 
     result = await module.run_cli(args=args, settings=settings)
 
@@ -144,6 +150,93 @@ def test_parse_args_requires_explicit_demo_restricted_opt_in() -> None:
     assert default_args.allow_demo_restricted is False
     assert approved_args.allow_demo_restricted is True
     assert default_args.quality_report == Path("data/knowledge/processed/reports/preprocessing-quality.json")
+    assert default_args.interaction_annotations is None
+
+
+def test_parse_args_accepts_interaction_annotation_contract() -> None:
+    args = module.parse_args(
+        [
+            "--dataset-version",
+            "knowledge-full-v2-interaction-metadata",
+            "--collection",
+            "medication_knowledge_full_v2",
+            "--interaction-annotations",
+            "data/knowledge/manifests/interaction_annotations.yaml",
+        ]
+    )
+
+    assert args.interaction_annotations == Path("data/knowledge/manifests/interaction_annotations.yaml")
+
+
+def test_rejects_release_when_required_annotation_pair_is_missing(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "annotations.yaml"
+    annotation_path.write_text(
+        """
+documents:
+  - document_id: mfds-guide
+    pairs:
+      - pair_type: DRUG_FOOD
+        left:
+          kind: DRUG
+          display_name: 펙소페나딘
+          aliases: [펙소페나딘]
+        right:
+          kind: FOOD
+          display_name: 과일주스
+          aliases: [과일주스]
+""".strip(),
+        encoding="utf-8",
+    )
+    chunk = SimpleNamespace(
+        metadata=SimpleNamespace(
+            document_id="mfds-guide",
+            interaction_pair_keys=[],
+        ),
+    )
+
+    with pytest.raises(ValueError, match="주석.*적용"):
+        module.ensure_interaction_annotations_applied(
+            [chunk],
+            annotation_path=annotation_path,
+        )
+
+
+def test_rejects_annotation_pair_found_only_in_the_wrong_document(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "annotations.yaml"
+    annotation_path.write_text(
+        """
+documents:
+  - document_id: expected-document
+    pairs:
+      - pair_type: DRUG_FOOD
+        left:
+          kind: DRUG
+          display_name: 펙소페나딘
+          aliases: [펙소페나딘]
+        right:
+          kind: FOOD
+          display_name: 과일주스
+          aliases: [과일주스]
+""".strip(),
+        encoding="utf-8",
+    )
+    registry = module.KnowledgeInteractionAnnotationRegistry.from_yaml(annotation_path)
+    chunk = SimpleNamespace(
+        metadata=SimpleNamespace(
+            document_id="wrong-document",
+            interaction_pair_keys=registry.required_pair_keys(),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="expected-document"):
+        module.ensure_interaction_annotations_applied(
+            [chunk],
+            annotation_path=annotation_path,
+        )
 
 
 def test_rejects_demo_restricted_chunks_without_explicit_opt_in() -> None:
