@@ -23,6 +23,19 @@ def test_extracts_drug_name_from_adverse_case_title() -> None:
     assert entities.drug_names == ["독사조신"]
 
 
+def test_extracts_verified_bilingual_drug_name_aliases() -> None:
+    entities = KnowledgeEntityExtractor().extract_from_title(
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="로사르탄(losartan)",
+    )
+
+    assert entities.drug_names == [
+        "로사르탄(losartan)",
+        "로사르탄",
+        "losartan",
+    ]
+
+
 def test_does_not_assign_all_document_words_as_supplement_names() -> None:
     entities = KnowledgeEntityExtractor().extract_from_title(
         document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,

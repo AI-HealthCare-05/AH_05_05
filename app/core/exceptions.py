@@ -335,6 +335,12 @@ class ChatUpstreamUnavailableError(AppError):
     message = "답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
 
 
+class ChatAnswerTimeoutError(AppError):
+    status_code = status.HTTP_504_GATEWAY_TIMEOUT
+    code = "API_TIMEOUT"
+    message = "답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
+
+
 class ChatProcessingFailedError(AppError):
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     code = "CHAT_PROCESSING_FAILED"

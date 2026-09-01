@@ -183,6 +183,25 @@ class RetrievedKnowledgeChunk(KnowledgeChunk):
     similarity_score: float = Field(ge=-1.0, le=1.0)
 
 
+class KnowledgeRetrievalDiagnostics(BaseModel):
+    raw_candidate_count: int = Field(ge=0)
+    entity_filtered_count: int = Field(ge=0)
+    broad_candidate_count: int = Field(ge=0)
+    fallback_used: bool = False
+    eligible_candidate_count: int = Field(ge=0)
+    rejected_below_score_count: int = Field(ge=0)
+    rejected_entity_mismatch_count: int = Field(ge=0)
+    rejected_pair_mismatch_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    max_raw_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    max_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+
+
+class KnowledgeRetrievalResult(BaseModel):
+    chunks: list[RetrievedKnowledgeChunk] = Field(default_factory=list)
+    diagnostics: KnowledgeRetrievalDiagnostics
+
+
 def _normalize_interaction_pair_keys(values: list[str]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()

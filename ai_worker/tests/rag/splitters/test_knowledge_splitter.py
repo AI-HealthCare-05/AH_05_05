@@ -588,6 +588,35 @@ def test_split_recognizes_attached_drug_encyclopedia_headings() -> None:
     ]
 
 
+def test_split_restores_attached_losartan_usage_and_caution_headings() -> None:
+    page = build_page(
+        (
+            "요약로사르탄은 안지오텐신 수용체 차단제입니다.\n"
+            "효능.효과고혈압 치료에 사용됩니다.\n"
+            "용법제품과 환자 상태에 따라 용법이 달라집니다.\n"
+            "경고임신 중에는 전문가에게 알려야 합니다.\n"
+            "금기특정 환자에게 투여하지 않습니다.\n"
+            "주의사항어지러움이 나타날 수 있습니다.\n"
+            "부작용저혈압 등이 나타날 수 있습니다."
+        ),
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="로사르탄(losartan)",
+        source_id="kpicia_drug_encyclopedia",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.SUMMARY,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.ADVERSE_EVENT,
+    ]
+
+
 def test_split_does_not_treat_inline_attached_term_as_heading() -> None:
     page = build_page(
         ("개요 백신 정보를 설명합니다. 요약하면 접종 전 확인이 필요하고 부작용은 개인에 따라 다를 수 있습니다."),

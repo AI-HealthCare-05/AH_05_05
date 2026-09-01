@@ -9,7 +9,6 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
     MEDICATION_CHAT_PROMPT_VERSION,
     build_medication_chat_messages,
 )
-from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationChatRequest,
@@ -101,15 +100,10 @@ class OpenAIMedicationAnswerGenerator:
             draft_answer=result.answer,
             generated_answer=generated_answer,
         ):
-            reason_codes = list(result.safety_reason_codes)
-            if "UNSUPPORTED_GENERATED_CLAIM" not in reason_codes:
-                reason_codes.append("UNSUPPORTED_GENERATED_CLAIM")
             return result.model_copy(
                 update={
                     "model_name": self._model_name,
                     "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
-                    "safety_status": SafetyStatus.RESTRICTED,
-                    "safety_reason_codes": reason_codes,
                 }
             )
         return result.model_copy(

@@ -93,7 +93,9 @@ def build_medication_chat_core_service(
     use_case = AnswerMedicationQuestionUseCase(
         context_provider=DbActiveIntakeContextProvider(),
         guide_repository=DbMedicationProductGuideRepository(),
-        interaction_rule_repository=DbInteractionRuleRepository(),
+        interaction_rule_repository=DbInteractionRuleRepository(
+            active_dataset_version=(settings.INTERACTION_RULE_DATASET_VERSION),
+        ),
         knowledge_retriever=MedicationKnowledgeRetriever(
             embedding_provider=embedding_provider,
             vector_store=vector_store,
