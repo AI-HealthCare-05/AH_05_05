@@ -4,6 +4,9 @@ from uuid import NAMESPACE_URL, uuid5
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 
+from ai_worker.rag.rerankers.knowledge_search_result_refiner import (
+    KnowledgeSearchResultRefiner,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
     KnowledgeSearchQuery,
@@ -12,6 +15,8 @@ from ai_worker.schemas.knowledge import (
 
 
 class QdrantKnowledgeStore:
+    _MAX_SEARCH_CANDIDATES = 50
+
     def __init__(
         self,
         *,
@@ -104,11 +109,15 @@ class QdrantKnowledgeStore:
     ) -> list[RetrievedKnowledgeChunk]:
         self._validate_vectors([query_vector])
         await self._validate_existing_collection()
+        candidate_limit = min(
+            self._MAX_SEARCH_CANDIDATES,
+            search_query.limit * 4,
+        )
         response = await self._client.query_points(
             collection_name=self._collection_name,
             query=query_vector,
             query_filter=self._build_filter(search_query),
-            limit=search_query.limit,
+            limit=candidate_limit,
             with_payload=True,
             with_vectors=False,
         )
@@ -130,7 +139,11 @@ class QdrantKnowledgeStore:
                 )
             except (KeyError, TypeError, ValueError):
                 continue
-        return results
+        return KnowledgeSearchResultRefiner.refine(
+            results,
+            query=search_query.query,
+            limit=search_query.limit,
+        )
 
     async def _validate_existing_collection(self) -> None:
         if self._collection_validated:
@@ -209,10 +222,10 @@ class QdrantKnowledgeStore:
                 )
             )
 
-        return models.Filter(
-            must=conditions,
-            should=entity_conditions or None,
-        )
+        if entity_conditions:
+            conditions.append(models.Filter(should=entity_conditions))
+
+        return models.Filter(must=conditions)
 
     @staticmethod
     def _append_any_filter(

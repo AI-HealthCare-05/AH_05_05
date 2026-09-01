@@ -1,4 +1,7 @@
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from ai_worker.schemas.medication_search import MedicationSearchExecutionPlan
 
 from ai_worker.schemas.chat import (
     ChatAnswerRequest,
@@ -145,11 +148,7 @@ class MedicationKnowledgeRetriever(Protocol):
     async def search_with_diagnostics(
         self,
         *,
-        question: str,
-        medication_names: list[str],
-        supplement_names: list[str],
-        interaction_pair_keys: list[str],
-        limit: int,
+        execution_plan: "MedicationSearchExecutionPlan",
     ) -> KnowledgeRetrievalResult: ...
 
 

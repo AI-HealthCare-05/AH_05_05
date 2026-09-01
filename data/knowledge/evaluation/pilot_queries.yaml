@@ -37,7 +37,7 @@ cases:
   - query_id: vitamin-a-daily-intake
     query: 비타민 A의 일일 섭취량 기준은 어떻게 되나요?
     expected_document_ids:
-      - mfds_supplement_code-d0ee39cdebceccf2
+      - food_safety_korea_supplement_ingredients-1d2702336f22ecc4
     expected_ingredient_names:
       - 비타민 A
     ingredient_names:
@@ -62,6 +62,10 @@ cases:
     query: 독사조신 복용 후 심한 어지러움이 보고된 사례가 있나요?
     expected_document_ids:
       - kpicia_adverse_case_report-2e89423c98769fbb
+    expected_drug_names:
+      - 독사조신
+    drug_names:
+      - 독사조신
     document_types:
       - ADVERSE_CASE_REPORT
     section_types:

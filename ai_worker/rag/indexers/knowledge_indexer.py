@@ -131,8 +131,7 @@ class KnowledgeIndexer:
                 interaction_type = InteractionPairType(metadata.interaction_type)
             except (TypeError, ValueError):
                 raise ValueError(
-                    "상호작용 메타데이터에는 유효한 유형과 유형별 대상이 "
-                    f"필요합니다: chunk_id={chunk.chunk_id}"
+                    f"상호작용 메타데이터에는 유효한 유형과 유형별 대상이 필요합니다: chunk_id={chunk.chunk_id}"
                 ) from None
 
             drug_count = len(set(metadata.drug_names))
@@ -147,6 +146,5 @@ class KnowledgeIndexer:
             }
             if not valid_entity_counts[interaction_type]:
                 raise ValueError(
-                    "상호작용 메타데이터에는 유효한 유형과 유형별 대상이 "
-                    f"필요합니다: chunk_id={chunk.chunk_id}"
+                    f"상호작용 메타데이터에는 유효한 유형과 유형별 대상이 필요합니다: chunk_id={chunk.chunk_id}"
                 )

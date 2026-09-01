@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field, field_validator
 from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.medication_search import (
+    MedicationSearchExecutionObservation,
+)
 
 
 class MedicationChatRoute(StrEnum):
@@ -173,3 +176,7 @@ class MedicationChatResult(BaseModel):
     prompt_version: str = Field(min_length=1)
     schema_version: str = Field(min_length=1)
     context_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    search_observation: MedicationSearchExecutionObservation | None = Field(
+        default=None,
+        exclude=True,
+    )

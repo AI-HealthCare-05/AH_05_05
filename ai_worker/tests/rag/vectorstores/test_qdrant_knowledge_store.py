@@ -21,6 +21,9 @@ def build_chunk(
     marker: str,
     *,
     dataset_version: str = "knowledge-pilot-v1",
+    content: str | None = None,
+    title: str | None = None,
+    document_id: str | None = None,
     ingredient_names: list[str] | None = None,
     drug_names: list[str] | None = None,
     document_type: KnowledgeDocumentType = KnowledgeDocumentType.SUPPLEMENT_CODE,
@@ -29,13 +32,13 @@ def build_chunk(
 ) -> KnowledgeChunk:
     return KnowledgeChunk(
         chunk_id=marker * 64,
-        content=f"{marker} 근거 원문",
-        embedding_text=f"[문서] {marker} 문서\n[원문]\n{marker} 근거 원문",
+        content=content or f"{marker} 근거 원문",
+        embedding_text=(f"[문서] {title or f'{marker} 문서'}\n[원문]\n{content or f'{marker} 근거 원문'}"),
         token_count=12,
         metadata=KnowledgeChunkMetadata(
             source_id=f"source-{marker}",
-            document_id=f"document-{marker}",
-            title=f"{marker} 문서",
+            document_id=document_id or f"document-{marker}",
+            title=title or f"{marker} 문서",
             provider="시험 제공자",
             access_scope=KnowledgeAccessScope.PUBLIC,
             document_type=document_type,
@@ -147,6 +150,117 @@ async def test_search_filters_dataset_version_and_ingredient() -> None:
         assert [result.metadata.document_id for result in results] == ["document-a"]
         assert results[0].content == "a 근거 원문"
         assert results[0].similarity_score > 0.0
+    finally:
+        await client.close()
+
+
+async def test_search_collapses_semantically_identical_chunks_before_limit() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        chunks = [
+            build_chunk(
+                "a",
+                content="성분: 비타민 B6\n기능: 단백질 대사에 필요",
+                title="비타민 B6",
+                document_id="source-b",
+                ingredient_names=["비타민 B6"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ),
+            build_chunk(
+                "b",
+                content="성분: 비타민 B6 기능: 단백질 대사에 필요",
+                title="비타민 B6",
+                document_id="source-a",
+                ingredient_names=["비타민 B6"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ),
+            build_chunk(
+                "c",
+                content="성분: 비타민 B6\n일일섭취량: 1.5 mg",
+                title="비타민 B6",
+                document_id="source-c",
+                ingredient_names=["비타민 B6"],
+                section_type=KnowledgeSectionType.DAILY_INTAKE,
+            ),
+        ]
+        await store.upsert_chunks(
+            chunks,
+            [
+                [1.0, 0.0, 0.0],
+                [0.999, 0.001, 0.0],
+                [0.98, 0.02, 0.0],
+            ],
+        )
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="비타민 B6 기능과 일일섭취량",
+                dataset_version="knowledge-pilot-v1",
+                ingredient_names=["비타민 B6"],
+                limit=5,
+            ),
+        )
+
+        assert [result.metadata.document_id for result in results] == [
+            "source-a",
+            "source-c",
+        ]
+    finally:
+        await client.close()
+
+
+async def test_search_scopes_results_to_title_named_in_query() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_release",
+        vector_size=3,
+    )
+
+    try:
+        await store.create_release_collection()
+        chunks = [
+            build_chunk(
+                "a",
+                title="하지불안증후군",
+                document_id="wrong-syndrome",
+                content="증후군의 증상과 관리 방법",
+                document_type=KnowledgeDocumentType.PHARM_REVIEW,
+            ),
+            build_chunk(
+                "b",
+                title="과민성대장증후군 홍길동 final",
+                document_id="requested-syndrome",
+                content="복통과 배변 변화의 증상 및 관리 방법",
+                document_type=KnowledgeDocumentType.PHARM_REVIEW,
+            ),
+        ]
+        await store.upsert_chunks(
+            chunks,
+            [[1.0, 0.0, 0.0], [0.94, 0.06, 0.0]],
+        )
+
+        results = await store.search(
+            query_vector=[1.0, 0.0, 0.0],
+            search_query=KnowledgeSearchQuery(
+                query="과민성대장증후군은 어떤 증상이 나타나고 어떻게 관리하나요?",
+                dataset_version="knowledge-pilot-v1",
+                document_types=[KnowledgeDocumentType.PHARM_REVIEW],
+                limit=5,
+            ),
+        )
+
+        assert [result.metadata.document_id for result in results] == [
+            "requested-syndrome",
+        ]
     finally:
         await client.close()
 

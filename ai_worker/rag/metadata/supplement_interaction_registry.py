@@ -1,35 +1,7 @@
 import re
 import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from ai_worker.schemas.interaction import (
-    InteractionEntity,
-    InteractionEntityKind,
-    build_interaction_pair_key,
-)
-
-
-class SupplementInteractionPair(BaseModel):
-    """현재 코퍼스에서 검색 가능한 영양성분 조합의 어휘 계약."""
-
-    model_config = ConfigDict(frozen=True)
-
-    canonical_names: tuple[str, str]
-    alias_groups: tuple[tuple[str, ...], tuple[str, ...]]
-    english_query: str = Field(min_length=1)
-
-    @property
-    def pair_key(self) -> str:
-        left, right = (
-            InteractionEntity(
-                kind=InteractionEntityKind.SUPPLEMENT,
-                display_name=name,
-            )
-            for name in self.canonical_names
-        )
-        return build_interaction_pair_key(left, right)
-
+from ai_worker.schemas.medication_search import SupplementInteractionPair
 
 _KNOWN_PAIRS = (
     SupplementInteractionPair(

@@ -1,64 +1,32 @@
 import re
-from enum import StrEnum
+import unicodedata
 from itertools import combinations
-
-from pydantic import BaseModel, ConfigDict, Field
 
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
 from ai_worker.rag.metadata.supplement_interaction_registry import (
-    SupplementInteractionPair,
     find_supplement_interaction_pair,
 )
 from ai_worker.schemas.interaction import (
+    InteractionEntity,
     InteractionEntityKind,
     InteractionPairType,
+    build_interaction_pair_key,
     interaction_pair_type_for_kinds,
 )
-from ai_worker.schemas.knowledge import KnowledgeSectionType
-
-
-class MedicationQueryEntityType(StrEnum):
-    PRODUCT_NAME = "PRODUCT_NAME"
-    BRAND_ALIAS = "BRAND_ALIAS"
-    INGREDIENT_NAME = "INGREDIENT_NAME"
-    FOOD_CATEGORY = "FOOD_CATEGORY"
-
-
-class MedicationQueryEntity(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    surface: str = Field(min_length=1)
-    canonical_name: str = Field(min_length=1)
-    entity_type: MedicationQueryEntityType
-    candidate_types: list[MedicationQueryEntityType] = Field(
-        default_factory=list,
-    )
-    kind: InteractionEntityKind
-
-
-class MedicationInteractionQueryPair(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    left_name: str = Field(min_length=1)
-    right_name: str = Field(min_length=1)
-    pair_type: InteractionPairType
-
-
-class MedicationKnowledgeQueryPlan(BaseModel):
-    original_query: str = Field(min_length=1)
-    expanded_query: str = Field(min_length=1)
-    entity_names: list[str] = Field(default_factory=list)
-    entities: list[MedicationQueryEntity] = Field(default_factory=list)
-    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
-    alternate_queries: list[str] = Field(default_factory=list)
-    interaction_pair: SupplementInteractionPair | None = None
-    interaction_pairs: list[MedicationInteractionQueryPair] = Field(
-        default_factory=list,
-    )
-    interaction_types: list[InteractionPairType] = Field(default_factory=list)
-    has_medication_product_cue: bool = False
+from ai_worker.schemas.knowledge import (
+    KnowledgeDocumentType,
+    KnowledgeSectionType,
+)
+from ai_worker.schemas.medication_search import (
+    MedicationInteractionQueryPair,
+    MedicationKnowledgeQueryPlan,
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+    MedicationQueryResolutionStatus,
+)
 
 
 class MedicationQueryEntityNormalizer:
@@ -178,6 +146,13 @@ class MedicationQueryEntityNormalizer:
         "알코올",
     }
     _FOOD_SUFFIXES = ("주스", "음식", "식품", "음료")
+    _TOPIC_SUFFIXES = (
+        "감염",
+        "간염",
+        "질환",
+        "질병",
+        "증후군",
+    )
 
     def normalize(
         self,
@@ -207,6 +182,12 @@ class MedicationQueryEntityNormalizer:
                     entity_type=entity_type,
                     candidate_types=candidate_types,
                     kind=self._entity_kind(canonical_name),
+                    source=self._entity_source(canonical_name),
+                    resolution_status=(
+                        MedicationQueryResolutionStatus.AMBIGUOUS
+                        if len(candidate_types) > 1
+                        else MedicationQueryResolutionStatus.RESOLVED
+                    ),
                 )
             )
             seen.add(canonical_key)
@@ -218,7 +199,10 @@ class MedicationQueryEntityNormalizer:
 
     @classmethod
     def _clean_surface(cls, value: str) -> str:
-        normalized = re.sub(r"\s+", " ", value).strip(" .,!?:;()[]{}\"'")
+        normalized = unicodedata.normalize("NFKC", value)
+        normalized = re.sub(r"\s+", " ", normalized).strip(
+            " .,!?:;()[]{}\"'",
+        )
         if normalized in cls._STOPWORDS:
             return normalized
         previous = ""
@@ -258,6 +242,8 @@ class MedicationQueryEntityNormalizer:
         surface: str,
         canonical_name: str,
     ) -> bool:
+        if len(canonical_name) == 1 and canonical_name not in cls._SUPPLEMENT_NAMES:
+            return False
         return bool(
             canonical_name
             and canonical_name not in cls._STOPWORDS
@@ -267,7 +253,12 @@ class MedicationQueryEntityNormalizer:
         )
 
     @classmethod
-    def _entity_kind(cls, canonical_name: str) -> InteractionEntityKind:
+    def _entity_kind(
+        cls,
+        canonical_name: str,
+    ) -> InteractionEntityKind | None:
+        if cls._is_topic(canonical_name):
+            return None
         if cls._is_food(canonical_name):
             return InteractionEntityKind.FOOD
         if cls._is_supplement(canonical_name):
@@ -279,6 +270,8 @@ class MedicationQueryEntityNormalizer:
         cls,
         canonical_name: str,
     ) -> MedicationQueryEntityType:
+        if cls._is_topic(canonical_name):
+            return MedicationQueryEntityType.TOPIC
         if cls._is_food(canonical_name):
             return MedicationQueryEntityType.FOOD_CATEGORY
         if cls._MEDICATION_PRODUCT_CUE.search(canonical_name):
@@ -301,12 +294,27 @@ class MedicationQueryEntityNormalizer:
         return [cls._entity_type(canonical_name)]
 
     @classmethod
+    def _entity_source(
+        cls,
+        canonical_name: str,
+    ) -> MedicationQueryEntitySource:
+        if canonical_name in cls._BRAND_ALIASES:
+            return MedicationQueryEntitySource.ALIAS
+        if cls._is_supplement(canonical_name) or cls._is_food(canonical_name):
+            return MedicationQueryEntitySource.CATALOG
+        return MedicationQueryEntitySource.REGEX
+
+    @classmethod
     def _is_supplement(cls, canonical_name: str) -> bool:
         return canonical_name.startswith("비타민 ") or canonical_name in cls._SUPPLEMENT_NAMES
 
     @classmethod
     def _is_food(cls, canonical_name: str) -> bool:
         return canonical_name in cls._FOOD_EXACT_NAMES or canonical_name.endswith(cls._FOOD_SUFFIXES)
+
+    @classmethod
+    def _is_topic(cls, canonical_name: str) -> bool:
+        return canonical_name.endswith(cls._TOPIC_SUFFIXES)
 
 
 class MedicationKnowledgeQueryBuilder:
@@ -380,13 +388,50 @@ class MedicationKnowledgeQueryBuilder:
             expanded_query=expanded_query,
             entity_names=entity_names,
             entities=entities,
+            document_types=self._document_types(
+                entities=entities,
+                section_types=section_types,
+            ),
             section_types=section_types,
             alternate_queries=alternate_queries,
             interaction_pair=interaction_pair,
             interaction_pairs=interaction_pairs,
             interaction_types=list(dict.fromkeys(pair.pair_type for pair in interaction_pairs)),
+            interaction_pair_keys=list(
+                dict.fromkeys(
+                    [
+                        *([interaction_pair.pair_key] if interaction_pair is not None else []),
+                        *(pair.pair_key for pair in interaction_pairs),
+                    ]
+                )
+            ),
             has_medication_product_cue=self._entity_normalizer.has_medication_product_cue(normalized),
         )
+
+    @staticmethod
+    def _document_types(
+        *,
+        entities: list[MedicationQueryEntity],
+        section_types: list[KnowledgeSectionType],
+    ) -> list[KnowledgeDocumentType]:
+        if KnowledgeSectionType.INTERACTION in section_types:
+            return [
+                KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+                KnowledgeDocumentType.RESEARCH_ARTICLE,
+                KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH,
+                KnowledgeDocumentType.PHARM_REVIEW,
+            ]
+        if any(entity.kind == InteractionEntityKind.SUPPLEMENT for entity in entities):
+            return [
+                KnowledgeDocumentType.SUPPLEMENT_CODE,
+                KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+            ]
+        if any(entity.kind == InteractionEntityKind.DRUG for entity in entities):
+            return [
+                KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+                KnowledgeDocumentType.PHARM_REVIEW,
+            ]
+        return []
 
     @staticmethod
     def _search_expansion_terms(
@@ -435,6 +480,8 @@ class MedicationKnowledgeQueryBuilder:
     ) -> list[MedicationInteractionQueryPair]:
         pairs: list[MedicationInteractionQueryPair] = []
         for left_entity, right_entity in combinations(entities, 2):
+            if left_entity.kind is None or right_entity.kind is None:
+                continue
             pair_type = interaction_pair_type_for_kinds(
                 left_entity.kind,
                 right_entity.kind,
@@ -446,6 +493,16 @@ class MedicationKnowledgeQueryBuilder:
                     left_name=left_entity.canonical_name,
                     right_name=right_entity.canonical_name,
                     pair_type=pair_type,
+                    pair_key=build_interaction_pair_key(
+                        InteractionEntity(
+                            kind=left_entity.kind,
+                            display_name=left_entity.canonical_name,
+                        ),
+                        InteractionEntity(
+                            kind=right_entity.kind,
+                            display_name=right_entity.canonical_name,
+                        ),
+                    ),
                 )
             )
         return sorted(

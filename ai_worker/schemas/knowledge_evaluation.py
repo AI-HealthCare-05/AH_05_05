@@ -1,7 +1,13 @@
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
@@ -11,6 +17,8 @@ from ai_worker.schemas.knowledge import (
 
 
 class KnowledgeEvaluationThresholds(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     min_hit_at_5: float = Field(default=0.90, ge=0.0, le=1.0)
     min_citation_accuracy: float = Field(
         default=0.90,
@@ -22,6 +30,8 @@ class KnowledgeEvaluationThresholds(BaseModel):
 
 
 class KnowledgeEvaluationCase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query_id: str = Field(min_length=1)
     query: str = Field(min_length=1)
     expected_document_ids: list[str] = Field(min_length=1)
@@ -81,6 +91,8 @@ class KnowledgeEvaluationCase(BaseModel):
 
 
 class KnowledgeEvaluationManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     schema_version: str = "knowledge-retrieval-evaluation-v1"
     dataset_version: str = Field(min_length=1)
     thresholds: KnowledgeEvaluationThresholds = Field(default_factory=KnowledgeEvaluationThresholds)

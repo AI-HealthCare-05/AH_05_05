@@ -42,6 +42,12 @@ class KnowledgeSectionType(StrEnum):
     OTHER = "OTHER"
 
 
+class KnowledgeSearchTier(StrEnum):
+    EXACT_PAIR = "EXACT_PAIR"
+    ENTITY = "ENTITY"
+    SEMANTIC = "SEMANTIC"
+
+
 class KnowledgeEvidenceLevel(StrEnum):
     REGULATORY = "REGULATORY"
     SYSTEMATIC_REVIEW = "SYSTEMATIC_REVIEW"
@@ -217,6 +223,10 @@ class KnowledgeRetrievalDiagnostics(BaseModel):
     accepted_count: int = Field(ge=0)
     max_raw_score: float | None = Field(default=None, ge=-1.0, le=1.0)
     max_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    attempted_search_tiers: list[KnowledgeSearchTier] = Field(
+        default_factory=list,
+    )
+    selected_search_tier: KnowledgeSearchTier | None = None
 
 
 class KnowledgeRetrievalResult(BaseModel):

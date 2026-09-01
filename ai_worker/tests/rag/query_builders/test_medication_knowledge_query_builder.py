@@ -5,8 +5,10 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationQueryEntityType,
 )
 from ai_worker.schemas.interaction import (
+    InteractionEntity,
     InteractionEntityKind,
     InteractionPairType,
+    build_interaction_pair_key,
 )
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 
@@ -241,6 +243,8 @@ def test_build_keeps_multiple_requested_sections() -> None:
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.CAUTION,
     ]
+    assert plan.entities[0].source.value == "ALIAS"
+    assert plan.entities[0].resolution_status.value == "AMBIGUOUS"
 
 
 def test_build_resolves_common_brand_to_ingredient_for_interaction_search() -> None:
@@ -313,6 +317,103 @@ def test_build_normalizes_vitamin_spacing() -> None:
     )
 
     assert plan.entity_names == ["와파린", "비타민 K"]
+
+
+def test_build_recognizes_catalogued_single_character_ingredient() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "철은 왜 먹나요?",
+    )
+
+    assert plan.entity_names == ["철"]
+    assert plan.entities[0].source.value == "CATALOG"
+
+
+def test_build_ignores_uncatalogued_single_character_word() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "물은 언제 마시나요?",
+    )
+
+    assert "물" not in plan.entity_names
+
+
+def test_build_does_not_classify_disease_topic_as_ingredient() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "과민성대장증후군의 생활 관리 방법을 알려줘.",
+    )
+
+    topic_entities = [entity for entity in plan.entities if entity.canonical_name == "과민성대장증후군"]
+    assert topic_entities
+    assert topic_entities[0].entity_type != MedicationQueryEntityType.INGREDIENT_NAME
+    assert topic_entities[0].entity_type.value == "TOPIC"
+    assert topic_entities[0].kind is None
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_names", "expected_pair_type"),
+    [
+        (
+            "칼슘과 철분을 같이 먹어도 되나요?",
+            ["칼슘", "철분"],
+            InteractionPairType.SUPPLEMENT_SUPPLEMENT,
+        ),
+        (
+            "펙소페나딘과 과일주스를 같이 먹어도 되나요?",
+            ["펙소페나딘", "과일주스"],
+            InteractionPairType.DRUG_FOOD,
+        ),
+        (
+            "와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
+            ["와파린", "비타민 K"],
+            InteractionPairType.DRUG_SUPPLEMENT,
+        ),
+        (
+            "와파린과 메트로니다졸을 같이 먹어도 되나요?",
+            ["와파린", "메트로니다졸"],
+            InteractionPairType.DRUG_DRUG,
+        ),
+    ],
+)
+def test_build_preserves_natural_language_interaction_pair_contract(
+    question: str,
+    expected_names: list[str],
+    expected_pair_type: InteractionPairType,
+) -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(question)
+
+    assert plan.entity_names == expected_names
+    assert len(plan.interaction_pairs) == 1
+    assert plan.interaction_pairs[0].pair_type == expected_pair_type
+    assert plan.section_types == [KnowledgeSectionType.INTERACTION]
+
+
+def test_build_uses_standard_pair_key_factory() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "펙소페나딘과 과일주스를 같이 먹어도 되나요?",
+    )
+    expected_pair_key = build_interaction_pair_key(
+        InteractionEntity(
+            kind=InteractionEntityKind.DRUG,
+            display_name="펙소페나딘",
+        ),
+        InteractionEntity(
+            kind=InteractionEntityKind.FOOD,
+            display_name="과일주스",
+        ),
+    )
+
+    assert plan.interaction_pairs[0].pair_key == expected_pair_key
+    assert plan.interaction_pair_keys == [expected_pair_key]
+
+
+def test_build_is_deterministic_for_serialization_and_hash() -> None:
+    builder = MedicationKnowledgeQueryBuilder()
+
+    first = builder.build("와파린과 비타민 K를 같이 먹어도 되나요?")
+    second = builder.build("와파린과 비타민 K를 같이 먹어도 되나요?")
+
+    assert first.model_dump_json() == second.model_dump_json()
+    assert first.query_plan_hash == second.query_plan_hash
+    assert len(first.query_plan_hash) == 64
 
 
 def test_build_removes_choice_particle_from_food_name() -> None:

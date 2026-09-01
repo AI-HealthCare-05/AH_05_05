@@ -477,6 +477,44 @@ def test_manifest_rejects_duplicate_query_ids() -> None:
         )
 
 
+def test_evaluation_case_rejects_unknown_search_contract_fields() -> None:
+    with pytest.raises(ValidationError):
+        KnowledgeEvaluationCase.model_validate(
+            {
+                "query_id": "unknown-contract-field",
+                "query": "칼슘과 철분을 같이 먹어도 되나요?",
+                "expected_document_ids": ["calcium-iron-paper"],
+                "expected_pair_names": ["칼슘", "철분"],
+            }
+        )
+
+
+def test_expected_values_do_not_change_oracle_search_input() -> None:
+    baseline = KnowledgeEvaluationCase(
+        query_id="calcium-iron",
+        query="칼슘과 철분을 같이 먹어도 되나요?",
+        expected_document_ids=["calcium-iron-paper"],
+    )
+    changed_expected_values = baseline.model_copy(
+        update={
+            "expected_document_ids": ["different-paper"],
+            "expected_ingredient_names": ["칼슘", "철분"],
+            "expected_interaction_pair_keys": ["a" * 64],
+        }
+    )
+
+    baseline_query = KnowledgeRetrievalEvaluator._build_search_query(
+        case=baseline,
+        dataset_version="knowledge-full-v2",
+    )
+    changed_query = KnowledgeRetrievalEvaluator._build_search_query(
+        case=changed_expected_values,
+        dataset_version="knowledge-full-v2",
+    )
+
+    assert changed_query == baseline_query
+
+
 def test_evaluation_contract_hash_ignores_dataset_version_and_case_order() -> None:
     first = KnowledgeEvaluationManifest(
         dataset_version="knowledge-full-v1",

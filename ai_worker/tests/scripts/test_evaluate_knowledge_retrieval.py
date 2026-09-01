@@ -213,3 +213,16 @@ def test_pilot_manifest_covers_v2_interaction_and_hard_negative_contracts() -> N
     )
     assert cases["acetaminophen-brand-alias"].expected_drug_names == ["아세트아미노펜"]
     assert cases["losartan-hard-negative"].forbidden_document_ids == ["kpicia_drug_encyclopedia-c649427ba7b67d68"]
+
+
+def test_pilot_manifest_covers_search_precision_contracts() -> None:
+    manifest = module.load_evaluation_manifest(Path("data/knowledge/evaluation/pilot_queries.yaml"))
+    cases = {case.query_id: case for case in manifest.cases}
+
+    assert cases["doxazosin-dizziness-case"].drug_names == ["독사조신"]
+    assert cases["doxazosin-dizziness-case"].expected_drug_names == [
+        "독사조신",
+    ]
+    assert cases["vitamin-a-daily-intake"].expected_document_ids == [
+        "food_safety_korea_supplement_ingredients-1d2702336f22ecc4",
+    ]

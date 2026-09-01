@@ -5,9 +5,6 @@ from typing import Protocol
 from uuid import uuid4
 
 from ai_worker.observability.chat_tracer import ChatTracer
-from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
-    MedicationKnowledgeQueryBuilder,
-)
 from ai_worker.schemas.chat_evaluation import (
     ChatEvaluationCase,
     ChatEvaluationObservation,
@@ -42,13 +39,11 @@ class ChatCoreEvaluationExecutor:
         self._care_episode_id = care_episode_id
         self._timeout_seconds = timeout_seconds
         self._clock = clock
-        self._query_builder = MedicationKnowledgeQueryBuilder()
 
     async def execute(
         self,
         case: ChatEvaluationCase,
     ) -> ChatEvaluationObservation:
-        query_plan = self._query_builder.build(case.question)
         inputs = (
             {"question": case.question} if self._tracer.capture_content else {"question_length": len(case.question)}
         )
@@ -82,8 +77,6 @@ class ChatCoreEvaluationExecutor:
                 )
                 return ChatEvaluationObservation(
                     query_id=case.query_id,
-                    normalized_entities=query_plan.entity_names,
-                    section_types=query_plan.section_types,
                     response_time_ms=elapsed_ms,
                     langsmith_trace_id=root_span.trace_id,
                     error_code="API_TIMEOUT",
@@ -99,8 +92,6 @@ class ChatCoreEvaluationExecutor:
                 )
                 return ChatEvaluationObservation(
                     query_id=case.query_id,
-                    normalized_entities=query_plan.entity_names,
-                    section_types=query_plan.section_types,
                     response_time_ms=elapsed_ms,
                     langsmith_trace_id=root_span.trace_id,
                     error_code=error_code,
@@ -108,23 +99,34 @@ class ChatCoreEvaluationExecutor:
 
             elapsed_ms = self._elapsed_ms(started_at)
             source_kinds = list(dict.fromkeys(source.kind for source in result.sources))
+            search_observation = result.search_observation
             root_span.end(
                 {
                     "status": "COMPLETED",
                     "route": result.route.value,
                     "safety_status": result.safety_status.value,
                     "source_count": len(source_kinds),
+                    "query_plan_hash": (search_observation.query_plan_hash if search_observation is not None else None),
+                    "execution_plan_hash": (
+                        search_observation.execution_plan_hash if search_observation is not None else None
+                    ),
                 }
             )
             return ChatEvaluationObservation(
                 query_id=case.query_id,
                 route=result.route,
-                normalized_entities=query_plan.entity_names,
-                section_types=query_plan.section_types,
+                normalized_entities=(
+                    search_observation.query_plan.entity_names if search_observation is not None else []
+                ),
+                section_types=(search_observation.query_plan.section_types if search_observation is not None else []),
                 source_kinds=source_kinds,
                 safety_status=result.safety_status,
                 response_time_ms=elapsed_ms,
                 langsmith_trace_id=root_span.trace_id,
+                query_plan_hash=(search_observation.query_plan_hash if search_observation is not None else None),
+                execution_plan_hash=(
+                    search_observation.execution_plan_hash if search_observation is not None else None
+                ),
                 answer=result.answer,
             )
 

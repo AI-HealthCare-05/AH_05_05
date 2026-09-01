@@ -100,6 +100,14 @@ class ChatEvaluationObservation(BaseModel):
     safety_status: SafetyStatus | None = None
     response_time_ms: float = Field(ge=0.0)
     langsmith_trace_id: str | None = None
+    query_plan_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    execution_plan_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     answer: str = ""
     error_code: str | None = None
 

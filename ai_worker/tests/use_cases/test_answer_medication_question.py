@@ -127,6 +127,16 @@ class FakeRuleRepository:
         return self.rules
 
 
+class FailingRuleRepository:
+    async def find_approved_rules(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        query_entity_names: list[str] | None = None,
+    ) -> list[InteractionRuleFact]:
+        raise RuntimeError("interaction rule DB unavailable")
+
+
 class FakeKnowledgeRetriever:
     def __init__(
         self,
@@ -172,14 +182,27 @@ class FakeKnowledgeRetriever:
     async def search_with_diagnostics(
         self,
         *,
-        question: str,
-        medication_names: list[str],
-        supplement_names: list[str],
-        interaction_pair_keys: list[str],
-        limit: int,
+        execution_plan,
     ) -> KnowledgeRetrievalResult:
         if self.error is not None:
             raise self.error
+        return KnowledgeRetrievalResult(
+            chunks=self.chunks,
+            diagnostics=self.diagnostics,
+        )
+
+
+class RecordingQueryPlanRetriever(FakeKnowledgeRetriever):
+    def __init__(self) -> None:
+        super().__init__()
+        self.received_kwargs = None
+
+    async def search_with_diagnostics(
+        self,
+        *,
+        execution_plan,
+    ) -> KnowledgeRetrievalResult:
+        self.received_kwargs = {"execution_plan": execution_plan}
         return KnowledgeRetrievalResult(
             chunks=self.chunks,
             diagnostics=self.diagnostics,
@@ -320,6 +343,7 @@ def build_use_case(
     context: ActiveIntakeContext | None = None,
     lookup: MedicationGuideLookup | None = None,
     rules: list[InteractionRuleFact] | None = None,
+    rule_repository=None,
     retriever: FakeKnowledgeRetriever | None = None,
     tracer=None,
     answer_generator=None,
@@ -328,7 +352,7 @@ def build_use_case(
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
         guide_repository=FakeGuideRepository(lookup or MedicationGuideLookup()),
-        interaction_rule_repository=FakeRuleRepository(rules or []),
+        interaction_rule_repository=(rule_repository or FakeRuleRepository(rules or [])),
         knowledge_retriever=retriever or FakeKnowledgeRetriever(),
         answer_generator=answer_generator or PassthroughGenerator(),
         grounded_claim_validator=(grounded_claim_validator or PassthroughValidator()),
@@ -347,6 +371,78 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "통증과 발열을 완화합니다" in result.answer
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
+
+
+async def test_execute_forwards_question_query_plan_without_patient_or_rule_signals() -> None:
+    retriever = RecordingQueryPlanRetriever()
+
+    await build_use_case(
+        context=ActiveIntakeContext(user_id=1),
+        rules=[],
+        retriever=retriever,
+    ).execute(
+        build_request("와파린과 비타민 K 영양제를 같이 먹어도 되나요?"),
+    )
+
+    assert retriever.received_kwargs is not None
+    execution_plan = retriever.received_kwargs["execution_plan"]
+    assert execution_plan.patient_medication_names == []
+    assert execution_plan.patient_supplement_names == []
+    assert execution_plan.approved_rule_pair_keys == []
+    query_plan = execution_plan.query_plan
+    assert query_plan.entity_names == ["와파린", "비타민 K"]
+    assert query_plan.section_types == [KnowledgeSectionType.INTERACTION]
+    assert execution_plan.interaction_pair_keys == query_plan.interaction_pair_keys
+    assert execution_plan.query_plan_hash == query_plan.query_plan_hash
+    assert len(execution_plan.execution_plan_hash) == 64
+
+
+async def test_execute_applies_patient_context_only_for_explicit_context_question() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=10,
+                care_episode_id=100,
+                name="아스피린",
+                dose="1정",
+                times_per_day=1,
+                days=7,
+            )
+        ],
+    )
+    general_retriever = RecordingQueryPlanRetriever()
+    context_retriever = RecordingQueryPlanRetriever()
+
+    await build_use_case(
+        context=context,
+        retriever=general_retriever,
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+    await build_use_case(
+        context=context,
+        retriever=context_retriever,
+    ).execute(build_request("등록한 약과 비타민 K의 상호작용을 알려줘"))
+
+    general_plan = general_retriever.received_kwargs["execution_plan"]
+    context_plan = context_retriever.received_kwargs["execution_plan"]
+    assert general_plan.patient_medication_names == ["아스피린"]
+    assert general_plan.medication_names == []
+    assert context_plan.medication_names == ["아스피린"]
+
+
+async def test_execute_distinguishes_rule_repository_failure_from_no_rules() -> None:
+    retriever = RecordingQueryPlanRetriever()
+
+    result = await build_use_case(
+        rule_repository=FailingRuleRepository(),
+        retriever=retriever,
+    ).execute(build_request("와파린과 비타민 K를 같이 먹어도 되나요?"))
+
+    execution_plan = retriever.received_kwargs["execution_plan"]
+    assert execution_plan.approved_rule_status.value == ("RULE_REPOSITORY_UNAVAILABLE")
+    assert execution_plan.interaction_pair_keys
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "INTERACTION_RULE_REPOSITORY_UNAVAILABLE" in (result.safety_reason_codes)
 
 
 async def test_drug_encyclopedia_evidence_uses_medication_guide_route() -> None:
@@ -458,7 +554,10 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     )
     assert "타이레놀정500밀리그람" not in serialized_outputs
     assert build_chunk().content not in serialized_outputs
-    assert tracer.spans[3].outputs == {
+    rag_outputs = tracer.spans[3].outputs
+    assert len(rag_outputs.pop("query_plan_hash")) == 64
+    assert len(rag_outputs.pop("execution_plan_hash")) == 64
+    assert rag_outputs == {
         "raw_candidate_count": 1,
         "entity_filtered_count": 0,
         "broad_candidate_count": 1,
@@ -473,8 +572,13 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
         "drug_encyclopedia_evidence_count": 1,
         "max_raw_score": 0.82,
         "max_score": 0.82,
+        "attempted_search_tiers": [],
+        "selected_search_tier": None,
     }
-    assert tracer.spans[-1].outputs == {
+    safety_outputs = tracer.spans[-1].outputs
+    assert len(safety_outputs.pop("query_plan_hash")) == 64
+    assert len(safety_outputs.pop("execution_plan_hash")) == 64
+    assert safety_outputs == {
         "status": "SAFE",
         "reason_codes": [],
     }

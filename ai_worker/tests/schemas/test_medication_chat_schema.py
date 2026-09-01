@@ -14,6 +14,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSource,
     MedicationChatSourceKind,
 )
+from ai_worker.schemas.medication_search import (
+    MedicationKnowledgeQueryPlan,
+    MedicationSearchExecutionObservation,
+)
 
 
 def test_general_drug_question_accepts_missing_care_episode() -> None:
@@ -84,3 +88,25 @@ def test_medication_chat_result_keeps_grounded_source_identifiers() -> None:
 
     assert result.sources[0].medication_guide_id == 12
     assert result.sources[0].kind == MedicationChatSourceKind.MEDICATION_GUIDE
+
+
+def test_medication_chat_result_excludes_internal_search_observation_from_api_dump() -> None:
+    result = MedicationChatResult(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        answer="확인된 근거를 설명드립니다.",
+        route=MedicationChatRoute.GENERAL_GUIDANCE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="medication-chat-v1",
+        schema_version="medication-chat-result-v1",
+        search_observation=MedicationSearchExecutionObservation(
+            query_plan=MedicationKnowledgeQueryPlan(
+                original_query="질문",
+                expanded_query="검색 질문",
+            ),
+            query_plan_hash="a" * 64,
+            execution_plan_hash="b" * 64,
+        ),
+    )
+
+    assert result.search_observation is not None
+    assert "search_observation" not in result.model_dump(mode="json")
