@@ -45,7 +45,7 @@ class MedicationService:
                 medication_start_date__isnull=False,
             )
             .prefetch_related("medications__slots")
-            .order_by("id")
+            .order_by("-created_at", "-id")
         )
         settings = await UserSettings.get_or_none(user_id=user.id)
         meal_times = self._meal_times(settings)
@@ -208,7 +208,7 @@ class MedicationService:
         return MedicationOverviewItem(
             medication_id=medication.id,
             name=medication.name,
-            dose=medication.dose or "",
+            dose=medication.strength or "",
             days=days,
             days_remaining=None if as_needed else max((end_date - today).days + 1, 0),
             slots=slots,

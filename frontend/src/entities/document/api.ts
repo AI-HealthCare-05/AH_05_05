@@ -20,15 +20,27 @@ import type {
 const idempotencyKeys = new WeakMap<File, string>();
 const documentImageUrls = new Map<string, Promise<string>>();
 
+type OcrImageKind = 'original' | 'processed';
+
+function imageCacheKey(ocrJobId: string, kind: OcrImageKind): string {
+  return `${ocrJobId}:${kind}`;
+}
+
 function revokeAuthenticatedImageUrl(ocrJobId: string): void {
-  const pendingUrl = documentImageUrls.get(ocrJobId);
-  if (!pendingUrl) return;
-  documentImageUrls.delete(ocrJobId);
-  void pendingUrl.then((url) => URL.revokeObjectURL(url), () => undefined);
+  for (const kind of ['original', 'processed'] as const) {
+    const key = imageCacheKey(ocrJobId, kind);
+    const pendingUrl = documentImageUrls.get(key);
+    if (!pendingUrl) continue;
+    documentImageUrls.delete(key);
+    void pendingUrl.then((url) => URL.revokeObjectURL(url), () => undefined);
+  }
 }
 
 function revokeAllAuthenticatedImageUrls(): void {
-  for (const ocrJobId of documentImageUrls.keys()) revokeAuthenticatedImageUrl(ocrJobId);
+  for (const pendingUrl of documentImageUrls.values()) {
+    void pendingUrl.then((url) => URL.revokeObjectURL(url), () => undefined);
+  }
+  documentImageUrls.clear();
 }
 
 function idempotencyKeyFor(file: File): string {
@@ -39,17 +51,19 @@ function idempotencyKeyFor(file: File): string {
   return key;
 }
 
-function authenticatedImageUrl(ocrJobId: string): Promise<string> {
-  const existing = documentImageUrls.get(ocrJobId);
+function authenticatedImageUrl(ocrJobId: string, kind: OcrImageKind): Promise<string> {
+  const key = imageCacheKey(ocrJobId, kind);
+  const existing = documentImageUrls.get(key);
   if (existing) return existing;
+  const suffix = kind === 'processed' ? '/processed-image' : '/image';
   const request = http
-    .getBlob(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}/image`)
+    .getBlob(`/v1/ocr/jobs/${encodeURIComponent(ocrJobId)}${suffix}`)
     .then((blob) => URL.createObjectURL(blob))
     .catch((error: unknown) => {
-      documentImageUrls.delete(ocrJobId);
+      documentImageUrls.delete(key);
       throw error;
     });
-  documentImageUrls.set(ocrJobId, request);
+  documentImageUrls.set(key, request);
   return request;
 }
 
@@ -58,7 +72,12 @@ function authenticatedImageUrl(ocrJobId: string): Promise<string> {
  * OCR JSON 조회와 분리해, 미리보기만 실패해도 검토·저장을 계속할 수 있게 합니다.
  */
 export function getOcrDocumentImageUrl(ocrJobId: string, mockImageUrl: string): Promise<string> {
-  return USE_MOCK ? Promise.resolve(mockImageUrl) : authenticatedImageUrl(ocrJobId);
+  return USE_MOCK ? Promise.resolve(mockImageUrl) : authenticatedImageUrl(ocrJobId, 'original');
+}
+
+/** OCR에 사용한 원근·조명 보정 이미지를 인증 fetch로 불러옵니다. */
+export function getOcrProcessedImageUrl(ocrJobId: string, mockImageUrl: string): Promise<string> {
+  return USE_MOCK ? Promise.resolve(mockImageUrl) : authenticatedImageUrl(ocrJobId, 'processed');
 }
 
 /** 검토 화면이 떠나거나 저장을 마치면 인증 이미지 blob URL을 해제합니다. */
@@ -66,7 +85,7 @@ export function releaseOcrDocumentImageUrl(ocrJobId: string): void {
   revokeAuthenticatedImageUrl(ocrJobId);
 }
 
-/** 조제약 OCR 작업 생성 — POST /ocr/medication-guides */
+/** 조제약 OCR 작업 생성 — POST /ocr */
 export async function uploadDocument(file: File): Promise<UploadDocumentsResult> {
   if (USE_MOCK) {
     await mockDelay();
@@ -77,7 +96,7 @@ export async function uploadDocument(file: File): Promise<UploadDocumentsResult>
 
   const form = new FormData();
   form.append('file', file);
-  const uploaded = await http.post<UploadDocumentsResult>('/v1/ocr/medication-guides', form, {
+  const uploaded = await http.post<UploadDocumentsResult>('/v1/ocr', form, {
     'Idempotency-Key': idempotencyKeyFor(file),
   });
   return uploaded;

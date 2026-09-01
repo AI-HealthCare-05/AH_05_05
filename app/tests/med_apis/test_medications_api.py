@@ -63,6 +63,35 @@ class TestMedicationOverviewAPI(TestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
+    async def test_overview_orders_recently_registered_episode_first(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-registration-order@example.com"
+            headers = await authentication_headers(client, email, "01023000014")
+            user = await User.get(email=email)
+            older = await create_episode(
+                user,
+                start_date=today,
+                source_ocr_job_id=201,
+            )
+            recent = await create_episode(
+                user,
+                start_date=today - timedelta(days=10),
+                source_ocr_job_id=202,
+            )
+            now = datetime.now(config.TIMEZONE)
+            older.created_at = now - timedelta(hours=1)
+            recent.created_at = now
+            await older.save(update_fields=["created_at"])
+            await recent.save(update_fields=["created_at"])
+            await Medication.create(care_episode=older, name="이전 등록약", times_per_day=1, days=7)
+            await Medication.create(care_episode=recent, name="최근 등록약", times_per_day=1, days=7)
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [overview["recordId"] for overview in response.json()] == [recent.id, older.id]
+
     async def test_overview_includes_episode_without_start_slot(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -208,7 +237,7 @@ class TestMedicationOverviewAPI(TestCase):
             scheduled = await Medication.create(
                 care_episode=first,
                 name="셀레콕시브",
-                dose="200mg",
+                strength="200mg",
                 times_per_day=2,
                 days=7,
             )
@@ -218,7 +247,7 @@ class TestMedicationOverviewAPI(TestCase):
             until_complete = await Medication.create(
                 care_episode=first,
                 name="리바록사반",
-                dose="10mg",
+                strength="10mg",
                 times_per_day=1,
                 days=None,
             )
@@ -227,7 +256,7 @@ class TestMedicationOverviewAPI(TestCase):
             as_needed = await Medication.create(
                 care_episode=first,
                 name="아세트아미노펜",
-                dose="650mg",
+                strength="650mg",
                 times_per_day=None,
                 days=7,
             )
@@ -245,7 +274,7 @@ class TestMedicationOverviewAPI(TestCase):
             second_medication = await Medication.create(
                 care_episode=second,
                 name="아목시실린",
-                dose="500mg",
+                strength="500mg",
                 times_per_day=3,
                 days=5,
             )
@@ -262,7 +291,7 @@ class TestMedicationOverviewAPI(TestCase):
             response = await client.get(OVERVIEW_URL, headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == [
+        assert sorted(response.json(), key=lambda overview: overview["recordId"]) == [
             {
                 "recordId": first.id,
                 "documentImageUrl": "/api/v1/ocr/jobs/12/image",

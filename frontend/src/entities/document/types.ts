@@ -26,25 +26,29 @@ export interface UploadDocumentsResult {
 }
 
 export interface OcrField<T> {
-  value: T | null;
+  value: T;
   confidence: Confidence;
 }
 
 export interface OcrMedication {
   tempId: string;
   name: string;
-  dose: string;
-  efficacy: string;
-  administration: string;
-  precautions: string;
-  timesPerDay: number | null;
-  /** 약봉투에 적힌 약별 처방 일수. 읽히지 않으면 null입니다. */
-  days: number | null;
+  strength?: string;
+  doseQuantity?: string;
+  /** OCR GET 결과에서는 미추출 시 키를 생략합니다. PRN null은 사용자 편집 결과에만 씁니다. */
+  timesPerDay?: number;
+  /** 약봉투에 적힌 약별 처방 일수. 미추출이면 키가 없습니다. */
+  days?: number;
   /**
    * O07(복약 정보 편집 모달)에서 사용자가 새로 추가한 약은 OCR로 추출된 값이
    * 아니므로 신뢰도가 없습니다(값이 있으면 = OCR 추출 항목, 없으면 = 사용자 추가 항목).
    */
   confidence?: Confidence;
+}
+
+/** 검토 화면의 사용자 편집 상태. 사용자가 필요 시를 선택한 경우에만 null을 보냅니다. */
+export interface EditableOcrMedication extends Omit<OcrMedication, 'timesPerDay'> {
+  timesPerDay?: number | null;
 }
 
 /** 결과 필드가 오는 상태. 명세 4번은 이 두 상태에서만 fields·medications 를 보냅니다. */
@@ -71,8 +75,8 @@ interface OcrResultReady {
   /** 등록한 문서 원본의 영속 URL. 미리보기와 저장 후 기록 화면이 같은 주소를 사용합니다. */
   documentImageUrl: string;
   fields: {
-    /** 약봉투 조제일. 미래 날짜일 수 없습니다. */
-    dispensedDate: OcrField<string>;
+    /** 약봉투 조제일. 미추출이면 키가 없습니다. */
+    dispensedDate?: OcrField<string>;
   };
   medications: OcrMedication[];
   lowConfidenceCount: number;
@@ -92,12 +96,11 @@ export interface ConfirmOcrResultPayload {
   medications: Array<{
     tempId: string;
     name: string;
-    dose: string;
-    efficacy: string;
-    administration: string;
-    precautions: string;
-    timesPerDay: number | null;
-    days: number | null;
+    strength?: string;
+    doseQuantity?: string;
+    /** 사용자가 명시한 필요 시 복용만 null이며, 미추출은 키를 생략합니다. */
+    timesPerDay?: number | null;
+    days?: number;
   }>;
 }
 

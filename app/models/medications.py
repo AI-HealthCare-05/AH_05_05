@@ -12,7 +12,8 @@ class Medication(models.Model):
         on_delete=fields.CASCADE,
     )
     name = fields.CharField(max_length=255)
-    dose = fields.CharField(max_length=100, null=True)
+    strength = fields.CharField(max_length=100, null=True)
+    dose_quantity = fields.CharField(max_length=50, null=True)
     efficacy = fields.CharField(max_length=500, null=True)
     administration = fields.CharField(max_length=500, null=True)
     precautions = fields.CharField(max_length=500, null=True)

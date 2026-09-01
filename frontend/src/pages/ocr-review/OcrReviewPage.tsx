@@ -5,13 +5,14 @@ import { toast } from 'sonner';
 import {
   confirmOcrResult,
   getOcrDocumentImageUrl,
+  getOcrProcessedImageUrl,
   getOcrResult,
   releaseOcrDocumentImageUrl,
   uploadDocument,
   type Confidence,
-  type OcrMedication,
   type OcrResult,
 } from '@/entities/document';
+import type { EditableOcrMedication } from '@/entities/document/types';
 import {
   Button,
   Card,
@@ -48,15 +49,22 @@ type MedicationEditorTarget =
   | { mode: 'add' }
   | { mode: 'edit'; tempId: string };
 
-/**
- * 오늘 날짜(YYYY-MM-DD). 조제일은 미래일 수 없으므로 입력 상한과 저장 검증에 함께 씁니다.
- * 복약 시간 화면과 같은 로컬 기준을 써야 두 화면의 날짜 입력이 다르게 동작하지 않습니다.
- */
-function todayISO(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${month}-${day}`;
+/** 서울 기준 조제일. 원본 연도 폭이 없는 정규화 날짜는 31일 뒤까지 허용합니다. */
+function seoulDateISO(daysAfterToday = 0): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  const date = new Date(
+    Date.UTC(Number(value('year')), Number(value('month')) - 1, Number(value('day')) + daysAfterToday),
+  );
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    date.getUTCDate(),
+  ).padStart(2, '0')}`;
 }
 
 /** 다른 화면이 매핑을 재사용할 수 있으므로 high 항목도 지우지 않습니다. */
@@ -95,7 +103,7 @@ export function OcrReviewPage() {
   const [timedOut, setTimedOut] = useState(false);
   const [dispensedDate, setDispensedDate] = useState('');
   const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(null);
-  const [medications, setMedications] = useState<OcrMedication[]>([]);
+  const [medications, setMedications] = useState<EditableOcrMedication[]>([]);
   const [medicationEditorTarget, setMedicationEditorTarget] =
     useState<MedicationEditorTarget | null>(null);
   const [reviewConfirmOpen, setReviewConfirmOpen] = useState(false);
@@ -104,11 +112,15 @@ export function OcrReviewPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dismissedOcrFailure, setDismissedOcrFailure] = useState(false);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
-  const [documentImageUrl, setDocumentImageUrl] = useState<string | null>(null);
+  const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
+  const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+  const [imageView, setImageView] = useState<'processed' | 'original'>('processed');
   const [imageUnavailable, setImageUnavailable] = useState(false);
 
   useEffect(() => {
-    setDocumentImageUrl(null);
+    setProcessedImageUrl(null);
+    setOriginalImageUrl(null);
+    setImageView('processed');
     setImageUnavailable(false);
     setImageViewerOpen(false);
     return () => {
@@ -180,17 +192,22 @@ export function OcrReviewPage() {
           completionTimer = window.setTimeout(() => {
             if (cancelled) return;
             setResult(data);
-            setDispensedDate(data.fields.dispensedDate.value ?? '');
-            setDispensedDateConfidence(data.fields.dispensedDate.confidence);
+            setDispensedDate(data.fields.dispensedDate?.value ?? '');
+            setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
             setMedications(data.medications);
             if (data.ocrStatus === 'ready_for_review' || confirmedReviewMode) {
-              void getOcrDocumentImageUrl(batchId, data.documentImageUrl)
-                .then((imageUrl) => {
-                  if (!cancelled) setDocumentImageUrl(imageUrl);
-                })
-                .catch(() => {
-                  if (!cancelled) setImageUnavailable(true);
-                });
+              void Promise.allSettled([
+                getOcrProcessedImageUrl(batchId, data.documentImageUrl),
+                getOcrDocumentImageUrl(batchId, data.documentImageUrl),
+              ]).then(([processed, original]) => {
+                if (cancelled) return;
+                const nextProcessed = processed.status === 'fulfilled' ? processed.value : null;
+                const nextOriginal = original.status === 'fulfilled' ? original.value : null;
+                setProcessedImageUrl(nextProcessed);
+                setOriginalImageUrl(nextOriginal);
+                setImageView(nextProcessed ? 'processed' : 'original');
+                setImageUnavailable(!nextProcessed && !nextOriginal);
+              });
             }
             navigate(`${location.pathname}${location.search}`, {
               replace: true,
@@ -253,9 +270,9 @@ export function OcrReviewPage() {
     }
   }
 
-  const maxDispensedDate = todayISO();
-  const dispensedDateInFuture = dispensedDate > maxDispensedDate;
-  const canSave = Boolean(dispensedDate) && !dispensedDateInFuture && !saving;
+  const maxDispensedDate = seoulDateISO(31);
+  const dispensedDateTooLate = dispensedDate > maxDispensedDate;
+  const canSave = Boolean(dispensedDate) && !dispensedDateTooLate && !saving;
 
   function handleSaveClick() {
     if (!canSave) return;
@@ -276,12 +293,12 @@ export function OcrReviewPage() {
         medications: medications.map((medication) => ({
           tempId: medication.tempId,
           name: medication.name,
-          dose: medication.dose,
-          efficacy: medication.efficacy,
-          administration: medication.administration,
-          precautions: medication.precautions,
-          timesPerDay: medication.timesPerDay,
-          days: medication.days,
+          ...(medication.strength ? { strength: medication.strength } : {}),
+          ...(medication.doseQuantity ? { doseQuantity: medication.doseQuantity } : {}),
+          ...(medication.timesPerDay !== undefined
+            ? { timesPerDay: medication.timesPerDay }
+            : {}),
+          ...(medication.days !== undefined ? { days: medication.days } : {}),
         })),
       });
       releaseOcrDocumentImageUrl(batchId);
@@ -420,21 +437,24 @@ export function OcrReviewPage() {
           </Card>
         )}
 
-        {documentImageUrl && (
+        {(processedImageUrl || originalImageUrl) && (
           <button
             type="button"
-            aria-label="등록한 약봉투 원본 크게 보기"
-            className="overflow-hidden rounded-card bg-card text-left shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => setImageViewerOpen(true)}
+            aria-label="전처리한 약봉투 크게 보기"
+            className="w-full overflow-hidden rounded-card bg-card text-left shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => {
+              setImageView(processedImageUrl ? 'processed' : 'original');
+              setImageViewerOpen(true);
+            }}
           >
             <img
-              src={documentImageUrl}
-              alt="등록한 약봉투 원본"
-              className="h-24 w-full object-cover object-top"
+              src={processedImageUrl ?? originalImageUrl ?? ''}
+              alt="전처리한 약봉투"
+              className="h-72 w-full bg-muted/40 object-contain p-2"
             />
             <span className="flex min-h-touch items-center justify-between gap-3 px-4 text-sm font-bold text-foreground">
-              촬영한 약봉투 원본
-              <span className="text-muted-foreground">크게 보기</span>
+              전처리한 약봉투
+              <span className="text-muted-foreground">눌러서 확대</span>
             </span>
           </button>
         )}
@@ -455,15 +475,33 @@ export function OcrReviewPage() {
             onChange={(event) => setDispensedDate(event.target.value)}
             onClick={openDatePicker}
             disabled={confirmedReviewMode}
-            error={dispensedDateInFuture ? '조제일은 오늘까지만 고를 수 있어요.' : undefined}
-            hint={confirmedReviewMode ? '저장된 조제일입니다.' : '복용 시작일을 이 날짜로 채워둘게요.'}
+            error={dispensedDateTooLate ? '조제일은 오늘 기준 31일 뒤까지만 고를 수 있어요.' : undefined}
+            hint={
+              confirmedReviewMode
+                ? '저장된 조제일입니다.'
+                : dispensedDate
+                  ? undefined
+                  : '미추출 — 직접 입력해주세요.'
+            }
           />
         </Card>
 
         <section className="flex flex-col gap-3" aria-labelledby="ocr-medication-title">
-          <h2 id="ocr-medication-title" className="text-xl font-bold text-foreground">
-            약 {medications.length}개
-          </h2>
+          <div className="flex min-h-touch items-center justify-between gap-3">
+            <h2 id="ocr-medication-title" className="text-xl font-bold text-foreground">
+              약 {medications.length}개
+            </h2>
+            {!confirmedReviewMode && (
+              <button
+                type="button"
+                className="inline-flex min-h-touch items-center gap-1 px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setMedicationEditorTarget({ mode: 'add' })}
+              >
+                <Plus aria-hidden className="size-4" />
+                직접 추가
+              </button>
+            )}
+          </div>
           {medications.map((medication) => (
             <button
               key={medication.tempId}
@@ -477,7 +515,7 @@ export function OcrReviewPage() {
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <strong className="text-lg text-foreground">
-                    {medication.name} {medication.dose}
+                    {[medication.name, medication.strength].filter(Boolean).join(' ')}
                   </strong>
                   <ConfidenceBadge confidence={medication.confidence} />
                 </span>
@@ -490,16 +528,6 @@ export function OcrReviewPage() {
               )}
             </button>
           ))}
-          {!confirmedReviewMode && (
-            <button
-              type="button"
-              className="flex min-h-touch items-center justify-center gap-2 rounded-card border border-dashed border-border text-sm font-bold text-muted-foreground"
-              onClick={() => setMedicationEditorTarget({ mode: 'add' })}
-            >
-              <Plus aria-hidden className="size-5" />
-              빠진 약 직접 추가
-            </button>
-          )}
         </section>
 
         <p className="text-sm text-muted-foreground">
@@ -592,11 +620,46 @@ export function OcrReviewPage() {
         }}
         onCancel={() => setReviewConfirmOpen(false)}
       />
-      {documentImageUrl && (
+      {(processedImageUrl || originalImageUrl) && (
         <ImageViewer
           open={imageViewerOpen}
-          src={documentImageUrl}
-          title="약봉투 원본 크게 보기"
+          src={
+            imageView === 'processed'
+              ? (processedImageUrl ?? originalImageUrl ?? '')
+              : (originalImageUrl ?? processedImageUrl ?? '')
+          }
+          title="약봉투 이미지 크게 보기"
+          alt={imageView === 'processed' ? '확대한 전처리 약봉투' : '확대한 약봉투 원본'}
+          toolbar={
+            <div
+              role="group"
+              aria-label="약봉투 이미지 보기"
+              className="flex rounded-full bg-background/95 p-1 shadow-card"
+            >
+              <button
+                type="button"
+                aria-pressed={imageView === 'processed'}
+                disabled={!processedImageUrl}
+                className={`min-h-10 rounded-full px-4 text-sm font-bold disabled:opacity-40 ${
+                  imageView === 'processed' ? 'bg-primary text-primary-foreground' : 'text-foreground'
+                }`}
+                onClick={() => setImageView('processed')}
+              >
+                전처리 후
+              </button>
+              <button
+                type="button"
+                aria-pressed={imageView === 'original'}
+                disabled={!originalImageUrl}
+                className={`min-h-10 rounded-full px-4 text-sm font-bold disabled:opacity-40 ${
+                  imageView === 'original' ? 'bg-primary text-primary-foreground' : 'text-foreground'
+                }`}
+                onClick={() => setImageView('original')}
+              >
+                원본 보기
+              </button>
+            </div>
+          }
           onOpenChange={setImageViewerOpen}
         />
       )}
@@ -682,9 +745,15 @@ function PageFrame({ onBack, children }: { onBack: () => void; children: ReactNo
   );
 }
 
-function medicationSummary(medication: OcrMedication): string {
+function medicationSummary(medication: EditableOcrMedication): string {
+  const strength = medication.strength || '미추출';
+  const doseQuantity = medication.doseQuantity || '미추출';
   const frequency =
-    medication.timesPerDay === null ? '필요할 때만' : `1일 ${medication.timesPerDay}회`;
-  const days = medication.days === null ? '' : `${medication.days}일분`;
-  return [frequency, days].filter(Boolean).join(' · ');
+    medication.timesPerDay === undefined
+      ? '미추출'
+      : medication.timesPerDay === null
+        ? '필요 시'
+        : `${medication.timesPerDay}회`;
+  const days = medication.days === undefined ? '미추출' : `${medication.days}일`;
+  return `함량 ${strength} · 1회 투약량 ${doseQuantity} · 1일 횟수 ${frequency} · 투약일수 ${days}`;
 }

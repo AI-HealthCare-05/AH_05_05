@@ -3,7 +3,9 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
@@ -35,14 +37,12 @@ from app.dtos.medication_guide_ocr import (
     OcrConfirmationResponse,
     OcrJobAcceptedResponse,
     OcrJobStatusResponse,
-    ReviewIssue,
 )
-from app.models.care import CareEpisode, FollowUpVisit
+from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, OcrJobStatus
 from app.models.medications import Medication
 from app.models.ocr import OcrJob
 from app.models.users import User
-from app.services.medication_guide_ocr import MedicationGuideService
 from app.services.ocr_image_input import ValidatedImage, validate_image
 
 logger = logging.getLogger(__name__)
@@ -61,9 +61,25 @@ class QueueClient(Protocol):
     async def aclose(self) -> None: ...
 
 
+class MedicationOcrV3AnalysisContract(Protocol):
+    project_review: object
+    stages: list[dict[str, object]]
+    confidence_values: list[float]
+    ocr_model: str
+    structuring_model: str | None
+    prompt_version: str | None
+    schema_version: str
+    processed_image_bytes: bytes
+    requires_recapture: bool
+
+
+class MedicationOcrV3Analyzer(Protocol):
+    async def analyze(self, image: ValidatedImage) -> MedicationOcrV3AnalysisContract: ...
+
+
 def build_review_result(result: MedicationGuideResult) -> MedicationGuideReviewResult:
-    medications = []
-    review_issues = list(result.review_issues)
+    medications: list[MedicationReview] = []
+    low_confidence_count = int(result.dispensing_date is None)
     for medication in result.medications:
         times_per_day = medication.times_per_day
         days = medication.days
@@ -71,37 +87,65 @@ def build_review_result(result: MedicationGuideResult) -> MedicationGuideReviewR
         if times_per_day is not None and times_per_day > 6:
             times_per_day = None
             needs_review = True
-            review_issues.append(
-                ReviewIssue(code="VALUE_OUT_OF_RANGE", path=f"medications.{medication.row_id}.timesPerDay")
-            )
         if days is not None and days > 365:
             days = None
             needs_review = True
-            review_issues.append(ReviewIssue(code="VALUE_OUT_OF_RANGE", path=f"medications.{medication.row_id}.days"))
-        medications.append(
-            MedicationReview(
-                row_id=medication.row_id,
-                name=medication.name,
-                dose=medication.strength or medication.dose_quantity or medication.dose_line,
-                efficacy=medication.efficacy,
-                administration=medication.administration,
-                precautions=medication.precautions,
-                times_per_day=times_per_day,
-                days=days,
-                confidence=medication.confidence,
-                needs_review=needs_review,
-            )
-        )
-    return MedicationGuideReviewResult(
-        dispensing_date=result.dispensing_date,
-        dispensing_date_confidence=next(
+        confidence = "low" if needs_review else _confidence_tier(medication.confidence)
+        low_confidence_count += int(confidence == "low")
+        medication_payload: dict[str, object] = {
+            "tempId": medication.row_id,
+            "name": medication.name,
+            "confidence": confidence,
+        }
+        if medication.strength:
+            medication_payload["strength"] = medication.strength
+        dose_quantity = _parse_dose_quantity(medication.dose_quantity, medication.dose_unit)
+        if dose_quantity is not None:
+            medication_payload["doseQuantity"] = dose_quantity
+        if times_per_day is not None:
+            medication_payload["timesPerDay"] = times_per_day
+        if days is not None:
+            medication_payload["days"] = days
+        medications.append(MedicationReview.model_validate(medication_payload))
+
+    fields: dict[str, object] = {}
+    if result.dispensing_date is not None:
+        date_confidence = next(
             (field.confidence for field in result.ocr_fields if field.name in {"dispensing_date", "dispensed_date"}),
-            None,
-        ),
-        next_visit_date=result.next_visit_date,
+            0.0,
+        )
+        date_confidence_tier = _confidence_tier(date_confidence)
+        low_confidence_count += int(date_confidence_tier == "low")
+        fields["dispensedDate"] = {
+            "value": result.dispensing_date.isoformat(),
+            "confidence": date_confidence_tier,
+        }
+    return MedicationGuideReviewResult(
+        fields=fields,
         medications=medications,
-        review_issues=review_issues,
+        low_confidence_count=low_confidence_count,
     )
+
+
+def _confidence_tier(confidence: float) -> str:
+    if confidence >= 0.90:
+        return "high"
+    if confidence >= 0.70:
+        return "medium"
+    return "low"
+
+
+def _parse_dose_quantity(quantity: str | None, unit: str | None) -> str | None:
+    if not quantity:
+        return None
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(.*?)\s*", quantity)
+    if match is None:
+        return None
+    value = float(match.group(1))
+    if value <= 0:
+        return None
+    parsed_unit = (unit or match.group(2)).strip()
+    return f"{match.group(1)}{parsed_unit}"
 
 
 class TemporaryOcrStorage:
@@ -126,6 +170,26 @@ class TemporaryOcrStorage:
         await asyncio.to_thread(write)
         return storage_key
 
+    async def save_processed(self, manifest: dict[str, object], content: bytes) -> dict[str, object]:
+        if not isinstance(content, bytes) or not content:
+            raise ValueError("processed OCR image is missing")
+        storage_key = f"{uuid4().hex}.processed.jpg"
+        path = self._path(storage_key)
+
+        def write() -> None:
+            self.root.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(f"{path.suffix}.tmp")
+            temporary.write_bytes(content)
+            os.replace(temporary, path)
+
+        await asyncio.to_thread(write)
+        return {
+            **manifest,
+            "processedStorageKey": storage_key,
+            "processedContentSha256": hashlib.sha256(content).hexdigest(),
+            "processedMediaType": "image/jpeg",
+        }
+
     async def load(self, manifest: dict[str, object]) -> ValidatedImage:
         storage_key = manifest.get("storageKey")
         if not isinstance(storage_key, str):
@@ -146,12 +210,24 @@ class TemporaryOcrStorage:
             content=content,
         )
 
-    async def delete(self, manifest: dict[str, object]) -> None:
-        storage_key = manifest.get("storageKey")
+    async def load_processed(self, manifest: dict[str, object]) -> tuple[bytes, str]:
+        storage_key = manifest.get("processedStorageKey")
         if not isinstance(storage_key, str):
-            return
-        path = self._path(storage_key)
-        await asyncio.to_thread(path.unlink, missing_ok=True)
+            raise ValueError("processed OCR storage key is missing")
+        content = await asyncio.to_thread(self._path(storage_key).read_bytes)
+        expected_hash = manifest.get("processedContentSha256")
+        if not isinstance(expected_hash, str) or hashlib.sha256(content).hexdigest() != expected_hash:
+            raise ValueError("processed OCR image hash mismatch")
+        media_type = manifest.get("processedMediaType")
+        if media_type != "image/jpeg":
+            raise ValueError("processed OCR image media type is invalid")
+        return content, media_type
+
+    async def delete(self, manifest: dict[str, object]) -> None:
+        for field in ("storageKey", "processedStorageKey"):
+            storage_key = manifest.get(field)
+            if isinstance(storage_key, str):
+                await asyncio.to_thread(self._path(storage_key).unlink, missing_ok=True)
 
     async def delete_orphans(self, active_storage_keys: set[str], *, older_than: datetime) -> int:
         """Remove stale files that no database row can discover after a partial submit failure."""
@@ -210,8 +286,6 @@ class MedicationGuideOcrJobService:
                     idempotency_key=key,
                     input_manifest=manifest,
                     ocr_model="clova-template",
-                    structuring_model="application",
-                    prompt_version="none",
                     schema_version="medication-guide-review/v1",
                 )
             except IntegrityError:
@@ -271,7 +345,7 @@ class MedicationGuideOcrJobService:
     async def process(
         self,
         job_id: int,
-        extractor: MedicationGuideService,
+        analyzer: MedicationOcrV3Analyzer,
         *,
         job_try: int,
     ) -> None:
@@ -288,31 +362,74 @@ class MedicationGuideOcrJobService:
         if job is None or job.status != OcrJobStatus.PROCESSING:
             return
         manifest = self._manifest(job)
+        analysis: MedicationOcrV3AnalysisContract | None = None
         try:
             image = await self.storage.load(manifest)
-            extracted = await extractor.extract_validated(image)
-            review = build_review_result(extracted)
+            analysis = await analyzer.analyze(image)
+            stage_results, review_payload, confidence_values = self._prepared_analysis(analysis)
+            if review_payload is None:
+                await self._fail(
+                    job,
+                    "RECAPTURE_REQUIRED",
+                    manifest,
+                    stage_results=stage_results,
+                )
+                return
+            manifest = await self.storage.save_processed(manifest, analysis.processed_image_bytes)
         except (OcrProviderTimeoutError, OcrProviderTransientError) as error:
             if job_try < 2:
                 raise Retry(defer=timedelta(seconds=config.OCR_RETRY_BASE_SECONDS)) from error
-            await self._fail(job, error.code, manifest)
+            await self._fail(
+                job,
+                error.code,
+                manifest,
+                stage_results=self._failure_stage_results(error, error.code, analysis),
+            )
             return
         except OcrProviderError as error:
-            await self._fail(job, error.code, manifest)
+            await self._fail(
+                job,
+                error.code,
+                manifest,
+                stage_results=self._failure_stage_results(error, error.code, analysis),
+            )
             return
-        except AppError:
-            await self._fail(job, "VALIDATION_FAILED", manifest)
+        except (AppError, TypeError, ValueError) as error:
+            await self._fail(
+                job,
+                "VALIDATION_FAILED",
+                manifest,
+                stage_results=self._failure_stage_results(error, "VALIDATION_FAILED", analysis),
+            )
             return
-        except Exception:
+        except Exception as error:
             logger.exception("Unexpected OCR extraction failure for job %s", job_id)
-            await self._fail(job, "EXTRACTION_FAILED", manifest)
+            await self._fail(
+                job,
+                "EXTRACTION_FAILED",
+                manifest,
+                stage_results=self._failure_stage_results(error, "EXTRACTION_FAILED", analysis),
+            )
             return
 
         ready_at = datetime.now(config.TIMEZONE)
         job.status = OcrJobStatus.READY_FOR_REVIEW
-        review_payload = review.model_dump(mode="json", by_alias=True)
-        review_payload["ocrFields"] = [field.model_dump(mode="json", by_alias=True) for field in extracted.ocr_fields]
+        job.input_manifest = manifest
         job.structured_result = review_payload
+        job.stage_results = stage_results
+        job.avg_field_confidence = (
+            (sum(confidence_values, start=Decimal("0")) / len(confidence_values)).quantize(
+                Decimal("0.0001"),
+                rounding=ROUND_HALF_UP,
+            )
+            if confidence_values
+            else None
+        )
+        job.confidence_field_count = len(confidence_values)
+        job.ocr_model = analysis.ocr_model
+        job.structuring_model = analysis.structuring_model
+        job.prompt_version = analysis.prompt_version
+        job.schema_version = analysis.schema_version
         job.ready_at = ready_at
         job.expires_at = ready_at + timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
         job.updated_at = ready_at
@@ -320,7 +437,15 @@ class MedicationGuideOcrJobService:
         await job.save(
             update_fields=[
                 "status",
+                "input_manifest",
                 "structured_result",
+                "stage_results",
+                "avg_field_confidence",
+                "confidence_field_count",
+                "ocr_model",
+                "structuring_model",
+                "prompt_version",
+                "schema_version",
                 "ready_at",
                 "expires_at",
                 "updated_at",
@@ -338,6 +463,16 @@ class MedicationGuideOcrJobService:
         except (OSError, ValueError) as error:
             raise OcrJobNotFoundError() from error
         return image.content, image.media_type
+
+    async def read_processed_bytes(self, user: User, job_id: int) -> tuple[bytes, str]:
+        """Return the verified processed JPEG only when the requesting user owns the job."""
+        job = await OcrJob.get_or_none(id=job_id, user_id=user.id)
+        if job is None or job.status not in {OcrJobStatus.READY_FOR_REVIEW, OcrJobStatus.COMPLETE}:
+            raise OcrJobNotFoundError()
+        try:
+            return await self.storage.load_processed(self._manifest(job))
+        except (OSError, ValueError) as error:
+            raise OcrJobNotFoundError() from error
 
     async def confirm(
         self,
@@ -366,7 +501,10 @@ class MedicationGuideOcrJobService:
                 raise OcrJobNotFoundError()
 
             dispensing_date = request.dispensing_date
-            medication_days = max((item.days for item in request.medications if item.days is not None), default=None)
+            medication_days = max(
+                (item.days for item in request.medications if "days" in item.model_fields_set),
+                default=None,
+            )
             episode = await CareEpisode.create(
                 using_db=connection,
                 user_id=user.id,
@@ -389,30 +527,21 @@ class MedicationGuideOcrJobService:
             )
 
             for item in request.medications:
+                dose_quantity = item.dose_quantity if "dose_quantity" in item.model_fields_set else None
                 await Medication.create(
                     using_db=connection,
                     care_episode_id=episode.id,
                     name=item.name,
-                    dose=item.dose,
-                    efficacy=item.efficacy,
-                    administration=item.administration,
-                    precautions=item.precautions,
-                    times_per_day=item.times_per_day,
-                    days=item.days,
+                    strength=item.strength if "strength" in item.model_fields_set else None,
+                    dose_quantity=dose_quantity,
+                    times_per_day=item.times_per_day if "times_per_day" in item.model_fields_set else None,
+                    days=item.days if "days" in item.model_fields_set else None,
                     prescribed_at=dispensing_date,
                     source_ocr_job_id=job.id,
-                    note=(
-                        item.note if item.note is not None else ("필요 시 복용" if item.times_per_day is None else None)
-                    ),
-                )
-            if request.next_visit_date is not None:
-                await FollowUpVisit.create(
-                    using_db=connection,
-                    user_id=user.id,
-                    visit_date=request.next_visit_date,
                 )
 
             job.status = OcrJobStatus.COMPLETE
+            job.user_review_match_rate = self._user_review_match_rate(job, request)
             job.structured_result = self._confirmed_review_payload(job, request)
             job.ready_at = None
             job.expires_at = None
@@ -423,6 +552,7 @@ class MedicationGuideOcrJobService:
                 update_fields=[
                     "status",
                     "structured_result",
+                    "user_review_match_rate",
                     "ready_at",
                     "expires_at",
                     "completed_at",
@@ -452,7 +582,9 @@ class MedicationGuideOcrJobService:
         active_storage_keys = {
             storage_key
             for manifest in manifests
-            if isinstance(manifest, dict) and isinstance((storage_key := manifest.get("storageKey")), str)
+            if isinstance(manifest, dict)
+            for field in ("storageKey", "processedStorageKey")
+            if isinstance((storage_key := manifest.get(field)), str)
         }
         await self.storage.delete_orphans(active_storage_keys, older_than=stale_cutoff)
         return deleted
@@ -500,13 +632,21 @@ class MedicationGuideOcrJobService:
             if owns_pool:
                 await pool.aclose()
 
-    async def _fail(self, job: OcrJob, error_code: str, manifest: dict[str, object]) -> None:
+    async def _fail(
+        self,
+        job: OcrJob,
+        error_code: str,
+        manifest: dict[str, object],
+        *,
+        stage_results: list[dict[str, object]] | None = None,
+    ) -> None:
         now = datetime.now(config.TIMEZONE)
         job.status = OcrJobStatus.FAILED
         job.error_code = error_code
         if job.started_at is None:
             job.started_at = now
         job.structured_result = None
+        job.stage_results = stage_results
         job.ready_at = None
         job.expires_at = None
         job.completed_at = now
@@ -517,6 +657,7 @@ class MedicationGuideOcrJobService:
                 "error_code",
                 "started_at",
                 "structured_result",
+                "stage_results",
                 "ready_at",
                 "expires_at",
                 "completed_at",
@@ -550,6 +691,123 @@ class MedicationGuideOcrJobService:
         return self._accepted(job)
 
     @staticmethod
+    def _project_review_payload(project_review: object) -> dict[str, object]:
+        if hasattr(project_review, "model_dump"):
+            payload = project_review.model_dump(mode="json", by_alias=True)  # type: ignore[union-attr]
+        elif isinstance(project_review, dict):
+            payload = project_review
+        else:
+            raise TypeError("OCR project_review must be a mapping or Pydantic model")
+        payload = MedicationGuideOcrJobService._without_incomplete_dose_quantities(payload)
+        review = MedicationGuideReviewResult.model_validate(payload)
+        if any(medication.confidence is None for medication in review.medications):
+            raise ValueError("OCR project_review medications must include confidence")
+        return review.model_dump(mode="json", by_alias=True)
+
+    @classmethod
+    def _prepared_analysis(
+        cls,
+        analysis: MedicationOcrV3AnalysisContract,
+    ) -> tuple[list[dict[str, object]], dict[str, object] | None, list[Decimal]]:
+        stage_results = cls._validated_stage_results(analysis.stages)
+        if type(analysis.requires_recapture) is not bool:
+            raise ValueError("OCR requires_recapture must be a boolean")
+        if analysis.requires_recapture:
+            return stage_results, None, []
+        review_payload = cls._project_review_payload(analysis.project_review)
+        confidence_values = [Decimal(str(value)) for value in analysis.confidence_values]
+        if any(value < 0 or value > 1 for value in confidence_values):
+            raise ValueError("OCR confidence values must be between 0 and 1")
+        return stage_results, review_payload, confidence_values
+
+    @staticmethod
+    def _without_incomplete_dose_quantities(payload: dict[str, object]) -> dict[str, object]:
+        canonical = dict(payload)
+        medications = payload.get("medications")
+        if not isinstance(medications, list):
+            return canonical
+        canonical_medications: list[object] = []
+        for medication in medications:
+            if not isinstance(medication, dict):
+                canonical_medications.append(medication)
+                continue
+            canonical_medication = dict(medication)
+            dose_quantity = canonical_medication.get("doseQuantity")
+            if "doseQuantity" in canonical_medication and (
+                not isinstance(dose_quantity, str) or not dose_quantity.strip() or len(dose_quantity) > 50
+            ):
+                canonical_medication.pop("doseQuantity", None)
+            if canonical_medication.get("timesPerDay") is None:
+                canonical_medication.pop("timesPerDay", None)
+            canonical_medications.append(canonical_medication)
+        canonical["medications"] = canonical_medications
+        return canonical
+
+    @staticmethod
+    def _validated_stage_results(stages: list[dict[str, object]]) -> list[dict[str, object]]:
+        expected_names = ["preprocess", "ocr", "candidate", "llm", "validate"]
+        normalized: list[dict[str, object]] = []
+        for stage in stages:
+            if hasattr(stage, "model_dump"):
+                stage_payload = stage.model_dump(mode="json", by_alias=True)  # type: ignore[union-attr]
+            elif isinstance(stage, dict):
+                stage_payload = dict(stage)
+            else:
+                raise TypeError("OCR stage must be a mapping or Pydantic model")
+            if set(stage_payload) - {"name", "status", "elapsedMs", "callCount", "code"}:
+                raise ValueError("OCR stage contains unsupported fields")
+            normalized.append(stage_payload)
+        if [stage.get("name") for stage in normalized] != expected_names:
+            raise ValueError("OCR stages must contain the five ordered v3 stages")
+        if any(
+            type(stage.get("status")) is not str or stage.get("status") not in {"succeeded", "failed", "skipped"}
+            for stage in normalized
+        ):
+            raise ValueError("OCR stage status is invalid")
+        if any(type(stage.get("elapsedMs")) is not int or int(stage["elapsedMs"]) < 0 for stage in normalized):
+            raise ValueError("OCR stage elapsedMs must be a non-negative integer")
+        if any(type(stage.get("callCount")) is not int or int(stage["callCount"]) < 0 for stage in normalized):
+            raise ValueError("OCR stage callCount must be a non-negative integer")
+        if any(
+            "code" in stage and (type(stage["code"]) is not str or not str(stage["code"]).strip())
+            for stage in normalized
+        ):
+            raise ValueError("OCR stage code must be a non-blank string")
+        return normalized
+
+    @classmethod
+    def _failure_stage_results(
+        cls,
+        error: Exception,
+        error_code: str,
+        analysis: MedicationOcrV3AnalysisContract | None = None,
+    ) -> list[dict[str, object]]:
+        for stages in (getattr(error, "stages", None), getattr(analysis, "stages", None)):
+            if not isinstance(stages, list):
+                continue
+            try:
+                return cls._validated_stage_results(stages)
+            except (TypeError, ValueError):
+                continue
+        return cls._fallback_stage_results(error_code)
+
+    @staticmethod
+    def _fallback_stage_results(error_code: str) -> list[dict[str, object]]:
+        return [
+            {
+                "name": "preprocess",
+                "status": "failed",
+                "elapsedMs": 0,
+                "callCount": 0,
+                "code": error_code,
+            },
+            *(
+                {"name": name, "status": "skipped", "elapsedMs": 0, "callCount": 0}
+                for name in ("ocr", "candidate", "llm", "validate")
+            ),
+        ]
+
+    @staticmethod
     def _confirmation_hash(request: MedicationGuideConfirmRequest) -> str:
         canonical = json.dumps(
             request.model_dump(mode="json", by_alias=True),
@@ -569,33 +827,69 @@ class MedicationGuideOcrJobService:
             existing = MedicationGuideReviewResult.model_validate(existing_payload)
         except ValueError:
             existing = MedicationGuideReviewResult()
-        existing_by_id = {medication.row_id: medication for medication in existing.medications}
+        existing_by_id = {medication.temp_id: medication for medication in existing.medications}
         medications: list[MedicationReview] = []
-        for index, item in enumerate(request.medications, start=1):
-            row_id = item.temp_id or f"user-{index}"
-            previous = existing_by_id.get(row_id)
-            medications.append(
-                MedicationReview(
-                    row_id=row_id,
-                    name=item.name,
-                    dose=item.dose,
-                    efficacy=item.efficacy,
-                    administration=item.note if item.note is not None else item.administration,
-                    precautions=item.precautions,
-                    times_per_day=item.times_per_day,
-                    days=item.days,
-                    confidence=previous.confidence if previous is not None else None,
-                    needs_review=False,
-                )
-            )
+        for item in request.medications:
+            previous = existing_by_id.get(item.temp_id)
+            medication_payload = item.model_dump(mode="json", by_alias=True)
+            if medication_payload.get("timesPerDay") is None:
+                medication_payload.pop("timesPerDay", None)
+            if previous is not None and previous.confidence is not None:
+                medication_payload["confidence"] = previous.confidence
+            medications.append(MedicationReview.model_validate(medication_payload))
+
+        has_previous_date = "dispensed_date" in existing.fields.model_fields_set
+        date_confidence = existing.fields.dispensed_date.confidence if has_previous_date else "low"
+        low_confidence_count = int(date_confidence == "low") + sum(
+            medication.confidence == "low" for medication in medications
+        )
         confirmed = MedicationGuideReviewResult(
-            dispensing_date=request.dispensing_date,
-            dispensing_date_confidence=existing.dispensing_date_confidence,
+            fields={
+                "dispensedDate": {
+                    "value": request.dispensing_date.isoformat(),
+                    "confidence": date_confidence,
+                }
+            },
             medications=medications,
+            low_confidence_count=low_confidence_count,
         ).model_dump(mode="json", by_alias=True)
-        if isinstance(existing_payload.get("ocrFields"), list):
-            confirmed["ocrFields"] = existing_payload["ocrFields"]
         return confirmed
+
+    @staticmethod
+    def _user_review_match_rate(
+        job: OcrJob,
+        request: MedicationGuideConfirmRequest,
+    ) -> Decimal | None:
+        existing_payload = job.structured_result if isinstance(job.structured_result, dict) else {}
+        try:
+            existing = MedicationGuideReviewResult.model_validate(existing_payload)
+        except ValueError:
+            return None
+
+        comparable = 0
+        matches = 0
+        if "dispensed_date" in existing.fields.model_fields_set:
+            previous_date = existing.fields.dispensed_date
+            comparable += 1
+            matches += int(previous_date.value == request.dispensing_date)
+
+        existing_by_id = {medication.temp_id: medication for medication in existing.medications}
+        missing = object()
+        for item in request.medications:
+            previous = existing_by_id.get(item.temp_id)
+            if previous is None:
+                continue
+            previous_payload = previous.model_dump(mode="json", by_alias=True)
+            confirmed_payload = item.model_dump(mode="json", by_alias=True)
+            for field in ("name", "strength", "doseQuantity", "timesPerDay", "days"):
+                if field not in previous_payload and field not in confirmed_payload:
+                    continue
+                comparable += 1
+                matches += int(previous_payload.get(field, missing) == confirmed_payload.get(field, missing))
+
+        if comparable == 0:
+            return None
+        return (Decimal(matches) / Decimal(comparable)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
     @staticmethod
     def _confirmed(job: OcrJob, episode: CareEpisode) -> OcrConfirmationResponse:
