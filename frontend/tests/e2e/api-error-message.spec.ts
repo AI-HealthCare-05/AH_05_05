@@ -1,12 +1,11 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const FALLBACK = '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
 
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '이 파일은 실 API 오류 본문 정규화를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 async function authenticate(page: Page) {

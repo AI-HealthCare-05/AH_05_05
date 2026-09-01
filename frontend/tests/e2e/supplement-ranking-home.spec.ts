@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const RANKING_RESPONSE = {
   display_id: 3,
   title: '9월 면역력 관리',
@@ -58,10 +60,7 @@ const REGISTERED_PRODUCT = {
 };
 
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '랭킹 화면의 실 API 경계와 오류 격리를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 async function authenticate(page: Page) {

@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const ACCESS_TOKEN = 'e2e-supplement-token';
 
 const IRON_PRODUCT = {
@@ -77,10 +79,7 @@ const MALE_NUTRIENT_STANDARD = {
 };
 
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '이 파일은 영양제 entity의 실 API 분기(VITE_USE_MOCK=false)를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 async function authenticate(page: Page) {

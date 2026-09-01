@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const ACCESS_TOKEN = 'e2e-document-token';
 const DOCUMENT_ID = 501;
 const OCR_URL = `/api/v1/ocr/jobs/${DOCUMENT_ID}`;
@@ -9,10 +11,7 @@ const ONE_PIXEL_PNG = Buffer.from(
 );
 
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '이 파일은 document entity의 실 API 분기(VITE_USE_MOCK=false)를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 interface CapturedRequest {

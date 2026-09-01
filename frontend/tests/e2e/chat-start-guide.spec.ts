@@ -1,5 +1,11 @@
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 const FAQS = [
   '지금 먹는 약을 같이 먹어도 되나요?',
   '이 약은 왜 먹는 건가요?',
@@ -48,16 +54,31 @@ test('자주 묻는 질문은 입력칸에 머물지 않고 바로 전송되며 
   await page.goto('/dev/chat');
 
   const question = FAQS[0];
+  const expectedProgress = ['질문 확인 중', '근거 검색 중', '답변 정리 중', '안전 확인 중'];
+  const progressObserver = await page.evaluateHandle((messages) => {
+    const observed: string[] = [];
+    const capture = () => {
+      const text = document.body.innerText;
+      for (const message of messages) {
+        if (text.includes(message) && !observed.includes(message)) observed.push(message);
+      }
+    };
+    const observer = new MutationObserver(capture);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    capture();
+    return { observed, observer };
+  }, expectedProgress);
   await page.getByRole('button', { name: question }).click();
 
   await expect(page.getByRole('textbox', { name: '질문 입력' })).toHaveValue('');
   await expect(page.getByText(question, { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: '자주 묻는 질문' })).toHaveCount(0);
-  await expect(page.getByText('질문 확인 중')).toBeVisible();
-  await expect(page.getByText('근거 검색 중')).toBeVisible();
-  await expect(page.getByText('답변 정리 중')).toBeVisible();
-  await expect(page.getByText('안전 확인 중')).toBeVisible();
+  await expect
+    .poll(() => progressObserver.evaluate(({ observed }) => observed))
+    .toEqual(expectedProgress);
+  await progressObserver.evaluate(({ observer }) => observer.disconnect());
+  await progressObserver.dispose();
 });
 
 test('기존 대화 이력이 있으면 시작 가이드와 자주 묻는 질문을 처음부터 보이지 않는다', async ({ page }) => {
