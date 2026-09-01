@@ -446,17 +446,29 @@ class TestDashboardAlarmNotifications(DashboardTestBase):
 
 
 class TestDashboardOcrDocuments(DashboardTestBase):
-    async def create_ocr_job(self, job_status: OcrJobStatus, user: User) -> OcrJob:
-        return await OcrJob.create(
+    async def create_ocr_job(
+        self,
+        job_status: OcrJobStatus,
+        user: User,
+        *,
+        structured_result: dict[str, object] | None = None,
+        created_at: datetime | None = None,
+    ) -> OcrJob:
+        job = await OcrJob.create(
             user=user,
             status=job_status,
             idempotency_key=f"dashboard-ocr-{next(_sequence)}",
             input_manifest={},
+            structured_result=structured_result,
             ocr_model="clova-template",
             structuring_model="rule-based",
             prompt_version="v1",
             schema_version="v1",
         )
+        if created_at is not None:
+            await OcrJob.filter(id=job.id).update(created_at=created_at)
+            job.created_at = created_at
+        return job
 
     async def test_total_includes_every_status_and_cards_count_selected_statuses(self) -> None:
         user = await create_user(name="OCR 회원", email=unique_email("ocr"))
@@ -474,7 +486,44 @@ class TestDashboardOcrDocuments(DashboardTestBase):
 
         documents = (await self.fetch())["ocrDocuments"]
 
-        assert documents == {"total": 7, "queued": 1, "completed": 2, "failed": 1}
+        assert documents == {
+            "total": 7,
+            "queued": 1,
+            "completed": 2,
+            "failed": 1,
+            "avgFieldConfidence": None,
+        }
+
+    async def test_field_confidence_averages_jobs_in_selected_created_at_period(self) -> None:
+        user = await create_user(name="OCR 회원", email=unique_email("ocr-confidence"))
+        await self.create_ocr_job(
+            OcrJobStatus.COMPLETE,
+            user,
+            structured_result={"ocrFields": [{"confidence": 1.0}, {"confidence": 0.8}]},
+            created_at=at(0),
+        )
+        await self.create_ocr_job(
+            OcrJobStatus.COMPLETE,
+            user,
+            structured_result={"ocrFields": [{"confidence": 0.6}]},
+            created_at=at(3),
+        )
+        await self.create_ocr_job(
+            OcrJobStatus.COMPLETE,
+            user,
+            structured_result={"ocrFields": []},
+            created_at=at(1),
+        )
+        await self.create_ocr_job(
+            OcrJobStatus.COMPLETE,
+            user,
+            structured_result={"ocrFields": [{"confidence": 0.0}]},
+            created_at=at(8),
+        )
+
+        documents = (await self.fetch("LAST_7_DAYS"))["ocrDocuments"]
+
+        assert documents["avgFieldConfidence"] == 0.75
 
 
 class TestDashboardPermissions(DashboardTestBase):

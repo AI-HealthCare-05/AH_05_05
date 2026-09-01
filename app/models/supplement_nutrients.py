@@ -169,7 +169,9 @@ class UserSupplementNutrient(models.Model):
         "models.SupplementNutrient",
         related_name="user_registrations",
         on_delete=fields.RESTRICT,
+        null=True,
     )
+    custom_name = fields.CharField(max_length=255, null=True)
     dose_amount = fields.DecimalField(
         max_digits=8,
         decimal_places=3,
