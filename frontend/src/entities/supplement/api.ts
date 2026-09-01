@@ -2,6 +2,7 @@ import { ApiError, http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockAddSupplement,
+  mockNutrientStandards,
   mockSearchSupplementProducts,
   mockStopSupplement,
   mockSupplementProduct,
@@ -11,8 +12,10 @@ import {
 } from './api.mock';
 import type {
   AddSupplementPayload,
+  NutrientStandards,
   SearchSupplementProductsParams,
   Supplement,
+  SupplementListResult,
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementRanking,
@@ -98,11 +101,38 @@ interface UserSupplementNutrientApiResponse {
   supplement: SupplementNutrientApiResponse;
 }
 
+interface NutrientStandardValuesApiResponse {
+  rni: NumericApiValue;
+  ai: NumericApiValue;
+  ul: NumericApiValue;
+}
+
+interface UserNutrientStandardApiResponse {
+  grp: string;
+  age: string | null;
+  protein_g: NutrientStandardValuesApiResponse;
+  carb_g: NutrientStandardValuesApiResponse;
+  fat_g: NutrientStandardValuesApiResponse;
+  fiber_g: NutrientStandardValuesApiResponse;
+  calcium_mg: NutrientStandardValuesApiResponse;
+  iron_mg: NutrientStandardValuesApiResponse;
+  phosphorus_mg: NutrientStandardValuesApiResponse;
+  potassium_mg: NutrientStandardValuesApiResponse;
+  sodium_mg: NutrientStandardValuesApiResponse;
+  vitamin_a_ug_rae: NutrientStandardValuesApiResponse;
+  thiamine_mg: NutrientStandardValuesApiResponse;
+  riboflavin_mg: NutrientStandardValuesApiResponse;
+  niacin_mg: NutrientStandardValuesApiResponse;
+  vitamin_c_mg: NutrientStandardValuesApiResponse;
+  vitamin_d_ug: NutrientStandardValuesApiResponse;
+}
+
 interface UserSupplementNutrientListApiResponse {
   items: UserSupplementNutrientApiResponse[];
   total: number;
   offset: number;
   limit: number;
+  nutrient_standard: UserNutrientStandardApiResponse | null;
 }
 
 const SLOT_TO_API: Record<SupplementSlot, SupplementSlotApi> = {
@@ -142,15 +172,18 @@ const NUTRIENT_FIELDS: Array<{
   { field: 'vitamin_d_ug', nutrientId: 'vitamin-d', name: '비타민 D', unit: 'µg' },
 ];
 
-export async function getSupplements(): Promise<Supplement[]> {
+export async function getSupplements(): Promise<SupplementListResult> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockSupplements();
+    return { items: mockSupplements(), standards: mockNutrientStandards() };
   }
   const response = await http.get<UserSupplementNutrientListApiResponse>(
     '/v1/med/user-suppl-nutr?status=ACTIVE&offset=0&limit=100',
   );
-  return response.items.map(mapUserSupplement);
+  return {
+    items: response.items.map(mapUserSupplement),
+    standards: mapNutrientStandards(response.nutrient_standard),
+  };
 }
 
 export async function getSupplementRanking(): Promise<SupplementRanking | null> {
@@ -310,8 +343,30 @@ function mapNutrients(
       ? Number(rawValue) * perUnitFactor
       : Number.NaN;
     if (!Number.isFinite(amount) || amount <= 0) return [];
-    return [{ nutrientId, name, amount, unit, rni: null, ai: null, ul: null }];
+    return [{ nutrientId, name, amount, unit }];
   });
+}
+
+function mapNutrientStandards(
+  raw: UserNutrientStandardApiResponse | null | undefined,
+): NutrientStandards | null {
+  if (!raw) return null;
+  const byNutrientId: NutrientStandards['byNutrientId'] = {};
+  for (const { field, nutrientId } of NUTRIENT_FIELDS) {
+    const values = raw[field as keyof Omit<UserNutrientStandardApiResponse, 'grp' | 'age'>];
+    byNutrientId[nutrientId] = {
+      rni: toNumberOrNull(values?.rni),
+      ai: toNumberOrNull(values?.ai),
+      ul: toNumberOrNull(values?.ul),
+    };
+  }
+  return { group: raw.grp, ageRange: raw.age, byNutrientId };
+}
+
+function toNumberOrNull(value: NumericApiValue | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function nutrientPerUnitFactor(

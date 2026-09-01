@@ -57,6 +57,25 @@ const DROPS_PRODUCT = {
   daily_freq: '1회',
 };
 
+const MALE_NUTRIENT_STANDARD = {
+  grp: '남자', age: '19-29세',
+  protein_g: { rni: '65.000', ai: null, ul: null },
+  carb_g: { rni: '130.000', ai: null, ul: null },
+  fat_g: { rni: null, ai: null, ul: null },
+  fiber_g: { rni: null, ai: '30.000', ul: null },
+  calcium_mg: { rni: '800.000', ai: null, ul: '3000.000' },
+  iron_mg: { rni: '8.000', ai: null, ul: '45.000' },
+  phosphorus_mg: { rni: '650.000', ai: null, ul: '3500.000' },
+  potassium_mg: { rni: null, ai: '3500.000', ul: null },
+  sodium_mg: { rni: null, ai: '1500.000', ul: '2300.000' },
+  vitamin_a_ug_rae: { rni: '800.000', ai: null, ul: '3000.000' },
+  thiamine_mg: { rni: '1.200', ai: null, ul: null },
+  riboflavin_mg: { rni: '1.500', ai: null, ul: null },
+  niacin_mg: { rni: '14.000', ai: null, ul: '35.000' },
+  vitamin_c_mg: { rni: '100.000', ai: null, ul: '2000.000' },
+  vitamin_d_ug: { rni: null, ai: '10.000', ul: '100.000' },
+};
+
 test.beforeEach(() => {
   test.skip(
     process.env.VITE_USE_MOCK !== 'false',
@@ -98,6 +117,104 @@ function registrationFor(
     supplement: product,
   };
 }
+
+test('override 목록은 기준 조회가 실패해도 오류 화면으로 바뀌지 않는다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, { detail: '기준 조회 실패' }, 500);
+  });
+
+  await page.goto('/dev/supplements-three-exceeded');
+
+  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 3개' })).toBeVisible();
+  await expect(page.getByText('영양제를 불러오지 못했어요')).toHaveCount(0);
+});
+
+test('목록 응답의 문자열 섭취기준을 합계 기준선과 상한선에 연결한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [registrationFor(IRON_PRODUCT, 9001, '1.000')],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  const iron = page.getByRole('article', { name: '철 성분 합계' });
+  await expect(iron.getByText('권장 8', { exact: true })).toBeVisible();
+  await expect(iron.getByText('상한 45', { exact: true })).toBeVisible();
+  await expect(iron.getByRole('meter')).toBeVisible();
+  await expect(iron.getByText('기준이 없는 성분이에요', { exact: true })).toHaveCount(0);
+});
+
+test('기준 행이 없으면 프로필이 채워져 있어도 기준선을 숨기고 입력 안내를 표시한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [registrationFor(IRON_PRODUCT, 9002, '1.000')],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: null,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('meter')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', {
+      name: '생년월일과 성별을 입력하면 나이·성별에 맞는 기준을 보여드려요',
+    }),
+  ).toBeVisible();
+});
+
+test('합산할 성분이 없으면 합계 섹션과 0개 안내 문구를 표시하지 않는다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  await expect(page.getByRole('region', { name: '성분 합계' })).toHaveCount(0);
+  await expect(page.getByText(/등록한 건강기능식품 0개만/)).toHaveCount(0);
+  await expect(page.getByText(/직접 입력한 0개는/)).toHaveCount(0);
+});
 
 test('제품명 검색을 실제 RDB 검색 API 계약으로 보낸다', async ({ page }) => {
   await authenticate(page);

@@ -101,8 +101,35 @@ class UserSupplementNutrientResponse(BaseModel):
     supplement: SupplementNutrientResponse
 
 
+class NutrientStandardValues(BaseModel):
+    rni: Decimal | None
+    ai: Decimal | None
+    ul: Decimal | None
+
+
+class UserNutrientStandardResponse(BaseModel):
+    grp: str
+    age: str | None
+    protein_g: NutrientStandardValues
+    carb_g: NutrientStandardValues
+    fat_g: NutrientStandardValues
+    fiber_g: NutrientStandardValues
+    calcium_mg: NutrientStandardValues
+    iron_mg: NutrientStandardValues
+    phosphorus_mg: NutrientStandardValues
+    potassium_mg: NutrientStandardValues
+    sodium_mg: NutrientStandardValues
+    vitamin_a_ug_rae: NutrientStandardValues
+    thiamine_mg: NutrientStandardValues
+    riboflavin_mg: NutrientStandardValues
+    niacin_mg: NutrientStandardValues
+    vitamin_c_mg: NutrientStandardValues
+    vitamin_d_ug: NutrientStandardValues
+
+
 class UserSupplementNutrientListResponse(BaseModel):
     items: list[UserSupplementNutrientResponse]
     total: int
     offset: int
     limit: int
+    nutrient_standard: UserNutrientStandardResponse | None = None

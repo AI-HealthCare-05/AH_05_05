@@ -1,9 +1,32 @@
+from datetime import date, datetime
+
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.core import config
 from app.main import app
+from app.models.supplement_nutrients import NutrientStandard
+from app.models.users import User
 from app.tests.med_apis.helpers import authentication_headers, create_supplement
+
+STANDARD_NUTRIENT_KEYS = {
+    "protein_g",
+    "carb_g",
+    "fat_g",
+    "fiber_g",
+    "calcium_mg",
+    "iron_mg",
+    "phosphorus_mg",
+    "potassium_mg",
+    "sodium_mg",
+    "vitamin_a_ug_rae",
+    "thiamine_mg",
+    "riboflavin_mg",
+    "niacin_mg",
+    "vitamin_c_mg",
+    "vitamin_d_ug",
+}
 
 
 def registration_payload(*, slots: list[str] | None = None) -> dict:
@@ -16,7 +39,115 @@ def registration_payload(*, slots: list[str] | None = None) -> dict:
     }
 
 
+async def get_active_supplement_list(client: AsyncClient, headers: dict[str, str]):
+    return await client.get(
+        "/api/v1/med/user-suppl-nutr",
+        params={"status": "ACTIVE", "offset": 0, "limit": 20},
+        headers=headers,
+    )
+
+
 class TestUserSupplementNutrientAPI(TestCase):
+    async def test_list_includes_nutrient_standard(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        await NutrientStandard.create(
+            grp="여자",
+            age="19-29세",
+            calcium_mg_rni="800",
+            calcium_mg_ul="2500",
+        )
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "user-suppl-standard@example.com"
+            headers = await authentication_headers(client, email, "01021000011")
+            user = await User.get(email=email)
+            user.birth_date = date(today.year - 26, 1, 1)
+            await user.save(update_fields=["birth_date"])
+            response = await get_active_supplement_list(client, headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        standard = response.json()["nutrient_standard"]
+        assert standard["grp"] == "여자"
+        assert standard["age"] == "19-29세"
+        assert standard["calcium_mg"] == {"rni": "800.000", "ai": None, "ul": "2500.000"}
+
+    async def test_list_standard_is_null_without_birth_date(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "user-suppl-no-birth-date@example.com"
+            headers = await authentication_headers(client, email, "01021000012")
+            user = await User.get(email=email)
+            user.birth_date = None
+            await user.save(update_fields=["birth_date"])
+            response = await get_active_supplement_list(client, headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["nutrient_standard"] is None
+
+    async def test_list_standard_is_null_without_gender(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "user-suppl-no-gender@example.com"
+            headers = await authentication_headers(client, email, "01021000013")
+            user = await User.get(email=email)
+            user.gender = None
+            await user.save(update_fields=["gender"])
+            response = await get_active_supplement_list(client, headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["nutrient_standard"] is None
+
+    async def test_list_standard_is_null_when_row_missing(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(
+                client,
+                "user-suppl-missing-standard@example.com",
+                "01021000014",
+            )
+            response = await get_active_supplement_list(client, headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["nutrient_standard"] is None
+
+    async def test_list_standard_keys_are_always_present(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        await NutrientStandard.create(grp="여자", age="19-29세")
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "user-suppl-standard-keys@example.com"
+            headers = await authentication_headers(client, email, "01021000015")
+            user = await User.get(email=email)
+            user.birth_date = date(today.year - 26, 1, 1)
+            await user.save(update_fields=["birth_date"])
+            response = await get_active_supplement_list(client, headers)
+
+        standard = response.json()["nutrient_standard"]
+        assert set(standard) == {"grp", "age", *STANDARD_NUTRIENT_KEYS}
+        for nutrient_key in STANDARD_NUTRIENT_KEYS:
+            assert standard[nutrient_key] == {"rni": None, "ai": None, "ul": None}
+
+    async def test_list_standard_never_matches_pregnant_group(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        await NutrientStandard.create(
+            grp="임신부",
+            age="19-29세",
+            calcium_mg_rni="900",
+        )
+        await NutrientStandard.create(
+            grp="수유부",
+            age="19-29세",
+            calcium_mg_rni="1000",
+        )
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "user-suppl-never-pregnant@example.com"
+            headers = await authentication_headers(client, email, "01021000016")
+            user = await User.get(email=email)
+            user.birth_date = date(today.year - 26, 1, 1)
+            await user.save(update_fields=["birth_date"])
+            response = await get_active_supplement_list(client, headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["nutrient_standard"] is None
+
     async def test_authenticated_user_can_manage_own_supplement_registration(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await authentication_headers(client, "user-suppl@example.com", "01021000001")
