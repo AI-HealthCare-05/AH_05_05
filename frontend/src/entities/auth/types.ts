@@ -15,12 +15,13 @@ export interface LoginResult {
 }
 
 /**
- * 로그인 실패 코드. 화면 분기가 필요할 때만 씁니다.
- * 메시지는 서버가 준 문구를 그대로 띄우므로 코드로 문구를 만들지 마세요.
+ * 로그인 실패 코드. 메시지는 서버가 준 문구를 그대로 띄우므로 코드로 문구를 만들지 마세요.
  *
- * - `INVALID_CREDENTIALS` 이메일이 없거나 비밀번호가 틀림 (400).
- *   두 경우를 구분하지 않습니다 — 구분하면 가입 여부가 새어나갑니다
- * - `ACCOUNT_INACTIVE` 정지·탈퇴·대기 계정 (423).
- *   관리자 로그인은 403 을 쓰므로 코드가 다릅니다
+ * - `INVALID_CREDENTIALS` (400) — **모든 실패가 이 하나입니다.**
+ *   계정 없음·비밀번호 불일치·정지·탈퇴·대기를 구분하지 않습니다.
+ *   구분하면 그 이메일의 가입 여부가 새어나갑니다(#196).
+ *
+ * 예전에는 비활성 계정에 `ACCOUNT_INACTIVE`(423)가 따로 있었습니다. 상태 코드만으로
+ * 구분이 가능해 없앴습니다. 관리자 로그인은 이 규칙을 따르지 않습니다(내부용).
  */
-export type LoginErrorCode = 'INVALID_CREDENTIALS' | 'ACCOUNT_INACTIVE';
+export type LoginErrorCode = 'INVALID_CREDENTIALS';
