@@ -136,6 +136,38 @@ async def test_search_uses_supplied_query_plan_without_rebuilding_it() -> None:
     assert store.queries[0].query == "공급된 실행 전용 검색문"
 
 
+async def test_search_expands_ingredient_family_to_member_metadata_filters() -> None:
+    vitamin_b1 = build_chunk(
+        ingredient_names=["비타민 B1"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        content="비타민 B1은 탄수화물과 에너지 대사에 필요합니다.",
+    )
+    store = FakeKnowledgeStore(responses=[[vitamin_b1]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan("비타민 B는 왜 먹나요?"),
+    )
+
+    assert result.chunks == [vitamin_b1]
+    assert store.queries[0].ingredient_names == [
+        "비타민 B1",
+        "비타민 B2",
+        "비타민 B3",
+        "비타민 B5",
+        "비타민 B6",
+        "비타민 B7",
+        "비타민 B9",
+        "비타민 B12",
+    ]
+    assert result.diagnostics.selected_search_tier == "ENTITY"
+
+
 async def test_search_relaxes_pair_to_entities_then_semantic_without_hint_filters() -> None:
     store = FakeKnowledgeStore(responses=[])
     retriever = MedicationKnowledgeRetriever(

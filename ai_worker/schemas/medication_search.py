@@ -93,6 +93,7 @@ class SupplementIngredientFamily(BaseModel):
 
     canonical_name: str = Field(min_length=1)
     member_names: list[str] = Field(min_length=1)
+    search_names: list[str] = Field(default_factory=list)
     search_terms: list[str] = Field(default_factory=list)
 
 
@@ -169,8 +170,16 @@ class MedicationSearchExecutionPlan(BaseModel):
                 entity.canonical_name
                 for entity in self.query_plan.entities
                 if entity.kind == InteractionEntityKind.SUPPLEMENT
+                and entity.entity_type != MedicationQueryEntityType.INGREDIENT_FAMILY
             ],
-            (self.patient_supplement_names if self.include_patient_context else []),
+            [
+                *(
+                    self.query_plan.ingredient_family.search_names
+                    if self.query_plan.ingredient_family is not None
+                    else []
+                ),
+                *(self.patient_supplement_names if self.include_patient_context else []),
+            ],
         )
 
     @property
