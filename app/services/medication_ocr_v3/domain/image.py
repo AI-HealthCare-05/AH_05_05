@@ -159,4 +159,3 @@ class PreprocessResult:
     operations: tuple[str, ...]
     template_image: EncodedImage
     oriented_preview: PreviewImage
-

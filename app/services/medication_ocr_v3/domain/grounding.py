@@ -49,8 +49,7 @@ class EvidenceCatalog:
         return {
             "schemaVersion": self.schema_version,
             "dateCandidates": [
-                {**block.to_llm_payload(), "allowedFields": ["dispensedDate"]}
-                for block in self.date_candidates
+                {**block.to_llm_payload(), "allowedFields": ["dispensedDate"]} for block in self.date_candidates
             ],
             "rows": [
                 {
@@ -62,8 +61,7 @@ class EvidenceCatalog:
                             "allowedFields": ["strength"],
                         }
                         for block_id in row.block_ids
-                        if block_id in blocks_by_id
-                        and "strength" in blocks_by_id[block_id].allowed_fields
+                        if block_id in blocks_by_id and "strength" in blocks_by_id[block_id].allowed_fields
                     ],
                 }
                 for row in self.rows
@@ -88,4 +86,3 @@ class MedicationBlockSelection(StrictSelectionModel):
 class GroundingSelection(StrictSelectionModel):
     dispensed_date_block_ids: list[str] = Field(max_length=8)
     medications: list[MedicationBlockSelection] = Field(max_length=100)
-

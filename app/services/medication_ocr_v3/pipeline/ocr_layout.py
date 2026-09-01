@@ -16,9 +16,7 @@ from app.services.medication_ocr_v3.domain.models import OcrBlock, OcrBlockIssue
 from app.services.medication_ocr_v3.pipeline.ocr_normalization import normalize_measurement_unit_ocr
 
 _HEADER_ALIASES: dict[str, frozenset[str]] = {
-    "name": frozenset(
-        {"약품명", "약품명·성분", "약품명및용량", "약품명및용법", "품목명"}
-    ),
+    "name": frozenset({"약품명", "약품명·성분", "약품명및용량", "약품명및용법", "품목명"}),
     "dose": frozenset({"투약량", "복약량", "1회량"}),
     "times": frozenset({"횟수", "1일횟수", "투어횟수"}),
     "days": frozenset({"일수", "투약일수"}),
@@ -83,9 +81,7 @@ _SUMMARY_ROW_MARKER_PATTERN = re.compile(
     r"(?:소계|합계|총계|총합|합산|요약|금액|총액|총금액|합계금액|"
     r"청구금액|결제금액|본인부담(?:금|액)?|보험부담(?:금|액)?)(?:\(원\))?"
 )
-_HEADERLESS_DOSE_PATTERN = re.compile(
-    r"(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]+|[1-9][0-9]*/[1-9][0-9]*)"
-)
+_HEADERLESS_DOSE_PATTERN = re.compile(r"(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]+|[1-9][0-9]*/[1-9][0-9]*)")
 _HEADERLESS_TIMES_PATTERN = re.compile(r"([1-9][0-9]*)(?:회)?")
 _HEADERLESS_DAYS_PATTERN = re.compile(r"([1-9][0-9]*)(?:일분|일)?")
 _HEADERLESS_NAME_STRENGTH_PATTERN = re.compile(
@@ -221,10 +217,7 @@ def _starts_new_visual_line(
     )
     maximum_height = max(height, candidate.height)
     minimum_height = min(height, candidate.height)
-    return (
-        abs(center - candidate.center_y) > maximum_height * 0.75
-        and vertical_overlap < minimum_height * 0.25
-    )
+    return abs(center - candidate.center_y) > maximum_height * 0.75 and vertical_overlap < minimum_height * 0.25
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,12 +295,7 @@ class LayoutRow:
 
     @property
     def source_block_ids(self) -> tuple[str, ...]:
-        return tuple(
-            block_id
-            for cell in self.cells
-            if cell is not None
-            for block_id in cell.block_ids
-        )
+        return tuple(block_id for cell in self.cells if cell is not None for block_id in cell.block_ids)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -355,18 +343,14 @@ class TableCandidate:
 
     @property
     def header_block_ids(self) -> tuple[str, ...]:
-        return tuple(
-            block_id for column in self.header_columns for block_id in column.block_ids
-        )
+        return tuple(block_id for column in self.header_columns for block_id in column.block_ids)
 
     @property
     def source_block_ids(self) -> tuple[str, ...]:
-        return self.header_block_ids + tuple(
-            block_id for row in self.rows for block_id in row.source_block_ids
-        ) + tuple(
-            block_id
-            for evidence in self.ambiguous_column_evidence
-            for block_id in evidence.block_ids
+        return (
+            self.header_block_ids
+            + tuple(block_id for row in self.rows for block_id in row.source_block_ids)
+            + tuple(block_id for evidence in self.ambiguous_column_evidence for block_id in evidence.block_ids)
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -380,9 +364,7 @@ class TableCandidate:
             "bbox": self.bbox.as_dict(),
             "headerMapping": [column.as_dict() for column in self.header_columns],
             "rows": [row.as_dict() for row in self.rows],
-            "ambiguousColumnEvidence": [
-                evidence.as_dict() for evidence in self.ambiguous_column_evidence
-            ],
+            "ambiguousColumnEvidence": [evidence.as_dict() for evidence in self.ambiguous_column_evidence],
             "approvalBlockIds": list(self.approval_block_ids),
             "sourceBlockIds": list(self.source_block_ids),
             "metrics": {
@@ -577,18 +559,14 @@ def _geometry_blocks(
         if bbox is None:
             if OcrBlockIssueCode.INVALID_BLOCK_GEOMETRY not in source_issues:
                 source_issues.append(OcrBlockIssueCode.INVALID_BLOCK_GEOMETRY)
-            issues.append(
-                LayoutIssue(LayoutIssueCode.INVALID_BLOCK_GEOMETRY, (block.block_id,))
-            )
+            issues.append(LayoutIssue(LayoutIssueCode.INVALID_BLOCK_GEOMETRY, (block.block_id,)))
             continue
         if block.confidence is None or not math.isfinite(block.confidence):
             if OcrBlockIssueCode.INVALID_BLOCK_CONFIDENCE not in source_issues:
                 source_issues.append(OcrBlockIssueCode.INVALID_BLOCK_CONFIDENCE)
         for issue in source_issues:
             if issue is OcrBlockIssueCode.INVALID_BLOCK_CONFIDENCE:
-                issues.append(
-                    LayoutIssue(LayoutIssueCode.INVALID_BLOCK_CONFIDENCE, (block.block_id,))
-                )
+                issues.append(LayoutIssue(LayoutIssueCode.INVALID_BLOCK_CONFIDENCE, (block.block_id,)))
         valid.append(
             _GeometryBlock(
                 source=block,
@@ -634,9 +612,7 @@ def _cluster_lines(blocks: tuple[_GeometryBlock, ...]) -> tuple[_LineGroup, ...]
         for index, group in enumerate(mutable_groups):
             group_center = median(member.bbox.center_y for member in group)
             group_height = median(member.bbox.height for member in group)
-            center_distance = abs(block.bbox.center_y - group_center) / median(
-                (block.bbox.height, group_height)
-            )
+            center_distance = abs(block.bbox.center_y - group_center) / median((block.bbox.height, group_height))
             representative_band = AxisAlignedBBox(
                 0.0,
                 group_center - group_height / 2.0,
@@ -645,10 +621,7 @@ def _cluster_lines(blocks: tuple[_GeometryBlock, ...]) -> tuple[_LineGroup, ...]
             )
             overlap = _vertical_overlap(block.bbox, representative_band)
             overlap_ratio = overlap / min(block.bbox.height, group_height)
-            if (
-                overlap_ratio >= _LINE_VERTICAL_OVERLAP
-                or center_distance <= _LINE_CENTER_DISTANCE
-            ):
+            if overlap_ratio >= _LINE_VERTICAL_OVERLAP or center_distance <= _LINE_CENTER_DISTANCE:
                 compatible.append((center_distance, index))
         if compatible:
             _, best_index = min(compatible)
@@ -683,9 +656,7 @@ def _vertical_overlap(first: AxisAlignedBBox, second: AxisAlignedBBox) -> float:
 
 
 def _normalized_header_text(text: str) -> str:
-    normalized = unicodedata.normalize(
-        "NFKC", text.translate(_HEADER_SEPARATOR_TRANSLATION)
-    )
+    normalized = unicodedata.normalize("NFKC", text.translate(_HEADER_SEPARATOR_TRANSLATION))
     return "".join(normalized.split()).translate(_HEADER_SEPARATOR_TRANSLATION)
 
 
@@ -725,8 +696,7 @@ def _header_match(text: str) -> _HeaderMatch | None:
         key
         for key, aliases in _HEADER_ALIASES.items()
         if any(
-            len(normalized_alias) >= 3
-            and _within_one_edit(comparison, normalized_alias)
+            len(normalized_alias) >= 3 and _within_one_edit(comparison, normalized_alias)
             for alias in aliases
             if (normalized_alias := _normalized_header_text(alias))
         )
@@ -739,11 +709,7 @@ def _header_match(text: str) -> _HeaderMatch | None:
 def _header_seeds(line_groups: tuple[_LineGroup, ...]) -> tuple[_HeaderSeed, ...]:
     seeds: list[_HeaderSeed] = []
     for line in line_groups:
-        headers = [
-            (block, match)
-            for block in line.blocks
-            if (match := _header_match(block.source.text)) is not None
-        ]
+        headers = [(block, match) for block in line.blocks if (match := _header_match(block.source.text)) is not None]
         for start in range(max(0, len(headers) - 3)):
             sequence = headers[start : start + 4]
             if tuple(match.key for _, match in sequence) != _HEADER_ORDER:
@@ -762,14 +728,10 @@ def _header_seeds(line_groups: tuple[_LineGroup, ...]) -> tuple[_HeaderSeed, ...
 
     for upper, lower in zip(line_groups, line_groups[1:], strict=False):
         upper_headers = tuple(
-            (block, match)
-            for block in upper.blocks
-            if (match := _header_match(block.source.text)) is not None
+            (block, match) for block in upper.blocks if (match := _header_match(block.source.text)) is not None
         )
         lower_headers = tuple(
-            (block, match)
-            for block in lower.blocks
-            if (match := _header_match(block.source.text)) is not None
+            (block, match) for block in lower.blocks if (match := _header_match(block.source.text)) is not None
         )
         if (
             tuple(match.key for _, match in upper_headers) != ("name",)
@@ -786,10 +748,7 @@ def _header_seeds(line_groups: tuple[_LineGroup, ...]) -> tuple[_HeaderSeed, ...
                 *(block.bbox.height for block, _ in lower_headers),
             )
         )
-        if (
-            vertical_gap < -typical_height * 0.25
-            or vertical_gap > typical_height * _MAX_SPLIT_HEADER_VERTICAL_GAP
-        ):
+        if vertical_gap < -typical_height * 0.25 or vertical_gap > typical_height * _MAX_SPLIT_HEADER_VERTICAL_GAP:
             continue
         header_blocks = (
             upper_headers[0][0],
@@ -803,8 +762,7 @@ def _header_seeds(line_groups: tuple[_LineGroup, ...]) -> tuple[_HeaderSeed, ...
     seeds.extend(_diagonal_header_seeds(line_groups))
     seeds = list(
         {
-            tuple(block_id for block in seed.blocks for block_id in block.source_block_ids): seed
-            for seed in seeds
+            tuple(block_id for block in seed.blocks for block_id in block.source_block_ids): seed for seed in seeds
         }.values()
     )
     seeds.sort(
@@ -822,11 +780,7 @@ def _diagonal_header_seeds(
 ) -> tuple[_HeaderSeed, ...]:
     original = tuple(block for line in line_groups for block in line.blocks)
     tokens = (*original, *_joined_header_fragments(original))
-    matched = tuple(
-        (block, match)
-        for block in tokens
-        if (match := _header_match(block.source.text)) is not None
-    )
+    matched = tuple((block, match) for block in tokens if (match := _header_match(block.source.text)) is not None)
     seeds: list[_HeaderSeed] = []
     for name, name_match in matched:
         if name_match.key != "name":
@@ -839,8 +793,7 @@ def _diagonal_header_seeds(
                 for block, match in matched
                 if match.key == key
                 and block.bbox.center_x > previous.bbox.center_x
-                and abs(block.bbox.center_y - name.bbox.center_y)
-                <= max(block.bbox.height, name.bbox.height) * 2.5
+                and abs(block.bbox.center_y - name.bbox.center_y) <= max(block.bbox.height, name.bbox.height) * 2.5
             )
             if not choices:
                 break
@@ -854,10 +807,7 @@ def _diagonal_header_seeds(
                     ),
                 )
             )
-        if (
-            len(sequence) != 4
-            or sum(match.fuzzy for _, match in sequence) > 1
-        ):
+        if len(sequence) != 4 or sum(match.fuzzy for _, match in sequence) > 1:
             continue
         blocks = tuple(block for block, _ in sequence)
         heights = tuple(block.bbox.height for block in blocks)
@@ -886,8 +836,7 @@ def _joined_header_fragments(
     singles = tuple(
         block
         for block in blocks
-        if len(text := _normalized_header_text(block.source.text)) == 1
-        and "가" <= text <= "힣"
+        if len(text := _normalized_header_text(block.source.text)) == 1 and "가" <= text <= "힣"
     )
     joined: list[_GeometryBlock] = []
     for alias in aliases:
@@ -925,34 +874,21 @@ def _joined_header_fragments(
             confidences = tuple(
                 block.source.confidence
                 for block in sequence
-                if block.source.confidence is not None
-                and math.isfinite(block.source.confidence)
+                if block.source.confidence is not None and math.isfinite(block.source.confidence)
             )
-            source_issues = tuple(
-                dict.fromkeys(
-                    issue for block in sequence for issue in block.source_issues
-                )
-            )
+            source_issues = tuple(dict.fromkeys(issue for block in sequence for issue in block.source_issues))
             joined.append(
                 _GeometryBlock(
                     source=replace(
                         first.source,
                         text=alias,
-                        confidence=(
-                            sum(confidences) / len(confidences)
-                            if confidences
-                            else None
-                        ),
+                        confidence=(sum(confidences) / len(confidences) if confidences else None),
                         issues=source_issues,
                     ),
                     bbox=_union(block.bbox for block in sequence),
                     provider_order=first.provider_order,
                     source_issues=source_issues,
-                    source_block_ids=tuple(
-                        block_id
-                        for block in sequence
-                        for block_id in block.source_block_ids
-                    ),
+                    source_block_ids=tuple(block_id for block in sequence for block_id in block.source_block_ids),
                 )
             )
     return tuple(joined)
@@ -970,25 +906,16 @@ def _header_seed(
     centers = tuple(block.bbox.center_x for block in header_blocks)
     if not all(centers[index] < centers[index + 1] for index in range(3)):
         return None
-    boundaries = tuple(
-        (centers[index] + centers[index + 1]) / 2.0 for index in range(3)
-    )
+    boundaries = tuple((centers[index] + centers[index + 1]) / 2.0 for index in range(3))
     left_edge = centers[0] - (centers[1] - centers[0]) / 2.0
     trailing_amount_centers = tuple(
         block.bbox.center_x
         for block in trailing_blocks
-        if block.bbox.center_x > centers[3]
-        and _normalized_header_text(block.source.text) in _TRAILING_AMOUNT_ALIASES
+        if block.bbox.center_x > centers[3] and _normalized_header_text(block.source.text) in _TRAILING_AMOUNT_ALIASES
     )
-    numeric_right_bound = (
-        (centers[3] + min(trailing_amount_centers)) / 2.0
-        if trailing_amount_centers
-        else None
-    )
+    numeric_right_bound = (centers[3] + min(trailing_amount_centers)) / 2.0 if trailing_amount_centers else None
     right_edge = (
-        numeric_right_bound
-        if numeric_right_bound is not None
-        else centers[3] + (centers[3] - centers[2]) / 2.0
+        numeric_right_bound if numeric_right_bound is not None else centers[3] + (centers[3] - centers[2]) / 2.0
     )
     bands = (
         (left_edge, boundaries[0]),
@@ -1024,14 +951,10 @@ def _guidance_layout_rows(
         instruction_blocks = tuple(
             block
             for block in line.blocks
-            if header.instruction_band[0]
-            <= block.bbox.center_x
-            <= header.instruction_band[1]
+            if header.instruction_band[0] <= block.bbox.center_x <= header.instruction_band[1]
         )
         name_blocks = [
-            block
-            for block in line.blocks
-            if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
+            block for block in line.blocks if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
         ]
         name_cell = _layout_cell(name_blocks)
         if name_cell is None:
@@ -1079,15 +1002,8 @@ def _combined_guidance_candidates(
         schedules = tuple(
             (block, match, strict)
             for block in line.blocks
-            if header.instruction_band[0]
-            <= block.bbox.center_x
-            <= header.instruction_band[1]
-            and (
-                parsed := _combined_guidance_schedule_match(
-                    _compact_text(block.source.text)
-                )
-            )
-            is not None
+            if header.instruction_band[0] <= block.bbox.center_x <= header.instruction_band[1]
+            and (parsed := _combined_guidance_schedule_match(_compact_text(block.source.text))) is not None
             for match, strict in (parsed,)
         )
         if len(schedules) != 1:
@@ -1096,16 +1012,11 @@ def _combined_guidance_candidates(
         name_blocks = tuple(
             block
             for block in line.blocks
-            if header.name_band[0]
-            <= block.bbox.center_x
-            <= header.name_band[1]
+            if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
             and _contains_hangul(block.source.text)
             and _header_match(block.source.text) is None
             and _SUMMARY_ROW_MARKER_PATTERN.search(block.source.text) is None
-            and (
-                efficacy_lane_left is None
-                or block.bbox.x_min < efficacy_lane_left
-            )
+            and (efficacy_lane_left is None or block.bbox.x_min < efficacy_lane_left)
         )
         if not name_blocks or not _looks_like_medication_name(name_blocks):
             continue
@@ -1151,10 +1062,7 @@ def _combined_guidance_candidates(
 
     observed_cells = [cell for row in rows for cell in row.cells if cell is not None]
     confidence_count = sum(cell.valid_confidence_count for cell in observed_cells)
-    confidence_sum = sum(
-        (cell.confidence or 0.0) * cell.valid_confidence_count
-        for cell in observed_cells
-    )
+    confidence_sum = sum((cell.confidence or 0.0) * cell.valid_confidence_count for cell in observed_cells)
     first_cells = tuple(cell for cell in rows[0].cells if cell is not None)
     if len(first_cells) != 4:
         return ()
@@ -1183,9 +1091,7 @@ def _combined_guidance_candidates(
             ambiguous_column_evidence=(),
             column_consistency=1.0,
             confidence_coverage=1.0 if confidence_count else 0.0,
-            mean_confidence=(
-                confidence_sum / confidence_count if confidence_count else None
-            ),
+            mean_confidence=(confidence_sum / confidence_count if confidence_count else None),
         ),
     )
 
@@ -1199,9 +1105,7 @@ def _repeated_bracket_label_lane_left(
         for line_index, line in enumerate(line_groups)
         if line.bbox.center_y > header.bbox.center_y
         for block in line.blocks
-        if header.name_band[0]
-        <= block.bbox.x_min
-        < header.instruction_band[0]
+        if header.name_band[0] <= block.bbox.x_min < header.instruction_band[0]
         and _compact_text(block.source.text).startswith("[")
     )
     if len(candidates) < 2:
@@ -1209,19 +1113,14 @@ def _repeated_bracket_label_lane_left(
 
     tolerance = max(4.0, median(block.bbox.height for _, block in candidates))
     clusters = tuple(
-        tuple(
-            candidate
-            for candidate in candidates
-            if abs(candidate[1].bbox.x_min - anchor.bbox.x_min) <= tolerance
-        )
+        tuple(candidate for candidate in candidates if abs(candidate[1].bbox.x_min - anchor.bbox.x_min) <= tolerance)
         for _, anchor in candidates
     )
     lane = max(
         clusters,
         key=lambda cluster: (
             len({line_index for line_index, _ in cluster}),
-            -max(block.bbox.x_min for _, block in cluster)
-            + min(block.bbox.x_min for _, block in cluster),
+            -max(block.bbox.x_min for _, block in cluster) + min(block.bbox.x_min for _, block in cluster),
         ),
     )
     if len({line_index for line_index, _ in lane}) < 2:
@@ -1254,23 +1153,16 @@ def _headerless_correlated_receipt_candidates(
         elif row_like:
             invalid_row_lines.append(line)
     rows = tuple(sorted(row_seeds, key=lambda row: row.center_y))
-    if not (
-        _MIN_HEADERLESS_RECEIPT_ROWS
-        <= len(rows)
-        <= _MAX_HEADERLESS_RECEIPT_ROWS
-    ):
+    if not (_MIN_HEADERLESS_RECEIPT_ROWS <= len(rows) <= _MAX_HEADERLESS_RECEIPT_ROWS):
         return ()
-    missing_name_indexes = tuple(
-        index for index, row in enumerate(rows) if not row.name_blocks
-    )
+    missing_name_indexes = tuple(index for index, row in enumerate(rows) if not row.name_blocks)
     if len(missing_name_indexes) > 1:
         return ()
     named_rows = tuple(row for row in rows if row.name_blocks)
     if len(named_rows) < 2 or not _headerless_name_lane_is_stable(named_rows):
         return ()
     normalized_names = tuple(
-        _compact_text(" ".join(block.source.text for block in row.name_blocks))
-        for row in named_rows
+        _compact_text(" ".join(block.source.text for block in row.name_blocks)) for row in named_rows
     )
     if len(set(normalized_names)) != len(normalized_names):
         return ()
@@ -1293,9 +1185,7 @@ def _headerless_correlated_receipt_candidates(
         return ()
     context: _HeaderlessContextEvidence | None = None
     if local_numeric_headers is not None:
-        if missing_name_indexes or not all(
-            _looks_like_headerless_medication_name(row.name_blocks) for row in rows
-        ):
+        if missing_name_indexes or not all(_looks_like_headerless_medication_name(row.name_blocks) for row in rows):
             return ()
         output_name_blocks = tuple(row.name_blocks for row in rows)
         context_approval_ids: tuple[str, ...] = ()
@@ -1319,9 +1209,7 @@ def _headerless_correlated_receipt_candidates(
         else:
             return ()
         invalid_row_centers = [
-            line.bbox.center_y
-            for line in invalid_row_lines
-            if not _headerless_line_belongs_to_context(line, context)
+            line.bbox.center_y for line in invalid_row_lines if not _headerless_line_belongs_to_context(line, context)
         ]
         peer_evidence = _headerless_peer_name_evidence(
             line_groups,
@@ -1405,15 +1293,10 @@ def _headerless_correlated_receipt_candidates(
             )
         )
 
-    observed_cells = tuple(
-        cell for row in layout_rows for cell in row.cells if cell is not None
-    )
+    observed_cells = tuple(cell for row in layout_rows for cell in row.cells if cell is not None)
     confidence_count = sum(cell.valid_confidence_count for cell in observed_cells)
     confidence_total = sum(len(cell.block_ids) for cell in observed_cells)
-    confidence_sum = sum(
-        (cell.confidence or 0.0) * cell.valid_confidence_count
-        for cell in observed_cells
-    )
+    confidence_sum = sum((cell.confidence or 0.0) * cell.valid_confidence_count for cell in observed_cells)
     approval_blocks = (
         *approval_evidence_blocks,
         *(block for row in rows for block in row.name_evidence_blocks),
@@ -1435,12 +1318,8 @@ def _headerless_correlated_receipt_candidates(
             rows=tuple(layout_rows),
             ambiguous_column_evidence=(),
             column_consistency=consistency,
-            confidence_coverage=(
-                confidence_count / confidence_total if confidence_total else 0.0
-            ),
-            mean_confidence=(
-                confidence_sum / confidence_count if confidence_count else None
-            ),
+            confidence_coverage=(confidence_count / confidence_total if confidence_total else 0.0),
+            mean_confidence=(confidence_sum / confidence_count if confidence_count else None),
             approval_block_ids=approval_block_ids,
             observed_header_coverage=0,
             header_inferred=True,
@@ -1452,35 +1331,15 @@ def _unique_headerless_medication_semantics(
     line_groups: tuple[_LineGroup, ...],
 ) -> _HeaderlessSemantics | None:
     blocks = tuple(block for line in line_groups for block in line.blocks)
-    matches = tuple(
-        (block, match)
-        for block in blocks
-        if (match := _header_match(block.source.text)) is not None
-    )
-    if any(
-        sum(match.key == key for _, match in matches) != 1
-        for key in _HEADER_ORDER
-    ):
+    matches = tuple((block, match) for block in blocks if (match := _header_match(block.source.text)) is not None)
+    if any(sum(match.key == key for _, match in matches) != 1 for key in _HEADER_ORDER):
         return None
     if sum(match.fuzzy for _, match in matches) > 1:
         return None
-    guidance_anchors = tuple(
-        block
-        for block in blocks
-        if "복약안내" in _normalized_header_text(block.source.text)
-    )
-    if (
-        len(guidance_anchors) != 1
-        or _normalized_header_text(
-            guidance_anchors[0].source.text
-        ).count("복약안내")
-        != 1
-    ):
+    guidance_anchors = tuple(block for block in blocks if "복약안내" in _normalized_header_text(block.source.text))
+    if len(guidance_anchors) != 1 or _normalized_header_text(guidance_anchors[0].source.text).count("복약안내") != 1:
         return None
-    ordered = tuple(
-        next((block, match) for block, match in matches if match.key == key)
-        for key in _HEADER_ORDER
-    )
+    ordered = tuple(next((block, match) for block, match in matches if match.key == key) for key in _HEADER_ORDER)
     return _HeaderlessSemantics(
         header_blocks=(ordered[0][0], ordered[1][0], ordered[2][0], ordered[3][0]),
         header_matches=(ordered[0][1], ordered[1][1], ordered[2][1], ordered[3][1]),
@@ -1502,30 +1361,21 @@ def _local_headerless_numeric_headers(
         and match.key in _HEADER_ORDER[1:]
         and not match.fuzzy
     )
-    if any(
-        sum(match.key == key for _, match in numeric_matches) != 1
-        for key in _HEADER_ORDER[1:]
-    ):
+    if any(sum(match.key == key for _, match in numeric_matches) != 1 for key in _HEADER_ORDER[1:]):
         return None
-    ordered = tuple(
-        next(block for block, match in numeric_matches if match.key == key)
-        for key in _HEADER_ORDER[1:]
-    )
+    ordered = tuple(next(block for block, match in numeric_matches if match.key == key) for key in _HEADER_ORDER[1:])
     headers = (ordered[0], ordered[1], ordered[2])
     header_ids = {block.source.block_id for block in headers}
-    if not any(
-        header_ids <= {block.source.block_id for block in line.blocks}
-        for line in line_groups
-    ):
+    if not any(header_ids <= {block.source.block_id for block in line.blocks} for line in line_groups):
         return None
     if not rows or any(not row.name_blocks for row in rows):
         return None
 
     typical_row_height = median(row.bbox.height for row in rows)
     typical_header_height = median(block.bbox.height for block in headers)
-    if max(block.bbox.center_y for block in headers) - min(
-        block.bbox.center_y for block in headers
-    ) > max(typical_row_height, typical_header_height):
+    if max(block.bbox.center_y for block in headers) - min(block.bbox.center_y for block in headers) > max(
+        typical_row_height, typical_header_height
+    ):
         return None
 
     header_bbox = _union(block.bbox for block in headers)
@@ -1533,10 +1383,7 @@ def _local_headerless_numeric_headers(
     if not -typical_row_height * 0.35 <= vertical_gap <= typical_row_height * 1.5:
         return None
 
-    track_centers = tuple(
-        median(row.numeric_blocks[index].bbox.center_x for row in rows)
-        for index in range(3)
-    )
+    track_centers = tuple(median(row.numeric_blocks[index].bbox.center_x for row in rows) for index in range(3))
     if not all(
         _axis_gap(
             center,
@@ -1556,11 +1403,7 @@ def _headerless_receipt_row(
 ) -> tuple[_HeaderlessReceiptRow | None, bool]:
     structural = tuple(
         sorted(
-            (
-                block
-                for block in line.blocks
-                if _is_structural_numeric(block.source.text)
-            ),
+            (block for block in line.blocks if _is_structural_numeric(block.source.text)),
             key=lambda block: (block.bbox.center_x, block.provider_order),
         )
     )
@@ -1571,32 +1414,20 @@ def _headerless_receipt_row(
         block
         for block in line.blocks
         if block.bbox.center_x < structural[0].bbox.x_min
-        and _HEADERLESS_NAME_STRENGTH_PATTERN.fullmatch(
-            _compact_text(block.source.text)
-        )
-        is not None
+        and _HEADERLESS_NAME_STRENGTH_PATTERN.fullmatch(_compact_text(block.source.text)) is not None
     )
     has_plausible_name = _looks_like_headerless_medication_name(name_blocks)
     if (name_blocks and not has_plausible_name) or len(name_evidence_blocks) > 1:
         return None, False
-    digit_blocks = tuple(
-        block for block in line.blocks if _contains_digit(block.source.text)
-    )
+    digit_blocks = tuple(block for block in line.blocks if _contains_digit(block.source.text))
     allowed_digit_ids = {
         *(block.source.block_id for block in name_blocks),
         *(block.source.block_id for block in name_evidence_blocks),
         *(block.source.block_id for block in structural),
     }
-    if (
-        len(structural) not in {3, 4}
-        or any(
-            block.source.block_id not in allowed_digit_ids for block in digit_blocks
-        )
-    ):
+    if len(structural) not in {3, 4} or any(block.source.block_id not in allowed_digit_ids for block in digit_blocks):
         return None, has_plausible_name or len(structural) >= 3
-    parsed_values = _headerless_numeric_values(
-        (structural[0], structural[1], structural[2])
-    )
+    parsed_values = _headerless_numeric_values((structural[0], structural[1], structural[2]))
     if parsed_values is None:
         return None, True
     name_bbox = _union(block.bbox for block in name_blocks) if name_blocks else None
@@ -1608,11 +1439,7 @@ def _headerless_receipt_row(
         *(block.bbox for block in structural),
     )
     typical_height = median(box.height for box in member_boxes)
-    if (
-        max(box.center_y for box in member_boxes)
-        - min(box.center_y for box in member_boxes)
-        > typical_height * 0.90
-    ):
+    if max(box.center_y for box in member_boxes) - min(box.center_y for box in member_boxes) > typical_height * 0.90:
         return None, True
     return (
         _HeaderlessReceiptRow(
@@ -1638,28 +1465,16 @@ def _headerless_receipt_name_blocks(
         if block.bbox.center_x < first_numeric.bbox.x_min
         and _header_match(block.source.text) is None
         and not _is_structural_numeric(block.source.text)
-        and _HEADERLESS_NAME_STRENGTH_PATTERN.fullmatch(
-            _compact_text(block.source.text)
-        )
-        is None
-        and (
-            not _contains_digit(block.source.text)
-            or _contains_hangul(block.source.text)
-        )
+        and _HEADERLESS_NAME_STRENGTH_PATTERN.fullmatch(_compact_text(block.source.text)) is None
+        and (not _contains_digit(block.source.text) or _contains_hangul(block.source.text))
     )
     if not eligible:
         return ()
-    ordered = tuple(
-        sorted(eligible, key=lambda block: (block.bbox.x_min, block.provider_order))
-    )
+    ordered = tuple(sorted(eligible, key=lambda block: (block.bbox.x_min, block.provider_order)))
     typical_height = median(block.bbox.height for block in ordered)
     groups: list[list[_GeometryBlock]] = []
     for block in ordered:
-        if (
-            groups
-            and block.bbox.x_min - groups[-1][-1].bbox.x_max
-            <= typical_height * 2.5
-        ):
+        if groups and block.bbox.x_min - groups[-1][-1].bbox.x_max <= typical_height * 2.5:
             groups[-1].append(block)
         else:
             groups.append([block])
@@ -1699,29 +1514,17 @@ def _headerless_numeric_values(
         return None
     times_value = _bounded_positive_integer(times_match.group(1))
     days_value = _bounded_positive_integer(days_match.group(1))
-    if (
-        times_value is None
-        or days_value is None
-        or not 1 <= times_value <= 6
-        or not 1 <= days_value <= 365
-    ):
+    if times_value is None or days_value is None or not 1 <= times_value <= 6 or not 1 <= days_value <= 365:
         return None
     return dose, str(times_value), str(days_value)
 
 
 def _headerless_quantity_fraction(text: str) -> Fraction | None:
-    if (
-        not text
-        or len(text) > _MAX_HEADERLESS_NUMERIC_LENGTH
-        or _HEADERLESS_DOSE_PATTERN.fullmatch(text) is None
-    ):
+    if not text or len(text) > _MAX_HEADERLESS_NUMERIC_LENGTH or _HEADERLESS_DOSE_PATTERN.fullmatch(text) is None:
         return None
     if "/" in text:
         numerator, denominator = text.split("/", 1)
-        if (
-            _bounded_positive_integer(numerator) is None
-            or _bounded_positive_integer(denominator) is None
-        ):
+        if _bounded_positive_integer(numerator) is None or _bounded_positive_integer(denominator) is None:
             return None
     else:
         integer_part = text.split(".", 1)[0]
@@ -1765,13 +1568,7 @@ def _validated_headerless_derived_totals(
         times = _bounded_positive_integer(row.parsed_values[1])
         days = _bounded_positive_integer(row.parsed_values[2])
         total = _headerless_quantity_fraction(_compact_text(total_block.source.text))
-        if (
-            dose is None
-            or times is None
-            or days is None
-            or total is None
-            or dose * times * days != total
-        ):
+        if dose is None or times is None or days is None or total is None or dose * times * days != total:
             return None
         validated.append(total_block)
     return tuple(validated)
@@ -1780,14 +1577,9 @@ def _validated_headerless_derived_totals(
 def _headerless_name_lane_is_stable(
     rows: tuple[_HeaderlessReceiptRow, ...],
 ) -> bool:
-    left_bounds = tuple(
-        _union(block.bbox for block in row.name_blocks).x_min for row in rows
-    )
+    left_bounds = tuple(_union(block.bbox for block in row.name_blocks).x_min for row in rows)
     typical_height = median(row.bbox.height for row in rows)
-    first_track_gap = median(
-        row.numeric_blocks[1].bbox.center_x - row.numeric_blocks[0].bbox.center_x
-        for row in rows
-    )
+    first_track_gap = median(row.numeric_blocks[1].bbox.center_x - row.numeric_blocks[0].bbox.center_x for row in rows)
     return max(left_bounds) - min(left_bounds) <= max(
         typical_height,
         first_track_gap * 0.15,
@@ -1797,9 +1589,7 @@ def _headerless_name_lane_is_stable(
 def _headerless_strict_contexts(
     line_groups: tuple[_LineGroup, ...],
 ) -> tuple[_HeaderlessContextEvidence, ...]:
-    geometry_by_id = {
-        block.source.block_id: block for line in line_groups for block in line.blocks
-    }
+    geometry_by_id = {block.source.block_id: block for line in line_groups for block in line.blocks}
     contexts: list[_HeaderlessContextEvidence] = []
     for context_rows in (
         _guidance_layout_rows(line_groups),
@@ -1808,26 +1598,16 @@ def _headerless_strict_contexts(
         if not context_rows:
             continue
         name_ids = tuple(
-            cell.block_ids[0]
-            for row in context_rows
-            if (cell := row.cells[0]) is not None and len(cell.block_ids) == 1
+            cell.block_ids[0] for row in context_rows if (cell := row.cells[0]) is not None and len(cell.block_ids) == 1
         )
         if len(name_ids) != len(context_rows) or len(set(name_ids)) != len(name_ids):
             continue
-        approval_ids = tuple(
-            dict.fromkeys(
-                block_id
-                for row in context_rows
-                for block_id in row.source_block_ids
-            )
-        )
+        approval_ids = tuple(dict.fromkeys(block_id for row in context_rows for block_id in row.source_block_ids))
         context_name_ids = set(name_ids)
         context_line_ids = frozenset(
             block.source.block_id
             for line in line_groups
-            if context_name_ids.intersection(
-                block.source.block_id for block in line.blocks
-            )
+            if context_name_ids.intersection(block.source.block_id for block in line.blocks)
             for block in line.blocks
         )
         contexts.append(
@@ -1848,10 +1628,7 @@ def _headerless_weak_contexts(
     semantics: _HeaderlessSemantics,
 ) -> tuple[_HeaderlessContextEvidence, ...]:
     fuzzy_matches = tuple(match for match in semantics.header_matches if match.fuzzy)
-    if (
-        any(match.key != "name" for match in fuzzy_matches)
-        or (len(rows) == 2 and fuzzy_matches)
-    ):
+    if any(match.key != "name" for match in fuzzy_matches) or (len(rows) == 2 and fuzzy_matches):
         return ()
     primary_bbox, horizontal_budget, vertical_budget = _headerless_primary_geometry(rows)
     typical_height = median(row.bbox.height for row in rows)
@@ -1864,8 +1641,7 @@ def _headerless_weak_contexts(
         block
         for line in line_groups
         for block in line.blocks
-        if block.bbox.y_max <= upper_limit
-        and block.source.block_id not in semantic_ids
+        if block.bbox.y_max <= upper_limit and block.source.block_id not in semantic_ids
     )
     name_candidates = tuple(
         block
@@ -1874,10 +1650,7 @@ def _headerless_weak_contexts(
         and _header_match(block.source.text) is None
         and "복약안내" not in _normalized_header_text(block.source.text)
         and "주의사항" not in _normalized_header_text(block.source.text)
-        and (
-            not _weak_medication_signal(block)[0]
-            or _weak_name_has_product_cue(block)
-        )
+        and (not _weak_medication_signal(block)[0] or _weak_name_has_product_cue(block))
     )
     if len(name_candidates) < len(rows):
         return ()
@@ -1887,33 +1660,21 @@ def _headerless_weak_contexts(
         if row.name_blocks
         for block in name_candidates
         if _compatible_inline_name(
-            _inline_name_key(
-                " ".join(item.source.text for item in row.name_blocks)
-            ),
+            _inline_name_key(" ".join(item.source.text for item in row.name_blocks)),
             _inline_name_key(block.source.text),
         )
     )
     if len({block.source.block_id for block in anchor_candidates}) < 2:
         return ()
-    numeric_span = median(
-        row.numeric_blocks[2].bbox.center_x
-        - row.numeric_blocks[0].bbox.center_x
-        for row in rows
-    )
+    numeric_span = median(row.numeric_blocks[2].bbox.center_x - row.numeric_blocks[0].bbox.center_x for row in rows)
     lane_tolerance = max(2.0, typical_height * 0.60, numeric_span * 0.02)
     sequences: dict[tuple[str, ...], tuple[_GeometryBlock, ...]] = {}
-    row_evidence_by_sequence: dict[
-        tuple[str, ...], tuple[tuple[_WeakMedicationEvidence, ...], ...]
-    ] = {}
+    row_evidence_by_sequence: dict[tuple[str, ...], tuple[tuple[_WeakMedicationEvidence, ...], ...]] = {}
     evaluated_pools: set[tuple[str, ...]] = set()
     for seed in anchor_candidates:
         pool = tuple(
             sorted(
-                (
-                    block
-                    for block in name_candidates
-                    if abs(block.bbox.x_min - seed.bbox.x_min) <= lane_tolerance
-                ),
+                (block for block in name_candidates if abs(block.bbox.x_min - seed.bbox.x_min) <= lane_tolerance),
                 key=lambda block: (block.bbox.center_y, block.provider_order),
             )
         )
@@ -1921,17 +1682,12 @@ def _headerless_weak_contexts(
         if pool_ids in evaluated_pools:
             continue
         evaluated_pools.add(pool_ids)
-        if (
-            not len(rows) <= len(pool) <= len(rows) * 3
-            or math.comb(len(pool), len(rows)) > 50_000
-        ):
+        if not len(rows) <= len(pool) <= len(rows) * 3 or math.comb(len(pool), len(rows)) > 50_000:
             continue
         for lane_items in combinations(pool, len(rows)):
             lane = tuple(lane_items)
             if (
-                max(block.bbox.x_min for block in lane)
-                - min(block.bbox.x_min for block in lane)
-                > lane_tolerance
+                max(block.bbox.x_min for block in lane) - min(block.bbox.x_min for block in lane) > lane_tolerance
                 or not _weak_name_sequence_spacing_is_stable(lane)
                 or not _weak_name_sequence_is_separate(
                     lane,
@@ -1942,29 +1698,21 @@ def _headerless_weak_contexts(
                 )
             ):
                 continue
-            canonical_names = tuple(
-                _inline_name_key(block.source.text) for block in lane
-            )
+            canonical_names = tuple(_inline_name_key(block.source.text) for block in lane)
             if not all(canonical_names) or len(set(canonical_names)) != len(lane):
                 continue
             compatible_rows = tuple(
                 bool(row.name_blocks)
                 and _compatible_inline_name(
-                    _inline_name_key(
-                        " ".join(item.source.text for item in row.name_blocks)
-                    ),
+                    _inline_name_key(" ".join(item.source.text for item in row.name_blocks)),
                     _inline_name_key(block.source.text),
                 )
                 for row, block in zip(rows, lane, strict=True)
             )
-            anchors = tuple(
-                index for index, compatible in enumerate(compatible_rows) if compatible
-            )
+            anchors = tuple(index for index, compatible in enumerate(compatible_rows) if compatible)
             if len(rows) == 2:
                 if anchors != (0, 1) or any(
-                    _inline_name_key(
-                        " ".join(item.source.text for item in row.name_blocks)
-                    )
+                    _inline_name_key(" ".join(item.source.text for item in row.name_blocks))
                     != _inline_name_key(block.source.text)
                     for row, block in zip(rows, lane, strict=True)
                 ):
@@ -1974,8 +1722,7 @@ def _headerless_weak_contexts(
             evidence_candidates = _weak_medication_line_evidence(
                 line_groups,
                 upper_limit,
-                semantic_ids
-                | {block.source.block_id for block in lane},
+                semantic_ids | {block.source.block_id for block in lane},
             )
             evidence_by_row = _weak_description_evidence(
                 lane,
@@ -1983,8 +1730,7 @@ def _headerless_weak_contexts(
             )
             rich_row_count = sum(bool(evidence) for evidence in evidence_by_row)
             lexical_row_count = sum(
-                any(evidence.lexical for evidence in row_evidence)
-                for row_evidence in evidence_by_row
+                any(evidence.lexical for evidence in row_evidence) for row_evidence in evidence_by_row
             )
             if (
                 rich_row_count < math.ceil(len(rows) * 2 / 3)
@@ -2000,15 +1746,8 @@ def _headerless_weak_contexts(
             ):
                 continue
             product_cues = tuple(_weak_name_has_product_cue(block) for block in lane)
-            if (
-                sum(product_cues) < min(2, len(rows))
-                or not any(
-                    _HEADERLESS_NAME_STRENGTH_PATTERN.search(
-                        _compact_text(block.source.text)
-                    )
-                    is not None
-                    for block in lane
-                )
+            if sum(product_cues) < min(2, len(rows)) or not any(
+                _HEADERLESS_NAME_STRENGTH_PATTERN.search(_compact_text(block.source.text)) is not None for block in lane
             ):
                 continue
             sequence_ids = tuple(block.source.block_id for block in lane)
@@ -2017,11 +1756,7 @@ def _headerless_weak_contexts(
     contexts: list[_HeaderlessContextEvidence] = []
     for sequence_ids, lane in sequences.items():
         evidence_by_row = row_evidence_by_sequence[sequence_ids]
-        evidence_items = tuple(
-            evidence
-            for row_evidence in evidence_by_row
-            for evidence in row_evidence
-        )
+        evidence_items = tuple(evidence for row_evidence in evidence_by_row for evidence in row_evidence)
         approval_blocks = tuple(
             dict.fromkeys(
                 (
@@ -2033,16 +1768,12 @@ def _headerless_weak_contexts(
         contexts.append(
             _HeaderlessContextEvidence(
                 name_blocks=lane,
-                approval_block_ids=tuple(
-                    block.source.block_id for block in approval_blocks
-                ),
+                approval_block_ids=tuple(block.source.block_id for block in approval_blocks),
                 bboxes=(
                     *(block.bbox for block in lane),
                     *(evidence.bbox for evidence in evidence_items),
                 ),
-                context_line_block_ids=frozenset(
-                    block.source.block_id for block in approval_blocks
-                ),
+                context_line_block_ids=frozenset(block.source.block_id for block in approval_blocks),
                 weak=True,
                 row_evidence=evidence_by_row,
             )
@@ -2059,11 +1790,7 @@ def _weak_medication_line_evidence(
     for line in line_groups:
         if line.bbox.y_max > upper_limit:
             continue
-        blocks = tuple(
-            block
-            for block in line.blocks
-            if block.source.block_id not in excluded_ids
-        )
+        blocks = tuple(block for block in line.blocks if block.source.block_id not in excluded_ids)
         if not blocks:
             continue
         normalized = _compact_text(" ".join(block.source.text for block in blocks))
@@ -2072,12 +1799,8 @@ def _weak_medication_line_evidence(
         lexical = _WEAK_MEDICATION_CONTEXT_PATTERN.search(normalized) is not None
         strength = _HEADERLESS_NAME_STRENGTH_PATTERN.search(normalized) is not None
         hangul_blocks = sum(_contains_hangul(block.source.text) for block in blocks)
-        hangul_characters = sum(
-            "가" <= character <= "힣" for character in normalized
-        )
-        rich = lexical or strength or (
-            len(blocks) >= 3 and hangul_blocks >= 3 and hangul_characters >= 8
-        )
+        hangul_characters = sum("가" <= character <= "힣" for character in normalized)
+        rich = lexical or strength or (len(blocks) >= 3 and hangul_blocks >= 3 and hangul_characters >= 8)
         if rich:
             evidence.append(
                 _WeakMedicationEvidence(
@@ -2106,10 +1829,7 @@ def _weak_name_sequence_spacing_is_stable(
     blocks: tuple[_GeometryBlock, ...],
 ) -> bool:
     typical_height = median(block.bbox.height for block in blocks)
-    gaps = tuple(
-        blocks[index + 1].bbox.center_y - blocks[index].bbox.center_y
-        for index in range(len(blocks) - 1)
-    )
+    gaps = tuple(blocks[index + 1].bbox.center_y - blocks[index].bbox.center_y for index in range(len(blocks) - 1))
     if any(gap <= typical_height * 0.75 for gap in gaps):
         return False
     typical_gap = median(gaps)
@@ -2152,8 +1872,7 @@ def _weak_description_evidence(
 ) -> tuple[tuple[_WeakMedicationEvidence, ...], ...]:
     typical_height = median(block.bbox.height for block in name_blocks)
     name_gaps = tuple(
-        name_blocks[index + 1].bbox.center_y - name_blocks[index].bbox.center_y
-        for index in range(len(name_blocks) - 1)
+        name_blocks[index + 1].bbox.center_y - name_blocks[index].bbox.center_y for index in range(len(name_blocks) - 1)
     )
     vertical_limit = max(typical_height * 1.75, median(name_gaps) * 0.48)
     lane_bbox = _union(block.bbox for block in name_blocks)
@@ -2163,25 +1882,22 @@ def _weak_description_evidence(
     )
     evidence: list[list[_WeakMedicationEvidence]] = [[] for _ in name_blocks]
     for signal in signal_evidence:
-        if _axis_gap(
-            signal.bbox.x_min,
-            signal.bbox.x_max,
-            lane_bbox.x_min,
-            lane_bbox.x_max,
-        ) > horizontal_limit:
+        if (
+            _axis_gap(
+                signal.bbox.x_min,
+                signal.bbox.x_max,
+                lane_bbox.x_min,
+                lane_bbox.x_max,
+            )
+            > horizontal_limit
+        ):
             continue
-        distances = tuple(
-            abs(signal.bbox.center_y - name.bbox.center_y)
-            for name in name_blocks
-        )
+        distances = tuple(abs(signal.bbox.center_y - name.bbox.center_y) for name in name_blocks)
         ordered = sorted((distance, index) for index, distance in enumerate(distances))
         closest_distance, closest_index = ordered[0]
         if closest_distance > vertical_limit:
             continue
-        if (
-            len(ordered) > 1
-            and ordered[1][0] - closest_distance <= typical_height * 0.10
-        ):
+        if len(ordered) > 1 and ordered[1][0] - closest_distance <= typical_height * 0.10:
             continue
         evidence[closest_index].append(signal)
     return tuple(tuple(items) for items in evidence)
@@ -2208,9 +1924,7 @@ def _headerless_final_names_are_valid(
     ):
         if not final_blocks or not _looks_like_headerless_medication_name(final_blocks):
             return False
-        canonical_name = _inline_name_key(
-            " ".join(block.source.text for block in final_blocks)
-        )
+        canonical_name = _inline_name_key(" ".join(block.source.text for block in final_blocks))
         if not canonical_name or (
             not context.weak
             and not _compatible_inline_name(
@@ -2244,9 +1958,7 @@ def _headerless_peer_name_evidence(
         return None
     if context.weak:
         return _headerless_weak_peer_evidence(rows, semantics, context)
-    context_name_ids = {
-        block.source.block_id for block in context.name_blocks
-    }
+    context_name_ids = {block.source.block_id for block in context.name_blocks}
     if len(context_name_ids) != len(context.name_blocks):
         return None
     primary_bbox, max_horizontal_gap, _ = _headerless_primary_geometry(rows)
@@ -2293,33 +2005,25 @@ def _headerless_peer_name_evidence(
             else:
                 continue
             if horizontal_gap <= max_horizontal_gap:
-                target = (
-                    candidates
-                    if block.source.block_id in context_name_ids
-                    else untrusted_candidates
-                )
+                target = candidates if block.source.block_id in context_name_ids else untrusted_candidates
                 target.append((block, side))
 
     mapped: list[tuple[_GeometryBlock, str]] = []
     for row in rows:
         if not row.name_blocks:
             continue
-        receipt_key = _inline_name_key(
-            " ".join(block.source.text for block in row.name_blocks)
-        )
+        receipt_key = _inline_name_key(" ".join(block.source.text for block in row.name_blocks))
         row_candidates = tuple(
             (block, side)
             for block, side in candidates
-            if abs(block.bbox.center_y - row.center_y)
-            <= median((block.bbox.height, row.bbox.height)) * 1.10
+            if abs(block.bbox.center_y - row.center_y) <= median((block.bbox.height, row.bbox.height)) * 1.10
             and _compatible_inline_name(
                 receipt_key,
                 _inline_name_key(block.source.text),
             )
         )
         has_untrusted_match = any(
-            abs(block.bbox.center_y - row.center_y)
-            <= median((block.bbox.height, row.bbox.height)) * 1.10
+            abs(block.bbox.center_y - row.center_y) <= median((block.bbox.height, row.bbox.height)) * 1.10
             and _compatible_inline_name(
                 receipt_key,
                 _inline_name_key(block.source.text),
@@ -2366,8 +2070,7 @@ def _headerless_peer_name_evidence(
             block
             for block, candidate_side in candidates
             if candidate_side == side
-            and block.source.block_id
-            not in {mapped_block.source.block_id for mapped_block, _ in mapped}
+            and block.source.block_id not in {mapped_block.source.block_id for mapped_block, _ in mapped}
             and abs(block.bbox.center_y - missing_row.center_y)
             <= median((block.bbox.height, missing_row.bbox.height)) * 1.10
             and abs(block.bbox.center_x - lane_center) <= lane_tolerance
@@ -2384,13 +2087,7 @@ def _headerless_peer_name_evidence(
         peer_blocks=tuple(block for block, _ in mapped),
         recovered_name_block=recovered_name_block,
         output_name_blocks=tuple(
-            row.name_blocks
-            or (
-                (recovered_name_block,)
-                if recovered_name_block is not None
-                else ()
-            )
-            for row in rows
+            row.name_blocks or ((recovered_name_block,) if recovered_name_block is not None else ()) for row in rows
         ),
     )
 
@@ -2401,38 +2098,29 @@ def _headerless_weak_peer_evidence(
     context: _HeaderlessContextEvidence,
 ) -> _HeaderlessPeerEvidence | None:
     anchors: list[int] = []
-    for index, (row, peer) in enumerate(
-        zip(rows, context.name_blocks, strict=True)
-    ):
+    for index, (row, peer) in enumerate(zip(rows, context.name_blocks, strict=True)):
         if not row.name_blocks:
             continue
-        receipt_name = _inline_name_key(
-            " ".join(block.source.text for block in row.name_blocks)
-        )
+        receipt_name = _inline_name_key(" ".join(block.source.text for block in row.name_blocks))
         peer_name = _inline_name_key(peer.source.text)
         if _compatible_inline_name(receipt_name, peer_name):
             anchors.append(index)
     if len(rows) == 2:
-        if semantics.header_matches[0].fuzzy or anchors != [0, 1] or any(
-            _inline_name_key(
-                " ".join(block.source.text for block in row.name_blocks)
+        if (
+            semantics.header_matches[0].fuzzy
+            or anchors != [0, 1]
+            or any(
+                _inline_name_key(" ".join(block.source.text for block in row.name_blocks))
+                != _inline_name_key(peer.source.text)
+                for row, peer in zip(rows, context.name_blocks, strict=True)
             )
-            != _inline_name_key(peer.source.text)
-            for row, peer in zip(rows, context.name_blocks, strict=True)
         ):
             return None
     elif len(anchors) < 2:
         return None
-    missing_indexes = tuple(
-        index for index, row in enumerate(rows) if not row.name_blocks
-    )
-    recovered_name = (
-        context.name_blocks[missing_indexes[0]] if missing_indexes else None
-    )
-    output_name_blocks = tuple(
-        row.name_blocks or (peer,)
-        for row, peer in zip(rows, context.name_blocks, strict=True)
-    )
+    missing_indexes = tuple(index for index, row in enumerate(rows) if not row.name_blocks)
+    recovered_name = context.name_blocks[missing_indexes[0]] if missing_indexes else None
+    output_name_blocks = tuple(row.name_blocks or (peer,) for row, peer in zip(rows, context.name_blocks, strict=True))
     return _HeaderlessPeerEvidence(
         peer_blocks=context.name_blocks,
         recovered_name_block=recovered_name,
@@ -2448,11 +2136,7 @@ def _headerless_approval_is_spatially_local(
 ) -> bool:
     primary_bbox, horizontal_budget, vertical_budget = _headerless_primary_geometry(rows)
     if context.weak:
-        numeric_span = median(
-            row.numeric_blocks[2].bbox.center_x
-            - row.numeric_blocks[0].bbox.center_x
-            for row in rows
-        )
+        numeric_span = median(row.numeric_blocks[2].bbox.center_x - row.numeric_blocks[0].bbox.center_x for row in rows)
         vertical_budget = max(vertical_budget, numeric_span * 2.0)
     directly_bound_boxes = (
         *(block.bbox for block in semantics.header_blocks),
@@ -2495,11 +2179,7 @@ def _headerless_approval_is_spatially_local(
             <= vertical_budget
             for bbox in context.bboxes
         )
-    evidence_items = tuple(
-        evidence
-        for row_evidence in context.row_evidence
-        for evidence in row_evidence
-    )
+    evidence_items = tuple(evidence for row_evidence in context.row_evidence for evidence in row_evidence)
     return (
         len(context.row_evidence) == len(peer_blocks)
         and context.name_blocks == peer_blocks
@@ -2508,30 +2188,18 @@ def _headerless_approval_is_spatially_local(
             *(block.bbox for block in peer_blocks),
             *(evidence.bbox for evidence in evidence_items),
         )
-        and _weak_description_evidence(peer_blocks, evidence_items)
-        == context.row_evidence
+        and _weak_description_evidence(peer_blocks, evidence_items) == context.row_evidence
     )
 
 
 def _headerless_primary_geometry(
     rows: tuple[_HeaderlessReceiptRow, ...],
 ) -> tuple[AxisAlignedBBox, float, float]:
-    primary_boxes = tuple(
-        block.bbox
-        for row in rows
-        for block in row.numeric_blocks
-    )
+    primary_boxes = tuple(block.bbox for row in rows for block in row.numeric_blocks)
     primary_bbox = _union(primary_boxes)
     typical_height = median(box.height for box in primary_boxes)
-    numeric_spans = tuple(
-        row.numeric_blocks[2].bbox.center_x
-        - row.numeric_blocks[0].bbox.center_x
-        for row in rows
-    )
-    row_gaps = tuple(
-        rows[index + 1].center_y - rows[index].center_y
-        for index in range(len(rows) - 1)
-    )
+    numeric_spans = tuple(row.numeric_blocks[2].bbox.center_x - row.numeric_blocks[0].bbox.center_x for row in rows)
+    row_gaps = tuple(rows[index + 1].center_y - rows[index].center_y for index in range(len(rows) - 1))
     horizontal_budget = max(median(numeric_spans) * 2.5, typical_height * 24.0)
     vertical_budget = max(median(row_gaps) * 10.0, typical_height * 24.0)
     return primary_bbox, horizontal_budget, vertical_budget
@@ -2554,10 +2222,7 @@ def _headerless_row_spacing_is_stable(
     rows: tuple[_HeaderlessReceiptRow, ...],
 ) -> bool:
     typical_height = median(row.bbox.height for row in rows)
-    gaps = tuple(
-        rows[index + 1].center_y - rows[index].center_y
-        for index in range(len(rows) - 1)
-    )
+    gaps = tuple(rows[index + 1].center_y - rows[index].center_y for index in range(len(rows) - 1))
     if any(gap <= typical_height * 0.45 or gap > typical_height * 6.0 for gap in gaps):
         return False
     typical_gap = median(gaps)
@@ -2568,10 +2233,7 @@ def _invalid_headerless_row_is_near_cluster(
     rows: tuple[_HeaderlessReceiptRow, ...],
     invalid_row_centers: list[float],
 ) -> bool:
-    gaps = tuple(
-        rows[index + 1].center_y - rows[index].center_y
-        for index in range(len(rows) - 1)
-    )
+    gaps = tuple(rows[index + 1].center_y - rows[index].center_y for index in range(len(rows) - 1))
     typical_gap = median(gaps)
     lower = rows[0].center_y - typical_gap * 1.25
     upper = rows[-1].center_y + typical_gap * 1.25
@@ -2595,13 +2257,8 @@ def _headerless_numeric_track_consistency(
         return None
     column_count = next(iter(column_counts))
     centers = tuple(tuple(block.bbox.center_x for block in blocks) for blocks in blocks_by_row)
-    gaps = tuple(
-        (row[1] - row[0], row[2] - row[1])
-        for row in centers
-    )
-    typical_height = median(
-        block.bbox.height for blocks in blocks_by_row for block in blocks
-    )
+    gaps = tuple((row[1] - row[0], row[2] - row[1]) for row in centers)
+    typical_height = median(block.bbox.height for blocks in blocks_by_row for block in blocks)
     if any(min(row_gaps) <= typical_height * 1.5 for row_gaps in gaps):
         return None
     spans = tuple(row[2] - row[0] for row in centers)
@@ -2609,10 +2266,7 @@ def _headerless_numeric_track_consistency(
     if any(not typical_span * 0.70 <= span <= typical_span * 1.30 for span in spans):
         return None
     middle_ratios = tuple(row_gaps[0] / span for row_gaps, span in zip(gaps, spans, strict=True))
-    if (
-        any(not 0.30 <= ratio <= 0.70 for ratio in middle_ratios)
-        or max(middle_ratios) - min(middle_ratios) > 0.12
-    ):
+    if any(not 0.30 <= ratio <= 0.70 for ratio in middle_ratios) or max(middle_ratios) - min(middle_ratios) > 0.12:
         return None
     if column_count == 4:
         trailing_gaps = tuple(row[3] - row[2] for row in centers)
@@ -2631,23 +2285,15 @@ def _headerless_numeric_track_consistency(
             if name_bbox.x_max + bbox_margin > blocks[0].bbox.x_min:
                 return None
         if any(
-            left.bbox.x_max + bbox_margin > right.bbox.x_min
-            for left, right in zip(blocks, blocks[1:], strict=False)
+            left.bbox.x_max + bbox_margin > right.bbox.x_min for left, right in zip(blocks, blocks[1:], strict=False)
         ):
             return None
     motion_tolerance = typical_height * 0.35
     fits: list[tuple[float, float]] = []
     scores: list[float] = []
     for column in range(column_count):
-        deltas = tuple(
-            centers[index + 1][column] - centers[index][column]
-            for index in range(len(centers) - 1)
-        )
-        directions = {
-            1 if delta > motion_tolerance else -1
-            for delta in deltas
-            if abs(delta) > motion_tolerance
-        }
+        deltas = tuple(centers[index + 1][column] - centers[index][column] for index in range(len(centers) - 1))
+        directions = {1 if delta > motion_tolerance else -1 for delta in deltas if abs(delta) > motion_tolerance}
         if len(directions) > 1:
             return None
         points = tuple((row.center_y, centers[index][column]) for index, row in enumerate(rows))
@@ -2667,10 +2313,7 @@ def _headerless_numeric_track_consistency(
         scores.extend(max(0.0, 1.0 - residual / residual_limit) for residual in residuals)
     for row, blocks in zip(rows, blocks_by_row, strict=True):
         expected = tuple(slope * row.center_y + intercept for slope, intercept in fits)
-        boundaries = tuple(
-            (expected[index] + expected[index + 1]) / 2.0
-            for index in range(column_count - 1)
-        )
+        boundaries = tuple((expected[index] + expected[index + 1]) / 2.0 for index in range(column_count - 1))
         for column, block in enumerate(blocks):
             if column > 0 and block.bbox.x_min <= boundaries[column - 1] + bbox_margin:
                 return None
@@ -2687,14 +2330,10 @@ def _three_column_summary_rows(
     headers: list[tuple[_GeometryBlock, _GeometryBlock, _GeometryBlock, float]] = []
     for upper, lower in zip(line_groups, line_groups[1:], strict=False):
         upper_headers = tuple(
-            (block, match)
-            for block in upper.blocks
-            if (match := _header_match(block.source.text)) is not None
+            (block, match) for block in upper.blocks if (match := _header_match(block.source.text)) is not None
         )
         lower_headers = tuple(
-            (block, match)
-            for block in lower.blocks
-            if (match := _header_match(block.source.text)) is not None
+            (block, match) for block in lower.blocks if (match := _header_match(block.source.text)) is not None
         )
         if (
             tuple(match.key for _, match in upper_headers) != ("name",)
@@ -2713,9 +2352,7 @@ def _three_column_summary_rows(
         if not centers[0] < centers[1] < centers[2]:
             continue
         vertical_gap = min(dose_block.bbox.y_min, times_block.bbox.y_min) - name_block.bbox.y_max
-        typical_height = median(
-            (name_block.bbox.height, dose_block.bbox.height, times_block.bbox.height)
-        )
+        typical_height = median((name_block.bbox.height, dose_block.bbox.height, times_block.bbox.height))
         if not _summary_header_gap_is_adjacent(vertical_gap, typical_height):
             continue
         headers.append((name_block, dose_block, times_block, lower.bbox.center_y))
@@ -2725,9 +2362,7 @@ def _three_column_summary_rows(
     name_header, dose_header, times_header, header_y = headers[0]
     name_dose_boundary = (name_header.bbox.center_x + dose_header.bbox.center_x) / 2.0
     numeric_left = name_dose_boundary
-    numeric_right = times_header.bbox.center_x + (
-        times_header.bbox.center_x - dose_header.bbox.center_x
-    )
+    numeric_right = times_header.bbox.center_x + (times_header.bbox.center_x - dose_header.bbox.center_x)
     rows: list[LayoutRow] = []
     last_row_y: float | None = None
     row_gaps: list[float] = []
@@ -2737,8 +2372,7 @@ def _three_column_summary_rows(
         numeric_blocks = tuple(
             block
             for block in line.blocks
-            if numeric_left <= block.bbox.center_x <= numeric_right
-            and _is_structural_numeric(block.source.text)
+            if numeric_left <= block.bbox.center_x <= numeric_right and _is_structural_numeric(block.source.text)
         )
         if len(numeric_blocks) != 2:
             if rows and last_row_y is not None:
@@ -2746,9 +2380,7 @@ def _three_column_summary_rows(
                 if line.bbox.center_y - last_row_y > typical_gap * 1.8:
                     break
             continue
-        numeric_blocks = tuple(
-            sorted(numeric_blocks, key=lambda block: (block.bbox.center_x, block.provider_order))
-        )
+        numeric_blocks = tuple(sorted(numeric_blocks, key=lambda block: (block.bbox.center_x, block.provider_order)))
         if numeric_blocks[0].bbox.center_x >= numeric_blocks[1].bbox.center_x:
             continue
         name_blocks = [
@@ -2792,9 +2424,7 @@ def _guidance_prefix_starts_near_name(
     if not instruction_blocks:
         return False
     first_instruction_x = min(block.bbox.x_min for block in instruction_blocks)
-    typical_height = median(
-        (name_cell.bbox.height, *(block.bbox.height for block in instruction_blocks))
-    )
+    typical_height = median((name_cell.bbox.height, *(block.bbox.height for block in instruction_blocks)))
     name_column_right = max(name_cell.bbox.x_max, header.name_band[1])
     horizontal_gap = first_instruction_x - name_column_right
     return horizontal_gap <= typical_height * _MAX_GUIDANCE_NAME_TO_INSTRUCTION_GAP
@@ -2808,35 +2438,19 @@ def _guidance_headers(
         name_headers = [
             (block, match)
             for block in line.blocks
-            if (match := _header_match(block.source.text)) is not None
-            and match.key == "name"
+            if (match := _header_match(block.source.text)) is not None and match.key == "name"
         ]
         for name_header, _ in name_headers:
-            right_blocks = tuple(
-                block
-                for block in line.blocks
-                if block.bbox.center_x > name_header.bbox.center_x
-            )
-            combined = "".join(
-                _normalized_header_text(block.source.text) for block in right_blocks
-            )
+            right_blocks = tuple(block for block in line.blocks if block.bbox.center_x > name_header.bbox.center_x)
+            combined = "".join(_normalized_header_text(block.source.text) for block in right_blocks)
             marker_occurrences = {
-                marker: sum(
-                    _normalized_header_text(block.source.text).count(marker)
-                    for block in right_blocks
-                )
+                marker: sum(_normalized_header_text(block.source.text).count(marker) for block in right_blocks)
                 for marker in ("복약안내", "투약량", "횟수", "일수", "주의사항")
             }
             guidance_blocks = tuple(
-                block
-                for block in right_blocks
-                if "복약안내" in _normalized_header_text(block.source.text)
+                block for block in right_blocks if "복약안내" in _normalized_header_text(block.source.text)
             )
-            if (
-                not guidance_blocks
-                or "횟수" not in combined
-                or "일수" not in combined
-            ):
+            if not guidance_blocks or "횟수" not in combined or "일수" not in combined:
                 continue
             dose_observed = marker_occurrences["투약량"] > 0
             if marker_occurrences["투약량"] > 1:
@@ -2851,20 +2465,14 @@ def _guidance_headers(
                 continue
             instruction_left = min(block.bbox.x_min for block in starts)
             caution_blocks = tuple(
-                block
-                for block in right_blocks
-                if "주의사항" in _normalized_header_text(block.source.text)
+                block for block in right_blocks if "주의사항" in _normalized_header_text(block.source.text)
             )
             if not dose_observed:
                 times_blocks = tuple(
-                    block
-                    for block in right_blocks
-                    if "횟수" in _normalized_header_text(block.source.text)
+                    block for block in right_blocks if "횟수" in _normalized_header_text(block.source.text)
                 )
                 days_blocks = tuple(
-                    block
-                    for block in right_blocks
-                    if "일수" in _normalized_header_text(block.source.text)
+                    block for block in right_blocks if "일수" in _normalized_header_text(block.source.text)
                 )
                 if (
                     len(name_headers) != 1
@@ -2907,9 +2515,7 @@ def _compact_schedule_headers(
     headers: list[_GuidanceHeader] = []
     for line in line_groups:
         observed = tuple(
-            (block, match)
-            for block in line.blocks
-            if (match := _header_match(block.source.text)) is not None
+            (block, match) for block in line.blocks if (match := _header_match(block.source.text)) is not None
         )
         if (
             tuple(match.key for _, match in observed) != ("name", "dose", "times")
@@ -2969,13 +2575,8 @@ def _guidance_instruction_cells(
 ) -> tuple[LayoutCell | None, LayoutCell, LayoutCell] | None:
     if not blocks:
         return None
-    ordered = tuple(
-        sorted(blocks, key=lambda block: (block.bbox.x_min, block.provider_order))
-    )
-    normalized = tuple(
-        "".join(unicodedata.normalize("NFKC", block.source.text).split())
-        for block in ordered
-    )
+    ordered = tuple(sorted(blocks, key=lambda block: (block.bbox.x_min, block.provider_order)))
+    normalized = tuple("".join(unicodedata.normalize("NFKC", block.source.text).split()) for block in ordered)
     separatorless = _separatorless_guidance_cells(ordered, normalized)
     if separatorless is not None:
         return separatorless
@@ -2995,9 +2596,7 @@ def _guidance_instruction_cells(
             return None
         return None, times_cell, days_cell
 
-    slash_indices = [
-        index for index, text in enumerate(normalized) if text == "/"
-    ]
+    slash_indices = [index for index, text in enumerate(normalized) if text == "/"]
     if len(slash_indices) != 2 or normalized[0] != "1회":
         return None
     first_slash, second_slash = slash_indices
@@ -3100,9 +2699,7 @@ def _separatorless_guidance_cells(
     return None
 
 
-def _guidance_prefix_is_bounded(
-    ordered: tuple[_GeometryBlock, ...], prefix_length: int
-) -> bool:
+def _guidance_prefix_is_bounded(ordered: tuple[_GeometryBlock, ...], prefix_length: int) -> bool:
     if len(ordered) == prefix_length:
         return True
     prefix = ordered[:prefix_length]
@@ -3175,9 +2772,7 @@ def _inline_composite_candidates(
     )
     observed_cells = [cell for row in rows for cell in row.cells if cell is not None]
     confidence_count = sum(cell.valid_confidence_count for cell in observed_cells)
-    confidence_sum = sum(
-        (cell.confidence or 0.0) * cell.valid_confidence_count for cell in observed_cells
-    )
+    confidence_sum = sum((cell.confidence or 0.0) * cell.valid_confidence_count for cell in observed_cells)
     candidate_bbox = _union(
         (
             header.name_block.bbox,
@@ -3199,9 +2794,7 @@ def _inline_composite_candidates(
             ambiguous_column_evidence=(),
             column_consistency=1.0,
             confidence_coverage=1.0 if confidence_count else 0.0,
-            mean_confidence=(
-                confidence_sum / confidence_count if confidence_count else None
-            ),
+            mean_confidence=(confidence_sum / confidence_count if confidence_count else None),
         ),
     )
 
@@ -3211,11 +2804,7 @@ def _inline_guidance_headers(
 ) -> tuple[_InlineGuidanceHeader, ...]:
     headers: list[_InlineGuidanceHeader] = []
     for line in line_groups:
-        name_blocks = tuple(
-            block
-            for block in line.blocks
-            if _normalized_header_text(block.source.text) == "약품명"
-        )
+        name_blocks = tuple(block for block in line.blocks if _normalized_header_text(block.source.text) == "약품명")
         for name_block in name_blocks:
             guidance_blocks = tuple(
                 block
@@ -3270,8 +2859,7 @@ def _inline_guidance_evidence(
         typical_height = median(
             block.bbox.height
             for block in blocks
-            if abs(block.bbox.center_y - anchor.bbox.center_y)
-            <= max(block.bbox.height, anchor.bbox.height)
+            if abs(block.bbox.center_y - anchor.bbox.center_y) <= max(block.bbox.height, anchor.bbox.height)
         )
         schedule_blocks = tuple(
             sorted(
@@ -3308,11 +2896,7 @@ def _inline_schedule_blocks(
     blocks: tuple[_GeometryBlock, ...],
     anchor: _GeometryBlock,
 ) -> tuple[_GeometryBlock, _GeometryBlock] | None:
-    structural = tuple(
-        block
-        for block in blocks
-        if _compact_text(block.source.text) not in {",", "，"}
-    )
+    structural = tuple(block for block in blocks if _compact_text(block.source.text) not in {",", "，"})
     try:
         start = structural.index(anchor)
     except ValueError:
@@ -3342,12 +2926,10 @@ def _inline_name_blocks(
         for block in blocks
         if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
         and block.bbox.center_y < anchor.bbox.center_y
-        and anchor.bbox.center_y - block.bbox.center_y
-        <= max(typical_height, block.bbox.height) * 2.5
+        and anchor.bbox.center_y - block.bbox.center_y <= max(typical_height, block.bbox.height) * 2.5
         and _contains_hangul(block.source.text)
         and not _is_inline_structural(block.source.text)
-        and _normalized_header_text(block.source.text)
-        not in {"약품명", "복약안내", "주의사항", "약품사진"}
+        and _normalized_header_text(block.source.text) not in {"약품명", "복약안내", "주의사항", "약품사진"}
     )
     if not candidates:
         return ()
@@ -3355,12 +2937,9 @@ def _inline_name_blocks(
     same_line = tuple(
         block
         for block in candidates
-        if abs(block.bbox.center_y - nearest_y)
-        <= median((block.bbox.height, anchor.bbox.height)) * 0.60
+        if abs(block.bbox.center_y - nearest_y) <= median((block.bbox.height, anchor.bbox.height)) * 0.60
     )
-    return tuple(
-        sorted(same_line, key=lambda block: (block.bbox.x_min, block.provider_order))
-    )
+    return tuple(sorted(same_line, key=lambda block: (block.bbox.x_min, block.provider_order)))
 
 
 def _matching_receipt_days(
@@ -3371,9 +2950,7 @@ def _matching_receipt_days(
     blocks = tuple(block for line in line_groups for block in line.blocks)
     typical_height = median(block.bbox.height for block in blocks)
     numeric_left = max(0.0, header.name_band[0] * 0.65)
-    numeric_right = min(
-        block.bbox.x_min for row in inline_rows for block in row.name_blocks
-    )
+    numeric_right = min(block.bbox.x_min for row in inline_rows for block in row.name_blocks)
     lower_y = inline_rows[-1].anchor_y - typical_height
     dose_blocks = tuple(
         sorted(
@@ -3400,15 +2977,9 @@ def _matching_receipt_days(
     for inline, dose_block in zip(inline_rows, dose_blocks, strict=True):
         main_dose = _inline_dose_text(inline.dose_block.source.text)
         receipt_dose = _receipt_dose_text(dose_block.source.text)
-        if (
-            main_dose is None
-            or receipt_dose is None
-            or _decimal_key(main_dose) != _decimal_key(receipt_dose)
-        ):
+        if main_dose is None or receipt_dose is None or _decimal_key(main_dose) != _decimal_key(receipt_dose):
             return None
-        times_match = _INLINE_TIMES_PATTERN.fullmatch(
-            _compact_text(inline.times_block.source.text)
-        )
+        times_match = _INLINE_TIMES_PATTERN.fullmatch(_compact_text(inline.times_block.source.text))
         if times_match is None:
             return None
         expected_times = int(times_match.group(1))
@@ -3439,9 +3010,7 @@ def _matching_receipt_days(
 
     strict_alignment = incompatible_name_matches == 0 and exact_name_matches >= 1
     relaxed_alignment = (
-        len(inline_rows) >= 3
-        and incompatible_name_matches <= 1
-        and exact_name_matches >= max(2, len(inline_rows) - 2)
+        len(inline_rows) >= 3 and incompatible_name_matches <= 1 and exact_name_matches >= max(2, len(inline_rows) - 2)
     )
     if (
         not (strict_alignment or relaxed_alignment)
@@ -3450,13 +3019,13 @@ def _matching_receipt_days(
     ):
         return None
     compatible_counts = tuple(
-        sum(_compatible_inline_name(main, receipt) for main in main_names)
-        for receipt in receipt_names
+        sum(_compatible_inline_name(main, receipt) for main in main_names) for receipt in receipt_names
     )
     unmatched_limit = 1 if relaxed_alignment else 0
-    if any(count > 1 for count in compatible_counts) or sum(
-        count == 0 for count in compatible_counts
-    ) > unmatched_limit:
+    if (
+        any(count > 1 for count in compatible_counts)
+        or sum(count == 0 for count in compatible_counts) > unmatched_limit
+    ):
         return None
     matches: list[_InlineReceiptMatch] = []
     for day_cell, main_name_cell, receipt_name_cell, main_key, receipt_key in zip(
@@ -3493,9 +3062,7 @@ def _receipt_schedule_tokens(
     blocks: tuple[_GeometryBlock, ...],
     dose_block: _GeometryBlock,
 ) -> tuple[tuple[str, _GeometryBlock], ...]:
-    dose_numbers = _INLINE_RECEIPT_NUMBER_PATTERN.findall(
-        _compact_text(dose_block.source.text)
-    )
+    dose_numbers = _INLINE_RECEIPT_NUMBER_PATTERN.findall(_compact_text(dose_block.source.text))
     if len(dose_numbers) >= 3:
         return tuple((number, dose_block) for number in dose_numbers[1:])
     nearby = tuple(
@@ -3535,9 +3102,7 @@ def _unique_day_evidence(
         if not text.isdigit():
             continue
         for split in range(1, len(text)):
-            if _positive_integer(text[:split]) == expected_times and _positive_integer(
-                text[split:]
-            ) is not None:
+            if _positive_integer(text[:split]) == expected_times and _positive_integer(text[split:]) is not None:
                 candidates.add((text[split:], block))
     normalized = {
         (str(_positive_integer(day_text)), block)
@@ -3571,8 +3136,7 @@ def _receipt_name_blocks(
             (
                 block
                 for block in candidates
-                if abs(block.bbox.center_y - closest_y)
-                <= median((block.bbox.height, dose_block.bbox.height)) * 0.60
+                if abs(block.bbox.center_y - closest_y) <= median((block.bbox.height, dose_block.bbox.height)) * 0.60
             ),
             key=lambda block: (block.bbox.x_min, block.provider_order),
         )
@@ -3615,16 +3179,9 @@ def _is_unique_inline_truncated_name_extension(
 ) -> bool:
     prefix = _inline_explicit_truncation_prefix(main_name_cell.text)
     receipt_name = _inline_name_key(receipt_name_cell.text)
-    if (
-        not prefix
-        or not receipt_name.startswith(prefix)
-        or len(receipt_name) <= len(prefix)
-    ):
+    if not prefix or not receipt_name.startswith(prefix) or len(receipt_name) <= len(prefix):
         return False
-    return sum(
-        _inline_name_key(candidate.text).startswith(prefix)
-        for candidate in receipt_name_cells
-    ) == 1
+    return sum(_inline_name_key(candidate.text).startswith(prefix) for candidate in receipt_name_cells) == 1
 
 
 def _inline_explicit_truncation_prefix(text: str) -> str | None:
@@ -3637,11 +3194,7 @@ def _inline_explicit_truncation_prefix(text: str) -> str | None:
     else:
         return None
     normalized_prefix = _inline_name_key(prefix)
-    return (
-        normalized_prefix
-        if len(normalized_prefix) >= _MIN_TRUNCATED_NAME_PREFIX_LENGTH
-        else None
-    )
+    return normalized_prefix if len(normalized_prefix) >= _MIN_TRUNCATED_NAME_PREFIX_LENGTH else None
 
 
 def _compatible_inline_name(first: str, second: str) -> bool:
@@ -3706,9 +3259,7 @@ def _table_candidates(
 ) -> tuple[tuple[TableCandidate, ...], tuple[LayoutIssue, ...]]:
     candidates: list[TableCandidate] = []
     issues: list[LayoutIssue] = []
-    all_header_ids = {
-        block_id for seed in seeds for block in seed.blocks for block_id in block.source_block_ids
-    }
+    all_header_ids = {block_id for seed in seeds for block in seed.blocks for block_id in block.source_block_ids}
     for candidate_index, seed in enumerate(seeds, start=1):
         lower_header = _next_overlapping_header_top(seed, seeds)
         fragments, ambiguous_blocks, fragment_issues = _body_fragments(
@@ -3726,22 +3277,18 @@ def _table_candidates(
             body_bottom,
         )
         rows = _anchored_layout_rows(seed, candidate_body)
-        used_block_ids = {
-            block_id for row in rows for block_id in row.source_block_ids
-        }
+        used_block_ids = {block_id for row in rows for block_id in row.source_block_ids}
         ambiguous_blocks = tuple(
             block
             for block in ambiguous_blocks
-            if block.source.block_id not in used_block_ids
-            and _is_structural_numeric(block.source.text)
+            if block.source.block_id not in used_block_ids and _is_structural_numeric(block.source.text)
         )
         fragment_issues = tuple(
             issue
             for issue in fragment_issues
             if not used_block_ids.intersection(issue.block_ids)
             and any(
-                block.source.block_id in issue.block_ids
-                and _is_structural_numeric(block.source.text)
+                block.source.block_id in issue.block_ids and _is_structural_numeric(block.source.text)
                 for block in candidate_body
             )
         )
@@ -3760,9 +3307,7 @@ def _table_candidates(
                 band_min=band[0],
                 band_max=band[1],
             )
-            for key, block, band in zip(
-                _HEADER_ORDER, seed.blocks, seed.bands, strict=True
-            )
+            for key, block, band in zip(_HEADER_ORDER, seed.blocks, seed.bands, strict=True)
         )
         body_boxes = [
             *(row.bbox for row in rows),
@@ -3776,8 +3321,7 @@ def _table_candidates(
         valid_confidences = [
             block.source.confidence
             for block in observed_blocks
-            if block.source.confidence is not None
-            and math.isfinite(block.source.confidence)
+            if block.source.confidence is not None and math.isfinite(block.source.confidence)
         ]
         confidence_total = len(observed_blocks)
         candidates.append(
@@ -3793,14 +3337,8 @@ def _table_candidates(
                 rows=rows,
                 ambiguous_column_evidence=ambiguous_evidence,
                 column_consistency=consistency,
-                confidence_coverage=(
-                    len(valid_confidences) / confidence_total if confidence_total else 0.0
-                ),
-                mean_confidence=(
-                    sum(valid_confidences) / len(valid_confidences)
-                    if valid_confidences
-                    else None
-                ),
+                confidence_coverage=(len(valid_confidences) / confidence_total if confidence_total else 0.0),
+                mean_confidence=(sum(valid_confidences) / len(valid_confidences) if valid_confidences else None),
             )
         )
     return tuple(candidates), tuple(issues)
@@ -3823,10 +3361,7 @@ def _candidate_body_blocks(
         if block.source.block_id not in all_header_ids
         and block.bbox.center_y > seed.bbox.center_y
         and block.bbox.y_min <= body_bottom
-        and (
-            seed.numeric_right_bound is None
-            or block.bbox.center_x < seed.numeric_right_bound
-        )
+        and (seed.numeric_right_bound is None or block.bbox.center_x < seed.numeric_right_bound)
         and (lower_header is None or block.bbox.y_min < lower_header)
         and block.bbox.x_max > left
         and block.bbox.x_min < right
@@ -3866,17 +3401,12 @@ def _anchored_layout_rows(
     numeric_blocks = [
         block
         for block in body_blocks
-        if block.bbox.center_x >= numeric_left
-        and _is_structural_numeric(block.source.text)
+        if block.bbox.center_x >= numeric_left and _is_structural_numeric(block.source.text)
     ]
     if not numeric_blocks:
         return ()
     typical_height = median(block.bbox.height for block in numeric_blocks)
-    normal_numeric_blocks = tuple(
-        block
-        for block in numeric_blocks
-        if block.bbox.height <= typical_height * 1.8
-    )
+    normal_numeric_blocks = tuple(block for block in numeric_blocks if block.bbox.height <= typical_height * 1.8)
     numeric_seeds = _numeric_row_seeds(seed, normal_numeric_blocks, typical_height)
     numeric_seeds = tuple(seed for seed in numeric_seeds if len(seed.blocks) in {1, 2, 3})
     if not numeric_seeds:
@@ -3884,16 +3414,11 @@ def _anchored_layout_rows(
 
     full_seeds = tuple(seed for seed in numeric_seeds if len(seed.blocks) == 3)
     tracks = _numeric_tracks(seed, full_seeds)
-    mapped_numeric = tuple(
-        _map_numeric_seed(row_seed, tracks) for row_seed in numeric_seeds
-    )
+    mapped_numeric = tuple(_map_numeric_seed(row_seed, tracks) for row_seed in numeric_seeds)
     name_groups = _name_line_groups(seed, body_blocks)
     row_centers = tuple(row_seed.center_y for row_seed in numeric_seeds)
     typical_gap = median(
-        tuple(
-            row_centers[index + 1] - row_centers[index]
-            for index in range(len(row_centers) - 1)
-        )
+        tuple(row_centers[index + 1] - row_centers[index] for index in range(len(row_centers) - 1))
         or (typical_height * 3.0,)
     )
     name_row_offset = _name_column_row_offset(
@@ -3910,9 +3435,7 @@ def _anchored_layout_rows(
         if numeric_cells is None:
             continue
         lower = (
-            (row_centers[index - 2] + row_seed.center_y) / 2.0
-            if index > 1
-            else row_seed.center_y - typical_gap / 2.0
+            (row_centers[index - 2] + row_seed.center_y) / 2.0 if index > 1 else row_seed.center_y - typical_gap / 2.0
         )
         upper = (
             (row_seed.center_y + row_centers[index]) / 2.0
@@ -3940,9 +3463,7 @@ def _anchored_layout_rows(
                 typical_height,
             )
         )
-        if len(row_seed.blocks) == 1 and (
-            name_cell is None or numeric_cells[0] is not None or not dose_blocks
-        ):
+        if len(row_seed.blocks) == 1 and (name_cell is None or numeric_cells[0] is not None or not dose_blocks):
             continue
         cells: LayoutCells = (
             name_cell,
@@ -3975,14 +3496,14 @@ def _name_column_row_offset(
         for group, row_center in zip(name_groups, row_centers, strict=True)
     )
     offset = median(offsets)
-    tolerance = max(
-        typical_height,
-        median(block.bbox.height for group in name_groups for block in group),
-    ) * 1.25
-    if (
-        max(abs(value - offset) for value in offsets) > tolerance
-        or abs(offset) > typical_gap * 1.5
-    ):
+    tolerance = (
+        max(
+            typical_height,
+            median(block.bbox.height for group in name_groups for block in group),
+        )
+        * 1.25
+    )
+    if max(abs(value - offset) for value in offsets) > tolerance or abs(offset) > typical_gap * 1.5:
         return 0.0
     return offset
 
@@ -4005,9 +3526,7 @@ def _rows_in_authoritative_numeric_lane(
     tolerance = typical_height * _MAX_NUMERIC_LANE_OFFSET_GAP
     clusters: list[list[int]] = []
     previous_offset: float | None = None
-    for offset, index in sorted(
-        (offset, index) for index, offset in enumerate(offsets)
-    ):
+    for offset, index in sorted((offset, index) for index, offset in enumerate(offsets)):
         if previous_offset is None or offset - previous_offset > tolerance:
             clusters.append([])
         clusters[-1].append(index)
@@ -4054,8 +3573,7 @@ def _nonnumeric_dose_blocks_for_row(
         and dose_left <= block.bbox.x_min
         and abs(block.bbox.center_x - expected[0]) <= track_gap * 0.60
         and lower <= block.bbox.center_y < upper
-        and abs(block.bbox.center_y - anchor_y)
-        <= max(typical_height, block.bbox.height) * 0.80
+        and abs(block.bbox.center_y - anchor_y) <= max(typical_height, block.bbox.height) * 0.80
     ]
     if not candidates:
         return ()
@@ -4070,8 +3588,7 @@ def _nonnumeric_dose_blocks_for_row(
     same_line = [
         block
         for block in candidates
-        if abs(block.bbox.center_y - closest.bbox.center_y)
-        <= median((block.bbox.height, closest.bbox.height)) * 0.60
+        if abs(block.bbox.center_y - closest.bbox.center_y) <= median((block.bbox.height, closest.bbox.height)) * 0.60
     ]
     return tuple(
         sorted(
@@ -4108,10 +3625,7 @@ def _numeric_row_seeds(
         if compatible:
             min(
                 compatible,
-                key=lambda group: abs(
-                    block.bbox.center_y
-                    - median(member.bbox.center_y for member in group)
-                ),
+                key=lambda group: abs(block.bbox.center_y - median(member.bbox.center_y for member in group)),
             ).append(block)
         else:
             groups.append([block])
@@ -4139,16 +3653,10 @@ def _authoritative_numeric_seed_blocks(
     if len(ordered) <= 3:
         return ordered
     by_column = tuple(
-        tuple(
-            block
-            for block in ordered
-            if _assigned_column(block.bbox, header.bands) == column
-        )
+        tuple(block for block in ordered if _assigned_column(block.bbox, header.bands) == column)
         for column in range(1, 4)
     )
-    if sum(map(len, by_column)) != len(ordered) or any(
-        len(candidates) < 2 for candidates in by_column
-    ):
+    if sum(map(len, by_column)) != len(ordered) or any(len(candidates) < 2 for candidates in by_column):
         return ordered
     return tuple(
         min(
@@ -4169,9 +3677,7 @@ def _numeric_tracks(
     header_centers = tuple(block.bbox.center_x for block in header.blocks[1:])
     tracks: list[tuple[float, float]] = []
     for column in range(3):
-        points = tuple(
-            (row.center_y, row.blocks[column].bbox.center_x) for row in full_seeds
-        )
+        points = tuple((row.center_y, row.blocks[column].bbox.center_x) for row in full_seeds)
         slopes = tuple(
             (right_x - left_x) / (right_y - left_y)
             for left_index, (left_y, left_x) in enumerate(points)
@@ -4198,8 +3704,7 @@ def _map_numeric_seed(
         return None
     if len(seed.blocks) == 3:
         if any(
-            abs(block.bbox.center_x - expected[column]) > track_gap * 0.60
-            for column, block in enumerate(seed.blocks)
+            abs(block.bbox.center_x - expected[column]) > track_gap * 0.60 for column, block in enumerate(seed.blocks)
         ):
             return None
         return seed.blocks[0], seed.blocks[1], seed.blocks[2]
@@ -4213,10 +3718,7 @@ def _map_numeric_seed(
         )
         best_error, best_column = ranked_columns[0]
         second_error = ranked_columns[1][0]
-        if (
-            best_error > track_gap * 0.60
-            or second_error - best_error < track_gap * 0.25
-        ):
+        if best_error > track_gap * 0.60 or second_error - best_error < track_gap * 0.25:
             return None
         mapped_single: list[_GeometryBlock | None] = [None, None, None]
         mapped_single[best_column] = seed.blocks[0]
@@ -4227,8 +3729,7 @@ def _map_numeric_seed(
     ranked = sorted(
         (
             sum(
-                abs(block.bbox.center_x - expected[column])
-                for block, column in zip(seed.blocks, columns, strict=True)
+                abs(block.bbox.center_x - expected[column]) for block, column in zip(seed.blocks, columns, strict=True)
             ),
             columns,
         )
@@ -4261,10 +3762,7 @@ def _name_line_groups(
     if len(name_blocks) >= 3:
         typical_name_height = median(block.bbox.height for block in name_blocks)
         name_blocks = [
-            block
-            for block in name_blocks
-            if block.bbox.height
-            <= typical_name_height * _MAX_NAME_BLOCK_HEIGHT_RATIO
+            block for block in name_blocks if block.bbox.height <= typical_name_height * _MAX_NAME_BLOCK_HEIGHT_RATIO
         ]
     groups: list[list[_GeometryBlock]] = []
     for block in sorted(
@@ -4274,22 +3772,17 @@ def _name_line_groups(
         compatible = [
             group
             for group in groups
-            if _name_fragment_center_is_local(block, group)
-            and _name_fragment_is_horizontally_local(block, group)
+            if _name_fragment_center_is_local(block, group) and _name_fragment_is_horizontally_local(block, group)
         ]
         if compatible:
             min(
                 compatible,
-                key=lambda group: abs(
-                    block.bbox.center_y
-                    - median(member.bbox.center_y for member in group)
-                ),
+                key=lambda group: abs(block.bbox.center_y - median(member.bbox.center_y for member in group)),
             ).append(block)
         else:
             groups.append([block])
     ordered_groups = [
-        tuple(sorted(group, key=lambda block: (block.bbox.x_min, block.provider_order)))
-        for group in groups
+        tuple(sorted(group, key=lambda block: (block.bbox.x_min, block.provider_order))) for group in groups
     ]
     ordered_groups.sort(
         key=lambda group: (
@@ -4309,24 +3802,11 @@ def _name_fragment_center_is_local(
         block.bbox.width,
         group_bbox.width,
     )
-    has_parenthetical = any(
-        _compact_text(member.source.text).startswith(("(", "["))
-        for member in (block, *group)
-    )
-    distance_ratio = (
-        0.25
-        if has_parenthetical
-        else 0.60 if overlap_ratio < 0.25 else _MAX_NAME_FRAGMENT_CENTER_DISTANCE
-    )
-    typical_height = median(
-        (block.bbox.height, *(member.bbox.height for member in group))
-    )
+    has_parenthetical = any(_compact_text(member.source.text).startswith(("(", "[")) for member in (block, *group))
+    distance_ratio = 0.25 if has_parenthetical else 0.60 if overlap_ratio < 0.25 else _MAX_NAME_FRAGMENT_CENTER_DISTANCE
+    typical_height = median((block.bbox.height, *(member.bbox.height for member in group)))
     return (
-        abs(
-            block.bbox.center_y
-            - median(member.bbox.center_y for member in group)
-        )
-        <= typical_height * distance_ratio
+        abs(block.bbox.center_y - median(member.bbox.center_y for member in group)) <= typical_height * distance_ratio
     )
 
 
@@ -4336,23 +3816,17 @@ def _name_fragment_is_horizontally_local(
 ) -> bool:
     group_bbox = _union(member.bbox for member in group)
     if block.bbox.x_min >= group_bbox.x_max and any(
-        _inline_explicit_truncation_prefix(member.source.text) is not None
-        for member in group
+        _inline_explicit_truncation_prefix(member.source.text) is not None for member in group
     ):
         return False
-    if (
-        block.bbox.x_max <= group_bbox.x_min
-        and _inline_explicit_truncation_prefix(block.source.text) is not None
-    ):
+    if block.bbox.x_max <= group_bbox.x_min and _inline_explicit_truncation_prefix(block.source.text) is not None:
         return False
     horizontal_gap = max(
         0.0,
         block.bbox.x_min - group_bbox.x_max,
         group_bbox.x_min - block.bbox.x_max,
     )
-    typical_height = median(
-        (block.bbox.height, *(member.bbox.height for member in group))
-    )
+    typical_height = median((block.bbox.height, *(member.bbox.height for member in group)))
     return horizontal_gap <= typical_height * _MAX_NAME_FRAGMENT_HORIZONTAL_GAP
 
 
@@ -4370,8 +3844,7 @@ def _name_blocks_for_row(
         and abs(median(block.bbox.center_y for block in group) - anchor_y)
         <= max(
             typical_height * _MAX_WRAPPED_NAME_DISTANCE,
-            median(block.bbox.height for block in group)
-            * _MAX_WRAPPED_NAME_DISTANCE,
+            median(block.bbox.height for block in group) * _MAX_WRAPPED_NAME_DISTANCE,
         )
     ]
     if not candidates:
@@ -4386,11 +3859,7 @@ def _name_blocks_for_row(
         ),
     )
     selected_center = median(block.bbox.center_y for block in selected)
-    preceding = [
-        group
-        for group in candidates
-        if median(block.bbox.center_y for block in group) < selected_center
-    ]
+    preceding = [group for group in candidates if median(block.bbox.center_y for block in group) < selected_center]
     if preceding:
         previous = max(
             preceding,
@@ -4398,9 +3867,9 @@ def _name_blocks_for_row(
         )
         previous_bbox = _union(block.bbox for block in previous)
         selected_bbox = _union(block.bbox for block in selected)
-        vertical_distance = (
-            selected_center - median(block.bbox.center_y for block in previous)
-        ) / median((previous_bbox.height, selected_bbox.height))
+        vertical_distance = (selected_center - median(block.bbox.center_y for block in previous)) / median(
+            (previous_bbox.height, selected_bbox.height)
+        )
         horizontal_overlap = _horizontal_overlap(previous_bbox, selected_bbox) / min(
             previous_bbox.width, selected_bbox.width
         )
@@ -4409,12 +3878,8 @@ def _name_blocks_for_row(
             vertical_distance <= _MAX_WRAPPED_NAME_JOIN_DISTANCE
             and horizontal_overlap >= _MIN_WRAPPED_NAME_HORIZONTAL_OVERLAP
             and left_edge_gap
-            <= median((previous_bbox.height, selected_bbox.height))
-            * _MAX_NAME_FRAGMENT_HORIZONTAL_GAP
-            and not any(
-                _compact_text(block.source.text).startswith(("(", "["))
-                for block in previous
-            )
+            <= median((previous_bbox.height, selected_bbox.height)) * _MAX_NAME_FRAGMENT_HORIZONTAL_GAP
+            and not any(_compact_text(block.source.text).startswith(("(", "[")) for block in previous)
         ):
             return (*previous, *selected)
     return selected
@@ -4436,16 +3901,12 @@ def _looks_like_medication_name_blocks(
     )
 
 
-def _next_overlapping_header_top(
-    current: _HeaderSeed, seeds: tuple[_HeaderSeed, ...]
-) -> float | None:
+def _next_overlapping_header_top(current: _HeaderSeed, seeds: tuple[_HeaderSeed, ...]) -> float | None:
     overlapping_tops = [
         seed.bbox.y_min
         for seed in seeds
         if seed.bbox.center_y > current.bbox.center_y
-        and _horizontal_overlap(seed.bbox, current.bbox)
-        / min(seed.bbox.width, current.bbox.width)
-        >= 0.5
+        and _horizontal_overlap(seed.bbox, current.bbox) / min(seed.bbox.width, current.bbox.width) >= 0.5
     ]
     return min(overlapping_tops, default=None)
 
@@ -4475,17 +3936,12 @@ def _body_fragments(
             for block in line.blocks
             if block.source.block_id not in all_header_ids
             and _horizontal_overlap(block.bbox, seed.bbox) > 0.0
-            and (
-                seed.numeric_right_bound is None
-                or block.bbox.center_x < seed.numeric_right_bound
-            )
+            and (seed.numeric_right_bound is None or block.bbox.center_x < seed.numeric_right_bound)
         ]
         if not relevant:
             continue
         line_height = median(block.bbox.height for block in relevant)
-        gap = (line.bbox.center_y - previous_center) / median(
-            (line_height, previous_height)
-        )
+        gap = (line.bbox.center_y - previous_center) / median((line_height, previous_height))
         if gap > _MAX_BODY_LINE_GAP and not _is_nearby_strong_body_row(
             seed,
             relevant,
@@ -4533,19 +3989,12 @@ def _is_nearby_strong_body_row(
     *,
     prior_fragment_count: int,
 ) -> bool:
-    if (
-        prior_fragment_count < 2
-        or normalized_gap > _MAX_STRONG_BODY_LINE_GAP
-    ):
+    if prior_fragment_count < 2 or normalized_gap > _MAX_STRONG_BODY_LINE_GAP:
         return False
     columns = tuple(_assigned_column(block.bbox, seed.bands) for block in blocks)
     if any(column is None for column in columns):
         return False
-    name_blocks = tuple(
-        block
-        for block, column in zip(blocks, columns, strict=True)
-        if column == 0
-    )
+    name_blocks = tuple(block for block, column in zip(blocks, columns, strict=True) if column == 0)
     if not _looks_like_medication_name(name_blocks):
         return False
     assigned_columns = {column for column in columns if column is not None}
@@ -4554,18 +4003,11 @@ def _is_nearby_strong_body_row(
         for block, column in zip(blocks, columns, strict=True)
         if column is not None and column > 0
     )
-    return (
-        0 in assigned_columns
-        and len(assigned_columns) >= 3
-        and structural_numeric_count >= 2
-    )
+    return 0 in assigned_columns and len(assigned_columns) >= 3 and structural_numeric_count >= 2
 
 
 def _looks_like_medication_name(blocks: tuple[_GeometryBlock, ...]) -> bool:
-    normalized = "".join(
-        "".join(unicodedata.normalize("NFKC", block.source.text).split())
-        for block in blocks
-    )
+    normalized = "".join("".join(unicodedata.normalize("NFKC", block.source.text).split()) for block in blocks)
     return (
         bool(normalized)
         and any(character.isalpha() for character in normalized)
@@ -4596,8 +4038,7 @@ def _ambiguous_column_evidence(
         if rows:
             _, nearest_row_index = min(
                 (
-                    abs(block.bbox.center_y - row.bbox.center_y)
-                    / median((block.bbox.height, row.bbox.height)),
+                    abs(block.bbox.center_y - row.bbox.center_y) / median((block.bbox.height, row.bbox.height)),
                     index,
                 )
                 for index, row in enumerate(rows)
@@ -4627,20 +4068,14 @@ def _assigned_column(
         tuple[float, float],
     ],
 ) -> int | None:
-    overlap_fractions = [
-        max(0.0, min(bbox.x_max, right) - max(bbox.x_min, left)) / bbox.width
-        for left, right in bands
-    ]
+    overlap_fractions = [max(0.0, min(bbox.x_max, right) - max(bbox.x_min, left)) / bbox.width for left, right in bands]
     ranked = sorted(
         ((fraction, index) for index, fraction in enumerate(overlap_fractions)),
         reverse=True,
     )
     best_fraction, best_index = ranked[0]
     second_fraction = ranked[1][0]
-    if (
-        best_fraction < _COLUMN_MIN_OVERLAP
-        or second_fraction > _COLUMN_MAX_SECONDARY_OVERLAP
-    ):
+    if best_fraction < _COLUMN_MIN_OVERLAP or second_fraction > _COLUMN_MAX_SECONDARY_OVERLAP:
         return None
     return best_index
 
@@ -4648,14 +4083,8 @@ def _assigned_column(
 def _layout_rows(fragments: tuple[_BodyFragment, ...]) -> tuple[LayoutRow, ...]:
     if not fragments:
         return ()
-    anchor_indices = [
-        index
-        for index, fragment in enumerate(fragments)
-        if _numeric_anchor_count(fragment) >= 2
-    ]
-    grouped: dict[int, list[_BodyFragment]] = {
-        index: [fragments[index]] for index in anchor_indices
-    }
+    anchor_indices = [index for index, fragment in enumerate(fragments) if _numeric_anchor_count(fragment) >= 2]
+    grouped: dict[int, list[_BodyFragment]] = {index: [fragments[index]] for index in anchor_indices}
     for index, fragment in enumerate(fragments):
         if index in grouped:
             continue
@@ -4681,9 +4110,8 @@ def _layout_rows(fragments: tuple[_BodyFragment, ...]) -> tuple[LayoutRow, ...]:
             horizontal_overlap = 0.0
             if next_name_blocks:
                 next_name_bbox = _union(block.bbox for block in next_name_blocks)
-                horizontal_overlap = (
-                    _horizontal_overlap(fragment.bbox, next_name_bbox)
-                    / min(fragment.bbox.width, next_name_bbox.width)
+                horizontal_overlap = _horizontal_overlap(fragment.bbox, next_name_bbox) / min(
+                    fragment.bbox.width, next_name_bbox.width
                 )
             if (
                 distance <= _MAX_WRAPPED_NAME_DISTANCE
@@ -4710,11 +4138,7 @@ def _layout_rows(fragments: tuple[_BodyFragment, ...]) -> tuple[LayoutRow, ...]:
         )
         cells: list[LayoutCell | None] = []
         for column in range(4):
-            blocks = [
-                block
-                for fragment in ordered_fragments
-                for block in fragment.blocks_by_column[column]
-            ]
+            blocks = [block for fragment in ordered_fragments for block in fragment.blocks_by_column[column]]
             cells.append(_layout_cell(blocks))
         present_cells = [cell for cell in cells if cell is not None]
         if not present_cells:
@@ -4750,9 +4174,7 @@ def _layout_cell(blocks: list[_GeometryBlock]) -> LayoutCell | None:
         for block in ordered
         if block.source.confidence is not None and math.isfinite(block.source.confidence)
     ]
-    source_issues = tuple(
-        dict.fromkeys(issue for block in ordered for issue in block.source_issues)
-    )
+    source_issues = tuple(dict.fromkeys(issue for block in ordered for issue in block.source_issues))
     return LayoutCell(
         text=" ".join(block.source.text for block in ordered),
         block_ids=tuple(block.source.block_id for block in ordered),
@@ -4803,10 +4225,7 @@ def _union(boxes: Iterable[AxisAlignedBBox]) -> AxisAlignedBBox:
 
 
 def _deduplicate_issues(issues: Iterable[LayoutIssue]) -> tuple[LayoutIssue, ...]:
-    unique = {
-        (issue.code, issue.block_ids): issue
-        for issue in issues
-    }
+    unique = {(issue.code, issue.block_ids): issue for issue in issues}
     return tuple(
         unique[key]
         for key in sorted(
@@ -4818,4 +4237,3 @@ def _deduplicate_issues(issues: Iterable[LayoutIssue]) -> tuple[LayoutIssue, ...
             ),
         )
     )
-

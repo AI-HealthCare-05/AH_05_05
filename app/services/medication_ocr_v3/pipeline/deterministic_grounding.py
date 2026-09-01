@@ -50,9 +50,7 @@ class DeterministicGroundingPlan:
 
     @property
     def ambiguity_required(self) -> bool:
-        return bool(self.deterministic_row_ids) and (
-            self.ambiguous_date or bool(self.ambiguous_strength_row_ids)
-        )
+        return bool(self.deterministic_row_ids) and (self.ambiguous_date or bool(self.ambiguous_strength_row_ids))
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,19 +186,12 @@ def canonicalize_deterministic_selection(
             )
         )
 
-    direct_by_row = {
-        medication.row_id: medication
-        for medication in plan.selection.medications
-    }
+    direct_by_row = {medication.row_id: medication for medication in plan.selection.medications}
     llm_counts = Counter(medication.row_id for medication in llm_selection.medications)
     grounded_by_row = {medication.row_id: medication for medication in raw_grounded.medications}
     medications: list[MedicationBlockSelection] = list(direct_by_row.values())
     for row_id in sorted(plan.ambiguous_strength_row_ids):
-        selections = [
-            medication
-            for medication in llm_selection.medications
-            if medication.row_id == row_id
-        ]
+        selections = [medication for medication in llm_selection.medications if medication.row_id == row_id]
         candidates = _strength_candidates(catalog, row_id)
         if len(selections) == 1:
             selected_ids = tuple(selections[0].strength_block_ids)
@@ -217,11 +208,7 @@ def canonicalize_deterministic_selection(
                 continue
         if not _has_issue(issues, "strength", row_id):
             rejected = tuple(
-                dict.fromkeys(
-                    block_id
-                    for selection in selections
-                    for block_id in selection.strength_block_ids
-                )
+                dict.fromkeys(block_id for selection in selections for block_id in selection.strength_block_ids)
             )
             issues.append(
                 GroundingIssue(
@@ -281,9 +268,7 @@ def materialize_deterministic_grounding(
             GroundedMedication(
                 row_id=proven.row_id,
                 name=_grounded_field(proven.row.fields.name),
-                strength=(
-                    selected.strength if selected is not None else _missing_grounded_field()
-                ),
+                strength=(selected.strength if selected is not None else _missing_grounded_field()),
                 dose_quantity=_grounded_field(proven.row.fields.dose_quantity),
                 times_per_day=_grounded_field(proven.row.fields.times_per_day),
                 days=_grounded_field(proven.row.fields.days),
@@ -322,11 +307,7 @@ def _proven_rows(
     medication_rows: MedicationRowsResult,
 ) -> tuple[_ProvenRow, ...]:
     block_counts = Counter(block.block_id for block in catalog.blocks)
-    blocks_by_id = {
-        block.block_id: block
-        for block in catalog.blocks
-        if block_counts[block.block_id] == 1
-    }
+    blocks_by_id = {block.block_id: block for block in catalog.blocks if block_counts[block.block_id] == 1}
     row_counts = Counter(row.row_id for row in catalog.rows)
     memberships: dict[str, list[str]] = defaultdict(list)
     for row in catalog.rows:
@@ -418,15 +399,10 @@ def _strength_candidates(catalog: EvidenceCatalog, row_id: str) -> _CandidateSet
         selected.sort(key=_evidence_key)
         value = parse_strength(" ".join(block.text for block in selected))
         if value is not None:
-            values[_normalized_strength(value)].append(
-                tuple(block.block_id for block in selected)
-            )
-    name_block_ids = {
-        block.block_id for block in blocks if "name" in block.allowed_fields
-    }
+            values[_normalized_strength(value)].append(tuple(block.block_id for block in selected))
+    name_block_ids = {block.block_id for block in blocks if "name" in block.allowed_fields}
     name_values = {
-        value: [ids for ids in choices if name_block_ids.intersection(ids)]
-        for value, choices in values.items()
+        value: [ids for ids in choices if name_block_ids.intersection(ids)] for value, choices in values.items()
     }
     if any(name_values.values()):
         values = defaultdict(list, {key: value for key, value in name_values.items() if value})
@@ -450,10 +426,7 @@ def _strength_candidates(catalog: EvidenceCatalog, row_id: str) -> _CandidateSet
         if remaining:
             filtered_values[value] = remaining
     return _CandidateSet(
-        {
-            key: tuple(sorted(set(choices), key=lambda ids: (len(ids), ids)))
-            for key, choices in filtered_values.items()
-        }
+        {key: tuple(sorted(set(choices), key=lambda ids: (len(ids), ids))) for key, choices in filtered_values.items()}
     )
 
 
@@ -461,9 +434,7 @@ def _normalized_strength(value: str) -> str:
     return "".join(value.casefold().split())
 
 
-_SLASH_LINKED_STRENGTH_PATTERN = re.compile(
-    r"^(?P<amounts>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)+)(?P<unit>[^\d/]+)$"
-)
+_SLASH_LINKED_STRENGTH_PATTERN = re.compile(r"^(?P<amounts>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)+)(?P<unit>[^\d/]+)$")
 
 
 def _slash_strength_components(value: str) -> frozenset[str]:
@@ -482,8 +453,7 @@ def _is_component_subset_of_atomic_strength(
 ) -> bool:
     candidate_ids = frozenset(block_ids)
     return any(
-        candidate_ids < frozenset(atomic_ids)
-        and value in _slash_strength_components(atomic_value)
+        candidate_ids < frozenset(atomic_ids) and value in _slash_strength_components(atomic_value)
         for atomic_value, atomic_ids in atomic_candidates
     )
 
@@ -532,10 +502,4 @@ def _evidence_key(block: EvidenceBlock) -> tuple[float, float, str]:
 
 
 def _deduplicate_issues(issues: list[GroundingIssue]) -> tuple[GroundingIssue, ...]:
-    return tuple(
-        {
-            (issue.code, issue.field, issue.block_ids, issue.row_id): issue
-            for issue in issues
-        }.values()
-    )
-
+    return tuple({(issue.code, issue.field, issue.block_ids, issue.row_id): issue for issue in issues}.values())

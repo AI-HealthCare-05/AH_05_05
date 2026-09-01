@@ -29,10 +29,7 @@ def parse_privacy_rectangles(value: str) -> tuple[PrivacyRectangle, ...]:
         parsed: object = json.loads(value)
     except (json.JSONDecodeError, RecursionError):
         raise PrivacyArtifactError("Privacy redactions are invalid.") from None
-    if (
-        not isinstance(parsed, list)
-        or len(parsed) > _MAX_PRIVACY_RECTANGLES
-    ):
+    if not isinstance(parsed, list) or len(parsed) > _MAX_PRIVACY_RECTANGLES:
         raise PrivacyArtifactError("Privacy redactions are invalid.")
     return tuple(_validated_rectangle(item) for item in parsed)
 
@@ -49,9 +46,7 @@ def build_privacy_safe_provider_image(
         result.raw_to_template.matrix,
         result.raw_to_oriented.inverse,
     )
-    if not np.isfinite(oriented_to_template).all() or abs(
-        float(np.linalg.det(oriented_to_template))
-    ) < 1e-12:
+    if not np.isfinite(oriented_to_template).all() or abs(float(np.linalg.det(oriented_to_template))) < 1e-12:
         raise PrivacyArtifactError("Privacy transform is invalid.")
 
     try:
@@ -78,10 +73,7 @@ def build_privacy_safe_provider_image(
             (x_max * oriented_width, y_max * oriented_height),
             (x_min * oriented_width, y_max * oriented_height),
         )
-        polygon = [
-            _apply_homography(oriented_to_template, x, y)
-            for x, y in oriented_corners
-        ]
+        polygon = [_apply_homography(oriented_to_template, x, y) for x, y in oriented_corners]
         if _intersects_canvas(polygon, width, height):
             polygons.append(polygon)
 
@@ -123,9 +115,7 @@ def _validated_rectangle(value: object) -> PrivacyRectangle:
 
 
 def _compose(after: Matrix3, before: Matrix3) -> NDArray[np.float64]:
-    return np.asarray(after, dtype=np.float64).reshape(3, 3) @ np.asarray(
-        before, dtype=np.float64
-    ).reshape(3, 3)
+    return np.asarray(after, dtype=np.float64).reshape(3, 3) @ np.asarray(before, dtype=np.float64).reshape(3, 3)
 
 
 def _apply_homography(
@@ -147,10 +137,4 @@ def _intersects_canvas(
 ) -> bool:
     x_values = [point[0] for point in polygon]
     y_values = [point[1] for point in polygon]
-    return not (
-        max(x_values) < 0
-        or min(x_values) > width - 1
-        or max(y_values) < 0
-        or min(y_values) > height - 1
-    )
-
+    return not (max(x_values) < 0 or min(x_values) > width - 1 or max(y_values) < 0 or min(y_values) > height - 1)

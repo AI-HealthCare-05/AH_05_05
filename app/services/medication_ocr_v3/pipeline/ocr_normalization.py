@@ -5,9 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-_KOREAN_MILLIGRAM_ERROR = re.compile(
-    r"(?<=\d)(?:밀리그람|밀리그랑|미리그램)"
-)
+_KOREAN_MILLIGRAM_ERROR = re.compile(r"(?<=\d)(?:밀리그람|밀리그랑|미리그램)")
 _KOREAN_MILLILITER = re.compile(r"(?<=\d)밀리리터")
 _MILLILITER_ERROR = re.compile(r"(?<=\d)[mM][lLI1ℓ](?![A-Za-z])")
 _MILLIGRAM_ERROR = re.compile(r"(?<=\d)[mM][gG9](?![A-Za-z])")

@@ -36,9 +36,7 @@ _ZERO_DOSE_QUANTITY_PATTERN = re.compile(
     r"^0(?:\.0+)?(?:정|캡슐|포|m[lℓ])?(?:씩)?$",
     re.IGNORECASE,
 )
-_COMBINED_SCHEDULE_SUFFIX_PATTERN = re.compile(
-    r"[1-9][0-9]*회[,，]?[1-9][0-9]*일분"
-)
+_COMBINED_SCHEDULE_SUFFIX_PATTERN = re.compile(r"[1-9][0-9]*회[,，]?[1-9][0-9]*일분")
 _TRAILING_STRENGTH_PATTERN = re.compile(
     r"(?:\(?[0-9]+(?:\.[0-9]+)?(?:/[0-9]+(?:\.[0-9]+)?)?"
     r"(?:mg|g|mcg|ug|μg|ml|mℓ|밀리그램|그램|마이크로그램|%)\)?)"
@@ -55,9 +53,7 @@ _TRAILING_NAME_DOSE_TOKEN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _TRAILING_PARENTHETICAL_PATTERN = re.compile(r"^(?P<base>.+)\((?P<content>[^()]*)\)$")
-_PACKAGE_WITH_TRAILING_LABELS_PATTERN = re.compile(
-    r"^(?P<base>.+)\((?P<content>[^()]*)\)(?:\s*\[[^\[\]]+\])+$"
-)
+_PACKAGE_WITH_TRAILING_LABELS_PATTERN = re.compile(r"^(?P<base>.+)\((?P<content>[^()]*)\)(?:\s*\[[^\[\]]+\])+$")
 _PACKAGE_SIZE_PARENTHETICAL_PATTERN = re.compile(
     r"[0-9]+(?:\.[0-9]+)?\s*m[lℓ]",
     re.IGNORECASE,
@@ -230,9 +226,7 @@ def materialize_medication_rows(layout: OcrLayoutResult) -> MedicationRowsResult
     """Select only an unambiguous structural candidate and ground every field."""
 
     candidates_with_body_evidence = tuple(
-        candidate
-        for candidate in layout.table_candidates
-        if candidate.rows or candidate.ambiguous_column_evidence
+        candidate for candidate in layout.table_candidates if candidate.rows or candidate.ambiguous_column_evidence
     )
     if not candidates_with_body_evidence:
         table_not_found = MedicationIssue(MedicationIssueCode.TABLE_NOT_FOUND)
@@ -242,38 +236,24 @@ def materialize_medication_rows(layout: OcrLayoutResult) -> MedicationRowsResult
             issues=(*_layout_issues(layout.issues), table_not_found),
         )
     semantically_ineligible = any(
-        not _is_semantically_eligible_medication_candidate(candidate)
-        for candidate in candidates_with_body_evidence
+        not _is_semantically_eligible_medication_candidate(candidate) for candidate in candidates_with_body_evidence
     )
     conflicting_near_duplicate = (
         semantically_ineligible
-        or
-        _has_conflicting_near_duplicate_names(candidates_with_body_evidence)
+        or _has_conflicting_near_duplicate_names(candidates_with_body_evidence)
         or _has_rejected_complete_duplicate_pair(candidates_with_body_evidence)
     )
-    selected = (
-        None
-        if conflicting_near_duplicate
-        else _select_candidate(candidates_with_body_evidence)
-    )
+    selected = None if conflicting_near_duplicate else _select_candidate(candidates_with_body_evidence)
     if selected is None and not conflicting_near_duplicate:
-        selected = _select_complete_correlated_duplicate_candidate(
-            candidates_with_body_evidence
-        )
+        selected = _select_complete_correlated_duplicate_candidate(candidates_with_body_evidence)
     if selected is None and not conflicting_near_duplicate:
-        selected = _select_complete_candidate_with_trailing_partial_duplicate(
-            candidates_with_body_evidence
-        )
+        selected = _select_complete_candidate_with_trailing_partial_duplicate(candidates_with_body_evidence)
     if selected is None and not conflicting_near_duplicate:
         selected = _merge_correlated_duplicate_candidates(candidates_with_body_evidence)
     if selected is None and not conflicting_near_duplicate:
-        selected = _select_correlated_truncated_name_candidate(
-            candidates_with_body_evidence
-        )
+        selected = _select_correlated_truncated_name_candidate(candidates_with_body_evidence)
     if selected is None and not conflicting_near_duplicate:
-        selected = _select_candidate_with_sparse_correlated_duplicate(
-            candidates_with_body_evidence
-        )
+        selected = _select_candidate_with_sparse_correlated_duplicate(candidates_with_body_evidence)
     if selected is None:
         issues = [
             *_layout_issues(layout.issues),
@@ -296,13 +276,9 @@ def materialize_medication_rows(layout: OcrLayoutResult) -> MedicationRowsResult
         selected = replace(
             selected,
             rows=summary_merged_rows,
-            bbox=_bbox_union(
-                (selected.bbox, *(row.bbox for row in summary_merged_rows))
-            ),
+            bbox=_bbox_union((selected.bbox, *(row.bbox for row in summary_merged_rows))),
         )
-    needs_guidance = any(
-        cell is None or not cell.text for row in selected.rows for cell in row.cells[1:]
-    )
+    needs_guidance = any(cell is None or not cell.text for row in selected.rows for cell in row.cells[1:])
     merged_rows, guidance_conflict, observed_guidance_conflict = (
         _merge_grounded_guidance_rows(selected, layout.guidance_rows)
         if needs_guidance
@@ -410,9 +386,7 @@ def _select_complete_candidate_with_trailing_partial_duplicate(
         partial_name = partial_row.cells[0]
         if primary_name is None or partial_name is None:
             return None
-        exact_names += _canonical_candidate_name(
-            primary_name.text
-        ) == _canonical_candidate_name(partial_name.text)
+        exact_names += _canonical_candidate_name(primary_name.text) == _canonical_candidate_name(partial_name.text)
         compatible_names += _compatible_duplicate_name(
             primary_name.text,
             partial_name.text,
@@ -434,18 +408,20 @@ def _select_complete_candidate_with_trailing_partial_duplicate(
     if partial.bbox.width * partial.bbox.height <= primary.bbox.width * primary.bbox.height:
         return primary
 
-    rows = tuple(
-        replace(primary_row, cells=(partial_name, *primary_row.cells[1:]))
-        if (
-            (primary_name := primary_row.cells[0]) is not None
-            and (partial_name := partial_row.cells[0]) is not None
-            and _canonical_candidate_name(primary_name.text)
-            != _canonical_candidate_name(partial_name.text)
-            and _compatible_duplicate_name(primary_name.text, partial_name.text)
+    rows = (
+        tuple(
+            replace(primary_row, cells=(partial_name, *primary_row.cells[1:]))
+            if (
+                (primary_name := primary_row.cells[0]) is not None
+                and (partial_name := partial_row.cells[0]) is not None
+                and _canonical_candidate_name(primary_name.text) != _canonical_candidate_name(partial_name.text)
+                and _compatible_duplicate_name(primary_name.text, partial_name.text)
+            )
+            else primary_row
+            for primary_row, partial_row in zip(primary.rows, partial.rows, strict=False)
         )
-        else primary_row
-        for primary_row, partial_row in zip(primary.rows, partial.rows, strict=False)
-    ) + primary.rows[len(partial.rows) :]
+        + primary.rows[len(partial.rows) :]
+    )
     return replace(
         primary,
         rows=rows,
@@ -505,8 +481,7 @@ def _is_complete_correlated_duplicate_pair(
                 return False
     return (
         min(name_similarities) >= _DUPLICATE_NAME_SIMILARITY
-        and sum(name_similarities) / len(name_similarities)
-        >= _DUPLICATE_NAME_MEAN_SIMILARITY
+        and sum(name_similarities) / len(name_similarities) >= _DUPLICATE_NAME_MEAN_SIMILARITY
     )
 
 
@@ -537,9 +512,9 @@ def _has_rejected_complete_duplicate_pair(
     if len(candidates) != 2:
         return False
     first, second = candidates
-    if not _has_complete_duplicate_structure(
+    if not _has_complete_duplicate_structure(first, second) or not _has_same_complete_duplicate_schedules(
         first, second
-    ) or not _has_same_complete_duplicate_schedules(first, second):
+    ):
         return False
     return (
         _has_non_medication_table_vocabulary(first.rows)
@@ -569,10 +544,7 @@ def _has_strong_medication_name_majority(
     first: TableCandidate,
     second: TableCandidate,
 ) -> bool:
-    if (
-        _has_non_medication_table_vocabulary(first.rows)
-        or _has_non_medication_table_vocabulary(second.rows)
-    ):
+    if _has_non_medication_table_vocabulary(first.rows) or _has_non_medication_table_vocabulary(second.rows):
         return False
     strong_rows = 0
     for first_row, second_row in zip(first.rows, second.rows, strict=True):
@@ -585,10 +557,7 @@ def _has_strong_medication_name_majority(
         if first_plausible or second_plausible:
             strong_rows += 1
             continue
-        if (
-            _canonical_candidate_name(first_name.text)
-            != _canonical_candidate_name(second_name.text)
-        ):
+        if _canonical_candidate_name(first_name.text) != _canonical_candidate_name(second_name.text):
             return False
     return strong_rows >= math.ceil(2 * len(first.rows) / 3)
 
@@ -614,9 +583,7 @@ def _strict_complete_duplicate_name_pair(
         first,
         second,
         second_rows,
-    ) or _is_unique_strict_truncated_name_extension(
-        second, first, first_rows
-    )
+    ) or _is_unique_strict_truncated_name_extension(second, first, first_rows)
 
 
 def _complete_duplicate_primary_key(candidate: TableCandidate) -> tuple[object, ...]:
@@ -687,9 +654,7 @@ def _select_correlated_truncated_name_candidate(
     completed = tuple(
         candidate
         for selected, donor in (candidates, tuple(reversed(candidates)))
-        if (
-            candidate := _complete_truncated_names_from_lower_receipt(selected, donor)
-        ) is not None
+        if (candidate := _complete_truncated_names_from_lower_receipt(selected, donor)) is not None
     )
     return completed[0] if len(completed) == 1 else None
 
@@ -723,10 +688,7 @@ def _has_conflicting_near_duplicate_names(
                     duplicate_row.cells[0].text,
                 )
             )
-            and (
-                primary_row.cells[0] is None
-                or not _has_imprint_name_contamination(primary_row.cells[0].text)
-            )
+            and (primary_row.cells[0] is None or not _has_imprint_name_contamination(primary_row.cells[0].text))
             for primary_row, duplicate_row in zip(
                 primary.rows,
                 duplicate.rows,
@@ -769,21 +731,13 @@ def _is_nearly_complete_correlated_duplicate(
         or len(primary.rows) != len(duplicate.rows)
         or len(primary.rows) < 3
         or not all(_is_complete_authoritative_row(row) for row in primary.rows)
-        or not (
-            primary.bbox.x_max < duplicate.bbox.x_min
-            or duplicate.bbox.x_max < primary.bbox.x_min
-        )
+        or not (primary.bbox.x_max < duplicate.bbox.x_min or duplicate.bbox.x_max < primary.bbox.x_min)
     ):
         return False
     primary_names = tuple(
-        _canonical_candidate_name(row.cells[0].text)
-        for row in primary.rows
-        if row.cells[0] is not None
+        _canonical_candidate_name(row.cells[0].text) for row in primary.rows if row.cells[0] is not None
     )
-    if (
-        len(primary_names) != len(primary.rows)
-        or not _unique_nonempty_names(primary_names)
-    ):
+    if len(primary_names) != len(primary.rows) or not _unique_nonempty_names(primary_names):
         return False
 
     invalid_duplicate_doses = 0
@@ -846,8 +800,7 @@ def _complete_truncated_names_from_lower_receipt(
     ):
         return None
     exact_name_anchors = sum(
-        selected_name == donor_name
-        for selected_name, donor_name in zip(selected_names, donor_names, strict=True)
+        selected_name == donor_name for selected_name, donor_name in zip(selected_names, donor_names, strict=True)
     )
     if exact_name_anchors < 2:
         return None
@@ -866,14 +819,10 @@ def _complete_truncated_names_from_lower_receipt(
         donor_name = donor_row.cells[0]
         if selected_name is None or donor_name is None:
             return None
-        if _canonical_candidate_name(selected_name.text) == _canonical_candidate_name(
-            donor_name.text
-        ):
+        if _canonical_candidate_name(selected_name.text) == _canonical_candidate_name(donor_name.text):
             rows.append(selected_row)
             continue
-        if not _is_unique_strict_truncated_name_extension(
-            selected_name, donor_name, donor.rows
-        ):
+        if not _is_unique_strict_truncated_name_extension(selected_name, donor_name, donor.rows):
             return None
         cells = (
             donor_name,
@@ -912,8 +861,7 @@ def _merge_correlated_duplicate(
     ):
         return None
     exact_names = tuple(
-        _canonical_candidate_name(donor_row.cells[0].text)
-        == _canonical_candidate_name(base_row.cells[0].text)
+        _canonical_candidate_name(donor_row.cells[0].text) == _canonical_candidate_name(base_row.cells[0].text)
         if donor_row.cells[0] is not None and base_row.cells[0] is not None
         else False
         for donor_row, base_row in zip(donor.rows, base.rows, strict=True)
@@ -977,15 +925,9 @@ def _merge_correlated_summary_rows(
         or any(row.cells[3] is not None for row in summary_rows)
     ):
         return main_rows
-    main_names = tuple(
-        _canonical_candidate_name(row.cells[0].text)
-        for row in main_rows
-        if row.cells[0] is not None
-    )
+    main_names = tuple(_canonical_candidate_name(row.cells[0].text) for row in main_rows if row.cells[0] is not None)
     summary_names = tuple(
-        _canonical_candidate_name(row.cells[0].text)
-        for row in summary_rows
-        if row.cells[0] is not None
+        _canonical_candidate_name(row.cells[0].text) for row in summary_rows if row.cells[0] is not None
     )
     if (
         len(main_names) != len(main_rows)
@@ -999,34 +941,18 @@ def _merge_correlated_summary_rows(
         index
         for index, row in enumerate(main_rows)
         if row.cells[3] is not None
-        and (
-            row.cells[1] is None
-            or not row.cells[1].text
-            or row.cells[2] is None
-            or not row.cells[2].text
-        )
+        and (row.cells[1] is None or not row.cells[1].text or row.cells[2] is None or not row.cells[2].text)
     )
     if len(repair_indices) != 1:
         return main_rows
-    supporting_indices = tuple(
-        index for index in range(len(main_rows)) if index not in repair_indices
-    )
+    supporting_indices = tuple(index for index in range(len(main_rows)) if index not in repair_indices)
     if len(supporting_indices) < 2:
         return main_rows
-    if (
-        not all(
-            _compatible_duplicate_name(main_names[index], summary_names[index])
-            for index in supporting_indices
-        )
-        or not any(
-            main_names[index] == summary_names[index]
-            for index in supporting_indices
-        )
-    ):
+    if not all(
+        _compatible_duplicate_name(main_names[index], summary_names[index]) for index in supporting_indices
+    ) or not any(main_names[index] == summary_names[index] for index in supporting_indices):
         return main_rows
-    for index, (main, summary) in enumerate(
-        zip(main_rows, summary_rows, strict=True)
-    ):
+    for index, (main, summary) in enumerate(zip(main_rows, summary_rows, strict=True)):
         summary_dose = summary.cells[1]
         summary_times = summary.cells[2]
         if (
@@ -1049,9 +975,7 @@ def _merge_correlated_summary_rows(
             return main_rows
 
     repaired: list[LayoutRow] = []
-    for index, (main, summary) in enumerate(
-        zip(main_rows, summary_rows, strict=True)
-    ):
+    for index, (main, summary) in enumerate(zip(main_rows, summary_rows, strict=True)):
         if index not in repair_indices:
             repaired.append(main)
             continue
@@ -1082,11 +1006,7 @@ def _merge_grounded_guidance_rows(
     guidance_rows: tuple[LayoutRow, ...],
 ) -> tuple[tuple[LayoutRow, ...], bool, bool]:
     receipt_rows = selected.rows
-    if (
-        selected.ambiguous_column_evidence
-        or len(receipt_rows) < 2
-        or len(guidance_rows) != len(receipt_rows)
-    ):
+    if selected.ambiguous_column_evidence or len(receipt_rows) < 2 or len(guidance_rows) != len(receipt_rows):
         return receipt_rows, False, False
     receipt_names = _normalized_row_names(receipt_rows)
     guidance_names = _normalized_row_names(guidance_rows)
@@ -1103,8 +1023,7 @@ def _merge_grounded_guidance_rows(
     ):
         return receipt_rows, False, False
     exact_name_matches = sum(
-        _normalized_candidate_name(guidance.cells[0].text)
-        == _normalized_candidate_name(receipt.cells[0].text)
+        _normalized_candidate_name(guidance.cells[0].text) == _normalized_candidate_name(receipt.cells[0].text)
         for receipt, guidance in zip(receipt_rows, guidance_rows, strict=True)
         if receipt.cells[0] is not None and guidance.cells[0] is not None
     )
@@ -1119,8 +1038,7 @@ def _merge_grounded_guidance_rows(
         exact_name = (
             receipt_name is not None
             and guidance_name is not None
-            and _normalized_candidate_name(receipt_name.text)
-            == _normalized_candidate_name(guidance_name.text)
+            and _normalized_candidate_name(receipt_name.text) == _normalized_candidate_name(guidance_name.text)
         )
         observed_guidance_conflict = observed_guidance_conflict or (
             exact_name and _has_conflicting_grounded_fields(receipt_row, guidance_row)
@@ -1144,9 +1062,7 @@ def _merge_grounded_guidance_rows(
 
 
 def _normalized_row_names(rows: tuple[LayoutRow, ...]) -> tuple[str, ...]:
-    return tuple(
-        _normalized_candidate_name(row.cells[0].text) for row in rows if row.cells[0] is not None
-    )
+    return tuple(_normalized_candidate_name(row.cells[0].text) for row in rows if row.cells[0] is not None)
 
 
 def _unique_nonempty_names(names: tuple[str, ...]) -> bool:
@@ -1224,8 +1140,7 @@ def _merge_grounded_row(
         return None
     merged_name = (
         guidance_name
-        if len(_normalized_candidate_name(guidance_name.text))
-        > len(_normalized_candidate_name(receipt_name.text))
+        if len(_normalized_candidate_name(guidance_name.text)) > len(_normalized_candidate_name(receipt_name.text))
         else receipt_name
     )
     merged: list[LayoutCell | None] = [merged_name]
@@ -1234,9 +1149,7 @@ def _merge_grounded_row(
         start=1,
     ):
         if receipt_cell is not None and guidance_cell is not None:
-            if not preserve_observed_conflicts and not _same_grounded_field(
-                column, receipt_cell, guidance_cell
-            ):
+            if not preserve_observed_conflicts and not _same_grounded_field(column, receipt_cell, guidance_cell):
                 return None
             merged.append(receipt_cell)
         else:
@@ -1261,11 +1174,7 @@ def _same_grounded_field(
     else:
         receipt_integer = parse_days(receipt.text)
         guidance_integer = parse_days(guidance.text)
-    return (
-        receipt_integer is not None
-        and guidance_integer is not None
-        and receipt_integer == guidance_integer
-    )
+    return receipt_integer is not None and guidance_integer is not None and receipt_integer == guidance_integer
 
 
 def _candidate_dominates(primary: TableCandidate, partial: TableCandidate) -> bool:
@@ -1278,20 +1187,14 @@ def _candidate_dominates(primary: TableCandidate, partial: TableCandidate) -> bo
     if not any(cell is None or not cell.text for row in partial.rows for cell in row.cells[1:]):
         return False
     primary_names = tuple(
-        _canonical_candidate_name(row.cells[0].text)
-        for row in primary.rows
-        if row.cells[0] is not None
+        _canonical_candidate_name(row.cells[0].text) for row in primary.rows if row.cells[0] is not None
     )
     if len(primary_names) != len(primary.rows) or len(set(primary_names)) != len(primary_names):
         return False
     partial_names = tuple(
-        _canonical_candidate_name(row.cells[0].text)
-        for row in partial.rows
-        if row.cells[0] is not None
+        _canonical_candidate_name(row.cells[0].text) for row in partial.rows if row.cells[0] is not None
     )
-    if len(partial_names) != len(partial.rows) or len(set(partial_names)) != len(
-        partial_names
-    ):
+    if len(partial_names) != len(partial.rows) or len(set(partial_names)) != len(partial_names):
         return False
     name_similarities: list[float] = []
     exact_name_matches = 0
@@ -1302,9 +1205,8 @@ def _candidate_dominates(primary: TableCandidate, partial: TableCandidate) -> bo
         partial_name = partial_row.cells[0]
         if primary_name is None or partial_name is None:
             return False
-        recoverable_missing_prefix = (
-            not _canonical_name_value(primary_name.text)
-            and _is_plausible_product_name(partial_name.text)
+        recoverable_missing_prefix = not _canonical_name_value(primary_name.text) and _is_plausible_product_name(
+            partial_name.text
         )
         compatible_name = recoverable_missing_prefix or _compatible_duplicate_name(
             primary_name.text,
@@ -1331,24 +1233,19 @@ def _candidate_dominates(primary: TableCandidate, partial: TableCandidate) -> bo
             start=1,
         ):
             if partial_cell is not None and (
-                primary_cell is None
-                or not _same_grounded_field(column, primary_cell, partial_cell)
+                primary_cell is None or not _same_grounded_field(column, primary_cell, partial_cell)
             ):
                 return False
     standard_duplicate = (
         all_names_compatible
-        and
-        exact_name_matches >= 1
+        and exact_name_matches >= 1
         and sum(name_similarities) / len(name_similarities) >= _DUPLICATE_NAME_MEAN_SIMILARITY
     )
     anchored_summary = (
         len(primary.rows) >= 3
         and exact_name_matches >= 2
         and incompatible_name_count >= 2
-        and (
-            primary.bbox.x_max < partial.bbox.x_min
-            or partial.bbox.x_max < primary.bbox.x_min
-        )
+        and (primary.bbox.x_max < partial.bbox.x_min or partial.bbox.x_max < primary.bbox.x_min)
     )
     return standard_duplicate or anchored_summary
 
@@ -1358,9 +1255,7 @@ def _refine_correlated_receipt_names(
     candidates: tuple[TableCandidate, ...],
 ) -> TableCandidate:
     donors = tuple(
-        candidate
-        for candidate in candidates
-        if candidate is not selected and _candidate_dominates(selected, candidate)
+        candidate for candidate in candidates if candidate is not selected and _candidate_dominates(selected, candidate)
     )
     if len(donors) != 1:
         return selected
@@ -1380,10 +1275,7 @@ def _refine_correlated_receipt_names(
             and _is_plausible_product_name(donor_name.text)
             and (
                 _has_imprint_name_contamination(selected_name.text)
-                or (
-                    not _canonical_name_value(selected_name.text)
-                    and bool(_canonical_name_value(donor_name.text))
-                )
+                or (not _canonical_name_value(selected_name.text) and bool(_canonical_name_value(donor_name.text)))
             )
         ):
             cells = (
@@ -1444,8 +1336,7 @@ def _has_unambiguous_truncated_name_alignment(
     if donor.bbox.y_min <= selected.bbox.y_min:
         return False
     exact_name_anchors = sum(
-        _canonical_candidate_name(selected_row.cells[0].text)
-        == _canonical_candidate_name(donor_row.cells[0].text)
+        _canonical_candidate_name(selected_row.cells[0].text) == _canonical_candidate_name(donor_row.cells[0].text)
         for selected_row, donor_row in zip(selected.rows, donor.rows, strict=True)
         if selected_row.cells[0] is not None and donor_row.cells[0] is not None
     )
@@ -1459,17 +1350,16 @@ def _is_unique_strict_truncated_name_extension(
 ) -> bool:
     prefix = _explicit_truncation_prefix(selected_name.text)
     donor_normalized = _canonical_candidate_name(donor_name.text)
-    if (
-        not prefix
-        or not donor_normalized.startswith(prefix)
-        or len(donor_normalized) <= len(prefix)
-    ):
+    if not prefix or not donor_normalized.startswith(prefix) or len(donor_normalized) <= len(prefix):
         return False
-    return sum(
-        _canonical_candidate_name(candidate.cells[0].text).startswith(prefix)
-        for candidate in donor_rows
-        if candidate.cells[0] is not None
-    ) == 1
+    return (
+        sum(
+            _canonical_candidate_name(candidate.cells[0].text).startswith(prefix)
+            for candidate in donor_rows
+            if candidate.cells[0] is not None
+        )
+        == 1
+    )
 
 
 def _explicit_truncation_prefix(text: str) -> str | None:
@@ -1482,11 +1372,7 @@ def _explicit_truncation_prefix(text: str) -> str | None:
     else:
         return None
     canonical_prefix = _canonical_candidate_name(prefix)
-    return (
-        canonical_prefix
-        if len(canonical_prefix) >= _MIN_TRUNCATED_NAME_PREFIX_LENGTH
-        else None
-    )
+    return canonical_prefix if len(canonical_prefix) >= _MIN_TRUNCATED_NAME_PREFIX_LENGTH else None
 
 
 def _has_imprint_name_contamination(text: str) -> bool:
@@ -1499,10 +1385,7 @@ def _is_plausible_product_name(text: str) -> bool:
     trailing_parenthetical = _TRAILING_PARENTHETICAL_PATTERN.fullmatch(normalized)
     if (
         trailing_parenthetical is not None
-        and _PACKAGE_SIZE_PARENTHETICAL_PATTERN.fullmatch(
-            trailing_parenthetical.group("content")
-        )
-        is not None
+        and _PACKAGE_SIZE_PARENTHETICAL_PATTERN.fullmatch(trailing_parenthetical.group("content")) is not None
     ):
         normalized = trailing_parenthetical.group("base")
     return (
@@ -1517,10 +1400,7 @@ def _has_non_medication_table_vocabulary(rows: tuple[LayoutRow, ...]) -> bool:
         name is not None
         and (
             _canonical_candidate_name(name.text) == "품목"
-            or _NON_MEDICATION_TABLE_VOCABULARY_PATTERN.search(
-                _canonical_candidate_name(name.text)
-            )
-            is not None
+            or _NON_MEDICATION_TABLE_VOCABULARY_PATTERN.search(_canonical_candidate_name(name.text)) is not None
         )
         for row in rows
         if (name := row.cells[0]) is not None
@@ -1531,8 +1411,7 @@ def _is_semantically_eligible_medication_candidate(candidate: TableCandidate) ->
     """Require dose-schedule evidence and reject known non-medical table language."""
 
     return not _has_non_medication_table_vocabulary(candidate.rows) and (
-        _has_independent_medication_evidence(candidate.rows)
-        or _has_unresolved_medication_evidence(candidate.rows)
+        _has_independent_medication_evidence(candidate.rows) or _has_unresolved_medication_evidence(candidate.rows)
     )
 
 
@@ -1584,8 +1463,7 @@ def _compatible_duplicate_name(first: str, second: str) -> bool:
     if min(len(first_normalized), len(second_normalized)) < 4:
         return False
     return (
-        SequenceMatcher(None, first_normalized, second_normalized, autojunk=False).ratio()
-        >= _DUPLICATE_NAME_SIMILARITY
+        SequenceMatcher(None, first_normalized, second_normalized, autojunk=False).ratio() >= _DUPLICATE_NAME_SIMILARITY
     )
 
 
@@ -1622,12 +1500,8 @@ def _candidate_signature(
 
 
 def _representative_key(candidate: TableCandidate) -> tuple[object, ...]:
-    populated_fields = sum(
-        cell is not None and bool(cell.text) for row in candidate.rows for cell in row.cells
-    )
-    complete_rows = sum(
-        all(cell is not None and bool(cell.text) for cell in row.cells) for row in candidate.rows
-    )
+    populated_fields = sum(cell is not None and bool(cell.text) for row in candidate.rows for cell in row.cells)
+    complete_rows = sum(all(cell is not None and bool(cell.text) for cell in row.cells) for row in candidate.rows)
     mean_confidence = candidate.mean_confidence
     return (
         -4,
@@ -1708,31 +1582,20 @@ def _canonical_name_value(text: str) -> str:
     package_with_labels = _PACKAGE_WITH_TRAILING_LABELS_PATTERN.fullmatch(normalized)
     if (
         package_with_labels is not None
-        and _PACKAGE_SIZE_PARENTHETICAL_PATTERN.fullmatch(
-            package_with_labels.group("content")
-        )
-        is not None
+        and _PACKAGE_SIZE_PARENTHETICAL_PATTERN.fullmatch(package_with_labels.group("content")) is not None
     ):
         return (
             f"{_strip_form_descriptor(package_with_labels.group('base').rstrip())}"
             f"({package_with_labels.group('content')})"
         )
     match = _TRAILING_PARENTHETICAL_PATTERN.fullmatch(normalized)
-    if (
-        match is not None
-        and _PACKAGE_SIZE_PARENTHETICAL_PATTERN.fullmatch(match.group("content"))
-        is not None
-    ):
+    if match is not None and _PACKAGE_SIZE_PARENTHETICAL_PATTERN.fullmatch(match.group("content")) is not None:
         return normalized
-    return _strip_trailing_name_schedule_token(
-        _strip_form_descriptor(normalized[:opening].rstrip())
-    )
+    return _strip_trailing_name_schedule_token(_strip_form_descriptor(normalized[:opening].rstrip()))
 
 
 def _strip_trailing_name_schedule_token(value: str) -> str:
-    match = _TRAILING_NAME_STRENGTH_TOKEN_PATTERN.fullmatch(
-        value
-    ) or _TRAILING_NAME_DOSE_TOKEN_PATTERN.fullmatch(value)
+    match = _TRAILING_NAME_STRENGTH_TOKEN_PATTERN.fullmatch(value) or _TRAILING_NAME_DOSE_TOKEN_PATTERN.fullmatch(value)
     if match is None:
         return value
     name = match.group("name").rstrip()
@@ -1741,10 +1604,7 @@ def _strip_trailing_name_schedule_token(value: str) -> str:
 
 
 def _strip_form_descriptor(value: str) -> str:
-    colors = (
-        "흰색|백색|적갈색|갈색|노란색|황색|녹색|분홍색|주황색|청색|회색|"
-        "적색|연두색"
-    )
+    colors = "흰색|백색|적갈색|갈색|노란색|황색|녹색|분홍색|주황색|청색|회색|적색|연두색"
     return re.sub(
         rf"\s+(?:{colors})\s+(?:정제|캡슐)(?:\s.*)?$",
         "",
@@ -1847,9 +1707,7 @@ def _layout_issues(issues: tuple[LayoutIssue, ...]) -> tuple[MedicationIssue, ..
     mapping = {
         LayoutIssueCode.INVALID_BLOCK_GEOMETRY: MedicationIssueCode.INVALID_BLOCK_GEOMETRY,
         LayoutIssueCode.INVALID_BLOCK_CONFIDENCE: MedicationIssueCode.INVALID_BLOCK_CONFIDENCE,
-        LayoutIssueCode.AMBIGUOUS_COLUMN_ASSIGNMENT: (
-            MedicationIssueCode.AMBIGUOUS_COLUMN_ASSIGNMENT
-        ),
+        LayoutIssueCode.AMBIGUOUS_COLUMN_ASSIGNMENT: (MedicationIssueCode.AMBIGUOUS_COLUMN_ASSIGNMENT),
     }
     return tuple(MedicationIssue(mapping[issue.code], issue.block_ids) for issue in issues)
 
@@ -1870,4 +1728,3 @@ def _bbox_union(boxes: Iterable[AxisAlignedBBox]) -> AxisAlignedBBox:
         max(box.x_max for box in materialized),
         max(box.y_max for box in materialized),
     )
-

@@ -39,9 +39,7 @@ CONTRACT_VERSION = "v3"
 GROUNDING_SCHEMA_VERSION = "medication_grounding_v3"
 DEFAULT_MODEL_VERSION = "gpt-5.6-terra"
 
-_PROMPT_PATH = (
-    Path(__file__).resolve().parents[1] / "prompts" / f"{PROMPT_VERSION}.md"
-)
+_PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / f"{PROMPT_VERSION}.md"
 
 
 class GeneralOcrProvider(Protocol):
@@ -159,9 +157,7 @@ async def analyze_processed_image(
     layout = build_ocr_layout(ocr_result)
     medication_rows = materialize_medication_rows(layout)
     catalog = build_evidence_catalog(ocr_result, layout, medication_rows)
-    candidate_stage = StageResult(
-        "candidate", "succeeded", _elapsed_ms(candidate_started), 0
-    )
+    candidate_stage = StageResult("candidate", "succeeded", _elapsed_ms(candidate_started), 0)
 
     if is_cancelled is not None and await is_cancelled():
         return AnalyzePipelineCancellation(
@@ -197,9 +193,7 @@ async def analyze_processed_image(
             selection = await structurer.select(_ambiguity_catalog(catalog, plan))
         except LlmProviderError as error:
             pipeline_issue_code = error.code.value
-            llm_stage = StageResult(
-                "llm", "failed", _elapsed_ms(llm_started), 1, pipeline_issue_code
-            )
+            llm_stage = StageResult("llm", "failed", _elapsed_ms(llm_started), 1, pipeline_issue_code)
         else:
             llm_stage = StageResult("llm", "succeeded", _elapsed_ms(llm_started), 1)
     validate_started = time.perf_counter()
@@ -215,9 +209,7 @@ async def analyze_processed_image(
         canonical,
         today=run_today,
     )
-    validate_stage = StageResult(
-        "validate", "succeeded", _elapsed_ms(validate_started), 0
-    )
+    validate_stage = StageResult("validate", "succeeded", _elapsed_ms(validate_started), 0)
     project_review = build_project_review(medication_rows, grounded)
     issues = _result_issues(medication_rows, pipeline_issue_code, grounded)
     if llm_stage.status == "succeeded" and _missing_expected_medication_output(
@@ -241,9 +233,7 @@ async def analyze_processed_image(
         layout=layout,
         medication_rows=medication_rows,
         ocr_elapsed_ms=ocr_stage.elapsed_ms,
-        structure_elapsed_ms=sum(
-            stage.elapsed_ms for stage in (candidate_stage, llm_stage, validate_stage)
-        ),
+        structure_elapsed_ms=sum(stage.elapsed_ms for stage in (candidate_stage, llm_stage, validate_stage)),
         catalog=catalog,
         grounded=grounded,
         project_review=project_review,
@@ -261,16 +251,8 @@ def _ambiguity_catalog(
     catalog: EvidenceCatalog,
     plan: DeterministicGroundingPlan,
 ) -> EvidenceCatalog:
-    rows = tuple(
-        row
-        for row in catalog.rows
-        if row.row_id in plan.ambiguous_strength_row_ids
-    )
-    relevant_ids = {
-        block_id
-        for row in rows
-        for block_id in row.block_ids
-    }
+    rows = tuple(row for row in catalog.rows if row.row_id in plan.ambiguous_strength_row_ids)
+    relevant_ids = {block_id for row in rows for block_id in row.block_ids}
     date_candidates = catalog.date_candidates if plan.ambiguous_date else ()
     relevant_ids.update(block.block_id for block in date_candidates)
     return EvidenceCatalog(
@@ -291,11 +273,7 @@ def _result_issues(
         issues.append(_pipeline_issue(pipeline_issue_code))
     issues.extend(issue.as_dict() for issue in grounded.issues)
     dispensed_date = grounded.dispensed_date
-    if (
-        isinstance(dispensed_date.value, str)
-        and dispensed_date.value
-        and not _is_iso_date(dispensed_date.value)
-    ):
+    if isinstance(dispensed_date.value, str) and dispensed_date.value and not _is_iso_date(dispensed_date.value):
         issues.append(
             {
                 "code": "INVALID_FIELD_VALUE",
@@ -364,11 +342,7 @@ def _field_evidence(
         evidence: dict[str, object] = {
             "tempId": temp_id,
             "name": _deterministic_evidence(row.fields.name),
-            "strength": _grounded_evidence(
-                grounded_medication.strength
-                if grounded_medication is not None
-                else None
-            ),
+            "strength": _grounded_evidence(grounded_medication.strength if grounded_medication is not None else None),
             "doseQuantity": _deterministic_evidence(row.fields.dose_quantity),
             "timesPerDay": _deterministic_evidence(row.fields.times_per_day),
             "days": _deterministic_evidence(row.fields.days),
@@ -404,9 +378,7 @@ def _merge_issue_codes(
         issue_codes = field_evidence.get("issues")
         if not isinstance(issue_codes, list):
             continue
-        field_evidence["issues"] = list(
-            dict.fromkeys([*issue_codes, issue.code.value])
-        )
+        field_evidence["issues"] = list(dict.fromkeys([*issue_codes, issue.code.value]))
 
 
 def _catalog_row_id(
@@ -414,9 +386,7 @@ def _catalog_row_id(
     catalog: EvidenceCatalog,
 ) -> str | None:
     name_block_ids = set(medication.fields.name.block_ids)
-    matches = tuple(
-        row.row_id for row in catalog.rows if name_block_ids.intersection(row.block_ids)
-    )
+    matches = tuple(row.row_id for row in catalog.rows if name_block_ids.intersection(row.block_ids))
     if len(matches) == 1:
         return matches[0]
     return None
@@ -508,4 +478,3 @@ def _version(name: str, source: str) -> dict[str, str]:
 
 def _elapsed_ms(started: float) -> int:
     return max(0, round((time.perf_counter() - started) * 1000))
-

@@ -45,10 +45,7 @@ class OcrBlock:
             raise ValueError("OCR block contains non-finite values.")
         bbox: dict[str, object] | None = None
         if self.bbox is not None:
-            if any(
-                not _is_finite_number(point.x) or not _is_finite_number(point.y)
-                for point in self.bbox
-            ):
+            if any(not _is_finite_number(point.x) or not _is_finite_number(point.y) for point in self.bbox):
                 raise ValueError("OCR block contains non-finite values.")
             bbox = {
                 "coordinateSpace": "processed",
@@ -79,4 +76,3 @@ def _is_finite_number(value: object) -> bool:
         return math.isfinite(float(value))
     except OverflowError:
         return False
-

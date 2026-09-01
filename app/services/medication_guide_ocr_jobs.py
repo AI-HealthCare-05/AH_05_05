@@ -734,9 +734,7 @@ class MedicationGuideOcrJobService:
             canonical_medication = dict(medication)
             dose_quantity = canonical_medication.get("doseQuantity")
             if "doseQuantity" in canonical_medication and (
-                not isinstance(dose_quantity, str)
-                or not dose_quantity.strip()
-                or len(dose_quantity) > 50
+                not isinstance(dose_quantity, str) or not dose_quantity.strip() or len(dose_quantity) > 50
             ):
                 canonical_medication.pop("doseQuantity", None)
             if canonical_medication.get("timesPerDay") is None:

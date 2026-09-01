@@ -233,4 +233,3 @@ def _contains_refusal(response: object) -> bool:
         if any(_attribute(part, "type") == "refusal" for part in content):
             return True
     return False
-

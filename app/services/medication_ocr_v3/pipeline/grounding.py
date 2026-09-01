@@ -245,20 +245,10 @@ def _selection_validation(
     selection: GroundingSelection,
 ) -> _SelectionValidation:
     block_counts = Counter(block.block_id for block in catalog.blocks)
-    blocks_by_id = {
-        block.block_id: block
-        for block in catalog.blocks
-        if block_counts[block.block_id] == 1
-    }
+    blocks_by_id = {block.block_id: block for block in catalog.blocks if block_counts[block.block_id] == 1}
     row_counts = Counter(row.row_id for row in catalog.rows)
-    row_block_ids = {
-        row.row_id: frozenset(row.block_ids)
-        for row in catalog.rows
-        if row_counts[row.row_id] == 1
-    }
-    row_selection_counts = Counter(
-        medication.row_id for medication in selection.medications
-    )
+    row_block_ids = {row.row_id: frozenset(row.block_ids) for row in catalog.rows if row_counts[row.row_id] == 1}
+    row_selection_counts = Counter(medication.row_id for medication in selection.medications)
     invalid_reuse: dict[tuple[str, str], set[str]] = defaultdict(set)
     usages: dict[str, list[tuple[str, str]]] = defaultdict(list)
 
@@ -285,9 +275,7 @@ def _selection_validation(
         row_block_ids=row_block_ids,
         date_candidate_ids=frozenset(block.block_id for block in catalog.date_candidates),
         invalid_reuse={key: frozenset(value) for key, value in invalid_reuse.items()},
-        duplicate_row_ids=frozenset(
-            row_id for row_id, count in row_selection_counts.items() if count > 1
-        ),
+        duplicate_row_ids=frozenset(row_id for row_id, count in row_selection_counts.items() if count > 1),
     )
 
 
@@ -323,10 +311,7 @@ def _materialize_field(
         if row_id is None:
             associated = block_id in validation.date_candidate_ids
         else:
-            associated = (
-                block.row_ids == (row_id,)
-                and block_id in validation.row_block_ids.get(row_id, frozenset())
-            )
+            associated = block.row_ids == (row_id,) and block_id in validation.row_block_ids.get(row_id, frozenset())
         if not associated:
             rejected_by_code[GroundingIssueCode.CROSS_ROW_BLOCK_ID].append(block_id)
         accepted.append(block)
@@ -378,9 +363,7 @@ def _visual_reading_order(blocks: list[EvidenceBlock]) -> tuple[EvidenceBlock, .
         sort_key=lambda item: (item.bbox.center_y, item.bbox.x_min, item.block_id),
     )
     return tuple(
-        block
-        for line in visual_lines
-        for block in sorted(line, key=lambda item: (item.bbox.x_min, item.block_id))
+        block for line in visual_lines for block in sorted(line, key=lambda item: (item.bbox.x_min, item.block_id))
     )
 
 
@@ -426,4 +409,3 @@ def _bbox_union(boxes: Iterable[AxisAlignedBBox]) -> AxisAlignedBBox:
 
 def _deduplicate_issues(issues: list[GroundingIssue]) -> tuple[GroundingIssue, ...]:
     return tuple(dict.fromkeys(issues))
-

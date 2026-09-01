@@ -149,15 +149,12 @@ def _normalize_block(field_value: object, index: int) -> OcrBlock:
 def _normalize_text(text: str) -> str:
     normalized = unicodedata.normalize("NFKC", text)
     whitespace_safe = "".join(
-        " " if character.isspace() or unicodedata.category(character) == "Cc" else character
-        for character in normalized
+        " " if character.isspace() or unicodedata.category(character) == "Cc" else character for character in normalized
     )
     return " ".join(whitespace_safe.split())
 
 
-def _normalize_confidence(
-    raw_confidence: object, issues: list[OcrBlockIssueCode]
-) -> float | None:
+def _normalize_confidence(raw_confidence: object, issues: list[OcrBlockIssueCode]) -> float | None:
     if not _is_finite_number(raw_confidence):
         issues.append(OcrBlockIssueCode.INVALID_BLOCK_CONFIDENCE)
         return None
@@ -230,30 +227,22 @@ def _segments_intersect(
     second_start_side = _orientation(second_start, second_end, first_start)
     second_end_side = _orientation(second_start, second_end, first_end)
     if (
-        first_start_side == 0.0 and _is_on_segment(first_start, first_end, second_start)
-    ) or (
-        first_end_side == 0.0 and _is_on_segment(first_start, first_end, second_end)
-    ) or (
-        second_start_side == 0.0 and _is_on_segment(second_start, second_end, first_start)
-    ) or (
-        second_end_side == 0.0 and _is_on_segment(second_start, second_end, first_end)
+        (first_start_side == 0.0 and _is_on_segment(first_start, first_end, second_start))
+        or (first_end_side == 0.0 and _is_on_segment(first_start, first_end, second_end))
+        or (second_start_side == 0.0 and _is_on_segment(second_start, second_end, first_start))
+        or (second_end_side == 0.0 and _is_on_segment(second_start, second_end, first_end))
     ):
         return True
-    return (first_start_side > 0.0) != (first_end_side > 0.0) and (
-        second_start_side > 0.0
-    ) != (second_end_side > 0.0)
+    return (first_start_side > 0.0) != (first_end_side > 0.0) and (second_start_side > 0.0) != (second_end_side > 0.0)
 
 
 def _orientation(first: Point, second: Point, third: Point) -> float:
-    return (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (
-        third.x - first.x
-    )
+    return (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x)
 
 
 def _is_on_segment(start: Point, end: Point, candidate: Point) -> bool:
-    return (
-        min(start.x, end.x) <= candidate.x <= max(start.x, end.x)
-        and min(start.y, end.y) <= candidate.y <= max(start.y, end.y)
+    return min(start.x, end.x) <= candidate.x <= max(start.x, end.x) and min(start.y, end.y) <= candidate.y <= max(
+        start.y, end.y
     )
 
 
@@ -274,4 +263,3 @@ def _mapping_or_protocol_error(value: object) -> Mapping[str, object]:
 
 def _protocol_error() -> OcrProviderError:
     return OcrProviderError(OcrErrorCode.OCR_PROTOCOL_INVALID, 502)
-

@@ -75,8 +75,7 @@ def _map_grounded_medications(
         matches = tuple(
             medication
             for medication in grounded_medications
-            if medication.row_id not in consumed
-            and name_ids.intersection(medication.name.block_ids)
+            if medication.row_id not in consumed and name_ids.intersection(medication.name.block_ids)
         )
         if len(matches) == 1:
             mapped[index] = matches[0]
@@ -137,12 +136,7 @@ def _structurally_valid_name(row: MedicationRow) -> bool:
 
 def _displayable_name(row: MedicationRow) -> bool:
     field = row.fields.name
-    return bool(
-        isinstance(row.name, str)
-        and row.name.strip()
-        and field.value == row.name
-        and field.block_ids
-    )
+    return bool(isinstance(row.name, str) and row.name.strip() and field.value == row.name and field.block_ids)
 
 
 def _public_dose_quantity(field: MedicationField) -> str | None:
@@ -225,9 +219,7 @@ def _medication_confidence(
     confidences.append(strength.confidence)
     if any(confidence is None for confidence in confidences):
         return "low"
-    return _confidence_tier(
-        min(confidence for confidence in confidences if confidence is not None)
-    )
+    return _confidence_tier(min(confidence for confidence in confidences if confidence is not None))
 
 
 def _valid_grounded_field(field: GroundedField) -> bool:
@@ -244,11 +236,7 @@ def _valid_grounded_date(field: GroundedField) -> bool:
 
 
 def _valid_grounded_strength(field: GroundedField) -> bool:
-    return bool(
-        _valid_grounded_field(field)
-        and isinstance(field.value, str)
-        and field.value.strip()
-    )
+    return bool(_valid_grounded_field(field) and isinstance(field.value, str) and field.value.strip())
 
 
 def _grounded_confidence(field: GroundedField) -> str:

@@ -84,4 +84,3 @@ def warp_quality_is_acceptable(
     bright_ok = candidate_bright_clip <= baseline_bright_clip + 0.12
     edges_ok = candidate_edge_density >= max(0.002, baseline_edge_density * 0.35)
     return blur_ok and dark_ok and bright_ok and edges_ok
-

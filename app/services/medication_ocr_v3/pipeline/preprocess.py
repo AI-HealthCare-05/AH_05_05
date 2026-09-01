@@ -184,9 +184,7 @@ def rotation_matrix_clockwise(width: int, height: int, degrees: int) -> MatrixTr
     return exif_orientation_matrix(width, height, {0: 1, 90: 6, 180: 3, 270: 8}[degrees])
 
 
-def resize_matrix(
-    source_width: int, source_height: int, target_width: int, target_height: int
-) -> MatrixTransform:
+def resize_matrix(source_width: int, source_height: int, target_width: int, target_height: int) -> MatrixTransform:
     if min(source_width, source_height, target_width, target_height) <= 0:
         raise ValueError("Image dimensions must be positive.")
     matrix: Matrix3 = (
@@ -209,27 +207,18 @@ def _quad_array(quad: Quad) -> NDArray[np.float32]:
 
 def _signed_area(quad: Quad) -> float:
     points = _quad_array(quad).astype(np.float64)
-    return float(
-        0.5
-        * np.sum(
-            points[:, 0] * np.roll(points[:, 1], -1) - points[:, 1] * np.roll(points[:, 0], -1)
-        )
-    )
+    return float(0.5 * np.sum(points[:, 0] * np.roll(points[:, 1], -1) - points[:, 1] * np.roll(points[:, 0], -1)))
 
 
 def _is_valid_quad(quad: Quad, *, minimum_area: float = 16.0) -> bool:
     points = _quad_array(quad)
     contour = points.reshape((-1, 1, 2))
     return bool(
-        bool(np.isfinite(points).all())
-        and cv2.isContourConvex(contour)
-        and abs(_signed_area(quad)) >= minimum_area
+        bool(np.isfinite(points).all()) and cv2.isContourConvex(contour) and abs(_signed_area(quad)) >= minimum_area
     )
 
 
-def perspective_matrix(
-    quad: Quad, *, target_width: int, target_height: int, border: int = 0
-) -> MatrixTransform:
+def perspective_matrix(quad: Quad, *, target_width: int, target_height: int, border: int = 0) -> MatrixTransform:
     if not _is_valid_quad(quad) or min(target_width, target_height) < 2 or border < 0:
         raise ValueError("A non-degenerate convex quadrilateral is required.")
     destination = np.asarray(
@@ -356,10 +345,7 @@ def _decode_image(data: bytes, mime_type: str) -> tuple[Image.Image, str, int]:
                     ImageErrorCode.MIME_MISMATCH,
                     "The decoded format does not match the image data.",
                 )
-            if (
-                bool(getattr(probe, "is_animated", False))
-                or int(getattr(probe, "n_frames", 1)) != 1
-            ):
+            if bool(getattr(probe, "is_animated", False)) or int(getattr(probe, "n_frames", 1)) != 1:
                 raise ImageValidationError(
                     ImageErrorCode.ANIMATED_IMAGE,
                     "Animated or multi-frame images are not supported.",
@@ -444,10 +430,7 @@ def _boundary_contrast(lab: NDArray[np.float32], quad: Quad) -> tuple[float, flo
             outside_x = round(x - inward_x * offset)
             outside_y = round(y - inward_y * offset)
             if not (
-                0 <= inside_x < width
-                and 0 <= inside_y < height
-                and 0 <= outside_x < width
-                and 0 <= outside_y < height
+                0 <= inside_x < width and 0 <= inside_y < height and 0 <= outside_x < width and 0 <= outside_y < height
             ):
                 continue
             radius = 3
@@ -472,10 +455,7 @@ def _boundary_contrast(lab: NDArray[np.float32], quad: Quad) -> tuple[float, flo
 def _crop_suspicion(quad: Quad, width: int, height: int) -> bool:
     margin = max(3.0, min(width, height) * 0.006)
     touching = sum(
-        point.x <= margin
-        or point.y <= margin
-        or point.x >= width - margin
-        or point.y >= height - margin
+        point.x <= margin or point.y <= margin or point.x >= width - margin or point.y >= height - margin
         for point in quad
     )
     return touching >= 2
@@ -495,11 +475,7 @@ def _stabilize_document_detection(
     coverage = abs(_signed_area(quad)) / float(width * height)
     horizontal_span = (max(point.x for point in quad) - min(point.x for point in quad)) / width
     vertical_span = (max(point.y for point in quad) - min(point.y for point in quad)) / height
-    if (
-        detection.likely_document_count == 0
-        and coverage < 0.075
-        and min(horizontal_span, vertical_span) < 0.08
-    ):
+    if detection.likely_document_count == 0 and coverage < 0.075 and min(horizontal_span, vertical_span) < 0.08:
         return DocumentDetection(None, 0, 0.0, False)
 
     if not detection.crop_suspicion or detection.confidence >= 0.75:
@@ -645,17 +621,10 @@ def _rank_line_pairs(
             if separation < minimum_separation:
                 continue
             span_score = min(1.0, separation / max(1.0, axis_extent * 0.55))
-            support = (
-                first.longest_segment
-                + second.longest_segment
-                + 0.20 * (first.total_length + second.total_length)
-            )
+            support = first.longest_segment + second.longest_segment + 0.20 * (first.total_length + second.total_length)
             ranked.append((support * (0.85 + 0.15 * span_score), first, second))
     ranked.sort(key=lambda item: item[0], reverse=True)
-    return {
-        (first, second)
-        for _, first, second in ranked[:MAX_HOUGH_PAIRS_PER_AXIS]
-    }
+    return {(first, second) for _, first, second in ranked[:MAX_HOUGH_PAIRS_PER_AXIS]}
 
 
 def _expand_quad(quad: Quad, width: int, height: int) -> Quad:
@@ -807,8 +776,7 @@ def _hough_candidate(
                         math.hypot(quad[0].x - quad[3].x, quad[0].y - quad[3].y),
                     )
                     edge_supports = tuple(
-                        _edge_side_support(edges, quad[index], quad[(index + 1) % 4])
-                        for index in range(4)
+                        _edge_side_support(edges, quad[index], quad[(index + 1) % 4]) for index in range(4)
                     )
                     if min(edge_supports) < 0.42 or float(np.mean(edge_supports)) < 0.60:
                         continue
@@ -965,11 +933,7 @@ def _grabcut_document_candidates(
     )
     contours, _ = cv2.findContours(foreground, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     candidates: list[_QuadCandidate] = []
-    colors = (
-        color_buffers
-        if working is rgb and color_buffers is not None
-        else _detection_color_buffers(working)
-    )
+    colors = color_buffers if working is rgb and color_buffers is not None else _detection_color_buffers(working)
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:4]:
         if cv2.contourArea(contour) < width * height * 0.08:
             continue
@@ -1147,18 +1111,11 @@ def _detect_document(rgb: UInt8Image) -> DocumentDetection:
     )
     component_count = 0
     component_crop_quads: list[Quad] = []
-    component_total, _, component_stats, _ = cv2.connectedComponentsWithStats(
-        page_mask, connectivity=8
-    )
+    component_total, _, component_stats, _ = cv2.connectedComponentsWithStats(page_mask, connectivity=8)
     for component_index in range(1, component_total):
         x, y, component_width, component_height, component_area = component_stats[component_index]
         component_coverage = float(component_area) / float(width * height)
-        touches_border = (
-            x <= 1
-            or y <= 1
-            or x + component_width >= width - 1
-            or y + component_height >= height - 1
-        )
+        touches_border = x <= 1 or y <= 1 or x + component_width >= width - 1 or y + component_height >= height - 1
         if (
             touches_border
             and 0.15 <= component_coverage <= 0.88
@@ -1207,8 +1164,7 @@ def _detect_document(rgb: UInt8Image) -> DocumentDetection:
         for candidate in authorities
         if candidate.coverage >= 0.075
         and candidate.confidence >= 0.55
-        and candidate.boundary_confidence
-        >= MULTIPLE_DOCUMENT_MIN_BOUNDARY_CONFIDENCE
+        and candidate.boundary_confidence >= MULTIPLE_DOCUMENT_MIN_BOUNDARY_CONFIDENCE
     ]
     likely_count = max(len(strong), component_count)
     plausible = [candidate for candidate in authorities if candidate.confidence >= 0.42]
@@ -1244,23 +1200,16 @@ def _detect_document(rgb: UInt8Image) -> DocumentDetection:
         and (best.confidence < 0.90 or best.provenance == "grabcut")
     ) and any(
         _quad_overlap(best.quad, evidence) >= 0.90
-        and 1.35
-        <= abs(_signed_area(evidence)) / max(abs(_signed_area(best.quad)), 1.0)
-        <= 6.0
+        and 1.35 <= abs(_signed_area(evidence)) / max(abs(_signed_area(best.quad)), 1.0) <= 6.0
         for evidence in component_crop_quads
     )
-    enclosing_three_side_crop = (
-        best.confidence < 0.90 or best.provenance == "hough"
-    ) and any(
+    enclosing_three_side_crop = (best.confidence < 0.90 or best.provenance == "hough") and any(
         _quad_overlap(best.quad, evidence) >= 0.90
-        and 1.35
-        <= abs(_signed_area(evidence)) / max(abs(_signed_area(best.quad)), 1.0)
-        <= 6.0
+        and 1.35 <= abs(_signed_area(evidence)) / max(abs(_signed_area(best.quad)), 1.0) <= 6.0
         for evidence in _three_sided_flat_crop_evidence(gray)
     )
     if (
-        original_width * original_height
-        >= MAX_LOW_RESOLUTION_CROP_EVIDENCE_PIXELS
+        original_width * original_height >= MAX_LOW_RESOLUTION_CROP_EVIDENCE_PIXELS
         and best.confidence < 0.70
         and matching_pre_expansion_crop
         and not best.crop_suspicion
@@ -1514,12 +1463,7 @@ def _content_envelope_crop_deskew_candidate(
     source_points = weak_points.reshape((-1, 2)).astype(np.float64) / scale
     homogeneous = np.column_stack((source_points, np.ones(len(source_points))))
     mapped = homogeneous @ rotation.T
-    retained = (
-        (mapped[:, 0] >= x1)
-        & (mapped[:, 0] <= x2)
-        & (mapped[:, 1] >= y1)
-        & (mapped[:, 1] <= y2)
-    )
+    retained = (mapped[:, 0] >= x1) & (mapped[:, 0] <= x2) & (mapped[:, 1] >= y1) & (mapped[:, 1] <= y2)
     if float(np.mean(retained)) < 0.995:
         return None
 
@@ -1710,9 +1654,7 @@ def _has_meaningful_content_outside_quad(rgb: UInt8Image, quad: Quad) -> bool:
     blur_size = max(15, round(min(working_height, working_width) * 0.05) | 1)
     local_background = cv2.GaussianBlur(gray, (blur_size, blur_size), 0)
     local_contrast = local_background.astype(np.int16) - gray.astype(np.int16)
-    dark_strokes = (
-        local_contrast >= PERSPECTIVE_OUTSIDE_MIN_LOCAL_CONTRAST
-    )
+    dark_strokes = local_contrast >= PERSPECTIVE_OUTSIDE_MIN_LOCAL_CONTRAST
     text_edges = cv2.Canny(gray, 60, 160) > 0
     content_edges = far_outside & dark_strokes & text_edges
     content_pixels = int(np.count_nonzero(content_edges))
@@ -1740,10 +1682,7 @@ def _has_meaningful_content_outside_quad(rgb: UInt8Image, quad: Quad) -> bool:
     if text_line_pixels >= PERSPECTIVE_NEAR_SMALL_LINE_MIN_SUPPORT:
         return True
 
-    adaptive_strokes = (
-        far_outside
-        & (local_contrast >= PERSPECTIVE_ADAPTIVE_TEXT_MIN_LOCAL_CONTRAST)
-    )
+    adaptive_strokes = far_outside & (local_contrast >= PERSPECTIVE_ADAPTIVE_TEXT_MIN_LOCAL_CONTRAST)
     bridged_strokes = cv2.dilate(
         adaptive_strokes.astype(np.uint8),
         np.ones((5, 9), dtype=np.uint8),
@@ -1789,9 +1728,7 @@ def _has_meaningful_content_outside_quad(rgb: UInt8Image, quad: Quad) -> bool:
         residual_std = float(np.std(surface_values - surface_model @ coefficients))
         if residual_std <= PERSPECTIVE_ADAPTIVE_MAX_SURFACE_RESIDUAL_STD:
             adaptive_text_regions[adaptive_labels == label] = 255
-    adaptive_text_pixels = int(
-        np.count_nonzero(adaptive_strokes & (adaptive_text_regions > 0))
-    )
+    adaptive_text_pixels = int(np.count_nonzero(adaptive_strokes & (adaptive_text_regions > 0)))
     if adaptive_text_pixels >= PERSPECTIVE_ADAPTIVE_TEXT_LINE_MIN_PIXELS:
         return True
     return False
@@ -1963,16 +1900,10 @@ def _classify(
 ) -> tuple[QualityState, tuple[str, ...]]:
     reasons: list[str] = []
     severe_blank = (
-        metrics.edge_density < 0.0015
-        and metrics.blur_variance < 4.0
-        and metrics.illumination_variation < 0.015
+        metrics.edge_density < 0.0015 and metrics.blur_variance < 4.0 and metrics.illumination_variation < 0.015
     )
     severe_blur = metrics.blur_variance < 9.0 and metrics.edge_density < 0.02
-    tiny_document = (
-        document.polygon is not None
-        and metrics.page_coverage < 0.075
-        and document.confidence >= 0.70
-    )
+    tiny_document = document.polygon is not None and metrics.page_coverage < 0.075 and document.confidence >= 0.70
     multiple = metrics.likely_document_count >= 2
     if severe_blank:
         reasons.append("blank_or_contentless")
@@ -1990,10 +1921,7 @@ def _classify(
         return QualityState.PROCESSED, ("document_geometry_uncertain",)
     if preprocessing_mode is PreprocessingMode.CROP_DESKEW:
         return QualityState.PROCESSED, ("crop_deskewed",)
-    if (
-        document.confidence < 0.60
-        or preprocessing_mode is not PreprocessingMode.PERSPECTIVE
-    ):
+    if document.confidence < 0.60 or preprocessing_mode is not PreprocessingMode.PERSPECTIVE:
         return QualityState.PROCESSED, ("perspective_not_applied",)
     return QualityState.PROCESSED, ("perspective_rectified",)
 
@@ -2088,15 +2016,9 @@ def preprocess_image(
     )
     meaningful_content_outside = False
     trusted_outer_document = (
-        coverage >= TRUSTED_OUTER_DOCUMENT_MIN_COVERAGE
-        and document.confidence >= TRUSTED_OUTER_DOCUMENT_MIN_CONFIDENCE
+        coverage >= TRUSTED_OUTER_DOCUMENT_MIN_COVERAGE and document.confidence >= TRUSTED_OUTER_DOCUMENT_MIN_CONFIDENCE
     )
-    if (
-        can_warp
-        and document_quad_override is None
-        and document.polygon is not None
-        and not trusted_outer_document
-    ):
+    if can_warp and document_quad_override is None and document.polygon is not None and not trusted_outer_document:
         meaningful_content_outside = _has_meaningful_content_outside_quad(
             rgb,
             document.polygon,
@@ -2168,9 +2090,7 @@ def preprocess_image(
         if quality_state is QualityState.RECAPTURE_REQUIRED
         else candidate.preprocessing_mode
     )
-    raw_to_template_matrix = _compose(
-        candidate.oriented_to_candidate.matrix, raw_to_oriented.matrix
-    )
+    raw_to_template_matrix = _compose(candidate.oriented_to_candidate.matrix, raw_to_oriented.matrix)
     raw_to_template = _transform(
         decoded_dimensions.width,
         decoded_dimensions.height,
@@ -2204,8 +2124,5 @@ def preprocess_image(
         reasons=reasons,
         operations=tuple(operations),
         template_image=template_image,
-        oriented_preview=_preview(
-            "oriented-original", rgb, decoded_dimensions, raw_to_oriented.matrix
-        ),
+        oriented_preview=_preview("oriented-original", rgb, decoded_dimensions, raw_to_oriented.matrix),
     )
-

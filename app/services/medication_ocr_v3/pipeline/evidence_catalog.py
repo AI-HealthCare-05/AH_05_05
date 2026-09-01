@@ -47,9 +47,7 @@ _DATE_LABEL_GRAMMAR = r"조제\s*일(?:\s*자)?"
 _DATE_LABEL_PATTERN = re.compile(_DATE_LABEL_GRAMMAR)
 _DATE_LABEL_ONLY_PATTERN = re.compile(r"^" + _DATE_LABEL_GRAMMAR + r"$")
 _DATE_VALUE_ONLY_PATTERN = re.compile(r"^\d{2,4}[./-]\d{1,2}[./-]\d{1,2}$")
-_DATE_LABEL_AND_VALUE_PATTERN = re.compile(
-    r"^" + _DATE_LABEL_GRAMMAR + r"[\s:：,·-]+\d{2,4}[./-]\d{1,2}[./-]\d{1,2}$"
-)
+_DATE_LABEL_AND_VALUE_PATTERN = re.compile(r"^" + _DATE_LABEL_GRAMMAR + r"[\s:：,·-]+\d{2,4}[./-]\d{1,2}[./-]\d{1,2}$")
 _SUMMARY_DOSE_PATTERN = re.compile(
     r"(?:적량|(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]+)(?:정|캡슐|포|m[lℓ]))",
     re.IGNORECASE,
@@ -103,9 +101,7 @@ def build_evidence_catalog(
     """
 
     source_by_id, duplicate_ids = _unique_geometry_sources(ocr_result.blocks)
-    line_by_block_id, sensitive_block_ids, line_segments = _line_indexes(
-        layout, source_by_id
-    )
+    line_by_block_id, sensitive_block_ids, line_segments = _line_indexes(layout, source_by_id)
     seeds, supplements = _row_seeds(layout, medication_rows)
     structural_schedule_block_ids = _structural_schedule_block_ids(layout, seeds)
     assignments: dict[str, _BlockAssignment] = defaultdict(_BlockAssignment)
@@ -177,9 +173,7 @@ def build_evidence_catalog(
         EvidenceRow(
             row_id=seed.row_id,
             bbox=seed.row.bbox,
-            block_ids=tuple(
-                block.block_id for block in candidate_blocks if seed.row_id in block.row_ids
-            )[:96],
+            block_ids=tuple(block.block_id for block in candidate_blocks if seed.row_id in block.row_ids)[:96],
         )
         for seed in seeds[:100]
     )
@@ -187,9 +181,7 @@ def build_evidence_catalog(
     included_ids = included_row_ids | set(date_ids)
     blocks = tuple(block for block in candidate_blocks if block.block_id in included_ids)
     blocks_by_id = {block.block_id: block for block in blocks}
-    date_candidates = tuple(
-        blocks_by_id[block_id] for block_id in date_ids if block_id in blocks_by_id
-    )
+    date_candidates = tuple(blocks_by_id[block_id] for block_id in date_ids if block_id in blocks_by_id)
     return EvidenceCatalog(blocks=blocks, date_candidates=date_candidates, rows=evidence_rows)
 
 
@@ -234,10 +226,7 @@ def _line_indexes(
         line_by_block_id.pop(block_id, None)
     segments = _line_segments(layout.lines, source_by_id)
     sensitive_block_ids = {
-        block_id
-        for segment in segments
-        if _is_sensitive_text(segment.text)
-        for block_id in segment.block_ids
+        block_id for segment in segments if _is_sensitive_text(segment.text) for block_id in segment.block_ids
     }
     sensitive_block_ids.update(_sensitive_continuation_block_ids(segments))
     return line_by_block_id, sensitive_block_ids, segments
@@ -249,22 +238,14 @@ def _line_segments(
 ) -> tuple[OcrLine, ...]:
     segments: list[OcrLine] = []
     for line in lines:
-        sources = tuple(
-            (block_id, source_by_id[block_id])
-            for block_id in line.block_ids
-            if block_id in source_by_id
-        )
+        sources = tuple((block_id, source_by_id[block_id]) for block_id in line.block_ids if block_id in source_by_id)
         for visual_line in _visual_line_groups(sources):
-            horizontal_groups: list[
-                list[tuple[str, tuple[OcrBlock, AxisAlignedBBox]]]
-            ] = []
+            horizontal_groups: list[list[tuple[str, tuple[OcrBlock, AxisAlignedBBox]]]] = []
             for item in sorted(
                 visual_line,
                 key=lambda value: (value[1][1].x_min, _block_key(value[1])),
             ):
-                if not horizontal_groups or _starts_new_line_segment(
-                    horizontal_groups[-1][-1][1][1], item[1][1]
-                ):
+                if not horizontal_groups or _starts_new_line_segment(horizontal_groups[-1][-1][1][1], item[1][1]):
                     horizontal_groups.append([item])
                 else:
                     horizontal_groups[-1].append(item)
@@ -302,9 +283,7 @@ def _starts_new_line_segment(first: AxisAlignedBBox, second: AxisAlignedBBox) ->
 
 
 def _sensitive_continuation_block_ids(segments: tuple[OcrLine, ...]) -> set[str]:
-    ordered = tuple(
-        sorted(segments, key=lambda line: (line.bbox.y_min, line.bbox.x_min, line.line_id))
-    )
+    ordered = tuple(sorted(segments, key=lambda line: (line.bbox.y_min, line.bbox.x_min, line.line_id)))
     sensitive: set[str] = set()
     for index, line in enumerate(ordered):
         if not any(label in _normalized(line.text) for label in _SECTION_LABELS):
@@ -327,24 +306,17 @@ def _is_section_continuation(first: AxisAlignedBBox, second: AxisAlignedBBox) ->
     horizontal_overlap = min(first.x_max, second.x_max) - max(first.x_min, second.x_min)
     minimum_width = min(first.width, second.width)
     return vertical_gap <= size * 0.5 and (
-        horizontal_overlap >= minimum_width * 0.5
-        or _is_bounded_directional_same_line_continuation(first, second)
+        horizontal_overlap >= minimum_width * 0.5 or _is_bounded_directional_same_line_continuation(first, second)
     )
 
 
-def _is_bounded_directional_same_line_continuation(
-    first: AxisAlignedBBox, second: AxisAlignedBBox
-) -> bool:
+def _is_bounded_directional_same_line_continuation(first: AxisAlignedBBox, second: AxisAlignedBBox) -> bool:
     vertical_overlap = min(first.y_max, second.y_max) - max(first.y_min, second.y_min)
     horizontal_gap = second.x_min - first.x_max
     minimum_height = min(first.height, second.height)
     maximum_height = max(first.height, second.height)
     maximum_gap = max(first.width, second.width, maximum_height * 12.0) * 1.25
-    return (
-        horizontal_gap >= 0.0
-        and vertical_overlap >= minimum_height * 0.5
-        and horizontal_gap <= maximum_gap
-    )
+    return horizontal_gap >= 0.0 and vertical_overlap >= minimum_height * 0.5 and horizontal_gap <= maximum_gap
 
 
 def _row_seeds(
@@ -360,18 +332,12 @@ def _row_seeds(
     if layout.guidance_rows:
         primary = _sort_rows(layout.guidance_rows)
         return (
-            tuple(
-                _RowSeed(f"row-{index:04d}", row, "guidance")
-                for index, row in enumerate(primary[:100], 1)
-            ),
+            tuple(_RowSeed(f"row-{index:04d}", row, "guidance") for index, row in enumerate(primary[:100], 1)),
             tuple(_SourceRow(row, "summary") for row in layout.summary_rows),
         )
     primary = _sort_rows(layout.summary_rows)
     return (
-        tuple(
-            _RowSeed(f"row-{index:04d}", row, "summary")
-            for index, row in enumerate(primary[:100], 1)
-        ),
+        tuple(_RowSeed(f"row-{index:04d}", row, "summary") for index, row in enumerate(primary[:100], 1)),
         (),
     )
 
@@ -402,9 +368,7 @@ def _assign_row_cells(
         assign_strength = "strength" in fields
         fields = tuple(field for field in fields if field != "strength")
         for block_id in cell.block_ids:
-            if _eligible(
-                block_id, source_by_id, duplicate_ids, line_by_block_id, sensitive_block_ids
-            ):
+            if _eligible(block_id, source_by_id, duplicate_ids, line_by_block_id, sensitive_block_ids):
                 assignment = assignments[block_id]
                 assignment.fields.update(fields)
                 assignment.row_ids.add(seed.row_id)
@@ -569,13 +533,7 @@ def _structural_schedule_block_ids(
         *layout.summary_rows,
         *(row for candidate in layout.table_candidates for row in candidate.rows),
     )
-    return {
-        block_id
-        for row in rows
-        for cell in row.cells[1:]
-        if cell is not None
-        for block_id in cell.block_ids
-    }
+    return {block_id for row in rows for cell in row.cells[1:] if cell is not None for block_id in cell.block_ids}
 
 
 def _matching_seed(row: LayoutRow, seeds: tuple[_RowSeed, ...]) -> _RowSeed | None:
@@ -585,8 +543,7 @@ def _matching_seed(row: LayoutRow, seeds: tuple[_RowSeed, ...]) -> _RowSeed | No
         candidates = [
             seed
             for seed in seeds
-            if seed.row.cells[0] is not None
-            and _names_match(name, _canonical_name(seed.row.cells[0].text))
+            if seed.row.cells[0] is not None and _names_match(name, _canonical_name(seed.row.cells[0].text))
         ]
         if len(candidates) == 1:
             return candidates[0]
@@ -594,11 +551,7 @@ def _matching_seed(row: LayoutRow, seeds: tuple[_RowSeed, ...]) -> _RowSeed | No
     schedule_provenance = _schedule_provenance(row)
     if schedule_provenance is None:
         return None
-    candidates = [
-        seed
-        for seed in seeds
-        if _schedule_provenance(seed.row) == schedule_provenance
-    ]
+    candidates = [seed for seed in seeds if _schedule_provenance(seed.row) == schedule_provenance]
     return candidates[0] if len(candidates) == 1 else None
 
 
@@ -621,9 +574,7 @@ def _row_geometry_groups(
         ("summary", layout.summary_rows),
         *(("table", candidate.rows) for candidate in layout.table_candidates),
     )
-    resolved_seeds = _sort_seeds(
-        _schedule_provenance_geometry_group(seeds, source_groups)
-    )
+    resolved_seeds = _sort_seeds(_schedule_provenance_geometry_group(seeds, source_groups))
     groups: list[tuple[_RowSeed, ...]] = [resolved_seeds]
     signatures = {_geometry_group_signature(resolved_seeds)}
     for source, rows in source_groups:
@@ -651,9 +602,7 @@ def _schedule_provenance_geometry_group(
     resolved: list[_RowSeed] = []
     for seed in seeds:
         provenance = _schedule_provenance(seed.row)
-        if provenance is None or sum(
-            _schedule_provenance(candidate.row) == provenance for candidate in seeds
-        ) != 1:
+        if provenance is None or sum(_schedule_provenance(candidate.row) == provenance for candidate in seeds) != 1:
             resolved.append(seed)
             continue
         candidates = {
@@ -685,9 +634,7 @@ def _geometry_group_signature(seeds: tuple[_RowSeed, ...]) -> tuple[tuple[object
 
 
 def _sort_seeds(seeds: tuple[_RowSeed, ...]) -> tuple[_RowSeed, ...]:
-    return tuple(
-        sorted(seeds, key=lambda seed: (seed.row.bbox.center_y, seed.row.bbox.x_min, seed.row_id))
-    )
+    return tuple(sorted(seeds, key=lambda seed: (seed.row.bbox.center_y, seed.row.bbox.x_min, seed.row_id)))
 
 
 def _row_band_seed(
@@ -699,9 +646,7 @@ def _row_band_seed(
         candidate = _row_band_group_seed(bbox, group)
         if candidate is None:
             continue
-        distance = abs(bbox.center_y - candidate.row.bbox.center_y) / max(
-            bbox.height, candidate.row.bbox.height
-        )
+        distance = abs(bbox.center_y - candidate.row.bbox.center_y) / max(bbox.height, candidate.row.bbox.height)
         current = candidates_by_row_id.get(candidate.row_id)
         if current is None or distance < current[0]:
             candidates_by_row_id[candidate.row_id] = (distance, candidate)
@@ -744,9 +689,7 @@ def _standalone_strength_continuation_group_seed(
     for preceding, following in zip(seeds, seeds[1:], strict=False):
         preceding_bbox = preceding.row.bbox
         following_bbox = following.row.bbox
-        horizontal_overlap = min(bbox.x_max, preceding_bbox.x_max) - max(
-            bbox.x_min, preceding_bbox.x_min
-        )
+        horizontal_overlap = min(bbox.x_max, preceding_bbox.x_max) - max(bbox.x_min, preceding_bbox.x_min)
         minimum_width = min(bbox.width, preceding_bbox.width)
         vertical_gap = bbox.y_min - preceding_bbox.y_max
         if (
@@ -777,16 +720,10 @@ def _row_band_group_seed(
         if index + 1 < len(seeds):
             upper = (center + seeds[index + 1].row.bbox.center_y) / 2.0
         elif len(seeds) > 1:
-            upper = (
-                center
-                + (center - seeds[index - 1].row.bbox.center_y) / 2.0
-                + seed.row.bbox.height * 0.25
-            )
+            upper = center + (center - seeds[index - 1].row.bbox.center_y) / 2.0 + seed.row.bbox.height * 0.25
         else:
             upper = center + max(seed.row.bbox.height, bbox.height) * 3.0
-        horizontal_overlap = min(bbox.x_max, seed.row.bbox.x_max) - max(
-            bbox.x_min, seed.row.bbox.x_min
-        )
+        horizontal_overlap = min(bbox.x_max, seed.row.bbox.x_max) - max(bbox.x_min, seed.row.bbox.x_min)
         if lower <= bbox.center_y <= upper and horizontal_overlap > 0.0:
             candidates.append(seed)
     if len(candidates) != 1:
@@ -794,8 +731,7 @@ def _row_band_group_seed(
     distances = sorted(
         abs(bbox.center_y - seed.row.bbox.center_y) / max(bbox.height, seed.row.bbox.height)
         for seed in seeds
-        if min(bbox.x_max, seed.row.bbox.x_max) - max(bbox.x_min, seed.row.bbox.x_min)
-        > 0.0
+        if min(bbox.x_max, seed.row.bbox.x_max) - max(bbox.x_min, seed.row.bbox.x_min) > 0.0
     )
     if len(distances) > 1 and distances[1] - distances[0] < 0.25:
         return None
@@ -806,9 +742,7 @@ def _strength_block_ids(
     line: OcrLine,
     source_by_id: dict[str, tuple[OcrBlock, AxisAlignedBBox]],
 ) -> frozenset[str]:
-    return frozenset(
-        block_id for group in _strength_block_id_groups(line, source_by_id) for block_id in group
-    )
+    return frozenset(block_id for group in _strength_block_id_groups(line, source_by_id) for block_id in group)
 
 
 def _strength_block_id_groups(
@@ -817,11 +751,7 @@ def _strength_block_id_groups(
 ) -> tuple[frozenset[str], ...]:
     ordered = tuple(
         sorted(
-            (
-                (block_id, source_by_id[block_id])
-                for block_id in line.block_ids
-                if block_id in source_by_id
-            ),
+            ((block_id, source_by_id[block_id]) for block_id in line.block_ids if block_id in source_by_id),
             key=lambda item: _block_key(item[1]),
         )
     )
@@ -833,13 +763,7 @@ def _strength_block_id_groups(
         fragment = _normalized(source.text)
         if not fragment:
             continue
-        separator = (
-            ""
-            if not combined_parts
-            or previous_fragment.endswith("/")
-            or fragment.startswith("/")
-            else " "
-        )
+        separator = "" if not combined_parts or previous_fragment.endswith("/") or fragment.startswith("/") else " "
         combined_parts.append(separator)
         position += len(separator)
         start = position
@@ -849,11 +773,7 @@ def _strength_block_id_groups(
         previous_fragment = fragment
     combined = normalize_measurement_unit_ocr("".join(combined_parts))
     return tuple(
-        frozenset(
-            block_id
-            for start, end, block_id in spans
-            if start < match.end() and end > match.start()
-        )
+        frozenset(block_id for start, end, block_id in spans if start < match.end() and end > match.start())
         for match in _STRENGTH_PATTERN.finditer(combined)
     )
 
@@ -864,9 +784,7 @@ def _date_candidate_ids(
     duplicate_ids: set[str],
     sensitive_block_ids: set[str],
 ) -> tuple[str, ...]:
-    ordered_lines = tuple(
-        sorted(line_segments, key=lambda line: (line.bbox.y_min, line.bbox.x_min, line.line_id))
-    )
+    ordered_lines = tuple(sorted(line_segments, key=lambda line: (line.bbox.y_min, line.bbox.x_min, line.line_id)))
     anchors = [line for line in ordered_lines if _DATE_LABEL_PATTERN.search(_normalized(line.text))]
     candidate_ids: set[str] = set()
     for line in anchors:
@@ -937,9 +855,7 @@ def _evidence_blocks(
     evidence: list[EvidenceBlock] = []
     date_id_set = set(date_ids)
     for block_id, (source, bbox) in source_by_id.items():
-        if not _eligible(
-            block_id, source_by_id, duplicate_ids, line_by_block_id, sensitive_block_ids
-        ):
+        if not _eligible(block_id, source_by_id, duplicate_ids, line_by_block_id, sensitive_block_ids):
             continue
         assignment = assignments.get(block_id)
         fields = set(assignment.fields) if assignment is not None else set()
@@ -1013,4 +929,3 @@ def _block_key(source: tuple[OcrBlock, AxisAlignedBBox]) -> tuple[float, float, 
 
 def _evidence_key(block: EvidenceBlock) -> tuple[float, float, str]:
     return block.bbox.center_y, block.bbox.x_min, block.block_id
-
