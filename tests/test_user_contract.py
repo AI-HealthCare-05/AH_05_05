@@ -127,7 +127,11 @@ def test_user_response_maps_database_phone_to_existing_api_name() -> None:
 
 
 @pytest.mark.asyncio
-async def test_suspended_user_cannot_authenticate() -> None:
+async def test_suspended_user_is_indistinguishable_from_wrong_credentials() -> None:
+    """정지 계정도 자격증명 오류와 같은 응답이어야 한다.
+
+    예전에는 423 으로 갈라져 상태 코드만으로 그 이메일의 가입 여부를 알 수 있었다(#196).
+    """
     auth_dtos, _, auth_services = load_user_contract()
     user = SimpleNamespace(
         id=1,
@@ -146,7 +150,8 @@ async def test_suspended_user_cannot_authenticate() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await service.authenticate(auth_dtos.LoginRequest(email="user@example.com", password="Password123!"))
 
-    assert exc_info.value.status_code == 423
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "이메일 또는 비밀번호가 올바르지 않습니다."
 
 
 def test_signup_openapi_documents_response_schemas() -> None:
