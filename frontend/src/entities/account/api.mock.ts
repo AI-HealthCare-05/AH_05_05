@@ -8,7 +8,7 @@ import type {
 } from './types';
 
 let currentProfile: AccountProfile = {
-  name: '포케 사용자',
+  name: 'RxVita 사용자',
   phoneNumber: '01012345678',
   birthDate: '1980-08-02',
   gender: 'female',

@@ -573,7 +573,7 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await expect(page).toHaveURL('/ocr-review');
   await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toBeVisible();
   await expect(page.getByText('잠깐이면 끝나요. 그동안 둘러보세요.')).toBeVisible();
-  const carousel = page.getByRole('region', { name: '포케 기능 소개' });
+  const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' });
   const stage = page.getByRole('status', { name: '약봉투 판독 단계' });
   await expect(carousel).toBeVisible();
   await expect(stage).toContainText('글자를 찾고 있어요');

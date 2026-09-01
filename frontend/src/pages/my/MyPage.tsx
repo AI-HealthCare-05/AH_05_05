@@ -279,7 +279,7 @@ export function MyPage({
                 <UserRound aria-hidden className="size-6" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-lg font-bold text-foreground">포케 사용자</p>
+                <p className="text-lg font-bold text-foreground">RxVita 사용자</p>
                 <p className="text-sm text-muted-foreground">기본정보</p>
               </div>
               <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />

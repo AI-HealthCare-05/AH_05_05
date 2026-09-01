@@ -23,7 +23,7 @@ import {
   Card,
   ErrorDialog,
   Header,
-  PokeFeatureCarousel,
+  RxVitaFeatureCarousel,
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
@@ -280,10 +280,16 @@ export function HomePage({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       {isAuthenticated ? (
-        <Header title="포케" />
+        <Header
+          title={
+            <img src="/images/rxvita-logo-480.png" alt="RxVita" className="h-6 w-auto" />
+          }
+        />
       ) : (
         <header className="flex h-header shrink-0 items-center justify-between bg-card px-page-x">
-          <h1 className="text-xl font-bold text-foreground">포케</h1>
+          <h1 className="flex items-center">
+            <img src="/images/rxvita-logo-480.png" alt="RxVita" className="h-6 w-auto" />
+          </h1>
           <button
             type="button"
             className="min-h-touch text-sm font-bold text-primary-strong"
@@ -295,7 +301,7 @@ export function HomePage({
       )}
 
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
-        <PokeFeatureCarousel autoAdvanceMs={3_000} size="compact" />
+        <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />
 
         {visibleSupplementRanking && (
           <SupplementRankingCard

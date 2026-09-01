@@ -82,5 +82,5 @@ test.skip('토큰은 메모리에만 있어 새로고침하면 로그아웃된�
   expect(stored.session).not.toContain('eyJ');
 
   await page.reload();
-  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toBeVisible();
 });

@@ -25,7 +25,17 @@ export function ChatStartGuide({ pending, onQuestion }: ChatStartGuideProps) {
         aria-label="챗봇 시작 가이드"
         className="flex flex-col gap-3 rounded-card bg-card p-4 shadow-card"
       >
-        <h2 className="text-lg font-bold text-foreground">이 챗봇에서 확인할 수 있어요</h2>
+        <div className="flex items-center gap-3">
+          <img
+            src="/images/rxvita-mark-256.png"
+            alt=""
+            aria-hidden
+            className="size-16 shrink-0"
+            width={256}
+            height={256}
+          />
+          <h2 className="text-lg font-bold text-foreground">이 챗봇에서 확인할 수 있어요</h2>
+        </div>
         <ul className="flex flex-col gap-1.5 text-sm leading-5 text-foreground">
           {GUIDE_ITEMS.map((item) => (
             <li key={item} className="flex items-start gap-2">

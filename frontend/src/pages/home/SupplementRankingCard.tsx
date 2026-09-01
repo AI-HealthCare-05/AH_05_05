@@ -20,7 +20,7 @@ export function SupplementRankingCard({
     >
       <div>
         <h2 className="text-xl font-bold text-foreground">{ranking.title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">포케가 골랐어요</p>
+        <p className="mt-1 text-sm text-muted-foreground">RxVita가 골랐어요</p>
       </div>
 
       <Card className="gap-0 overflow-hidden p-0">
