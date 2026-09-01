@@ -57,9 +57,16 @@ export function WithdrawAccountDialog({
       <DialogContent aria-describedby="withdraw-account-description">
         <DialogHeader>
           <DialogTitle>정말 탈퇴하시겠어요?</DialogTitle>
+          {/*
+            예전 문구는 "같은 이메일로 다시 가입할 수 있다"였는데 사실이 아닙니다.
+            탈퇴해도 user 행이 남아 회원가입의 중복 검사에 걸립니다.
+            되돌릴 수 없는 동작이라 누르기 전에 알아야 합니다.
+          */}
           <DialogDescription id="withdraw-account-description" className="leading-relaxed">
-            복약 기록과 등록한 영양제를 다시 볼 수 없어요. 같은 이메일로 다시 가입할 수
-            있지만, 이전 기록은 복구되지 않아요.
+            복약 기록과 등록한 영양제를 다시 볼 수 없어요.{' '}
+            <strong className="font-bold text-danger-strong">
+              탈퇴하면 같은 이메일로 다시 가입할 수 없어요.
+            </strong>
           </DialogDescription>
         </DialogHeader>
         <Input
