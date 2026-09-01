@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Literal
 
 from numbers_parser import Document
+from openpyxl import load_workbook
 from tortoise import Tortoise
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +101,41 @@ FIELD_SPECS = [
 ]
 
 SOURCE_FIELDS = [spec.name for spec in FIELD_SPECS]
+MFDS_HEADER_BY_FIELD = {
+    "food_code": "식품코드",
+    "name": "식품명",
+    "basis_qty": "영양성분제공단위량",
+    "energy_kcal": "에너지(kcal)",
+    "water_g": "수분(g)",
+    "protein_g": "단백질(g)",
+    "fat_g": "지방(g)",
+    "ash_g": "회분(g)",
+    "carb_g": "탄수화물(g)",
+    "sugar_g": "당류(g)",
+    "fiber_g": "식이섬유(g)",
+    "calcium_mg": "칼슘(mg)",
+    "iron_mg": "철(mg)",
+    "phosphorus_mg": "인(mg)",
+    "potassium_mg": "칼륨(mg)",
+    "sodium_mg": "나트륨(mg)",
+    "vitamin_a_ug_rae": "비타민A(μg RAE)",
+    "retinol_ug": "레티놀(μg)",
+    "beta_carotene_ug": "베타카로틴(μg)",
+    "thiamine_mg": "티아민(mg)",
+    "riboflavin_mg": "리보플라빈(mg)",
+    "niacin_mg": "니아신(mg)",
+    "vitamin_c_mg": "비타민 C(mg)",
+    "vitamin_d_ug": "비타민 D(μg)",
+    "cholesterol_mg": "콜레스테롤(mg)",
+    "sat_fat_g": "포화지방산(g)",
+    "trans_fat_g": "트랜스지방산(g)",
+    # 최신 식약처 파일에는 제형 단위(1정/1캡슐)가 따로 없으므로
+    # 원문 1회분량중량/부피를 그대로 보존하고 제형을 추측하지 않는다.
+    "serving_desc": "1회분량중량/부피",
+    "serving_size": "1회분량중량/부피",
+    "daily_freq": "1일섭취횟수",
+    "target": "섭취대상명",
+}
 
 
 class ImportValidationError(ValueError):
@@ -184,17 +221,79 @@ def validate_rows(rows: list[list[object]], *, first_row_number: int) -> list[di
     return records
 
 
-def parse_numbers(path: str | Path) -> list[dict[str, object]]:
-    document = Document(str(path))
-    rows = document.sheets[0].tables[0].rows(values_only=True)
+def validate_mfds_rows(
+    headers: list[object],
+    rows: list[list[object]],
+    *,
+    header_row_number: int,
+) -> list[dict[str, object]]:
+    normalized_headers = [str(value).strip() if value is not None else "" for value in headers]
+    header_indexes = {header: index for index, header in enumerate(normalized_headers)}
+    required_headers = set(MFDS_HEADER_BY_FIELD.values())
+    missing_headers = sorted(required_headers.difference(header_indexes))
+    if missing_headers:
+        raise ImportValidationError(f"header mismatch at row {header_row_number}: missing={','.join(missing_headers)}")
+
+    selected_rows = [
+        [
+            row[header_indexes[MFDS_HEADER_BY_FIELD[spec.name]]]
+            if header_indexes[MFDS_HEADER_BY_FIELD[spec.name]] < len(row)
+            else None
+            for spec in FIELD_SPECS
+        ]
+        for row in rows
+    ]
+    return validate_rows(selected_rows, first_row_number=header_row_number + 1)
+
+
+def _first_nonempty_row_index(rows: list[list[object]]) -> int:
     header_index = next(
         (index for index, row in enumerate(rows) if any(value is not None and str(value).strip() for value in row)),
         None,
     )
     if header_index is None:
         raise ImportValidationError("header row not found")
-    validate_headers(rows[header_index], row_number=header_index + 1)
-    return validate_rows(rows[header_index + 1 :], first_row_number=header_index + 2)
+    return header_index
+
+
+def read_numbers_rows(path: str | Path) -> list[list[object]]:
+    document = Document(str(path))
+    return document.sheets[0].tables[0].rows(values_only=True)
+
+
+def read_xlsx_rows(path: str | Path) -> list[list[object]]:
+    workbook = load_workbook(filename=path, read_only=True, data_only=True)
+    try:
+        worksheet = workbook.worksheets[0]
+        return [list(row) for row in worksheet.iter_rows(values_only=True)]
+    finally:
+        workbook.close()
+
+
+def parse_workbook(path: str | Path) -> list[dict[str, object]]:
+    source_path = Path(path)
+    suffix = source_path.suffix.lower()
+    if suffix == ".numbers":
+        rows = read_numbers_rows(source_path)
+    elif suffix == ".xlsx":
+        rows = read_xlsx_rows(source_path)
+    else:
+        raise ImportValidationError(f"unsupported workbook type: {suffix or '<none>'}")
+
+    header_index = _first_nonempty_row_index(rows)
+    headers = rows[header_index]
+    normalized_headers = [str(value).strip() if value is not None else None for value in headers]
+    if normalized_headers == EXPECTED_HEADERS:
+        return validate_rows(rows[header_index + 1 :], first_row_number=header_index + 2)
+    return validate_mfds_rows(
+        headers,
+        rows[header_index + 1 :],
+        header_row_number=header_index + 1,
+    )
+
+
+def parse_numbers(path: str | Path) -> list[dict[str, object]]:
+    return parse_workbook(path)
 
 
 async def upsert_records(records: list[dict[str, object]], *, batch_size: int = 500) -> ImportResult:
@@ -221,28 +320,72 @@ async def upsert_records(records: list[dict[str, object]], *, batch_size: int = 
                 batch_size=batch_size,
                 using_db=connection,
             )
+        await verify_stored_records(records, connection=connection)
     return ImportResult(total=len(records), created=len(to_create), updated=len(to_update))
 
 
-async def _run_import(path: Path) -> ImportResult:
-    records = parse_numbers(path)
+async def verify_stored_records(
+    records: list[dict[str, object]],
+    *,
+    connection: BaseDBAsyncClient | None = None,
+) -> None:
+    expected_codes = {str(record["food_code"]) for record in records}
+    query = SupplementNutrient.filter(food_code__in=expected_codes)
+    if connection is not None:
+        query = query.using_db(connection)
+    stored_codes = set(await query.values_list("food_code", flat=True))
+    missing_codes = expected_codes.difference(stored_codes)
+    if missing_codes:
+        raise RuntimeError(f"건강기능식품 원본 식품코드가 DB에 모두 저장되지 않았습니다: missing={len(missing_codes)}")
+
+
+def _validate_expected_count(records: list[dict[str, object]], expected_count: int | None) -> None:
+    if expected_count is not None and len(records) != expected_count:
+        raise ImportValidationError(f"expected {expected_count} records, received {len(records)}")
+
+
+async def _run_import(
+    path: Path,
+    *,
+    dry_run: bool,
+    expected_count: int | None,
+) -> tuple[list[dict[str, object]], ImportResult | None]:
+    records = parse_workbook(path)
+    _validate_expected_count(records, expected_count)
+    if dry_run:
+        return records, None
     await Tortoise.init(config=TORTOISE_ORM)
     try:
-        return await upsert_records(records)
+        return records, await upsert_records(records)
     finally:
         await Tortoise.close_connections()
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="건강기능식품 영양성분 Numbers 파일을 MySQL에 적재합니다.")
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="건강기능식품 영양성분 Numbers/XLSX 파일을 MySQL에 적재합니다.")
     parser.add_argument("path", type=Path)
-    args = parser.parse_args()
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--expected-count", type=int)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     try:
-        result = asyncio.run(_run_import(args.path))
+        records, result = asyncio.run(
+            _run_import(
+                args.path,
+                dry_run=args.dry_run,
+                expected_count=args.expected_count,
+            )
+        )
     except Exception as exc:
         print("total=0 created=0 updated=0 failed=1", file=sys.stdout)
         print(str(exc), file=sys.stderr)
         return 1
+    if result is None:
+        print(f"total={len(records)} dry_run=true", file=sys.stdout)
+        return 0
     print(
         f"total={result.total} created={result.created} updated={result.updated} failed={result.failed}",
         file=sys.stdout,

@@ -1,35 +1,7 @@
 import re
 import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from ai_worker.schemas.interaction import (
-    InteractionEntity,
-    InteractionEntityKind,
-    build_interaction_pair_key,
-)
-
-
-class SupplementInteractionPair(BaseModel):
-    """현재 코퍼스에서 검색 가능한 영양성분 조합의 어휘 계약."""
-
-    model_config = ConfigDict(frozen=True)
-
-    canonical_names: tuple[str, str]
-    alias_groups: tuple[tuple[str, ...], tuple[str, ...]]
-    english_query: str = Field(min_length=1)
-
-    @property
-    def pair_key(self) -> str:
-        left, right = (
-            InteractionEntity(
-                kind=InteractionEntityKind.SUPPLEMENT,
-                display_name=name,
-            )
-            for name in self.canonical_names
-        )
-        return build_interaction_pair_key(left, right)
-
+from ai_worker.schemas.medication_search import SupplementInteractionPair
 
 _KNOWN_PAIRS = (
     SupplementInteractionPair(
@@ -98,6 +70,19 @@ def known_supplement_names_in(text: str) -> list[str]:
     return names
 
 
+def canonical_supplement_name(value: str) -> str | None:
+    normalized = _normalize_text(value)
+    for pair in _KNOWN_PAIRS:
+        for name, aliases in zip(
+            pair.canonical_names,
+            pair.alias_groups,
+            strict=True,
+        ):
+            if any(_contains_alias(normalized, alias) for alias in aliases):
+                return name
+    return None
+
+
 def _normalize_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold()
     return re.sub(r"\s+", " ", normalized).strip()
@@ -112,4 +97,11 @@ def _contains_alias(normalized_text: str, alias: str) -> bool:
                 normalized_text,
             )
         )
+    if len(normalized_alias) == 2 and normalized_alias.endswith("분"):
+        base_name = normalized_alias[:-1]
+        if re.search(
+            rf"(?<![가-힣a-z0-9]){re.escape(base_name)}(?![가-힣a-z0-9])",
+            normalized_text,
+        ):
+            return True
     return normalized_alias in normalized_text

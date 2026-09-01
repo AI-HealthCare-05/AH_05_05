@@ -134,6 +134,70 @@ uv run --group ai python -m scripts.evaluate_knowledge_retrieval \
 변경 이유와 전후 수치는 `SEARCH_QUALITY_IMPROVEMENT_HISTORY.md`에 기록되어
 있습니다.
 
+### 상호작용 메타데이터 v2 A/B 평가
+
+`knowledge-full-v2-interaction-metadata`는 기존 v1 청크와 컬렉션을 덮어쓰지 않고
+별도 출력과 불변 컬렉션으로 생성합니다. 청크에는 약명·성분명·상호작용 유형·조합
+키·근거 수준·사람/동물/세포 연구 구분·문서 섹션·데이터셋 버전을 저장합니다.
+확인할 수 없는 근거 수준이나 연구 대상은 추측하지 않고 `UNKNOWN`으로 둡니다.
+
+두 대상이 같은 청크에 우연히 등장한 것만으로 상호작용을 확정하지 않습니다.
+연구 논문의 검증된 영양성분 조합은 제한된 어휘 규칙으로 추출하고, 약-약·약-영양제·
+약-음식 조합은 `manifests/interaction_annotations.yaml`의 문서 ID별 검수 주석에서
+두 대상이 모두 확인된 청크에만 부여합니다.
+
+```bash
+uv run --group ai python -m scripts.preprocess_knowledge_corpus \
+  --output data/knowledge/processed/full-v2 \
+  --dataset-version knowledge-full-v2-interaction-metadata
+```
+
+실제 외부 임베딩 전송 승인을 받은 뒤에만 새 컬렉션을 생성합니다.
+
+```bash
+uv run --group ai python -m scripts.index_knowledge_release \
+  --chunks-dir data/knowledge/processed/full-v2/chunks \
+  --quality-report data/knowledge/processed/full-v2/reports/preprocessing-quality.json \
+  --dataset-version knowledge-full-v2-interaction-metadata \
+  --collection medication_knowledge_full_v2 \
+  --interaction-annotations data/knowledge/manifests/interaction_annotations.yaml \
+  --embedding-batch-size 128 \
+  --upsert-batch-size 128 \
+  --allow-demo-restricted
+```
+
+동일한 평가 질문 파일을 v1과 v2에 각각 적용한 뒤 비교합니다. 평가 파일 안의
+`dataset_version`은 질문 세트의 기본값이며, 실행 시 `--dataset-version` 값으로
+대체되므로 질문을 복사해 서로 다른 파일로 관리하지 않습니다.
+
+```bash
+uv run --group ai python -m scripts.evaluate_knowledge_retrieval \
+  --evaluation-file data/knowledge/evaluation/pilot_queries.yaml \
+  --dataset-version knowledge-full-v1 \
+  --collection medication_knowledge_full_v1 \
+  --output data/knowledge/reports/knowledge-full-v1-ab.json
+
+uv run --group ai python -m scripts.evaluate_knowledge_retrieval \
+  --evaluation-file data/knowledge/evaluation/pilot_queries.yaml \
+  --dataset-version knowledge-full-v2-interaction-metadata \
+  --collection medication_knowledge_full_v2 \
+  --output data/knowledge/reports/knowledge-full-v2-ab.json
+
+uv run --group ai python -m scripts.compare_knowledge_releases \
+  --baseline data/knowledge/reports/knowledge-full-v1-ab.json \
+  --candidate data/knowledge/reports/knowledge-full-v2-ab.json \
+  --output data/knowledge/reports/knowledge-full-v1-v2-comparison.json
+```
+
+비교기는 평가 질문·정답·필터·임계값의 SHA-256 계약이 같은지 먼저 확인합니다.
+그 후 Hit@5·MRR·출처 정확도·잘못된 대상 혼입·중복 검색의 전체 회귀뿐 아니라 질문별
+적중·순위·대상 혼입 회귀도 차단합니다. 검색 시간은 함께 기록하고 경고하지만 정확도
+보다 우선하지 않습니다. 정확도 지표가 하나도 개선되지 않거나 정확도 회귀가 하나라도
+있으면 `KEEP_BASELINE`, 정확도가 개선되고 회귀가 없을 때만 `ACTIVATE`를 권고합니다.
+권고 결과가 설정을 자동으로 변경하지는 않으며, 검토 후
+`KNOWLEDGE_QDRANT_COLLECTION`과 `KNOWLEDGE_DATASET_VERSION`을 수동으로 교체합니다.
+v1 컬렉션은 롤백을 위해 유지합니다.
+
 ## 상호작용 RDBMS staging
 
 구조화된 식약처 DUR 병용금기 CSV를 향후 RDBMS에 넣을 검수 후보로 만들려면

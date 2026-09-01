@@ -1,5 +1,5 @@
 schema_version: chat-evaluation-v1
-dataset_version: chat-representative-v2
+dataset_version: chat-representative-v3
 frontend_preset: false
 max_case_latency_ms: 30000
 description: >-
@@ -164,6 +164,73 @@ cases:
         - 단일제 일반 정보와 제품·복합제별 차이를 구분한다.
       forbidden_claims:
         - 공공자료를 사용자에게 확정 처방된 제품·용량처럼 표현하지 않는다.
+
+  - query_id: vector-vitamin-b-family-function
+    category: VECTOR_ONLY
+    question: 비타민 B는 왜 먹나요?
+    preconditions:
+      - Qdrant 활성 지식베이스에 비타민 B군 구성 성분의 FUNCTION 청크가 존재한다.
+    expected:
+      route: SUPPLEMENT_GUIDE
+      intent_tags: [SUPPLEMENT_FUNCTION]
+      normalized_entities:
+        - entity_type: INGREDIENT_FAMILY
+          canonical_name: 비타민 B
+      section_types: [FUNCTION]
+      required_source_kinds: [PUBLIC_KNOWLEDGE]
+      safety_status: SAFE
+      require_langsmith_trace: true
+      answer_requirements:
+        - 비타민 B가 여러 성분을 묶어 부르는 이름임을 먼저 설명한다.
+        - 검색된 구성 성분의 기능 근거를 한국어로 간결하게 요약한다.
+        - 비타민 B1부터 B12까지 실제 지원하는 구성 성분 목록을 안내한다.
+      forbidden_claims:
+        - 비타민 B군의 모든 성분이 동일한 기능을 한다고 단정하지 않는다.
+        - 근거가 검색되지 않은 구성 성분의 효능을 생성하지 않는다.
+
+  - query_id: clarification-vitamin-b-family-intake
+    category: NO_SOURCE
+    question: 비타민 B는 하루에 얼마나 먹어야 하나요?
+    preconditions:
+      - 질문에 B1·B6·B12처럼 특정 비타민 B 구성 성분이 명시되지 않았다.
+    expected:
+      route: CLARIFICATION
+      intent_tags: [SUPPLEMENT_DAILY_INTAKE]
+      normalized_entities:
+        - entity_type: INGREDIENT_FAMILY
+          canonical_name: 비타민 B
+      section_types: [DAILY_INTAKE]
+      required_source_kinds: []
+      safety_status: RESTRICTED
+      require_langsmith_trace: true
+      answer_requirements:
+        - 성분별 섭취량이 달라 하나의 수치로 답할 수 없음을 설명한다.
+        - 지원하는 비타민 B 구성 성분 목록을 제시하고 정확한 성분을 다시 묻는다.
+      forbidden_claims:
+        - 비타민 B군 전체에 적용되는 단일 일일 섭취량을 제시하지 않는다.
+        - 사용자의 섭취량을 임의로 결정하지 않는다.
+
+  - query_id: vector-vitamin-b6-intake
+    category: VECTOR_ONLY
+    question: 비타민 B6는 하루에 얼마나 먹어야 하나요?
+    preconditions:
+      - Qdrant 활성 지식베이스에 비타민 B6 DAILY_INTAKE 청크가 존재한다.
+    expected:
+      route: SUPPLEMENT_GUIDE
+      intent_tags: [SUPPLEMENT_DAILY_INTAKE]
+      normalized_entities:
+        - entity_type: INGREDIENT_NAME
+          canonical_name: 비타민 B6
+      section_types: [DAILY_INTAKE]
+      required_source_kinds: [PUBLIC_KNOWLEDGE]
+      safety_status: SAFE
+      require_langsmith_trace: true
+      answer_requirements:
+        - 비타민 B6에 해당하는 공공 근거의 일일 섭취량만 요약한다.
+        - 단위와 적용 조건을 원문 근거와 일치하게 표시한다.
+      forbidden_claims:
+        - 비타민 B6의 기준을 다른 비타민 B 구성 성분에 적용하지 않는다.
+        - 사용자의 개인 복용량을 처방하지 않는다.
 
   - query_id: mixed-drug-supplement-interaction
     category: RDB_AND_VECTOR

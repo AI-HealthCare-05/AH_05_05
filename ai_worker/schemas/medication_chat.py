@@ -4,11 +4,14 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.medication_search import (
+    MedicationSearchExecutionObservation,
+)
 
 
 class MedicationChatRoute(StrEnum):
@@ -26,6 +29,21 @@ class MedicationChatProgressStage(StrEnum):
     EVIDENCE_SEARCHING = "EVIDENCE_SEARCHING"
     ANSWER_GENERATING = "ANSWER_GENERATING"
     SAFETY_CHECKING = "SAFETY_CHECKING"
+
+
+class MedicationAnswerRewriteStatus(StrEnum):
+    REWRITTEN = "REWRITTEN"
+    DRAFT_FALLBACK = "DRAFT_FALLBACK"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+
+
+class MedicationAnswerFallbackReason(StrEnum):
+    GENERATED_DOSAGE_NOT_IN_DRAFT = "GENERATED_DOSAGE_NOT_IN_DRAFT"
+    UNSUPPORTED_SAFETY_ASSERTION = "UNSUPPORTED_SAFETY_ASSERTION"
+    NO_GROUNDED_SOURCES = "NO_GROUNDED_SOURCES"
+    CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
+    CLIENT_ERROR = "CLIENT_ERROR"
 
 
 class MedicationChatProgress(BaseModel):
@@ -173,3 +191,35 @@ class MedicationChatResult(BaseModel):
     prompt_version: str = Field(min_length=1)
     schema_version: str = Field(min_length=1)
     context_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    search_observation: MedicationSearchExecutionObservation | None = Field(
+        default=None,
+        exclude=True,
+    )
+
+
+class MedicationAnswerGenerationObservation(BaseModel):
+    status: MedicationAnswerRewriteStatus
+    fallback_used: bool
+    fallback_reason: MedicationAnswerFallbackReason | None = None
+    draft_answer_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    generated_answer_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+
+    @model_validator(mode="after")
+    def validate_status_contract(self) -> "MedicationAnswerGenerationObservation":
+        if self.status == MedicationAnswerRewriteStatus.DRAFT_FALLBACK:
+            if not self.fallback_used or self.fallback_reason is None:
+                raise ValueError("DRAFT_FALLBACK은 fallback_reason이 필요합니다.")
+        elif self.status == MedicationAnswerRewriteStatus.REWRITTEN:
+            if self.fallback_used or self.fallback_reason is not None:
+                raise ValueError("REWRITTEN에는 fallback_reason을 사용할 수 없습니다.")
+            if self.generated_answer_hash is None:
+                raise ValueError("REWRITTEN은 generated_answer_hash가 필요합니다.")
+        return self
+
+
+class MedicationAnswerGenerationOutcome(BaseModel):
+    result: MedicationChatResult
+    observation: MedicationAnswerGenerationObservation

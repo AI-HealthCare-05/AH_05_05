@@ -42,6 +42,32 @@ class KnowledgeSectionType(StrEnum):
     OTHER = "OTHER"
 
 
+class KnowledgeSearchTier(StrEnum):
+    EXACT_PAIR = "EXACT_PAIR"
+    ENTITY = "ENTITY"
+    SEMANTIC = "SEMANTIC"
+
+
+class KnowledgeEvidenceLevel(StrEnum):
+    REGULATORY = "REGULATORY"
+    SYSTEMATIC_REVIEW = "SYSTEMATIC_REVIEW"
+    REVIEW_ARTICLE = "REVIEW_ARTICLE"
+    CLINICAL_STUDY = "CLINICAL_STUDY"
+    OBSERVATIONAL_STUDY = "OBSERVATIONAL_STUDY"
+    CASE_REPORT = "CASE_REPORT"
+    PRECLINICAL = "PRECLINICAL"
+    UNKNOWN = "UNKNOWN"
+
+
+class KnowledgeStudyPopulation(StrEnum):
+    HUMAN = "HUMAN"
+    ANIMAL = "ANIMAL"
+    CELL = "CELL"
+    MIXED = "MIXED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    UNKNOWN = "UNKNOWN"
+
+
 class KnowledgeMetadata(BaseModel):
     source_id: str = Field(min_length=1)
     document_id: str = Field(min_length=1)
@@ -57,6 +83,8 @@ class KnowledgeMetadata(BaseModel):
     ingredient_names: list[str] = Field(default_factory=list)
     interaction_type: str | None = None
     interaction_pair_keys: list[str] = Field(default_factory=list)
+    evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
+    study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
     special_populations: list[str] = Field(default_factory=list)
     index_eligible: bool = True
 
@@ -85,7 +113,7 @@ class KnowledgeMetadata(BaseModel):
         cls,
         values: list[str],
     ) -> list[str]:
-        return _normalize_interaction_pair_keys(values)
+        return normalize_interaction_pair_keys(values)
 
 
 class KnowledgePage(BaseModel):
@@ -167,7 +195,7 @@ class KnowledgeSearchQuery(BaseModel):
         cls,
         values: list[str],
     ) -> list[str]:
-        return _normalize_interaction_pair_keys(values)
+        return normalize_interaction_pair_keys(values)
 
     @field_validator("interaction_type")
     @classmethod
@@ -195,6 +223,10 @@ class KnowledgeRetrievalDiagnostics(BaseModel):
     accepted_count: int = Field(ge=0)
     max_raw_score: float | None = Field(default=None, ge=-1.0, le=1.0)
     max_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    attempted_search_tiers: list[KnowledgeSearchTier] = Field(
+        default_factory=list,
+    )
+    selected_search_tier: KnowledgeSearchTier | None = None
 
 
 class KnowledgeRetrievalResult(BaseModel):
@@ -202,7 +234,7 @@ class KnowledgeRetrievalResult(BaseModel):
     diagnostics: KnowledgeRetrievalDiagnostics
 
 
-def _normalize_interaction_pair_keys(values: list[str]) -> list[str]:
+def normalize_interaction_pair_keys(values: list[str]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
     for value in values:

@@ -3,6 +3,9 @@ import json
 from pathlib import Path
 
 from ai_worker.rag.loaders.knowledge_pdf_loader import KnowledgePdfLoader
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
 from ai_worker.rag.normalizers.knowledge_normalizer import KnowledgeNormalizer
 from ai_worker.rag.splitters.knowledge_splitter import KnowledgeSplitter
 from ai_worker.services.knowledge_corpus_preprocessing_service import (
@@ -39,17 +42,25 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/knowledge/processed/full"),
     )
     parser.add_argument("--dataset-version", required=True)
+    parser.add_argument(
+        "--interaction-annotations",
+        type=Path,
+        default=Path("data/knowledge/manifests/interaction_annotations.yaml"),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     repo_root = args.repo_root.resolve()
+    interaction_annotations = KnowledgeInteractionAnnotationRegistry.from_yaml(repo_root / args.interaction_annotations)
     pilot_service = KnowledgePilotPreprocessingService(
         repo_root=repo_root,
         loader=KnowledgePdfLoader(),
         normalizer=KnowledgeNormalizer(),
-        splitter=KnowledgeSplitter(),
+        splitter=KnowledgeSplitter(
+            interaction_annotations=interaction_annotations,
+        ),
     )
     result = KnowledgeCorpusPreprocessingService(
         pilot_service=pilot_service,

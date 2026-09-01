@@ -4,9 +4,11 @@ from pydantic import ValidationError
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeDocumentType,
+    KnowledgeEvidenceLevel,
     KnowledgeMetadata,
     KnowledgePage,
     KnowledgeSearchQuery,
+    KnowledgeStudyPopulation,
 )
 from ai_worker.schemas.knowledge_manifest import (
     KnowledgePilotManifest,
@@ -44,6 +46,13 @@ def test_metadata_normalizes_duplicate_entity_names() -> None:
         "비타민 A",
         "레티닐 팔미트산염",
     ]
+
+
+def test_metadata_defaults_to_unknown_evidence_contract() -> None:
+    metadata = build_metadata()
+
+    assert metadata.evidence_level == KnowledgeEvidenceLevel.UNKNOWN
+    assert metadata.study_population == KnowledgeStudyPopulation.UNKNOWN
 
 
 def test_page_requires_positive_page_number() -> None:

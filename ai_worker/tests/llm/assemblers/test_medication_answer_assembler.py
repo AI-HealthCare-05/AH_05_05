@@ -12,6 +12,7 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationGuideFact,
 )
+from ai_worker.schemas.medication_search import SupplementIngredientFamily
 
 
 def build_guide(**updates: str) -> MedicationGuideFact:
@@ -97,3 +98,26 @@ def test_assemble_does_not_claim_missing_when_interaction_evidence_exists() -> N
     assert "확인하지 못했습니다" not in answer
     assert "검색된 상호작용 연구 근거" in answer
     assert "칼슘이 철분 흡수를" in answer
+
+
+def test_assemble_adds_specific_member_choices_for_ingredient_family() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        ingredient_family=SupplementIngredientFamily(
+            canonical_name="비타민 B",
+            member_names=[
+                "비타민 B1(티아민)",
+                "비타민 B6(피리독신)",
+                "비타민 B12(코발라민)",
+            ],
+            search_terms=["비타민 B군"],
+        ),
+    )
+
+    assert "비타민 B는 여러 성분을 묶어 부르는 이름" in answer
+    assert "비타민 B1(티아민), 비타민 B6(피리독신), 비타민 B12(코발라민)" in answer
+    assert "성분명을 포함해 다시 질문" in answer
