@@ -750,6 +750,19 @@ async def test_ambiguous_medication_name_requests_clarification() -> None:
     assert "제품명을 확인" in result.answer
 
 
+async def test_vitamin_b_family_daily_intake_requests_specific_member() -> None:
+    result = await build_use_case().execute(
+        build_request("비타민 B는 하루에 얼마나 먹어야 하나요?"),
+    )
+
+    assert result.route == MedicationChatRoute.CLARIFICATION
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "비타민 B는 여러 성분을 묶어 부르는 이름" in result.answer
+    assert "비타민 B1(티아민)" in result.answer
+    assert "비타민 B12(코발라민)" in result.answer
+    assert "INGREDIENT_FAMILY_DETAIL_REQUIRED" in result.safety_reason_codes
+
+
 async def test_general_brand_name_uses_reference_efficacy_without_guessing_dose() -> None:
     result = await build_use_case(
         lookup=MedicationGuideLookup(
@@ -849,6 +862,30 @@ async def test_supplement_evidence_prevents_partial_drug_name_clarification() ->
     assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
     assert "제품명을 확인" not in result.answer
     assert "공공자료 추가 설명" in result.answer
+
+
+async def test_vitamin_b_family_function_answer_includes_member_choices() -> None:
+    supplement_chunk = build_chunk().model_copy(
+        update={
+            "content": "비타민 B군은 여러 수용성 비타민으로 구성됩니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": (KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE),
+                    "ingredient_names": ["비타민 B1"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
+    ).execute(build_request("비타민 B는 왜 먹나요?"))
+
+    assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert "비타민 B군은 여러 수용성 비타민" in result.answer
+    assert "비타민 B는 여러 성분을 묶어 부르는 이름" in result.answer
+    assert "비타민 B1(티아민)" in result.answer
+    assert "비타민 B12(코발라민)" in result.answer
 
 
 async def test_supplement_evidence_precedes_single_partial_medication_match() -> None:

@@ -35,6 +35,40 @@ def test_build_detects_daily_intake_intent() -> None:
     assert "일일섭취량" in plan.expanded_query
 
 
+def test_build_preserves_vitamin_b_as_ingredient_family() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "비타민 B는 왜 먹나요?",
+    )
+
+    assert plan.entity_names == ["비타민 B"]
+    assert plan.entities[0].entity_type == MedicationQueryEntityType.INGREDIENT_FAMILY
+    assert plan.ingredient_family is not None
+    assert plan.ingredient_family.canonical_name == "비타민 B"
+    assert plan.ingredient_family.member_names == [
+        "비타민 B1(티아민)",
+        "비타민 B2(리보플라빈)",
+        "비타민 B3(나이아신)",
+        "비타민 B5(판토텐산)",
+        "비타민 B6(피리독신)",
+        "비타민 B7(비오틴)",
+        "비타민 B9(엽산)",
+        "비타민 B12(코발라민)",
+    ]
+    assert plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert "비타민 B군" in plan.expanded_query
+
+
+def test_build_keeps_specific_vitamin_b_member_as_ingredient() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "비타민 B6는 하루에 얼마나 먹나요?",
+    )
+
+    assert plan.entity_names == ["비타민 B6"]
+    assert plan.entities[0].entity_type == MedicationQueryEntityType.INGREDIENT_NAME
+    assert plan.ingredient_family is None
+    assert plan.section_types == [KnowledgeSectionType.DAILY_INTAKE]
+
+
 def test_build_keeps_explicit_medication_product_cue() -> None:
     plan = MedicationKnowledgeQueryBuilder().build(
         "마그밀정 500mg 주의사항",

@@ -180,6 +180,16 @@ class AnswerMedicationQuestionUseCase:
                     "execution_plan_hash": (execution_plan.execution_plan_hash),
                 }
             )
+        if self._ingredient_family_detail_required(query_plan):
+            await self._report_progress(
+                progress_callback,
+                MedicationChatProgressStage.SAFETY_CHECKING,
+            )
+            return self._ingredient_family_clarification_result(
+                request=request,
+                context=context,
+                execution_plan=execution_plan,
+            )
         async with self._tracer.span(
             "rag.retrieve",
             run_type="retriever",
@@ -305,6 +315,7 @@ class AnswerMedicationQuestionUseCase:
                     interaction_question=interaction_question,
                     family_reference=family_reference,
                     ingredient_family_reference=(ingredient_family_reference),
+                    ingredient_family=query_plan.ingredient_family,
                     unsupported_pairs=unsupported_pairs,
                 ),
                 route=route,
@@ -682,6 +693,50 @@ class AnswerMedicationQuestionUseCase:
             route=MedicationChatRoute.CLARIFICATION,
             safety_status=SafetyStatus.RESTRICTED,
             safety_reason_codes=["AMBIGUOUS_MEDICATION_NAME"],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=AnswerMedicationQuestionUseCase._context_hash(context),
+            search_observation=(
+                MedicationSearchExecutionObservation.from_execution_plan(
+                    execution_plan,
+                )
+            ),
+        )
+
+    @staticmethod
+    def _ingredient_family_detail_required(
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        return query_plan.ingredient_family is not None and bool(
+            {
+                KnowledgeSectionType.DAILY_INTAKE,
+                KnowledgeSectionType.CAUTION,
+                KnowledgeSectionType.INTERACTION,
+            }.intersection(query_plan.section_types)
+        )
+
+    @staticmethod
+    def _ingredient_family_clarification_result(
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        execution_plan: MedicationSearchExecutionPlan,
+    ) -> MedicationChatResult:
+        family = execution_plan.query_plan.ingredient_family
+        if family is None:
+            raise ValueError("성분군 재질문에는 ingredient_family가 필요합니다.")
+        members = ", ".join(family.member_names)
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=(
+                f"{family.canonical_name}는 여러 성분을 묶어 부르는 이름입니다. "
+                "성분마다 섭취량·주의사항·상호작용이 다를 수 있어 하나로 "
+                "답하면 부정확할 수 있습니다.\n\n"
+                f"확인할 성분을 골라 다시 질문해 주세요: {members}"
+            ),
+            route=MedicationChatRoute.CLARIFICATION,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=["INGREDIENT_FAMILY_DETAIL_REQUIRED"],
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=AnswerMedicationQuestionUseCase._context_hash(context),

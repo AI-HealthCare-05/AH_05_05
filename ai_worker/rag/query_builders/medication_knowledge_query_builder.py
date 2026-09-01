@@ -5,6 +5,9 @@ from itertools import combinations
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
+from ai_worker.rag.metadata.supplement_ingredient_family_registry import (
+    find_supplement_ingredient_family,
+)
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     canonical_supplement_name,
     find_supplement_interaction_pair,
@@ -302,6 +305,8 @@ class MedicationQueryEntityNormalizer:
     ) -> MedicationQueryEntityType:
         if cls._is_topic(canonical_name):
             return MedicationQueryEntityType.TOPIC
+        if find_supplement_ingredient_family(canonical_name) is not None:
+            return MedicationQueryEntityType.INGREDIENT_FAMILY
         if cls._is_food(canonical_name):
             return MedicationQueryEntityType.FOOD_CATEGORY
         if cls._MEDICATION_PRODUCT_CUE.search(canonical_name):
@@ -375,6 +380,19 @@ class MedicationKnowledgeQueryBuilder:
             normalized,
             interaction_question=interaction_question,
         )
+        ingredient_family = next(
+            (
+                family
+                for entity in entities
+                if (
+                    family := find_supplement_ingredient_family(
+                        entity.canonical_name,
+                    )
+                )
+                is not None
+            ),
+            None,
+        )
         search_expansion_terms = self._search_expansion_terms(
             entities=entities,
             section_types=section_types,
@@ -409,6 +427,7 @@ class MedicationKnowledgeQueryBuilder:
                 [
                     normalized,
                     *entity_names,
+                    *(ingredient_family.search_terms if ingredient_family else []),
                     *search_expansion_terms,
                 ]
             )
@@ -425,6 +444,7 @@ class MedicationKnowledgeQueryBuilder:
             section_types=section_types,
             alternate_queries=alternate_queries,
             interaction_pair=interaction_pair,
+            ingredient_family=ingredient_family,
             interaction_pairs=interaction_pairs,
             interaction_types=list(dict.fromkeys(pair.pair_type for pair in interaction_pairs)),
             interaction_pair_keys=list(

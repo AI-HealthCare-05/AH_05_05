@@ -20,6 +20,7 @@ class MedicationQueryEntityType(StrEnum):
     PRODUCT_NAME = "PRODUCT_NAME"
     BRAND_ALIAS = "BRAND_ALIAS"
     INGREDIENT_NAME = "INGREDIENT_NAME"
+    INGREDIENT_FAMILY = "INGREDIENT_FAMILY"
     FOOD_CATEGORY = "FOOD_CATEGORY"
     TOPIC = "TOPIC"
 
@@ -85,6 +86,16 @@ class SupplementInteractionPair(BaseModel):
         return build_interaction_pair_key(left, right)
 
 
+class SupplementIngredientFamily(BaseModel):
+    """사용자가 통칭으로 질문하는 영양성분군과 세부 선택지 계약."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    canonical_name: str = Field(min_length=1)
+    member_names: list[str] = Field(min_length=1)
+    search_terms: list[str] = Field(default_factory=list)
+
+
 class MedicationKnowledgeQueryPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -96,6 +107,7 @@ class MedicationKnowledgeQueryPlan(BaseModel):
     section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     alternate_queries: list[str] = Field(default_factory=list)
     interaction_pair: SupplementInteractionPair | None = None
+    ingredient_family: SupplementIngredientFamily | None = None
     interaction_pairs: list[MedicationInteractionQueryPair] = Field(
         default_factory=list,
     )
