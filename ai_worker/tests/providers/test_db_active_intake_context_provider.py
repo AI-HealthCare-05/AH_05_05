@@ -78,7 +78,7 @@ async def test_provider_returns_only_current_user_active_intakes(
         id=10,
         care_episode=active_episode,
         name="아스피린",
-        dose="1정",
+        dose_quantity="1정",
         days=30,
         prescribed_at=date(2026, 8, 1),
     )

@@ -109,7 +109,7 @@ class DbActiveIntakeContextProvider:
             medication_id=medication.id,
             care_episode_id=medication.care_episode_id,
             name=medication.name,
-            dose=medication.dose,
+            dose=medication.dose_quantity,
             efficacy=medication.efficacy,
             administration=medication.administration,
             precautions=medication.precautions,

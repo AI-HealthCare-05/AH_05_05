@@ -70,7 +70,7 @@ class DbPatientContextProvider:
                 PatientMedication(
                     medication_id=medication.id,
                     name=medication.name,
-                    dose=medication.dose,
+                    dose=medication.dose_quantity,
                     times_per_day=(medication.times_per_day),
                     note=medication.note,
                     days=medication.days,
