@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="../css/styles.css?v=20260831-9"/>
     <link rel="stylesheet" href="../css/management.css?v=20260831-9"/>
     <link rel="stylesheet" href="../css/overlays.css?v=20260831-9"/>
-    <script type="module" src="../js/dashboard.js?v=20260831-3"></script>
+    <script type="module" src="../js/dashboard.js?v=20260901-1"></script>
     <script type="module" src="../js/navigation.js?v=20260827-2"></script>
     <script type="module" src="../js/sidebar.js?v=20260831-8"></script>
 </head>
@@ -71,17 +71,17 @@
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">활성</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">활성</p>
                             <div class="flex items-baseline justify-between w-full">
-                                <p data-member-active class="font-bold text-[20px]" style="color:#111827;">27,105</p>
-                                <span data-member-active-ratio class="font-semibold text-[11px]" style="color:#6b7280;">— 95%</span>
+                                <p data-member-active class="font-bold text-[20px]" style="color:#2563eb;">27,105</p>
+                                <span data-member-active-ratio class="font-semibold text-[11px]" style="color:#2563eb;">— 95%</span>
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">탈퇴</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#dc2626;">탈퇴</p>
                             <div class="flex items-baseline justify-between w-full">
-                                <p data-member-withdrawn class="font-bold text-[20px]" style="color:#111827;">0</p>
-                                <span data-member-withdrawn-ratio class="font-semibold text-[11px]" style="color:#6b7280;">0%</span>
+                                <p data-member-withdrawn class="font-bold text-[20px]" style="color:#dc2626;">0</p>
+                                <span data-member-withdrawn-ratio class="font-semibold text-[11px]" style="color:#dc2626;">0%</span>
                             </div>
                         </div>
                     </div>
@@ -108,27 +108,27 @@
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">성공</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">성공</p>
                             <div class="flex items-baseline w-full">
-                                <p data-ocr-completed class="font-bold text-[20px]" style="color:#111827;">0</p>
+                                <p data-ocr-completed class="font-bold text-[20px]" style="color:#2563eb;">0</p>
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">실패</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#dc2626;">실패</p>
                             <div class="flex items-baseline w-full">
-                                <p data-ocr-failed class="font-bold text-[20px]" style="color:#111827;">0</p>
+                                <p data-ocr-failed class="font-bold text-[20px]" style="color:#dc2626;">0</p>
                             </div>
                         </div>
                     </div>
                     <div class="flex gap-4 items-center p-3 rounded-lg w-full" style="background:#f7f8fa;">
                         <div class="bg-white rounded-full flex flex-col items-center justify-center w-14 h-14 shrink-0"
                              style="border:6px solid var(--brand-primary);">
-                            <p class="font-bold text-[10px]" style="color:var(--brand-primary-strong);">98%</p>
+                            <p data-ocr-accuracy class="font-bold text-[9px] text-center leading-tight"
+                               style="color:var(--brand-primary-strong);">데이터 없음</p>
                         </div>
                         <div class="flex flex-col gap-1 items-start flex-1 min-w-0">
                             <p class="font-semibold text-[12px] w-full" style="color:#111827;">OCR 추출 정확도</p>
-                            <p class="font-normal text-[11px] w-full" style="color:#4b5563;">AI 비전 알고리즘을 통해 처리된 1,842건의
-                                의료 보험 기록에서 최적의 정확도가 보고되었습니다.</p>
+                            <p class="font-normal text-[11px] w-full" style="color:#4b5563;">각 필드의 confidence 평균을 나타냅니다.</p>
                         </div>
                     </div>
                 </div>
@@ -148,15 +148,15 @@
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">성공</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">성공</p>
                             <div class="flex items-baseline w-full">
-                                <p data-alarm-completed class="font-bold text-[20px]" style="color:#111827;">0</p>
+                                <p data-alarm-completed class="font-bold text-[20px]" style="color:#2563eb;">0</p>
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">실패</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#dc2626;">실패</p>
                             <div class="flex items-baseline w-full">
-                                <p data-alarm-failed class="font-bold text-[20px]" style="color:#111827;">0</p>
+                                <p data-alarm-failed class="font-bold text-[20px]" style="color:#dc2626;">0</p>
                             </div>
                         </div>
                     </div>
@@ -179,16 +179,16 @@
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">응답 성공</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">응답 성공</p>
                             <div class="flex items-baseline justify-between w-full">
-                                <p class="font-bold text-[20px]" style="color:#111827;">4,210</p>
-                                <span class="font-semibold text-[11px]" style="color:#16a34a;">▲ 87.3%</span>
+                                <p class="font-bold text-[20px]" style="color:#2563eb;">4,210</p>
+                                <span class="font-semibold text-[11px]" style="color:#2563eb;">▲ 87.3%</span>
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">응답 실패</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#dc2626;">응답 실패</p>
                             <div class="flex items-baseline justify-between w-full">
-                                <p class="font-bold text-[20px]" style="color:#111827;">611</p>
+                                <p class="font-bold text-[20px]" style="color:#dc2626;">611</p>
                                 <span class="font-semibold text-[11px]" style="color:#dc2626;">▼ 12.7%</span>
                             </div>
                         </div>
