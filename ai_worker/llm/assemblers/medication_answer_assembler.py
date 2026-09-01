@@ -4,6 +4,7 @@ from ai_worker.schemas.medication_chat import (
     InteractionRuleFact,
     MedicationGuideFact,
 )
+from ai_worker.schemas.medication_search import SupplementIngredientFamily
 
 MEDICAL_DISCLAIMER = (
     "이 안내는 보유한 자료를 바탕으로 한 참고 정보이며 의료진의 진료, "
@@ -34,6 +35,7 @@ class MedicationAnswerAssembler:
         interaction_question: bool,
         family_reference: bool = False,
         ingredient_family_reference: bool = False,
+        ingredient_family: SupplementIngredientFamily | None = None,
         unsupported_pairs: list[str] | None = None,
     ) -> str:
         sections: list[str] = []
@@ -105,6 +107,12 @@ class MedicationAnswerAssembler:
             else:
                 section_title = "공공자료 추가 설명"
             sections.append(section_title + "\n" + "\n".join(public_lines))
+        ingredient_family_section = self._ingredient_family_section(
+            ingredient_family,
+        )
+        sections.extend(
+            [ingredient_family_section] if ingredient_family_section else [],
+        )
         unsupported_section = self._unsupported_pairs_section(
             unsupported_pairs or [],
         )
@@ -135,6 +143,22 @@ class MedicationAnswerAssembler:
             "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 "
             "아닙니다."
             for pair in pairs
+        )
+
+    @staticmethod
+    def _ingredient_family_section(
+        family: SupplementIngredientFamily | None,
+    ) -> str:
+        if family is None:
+            return ""
+        members = ", ".join(family.member_names)
+        return (
+            "세부 성분 안내\n"
+            f"- {family.canonical_name}는 여러 성분을 묶어 부르는 이름입니다. "
+            "성분마다 기능·섭취량·주의사항이 다를 수 있습니다.\n"
+            f"- 선택 가능한 성분: {members}\n"
+            "- 정확한 섭취량, 주의사항 또는 상호작용이 필요하면 위 목록의 "
+            "성분명을 포함해 다시 질문해 주세요."
         )
 
     @staticmethod

@@ -1,5 +1,10 @@
+from pathlib import Path
+
 import pytest
 
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
 from ai_worker.rag.parsers.supplement_code_parser import (
     SupplementCodeParser,
 )
@@ -11,9 +16,11 @@ from ai_worker.rag.splitters.knowledge_splitter import (
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeDocumentType,
+    KnowledgeEvidenceLevel,
     KnowledgeMetadata,
     KnowledgePage,
     KnowledgeSectionType,
+    KnowledgeStudyPopulation,
 )
 
 
@@ -558,6 +565,112 @@ def test_split_does_not_treat_inline_research_term_as_heading() -> None:
     assert [chunk.metadata.section_type for chunk in chunks] == [
         KnowledgeSectionType.SUMMARY,
     ]
+
+
+def test_split_adds_interaction_evidence_metadata_to_embedding_text() -> None:
+    page = build_page(
+        ("Results A crossover single-meal study measured calcium and iron absorption in postmenopausal women."),
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Calcium and iron absorption--mechanisms and public health relevance",
+    )
+
+    chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
+
+    assert chunk.metadata.ingredient_names == ["칼슘", "철분"]
+    assert chunk.metadata.interaction_type == "SUPPLEMENT_SUPPLEMENT"
+    assert chunk.metadata.evidence_level == KnowledgeEvidenceLevel.CLINICAL_STUDY
+    assert chunk.metadata.study_population == KnowledgeStudyPopulation.HUMAN
+    assert "[상호작용] 영양제-영양제" in chunk.embedding_text
+    assert "[근거 수준] 임상시험" in chunk.embedding_text
+    assert "[연구 대상] 사람" in chunk.embedding_text
+
+
+def test_split_uses_korean_label_for_drug_food_interaction() -> None:
+    page = build_page(
+        "펙소페나딘은 과일주스 대신 물과 함께 복용합니다.",
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        title="약과 음식 상호작용 안내서",
+    )
+    page = page.model_copy(
+        update={
+            "metadata": page.metadata.model_copy(
+                update={
+                    "drug_names": ["펙소페나딘"],
+                    "ingredient_names": [],
+                    "interaction_type": "DRUG_FOOD",
+                    "interaction_pair_keys": ["f" * 64],
+                }
+            )
+        }
+    )
+
+    chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
+
+    assert "[상호작용] 약-음식" in chunk.embedding_text
+
+
+def test_split_applies_curated_interaction_annotation_end_to_end(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "interaction-annotations.yaml"
+    annotation_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: pilot-document
+    pairs:
+      - pair_type: DRUG_SUPPLEMENT
+        left:
+          kind: DRUG
+          display_name: 와파린
+          aliases: [와파린, warfarin]
+        right:
+          kind: SUPPLEMENT
+          display_name: 비타민 K
+          aliases: [비타민 K, vitamin k]
+""".strip(),
+        encoding="utf-8",
+    )
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(annotation_path)
+    page = build_page(
+        "Results Warfarin use requires attention to vitamin K intake.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin and vitamin K",
+    )
+
+    chunk = KnowledgeSplitter(
+        token_counter=WordTokenCounter(),
+        interaction_annotations=registry,
+    ).split([page])[0]
+
+    assert chunk.metadata.drug_names == ["와파린"]
+    assert chunk.metadata.ingredient_names == ["비타민 K"]
+    assert chunk.metadata.interaction_type == "DRUG_SUPPLEMENT"
+    assert len(chunk.metadata.interaction_pair_keys) == 1
+    assert "[상호작용] 약-영양제" in chunk.embedding_text
+
+
+def test_split_preserves_curated_evidence_when_auto_classifier_is_unknown() -> None:
+    page = build_page(
+        "Results 근거 문장을 설명합니다.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="근거 수준 수동 검수 문서",
+    )
+    page = page.model_copy(
+        update={
+            "metadata": page.metadata.model_copy(
+                update={
+                    "evidence_level": KnowledgeEvidenceLevel.REVIEW_ARTICLE,
+                    "study_population": KnowledgeStudyPopulation.NOT_APPLICABLE,
+                }
+            )
+        }
+    )
+
+    chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
+
+    assert chunk.metadata.evidence_level == KnowledgeEvidenceLevel.REVIEW_ARTICLE
+    assert chunk.metadata.study_population == KnowledgeStudyPopulation.NOT_APPLICABLE
 
 
 def test_split_recognizes_attached_drug_encyclopedia_headings() -> None:

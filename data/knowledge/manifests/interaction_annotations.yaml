@@ -1,0 +1,45 @@
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: mfds_drug_food_interaction_guide-53bfb2433f48a8b0
+    pairs:
+      - pair_type: DRUG_FOOD
+        left:
+          kind: DRUG
+          display_name: 펙소페나딘
+          aliases:
+            - fexofenadine
+        right:
+          kind: FOOD
+          display_name: 과일주스
+          aliases:
+            - 자몽주스
+            - 오렌지주스
+            - 사과주스
+            - fruit juice
+  - document_id: kpicia_pharm_review-c4ea8e68b35b65b3
+    pairs:
+      - pair_type: DRUG_SUPPLEMENT
+        left:
+          kind: DRUG
+          display_name: 와파린
+          aliases:
+            - warfarin
+        right:
+          kind: SUPPLEMENT
+          display_name: 비타민 K
+          aliases:
+            - 비타민K
+            - vitamin K
+  - document_id: kpicia_pharm_review-e8127943c02a5a76
+    pairs:
+      - pair_type: DRUG_DRUG
+        left:
+          kind: DRUG
+          display_name: 와파린
+          aliases:
+            - warfarin
+        right:
+          kind: DRUG
+          display_name: 메트로니다졸
+          aliases:
+            - metronidazole

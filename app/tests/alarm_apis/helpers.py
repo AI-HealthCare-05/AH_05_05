@@ -38,7 +38,7 @@ async def authentication_headers(client: AsyncClient, email: str, phone_number: 
         json={
             "email": email,
             "password": "Password123!",
-            "name": "알람 API 사용자",
+            "name": "알람테스트사용자",
             "phone_number": phone_number,
             "birth_date": "1990-01-01",
             "gender": "FEMALE",

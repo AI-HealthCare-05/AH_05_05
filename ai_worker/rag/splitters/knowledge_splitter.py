@@ -5,6 +5,12 @@ from typing import Protocol
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
+from ai_worker.rag.metadata.knowledge_entity_extractor import (
+    KnowledgeEntityExtractor,
+)
 from ai_worker.rag.parsers.supplement_code_parser import (
     SupplementCodeParser,
 )
@@ -12,9 +18,11 @@ from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
     KnowledgeChunkMetadata,
     KnowledgeDocumentType,
+    KnowledgeEvidenceLevel,
     KnowledgePage,
     KnowledgeSection,
     KnowledgeSectionType,
+    KnowledgeStudyPopulation,
 )
 
 
@@ -55,6 +63,32 @@ _POLICIES = {
     KnowledgeDocumentType.PHARM_REVIEW: ChunkingPolicy(400, 750, 80),
     KnowledgeDocumentType.RESEARCH_ARTICLE: ChunkingPolicy(400, 800, 100),
     KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH: ChunkingPolicy(150, 450, 0),
+}
+
+
+_INTERACTION_LABELS = {
+    "DRUG_DRUG": "약-약",
+    "DRUG_SUPPLEMENT": "약-영양제",
+    "SUPPLEMENT_SUPPLEMENT": "영양제-영양제",
+    "DRUG_FOOD": "약-음식",
+}
+
+_EVIDENCE_LABELS = {
+    "REGULATORY": "공인 규정·가이드",
+    "SYSTEMATIC_REVIEW": "체계적 문헌고찰",
+    "REVIEW_ARTICLE": "종설",
+    "CLINICAL_STUDY": "임상시험",
+    "OBSERVATIONAL_STUDY": "관찰연구",
+    "CASE_REPORT": "사례보고",
+    "PRECLINICAL": "전임상 연구",
+}
+
+_POPULATION_LABELS = {
+    "HUMAN": "사람",
+    "ANIMAL": "동물",
+    "CELL": "세포",
+    "MIXED": "혼합",
+    "NOT_APPLICABLE": "해당 없음",
 }
 
 
@@ -169,9 +203,16 @@ class KnowledgeSplitter:
         "",
     ]
 
-    def __init__(self, token_counter: TokenCounter | None = None) -> None:
+    def __init__(
+        self,
+        token_counter: TokenCounter | None = None,
+        interaction_annotations: KnowledgeInteractionAnnotationRegistry | None = None,
+    ) -> None:
         self._token_counter = token_counter or TiktokenTokenCounter()
         self._supplement_code_parser = SupplementCodeParser()
+        self._entity_extractor = KnowledgeEntityExtractor(
+            interaction_annotations=interaction_annotations,
+        )
 
     def split(self, pages: list[KnowledgePage]) -> list[KnowledgeChunk]:
         if not pages:
@@ -517,8 +558,34 @@ class KnowledgeSplitter:
             ]
         )
         chunk_id = hashlib.sha256(chunk_key.encode("utf-8")).hexdigest()
+        entities = self._entity_extractor.extract_from_chunk(
+            document_type=metadata.document_type,
+            title=metadata.title,
+            content=content,
+            document_id=metadata.document_id,
+            section_type=section.section_type,
+        )
+        metadata_values = metadata.model_dump()
+        metadata_values.update(
+            {
+                "drug_names": entities.drug_names or metadata.drug_names,
+                "ingredient_names": entities.ingredient_names or metadata.ingredient_names,
+                "interaction_type": entities.interaction_type or metadata.interaction_type,
+                "interaction_pair_keys": (entities.interaction_pair_keys or metadata.interaction_pair_keys),
+                "evidence_level": (
+                    entities.evidence_level
+                    if entities.evidence_level != KnowledgeEvidenceLevel.UNKNOWN
+                    else metadata.evidence_level
+                ),
+                "study_population": (
+                    entities.study_population
+                    if entities.study_population != KnowledgeStudyPopulation.UNKNOWN
+                    else metadata.study_population
+                ),
+            }
+        )
         chunk_metadata = KnowledgeChunkMetadata(
-            **metadata.model_dump(),
+            **metadata_values,
             section_type=section.section_type,
             section_title=section.section_title,
             page_start=section.page_start,
@@ -549,6 +616,18 @@ class KnowledgeSplitter:
             prefixes.append(f"[약] {', '.join(metadata.drug_names)}")
         if metadata.ingredient_names:
             prefixes.append(f"[성분] {', '.join(metadata.ingredient_names)}")
+        if metadata.interaction_type:
+            label = _INTERACTION_LABELS.get(
+                metadata.interaction_type,
+                metadata.interaction_type,
+            )
+            prefixes.append(f"[상호작용] {label}")
+        evidence_label = _EVIDENCE_LABELS.get(metadata.evidence_level.value)
+        if evidence_label:
+            prefixes.append(f"[근거 수준] {evidence_label}")
+        population_label = _POPULATION_LABELS.get(metadata.study_population.value)
+        if population_label:
+            prefixes.append(f"[연구 대상] {population_label}")
         section_name = metadata.section_title or metadata.section_type.value
         prefixes.append(f"[섹션] {section_name}")
         return "\n".join([*prefixes, "[원문]", content])

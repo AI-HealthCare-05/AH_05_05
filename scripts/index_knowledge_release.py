@@ -18,6 +18,9 @@ from ai_worker.rag.indexers.knowledge_indexer import (
 from ai_worker.rag.loaders.knowledge_chunk_loader import (
     KnowledgeChunkLoader,
 )
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
 )
@@ -46,6 +49,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--collection", required=True)
     parser.add_argument("--embedding-batch-size", type=int, default=64)
     parser.add_argument("--upsert-batch-size", type=int, default=64)
+    parser.add_argument(
+        "--interaction-annotations",
+        type=Path,
+        default=None,
+        help=("v2 상호작용 메타데이터 release에서 모든 검수 주석이 청크에 적용됐는지 확인할 YAML 경로"),
+    )
     parser.add_argument(
         "--allow-demo-restricted",
         action="store_true",
@@ -139,6 +148,38 @@ def ensure_external_embedding_allowed(
         )
 
 
+def ensure_interaction_annotations_applied(
+    chunks: list[KnowledgeChunk],
+    *,
+    annotation_path: Path | None,
+) -> None:
+    if annotation_path is None:
+        return
+
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(Path(annotation_path))
+    required_by_document = registry.required_pair_keys_by_document()
+    if not required_by_document:
+        raise ValueError("상호작용 주석 계약에 검증할 조합이 없습니다.")
+
+    observed_by_document: dict[str, set[str]] = {}
+    for chunk in chunks:
+        observed_by_document.setdefault(
+            chunk.metadata.document_id,
+            set(),
+        ).update(chunk.metadata.interaction_pair_keys)
+
+    missing_by_document = {
+        document_id: sorted(set(required_pair_keys) - observed_by_document.get(document_id, set()))
+        for document_id, required_pair_keys in required_by_document.items()
+        if set(required_pair_keys) - observed_by_document.get(document_id, set())
+    }
+    if missing_by_document:
+        details = "; ".join(
+            f"{document_id}={','.join(pair_keys)}" for document_id, pair_keys in sorted(missing_by_document.items())
+        )
+        raise ValueError("검수된 상호작용 주석이 전처리 청크에 모두 적용되지 않았습니다: " + details)
+
+
 def build_indexer(
     *,
     settings: Config,
@@ -179,6 +220,14 @@ async def run_cli(
             quality_report_path=args.quality_report,
             expected_dataset_version=args.dataset_version,
         )
+        ensure_interaction_annotations_applied(
+            chunks,
+            annotation_path=getattr(
+                args,
+                "interaction_annotations",
+                None,
+            ),
+        )
         ensure_external_embedding_allowed(
             chunks,
             allow_demo_restricted=args.allow_demo_restricted,
@@ -195,12 +244,24 @@ async def run_cli(
 
 def main() -> None:
     result = asyncio.run(run_cli(args=parse_args()))
+    metadata_quality = result.metadata_quality
     print(
         json.dumps(
             {
                 "dataset_version": result.dataset_version,
                 "collection_name": result.collection_name,
                 "indexed_chunk_count": result.indexed_chunk_count,
+                "metadata_quality": (
+                    {
+                        "total_chunk_count": metadata_quality.total_chunk_count,
+                        "interaction_chunk_count": metadata_quality.interaction_chunk_count,
+                        "pair_key_chunk_count": metadata_quality.pair_key_chunk_count,
+                        "known_evidence_count": metadata_quality.known_evidence_count,
+                        "known_study_population_count": (metadata_quality.known_study_population_count),
+                    }
+                    if metadata_quality is not None
+                    else None
+                ),
             },
             ensure_ascii=False,
             indent=2,

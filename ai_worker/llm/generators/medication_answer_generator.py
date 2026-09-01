@@ -1,3 +1,4 @@
+import hashlib
 import re
 from typing import Any, Protocol
 
@@ -11,6 +12,10 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
 )
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    MedicationAnswerFallbackReason,
+    MedicationAnswerGenerationObservation,
+    MedicationAnswerGenerationOutcome,
+    MedicationAnswerRewriteStatus,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -78,9 +83,20 @@ class OpenAIMedicationAnswerGenerator:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
         result: MedicationChatResult,
-    ) -> MedicationChatResult:
-        if not result.sources or result.route == MedicationChatRoute.CLARIFICATION:
-            return result
+    ) -> MedicationAnswerGenerationOutcome:
+        draft_hash = self._answer_hash(result.answer)
+        if result.route == MedicationChatRoute.CLARIFICATION:
+            return self._skipped_outcome(
+                result,
+                draft_hash=draft_hash,
+                reason=MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED,
+            )
+        if not result.sources:
+            return self._skipped_outcome(
+                result,
+                draft_hash=draft_hash,
+                reason=MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES,
+            )
         messages = build_medication_chat_messages(
             request=request,
             context=context,
@@ -94,44 +110,89 @@ class OpenAIMedicationAnswerGenerator:
                 else MedicationAnswerPayload.model_validate(response)
             )
         except Exception as error:
-            raise ChatAnswerGenerationError("약·영양제 챗봇 답변 생성에 실패했습니다.") from error
+            raise ChatAnswerGenerationError(
+                "약·영양제 챗봇 답변 생성에 실패했습니다.",
+                reason_code=MedicationAnswerFallbackReason.CLIENT_ERROR.value,
+            ) from error
         generated_answer = self._to_plain_text(payload.answer)
-        if not self._is_grounded_rewrite(
+        generated_hash = self._answer_hash(generated_answer)
+        fallback_reason = self._grounding_failure_reason(
             draft_answer=result.answer,
             generated_answer=generated_answer,
-        ):
-            return result.model_copy(
+        )
+        if fallback_reason is not None:
+            fallback_result = result.model_copy(
                 update={
                     "model_name": self._model_name,
                     "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
-                }
+                },
             )
-        return result.model_copy(
+            return MedicationAnswerGenerationOutcome(
+                result=fallback_result,
+                observation=MedicationAnswerGenerationObservation(
+                    status=MedicationAnswerRewriteStatus.DRAFT_FALLBACK,
+                    fallback_used=True,
+                    fallback_reason=fallback_reason,
+                    draft_answer_hash=draft_hash,
+                    generated_answer_hash=generated_hash,
+                ),
+            )
+        rewritten = result.model_copy(
             update={
                 "answer": generated_answer,
                 "model_name": self._model_name,
                 "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
-            }
+            },
+        )
+        return MedicationAnswerGenerationOutcome(
+            result=rewritten,
+            observation=MedicationAnswerGenerationObservation(
+                status=MedicationAnswerRewriteStatus.REWRITTEN,
+                fallback_used=False,
+                draft_answer_hash=draft_hash,
+                generated_answer_hash=generated_hash,
+            ),
         )
 
     @classmethod
-    def _is_grounded_rewrite(
+    def _grounding_failure_reason(
         cls,
         *,
         draft_answer: str,
         generated_answer: str,
-    ) -> bool:
+    ) -> MedicationAnswerFallbackReason | None:
+        if cls._SAFETY_ASSERTION_PATTERN.search(generated_answer) and not cls._SAFETY_ASSERTION_PATTERN.search(
+            draft_answer
+        ):
+            return MedicationAnswerFallbackReason.UNSUPPORTED_SAFETY_ASSERTION
         draft_dosages = {token.casefold().replace(" ", "") for token in cls._DOSAGE_TOKEN_PATTERN.findall(draft_answer)}
         generated_dosages = {
             token.casefold().replace(" ", "") for token in cls._DOSAGE_TOKEN_PATTERN.findall(generated_answer)
         }
         if not generated_dosages.issubset(draft_dosages):
-            return False
-        if cls._SAFETY_ASSERTION_PATTERN.search(generated_answer) and not cls._SAFETY_ASSERTION_PATTERN.search(
-            draft_answer
-        ):
-            return False
-        return True
+            return MedicationAnswerFallbackReason.GENERATED_DOSAGE_NOT_IN_DRAFT
+        return None
+
+    @staticmethod
+    def _answer_hash(answer: str) -> str:
+        return hashlib.sha256(answer.strip().encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _skipped_outcome(
+        result: MedicationChatResult,
+        *,
+        draft_hash: str,
+        reason: MedicationAnswerFallbackReason,
+    ) -> MedicationAnswerGenerationOutcome:
+        return MedicationAnswerGenerationOutcome(
+            result=result,
+            observation=MedicationAnswerGenerationObservation(
+                status=MedicationAnswerRewriteStatus.SKIPPED,
+                fallback_used=False,
+                fallback_reason=reason,
+                draft_answer_hash=draft_hash,
+            ),
+        )
 
     @staticmethod
     def _to_plain_text(answer: str) -> str:

@@ -17,6 +17,15 @@ _INTAKE_CONTEXT_AVOIDANCE_PATTERN = re.compile(
     r".{1,48}?"
     r"(?:피해야|피하|먹지\s*말|복용하지\s*말|섭취하지\s*말)",
 )
+_RELATIONAL_EFFECT_PATTERN = re.compile(
+    r"(?:복용|섭취).{1,48}?"
+    r"(?:흡수|효과|작용|수치|농도).{0,24}?"
+    r"(?:영향|변화|감소|증가)",
+)
+_DRUG_FOOD_USAGE_PATTERN = re.compile(
+    r"(?:음식|식품|음료|주스|물)(?:이나|나|과|와|이랑|랑)?"
+    r".{0,32}?(?:복용|먹|섭취)",
+)
 
 
 def is_interaction_question(question: str) -> bool:
@@ -32,5 +41,7 @@ def is_interaction_question(question: str) -> bool:
             _COADMINISTRATION_PATTERN,
             _RELATIONAL_AVOIDANCE_PATTERN,
             _INTAKE_CONTEXT_AVOIDANCE_PATTERN,
+            _RELATIONAL_EFFECT_PATTERN,
+            _DRUG_FOOD_USAGE_PATTERN,
         )
     )
