@@ -28,6 +28,7 @@ import {
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
+import { SupplementsBrowseView } from './SupplementsBrowseView';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -81,6 +82,15 @@ export function SupplementsPage({
     (supplement) => supplement.nutrientDataAvailable,
   ).length;
   const manuallyEnteredSupplements = (supplements ?? []).length - supplementsWithNutrients;
+  const registeredProductIds = useMemo(
+    () =>
+      new Set(
+        (supplements ?? []).flatMap((supplement) =>
+          supplement.productId === null ? [] : [supplement.productId],
+        ),
+      ),
+    [supplements],
+  );
 
   useEffect(() => {
     if (routePresetProductId === null) return;
@@ -241,7 +251,15 @@ export function SupplementsPage({
       </div>
 
       <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5">
-        {activeView === 'browse' ? null : loadError !== null ? (
+        {activeView === 'browse' ? (
+          <SupplementsBrowseView
+            registeredProductIds={registeredProductIds}
+            registrationPending={supplements === null}
+            onSelectProduct={(productId) =>
+              navigate(`/supplements/product/${encodeURIComponent(productId)}`)
+            }
+          />
+        ) : loadError !== null ? (
           <Card title="영양제를 불러오지 못했어요">{loadError}</Card>
         ) : supplements === null ? (
           <p className="text-sm text-muted-foreground">불러오는 중...</p>
