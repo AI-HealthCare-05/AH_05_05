@@ -3,7 +3,7 @@ import { Camera, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { Button, Card, Header, ImageViewer } from '@/shared/ui';
 
-const GUIDE_ITEMS = ['조제일', '약 이름과 용량', '하루 몇 번, 며칠분'] as const;
+const GUIDE_ITEMS = ['조제일', '약품명·함량', '1회 투약량·횟수·일수'] as const;
 
 export function DocumentUploadPage() {
   const navigate = useNavigate();

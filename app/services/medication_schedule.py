@@ -252,7 +252,7 @@ class MedicationScheduleService:
         return MedicationScheduleMedication(
             medication_id=medication.id,
             name=medication.name,
-            dose=medication.dose or "",
+            dose=medication.strength or "",
             times_per_day=medication.times_per_day,
             timing=medication.administration or "",
             slots=slots,

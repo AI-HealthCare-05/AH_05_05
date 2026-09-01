@@ -46,8 +46,12 @@ class Config(BaseSettings):
     CLOVA_TEMPLATE_OCR_INVOKE_URL: str | None = None
     CLOVA_TEMPLATE_OCR_SECRET: SecretStr | None = None
     CLOVA_TEMPLATE_ID: int | None = Field(default=None, gt=0)
+    CLOVA_GENERAL_OCR_INVOKE_URL: str | None = None
+    CLOVA_GENERAL_OCR_SECRET: SecretStr | None = None
     CLOVA_CONNECT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
     CLOVA_READ_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0)
+    OPENAI_API_KEY: SecretStr | None = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
     OCR_REVIEW_CONFIDENCE_THRESHOLD: float = Field(
         default=0.90,
         ge=0.0,

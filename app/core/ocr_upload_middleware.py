@@ -2,7 +2,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 MAX_OCR_MULTIPART_REQUEST_BYTES = 51 * 1024 * 1024
-_OCR_PATH = "/api/v1/ocr/medication-guides"
+_OCR_PATH = "/api/v1/ocr"
 
 
 class _OcrRequestTooLargeError(Exception):

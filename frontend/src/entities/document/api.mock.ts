@@ -8,7 +8,7 @@
  *
  * - 진단명·수술명은 의도적으로 OCR 원문 그대로(영문·약어) 둡니다. LLM 단순화 이전
  *   상태를 화면에서 확인하기 위한 것이며, 읽기 좋은 한국어로 바꾸지 않습니다.
- * - days 는 약별 처방 일수이고 administration 은 복용 방법 원문입니다.
+ * - strength, doseQuantity, timesPerDay, days 는 약별 OCR 결과입니다.
  * - high 항목은 배지를 숨기고 리바록사반 low 한 건만 확인 대상으로 보이게 합니다.
  */
 import type {
@@ -88,10 +88,10 @@ export function mockOcrResult(batchId: string): OcrResult {
       dispensedDate: { value: '2026-08-22', confidence: 'high' },
     },
     medications: [
-      { tempId: 'm1', name: '셀레콕시브', dose: '200mg', efficacy: '염증과 통증 완화', administration: '아침·저녁 식후', precautions: '위장장애가 있으면 상담하세요.', timesPerDay: 2, days: 7, confidence: 'high' },
-      { tempId: 'm2', name: '리바록사반', dose: '10mg', efficacy: '혈전 생성 억제', administration: '아침·저녁 식후', precautions: '출혈 증상이 있으면 상담하세요.', timesPerDay: 2, days: 7, confidence: 'low' },
-      { tempId: 'm3', name: '아세트아미노펜', dose: '650mg', efficacy: '해열 및 진통', administration: '필요 시, 6시간 이상 간격', precautions: '과량 복용하지 마세요.', timesPerDay: null, days: 7, confidence: 'high' },
-      { tempId: 'm4', name: '파모티딘', dose: '20mg', efficacy: '위산 분비 억제', administration: '아침·저녁 식후', precautions: '임의로 증량하지 마세요.', timesPerDay: 2, days: 7, confidence: 'high' },
+      { tempId: 'm1', name: '셀레콕시브', strength: '200mg', doseQuantity: '1정', timesPerDay: 2, days: 7, confidence: 'high' },
+      { tempId: 'm2', name: '리바록사반', strength: '10mg', doseQuantity: '1정', timesPerDay: 2, days: 7, confidence: 'low' },
+      { tempId: 'm3', name: '아세트아미노펜', strength: '650mg', doseQuantity: '1정', days: 7, confidence: 'high' },
+      { tempId: 'm4', name: '파모티딘', confidence: 'high' },
     ],
     lowConfidenceCount: 1,
   };

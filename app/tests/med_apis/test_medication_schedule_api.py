@@ -24,7 +24,7 @@ async def create_ocr_medications(user: User) -> tuple[CareEpisode, Medication, M
     scheduled = await Medication.create(
         care_episode=episode,
         name="셀레콕시브",
-        dose="200mg",
+        strength="200mg",
         administration="아침·저녁 식후",
         times_per_day=2,
         days=7,
@@ -33,7 +33,7 @@ async def create_ocr_medications(user: User) -> tuple[CareEpisode, Medication, M
     as_needed = await Medication.create(
         care_episode=episode,
         name="아세트아미노펜",
-        dose="650mg",
+        strength="650mg",
         administration="6시간 이상 간격",
         times_per_day=None,
         days=7,

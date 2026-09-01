@@ -1,6 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 
 from tortoise import fields, models
+from tortoise.validators import MaxValueValidator, MinValueValidator
 
 from app.models.enums import OcrJobStatus
 
@@ -23,9 +25,23 @@ class OcrJob(models.Model):
     input_manifest: dict[str, object] | list[object] = fields.JSONField()
     structured_result: dict[str, object] | list[object] | None = fields.JSONField(null=True)
     ocr_model = fields.CharField(max_length=100)
-    structuring_model = fields.CharField(max_length=100)
-    prompt_version = fields.CharField(max_length=100)
+    structuring_model = fields.CharField(max_length=100, null=True)
+    prompt_version = fields.CharField(max_length=100, null=True)
     schema_version = fields.CharField(max_length=50)
+    stage_results: list[dict[str, object]] | None = fields.JSONField(null=True)
+    avg_field_confidence = fields.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        null=True,
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("1"))],
+    )
+    confidence_field_count = fields.IntField(null=True, validators=[MinValueValidator(0)])
+    user_review_match_rate = fields.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        null=True,
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("1"))],
+    )
     error_code: str | None = fields.CharField(max_length=100, null=True)  # type: ignore[assignment]
     started_at: datetime | None = fields.DatetimeField(null=True)
     ready_at: datetime | None = fields.DatetimeField(null=True)
