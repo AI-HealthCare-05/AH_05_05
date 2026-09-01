@@ -195,6 +195,7 @@ class UserSupplementNutrientService:
             end_date=registration.end_date,
             status=registration.status,
             note=registration.note,
+            score=registration.score,
             created_at=registration.created_at,
             updated_at=registration.updated_at,
             slots=[

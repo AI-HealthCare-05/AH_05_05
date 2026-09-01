@@ -54,6 +54,7 @@ class UserSupplementNutrientUpdateRequest(BaseModel):
     status: SupplementStatus | None = None
     slots: list[MealSlot] | None = Field(default=None, min_length=1, max_length=4)
     note: str | None = Field(default=None, max_length=500)
+    score: int | None = Field(default=None, ge=1, le=5)
 
     @field_validator("dose_unit", mode="before")
     @classmethod
@@ -95,6 +96,7 @@ class UserSupplementNutrientResponse(BaseModel):
     end_date: date | None
     status: SupplementStatus
     note: str | None
+    score: int | None
     created_at: datetime
     updated_at: datetime | None
     slots: list[SupplementSlotResponse]
