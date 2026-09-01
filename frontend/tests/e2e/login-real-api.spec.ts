@@ -10,9 +10,12 @@
  */
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const ACTIVE = { email: 'login89@example.com', password: 'Passw0rd!23' };
 const SUSPENDED = { email: 'locked89@example.com', password: 'Passw0rd!23' };
 
+test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 test.skip(process.env.E2E_REAL_API !== '1', '실서버와 시드 계정이 필요합니다.');
 
 async function submitLogin(page: import('playwright/test').Page, email: string, password: string) {

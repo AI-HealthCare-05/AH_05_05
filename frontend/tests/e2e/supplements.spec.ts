@@ -1,5 +1,11 @@
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가지 단서로 알린다', async ({ page }) => {
   await page.goto('/dev/supplements');
 

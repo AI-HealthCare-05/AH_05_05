@@ -1,5 +1,11 @@
 import { expect, test, type Page } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 async function authenticate(page: Page) {
   await page.addInitScript(() => {
     window.sessionStorage.setItem('poke.access-token', 'withdrawal-e2e-token');

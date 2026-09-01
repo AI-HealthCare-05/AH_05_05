@@ -1,9 +1,8 @@
 import { expect, test } from 'playwright/test';
 
-test.skip(
-  process.env.VITE_USE_MOCK !== 'false',
-  '실제 API 모드의 SSE 파서 계약만 검증합니다.',
-);
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
+test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 
 test('SSE에서는 검증 완료 이벤트의 답변만 말풍선으로 표시한다', async ({ page }) => {
   await page.route('**/api/v1/chat/stream', async (route) => {

@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
-const useMock = process.env.VITE_USE_MOCK !== 'false';
+import { IS_REAL_API, MOCK_ONLY_REASON, REAL_API_ONLY_REASON } from './helpers/mode';
 
 const RANKING_RESPONSE = {
   display_id: 3,
@@ -75,7 +75,7 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 }
 
 test('목업 랭킹은 화면용 타입과 서버가 정한 순위를 반환한다', async ({ page }) => {
-  test.skip(!useMock, '목업 모드 계약입니다.');
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.goto('/dev/gallery');
 
   const ranking = await loadRanking(page);
@@ -93,7 +93,7 @@ test('목업 랭킹은 화면용 타입과 서버가 정한 순위를 반환한�
 });
 
 test('실 랭킹 API의 snake_case 응답을 화면용 타입으로 한 번만 매핑한다', async ({ page }) => {
-  test.skip(useMock, '실 API 분기 계약입니다.');
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   let requestedPath = '';
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
     requestedPath = new URL(route.request().url()).pathname;
@@ -114,7 +114,7 @@ test('실 랭킹 API의 snake_case 응답을 화면용 타입으로 한 번만 �
 });
 
 test('실 랭킹 API의 404는 정상적인 null로 변환한다', async ({ page }) => {
-  test.skip(useMock, '실 API 분기 계약입니다.');
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
     await fulfillJson(
       route,
@@ -128,7 +128,7 @@ test('실 랭킹 API의 404는 정상적인 null로 변환한다', async ({ page
 });
 
 test('실 랭킹 API의 404 외 오류는 숨기지 않고 호출자에게 전달한다', async ({ page }) => {
-  test.skip(useMock, '실 API 분기 계약입니다.');
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
     await fulfillJson(route, { code: 'SERVER_ERROR', message: '서버 오류' }, 500);
   });
@@ -148,7 +148,7 @@ test('실 랭킹 API의 404 외 오류는 숨기지 않고 호출자에게 전�
 });
 
 test('제품 ID로 상세 API를 조회해 추가 시트용 제품으로 매핑한다', async ({ page }) => {
-  test.skip(useMock, '실 API 분기 계약입니다.');
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   let requestedPath = '';
   await page.route('**/api/v1/med/nutr/2048', async (route) => {
     requestedPath = new URL(route.request().url()).pathname;

@@ -1,5 +1,11 @@
 import { expect, test, type Page } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 async function chooseAlarmTime(page: Page, hour: string, minute: string) {
   const sheet = page.getByRole('dialog');
   await sheet.getByLabel('시').click();

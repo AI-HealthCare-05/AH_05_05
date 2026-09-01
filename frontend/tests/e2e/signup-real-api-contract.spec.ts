@@ -1,5 +1,11 @@
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+});
+
 test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 홈으로 이동한다', async ({ page }) => {
   let signupBody: unknown;
   let loginBody: unknown;
