@@ -442,16 +442,27 @@ export function ChatPage({
           </>
         )}
 
-        {messages.map((message, index) =>
-          message.role === 'user' ? (
+        {messages.map((message, index) => {
+          const showAvatar = messages[index - 1]?.role !== 'assistant';
+          return message.role === 'user' ? (
             <div key={index} className="flex justify-end">
               <p className="max-w-[80%] rounded-card bg-primary px-3.5 py-2.5 text-base break-words text-card">
                 {message.text}
               </p>
             </div>
           ) : (
-            <div key={index} className="flex justify-start">
-              <div className="flex max-w-[80%] flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
+            <div key={index} className="flex max-w-[85%] justify-start gap-2">
+              {showAvatar ? (
+                <img
+                  src="/images/rxvita-mark-128.png"
+                  alt=""
+                  aria-hidden
+                  className="mt-0.5 size-8 shrink-0"
+                />
+              ) : (
+                <span aria-hidden className="size-8 shrink-0" />
+              )}
+              <div className="flex flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
                 <p className="whitespace-pre-wrap text-base break-words text-foreground">
                   {message.text}
                 </p>
@@ -465,12 +476,18 @@ export function ChatPage({
                 )}
               </div>
             </div>
-          ),
-        )}
+          );
+        })}
 
         {(chatRequestPending || pending) && (
-          <div className="flex justify-start">
-            <p className="max-w-[80%] rounded-card bg-muted-bg px-3.5 py-2.5 text-base text-muted-foreground">
+          <div className="flex max-w-[85%] justify-start gap-2">
+            <img
+              src="/images/rxvita-mark-128.png"
+              alt=""
+              aria-hidden
+              className="mt-0.5 size-8 shrink-0"
+            />
+            <p className="rounded-card bg-muted-bg px-3.5 py-2.5 text-base text-muted-foreground">
               {progressMessage}
             </p>
           </div>

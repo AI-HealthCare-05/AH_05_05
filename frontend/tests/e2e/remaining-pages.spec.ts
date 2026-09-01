@@ -128,7 +128,7 @@ test('하단 탭은 구현된 실제 화면 경로로 이동한다', async ({ pa
 
 test('게스트 배너를 넘기면 현재 위치 인디케이터가 함께 바뀐다', async ({ page }) => {
   await page.goto('/home');
-  const carousel = page.getByRole('region', { name: '포케 기능 소개' }).locator('.overflow-x-auto');
+  const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' }).locator('.overflow-x-auto');
 
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
   await carousel.evaluate((element) => {
@@ -141,7 +141,7 @@ test('게스트 배너를 넘기면 현재 위치 인디케이터가 함께 바�
 
 test('홈 기능 배너는 마우스가 배너 위에 있어도 자동으로 다음 장을 보여준다', async ({ page }) => {
   await page.goto('/home');
-  await page.getByRole('region', { name: '포케 기능 소개' }).hover();
+  await page.getByRole('region', { name: 'RxVita 기능 소개' }).hover();
 
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
   await expect(page.getByLabel('현재 배너 2 / 3')).toBeVisible({ timeout: 4_500 });
@@ -149,7 +149,7 @@ test('홈 기능 배너는 마우스가 배너 위에 있어도 자동으로 다
 
 test('홈 기능 배너는 마지막 장에서도 같은 방향으로 첫 장을 이어 보여준다', async ({ page }) => {
   await page.goto('/home');
-  const carousel = page.getByRole('region', { name: '포케 기능 소개' }).locator('.overflow-x-auto');
+  const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' }).locator('.overflow-x-auto');
 
   await carousel.evaluate((element) => {
     const banners = Array.from(element.children) as HTMLElement[];

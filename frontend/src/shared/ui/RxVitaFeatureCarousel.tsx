@@ -22,16 +22,16 @@ const BANNERS = [
   },
 ] as const;
 
-interface PokeFeatureCarouselProps {
+interface RxVitaFeatureCarouselProps {
   autoAdvanceMs?: number;
   size?: 'full' | 'compact';
 }
 
-/** 비로그인 홈과 기다림 화면이 함께 쓰는 포케 기능 소개 배너. */
-export function PokeFeatureCarousel({
+/** 비로그인 홈과 기다림 화면이 함께 쓰는 RxVita 기능 소개 배너. */
+export function RxVitaFeatureCarousel({
   autoAdvanceMs,
   size = 'full',
-}: PokeFeatureCarouselProps) {
+}: RxVitaFeatureCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -78,7 +78,7 @@ export function PokeFeatureCarousel({
 
   return (
     <section
-      aria-label="포케 기능 소개"
+      aria-label="RxVita 기능 소개"
       className={`flex flex-col ${isCompact ? 'min-h-42 gap-2' : 'min-h-84 gap-3'}`}
     >
       <div

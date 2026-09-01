@@ -15,7 +15,7 @@ async function authenticate(page: Page) {
 test('홈 기능 배너는 compact 가로 레이아웃과 한 문장 제목을 사용한다', async ({ page }) => {
   await page.goto('/dev/home-active');
 
-  const carousel = page.getByRole('region', { name: '포케 기능 소개' });
+  const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' });
   const firstCard = carousel.locator('article').first();
   const carouselBox = await carousel.boundingBox();
 
@@ -49,7 +49,7 @@ test('OCR 읽는 중 기능 배너는 기본 full 높이와 세로 레이아웃�
   await page.getByRole('button', { name: '등록하기' }).click();
 
   await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toBeVisible();
-  const carousel = page.getByRole('region', { name: '포케 기능 소개' });
+  const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' });
   const carouselBox = await carousel.boundingBox();
 
   expect(carouselBox).not.toBeNull();

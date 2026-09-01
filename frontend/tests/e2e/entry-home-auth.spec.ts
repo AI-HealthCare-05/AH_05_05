@@ -16,7 +16,7 @@ test('첫 진입은 버튼 없는 스플래시를 거쳐 게스트 홈으로 자
   await expect(page.getByText('약봉투 한 장이면 충분해요')).toBeVisible();
   await expect(page.getByRole('button')).toHaveCount(0);
   await expect(page).toHaveURL(/\/home$/, { timeout: 3_000 });
-  await expect(page.getByRole('heading', { name: '포케' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'RxVita' })).toBeVisible();
 });
 
 test('같은 브라우저 세션의 두 번째 진입은 스플래시를 다시 기다리지 않는다', async ({ page }) => {
@@ -30,7 +30,7 @@ test('같은 브라우저 세션의 두 번째 진입은 스플래시를 다시 
 test('게스트 홈은 기능 중복 카드 없이 소개 배너와 탭바를 유지한다', async ({ page }) => {
   await page.goto('/home');
 
-  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toBeVisible();
   await expect(page.getByRole('button', { name: /복용약 관리/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /영양제 관리/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /AI 상담/ })).toHaveCount(0);
@@ -39,7 +39,7 @@ test('게스트 홈은 기능 중복 카드 없이 소개 배너와 탭바를 �
 test('로그인 홈도 복약 상태 위에 소개 배너를 유지한다', async ({ page }) => {
   await page.goto('/dev/home-data-empty');
 
-  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toBeVisible();
   await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 });
 
@@ -212,7 +212,7 @@ test('복약 중 홈은 overview의 시각과 슬롯별 약만 타임라인에 �
   await expect(today.getByText('7일 중 4일째')).toHaveCount(0);
   await expect(today.getByText('8월 22일 시작')).toHaveCount(0);
 
-  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toBeVisible();
 });
 
 test('약 하나가 한 슬롯에만 있으면 타임라인도 한 칸과 실제 개수만 보여준다', async ({
