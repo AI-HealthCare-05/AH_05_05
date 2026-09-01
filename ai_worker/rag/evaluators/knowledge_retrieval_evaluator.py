@@ -116,9 +116,7 @@ class KnowledgeRetrievalEvaluator:
             contract["cases"],
             key=lambda case: case["query_id"],
         )
-        contract["evaluator_version"] = (
-            KnowledgeRetrievalEvaluator._EVALUATOR_VERSION
-        )
+        contract["evaluator_version"] = KnowledgeRetrievalEvaluator._EVALUATOR_VERSION
         contract["embedding_model_name"] = embedding_model_name
         contract["embedding_dimension"] = embedding_dimension
         canonical = json.dumps(
@@ -135,13 +133,15 @@ class KnowledgeRetrievalEvaluator:
         case: KnowledgeEvaluationCase,
         dataset_version: str,
     ) -> KnowledgeSearchQuery:
+        uses_exact_pair_filter = bool(case.interaction_pair_keys)
         return KnowledgeSearchQuery(
             query=case.query,
             dataset_version=dataset_version,
             document_types=case.document_types,
-            drug_names=case.drug_names,
-            ingredient_names=case.ingredient_names,
+            drug_names=[] if uses_exact_pair_filter else case.drug_names,
+            ingredient_names=[] if uses_exact_pair_filter else case.ingredient_names,
             interaction_type=case.interaction_type,
+            interaction_pair_keys=case.interaction_pair_keys,
             special_populations=case.special_populations,
             section_types=case.section_types,
             limit=case.top_k,
@@ -180,7 +180,13 @@ class KnowledgeRetrievalEvaluator:
         return KnowledgeQueryEvaluationResult(
             query_id=case.query_id,
             retrieved_document_ids=[result.metadata.document_id for result in retrieved],
-            hit_at_5=any(position <= 5 for position in relevant_positions),
+            hit_at_5=(
+                any(position <= 5 for position in relevant_positions)
+                and KnowledgeRetrievalEvaluator._has_expected_section_coverage(
+                    case,
+                    retrieved[:5],
+                )
+            ),
             reciprocal_rank=(1.0 / first_relevant_rank if first_relevant_rank is not None else 0.0),
             relevant_count=len(relevant_positions),
             retrieved_count=len(retrieved),
@@ -204,15 +210,56 @@ class KnowledgeRetrievalEvaluator:
             case.expected_ingredient_names
         ):
             return False
+        if case.expected_interaction_pair_keys and set(result.metadata.interaction_pair_keys).isdisjoint(
+            case.expected_interaction_pair_keys
+        ):
+            return False
         return True
+
+    @staticmethod
+    def _has_expected_section_coverage(
+        case: KnowledgeEvaluationCase,
+        retrieved: list[RetrievedKnowledgeChunk],
+    ) -> bool:
+        expected_sections = set(case.expected_section_types)
+        if not expected_sections:
+            return True
+
+        covered_sections = {
+            result.metadata.section_type
+            for result in retrieved
+            if result.metadata.document_id in set(case.expected_document_ids)
+            and (
+                not case.expected_drug_names or not set(result.metadata.drug_names).isdisjoint(case.expected_drug_names)
+            )
+            and (
+                not case.expected_ingredient_names
+                or not set(result.metadata.ingredient_names).isdisjoint(case.expected_ingredient_names)
+            )
+            and (
+                not case.expected_interaction_pair_keys
+                or not set(result.metadata.interaction_pair_keys).isdisjoint(case.expected_interaction_pair_keys)
+            )
+        }
+        return expected_sections.issubset(covered_sections)
 
     @staticmethod
     def _is_disjoint_entity_result(
         case: KnowledgeEvaluationCase,
         result: RetrievedKnowledgeChunk,
     ) -> bool:
+        if result.metadata.document_id in set(case.forbidden_document_ids):
+            return True
+
+        actual_drugs = set(result.metadata.drug_names)
+        actual_ingredients = set(result.metadata.ingredient_names)
+        if actual_drugs.intersection(case.forbidden_drug_names):
+            return True
+        if actual_ingredients.intersection(case.forbidden_ingredient_names):
+            return True
+
         expected = set(case.expected_drug_names) | set(case.expected_ingredient_names)
         if not expected:
             return False
-        actual = set(result.metadata.drug_names) | set(result.metadata.ingredient_names)
+        actual = actual_drugs | actual_ingredients
         return bool(actual) and actual.isdisjoint(expected)

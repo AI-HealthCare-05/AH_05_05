@@ -4,6 +4,12 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
+from ai_worker.rag.metadata.supplement_interaction_registry import (
+    find_supplement_interaction_pair,
+)
 from ai_worker.schemas.knowledge_evaluation import (
     KnowledgeEvaluationCase,
     KnowledgeEvaluationManifest,
@@ -173,3 +179,37 @@ cases:
     manifest = module.load_evaluation_manifest(path)
 
     assert manifest.cases[0].query_id == "vitamin-b6"
+
+
+def test_pilot_manifest_covers_v2_interaction_and_hard_negative_contracts() -> None:
+    manifest = module.load_evaluation_manifest(Path("data/knowledge/evaluation/pilot_queries.yaml"))
+    cases = {case.query_id: case for case in manifest.cases}
+
+    assert {
+        "calcium-iron-absorption",
+        "fexofenadine-fruit-juice",
+        "warfarin-vitamin-k",
+        "warfarin-metronidazole",
+        "acetaminophen-brand-alias",
+        "losartan-hard-negative",
+    }.issubset(cases)
+    calcium_iron = find_supplement_interaction_pair("칼슘과 철분")
+    assert calcium_iron is not None
+    assert cases["calcium-iron-absorption"].expected_interaction_pair_keys == [calcium_iron.pair_key]
+    annotations = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        Path("data/knowledge/manifests/interaction_annotations.yaml")
+    ).required_pair_keys_by_document()
+    assert (
+        cases["fexofenadine-fruit-juice"].interaction_pair_keys
+        == annotations["mfds_drug_food_interaction_guide-53bfb2433f48a8b0"]
+    )
+    assert (
+        cases["warfarin-vitamin-k"].expected_interaction_pair_keys
+        == annotations["kpicia_pharm_review-c4ea8e68b35b65b3"]
+    )
+    assert (
+        cases["warfarin-metronidazole"].expected_interaction_pair_keys
+        == annotations["kpicia_pharm_review-e8127943c02a5a76"]
+    )
+    assert cases["acetaminophen-brand-alias"].expected_drug_names == ["아세트아미노펜"]
+    assert cases["losartan-hard-negative"].forbidden_document_ids == ["kpicia_drug_encyclopedia-c649427ba7b67d68"]

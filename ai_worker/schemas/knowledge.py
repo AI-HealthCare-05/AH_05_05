@@ -107,7 +107,7 @@ class KnowledgeMetadata(BaseModel):
         cls,
         values: list[str],
     ) -> list[str]:
-        return _normalize_interaction_pair_keys(values)
+        return normalize_interaction_pair_keys(values)
 
 
 class KnowledgePage(BaseModel):
@@ -189,7 +189,7 @@ class KnowledgeSearchQuery(BaseModel):
         cls,
         values: list[str],
     ) -> list[str]:
-        return _normalize_interaction_pair_keys(values)
+        return normalize_interaction_pair_keys(values)
 
     @field_validator("interaction_type")
     @classmethod
@@ -224,7 +224,7 @@ class KnowledgeRetrievalResult(BaseModel):
     diagnostics: KnowledgeRetrievalDiagnostics
 
 
-def _normalize_interaction_pair_keys(values: list[str]) -> list[str]:
+def normalize_interaction_pair_keys(values: list[str]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
     for value in values:

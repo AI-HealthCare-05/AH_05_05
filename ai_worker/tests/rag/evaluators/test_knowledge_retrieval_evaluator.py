@@ -24,7 +24,10 @@ def build_result(
     marker: str,
     *,
     document_id: str,
+    drug_names: list[str] | None = None,
     ingredient_names: list[str] | None = None,
+    interaction_pair_keys: list[str] | None = None,
+    section_type: KnowledgeSectionType = KnowledgeSectionType.CAUTION,
     content_hash: str | None = None,
 ) -> RetrievedKnowledgeChunk:
     return RetrievedKnowledgeChunk(
@@ -42,8 +45,10 @@ def build_result(
             access_scope=KnowledgeAccessScope.PUBLIC,
             document_type=KnowledgeDocumentType.SUPPLEMENT_CODE,
             dataset_version="knowledge-pilot-v1",
+            drug_names=drug_names or [],
             ingredient_names=ingredient_names or [],
-            section_type=KnowledgeSectionType.CAUTION,
+            interaction_pair_keys=interaction_pair_keys or [],
+            section_type=section_type,
             page_start=1,
             page_end=1,
             chunk_index=0,
@@ -181,8 +186,138 @@ async def test_evaluate_counts_disjoint_entity_result_as_mixing() -> None:
     report = await evaluator.evaluate(manifest)
 
     assert report.wrong_entity_mixing_count == 1
+
+
+async def test_evaluate_filters_and_scores_exact_interaction_pair() -> None:
+    requested_pair_key = "a" * 64
+    unrelated_pair_key = "b" * 64
+    store = SequenceKnowledgeStore(
+        responses=[
+            [
+                build_result(
+                    "x",
+                    document_id="interaction-document",
+                    ingredient_names=["칼슘", "철분"],
+                    interaction_pair_keys=[unrelated_pair_key],
+                ),
+                build_result(
+                    "a",
+                    document_id="interaction-document",
+                    ingredient_names=["칼슘", "철분"],
+                    interaction_pair_keys=[requested_pair_key],
+                ),
+            ]
+        ]
+    )
+    evaluator = KnowledgeRetrievalEvaluator(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        timer=sequence_timer([0.0, 0.01]),
+    )
+    manifest = KnowledgeEvaluationManifest.model_validate(
+        {
+            "dataset_version": "knowledge-full-v2",
+            "cases": [
+                {
+                    "query_id": "calcium-iron",
+                    "query": "칼슘과 철분을 같이 먹어도 되나요?",
+                    "expected_document_ids": ["interaction-document"],
+                    "expected_ingredient_names": ["칼슘", "철분"],
+                    "ingredient_names": ["칼슘", "철분"],
+                    "interaction_pair_keys": [requested_pair_key],
+                    "expected_interaction_pair_keys": [requested_pair_key],
+                }
+            ],
+        }
+    )
+
+    report = await evaluator.evaluate(manifest)
+
+    assert store.received_queries[0].interaction_pair_keys == [requested_pair_key]
+    assert store.received_queries[0].ingredient_names == []
+    assert report.query_results[0].relevant_count == 1
+    assert report.query_results[0].reciprocal_rank == 0.5
+
+
+async def test_evaluate_counts_explicit_forbidden_document_as_mixing() -> None:
+    store = SequenceKnowledgeStore(
+        responses=[
+            [
+                build_result("a", document_id="expected-document"),
+                build_result("x", document_id="lookalike-document"),
+            ]
+        ]
+    )
+    evaluator = KnowledgeRetrievalEvaluator(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        timer=sequence_timer([0.0, 0.01]),
+    )
+    manifest = KnowledgeEvaluationManifest.model_validate(
+        {
+            "dataset_version": "knowledge-full-v2",
+            "cases": [
+                {
+                    "query_id": "hard-negative",
+                    "query": "로사르탄 효능을 알려줘",
+                    "expected_document_ids": ["expected-document"],
+                    "forbidden_document_ids": ["lookalike-document"],
+                }
+            ],
+        }
+    )
+
+    report = await evaluator.evaluate(manifest)
+
     assert report.query_results[0].wrong_entity_mixing_count == 1
     assert report.passed is False
+
+
+@pytest.mark.parametrize(
+    ("case_field", "result_field", "forbidden_value"),
+    [
+        ("forbidden_drug_names", "drug_names", "유사 의약품"),
+        ("forbidden_ingredient_names", "ingredient_names", "유사 영양성분"),
+    ],
+)
+async def test_evaluate_counts_explicit_forbidden_entity_as_mixing(
+    case_field: str,
+    result_field: str,
+    forbidden_value: str,
+) -> None:
+    result_kwargs = {result_field: [forbidden_value]}
+    store = SequenceKnowledgeStore(
+        responses=[
+            [
+                build_result(
+                    "x",
+                    document_id="lookalike-document",
+                    **result_kwargs,
+                )
+            ]
+        ]
+    )
+    evaluator = KnowledgeRetrievalEvaluator(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        timer=sequence_timer([0.0, 0.01]),
+    )
+    case_kwargs = {case_field: [forbidden_value]}
+    manifest = KnowledgeEvaluationManifest(
+        dataset_version="knowledge-full-v2",
+        cases=[
+            KnowledgeEvaluationCase(
+                query_id="forbidden-entity",
+                query="유사 이름이 섞이지 않아야 하나요?",
+                expected_document_ids=["expected-document"],
+                **case_kwargs,
+            )
+        ],
+    )
+
+    report = await evaluator.evaluate(manifest)
+
+    assert report.query_results[0].wrong_entity_mixing_count == 1
 
 
 async def test_evaluate_forwards_metadata_filters() -> None:
@@ -255,6 +390,44 @@ async def test_evaluate_requires_expected_section_for_relevance() -> None:
 
     assert report.hit_at_5 == 0.0
     assert report.citation_accuracy == 0.0
+
+
+async def test_evaluate_requires_all_expected_sections_in_top_five() -> None:
+    store = SequenceKnowledgeStore(
+        responses=[
+            [
+                build_result(
+                    "a",
+                    document_id="medicine-document",
+                    section_type=KnowledgeSectionType.FUNCTION,
+                )
+            ]
+        ]
+    )
+    evaluator = KnowledgeRetrievalEvaluator(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        timer=sequence_timer([0.0, 0.001]),
+    )
+    manifest = KnowledgeEvaluationManifest(
+        dataset_version="knowledge-full-v2",
+        cases=[
+            KnowledgeEvaluationCase(
+                query_id="function-and-caution",
+                query="효능과 주의사항을 알려주세요.",
+                expected_document_ids=["medicine-document"],
+                expected_section_types=[
+                    KnowledgeSectionType.FUNCTION,
+                    KnowledgeSectionType.CAUTION,
+                ],
+            )
+        ],
+    )
+
+    report = await evaluator.evaluate(manifest)
+
+    assert report.query_results[0].relevant_count == 1
+    assert report.query_results[0].hit_at_5 is False
 
 
 async def test_evaluate_separates_accuracy_and_latency_gates() -> None:

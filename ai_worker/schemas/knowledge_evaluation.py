@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeSectionType,
+    normalize_interaction_pair_keys,
 )
 
 
@@ -27,10 +28,15 @@ class KnowledgeEvaluationCase(BaseModel):
     expected_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     expected_drug_names: list[str] = Field(default_factory=list)
     expected_ingredient_names: list[str] = Field(default_factory=list)
+    expected_interaction_pair_keys: list[str] = Field(default_factory=list)
+    forbidden_document_ids: list[str] = Field(default_factory=list)
+    forbidden_drug_names: list[str] = Field(default_factory=list)
+    forbidden_ingredient_names: list[str] = Field(default_factory=list)
     document_types: list[KnowledgeDocumentType] = Field(default_factory=list)
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
     interaction_type: str | None = None
+    interaction_pair_keys: list[str] = Field(default_factory=list)
     special_populations: list[str] = Field(default_factory=list)
     section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     top_k: int = Field(default=5, ge=1, le=50)
@@ -47,6 +53,9 @@ class KnowledgeEvaluationCase(BaseModel):
         "expected_document_ids",
         "expected_drug_names",
         "expected_ingredient_names",
+        "forbidden_document_ids",
+        "forbidden_drug_names",
+        "forbidden_ingredient_names",
         "drug_names",
         "ingredient_names",
         "special_populations",
@@ -61,6 +70,14 @@ class KnowledgeEvaluationCase(BaseModel):
                 normalized.append(item)
                 seen.add(item)
         return normalized
+
+    @field_validator(
+        "expected_interaction_pair_keys",
+        "interaction_pair_keys",
+    )
+    @classmethod
+    def normalize_pair_keys(cls, values: list[str]) -> list[str]:
+        return normalize_interaction_pair_keys(values)
 
 
 class KnowledgeEvaluationManifest(BaseModel):
