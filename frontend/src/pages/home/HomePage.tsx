@@ -175,7 +175,7 @@ export function HomePage({
     setDoseRecords(null);
     setDoseLoadError(null);
     const firstOverview = withMedication[0];
-    const from = withMedication.reduce(
+    const rawFrom = withMedication.reduce(
       (minimum, overview) => overview.start.date < minimum ? overview.start.date : minimum,
       firstOverview.start.date,
     );
@@ -183,6 +183,10 @@ export function HomePage({
       (maximum, overview) => overview.endDate > maximum ? overview.endDate : maximum,
       firstOverview.endDate,
     );
+    const earliestDate = new Date(`${to}T00:00:00`);
+    earliestDate.setDate(earliestDate.getDate() - 365);
+    const earliest = localISODate(earliestDate);
+    const from = rawFrom < earliest ? earliest : rawFrom;
     doseRecordsLoader({ from, to })
       .then((records) => {
         if (!cancelled) setDoseRecords(records);
