@@ -109,7 +109,7 @@ class TestSignupAPI(TestCase):
         assert duplicate.status_code == status.HTTP_409_CONFLICT
         assert duplicate.json() == {
             "code": "EMAIL_ALREADY_EXISTS",
-            "message": "이미 사용중인 이메일입니다.",
+            "message": "사용할 수 없는 이메일입니다.",
             "field": "email",
         }
 
@@ -143,7 +143,7 @@ class TestSignupAPI(TestCase):
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json() == {
             "code": "EMAIL_ALREADY_EXISTS",
-            "message": "이미 사용중인 이메일입니다.",
+            "message": "사용할 수 없는 이메일입니다.",
             "field": "email",
         }
 

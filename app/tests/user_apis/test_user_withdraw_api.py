@@ -43,10 +43,12 @@ class TestUserWithdrawApi(TestCase):
             assert response.status_code == status.HTTP_204_NO_CONTENT
             assert response.content == b""
 
-            # 탈퇴한 계정은 로그인을 막는다(AccountWithdrawnError).
+            # 탈퇴한 계정은 로그인을 막는다. 사유는 알려주지 않는다 — 자격증명 오류와
+            # 같은 응답이라 탈퇴 여부가 드러나지 않는다(#196).
             login = await client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
 
-        assert login.status_code == status.HTTP_423_LOCKED
+        assert login.status_code == status.HTTP_400_BAD_REQUEST
+        assert login.json()["code"] == "INVALID_CREDENTIALS"
         assert (await User.get(email=EMAIL)).status == AccountStatus.WITHDRAWN
 
     async def test_withdraw_rejects_wrong_password_and_keeps_status(self):

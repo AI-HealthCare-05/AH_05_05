@@ -72,6 +72,9 @@ test('탈퇴 성공은 세션을 비우고 스플래시로 replace 이동한다'
   await dialog.getByRole('button', { name: '탈퇴하기' }).click();
 
   await expect(page).toHaveURL(/\/$/);
+  // 되돌릴 수 없는 동작인데 화면만 바뀌면 눌린 건지 알 수 없다.
+  // Toaster 가 앱 루트에 있어 화면을 옮긴 뒤에도 떠 있어야 한다(#196).
+  await expect(page.getByText('탈퇴되었습니다. 그동안 이용해 주셔서 감사합니다.')).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(() => ({

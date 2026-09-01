@@ -27,9 +27,11 @@ REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 # AuthService 가 던지는 HTTPException 의 상태 코드 -> 프론트가 분기에 쓸 code.
 # 서비스(은미님 파일)는 {detail} 만 주므로 라우터에서 형식을 맞춘다.
+# 로그인 실패는 사유를 구분하지 않아 400 하나뿐이다(#196).
+# 정지·탈퇴 계정에 쓰던 423 ACCOUNT_INACTIVE 를 없앴다 — 상태 코드만으로
+# 그 이메일이 가입돼 있다는 사실이 새어나갔다.
 _LOGIN_ERROR_CODES = {
     status.HTTP_400_BAD_REQUEST: "INVALID_CREDENTIALS",
-    status.HTTP_423_LOCKED: "ACCOUNT_INACTIVE",
 }
 
 
@@ -94,17 +96,15 @@ async def signup(
     status_code=status.HTTP_200_OK,
     responses={
         status.HTTP_400_BAD_REQUEST: {
-            "description": "이메일이 없거나 비밀번호가 틀림 (두 경우를 구분하지 않는다)",
+            "description": (
+                "로그인 실패. 계정 없음·비밀번호 불일치·정지·탈퇴·대기를 구분하지 않는다. "
+                "사유가 드러나면 그 이메일의 가입 여부가 새어나간다(#196). "
+                "관리자 로그인은 이 규칙을 따르지 않는다"
+            ),
             "content": {
                 "application/json": {
                     "example": {"code": "INVALID_CREDENTIALS", "message": "이메일 또는 비밀번호가 올바르지 않습니다."}
                 }
-            },
-        },
-        status.HTTP_423_LOCKED: {
-            "description": "정지·탈퇴·대기 계정. 관리자 로그인(403)과 상태 코드가 다르다",
-            "content": {
-                "application/json": {"example": {"code": "ACCOUNT_INACTIVE", "message": "비활성화된 계정입니다."}}
             },
         },
     },
