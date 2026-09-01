@@ -6,6 +6,9 @@ from dateutil.relativedelta import relativedelta
 from app.core import config
 
 MIN_PASSWORD_LENGTH = 8
+# 화면에서 받아야 할 길이 기준. DB 에는 해시가 저장되므로 컬럼 폭과는 무관하다.
+# 프론트 PASSWORD_MAX_LENGTH 와 같은 값이다.
+MAX_PASSWORD_LENGTH = 32
 MIN_BIRTH_DATE = date(1900, 1, 1)
 
 # 비밀번호에 반드시 포함되어야 하는 문자 종류.
@@ -20,11 +23,18 @@ _PASSWORD_CHARACTER_RULES = (
 def validate_password(password: str) -> str:
     """사용자·관리자 공통 비밀번호 정책.
 
-    두 곳이 같은 함수를 쓰므로 정책이 어긋날 일이 없다.
+    두 곳이 같은 함수를 쓰므로 정책이 어긋날 일이 없다. **상한도 관리자에 함께 적용된다.**
+    (관리자 임시 비밀번호 생성기는 12자라 상한에 걸리지 않는다.)
     무엇이 부족한지 알려줘야 사용자가 고칠 수 있으므로, 빠진 종류를 모아서 알려준다.
+
+    **이 함수는 「새로 정하는 비밀번호」에만 붙인다.** 로그인·탈퇴 확인·비밀번호 변경의
+    *현재* 비밀번호처럼 대조용으로 받는 값에 붙이면, 이 정책이 생기기 전에 더 긴 비밀번호로
+    가입한 계정이 로그인·탈퇴·변경 자체를 못 하게 된다.
     """
     if len(password) < MIN_PASSWORD_LENGTH:
         raise ValueError(f"비밀번호는 {MIN_PASSWORD_LENGTH}자 이상이어야 합니다.")
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise ValueError(f"비밀번호는 {MAX_PASSWORD_LENGTH}자 이하여야 합니다.")
 
     missing = [label for pattern, label in _PASSWORD_CHARACTER_RULES if not re.search(pattern, password)]
     if missing:
