@@ -14,9 +14,7 @@ from app.tests.med_apis.helpers import authentication_headers, create_supplement
 class TestMedNutrAPI(TestCase):
     async def _create_popularity_rows(self, user: User, *, manual_count: int):
         today = datetime.now(config.TIMEZONE).date()
-        products = [
-            await create_supplement(f"POPULAR-{index}", f"인기 표준 제품 {index}") for index in range(5)
-        ]
+        products = [await create_supplement(f"POPULAR-{index}", f"인기 표준 제품 {index}") for index in range(5)]
         for product in products:
             await UserSupplementNutrient.create(
                 user=user,
