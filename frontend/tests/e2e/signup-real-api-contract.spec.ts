@@ -1,4 +1,18 @@
-import { expect, test } from 'playwright/test';
+import { expect, test, type Page } from 'playwright/test';
+
+/**
+ * 상단 탭 버튼.
+ *
+ * `exact` 가 필요합니다. 그냥 `{ name: '회원가입' }` 이면 제출 버튼 「회원가입 완료」까지
+ * 잡혀 strict mode 위반이 납니다(회원가입 모드에서는 둘 다 존재). 로그인 탭도 마찬가지로
+ * 제출 버튼 이름이 '로그인' 이라 겹칩니다.
+ */
+const signupTab = (page: Page) => page.getByRole('button', { name: '회원가입', exact: true });
+const loginTab = (page: Page) => page.getByRole('button', { name: '로그인', exact: true });
+
+async function openSignupTab(page: Page) {
+  await signupTab(page).click();
+}
 
 test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 홈으로 이동한다', async ({ page }) => {
   let signupBody: unknown;
@@ -147,19 +161,6 @@ test('이메일 @ 뒤에 한글을 조합해도 앞서 입력한 주소가 남�
   await expect(emailInput).toHaveValue('ddfdd@ddadf.net');
 });
 
-test('회원가입 입력창은 DB 컬럼 폭까지만 받는다', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
-
-  // user.email 은 varchar(255), user.name 은 varchar(100) 이다.
-  await expect(page.getByLabel('이메일')).toHaveAttribute('maxlength', '255');
-  await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '100');
-  await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');
-
-  await page.getByLabel('이름').fill('가'.repeat(120));
-  await expect(page.getByLabel('이름')).toHaveValue('가'.repeat(100));
-});
-
 test('회원가입 이메일 API 검증 오류는 브라우저 검증 말풍선으로 안내한다', async ({ page }) => {
   await page.route('**/api/v1/auth/signup', async (route) => {
     await route.fulfill({
@@ -192,4 +193,74 @@ test('회원가입 이메일 API 검증 오류는 브라우저 검증 말풍선�
     .poll(() => emailInput.evaluate((input: HTMLInputElement) => input.validationMessage))
     .toBe('이메일 주소를 확인해주세요');
   await expect(page.getByText(/value is not a valid email address/)).toHaveCount(0);
+});
+
+test('탭을 옮기면 폼이 새로 시작된다', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('이메일').fill('typed@example.com');
+  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
+
+  await openSignupTab(page);
+
+  // 로그인 칸에 쳐둔 값이 회원가입 폼에 따라오면 안 된다.
+  await expect(page.getByLabel('이메일')).toHaveValue('');
+  await expect(page.getByLabel('비밀번호', { exact: true })).toHaveValue('');
+});
+
+test('같은 탭을 다시 눌러도 채워둔 값이 남는다', async ({ page }) => {
+  // 이 가드가 없으면 회원가입 폼을 다 채운 사람이 「회원가입」을 한 번 더 누르는 순간
+  // 전부 날아간다. 개선이 아니라 사고다.
+  await page.goto('/login');
+  await openSignupTab(page);
+
+  await page.getByLabel('이메일').fill('keep@example.com');
+  await page.getByLabel('이름').fill('유지');
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+
+  await openSignupTab(page);
+
+  await expect(page.getByLabel('이메일')).toHaveValue('keep@example.com');
+  await expect(page.getByLabel('이름')).toHaveValue('유지');
+  await expect(page.getByRole('checkbox', { name: /진료기록 수집/ })).toBeChecked();
+});
+
+test('탭을 옮기면 필수 동의도 꺼진다', async ({ page }) => {
+  await page.goto('/login');
+  await openSignupTab(page);
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+
+  await loginTab(page).click();
+  await openSignupTab(page);
+
+  // 이전 세션의 흔적으로 필수 동의가 켜져 있으면 안 된다.
+  await expect(page.getByRole('checkbox', { name: /진료기록 수집/ })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /AI 서비스 이용/ })).not.toBeChecked();
+});
+
+test('회원가입 입력창 상한은 화면 기준이다', async ({ page }) => {
+  // DB 컬럼 폭(email 255 · name 100)이 아니라 화면에서 받아야 할 길이 기준이다.
+  await page.goto('/login');
+  await openSignupTab(page);
+
+  await expect(page.getByLabel('이메일')).toHaveAttribute('maxlength', '40');
+  await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '20');
+  await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');
+  await expect(page.getByLabel('비밀번호', { exact: true })).toHaveAttribute('maxlength', '32');
+  await expect(page.getByLabel('비밀번호 확인')).toHaveAttribute('maxlength', '32');
+
+  await page.getByLabel('이름').fill('가'.repeat(25));
+  await expect(page.getByLabel('이름')).toHaveValue('가'.repeat(20));
+});
+
+test('로그인 비밀번호에는 상한을 걸지 않는다', async ({ page }) => {
+  // 이 정책이 생기기 전에 더 긴 비밀번호로 가입한 사람이 로그인 자체를 못 하게 된다.
+  await page.goto('/login');
+  const password = page.getByLabel('비밀번호', { exact: true });
+
+  await expect(password).not.toHaveAttribute('maxlength', /.+/);
+
+  const long = 'L'.repeat(40);
+  await password.fill(long);
+  await expect(password).toHaveValue(long);
 });

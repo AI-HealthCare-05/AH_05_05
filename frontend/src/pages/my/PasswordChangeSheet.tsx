@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { changePassword, type ChangePasswordPayload } from '@/entities/account';
 import { ApiError } from '@/shared/api/client';
+import { PASSWORD_MAX_LENGTH } from '@/shared/lib/password';
 import {
   Button,
   Dialog,
@@ -112,6 +113,8 @@ export function PasswordChangeSheet({
             type="password"
             autoComplete="current-password"
             value={currentPassword}
+            // 여기에는 maxLength 를 걸지 않습니다. 대조용으로 받는 값이라, 이 정책이
+            // 생기기 전에 더 긴 비밀번호로 가입한 사람이 비밀번호를 영영 못 바꾸게 됩니다.
             error={currentPasswordError ?? undefined}
             onChange={(event) => {
               setCurrentPassword(event.target.value);
@@ -124,6 +127,7 @@ export function PasswordChangeSheet({
             type="password"
             autoComplete="new-password"
             value={newPassword}
+            maxLength={PASSWORD_MAX_LENGTH}
             error={newPasswordError ?? undefined}
             onChange={(event) => {
               setNewPassword(event.target.value);
@@ -136,6 +140,7 @@ export function PasswordChangeSheet({
             type="password"
             autoComplete="new-password"
             value={newPasswordConfirm}
+            maxLength={PASSWORD_MAX_LENGTH}
             error={confirmError ?? undefined}
             onChange={(event) => {
               setNewPasswordConfirm(event.target.value);

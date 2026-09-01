@@ -18,13 +18,17 @@ from app.models.enums import Gender
 
 class SignUpRequest(BaseModel):
     # BeforeValidator 라야 EmailStr 의 영문 메시지보다 우리 안내가 먼저 나간다.
+    # 상한은 DB 컬럼 폭(varchar 255)이 아니라 화면에서 받아야 할 길이 기준이다.
+    # 프론트 EMAIL_MAX_LENGTH 와 같은 값이며, maxLength 는 개발자도구로 지울 수 있고
+    # API 직접 호출은 거치지도 않으므로 여기서도 막는다.
     email: Annotated[
         EmailStr,
-        Field(max_length=255),
+        Field(max_length=40),
         BeforeValidator(validate_ascii_email),
     ]
     password: Annotated[str, Field(min_length=8), AfterValidator(validate_password)]
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)]
+    # 상한은 DB 컬럼 폭(varchar 100)이 아니라 화면 기준이다. 프론트 NAME_MAX_LENGTH 와 같은 값.
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=20)]
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]
     birth_date: Annotated[date, AfterValidator(validate_birthday)]
     gender: Gender

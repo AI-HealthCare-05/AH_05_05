@@ -1,5 +1,11 @@
-/** DB `user.email` 컬럼(varchar 255)에 맞춘 상한. 서버 DTO 도 같은 값을 쓴다. */
-export const EMAIL_MAX_LENGTH = 255;
+/**
+ * 입력 상한. DB 컬럼(varchar 255)보다 좁다 — 일부러 그렇다.
+ *
+ * 컬럼 폭은 저장 한계일 뿐이고, 화면에서 받아야 할 길이는 그보다 훨씬 짧다.
+ * 200자짜리 이메일을 적는 사용자는 없다. 터무니없이 긴 입력을 문 앞에서 막는 것이 목적이다.
+ * 서버 DTO(SignUpRequest.email)도 같은 값을 쓴다.
+ */
+export const EMAIL_MAX_LENGTH = 40;
 
 /**
  * 이메일에 쓸 수 없는 문자.
@@ -10,7 +16,7 @@ export const EMAIL_MAX_LENGTH = 255;
  */
 const NOT_ALLOWED_IN_EMAIL = /[^!-~]/g;
 
-/** 입력값에서 이메일에 못 쓰는 문자를 지우고 컬럼 폭까지 자른다. */
+/** 입력값에서 이메일에 못 쓰는 문자를 지우고 입력 상한까지 자른다. */
 export function sanitizeEmailInput(value: string): string {
   return value.replace(NOT_ALLOWED_IN_EMAIL, '').slice(0, EMAIL_MAX_LENGTH);
 }

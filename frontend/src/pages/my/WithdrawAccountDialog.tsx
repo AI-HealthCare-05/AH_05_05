@@ -74,6 +74,9 @@ export function WithdrawAccountDialog({
           type="password"
           autoComplete="current-password"
           value={password}
+          // maxLength 를 걸지 않습니다. 대조용으로 받는 값이라, 비밀번호 상한이 생기기 전에
+          // 더 긴 비밀번호로 가입한 사람이 탈퇴 자체를 못 하게 됩니다.
+          // 서버 WithdrawRequest 가 validate_password 를 안 붙이는 것과 같은 이유입니다.
           error={passwordError ?? undefined}
           onChange={(event) => {
             setPassword(event.target.value);
