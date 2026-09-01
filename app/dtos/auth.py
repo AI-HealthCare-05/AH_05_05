@@ -12,7 +12,13 @@ from pydantic import (
     field_validator,
 )
 
-from app.core.validators import validate_ascii_email, validate_birthday, validate_password, validate_phone_number
+from app.core.validators import (
+    validate_ascii_email,
+    validate_birthday,
+    validate_name,
+    validate_password,
+    validate_phone_number,
+)
 from app.models.enums import Gender
 
 
@@ -28,7 +34,12 @@ class SignUpRequest(BaseModel):
     ]
     password: Annotated[str, Field(min_length=8), AfterValidator(validate_password)]
     # 상한은 DB 컬럼 폭(varchar 100)이 아니라 화면 기준이다. 프론트 NAME_MAX_LENGTH 와 같은 값.
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=20)]
+    # strip_whitespace 가 먼저 돌아 앞뒤 공백은 잘린 값이 validate_name 으로 간다.
+    name: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=2, max_length=20),
+        AfterValidator(validate_name),
+    ]
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]
     birth_date: Annotated[date, AfterValidator(validate_birthday)]
     gender: Gender
