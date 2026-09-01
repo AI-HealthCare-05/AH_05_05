@@ -23,6 +23,8 @@ function product(
   manufacturer: string,
   packageAmount: string,
   recommendedDailyCount: number | null,
+  ratingAverage: number | null = null,
+  reviewCount = 0,
 ): SupplementProduct {
   return {
     productId,
@@ -38,6 +40,8 @@ function product(
     recommendedDoseAmount: recommendedDailyCount,
     doseUnit: '정',
     recommendedSlots: ['morning'],
+    ratingAverage,
+    reviewCount,
     nutrients: BASE_MULTIVITAMIN_NUTRIENTS.map((nutrient) => ({ ...nutrient })),
   };
 }
@@ -47,14 +51,14 @@ function product(
  * 실제 제품 동기화가 아니라 과다 결과·브랜드 검색·페이지네이션을 검증하는 고정 픽스처입니다.
  */
 const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
-  product('sp-001', '센트룸 실버 우먼', '센트룸', '한국화이자', '90정', 1),
+  product('sp-001', '센트룸 실버 우먼', '센트룸', '한국화이자', '90정', 1, 4.2, 12),
   product('sp-002', '센트룸 실버 맨', '센트룸', '한국화이자', '90정', 1),
-  product('sp-003', '고려은단 멀티비타민 올인원', '고려은단', '고려은단헬스케어', '60정', 2),
+  product('sp-003', '고려은단 멀티비타민 올인원', '고려은단', '고려은단헬스케어', '60정', 2, 5, 1),
   product('sp-004', '종근당 아이커버 멀티비타민', '종근당', '종근당건강', '60정', 1),
   product('sp-005', '얼라이브 원스데일리 포 우먼', '얼라이브', '네이쳐스웨이', '60정', null),
   product('sp-006', '얼라이브 원스데일리 포 맨', '얼라이브', '네이쳐스웨이', '60정', 1),
   product('sp-007', '뉴트리코어 멀티비타민 미네랄', '뉴트리코어', '에프앤디넷', '60정', 2),
-  product('sp-008', '오쏘몰 이뮨', '오쏘몰', '오쏘몰파마', '30정', 1),
+  product('sp-008', '오쏘몰 이뮨', '오쏘몰', '오쏘몰파마', '30정', 1, 4.7, 8),
   product('sp-009', '세노비스 트리플러스', '세노비스', '사노피아벤티스', '100정', 2),
   product('sp-010', '솔가 여성용 멀티비타민', '솔가', '솔가코리아', '60정', 1),
   product('sp-011', 'GNC 메가맨', 'GNC', '동원F&B', '90정', 2),
@@ -109,35 +113,53 @@ function normalized(value: string): string {
   return value.toLocaleLowerCase('ko-KR').replace(/\s+/g, '');
 }
 
-function relevance(productItem: SupplementProduct, query: string): number {
-  const fields = [
-    productItem.productName,
-    productItem.brand,
-    productItem.manufacturer,
-    productItem.category,
-  ].map(normalized);
-  const normalizedQuery = normalized(query);
-  return fields.reduce((score, field, index) => {
-    if (field === normalizedQuery) return score + 100 - index;
-    if (field.startsWith(normalizedQuery)) return score + 60 - index;
-    if (field.includes(normalizedQuery)) return score + 30 - index;
-    return score;
-  }, 0);
+const MOCK_REGISTRATION_COUNTS: Record<string, number> = {
+  'sp-001': 18,
+  'sp-002': 7,
+  'sp-003': 25,
+  'sp-008': 14,
+};
+
+function compareName(left: SupplementProduct, right: SupplementProduct): number {
+  return left.productName.localeCompare(right.productName, 'ko-KR') || left.productId.localeCompare(right.productId);
 }
 
 export function mockSearchSupplementProducts({
   query,
+  sort = 'name',
   offset = 0,
   limit = 20,
 }: SearchSupplementProductsParams): SupplementSearchPage {
-  const trimmedQuery = query.trim();
+  const trimmedQuery = normalized(query);
   if (!trimmedQuery) return { items: [], total: 0, nextOffset: null };
 
-  const matches = SUPPLEMENT_PRODUCTS
-    .map((productItem, index) => ({ productItem, index, score: relevance(productItem, trimmedQuery) }))
-    .filter(({ score }) => score > 0)
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .map(({ productItem }) => productItem);
+  const matches = SUPPLEMENT_PRODUCTS.filter((productItem) =>
+    normalized(productItem.productName).includes(trimmedQuery),
+  ).sort((left, right) => {
+    if (sort === 'registered') {
+      return (
+        (MOCK_REGISTRATION_COUNTS[right.productId] ?? 0) -
+          (MOCK_REGISTRATION_COUNTS[left.productId] ?? 0) || compareName(left, right)
+      );
+    }
+    if (sort === 'rating') {
+      if (left.ratingAverage === null) return right.ratingAverage === null ? compareName(left, right) : 1;
+      if (right.ratingAverage === null) return -1;
+      return (
+        right.ratingAverage - left.ratingAverage ||
+        right.reviewCount - left.reviewCount ||
+        compareName(left, right)
+      );
+    }
+    if (sort === 'reviews') {
+      return (
+        right.reviewCount - left.reviewCount ||
+        (right.ratingAverage ?? -1) - (left.ratingAverage ?? -1) ||
+        compareName(left, right)
+      );
+    }
+    return compareName(left, right);
+  });
   const items = matches.slice(offset, offset + limit).map((productItem) => ({
     ...productItem,
     nutrients: productItem.nutrients.map((nutrient) => ({ ...nutrient })),

@@ -66,6 +66,16 @@ async function loadProduct(page: Page, productId: string): Promise<unknown> {
   }, productId);
 }
 
+async function searchProducts(
+  page: Page,
+  params: { query: string; sort: 'name' | 'registered' | 'rating' | 'reviews' },
+): Promise<unknown> {
+  return page.evaluate(async (searchParams) => {
+    const supplementApi = await import('/src/entities/supplement/api.ts');
+    return supplementApi.searchSupplementProducts(searchParams);
+  }, params);
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -168,5 +178,40 @@ test('제품 ID로 상세 API를 조회해 추가 시트용 제품으로 매핑�
     recommendedDoseAmount: 2,
     doseUnit: '정',
     recommendedSlots: ['morning'],
+  });
+});
+test('실 검색 API에 sort를 전달하고 Decimal 평점을 숫자로 매핑한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  let requestedSort = '';
+  await page.route('**/api/v1/med/nutr?*', async (route) => {
+    requestedSort = new URL(route.request().url()).searchParams.get('sort') ?? '';
+    await fulfillJson(route, {
+      items: [{ ...PRODUCT_RESPONSE, rating_average: '4.2', review_count: 12 }],
+      total: 1,
+      offset: 0,
+      limit: 20,
+    });
+  });
+  await page.goto('/dev/gallery');
+
+  const result = await searchProducts(page, { query: '종합비타민', sort: 'rating' });
+
+  expect(requestedSort).toBe('rating');
+  expect(result).toMatchObject({
+    items: [{ productId: '2048', ratingAverage: 4.2, reviewCount: 12 }],
+  });
+});
+
+test('목업 검색도 평점순에서 미평가 제품을 뒤로 보낸다', async ({ page }) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+  await page.goto('/dev/gallery');
+
+  const result = await searchProducts(page, { query: '센트룸', sort: 'rating' });
+
+  expect(result).toMatchObject({
+    items: [
+      { productId: 'sp-001', ratingAverage: 4.2, reviewCount: 12 },
+      { productId: 'sp-002', ratingAverage: null, reviewCount: 0 },
+    ],
   });
 });

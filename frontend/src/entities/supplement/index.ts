@@ -27,6 +27,7 @@ export type {
   SupplementRanking,
   SupplementRankingItem,
   SupplementSearchPage,
+  SupplementSortKey,
   SupplementSlot,
   UpdateSupplementPayload,
 } from './types';
