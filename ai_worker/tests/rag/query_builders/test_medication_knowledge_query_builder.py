@@ -69,6 +69,15 @@ def test_build_keeps_specific_vitamin_b_member_as_ingredient() -> None:
     assert plan.section_types == [KnowledgeSectionType.DAILY_INTAKE]
 
 
+def test_build_keeps_disease_topic_without_predicate_noise() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "과민성대장증후군은 어떤 증상이 나타나고 어떻게 관리하나요?",
+    )
+
+    assert plan.entity_names == ["과민성대장증후군"]
+    assert plan.entities[0].entity_type == MedicationQueryEntityType.TOPIC
+
+
 def test_build_keeps_explicit_medication_product_cue() -> None:
     plan = MedicationKnowledgeQueryBuilder().build(
         "마그밀정 500mg 주의사항",
@@ -543,6 +552,7 @@ def test_build_preserves_multiword_vaccine_name_as_one_entity() -> None:
 
     assert plan.entity_names == ["A형 간염 백신"]
     assert plan.entities[0].kind == InteractionEntityKind.DRUG
+    assert plan.section_types == [KnowledgeSectionType.FUNCTION]
 
 
 def test_build_detects_supplement_absorption_effect_as_interaction() -> None:

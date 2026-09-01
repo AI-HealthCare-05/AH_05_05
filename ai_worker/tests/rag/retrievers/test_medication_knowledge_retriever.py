@@ -168,6 +168,89 @@ async def test_search_expands_ingredient_family_to_member_metadata_filters() -> 
     assert result.diagnostics.selected_search_tier == "ENTITY"
 
 
+async def test_search_rescues_low_score_exact_topic_title() -> None:
+    topic = build_chunk(
+        0.51,
+        title="과민성대장증후군 곽혜선 final",
+        content="과민성대장증후군의 증상과 생활 관리 방법을 설명합니다.",
+        document_type=KnowledgeDocumentType.PHARM_REVIEW,
+        section_type=KnowledgeSectionType.OVERVIEW,
+    )
+    store = FakeKnowledgeStore(responses=[[topic]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "과민성대장증후군은 어떤 증상이 나타나고 어떻게 관리하나요?",
+        ),
+    )
+
+    assert result.chunks == [topic]
+    assert result.diagnostics.accepted_count == 1
+
+
+async def test_search_trusts_exact_pair_metadata_for_summary_evidence() -> None:
+    execution_plan = build_execution_plan(
+        "와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
+    )
+    target = build_chunk(
+        0.56,
+        title="항응고제와 영양소 상호작용",
+        content="관련 상호작용 연구의 핵심 결과를 요약합니다.",
+        document_type=KnowledgeDocumentType.PHARM_REVIEW,
+        section_type=KnowledgeSectionType.SUMMARY,
+    )
+    target.metadata.interaction_pair_keys = execution_plan.interaction_pair_keys
+    store = FakeKnowledgeStore(responses=[[target]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=execution_plan,
+    )
+
+    assert result.chunks == [target]
+    assert result.diagnostics.selected_search_tier == "EXACT_PAIR"
+
+
+async def test_search_rescues_verified_drug_food_relation_with_food_alias() -> None:
+    target = build_chunk(
+        0.49,
+        title="비스포스포네이트 복약 안내",
+        content=(
+            "알렌드로네이트는 아침 공복에 충분한 물과 함께 복용해야 합니다."
+        ),
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    target.metadata.drug_names = ["알렌드로네이트"]
+    store = FakeKnowledgeStore(responses=[[], [target]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "알렌드로네이트는 음식이나 물과 어떻게 복용해야 하나요?",
+        ),
+    )
+
+    assert result.chunks == [target]
+    assert result.diagnostics.selected_search_tier == "EXACT_PAIR"
+
+
 async def test_search_relaxes_pair_to_entities_then_semantic_without_hint_filters() -> None:
     store = FakeKnowledgeStore(responses=[])
     retriever = MedicationKnowledgeRetriever(

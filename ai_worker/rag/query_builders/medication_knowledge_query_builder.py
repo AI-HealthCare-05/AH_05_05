@@ -58,7 +58,7 @@ class MedicationQueryEntityNormalizer:
         r"주의(?:하(?:면|나요|야|지|고|는|여)|할|해야)|"
         r"복용(?:해|해야|하면|하나요|하는|할|하지|하고|했어)|"
         r"떨어지(?:면|나요|는|고|지)|"
-        r"알려|요약해|등록해|확인해|검색해"
+        r"나타나|관리하|알려|요약해|등록해|확인해|검색해"
         r")[가-힣]*$"
     )
     _STOPWORDS = {
@@ -128,6 +128,7 @@ class MedicationQueryEntityNormalizer:
         "사례",
         "섭취량",
         "심한",
+        "증상",
         "어지러움",
         "얼마인가요",
         "역할",
@@ -570,7 +571,10 @@ class MedicationKnowledgeQueryBuilder:
             return [KnowledgeSectionType.INTERACTION], ["상호작용", "병용 주의"]
         section_types: list[KnowledgeSectionType] = []
         expansion_terms: list[str] = []
-        if any(keyword in question for keyword in ("효능", "효과", "기능", "왜 먹")):
+        if any(
+            keyword in question
+            for keyword in ("효능", "효과", "기능", "역할", "왜 먹")
+        ):
             section_types.append(KnowledgeSectionType.FUNCTION)
             expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
         if any(

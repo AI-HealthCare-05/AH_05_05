@@ -19,6 +19,7 @@ from ai_worker.schemas.knowledge import (
 )
 from ai_worker.schemas.medication_search import (
     MedicationKnowledgeQueryPlan,
+    MedicationQueryEntityType,
     MedicationSearchExecutionPlan,
 )
 
@@ -63,9 +64,14 @@ class MedicationKnowledgeRetriever:
     _SECTION_BONUS = 0.05
     _DOCUMENT_TYPE_BONUS = 0.03
     _INTERACTION_TYPE_BONUS = 0.03
+    _EXACT_TOPIC_TITLE_BONUS = 0.15
     _BOOST_ELIGIBILITY_MARGIN = 0.10
     _PAIR_BOOST_ELIGIBILITY_MARGIN = 0.15
+    _VERIFIED_RELATION_ELIGIBILITY_MARGIN = 0.20
     _MAX_CHUNKS_PER_DOCUMENT = 2
+    _GENERIC_FOOD_ALIASES = {
+        "음식": ("음식", "식사", "공복", "물", "음료", "주스"),
+    }
 
     def __init__(
         self,
@@ -383,16 +389,10 @@ class MedicationKnowledgeRetriever:
         if result.similarity_score >= self._min_similarity_score:
             return _EligibilityReason.ELIGIBLE
 
-        eligibility_margin = (
-            self._PAIR_BOOST_ELIGIBILITY_MARGIN
-            if self._requires_entity_pair_match(plan) and self._matches_any_interaction_pair(result, plan=plan)
-            else self._BOOST_ELIGIBILITY_MARGIN
+        eligibility_margin = self._eligibility_margin(
+            result,
+            plan=plan,
         )
-        if self._has_exact_drug_section_match(result, plan=plan):
-            eligibility_margin = max(
-                eligibility_margin,
-                self._PAIR_BOOST_ELIGIBILITY_MARGIN,
-            )
         minimum_raw_score = max(
             0.0,
             self._min_similarity_score - eligibility_margin,
@@ -408,6 +408,34 @@ class MedicationKnowledgeRetriever:
         if self._relevance_score(result, plan=plan) < self._min_similarity_score:
             return _EligibilityReason.BELOW_SCORE
         return _EligibilityReason.ELIGIBLE
+
+    @classmethod
+    def _eligibility_margin(
+        cls,
+        result: RetrievedKnowledgeChunk,
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> float:
+        margin = (
+            cls._PAIR_BOOST_ELIGIBILITY_MARGIN
+            if cls._requires_entity_pair_match(plan)
+            and cls._matches_any_interaction_pair(result, plan=plan)
+            else cls._BOOST_ELIGIBILITY_MARGIN
+        )
+        if cls._has_exact_drug_section_match(
+            result,
+            plan=plan,
+        ) or cls._has_topic_title_prefix_match(result, plan=plan):
+            margin = max(
+                margin,
+                cls._PAIR_BOOST_ELIGIBILITY_MARGIN,
+            )
+        if cls._has_same_sentence_interaction_pair(result, plan=plan):
+            margin = max(
+                margin,
+                cls._VERIFIED_RELATION_ELIGIBILITY_MARGIN,
+            )
+        return margin
 
     @classmethod
     def _relevance_score(
@@ -452,7 +480,10 @@ class MedicationKnowledgeRetriever:
         result: RetrievedKnowledgeChunk,
     ) -> set[KnowledgeSectionType]:
         if result.metadata.document_type != KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
-            return {result.metadata.section_type}
+            section_types = {result.metadata.section_type}
+            if result.metadata.interaction_pair_keys:
+                section_types.add(KnowledgeSectionType.INTERACTION)
+            return section_types
 
         return cls._explicit_legacy_section_types(result) or {
             result.metadata.section_type,
@@ -514,6 +545,8 @@ class MedicationKnowledgeRetriever:
     ) -> float:
         query_entities = cls._normalized_query_entities(plan)
         metadata_entities = cls._metadata_entity_aliases(result)
+        if cls._has_topic_title_prefix_match(result, plan=plan):
+            return cls._EXACT_TOPIC_TITLE_BONUS
         if len(query_entities) >= 2 and cls._matches_any_interaction_pair(result, plan=plan):
             return cls._PAIR_ENTITY_BONUS
         if query_entities.intersection(metadata_entities):
@@ -582,6 +615,10 @@ class MedicationKnowledgeRetriever:
         *,
         plan: MedicationKnowledgeQueryPlan,
     ) -> bool:
+        if set(plan.interaction_pair_keys).intersection(
+            result.metadata.interaction_pair_keys,
+        ):
+            return True
         searchable_text = cls._normalize_name(
             " ".join(
                 [
@@ -593,8 +630,14 @@ class MedicationKnowledgeRetriever:
             )
         )
         return any(
-            cls._normalize_name(pair.left_name) in searchable_text
-            and cls._normalize_name(pair.right_name) in searchable_text
+            cls._interaction_entity_matches_text(
+                pair.left_name,
+                searchable_text,
+            )
+            and cls._interaction_entity_matches_text(
+                pair.right_name,
+                searchable_text,
+            )
             for pair in plan.interaction_pairs
         )
 
@@ -613,9 +656,41 @@ class MedicationKnowledgeRetriever:
             if sentence.strip()
         ]
         return any(
-            cls._normalize_name(pair.left_name) in sentence and cls._normalize_name(pair.right_name) in sentence
+            cls._interaction_entity_matches_text(pair.left_name, sentence)
+            and cls._interaction_entity_matches_text(pair.right_name, sentence)
             for pair in plan.interaction_pairs
             for sentence in sentences
+        )
+
+    @classmethod
+    def _interaction_entity_matches_text(
+        cls,
+        entity_name: str,
+        normalized_text: str,
+    ) -> bool:
+        normalized_name = cls._normalize_name(entity_name)
+        aliases = cls._GENERIC_FOOD_ALIASES.get(normalized_name)
+        if aliases is None:
+            return normalized_name in normalized_text
+        return any(
+            cls._normalize_name(alias) in normalized_text
+            for alias in aliases
+        )
+
+    @classmethod
+    def _has_topic_title_prefix_match(
+        cls,
+        result: RetrievedKnowledgeChunk,
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        normalized_title = cls._normalize_name(result.metadata.title)
+        return any(
+            entity.entity_type == MedicationQueryEntityType.TOPIC
+            and normalized_title.startswith(
+                cls._normalize_name(entity.canonical_name),
+            )
+            for entity in plan.entities
         )
 
     @classmethod
