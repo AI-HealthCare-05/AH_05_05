@@ -28,7 +28,9 @@ test('회원 탈퇴는 로그아웃과 같은 외곽선 버튼에서 빨간 글�
 
   const dialog = await openWithdrawalDialog(page);
   await expect(dialog).toContainText('복약 기록과 등록한 영양제를 다시 볼 수 없어요.');
-  await expect(dialog).toContainText('같은 이메일로 다시 가입할 수 있지만, 이전 기록은 복구되지 않아요.');
+  // 되돌릴 수 없는 동작이라 재가입 불가를 누르기 전에 알려야 한다.
+  // 예전 문구는 "다시 가입할 수 있다"였는데 사실이 아니었다(#194).
+  await expect(dialog).toContainText('탈퇴하면 같은 이메일로 다시 가입할 수 없어요.');
   await expect(dialog).not.toContainText('삭제');
 
   const password = dialog.getByLabel('비밀번호');
