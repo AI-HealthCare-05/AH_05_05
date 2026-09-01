@@ -53,26 +53,17 @@ class CareAdvice(models.Model):
 
 class FollowUpVisit(models.Model):
     id = fields.BigIntField(primary_key=True)
-    care_episode: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
-        "models.CareEpisode",
+    user: fields.ForeignKeyRelation[models.Model] = fields.ForeignKeyField(
+        "models.User",
         related_name="follow_up_visits",
         on_delete=fields.CASCADE,
     )
-    source_ocr_job: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.OcrJob",
-        related_name="follow_up_visits",
-        null=True,
-        on_delete=fields.SET_NULL,
-    )
     visit_date = fields.DateField()
     visit_time = fields.TimeField(null=True)
-    department = fields.CharField(max_length=255, null=True)
-    doctor_name = fields.CharField(max_length=255, null=True)
-    place = fields.CharField(max_length=255, null=True)
-    purpose = fields.CharField(max_length=255, null=True)
+    hospital = fields.CharField(max_length=255, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(null=True)
 
     class Meta:
         table = "follow_up_visits"
-        indexes = (("care_episode",), ("visit_date", "visit_time", "id"))
+        indexes = (("user",), ("visit_date", "visit_time", "id"))

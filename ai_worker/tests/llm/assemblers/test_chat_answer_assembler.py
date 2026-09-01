@@ -55,10 +55,7 @@ def build_patient_context() -> PatientContext:
                     10,
                     0,
                 ),
-                department="신경과",
-                doctor_name="담당의",
-                place="본관 2층",
-                purpose="퇴원 후 경과 확인",
+                hospital="테스트병원",
             )
         ],
     )
@@ -153,4 +150,4 @@ def test_assemble_follow_up_uses_confirmed_schedule() -> None:
         supplement=ChatAnswerSupplement(),
     )
 
-    assert ("2026-08-20 10:00 · 신경과 · 담당의 · 퇴원 후 경과 확인 · 본관 2층") in answer
+    assert "2026-08-20 10:00 · 테스트병원" in answer

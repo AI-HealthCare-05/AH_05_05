@@ -16,6 +16,7 @@ from ai_worker.schemas.guide import (
 )
 from app.models.care import (
     CareAdvice,
+    CareEpisode,
     FollowUpVisit,
 )
 from app.models.enums import (
@@ -112,17 +113,19 @@ class RecoveryGuideRepository:
             )
 
         elif source_kind == SchemaPatientSourceKind.FOLLOW_UP_VISIT:
-            belongs_to_episode = await (
-                FollowUpVisit.filter(
-                    id=source.follow_up_visit_id,
-                    care_episode_id=care_episode_id,
+            care_episode = await CareEpisode.filter(id=care_episode_id).using_db(connection).only("user_id").first()
+            if care_episode is not None:
+                belongs_to_episode = await (
+                    FollowUpVisit.filter(
+                        id=source.follow_up_visit_id,
+                        user_id=care_episode.user_id,
+                    )
+                    .using_db(connection)
+                    .exists()
                 )
-                .using_db(connection)
-                .exists()
-            )
 
         if not belongs_to_episode:
-            raise ValueError("환자 출처가 현재 케어 에피소드에 속하지 않습니다.")
+            raise ValueError("환자 출처가 현재 사용자 또는 케어 에피소드에 속하지 않습니다.")
 
     @staticmethod
     async def _save_source(

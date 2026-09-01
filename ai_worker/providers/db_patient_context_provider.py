@@ -48,7 +48,7 @@ class DbPatientContextProvider:
         )
 
         follow_up_visits = await FollowUpVisit.filter(
-            care_episode_id=care_episode_id,
+            user_id=user_id,
         ).order_by(
             "visit_date",
             "visit_time",
@@ -93,10 +93,7 @@ class DbPatientContextProvider:
                         visit_date=visit.visit_date,
                         visit_time=visit.visit_time,
                     ),
-                    department=visit.department,
-                    doctor_name=visit.doctor_name,
-                    place=visit.place,
-                    purpose=visit.purpose,
+                    hospital=visit.hospital,
                 )
                 for visit in follow_up_visits
             ],

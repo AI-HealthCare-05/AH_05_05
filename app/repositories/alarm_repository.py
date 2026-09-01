@@ -45,9 +45,7 @@ class AlarmRepository:
         )
 
     async def get_owned_follow_up_visit(self, visit_id: int, user_id: int) -> FollowUpVisit | None:
-        return await FollowUpVisit.get_or_none(id=visit_id, care_episode__user_id=user_id).prefetch_related(
-            "care_episode"
-        )
+        return await FollowUpVisit.get_or_none(id=visit_id, user_id=user_id)
 
     async def create_alarm(
         self,

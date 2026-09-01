@@ -56,12 +56,13 @@ class TestAlarmCrudAPI(TestCase):
             user = await User.get(email=email)
             care_episode = await CareEpisode.create(user=user, title="외래 진료 테스트")
             first_visit = await FollowUpVisit.create(
-                care_episode=care_episode,
+                user=user,
                 visit_date=date(2026, 8, 25),
                 visit_time=time(10, 0),
+                hospital="포케병원",
             )
             second_visit = await FollowUpVisit.create(
-                care_episode=care_episode,
+                user=user,
                 visit_date=first_visit.visit_date + timedelta(days=7),
                 visit_time=first_visit.visit_time,
             )
@@ -102,9 +103,8 @@ class TestAlarmCrudAPI(TestCase):
                 name="다른 사용자",
             )
             owner_episode = await CareEpisode.create(user=owner, title="소유자 에피소드")
-            other_episode = await CareEpisode.create(user=other, title="다른 사용자 에피소드")
             other_visit = await FollowUpVisit.create(
-                care_episode=other_episode,
+                user=other,
                 visit_date=date(2026, 8, 25),
                 visit_time=time(10, 0),
             )
@@ -118,15 +118,14 @@ class TestAlarmCrudAPI(TestCase):
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Follow-up visit not found."
 
-    async def test_follow_up_visit_must_match_care_episode(self):
+    async def test_follow_up_visit_is_owned_by_user_independently_of_care_episode(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "follow-up-mismatch@example.com"
             headers = await authentication_headers(client, email, "01011110006")
             user = await User.get(email=email)
             first_episode = await CareEpisode.create(user=user, title="첫 번째 에피소드")
-            second_episode = await CareEpisode.create(user=user, title="두 번째 에피소드")
             visit = await FollowUpVisit.create(
-                care_episode=second_episode,
+                user=user,
                 visit_date=date(2026, 8, 25),
                 visit_time=time(10, 0),
             )
@@ -137,8 +136,8 @@ class TestAlarmCrudAPI(TestCase):
                 headers=headers,
             )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
-        assert response.json()["detail"] == "Follow-up visit does not match care episode."
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["follow_up_visit_id"] == visit.id
 
     async def test_actions_endpoint_performs_supported_alarm_transitions(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

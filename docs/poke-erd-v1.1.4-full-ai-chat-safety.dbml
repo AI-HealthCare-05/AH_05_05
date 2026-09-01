@@ -1306,33 +1306,27 @@ Table care_advices {
    --------------------------------------------------------- */
 Table follow_up_visits {
   id bigint [pk, increment]
-  care_episode_id bigint [not null]
-  source_ocr_job_id bigint [note: '현재 확정 일정을 만든 OCR 작업. 원본 파기와 독립된 추적용']
+  user_id bigint [not null, note: '일정 소유 사용자']
   visit_date date [not null]
   visit_time time [note: '문서에 시각이 명시된 경우만 저장하며 임의의 00:00을 만들지 않는다']
-  department varchar(255) [note: "'정형외과(OS)'. 일정 화면이 '어디로 가야 하나'를 표시하는 데 쓴다"]
-  doctor_name varchar(255)
-  place varchar(255) [note: "'본관 2층'"]
-  purpose varchar(255) [note: "'실밥 제거', '흉부 X선 확인'"]
+  hospital varchar(255) [note: "진료·검사 예정 병원명. 예: '포케병원'"]
   created_at datetime [not null, default: `current_timestamp`]
   updated_at datetime
   indexes {
-    care_episode_id
+    user_id
     (visit_date, visit_time, id) [note: '일정 화면 날짜·시각·PK 순 통합 목록']
   }
   Note: '''
-  조제약 약봉투 OCR에서는 이 테이블을 생성하지 않는다.
-  외래·검사 일정 입력 또는 해당 문서 OCR 흐름에서 별도로 생성한다.
+  사용자에게 속한 외래·검사 일정을 저장한다. care_episode와 독립적으로 관리한다.
+  조제약 약봉투 OCR에서 다음 내방일이 확정되면 사용자 소유 일정으로 생성할 수 있다.
 
   alarms 로 대체할 수 없다. 알람은 "알려줄 것"이고 일정은 "표시할 사실"이다.
   알람 행이 곧 일정이면 사용자가 알림을 끄는 순간 일정 화면이 비어버린다.
-  일정은 날짜순으로 통합해 보여준다 — 케어별로 나누지 않는다.
-  각 항목이 날짜·시각·장소를 자기 안에 갖고 있어 출처 표시가 없어도 헷갈리지 않는다.
-  외래 예약일은 care_episodes.planned_end_at 을 연장하는 근거가 되기도 한다.
+  일정은 사용자 기준으로 조회하여 날짜순으로 통합해 보여준다.
+  각 항목이 날짜·시각·병원 정보를 자기 안에 갖는다.
   일정 종류(진료/검사/재활)를 분류하는 컬럼은 두지 않는다 — 분류 규칙이 없어 서버가 추측하게 된다.
   ocr-demo-result-v3의 followUpVisits[]를 사용자 확인 후 confirm 트랜잭션에서 저장한다.
   visitDate는 필수이고 visitTime은 선택이다. 실제 날짜 예약행이 없으면 빈 배열을 허용한다.
-  source_ocr_job_id는 잠근 READY_FOR_REVIEW 작업이 같은 care_episode 소속인지 검증한 뒤 기록한다.
   '''
 }
 
@@ -1342,10 +1336,9 @@ Table follow_up_visits {
 Ref: medications.care_episode_id > care_episodes.id [delete: cascade]
 Ref: medication_slots.medication_id > medications.id [delete: cascade]
 Ref: care_advices.care_episode_id > care_episodes.id [delete: cascade]
-Ref: follow_up_visits.care_episode_id > care_episodes.id [delete: cascade]
+Ref: follow_up_visits.user_id > user.id [delete: cascade]
 /* 추적용 참조. OCR 원본이 파기돼도 확정 데이터는 남아야 하므로 set null 이다. */
 Ref: medications.source_ocr_job_id > ocr_jobs.id [delete: set null]
-Ref: follow_up_visits.source_ocr_job_id > ocr_jobs.id [delete: set null]
 
 
 /* ---------------------------------------------------------
@@ -1948,8 +1941,6 @@ Ref: medication_safety_rule_sources.medication_safety_rule_id > medication_safet
 Ref: "supplement_nutrients"."id" ?<? "supplement_nutrients"."vitamin_a_ug_rae"
 
 Ref: "alarm_events"."id" -? "user_suppl_nutrient"."id"
-
-Ref: "follow_up_visits"."id" ?<? "follow_up_visits"."source_ocr_job_id"
 
   /* =========================================================
    영양제 랭킹 전시

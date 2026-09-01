@@ -386,7 +386,7 @@ async def test_save_rejects_patient_source_from_other_episode(
     )
     other_follow_up = await FollowUpVisit.create(
         id=3001,
-        care_episode=other_episode,
+        user=other_user,
         visit_date=date(2026, 8, 20),
         visit_time=time(10, 0),
     )
