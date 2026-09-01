@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ChevronRight, Plus, Sprout } from 'lucide-react';
+import { ChevronRight, Plus, Sprout, Star } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
 import {
@@ -10,6 +10,7 @@ import {
   summarizeNutrients,
   updateSupplement,
   type AddSupplementPayload,
+  type NutrientStandards,
   type NutrientTotal,
   type Supplement,
   type UpdateSupplementPayload,
@@ -56,6 +57,7 @@ export function SupplementsPage({
   const location = useLocation();
   const routePresetProductId = presetProductIdFromState(location.state);
   const [supplements, setSupplements] = useState<Supplement[] | null>(supplementsOverride ?? null);
+  const [standards, setStandards] = useState<NutrientStandards | null>(null);
   const [profile, setProfile] = useState<NutrientStandardProfile | null>(
     profileOverride ?? null,
   );
@@ -66,8 +68,11 @@ export function SupplementsPage({
   const [editingSupplement, setEditingSupplement] = useState<Supplement | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveErrorTitle, setSaveErrorTitle] = useState('영양제를 추가하지 못했어요');
-  const totals = useMemo(() => summarizeNutrients(supplements ?? []), [supplements]);
-  const hasStandardProfile = Boolean(profile?.birthDate && profile.gender);
+  const totals = useMemo(
+    () => summarizeNutrients(supplements ?? [], standards),
+    [standards, supplements],
+  );
+  const hasStandardProfile = standards !== null;
   const exceeded = hasStandardProfile ? totals.filter((total) => total.exceeded) : [];
   const neutral = hasStandardProfile ? totals.filter((total) => !total.exceeded) : totals;
   const supplementsWithNutrients = (supplements ?? []).filter(
@@ -95,22 +100,25 @@ export function SupplementsPage({
   useEffect(() => {
     if (supplementsOverride) {
       setSupplements(supplementsOverride);
-      return;
     }
     let cancelled = false;
     getSupplements()
       .then((result) => {
-        if (!cancelled) setSupplements(result);
+        if (cancelled) return;
+        if (!supplementsOverride) setSupplements(result.items);
+        const overrideHasProfile =
+          profileOverride === undefined ||
+          Boolean(profileOverride.birthDate && profileOverride.gender);
+        setStandards(overrideHasProfile ? result.standards : null);
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : '영양제를 불러오지 못했어요.');
-        }
+        if (cancelled || supplementsOverride) return;
+        setLoadError(error instanceof Error ? error.message : '영양제를 불러오지 못했어요.');
       });
     return () => {
       cancelled = true;
     };
-  }, [supplementsOverride]);
+  }, [profileOverride, supplementsOverride]);
 
   useEffect(() => {
     if (profileOverride !== undefined) {
@@ -239,58 +247,80 @@ export function SupplementsPage({
                       {supplement.doseUnit} ·{' '}
                       {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                     </span>
+                    {supplement.score !== null && (
+                      <span
+                        className="mt-1 flex items-center gap-0.5"
+                        aria-label={`별 ${supplement.score}점`}
+                      >
+                        {Array.from({ length: supplement.score }, (_, index) => (
+                          <Star
+                            key={index}
+                            aria-hidden
+                            className="size-4 fill-current text-primary"
+                          />
+                        ))}
+                      </span>
+                    )}
                   </span>
                   <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
                 </button>
               ))}
             </section>
 
-            <section className="flex flex-col gap-3" aria-labelledby="nutrient-total-title">
-              <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
-                성분 합계
-              </h2>
-              {exceeded.map((total) => (
-                <NutrientTotalCard
-                  key={total.nutrientId}
-                  total={total}
-                  showStandards={hasStandardProfile}
-                />
-              ))}
-              {neutral.length > 0 && (
-                <Card className="gap-0 overflow-hidden p-0">
-                  {neutral.map((total) => (
+            {supplements.length > 0 && (
+              <>
+                <section className="flex flex-col gap-3" aria-labelledby="nutrient-total-title">
+                  <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
+                    성분 합계
+                  </h2>
+                  {exceeded.map((total) => (
                     <NutrientTotalCard
                       key={total.nutrientId}
                       total={total}
                       showStandards={hasStandardProfile}
-                      grouped
                     />
                   ))}
-                </Card>
-              )}
-            </section>
+                  {neutral.length > 0 && (
+                    <Card className="gap-0 overflow-hidden p-0">
+                      {neutral.map((total) => (
+                        <NutrientTotalCard
+                          key={total.nutrientId}
+                          total={total}
+                          showStandards={hasStandardProfile}
+                          grouped
+                        />
+                      ))}
+                    </Card>
+                  )}
+                </section>
 
-            <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-              <p>{standardSourceLabel(profile)}</p>
-              <p>
-                등록한 건강기능식품 {supplementsWithNutrients}개만 더한 값입니다. 음식과 의약품을 통한
-                섭취량은 포함되지 않았습니다.
-              </p>
-              <p>
-                직접 입력한 {manuallyEnteredSupplements}개는 성분을 알 수 없어 합계에 포함하지
-                않았습니다.
-              </p>
-              {profileResolved && !hasStandardProfile && (
-                <button
-                  type="button"
-                  className="mt-2 flex min-h-touch items-center justify-between gap-3 rounded-control bg-card px-4 py-3 text-left text-sm font-bold text-foreground shadow-card"
-                  onClick={() => navigate('/my/profile')}
-                >
-                  <span>생년월일과 성별을 입력하면 나이·성별에 맞는 기준을 보여드려요</span>
-                  <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
-                </button>
-              )}
-            </div>
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                  <p>{standardSourceLabel(profile)}</p>
+                  {supplementsWithNutrients > 0 && (
+                    <p>
+                      등록한 건강기능식품 {supplementsWithNutrients}개만 더한 값입니다. 음식과 의약품을
+                      통한 섭취량은 포함되지 않았습니다.
+                    </p>
+                  )}
+                  {manuallyEnteredSupplements > 0 && (
+                    <p>
+                      직접 입력한 {manuallyEnteredSupplements}개는 성분을 알 수 없어 합계에 포함하지
+                      않았습니다.
+                    </p>
+                  )}
+                  {profileResolved && !hasStandardProfile && (
+                    <button
+                      type="button"
+                      className="mt-2 flex min-h-touch items-center justify-between gap-3 rounded-control bg-card px-4 py-3 text-left text-sm font-bold text-foreground shadow-card"
+                      onClick={() => navigate('/my/profile')}
+                    >
+                      <span>생년월일과 성별을 입력하면 나이·성별에 맞는 기준을 보여드려요</span>
+                      <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
 
             <Button variant="secondary" onClick={openAddSheet}>
               <Plus aria-hidden className="mr-2 size-5" />
@@ -346,18 +376,13 @@ function NutrientTotalCard({
   const content = (
     <>
         <div className="flex items-start gap-3">
-          <div className="flex items-center gap-2">
-            {isOverUpperLimit && (
-              <AlertCircle aria-hidden className="size-5 shrink-0 text-warning" />
-            )}
-            <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
-          </div>
+          <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
         </div>
 
         <div className="flex items-baseline gap-2">
           <strong
             className={`text-metric font-bold tnum ${
-              isOverUpperLimit ? 'text-warning-strong' : 'text-foreground'
+              isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
             }`}
           >
             {numberFormat.format(total.amount)}
@@ -365,38 +390,29 @@ function NutrientTotalCard({
           <span className="text-unit text-muted-foreground">{total.unit}</span>
         </div>
 
-        {showStandards && (
+        {showStandards && (evaluation.base !== null || total.ul !== null) && (
           <>
-            {evaluation.base === null && total.ul === null ? (
-              <p className="text-sm text-muted-foreground">기준이 없는 성분이에요</p>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-unit text-muted-foreground tnum">
-                  {evaluation.base !== null && (
-                    <span>
-                      {evaluation.baseKind === 'ai' ? '충분' : '권장'}{' '}
-                      {numberFormat.format(evaluation.base)}
-                    </span>
-                  )}
-                  {total.ul !== null ? (
-                    <span>상한 {numberFormat.format(total.ul)}</span>
-                  ) : (
-                    <span>상한 기준이 없어요</span>
-                  )}
-                </div>
-                <NutrientRangeBar total={total} />
-                <StandardStatus total={total} />
-              </>
-            )}
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pr-[12%] text-unit text-muted-foreground tnum">
+              {evaluation.base !== null && (
+                <span>
+                  {evaluation.baseKind === 'ai' ? '충분' : '권장'}{' '}
+                  {numberFormat.format(evaluation.base)}
+                </span>
+              )}
+              {total.ul !== null ? (
+                <span>상한 {numberFormat.format(total.ul)}</span>
+              ) : (
+                <span>상한 기준이 없어요</span>
+              )}
+            </div>
+            {total.ul !== null && <NutrientRangeBar total={total} />}
+            <StandardStatus total={total} />
           </>
         )}
 
-        {isOverUpperLimit && (
-          <p className="border-t border-border pt-3 text-sm text-muted-foreground">
-            {total.sourceNames.join('과 ')}에 함께 들어 있어요. 하나를 줄일지 담당 의사·약사에게
-            확인해 주세요.
-          </p>
-        )}
+        <p className="text-sm text-muted-foreground">
+          {total.sourceNames.join(' · ')}에 들어 있어요
+        </p>
     </>
   );
 
@@ -413,7 +429,7 @@ function NutrientTotalCard({
 
   return (
     <article aria-label={`${total.name} 성분 합계`}>
-      <Card tone={isOverUpperLimit ? 'warning' : 'default'} className="gap-4 p-4">
+      <Card className="gap-4 p-4">
         {content}
       </Card>
     </article>
@@ -423,16 +439,23 @@ function NutrientTotalCard({
 function StandardStatus({ total }: { total: NutrientTotal }) {
   const evaluation = evaluateNutrientStandard(total);
   if (evaluation.status === 'over-upper-limit') {
-    return <p className="text-sm font-bold text-warning-strong">상한 초과</p>;
+    return <p className="text-sm font-bold text-danger-strong">상한 초과</p>;
   }
   if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
     return (
       <p className="text-sm text-muted-foreground">
-        영양제로는 권장량의 {evaluation.percentOfBase}%
+        권장량의 {numberFormat.format(evaluation.percentOfBase)}%예요
       </p>
     );
   }
   if (evaluation.status === 'recommended') {
+    if (total.ul === null && evaluation.percentOfBase !== null) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          권장량의 {numberFormat.format(evaluation.percentOfBase)}%예요
+        </p>
+      );
+    }
     return <p className="text-sm text-muted-foreground">권장 범위예요</p>;
   }
   return null;
@@ -440,21 +463,35 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
 
 function NutrientRangeBar({ total }: { total: NutrientTotal }) {
   const evaluation = evaluateNutrientStandard(total);
+  if (total.ul === null) return null;
+
   const positions = rangePositions(total, evaluation.base);
-  const overUpperLimit = evaluation.status === 'over-upper-limit';
+  const fillColor =
+    evaluation.status === 'below-base'
+      ? 'bg-warning'
+      : evaluation.status === 'over-upper-limit'
+        ? 'bg-danger'
+        : 'bg-primary';
+  const markerColor =
+    evaluation.status === 'below-base'
+      ? 'bg-warning-strong'
+      : evaluation.status === 'over-upper-limit'
+        ? 'bg-danger-strong'
+        : 'bg-primary-strong';
 
   return (
     <div
       role="meter"
       aria-label={`${total.name} 섭취기준 위치`}
       aria-valuemin={0}
-      aria-valuenow={total.amount}
-      aria-valuemax={Math.max(total.amount, total.ul ?? evaluation.base ?? total.amount)}
+      aria-valuenow={Math.min(total.amount, total.ul)}
+      aria-valuemax={total.ul}
+      aria-valuetext={`${numberFormat.format(total.amount)}${total.unit}`}
       className="relative mx-1 h-5"
     >
       <div className="absolute inset-x-0 top-2 h-2 rounded-pill bg-muted-bg">
         <div
-          className={`h-full rounded-pill ${overUpperLimit ? 'bg-warning' : 'bg-primary-bg'}`}
+          className={`h-full rounded-pill ${fillColor}`}
           style={{ width: `${positions.marker}%` }}
         />
       </div>
@@ -462,7 +499,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
         <span
           data-threshold="base"
           aria-hidden
-          className="absolute top-1 h-4 w-px bg-muted-foreground"
+          className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
           style={{ left: `${positions.base}%` }}
         />
       )}
@@ -470,17 +507,13 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
         <span
           data-threshold="upper-limit"
           aria-hidden
-          className={`absolute top-1 h-4 w-px ${
-            overUpperLimit ? 'bg-warning' : 'bg-muted-foreground'
-          }`}
+          className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
           style={{ left: `${positions.upper}%` }}
         />
       )}
       <span
         aria-hidden
-        className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${
-          overUpperLimit ? 'bg-warning' : 'bg-muted-foreground'
-        }`}
+        className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${markerColor}`}
         style={{ left: `${positions.marker}%` }}
       />
     </div>
@@ -488,24 +521,15 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
 }
 
 function rangePositions(total: NutrientTotal, base: number | null) {
-  if (total.ul !== null) {
-    const upper = 88;
-    const marker = total.amount > total.ul
+  if (total.ul === null) return { base: null, upper: null, marker: 0 };
+  const upper = 88;
+  const marker =
+    total.amount > total.ul
       ? 100
       : Math.max(0, Math.min(upper, (total.amount / total.ul) * upper));
-    const basePosition = base === null
-      ? null
-      : Math.max(8, Math.min(upper - 8, (base / total.ul) * upper));
-    return { base: basePosition, upper, marker };
-  }
-
-  if (base !== null) {
-    const basePosition = 64;
-    const marker = Math.max(0, Math.min(100, (total.amount / base) * basePosition));
-    return { base: basePosition, upper: null, marker };
-  }
-
-  return { base: null, upper: null, marker: 0 };
+  const basePosition =
+    base === null ? null : Math.max(4, Math.min(upper - 4, (base / total.ul) * upper));
+  return { base: basePosition, upper, marker };
 }
 
 function standardSourceLabel(profile: NutrientStandardProfile | null): string {

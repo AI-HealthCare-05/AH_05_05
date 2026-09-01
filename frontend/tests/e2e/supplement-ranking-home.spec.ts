@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const RANKING_RESPONSE = {
   display_id: 3,
   title: '9월 면역력 관리',
@@ -58,10 +60,7 @@ const REGISTERED_PRODUCT = {
 };
 
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '랭킹 화면의 실 API 경계와 오류 격리를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 async function authenticate(page: Page) {
@@ -144,7 +143,7 @@ test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
   await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
-  await expect(ranking.getByText('포케가 골랐어요', { exact: true })).toBeVisible();
+  await expect(ranking.getByText('RxVita가 골랐어요', { exact: true })).toBeVisible();
   await expect(ranking.getByText('튼튼 철분 캡슐', { exact: true })).toBeVisible();
   await expect(ranking.getByText('등록됨', { exact: true })).toBeVisible();
   await expect(ranking).not.toContainText(/인기|많이|베스트|추천|명이 등록|전시 기간/);

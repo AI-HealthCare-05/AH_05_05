@@ -18,10 +18,12 @@ class UserUpdateRequest(CamelModel):
     # 여기서 extra 만 더해도 별칭 변환은 그대로 살아 있다.
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[str | None, Field(None, min_length=2, max_length=100)]
+    # 상한은 DB 컬럼 폭이 아니라 화면에서 받아야 할 길이 기준이다.
+    # 회원가입(SignUpRequest)·프론트 상수와 같은 값을 쓴다.
+    name: Annotated[str | None, Field(None, min_length=2, max_length=20)]
     email: Annotated[
         EmailStr | None,
-        Field(None, max_length=255),
+        Field(None, max_length=40),
     ]
     phone_number: Annotated[
         str | None,
@@ -45,6 +47,16 @@ class PasswordChangeRequest(CamelModel):
 
 class PasswordChangeResponse(CamelModel):
     detail: str
+
+
+class WithdrawRequest(CamelModel):
+    """마이페이지 「회원 탈퇴」. 본인 확인용이라 비밀번호 하나만 받는다.
+
+    validate_password 를 붙이지 않는다. 새로 정하는 비밀번호가 아니라 대조용이고,
+    정책이 바뀌기 전에 가입한 계정이 자기 비밀번호로 탈퇴하지 못하게 된다.
+    """
+
+    password: Annotated[str, Field(min_length=1)]
 
 
 class UserInfoResponse(CamelModel):

@@ -57,9 +57,16 @@ export function WithdrawAccountDialog({
       <DialogContent aria-describedby="withdraw-account-description">
         <DialogHeader>
           <DialogTitle>정말 탈퇴하시겠어요?</DialogTitle>
+          {/*
+            예전 문구는 "같은 이메일로 다시 가입할 수 있다"였는데 사실이 아닙니다.
+            탈퇴해도 user 행이 남아 회원가입의 중복 검사에 걸립니다.
+            되돌릴 수 없는 동작이라 누르기 전에 알아야 합니다.
+          */}
           <DialogDescription id="withdraw-account-description" className="leading-relaxed">
-            복약 기록과 등록한 영양제를 다시 볼 수 없어요. 같은 이메일로 다시 가입할 수
-            있지만, 이전 기록은 복구되지 않아요.
+            복약 기록과 등록한 영양제를 다시 볼 수 없어요.{' '}
+            <strong className="font-bold text-danger-strong">
+              탈퇴하면 같은 이메일로 다시 가입할 수 없어요.
+            </strong>
           </DialogDescription>
         </DialogHeader>
         <Input
@@ -67,6 +74,9 @@ export function WithdrawAccountDialog({
           type="password"
           autoComplete="current-password"
           value={password}
+          // maxLength 를 걸지 않습니다. 대조용으로 받는 값이라, 비밀번호 상한이 생기기 전에
+          // 더 긴 비밀번호로 가입한 사람이 탈퇴 자체를 못 하게 됩니다.
+          // 서버 WithdrawRequest 가 validate_password 를 안 붙이는 것과 같은 이유입니다.
           error={passwordError ?? undefined}
           onChange={(event) => {
             setPassword(event.target.value);

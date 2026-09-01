@@ -2,6 +2,7 @@ import { ApiError, http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockAddSupplement,
+  mockNutrientStandards,
   mockSearchSupplementProducts,
   mockStopSupplement,
   mockSupplementProduct,
@@ -11,8 +12,10 @@ import {
 } from './api.mock';
 import type {
   AddSupplementPayload,
+  NutrientStandards,
   SearchSupplementProductsParams,
   Supplement,
+  SupplementListResult,
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementRanking,
@@ -86,16 +89,44 @@ type SupplementSlotApi = 'MORNING' | 'LUNCH' | 'EVENING' | 'BEDTIME';
 
 interface UserSupplementNutrientApiResponse {
   id: number;
+  custom_name: string | null;
   dose_amount: number | string;
   dose_unit: string;
   start_date: string;
   end_date: string | null;
   status: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+  score: number | null;
   note: string | null;
   created_at: string;
   updated_at: string | null;
   slots: Array<{ slot: SupplementSlotApi; time: string }>;
-  supplement: SupplementNutrientApiResponse;
+  supplement: SupplementNutrientApiResponse | null;
+}
+
+interface NutrientStandardValuesApiResponse {
+  rni: NumericApiValue;
+  ai: NumericApiValue;
+  ul: NumericApiValue;
+}
+
+interface UserNutrientStandardApiResponse {
+  grp: string;
+  age: string | null;
+  protein_g: NutrientStandardValuesApiResponse;
+  carb_g: NutrientStandardValuesApiResponse;
+  fat_g: NutrientStandardValuesApiResponse;
+  fiber_g: NutrientStandardValuesApiResponse;
+  calcium_mg: NutrientStandardValuesApiResponse;
+  iron_mg: NutrientStandardValuesApiResponse;
+  phosphorus_mg: NutrientStandardValuesApiResponse;
+  potassium_mg: NutrientStandardValuesApiResponse;
+  sodium_mg: NutrientStandardValuesApiResponse;
+  vitamin_a_ug_rae: NutrientStandardValuesApiResponse;
+  thiamine_mg: NutrientStandardValuesApiResponse;
+  riboflavin_mg: NutrientStandardValuesApiResponse;
+  niacin_mg: NutrientStandardValuesApiResponse;
+  vitamin_c_mg: NutrientStandardValuesApiResponse;
+  vitamin_d_ug: NutrientStandardValuesApiResponse;
 }
 
 interface UserSupplementNutrientListApiResponse {
@@ -103,6 +134,7 @@ interface UserSupplementNutrientListApiResponse {
   total: number;
   offset: number;
   limit: number;
+  nutrient_standard: UserNutrientStandardApiResponse | null;
 }
 
 const SLOT_TO_API: Record<SupplementSlot, SupplementSlotApi> = {
@@ -142,15 +174,18 @@ const NUTRIENT_FIELDS: Array<{
   { field: 'vitamin_d_ug', nutrientId: 'vitamin-d', name: '비타민 D', unit: 'µg' },
 ];
 
-export async function getSupplements(): Promise<Supplement[]> {
+export async function getSupplements(): Promise<SupplementListResult> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockSupplements();
+    return { items: mockSupplements(), standards: mockNutrientStandards() };
   }
   const response = await http.get<UserSupplementNutrientListApiResponse>(
     '/v1/med/user-suppl-nutr?status=ACTIVE&offset=0&limit=100',
   );
-  return response.items.map(mapUserSupplement);
+  return {
+    items: response.items.map(mapUserSupplement),
+    standards: mapNutrientStandards(response.nutrient_standard),
+  };
 }
 
 export async function getSupplementRanking(): Promise<SupplementRanking | null> {
@@ -185,8 +220,20 @@ export async function addSupplement(payload: AddSupplementPayload): Promise<Supp
     await mockDelay();
     return mockAddSupplement(payload);
   }
-  if (payload.source !== 'standard') {
-    throw new Error('실제 등록은 RDB에서 검색한 영양제만 지원합니다.');
+  if (payload.source === 'manual') {
+    const response = await http.post<UserSupplementNutrientApiResponse>(
+      '/v1/med/user-suppl-nutr',
+      {
+        custom_name: payload.name,
+        dose_amount: payload.doseAmount,
+        dose_unit: payload.doseUnit,
+        start_date: todayInKorea(),
+        end_date: null,
+        slots: payload.slots.map((slot) => SLOT_TO_API[slot]),
+        note: null,
+      },
+    );
+    return mapUserSupplement(response);
   }
   const response = await http.put<UserSupplementNutrientApiResponse>(
     `/v1/med/user-suppl-nutr/${encodeURIComponent(payload.productId)}`,
@@ -210,12 +257,15 @@ export async function updateSupplement(
     await mockDelay();
     return mockUpdateSupplement(supplementId, payload);
   }
+  const body: Record<string, unknown> = {
+    dose_amount: payload.doseAmount,
+    slots: payload.slots.map((slot) => SLOT_TO_API[slot]),
+  };
+  if ('score' in payload) body.score = payload.score;
+  if ('note' in payload) body.note = payload.note;
   const response = await http.patch<UserSupplementNutrientApiResponse>(
     `/v1/med/user-suppl-nutr/${supplementId}`,
-    {
-      dose_amount: payload.doseAmount,
-      slots: payload.slots.map((slot) => SLOT_TO_API[slot]),
-    },
+    body,
   );
   return mapUserSupplement(response);
 }
@@ -254,6 +304,20 @@ export async function searchSupplementProducts(
 }
 
 function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Supplement {
+  if (registration.supplement === null) {
+    return {
+      supplementId: registration.id,
+      productId: null,
+      name: registration.custom_name ?? '이름 없는 영양제',
+      doseAmount: Number(registration.dose_amount),
+      doseUnit: registration.dose_unit,
+      slots: registration.slots.map(({ slot }) => API_TO_SLOT[slot]),
+      score: registration.score ?? null,
+      note: registration.note ?? null,
+      nutrientDataAvailable: false,
+      nutrients: [],
+    };
+  }
   const product = mapSupplementProduct(registration.supplement);
   return {
     supplementId: registration.id,
@@ -262,6 +326,8 @@ function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Sup
     doseAmount: Number(registration.dose_amount),
     doseUnit: registration.dose_unit,
     slots: registration.slots.map(({ slot }) => API_TO_SLOT[slot]),
+    score: registration.score ?? null,
+    note: registration.note ?? null,
     nutrientDataAvailable: product.nutrients.length > 0,
     nutrients: product.nutrients,
   };
@@ -310,8 +376,30 @@ function mapNutrients(
       ? Number(rawValue) * perUnitFactor
       : Number.NaN;
     if (!Number.isFinite(amount) || amount <= 0) return [];
-    return [{ nutrientId, name, amount, unit, rni: null, ai: null, ul: null }];
+    return [{ nutrientId, name, amount, unit }];
   });
+}
+
+function mapNutrientStandards(
+  raw: UserNutrientStandardApiResponse | null | undefined,
+): NutrientStandards | null {
+  if (!raw) return null;
+  const byNutrientId: NutrientStandards['byNutrientId'] = {};
+  for (const { field, nutrientId } of NUTRIENT_FIELDS) {
+    const values = raw[field as keyof Omit<UserNutrientStandardApiResponse, 'grp' | 'age'>];
+    byNutrientId[nutrientId] = {
+      rni: toNumberOrNull(values?.rni),
+      ai: toNumberOrNull(values?.ai),
+      ul: toNumberOrNull(values?.ul),
+    };
+  }
+  return { group: raw.grp, ageRange: raw.age, byNutrientId };
+}
+
+function toNumberOrNull(value: NumericApiValue | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function nutrientPerUnitFactor(

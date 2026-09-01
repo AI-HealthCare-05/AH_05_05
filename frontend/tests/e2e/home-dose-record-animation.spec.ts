@@ -1,6 +1,9 @@
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
 test.beforeEach(async ({ page }) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
 });
 

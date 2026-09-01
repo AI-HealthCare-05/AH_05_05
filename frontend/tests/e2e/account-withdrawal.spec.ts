@@ -1,5 +1,11 @@
 import { expect, test, type Page } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 async function authenticate(page: Page) {
   await page.addInitScript(() => {
     window.sessionStorage.setItem('poke.access-token', 'withdrawal-e2e-token');
@@ -28,7 +34,9 @@ test('회원 탈퇴는 로그아웃과 같은 외곽선 버튼에서 빨간 글�
 
   const dialog = await openWithdrawalDialog(page);
   await expect(dialog).toContainText('복약 기록과 등록한 영양제를 다시 볼 수 없어요.');
-  await expect(dialog).toContainText('같은 이메일로 다시 가입할 수 있지만, 이전 기록은 복구되지 않아요.');
+  // 되돌릴 수 없는 동작이라 재가입 불가를 누르기 전에 알려야 한다.
+  // 예전 문구는 "다시 가입할 수 있다"였는데 사실이 아니었다(#194).
+  await expect(dialog).toContainText('탈퇴하면 같은 이메일로 다시 가입할 수 없어요.');
   await expect(dialog).not.toContainText('삭제');
 
   const password = dialog.getByLabel('비밀번호');
@@ -70,6 +78,9 @@ test('탈퇴 성공은 세션을 비우고 스플래시로 replace 이동한다'
   await dialog.getByRole('button', { name: '탈퇴하기' }).click();
 
   await expect(page).toHaveURL(/\/$/);
+  // 되돌릴 수 없는 동작인데 화면만 바뀌면 눌린 건지 알 수 없다.
+  // Toaster 가 앱 루트에 있어 화면을 옮긴 뒤에도 떠 있어야 한다(#196).
+  await expect(page.getByText('탈퇴되었습니다. 그동안 이용해 주셔서 감사합니다.')).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(() => ({

@@ -1,5 +1,11 @@
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가지 단서로 알린다', async ({ page }) => {
   await page.goto('/dev/supplements');
 
@@ -10,9 +16,10 @@ test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가�
   await expect(exceeded).toBeVisible();
   await expect(exceededCard.getByText('상한 초과', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('3,200', { exact: true })).toBeVisible();
-  await expect(exceededCard.getByText('권장 700', { exact: true })).toBeVisible();
+  await expect(exceededCard.getByText('권장 800', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('상한 3,000', { exact: true })).toBeVisible();
-  await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuenow', '3200');
+  await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuenow', '3000');
+  await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuetext', /3,200/);
   await expect(exceededCard.locator('[data-threshold="upper-limit"]')).toBeVisible();
   await expect(neutral).toBeVisible();
 
@@ -27,7 +34,7 @@ test('기준 미달과 권장 범위를 판정 가능한 범위 안에서 중립
   const totals = page.getByRole('region', { name: '성분 합계' });
   const calcium = totals.getByRole('article', { name: '칼슘 성분 합계' });
   const vitaminD = totals.getByRole('article', { name: '비타민 D 성분 합계' });
-  await expect(calcium.getByText('영양제로는 권장량의 57%', { exact: true })).toBeVisible();
+  await expect(calcium.getByText('권장량의 50%예요', { exact: true })).toBeVisible();
   await expect(vitaminD.getByText('권장 범위예요', { exact: true })).toBeVisible();
   await expect(totals.getByText('부족', { exact: false })).toHaveCount(0);
   await expect(totals.getByText('권장~충분', { exact: false })).toHaveCount(0);
@@ -42,19 +49,19 @@ test('기준과 상한의 누락 조합을 숨기거나 임의 판정하지 않�
   const upperOnly = totals.getByRole('article', { name: '아연 성분 합계' });
   const noStandards = totals.getByRole('article', { name: '셀레늄 성분 합계' });
 
-  await expect(baseOnly.getByText('상한 기준이 없어요', { exact: true })).toBeVisible();
+  await expect(baseOnly.getByText('상한 2,000', { exact: true })).toBeVisible();
   await expect(baseOnly.getByText('권장 100', { exact: true })).toBeVisible();
-  await expect(upperOnly.getByText('상한 35', { exact: true })).toBeVisible();
-  await expect(upperOnly.getByText(/권장량의/)).toHaveCount(0);
+  await expect(upperOnly.getByText('상한 35', { exact: true })).toHaveCount(0);
+  await expect(upperOnly.getByRole('meter')).toHaveCount(0);
   await expect(noStandards.getByText('55', { exact: true })).toBeVisible();
-  await expect(noStandards.getByText('기준이 없는 성분이에요', { exact: true })).toBeVisible();
+  await expect(noStandards.getByText('기준이 없는 성분이에요', { exact: true })).toHaveCount(0);
   await expect(noStandards.getByRole('meter')).toHaveCount(0);
 });
 
 test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시한다', async ({ page }) => {
   await page.goto('/dev/supplements');
 
-  await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 여성')).toBeVisible();
+  await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 남성')).toBeVisible();
   await expect(
     page.getByText(
       '등록한 건강기능식품 3개만 더한 값입니다. 음식과 의약품을 통한 섭취량은 포함되지 않았습니다.',
@@ -62,7 +69,7 @@ test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시
   ).toBeVisible();
   await expect(
     page.getByText('직접 입력한 0개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test('생년월일이나 성별이 없으면 기준을 숨기고 기본정보 입력으로 안내한다', async ({ page }) => {
@@ -251,6 +258,52 @@ test('목록 카드에서 회당 수량과 슬롯을 편집하면 카드와 성�
   const omega = supplementList.getByRole('button', { name: /오메가3/ });
   await expect(omega).toContainText('하루 3회 · 1회 1정 · 아침 · 점심 · 저녁');
   await expect(page.getByText('3,500', { exact: true })).toBeVisible();
+});
+
+test('목록에는 채운 별만 읽기 전용으로 표시하고 별점이 없으면 숨긴다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+  const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
+  const omega = supplementList.getByRole('button', { name: /오메가3/ });
+  const multivitamin = supplementList.getByRole('button', { name: /종합비타민/ });
+
+  const omegaScore = omega.getByLabel('별 4점');
+  await expect(omegaScore).toBeVisible();
+  await expect(omegaScore.locator('svg')).toHaveCount(4);
+  await expect(omega.getByRole('button')).toHaveCount(0);
+  await expect(multivitamin.getByLabel(/별 \d점/)).toHaveCount(0);
+});
+
+test('편집 시트는 기존 별점과 메모를 채우고 선택한 별 재클릭을 저장할 때 해제한다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+  const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
+  const omega = supplementList.getByRole('button', { name: /오메가3/ });
+  await omega.click();
+
+  const sheet = page.getByRole('dialog', { name: '오메가3' });
+  const stars = sheet.getByRole('group', { name: '먹어보니 어때요?' });
+  const scoreFour = stars.getByRole('button', { name: '별 4점' });
+  const note = sheet.getByRole('textbox', { name: '메모' });
+  await expect(stars.getByRole('button')).toHaveCount(5);
+  await expect(scoreFour).toHaveAttribute('aria-pressed', 'true');
+  await expect(note).toHaveValue('아침 식후에 먹기');
+
+  await scoreFour.click();
+  await expect(scoreFour).toHaveAttribute('aria-pressed', 'false');
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole('button', { name: '닫기' }).click();
+  await expect(omega.getByLabel('별 4점')).toBeVisible();
+  await omega.click();
+  const reopenedSheet = page.getByRole('dialog', { name: '오메가3' });
+  await reopenedSheet.getByRole('button', { name: '별 4점' }).click();
+  const reopenedNote = reopenedSheet.getByRole('textbox', { name: '메모' });
+  await reopenedNote.fill('   ');
+  await reopenedSheet.getByRole('button', { name: '저장' }).click();
+
+  await expect(reopenedSheet).toBeHidden();
+  await expect(omega.getByLabel(/별 \d점/)).toHaveCount(0);
+  await omega.click();
+  await expect(page.getByRole('dialog', { name: '오메가3' }).getByRole('textbox', { name: '메모' }))
+    .toHaveValue('');
 });
 
 test('복용 중단을 확인하면 삭제 문구 없이 활성 목록과 성분 합계에서 제외한다', async ({ page }) => {

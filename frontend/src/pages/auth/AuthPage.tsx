@@ -11,6 +11,7 @@ import {
   validateBirthDate,
 } from '@/shared/lib/birthDate';
 import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
+import { PASSWORD_MAX_LENGTH } from '@/shared/lib/password';
 import {
   PHONE_NUMBER_MAX_LENGTH,
   formatPhoneNumberInput,
@@ -53,6 +54,34 @@ export function AuthPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const today = formatDateInputValue(new Date());
+
+  /**
+   * 탭을 옮길 때 폼을 새로 시작합니다.
+   *
+   * 예전에는 오류 문구 두 개만 지워서, 로그인 칸에 쳐둔 이메일·비밀번호가 회원가입 폼에
+   * 그대로 따라왔습니다. 필수 동의도 이전 세션의 흔적으로 켜져 있으면 안 됩니다.
+   *
+   * 이메일 칸은 applyEmailInput 이 DOM 값을 직접 쓰지만(IME 때문), state 를 비우면
+   * React 가 리렌더하면서 DOM 도 따라 비워지므로 여기서 따로 손댈 것은 없습니다.
+   */
+  function resetAuthForm() {
+    setEmail('');
+    setPassword('');
+    setPasswordConfirm('');
+    setName('');
+    setPhoneNumber('');
+    setBirthDate('');
+    setGender('');
+    setRecordTerms(false);
+    setAiTerms(false);
+    setEmailError(null);
+    setBirthDateError(null);
+    setPasswordConfirmError(null);
+    setNameError(null);
+    setPhoneNumberError(null);
+    setLoginError(null);
+    emailInputRef.current?.setCustomValidity('');
+  }
 
   /**
    * 이메일 칸에서 쓸 수 없는 문자를 지웁니다.
@@ -104,7 +133,15 @@ export function AuthPage() {
         await login({ email: email.trim(), password });
       } catch (error) {
         if (error instanceof ApiError && error.field === 'email') {
-          emailInputRef.current?.setCustomValidity('이메일 주소를 확인해주세요');
+          // 중복과 형식 오류를 갈라 씁니다. 예전에는 둘 다 「확인해주세요」라 나와서,
+          // 주소가 멀쩡한데도 계속 고치라는 말로 읽혔습니다.
+          //
+          // 중복일 때는 **서버 문구를 그대로** 씁니다. 활성 계정인지 탈퇴 계정인지
+          // 구분되지 않게 뭉갠 문구라 프론트가 따로 만들면 그 의도가 깨집니다(#196).
+          // 형식 오류(422)는 서버가 영문 pydantic 메시지를 주므로 자체 문구를 씁니다.
+          emailInputRef.current?.setCustomValidity(
+            error.code === 'EMAIL_ALREADY_EXISTS' ? error.message : '이메일 주소를 확인해주세요',
+          );
           emailInputRef.current?.reportValidity();
         } else {
           setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
@@ -119,7 +156,8 @@ export function AuthPage() {
         // 토큰은 login() 안에서 메모리에만 심습니다. 새로고침하면 사라집니다(유저플로우 v4).
         await login({ email: email.trim(), password });
       } catch (error) {
-        // 서버 문구를 그대로 씁니다. 400(자격증명)과 423(정지·탈퇴) 모두 마찬가지입니다.
+        // 서버 문구를 그대로 씁니다. 계정 없음·비밀번호 불일치·정지·탈퇴가 모두 같은
+        // 400 응답이라 여기서 갈라볼 것이 없습니다(#196).
         // 프론트가 "이메일이 없습니다" 같은 문구를 만들면 가입 여부가 새어나갑니다.
         setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
         return;
@@ -151,11 +189,12 @@ export function AuthPage() {
                   selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
                 }`}
                 onClick={() => {
+                  // 같은 탭을 다시 눌렀을 때는 지우지 않습니다. 이 가드가 없으면
+                  // 회원가입 폼을 다 채운 사람이 「회원가입」을 한 번 더 누르는 순간
+                  // 전부 날아갑니다.
+                  if (item === mode) return;
                   setMode(item);
-                  emailInputRef.current?.setCustomValidity('');
-                  // 탭을 옮기면 지난 로그인 실패 문구를 지웁니다. 회원가입 폼에 남아 있으면 오해합니다.
-                  setLoginError(null);
-                  setEmailError(null);
+                  resetAuthForm();
                 }}
               >
                 {item === 'login' ? '로그인' : '회원가입'}
@@ -215,6 +254,10 @@ export function AuthPage() {
             type="password"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             value={password}
+            // 로그인에는 상한을 걸지 않습니다. 이 정책이 생기기 전에 더 긴 비밀번호로
+            // 가입한 사람이 로그인 자체를 못 하게 됩니다.
+            // 상한은 「새로 정하는 비밀번호」에만 겁니다.
+            maxLength={mode === 'signup' ? PASSWORD_MAX_LENGTH : undefined}
             onChange={(event) => setPassword(event.target.value)}
             error={loginError ?? undefined}
             required
@@ -227,6 +270,7 @@ export function AuthPage() {
                 type="password"
                 autoComplete="new-password"
                 value={passwordConfirm}
+                maxLength={PASSWORD_MAX_LENGTH}
                 error={passwordConfirmError ?? undefined}
                 onChange={(event) => {
                   setPasswordConfirm(event.target.value);

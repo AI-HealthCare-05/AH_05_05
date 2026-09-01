@@ -22,8 +22,14 @@ export function SplashPage() {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-app flex-col items-center overflow-hidden bg-card px-page-x pt-28 text-center">
-      <p className="text-tagline text-muted-foreground">약봉투 한 장이면 충분해요</p>
-      <h1 className="mt-2 text-logo font-bold tracking-tight text-foreground">포케</h1>
+      <p className="text-tagline text-brand">약봉투 한 장이면 충분해요</p>
+      <img
+        src="/images/rxvita-logo-960.png"
+        alt="RxVita"
+        className="mt-2 w-56"
+        width={960}
+        height={248}
+      />
 
       <svg
         aria-hidden

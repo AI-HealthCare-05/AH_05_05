@@ -28,8 +28,16 @@ export function signupsLabel(periodLabel) {
   return PERIOD_VALUES[periodLabel] ? `${periodLabel} 가입` : "신규 가입";
 }
 
+export function formatOcrConfidence(value) {
+  if (value === null || value === undefined) return "데이터 없음";
+  const confidence = Number(value);
+  if (!Number.isFinite(confidence)) return "데이터 없음";
+  return `${(confidence * 100).toFixed(1)}%`;
+}
+
 // 카드 안에서 이미 쓰고 있는 색이다. 새 색을 만들지 않는다.
 const CHANGE_COLORS = { up: "#16a34a", down: "#dc2626", flat: "#6b7280" };
+const STATUS_COLORS = { positive: "#2563eb", negative: "#dc2626" };
 
 // 막대 높이. 컨테이너가 70px 이고 패딩이 8px 씩이라 목 데이터의 최대 막대와 같은 52px 로 맞춘다.
 const TREND_MAX_HEIGHT = 52;
@@ -162,6 +170,7 @@ function initializeDashboard() {
     ocrQueued: document.querySelector("[data-ocr-queued]"),
     ocrCompleted: document.querySelector("[data-ocr-completed]"),
     ocrFailed: document.querySelector("[data-ocr-failed]"),
+    ocrAccuracy: document.querySelector("[data-ocr-accuracy]"),
   };
   const trend = document.querySelector("[data-member-trend]");
   const alarmTrend = document.querySelector("[data-alarm-trend]");
@@ -200,6 +209,7 @@ function initializeDashboard() {
     // 숫자만 비우고 차트를 두면 목 데이터 막대가 실제 추이처럼 남는다.
     if (trend) renderTrend(trend, []);
     if (alarmTrend) renderTrend(alarmTrend, []);
+    if (slots.ocrAccuracy) slots.ocrAccuracy.textContent = "데이터 없음";
   };
 
   const render = (body) => {
@@ -217,11 +227,11 @@ function initializeDashboard() {
     const withdrawnShare = shareOfTotal(members.withdrawn, accountTotal(members));
     setBadge(slots.activeRatio, {
       text: activeShare === null ? PLACEHOLDER : `${activeShare}%`,
-      color: CHANGE_COLORS.flat,
+      color: STATUS_COLORS.positive,
     });
     setBadge(slots.withdrawnRatio, {
       text: withdrawnShare === null ? PLACEHOLDER : `${withdrawnShare}%`,
-      color: CHANGE_COLORS.flat,
+      color: STATUS_COLORS.negative,
     });
 
     if (trend) renderTrend(trend, members.signupTrend);
@@ -241,6 +251,9 @@ function initializeDashboard() {
     if (slots.ocrQueued) slots.ocrQueued.textContent = formatCount(ocrDocuments.queued);
     if (slots.ocrCompleted) slots.ocrCompleted.textContent = formatCount(ocrDocuments.completed);
     if (slots.ocrFailed) slots.ocrFailed.textContent = formatCount(ocrDocuments.failed);
+    if (slots.ocrAccuracy) {
+      slots.ocrAccuracy.textContent = formatOcrConfidence(ocrDocuments.avgFieldConfidence);
+    }
     setState(members.total === 0 ? "집계된 회원이 없습니다" : "");
   };
 

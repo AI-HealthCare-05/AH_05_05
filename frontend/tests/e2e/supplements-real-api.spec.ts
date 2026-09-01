@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const ACCESS_TOKEN = 'e2e-supplement-token';
 
 const IRON_PRODUCT = {
@@ -57,11 +59,27 @@ const DROPS_PRODUCT = {
   daily_freq: '1회',
 };
 
+const MALE_NUTRIENT_STANDARD = {
+  grp: '남자', age: '19-29세',
+  protein_g: { rni: '65.000', ai: null, ul: null },
+  carb_g: { rni: '130.000', ai: null, ul: null },
+  fat_g: { rni: null, ai: null, ul: null },
+  fiber_g: { rni: null, ai: '30.000', ul: null },
+  calcium_mg: { rni: '800.000', ai: null, ul: '3000.000' },
+  iron_mg: { rni: '8.000', ai: null, ul: '45.000' },
+  phosphorus_mg: { rni: '650.000', ai: null, ul: '3500.000' },
+  potassium_mg: { rni: null, ai: '3500.000', ul: null },
+  sodium_mg: { rni: null, ai: '1500.000', ul: '2300.000' },
+  vitamin_a_ug_rae: { rni: '800.000', ai: null, ul: '3000.000' },
+  thiamine_mg: { rni: '1.200', ai: null, ul: null },
+  riboflavin_mg: { rni: '1.500', ai: null, ul: null },
+  niacin_mg: { rni: '14.000', ai: null, ul: '35.000' },
+  vitamin_c_mg: { rni: '100.000', ai: null, ul: '2000.000' },
+  vitamin_d_ug: { rni: null, ai: '10.000', ul: '100.000' },
+};
+
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '이 파일은 영양제 entity의 실 API 분기(VITE_USE_MOCK=false)를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 async function authenticate(page: Page) {
@@ -91,6 +109,7 @@ function registrationFor(
     start_date: koreanToday(),
     end_date: null,
     status: 'ACTIVE',
+    score: null,
     note: null,
     created_at: '2026-08-27T09:00:00+09:00',
     updated_at: null,
@@ -98,6 +117,164 @@ function registrationFor(
     supplement: product,
   };
 }
+
+test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값을 PATCH로 보낸다', async ({ page }) => {
+  await authenticate(page);
+  let patchBody: Record<string, unknown> | null = null;
+  const registration = {
+    ...registrationFor(IRON_PRODUCT, 9001, '1.000'),
+    score: 4,
+    note: '아침 식후',
+  };
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, {
+        items: [registration],
+        total: 1,
+        offset: 0,
+        limit: 100,
+        nutrient_standard: null,
+      });
+      return;
+    }
+    patchBody = route.request().postDataJSON() as Record<string, unknown>;
+    await fulfillJson(route, {
+      ...registration,
+      score: patchBody.score,
+      note: patchBody.note,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+  const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
+  const iron = supplementList.getByRole('button', { name: /튼튼 철분 캡슐/ });
+  await expect(iron.getByLabel('별 4점')).toBeVisible();
+  await iron.click();
+
+  const sheet = page.getByRole('dialog', { name: '튼튼 철분 캡슐' });
+  await expect(sheet.getByRole('button', { name: '별 4점' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(sheet.getByRole('textbox', { name: '메모' })).toHaveValue('아침 식후');
+  await sheet.getByRole('button', { name: '별 3점' }).click();
+  await sheet.getByRole('textbox', { name: '메모' }).fill('  저녁 식후  ');
+  await sheet.getByRole('button', { name: '저장' }).click();
+
+  expect(patchBody).toEqual({
+    dose_amount: 1,
+    slots: ['MORNING'],
+    score: 3,
+    note: '저녁 식후',
+  });
+  await expect(iron.getByLabel('별 3점')).toBeVisible();
+});
+
+test('override 목록은 기준 조회가 실패해도 오류 화면으로 바뀌지 않는다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, { detail: '기준 조회 실패' }, 500);
+  });
+
+  await page.goto('/dev/supplements-three-exceeded');
+
+  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 3개' })).toBeVisible();
+  await expect(page.getByText('영양제를 불러오지 못했어요')).toHaveCount(0);
+});
+
+test('목록 응답의 문자열 섭취기준을 합계 기준선과 상한선에 연결한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [registrationFor(IRON_PRODUCT, 9001, '1.000')],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  const iron = page.getByRole('article', { name: '철 성분 합계' });
+  await expect(iron.getByText('권장 8', { exact: true })).toBeVisible();
+  await expect(iron.getByText('상한 45', { exact: true })).toBeVisible();
+  await expect(iron.getByRole('meter')).toBeVisible();
+  await expect(iron.getByText('기준이 없는 성분이에요', { exact: true })).toHaveCount(0);
+});
+
+test('기준 행이 없으면 프로필이 채워져 있어도 기준선을 숨기고 입력 안내를 표시한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [registrationFor(IRON_PRODUCT, 9002, '1.000')],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: null,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('meter')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', {
+      name: '생년월일과 성별을 입력하면 나이·성별에 맞는 기준을 보여드려요',
+    }),
+  ).toBeVisible();
+});
+
+test('합산할 성분이 없으면 합계 섹션과 0개 안내 문구를 표시하지 않는다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  await expect(page.getByRole('region', { name: '성분 합계' })).toHaveCount(0);
+  await expect(page.getByText(/등록한 건강기능식품 0개만/)).toHaveCount(0);
+  await expect(page.getByText(/직접 입력한 0개는/)).toHaveCount(0);
+});
 
 test('제품명 검색을 실제 RDB 검색 API 계약으로 보낸다', async ({ page }) => {
   await authenticate(page);
@@ -431,7 +608,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   expect(listRequests.every((request) => request.searchParams.get('limit') === '100')).toBe(true);
 });
 
-test('검색 실패 시 FastAPI detail 메시지를 시트 안에 표시한다', async ({ page }) => {
+test('검색 실패 시 서버 detail 을 숨기고 기본 문구를 시트 안에 표시한다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
     await fulfillJson(route, { items: [], total: 0, offset: 0, limit: 100 });
@@ -453,11 +630,13 @@ test('검색 실패 시 FastAPI detail 메시지를 시트 안에 표시한다',
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('철분');
 
-  await expect(sheet.getByText('영양제 검색 서버가 응답하지 않았습니다.')).toBeVisible();
+  const FALLBACK = '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+  await expect(sheet.getByText(FALLBACK)).toBeVisible();
+  await expect(sheet.getByText('영양제 검색 서버가 응답하지 않았습니다.')).toHaveCount(0);
   await expect(sheet).toBeVisible();
 });
 
-test('저장 실패 시 FastAPI detail 메시지를 보여주고 선택 시트를 유지한다', async ({ page }) => {
+test('저장 실패 시 서버 detail 을 숨기고 기본 문구를 보여주며 선택 시트를 유지한다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
     if (route.request().method() === 'GET') {
@@ -499,9 +678,10 @@ test('저장 실패 시 FastAPI detail 메시지를 보여주고 선택 시트�
   await product.getByRole('button', { name: /튼튼 철분 캡슐/ }).click();
   await product.getByRole('button', { name: '추가하기' }).click();
 
-  await expect(
-    page.getByRole('dialog', { name: '영양제를 추가하지 못했어요' }),
-  ).toContainText('Input should be greater than 0');
+  const FALLBACK = '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+  const errorDialog = page.getByRole('dialog', { name: '영양제를 추가하지 못했어요' });
+  await expect(errorDialog.getByText(FALLBACK)).toBeVisible();
+  await expect(page.getByText('Input should be greater than 0')).toHaveCount(0);
   await expect(sheet).toBeVisible();
 });
 
@@ -513,3 +693,122 @@ function koreanToday(): string {
     day: '2-digit',
   }).format(new Date());
 }
+
+test('직접 입력으로 등록하면 목록에 뜨고 성분 합계에서 제외된다', async ({ page }) => {
+  await authenticate(page);
+  let postBody: Record<string, unknown> | null = null;
+  const manualRegistration = {
+    id: 9101,
+    custom_name: '실 API 직접 입력 오메가3',
+    dose_amount: '1.000',
+    dose_unit: '정',
+    start_date: koreanToday(),
+    end_date: null,
+    status: 'ACTIVE',
+    score: null,
+    note: null,
+    created_at: '2026-09-01T14:00:00+09:00',
+    updated_at: null,
+    slots: [{ slot: 'MORNING', time: '08:00:00' }],
+    supplement: null,
+  };
+
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    if (route.request().method() === 'POST') {
+      postBody = route.request().postDataJSON() as Record<string, unknown>;
+      await fulfillJson(route, manualRegistration, 201);
+      return;
+    }
+    await fulfillJson(route, {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/med/nutr?**', async (route) => {
+    await fulfillJson(route, { items: [], total: 0, offset: 0, limit: 20 });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+  await page.getByRole('button', { name: '영양제 추가' }).first().click();
+  const sheet = page.getByRole('dialog', { name: '영양제 추가' });
+  await sheet.getByRole('button', { name: '직접 입력' }).click();
+  await sheet.getByRole('textbox', { name: '직접 입력 제품명' }).fill('실 API 직접 입력 오메가3');
+  await sheet.getByRole('button', { name: '추가하기' }).click();
+
+  expect(postBody).toEqual({
+    custom_name: '실 API 직접 입력 오메가3',
+    dose_amount: 1,
+    dose_unit: '정',
+    start_date: koreanToday(),
+    end_date: null,
+    slots: ['MORNING'],
+    note: null,
+  });
+  const manualCard = page
+    .getByRole('region', { name: '먹고 있는 영양제' })
+    .getByRole('button', { name: /실 API 직접 입력 오메가3/ });
+  await expect(manualCard).toContainText('성분 정보 없음');
+  await expect(
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+  ).toBeVisible();
+});
+
+test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [
+        {
+          id: 9102,
+          custom_name: '성분 없는 직접 입력 제품',
+          dose_amount: '2.000',
+          dose_unit: '캡슐',
+          start_date: koreanToday(),
+          end_date: null,
+          status: 'ACTIVE',
+          score: null,
+          note: null,
+          created_at: '2026-09-01T14:00:00+09:00',
+          updated_at: null,
+          slots: [{ slot: 'BEDTIME', time: '22:00:00' }],
+          supplement: null,
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  const manualCard = page
+    .getByRole('region', { name: '먹고 있는 영양제' })
+    .getByRole('button', { name: /성분 없는 직접 입력 제품/ });
+  await expect(manualCard).toContainText('성분 정보 없음');
+  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('article')).toHaveCount(0);
+  await expect(
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+  ).toBeVisible();
+});

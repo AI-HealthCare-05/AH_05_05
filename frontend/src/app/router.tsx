@@ -36,7 +36,7 @@ const EXISTING_CHAT_HISTORY: ChatMessage[] = [
 ];
 const DEV_NUTRIENT_PROFILE: NutrientStandardProfile = {
   birthDate: '2000-08-25',
-  gender: 'female',
+  gender: 'male',
 };
 const MISSING_NUTRIENT_PROFILE: NutrientStandardProfile = {
   birthDate: null,

@@ -17,8 +17,11 @@ from app.core.exceptions import (
     ChatProcessingFailedError,
     ChatUpstreamUnavailableError,
 )
-from app.models.enums import ChatMessageRole
-from app.repositories.chat_repository import AcceptedChatRequest
+from app.models.chat import ChatMessageSource
+from app.models.enums import ChatMessageRole, ChatSourceType
+from app.models.supplement_nutrients import UserSupplementNutrient
+from app.models.users import User
+from app.repositories.chat_repository import AcceptedChatRequest, ChatRepository
 from app.services.chat import (
     ChatApplicationService,
     SendChatCommand,
@@ -173,6 +176,41 @@ async def test_send_passes_server_loaded_history_to_core() -> None:
     assert response.conversation_id == 42
     assert response.message_id == 101
     assert response.sources[0].scope == "official"
+
+
+async def test_chat_source_name_falls_back_to_custom_name() -> None:
+    user = await User.create(
+        email="manual-source@example.com",
+        hashed_password="unused",
+        name="직접 입력 출처 사용자",
+    )
+    registration = await UserSupplementNutrient.create(
+        user=user,
+        supplement_nutrient_id=None,
+        custom_name="직접 입력 오메가3",
+        dose_amount="1.000",
+        dose_unit="캡슐",
+        start_date="2026-09-01",
+    )
+    repository = ChatRepository()
+    accepted = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="18700000-0000-4000-8000-000000000001",
+        content="직접 입력 영양제 출처를 알려줘",
+    )
+    await ChatMessageSource.create(
+        chat_message=accepted.assistant_message,
+        source_type=ChatSourceType.USER_SUPPLEMENT,
+        user_suppl_nutrient=registration,
+        citation_order=1,
+    )
+    source = (await repository.get_message_sources(message_id=accepted.assistant_message.id))[0]
+
+    view = ChatApplicationService._saved_source_view(source)
+
+    assert view.title == "사용자 복용 영양제 · 직접 입력 오메가3"
 
 
 async def test_send_compacts_oversized_history_before_core() -> None:

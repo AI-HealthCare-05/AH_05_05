@@ -92,13 +92,10 @@ async def test_get_patient_context_reads_confirmed_erd_data(
     )
     await FollowUpVisit.create(
         id=3001,
-        care_episode=care_episode,
+        user=user,
         visit_date=date(2026, 8, 20),
         visit_time=time(10, 0),
-        department="신경과",
-        doctor_name="담당의",
-        place="본관 2층",
-        purpose="퇴원 후 경과 확인",
+        hospital="테스트병원",
     )
 
     provider = DbPatientContextProvider()
@@ -134,7 +131,7 @@ async def test_get_patient_context_reads_confirmed_erd_data(
         0,
         tzinfo=ZoneInfo("Asia/Seoul"),
     )
-    assert result.follow_up_schedules[0].department == "신경과"
+    assert result.follow_up_schedules[0].hospital == "테스트병원"
 
 
 @pytest.mark.asyncio

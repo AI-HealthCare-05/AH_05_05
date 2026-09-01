@@ -1,5 +1,11 @@
 import { expect, test, type Page } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 const MOCK_ACCOUNT = 'patient@example.com';
 const OTHER_MOCK_ACCOUNT = 'other-patient@example.com';
 const ACCOUNT_PRINCIPAL_STORAGE_KEY = 'poke.account-principal';

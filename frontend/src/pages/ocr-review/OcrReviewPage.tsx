@@ -19,7 +19,7 @@ import {
   Header,
   ImageViewer,
   Input,
-  PokeFeatureCarousel,
+  RxVitaFeatureCarousel,
   StatusBadge,
   type StatusBadgeType,
 } from '@/shared/ui';
@@ -632,7 +632,7 @@ function ReadingScreen({
           </p>
         </section>
 
-        <PokeFeatureCarousel autoAdvanceMs={1_800} />
+        <RxVitaFeatureCarousel autoAdvanceMs={1_800} />
 
         <section className="flex flex-col gap-3">
           <div

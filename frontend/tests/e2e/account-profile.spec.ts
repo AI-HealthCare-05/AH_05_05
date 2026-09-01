@@ -1,5 +1,11 @@
 import { expect, test, type Page } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
 async function openSignup(page: Page) {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/login');
@@ -169,16 +175,16 @@ test('기본정보에서도 공용 만 14세 검증을 적용한다', async ({ p
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('기본정보 입력창도 회원가입과 같은 DB 컬럼 폭을 지킨다', async ({ page }) => {
+test('기본정보 입력창도 회원가입과 같은 상한을 지킨다', async ({ page }) => {
   await page.goto('/dev/my-profile');
 
-  // 회원가입과 같은 user.name(varchar 100) · user.phone 에 쓰는 값이다.
-  // 한쪽만 막아두면 어느 화면으로 고치느냐에 따라 동작이 갈린다.
-  await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '100');
+  // 회원가입과 같은 값을 쓴다. 한쪽만 막아두면 어느 화면으로 고치느냐에 따라 동작이 갈린다.
+  // 상한은 DB 컬럼 폭(varchar 100)이 아니라 화면에서 받아야 할 길이 기준이다.
+  await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '20');
   await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');
 
-  await page.getByLabel('이름').fill('가'.repeat(130));
-  await expect(page.getByLabel('이름')).toHaveValue('가'.repeat(100));
+  await page.getByLabel('이름').fill('가'.repeat(25));
+  await expect(page.getByLabel('이름')).toHaveValue('가'.repeat(20));
 });
 
 test('기본정보 저장 실패는 화면 전환 없이 ErrorDialog로 알린다', async ({ page }) => {

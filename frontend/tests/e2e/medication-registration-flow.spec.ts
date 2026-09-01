@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const ACCESS_TOKEN = 'e2e-document-token';
 const DOCUMENT_ID = 501;
 const OCR_URL = `/api/v1/ocr/jobs/${DOCUMENT_ID}`;
@@ -9,10 +11,7 @@ const ONE_PIXEL_PNG = Buffer.from(
 );
 
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '이 파일은 document entity의 실 API 분기(VITE_USE_MOCK=false)를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 interface CapturedRequest {
@@ -574,7 +573,7 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await expect(page).toHaveURL('/ocr-review');
   await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toBeVisible();
   await expect(page.getByText('잠깐이면 끝나요. 그동안 둘러보세요.')).toBeVisible();
-  const carousel = page.getByRole('region', { name: '포케 기능 소개' });
+  const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' });
   const stage = page.getByRole('status', { name: '약봉투 판독 단계' });
   await expect(carousel).toBeVisible();
   await expect(stage).toContainText('글자를 찾고 있어요');

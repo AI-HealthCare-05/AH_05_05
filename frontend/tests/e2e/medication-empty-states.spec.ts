@@ -1,10 +1,9 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 test.beforeEach(() => {
-  test.skip(
-    process.env.VITE_USE_MOCK !== 'false',
-    '이 파일은 실 API 복약 목록의 404 정규화를 검증합니다.',
-  );
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
 async function authenticate(page: Page) {

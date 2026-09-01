@@ -32,7 +32,7 @@ def test_build_patient_sources_tracks_rendered_patient_records() -> None:
             FollowUpSchedule(
                 follow_up_visit_id=301,
                 visit_at=datetime(2026, 8, 20, 10, 0),
-                department="신경과",
+                hospital="테스트병원",
             )
         ],
     )

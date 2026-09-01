@@ -1,5 +1,6 @@
 import type {
   AddSupplementPayload,
+  NutrientStandards,
   SearchSupplementProductsParams,
   Supplement,
   SupplementNutrientAmount,
@@ -10,18 +11,9 @@ import type {
 } from './types';
 
 const BASE_MULTIVITAMIN_NUTRIENTS: SupplementNutrientAmount[] = [
-  {
-    nutrientId: 'vitamin-a', name: '비타민 A', amount: 400, unit: 'µg RAE',
-    rni: 700, ai: null, ul: 3000,
-  },
-  {
-    nutrientId: 'vitamin-d', name: '비타민 D', amount: 10, unit: 'µg',
-    rni: 10, ai: null, ul: 100,
-  },
-  {
-    nutrientId: 'iron', name: '철', amount: 6, unit: 'mg',
-    rni: 10, ai: null, ul: 45,
-  },
+  { nutrientId: 'vitamin-a', name: '비타민 A', amount: 400, unit: 'µg RAE' },
+  { nutrientId: 'vitamin-d', name: '비타민 D', amount: 10, unit: 'µg' },
+  { nutrientId: 'iron', name: '철', amount: 6, unit: 'mg' },
 ];
 
 function product(
@@ -163,12 +155,11 @@ function initialSupplements(): Supplement[] {
       doseAmount: 1,
       doseUnit: '정',
       slots: ['morning', 'evening'],
+      score: 4,
+      note: '아침 식후에 먹기',
       nutrientDataAvailable: true,
       nutrients: [
-        {
-          nutrientId: 'vitamin-a', name: '비타민 A', amount: 300, unit: 'µg RAE',
-          rni: 700, ai: null, ul: 3000,
-        },
+        { nutrientId: 'vitamin-a', name: '비타민 A', amount: 300, unit: 'µg RAE' },
       ],
     },
     {
@@ -178,40 +169,18 @@ function initialSupplements(): Supplement[] {
       doseAmount: 1,
       doseUnit: '정',
       slots: ['morning'],
+      score: null,
+      note: null,
       nutrientDataAvailable: true,
       nutrients: [
-        {
-          nutrientId: 'vitamin-a', name: '비타민 A', amount: 2600, unit: 'µg RAE',
-          rni: 700, ai: null, ul: 3000,
-        },
-        {
-          nutrientId: 'vitamin-d', name: '비타민 D', amount: 20, unit: 'µg',
-          rni: 10, ai: null, ul: 100,
-        },
-        {
-          nutrientId: 'iron', name: '철', amount: 18, unit: 'mg',
-          rni: 10, ai: null, ul: 45,
-        },
-        {
-          nutrientId: 'calcium', name: '칼슘', amount: 400, unit: 'mg',
-          rni: 700, ai: null, ul: 2500,
-        },
-        {
-          nutrientId: 'vitamin-c', name: '비타민 C', amount: 100, unit: 'mg',
-          rni: 100, ai: null, ul: null,
-        },
-        {
-          nutrientId: 'zinc', name: '아연', amount: 8, unit: 'mg',
-          rni: null, ai: null, ul: 35,
-        },
-        {
-          nutrientId: 'magnesium', name: '마그네슘', amount: 150, unit: 'mg',
-          rni: null, ai: 350, ul: 350,
-        },
-        {
-          nutrientId: 'selenium', name: '셀레늄', amount: 55, unit: 'µg',
-          rni: null, ai: null, ul: null,
-        },
+        { nutrientId: 'vitamin-a', name: '비타민 A', amount: 2600, unit: 'µg RAE' },
+        { nutrientId: 'vitamin-d', name: '비타민 D', amount: 20, unit: 'µg' },
+        { nutrientId: 'iron', name: '철', amount: 18, unit: 'mg' },
+        { nutrientId: 'calcium', name: '칼슘', amount: 400, unit: 'mg' },
+        { nutrientId: 'vitamin-c', name: '비타민 C', amount: 100, unit: 'mg' },
+        { nutrientId: 'zinc', name: '아연', amount: 8, unit: 'mg' },
+        { nutrientId: 'magnesium', name: '마그네슘', amount: 150, unit: 'mg' },
+        { nutrientId: 'selenium', name: '셀레늄', amount: 55, unit: 'µg' },
       ],
     },
     {
@@ -221,12 +190,11 @@ function initialSupplements(): Supplement[] {
       doseAmount: 1,
       doseUnit: '정',
       slots: ['evening'],
+      score: null,
+      note: null,
       nutrientDataAvailable: true,
       nutrients: [
-        {
-          nutrientId: 'vitamin-d', name: '비타민 D', amount: 30, unit: 'µg',
-          rni: 10, ai: null, ul: 100,
-        },
+        { nutrientId: 'vitamin-d', name: '비타민 D', amount: 30, unit: 'µg' },
       ],
     },
   ];
@@ -246,6 +214,30 @@ export function mockSupplements(): Supplement[] {
   return supplementStore.map(cloneSupplement);
 }
 
+export function mockNutrientStandards(): NutrientStandards {
+  return {
+    group: '남자',
+    ageRange: '19-29세',
+    byNutrientId: {
+      protein: { rni: 65, ai: null, ul: null },
+      carbohydrate: { rni: 130, ai: null, ul: null },
+      fat: { rni: null, ai: null, ul: null },
+      fiber: { rni: null, ai: 30, ul: null },
+      calcium: { rni: 800, ai: null, ul: 3000 },
+      iron: { rni: 8, ai: null, ul: 45 },
+      phosphorus: { rni: 650, ai: null, ul: 3500 },
+      potassium: { rni: null, ai: 3500, ul: null },
+      sodium: { rni: null, ai: 1500, ul: 2300 },
+      'vitamin-a': { rni: 800, ai: null, ul: 3000 },
+      thiamine: { rni: 1.2, ai: null, ul: null },
+      riboflavin: { rni: 1.5, ai: null, ul: null },
+      niacin: { rni: 14, ai: null, ul: 35 },
+      'vitamin-c': { rni: 100, ai: null, ul: 2000 },
+      'vitamin-d': { rni: null, ai: 10, ul: 100 },
+    },
+  };
+}
+
 export function mockSupplementsWithThreeExceeded(): Supplement[] {
   return mockSupplements().map((supplement, index) =>
     index === 0
@@ -253,14 +245,8 @@ export function mockSupplementsWithThreeExceeded(): Supplement[] {
           ...supplement,
           nutrients: [
             ...supplement.nutrients,
-            {
-              nutrientId: 'vitamin-d', name: '비타민 D', amount: 60, unit: 'µg',
-              rni: 10, ai: null, ul: 100,
-            },
-            {
-              nutrientId: 'iron', name: '철', amount: 30, unit: 'mg',
-              rni: 10, ai: null, ul: 45,
-            },
+            { nutrientId: 'vitamin-d', name: '비타민 D', amount: 60, unit: 'µg' },
+            { nutrientId: 'iron', name: '철', amount: 30, unit: 'mg' },
           ],
         }
       : supplement,
@@ -279,6 +265,8 @@ export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
     doseAmount: payload.doseAmount,
     doseUnit: payload.doseUnit,
     slots: [...payload.slots],
+    score: null,
+    note: null,
     nutrientDataAvailable: Boolean(standardProduct),
     nutrients: standardProduct
       ? standardProduct.nutrients.map((nutrient) => ({ ...nutrient }))
@@ -298,6 +286,8 @@ export function mockUpdateSupplement(
     ...supplementStore[index],
     doseAmount: payload.doseAmount,
     slots: [...payload.slots],
+    score: 'score' in payload ? (payload.score ?? null) : supplementStore[index].score,
+    note: 'note' in payload ? (payload.note ?? null) : supplementStore[index].note,
   };
   supplementStore = supplementStore.map((supplement, itemIndex) =>
     itemIndex === index ? updated : supplement,

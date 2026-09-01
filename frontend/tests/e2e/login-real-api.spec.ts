@@ -10,9 +10,12 @@
  */
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 const ACTIVE = { email: 'login89@example.com', password: 'Passw0rd!23' };
 const SUSPENDED = { email: 'locked89@example.com', password: 'Passw0rd!23' };
 
+test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 test.skip(process.env.E2E_REAL_API !== '1', '실서버와 시드 계정이 필요합니다.');
 
 async function submitLogin(page: import('playwright/test').Page, email: string, password: string) {
@@ -46,12 +49,15 @@ test('없는 이메일도 비밀번호 오류와 같은 문구를 낸다', async
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test('정지 계정은 423 을 받아 비활성 문구를 띄운다', async ({ page }) => {
+test('정지 계정도 자격증명 오류와 구분되지 않는 응답을 받는다', async ({ page }) => {
+  // 사유를 알려주면 그 이메일이 가입돼 있다는 사실이 새어나간다(#196).
+  // 문구뿐 아니라 상태 코드까지 같아야 한다 — 예전에는 423 으로 갈라져 있었다.
   const response = page.waitForResponse((r) => r.url().includes('/auth/login'));
   await submitLogin(page, SUSPENDED.email, SUSPENDED.password);
 
-  expect((await response).status()).toBe(423);
-  await expect(page.getByText('비활성화된 계정입니다.')).toBeVisible();
+  expect((await response).status()).toBe(400);
+  await expect(page.getByText('이메일 또는 비밀번호가 올바르지 않습니다.')).toBeVisible();
+  await expect(page.getByText('비활성화된 계정입니다.')).toHaveCount(0);
   await expect(page).toHaveURL(/\/login$/);
 });
 
@@ -76,5 +82,5 @@ test.skip('토큰은 메모리에만 있어 새로고침하면 로그아웃된�
   expect(stored.session).not.toContain('eyJ');
 
   await page.reload();
-  await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toBeVisible();
 });

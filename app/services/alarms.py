@@ -106,11 +106,6 @@ class AlarmService:
             visit = await self.repository.get_owned_follow_up_visit(follow_up_visit_id, user.id)
             if visit is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Follow-up visit not found.")
-            if care_episode_id is not None and visit.care_episode_id != care_episode_id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Follow-up visit does not match care episode.",
-                )
 
     async def update_alarm(self, user: User, alarm_id: int, data: AlarmUpdateRequest) -> Alarm:
         alarm = await self.get_alarm(user, alarm_id)
