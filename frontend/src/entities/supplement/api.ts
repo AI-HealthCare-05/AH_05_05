@@ -89,6 +89,7 @@ type SupplementSlotApi = 'MORNING' | 'LUNCH' | 'EVENING' | 'BEDTIME';
 
 interface UserSupplementNutrientApiResponse {
   id: number;
+  custom_name: string | null;
   dose_amount: number | string;
   dose_unit: string;
   start_date: string;
@@ -99,7 +100,7 @@ interface UserSupplementNutrientApiResponse {
   created_at: string;
   updated_at: string | null;
   slots: Array<{ slot: SupplementSlotApi; time: string }>;
-  supplement: SupplementNutrientApiResponse;
+  supplement: SupplementNutrientApiResponse | null;
 }
 
 interface NutrientStandardValuesApiResponse {
@@ -219,8 +220,20 @@ export async function addSupplement(payload: AddSupplementPayload): Promise<Supp
     await mockDelay();
     return mockAddSupplement(payload);
   }
-  if (payload.source !== 'standard') {
-    throw new Error('실제 등록은 RDB에서 검색한 영양제만 지원합니다.');
+  if (payload.source === 'manual') {
+    const response = await http.post<UserSupplementNutrientApiResponse>(
+      '/v1/med/user-suppl-nutr',
+      {
+        custom_name: payload.name,
+        dose_amount: payload.doseAmount,
+        dose_unit: payload.doseUnit,
+        start_date: todayInKorea(),
+        end_date: null,
+        slots: payload.slots.map((slot) => SLOT_TO_API[slot]),
+        note: null,
+      },
+    );
+    return mapUserSupplement(response);
   }
   const response = await http.put<UserSupplementNutrientApiResponse>(
     `/v1/med/user-suppl-nutr/${encodeURIComponent(payload.productId)}`,
@@ -291,6 +304,20 @@ export async function searchSupplementProducts(
 }
 
 function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Supplement {
+  if (registration.supplement === null) {
+    return {
+      supplementId: registration.id,
+      productId: null,
+      name: registration.custom_name ?? '이름 없는 영양제',
+      doseAmount: Number(registration.dose_amount),
+      doseUnit: registration.dose_unit,
+      slots: registration.slots.map(({ slot }) => API_TO_SLOT[slot]),
+      score: registration.score ?? null,
+      note: registration.note ?? null,
+      nutrientDataAvailable: false,
+      nutrients: [],
+    };
+  }
   const product = mapSupplementProduct(registration.supplement);
   return {
     supplementId: registration.id,

@@ -691,3 +691,122 @@ function koreanToday(): string {
     day: '2-digit',
   }).format(new Date());
 }
+
+test('직접 입력으로 등록하면 목록에 뜨고 성분 합계에서 제외된다', async ({ page }) => {
+  await authenticate(page);
+  let postBody: Record<string, unknown> | null = null;
+  const manualRegistration = {
+    id: 9101,
+    custom_name: '실 API 직접 입력 오메가3',
+    dose_amount: '1.000',
+    dose_unit: '정',
+    start_date: koreanToday(),
+    end_date: null,
+    status: 'ACTIVE',
+    score: null,
+    note: null,
+    created_at: '2026-09-01T14:00:00+09:00',
+    updated_at: null,
+    slots: [{ slot: 'MORNING', time: '08:00:00' }],
+    supplement: null,
+  };
+
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    if (route.request().method() === 'POST') {
+      postBody = route.request().postDataJSON() as Record<string, unknown>;
+      await fulfillJson(route, manualRegistration, 201);
+      return;
+    }
+    await fulfillJson(route, {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/med/nutr?**', async (route) => {
+    await fulfillJson(route, { items: [], total: 0, offset: 0, limit: 20 });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+  await page.getByRole('button', { name: '영양제 추가' }).first().click();
+  const sheet = page.getByRole('dialog', { name: '영양제 추가' });
+  await sheet.getByRole('button', { name: '직접 입력' }).click();
+  await sheet.getByRole('textbox', { name: '직접 입력 제품명' }).fill('실 API 직접 입력 오메가3');
+  await sheet.getByRole('button', { name: '추가하기' }).click();
+
+  expect(postBody).toEqual({
+    custom_name: '실 API 직접 입력 오메가3',
+    dose_amount: 1,
+    dose_unit: '정',
+    start_date: koreanToday(),
+    end_date: null,
+    slots: ['MORNING'],
+    note: null,
+  });
+  const manualCard = page
+    .getByRole('region', { name: '먹고 있는 영양제' })
+    .getByRole('button', { name: /실 API 직접 입력 오메가3/ });
+  await expect(manualCard).toContainText('성분 정보 없음');
+  await expect(
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+  ).toBeVisible();
+});
+
+test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [
+        {
+          id: 9102,
+          custom_name: '성분 없는 직접 입력 제품',
+          dose_amount: '2.000',
+          dose_unit: '캡슐',
+          start_date: koreanToday(),
+          end_date: null,
+          status: 'ACTIVE',
+          score: null,
+          note: null,
+          created_at: '2026-09-01T14:00:00+09:00',
+          updated_at: null,
+          slots: [{ slot: 'BEDTIME', time: '22:00:00' }],
+          supplement: null,
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: MALE_NUTRIENT_STANDARD,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  const manualCard = page
+    .getByRole('region', { name: '먹고 있는 영양제' })
+    .getByRole('button', { name: /성분 없는 직접 입력 제품/ });
+  await expect(manualCard).toContainText('성분 정보 없음');
+  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('article')).toHaveCount(0);
+  await expect(
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+  ).toBeVisible();
+});

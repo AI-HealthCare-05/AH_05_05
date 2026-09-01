@@ -10,6 +10,7 @@ from app.dtos.supplement_nutrients import (
     SupplementNutrientResponse,
 )
 from app.dtos.user_supplement_nutrients import (
+    ManualSupplementNutrientCreateRequest,
     UserSupplementNutrientListResponse,
     UserSupplementNutrientResponse,
     UserSupplementNutrientUpdateRequest,
@@ -128,6 +129,21 @@ async def list_user_supplement_nutrients(
         offset=offset,
         limit=limit,
     )
+
+
+@med_router.post(
+    "/user-suppl-nutr",
+    response_model=UserSupplementNutrientResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="표준데이터에 없는 영양제 직접 등록",
+)
+async def create_manual_user_supplement_nutrient(
+    data: ManualSupplementNutrientCreateRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[UserSupplementNutrientService, Depends(get_user_supplement_nutrient_service)],
+) -> UserSupplementNutrientResponse:
+    """표준데이터에서 찾지 못한 제품을 이름만으로 등록한다. 성분 합계에는 포함하지 않는다."""
+    return await service.create_manual(user, data)
 
 
 @med_router.put(

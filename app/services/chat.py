@@ -305,7 +305,12 @@ class ChatApplicationService:
             )
         if source.source_type == ChatSourceType.USER_SUPPLEMENT:
             registration = source.user_suppl_nutrient
-            name = registration.supplement_nutrient.name if registration is not None else "복용 영양제"
+            if registration is None:
+                name = "복용 영양제"
+            elif registration.supplement_nutrient is not None:
+                name = registration.supplement_nutrient.name
+            else:
+                name = registration.custom_name or "복용 영양제"
             return ChatSourceView(
                 scope="personal",
                 title=f"사용자 복용 영양제 · {name}",

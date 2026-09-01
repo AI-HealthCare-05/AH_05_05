@@ -53,6 +53,7 @@ class DbActiveIntakeContextProvider:
         supplement_rows = await UserSupplementNutrient.filter(
             user_id=user_id,
             status=SupplementStatus.ACTIVE,
+            supplement_nutrient_id__isnull=False,
         ).prefetch_related("supplement_nutrient")
 
         today = self._today_provider()

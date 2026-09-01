@@ -8,6 +8,42 @@ from app.dtos.supplement_nutrients import SupplementNutrientResponse
 from app.models.enums import MealSlot, SupplementStatus
 
 
+class ManualSupplementNutrientCreateRequest(BaseModel):
+    custom_name: str = Field(min_length=1, max_length=255)
+    dose_amount: Decimal = Field(gt=0, max_digits=8, decimal_places=3)
+    dose_unit: str = Field(min_length=1, max_length=20)
+    start_date: date
+    end_date: date | None = None
+    slots: list[MealSlot] = Field(min_length=1, max_length=4)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("custom_name", "dose_unit", mode="before")
+    @classmethod
+    def normalize_required_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def normalize_note(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("slots")
+    @classmethod
+    def reject_duplicate_slots(cls, value: list[MealSlot]) -> list[MealSlot]:
+        if len(value) != len(set(value)):
+            raise ValueError("Duplicate supplement slots are not allowed.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> Self:
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date.")
+        return self
+
+
 class UserSupplementNutrientUpsertRequest(BaseModel):
     dose_amount: Decimal = Field(gt=0, max_digits=8, decimal_places=3)
     dose_unit: str = Field(min_length=1, max_length=20)
@@ -90,6 +126,7 @@ class SupplementSlotResponse(BaseModel):
 
 class UserSupplementNutrientResponse(BaseModel):
     id: int
+    custom_name: str | None
     dose_amount: Decimal
     dose_unit: str
     start_date: date
@@ -100,7 +137,7 @@ class UserSupplementNutrientResponse(BaseModel):
     created_at: datetime
     updated_at: datetime | None
     slots: list[SupplementSlotResponse]
-    supplement: SupplementNutrientResponse
+    supplement: SupplementNutrientResponse | None
 
 
 class NutrientStandardValues(BaseModel):
