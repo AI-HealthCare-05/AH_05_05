@@ -299,7 +299,7 @@ MEDICATION_SAFETY_RULE_DATASET_VERSION=medication-safety-v1
 ## 8. ERD 파일 정책
 
 - 입력 기준: 사용자가 제공한 v1.1.3 전체 ERD
-- 출력: `docs/poke-erd-v1.1.3-full-ai-chat-safety.dbml`
+- 출력: `docs/poke-erd-v1.1.4-full-ai-chat-safety.dbml`
 - 제거: `docs/poke-erd-v1.0.6-full-ai-chat-interaction.dbml`
 - 팀원 영역은 입력 ERD 그대로 보존한다.
 - 수정 위치는 AI enum, AI 안전 규칙 테이블, 채팅 출처 컬럼·제약·Ref에 한정한다.
