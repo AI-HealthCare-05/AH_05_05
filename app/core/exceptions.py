@@ -113,9 +113,23 @@ class SmtpPasswordRequiredError(AppError):
 
 
 class SignupEmailAlreadyExistsError(AppError):
+    """계정 열거 방지: 활성 계정인지 탈퇴 계정인지 구분되지 않게 문구를 뭉갠다.
+
+    「이미 사용중인」은 **활성 계정이 있다**는 뜻이라 탈퇴자와 구분됐다.
+    「사용할 수 없는」은 이유를 말하지 않는다.
+
+    **로그인과 달리 code·status 는 바꾸지 않는다.** 회원가입은 「이 주소는 쓸 수 없다」를
+    반드시 알려야 기능이 성립한다 — 안 알려주면 사용자가 다른 주소를 쓸 수가 없다.
+    즉 어떤 코드를 쓰든 열거를 완전히 막을 수 없고, 409 라는 사실만으로 이미 새어나간다.
+    문구를 바꿔 얻는 것은 「왜 못 쓰는지」를 감추는 것뿐이다.
+
+    게다가 프론트(AuthPage)가 이 code 로 형식 오류(422)와 분기하고 있어,
+    코드를 바꾸면 그 분기까지 고쳐야 한다. 얻는 것에 비해 비싸다.
+    """
+
     status_code = status.HTTP_409_CONFLICT
     code = "EMAIL_ALREADY_EXISTS"
-    message = "이미 사용중인 이메일입니다."
+    message = "사용할 수 없는 이메일입니다."
     field = "email"
 
 

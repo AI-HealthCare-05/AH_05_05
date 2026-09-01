@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import {
   BottomTabbar,
@@ -409,6 +410,10 @@ export function MyPage({
           logoutNavigationRef.current = true;
           signOut();
           navigate('/', { replace: true });
+          // Toaster 가 앱 루트(main.tsx)에 있어 화면을 옮겨도 그대로 떠 있습니다.
+          // 되돌릴 수 없는 동작인데 화면만 바뀌면 눌린 건지 알 수 없고,
+          // 이동한 홈은 비로그인 상태라 원래도 휑합니다.
+          toast.success('탈퇴되었습니다. 그동안 이용해 주셔서 감사합니다.');
         }}
       />
     </div>

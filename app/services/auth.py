@@ -57,23 +57,33 @@ class AuthService:
             raise
 
     async def authenticate(self, data: LoginRequest) -> User:
-        # 이메일로 사용자 조회
-        email = str(data.email)
-        user = await self.user_repo.get_user_by_email(email)
-        if not user:
+        """로그인 자격 검증.
+
+        **실패 사유를 구분해 알려주지 않는다.** 계정 없음·비밀번호 불일치·정지·탈퇴·대기가
+        모두 같은 응답으로 나간다. 사유가 드러나면 그 이메일이 이 서비스에 등록돼 있다는
+        사실이 새어나가, 이메일 목록을 넣어보는 것만으로 가입자를 골라낼 수 있다.
+
+        예전에는 비활성 계정만 423 ACCOUNT_INACTIVE 로 갈라져 문구를 보지 않아도 구분됐다.
+
+        **감수하는 것**: 정지된 사용자가 「관리자에게 문의하세요」 안내를 잃는다.
+        비밀번호가 틀린 줄 알고 계속 다시 치게 된다. 보안을 우선하기로 한 선택이다(#196).
+
+        관리자 로그인(AdminAuthService)은 이 규칙을 따르지 않는다. 내부용이라 열거 위험이
+        낮고, 관리자에게는 정지 사유를 알려주는 편이 낫다.
+
+        **남는 한계**: 계정이 없으면 verify_password 를 타지 않아 응답이 더 빠르다.
+        응답 시간으로는 여전히 가입 여부를 구분할 수 있다. 막으려면 없는 계정에도
+        더미 해시를 대조해 시간을 맞춰야 하는데, 이번 범위 밖으로 두었다.
+        """
+        user = await self.user_repo.get_user_by_email(str(data.email))
+        if (
+            user is None
+            or not verify_password(data.password, user.hashed_password)
+            or user.status != AccountStatus.ACTIVE
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="이메일 또는 비밀번호가 올바르지 않습니다."
             )
-
-        # 비밀번호 검증
-        if not verify_password(data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="이메일 또는 비밀번호가 올바르지 않습니다."
-            )
-
-        # 활성 사용자 체크
-        if user.status != AccountStatus.ACTIVE:
-            raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="비활성화된 계정입니다.")
 
         return user
 
