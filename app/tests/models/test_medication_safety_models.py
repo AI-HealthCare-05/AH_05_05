@@ -35,9 +35,7 @@ def test_medication_safety_enums_define_supported_rules() -> None:
     }
     assert SafetyConditionKind.DAILY_DOSE.value == "DAILY_DOSE"
     assert SafetyComparisonOperator.BETWEEN.value == "BETWEEN"
-    assert ChatSourceType.MEDICATION_SAFETY_RULE.value == (
-        "MEDICATION_SAFETY_RULE"
-    )
+    assert ChatSourceType.MEDICATION_SAFETY_RULE.value == ("MEDICATION_SAFETY_RULE")
 
 
 async def _create_rule(*, rule_key: str = "a" * 64) -> MedicationSafetyRule:
@@ -54,9 +52,7 @@ async def _create_rule(*, rule_key: str = "a" * 64) -> MedicationSafetyRule:
         guidance_text="특정 연령에서는 사용하지 않도록 안내된 성분입니다.",
         review_status=InteractionReviewStatus.PENDING,
         rule_dataset_version="medication-safety-v1",
-        extraction_method=(
-            InteractionExtractionMethod.DETERMINISTIC_STRUCTURED
-        ),
+        extraction_method=(InteractionExtractionMethod.DETERMINISTIC_STRUCTURED),
     )
 
 

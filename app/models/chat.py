@@ -151,13 +151,11 @@ class ChatMessageSource(models.Model):
         null=True,
         on_delete=fields.RESTRICT,
     )
-    medication_safety_rule: fields.ForeignKeyNullableRelation[models.Model] = (
-        fields.ForeignKeyField(
-            "models.MedicationSafetyRule",
-            related_name="chat_message_sources",
-            null=True,
-            on_delete=fields.RESTRICT,
-        )
+    medication_safety_rule: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
+        "models.MedicationSafetyRule",
+        related_name="chat_message_sources",
+        null=True,
+        on_delete=fields.RESTRICT,
     )
     public_dataset_key = fields.CharField(max_length=100, null=True)
     dataset_version = fields.CharField(max_length=100, null=True)
