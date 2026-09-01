@@ -118,6 +118,18 @@ function registrationFor(
   };
 }
 
+test('override 목록은 기준 조회가 실패해도 오류 화면으로 바뀌지 않는다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, { detail: '기준 조회 실패' }, 500);
+  });
+
+  await page.goto('/dev/supplements-three-exceeded');
+
+  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 3개' })).toBeVisible();
+  await expect(page.getByText('영양제를 불러오지 못했어요')).toHaveCount(0);
+});
+
 test('목록 응답의 문자열 섭취기준을 합계 기준선과 상한선에 연결한다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {

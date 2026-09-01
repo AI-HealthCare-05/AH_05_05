@@ -112,9 +112,8 @@ export function SupplementsPage({
         setStandards(overrideHasProfile ? result.standards : null);
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : '영양제를 불러오지 못했어요.');
-        }
+        if (cancelled || supplementsOverride) return;
+        setLoadError(error instanceof Error ? error.message : '영양제를 불러오지 못했어요.');
       });
     return () => {
       cancelled = true;
