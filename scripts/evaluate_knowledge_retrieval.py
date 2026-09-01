@@ -87,8 +87,7 @@ async def run_cli(
 ) -> KnowledgeEvaluationReport:
     resolved_settings = settings or Config()
     manifest = load_evaluation_manifest(args.evaluation_file)
-    if manifest.dataset_version != args.dataset_version:
-        raise ValueError("평가 파일의 dataset_version이 CLI 인자와 일치하지 않습니다.")
+    manifest = manifest.model_copy(update={"dataset_version": args.dataset_version.strip()})
 
     qdrant_client = create_qdrant_client(resolved_settings)
     try:

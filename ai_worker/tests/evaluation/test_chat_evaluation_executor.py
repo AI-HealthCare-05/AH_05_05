@@ -13,6 +13,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSource,
     MedicationChatSourceKind,
 )
+from ai_worker.schemas.medication_search import (
+    MedicationKnowledgeQueryPlan,
+    MedicationSearchExecutionObservation,
+)
 
 from .test_chat_evaluator import build_case
 
@@ -72,6 +76,16 @@ async def test_execute_collects_query_plan_result_latency_and_trace_id() -> None
             ],
             prompt_version="test-prompt-v1",
             schema_version="test-result-v1",
+            search_observation=MedicationSearchExecutionObservation(
+                query_plan=MedicationKnowledgeQueryPlan(
+                    original_query="칼슘과 철분을 같이 먹어도 되나요?",
+                    expanded_query="칼슘 철분 상호작용",
+                    entity_names=["칼슘", "철분"],
+                    section_types=[KnowledgeSectionType.INTERACTION],
+                ),
+                query_plan_hash="a" * 64,
+                execution_plan_hash="b" * 64,
+            ),
         )
     )
     executor = ChatCoreEvaluationExecutor(
@@ -99,6 +113,8 @@ async def test_execute_collects_query_plan_result_latency_and_trace_id() -> None
     assert observation.safety_status == SafetyStatus.SAFE
     assert observation.response_time_ms == 125.0
     assert observation.langsmith_trace_id == "trace-123"
+    assert observation.query_plan_hash == "a" * 64
+    assert observation.execution_plan_hash == "b" * 64
     assert core.requests[0].user_id == 7
     assert core.requests[0].care_episode_id == 11
 

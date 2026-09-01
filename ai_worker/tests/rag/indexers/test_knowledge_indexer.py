@@ -107,6 +107,9 @@ async def test_index_release_embeds_and_upserts_in_batches() -> None:
     assert result.collection_name == "knowledge_release"
     assert result.dataset_version == "knowledge-pilot-v1"
     assert result.indexed_chunk_count == 3
+    assert result.metadata_quality is not None
+    assert result.metadata_quality.total_chunk_count == 3
+    assert result.metadata_quality.known_evidence_count == 0
 
 
 async def test_index_release_rejects_empty_chunks() -> None:
@@ -145,3 +148,67 @@ async def test_index_release_rejects_final_point_count_mismatch() -> None:
 
     with pytest.raises(ValueError, match="저장 건수"):
         await indexer.index_release([build_chunk("a")])
+
+
+async def test_index_release_rejects_incomplete_interaction_metadata() -> None:
+    indexer = KnowledgeIndexer(
+        embedding_provider=RecordingEmbeddingProvider(),
+        vector_store=RecordingKnowledgeStore(),
+    )
+    chunk = build_chunk("a").model_copy(
+        update={"metadata": build_chunk("a").metadata.model_copy(update={"interaction_pair_keys": ["f" * 64]})}
+    )
+
+    with pytest.raises(ValueError, match="상호작용 메타데이터"):
+        await indexer.index_release([chunk])
+
+
+async def test_index_release_accepts_drug_food_pair_with_one_drug_entity() -> None:
+    embedding_provider = RecordingEmbeddingProvider()
+    store = RecordingKnowledgeStore()
+    indexer = KnowledgeIndexer(
+        embedding_provider=embedding_provider,
+        vector_store=store,
+    )
+    chunk = build_chunk("a").model_copy(
+        update={
+            "metadata": build_chunk("a").metadata.model_copy(
+                update={
+                    "drug_names": ["펙소페나딘"],
+                    "interaction_type": "DRUG_FOOD",
+                    "interaction_pair_keys": ["f" * 64],
+                }
+            )
+        }
+    )
+
+    result = await indexer.index_release([chunk])
+
+    assert result.indexed_chunk_count == 1
+    assert embedding_provider.batches == [["embedding-a"]]
+
+
+async def test_index_release_rejects_drug_supplement_without_ingredient() -> None:
+    embedding_provider = RecordingEmbeddingProvider()
+    store = RecordingKnowledgeStore()
+    indexer = KnowledgeIndexer(
+        embedding_provider=embedding_provider,
+        vector_store=store,
+    )
+    chunk = build_chunk("a").model_copy(
+        update={
+            "metadata": build_chunk("a").metadata.model_copy(
+                update={
+                    "drug_names": ["와파린"],
+                    "interaction_type": "DRUG_SUPPLEMENT",
+                    "interaction_pair_keys": ["f" * 64],
+                }
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="상호작용 메타데이터"):
+        await indexer.index_release([chunk])
+
+    assert store.created is False
+    assert embedding_provider.batches == []

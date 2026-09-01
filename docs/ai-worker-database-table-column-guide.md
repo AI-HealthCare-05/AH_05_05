@@ -618,6 +618,34 @@ flowchart LR
     G --> H["환자 컨텍스트와 실행 시 판정"]
 ```
 
+현재 구현된 staging·적재 명령은 다음과 같다.
+
+```bash
+uv run --group ai --group app \
+  python -m scripts.build_medication_safety_staging \
+  --dataset-version medication-safety-v2
+
+uv run --group ai --group app \
+  python -m scripts.import_medication_safety_staging \
+  --marker data/knowledge/processed/staging/medication-safety-v2/current.json \
+  --allow-pending \
+  --dry-run
+
+uv run --group ai --group app \
+  python -m scripts.import_medication_safety_staging \
+  --marker data/knowledge/processed/staging/medication-safety-v2/current.json \
+  --allow-pending
+```
+
+`--allow-pending`은 자동 승인 옵션이 아니다. 사람이 아직 승인하지 않은 후보를
+MySQL에 `PENDING` 상태로 적재할 것을 명시하는 안전장치다. 같은 generation을
+다시 적재해도 신규 레코드는 생성되지 않는다.
+
+`medication-safety-v2`는 복합 성분·주기 표현처럼 수치가 둘 이상인 용량 문자열을
+임의의 단일 임계값으로 해석하지 않고 `AMBIGUOUS_DOSE_EXPRESSION`으로 격리한다.
+초기 `medication-safety-v1` 후보는 이 검사가 적용되기 전에 생성되었으므로 승인하지
+않고, v2 후보만 사람 검수 대상으로 사용한다.
+
 ## 11.3 챗봇 답변
 
 ```mermaid
@@ -760,6 +788,19 @@ WHERE m.request_id = :request_id
 ORDER BY m.id, s.citation_order;
 ```
 
+## 13.5 단일 약물 안전 규칙 상태·유형별 건수
+
+```sql
+SELECT
+    rule_dataset_version,
+    review_status,
+    rule_type,
+    COUNT(*) AS rule_count
+FROM medication_safety_rules
+GROUP BY rule_dataset_version, review_status, rule_type
+ORDER BY rule_dataset_version, review_status, rule_type;
+```
+
 ---
 
 # 14. 구현 체크리스트
@@ -785,9 +826,10 @@ ORDER BY m.id, s.citation_order;
 
 ## 후속 구현
 
-- [ ] 자료 유형별 CSV 파서
-- [ ] 후보 JSONL·자동 품질 검사
-- [ ] PENDING 적재·승인·감사 로그
+- [x] 자료 유형별 CSV 파서
+- [x] 후보 JSONL·자동 품질 검사
+- [x] SHA-256·건수 검증 후 트랜잭션 PENDING 적재
+- [ ] 후보 사람 검수·승인·감사 로그
 - [ ] 환자 컨텍스트 조건 평가기
 - [ ] `MATCHED`, `NOT_APPLICABLE`, `INSUFFICIENT_CONTEXT` 테스트
 

@@ -1,3 +1,6 @@
+from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
+    MedicationKnowledgeQueryBuilder,
+)
 from ai_worker.rag.retrievers.medication_knowledge_retriever import (
     MedicationKnowledgeRetriever,
 )
@@ -8,6 +11,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
+from ai_worker.schemas.medication_search import MedicationSearchExecutionPlan
 
 
 class FakeEmbeddingProvider:
@@ -26,7 +30,28 @@ class FakeKnowledgeStore:
 
     async def search(self, *, query_vector, search_query):
         self.queries.append(search_query)
+        if not self.responses:
+            return []
         return self.responses.pop(0)
+
+
+def build_execution_plan(
+    question: str,
+    *,
+    medication_names: list[str] | None = None,
+    supplement_names: list[str] | None = None,
+    interaction_pair_keys: list[str] | None = None,
+    limit: int = 5,
+) -> MedicationSearchExecutionPlan:
+    return MedicationSearchExecutionPlan(
+        query_plan=MedicationKnowledgeQueryBuilder().build(question),
+        patient_medication_names=medication_names or [],
+        patient_supplement_names=supplement_names or [],
+        approved_rule_pair_keys=interaction_pair_keys or [],
+        context_hash="a" * 64,
+        approved_rules_hash="b" * 64,
+        limit=limit,
+    )
 
 
 def build_chunk(
@@ -75,16 +100,285 @@ async def test_search_retries_without_entity_filters_when_filtered_search_is_emp
     )
 
     results = await retriever.search(
-        question="비타민 D 주의사항을 알려줘",
-        medication_names=[],
-        supplement_names=["비타민 D"],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "비타민 D 주의사항을 알려줘",
+            supplement_names=["비타민 D"],
+        ),
     )
 
     assert results == [build_chunk()]
     assert store.queries[0].ingredient_names == ["비타민 D"]
     assert store.queries[1].ingredient_names == []
+
+
+async def test_search_uses_supplied_query_plan_without_rebuilding_it() -> None:
+    store = FakeKnowledgeStore(responses=[[build_chunk()]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-baseline-v1",
+        min_similarity_score=0.65,
+    )
+    execution_plan = build_execution_plan(
+        "비타민 D 주의사항을 알려줘",
+        supplement_names=["비타민 D"],
+    )
+    supplied_query_plan = execution_plan.query_plan.model_copy(
+        update={"expanded_query": "공급된 실행 전용 검색문"},
+    )
+
+    await retriever.search_with_diagnostics(
+        execution_plan=execution_plan.model_copy(
+            update={"query_plan": supplied_query_plan},
+        ),
+    )
+
+    assert store.queries[0].query == "공급된 실행 전용 검색문"
+
+
+async def test_search_expands_ingredient_family_to_member_metadata_filters() -> None:
+    vitamin_b1 = build_chunk(
+        ingredient_names=["비타민 B1"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        content="비타민 B1은 탄수화물과 에너지 대사에 필요합니다.",
+    )
+    store = FakeKnowledgeStore(responses=[[vitamin_b1]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan("비타민 B는 왜 먹나요?"),
+    )
+
+    assert result.chunks == [vitamin_b1]
+    assert store.queries[0].ingredient_names == [
+        "비타민 B1",
+        "비타민 B2",
+        "비타민 B3",
+        "비타민 B5",
+        "비타민 B6",
+        "비타민 B7",
+        "비타민 B9",
+        "비타민 B12",
+    ]
+    assert result.diagnostics.selected_search_tier == "ENTITY"
+
+
+async def test_search_rescues_low_score_exact_topic_title() -> None:
+    topic = build_chunk(
+        0.51,
+        title="과민성대장증후군 곽혜선 final",
+        content="과민성대장증후군의 증상과 생활 관리 방법을 설명합니다.",
+        document_type=KnowledgeDocumentType.PHARM_REVIEW,
+        section_type=KnowledgeSectionType.OVERVIEW,
+    )
+    store = FakeKnowledgeStore(responses=[[topic]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "과민성대장증후군은 어떤 증상이 나타나고 어떻게 관리하나요?",
+        ),
+    )
+
+    assert result.chunks == [topic]
+    assert result.diagnostics.accepted_count == 1
+
+
+async def test_search_trusts_exact_pair_metadata_for_summary_evidence() -> None:
+    execution_plan = build_execution_plan(
+        "와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
+    )
+    target = build_chunk(
+        0.56,
+        title="항응고제와 영양소 상호작용",
+        content="관련 상호작용 연구의 핵심 결과를 요약합니다.",
+        document_type=KnowledgeDocumentType.PHARM_REVIEW,
+        section_type=KnowledgeSectionType.SUMMARY,
+    )
+    target.metadata.interaction_pair_keys = execution_plan.interaction_pair_keys
+    store = FakeKnowledgeStore(responses=[[target]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=execution_plan,
+    )
+
+    assert result.chunks == [target]
+    assert result.diagnostics.selected_search_tier == "EXACT_PAIR"
+
+
+async def test_search_rescues_verified_drug_food_relation_with_food_alias() -> None:
+    target = build_chunk(
+        0.49,
+        title="비스포스포네이트 복약 안내",
+        content=("알렌드로네이트는 아침 공복에 충분한 물과 함께 복용해야 합니다."),
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+    target.metadata.drug_names = ["알렌드로네이트"]
+    store = FakeKnowledgeStore(responses=[[], [target]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "알렌드로네이트는 음식이나 물과 어떻게 복용해야 하나요?",
+        ),
+    )
+
+    assert result.chunks == [target]
+    assert result.diagnostics.selected_search_tier == "EXACT_PAIR"
+
+
+async def test_search_relaxes_pair_to_entities_then_semantic_without_hint_filters() -> None:
+    store = FakeKnowledgeStore(responses=[])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+    execution_plan = build_execution_plan(
+        "와파린과 비타민 K를 같이 먹어도 되나요?",
+    )
+    execution_plan = execution_plan.model_copy(
+        update={
+            "query_plan": execution_plan.query_plan.model_copy(
+                update={"alternate_queries": []},
+            ),
+        },
+    )
+
+    await retriever.search_with_diagnostics(execution_plan=execution_plan)
+
+    assert len(store.queries) == 3
+    pair_query, entity_query, semantic_query = store.queries
+
+    assert pair_query.drug_names == []
+    assert pair_query.ingredient_names == []
+    assert pair_query.interaction_pair_keys == (execution_plan.query_plan.interaction_pair_keys)
+    assert pair_query.interaction_type is None
+    assert pair_query.section_types == []
+    assert pair_query.document_types == []
+
+    assert entity_query.drug_names == ["와파린"]
+    assert entity_query.ingredient_names == ["비타민 K"]
+    assert entity_query.interaction_pair_keys == []
+    assert entity_query.interaction_type is None
+    assert entity_query.section_types == []
+    assert entity_query.document_types == []
+
+    assert semantic_query.drug_names == []
+    assert semantic_query.ingredient_names == []
+    assert semantic_query.interaction_pair_keys == []
+    assert semantic_query.interaction_type is None
+    assert semantic_query.section_types == []
+    assert semantic_query.document_types == []
+
+
+async def test_search_semantic_fallback_recovers_pair_without_metadata_filters() -> None:
+    relevant = build_chunk(
+        0.80,
+        ingredient_names=["비타민 K"],
+        title="와파린과 비타민 K 상호작용 연구",
+        content="와파린과 비타민 K를 함께 사용할 때 상호작용에 주의합니다.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        section_type=KnowledgeSectionType.RESULTS,
+    )
+    relevant.metadata.drug_names = ["와파린"]
+    store = FakeKnowledgeStore(responses=[[], [], [relevant]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+    execution_plan = build_execution_plan(
+        "와파린과 비타민 K를 같이 먹어도 되나요?",
+    )
+    execution_plan = execution_plan.model_copy(
+        update={
+            "query_plan": execution_plan.query_plan.model_copy(
+                update={"alternate_queries": []},
+            ),
+        },
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=execution_plan,
+    )
+
+    assert result.chunks == [relevant]
+    assert result.diagnostics.fallback_used is True
+    assert result.diagnostics.attempted_search_tiers == [
+        "EXACT_PAIR",
+        "ENTITY",
+        "SEMANTIC",
+    ]
+    assert result.diagnostics.selected_search_tier == "SEMANTIC"
+
+
+async def test_search_semantic_fallback_rejects_high_score_wrong_entity() -> None:
+    wrong = build_chunk(
+        0.95,
+        chunk_id="b" * 64,
+        ingredient_names=["칼슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        content="칼슘은 뼈 형성과 유지에 필요합니다.",
+    )
+    relevant = build_chunk(
+        0.80,
+        chunk_id="c" * 64,
+        ingredient_names=["마그네슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        content="마그네슘은 에너지 이용에 필요합니다.",
+    )
+    store = FakeKnowledgeStore(responses=[[], [wrong, relevant]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+    execution_plan = build_execution_plan("마그네슘은 왜 먹나요?")
+    execution_plan = execution_plan.model_copy(
+        update={
+            "query_plan": execution_plan.query_plan.model_copy(
+                update={"alternate_queries": []},
+            ),
+        },
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=execution_plan,
+    )
+
+    assert result.chunks == [relevant]
+    assert result.diagnostics.rejected_entity_mismatch_count == 1
+    assert result.diagnostics.attempted_search_tiers == [
+        "ENTITY",
+        "SEMANTIC",
+    ]
+    assert result.diagnostics.selected_search_tier == "SEMANTIC"
 
 
 async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -> None:
@@ -117,11 +411,10 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
     )
 
     result = await retriever.search_with_diagnostics(
-        question="마그네슘은 왜 먹나요?",
-        medication_names=[],
-        supplement_names=["마그네슘"],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "마그네슘은 왜 먹나요?",
+            supplement_names=["마그네슘"],
+        ),
     )
 
     assert result.chunks == [accepted]
@@ -137,6 +430,8 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
         "accepted_count": 1,
         "max_raw_score": 0.8,
         "max_score": 0.8,
+        "attempted_search_tiers": ["ENTITY", "SEMANTIC"],
+        "selected_search_tier": "SEMANTIC",
     }
 
 
@@ -152,11 +447,7 @@ async def test_search_excludes_results_below_minimum_score() -> None:
     )
 
     results = await retriever.search(
-        question="비타민 D",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("비타민 D"),
     )
 
     assert [result.similarity_score for result in results] == [0.8]
@@ -172,17 +463,13 @@ async def test_search_requests_twenty_candidates_for_final_five() -> None:
     )
 
     await retriever.search(
-        question="마그네슘의 효능",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("마그네슘의 효능"),
     )
 
     assert store.queries[0].limit == 20
 
 
-async def test_search_reranks_exact_ingredient_and_section_match() -> None:
+async def test_search_rejects_unrelated_high_score_and_keeps_exact_ingredient() -> None:
     generic = build_chunk(
         0.8,
         chunk_id="a" * 64,
@@ -203,14 +490,43 @@ async def test_search_reranks_exact_ingredient_and_section_match() -> None:
     )
 
     results = await retriever.search(
-        question="마그네슘의 효능",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("마그네슘의 효능"),
     )
 
-    assert results == [exact, generic]
+    assert results == [exact]
+
+
+async def test_search_prefers_planned_document_type_without_filtering_candidates() -> None:
+    different_document_type = build_chunk(
+        0.75,
+        chunk_id="d" * 64,
+        ingredient_names=["마그네슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+    )
+    preferred_document_type = build_chunk(
+        0.73,
+        chunk_id="e" * 64,
+        ingredient_names=["마그네슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+    )
+    store = FakeKnowledgeStore(
+        responses=[[different_document_type, preferred_document_type]],
+    )
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    results = await retriever.search(
+        execution_plan=build_execution_plan("마그네슘은 왜 먹나요?"),
+    )
+
+    assert results == [preferred_document_type, different_document_type]
+    assert store.queries[0].document_types == []
 
 
 async def test_search_reranks_verified_bilingual_drug_alias_above_substring_match() -> None:
@@ -245,11 +561,7 @@ async def test_search_reranks_verified_bilingual_drug_alias_above_substring_matc
     )
 
     results = await retriever.search(
-        question="losartan 주의사항",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("losartan 주의사항"),
     )
 
     assert results == [exact_family, substring_only]
@@ -273,11 +585,7 @@ async def test_search_does_not_rescue_low_score_alias_from_wrong_section() -> No
     )
 
     results = await retriever.search(
-        question="losartan 주의사항",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("losartan 주의사항"),
     )
 
     assert results == []
@@ -303,11 +611,7 @@ async def test_search_rescues_legacy_encyclopedia_chunk_from_attached_heading() 
     )
 
     results = await retriever.search(
-        question="로사르탄 주의사항",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("로사르탄 주의사항"),
     )
 
     assert results == [legacy_caution]
@@ -331,11 +635,7 @@ async def test_search_rescues_lower_score_exact_drug_function_heading() -> None:
     )
 
     results = await retriever.search(
-        question="로사르탄의 효능을 알려줘",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("로사르탄의 효능을 알려줘"),
     )
 
     assert results == [exact_function]
@@ -386,11 +686,9 @@ async def test_search_prefers_explicit_requested_section_coverage() -> None:
     )
 
     results = await retriever.search(
-        question="로사르탄의 효능과 주의사항을 알려줘",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "로사르탄의 효능과 주의사항을 알려줘",
+        ),
     )
 
     assert results == [explicit_function, explicit_caution]
@@ -414,11 +712,7 @@ async def test_search_does_not_keep_wrong_legacy_section_after_heading_recovery(
     )
 
     results = await retriever.search(
-        question="로사르탄 효능",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("로사르탄 효능"),
     )
 
     assert results == []
@@ -446,11 +740,9 @@ async def test_search_rescues_legacy_usage_heading_after_previous_sentence() -> 
     )
 
     results = await retriever.search(
-        question="로사르탄은 일반적으로 어떻게 복용하나요?",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "로사르탄은 일반적으로 어떻게 복용하나요?",
+        ),
     )
 
     assert results == [legacy_usage]
@@ -474,11 +766,7 @@ async def test_search_does_not_treat_body_word_as_legacy_section_heading() -> No
     )
 
     results = await retriever.search(
-        question="로사르탄 주의사항",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("로사르탄 주의사항"),
     )
 
     assert results == []
@@ -499,11 +787,7 @@ async def test_search_accepts_strong_entity_and_section_match_after_boost() -> N
     )
 
     results = await retriever.search(
-        question="마그네슘의 효능",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("마그네슘의 효능"),
     )
 
     assert results == [exact_match]
@@ -524,11 +808,7 @@ async def test_search_does_not_rescue_weak_exact_match() -> None:
     )
 
     results = await retriever.search(
-        question="마그네슘의 효능",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("마그네슘의 효능"),
     )
 
     assert results == []
@@ -550,11 +830,9 @@ async def test_search_accepts_population_name_contained_in_metadata_entity() -> 
     )
 
     results = await retriever.search(
-        question="임산부는 무슨 약을 조심해야 해?",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "임산부는 무슨 약을 조심해야 해?",
+        ),
     )
 
     assert results == [population_caution]
@@ -581,11 +859,9 @@ async def test_search_merges_separate_english_pair_query_results() -> None:
     )
 
     results = await retriever.search(
-        question="칼슘과 철분을 같이 먹으면 철분 흡수가 떨어지나요?",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "칼슘과 철분을 같이 먹으면 철분 흡수가 떨어지나요?",
+        ),
     )
 
     assert results == [target]
@@ -614,11 +890,9 @@ async def test_search_rescues_low_score_drug_food_chunk_only_when_both_entities_
     )
 
     result = await retriever.search_with_diagnostics(
-        question="펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
+        ),
     )
 
     assert result.chunks == [target]
@@ -644,11 +918,9 @@ async def test_search_rejects_high_score_interaction_chunk_when_one_entity_is_mi
     )
 
     result = await retriever.search_with_diagnostics(
-        question="펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
+        ),
     )
 
     assert result.chunks == []
@@ -674,11 +946,9 @@ async def test_search_rejects_single_ingredient_chunk_for_pair_question() -> Non
     )
 
     result = await retriever.search_with_diagnostics(
-        question="아연을 복용하면 철분 수치가 낮아질 수 있나요?",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "아연을 복용하면 철분 수치가 낮아질 수 있나요?",
+        ),
     )
 
     assert result.chunks == []
@@ -720,11 +990,9 @@ async def test_search_multi_entity_question_accepts_only_chunks_matching_a_pair(
     )
 
     result = await retriever.search_with_diagnostics(
-        question="와파린, 비타민 K, 칼슘의 상호작용을 알려줘",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "와파린, 비타민 K, 칼슘의 상호작용을 알려줘",
+        ),
     )
 
     assert result.chunks == [supported_pair]
@@ -768,11 +1036,9 @@ async def test_search_prioritizes_pair_relationship_in_same_sentence() -> None:
     )
 
     results = await retriever.search(
-        question="와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan(
+            "와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
+        ),
     )
 
     assert results == [direct_relationship, scattered_mentions]
@@ -803,11 +1069,7 @@ async def test_search_limits_results_from_one_document_to_two_chunks() -> None:
     )
 
     results = await retriever.search(
-        question="비타민 D 주의사항",
-        medication_names=[],
-        supplement_names=[],
-        interaction_pair_keys=[],
-        limit=5,
+        execution_plan=build_execution_plan("비타민 D 주의사항"),
     )
 
     assert [result.metadata.document_id for result in results] == [

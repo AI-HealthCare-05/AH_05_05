@@ -1,6 +1,11 @@
 from decimal import Decimal
 
-from scripts.import_nutrient_standards import DEFAULT_PATH, EXPECTED_HEADERS, parse_csv
+from scripts.import_nutrient_standards import (
+    DEFAULT_PATH,
+    EXPECTED_HEADERS,
+    parse_args,
+    parse_csv,
+)
 
 
 def test_generated_csv_matches_wide_schema_and_preserves_nulls() -> None:
@@ -21,3 +26,18 @@ def test_source_comma_values_are_normalized_to_numeric_values() -> None:
     assert by_target[("남자", "19-29세")]["phosphorus_mg_rni"] == Decimal("650")
     assert by_target[("여자", "6-8세")]["vitamin_c_mg_ul"] == Decimal("750")
     assert by_target[("임신부", None)]["calcium_mg_rni"] == Decimal("0")
+
+
+def test_default_source_contains_exactly_24_unique_targets() -> None:
+    records = parse_csv(DEFAULT_PATH)
+    keys = {(record["grp"], record["age"]) for record in records}
+
+    assert len(records) == 24
+    assert len(keys) == 24
+
+
+def test_parse_args_supports_dry_run() -> None:
+    args = parse_args(["--dry-run"])
+
+    assert args.dry_run is True
+    assert args.path == DEFAULT_PATH

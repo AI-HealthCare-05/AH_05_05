@@ -46,6 +46,7 @@ app = [
     "pywebpush==2.4.0",
     "tortoise-orm>=0.25.3",
     "uvicorn>=0.40.0",
+    "openpyxl>=3.1.5,<4",
 ]
 dev = [
     "coverage>=7.13.2",

@@ -11,6 +11,7 @@ from ai_worker.schemas.medication_chat import (
 
 
 class ChatEvaluationCategory(StrEnum):
+    NO_SOURCE = "NO_SOURCE"
     RDB_ONLY = "RDB_ONLY"
     VECTOR_ONLY = "VECTOR_ONLY"
     RDB_AND_VECTOR = "RDB_AND_VECTOR"
@@ -37,7 +38,7 @@ class ChatEvaluationExpected(BaseModel):
     intent_tags: list[str] = Field(min_length=1)
     normalized_entities: list[ChatExpectedEntity] = Field(min_length=1)
     section_types: list[KnowledgeSectionType] = Field(min_length=1)
-    required_source_kinds: list[MedicationChatSourceKind] = Field(min_length=1)
+    required_source_kinds: list[MedicationChatSourceKind] = Field(default_factory=list)
     safety_status: SafetyStatus = SafetyStatus.SAFE
     require_langsmith_trace: bool = True
     answer_requirements: list[str] = Field(min_length=1)
@@ -80,7 +81,9 @@ class ChatEvaluationManifest(BaseModel):
             source_kinds = set(case.expected.required_source_kinds)
             has_vector = MedicationChatSourceKind.PUBLIC_KNOWLEDGE in source_kinds
             has_rdb = bool(source_kinds - {MedicationChatSourceKind.PUBLIC_KNOWLEDGE})
-            if has_vector and has_rdb:
+            if not source_kinds:
+                expected_category = ChatEvaluationCategory.NO_SOURCE
+            elif has_vector and has_rdb:
                 expected_category = ChatEvaluationCategory.RDB_AND_VECTOR
             elif has_vector:
                 expected_category = ChatEvaluationCategory.VECTOR_ONLY
@@ -88,6 +91,11 @@ class ChatEvaluationManifest(BaseModel):
                 expected_category = ChatEvaluationCategory.RDB_ONLY
             if case.category != expected_category:
                 raise ValueError("category와 required_source_kinds의 데이터 경로가 일치해야 합니다.")
+            if (
+                case.category == ChatEvaluationCategory.NO_SOURCE
+                and case.expected.route != MedicationChatRoute.CLARIFICATION
+            ):
+                raise ValueError("NO_SOURCE 평가는 CLARIFICATION 경로에만 사용할 수 있습니다.")
         return self
 
 
@@ -100,6 +108,14 @@ class ChatEvaluationObservation(BaseModel):
     safety_status: SafetyStatus | None = None
     response_time_ms: float = Field(ge=0.0)
     langsmith_trace_id: str | None = None
+    query_plan_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    execution_plan_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     answer: str = ""
     error_code: str | None = None
 

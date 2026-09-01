@@ -37,7 +37,7 @@ cases:
   - query_id: vitamin-a-daily-intake
     query: 비타민 A의 일일 섭취량 기준은 어떻게 되나요?
     expected_document_ids:
-      - mfds_supplement_code-d0ee39cdebceccf2
+      - food_safety_korea_supplement_ingredients-1d2702336f22ecc4
     expected_ingredient_names:
       - 비타민 A
     ingredient_names:
@@ -62,6 +62,10 @@ cases:
     query: 독사조신 복용 후 심한 어지러움이 보고된 사례가 있나요?
     expected_document_ids:
       - kpicia_adverse_case_report-2e89423c98769fbb
+    expected_drug_names:
+      - 독사조신
+    drug_names:
+      - 독사조신
     document_types:
       - ADVERSE_CASE_REPORT
     section_types:
@@ -82,6 +86,18 @@ cases:
     query: 칼슘 섭취가 철 흡수에 어떤 영향을 줄 수 있나요?
     expected_document_ids:
       - research_supplement_interactions-016c81c9a3e29ebd
+      - research_supplement_interactions-7983c60e9a092828
+    expected_ingredient_names:
+      - 칼슘
+      - 철분
+    expected_interaction_pair_keys:
+      - 38dc3ee431472133b30bbb47997b5933968c14bee17140cdad320c06092de3fc
+    ingredient_names:
+      - 칼슘
+      - 철분
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys:
+      - 38dc3ee431472133b30bbb47997b5933968c14bee17140cdad320c06092de3fc
     document_types:
       - RESEARCH_ARTICLE
 
@@ -89,6 +105,15 @@ cases:
     query: 펙소페나딘을 자몽주스나 사과주스와 함께 먹어도 되나요?
     expected_document_ids:
       - mfds_drug_food_interaction_guide-53bfb2433f48a8b0
+    expected_drug_names:
+      - 펙소페나딘
+    expected_interaction_pair_keys:
+      - f9802ebfd475228768bee877a5e3594f606bb2941b56b0edb4fe142f969efab1
+    drug_names:
+      - 펙소페나딘
+    interaction_type: DRUG_FOOD
+    interaction_pair_keys:
+      - f9802ebfd475228768bee877a5e3594f606bb2941b56b0edb4fe142f969efab1
     document_types:
       - DRUG_FOOD_INTERACTION_GUIDE
     section_types:
@@ -113,3 +138,85 @@ cases:
       - mfds_supplement_function_guide-b6e3f0c206cd3a22
     document_types:
       - SUPPLEMENT_FUNCTION_GUIDE
+
+  - query_id: warfarin-vitamin-k
+    query: 와파린과 비타민 K 영양제를 같이 먹어도 되나요?
+    expected_document_ids:
+      - kpicia_pharm_review-c4ea8e68b35b65b3
+    expected_drug_names:
+      - 와파린
+    expected_ingredient_names:
+      - 비타민 K
+    expected_interaction_pair_keys:
+      - d6653608f46bb208d7f63306f9078d18aa0b88444c9cf7a01cb3936432e24af9
+    drug_names:
+      - 와파린
+    ingredient_names:
+      - 비타민 K
+    interaction_type: DRUG_SUPPLEMENT
+    interaction_pair_keys:
+      - d6653608f46bb208d7f63306f9078d18aa0b88444c9cf7a01cb3936432e24af9
+    document_types:
+      - PHARM_REVIEW
+    section_types:
+      - SUMMARY
+    expected_section_types:
+      - SUMMARY
+
+  - query_id: warfarin-metronidazole
+    query: 와파린과 메트로니다졸을 같이 복용해도 되나요?
+    expected_document_ids:
+      - kpicia_pharm_review-e8127943c02a5a76
+    expected_drug_names:
+      - 와파린
+      - 메트로니다졸
+    expected_interaction_pair_keys:
+      - e3cadc1cf121c5fd105f8ee57d012a0419c4d4f9638edbcc229e77820ff6608a
+    drug_names:
+      - 와파린
+      - 메트로니다졸
+    interaction_type: DRUG_DRUG
+    interaction_pair_keys:
+      - e3cadc1cf121c5fd105f8ee57d012a0419c4d4f9638edbcc229e77820ff6608a
+    document_types:
+      - PHARM_REVIEW
+    section_types:
+      - SUMMARY
+    expected_section_types:
+      - SUMMARY
+
+  - query_id: acetaminophen-brand-alias
+    query: 타이레놀의 효능과 주의사항을 알려주세요.
+    expected_document_ids:
+      - kpicia_drug_encyclopedia-33898a903b6cbca7
+    expected_drug_names:
+      - 아세트아미노펜
+    drug_names:
+      - 아세트아미노펜
+    document_types:
+      - DRUG_ENCYCLOPEDIA
+    section_types:
+      - FUNCTION
+      - CAUTION
+    expected_section_types:
+      - FUNCTION
+      - CAUTION
+
+  - query_id: losartan-hard-negative
+    query: 로사르탄의 효능과 주의사항을 알려주세요.
+    expected_document_ids:
+      - kpicia_drug_encyclopedia-5fe155bd6066b3c6
+    expected_drug_names:
+      - 로사르탄
+    forbidden_document_ids:
+      - kpicia_drug_encyclopedia-c649427ba7b67d68
+    drug_names:
+      - 로사르탄
+    document_types:
+      - DRUG_ENCYCLOPEDIA
+    section_types:
+      - FUNCTION
+      - CAUTION
+    expected_section_types:
+      - FUNCTION
+      - CAUTION

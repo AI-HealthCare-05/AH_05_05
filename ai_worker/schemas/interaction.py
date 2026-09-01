@@ -119,6 +119,15 @@ _PAIR_TYPE_BY_ENTITY_KINDS = {
 }
 
 
+def interaction_pair_type_for_kinds(
+    left_kind: InteractionEntityKind,
+    right_kind: InteractionEntityKind,
+) -> InteractionPairType | None:
+    """두 상호작용 주체 종류에 대응하는 표준 조합 유형을 반환합니다."""
+
+    return _PAIR_TYPE_BY_ENTITY_KINDS.get(frozenset({left_kind, right_kind}))
+
+
 def build_interaction_pair_key(
     left_entity: InteractionEntity,
     right_entity: InteractionEntity,
@@ -192,13 +201,9 @@ class InteractionRuleCandidate(BaseModel):
 
     @model_validator(mode="after")
     def validate_and_build_identifiers(self) -> Self:
-        expected_pair_type = _PAIR_TYPE_BY_ENTITY_KINDS.get(
-            frozenset(
-                {
-                    self.left_entity.kind,
-                    self.right_entity.kind,
-                }
-            )
+        expected_pair_type = interaction_pair_type_for_kinds(
+            self.left_entity.kind,
+            self.right_entity.kind,
         )
         if expected_pair_type != self.pair_type:
             raise ValueError("pair_type이 상호작용 주체 종류와 일치하지 않습니다.")
