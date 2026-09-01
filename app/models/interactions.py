@@ -30,6 +30,7 @@ class MedicationProductGuide(models.Model):
     drug_food_interactions = fields.TextField()
     adverse_reactions = fields.TextField()
     storage_instructions = fields.TextField()
+    item_image_url = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

@@ -1601,6 +1601,7 @@ Table medication_product_guides {
   drug_food_interactions text [not null]
   adverse_reactions text [not null]
   storage_instructions text [not null]
+  item_image_url text [note: 'e약은요 낱알이미지 URL. 원본 값이 없으면 NULL']
   created_at datetime [not null, default: `current_timestamp`]
   updated_at datetime [not null]
 
@@ -1609,8 +1610,8 @@ Table medication_product_guides {
   }
 
   Note: '''
-  식약처 e약은요 CSV에서 사용자에게 필요한 제품 가이드 10개 필드만 보존한다.
-  이미지 URL·공개일자 등 현재 서비스에서 사용하지 않는 중복 필드는 적재하지 않는다.
+  식약처 e약은요 CSV에서 사용자에게 필요한 제품 안내와 낱알이미지 URL을 보존한다.
+  공개일자 등 현재 서비스에서 사용하지 않는 중복 필드는 적재하지 않는다.
   품목일련번호가 같은 완전 중복 행은 하나로 병합하고 내용 충돌은 적재 전에 차단한다.
   '''
 }
@@ -1975,4 +1976,3 @@ Table suppl_nutr_rank_item {
 Ref: display_suppl_nutr_rank.created_by_admin_id > admin.id
 Ref: suppl_nutr_rank_item.display_id > display_suppl_nutr_rank.id
 Ref: suppl_nutr_rank_item.supplement_nutrient_id > supplement_nutrients.id
-
