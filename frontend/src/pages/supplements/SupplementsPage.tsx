@@ -396,7 +396,7 @@ function NutrientTotalCard({
                 <span>상한 기준이 없어요</span>
               )}
             </div>
-            <NutrientRangeBar total={total} />
+            {total.ul !== null && <NutrientRangeBar total={total} />}
             <StandardStatus total={total} />
           </>
         )}
@@ -438,11 +438,18 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
   if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
     return (
       <p className="text-sm text-muted-foreground">
-        영양제로는 권장량의 {evaluation.percentOfBase}%
+        권장량의 {numberFormat.format(evaluation.percentOfBase)}%예요
       </p>
     );
   }
   if (evaluation.status === 'recommended') {
+    if (total.ul === null && evaluation.percentOfBase !== null) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          권장량의 {numberFormat.format(evaluation.percentOfBase)}%예요
+        </p>
+      );
+    }
     return <p className="text-sm text-muted-foreground">권장 범위예요</p>;
   }
   return null;
@@ -464,7 +471,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
     >
       <div className="absolute inset-x-0 top-2 h-2 rounded-pill bg-muted-bg">
         <div
-          className={`h-full rounded-pill ${overUpperLimit ? 'bg-warning' : 'bg-primary-bg'}`}
+          className={`h-full rounded-pill ${overUpperLimit ? 'bg-warning' : 'bg-primary'}`}
           style={{ width: `${positions.marker}%` }}
         />
       </div>
@@ -472,7 +479,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
         <span
           data-threshold="base"
           aria-hidden
-          className="absolute top-1 h-4 w-px bg-muted-foreground"
+          className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
           style={{ left: `${positions.base}%` }}
         />
       )}
@@ -480,7 +487,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
         <span
           data-threshold="upper-limit"
           aria-hidden
-          className={`absolute top-1 h-4 w-px ${
+          className={`absolute top-1 h-4 w-0.5 ${
             overUpperLimit ? 'bg-warning' : 'bg-muted-foreground'
           }`}
           style={{ left: `${positions.upper}%` }}
@@ -489,7 +496,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
       <span
         aria-hidden
         className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${
-          overUpperLimit ? 'bg-warning' : 'bg-muted-foreground'
+          overUpperLimit ? 'bg-warning' : 'bg-primary-strong'
         }`}
         style={{ left: `${positions.marker}%` }}
       />
@@ -507,12 +514,6 @@ function rangePositions(total: NutrientTotal, base: number | null) {
       ? null
       : Math.max(8, Math.min(upper - 8, (base / total.ul) * upper));
     return { base: basePosition, upper, marker };
-  }
-
-  if (base !== null) {
-    const basePosition = 64;
-    const marker = Math.max(0, Math.min(100, (total.amount / base) * basePosition));
-    return { base: basePosition, upper: null, marker };
   }
 
   return { base: null, upper: null, marker: 0 };
