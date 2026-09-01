@@ -12,6 +12,7 @@ from ai_worker.schemas.medication_safety import (
 )
 from ai_worker.services.medication_safety_staging_service import (
     MedicationSafetyStagingService,
+    _parse_amount,
 )
 
 DUR_FIELDS = [
@@ -226,7 +227,7 @@ def test_build_converts_all_seven_source_types(tmp_path: Path) -> None:
     assert excipient.conditions[0].value_text == "유당"
 
 
-def test_build_skips_unsafe_age_conversion_and_inactive_rows(
+def test_build_converts_integer_months_to_days_and_skips_unsafe_rows(
     tmp_path: Path,
 ) -> None:
     paths = build_input_files(tmp_path)
@@ -257,6 +258,13 @@ def test_build_skips_unsafe_age_conversion_and_inactive_rows(
                 age="18세미만",
                 status="삭제",
             ),
+            dur_row(
+                "a-4",
+                "특정연령대금기",
+                code="D4",
+                name="성분4",
+                age="1.5개월미만",
+            ),
         ],
     )
 
@@ -266,18 +274,27 @@ def test_build_skips_unsafe_age_conversion_and_inactive_rows(
         dataset_version="medication-safety-2026-09",
     )
 
-    assert result.accepted_row_count == 7
+    assert result.accepted_row_count == 8
     assert result.skipped_reason_counts == {
         "INACTIVE_STATUS": 1,
         "UNSUPPORTED_AGE_MONTH_UNIT": 1,
     }
-    candidate = next(
+    candidates = load_candidates(tmp_path / "processed", result.candidates_path)
+    six_month_candidate = next(
         item
-        for item in load_candidates(tmp_path / "processed", result.candidates_path)
-        if item.rule_type == MedicationSafetyRuleType.AGE_CONTRAINDICATION
+        for item in candidates
+        if item.entity.source_code == "D1"
     )
-    assert candidate.conditions[0].condition_kind == SafetyConditionKind.AGE_YEARS
-    assert candidate.conditions[0].value_min == 1
+    twelve_month_candidate = next(
+        item
+        for item in candidates
+        if item.entity.source_code == "D2"
+    )
+    assert six_month_candidate.conditions[0].condition_kind == SafetyConditionKind.AGE_DAYS
+    assert six_month_candidate.conditions[0].value_min == 180
+    assert six_month_candidate.conditions[0].unit == "day"
+    assert twelve_month_candidate.conditions[0].condition_kind == SafetyConditionKind.AGE_DAYS
+    assert twelve_month_candidate.conditions[0].value_min == 360
 
 
 def test_build_is_deterministic_and_records_quality_hash(tmp_path: Path) -> None:
@@ -366,6 +383,42 @@ def test_build_skips_ambiguous_dose_and_unknown_pregnancy_grade(
         "UNSUPPORTED_PREGNANCY_GRADE": 1,
     }
     assert result.accepted_row_count == 5
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_amount", "expected_unit"),
+    [
+        ("메노트로핀에이치피450아이.유", "450", "IU/day"),
+        ("360메가베크렐", "360", "MBq/day"),
+        ("Tacalcitol로200μg", "200", "mcg/day"),
+        ("메클리진염산염수화물50mg밀리그램", "50", "mg/day"),
+        ("PenicillinG로2|400만단위", "24000000", "unit/day"),
+    ],
+)
+def test_parse_amount_accepts_only_explicit_closed_units(
+    source: str,
+    expected_amount: str,
+    expected_unit: str,
+) -> None:
+    amount, unit = _parse_amount(source)
+
+    assert str(amount) == expected_amount
+    assert unit == expected_unit
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "800",
+        "비고참고밀리그램",
+        "1주50g(60mL)(Clobetasolpropionate로1주25mg)",
+    ],
+)
+def test_parse_amount_keeps_unitless_or_multi_value_expressions_quarantined(
+    source: str,
+) -> None:
+    with pytest.raises(ValueError):
+        _parse_amount(source)
 
 
 def test_failed_generation_write_does_not_publish_partial_directory(

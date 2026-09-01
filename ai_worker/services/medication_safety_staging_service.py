@@ -99,10 +99,21 @@ _DOSE_UNIT_BY_KOREAN = {
     "프리필드시린지": "prefilled-syringe/day",
     "프리필드펜": "prefilled-pen/day",
     "시린지": "syringe/day",
+    "아이.유": "IU/day",
+    "메가베크렐": "MBq/day",
+    "μg": "mcg/day",
+    "mg": "mg/day",
+    "mL": "mL/day",
+    "ml": "mL/day",
+    "g": "g/day",
+    "만단위": "unit/day",
+}
+_DOSE_AMOUNT_MULTIPLIER = {
+    "만단위": Decimal("10000"),
 }
 _AMOUNT_PATTERN = re.compile(
     r"(?P<amount>\d+(?:\.\d+)?)"
-    r"(?P<unit>마이크로그램|밀리그램|밀리리터|그램|리터|방울|캡슐|프리필드시린지|프리필드펜|바이알|시린지|앰플|정|포|회|병|매|개|환)"
+    r"(?P<unit>마이크로그램|밀리그램|밀리리터|그램|리터|방울|캡슐|프리필드시린지|프리필드펜|바이알|시린지|앰플|아이\.유|메가베크렐|만단위|μg|mg|mL|ml|g|정|포|회|병|매|개|환)"
 )
 _AGE_PATTERN = re.compile(r"^(?P<value>\d+(?:\.\d+)?)(?P<unit>세|개월|주|일)(?P<operator>미만|이하|이상|초과)$")
 _DURATION_PATTERN = re.compile(r"^(?P<days>\d+(?:\.\d+)?)일$")
@@ -525,11 +536,11 @@ def _parse_age_condition(value: str) -> MedicationSafetyConditionCandidate:
         normalized_amount = amount
         normalized_unit = "year"
     elif unit == "개월":
-        if amount % 12 != 0:
+        if amount != amount.to_integral_value():
             raise _SkipRowError("UNSUPPORTED_AGE_MONTH_UNIT", value)
-        condition_kind = SafetyConditionKind.AGE_YEARS
-        normalized_amount = amount / 12
-        normalized_unit = "year"
+        condition_kind = SafetyConditionKind.AGE_DAYS
+        normalized_amount = amount * 30
+        normalized_unit = "day"
     elif unit == "주":
         condition_kind = SafetyConditionKind.AGE_DAYS
         normalized_amount = amount * 7
@@ -549,15 +560,25 @@ def _parse_age_condition(value: str) -> MedicationSafetyConditionCandidate:
 
 
 def _parse_amount(value: str) -> tuple[Decimal, str]:
-    compact = _compact(value).replace("|", "").replace(",", "")
+    compact = (
+        _compact(value)
+        .replace("|", "")
+        .replace(",", "")
+        .replace("mg밀리그램", "mg")
+    )
     matches = list(_AMOUNT_PATTERN.finditer(compact))
     if not matches:
         raise _SkipRowError("UNSUPPORTED_DOSE_EXPRESSION", value)
     if len(matches) != 1:
         raise _SkipRowError("AMBIGUOUS_DOSE_EXPRESSION", value)
     match = matches[0]
-    unit = _DOSE_UNIT_BY_KOREAN[match.group("unit")]
-    return Decimal(match.group("amount")), unit
+    raw_unit = match.group("unit")
+    unit = _DOSE_UNIT_BY_KOREAN[raw_unit]
+    amount = Decimal(match.group("amount")) * _DOSE_AMOUNT_MULTIPLIER.get(
+        raw_unit,
+        Decimal("1"),
+    )
+    return amount, unit
 
 
 def _numeric_condition(
