@@ -307,6 +307,8 @@ export function HomePage({
           <SupplementRankingCard
             ranking={visibleSupplementRanking}
             registrationPending={supplementRegistrationPending}
+            maxItems={3}
+            onMore={() => navigate('/supplements?tab=browse')}
             onSelect={(productId) =>
               navigate('/supplements', { state: { presetProductId: String(productId) } })
             }
