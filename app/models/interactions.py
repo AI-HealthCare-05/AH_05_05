@@ -12,6 +12,9 @@ from app.models.enums import (
     InteractionPairType,
     InteractionReviewStatus,
     InteractionRiskLevel,
+    MedicationSafetyRuleType,
+    SafetyComparisonOperator,
+    SafetyConditionKind,
 )
 
 
@@ -27,6 +30,7 @@ class MedicationProductGuide(models.Model):
     drug_food_interactions = fields.TextField()
     adverse_reactions = fields.TextField()
     storage_instructions = fields.TextField()
+    item_image_url = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -241,3 +245,102 @@ class InteractionRuleEvidenceChunk(models.Model):
         table = "interaction_rule_evidence_chunks"
         unique_together = (("interaction_rule_source", "dataset_version", "vector_chunk_id"),)
         indexes = (("vector_chunk_id",),)
+
+
+class MedicationSafetyRule(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    rule_key = fields.CharField(max_length=64)
+    interaction_entity = fields.ForeignKeyField(
+        "models.InteractionEntity",
+        related_name="medication_safety_rules",
+        on_delete=fields.RESTRICT,
+    )
+    rule_type = fields.CharEnumField(MedicationSafetyRuleType)
+    risk_level = fields.CharEnumField(InteractionRiskLevel)
+    guidance_text = fields.TextField()
+    review_status = fields.CharEnumField(
+        InteractionReviewStatus,
+        default=InteractionReviewStatus.PENDING,
+    )
+    rule_dataset_version = fields.CharField(max_length=100)
+    extraction_method = fields.CharEnumField(InteractionExtractionMethod)
+    approved_at = fields.DatetimeField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "medication_safety_rules"
+        unique_together = (("rule_key", "rule_dataset_version"),)
+        indexes = (
+            ("interaction_entity", "rule_type", "review_status"),
+            ("rule_dataset_version", "review_status"),
+        )
+
+
+class MedicationSafetyRuleCondition(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    medication_safety_rule = fields.ForeignKeyField(
+        "models.MedicationSafetyRule",
+        related_name="conditions",
+        on_delete=fields.CASCADE,
+    )
+    condition_group_no = fields.SmallIntField(
+        validators=[MinValueValidator(1)],
+    )
+    condition_order = fields.SmallIntField(
+        validators=[MinValueValidator(1)],
+    )
+    condition_kind = fields.CharEnumField(SafetyConditionKind)
+    comparison_operator = fields.CharEnumField(SafetyComparisonOperator)
+    value_min = fields.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+    )
+    value_max = fields.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+    )
+    value_text = fields.CharField(max_length=255, null=True)
+    unit = fields.CharField(max_length=30, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "medication_safety_rule_conditions"
+        unique_together = (
+            (
+                "medication_safety_rule",
+                "condition_group_no",
+                "condition_order",
+            ),
+        )
+        indexes = (("condition_kind", "comparison_operator"),)
+
+
+class MedicationSafetyRuleSource(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    medication_safety_rule = fields.ForeignKeyField(
+        "models.MedicationSafetyRule",
+        related_name="sources",
+        on_delete=fields.CASCADE,
+    )
+    source_id = fields.CharField(max_length=100)
+    document_id = fields.CharField(max_length=150)
+    record_id = fields.CharField(max_length=150)
+    raw_effect_text = fields.TextField()
+    source_published_at = fields.DateField(null=True)
+    source_url = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "medication_safety_rule_sources"
+        unique_together = (
+            (
+                "medication_safety_rule",
+                "source_id",
+                "document_id",
+                "record_id",
+            ),
+        )
+        indexes = (("source_id", "record_id"),)
