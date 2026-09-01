@@ -1,6 +1,6 @@
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.dtos.base import BaseSerializerModel
 
@@ -38,6 +38,15 @@ class SupplementNutrientResponse(BaseSerializerModel):
     serving_size: str
     daily_freq: str
     target: str | None
+    rating_average: Decimal | None = None
+    review_count: int = 0
+
+    @field_validator("rating_average", mode="before")
+    @classmethod
+    def round_rating_average(cls, value: Decimal | int | float | str | None) -> Decimal | None:
+        if value is None:
+            return None
+        return Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
 class SupplementNutrientListResponse(BaseModel):
