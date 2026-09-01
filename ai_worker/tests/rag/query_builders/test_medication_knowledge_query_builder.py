@@ -470,3 +470,64 @@ def test_build_removes_conjunction_particles_from_entity_names(
     plan = MedicationKnowledgeQueryBuilder().build(question)
 
     assert plan.entity_names == expected_names
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_names"),
+    [
+        (
+            "비타민 B6의 일일 섭취량 기준은 얼마인가요?",
+            ["비타민 B6"],
+        ),
+        (
+            "비타민 A의 일일 섭취량 기준은 어떻게 되나요?",
+            ["비타민 A"],
+        ),
+        (
+            "독사조신 복용 후 심한 어지러움이 보고된 사례가 있나요?",
+            ["독사조신"],
+        ),
+        (
+            "와파린과 메트로니다졸을 같이 복용해도 되나요?",
+            ["와파린", "메트로니다졸"],
+        ),
+    ],
+)
+def test_build_removes_general_language_noise_from_evaluation_questions(
+    question: str,
+    expected_names: list[str],
+) -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(question)
+
+    assert plan.entity_names == expected_names
+
+
+def test_build_preserves_multiword_vaccine_name_as_one_entity() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "A형 간염 백신은 어떤 역할을 하나요?",
+    )
+
+    assert plan.entity_names == ["A형 간염 백신"]
+    assert plan.entities[0].kind == InteractionEntityKind.DRUG
+
+
+def test_build_detects_supplement_absorption_effect_as_interaction() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "칼슘 섭취가 철 흡수에 어떤 영향을 줄 수 있나요?",
+    )
+
+    assert plan.entity_names == ["칼슘", "철분"]
+    assert plan.section_types == [KnowledgeSectionType.INTERACTION]
+    assert plan.interaction_types == [
+        InteractionPairType.SUPPLEMENT_SUPPLEMENT,
+    ]
+
+
+def test_build_detects_drug_food_usage_as_interaction() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "알렌드로네이트는 음식이나 물과 어떻게 복용해야 하나요?",
+    )
+
+    assert plan.entity_names == ["알렌드로네이트", "음식"]
+    assert plan.section_types == [KnowledgeSectionType.INTERACTION]
+    assert plan.interaction_types == [InteractionPairType.DRUG_FOOD]

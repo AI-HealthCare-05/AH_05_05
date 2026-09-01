@@ -6,6 +6,7 @@ from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
 from ai_worker.rag.metadata.supplement_interaction_registry import (
+    canonical_supplement_name,
     find_supplement_interaction_pair,
 )
 from ai_worker.schemas.interaction import (
@@ -36,8 +37,12 @@ class MedicationQueryEntityNormalizer:
         flags=re.IGNORECASE,
     )
     _ENTITY_TOKEN = re.compile(
-        r"비타민\s*[A-Za-z0-9]+|오메가\s*3|[가-힣A-Za-z0-9.+-]{2,}",
+        r"비타민\s*[A-Za-z0-9]+|오메가\s*3|[가-힣A-Za-z0-9.+-]+",
         flags=re.IGNORECASE,
+    )
+    _MULTIWORD_VACCINE = re.compile(
+        r"(?:[A-Za-z0-9]+형\s+)?[가-힣]+(?:\s+[가-힣]+){0,2}\s+백신"
+        r"(?=[은는이가을를과와]?(?:\s|$))",
     )
     _TRAILING_PARTICLE = re.compile(
         r"(?:으로|에서|부터|까지|처럼|보다|에게|한테|하고|이며|이나|"
@@ -48,6 +53,7 @@ class MedicationQueryEntityNormalizer:
         r"먹(?:어|으면|나요|어야|을|는|지|고|어도)|"
         r"피하(?:면|나요|야|지|고|는|여|할)|"
         r"주의(?:하(?:면|나요|야|지|고|는|여)|할|해야)|"
+        r"복용(?:해|해야|하면|하나요|하는|할|하지|하고|했어)|"
         r"떨어지(?:면|나요|는|고|지)|"
         r"알려|요약해|등록해|확인해|검색해"
         r")[가-힣]*$"
@@ -114,6 +120,15 @@ class MedicationQueryEntityNormalizer:
         "무슨",
         "어떤",
         "왜",
+        "기준",
+        "보고된",
+        "사례",
+        "섭취량",
+        "심한",
+        "어지러움",
+        "얼마인가요",
+        "역할",
+        "일일",
     }
     _SUPPLEMENT_NAMES = {
         "마그네슘",
@@ -162,11 +177,17 @@ class MedicationQueryEntityNormalizer:
     ) -> list[MedicationQueryEntity]:
         entities: list[MedicationQueryEntity] = []
         seen: set[str] = set()
-        for match in self._ENTITY_TOKEN.finditer(question):
-            surface = self._clean_surface(match.group())
+        covered_spans: list[tuple[int, int]] = []
+
+        def append_entity(value: str) -> None:
+            surface = self._clean_surface(value)
             canonical_name = self._canonical_name(surface)
+            if interaction_question:
+                canonical_supplement = canonical_supplement_name(surface)
+                if canonical_supplement is not None:
+                    canonical_name = canonical_supplement
             if not self._is_entity_candidate(surface, canonical_name):
-                continue
+                return
             candidate_types = self._candidate_types(canonical_name)
             entity_type = self._entity_type(canonical_name)
             if interaction_question and canonical_name in self._BRAND_INGREDIENT_ALIASES:
@@ -174,7 +195,7 @@ class MedicationQueryEntityNormalizer:
                 entity_type = MedicationQueryEntityType.INGREDIENT_NAME
             canonical_key = canonical_name.casefold()
             if canonical_key in seen:
-                continue
+                return
             entities.append(
                 MedicationQueryEntity(
                     surface=surface,
@@ -191,6 +212,15 @@ class MedicationQueryEntityNormalizer:
                 )
             )
             seen.add(canonical_key)
+
+        for match in self._MULTIWORD_VACCINE.finditer(question):
+            append_entity(match.group())
+            covered_spans.append(match.span())
+
+        for match in self._ENTITY_TOKEN.finditer(question):
+            if any(match.start() < end and start < match.end() for start, end in covered_spans):
+                continue
+            append_entity(match.group())
         return entities
 
     @classmethod

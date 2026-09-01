@@ -70,6 +70,19 @@ def known_supplement_names_in(text: str) -> list[str]:
     return names
 
 
+def canonical_supplement_name(value: str) -> str | None:
+    normalized = _normalize_text(value)
+    for pair in _KNOWN_PAIRS:
+        for name, aliases in zip(
+            pair.canonical_names,
+            pair.alias_groups,
+            strict=True,
+        ):
+            if any(_contains_alias(normalized, alias) for alias in aliases):
+                return name
+    return None
+
+
 def _normalize_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold()
     return re.sub(r"\s+", " ", normalized).strip()
@@ -84,4 +97,11 @@ def _contains_alias(normalized_text: str, alias: str) -> bool:
                 normalized_text,
             )
         )
+    if len(normalized_alias) == 2 and normalized_alias.endswith("분"):
+        base_name = normalized_alias[:-1]
+        if re.search(
+            rf"(?<![가-힣a-z0-9]){re.escape(base_name)}(?![가-힣a-z0-9])",
+            normalized_text,
+        ):
+            return True
     return normalized_alias in normalized_text
