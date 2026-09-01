@@ -28,6 +28,7 @@ class SupplementNutrientRepository:
         rows: list[dict[str, Any]] = (
             await UserSupplementNutrient.filter(
                 status=SupplementStatus.ACTIVE,
+                supplement_nutrient_id__isnull=False,
                 start_date__lte=as_of,
             )
             .filter(Q(end_date=None) | Q(end_date__gte=as_of))

@@ -430,7 +430,7 @@ export function AddSupplementSheet({
               )}
             </div>
 
-            {USE_MOCK && <div className="-mx-5 flex shrink-0 items-center justify-center gap-2 border-t border-border px-5 py-4 text-sm text-muted-foreground">
+            <div className="-mx-5 flex shrink-0 items-center justify-center gap-2 border-t border-border px-5 py-4 text-sm text-muted-foreground">
               <span>찾는 제품이 없나요?</span>
               <button
                 type="button"
@@ -445,7 +445,7 @@ export function AddSupplementSheet({
               >
                 직접 입력
               </button>
-            </div>}
+            </div>
           </>
         )}
       </DialogContent>
