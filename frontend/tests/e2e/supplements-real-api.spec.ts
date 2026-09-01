@@ -681,8 +681,8 @@ test('저장 실패 시 서버 detail 을 숨기고 기본 문구를 보여주�
 
   const FALLBACK = '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
   const errorDialog = page.getByRole('dialog', { name: '영양제를 추가하지 못했어요' });
-  await expect(errorDialog).toContainText(FALLBACK);
-  await expect(errorDialog.getByText('Input should be greater than 0')).toHaveCount(0);
+  await expect(errorDialog.getByText(FALLBACK)).toBeVisible();
+  await expect(page.getByText('Input should be greater than 0')).toHaveCount(0);
   await expect(sheet).toBeVisible();
 });
 
