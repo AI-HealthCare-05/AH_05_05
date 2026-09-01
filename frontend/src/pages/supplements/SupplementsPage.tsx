@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ChevronRight, Plus, Sprout } from 'lucide-react';
+import { ChevronRight, Plus, Sprout } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
 import {
@@ -362,12 +362,7 @@ function NutrientTotalCard({
   const content = (
     <>
         <div className="flex items-start gap-3">
-          <div className="flex items-center gap-2">
-            {isOverUpperLimit && (
-              <AlertCircle aria-hidden className="size-5 shrink-0 text-danger" />
-            )}
-            <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
-          </div>
+          <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
         </div>
 
         <div className="flex items-baseline gap-2">
@@ -383,7 +378,7 @@ function NutrientTotalCard({
 
         {showStandards && (evaluation.base !== null || total.ul !== null) && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-unit text-muted-foreground tnum">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pr-[12%] text-unit text-muted-foreground tnum">
               {evaluation.base !== null && (
                 <span>
                   {evaluation.baseKind === 'ai' ? '충분' : '권장'}{' '}
@@ -401,12 +396,9 @@ function NutrientTotalCard({
           </>
         )}
 
-        {isOverUpperLimit && (
-          <p className="border-t border-border pt-3 text-sm text-muted-foreground">
-            {total.sourceNames.join('과 ')}에 함께 들어 있어요. 하나를 줄일지 담당 의사·약사에게
-            확인해 주세요.
-          </p>
-        )}
+        <p className="text-sm text-muted-foreground">
+          {total.sourceNames.join(' · ')}에 들어 있어요
+        </p>
     </>
   );
 
@@ -423,7 +415,7 @@ function NutrientTotalCard({
 
   return (
     <article aria-label={`${total.name} 성분 합계`}>
-      <Card className={`gap-4 p-4 ${isOverUpperLimit ? '!bg-danger-bg' : ''}`}>
+      <Card className="gap-4 p-4">
         {content}
       </Card>
     </article>
@@ -497,6 +489,14 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
           style={{ left: `${positions.base}%` }}
         />
       )}
+      {positions.upper !== null && (
+        <span
+          data-threshold="upper-limit"
+          aria-hidden
+          className="absolute top-1 h-4 w-0.5 bg-muted-foreground"
+          style={{ left: `${positions.upper}%` }}
+        />
+      )}
       <span
         aria-hidden
         className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${markerColor}`}
@@ -508,10 +508,14 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
 
 function rangePositions(total: NutrientTotal, base: number | null) {
   if (total.ul === null) return { base: null, upper: null, marker: 0 };
-  const marker = Math.max(0, Math.min(100, (total.amount / total.ul) * 100));
+  const upper = 88;
+  const marker =
+    total.amount > total.ul
+      ? 100
+      : Math.max(0, Math.min(upper, (total.amount / total.ul) * upper));
   const basePosition =
-    base === null ? null : Math.max(4, Math.min(96, (base / total.ul) * 100));
-  return { base: basePosition, upper: null, marker };
+    base === null ? null : Math.max(4, Math.min(upper - 4, (base / total.ul) * upper));
+  return { base: basePosition, upper, marker };
 }
 
 function standardSourceLabel(profile: NutrientStandardProfile | null): string {
