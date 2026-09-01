@@ -7,12 +7,6 @@ export interface SupplementNutrientAmount {
   name: string;
   amount: number;
   unit: string;
-  /** 권장섭취량. 충분섭취량과 동시에 값이 오면 이 값을 우선합니다. */
-  rni: number | null;
-  /** 충분섭취량. 권장섭취량을 정할 수 없을 때만 사용합니다. */
-  ai: number | null;
-  /** 상한섭취량. 기준이 없는 성분은 null입니다. */
-  ul: number | null;
 }
 
 export interface Supplement {
@@ -26,6 +20,22 @@ export interface Supplement {
   /** false면 직접 입력 제품으로, 성분 합계에서 제외합니다. */
   nutrientDataAvailable: boolean;
   nutrients: SupplementNutrientAmount[];
+}
+
+/** 사용자의 나이·성별에 맞는 섭취기준. nutrientId로 찾습니다. */
+export interface NutrientStandards {
+  /** 화면 표시가 아니라 매칭된 원본 행 확인에 사용합니다. */
+  group: string;
+  ageRange: string | null;
+  byNutrientId: Record<
+    string,
+    { rni: number | null; ai: number | null; ul: number | null }
+  >;
+}
+
+export interface SupplementListResult {
+  items: Supplement[];
+  standards: NutrientStandards | null;
 }
 
 export interface SupplementProduct {

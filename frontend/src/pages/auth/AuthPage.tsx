@@ -104,7 +104,15 @@ export function AuthPage() {
         await login({ email: email.trim(), password });
       } catch (error) {
         if (error instanceof ApiError && error.field === 'email') {
-          emailInputRef.current?.setCustomValidity('이메일 주소를 확인해주세요');
+          // 중복과 형식 오류를 갈라 씁니다. 예전에는 둘 다 「확인해주세요」라 나와서,
+          // 주소가 멀쩡한데도 계속 고치라는 말로 읽혔습니다.
+          // 탈퇴한 계정도 같은 문구를 받습니다. 두 경우가 구분되지 않아야
+          // 가입 여부가 새어나가지 않습니다.
+          emailInputRef.current?.setCustomValidity(
+            error.code === 'EMAIL_ALREADY_EXISTS'
+              ? '이미 등록된 이메일입니다'
+              : '이메일 주소를 확인해주세요',
+          );
           emailInputRef.current?.reportValidity();
         } else {
           setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);

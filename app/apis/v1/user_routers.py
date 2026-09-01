@@ -1,11 +1,18 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
+from fastapi import Response as EmptyResponse  # 본문 없는 204 용. ORJSONResponse 는 content 가 필수다.
 from fastapi.responses import ORJSONResponse as Response
 
 from app.core.phone_encryption import decrypt_phone_number
 from app.dependencies.security import get_request_user
-from app.dtos.users import PasswordChangeRequest, PasswordChangeResponse, UserInfoResponse, UserUpdateRequest
+from app.dtos.users import (
+    PasswordChangeRequest,
+    PasswordChangeResponse,
+    UserInfoResponse,
+    UserUpdateRequest,
+    WithdrawRequest,
+)
 from app.models.users import User
 from app.services.users import UserManageService
 
@@ -67,3 +74,35 @@ async def change_my_password(
         PasswordChangeResponse(detail="비밀번호가 변경되었습니다.").model_dump(by_alias=True),
         status_code=status.HTTP_200_OK,
     )
+
+
+@user_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def withdraw_me(
+    request: WithdrawRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    user_manage_service: Annotated[UserManageService, Depends(UserManageService)],
+) -> EmptyResponse:
+    """로그인한 본인이 탈퇴한다. 대상은 토큰의 사용자로 정한다.
+
+    **되돌릴 수 없다.** 관리자도 되살릴 수 없고(`CANNOT_REACTIVATE_WITHDRAWN`),
+    같은 이메일로 재가입도 안 된다. 탈퇴해도 `user` 행이 남아 있어
+    회원가입의 중복 검사(`exists_by_email`)에 그대로 걸리기 때문이다.
+
+    계정 상태만 `WITHDRAWN` 으로 바꾼다. 이름·전화번호·이메일과 복약·영양제·상담
+    이력은 손대지 않는다. 물리 삭제는 REQ-ADMIN-007 범위다.
+
+    본문에 비밀번호를 싣는다. DELETE 본문은 HTTP 명세상 권장되지 않아 프록시가
+    버릴 수 있어, 프론트가 쓰는 세 경로(curl 직접·Vite 프록시·브라우저 fetch)에서
+    실제로 도달하는 것을 확인하고 이 방식을 유지했다.
+
+    **이미 탈퇴한 계정은 401 이다.** `get_request_user` 가 ACTIVE 가 아닌 계정을
+    먼저 막아 이 함수까지 오지 않는다.
+
+    비밀번호 변경과 같은 제약이 있다. 발급된 JWT 를 개별 폐기할 수단이 없어
+    **탈퇴 뒤에도 액세스 토큰이 만료될 때까지 유효하다.**
+
+    - **400 INVALID_PASSWORD** — 비밀번호 불일치
+    - **401 UNAUTHORIZED** — 미인증이거나 이미 탈퇴·정지된 계정
+    """
+    await user_manage_service.withdraw(user=user, data=request)
+    return EmptyResponse(status_code=status.HTTP_204_NO_CONTENT)

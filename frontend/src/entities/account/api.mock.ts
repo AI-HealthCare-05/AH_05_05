@@ -56,8 +56,9 @@ export function mockChangePassword(payload: ChangePasswordPayload): void {
   currentPassword = payload.newPassword;
 }
 
+/** 실서버 `DELETE /v1/users/me` 의 오류 계약을 그대로 흉내냅니다. */
 export function mockWithdrawAccount({ password }: WithdrawAccountPayload): void {
-  if (password === 'wrong') {
-    throw new ApiError(400, 'invalid_password', '비밀번호가 일치하지 않아요.');
+  if (password !== currentPassword) {
+    throw new ApiError(400, 'INVALID_PASSWORD', '비밀번호가 일치하지 않아요.');
   }
 }

@@ -103,11 +103,11 @@ export function HomePage({
         if (!cancelled) setSupplementRanking(null);
       });
     getSupplements()
-      .then((supplements) => {
+      .then((result) => {
         if (!cancelled) {
           setRegisteredProductIds(
             new Set(
-              supplements.flatMap((supplement) =>
+              result.items.flatMap((supplement) =>
                 supplement.productId === null ? [] : [supplement.productId],
               ),
             ),

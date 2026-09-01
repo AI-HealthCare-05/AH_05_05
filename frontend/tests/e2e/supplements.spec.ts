@@ -10,7 +10,7 @@ test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가�
   await expect(exceeded).toBeVisible();
   await expect(exceededCard.getByText('상한 초과', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('3,200', { exact: true })).toBeVisible();
-  await expect(exceededCard.getByText('권장 700', { exact: true })).toBeVisible();
+  await expect(exceededCard.getByText('권장 800', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('상한 3,000', { exact: true })).toBeVisible();
   await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuenow', '3200');
   await expect(exceededCard.locator('[data-threshold="upper-limit"]')).toBeVisible();
@@ -27,7 +27,7 @@ test('기준 미달과 권장 범위를 판정 가능한 범위 안에서 중립
   const totals = page.getByRole('region', { name: '성분 합계' });
   const calcium = totals.getByRole('article', { name: '칼슘 성분 합계' });
   const vitaminD = totals.getByRole('article', { name: '비타민 D 성분 합계' });
-  await expect(calcium.getByText('영양제로는 권장량의 57%', { exact: true })).toBeVisible();
+  await expect(calcium.getByText('영양제로는 권장량의 50%', { exact: true })).toBeVisible();
   await expect(vitaminD.getByText('권장 범위예요', { exact: true })).toBeVisible();
   await expect(totals.getByText('부족', { exact: false })).toHaveCount(0);
   await expect(totals.getByText('권장~충분', { exact: false })).toHaveCount(0);
@@ -42,19 +42,19 @@ test('기준과 상한의 누락 조합을 숨기거나 임의 판정하지 않�
   const upperOnly = totals.getByRole('article', { name: '아연 성분 합계' });
   const noStandards = totals.getByRole('article', { name: '셀레늄 성분 합계' });
 
-  await expect(baseOnly.getByText('상한 기준이 없어요', { exact: true })).toBeVisible();
+  await expect(baseOnly.getByText('상한 2,000', { exact: true })).toBeVisible();
   await expect(baseOnly.getByText('권장 100', { exact: true })).toBeVisible();
-  await expect(upperOnly.getByText('상한 35', { exact: true })).toBeVisible();
-  await expect(upperOnly.getByText(/권장량의/)).toHaveCount(0);
+  await expect(upperOnly.getByText('상한 35', { exact: true })).toHaveCount(0);
+  await expect(upperOnly.getByRole('meter')).toHaveCount(0);
   await expect(noStandards.getByText('55', { exact: true })).toBeVisible();
-  await expect(noStandards.getByText('기준이 없는 성분이에요', { exact: true })).toBeVisible();
+  await expect(noStandards.getByText('기준이 없는 성분이에요', { exact: true })).toHaveCount(0);
   await expect(noStandards.getByRole('meter')).toHaveCount(0);
 });
 
 test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시한다', async ({ page }) => {
   await page.goto('/dev/supplements');
 
-  await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 여성')).toBeVisible();
+  await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 남성')).toBeVisible();
   await expect(
     page.getByText(
       '등록한 건강기능식품 3개만 더한 값입니다. 음식과 의약품을 통한 섭취량은 포함되지 않았습니다.',
@@ -62,7 +62,7 @@ test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시
   ).toBeVisible();
   await expect(
     page.getByText('직접 입력한 0개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test('생년월일이나 성별이 없으면 기준을 숨기고 기본정보 입력으로 안내한다', async ({ page }) => {
