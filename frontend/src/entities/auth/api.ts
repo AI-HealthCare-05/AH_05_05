@@ -15,8 +15,9 @@ interface LoginResponseBody {
  * 토큰은 메모리에만 둡니다(유저플로우 v4). 새로고침하면 사라져 다시 로그인해야 합니다.
  * 리프레시 토큰은 쓰지 않습니다 — 백엔드도 기본적으로 발급하지 않습니다.
  *
- * 실패는 ApiError 로 던져집니다. 화면은 message 를 그대로 띄우고,
- * 분기가 필요할 때만 code(INVALID_CREDENTIALS / ACCOUNT_INACTIVE)를 봅니다.
+ * 실패는 ApiError 로 던져집니다. 화면은 message 를 그대로 띄웁니다.
+ * 실패 코드는 INVALID_CREDENTIALS 하나뿐이라 분기할 것이 없습니다 — 계정 상태를
+ * 구분해 알려주지 않기 때문입니다(#196).
  */
 export async function login(payload: LoginPayload): Promise<LoginResult> {
   if (USE_MOCK) {

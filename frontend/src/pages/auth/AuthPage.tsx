@@ -106,12 +106,12 @@ export function AuthPage() {
         if (error instanceof ApiError && error.field === 'email') {
           // 중복과 형식 오류를 갈라 씁니다. 예전에는 둘 다 「확인해주세요」라 나와서,
           // 주소가 멀쩡한데도 계속 고치라는 말로 읽혔습니다.
-          // 탈퇴한 계정도 같은 문구를 받습니다. 두 경우가 구분되지 않아야
-          // 가입 여부가 새어나가지 않습니다.
+          //
+          // 중복일 때는 **서버 문구를 그대로** 씁니다. 활성 계정인지 탈퇴 계정인지
+          // 구분되지 않게 뭉갠 문구라 프론트가 따로 만들면 그 의도가 깨집니다(#196).
+          // 형식 오류(422)는 서버가 영문 pydantic 메시지를 주므로 자체 문구를 씁니다.
           emailInputRef.current?.setCustomValidity(
-            error.code === 'EMAIL_ALREADY_EXISTS'
-              ? '이미 등록된 이메일입니다'
-              : '이메일 주소를 확인해주세요',
+            error.code === 'EMAIL_ALREADY_EXISTS' ? error.message : '이메일 주소를 확인해주세요',
           );
           emailInputRef.current?.reportValidity();
         } else {
@@ -127,7 +127,8 @@ export function AuthPage() {
         // 토큰은 login() 안에서 메모리에만 심습니다. 새로고침하면 사라집니다(유저플로우 v4).
         await login({ email: email.trim(), password });
       } catch (error) {
-        // 서버 문구를 그대로 씁니다. 400(자격증명)과 423(정지·탈퇴) 모두 마찬가지입니다.
+        // 서버 문구를 그대로 씁니다. 계정 없음·비밀번호 불일치·정지·탈퇴가 모두 같은
+        // 400 응답이라 여기서 갈라볼 것이 없습니다(#196).
         // 프론트가 "이메일이 없습니다" 같은 문구를 만들면 가입 여부가 새어나갑니다.
         setLoginError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
         return;
