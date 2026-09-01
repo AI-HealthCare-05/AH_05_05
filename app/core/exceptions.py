@@ -269,6 +269,36 @@ class InvalidMedicationScheduleError(AppError):
     message = "복약 시간표 입력값이 올바르지 않습니다."
 
 
+class InvalidDoseDateError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "invalid_dose_date"
+    message = "복용 날짜는 오늘 또는 지난 365일 이내여야 합니다."
+
+
+class InvalidDoseSlotError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "invalid_slot"
+    message = "복용 시간대가 올바르지 않습니다."
+
+
+class MedicationRecordForbiddenError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "MEDICATION_RECORD_FORBIDDEN"
+    message = "다른 사용자의 복약 기록에는 접근할 수 없습니다."
+
+
+class MedicationRecordNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "MEDICATION_RECORD_NOT_FOUND"
+    message = "복약 기록을 찾을 수 없습니다."
+
+
+class InvalidDoseDateRangeError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "invalid_dose_date_range"
+    message = "복용 기록 조회 기간이 올바르지 않습니다."
+
+
 class ChatConversationNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "CHAT_SESSION_NOT_FOUND"

@@ -40,7 +40,7 @@ test('로그인 홈도 복약 상태 위에 소개 배너를 유지한다', asyn
   await page.goto('/dev/home-data-empty');
 
   await expect(page.getByRole('region', { name: '포케 기능 소개' })).toBeVisible();
-  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 });
 
 test('게스트 탭은 조회 화면으로 가지 않고 같은 로그인 시트를 연다', async ({ page }) => {
@@ -89,8 +89,7 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
-  await expect(page.getByText('오늘의 복약')).toHaveCount(0);
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 });
 
 test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태가 된다', async ({ page }) => {
@@ -106,9 +105,9 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
   await page.getByRole('button', { name: '회원가입 완료' }).click();
-  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: '약봉투 등록', exact: true }).click();
+  await page.getByRole('button', { name: '약봉투 등록하기', exact: true }).click();
   await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
     name: '조제약봉투_01.png',
     mimeType: 'image/png',
@@ -124,7 +123,7 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
 
 test('로그인 홈은 약 없음·복약 중·복약 종료 상태를 모두 표현한다', async ({ page }) => {
   await page.goto('/dev/home-data-empty');
-  await expect(page.getByText('약봉투를 등록해 주세요')).toBeVisible();
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 
   await page.goto('/dev/home-active');
   await expect(page.getByText('오늘의 복약')).toBeVisible();
@@ -147,7 +146,7 @@ test('로그인 홈 헤더는 탭바와 중복되는 마이 버튼을 두지 않
 test('로그인 홈은 조회 중 등록 카드를 띄우지 않고 실제 복약 데이터로 바뀐다', async ({ page }) => {
   await logIn(page);
 
-  await expect(page.getByText('약봉투를 등록해 주세요')).toHaveCount(0);
+  await expect(page.getByText('복약정보를 등록하시면 시간에 맞춰 알림을 받으실 수 있어요.')).toHaveCount(0);
   await expect(page.getByText('오늘의 복약')).toBeVisible();
 });
 

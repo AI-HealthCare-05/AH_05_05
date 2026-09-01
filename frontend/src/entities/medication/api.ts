@@ -2,9 +2,10 @@
  * 복약 API. 화면은 이 함수들만 부릅니다.
  * 목업 ↔ 실서버 전환 규칙은 entities/document/api.ts 와 같습니다.
  */
-import { http, mockDelay } from '@/shared/api/client';
+import { ApiError, http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
+  mockCancelMedication,
   mockMedicationOverview,
   mockMedicationOverviews,
   mockMedicationSchedule,
@@ -33,10 +34,15 @@ export async function getMedicationOverviews(): Promise<MedicationOverview[]> {
     await mockDelay();
     return mockMedicationOverviews();
   }
-  const response = await http.get<MedicationOverviewResponse>('/v1/medications');
-  if (Array.isArray(response)) return response;
-  if ('episodes' in response) return response.episodes;
-  return [response];
+  try {
+    const response = await http.get<MedicationOverviewResponse>('/v1/medications');
+    if (Array.isArray(response)) return response;
+    if ('episodes' in response) return response.episodes;
+    return [response];
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return [];
+    throw error;
+  }
 }
 
 export async function getMedicationOverview(recordId?: number): Promise<MedicationOverview> {
@@ -91,9 +97,17 @@ export async function getDoseRecords(range: DoseRecordRange): Promise<DoseRecord
     return mockGetDoseRecords(range);
   }
   const query = new URLSearchParams({
-    recordId: String(range.recordId),
     from: range.from,
     to: range.to,
   });
   return http.get<DoseRecord[]>(`/v1/medications/doses?${query.toString()}`);
+}
+
+export async function cancelMedication(recordId: number): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay();
+    mockCancelMedication(recordId);
+    return;
+  }
+  await http.delete<void>(`/v1/medications/${recordId}`);
 }

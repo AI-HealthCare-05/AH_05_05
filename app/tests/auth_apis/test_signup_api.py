@@ -60,6 +60,20 @@ class TestSignupAPI(TestCase):
             response = await client.post("/api/v1/auth/signup", json=signup_data)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    async def test_signup_rejects_non_ascii_email(self):
+        # EmailStr 은 SMTPUTF8 주소를 허용해 한글 이메일을 그대로 통과시킨다.
+        # 프론트 입력 필터는 API 직접 호출로 우회되므로 서버에서도 막아야 한다.
+        korean_emails = ("한글@example.com", "a@한글.com", "서도서나도@서도나.서도나")
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            for email in korean_emails:
+                response = await client.post("/api/v1/auth/signup", json=self.signup_data(email=email))
+
+                assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+                assert response.json()["code"] == "VALIDATION_ERROR"
+                assert response.json()["field"] == "email"
+                assert await User.filter(email=email).exists() is False
+
     async def test_signup_requires_terms_agreement(self):
         signup_data = self.signup_data(is_terms_agreed=False)
 

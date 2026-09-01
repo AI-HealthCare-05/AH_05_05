@@ -225,14 +225,11 @@ function buildMedicationTimeline(
   });
 
   return items.map((item, index) => {
-    const completed = item.recordIds.every((recordId) =>
-      doseRecords.some(
-        (record) =>
-          record.recordId === recordId &&
-          record.date === currentDate &&
-          record.slot === item.slot &&
-          record.taken,
-      ),
+    const completed = doseRecords.some(
+      (record) =>
+        record.date === currentDate &&
+        record.slot === item.slot &&
+        record.taken,
     );
     return {
       ...item,

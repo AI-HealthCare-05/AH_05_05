@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
-import { createAccount, type Gender } from '@/entities/account';
+import { NAME_MAX_LENGTH, createAccount, type Gender } from '@/entities/account';
 import { login } from '@/entities/auth';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { ApiError } from '@/shared/api/client';
@@ -10,8 +10,21 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
-import { formatPhoneNumberInput, validatePhoneNumber } from '@/shared/lib/phoneNumber';
-import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
+import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
+import {
+  PHONE_NUMBER_MAX_LENGTH,
+  formatPhoneNumberInput,
+  validatePhoneNumber,
+} from '@/shared/lib/phoneNumber';
+import {
+  BottomTabbar,
+  Button,
+  CheckboxField,
+  GenderRadioGroup,
+  Header,
+  Input,
+  type TabKey,
+} from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
 
@@ -32,6 +45,7 @@ export function AuthPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState<Gender | ''>('');
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [birthDateError, setBirthDateError] = useState<string | null>(null);
   const [passwordConfirmError, setPasswordConfirmError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -39,6 +53,25 @@ export function AuthPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const today = formatDateInputValue(new Date());
+
+  /**
+   * 이메일 칸에서 쓸 수 없는 문자를 지웁니다.
+   *
+   * setEmail 만으로는 부족합니다. 정리한 값이 직전 state 와 같으면 리렌더가 일어나지 않아
+   * IME 가 DOM 에 넣어둔 조합 문자가 화면에 그대로 남습니다. 그래서 값을 직접 되돌립니다.
+   * 되돌리는 문자열에 앞 글자가 모두 들어 있으므로 지워지는 건 한글뿐입니다.
+   *
+   * 단, 조합이 끝난 뒤에만 불러야 합니다. 조합 도중에 값을 건드리면 IME 버퍼와 충돌해
+   * 앞서 입력해 둔 영문까지 함께 날아갑니다.
+   */
+  function applyEmailInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizeEmailInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    // 조용히 지우면 왜 안 찍히는지 모른다. 지운 게 있을 때만 이유를 알린다.
+    setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
+    setEmail(sanitized);
+  }
 
   async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,6 +131,10 @@ export function AuthPage() {
     navigate('/home', { replace: true });
   }
 
+  function handleTabChange(key: TabKey) {
+    if (key === 'home') navigate('/home');
+  }
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="로그인 · 회원가입" onBack={() => navigate(-1)} />
@@ -118,6 +155,7 @@ export function AuthPage() {
                   emailInputRef.current?.setCustomValidity('');
                   // 탭을 옮기면 지난 로그인 실패 문구를 지웁니다. 회원가입 폼에 남아 있으면 오해합니다.
                   setLoginError(null);
+                  setEmailError(null);
                 }}
               >
                 {item === 'login' ? '로그인' : '회원가입'}
@@ -143,14 +181,33 @@ export function AuthPage() {
           <Input
             label="이메일"
             inputRef={emailInputRef}
-            type="email"
+            // type="email" 이 아닙니다. 크롬이 그 타입에서 도메인을 퓨니코드로 바꿔 값을 주는 탓에
+            // 화면의 한글을 코드가 볼 수 없습니다. 자세한 이유는 EMAIL_INPUT_PATTERN 주석 참고.
+            type="text"
             inputMode="email"
+            pattern={EMAIL_INPUT_PATTERN}
             autoComplete="email"
+            // text 로 바뀌면서 모바일 자동 대문자·맞춤법 교정이 붙습니다. 이메일에는 방해가 됩니다.
+            autoCapitalize="none"
+            spellCheck={false}
             value={email}
+            maxLength={EMAIL_MAX_LENGTH}
+            error={emailError ?? undefined}
             onChange={(event) => {
               event.currentTarget.setCustomValidity('');
-              setEmail(event.target.value);
+              // 조합 중에는 들어온 값을 그대로 state 에 넣습니다. 정리는 조합이 끝난 뒤 합니다.
+              // state 를 그대로 두면 React 가 controlled input 값을 되돌리는데, 그 복원이
+              // IME 버퍼와 충돌해 앞서 입력해 둔 영문까지 지워버립니다.
+              //
+              // 플래그를 따로 들지 않고 이벤트의 isComposing 을 씁니다. 플래그를 쓰면
+              // compositionend 를 한 번이라도 놓쳤을 때 칸이 영영 얼어붙습니다.
+              if ((event.nativeEvent as InputEvent).isComposing) {
+                setEmail(event.currentTarget.value);
+                return;
+              }
+              applyEmailInput(event.currentTarget);
             }}
+            onCompositionEnd={(event) => applyEmailInput(event.currentTarget)}
             required
           />
           <Input
@@ -181,6 +238,7 @@ export function AuthPage() {
                 label="이름"
                 autoComplete="name"
                 value={name}
+                maxLength={NAME_MAX_LENGTH}
                 error={nameError ?? undefined}
                 onChange={(event) => {
                   setName(event.target.value);
@@ -194,6 +252,7 @@ export function AuthPage() {
                 inputMode="tel"
                 autoComplete="tel"
                 value={phoneNumber}
+                maxLength={PHONE_NUMBER_MAX_LENGTH}
                 error={phoneNumberError ?? undefined}
                 onChange={(event) => {
                   setPhoneNumber(formatPhoneNumberInput(event.target.value));
@@ -241,7 +300,16 @@ export function AuthPage() {
             {mode === 'login' ? '로그인' : '회원가입 완료'}
           </Button>
         </form>
+        <nav className="mt-6 flex flex-col" aria-label="법적 안내">
+          <a href="/terms" className="flex min-h-touch items-center text-sm text-muted-foreground">
+            이용약관
+          </a>
+          <a href="/privacy" className="flex min-h-touch items-center text-sm text-muted-foreground">
+            개인정보 처리 안내
+          </a>
+        </nav>
       </main>
+      <BottomTabbar active="my" onChange={handleTabChange} className="border-t border-border" />
     </div>
   );
 }

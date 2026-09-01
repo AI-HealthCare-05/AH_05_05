@@ -81,13 +81,15 @@ export class ApiError extends Error {
   readonly code: string;
   readonly field?: string;
   readonly status: number;
+  readonly detail?: unknown;
 
-  constructor(status: number, code: string, message: string, field?: string) {
+  constructor(status: number, code: string, message: string, field?: string, detail?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.field = field;
+    this.detail = detail;
   }
 }
 
@@ -98,6 +100,7 @@ async function toApiError(res: Response): Promise<ApiError> {
   let code = `http_${res.status}`;
   let message = FALLBACK_MESSAGE;
   let field: string | undefined;
+  let detail: unknown;
   try {
     const body = (await res.json()) as {
       code?: string;
@@ -107,27 +110,15 @@ async function toApiError(res: Response): Promise<ApiError> {
     };
     if (body.code) code = body.code;
     if (body.message) message = body.message;
-    else {
-      const detailMessage = apiDetailMessage(body.detail);
-      if (detailMessage) message = detailMessage;
-    }
+    detail = body.detail;
     if (body.field) field = body.field;
   } catch {
     // 본문이 JSON이 아니면 기본 문구를 씁니다.
   }
-  return new ApiError(res.status, code, message, field);
-}
-
-function apiDetailMessage(detail: unknown): string | null {
-  if (typeof detail === 'string') return detail.trim() || null;
-  const entries = Array.isArray(detail) ? detail : [detail];
-  const messages = entries.flatMap((entry) => {
-    if (typeof entry === 'string') return entry.trim() ? [entry.trim()] : [];
-    if (entry === null || typeof entry !== 'object' || !('msg' in entry)) return [];
-    const message = (entry as { msg?: unknown }).msg;
-    return typeof message === 'string' && message.trim() ? [message.trim()] : [];
-  });
-  return messages.length > 0 ? messages.join('\n') : null;
+  if (import.meta.env.DEV && detail !== undefined) {
+    console.warn('API error detail:', detail);
+  }
+  return new ApiError(res.status, code, message, field, detail);
 }
 
 async function request<T>(
@@ -190,5 +181,5 @@ export const http = {
   postStream: (path: string, body: unknown) => requestStream(path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
-  delete: <T>(path: string) => request<T>('DELETE', path),
+  delete: <T>(path: string, body?: unknown) => request<T>('DELETE', path, body),
 };

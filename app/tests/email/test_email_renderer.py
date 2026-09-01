@@ -20,8 +20,15 @@ def test_admin_temporary_password_template_renders_approved_text_and_html() -> N
         "감사합니다.",
     )
     assert message.to == "recipient@example.com"
+    assert message.subject == "[RxVita] 임시비밀번호 안내"
     assert all(line in message.text_body for line in approved_lines)
-    assert all(line in message.html_body for line in approved_lines)
+    assert all(line in message.html_body for line in approved_lines[1:])
+    assert "<strong>홍길동</strong> 님 안녕하세요." in message.html_body
+    assert "#e8f9f7" in message.html_body
+    assert "#0b7f75" in message.html_body
+    assert "#06356f" in message.html_body
+    assert "#f0f5ff" not in message.html_body
+    assert "#1746a2" not in message.html_body
 
 
 def test_admin_temporary_password_template_escapes_recipient_name() -> None:
@@ -36,4 +43,4 @@ def test_admin_temporary_password_template_escapes_recipient_name() -> None:
     message = renderer.render(payload)
 
     assert "<script>" not in message.html_body
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in message.html_body
+    assert "<strong>&lt;script&gt;alert(1)&lt;/script&gt;</strong>" in message.html_body

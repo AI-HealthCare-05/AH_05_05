@@ -1,16 +1,27 @@
 from datetime import date
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field, StrictBool, StringConstraints, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    EmailStr,
+    Field,
+    StrictBool,
+    StringConstraints,
+    field_validator,
+)
 
-from app.core.validators import validate_birthday, validate_password, validate_phone_number
+from app.core.validators import validate_ascii_email, validate_birthday, validate_password, validate_phone_number
 from app.models.enums import Gender
 
 
 class SignUpRequest(BaseModel):
+    # BeforeValidator 라야 EmailStr 의 영문 메시지보다 우리 안내가 먼저 나간다.
     email: Annotated[
         EmailStr,
         Field(max_length=255),
+        BeforeValidator(validate_ascii_email),
     ]
     password: Annotated[str, Field(min_length=8), AfterValidator(validate_password)]
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)]

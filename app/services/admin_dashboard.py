@@ -6,14 +6,18 @@ from tortoise.functions import Count
 
 from app.core import config
 from app.dtos.admin_dashboard import (
+    AlarmNotificationStats,
     DashboardPeriod,
     DashboardSummaryQuery,
     DashboardSummaryResponse,
     MemberAlertStatus,
     MemberStats,
+    OcrDocumentStats,
     SignupTrendPoint,
 )
-from app.models.enums import AccountStatus
+from app.models.background_jobs import BackgroundJob
+from app.models.enums import AccountStatus, BackgroundJobStatus, BackgroundJobType, OcrJobStatus
+from app.models.ocr import OcrJob
 from app.models.users import User
 
 # 기간 토글이 며칠을 뜻하는지. 오늘을 끝으로 하는 롤링 구간이며 캘린더 주·월이 아니다.
@@ -25,6 +29,7 @@ PERIOD_DAYS = {
 
 # 화면의 "14일간 가입 추이" 차트는 고정 길이라 선택한 기간을 따르지 않는다.
 SIGNUP_TREND_DAYS = 14
+ALARM_TREND_DAYS = 7
 
 # total 로 세는 상태. 화면이 활성 95% + 정지 5% = 100% 로 표시하므로 둘만 넣는다.
 TOTAL_STATUSES = (AccountStatus.ACTIVE, AccountStatus.SUSPENDED)
@@ -51,9 +56,8 @@ def day_range(first: date, last: date) -> tuple[datetime, datetime]:
 class AdminDashboardService:
     """REQ-DASH-001 대시보드 집계.
 
-    1차 범위는 회원 현황뿐이다. OCR·챗봇·알림·시스템·보안 지표는 담당자 데이터와
-    로그 테이블이 아직 없다. 0으로 채워 내보내면 프론트가 정상값으로 렌더링해
-    "기능이 안 돈다"는 오해를 부르므로 필드 자체를 만들지 않는다.
+    회원 현황, ALARM 백그라운드 작업 기반 알림 발송 현황과 OCR 작업 현황을 제공한다.
+    챗봇·보안 지표는 담당 데이터가 아직 없어 응답에 넣지 않는다.
     """
 
     async def get_summary(self, query: DashboardSummaryQuery) -> DashboardSummaryResponse:
@@ -70,6 +74,66 @@ class AdminDashboardService:
             period=query.period,
             generated_at=now,
             members=await self._members(now, start, previous_start, previous_end),
+            alarm_notifications=await self._alarm_notifications(now.date()),
+            ocr_documents=await self._ocr_documents(),
+        )
+
+    @staticmethod
+    async def _ocr_documents() -> OcrDocumentStats:
+        """OCR 모든 상태의 합계와 화면에 노출하는 주요 상태를 한 번에 집계한다."""
+        rows: list[dict[str, Any]] = (
+            await OcrJob.all().annotate(total=Count("id")).group_by("status").values("status", "total")
+        )
+        counts = {OcrJobStatus(row["status"]): row["total"] for row in rows}
+
+        return OcrDocumentStats(
+            total=sum(counts.values()),
+            queued=counts.get(OcrJobStatus.QUEUED, 0),
+            completed=counts.get(OcrJobStatus.COMPLETE, 0),
+            failed=counts.get(OcrJobStatus.FAILED, 0),
+        )
+
+    @staticmethod
+    async def _alarm_notifications(today: date) -> AlarmNotificationStats:
+        """ALARM 작업 상태와 최근 7일 성공 발송 수를 집계한다."""
+        displayed_statuses = (
+            BackgroundJobStatus.QUEUED,
+            BackgroundJobStatus.COMPLETED,
+            BackgroundJobStatus.FAILED,
+        )
+        rows: list[dict[str, Any]] = (
+            await BackgroundJob.filter(job_type=BackgroundJobType.ALARM, status__in=list(displayed_statuses))
+            .annotate(total=Count("id"))
+            .group_by("status")
+            .values("status", "total")
+        )
+        counts = {job_status: 0 for job_status in displayed_statuses}
+        for row in rows:
+            counts[BackgroundJobStatus(row["status"])] = row["total"]
+
+        first = today - timedelta(days=ALARM_TREND_DAYS - 1)
+        start, end = day_range(first, today)
+        trend_rows: list[dict[str, Any]] = (
+            await BackgroundJob.filter(
+                job_type=BackgroundJobType.ALARM,
+                status=BackgroundJobStatus.COMPLETED,
+                completed_at__gte=start,
+                completed_at__lt=end,
+            )
+            .annotate(day=RawSQL("DATE(`completed_at`)"), total=Count("id"))
+            .group_by("day")
+            .values("day", "total")
+        )
+        completed_by_day = {AdminDashboardService._as_date(row["day"]): row["total"] for row in trend_rows}
+
+        return AlarmNotificationStats(
+            queued=counts[BackgroundJobStatus.QUEUED],
+            completed=counts[BackgroundJobStatus.COMPLETED],
+            failed=counts[BackgroundJobStatus.FAILED],
+            completed_trend=[
+                SignupTrendPoint(date=day, count=completed_by_day.get(day, 0))
+                for day in (first + timedelta(days=offset) for offset in range(ALARM_TREND_DAYS))
+            ],
         )
 
     async def _members(

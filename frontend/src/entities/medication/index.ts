@@ -1,4 +1,5 @@
 export {
+  cancelMedication,
   getMedicationOverview,
   getMedicationOverviews,
   getDoseRecords,
