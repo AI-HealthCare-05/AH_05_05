@@ -12,7 +12,8 @@ test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가�
   await expect(exceededCard.getByText('3,200', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('권장 800', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('상한 3,000', { exact: true })).toBeVisible();
-  await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuenow', '3200');
+  await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuenow', '3000');
+  await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuetext', /3,200/);
   await expect(exceededCard.locator('[data-threshold="upper-limit"]')).toBeVisible();
   await expect(neutral).toBeVisible();
 
@@ -27,7 +28,7 @@ test('기준 미달과 권장 범위를 판정 가능한 범위 안에서 중립
   const totals = page.getByRole('region', { name: '성분 합계' });
   const calcium = totals.getByRole('article', { name: '칼슘 성분 합계' });
   const vitaminD = totals.getByRole('article', { name: '비타민 D 성분 합계' });
-  await expect(calcium.getByText('영양제로는 권장량의 50%', { exact: true })).toBeVisible();
+  await expect(calcium.getByText('권장량의 50%예요', { exact: true })).toBeVisible();
   await expect(vitaminD.getByText('권장 범위예요', { exact: true })).toBeVisible();
   await expect(totals.getByText('부족', { exact: false })).toHaveCount(0);
   await expect(totals.getByText('권장~충분', { exact: false })).toHaveCount(0);
