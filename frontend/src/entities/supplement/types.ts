@@ -17,6 +17,10 @@ export interface Supplement {
   doseAmount: number;
   doseUnit: string;
   slots: SupplementSlot[];
+  /** 사용자가 남긴 별점 1~5. 안 남겼으면 null */
+  score: number | null;
+  /** 사용자가 남긴 복용 메모. 안 남겼으면 null */
+  note: string | null;
   /** false면 직접 입력 제품으로, 성분 합계에서 제외합니다. */
   nutrientDataAvailable: boolean;
   nutrients: SupplementNutrientAmount[];
@@ -117,4 +121,6 @@ export type AddSupplementPayload = StandardSupplementPayload | ManualSupplementP
 export interface UpdateSupplementPayload {
   doseAmount: number;
   slots: SupplementSlot[];
+  score?: number | null;
+  note?: string | null;
 }

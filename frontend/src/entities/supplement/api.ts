@@ -94,6 +94,7 @@ interface UserSupplementNutrientApiResponse {
   start_date: string;
   end_date: string | null;
   status: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+  score: number | null;
   note: string | null;
   created_at: string;
   updated_at: string | null;
@@ -243,12 +244,15 @@ export async function updateSupplement(
     await mockDelay();
     return mockUpdateSupplement(supplementId, payload);
   }
+  const body: Record<string, unknown> = {
+    dose_amount: payload.doseAmount,
+    slots: payload.slots.map((slot) => SLOT_TO_API[slot]),
+  };
+  if ('score' in payload) body.score = payload.score;
+  if ('note' in payload) body.note = payload.note;
   const response = await http.patch<UserSupplementNutrientApiResponse>(
     `/v1/med/user-suppl-nutr/${supplementId}`,
-    {
-      dose_amount: payload.doseAmount,
-      slots: payload.slots.map((slot) => SLOT_TO_API[slot]),
-    },
+    body,
   );
   return mapUserSupplement(response);
 }
@@ -295,6 +299,8 @@ function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Sup
     doseAmount: Number(registration.dose_amount),
     doseUnit: registration.dose_unit,
     slots: registration.slots.map(({ slot }) => API_TO_SLOT[slot]),
+    score: registration.score ?? null,
+    note: registration.note ?? null,
     nutrientDataAvailable: product.nutrients.length > 0,
     nutrients: product.nutrients,
   };

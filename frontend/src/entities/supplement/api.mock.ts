@@ -155,6 +155,8 @@ function initialSupplements(): Supplement[] {
       doseAmount: 1,
       doseUnit: '정',
       slots: ['morning', 'evening'],
+      score: 4,
+      note: '아침 식후에 먹기',
       nutrientDataAvailable: true,
       nutrients: [
         { nutrientId: 'vitamin-a', name: '비타민 A', amount: 300, unit: 'µg RAE' },
@@ -167,6 +169,8 @@ function initialSupplements(): Supplement[] {
       doseAmount: 1,
       doseUnit: '정',
       slots: ['morning'],
+      score: null,
+      note: null,
       nutrientDataAvailable: true,
       nutrients: [
         { nutrientId: 'vitamin-a', name: '비타민 A', amount: 2600, unit: 'µg RAE' },
@@ -186,6 +190,8 @@ function initialSupplements(): Supplement[] {
       doseAmount: 1,
       doseUnit: '정',
       slots: ['evening'],
+      score: null,
+      note: null,
       nutrientDataAvailable: true,
       nutrients: [
         { nutrientId: 'vitamin-d', name: '비타민 D', amount: 30, unit: 'µg' },
@@ -259,6 +265,8 @@ export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
     doseAmount: payload.doseAmount,
     doseUnit: payload.doseUnit,
     slots: [...payload.slots],
+    score: null,
+    note: null,
     nutrientDataAvailable: Boolean(standardProduct),
     nutrients: standardProduct
       ? standardProduct.nutrients.map((nutrient) => ({ ...nutrient }))
@@ -278,6 +286,8 @@ export function mockUpdateSupplement(
     ...supplementStore[index],
     doseAmount: payload.doseAmount,
     slots: [...payload.slots],
+    score: 'score' in payload ? (payload.score ?? null) : supplementStore[index].score,
+    note: 'note' in payload ? (payload.note ?? null) : supplementStore[index].note,
   };
   supplementStore = supplementStore.map((supplement, itemIndex) =>
     itemIndex === index ? updated : supplement,

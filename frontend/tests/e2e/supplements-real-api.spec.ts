@@ -110,6 +110,7 @@ function registrationFor(
     start_date: koreanToday(),
     end_date: null,
     status: 'ACTIVE',
+    score: null,
     note: null,
     created_at: '2026-08-27T09:00:00+09:00',
     updated_at: null,
@@ -117,6 +118,66 @@ function registrationFor(
     supplement: product,
   };
 }
+
+test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값을 PATCH로 보낸다', async ({ page }) => {
+  await authenticate(page);
+  let patchBody: Record<string, unknown> | null = null;
+  const registration = {
+    ...registrationFor(IRON_PRODUCT, 9001, '1.000'),
+    score: 4,
+    note: '아침 식후',
+  };
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, {
+        items: [registration],
+        total: 1,
+        offset: 0,
+        limit: 100,
+        nutrient_standard: null,
+      });
+      return;
+    }
+    patchBody = route.request().postDataJSON() as Record<string, unknown>;
+    await fulfillJson(route, {
+      ...registration,
+      score: patchBody.score,
+      note: patchBody.note,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+  const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
+  const iron = supplementList.getByRole('button', { name: /튼튼 철분 캡슐/ });
+  await expect(iron.getByLabel('별 4점')).toBeVisible();
+  await iron.click();
+
+  const sheet = page.getByRole('dialog', { name: '튼튼 철분 캡슐' });
+  await expect(sheet.getByRole('button', { name: '별 4점' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(sheet.getByRole('textbox', { name: '메모' })).toHaveValue('아침 식후');
+  await sheet.getByRole('button', { name: '별 3점' }).click();
+  await sheet.getByRole('textbox', { name: '메모' }).fill('  저녁 식후  ');
+  await sheet.getByRole('button', { name: '저장' }).click();
+
+  expect(patchBody).toEqual({
+    dose_amount: 1,
+    slots: ['MORNING'],
+    score: 3,
+    note: '저녁 식후',
+  });
+  await expect(iron.getByLabel('별 3점')).toBeVisible();
+});
 
 test('override 목록은 기준 조회가 실패해도 오류 화면으로 바뀌지 않는다', async ({ page }) => {
   await authenticate(page);

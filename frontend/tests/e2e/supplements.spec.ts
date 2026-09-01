@@ -253,6 +253,52 @@ test('목록 카드에서 회당 수량과 슬롯을 편집하면 카드와 성�
   await expect(page.getByText('3,500', { exact: true })).toBeVisible();
 });
 
+test('목록에는 채운 별만 읽기 전용으로 표시하고 별점이 없으면 숨긴다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+  const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
+  const omega = supplementList.getByRole('button', { name: /오메가3/ });
+  const multivitamin = supplementList.getByRole('button', { name: /종합비타민/ });
+
+  const omegaScore = omega.getByLabel('별 4점');
+  await expect(omegaScore).toBeVisible();
+  await expect(omegaScore.locator('svg')).toHaveCount(4);
+  await expect(omega.getByRole('button')).toHaveCount(0);
+  await expect(multivitamin.getByLabel(/별 \d점/)).toHaveCount(0);
+});
+
+test('편집 시트는 기존 별점과 메모를 채우고 선택한 별 재클릭을 저장할 때 해제한다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+  const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
+  const omega = supplementList.getByRole('button', { name: /오메가3/ });
+  await omega.click();
+
+  const sheet = page.getByRole('dialog', { name: '오메가3' });
+  const stars = sheet.getByRole('group', { name: '먹어보니 어때요?' });
+  const scoreFour = stars.getByRole('button', { name: '별 4점' });
+  const note = sheet.getByRole('textbox', { name: '메모' });
+  await expect(stars.getByRole('button')).toHaveCount(5);
+  await expect(scoreFour).toHaveAttribute('aria-pressed', 'true');
+  await expect(note).toHaveValue('아침 식후에 먹기');
+
+  await scoreFour.click();
+  await expect(scoreFour).toHaveAttribute('aria-pressed', 'false');
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole('button', { name: '닫기' }).click();
+  await expect(omega.getByLabel('별 4점')).toBeVisible();
+  await omega.click();
+  const reopenedSheet = page.getByRole('dialog', { name: '오메가3' });
+  await reopenedSheet.getByRole('button', { name: '별 4점' }).click();
+  const reopenedNote = reopenedSheet.getByRole('textbox', { name: '메모' });
+  await reopenedNote.fill('   ');
+  await reopenedSheet.getByRole('button', { name: '저장' }).click();
+
+  await expect(reopenedSheet).toBeHidden();
+  await expect(omega.getByLabel(/별 \d점/)).toHaveCount(0);
+  await omega.click();
+  await expect(page.getByRole('dialog', { name: '오메가3' }).getByRole('textbox', { name: '메모' }))
+    .toHaveValue('');
+});
+
 test('복용 중단을 확인하면 삭제 문구 없이 활성 목록과 성분 합계에서 제외한다', async ({ page }) => {
   await page.goto('/dev/supplements');
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Plus, Sprout } from 'lucide-react';
+import { ChevronRight, Plus, Sprout, Star } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
 import {
@@ -247,6 +247,20 @@ export function SupplementsPage({
                       {supplement.doseUnit} ·{' '}
                       {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                     </span>
+                    {supplement.score !== null && (
+                      <span
+                        className="mt-1 flex items-center gap-0.5"
+                        aria-label={`별 ${supplement.score}점`}
+                      >
+                        {Array.from({ length: supplement.score }, (_, index) => (
+                          <Star
+                            key={index}
+                            aria-hidden
+                            className="size-4 fill-current text-primary"
+                          />
+                        ))}
+                      </span>
+                    )}
                   </span>
                   <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
                 </button>
