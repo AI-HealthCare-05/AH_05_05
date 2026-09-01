@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Plus, Sprout, Star } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
 import {
   addSupplement,
@@ -55,6 +55,8 @@ export function SupplementsPage({
 }: SupplementsPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const activeView = searchParams.get('tab') === 'browse' ? 'browse' : 'my';
   const routePresetProductId = presetProductIdFromState(location.state);
   const [supplements, setSupplements] = useState<Supplement[] | null>(supplementsOverride ?? null);
   const [standards, setStandards] = useState<NutrientStandards | null>(null);
@@ -90,6 +92,11 @@ export function SupplementsPage({
   function openAddSheet() {
     setPresetProductId(null);
     setAddOpen(true);
+  }
+
+  function changeView(view: 'my' | 'browse') {
+    const search = view === 'browse' ? '?tab=browse' : '';
+    navigate(`${location.pathname}${search}`, { replace: true });
   }
 
   function changeAddOpen(open: boolean) {
@@ -208,8 +215,33 @@ export function SupplementsPage({
         }
       />
 
+      <div className="px-page-x pt-5">
+        <div
+          className="grid grid-cols-2 rounded-input bg-muted-bg p-1"
+          role="group"
+          aria-label="영양제 화면"
+        >
+          {(['my', 'browse'] as const).map((view) => {
+            const selected = view === activeView;
+            return (
+              <button
+                key={view}
+                type="button"
+                aria-pressed={selected}
+                className={`min-h-touch rounded-input text-sm font-bold ${
+                  selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
+                }`}
+                onClick={() => changeView(view)}
+              >
+                {view === 'my' ? '내 영양제' : '둘러보기'}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5">
-        {loadError !== null ? (
+        {activeView === 'browse' ? null : loadError !== null ? (
           <Card title="영양제를 불러오지 못했어요">{loadError}</Card>
         ) : supplements === null ? (
           <p className="text-sm text-muted-foreground">불러오는 중...</p>
