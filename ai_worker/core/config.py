@@ -43,6 +43,7 @@ class Config(BaseSettings):
     KNOWLEDGE_QDRANT_COLLECTION: str = "medication_knowledge_full_v1"
     KNOWLEDGE_DATASET_VERSION: str = "knowledge-full-v1"
     INTERACTION_RULE_DATASET_VERSION: str = "interaction-pilot-v1"
+    MEDICATION_SAFETY_RULE_DATASET_VERSION: str = "medication-safety-v1"
     QDRANT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     RAG_MIN_SIMILARITY_SCORE: float = Field(
         default=0.65,
