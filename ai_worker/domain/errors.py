@@ -28,3 +28,7 @@ class ChatClassificationError(AIWorkerError):
 class ChatAnswerGenerationError(AIWorkerError):
     code = "CHAT_ANSWER_GENERATION_FAILED"
     retryable = True
+
+    def __init__(self, message: str, *, reason_code: str = "CLIENT_ERROR") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code

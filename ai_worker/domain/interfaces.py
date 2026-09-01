@@ -18,6 +18,7 @@ from ai_worker.schemas.knowledge import KnowledgeRetrievalResult
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
+    MedicationAnswerGenerationOutcome,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationGuideLookup,
@@ -159,7 +160,7 @@ class MedicationAnswerGenerator(Protocol):
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
         result: MedicationChatResult,
-    ) -> MedicationChatResult: ...
+    ) -> MedicationAnswerGenerationOutcome: ...
 
 
 class GroundedClaimValidator(Protocol):

@@ -1,6 +1,10 @@
+import hashlib
 from contextlib import asynccontextmanager
 from datetime import date
 
+import pytest
+
+from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
@@ -18,6 +22,10 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
     InteractionRuleFact,
+    MedicationAnswerFallbackReason,
+    MedicationAnswerGenerationObservation,
+    MedicationAnswerGenerationOutcome,
+    MedicationAnswerRewriteStatus,
     MedicationChatProgressStage,
     MedicationChatRequest,
     MedicationChatResult,
@@ -216,8 +224,17 @@ class PassthroughGenerator:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
         result: MedicationChatResult,
-    ) -> MedicationChatResult:
-        return result
+    ) -> MedicationAnswerGenerationOutcome:
+        answer_hash = hashlib.sha256(result.answer.encode("utf-8")).hexdigest()
+        return MedicationAnswerGenerationOutcome(
+            result=result,
+            observation=MedicationAnswerGenerationObservation(
+                status=MedicationAnswerRewriteStatus.REWRITTEN,
+                fallback_used=False,
+                draft_answer_hash=answer_hash,
+                generated_answer_hash=answer_hash,
+            ),
+        )
 
 
 class PassthroughValidator:
@@ -240,8 +257,53 @@ class LongAnswerGenerator:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
         result: MedicationChatResult,
-    ) -> MedicationChatResult:
-        return result.model_copy(update={"answer": self.answer})
+    ) -> MedicationAnswerGenerationOutcome:
+        generated = result.model_copy(update={"answer": self.answer})
+        return MedicationAnswerGenerationOutcome(
+            result=generated,
+            observation=MedicationAnswerGenerationObservation(
+                status=MedicationAnswerRewriteStatus.REWRITTEN,
+                fallback_used=False,
+                draft_answer_hash=hashlib.sha256(result.answer.encode("utf-8")).hexdigest(),
+                generated_answer_hash=hashlib.sha256(self.answer.encode("utf-8")).hexdigest(),
+            ),
+        )
+
+
+class FallbackGenerator:
+    generated_answer = "하루 10정을 복용해도 안전합니다."
+
+    async def generate(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationAnswerGenerationOutcome:
+        return MedicationAnswerGenerationOutcome(
+            result=result,
+            observation=MedicationAnswerGenerationObservation(
+                status=MedicationAnswerRewriteStatus.DRAFT_FALLBACK,
+                fallback_used=True,
+                fallback_reason=(MedicationAnswerFallbackReason.UNSUPPORTED_SAFETY_ASSERTION),
+                draft_answer_hash=hashlib.sha256(result.answer.encode("utf-8")).hexdigest(),
+                generated_answer_hash=hashlib.sha256(self.generated_answer.encode("utf-8")).hexdigest(),
+            ),
+        )
+
+
+class FailingMedicationGenerator:
+    async def generate(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationAnswerGenerationOutcome:
+        raise ChatAnswerGenerationError(
+            "생성 실패",
+            reason_code=MedicationAnswerFallbackReason.CLIENT_ERROR.value,
+        )
 
 
 class RecordingValidator:
@@ -581,6 +643,50 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert safety_outputs == {
         "status": "SAFE",
         "reason_codes": [],
+    }
+
+    llm_outputs = next(span.outputs for span in tracer.spans if span.name == "llm.generate")
+    assert llm_outputs["rewrite_status"] == "REWRITTEN"
+    assert llm_outputs["fallback_used"] is False
+    assert llm_outputs["fallback_reason"] is None
+    assert len(llm_outputs["draft_answer_hash"]) == 64
+    assert len(llm_outputs["generated_answer_hash"]) == 64
+
+
+async def test_execute_records_fallback_reason_without_answer_content() -> None:
+    tracer = RecordingChatTracer()
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        answer_generator=FallbackGenerator(),
+        tracer=tracer,
+    ).execute(build_request("타이레놀의 주의사항을 알려줘"))
+
+    llm_outputs = next(span.outputs for span in tracer.spans if span.name == "llm.generate")
+    assert llm_outputs["rewrite_status"] == "DRAFT_FALLBACK"
+    assert llm_outputs["fallback_used"] is True
+    assert llm_outputs["fallback_reason"] == "UNSUPPORTED_SAFETY_ASSERTION"
+    assert FallbackGenerator.generated_answer not in repr(llm_outputs)
+    assert result.answer not in repr(llm_outputs)
+
+
+async def test_execute_records_provider_failure_reason_and_reraises() -> None:
+    tracer = RecordingChatTracer()
+    use_case = build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        answer_generator=FailingMedicationGenerator(),
+        tracer=tracer,
+    )
+
+    with pytest.raises(ChatAnswerGenerationError):
+        await use_case.execute(build_request("타이레놀의 주의사항을 알려줘"))
+
+    llm_outputs = next(span.outputs for span in tracer.spans if span.name == "llm.generate")
+    assert llm_outputs == {
+        "rewrite_status": "FAILED",
+        "fallback_used": False,
+        "fallback_reason": "CLIENT_ERROR",
+        "route": "MEDICATION_GUIDE",
+        "source_count": 1,
     }
 
 

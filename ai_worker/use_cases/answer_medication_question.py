@@ -6,6 +6,7 @@ from ai_worker.domain.chat_content_compactor import (
     ANSWER_COMPACTION_MARKER,
     compact_chat_content,
 )
+from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
@@ -348,11 +349,24 @@ class AnswerMedicationQuestionUseCase:
             MedicationChatProgressStage.ANSWER_GENERATING,
         )
         async with self._tracer.span("llm.generate", run_type="llm") as llm_span:
-            generated = await self._answer_generator.generate(
-                request=request,
-                context=context,
-                result=draft,
-            )
+            try:
+                outcome = await self._answer_generator.generate(
+                    request=request,
+                    context=context,
+                    result=draft,
+                )
+            except ChatAnswerGenerationError as error:
+                llm_span.end(
+                    {
+                        "rewrite_status": "FAILED",
+                        "fallback_used": False,
+                        "fallback_reason": error.reason_code,
+                        "route": draft.route.value,
+                        "source_count": len(draft.sources),
+                    }
+                )
+                raise
+            generated = outcome.result
             generated = generated.model_copy(
                 update={
                     "answer": compact_chat_content(
@@ -363,6 +377,15 @@ class AnswerMedicationQuestionUseCase:
             )
             llm_span.end(
                 {
+                    "rewrite_status": outcome.observation.status.value,
+                    "fallback_used": outcome.observation.fallback_used,
+                    "fallback_reason": (
+                        outcome.observation.fallback_reason.value
+                        if outcome.observation.fallback_reason is not None
+                        else None
+                    ),
+                    "draft_answer_hash": outcome.observation.draft_answer_hash,
+                    "generated_answer_hash": outcome.observation.generated_answer_hash,
                     "route": generated.route.value,
                     "source_count": len(generated.sources),
                 }
