@@ -364,7 +364,7 @@ function NutrientTotalCard({
         <div className="flex items-start gap-3">
           <div className="flex items-center gap-2">
             {isOverUpperLimit && (
-              <AlertCircle aria-hidden className="size-5 shrink-0 text-warning" />
+              <AlertCircle aria-hidden className="size-5 shrink-0 text-danger" />
             )}
             <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
           </div>
@@ -373,7 +373,7 @@ function NutrientTotalCard({
         <div className="flex items-baseline gap-2">
           <strong
             className={`text-metric font-bold tnum ${
-              isOverUpperLimit ? 'text-warning-strong' : 'text-foreground'
+              isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
             }`}
           >
             {numberFormat.format(total.amount)}
@@ -423,7 +423,7 @@ function NutrientTotalCard({
 
   return (
     <article aria-label={`${total.name} 성분 합계`}>
-      <Card tone={isOverUpperLimit ? 'warning' : 'default'} className="gap-4 p-4">
+      <Card className={`gap-4 p-4 ${isOverUpperLimit ? '!bg-danger-bg' : ''}`}>
         {content}
       </Card>
     </article>
@@ -433,7 +433,7 @@ function NutrientTotalCard({
 function StandardStatus({ total }: { total: NutrientTotal }) {
   const evaluation = evaluateNutrientStandard(total);
   if (evaluation.status === 'over-upper-limit') {
-    return <p className="text-sm font-bold text-warning-strong">상한 초과</p>;
+    return <p className="text-sm font-bold text-danger-strong">상한 초과</p>;
   }
   if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
     return (
@@ -457,21 +457,35 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
 
 function NutrientRangeBar({ total }: { total: NutrientTotal }) {
   const evaluation = evaluateNutrientStandard(total);
+  if (total.ul === null) return null;
+
   const positions = rangePositions(total, evaluation.base);
-  const overUpperLimit = evaluation.status === 'over-upper-limit';
+  const fillColor =
+    evaluation.status === 'below-base'
+      ? 'bg-warning'
+      : evaluation.status === 'over-upper-limit'
+        ? 'bg-danger'
+        : 'bg-primary';
+  const markerColor =
+    evaluation.status === 'below-base'
+      ? 'bg-warning-strong'
+      : evaluation.status === 'over-upper-limit'
+        ? 'bg-danger-strong'
+        : 'bg-primary-strong';
 
   return (
     <div
       role="meter"
       aria-label={`${total.name} 섭취기준 위치`}
       aria-valuemin={0}
-      aria-valuenow={total.amount}
-      aria-valuemax={Math.max(total.amount, total.ul ?? evaluation.base ?? total.amount)}
+      aria-valuenow={Math.min(total.amount, total.ul)}
+      aria-valuemax={total.ul}
+      aria-valuetext={`${numberFormat.format(total.amount)}${total.unit}`}
       className="relative mx-1 h-5"
     >
       <div className="absolute inset-x-0 top-2 h-2 rounded-pill bg-muted-bg">
         <div
-          className={`h-full rounded-pill ${overUpperLimit ? 'bg-warning' : 'bg-primary'}`}
+          className={`h-full rounded-pill ${fillColor}`}
           style={{ width: `${positions.marker}%` }}
         />
       </div>
@@ -483,21 +497,9 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
           style={{ left: `${positions.base}%` }}
         />
       )}
-      {positions.upper !== null && (
-        <span
-          data-threshold="upper-limit"
-          aria-hidden
-          className={`absolute top-1 h-4 w-0.5 ${
-            overUpperLimit ? 'bg-warning' : 'bg-muted-foreground'
-          }`}
-          style={{ left: `${positions.upper}%` }}
-        />
-      )}
       <span
         aria-hidden
-        className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${
-          overUpperLimit ? 'bg-warning' : 'bg-primary-strong'
-        }`}
+        className={`absolute top-1 size-4 -translate-x-1/2 rounded-pill border-2 border-card ${markerColor}`}
         style={{ left: `${positions.marker}%` }}
       />
     </div>
@@ -505,18 +507,11 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
 }
 
 function rangePositions(total: NutrientTotal, base: number | null) {
-  if (total.ul !== null) {
-    const upper = 88;
-    const marker = total.amount > total.ul
-      ? 100
-      : Math.max(0, Math.min(upper, (total.amount / total.ul) * upper));
-    const basePosition = base === null
-      ? null
-      : Math.max(8, Math.min(upper - 8, (base / total.ul) * upper));
-    return { base: basePosition, upper, marker };
-  }
-
-  return { base: null, upper: null, marker: 0 };
+  if (total.ul === null) return { base: null, upper: null, marker: 0 };
+  const marker = Math.max(0, Math.min(100, (total.amount / total.ul) * 100));
+  const basePosition =
+    base === null ? null : Math.max(4, Math.min(96, (base / total.ul) * 100));
+  return { base: basePosition, upper: null, marker };
 }
 
 function standardSourceLabel(profile: NutrientStandardProfile | null): string {
