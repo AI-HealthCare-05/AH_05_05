@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Eye, EyeOff } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { createAccount, type Gender } from '@/entities/account';
 import { login } from '@/entities/auth';
@@ -11,7 +12,7 @@ import {
   validateBirthDate,
 } from '@/shared/lib/birthDate';
 import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
-import { NAME_MAX_LENGTH, validateName } from '@/shared/lib/name';
+import { NAME_MAX_LENGTH, sanitizeNameInput, validateName } from '@/shared/lib/name';
 import { PASSWORD_MAX_LENGTH } from '@/shared/lib/password';
 import {
   PHONE_NUMBER_MAX_LENGTH,
@@ -35,6 +36,7 @@ const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 �
 
 export function AuthPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn } = useSession();
   const emailInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<AuthMode>('login');
@@ -43,6 +45,8 @@ export function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [birthDate, setBirthDate] = useState('');
@@ -69,6 +73,8 @@ export function AuthPage() {
     setEmail('');
     setPassword('');
     setPasswordConfirm('');
+    setShowPassword(false);
+    setShowPasswordConfirm(false);
     setName('');
     setPhoneNumber('');
     setBirthDate('');
@@ -101,6 +107,19 @@ export function AuthPage() {
     // 조용히 지우면 왜 안 찍히는지 모른다. 지운 게 있을 때만 이유를 알린다.
     setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
     setEmail(sanitized);
+  }
+
+  function applyNameInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const normalized = typed.normalize('NFC');
+    const sanitized = sanitizeNameInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    setName(sanitized);
+    setNameError(
+      sanitized === normalized
+        ? null
+        : '이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.',
+    );
   }
 
   async function complete(event: FormEvent<HTMLFormElement>) {
@@ -167,7 +186,16 @@ export function AuthPage() {
       }
     }
     signIn(email);
-    navigate('/home', { replace: true });
+    const requestedPath = (location.state as { from?: unknown } | null)?.from;
+    const destination =
+      mode === 'login' &&
+      typeof requestedPath === 'string' &&
+      requestedPath.startsWith('/') &&
+      !requestedPath.startsWith('//') &&
+      requestedPath !== '/login'
+        ? requestedPath
+        : '/home';
+    navigate(destination, { replace: true });
   }
 
   function handleTabChange(key: TabKey) {
@@ -252,7 +280,7 @@ export function AuthPage() {
           />
           <Input
             label="비밀번호"
-            type="password"
+            type={mode === 'signup' && showPassword ? 'text' : 'password'}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             value={password}
             // 로그인에는 상한을 걸지 않습니다. 이 정책이 생기기 전에 더 긴 비밀번호로
@@ -261,6 +289,22 @@ export function AuthPage() {
             maxLength={mode === 'signup' ? PASSWORD_MAX_LENGTH : undefined}
             onChange={(event) => setPassword(event.target.value)}
             error={loginError ?? undefined}
+            trailingAction={
+              mode === 'signup' ? (
+                <button
+                  type="button"
+                  aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  className="flex size-10 items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-5" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-5" aria-hidden="true" />
+                  )}
+                </button>
+              ) : undefined
+            }
             required
           />
 
@@ -268,7 +312,7 @@ export function AuthPage() {
             <>
               <Input
                 label="비밀번호 확인"
-                type="password"
+                type={showPasswordConfirm ? 'text' : 'password'}
                 autoComplete="new-password"
                 value={passwordConfirm}
                 maxLength={PASSWORD_MAX_LENGTH}
@@ -277,6 +321,22 @@ export function AuthPage() {
                   setPasswordConfirm(event.target.value);
                   setPasswordConfirmError(null);
                 }}
+                trailingAction={
+                  <button
+                    type="button"
+                    aria-label={
+                      showPasswordConfirm ? '비밀번호 확인 숨기기' : '비밀번호 확인 보기'
+                    }
+                    className="flex size-10 items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
+                    onClick={() => setShowPasswordConfirm((visible) => !visible)}
+                  >
+                    {showPasswordConfirm ? (
+                      <EyeOff className="size-5" aria-hidden="true" />
+                    ) : (
+                      <Eye className="size-5" aria-hidden="true" />
+                    )}
+                  </button>
+                }
                 required
               />
               <Input
@@ -286,9 +346,13 @@ export function AuthPage() {
                 maxLength={NAME_MAX_LENGTH}
                 error={nameError ?? undefined}
                 onChange={(event) => {
-                  setName(event.target.value);
-                  setNameError(null);
+                  if ((event.nativeEvent as InputEvent).isComposing) {
+                    setName(event.currentTarget.value);
+                    return;
+                  }
+                  applyNameInput(event.currentTarget);
                 }}
+                onCompositionEnd={(event) => applyNameInput(event.currentTarget)}
                 required
               />
               <Input
@@ -345,15 +409,17 @@ export function AuthPage() {
             {mode === 'login' ? '로그인' : '회원가입 완료'}
           </Button>
         </form>
-        <nav className="mt-6 flex flex-col" aria-label="법적 안내">
-          <a href="/terms" className="flex min-h-touch items-center text-sm text-muted-foreground">
-            이용약관
-          </a>
-          <a href="/privacy" className="flex min-h-touch items-center text-sm text-muted-foreground">
-            개인정보 처리 안내
-          </a>
-        </nav>
       </main>
+      <footer className="flex min-h-touch shrink-0 items-center justify-center gap-2 border-t border-border px-page-x text-xs text-muted-foreground">
+        <img src="/images/rxvita-logo-480.png" alt="RxVita" className="h-4 w-auto" />
+        <Link to="/terms" className="hover:text-foreground">
+          이용약관
+        </Link>
+        <span aria-hidden="true">|</span>
+        <Link to="/privacy" className="hover:text-foreground">
+          개인정보 처리 안내
+        </Link>
+      </footer>
       <BottomTabbar active="my" onChange={handleTabChange} className="border-t border-border" />
     </div>
   );

@@ -5,7 +5,7 @@ import { Card, StatusBadge } from '@/shared/ui';
 interface SupplementRankingCardProps {
   ranking: SupplementRanking;
   registrationPending: boolean;
-  onSelect: (productId: string) => void;
+  onSelect?: (productId: string) => void;
   maxItems?: number;
   onMore?: () => void;
 }
@@ -64,7 +64,7 @@ export function SupplementRankingCard({
                     {item.name}
                   </strong>
                 </div>
-              ) : (
+              ) : onSelect ? (
                 <button
                   type="button"
                   aria-label={`${item.rank}위 ${item.name} 영양제 추가`}
@@ -77,6 +77,13 @@ export function SupplementRankingCard({
                   </strong>
                   <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
                 </button>
+              ) : (
+                <div className="flex min-h-touch items-center gap-3 px-4 py-2">
+                  <RankNumber rank={item.rank} />
+                  <strong className="min-w-0 flex-1 truncate text-base text-foreground">
+                    {item.name}
+                  </strong>
+                </div>
               )}
             </li>
           ))}

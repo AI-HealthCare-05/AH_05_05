@@ -10,6 +10,7 @@ import { API_BASE_URL } from '@/shared/config/env';
 
 const ACCESS_TOKEN_STORAGE_KEY = 'poke.access-token';
 const ACCOUNT_PRINCIPAL_STORAGE_KEY = 'poke.account-principal';
+export const AUTH_SESSION_EXPIRED_EVENT = 'poke:auth-session-expired';
 
 let accessToken: string | null = null;
 let accountPrincipal: string | null = null;
@@ -64,6 +65,34 @@ export function restoreAccessToken(): string | null {
 export function authHeader(): Record<string, string> {
   const token = restoreAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** JWT의 exp(초)를 브라우저 시간(밀리초)으로 변환합니다. JWT가 아니면 서버의 401에 맡깁니다. */
+export function accessTokenExpiresAt(token: string): number | null {
+  const payload = token.split('.')[1];
+  if (!payload) return null;
+  try {
+    const base64 = payload.replaceAll('-', '+').replaceAll('_', '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const decoded = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof decoded.exp === 'number' && Number.isFinite(decoded.exp)
+      ? decoded.exp * 1000
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function expireSession(requestGeneration?: number): void {
+  if (requestGeneration !== undefined && requestGeneration !== authGeneration) return;
+  if (!restoreAccessToken() && !restoreAccountPrincipal()) return;
+  setAccessToken(null);
+  setAccountPrincipal(null);
+  window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT));
+}
+
+function handleUnauthorized(res: Response, requestGeneration: number): void {
+  if (res.status === 401) expireSession(requestGeneration);
 }
 
 /** 목업이 네트워크 지연을 흉내내어 로딩 상태를 확인할 수 있게 합니다. */
@@ -127,6 +156,7 @@ async function request<T>(
   body?: unknown,
   additionalHeaders: Record<string, string> = {},
 ): Promise<T> {
+  const requestGeneration = getAuthGeneration();
   const isFormData = body instanceof FormData;
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
@@ -140,18 +170,25 @@ async function request<T>(
     body: isFormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if (!res.ok) throw await toApiError(res);
+  if (!res.ok) {
+    handleUnauthorized(res, requestGeneration);
+    throw await toApiError(res);
+  }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
 async function requestBlob(path: string): Promise<Blob> {
+  const requestGeneration = getAuthGeneration();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: 'GET',
     credentials: 'include',
     headers: authHeader(),
   });
-  if (!res.ok) throw await toApiError(res);
+  if (!res.ok) {
+    handleUnauthorized(res, requestGeneration);
+    throw await toApiError(res);
+  }
   return res.blob();
 }
 
@@ -159,6 +196,7 @@ async function requestStream(
   path: string,
   body: unknown,
 ): Promise<Response> {
+  const requestGeneration = getAuthGeneration();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     credentials: 'include',
@@ -169,7 +207,10 @@ async function requestStream(
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await toApiError(res);
+  if (!res.ok) {
+    handleUnauthorized(res, requestGeneration);
+    throw await toApiError(res);
+  }
   return res;
 }
 

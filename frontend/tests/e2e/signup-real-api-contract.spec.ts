@@ -45,7 +45,7 @@ test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 �
   await page.getByRole('button', { name: '회원가입' }).click();
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
-  await page.getByLabel('비밀번호 확인').fill('Password123!');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('Password123!');
   await page.getByLabel('이름').fill('  신규사용자  ');
   await page.getByLabel('전화번호').fill('011-123-4567');
   await page.getByLabel('생년월일').fill('1990-01-01');
@@ -186,7 +186,7 @@ test('회원가입 이메일 API 검증 오류는 브라우저 검증 말풍선�
   const emailInput = page.getByLabel('이메일');
   await emailInput.fill('patient@localhost');
   await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
-  await page.getByLabel('비밀번호 확인').fill('Password123!');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('Password123!');
   await page.getByLabel('이름').fill('테스트회원');
   await page.getByLabel('전화번호').fill('010-1234-5678');
   await page.getByLabel('생년월일').fill('1990-01-01');
@@ -253,7 +253,10 @@ test('회원가입 입력창 상한은 화면 기준이다', async ({ page }) =>
   await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '20');
   await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');
   await expect(page.getByLabel('비밀번호', { exact: true })).toHaveAttribute('maxlength', '30');
-  await expect(page.getByLabel('비밀번호 확인')).toHaveAttribute('maxlength', '30');
+  await expect(page.getByLabel('비밀번호 확인', { exact: true })).toHaveAttribute(
+    'maxlength',
+    '30',
+  );
 
   await page.getByLabel('이름').fill('가'.repeat(25));
   await expect(page.getByLabel('이름')).toHaveValue('가'.repeat(20));
@@ -271,22 +274,15 @@ test('로그인 비밀번호에는 상한을 걸지 않는다', async ({ page })
   await expect(password).toHaveValue(long);
 });
 
-test('이름 칸은 한글과 영문만 받는다', async ({ page }) => {
-  // 제출 시점에만 검사한다. 이메일 칸처럼 입력 시점에 지우면 한글 IME 조합 중인
-  // 낱자가 찍는 족족 지워져 한글을 아예 입력할 수 없다.
+test('이름 칸은 숫자·공백·특수문자를 제거하고 여러 언어의 문자를 받는다', async ({ page }) => {
   await page.goto('/login');
   await openSignupTab(page);
   const name = page.getByLabel('이름');
-  const message = '이름은 한글과 영문만 입력할 수 있어요.';
 
-  for (const rejected of ['김 진형', '김진형2', 'Kim-Jinhyeong']) {
-    await name.fill(rejected);
-    // 입력 시점에는 지우지 않는다 — 값이 그대로 남아 있어야 한다.
-    await expect(name).toHaveValue(rejected);
-    await page.getByRole('button', { name: '회원가입 완료' }).click();
-    await expect(page.getByText(message)).toBeVisible();
-  }
+  await name.fill('Élodie 山田Мария123!-😀');
 
-  await name.fill('KimJinhyeong');
-  await expect(page.getByText(message)).toHaveCount(0);
+  await expect(name).toHaveValue('Élodie山田Мария');
+  await expect(
+    page.getByText('이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.'),
+  ).toBeVisible();
 });
