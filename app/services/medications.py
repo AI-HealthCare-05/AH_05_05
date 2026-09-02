@@ -21,6 +21,7 @@ from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, MealSlot
 from app.models.medications import Medication, MedicationDose
 from app.models.users import User, UserSettings
+from app.services.medication_period import medication_end_date, resolve_medication_overview_range
 
 MAX_DOSE_HISTORY_DAYS = 366
 UNKNOWN_DAYS = 1
@@ -36,20 +37,27 @@ DEFAULT_MEAL_TIMES = {
 
 
 class MedicationService:
-    async def list_overviews(self, user: User) -> list[MedicationOverview]:
+    async def list_overviews(
+        self,
+        user: User,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> list[MedicationOverview]:
+        today = datetime.now(config.TIMEZONE).date()
+        resolved_from, resolved_to = resolve_medication_overview_range(from_date, to_date, today)
         episodes = (
             await CareEpisode.filter(
                 user_id=user.id,
                 status=CareEpisodeStatus.ACTIVE,
                 source_ocr_job_id__isnull=False,
-                medication_start_date__isnull=False,
+                medication_start_date__gte=resolved_from,
+                medication_start_date__lte=resolved_to,
             )
             .prefetch_related("medications__slots")
-            .order_by("-created_at", "-id")
+            .order_by("-medication_start_date", "-id")
         )
         settings = await UserSettings.get_or_none(user_id=user.id)
         meal_times = self._meal_times(settings)
-        today = datetime.now(config.TIMEZONE).date()
 
         overviews: list[MedicationOverview] = []
         for episode in episodes:
@@ -168,12 +176,7 @@ class MedicationService:
             MedicationService._medication_item(medication, start_date, today, fallback_days)
             for medication in medications
         ]
-        scheduled = [item for item in items if not item.as_needed]
-        longest_days = max(
-            (item.days for item in scheduled),
-            default=max(item.days for item in items),
-        )
-        end_date = start_date + timedelta(days=longest_days - 1)
+        end_date = medication_end_date(episode, medications)
         return MedicationOverview(
             record_id=episode.id,
             document_image_url=(
@@ -182,6 +185,7 @@ class MedicationService:
             start=MedicationStart(date=start_date, slot=start_slot.value.lower()),
             end_date=end_date,
             days_remaining=max((end_date - today).days + 1, 0),
+            is_finished=end_date < today,
             meal_times=meal_times,
             medications=items,
         )

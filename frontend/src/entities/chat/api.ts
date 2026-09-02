@@ -4,6 +4,7 @@
  * SSE는 LLM 원문이 아니라 고정 진행 상태와 안전성 검사를 통과한 최종 답변만 받습니다.
  */
 import {
+  ApiError,
   getAuthGeneration,
   http,
   mockDelay,
@@ -38,6 +39,33 @@ export class ChatRequestAbortedError extends Error {
     super('로그인 상태가 바뀌어 채팅 요청을 중단했어요.');
     this.name = 'ChatRequestAbortedError';
   }
+}
+
+interface ChatSessionApiSource {
+  sourceType: 'PATIENT_DOCUMENT' | 'PUBLIC_DATA';
+  sourceName: string;
+  sourceOrganization: string | null;
+  sourceUrl: string | null;
+}
+
+interface ChatSessionApiMessage {
+  role: 'USER' | 'ASSISTANT';
+  content: string;
+  status: 'PENDING' | 'STREAMING' | 'COMPLETED' | 'FAILED';
+  sources: ChatSessionApiSource[];
+}
+
+interface ChatSessionDetailApiResponse {
+  success: true;
+  data: {
+    messages: ChatSessionApiMessage[];
+  };
+  error: null;
+}
+
+export interface ChatSessionDeleteResult {
+  deletedSessionIds: number[];
+  failedSessionIds: number[];
 }
 
 const PROGRESS_MESSAGES: Record<ChatProgressStage, string> = {
@@ -158,41 +186,118 @@ export async function sendChat(
   return result;
 }
 
-/** #111 임시 이력 경계. 실 API 경로를 추측하지 않고 계약 확정 후 내부만 교체합니다. */
 export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
-  if (!USE_MOCK) throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
   const requestAuthGeneration = getAuthGeneration();
-  const requestPrincipal = restoreAccountPrincipal();
-  await mockDelay();
-  if (requestAuthGeneration !== getAuthGeneration()) {
-    throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+  if (USE_MOCK) {
+    const requestPrincipal = restoreAccountPrincipal();
+    await mockDelay();
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+    }
+    const messages = mockGetChatMessages(sessionId, requestPrincipal);
+    if (messages === null) throw new ChatSessionNotFoundError();
+    return messages;
   }
-  const messages = mockGetChatMessages(sessionId, requestPrincipal);
-  if (messages === null) throw new ChatSessionNotFoundError();
-  return messages;
+
+  try {
+    const response = await http.get<ChatSessionDetailApiResponse>(
+      `/v1/chat/sessions/${sessionId}`,
+    );
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+    }
+    return response.data.messages
+      .filter(
+        (message) =>
+          message.status === 'COMPLETED' && message.content.trim().length > 0,
+      )
+      .map((message) => ({
+        role: message.role === 'USER' ? 'user' : 'assistant',
+        text: message.content,
+        sources: message.sources.map((source) => ({
+          scope: source.sourceType === 'PATIENT_DOCUMENT' ? 'personal' : 'official',
+          title: source.sourceName,
+          organization: source.sourceOrganization,
+          url: source.sourceUrl,
+        })),
+      }));
+  } catch (error: unknown) {
+    if (error instanceof ApiError && error.code === 'CHAT_SESSION_NOT_FOUND') {
+      throw new ChatSessionNotFoundError();
+    }
+    throw error;
+  }
 }
 
-/** #111 임시 세션 목록 경계. 백엔드 계약이 확정되면 내부만 HTTP 조회로 교체합니다. */
 export async function listChatSessions(): Promise<ChatSessionSummary[]> {
-  if (!USE_MOCK) throw new Error('대화 목록 API가 아직 준비되지 않았어요.');
   const requestAuthGeneration = getAuthGeneration();
-  const requestPrincipal = restoreAccountPrincipal();
-  await mockDelay();
+  if (USE_MOCK) {
+    const requestPrincipal = restoreAccountPrincipal();
+    await mockDelay();
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
+    }
+    return mockListChatSessions(requestPrincipal);
+  }
+
+  const { items } = await http.get<{ items: ChatSessionSummary[] }>('/v1/chat/sessions');
   if (requestAuthGeneration !== getAuthGeneration()) {
     throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
   }
-  return mockListChatSessions(requestPrincipal);
+  return items;
 }
 
-/** #111 임시 다중 삭제 경계. 실제 소프트 삭제 계약은 백엔드 API 확정 후 연결합니다. */
-export async function deleteChatSessions(sessionIds: readonly number[]): Promise<void> {
-  if (sessionIds.length === 0) return;
-  if (!USE_MOCK) throw new Error('대화 삭제 API가 아직 준비되지 않았어요.');
+export async function deleteChatSessions(
+  sessionIds: readonly number[],
+): Promise<ChatSessionDeleteResult> {
+  const uniqueSessionIds = [...new Set(sessionIds)];
+  if (uniqueSessionIds.length === 0) {
+    return { deletedSessionIds: [], failedSessionIds: [] };
+  }
   const requestAuthGeneration = getAuthGeneration();
-  const requestPrincipal = restoreAccountPrincipal();
-  await mockDelay();
-  if (requestAuthGeneration !== getAuthGeneration()) {
+  if (USE_MOCK) {
+    const requestPrincipal = restoreAccountPrincipal();
+    await mockDelay();
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
+    }
+    mockDeleteChatSessions(uniqueSessionIds, requestPrincipal);
+    return { deletedSessionIds: uniqueSessionIds, failedSessionIds: [] };
+  }
+
+  const outcomes = new Map<number, boolean>();
+  let authGenerationChanged = false;
+
+  async function deleteOneSession(sessionId: number): Promise<void> {
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      authGenerationChanged = true;
+      return;
+    }
+    try {
+      await http.delete<void>(`/v1/chat/sessions/${sessionId}`);
+      if (requestAuthGeneration !== getAuthGeneration()) {
+        authGenerationChanged = true;
+        return;
+      }
+      outcomes.set(sessionId, true);
+    } catch (error: unknown) {
+      if (requestAuthGeneration !== getAuthGeneration()) {
+        authGenerationChanged = true;
+        return;
+      }
+      // DELETE 는 재시도될 수 있으므로 이미 삭제된 세션은 성공과 같은 최종 상태입니다.
+      outcomes.set(sessionId, error instanceof ApiError && error.status === 404);
+    }
+  }
+
+  await Promise.allSettled(
+    uniqueSessionIds.map((sessionId) => deleteOneSession(sessionId)),
+  );
+  if (authGenerationChanged || requestAuthGeneration !== getAuthGeneration()) {
     throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
   }
-  mockDeleteChatSessions(sessionIds, requestPrincipal);
+  return {
+    deletedSessionIds: uniqueSessionIds.filter((sessionId) => outcomes.get(sessionId) === true),
+    failedSessionIds: uniqueSessionIds.filter((sessionId) => outcomes.get(sessionId) !== true),
+  };
 }

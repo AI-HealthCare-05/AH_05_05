@@ -90,7 +90,7 @@ test('선택 모드에서 마우스로 여러 대화를 고르고 삭제할 수 
   await createConversation(page, '두 번째 상담 질문');
   await page.reload();
 
-  await page.getByRole('button', { name: '대화 선택' }).click();
+  await page.getByRole('button', { name: '대화 삭제' }).click();
   await page.getByRole('checkbox', { name: /첫 번째 상담 질문/ }).check();
   await page.getByRole('checkbox', { name: /두 번째 상담 질문/ }).check();
   await expect(page.getByRole('button', { name: '2개 삭제' })).toBeEnabled();
@@ -119,12 +119,12 @@ test('375px 목록과 선택 화면은 가로로 넘치지 않고 조작 이름�
   await page.reload();
 
   await expect(page.getByRole('button', { name: '새 채팅' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '대화 선택' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '대화 삭제' })).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
 
-  await page.getByRole('button', { name: '대화 선택' }).click();
+  await page.getByRole('button', { name: '대화 삭제' }).click();
   await expect(page.getByRole('checkbox', { name: /작은 화면 상담 질문 선택/ })).toBeVisible();
   await expect(page.getByRole('button', { name: '0개 삭제' })).toBeDisabled();
   expect(
@@ -136,7 +136,7 @@ test('대화 삭제 실패 뒤에도 선택 상태를 유지해 다시 시도할
   await createConversation(page, '삭제 실패 확인 질문');
   await page.goto('/dev/chat-delete-error');
 
-  await page.getByRole('button', { name: '대화 선택' }).click();
+  await page.getByRole('button', { name: '대화 삭제' }).click();
   const checkbox = page.getByRole('checkbox', { name: /삭제 실패 확인 질문 선택/ });
   await checkbox.check();
   await page.getByRole('button', { name: '1개 삭제' }).click();
@@ -219,7 +219,7 @@ test('삭제 대기 중 계정이 바뀌어도 다른 계정의 같은 ID 대화
   await page.getByRole('button', { name: '챗봇', exact: true }).click();
   await createConversation(page, otherQuestion);
   await page.reload();
-  await page.getByRole('button', { name: '대화 선택' }).click();
+  await page.getByRole('button', { name: '대화 삭제' }).click();
   await page.getByRole('checkbox', { name: new RegExp(otherQuestion) }).check();
   await page.getByRole('button', { name: '1개 삭제' }).click();
   await page.getByRole('button', { name: '삭제', exact: true }).click();

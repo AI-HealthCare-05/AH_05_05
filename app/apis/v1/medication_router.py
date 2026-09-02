@@ -24,8 +24,10 @@ def get_medication_service() -> MedicationService:
 async def get_medications(
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[MedicationService, Depends(get_medication_service)],
+    from_date: Annotated[date | None, Query(alias="from")] = None,
+    to_date: Annotated[date | None, Query(alias="to")] = None,
 ) -> list[MedicationOverview]:
-    return await service.list_overviews(user)
+    return await service.list_overviews(user, from_date, to_date)
 
 
 @medication_router.get(

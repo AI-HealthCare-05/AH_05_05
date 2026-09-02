@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { DoseRecord, MealSlot, MedicationOverview } from '@/entities/medication';
+import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
 import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Card } from '@/shared/ui';
 
@@ -71,7 +72,7 @@ export function MedicationRecordGrid({
                 aria-live="polite"
                 className="min-w-28 text-center text-sm text-muted-foreground tnum"
               >
-                {formatPeriod(dates[0] ?? '', dates.at(-1) ?? '')}
+                {formatDatePeriod(dates[0] ?? '', dates.at(-1) ?? '')}
               </p>
               <button
                 type="button"
@@ -301,18 +302,4 @@ function formatLocalIsoDate(date: Date): string {
     String(date.getMonth() + 1).padStart(2, '0'),
     String(date.getDate()).padStart(2, '0'),
   ].join('-');
-}
-
-function formatDateLabel(value: string): string {
-  const [, month, day] = value.split('-').map(Number);
-  return `${month}월 ${day}일`;
-}
-
-function formatPeriod(from: string, to: string): string {
-  if (!from || !to) return '';
-  const [, fromMonth, fromDay] = from.split('-').map(Number);
-  const [, toMonth, toDay] = to.split('-').map(Number);
-  return fromMonth === toMonth
-    ? `${fromMonth}월 ${fromDay}일 ~ ${toDay}일`
-    : `${fromMonth}월 ${fromDay}일 ~ ${toMonth}월 ${toDay}일`;
 }

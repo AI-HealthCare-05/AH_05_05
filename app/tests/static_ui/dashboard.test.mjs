@@ -4,13 +4,16 @@ import { readFile } from "node:fs/promises";
 
 import {
   accountTotal,
+  alarmTrendLabel,
   buildAlarmTrendItems,
   buildTrendItems,
   changeBadge,
+  formatChatSatisfaction,
   periodValue,
   selectPeriod,
   shareOfTotal,
   signupsLabel,
+  trendGridColumns,
 } from "../../static/js/dashboard.js";
 
 test("selectPeriod marks only the selected period active", () => {
@@ -39,6 +42,17 @@ test("signupsLabel follows the selected period", () => {
 
 test("signupsLabel falls back to a period-free label", () => {
   assert.equal(signupsLabel("90일"), "신규 가입");
+});
+
+test("alarmTrendLabel stays fixed at fourteen days", () => {
+  assert.equal(alarmTrendLabel(), "최근 14일 성공 발송");
+});
+
+test("trendGridColumns keeps every period day on one chart row", () => {
+  assert.equal(trendGridColumns(1), "repeat(1, minmax(0, 1fr))");
+  assert.equal(trendGridColumns(7), "repeat(7, minmax(0, 1fr))");
+  assert.equal(trendGridColumns(30), "repeat(30, minmax(0, 1fr))");
+  assert.equal(trendGridColumns(0), "repeat(1, minmax(0, 1fr))");
 });
 
 test("changeBadge omits the neutral dash when the rate has not changed", () => {
@@ -110,7 +124,7 @@ test("OCR document card exposes API count slots without change badges", async ()
   assert.match(ocrCard, /data-ocr-failed/);
   assert.match(ocrCard, /data-ocr-accuracy/);
   assert.match(ocrCard, /OCR 추출 정확도/);
-  assert.match(ocrCard, /각 필드의 confidence 평균을 나타냅니다\./);
+  assert.match(ocrCard, /약 제품명 confidence 평균을 나타냅니다\./);
   assert.doesNotMatch(ocrCard, /[▲▼—]/);
 });
 
@@ -120,6 +134,58 @@ test("OCR field confidence is formatted as one decimal percent or no-data text",
   assert.equal(typeof dashboard.formatOcrConfidence, "function");
   assert.equal(dashboard.formatOcrConfidence(0.9846), "98.5%");
   assert.equal(dashboard.formatOcrConfidence(null), "데이터 없음");
+});
+
+test("chat satisfaction formats a fractional five-star average", () => {
+  assert.deepEqual(formatChatSatisfaction(4.3), {
+    text: "4.3 / 5.0",
+    fillPercent: 86,
+    ariaLabel: "챗봇 만족도 5점 만점에 4.3점",
+  });
+});
+
+test("chat satisfaction leaves stars empty when no rating exists", () => {
+  assert.deepEqual(formatChatSatisfaction(null), {
+    text: "데이터 없음",
+    fillPercent: 0,
+    ariaLabel: "챗봇 만족도 평가 데이터 없음",
+  });
+});
+
+test("chatbot card exposes API slots and an accessible five-star visualization", async () => {
+  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+  const chatbotIndex = html.indexOf("AI 챗봇 응답 현황");
+  const chatbotCard = html.slice(chatbotIndex);
+
+  assert.match(chatbotCard, /data-chat-total/);
+  assert.match(chatbotCard, /data-chat-completed/);
+  assert.match(chatbotCard, /data-chat-failed/);
+  assert.match(chatbotCard, /data-chat-satisfaction[^>]+role="img"/);
+  assert.match(chatbotCard, /data-chat-satisfaction-fill/);
+  assert.match(chatbotCard, /data-chat-satisfaction-value/);
+  assert.match(chatbotCard, /챗봇 만족도/);
+  assert.match(chatbotCard, /챗봇 사용자의 별점 평균을 나타냅니다\./);
+  assert.doesNotMatch(chatbotCard, /자동 해결률|4,821|4,210|611/);
+});
+
+test("dashboard loads fractional star styles without changing the shared stylesheet version", async () => {
+  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
+
+  assert.match(html, /styles\.css\?v=20260831-9/);
+  assert.match(html, /dashboard\.css\?v=20260902-1/);
+  assert.match(styles, /\.chat-satisfaction-stars-fill\s*\{[^}]*overflow:\s*hidden;/s);
+});
+
+test("OCR accuracy and chatbot satisfaction use the same insight area height", async () => {
+  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
+  const ocrArea = html.slice(html.indexOf("data-ocr-accuracy") - 500, html.indexOf("data-ocr-accuracy"));
+  const chatArea = html.slice(html.indexOf("data-chat-satisfaction") - 500, html.indexOf("data-chat-satisfaction"));
+
+  assert.match(ocrArea, /dashboard-insight-card/);
+  assert.match(chatArea, /dashboard-insight-card/);
+  assert.match(styles, /\.dashboard-insight-card\s*\{[^}]*min-height:\s*80px;/s);
 });
 
 test("OCR accuracy uses the shared RxVita accent tokens", async () => {
