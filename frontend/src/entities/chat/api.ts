@@ -172,7 +172,6 @@ export async function getChatMessages(sessionId: number): Promise<ChatMessage[]>
   return messages;
 }
 
-/** #111 세션 목록 경계. */
 export async function listChatSessions(): Promise<ChatSessionSummary[]> {
   const requestAuthGeneration = getAuthGeneration();
   const requestPrincipal = restoreAccountPrincipal();
