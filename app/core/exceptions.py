@@ -283,6 +283,12 @@ class InvalidMedicationScheduleError(AppError):
     message = "복약 시간표 입력값이 올바르지 않습니다."
 
 
+class MedicationScheduleFinishedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "MEDICATION_SCHEDULE_FINISHED"
+    message = "이미 끝난 처방은 수정할 수 없습니다"
+
+
 class InvalidDoseDateError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "INVALID_DOSE_DATE"
