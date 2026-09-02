@@ -17,6 +17,7 @@ import {
   getSupplements,
   type SupplementRanking,
 } from '@/entities/supplement';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
   Button,
@@ -48,14 +49,6 @@ interface DoseBatchChange {
   slot: MealSlot;
   taken: boolean;
 }
-
-const TAB_ROUTES: Record<TabKey, string> = {
-  home: '/home',
-  medication: '/medications',
-  supplement: '/supplements',
-  chat: '/chat',
-  my: '/my',
-};
 
 export function HomePage({
   authenticatedOverride,

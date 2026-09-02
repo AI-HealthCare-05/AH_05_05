@@ -15,6 +15,7 @@ import {
   type Supplement,
   type UpdateSupplementPayload,
 } from '@/entities/supplement';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { calculateFullAge } from '@/shared/lib/birthDate';
 import { mealSlotLabel } from '@/shared/model/mealSlot';
 import {
@@ -24,19 +25,10 @@ import {
   ErrorDialog,
   Header,
   StatusBadge,
-  type TabKey,
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
 import { SupplementsBrowseView } from './SupplementsBrowseView';
-
-const TAB_ROUTES: Record<TabKey, string> = {
-  home: '/home',
-  medication: '/medications',
-  supplement: '/supplements',
-  chat: '/chat',
-  my: '/my',
-};
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
 
