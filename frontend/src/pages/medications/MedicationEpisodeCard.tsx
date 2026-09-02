@@ -1,4 +1,4 @@
-import { ChevronDown, Clock3, ImageIcon } from 'lucide-react';
+import { ChevronDown, Clock3 } from 'lucide-react';
 import type { MedicationOverview, MedicationOverviewItem } from '@/entities/medication';
 import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
 import { mealSlotLabel } from '@/shared/model/mealSlot';
@@ -12,7 +12,6 @@ interface MedicationEpisodeCardProps {
   onToggleExpanded: () => void;
   onToggleSelected: () => void;
   onEditMedication: (medication: MedicationOverviewItem) => void;
-  onViewImage: () => void;
 }
 
 export function MedicationEpisodeCard({
@@ -23,7 +22,6 @@ export function MedicationEpisodeCard({
   onToggleExpanded,
   onToggleSelected,
   onEditMedication,
-  onViewImage,
 }: MedicationEpisodeCardProps) {
   const dateLabel = formatDateLabel(overview.start.date, { includeYear: true });
   const panelId = `medication-episode-${overview.recordId}`;
@@ -131,16 +129,6 @@ export function MedicationEpisodeCard({
               </li>
             ))}
           </ul>
-          {overview.documentImageUrl && (
-            <button
-              type="button"
-              className="flex min-h-touch w-full items-center justify-center gap-2 rounded-control text-sm font-bold text-primary-strong hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={onViewImage}
-            >
-              <ImageIcon aria-hidden className="size-4" />
-              약봉투 사진 보기
-            </button>
-          )}
         </div>
       )}
     </article>

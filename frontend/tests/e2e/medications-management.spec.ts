@@ -30,7 +30,7 @@ test('처방 두 건을 같은 화면에서 독립적으로 펼친다', async ({
       name: /복용 시간 수정/,
     }),
   ).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '약봉투 사진 보기' })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '약봉투 사진 보기' })).toHaveCount(0);
 });
 
 test('연도를 넘는 처방 기간을 양쪽 연도와 함께 보여준다', async ({ page }) => {

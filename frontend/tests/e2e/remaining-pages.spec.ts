@@ -328,11 +328,11 @@ test('복용약 카드를 누르면 그 약의 시간대만 시트에서 바꾼�
   ).toBeVisible();
 });
 
-test('약봉투 사진은 회차를 펼친 뒤 요청할 때만 보여준다', async ({ page }) => {
+test('복약 목록은 약봉투 사진 보기 동작을 노출하지 않는다', async ({ page }) => {
   await page.goto('/dev/medications');
 
   await expect(page.getByRole('img', { name: '확대한 약봉투 원본' })).toHaveCount(0);
   await page.getByRole('button', { name: /2026년 8월 22일 처방.*약 4개/ }).click();
-  await page.getByRole('button', { name: '약봉투 사진 보기' }).click();
-  await expect(page.getByRole('img', { name: '확대한 약봉투 원본' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '약봉투 사진 보기' })).toHaveCount(0);
+  await expect(page.getByRole('img', { name: '확대한 약봉투 원본' })).toHaveCount(0);
 });

@@ -4,9 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   cancelMedication,
-  getMedicationDocumentImageUrl,
   getMedicationOverviews,
-  releaseMedicationDocumentImageUrl,
   saveMedicationSchedule,
   type MealSlot,
   type MedicationOverview,
@@ -19,7 +17,6 @@ import {
   Card,
   ErrorDialog,
   Header,
-  ImageViewer,
   type TabKey,
 } from '@/shared/ui';
 import { MedicationBulkDeleteDialog } from './MedicationBulkDeleteDialog';
@@ -39,7 +36,6 @@ const TAB_ROUTES: Record<TabKey, string> = {
 interface MedicationsPageProps {
   overviewsLoader?: (range?: MedicationOverviewRange) => Promise<MedicationOverview[]>;
   medicationCanceller?: (recordId: number) => Promise<void>;
-  documentImageLoader?: (documentImageUrl: string) => Promise<string>;
 }
 
 interface EditingMedication {
@@ -50,7 +46,6 @@ interface EditingMedication {
 export function MedicationsPage({
   overviewsLoader = getMedicationOverviews,
   medicationCanceller = cancelMedication,
-  documentImageLoader = getMedicationDocumentImageUrl,
 }: MedicationsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,8 +63,6 @@ export function MedicationsPage({
   const [filterOpen, setFilterOpen] = useState(false);
   const [editing, setEditing] = useState<EditingMedication | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageError, setImageError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -97,13 +90,6 @@ export function MedicationsPage({
       cancelled = true;
     };
   }, [overviewsLoader, range, reloadKey]);
-
-  useEffect(
-    () => () => {
-      if (imageUrl) releaseMedicationDocumentImageUrl(imageUrl);
-    },
-    [imageUrl],
-  );
 
   function toggleExpanded(recordId: number) {
     setExpandedRecordIds((current) => {
@@ -158,15 +144,6 @@ export function MedicationsPage({
       toast.success('복용 시간을 바꿨어요.');
     } catch (error: unknown) {
       setSaveError(error instanceof Error ? error.message : '복용 시간을 저장하지 못했어요.');
-    }
-  }
-
-  async function openDocumentImage(documentImageUrl: string) {
-    setImageError(null);
-    try {
-      setImageUrl(await documentImageLoader(documentImageUrl));
-    } catch (error: unknown) {
-      setImageError(error instanceof Error ? error.message : '약봉투 사진을 불러오지 못했어요.');
     }
   }
 
@@ -323,7 +300,6 @@ export function MedicationsPage({
                 onEditMedication={(medication) =>
                   setEditing({ recordId: overview.recordId, medication })
                 }
-                onViewImage={() => void openDocumentImage(overview.documentImageUrl)}
               />
             ))}
           </section>
@@ -367,27 +343,12 @@ export function MedicationsPage({
         onConfirm={() => void deleteSelectedMedications(deleteTargets)}
         onRetry={() => void deleteSelectedMedications(deleteTargets)}
       />
-      <ImageViewer
-        open={imageUrl !== null}
-        src={imageUrl ?? ''}
-        title="약봉투 사진"
-        onOpenChange={(open) => {
-          if (!open) setImageUrl(null);
-        }}
-      />
       <ErrorDialog
         open={saveError !== null}
         title="복용 시간을 저장하지 못했어요"
         message={saveError ?? ''}
         retryLabel="확인"
         onRetry={() => setSaveError(null)}
-      />
-      <ErrorDialog
-        open={imageError !== null}
-        title="약봉투 사진을 불러오지 못했어요"
-        message={imageError ?? ''}
-        retryLabel="확인"
-        onRetry={() => setImageError(null)}
       />
     </div>
   );
