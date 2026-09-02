@@ -122,3 +122,57 @@ test('실 API 대화 목록에서 세션을 선택해 저장된 메시지를 연
   await expect(page.getByText('의약품안전나라', { exact: true })).toBeVisible();
   await expect(page.getByText('화면에 표시하면 안 되는 처리 중 답변')).toHaveCount(0);
 });
+
+test('실 API 대화 목록에서 선택한 세션을 소프트 삭제한다', async ({ page }) => {
+  await page.addInitScript((token) => {
+    window.sessionStorage.setItem('poke.access-token', token);
+    window.sessionStorage.setItem('poke.account-principal', 'chat-list-e2e@example.com');
+  }, ACCESS_TOKEN);
+
+  await page.route('**/api/v1/chat/sessions', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            sessionId: 101,
+            title: '삭제할 복약 상담',
+            lastMessagePreview: '삭제 API 연결을 확인합니다.',
+            lastMessageAt: '2026-09-02T09:00:00+09:00',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/chat/sessions/101', async (route) => {
+    const request = route.request();
+    expect(request.method()).toBe('DELETE');
+    expect(new URL(request.url()).pathname).toBe('/api/v1/chat/sessions/101');
+    expect(request.headers().authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          sessionId: 101,
+          status: 'DELETED',
+          deletedAt: '2026-09-02T10:00:00+09:00',
+        },
+        error: null,
+      }),
+    });
+  });
+
+  await page.goto('/chat');
+  await page.getByRole('button', { name: '대화 삭제' }).click();
+  await page.getByRole('checkbox', { name: /삭제할 복약 상담 선택/ }).check();
+  await page.getByRole('button', { name: '1개 삭제' }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+
+  await expect(page.getByRole('region', { name: '챗봇 시작 가이드' })).toBeVisible();
+  await expect(page.getByText('삭제할 복약 상담', { exact: true })).toHaveCount(0);
+});

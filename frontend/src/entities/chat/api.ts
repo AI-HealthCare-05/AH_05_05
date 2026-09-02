@@ -74,6 +74,16 @@ interface ChatSessionDetailApiResponse {
   error: null;
 }
 
+interface DeletedChatSessionApiResponse {
+  success: true;
+  data: {
+    sessionId: number;
+    status: 'DELETED';
+    deletedAt: string;
+  };
+  error: null;
+}
+
 const PROGRESS_MESSAGES: Record<ChatProgressStage, string> = {
   QUESTION_CHECKING: '질문 확인 중',
   EVIDENCE_SEARCHING: '근거 검색 중',
@@ -253,15 +263,25 @@ export async function listChatSessions(): Promise<ChatSessionSummary[]> {
   return items;
 }
 
-/** #111 임시 다중 삭제 경계. 실제 소프트 삭제 계약은 백엔드 API 확정 후 연결합니다. */
 export async function deleteChatSessions(sessionIds: readonly number[]): Promise<void> {
   if (sessionIds.length === 0) return;
-  if (!USE_MOCK) throw new Error('대화 삭제 API가 아직 준비되지 않았어요.');
   const requestAuthGeneration = getAuthGeneration();
-  const requestPrincipal = restoreAccountPrincipal();
-  await mockDelay();
+  if (USE_MOCK) {
+    const requestPrincipal = restoreAccountPrincipal();
+    await mockDelay();
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
+    }
+    mockDeleteChatSessions(sessionIds, requestPrincipal);
+    return;
+  }
+
+  await Promise.all(
+    sessionIds.map((sessionId) =>
+      http.delete<DeletedChatSessionApiResponse>(`/v1/chat/sessions/${sessionId}`),
+    ),
+  );
   if (requestAuthGeneration !== getAuthGeneration()) {
     throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
   }
-  mockDeleteChatSessions(sessionIds, requestPrincipal);
 }
