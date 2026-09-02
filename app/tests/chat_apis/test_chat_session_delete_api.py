@@ -12,7 +12,7 @@ from app.models.enums import (
 from app.models.users import User
 
 
-async def _delete_session(*, user: User, session_id: int):
+async def _delete_session(*, user: User, session_id: int | str):
     app.dependency_overrides[get_request_user] = lambda: user
     try:
         async with AsyncClient(
@@ -126,8 +126,29 @@ async def test_delete_chat_session_requires_authentication() -> None:
     }
 
 
+async def test_delete_chat_session_rejects_malformed_session_id_with_common_validation_error() -> None:
+    user = await User.create(
+        id=1,
+        email="delete-owner@example.com",
+        hashed_password="hashed-password",
+        name="삭제 요청자",
+    )
+
+    response = await _delete_session(user=user, session_id="not-an-integer")
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.json() == {
+        "code": "VALIDATION_ERROR",
+        "message": "Input should be a valid integer, unable to parse string as an integer",
+        "field": "session_id",
+    }
+
+
 def test_chat_session_delete_is_registered_in_openapi() -> None:
     operation = app.openapi()["paths"]["/api/v1/chat/sessions/{session_id}"]["delete"]
 
     assert operation["summary"] == "내 채팅 세션 삭제"
-    assert set(operation["responses"]) >= {"200", "401", "403", "404"}
+    assert set(operation["responses"]) >= {"200", "401", "403", "404", "422"}
+    assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ChatErrorResponse"
+    }

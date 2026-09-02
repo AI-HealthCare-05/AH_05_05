@@ -125,7 +125,7 @@ class DeletedChatSessionView:
     deleted_at: datetime
 
 
-class ChatSessionQueryService:
+class ChatSessionService:
     def __init__(self, repository: ChatRepository | None = None) -> None:
         self._repository = repository or ChatRepository()
 

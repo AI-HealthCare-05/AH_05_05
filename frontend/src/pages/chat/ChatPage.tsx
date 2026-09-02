@@ -20,6 +20,7 @@ import {
   sendChat,
   type ChatMessage,
   type ChatProgressHandler,
+  type ChatSessionDeleteResult,
   type ChatSessionSummary,
   type SendChatPayload,
   type SendChatResult,
@@ -45,7 +46,9 @@ type ChatSender = (
 ) => Promise<SendChatResult>;
 type ChatSessionListLoader = () => Promise<ChatSessionSummary[]>;
 type ChatSessionHistoryLoader = (sessionId: number) => Promise<ChatMessage[]>;
-type ChatSessionDeleter = (sessionIds: readonly number[]) => Promise<void>;
+type ChatSessionDeleter = (
+  sessionIds: readonly number[],
+) => Promise<ChatSessionDeleteResult | void>;
 type ChatView = 'loading' | 'list' | 'room';
 
 interface ChatPageProps {
@@ -336,14 +339,20 @@ export function ChatPage({
     const deletingIds = [...selectedSessionIds];
     setDeleting(true);
     try {
-      await sessionDeleter(deletingIds);
-      const deleted = new Set(deletingIds);
+      const result = await sessionDeleter(deletingIds);
+      // 기존 주입형 삭제기는 void 를 반환합니다. 그 경로는 이전 계약대로 모두 성공입니다.
+      const deleted = new Set<number>(result?.deletedSessionIds ?? deletingIds);
+      const failed = new Set<number>(result?.failedSessionIds ?? []);
       const remaining = sessions.filter((session) => !deleted.has(session.sessionId));
       setSessions(remaining);
       setDeleteDialogOpen(false);
-      setSelectionMode(false);
-      setSelectedSessionIds(new Set());
+      setSelectedSessionIds(failed);
       if (activeSessionId !== null && deleted.has(activeSessionId)) startNewSession();
+      if (failed.size > 0) {
+        setDeleteError('일부 대화를 삭제하지 못했어요. 다시 시도해주세요.');
+        return;
+      }
+      setSelectionMode(false);
       if (remaining.length === 0) {
         startNewSession();
         setNewChatRequested(true);

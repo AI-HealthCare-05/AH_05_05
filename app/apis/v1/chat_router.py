@@ -27,7 +27,7 @@ from app.models.users import User
 from app.services.chat import (
     CHAT_API_GUARD_TIMEOUT_SECONDS,
     ChatApplicationService,
-    ChatSessionQueryService,
+    ChatSessionService,
     SendChatCommand,
 )
 
@@ -122,12 +122,27 @@ _CHAT_SESSION_LIST_RESPONSES = {
     401: _CHAT_RESPONSES[401],
 }
 
+_CHAT_SESSION_VALIDATION_ERROR_RESPONSE = {
+    "model": ChatErrorResponse,
+    "description": "채팅 세션 식별자 입력값이 올바르지 않음",
+    "content": {
+        "application/json": {
+            "example": {
+                "code": "VALIDATION_ERROR",
+                "message": "입력값이 올바르지 않습니다.",
+                "field": "session_id",
+            }
+        }
+    },
+}
+
 _CHAT_SESSION_DETAIL_RESPONSES = {
     200: {
         "description": "인증 사용자가 소유한 채팅 세션 상세와 저장된 메시지",
     },
     401: _CHAT_RESPONSES[401],
     404: _CHAT_RESPONSES[404],
+    422: _CHAT_SESSION_VALIDATION_ERROR_RESPONSE,
 }
 
 _CHAT_SESSION_DELETE_RESPONSES = {
@@ -140,12 +155,13 @@ _CHAT_SESSION_DELETE_RESPONSES = {
         "description": "다른 사용자의 채팅 세션을 삭제할 권한이 없음",
     },
     404: _CHAT_RESPONSES[404],
+    422: _CHAT_SESSION_VALIDATION_ERROR_RESPONSE,
 }
 
 
-def get_chat_session_query_service() -> ChatSessionQueryService:
-    """AI/Qdrant 초기화 없이 채팅 세션 요약만 조회한다."""
-    return ChatSessionQueryService()
+def get_chat_session_service() -> ChatSessionService:
+    """AI/Qdrant 초기화 없이 채팅 세션 조회와 삭제를 처리한다."""
+    return ChatSessionService()
 
 
 @chat_router.get(
@@ -157,8 +173,8 @@ def get_chat_session_query_service() -> ChatSessionQueryService:
 async def list_chat_sessions(
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[
-        ChatSessionQueryService,
-        Depends(get_chat_session_query_service),
+        ChatSessionService,
+        Depends(get_chat_session_service),
     ],
 ) -> ChatSessionListResponse:
     items = await service.list_sessions(user=user)
@@ -177,8 +193,8 @@ async def get_chat_session(
     session_id: int,
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[
-        ChatSessionQueryService,
-        Depends(get_chat_session_query_service),
+        ChatSessionService,
+        Depends(get_chat_session_service),
     ],
 ) -> ChatSessionDetailResponse:
     detail = await service.get_session(user=user, session_id=session_id)
@@ -197,8 +213,8 @@ async def delete_chat_session(
     session_id: int,
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[
-        ChatSessionQueryService,
-        Depends(get_chat_session_query_service),
+        ChatSessionService,
+        Depends(get_chat_session_service),
     ],
 ) -> DeletedChatSessionResponse:
     deleted = await service.delete_session(user=user, session_id=session_id)

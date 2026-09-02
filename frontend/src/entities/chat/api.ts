@@ -44,44 +44,28 @@ export class ChatRequestAbortedError extends Error {
 interface ChatSessionApiSource {
   sourceType: 'PATIENT_DOCUMENT' | 'PUBLIC_DATA';
   sourceName: string;
-  vectorChunkId: string | null;
   sourceOrganization: string | null;
   sourceUrl: string | null;
-  datasetVersion: string | null;
 }
 
 interface ChatSessionApiMessage {
-  messageId: number;
   role: 'USER' | 'ASSISTANT';
   content: string;
   status: 'PENDING' | 'STREAMING' | 'COMPLETED' | 'FAILED';
-  replyToMessageId: number | null;
-  guideId: number | null;
   sources: ChatSessionApiSource[];
-  createdAt: string;
 }
 
 interface ChatSessionDetailApiResponse {
   success: true;
   data: {
-    sessionId: number;
-    careEpisodeKey: string | null;
-    status: 'ACTIVE';
-    lastMessageAt: string | null;
-    createdAt: string;
     messages: ChatSessionApiMessage[];
   };
   error: null;
 }
 
-interface DeletedChatSessionApiResponse {
-  success: true;
-  data: {
-    sessionId: number;
-    status: 'DELETED';
-    deletedAt: string;
-  };
-  error: null;
+export interface ChatSessionDeleteResult {
+  deletedSessionIds: number[];
+  failedSessionIds: number[];
 }
 
 const PROGRESS_MESSAGES: Record<ChatProgressStage, string> = {
@@ -247,8 +231,8 @@ export async function getChatMessages(sessionId: number): Promise<ChatMessage[]>
 
 export async function listChatSessions(): Promise<ChatSessionSummary[]> {
   const requestAuthGeneration = getAuthGeneration();
-  const requestPrincipal = restoreAccountPrincipal();
   if (USE_MOCK) {
+    const requestPrincipal = restoreAccountPrincipal();
     await mockDelay();
     if (requestAuthGeneration !== getAuthGeneration()) {
       throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
@@ -263,8 +247,13 @@ export async function listChatSessions(): Promise<ChatSessionSummary[]> {
   return items;
 }
 
-export async function deleteChatSessions(sessionIds: readonly number[]): Promise<void> {
-  if (sessionIds.length === 0) return;
+export async function deleteChatSessions(
+  sessionIds: readonly number[],
+): Promise<ChatSessionDeleteResult> {
+  const uniqueSessionIds = [...new Set(sessionIds)];
+  if (uniqueSessionIds.length === 0) {
+    return { deletedSessionIds: [], failedSessionIds: [] };
+  }
   const requestAuthGeneration = getAuthGeneration();
   if (USE_MOCK) {
     const requestPrincipal = restoreAccountPrincipal();
@@ -272,16 +261,43 @@ export async function deleteChatSessions(sessionIds: readonly number[]): Promise
     if (requestAuthGeneration !== getAuthGeneration()) {
       throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
     }
-    mockDeleteChatSessions(sessionIds, requestPrincipal);
-    return;
+    mockDeleteChatSessions(uniqueSessionIds, requestPrincipal);
+    return { deletedSessionIds: uniqueSessionIds, failedSessionIds: [] };
   }
 
-  await Promise.all(
-    sessionIds.map((sessionId) =>
-      http.delete<DeletedChatSessionApiResponse>(`/v1/chat/sessions/${sessionId}`),
-    ),
+  const outcomes = new Map<number, boolean>();
+  let authGenerationChanged = false;
+
+  async function deleteOneSession(sessionId: number): Promise<void> {
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      authGenerationChanged = true;
+      return;
+    }
+    try {
+      await http.delete<void>(`/v1/chat/sessions/${sessionId}`);
+      if (requestAuthGeneration !== getAuthGeneration()) {
+        authGenerationChanged = true;
+        return;
+      }
+      outcomes.set(sessionId, true);
+    } catch (error: unknown) {
+      if (requestAuthGeneration !== getAuthGeneration()) {
+        authGenerationChanged = true;
+        return;
+      }
+      // DELETE 는 재시도될 수 있으므로 이미 삭제된 세션은 성공과 같은 최종 상태입니다.
+      outcomes.set(sessionId, error instanceof ApiError && error.status === 404);
+    }
+  }
+
+  await Promise.allSettled(
+    uniqueSessionIds.map((sessionId) => deleteOneSession(sessionId)),
   );
-  if (requestAuthGeneration !== getAuthGeneration()) {
+  if (authGenerationChanged || requestAuthGeneration !== getAuthGeneration()) {
     throw new Error('로그인 상태가 바뀌어 대화 삭제를 중단했어요.');
   }
+  return {
+    deletedSessionIds: uniqueSessionIds.filter((sessionId) => outcomes.get(sessionId) === true),
+    failedSessionIds: uniqueSessionIds.filter((sessionId) => outcomes.get(sessionId) !== true),
+  };
 }

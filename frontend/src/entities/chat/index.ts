@@ -6,6 +6,7 @@ export {
   listChatSessions,
   sendChat,
 } from './api';
+export type { ChatSessionDeleteResult } from './api';
 export type {
   ChatMessage,
   ChatProgress,

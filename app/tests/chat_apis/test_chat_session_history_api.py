@@ -35,7 +35,7 @@ async def _create_message(
     return await ChatMessage.get(id=message.id)
 
 
-async def _get_history(*, user: User, session_id: int):
+async def _get_history(*, user: User, session_id: int | str):
     app.dependency_overrides[get_request_user] = lambda: user
     try:
         async with AsyncClient(
@@ -238,8 +238,29 @@ async def test_get_chat_session_messages_requires_authentication() -> None:
     }
 
 
+async def test_get_chat_session_rejects_malformed_session_id_with_common_validation_error() -> None:
+    user = await User.create(
+        id=1,
+        email="history-owner@example.com",
+        hashed_password="hashed-password",
+        name="이력 소유자",
+    )
+
+    response = await _get_history(user=user, session_id="not-an-integer")
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.json() == {
+        "code": "VALIDATION_ERROR",
+        "message": "Input should be a valid integer, unable to parse string as an integer",
+        "field": "session_id",
+    }
+
+
 def test_chat_session_history_is_registered_in_openapi() -> None:
     operation = app.openapi()["paths"]["/api/v1/chat/sessions/{session_id}"]["get"]
 
     assert operation["summary"] == "내 채팅 세션 상세 및 메시지 조회"
-    assert set(operation["responses"]) >= {"200", "401", "404"}
+    assert set(operation["responses"]) >= {"200", "401", "404", "422"}
+    assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ChatErrorResponse"
+    }
