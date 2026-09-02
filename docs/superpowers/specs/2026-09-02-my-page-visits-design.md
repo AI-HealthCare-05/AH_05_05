@@ -12,7 +12,7 @@
 - `PUT /med/medication/schedule/{record_id}`는 위 컬럼을 저장하고 `MedicationScheduleService._sync_medication_alarms`로 알람을 재동기화한다.
 - `GET/PATCH /me/settings`는 마이페이지 알림 토글이 이미 사용한다.
 - `/user/follow-up-visits`에는 등록, 목록, 상세, 부분 수정, 삭제 API가 모두 있다. 날짜는 필수이며 시간과 병원은 선택이다. 삭제 시 FK에 연결된 알람도 삭제된다.
-- `GET /alarms`는 현재 사용자의 알람 목록을 반환한다. `AlarmResponse`에는 생성 시각이 없으므로 화면의 시간 역순은 `scheduled_at`을 기준으로 한다.
+- `GET /alarms`는 발송 이력이 아니라 현재 사용자의 예약 알람 정의를 반환한다. 화면은 `status=ACTIVE`로 활성 예약만 조회하고 가까운 `scheduled_at`부터 보여준다.
 - 진료일정과 알람 DTO는 `BaseSerializerModel`을 사용하므로 JSON 필드가 snake_case다. 화면 타입은 API 경계에서 camelCase로 변환한다.
 
 ## 선택한 접근
@@ -48,9 +48,11 @@ morning < lunch < evening < bedtime
 
 ### 알람 재동기화
 
-시간 필드 중 하나라도 실제 값이 바뀐 경우에만 설정을 저장한 같은 트랜잭션과 DB connection으로 `MedicationScheduleService._sync_medication_alarms`를 호출한다. 전달값은 네 MealSlot을 모두 포함하는 `dict[MealSlot, time]`이다.
+시간 필드 중 하나라도 실제 값이 바뀐 경우에만 설정을 저장한 같은 트랜잭션과 DB connection으로 `MedicationScheduleService._sync_medication_alarms`를 호출한다. 변경 트리거가 한 슬롯뿐이어도 전달값은 병합된 네 MealSlot을 모두 포함하는 `dict[MealSlot, time]`이어야 한다. 동기화 구현이 `meal_times[slot]`으로 네 슬롯을 전부 인덱싱하므로 변경된 슬롯만 전달하지 않는다.
 
 이 방식으로 처방이 없는 사용자는 설정만 저장하고, 활성 처방이 있는 사용자는 기존 알람 계산 규칙에 따라 예약 시각이 갱신된다. 기존 schedule PUT은 수정된 동기화 로직을 계속 그대로 사용한다.
+
+`_sync_medication_alarms`가 `is_notify_medication` 토글을 확인하지 않는 기존 동작은 이번 범위에서 바꾸지 않는다. 토글과 알람 행 생성 정책의 연동은 별도 이슈다.
 
 ## 프론트엔드 설계
 
@@ -71,11 +73,11 @@ morning < lunch < evening < bedtime
 1. 복약 알림 토글
 2. 영양제 알림 토글
 3. 구분선과 알림 시간 네 행
-4. 받은 알림 보기 링크
+4. 예약된 알림 링크
 
 시간 행을 누르면 해당 슬롯의 `TimePickerSheet`를 연다. 적용 전 `isMealTimeOrderValid`로 즉시 안내하고, 통과하면 변경 슬롯 하나만 PATCH한다. 성공 응답 전체로 로컬 상태를 갱신해 서버가 확정한 값을 표시한다. 실패 시 기존 `ErrorDialog` 패턴으로 재시도를 제공한다.
 
-내 관리 카드에는 `/my/visits`로 이동하는 진료일정 행을 추가한다. 받은 알림 보기 행은 `/my/alarms`로 이동한다.
+내 관리 카드에는 `/my/visits`로 이동하는 진료일정 행을 추가한다. 예약된 알림 행은 `/my/alarms`로 이동한다.
 
 ### 기존 알림 시간 화면
 
@@ -116,9 +118,9 @@ morning < lunch < evening < bedtime
 
 `frontend/src/entities/alarm/`에 API, 목업, 타입, barrel export를 둔다. 원시 `AlarmListResponse`와 `AlarmResponse`의 snake_case는 `api.ts`의 매핑 함수에서만 처리한다.
 
-`/my/alarms`는 `GET /alarms?offset=0&limit=100`을 호출하고 `scheduledAt` 내림차순, 동률이면 id 내림차순으로 정렬한다. 제목, 메시지, 예정 시각, 알람 유형과 상태 중 실제 DTO에 있는 값만 표시한다. 생성, 수정, 취소 동작은 제공하지 않는다.
+`/my/alarms`는 `GET /alarms?status=ACTIVE&offset=0&limit=100`을 호출하고 `scheduledAt` 오름차순, 동률이면 id 오름차순으로 정렬해 가까운 예약을 먼저 보여준다. 제목, 메시지, 예정 시각, 알람 유형과 상태 중 실제 DTO에 있는 값만 표시한다. 생성, 수정, 취소 동작은 제공하지 않는다.
 
-목록이 비어 있으면 받은 알림이 없다는 빈 상태를 표시한다. 이 화면은 마이페이지 내부 링크로만 진입하며 BottomTabbar의 다섯 탭은 변경하지 않는다.
+목록이 비어 있으면 예약된 알림이 없다는 빈 상태를 표시한다. 이 화면은 마이페이지 내부 링크로만 진입하며 BottomTabbar의 다섯 탭은 변경하지 않는다. 발송 이벤트를 알람별로 조회하는 `/alarms/{alarm_id}/events`는 N+1 호출이 필요하므로 이번 화면에서 사용하지 않는다.
 
 ## 라우팅과 화면 경계
 
@@ -155,7 +157,7 @@ morning < lunch < evening < bedtime
 - 처방 상세에서 알림 시간 버튼이 사라진다.
 - 기존 알림 시간 페이지가 settings API로 불러오기와 저장을 수행한다.
 - 진료일정 등록, 수정, 삭제와 선택 병원·시간, 과거 일정, null-safe 정렬을 검증한다.
-- 알림 목록의 시간 역순과 빈 상태를 검증한다.
+- 알림 목록이 `status=ACTIVE`를 요청하고 예정 시각 오름차순과 빈 상태를 올바르게 표시하는지 검증한다.
 - 목업 모드와 실 API 모드 모두 실패 0으로 실행한다.
 - 375px에서 가로 스크롤이 없고 BottomTabbar가 다섯 개다.
 - TSX에 6자리 hex 색상이 추가되지 않는다.
@@ -167,5 +169,7 @@ morning < lunch < evening < bedtime
 - 기존 medication schedule PUT 삭제 또는 요청 축소
 - `/medication-alarm-times` 삭제
 - 알림 목록에서 생성, 수정, 취소 기능
+- 알람별 발송 이벤트를 모은 수신함
+- `is_notify_medication` 토글과 예약 알람 행 생성 정책 변경
 - 하단 탭 여섯 번째 항목
 - #225의 복약 페이지 개편과 연도 표시
