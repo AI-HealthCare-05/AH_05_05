@@ -41,10 +41,12 @@ const EXISTING_CHAT_HISTORY: ChatMessage[] = [
 const DEV_NUTRIENT_PROFILE: NutrientStandardProfile = {
   birthDate: '2000-08-25',
   gender: 'male',
+  maskedName: '김*훈',
 };
 const MISSING_NUTRIENT_PROFILE: NutrientStandardProfile = {
   birthDate: null,
   gender: null,
+  maskedName: '김*훈',
 };
 const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
 const ACTIVE_MEDICATION_OVERVIEW = mockMedicationOverview();

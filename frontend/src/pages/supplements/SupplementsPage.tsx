@@ -48,6 +48,7 @@ interface SupplementsPageProps {
 export interface NutrientStandardProfile {
   birthDate: string | null;
   gender: Gender | null;
+  maskedName: string;
 }
 
 export function SupplementsPage({
@@ -394,6 +395,7 @@ export function SupplementsPage({
       <EditSupplementSheet
         open={editingSupplement !== null}
         supplement={editingSupplement}
+        maskedName={profile?.maskedName ?? '익명'}
         onOpenChange={(open) => {
           if (!open) setEditingSupplement(null);
         }}
