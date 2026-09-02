@@ -6,6 +6,7 @@ import type {
   MedicationOverview,
   MedicationOverviewItem,
 } from '@/entities/medication';
+import { formatDateLabel } from '@/shared/lib/dateLabel';
 import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Button } from '@/shared/ui';
 
@@ -254,8 +255,8 @@ function formatSingleEpisodeProgress(
 }
 
 function formatPrescriptionLabel(value: string): string {
-  const [, month, day] = value.split('-');
-  return month && day ? `${Number(month)}월 ${Number(day)}일 처방` : '등록한 처방';
+  const label = formatDateLabel(value);
+  return label === value ? '등록한 처방' : `${label} 처방`;
 }
 
 function timeInMinutes(value: string): number {

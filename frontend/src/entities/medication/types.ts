@@ -84,8 +84,17 @@ export interface MedicationOverview {
   /** start.date + MAX(활성 약 days) - 1. prescribed_at은 기준으로 쓰지 않습니다. */
   endDate: string;
   daysRemaining: number;
+  /** 서버 기준 종료 여부. 프론트에서 날짜나 daysRemaining으로 다시 계산하지 않습니다. */
+  isFinished: boolean;
   mealTimes: MealTimes;
   medications: MedicationOverviewItem[];
+}
+
+export interface MedicationOverviewRange {
+  /** YYYY-MM-DD */
+  from?: string;
+  /** YYYY-MM-DD */
+  to?: string;
 }
 
 export interface DoseRecord {

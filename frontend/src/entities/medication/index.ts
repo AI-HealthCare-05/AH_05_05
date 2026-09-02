@@ -1,10 +1,11 @@
 export {
   cancelMedication,
-  getMedicationOverview,
+  getMedicationDocumentImageUrl,
   getMedicationOverviews,
   getDoseRecords,
   getMedicationSchedule,
   prepareMedicationStateForNewAccount,
+  releaseMedicationDocumentImageUrl,
   saveMedicationSchedule,
   saveDoseTaken,
 } from './api';
@@ -21,6 +22,7 @@ export type {
   MedicationSchedule,
   MedicationOverview,
   MedicationOverviewItem,
+  MedicationOverviewRange,
   MedicationStartPoint,
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,
