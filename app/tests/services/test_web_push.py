@@ -72,7 +72,9 @@ async def test_other_client_error_is_permanent(monkeypatch: pytest.MonkeyPatch):
     assert result.kind == PushResultKind.PERMANENT_FAILURE
 
 
-def test_build_medication_payload_uses_current_medication_names(monkeypatch: pytest.MonkeyPatch):
+def test_build_medication_payload_uses_confirmed_message_when_current_medications_exist(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setattr("app.services.web_push.config.ALARM_CLICK_URL", "/alarms")
     alarm = SimpleNamespace(
         id=7,
@@ -87,6 +89,6 @@ def test_build_medication_payload_uses_current_medication_names(monkeypatch: pyt
     payload = WebPushService().build_payload(alarm, medications)
 
     assert payload["alarmId"] == 7
-    assert payload["body"] == "약A, 약B 복용 시간입니다."
+    assert payload["body"] == "약 드실 시간이에요"
     assert payload["clickUrl"] == "/alarms"
     assert "auth_key" not in payload

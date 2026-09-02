@@ -58,7 +58,7 @@ class WebPushService:
         title = alarm.title
         medication_names = [medication.name for medication in medications]
         if str(alarm_type) == "MEDICATION" and medication_names:
-            message = f"{', '.join(medication_names)} 복용 시간입니다."
+            message = "약 드실 시간이에요"
         if str(alarm_type) == "NUTRIENT" and nutrient_items:
             title = "영양제 알림"
             message = "영양제 챙기실 시간이에요"
