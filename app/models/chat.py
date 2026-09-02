@@ -31,6 +31,11 @@ class ChatSession(models.Model):
         on_delete=fields.CASCADE,
     )
     status = fields.CharEnumField(ChatSessionStatus, default=ChatSessionStatus.ACTIVE)
+    score = fields.IntField(
+        null=True,
+        description="채팅 별점",
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
     last_message_at = fields.DatetimeField(null=True)
     deleted_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
