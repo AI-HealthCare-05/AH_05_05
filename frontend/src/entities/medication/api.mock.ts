@@ -22,6 +22,7 @@ import type {
   DoseRecord,
   DoseRecordRange,
   MedicationOverview,
+  MedicationOverviewRange,
   MedicationSchedule,
   SaveDoseTakenPayload,
   SaveMedicationSchedulePayload,
@@ -58,6 +59,7 @@ function primaryMedicationOverview(): MedicationOverview {
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),
     daysRemaining: 3,
+    isFinished: false,
     mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
     medications: medications.map((medication) => ({
       ...medication,
@@ -85,6 +87,7 @@ function secondaryMedicationOverview(): MedicationOverview {
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),
     daysRemaining: 3,
+    isFinished: true,
     mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
     medications: medications.map((medication) => ({
       ...medication,
@@ -93,10 +96,13 @@ function secondaryMedicationOverview(): MedicationOverview {
   };
 }
 
-export function mockMedicationOverviews(): MedicationOverview[] {
+export function mockMedicationOverviews(range: MedicationOverviewRange = {}): MedicationOverview[] {
   if (!hasRegisteredMedication) return [];
   return [primaryMedicationOverview(), secondaryMedicationOverview()].filter(
-    (overview) => !cancelledMedicationRecordIds.has(overview.recordId),
+    (overview) =>
+      !cancelledMedicationRecordIds.has(overview.recordId) &&
+      (!range.from || overview.start.date >= range.from) &&
+      (!range.to || overview.start.date <= range.to),
   );
 }
 

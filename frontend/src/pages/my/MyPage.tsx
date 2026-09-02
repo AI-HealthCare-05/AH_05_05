@@ -12,7 +12,6 @@ import {
   NotifyBlockedDialog,
   NotifyPermissionDialog,
   Switch,
-  TimePickerSheet,
   type TabKey,
 } from '@/shared/ui';
 import {
@@ -23,11 +22,7 @@ import {
   type NotifySettings,
   type UpdateNotifySettingsPayload,
 } from '@/entities/settings';
-import {
-  MEAL_SLOTS,
-  isMealTimeOrderValid,
-  type MealSlot,
-} from '@/shared/model/mealSlot';
+import { isMealTimeOrderValid } from '@/shared/model/mealSlot';
 import {
   getPushPermission,
   requestPushPermission,
@@ -35,6 +30,7 @@ import {
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
 import { WithdrawAccountDialog } from './WithdrawAccountDialog';
+import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -44,26 +40,21 @@ const TAB_ROUTES: Record<TabKey, string> = {
   my: '/my',
 };
 
-const SETTINGS_FIELD_BY_SLOT: Record<MealSlot, keyof MedicationTimes> = {
-  morning: 'morningMedicationTime',
-  lunch: 'lunchMedicationTime',
-  evening: 'eveningMedicationTime',
-  bedtime: 'bedtimeMedicationTime',
-};
-
-const MY_TIME_LABELS: Record<MealSlot, string> = {
-  morning: '아침',
-  lunch: '점심',
-  evening: '저녁',
-  bedtime: '자기전',
-};
-
-function medicationTimesFromSettings(settings: NotifySettings): Record<MealSlot, string> {
+function medicationTimesFromSettings(settings: NotifySettings): MedicationTimes {
   return {
-    morning: settings.morningMedicationTime,
-    lunch: settings.lunchMedicationTime,
-    evening: settings.eveningMedicationTime,
-    bedtime: settings.bedtimeMedicationTime,
+    morningMedicationTime: settings.morningMedicationTime,
+    lunchMedicationTime: settings.lunchMedicationTime,
+    eveningMedicationTime: settings.eveningMedicationTime,
+    bedtimeMedicationTime: settings.bedtimeMedicationTime,
+  };
+}
+
+function mealSlotTimesFromMedicationTimes(times: MedicationTimes) {
+  return {
+    morning: times.morningMedicationTime,
+    lunch: times.lunchMedicationTime,
+    evening: times.eveningMedicationTime,
+    bedtime: times.bedtimeMedicationTime,
   };
 }
 
@@ -99,8 +90,9 @@ export function MyPage({
   const [blockedDialogOpen, setBlockedDialogOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [pendingSettingKeys, setPendingSettingKeys] = useState<NotifySettingKey[]>([]);
-  const [editingSlot, setEditingSlot] = useState<MealSlot | null>(null);
-  const [timeOrderError, setTimeOrderError] = useState(false);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
+  const [timeDraft, setTimeDraft] = useState<MedicationTimes | null>(null);
+  const [timeSaveError, setTimeSaveError] = useState<string | null>(null);
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
@@ -244,27 +236,46 @@ export function MyPage({
     }
   }
 
-  async function persistMedicationTime(slot: MealSlot, value: string) {
-    const updated = await persistNotifySettings(
-      { [SETTINGS_FIELD_BY_SLOT[slot]]: value },
-      () => void persistMedicationTime(slot, value),
-    );
-    if (!updated) return;
-    setEditingSlot(null);
-    toast.success('알림 시간을 바꿨어요.');
+  function openMedicationTimeSheet() {
+    if (!notifySettings) return;
+    setTimeDraft(medicationTimesFromSettings(notifySettings));
+    setTimeSaveError(null);
+    setTimeSheetOpen(true);
   }
 
-  function applyMedicationTime(value: string) {
-    if (!notifySettings || !editingSlot) return;
-    const nextTimes = {
-      ...medicationTimesFromSettings(notifySettings),
-      [editingSlot]: value,
-    };
-    if (!isMealTimeOrderValid(nextTimes)) {
-      setTimeOrderError(true);
+  function cancelMedicationTimeSheet() {
+    setTimeSheetOpen(false);
+    setTimeDraft(null);
+    setTimeSaveError(null);
+  }
+
+  function updateMedicationTimeDraft(values: MedicationTimes) {
+    setTimeDraft(values);
+    setTimeSaveError(null);
+  }
+
+  async function saveMedicationTimes() {
+    if (!timeDraft) return;
+    if (!isMealTimeOrderValid(mealSlotTimesFromMedicationTimes(timeDraft))) {
+      setTimeSaveError('아침 < 점심 < 저녁 < 자기전 순서로 정해주세요');
       return;
     }
-    void persistMedicationTime(editingSlot, value);
+
+    setNotificationBusy(true);
+    setTimeSaveError(null);
+    try {
+      const updated = await notifySettingsUpdater(timeDraft);
+      setNotifySettings(updated);
+      setTimeSheetOpen(false);
+      setTimeDraft(null);
+      toast.success('알림 시간을 바꿨어요.');
+    } catch (error: unknown) {
+      setTimeSaveError(
+        error instanceof Error ? error.message : '알림 설정을 저장하지 못했어요.',
+      );
+    } finally {
+      setNotificationBusy(false);
+    }
   }
 
   async function handlePermissionAccept() {
@@ -401,35 +412,24 @@ export function MyPage({
                       }
                       divided
                     />
-                    <div className="border-t border-border px-4 pt-4 pb-1">
-                      <p className="text-sm font-bold text-foreground">알림 시간</p>
-                    </div>
-                    {MEAL_SLOTS.map((slot) => (
-                      <button
-                        key={slot.value}
-                        type="button"
-                        onClick={() => setEditingSlot(slot.value)}
-                        className="flex min-h-14 w-full items-center gap-3 px-4 text-left"
-                      >
-                        <span className="flex-1 text-base font-bold text-foreground">
-                          {MY_TIME_LABELS[slot.value]}
-                        </span>
-                        <span className="text-base text-foreground tnum">
-                          {notifySettings[SETTINGS_FIELD_BY_SLOT[slot.value]]}
-                        </span>
-                        <ChevronRight
-                          aria-hidden
-                          className="size-5 shrink-0 text-disabled-foreground"
-                        />
-                      </button>
-                    ))}
+                    <NotificationRow
+                      label="일정 알림"
+                      checked={notifySettings.notifySchedule}
+                      disabled={
+                        pendingSettingKeys.includes('notifySchedule') || pushUnsupported
+                      }
+                      onCheckedChange={(checked) =>
+                        handleNotificationChange('notifySchedule', checked)
+                      }
+                      divided
+                    />
                     <button
                       type="button"
                       className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
-                      onClick={() => navigate('/my/alarms')}
+                      onClick={openMedicationTimeSheet}
                     >
                       <span className="flex-1 text-base font-bold text-foreground">
-                        예약된 알림
+                        알림 시간 설정
                       </span>
                       <ChevronRight
                         aria-hidden
@@ -480,7 +480,9 @@ export function MyPage({
         title={
           pendingToggle === 'notifySupplement'
             ? '영양제 알림을 보내드릴까요?'
-            : '복약 시간에 알림을 보내드릴까요?'
+            : pendingToggle === 'notifySchedule'
+              ? '일정 알림을 보내드릴까요?'
+              : '복약 시간에 알림을 보내드릴까요?'
         }
         busy={notificationBusy}
         onAccept={() => void handlePermissionAccept()}
@@ -500,24 +502,17 @@ export function MyPage({
           retry?.();
         }}
       />
-      <TimePickerSheet
-        open={editingSlot !== null}
-        description={editingSlot ? `${MY_TIME_LABELS[editingSlot]} 복약 시각` : ''}
-        value={
-          editingSlot && notifySettings
-            ? notifySettings[SETTINGS_FIELD_BY_SLOT[editingSlot]]
-            : '08:00'
-        }
-        onApply={applyMedicationTime}
-        onCancel={() => setEditingSlot(null)}
-      />
-      <ErrorDialog
-        open={timeOrderError}
-        title="시간을 적용할 수 없어요"
-        message="복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요."
-        retryLabel="확인"
-        onRetry={() => setTimeOrderError(false)}
-      />
+      {notifySettings && timeDraft && (
+        <MedicationTimeSettingsSheet
+          open={timeSheetOpen}
+          values={timeDraft}
+          busy={notificationBusy}
+          error={timeSaveError}
+          onChange={updateMedicationTimeDraft}
+          onSave={() => void saveMedicationTimes()}
+          onCancel={cancelMedicationTimeSheet}
+        />
+      )}
       <WithdrawAccountDialog
         open={withdrawDialogOpen}
         onOpenChange={setWithdrawDialogOpen}

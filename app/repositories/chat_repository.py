@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 
+from tortoise.functions import Max, Min
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
@@ -32,6 +34,10 @@ class ChatSessionNotFoundError(ChatRepositoryError):
     pass
 
 
+class ChatSessionAccessDeniedRepositoryError(ChatRepositoryError):
+    pass
+
+
 class CareEpisodeNotFoundError(ChatRepositoryError):
     pass
 
@@ -48,6 +54,28 @@ class ChatRequestPayloadMismatchError(ChatRepositoryError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class ChatSessionSummaryRecord:
+    session_id: int
+    title: str
+    last_message_preview: str
+    last_message_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ChatSessionDetailRecord:
+    session: ChatSession
+    messages: list[ChatMessage]
+    sources_by_message_id: dict[int, list[ChatMessageSource]]
+
+
+@dataclass(frozen=True, slots=True)
+class DeletedChatSessionRecord:
+    session_id: int
+    status: ChatSessionStatus
+    deleted_at: datetime
+
+
 @dataclass(slots=True)
 class AcceptedChatRequest:
     session: ChatSession
@@ -58,6 +86,149 @@ class AcceptedChatRequest:
 
 
 class ChatRepository:
+    async def list_session_summaries(
+        self,
+        *,
+        user_id: int,
+    ) -> list[ChatSessionSummaryRecord]:
+        session_filter = {
+            "chat_session__user_id": user_id,
+            "chat_session__status": ChatSessionStatus.ACTIVE,
+            "chat_session__deleted_at__isnull": True,
+            "status": ChatMessageStatus.COMPLETED,
+        }
+        title_rows = await (
+            ChatMessage.filter(
+                **session_filter,
+                role=ChatMessageRole.USER,
+            )
+            .annotate(message_id=Min("id"))
+            .group_by("chat_session_id")
+            .values("chat_session_id", "message_id")
+        )
+        preview_rows = await (
+            ChatMessage.filter(
+                **session_filter,
+                role__in=[
+                    ChatMessageRole.USER,
+                    ChatMessageRole.ASSISTANT,
+                ],
+            )
+            .exclude(content="")
+            .annotate(message_id=Max("id"))
+            .group_by("chat_session_id")
+            .values("chat_session_id", "message_id")
+        )
+        title_message_ids = {row["chat_session_id"]: row["message_id"] for row in title_rows}
+        preview_message_ids = {
+            row["chat_session_id"]: row["message_id"]
+            for row in preview_rows
+            if row["chat_session_id"] in title_message_ids
+        }
+        if not preview_message_ids:
+            return []
+
+        message_ids = set(title_message_ids.values()) | set(preview_message_ids.values())
+        messages = await ChatMessage.filter(
+            id__in=message_ids,
+        ).values("id", "content", "completed_at")
+        messages_by_id = {message["id"]: message for message in messages}
+
+        records: list[ChatSessionSummaryRecord] = []
+        for session_id, preview_message_id in preview_message_ids.items():
+            title = messages_by_id[title_message_ids[session_id]]
+            preview = messages_by_id[preview_message_id]
+            last_message_at = preview["completed_at"]
+            if last_message_at is None:
+                continue
+            records.append(
+                ChatSessionSummaryRecord(
+                    session_id=session_id,
+                    title=title["content"],
+                    last_message_preview=preview["content"],
+                    last_message_at=last_message_at,
+                )
+            )
+        records.sort(
+            key=lambda record: (record.last_message_at, record.session_id),
+            reverse=True,
+        )
+        return records
+
+    async def get_session_detail(
+        self,
+        *,
+        user_id: int,
+        session_id: int,
+    ) -> ChatSessionDetailRecord:
+        session = await ChatSession.filter(
+            id=session_id,
+            user_id=user_id,
+            status=ChatSessionStatus.ACTIVE,
+            deleted_at__isnull=True,
+        ).first()
+        if session is None:
+            raise ChatSessionNotFoundError
+
+        messages = await ChatMessage.filter(
+            chat_session_id=session.id,
+            role__in=[
+                ChatMessageRole.USER,
+                ChatMessageRole.ASSISTANT,
+            ],
+        ).order_by("sequence_no")
+        message_ids = [message.id for message in messages]
+        sources_by_message_id: dict[int, list[ChatMessageSource]] = {}
+        if message_ids:
+            sources = (
+                await ChatMessageSource.filter(
+                    chat_message_id__in=message_ids,
+                )
+                .order_by("chat_message_id", "citation_order")
+                .prefetch_related(
+                    "medication",
+                    "user_suppl_nutrient__supplement_nutrient",
+                    "interaction_rule__left_entity",
+                    "interaction_rule__right_entity",
+                )
+            )
+            for source in sources:
+                sources_by_message_id.setdefault(source.chat_message_id, []).append(source)
+
+        return ChatSessionDetailRecord(
+            session=session,
+            messages=messages,
+            sources_by_message_id=sources_by_message_id,
+        )
+
+    async def delete_session(
+        self,
+        *,
+        user_id: int,
+        session_id: int,
+    ) -> DeletedChatSessionRecord:
+        async with in_transaction() as connection:
+            session = await ChatSession.filter(id=session_id).using_db(connection).select_for_update().first()
+            if session is None or session.status != ChatSessionStatus.ACTIVE or session.deleted_at is not None:
+                raise ChatSessionNotFoundError
+            if session.user_id != user_id:
+                raise ChatSessionAccessDeniedRepositoryError
+
+            deleted_at = now()
+            session.status = ChatSessionStatus.DELETED
+            session.deleted_at = deleted_at
+            session.updated_at = deleted_at
+            await session.save(
+                using_db=connection,
+                update_fields=["status", "deleted_at", "updated_at"],
+            )
+
+        return DeletedChatSessionRecord(
+            session_id=session.id,
+            status=session.status,
+            deleted_at=deleted_at,
+        )
+
     async def accept_request(
         self,
         *,

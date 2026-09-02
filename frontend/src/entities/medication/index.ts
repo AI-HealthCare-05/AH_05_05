@@ -1,6 +1,5 @@
 export {
   cancelMedication,
-  getMedicationOverview,
   getMedicationOverviews,
   getDoseRecords,
   getMedicationSchedule,
@@ -21,6 +20,7 @@ export type {
   MedicationSchedule,
   MedicationOverview,
   MedicationOverviewItem,
+  MedicationOverviewRange,
   MedicationStartPoint,
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,

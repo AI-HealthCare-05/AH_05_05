@@ -8,6 +8,7 @@ import orjson
 from pywebpush import WebPushException, webpush_async
 
 from app.core import config
+from app.services.follow_up_visit_alarms import follow_up_message
 
 
 class PushSubscriptionData(Protocol):
@@ -45,19 +46,31 @@ class PushResult:
 
 class WebPushService:
     @staticmethod
-    def build_payload(alarm: AlarmData, medications: list[MedicationData]) -> dict[str, object]:
+    def build_payload(
+        alarm: AlarmData,
+        medications: list[MedicationData],
+        nutrient_items: list[object] | None = None,
+        follow_up_visit: object | None = None,
+    ) -> dict[str, object]:
         alarm_type = alarm.alarm_type
         meal_slot = alarm.meal_slot
         message = alarm.message or alarm.title
+        title = alarm.title
         medication_names = [medication.name for medication in medications]
         if str(alarm_type) == "MEDICATION" and medication_names:
-            message = f"{', '.join(medication_names)} 복용 시간입니다."
+            message = "약 드실 시간이에요"
+        if str(alarm_type) == "NUTRIENT" and nutrient_items:
+            title = "영양제 알림"
+            message = "영양제 챙기실 시간이에요"
+        if str(alarm_type) == "FOLLOW_UP_VISIT" and follow_up_visit is not None:
+            title = "진료 일정 알림"
+            message = follow_up_message(follow_up_visit)
         trigger_at = alarm.next_trigger_at
         if hasattr(trigger_at, "isoformat"):
             trigger_at = trigger_at.isoformat()
         return {
             "alarmId": alarm.id,
-            "title": alarm.title,
+            "title": title,
             "body": message,
             "clickUrl": config.ALARM_CLICK_URL,
             "alarmType": str(alarm_type),

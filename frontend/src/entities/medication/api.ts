@@ -6,7 +6,6 @@ import { ApiError, http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
 import {
   mockCancelMedication,
-  mockMedicationOverview,
   mockMedicationOverviews,
   mockMedicationSchedule,
   mockGetDoseRecords,
@@ -18,6 +17,7 @@ import type {
   DoseRecord,
   DoseRecordRange,
   MedicationOverview,
+  MedicationOverviewRange,
   MedicationSchedule,
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,
@@ -29,13 +29,20 @@ type MedicationOverviewResponse =
   | MedicationOverview[]
   | { episodes: MedicationOverview[] };
 
-export async function getMedicationOverviews(): Promise<MedicationOverview[]> {
+export async function getMedicationOverviews(
+  range: MedicationOverviewRange = {},
+): Promise<MedicationOverview[]> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockMedicationOverviews();
+    return mockMedicationOverviews(range);
   }
+  const query = new URLSearchParams();
+  if (range.from) query.set('from', range.from);
+  if (range.to) query.set('to', range.to);
+  const queryString = query.toString();
+  const suffix = queryString ? `?${queryString}` : '';
   try {
-    const response = await http.get<MedicationOverviewResponse>('/v1/medications');
+    const response = await http.get<MedicationOverviewResponse>(`/v1/medications${suffix}`);
     if (Array.isArray(response)) return response;
     if ('episodes' in response) return response.episodes;
     return [response];
@@ -43,19 +50,6 @@ export async function getMedicationOverviews(): Promise<MedicationOverview[]> {
     if (error instanceof ApiError && error.status === 404) return [];
     throw error;
   }
-}
-
-export async function getMedicationOverview(recordId?: number): Promise<MedicationOverview> {
-  if (USE_MOCK) {
-    await mockDelay();
-    return mockMedicationOverview(recordId);
-  }
-  const overviews = await getMedicationOverviews();
-  const overview = recordId === undefined
-    ? overviews[0]
-    : overviews.find((item) => item.recordId === recordId);
-  if (!overview) throw new Error('복약 기록을 찾지 못했어요.');
-  return overview;
 }
 
 export function prepareMedicationStateForNewAccount(): void {

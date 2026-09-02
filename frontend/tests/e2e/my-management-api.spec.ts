@@ -21,6 +21,7 @@ test('설정 API 시간은 HH:MM으로 보이고 한 필드 PATCH는 camelCase�
   const response = {
     notifyMedication: false,
     notifySupplement: false,
+    notifySchedule: false,
     notifyConsentedAt: null,
     morningMedicationTime: '08:00:00',
     lunchMedicationTime: '13:00:00',
@@ -53,6 +54,161 @@ test('설정 API 시간은 HH:MM으로 보이고 한 필드 PATCH는 camelCase�
   expect(patchBodies).toEqual([{ morningMedicationTime: '08:30' }]);
 });
 
+async function chooseMyTime(
+  page: Page,
+  slotLabel: string,
+  hour: string,
+  minute: string,
+) {
+  const sheet = page.getByRole('dialog', { name: '알림 시간' });
+  await sheet.getByLabel(slotLabel + ' 시').click();
+  await page.getByRole('option', { name: hour + '시', exact: true }).click();
+  await sheet.getByLabel(slotLabel + ' 분').click();
+  await page.getByRole('option', { name: minute + '분', exact: true }).click();
+}
+
+test('마이페이지 알림 시간은 네 필드를 PATCH 한 번으로 저장한다', async ({ page }) => {
+  const patchBodies: unknown[] = [];
+  const response = {
+    notifyMedication: false,
+    notifySupplement: false,
+    notifySchedule: false,
+    notifyConsentedAt: null,
+    morningMedicationTime: '06:00:00',
+    lunchMedicationTime: '11:00:00',
+    eveningMedicationTime: '17:00:00',
+    bedtimeMedicationTime: '21:00:00',
+  };
+  const updatedResponse = {
+    ...response,
+    morningMedicationTime: '08:00:00',
+    lunchMedicationTime: '13:00:00',
+    eveningMedicationTime: '19:00:00',
+    bedtimeMedicationTime: '23:00:00',
+  };
+  let currentResponse = response;
+  await page.route('**/api/v1/me/settings', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patchBodies.push(route.request().postDataJSON());
+      currentResponse = updatedResponse;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(updatedResponse),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(currentResponse),
+    });
+  });
+
+  await page.goto('/dev/my-authenticated');
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  await chooseMyTime(page, '아침', '08', '00');
+  await chooseMyTime(page, '점심', '13', '00');
+  await chooseMyTime(page, '저녁', '19', '00');
+  await chooseMyTime(page, '자기전', '23', '00');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+
+  expect(patchBodies).toEqual([
+    {
+      morningMedicationTime: '08:00',
+      lunchMedicationTime: '13:00',
+      eveningMedicationTime: '19:00',
+      bedtimeMedicationTime: '23:00',
+    },
+  ]);
+  await expect(page.getByRole('dialog', { name: '알림 시간' })).toHaveCount(0);
+  await expect(page.getByText('알림 시간을 바꿨어요.')).toBeVisible();
+
+  await page.reload();
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  const reloadedSheet = page.getByRole('dialog', { name: '알림 시간' });
+  await expect(reloadedSheet.getByLabel('아침 시')).toContainText('08');
+  await expect(reloadedSheet.getByLabel('자기전 시')).toContainText('23');
+});
+
+test('마이페이지 시간 순서가 어긋나면 PATCH를 보내지 않는다', async ({ page }) => {
+  let patchCount = 0;
+  const response = {
+    notifyMedication: false,
+    notifySupplement: false,
+    notifySchedule: false,
+    notifyConsentedAt: null,
+    morningMedicationTime: '08:00:00',
+    lunchMedicationTime: '13:00:00',
+    eveningMedicationTime: '19:00:00',
+    bedtimeMedicationTime: '22:00:00',
+  };
+  await page.route('**/api/v1/me/settings', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patchCount += 1;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.goto('/dev/my-authenticated');
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  await chooseMyTime(page, '아침', '14', '00');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+
+  const sheet = page.getByRole('dialog', { name: '알림 시간' });
+  await expect(sheet.getByText('아침 < 점심 < 저녁 < 자기전 순서로 정해주세요')).toBeVisible();
+  expect(patchCount).toBe(0);
+});
+test('마이페이지 알림 시간 PATCH가 실패하면 서버 메시지와 고른 값을 유지한다', async ({
+  page,
+}) => {
+  let patchCount = 0;
+  const response = {
+    notifyMedication: false,
+    notifySupplement: false,
+    notifySchedule: false,
+    notifyConsentedAt: null,
+    morningMedicationTime: '08:00:00',
+    lunchMedicationTime: '13:00:00',
+    eveningMedicationTime: '19:00:00',
+    bedtimeMedicationTime: '22:00:00',
+  };
+  await page.route('**/api/v1/me/settings', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patchCount += 1;
+      await route.fulfill({
+        status: 422,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'invalid_medication_times',
+          message: '서버가 알림 시간 순서를 거부했어요.',
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.goto('/dev/my-authenticated');
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  await chooseMyTime(page, '아침', '08', '30');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+
+  const sheet = page.getByRole('dialog', { name: '알림 시간' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText('서버가 알림 시간 순서를 거부했어요.')).toBeVisible();
+  await expect(sheet.getByLabel('아침 시')).toContainText('08');
+  await expect(sheet.getByLabel('아침 분')).toContainText('30');
+  expect(patchCount).toBe(1);
+});
 test('진료일정 목록은 start_date 쿼리와 snake_case 응답을 화면 타입으로 바꾼다', async ({
   page,
 }) => {
@@ -90,60 +246,40 @@ test('진료일정 목록은 start_date 쿼리와 snake_case 응답을 화면 �
   expect(requestUrl!.searchParams.get('limit')).toBe('100');
 });
 
-test('예약 알림은 ACTIVE exact query를 보내고 snake_case 응답을 가까운 순서로 정렬한다', async ({
-  page,
-}) => {
-  let requestUrl: URL | null = null;
-  await page.route('**/api/v1/alarms?*', async (route) => {
-    requestUrl = new URL(route.request().url());
+test('마이페이지 일정 알림 토글은 notifySchedule만 PATCH한다', async ({ page }) => {
+  const patchBodies: unknown[] = [];
+  const response = {
+    notifyMedication: false,
+    notifySupplement: false,
+    notifySchedule: true,
+    notifyConsentedAt: '2026-09-02T10:00:00+09:00',
+    morningMedicationTime: '08:00:00',
+    lunchMedicationTime: '13:00:00',
+    eveningMedicationTime: '19:00:00',
+    bedtimeMedicationTime: '22:00:00',
+  };
+  await page.route('**/api/v1/me/settings', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patchBodies.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...response, notifySchedule: false }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        items: [
-          {
-            id: 1,
-            user_id: 7,
-            care_episode_id: null,
-            source_guide_id: null,
-            follow_up_visit_id: 41,
-            alarm_type: 'FOLLOW_UP_VISIT',
-            meal_slot: null,
-            title: '나중 알림',
-            message: null,
-            scheduled_at: '2026-09-05T10:00:00+09:00',
-            recurrence_rule: null,
-            status: 'ACTIVE',
-          },
-          {
-            id: 2,
-            user_id: 7,
-            care_episode_id: null,
-            source_guide_id: null,
-            follow_up_visit_id: null,
-            alarm_type: 'MEDICATION',
-            meal_slot: 'MORNING',
-            title: '가까운 알림',
-            message: '약을 복용할 시간입니다.',
-            scheduled_at: '2026-09-03T08:00:00+09:00',
-            recurrence_rule: 'FREQ=DAILY;COUNT=3',
-            status: 'ACTIVE',
-          },
-        ],
-        total: 2,
-        offset: 0,
-        limit: 100,
-      }),
+      body: JSON.stringify(response),
     });
   });
 
-  await page.goto('/dev/my-alarms');
-  await expect(page.getByRole('heading', { name: '가까운 알림' })).toBeVisible();
-  const titles = await page.locator('article h2').allTextContents();
+  await page.goto('/dev/my-authenticated');
+  const scheduleSwitch = page.getByRole('switch', { name: '일정 알림' });
+  await expect(scheduleSwitch).toBeChecked();
+  await scheduleSwitch.click();
 
-  expect(requestUrl).not.toBeNull();
-  expect(requestUrl!.searchParams.get('status')).toBe('ACTIVE');
-  expect(requestUrl!.searchParams.get('offset')).toBe('0');
-  expect(requestUrl!.searchParams.get('limit')).toBe('100');
-  expect(titles).toEqual(['가까운 알림', '나중 알림']);
+  await expect(scheduleSwitch).not.toBeChecked();
+  expect(patchBodies).toEqual([{ notifySchedule: false }]);
 });
