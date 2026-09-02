@@ -4,7 +4,7 @@ import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
 import { MedicationEpisodePage, MedicationsPage } from '@/pages/medications';
-import { MyPage, MyProfilePage } from '@/pages/my';
+import { FollowUpVisitsPage, MyPage, MyProfilePage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
@@ -147,6 +147,7 @@ export function AppRouter() {
         <Route path="/chat" element={<AuthenticatedChatPage />} />
         <Route path="/my" element={<MyPage />} />
         <Route path="/my/profile" element={<MyProfilePage />} />
+        <Route path="/my/visits" element={<FollowUpVisitsPage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
@@ -215,6 +216,7 @@ export function AppRouter() {
           element={<MyPage authenticatedOverride />}
         />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
+        <Route path="/dev/my-visits" element={<FollowUpVisitsPage />} />
         <Route
           path="/dev/my-profile-save-error"
           element={<MyProfilePage profileSaver={failProfileSave} />}

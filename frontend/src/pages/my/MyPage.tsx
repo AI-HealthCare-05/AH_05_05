@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
+import { CalendarDays, ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -356,6 +356,13 @@ export function MyPage({
                   label="영양제"
                   value="3개"
                   onClick={() => navigate('/supplements')}
+                  divided
+                />
+                <ManagementRow
+                  icon={CalendarDays}
+                  label="진료일정"
+                  value="관리"
+                  onClick={() => navigate('/my/visits')}
                   divided
                 />
               </Card>
