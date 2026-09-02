@@ -4,6 +4,7 @@
  * SSE는 LLM 원문이 아니라 고정 진행 상태와 안전성 검사를 통과한 최종 답변만 받습니다.
  */
 import {
+  ApiError,
   getAuthGeneration,
   http,
   mockDelay,
@@ -38,6 +39,39 @@ export class ChatRequestAbortedError extends Error {
     super('로그인 상태가 바뀌어 채팅 요청을 중단했어요.');
     this.name = 'ChatRequestAbortedError';
   }
+}
+
+interface ChatSessionApiSource {
+  sourceType: 'PATIENT_DOCUMENT' | 'PUBLIC_DATA';
+  sourceName: string;
+  vectorChunkId: string | null;
+  sourceOrganization: string | null;
+  sourceUrl: string | null;
+  datasetVersion: string | null;
+}
+
+interface ChatSessionApiMessage {
+  messageId: number;
+  role: 'USER' | 'ASSISTANT';
+  content: string;
+  status: 'PENDING' | 'STREAMING' | 'COMPLETED' | 'FAILED';
+  replyToMessageId: number | null;
+  guideId: number | null;
+  sources: ChatSessionApiSource[];
+  createdAt: string;
+}
+
+interface ChatSessionDetailApiResponse {
+  success: true;
+  data: {
+    sessionId: number;
+    careEpisodeKey: string | null;
+    status: 'ACTIVE';
+    lastMessageAt: string | null;
+    createdAt: string;
+    messages: ChatSessionApiMessage[];
+  };
+  error: null;
 }
 
 const PROGRESS_MESSAGES: Record<ChatProgressStage, string> = {
@@ -158,18 +192,47 @@ export async function sendChat(
   return result;
 }
 
-/** #111 임시 이력 경계. 실 API 경로를 추측하지 않고 계약 확정 후 내부만 교체합니다. */
 export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
-  if (!USE_MOCK) throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
   const requestAuthGeneration = getAuthGeneration();
-  const requestPrincipal = restoreAccountPrincipal();
-  await mockDelay();
-  if (requestAuthGeneration !== getAuthGeneration()) {
-    throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+  if (USE_MOCK) {
+    const requestPrincipal = restoreAccountPrincipal();
+    await mockDelay();
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+    }
+    const messages = mockGetChatMessages(sessionId, requestPrincipal);
+    if (messages === null) throw new ChatSessionNotFoundError();
+    return messages;
   }
-  const messages = mockGetChatMessages(sessionId, requestPrincipal);
-  if (messages === null) throw new ChatSessionNotFoundError();
-  return messages;
+
+  try {
+    const response = await http.get<ChatSessionDetailApiResponse>(
+      `/v1/chat/sessions/${sessionId}`,
+    );
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 조회를 중단했어요.');
+    }
+    return response.data.messages
+      .filter(
+        (message) =>
+          message.status === 'COMPLETED' && message.content.trim().length > 0,
+      )
+      .map((message) => ({
+        role: message.role === 'USER' ? 'user' : 'assistant',
+        text: message.content,
+        sources: message.sources.map((source) => ({
+          scope: source.sourceType === 'PATIENT_DOCUMENT' ? 'personal' : 'official',
+          title: source.sourceName,
+          organization: source.sourceOrganization,
+          url: source.sourceUrl,
+        })),
+      }));
+  } catch (error: unknown) {
+    if (error instanceof ApiError && error.code === 'CHAT_SESSION_NOT_FOUND') {
+      throw new ChatSessionNotFoundError();
+    }
+    throw error;
+  }
 }
 
 export async function listChatSessions(): Promise<ChatSessionSummary[]> {

@@ -32,9 +32,6 @@ import { SourceList } from './SourceList';
 /**
  * REQ-CHAT-001 · 화면 17 AI 상담 — 공공 근거를 보여주는 화면.
  *
- * 실제 이력 API 경로는 아직 확정되지 않아 loader 경계만 둡니다. loader가 없으면 빈 이력으로
- * 바로 시작하며, 서버 계약이 생기면 이 화면을 바꾸지 않고 entities/chat 함수로 교체합니다.
- *
  * 말풍선은 Card를 재사용하지 않고 직접 만들었습니다 — 정렬과 최대폭 규칙이 다릅니다.
  */
 interface ChatLocationState {
