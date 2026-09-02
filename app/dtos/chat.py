@@ -1,10 +1,11 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, field_validator
 
 from app.dtos.base import CamelModel
-from app.services.chat import ChatSourceView, SendChatResult
+from app.services.chat import ChatSessionSummaryView, ChatSourceView, SendChatResult
 
 
 class SendChatRequest(CamelModel):
@@ -49,6 +50,26 @@ class SendChatResponse(CamelModel):
             answer=result.answer,
             sources=[ChatSourceResponse.from_view(source) for source in result.sources],
         )
+
+
+class ChatSessionSummaryResponse(CamelModel):
+    session_id: int
+    title: str
+    last_message_preview: str
+    last_message_at: datetime
+
+    @classmethod
+    def from_view(cls, view: ChatSessionSummaryView) -> "ChatSessionSummaryResponse":
+        return cls(
+            session_id=view.session_id,
+            title=view.title,
+            last_message_preview=view.last_message_preview,
+            last_message_at=view.last_message_at,
+        )
+
+
+class ChatSessionListResponse(CamelModel):
+    items: list[ChatSessionSummaryResponse]
 
 
 class ChatErrorResponse(CamelModel):

@@ -14,6 +14,8 @@ from app.dependencies.chat import get_chat_application_service
 from app.dependencies.security import get_request_user
 from app.dtos.chat import (
     ChatErrorResponse,
+    ChatSessionListResponse,
+    ChatSessionSummaryResponse,
     SendChatRequest,
     SendChatResponse,
 )
@@ -21,6 +23,7 @@ from app.models.users import User
 from app.services.chat import (
     CHAT_API_GUARD_TIMEOUT_SECONDS,
     ChatApplicationService,
+    ChatSessionQueryService,
     SendChatCommand,
 )
 
@@ -106,6 +109,38 @@ _CHAT_RESPONSES = {
         },
     },
 }
+
+
+_CHAT_SESSION_LIST_RESPONSES = {
+    200: {
+        "description": "인증 사용자의 표시 가능한 채팅 세션 목록",
+    },
+    401: _CHAT_RESPONSES[401],
+}
+
+
+def get_chat_session_query_service() -> ChatSessionQueryService:
+    """AI/Qdrant 초기화 없이 채팅 세션 요약만 조회한다."""
+    return ChatSessionQueryService()
+
+
+@chat_router.get(
+    "/sessions",
+    response_model=ChatSessionListResponse,
+    summary="내 채팅 세션 목록 조회",
+    responses=_CHAT_SESSION_LIST_RESPONSES,
+)
+async def list_chat_sessions(
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[
+        ChatSessionQueryService,
+        Depends(get_chat_session_query_service),
+    ],
+) -> ChatSessionListResponse:
+    items = await service.list_sessions(user=user)
+    return ChatSessionListResponse(
+        items=[ChatSessionSummaryResponse.from_view(item) for item in items],
+    )
 
 
 @chat_router.post(

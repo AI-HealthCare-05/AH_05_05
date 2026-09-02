@@ -2,6 +2,7 @@ import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from ai_worker.domain.chat_content_compactor import (
     HISTORY_COMPACTION_MARKER,
@@ -73,6 +74,31 @@ class SendChatResult:
     message_id: int
     answer: str
     sources: list[ChatSourceView]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatSessionSummaryView:
+    session_id: int
+    title: str
+    last_message_preview: str
+    last_message_at: datetime
+
+
+class ChatSessionQueryService:
+    def __init__(self, repository: ChatRepository | None = None) -> None:
+        self._repository = repository or ChatRepository()
+
+    async def list_sessions(self, *, user: User) -> list[ChatSessionSummaryView]:
+        records = await self._repository.list_session_summaries(user_id=user.id)
+        return [
+            ChatSessionSummaryView(
+                session_id=record.session_id,
+                title=record.title,
+                last_message_preview=record.last_message_preview,
+                last_message_at=record.last_message_at,
+            )
+            for record in records
+        ]
 
 
 class ChatApplicationService:
