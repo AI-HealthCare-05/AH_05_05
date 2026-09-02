@@ -29,7 +29,7 @@ async def test_streamed_ocr_request_without_content_length_is_bounded() -> None:
     scope: Scope = {
         "type": "http",
         "method": "POST",
-        "path": "/api/v1/ocr/medication-guides",
+        "path": "/api/v1/ocr",
         "headers": [],
     }
 

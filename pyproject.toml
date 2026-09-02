@@ -36,7 +36,11 @@ app = [
     "bcrypt<=4.0.1",
     "fastapi[standard]>=0.128.0",
     "httpx>=0.28.1",
+    "httpx2>=2.12,<3",
     "numbers-parser>=4.19.0",
+    "numpy>=2,<3",
+    "openai>=3.1,<4",
+    "opencv-python-headless>=5,<6",
     "orjson>=3.11.5",
     "pillow>=11,<13",
     "qdrant-client>=1.19.0",
@@ -99,6 +103,7 @@ ignore = ["UP046", "E501"]
 # 특정 파일에서 무시할 규칙들
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"app/services/medication_ocr_v3/**/*.py" = ["C901"]
 "db/migrations/*" = ["ALL"]
 
 [tool.ruff.format]

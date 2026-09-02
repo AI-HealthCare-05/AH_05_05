@@ -6,6 +6,8 @@ import type {
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementRanking,
+  SupplementReview,
+  SupplementReviewList,
   SupplementSearchPage,
   UpdateSupplementPayload,
 } from './types';
@@ -23,6 +25,8 @@ function product(
   manufacturer: string,
   packageAmount: string,
   recommendedDailyCount: number | null,
+  ratingAverage: number | null = null,
+  reviewCount = 0,
 ): SupplementProduct {
   return {
     productId,
@@ -38,6 +42,8 @@ function product(
     recommendedDoseAmount: recommendedDailyCount,
     doseUnit: '정',
     recommendedSlots: ['morning'],
+    ratingAverage,
+    reviewCount,
     nutrients: BASE_MULTIVITAMIN_NUTRIENTS.map((nutrient) => ({ ...nutrient })),
   };
 }
@@ -47,14 +53,14 @@ function product(
  * 실제 제품 동기화가 아니라 과다 결과·브랜드 검색·페이지네이션을 검증하는 고정 픽스처입니다.
  */
 const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
-  product('sp-001', '센트룸 실버 우먼', '센트룸', '한국화이자', '90정', 1),
+  product('sp-001', '센트룸 실버 우먼', '센트룸', '한국화이자', '90정', 1, 4.2, 12),
   product('sp-002', '센트룸 실버 맨', '센트룸', '한국화이자', '90정', 1),
-  product('sp-003', '고려은단 멀티비타민 올인원', '고려은단', '고려은단헬스케어', '60정', 2),
+  product('sp-003', '고려은단 멀티비타민 올인원', '고려은단', '고려은단헬스케어', '60정', 2, 5, 1),
   product('sp-004', '종근당 아이커버 멀티비타민', '종근당', '종근당건강', '60정', 1),
   product('sp-005', '얼라이브 원스데일리 포 우먼', '얼라이브', '네이쳐스웨이', '60정', null),
   product('sp-006', '얼라이브 원스데일리 포 맨', '얼라이브', '네이쳐스웨이', '60정', 1),
   product('sp-007', '뉴트리코어 멀티비타민 미네랄', '뉴트리코어', '에프앤디넷', '60정', 2),
-  product('sp-008', '오쏘몰 이뮨', '오쏘몰', '오쏘몰파마', '30정', 1),
+  product('sp-008', '오쏘몰 이뮨', '오쏘몰', '오쏘몰파마', '30정', 1, 4.7, 8),
   product('sp-009', '세노비스 트리플러스', '세노비스', '사노피아벤티스', '100정', 2),
   product('sp-010', '솔가 여성용 멀티비타민', '솔가', '솔가코리아', '60정', 1),
   product('sp-011', 'GNC 메가맨', 'GNC', '동원F&B', '90정', 2),
@@ -72,6 +78,17 @@ const SUPPLEMENT_PRODUCTS: SupplementProduct[] = [
   product('sp-023', '대상웰라이프 뉴케어 멀티비타민', '뉴케어', '대상웰라이프', '60정', 1),
   product('sp-024', '풀무원 그린체 멀티비타민', '그린체', '풀무원건강생활', '60정', 2),
 ];
+
+const REGISTERED_MOCK_PRODUCT = product(
+  'mock-501',
+  '오메가3',
+  'RxVita 목업',
+  'RxVita',
+  '60캡슐',
+  1,
+  4.8,
+  32,
+);
 
 export function mockSupplementRanking(): SupplementRanking {
   return {
@@ -97,7 +114,10 @@ export function mockSupplementRanking(): SupplementRanking {
 }
 
 export function mockSupplementProduct(productId: string): SupplementProduct {
-  const found = SUPPLEMENT_PRODUCTS.find((item) => item.productId === productId);
+  const found =
+    productId === REGISTERED_MOCK_PRODUCT.productId
+      ? REGISTERED_MOCK_PRODUCT
+      : SUPPLEMENT_PRODUCTS.find((item) => item.productId === productId);
   if (!found) throw new Error('영양제를 찾지 못했어요.');
   return {
     ...found,
@@ -125,19 +145,64 @@ function relevance(productItem: SupplementProduct, query: string): number {
   }, 0);
 }
 
+const MOCK_REGISTRATION_COUNTS: Record<string, number> = {
+  'sp-001': 18,
+  'sp-002': 7,
+  'sp-003': 25,
+  'sp-008': 14,
+};
+
+function compareName(left: SupplementProduct, right: SupplementProduct): number {
+  return left.productName.localeCompare(right.productName, 'ko-KR') || left.productId.localeCompare(right.productId);
+}
+
 export function mockSearchSupplementProducts({
   query,
+  sort,
   offset = 0,
   limit = 20,
 }: SearchSupplementProductsParams): SupplementSearchPage {
-  const trimmedQuery = query.trim();
+  const trimmedQuery = normalized(query);
   if (!trimmedQuery) return { items: [], total: 0, nextOffset: null };
 
-  const matches = SUPPLEMENT_PRODUCTS
-    .map((productItem, index) => ({ productItem, index, score: relevance(productItem, trimmedQuery) }))
-    .filter(({ score }) => score > 0)
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .map(({ productItem }) => productItem);
+  const matches = SUPPLEMENT_PRODUCTS.filter((productItem) =>
+    [
+      productItem.productName,
+      productItem.brand,
+      productItem.manufacturer,
+      productItem.category,
+    ].some((field) => normalized(field).includes(trimmedQuery)),
+  ).sort((left, right) => {
+    if (sort === undefined) {
+      return (
+        relevance(right, trimmedQuery) - relevance(left, trimmedQuery) ||
+        SUPPLEMENT_PRODUCTS.indexOf(left) - SUPPLEMENT_PRODUCTS.indexOf(right)
+      );
+    }
+    if (sort === 'registered') {
+      return (
+        (MOCK_REGISTRATION_COUNTS[right.productId] ?? 0) -
+          (MOCK_REGISTRATION_COUNTS[left.productId] ?? 0) || compareName(left, right)
+      );
+    }
+    if (sort === 'rating') {
+      if (left.ratingAverage === null) return right.ratingAverage === null ? compareName(left, right) : 1;
+      if (right.ratingAverage === null) return -1;
+      return (
+        right.ratingAverage - left.ratingAverage ||
+        right.reviewCount - left.reviewCount ||
+        compareName(left, right)
+      );
+    }
+    if (sort === 'reviews') {
+      return (
+        right.reviewCount - left.reviewCount ||
+        (right.ratingAverage ?? -1) - (left.ratingAverage ?? -1) ||
+        compareName(left, right)
+      );
+    }
+    return compareName(left, right);
+  });
   const items = matches.slice(offset, offset + limit).map((productItem) => ({
     ...productItem,
     nutrients: productItem.nutrients.map((nutrient) => ({ ...nutrient })),
@@ -156,6 +221,7 @@ function initialSupplements(): Supplement[] {
       doseUnit: '정',
       slots: ['morning', 'evening'],
       score: 4,
+      reviewBody: '꾸준히 챙겨 먹기 편해요.',
       note: '아침 식후에 먹기',
       nutrientDataAvailable: true,
       nutrients: [
@@ -170,6 +236,7 @@ function initialSupplements(): Supplement[] {
       doseUnit: '정',
       slots: ['morning'],
       score: null,
+      reviewBody: null,
       note: null,
       nutrientDataAvailable: true,
       nutrients: [
@@ -191,6 +258,7 @@ function initialSupplements(): Supplement[] {
       doseUnit: '정',
       slots: ['evening'],
       score: null,
+      reviewBody: null,
       note: null,
       nutrientDataAvailable: true,
       nutrients: [
@@ -266,6 +334,7 @@ export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
     doseUnit: payload.doseUnit,
     slots: [...payload.slots],
     score: null,
+    reviewBody: null,
     note: null,
     nutrientDataAvailable: Boolean(standardProduct),
     nutrients: standardProduct
@@ -287,6 +356,8 @@ export function mockUpdateSupplement(
     doseAmount: payload.doseAmount,
     slots: [...payload.slots],
     score: 'score' in payload ? (payload.score ?? null) : supplementStore[index].score,
+    reviewBody:
+      'reviewBody' in payload ? (payload.reviewBody ?? null) : supplementStore[index].reviewBody,
     note: 'note' in payload ? (payload.note ?? null) : supplementStore[index].note,
   };
   supplementStore = supplementStore.map((supplement, itemIndex) =>
@@ -299,4 +370,38 @@ export function mockStopSupplement(supplementId: number): void {
   const exists = supplementStore.some((supplement) => supplement.supplementId === supplementId);
   if (!exists) throw new Error('영양제를 찾지 못했어요.');
   supplementStore = supplementStore.filter((supplement) => supplement.supplementId !== supplementId);
+}
+
+const MOCK_REVIEWS: SupplementReview[] = [
+  { id: 9001, authorLabel: '김*훈', score: 5, reviewBody: '두 달째 꾸준히 먹고 있어요.', updatedAt: '2026-09-02T09:00:00', isMine: false, reportedByMe: false },
+  { id: 9002, authorLabel: '김*훈', score: 4, reviewBody: '목 넘김이 편했어요.', updatedAt: '2026-09-01T18:00:00', isMine: false, reportedByMe: false },
+  { id: 9003, authorLabel: '박*', score: 3, reviewBody: '포장이 간편해요.', updatedAt: '2026-08-31T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9004, authorLabel: '남**훈', score: 2, reviewBody: '저에게는 잘 맞지 않았어요.', updatedAt: '2026-08-30T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9005, authorLabel: 'K***g', score: null, reviewBody: '본문만 남긴 후기예요.', updatedAt: '2026-08-29T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9006, authorLabel: '이*영', score: 4, reviewBody: null, updatedAt: '2026-08-28T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9007, authorLabel: '황***이', score: 5, reviewBody: '제 후기예요.', updatedAt: '2026-08-27T12:00:00', isMine: true, reportedByMe: false },
+  { id: 9008, authorLabel: '최*우', score: 4, reviewBody: '매일 챙겨 먹고 있어요.', updatedAt: '2026-08-26T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9009, authorLabel: '정*민', score: 5, reviewBody: '재구매했어요.', updatedAt: '2026-08-25T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9010, authorLabel: '한*진', score: 4, reviewBody: '크기가 적당해요.', updatedAt: '2026-08-24T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9011, authorLabel: '오*서', score: 3, reviewBody: '무난하게 먹고 있어요.', updatedAt: '2026-08-23T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9012, authorLabel: '윤*호', score: 5, reviewBody: '꾸준히 먹기 좋아요.', updatedAt: '2026-08-22T12:00:00', isMine: false, reportedByMe: false },
+];
+
+export function mockFetchSupplementReviews(
+  productId: string,
+  { offset, limit }: { offset: number; limit: number },
+): SupplementReviewList {
+  const source = productId === 'mock-501' ? MOCK_REVIEWS : [];
+  return {
+    items: source.slice(offset, offset + limit).map((review) => ({ ...review })),
+    total: source.length,
+    offset,
+    limit,
+    ratingAverage: source.length === 0 ? null : 4.1,
+    reviewCount: source.filter((review) => review.score !== null).length,
+  };
+}
+
+export function mockReportSupplementReview(registrationId: number): void {
+  if (registrationId === 9004) throw new Error('잠시 후 다시 시도해주세요');
 }

@@ -53,11 +53,11 @@ export function ChatSessionList({
             )}
             <button
               type="button"
-              aria-label={selectionMode ? '선택 취소' : '대화 선택'}
+              aria-label={selectionMode ? '삭제 취소' : '대화 삭제'}
               onClick={onToggleSelectionMode}
               className="flex min-h-touch items-center justify-center px-2 text-sm font-bold text-foreground"
             >
-              {selectionMode ? '취소' : '선택'}
+              {selectionMode ? '취소' : '삭제'}
             </button>
           </div>
         }

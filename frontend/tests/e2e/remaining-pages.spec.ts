@@ -16,26 +16,24 @@ async function chooseAlarmTime(page: Page, hour: string, minute: string) {
 
 test.setTimeout(20_000);
 
-test('복용약 화면은 약봉투 원본 없이 care episode 목록을 보여준다', async ({ page }) => {
+test('복약 화면은 처방 회차 목록을 보여준다', async ({ page }) => {
   await page.goto('/dev/medications');
 
-  await expect(page.getByRole('heading', { name: '복용약' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /8월 22일 처방.*약 4개/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /8월 24일 처방.*약 1개/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '복약' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /2026년 8월 22일 처방.*약 4개/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /2026년 8월 24일 처방.*약 1개/ })).toBeVisible();
   await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveCount(0);
   await expect(page.getByText('이 기록의 약봉투 원본')).toHaveCount(0);
 });
 
-test('care episode를 누르면 그 회차의 알림 시간과 약만 상세에서 보여준다', async ({ page }) => {
+test('처방 회차를 누르면 같은 화면에서 그 회차의 약만 펼친다', async ({ page }) => {
   await page.goto('/dev/medications');
-  await page.getByRole('button', { name: /8월 22일 처방.*약 4개/ }).click();
+  await page.getByRole('button', { name: /2026년 8월 22일 처방.*약 4개/ }).click();
 
-  await expect(page).toHaveURL(/\/medications\/12$/);
-  await expect(page.getByRole('heading', { name: '처방 상세' })).toBeVisible();
-  await expect(page.getByText('아침 08:00 · 점심 13:00 · 저녁 19:00')).toBeVisible();
-  await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
-  await expect(page.getByText('필요할 때만 · 알림 없음')).toBeVisible();
-  await expect(page.getByText('아목시실린 500mg')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/dev\/medications$/);
+  const detail = page.getByRole('region', { name: '2026년 8월 22일 처방 상세' });
+  await expect(detail.getByText('필요할 때만 · 알림 없음')).toBeVisible();
+  await expect(detail.getByText('아목시실린 500mg')).toHaveCount(0);
 });
 
 test('근거가 없는 챗봇 답변은 등록한 약에 근거하지 않았음을 명시한다', async ({ page }) => {
@@ -198,22 +196,17 @@ test('동작 줄이기 환경에서는 홈 기능 배너를 자동으로 넘기�
   await expect(page.getByLabel('현재 배너 1 / 3')).toBeVisible();
 });
 
-test('복용약의 알림 시간은 시간 네 개만 있는 전용 화면으로 들어간다', async ({ page }) => {
+test('펼친 처방에는 사용자 공통 알림 시간 진입 버튼이 없다', async ({ page }) => {
   await page.goto('/dev/medications');
-  await page.getByRole('button', { name: /8월 22일 처방.*약 4개/ }).click();
-  await page.getByRole('button', { name: /알림 시간/ }).click();
+  await page.getByRole('button', { name: /2026년 8월 22일 처방.*약 4개/ }).click();
 
-  await expect(page).toHaveURL(/\/medication-alarm-times$/);
-  await expect(page.getByRole('heading', { name: '알림 시간' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /취침약 22:30/ })).toBeVisible();
-  await expect(page.getByText('처음 약을 언제부터 드셨나요?')).toHaveCount(0);
-  await expect(page.getByRole('region', { name: '자동 배정 시간 확인' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /저장하고|건너뛰기/ })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '2026년 8월 22일 처방 상세' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /알림 시간/ })).toHaveCount(0);
 });
 
 test('시간 선택 시트는 기본 시간 프리셋을 보여주지 않는다', async ({ page }) => {
   await page.goto('/dev/medication-alarm-times');
-  await page.getByRole('button', { name: /취침약 22:30/ }).click();
+  await page.getByRole('button', { name: /취침약 22:00/ }).click();
 
   const sheet = page.getByRole('dialog');
   await expect(sheet.getByRole('button', { name: '아침약 08:00' })).toHaveCount(0);
@@ -237,6 +230,24 @@ test('앞뒤 시간보다 같거나 넘어가면 팝업을 띄우고 적용하�
   await page.getByRole('button', { name: '취소' }).click();
   await expect(page.getByRole('button', { name: /점심약 13:00/ })).toBeVisible();
   await expect(page.getByText('알림 시간을 바꿨어요.')).toHaveCount(0);
+});
+
+test('알림 시간 전용 화면은 처방 ID 없이 사용자 설정을 저장한다', async ({ page }) => {
+  await page.goto('/dev/medication-alarm-times');
+
+  await expect(page.getByRole('heading', { name: '알림 시간' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /아침약 08:00/ })).toBeVisible();
+  await expect(page.getByText('처음 약을 언제부터 드셨나요?')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '자동 배정 시간 확인' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /저장하고|건너뛰기/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /아침약 08:00/ }).click();
+  await chooseAlarmTime(page, '12', '30');
+  await page.getByRole('button', { name: '이 시간 적용' }).click();
+  await expect(page.getByRole('button', { name: /아침약 12:30/ })).toBeVisible();
+  await page.getByRole('button', { name: /아침약 12:30/ }).click();
+  await chooseAlarmTime(page, '08', '00');
+  await page.getByRole('button', { name: '이 시간 적용' }).click();
+  await expect(page.getByRole('button', { name: /아침약 08:00/ })).toBeVisible();
 });
 
 test('3시간 미만이어도 앞뒤 순서만 맞으면 즉시 저장한다', async ({ page }) => {
@@ -299,8 +310,8 @@ test('복약 시작 시간대는 알림을 위한 필수 선택임을 표시한�
 
 test('복용약 카드를 누르면 그 약의 시간대만 시트에서 바꾼다', async ({ page }) => {
   await page.goto('/dev/medications');
-  await page.getByRole('button', { name: /8월 22일 처방.*약 4개/ }).click();
-  await page.getByRole('button', { name: /셀레콕시브 200mg/ }).click();
+  await page.getByRole('button', { name: /2026년 8월 22일 처방.*약 4개/ }).click();
+  await page.getByRole('button', { name: /셀레콕시브 200mg 복용 시간 수정/ }).click();
 
   const sheet = page.getByRole('dialog');
   await expect(sheet.getByRole('heading', { name: '셀레콕시브 복용 시간' })).toBeVisible();
@@ -312,13 +323,16 @@ test('복용약 카드를 누르면 그 약의 시간대만 시트에서 바꾼�
   await sheet.getByRole('button', { name: '셀레콕시브 점심약' }).click();
   await sheet.getByRole('button', { name: '저장' }).click();
 
-  await expect(page.getByRole('button', { name: /셀레콕시브 200mg/ }).getByText('점심')).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: '2026년 8월 22일 처방 상세' }).getByText('점심'),
+  ).toBeVisible();
 });
 
-test('복용약 목록과 상세 어디에도 약봉투 원본을 다시 보여주지 않는다', async ({ page }) => {
+test('복약 목록은 약봉투 사진 보기 동작을 노출하지 않는다', async ({ page }) => {
   await page.goto('/dev/medications');
 
-  await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveCount(0);
-  await page.getByRole('button', { name: /8월 22일 처방.*약 4개/ }).click();
-  await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveCount(0);
+  await expect(page.getByRole('img', { name: '확대한 약봉투 원본' })).toHaveCount(0);
+  await page.getByRole('button', { name: /2026년 8월 22일 처방.*약 4개/ }).click();
+  await expect(page.getByRole('button', { name: '약봉투 사진 보기' })).toHaveCount(0);
+  await expect(page.getByRole('img', { name: '확대한 약봉투 원본' })).toHaveCount(0);
 });

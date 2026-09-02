@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
-import { NAME_MAX_LENGTH, createAccount, type Gender } from '@/entities/account';
+import { createAccount, type Gender } from '@/entities/account';
 import { login } from '@/entities/auth';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { ApiError } from '@/shared/api/client';
@@ -11,6 +11,7 @@ import {
   validateBirthDate,
 } from '@/shared/lib/birthDate';
 import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
+import { NAME_MAX_LENGTH, validateName } from '@/shared/lib/name';
 import { PASSWORD_MAX_LENGTH } from '@/shared/lib/password';
 import {
   PHONE_NUMBER_MAX_LENGTH,
@@ -112,7 +113,7 @@ export function AuthPage() {
       const nextBirthDateError = validateBirthDate(birthDate);
       const nextPasswordConfirmError =
         password === passwordConfirm ? null : '비밀번호가 일치하지 않아요.';
-      const nextNameError = name.trim().length >= 2 ? null : '이름을 두 글자 이상 입력해 주세요.';
+      const nextNameError = validateName(name);
       const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
       setBirthDateError(nextBirthDateError);
       setPasswordConfirmError(nextPasswordConfirmError);
@@ -127,7 +128,7 @@ export function AuthPage() {
 
       setSaving(true);
       try {
-        await createAccount({ email, password, name, phoneNumber, birthDate, gender });
+        await createAccount({ email, password, name: name.trim(), phoneNumber, birthDate, gender });
         prepareMedicationStateForNewAccount();
         // 회원가입 응답에는 액세스 토큰이 없으므로 같은 자격증명으로 로그인까지 완료합니다.
         await login({ email: email.trim(), password });

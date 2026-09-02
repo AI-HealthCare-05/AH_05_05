@@ -65,6 +65,7 @@ const MY_PROFILE_PATH = '/v1/users/me';
  */
 interface UserProfileResponse {
   name: string;
+  maskedName: string;
   phoneNumber: string | null;
   birthDate: string | null;
   gender: 'MALE' | 'FEMALE' | null;
@@ -79,6 +80,7 @@ interface UserProfileResponse {
 function toAccountProfile(body: UserProfileResponse): AccountProfile {
   return {
     name: body.name,
+    maskedName: body.maskedName,
     phoneNumber: body.phoneNumber ?? '',
     birthDate: body.birthDate ?? '',
     // 화면은 소문자를 쓴다(GenderRadioGroup). 값이 없으면 라디오를 비워 두고,

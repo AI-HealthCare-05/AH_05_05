@@ -59,6 +59,70 @@ const DROPS_PRODUCT = {
   daily_freq: '1회',
 };
 
+const MIXED_STANDARD_PRODUCT = {
+  ...IRON_PRODUCT,
+  id: 704,
+  food_code: 'SUPPL-MIXED-STANDARD-704',
+  name: '혼합 기준 영양제',
+  serving_desc: '1캡슐',
+  serving_size: '1캡슐',
+  protein_g: '150.00',
+  fat_g: '12.00',
+  fiber_g: '9.00',
+  calcium_mg: '720.00',
+  iron_mg: '24.00',
+  potassium_mg: '960.00',
+  vitamin_a_ug_rae: '3200.00',
+};
+
+const THRESHOLD_LABEL_PRODUCT = {
+  ...IRON_PRODUCT,
+  id: 705,
+  food_code: 'SUPPL-THRESHOLD-LABEL-705',
+  name: '눈금 라벨 영양제',
+  serving_desc: '1캡슐',
+  serving_size: '1캡슐',
+  iron_mg: null,
+  sodium_mg: '1300.00',
+  vitamin_c_mg: '25.00',
+};
+
+const CALCIUM_TIER_PRODUCT = {
+  ...IRON_PRODUCT,
+  id: 706,
+  food_code: 'SUPPL-CALCIUM-TIER-706',
+  name: '상한 기준 칼슘',
+  iron_mg: null,
+  calcium_mg: '600.00',
+};
+
+const PROTEIN_TIER_PRODUCT = {
+  ...IRON_PRODUCT,
+  id: 707,
+  food_code: 'SUPPL-PROTEIN-TIER-707',
+  name: '권장 기준 단백질',
+  iron_mg: null,
+  protein_g: '70.00',
+};
+
+const FAT_TIER_PRODUCT = {
+  ...IRON_PRODUCT,
+  id: 708,
+  food_code: 'SUPPL-FAT-TIER-708',
+  name: '기준 없는 지방',
+  iron_mg: null,
+  fat_g: '10.00',
+};
+
+const EXCEEDED_VITAMIN_A_PRODUCT = {
+  ...IRON_PRODUCT,
+  id: 709,
+  food_code: 'SUPPL-EXCEEDED-VITAMIN-A-709',
+  name: '상한 초과 비타민 A',
+  iron_mg: null,
+  vitamin_a_ug_rae: '3500.00',
+};
+
 const MALE_NUTRIENT_STANDARD = {
   grp: '남자', age: '19-29세',
   protein_g: { rni: '65.000', ai: null, ul: null },
@@ -110,12 +174,39 @@ function registrationFor(
     end_date: null,
     status: 'ACTIVE',
     score: null,
+    review_body: null,
     note: null,
     created_at: '2026-08-27T09:00:00+09:00',
     updated_at: null,
     slots: [{ slot: 'MORNING', time: '08:00:00' }],
     supplement: product,
   };
+}
+
+async function openSupplementFixture(
+  page: Page,
+  product: typeof IRON_PRODUCT,
+  nutrientStandard: unknown,
+) {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [registrationFor(product, 9004, '1.000')],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: nutrientStandard,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+  await page.goto('/supplements');
 }
 
 test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값을 PATCH로 보낸다', async ({ page }) => {
@@ -147,6 +238,7 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
   await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
+      maskedName: '테***자',
       phoneNumber: '01012345678',
       birthDate: '2000-01-01',
       gender: 'MALE',
@@ -174,6 +266,7 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
     slots: ['MORNING'],
     score: 3,
     note: '저녁 식후',
+    review_body: null,
   });
   await expect(iron.getByLabel('별 3점')).toBeVisible();
 });
@@ -213,10 +306,304 @@ test('목록 응답의 문자열 섭취기준을 합계 기준선과 상한선�
   await page.goto('/supplements');
 
   const iron = page.getByRole('article', { name: '철 성분 합계' });
-  await expect(iron.getByText('권장 8', { exact: true })).toBeVisible();
-  await expect(iron.getByText('상한 45', { exact: true })).toBeVisible();
+  const baseLabel = iron.locator('[data-threshold-label="base"]');
+  const upperLabel = iron.locator('[data-threshold-label="upper-limit"]');
+  await expect(baseLabel.getByText('권장', { exact: true })).toBeVisible();
+  await expect(baseLabel.getByText('8', { exact: true })).toBeVisible();
+  await expect(upperLabel.getByText('상한', { exact: true })).toBeVisible();
+  await expect(upperLabel.getByText('45', { exact: true })).toBeVisible();
   await expect(iron.getByRole('meter')).toBeVisible();
   await expect(iron.getByText('기준이 없는 성분이에요', { exact: true })).toHaveCount(0);
+});
+
+test('성분 합계를 기준 종류별 등급으로 나누고 등급 안에서 비율순으로 정렬한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    await fulfillJson(route, {
+      items: [registrationFor(MIXED_STANDARD_PRODUCT, 9003, '1.000')],
+      total: 1,
+      offset: 0,
+      limit: 100,
+      nutrient_standard: {
+        ...MALE_NUTRIENT_STANDARD,
+        fiber_g: { rni: null, ai: null, ul: null },
+      },
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+
+  const nutrientCards = page.getByRole('region', { name: '성분 합계' }).getByRole('article');
+  await expect(nutrientCards).toHaveCount(7);
+  const nutrientNames = await nutrientCards.getByRole('heading').allTextContents();
+  expect(nutrientNames).toEqual([
+    '비타민 A',
+    '철',
+    '칼슘',
+    '단백질',
+    '칼륨',
+    '식이섬유',
+    '지방',
+  ]);
+});
+
+test('추가와 복용 중단 뒤에도 성분 합계를 섭취기준 등급 순서로 다시 정렬한다', async ({ page }) => {
+  await authenticate(page);
+  let activeRegistrations = [
+    registrationFor(CALCIUM_TIER_PRODUCT, 9101, '1.000'),
+    registrationFor(PROTEIN_TIER_PRODUCT, 9102, '1.000'),
+    registrationFor(FAT_TIER_PRODUCT, 9103, '1.000'),
+  ];
+  await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, {
+        items: activeRegistrations,
+        total: activeRegistrations.length,
+        offset: 0,
+        limit: 100,
+        nutrient_standard: MALE_NUTRIENT_STANDARD,
+      });
+      return;
+    }
+    if (request.method() === 'PUT') {
+      const added = registrationFor(EXCEEDED_VITAMIN_A_PRODUCT, 9104, '1.000');
+      activeRegistrations = [added, ...activeRegistrations];
+      await fulfillJson(route, added);
+      return;
+    }
+    activeRegistrations = activeRegistrations.filter((registration) => registration.id !== 9104);
+    await fulfillJson(route, {});
+  });
+  await page.route('**/api/v1/med/nutr?**', async (route) => {
+    await fulfillJson(route, {
+      items: [EXCEEDED_VITAMIN_A_PRODUCT],
+      total: 1,
+      offset: 0,
+      limit: 20,
+    });
+  });
+  await page.route('**/api/v1/users/me', async (route) => {
+    await fulfillJson(route, {
+      name: '테스트 사용자',
+      phoneNumber: '01012345678',
+      birthDate: '2000-01-01',
+      gender: 'MALE',
+    });
+  });
+
+  await page.goto('/supplements');
+  const totals = page.getByRole('region', { name: '성분 합계' });
+  await expect(totals.getByRole('article')).toHaveCount(3);
+  await expect(totals.getByRole('article').getByRole('heading').allTextContents()).resolves.toEqual([
+    '칼슘',
+    '단백질',
+    '지방',
+  ]);
+
+  await page.getByRole('button', { name: '영양제 추가' }).first().click();
+  const sheet = page.getByRole('dialog', { name: '영양제 추가' });
+  await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('상한 초과 비타민 A');
+  const product = sheet.getByRole('listitem').filter({ hasText: EXCEEDED_VITAMIN_A_PRODUCT.name });
+  await product.getByRole('button', { name: new RegExp(EXCEEDED_VITAMIN_A_PRODUCT.name) }).click();
+  await product.getByRole('button', { name: '추가하기' }).click();
+
+  await expect(totals.getByRole('article')).toHaveCount(4);
+  await expect(totals.getByRole('article').getByRole('heading').allTextContents()).resolves.toEqual([
+    '비타민 A',
+    '칼슘',
+    '단백질',
+    '지방',
+  ]);
+
+  const list = page.getByRole('region', { name: '먹고 있는 영양제' });
+  await list.getByRole('button', { name: new RegExp(EXCEEDED_VITAMIN_A_PRODUCT.name) }).click();
+  await page.getByRole('dialog', { name: EXCEEDED_VITAMIN_A_PRODUCT.name })
+    .getByRole('button', { name: '복용 중단하기' })
+    .click();
+  await page
+    .getByRole('dialog', { name: `${EXCEEDED_VITAMIN_A_PRODUCT.name} 복용을 중단할까요?` })
+    .getByRole('button', { name: '중단하기' })
+    .click();
+
+  await expect(totals.getByRole('article')).toHaveCount(3);
+  await expect(totals.getByRole('article').getByRole('heading').allTextContents()).resolves.toEqual([
+    '칼슘',
+    '단백질',
+    '지방',
+  ]);
+});
+
+test('눈금 라벨을 해당 눈금 중심에 이름과 숫자 두 줄로 표시한다', async ({ page }) => {
+  await openSupplementFixture(page, THRESHOLD_LABEL_PRODUCT, MALE_NUTRIENT_STANDARD);
+
+  const sodium = page.getByRole('article', { name: '나트륨 성분 합계' });
+  const track = sodium.locator('[data-range-track]');
+  const baseTick = sodium.locator('[data-threshold="base"]');
+  const upperTick = sodium.locator('[data-threshold="upper-limit"]');
+  const baseLabel = sodium.locator('[data-threshold-label="base"]');
+  const upperLabel = sodium.locator('[data-threshold-label="upper-limit"]');
+
+  await expect(baseLabel.getByText('충분', { exact: true })).toBeVisible();
+  await expect(baseLabel.getByText('1,500', { exact: true })).toBeVisible();
+  await expect(upperLabel.getByText('상한', { exact: true })).toBeVisible();
+  await expect(upperLabel.getByText('2,300', { exact: true })).toBeVisible();
+
+  const [trackBox, baseTickBox, upperTickBox, baseLabelBox, upperLabelBox] = await Promise.all([
+    track.boundingBox(),
+    baseTick.boundingBox(),
+    upperTick.boundingBox(),
+    baseLabel.boundingBox(),
+    upperLabel.boundingBox(),
+  ]);
+  expect(trackBox).not.toBeNull();
+  expect(baseTickBox).not.toBeNull();
+  expect(upperTickBox).not.toBeNull();
+  expect(baseLabelBox).not.toBeNull();
+  expect(upperLabelBox).not.toBeNull();
+  expect(Math.abs((baseTickBox?.x ?? 0) - ((baseLabelBox?.x ?? 0) + (baseLabelBox?.width ?? 0) / 2)))
+    .toBeLessThan(2);
+  expect(Math.abs((upperTickBox?.x ?? 0) - ((upperLabelBox?.x ?? 0) + (upperLabelBox?.width ?? 0) / 2)))
+    .toBeLessThan(2);
+  expect(((baseTickBox?.x ?? 0) - (trackBox?.x ?? 0)) / (trackBox?.width ?? 1)).toBeCloseTo(
+    (1500 / 2300) * 0.88,
+    2,
+  );
+  expect(((upperTickBox?.x ?? 0) - (trackBox?.x ?? 0)) / (trackBox?.width ?? 1)).toBeCloseTo(
+    0.88,
+    2,
+  );
+});
+
+test('가장자리 라벨을 트랙 안에 가두고 가까운 두 눈금 라벨을 겹치지 않는다', async ({ page }) => {
+  await openSupplementFixture(page, THRESHOLD_LABEL_PRODUCT, {
+    ...MALE_NUTRIENT_STANDARD,
+    sodium_mg: { rni: null, ai: '2200.000', ul: '2300.000' },
+  });
+
+  const vitaminC = page.getByRole('article', { name: '비타민 C 성분 합계' });
+  const vitaminCTrackBox = await vitaminC.locator('[data-range-track]').boundingBox();
+  const vitaminCLabelBox = await vitaminC.locator('[data-threshold-label="base"]').boundingBox();
+  expect(vitaminCTrackBox).not.toBeNull();
+  expect(vitaminCLabelBox).not.toBeNull();
+  expect(vitaminCLabelBox?.x ?? 0).toBeGreaterThanOrEqual(vitaminCTrackBox?.x ?? 0);
+
+  const sodium = page.getByRole('article', { name: '나트륨 성분 합계' });
+  const baseLabelBox = await sodium.locator('[data-threshold-label="base"]').boundingBox();
+  const upperLabelBox = await sodium.locator('[data-threshold-label="upper-limit"]').boundingBox();
+  expect(baseLabelBox).not.toBeNull();
+  expect(upperLabelBox).not.toBeNull();
+  expect((baseLabelBox?.x ?? 0) + (baseLabelBox?.width ?? 0)).toBeLessThanOrEqual(
+    upperLabelBox?.x ?? 0,
+  );
+});
+
+test('상한 없는 안내를 눈금 라벨 영역 밖의 상태 문구로 표시한다', async ({ page }) => {
+  await openSupplementFixture(page, MIXED_STANDARD_PRODUCT, MALE_NUTRIENT_STANDARD);
+
+  const protein = page.getByRole('article', { name: '단백질 성분 합계' });
+  const labels = protein.locator('[data-threshold-labels]');
+  const baseLabel = labels.locator('[data-threshold-label="base"]');
+  await expect(baseLabel.getByText('권장', { exact: true })).toBeVisible();
+  await expect(baseLabel.getByText('65', { exact: true })).toBeVisible();
+  await expect(labels.getByText('상한 기준이 없어요', { exact: true })).toHaveCount(0);
+  await expect(protein.getByText('권장량의 231%예요 · 상한 기준이 없어요', { exact: true }))
+    .toBeVisible();
+});
+
+test('상한 없는 성분은 권장 눈금을 70%에 두고 마커를 트랙 안에 고정한다', async ({ page }) => {
+  await openSupplementFixture(page, MIXED_STANDARD_PRODUCT, MALE_NUTRIENT_STANDARD);
+
+  const protein = page.getByRole('article', { name: '단백질 성분 합계' });
+  const proteinRange = protein.locator('[data-nutrient-range]');
+  const proteinTrack = protein.locator('[data-range-track]');
+  const proteinBaseTick = protein.locator('[data-threshold="base"]');
+  const proteinMarker = protein.locator('[data-range-marker]');
+  await expect(proteinRange).toHaveAttribute('aria-hidden', 'true');
+  await expect(protein.getByRole('meter')).toHaveCount(0);
+  await expect(protein.locator('[data-threshold="upper-limit"]')).toHaveCount(0);
+
+  const [proteinTrackBox, proteinBaseTickBox, proteinMarkerBox] = await Promise.all([
+    proteinTrack.boundingBox(),
+    proteinBaseTick.boundingBox(),
+    proteinMarker.boundingBox(),
+  ]);
+  expect(proteinTrackBox).not.toBeNull();
+  expect(proteinBaseTickBox).not.toBeNull();
+  expect(proteinMarkerBox).not.toBeNull();
+  expect(
+    ((proteinBaseTickBox?.x ?? 0) - (proteinTrackBox?.x ?? 0)) /
+      (proteinTrackBox?.width ?? 1),
+  ).toBeCloseTo(0.7, 2);
+  expect(
+    ((proteinMarkerBox?.x ?? 0) + (proteinMarkerBox?.width ?? 0) / 2 -
+      (proteinTrackBox?.x ?? 0)) /
+      (proteinTrackBox?.width ?? 1),
+  ).toBeCloseTo(1, 2);
+
+  const potassium = page.getByRole('article', { name: '칼륨 성분 합계' });
+  const potassiumTrackBox = await potassium.locator('[data-range-track]').boundingBox();
+  const potassiumMarkerBox = await potassium.locator('[data-range-marker]').boundingBox();
+  expect(potassiumTrackBox).not.toBeNull();
+  expect(potassiumMarkerBox).not.toBeNull();
+  expect(
+    ((potassiumMarkerBox?.x ?? 0) + (potassiumMarkerBox?.width ?? 0) / 2 -
+      (potassiumTrackBox?.x ?? 0)) /
+      (potassiumTrackBox?.width ?? 1),
+  ).toBeCloseTo((960 / 3500) * 0.7, 2);
+
+  const fat = page.getByRole('article', { name: '지방 성분 합계' });
+  await expect(fat.locator('[data-nutrient-range]')).toHaveCount(0);
+});
+
+test('상한 없는 바의 오른쪽 끝을 흐리고 기준 미만과 이상에 안전한 색을 사용한다', async ({ page }) => {
+  await openSupplementFixture(page, MIXED_STANDARD_PRODUCT, MALE_NUTRIENT_STANDARD);
+
+  const protein = page.getByRole('article', { name: '단백질 성분 합계' });
+  const proteinTrack = protein.locator('[data-range-track]');
+  const proteinFill = protein.locator('[data-range-fill]');
+  const proteinMarker = protein.locator('[data-range-marker]');
+  const proteinMask = await proteinTrack.evaluate((element) =>
+    getComputedStyle(element).maskImage,
+  );
+  expect(proteinMask).toContain('linear-gradient');
+  expect(proteinMask).toContain('80%');
+  await expect(proteinFill).toHaveClass(/bg-primary/);
+  await expect(proteinMarker).toHaveClass(/bg-primary-strong/);
+  await expect(proteinFill).not.toHaveClass(/bg-danger/);
+  await expect(proteinMarker).not.toHaveClass(/bg-danger/);
+
+  const potassium = page.getByRole('article', { name: '칼륨 성분 합계' });
+  await expect(potassium.locator('[data-range-fill]')).toHaveClass(/bg-warning/);
+  await expect(potassium.locator('[data-range-marker]')).toHaveClass(/bg-warning-strong/);
+
+  const calcium = page.getByRole('article', { name: '칼슘 성분 합계' });
+  const calciumMask = await calcium.locator('[data-range-track]').evaluate((element) =>
+    getComputedStyle(element).maskImage,
+  );
+  expect(calciumMask).toBe('none');
+});
+
+test('권장과 충분 기준에 맞춰 상태 문구의 기준량 이름을 구분한다', async ({ page }) => {
+  await openSupplementFixture(page, MIXED_STANDARD_PRODUCT, MALE_NUTRIENT_STANDARD);
+
+  const protein = page.getByRole('article', { name: '단백질 성분 합계' });
+  await expect(
+    protein.getByText('권장량의 231%예요 · 상한 기준이 없어요', { exact: true }),
+  ).toBeVisible();
+
+  const potassium = page.getByRole('article', { name: '칼륨 성분 합계' });
+  await expect(
+    potassium.getByText('충분섭취량의 27%예요 · 상한 기준이 없어요', { exact: true }),
+  ).toBeVisible();
 });
 
 test('기준 행이 없으면 프로필이 채워져 있어도 기준선을 숨기고 입력 안내를 표시한다', async ({ page }) => {

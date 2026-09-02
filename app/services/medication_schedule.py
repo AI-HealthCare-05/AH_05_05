@@ -5,7 +5,11 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
 from app.core import config
-from app.core.exceptions import InvalidMedicationScheduleError, MedicationScheduleNotFoundError
+from app.core.exceptions import (
+    InvalidMedicationScheduleError,
+    MedicationScheduleFinishedError,
+    MedicationScheduleNotFoundError,
+)
 from app.dtos.medication_schedule import (
     MedicationScheduleMealTimes,
     MedicationScheduleMedication,
@@ -18,6 +22,7 @@ from app.models.care import CareEpisode
 from app.models.enums import AlarmStatus, AlarmType, CareEpisodeStatus, MealSlot
 from app.models.medications import Medication, MedicationSlot
 from app.models.users import User, UserSettings
+from app.services.medication_period import medication_end_date
 
 SLOT_ORDER = (MealSlot.MORNING, MealSlot.LUNCH, MealSlot.EVENING, MealSlot.BEDTIME)
 SLOT_BY_NAME = {
@@ -66,6 +71,9 @@ class MedicationScheduleService:
                 raise MedicationScheduleNotFoundError()
 
             medications = await Medication.filter(care_episode_id=episode.id).using_db(connection).order_by("id")
+            if medication_end_date(episode, medications) < datetime.now(config.TIMEZONE).date():
+                raise MedicationScheduleFinishedError()
+
             medication_ids = {medication.id for medication in medications}
             scheduled_ids = {medication.id for medication in medications if medication.times_per_day is not None}
             assignment_ids = [assignment[0] for assignment in assignments]
@@ -252,7 +260,7 @@ class MedicationScheduleService:
         return MedicationScheduleMedication(
             medication_id=medication.id,
             name=medication.name,
-            dose=medication.dose or "",
+            dose=medication.strength or "",
             times_per_day=medication.times_per_day,
             timing=medication.administration or "",
             slots=slots,

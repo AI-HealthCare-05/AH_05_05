@@ -4,6 +4,10 @@ let settings: NotifySettings = {
   notifyMedication: false,
   notifySupplement: false,
   notifyConsentedAt: null,
+  morningMedicationTime: '08:00',
+  lunchMedicationTime: '13:00',
+  eveningMedicationTime: '19:00',
+  bedtimeMedicationTime: '22:00',
 };
 
 export function mockGetNotifySettings(): NotifySettings {

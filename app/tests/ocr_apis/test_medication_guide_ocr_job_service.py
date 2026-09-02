@@ -1,10 +1,10 @@
-import copy
-import json
 import os
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -31,19 +31,16 @@ from app.dtos.medication_guide_ocr import (
     MedicationGuideOcrJobStatus,
     MedicationGuideResult,
 )
-from app.models.care import CareEpisode, FollowUpVisit
+from app.models.care import CareEpisode
 from app.models.enums import AccountStatus, OcrJobStatus
 from app.models.medications import Medication
 from app.models.ocr import OcrJob
 from app.models.users import User
-from app.services.medication_guide_normalizer import normalize_clova_response
 from app.services.medication_guide_ocr_jobs import (
     MedicationGuideOcrJobService,
     TemporaryOcrStorage,
     build_review_result,
 )
-
-FIXTURE_PATH = Path(__file__).parents[3] / "tests" / "ocr" / "fixtures" / "template_ocr_exact_02_response.json"
 
 
 def png_bytes(color: str = "white") -> bytes:
@@ -73,20 +70,17 @@ def confirm_request(*, name: str = "수정한 약품 10mg") -> MedicationGuideCo
     return MedicationGuideConfirmRequest.model_validate(
         {
             "dispensingDate": "2026-08-25",
-            "nextVisitDate": "2026-09-01",
             "medications": [
                 {
                     "tempId": "med-1",
                     "name": name,
-                    "dose": "1회 1정",
-                    "efficacy": "효능",
-                    "note": "식후 복용",
-                    "precautions": "졸림 주의",
+                    "strength": "10mg",
+                    "doseQuantity": "1.5정",
                     "timesPerDay": 3,
                     "days": 5,
                 },
                 {"tempId": "user-2", "name": "추가한 약품", "timesPerDay": 1, "days": 3},
-                {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None, "days": None},
+                {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None},
             ],
         }
     )
@@ -108,14 +102,12 @@ def test_review_projection_marks_values_outside_public_ranges_for_review() -> No
     )
 
     review = build_review_result(extracted)
+    payload = review.model_dump(mode="json", by_alias=True)
 
-    assert review.medications[0].times_per_day is None
-    assert review.medications[0].days is None
-    assert review.medications[0].needs_review is True
-    assert {(issue.code, issue.path) for issue in review.review_issues} == {
-        ("VALUE_OUT_OF_RANGE", "medications.med-1.timesPerDay"),
-        ("VALUE_OUT_OF_RANGE", "medications.med-1.days"),
-    }
+    assert "timesPerDay" not in payload["medications"][0]
+    assert "days" not in payload["medications"][0]
+    assert payload["medications"][0]["confidence"] == "low"
+    assert payload["lowConfidenceCount"] == 2
 
 
 class FakeRedis:
@@ -132,42 +124,216 @@ class FailingRedis(FakeRedis):
         raise ConnectionError("redis unavailable")
 
 
-class FixtureExtractor:
-    async def extract_validated(self, _image: object) -> object:
-        payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-        return normalize_clova_response(copy.deepcopy(payload), expected_template_id=43199)
+def successful_stages() -> list[dict[str, object]]:
+    return [
+        {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
+        {"name": "ocr", "status": "succeeded", "elapsedMs": 20, "callCount": 1},
+        {"name": "candidate", "status": "succeeded", "elapsedMs": 2, "callCount": 0},
+        {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "validate", "status": "succeeded", "elapsedMs": 1, "callCount": 0},
+    ]
 
 
-class TimeoutThenSuccessExtractor(FixtureExtractor):
+def provider_failure_stages(*, code: str = "OCR_TIMEOUT") -> list[dict[str, object]]:
+    return [
+        {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
+        {"name": "ocr", "status": "failed", "elapsedMs": 20, "callCount": 1, "code": code},
+        {"name": "candidate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "validate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+    ]
+
+
+def fallback_failure_stages(*, code: str) -> list[dict[str, object]]:
+    return [
+        {"name": "preprocess", "status": "failed", "elapsedMs": 0, "callCount": 0, "code": code},
+        {"name": "ocr", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "candidate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "validate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+    ]
+
+
+class FixtureAnalyzer:
+    async def analyze(self, _image: object) -> object:
+        return SimpleNamespace(
+            project_review={
+                "fields": {"dispensedDate": {"value": "2025-04-02", "confidence": "high"}},
+                "medications": [
+                    {
+                        "tempId": "med-1",
+                        "name": "에스오메프라졸캡슐",
+                        "strength": "20mg",
+                        "doseQuantity": "1캡슐",
+                        "timesPerDay": 1,
+                        "days": 14,
+                        "confidence": "high",
+                        "efficacy": "must not cross the public boundary",
+                    },
+                    {
+                        "tempId": "med-2",
+                        "name": "단위 미추출 약",
+                        "doseQuantity": "2",
+                        "confidence": "medium",
+                    },
+                ],
+                "lowConfidenceCount": 0,
+            },
+            stages=successful_stages(),
+            confidence_values=[0.95, 0.91, 0.69],
+            ocr_model="clova-general-v2",
+            structuring_model="deterministic-v3",
+            prompt_version="medication_grounding_v3",
+            schema_version="medication-guide-review/v3",
+            requires_recapture=False,
+            processed_image_bytes=b"processed-review-jpeg",
+        )
+
+
+class RecaptureAnalyzer(FixtureAnalyzer):
+    async def analyze(self, image: object) -> object:
+        analysis = await super().analyze(image)
+        analysis.project_review = {"fields": {}, "medications": [], "lowConfidenceCount": 0}
+        analysis.stages = [
+            {
+                "name": "preprocess",
+                "status": "succeeded",
+                "elapsedMs": 4,
+                "callCount": 0,
+                "code": "RECAPTURE_REQUIRED",
+            },
+            *(
+                {"name": name, "status": "skipped", "elapsedMs": 0, "callCount": 0}
+                for name in ("ocr", "candidate", "llm", "validate")
+            ),
+        ]
+        analysis.confidence_values = []
+        analysis.requires_recapture = True
+        return analysis
+
+
+class TimeoutThenSuccessAnalyzer(FixtureAnalyzer):
     def __init__(self) -> None:
         self.calls = 0
 
-    async def extract_validated(self, image: object) -> object:
+    async def analyze(self, image: object) -> object:
         from app.core.exceptions import OcrProviderTimeoutError
 
         self.calls += 1
         if self.calls == 1:
             raise OcrProviderTimeoutError()
-        return await super().extract_validated(image)
+        return await super().analyze(image)
 
 
-class AlwaysTimeoutExtractor:
-    async def extract_validated(self, _image: object) -> object:
+class AlwaysTimeoutAnalyzer:
+    async def analyze(self, _image: object) -> object:
         from app.core.exceptions import OcrProviderTimeoutError
 
-        raise OcrProviderTimeoutError()
+        error = OcrProviderTimeoutError()
+        error.stages = provider_failure_stages()  # type: ignore[attr-defined]
+        raise error
 
 
-class PermanentFailureExtractor:
-    async def extract_validated(self, _image: object) -> object:
+class PermanentFailureAnalyzer:
+    async def analyze(self, _image: object) -> object:
         from app.core.exceptions import OcrProviderError
 
-        raise OcrProviderError()
+        error = OcrProviderError()
+        error.stages = provider_failure_stages(code="OCR_PROVIDER_ERROR")  # type: ignore[attr-defined]
+        raise error
 
 
-class UnexpectedFailureExtractor:
-    async def extract_validated(self, _image: object) -> object:
+class UnexpectedFailureAnalyzer:
+    async def analyze(self, _image: object) -> object:
         raise RuntimeError("unexpected extraction failure")
+
+
+class InvalidProjectionAnalyzer(FixtureAnalyzer):
+    async def analyze(self, image: object) -> object:
+        analysis = await super().analyze(image)
+        del analysis.project_review["medications"][0]["confidence"]
+        return analysis
+
+
+class InvalidStageAnalyzer(FixtureAnalyzer):
+    async def analyze(self, image: object) -> object:
+        analysis = await super().analyze(image)
+        analysis.stages[0]["elapsedMs"] = True
+        return analysis
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("elapsedMs", True),
+        ("elapsedMs", 1.5),
+        ("callCount", False),
+        ("callCount", "1"),
+        ("code", None),
+        ("code", "   "),
+        ("code", 123),
+    ],
+)
+def test_stage_validation_rejects_non_exact_scalar_types(field: str, value: object) -> None:
+    stages = successful_stages()
+    stages[0][field] = value
+
+    with pytest.raises(ValueError):
+        MedicationGuideOcrJobService._validated_stage_results(stages)
+
+
+@pytest.mark.parametrize(
+    "dose_quantity",
+    [
+        {"value": 1, "unit": "정"},
+        None,
+        "",
+        "   ",
+        "1" * 51,
+        1,
+        [],
+    ],
+)
+def test_ready_projection_omits_the_entire_invalid_dose_quantity(dose_quantity: object) -> None:
+    payload = MedicationGuideOcrJobService._project_review_payload(
+        {
+            "fields": {},
+            "medications": [
+                {
+                    "tempId": "med-1",
+                    "name": "테스트 약",
+                    "doseQuantity": dose_quantity,
+                    "confidence": "high",
+                }
+            ],
+            "lowConfidenceCount": 0,
+        }
+    )
+
+    assert payload["medications"][0] == {
+        "tempId": "med-1",
+        "name": "테스트 약",
+        "confidence": "high",
+    }
+
+
+def test_ready_projection_omits_explicit_null_times_per_day() -> None:
+    payload = MedicationGuideOcrJobService._project_review_payload(
+        {
+            "fields": {},
+            "medications": [
+                {
+                    "tempId": "med-prn",
+                    "name": "필요 시 약",
+                    "timesPerDay": None,
+                    "confidence": "high",
+                }
+            ],
+            "lowConfidenceCount": 0,
+        }
+    )
+
+    assert "timesPerDay" not in payload["medications"][0]
 
 
 class TestMedicationGuideOcrJobService(TestCase):
@@ -187,6 +353,8 @@ class TestMedicationGuideOcrJobService(TestCase):
             job = await OcrJob.get(id=int(first.ocr_job_id))
             assert job.user_id == user.id
             assert job.care_episode_id is None
+            assert job.structuring_model is None
+            assert job.prompt_version is None
             assert job.input_manifest["contentSha256"]
             assert Path(directory, str(job.input_manifest["storageKey"])).is_file()
             assert len(redis.enqueued) == 1
@@ -236,7 +404,7 @@ class TestMedicationGuideOcrJobService(TestCase):
     async def test_process_retries_once_then_publishes_review_result_and_preserves_image(self) -> None:
         user = await create_user("ocr-process@example.com")
         redis = FakeRedis()
-        extractor = TimeoutThenSuccessExtractor()
+        analyzer = TimeoutThenSuccessAnalyzer()
         with TemporaryDirectory() as directory:
             storage = TemporaryOcrStorage(Path(directory))
             service = MedicationGuideOcrJobService(storage=storage, redis_pool=redis)
@@ -245,31 +413,79 @@ class TestMedicationGuideOcrJobService(TestCase):
             stored_path = Path(directory, str(job.input_manifest["storageKey"]))
 
             with pytest.raises(Retry):
-                await service.process(job.id, extractor, job_try=1)
+                await service.process(job.id, analyzer, job_try=1)
 
             retrying = await OcrJob.get(id=job.id)
             assert retrying.status is OcrJobStatus.PROCESSING
             assert stored_path.is_file()
 
-            await service.process(job.id, extractor, job_try=2)
+            await service.process(job.id, analyzer, job_try=2)
 
             ready = await OcrJob.get(id=job.id)
             assert ready.status is OcrJobStatus.READY_FOR_REVIEW
             assert ready.ready_at is not None
             assert ready.expires_at == ready.ready_at + timedelta(minutes=60)
             assert ready.structured_result["medications"][0]["name"] == "에스오메프라졸캡슐"
-            assert ready.structured_result["medications"][0]["dose"] == "20mg"
-            assert ready.structured_result["dispensingDateConfidence"] == 1.0
-            date_fields = {
-                field["name"]: field
-                for field in ready.structured_result["ocrFields"]
-                if field["name"] in {"next_visit_date", "dispensing_date"}
+            assert ready.structured_result["medications"][0]["strength"] == "20mg"
+            assert ready.structured_result["medications"][0]["doseQuantity"] == "1캡슐"
+            assert set(ready.structured_result["medications"][0]) == {
+                "tempId",
+                "name",
+                "strength",
+                "doseQuantity",
+                "timesPerDay",
+                "days",
+                "confidence",
             }
-            assert date_fields == {
-                "next_visit_date": {"name": "next_visit_date", "text": "2025-04-16(수))", "confidence": 0.9999},
-                "dispensing_date": {"name": "dispensing_date", "text": "2025-04-02", "confidence": 1.0},
+            assert ready.structured_result["medications"][1] == {
+                "tempId": "med-2",
+                "name": "단위 미추출 약",
+                "doseQuantity": "2",
+                "confidence": "medium",
             }
+            assert ready.stage_results == [
+                {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
+                {"name": "ocr", "status": "succeeded", "elapsedMs": 20, "callCount": 1},
+                {"name": "candidate", "status": "succeeded", "elapsedMs": 2, "callCount": 0},
+                {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+                {"name": "validate", "status": "succeeded", "elapsedMs": 1, "callCount": 0},
+            ]
+            assert ready.avg_field_confidence == Decimal("0.8500")
+            assert ready.confidence_field_count == 3
+            assert ready.ocr_model == "clova-general-v2"
+            assert ready.structuring_model == "deterministic-v3"
+            assert ready.prompt_version == "medication_grounding_v3"
+            assert ready.schema_version == "medication-guide-review/v3"
+            assert "targetFieldCount" not in ready.structured_result
             assert stored_path.is_file()
+
+    async def test_process_marks_recapture_as_failed_with_exact_stages_and_no_review(self) -> None:
+        user = await create_user("ocr-recapture@example.com")
+        with TemporaryDirectory() as directory:
+            storage = TemporaryOcrStorage(Path(directory))
+            service = MedicationGuideOcrJobService(storage=storage, redis_pool=FakeRedis())
+            accepted = await service.submit(user, "recapture-key", upload())
+            job = await OcrJob.get(id=int(accepted.ocr_job_id))
+
+            await service.process(job.id, RecaptureAnalyzer(), job_try=1)
+
+            failed = await OcrJob.get(id=job.id)
+            assert failed.status is OcrJobStatus.FAILED
+            assert failed.error_code == "RECAPTURE_REQUIRED"
+            assert failed.structured_result is None
+            assert failed.stage_results == [
+                {
+                    "name": "preprocess",
+                    "status": "succeeded",
+                    "elapsedMs": 4,
+                    "callCount": 0,
+                    "code": "RECAPTURE_REQUIRED",
+                },
+                {"name": "ocr", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+                {"name": "candidate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+                {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+                {"name": "validate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+            ]
 
     async def test_read_input_bytes_is_owner_scoped_and_preserves_uploaded_content(self) -> None:
         owner = await create_user("ocr-input-owner@example.com")
@@ -289,6 +505,28 @@ class TestMedicationGuideOcrJobService(TestCase):
             with pytest.raises(OcrJobNotFoundError):
                 await service.read_input_bytes(other, int(accepted.ocr_job_id))
 
+    async def test_process_persists_an_owner_scoped_processed_image(self) -> None:
+        owner = await create_user("ocr-processed-owner@example.com")
+        other = await create_user("ocr-processed-other@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(
+                storage=TemporaryOcrStorage(Path(directory)),
+                redis_pool=FakeRedis(),
+            )
+            accepted = await service.submit(owner, "processed-image-key", upload())
+            job_id = int(accepted.ocr_job_id)
+
+            await service.process(job_id, FixtureAnalyzer(), job_try=1)
+
+            content, media_type = await service.read_processed_bytes(owner, job_id)
+            ready = await OcrJob.get(id=job_id)
+            assert content == b"processed-review-jpeg"
+            assert media_type == "image/jpeg"
+            assert ready.input_manifest["processedContentSha256"]
+            assert Path(directory, str(ready.input_manifest["processedStorageKey"])).is_file()
+            with pytest.raises(OcrJobNotFoundError):
+                await service.read_processed_bytes(other, job_id)
+
     async def test_process_marks_the_second_transient_failure_as_failed(self) -> None:
         user = await create_user("ocr-final-failure@example.com")
         with TemporaryDirectory() as directory:
@@ -299,12 +537,15 @@ class TestMedicationGuideOcrJobService(TestCase):
             stored_path = Path(directory, str(job.input_manifest["storageKey"]))
 
             with pytest.raises(Retry):
-                await service.process(job.id, AlwaysTimeoutExtractor(), job_try=1)
-            await service.process(job.id, AlwaysTimeoutExtractor(), job_try=2)
+                await service.process(job.id, AlwaysTimeoutAnalyzer(), job_try=1)
+            retrying = await OcrJob.get(id=job.id)
+            assert retrying.stage_results is None
+            await service.process(job.id, AlwaysTimeoutAnalyzer(), job_try=2)
 
             failed = await OcrJob.get(id=job.id)
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "OCR_PROVIDER_TIMEOUT"
+            assert failed.stage_results == provider_failure_stages()
             assert failed.completed_at is not None
             assert not stored_path.exists()
 
@@ -316,11 +557,12 @@ class TestMedicationGuideOcrJobService(TestCase):
             accepted = await service.submit(user, "permanent-failure-key", upload())
             job = await OcrJob.get(id=int(accepted.ocr_job_id))
 
-            await service.process(job.id, PermanentFailureExtractor(), job_try=1)
+            await service.process(job.id, PermanentFailureAnalyzer(), job_try=1)
 
             failed = await OcrJob.get(id=job.id)
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "OCR_PROVIDER_ERROR"
+            assert failed.stage_results == provider_failure_stages(code="OCR_PROVIDER_ERROR")
 
     async def test_process_logs_an_unexpected_extraction_failure_before_marking_the_job_failed(self) -> None:
         user = await create_user("ocr-unexpected-failure@example.com")
@@ -331,13 +573,50 @@ class TestMedicationGuideOcrJobService(TestCase):
             job = await OcrJob.get(id=int(accepted.ocr_job_id))
 
             with self.assertLogs("app.services.medication_guide_ocr_jobs", level="ERROR") as captured:
-                await service.process(job.id, UnexpectedFailureExtractor(), job_try=1)
+                await service.process(job.id, UnexpectedFailureAnalyzer(), job_try=1)
 
             assert "Unexpected OCR extraction failure for job" in "\n".join(captured.output)
             assert "RuntimeError: unexpected extraction failure" in "\n".join(captured.output)
             failed = await OcrJob.get(id=job.id)
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "EXTRACTION_FAILED"
+            assert failed.stage_results == fallback_failure_stages(code="EXTRACTION_FAILED")
+
+    async def test_process_preserves_analyzers_stages_when_ready_projection_is_invalid(self) -> None:
+        user = await create_user("ocr-invalid-projection@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(
+                storage=TemporaryOcrStorage(Path(directory)),
+                redis_pool=FakeRedis(),
+            )
+            accepted = await service.submit(user, "invalid-projection-key", upload())
+            job = await OcrJob.get(id=int(accepted.ocr_job_id))
+
+            await service.process(job.id, InvalidProjectionAnalyzer(), job_try=1)
+
+            failed = await OcrJob.get(id=job.id)
+            assert failed.status is OcrJobStatus.FAILED
+            assert failed.error_code == "VALIDATION_FAILED"
+            assert failed.structured_result is None
+            assert failed.stage_results == successful_stages()
+
+    async def test_process_uses_exact_fallback_stages_when_analyzer_stages_are_invalid(self) -> None:
+        user = await create_user("ocr-invalid-stages@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(
+                storage=TemporaryOcrStorage(Path(directory)),
+                redis_pool=FakeRedis(),
+            )
+            accepted = await service.submit(user, "invalid-stages-key", upload())
+            job = await OcrJob.get(id=int(accepted.ocr_job_id))
+
+            await service.process(job.id, InvalidStageAnalyzer(), job_try=1)
+
+            failed = await OcrJob.get(id=job.id)
+            assert failed.status is OcrJobStatus.FAILED
+            assert failed.error_code == "VALIDATION_FAILED"
+            assert failed.structured_result is None
+            assert failed.stage_results == fallback_failure_stages(code="VALIDATION_FAILED")
 
     async def test_status_is_owner_scoped_and_hides_result_before_review(self) -> None:
         owner = await create_user("ocr-owner@example.com")
@@ -363,7 +642,13 @@ class TestMedicationGuideOcrJobService(TestCase):
             user=user,
             status=OcrJobStatus.READY_FOR_REVIEW,
             idempotency_key="expired-status-key",
-            input_manifest={"contentSha256": "abc", "storageKey": "expired.png"},
+            input_manifest={
+                "contentSha256": "abc",
+                "storageKey": "expired.png",
+                "processedStorageKey": "expired.processed.jpg",
+                "processedContentSha256": "def",
+                "processedMediaType": "image/jpeg",
+            },
             structured_result={"medications": []},
             ocr_model="clova-template",
             structuring_model="application",
@@ -376,6 +661,8 @@ class TestMedicationGuideOcrJobService(TestCase):
         with TemporaryDirectory() as directory:
             original_path = Path(directory, "expired.png")
             original_path.write_bytes(b"temporary OCR image")
+            processed_path = Path(directory, "expired.processed.jpg")
+            processed_path.write_bytes(b"temporary processed image")
             service = MedicationGuideOcrJobService(
                 storage=TemporaryOcrStorage(Path(directory)),
                 redis_pool=FakeRedis(),
@@ -385,6 +672,7 @@ class TestMedicationGuideOcrJobService(TestCase):
                 await service.get(user, job.id)
 
             assert not original_path.exists()
+            assert not processed_path.exists()
         assert not await OcrJob.filter(id=job.id).exists()
 
     async def test_status_preserves_a_cancelled_document_job(self) -> None:
@@ -417,19 +705,27 @@ class TestMedicationGuideOcrJobService(TestCase):
             idempotency_key="confirm-key-123",
             input_manifest={"contentSha256": "abc", "storageKey": "gone.png"},
             structured_result={
-                "dispensingDate": "2026-08-25",
-                "dispensingDateConfidence": 0.99,
+                "fields": {"dispensedDate": {"value": "2026-08-25", "confidence": "high"}},
                 "medications": [
                     {
-                        "rowId": "med-1",
+                        "tempId": "med-1",
                         "name": "OCR 약품명",
+                        "strength": "5mg",
+                        "doseQuantity": "1.5정",
                         "timesPerDay": 3,
                         "days": 5,
-                        "confidence": 0.88,
-                        "needsReview": True,
+                        "confidence": "low",
                     }
                 ],
+                "lowConfidenceCount": 1,
             },
+            stage_results=[
+                {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
+                {"name": "ocr", "status": "succeeded", "elapsedMs": 20, "callCount": 1},
+                {"name": "candidate", "status": "succeeded", "elapsedMs": 2, "callCount": 0},
+                {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+                {"name": "validate", "status": "succeeded", "elapsedMs": 1, "callCount": 0},
+            ],
             ocr_model="clova-template",
             structuring_model="application",
             prompt_version="none",
@@ -461,24 +757,39 @@ class TestMedicationGuideOcrJobService(TestCase):
             medications = await Medication.filter(care_episode=episode).order_by("id")
             assert [item.name for item in medications] == ["수정한 약품 10mg", "추가한 약품", "필요 시 약품"]
             assert medications[0].prescribed_at == date(2026, 8, 25)
-            assert medications[0].note == "식후 복용"
-            assert medications[2].note == "필요 시 복용"
+            assert medications[0].strength == "10mg"
+            assert medications[0].dose_quantity == "1.5정"
+            assert all(item.efficacy is None for item in medications)
+            assert all(item.administration is None for item in medications)
+            assert all(item.precautions is None for item in medications)
+            assert all(item.note is None for item in medications)
             assert all(item.source_ocr_job_id == job.id for item in medications)
-            visit = await FollowUpVisit.get(user=user)
-            assert visit.visit_date == date(2026, 9, 1)
-            assert visit.user_id == user.id
             stored_job = await OcrJob.get(id=job.id)
             assert stored_job.status is OcrJobStatus.COMPLETE
             assert stored_job.care_episode_id == episode.id
-            assert stored_job.structured_result["dispensingDate"] == "2026-08-25"
+            assert stored_job.structured_result["fields"]["dispensedDate"] == {
+                "value": "2026-08-25",
+                "confidence": "high",
+            }
             assert [item["name"] for item in stored_job.structured_result["medications"]] == [
                 "수정한 약품 10mg",
                 "추가한 약품",
                 "필요 시 약품",
             ]
-            assert stored_job.structured_result["medications"][0]["confidence"] == 0.88
+            assert stored_job.structured_result["medications"][0]["confidence"] == "low"
+            assert stored_job.structured_result["medications"][0]["strength"] == "10mg"
+            assert stored_job.structured_result["medications"][0]["doseQuantity"] == "1.5정"
             assert "confidence" not in stored_job.structured_result["medications"][1]
             assert "confidence" not in stored_job.structured_result["medications"][2]
+            assert "timesPerDay" not in stored_job.structured_result["medications"][2]
+            assert stored_job.user_review_match_rate == Decimal("0.6667")
+            assert stored_job.stage_results == [
+                {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
+                {"name": "ocr", "status": "succeeded", "elapsedMs": 20, "callCount": 1},
+                {"name": "candidate", "status": "succeeded", "elapsedMs": 2, "callCount": 0},
+                {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+                {"name": "validate", "status": "succeeded", "elapsedMs": 1, "callCount": 0},
+            ]
             assert stored_job.ready_at is None
             assert stored_job.expires_at is None
             assert stored_path.is_file()
@@ -489,14 +800,47 @@ class TestMedicationGuideOcrJobService(TestCase):
             with pytest.raises(OcrJobStateConflictError):
                 await service.confirm(user, job.id, confirm_request(name="다르게 수정한 약품"))
 
-    async def test_confirmation_preserves_an_explicit_blank_note(self) -> None:
-        user = await create_user("ocr-confirm-blank-note@example.com")
+    def test_user_review_match_rate_counts_user_filled_missing_strength_as_mismatch(self) -> None:
+        job = OcrJob(
+            structured_result={
+                "fields": {"dispensedDate": {"value": "2026-08-25", "confidence": "high"}},
+                "medications": [
+                    {
+                        "tempId": "med-1",
+                        "name": "테스트약",
+                        "doseQuantity": "1정",
+                        "timesPerDay": 3,
+                        "days": 5,
+                    }
+                ],
+            }
+        )
+        request = MedicationGuideConfirmRequest.model_validate(
+            {
+                "dispensingDate": "2026-08-25",
+                "medications": [
+                    {
+                        "tempId": "med-1",
+                        "name": "테스트약",
+                        "strength": "500mg",
+                        "doseQuantity": "1정",
+                        "timesPerDay": 3,
+                        "days": 5,
+                    }
+                ],
+            }
+        )
+
+        assert MedicationGuideOcrJobService._user_review_match_rate(job, request) == Decimal("0.8333")
+
+    async def test_confirmation_keeps_match_rate_null_without_comparable_baseline_fields(self) -> None:
+        user = await create_user("ocr-confirm-no-baseline@example.com")
         now = datetime.now(config.TIMEZONE)
         job = await OcrJob.create(
             user=user,
             status=OcrJobStatus.READY_FOR_REVIEW,
-            idempotency_key="confirm-blank-note-key",
-            input_manifest={"contentSha256": "abc", "storageKey": "blank-note.png"},
+            idempotency_key="confirm-no-baseline-key",
+            input_manifest={"contentSha256": "abc", "storageKey": "no-baseline.png"},
             structured_result={"medications": []},
             ocr_model="clova-template",
             structuring_model="application",
@@ -515,8 +859,6 @@ class TestMedicationGuideOcrJobService(TestCase):
                         "tempId": "user-1",
                         "name": "사용자 추가 필요 시 약",
                         "timesPerDay": None,
-                        "days": None,
-                        "note": "",
                     }
                 ],
             }
@@ -525,9 +867,11 @@ class TestMedicationGuideOcrJobService(TestCase):
         confirmation = await service.confirm(user, job.id, request)
 
         medication = await Medication.get(care_episode_id=int(confirmation.care_episode_id))
-        assert medication.note == ""
+        assert medication.times_per_day is None
+        assert medication.note is None
         stored_job = await OcrJob.get(id=job.id)
-        assert stored_job.structured_result["medications"][0]["administration"] == ""
+        assert "timesPerDay" not in stored_job.structured_result["medications"][0]
+        assert stored_job.user_review_match_rate is None
 
     async def test_confirmation_is_owner_scoped(self) -> None:
         owner = await create_user("ocr-confirm-owner@example.com")
@@ -580,7 +924,7 @@ class TestMedicationGuideOcrJobService(TestCase):
                 storage=TemporaryOcrStorage(Path(directory)),
                 redis_pool=FakeRedis(),
             )
-            with patch.object(FollowUpVisit, "create", AsyncMock(side_effect=RuntimeError("write failed"))):
+            with patch.object(Medication, "create", AsyncMock(side_effect=RuntimeError("write failed"))):
                 with pytest.raises(RuntimeError, match="write failed"):
                     await service.confirm(user, job.id, confirm_request())
 
@@ -589,7 +933,6 @@ class TestMedicationGuideOcrJobService(TestCase):
         assert rolled_back.care_episode_id is None
         assert not await CareEpisode.filter(user=user).exists()
         assert not await Medication.all().exists()
-        assert not await FollowUpVisit.all().exists()
 
     async def test_cleanup_deletes_only_expired_unconfirmed_jobs(self) -> None:
         user = await create_user("ocr-cleanup@example.com")

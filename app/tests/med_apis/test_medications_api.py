@@ -1,5 +1,6 @@
 from datetime import date, datetime, time, timedelta
 
+from dateutil.relativedelta import relativedelta
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
@@ -36,6 +37,30 @@ async def create_episode(
     )
 
 
+async def create_overview_episode(
+    user: User,
+    *,
+    start_date: date,
+    days: int = 1,
+    source_ocr_job_id: int,
+    episode_status: CareEpisodeStatus = CareEpisodeStatus.ACTIVE,
+) -> CareEpisode:
+    episode = await create_episode(
+        user,
+        start_date=start_date,
+        medication_days=days,
+        source_ocr_job_id=source_ocr_job_id,
+        episode_status=episode_status,
+    )
+    await Medication.create(
+        care_episode=episode,
+        name=f"{start_date.isoformat()} 처방약",
+        times_per_day=1,
+        days=days,
+    )
+    return episode
+
+
 class TestMedicationOverviewAPI(TestCase):
     async def test_routes_require_authentication(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -62,6 +87,208 @@ class TestMedicationOverviewAPI(TestCase):
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+    async def test_overview_orders_by_start_date_then_id_descending(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-registration-order@example.com"
+            headers = await authentication_headers(client, email, "01023000014")
+            user = await User.get(email=email)
+            newest_start = await create_overview_episode(
+                user,
+                start_date=today,
+                source_ocr_job_id=201,
+            )
+            older_start_first = await create_overview_episode(
+                user,
+                start_date=today - timedelta(days=10),
+                source_ocr_job_id=202,
+            )
+            older_start_second = await create_overview_episode(
+                user,
+                start_date=today - timedelta(days=10),
+                source_ocr_job_id=203,
+            )
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [overview["recordId"] for overview in response.json()] == [
+            newest_start.id,
+            older_start_second.id,
+            older_start_first.id,
+        ]
+
+    async def test_overview_defaults_to_recent_three_calendar_months(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        boundary = today - relativedelta(months=3)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-default-range@example.com"
+            headers = await authentication_headers(client, email, "01023000015")
+            user = await User.get(email=email)
+            included_boundary = await create_overview_episode(
+                user,
+                start_date=boundary,
+                source_ocr_job_id=204,
+            )
+            included_today = await create_overview_episode(
+                user,
+                start_date=today,
+                source_ocr_job_id=205,
+            )
+            await create_overview_episode(
+                user,
+                start_date=boundary - timedelta(days=1),
+                source_ocr_job_id=206,
+            )
+            await create_overview_episode(
+                user,
+                start_date=today + timedelta(days=1),
+                source_ocr_job_id=207,
+            )
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["recordId"] for item in response.json()] == [included_today.id, included_boundary.id]
+
+    async def test_overview_uses_explicit_range_and_excludes_cancelled_episode(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        from_date = today - timedelta(days=20)
+        to_date = today - timedelta(days=10)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-explicit-range@example.com"
+            headers = await authentication_headers(client, email, "01023000016")
+            user = await User.get(email=email)
+            included_from = await create_overview_episode(
+                user,
+                start_date=from_date,
+                source_ocr_job_id=208,
+            )
+            included_to = await create_overview_episode(
+                user,
+                start_date=to_date,
+                source_ocr_job_id=209,
+            )
+            await create_overview_episode(
+                user,
+                start_date=from_date - timedelta(days=1),
+                source_ocr_job_id=210,
+            )
+            await create_overview_episode(
+                user,
+                start_date=to_date + timedelta(days=1),
+                source_ocr_job_id=211,
+            )
+            await create_overview_episode(
+                user,
+                start_date=to_date,
+                source_ocr_job_id=212,
+                episode_status=CareEpisodeStatus.CANCELLED,
+            )
+
+            response = await client.get(
+                OVERVIEW_URL,
+                params={"from": from_date.isoformat(), "to": to_date.isoformat()},
+                headers=headers,
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["recordId"] for item in response.json()] == [included_to.id, included_from.id]
+
+    async def test_overview_resolves_single_sided_ranges(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        from_date = today - relativedelta(months=6)
+        from_range_end = from_date + relativedelta(months=3)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-single-sided-range@example.com"
+            headers = await authentication_headers(client, email, "01023000017")
+            user = await User.get(email=email)
+            from_boundary = await create_overview_episode(
+                user,
+                start_date=from_date,
+                source_ocr_job_id=213,
+            )
+            from_end_boundary = await create_overview_episode(
+                user,
+                start_date=from_range_end,
+                source_ocr_job_id=214,
+            )
+            today_boundary = await create_overview_episode(
+                user,
+                start_date=today,
+                source_ocr_job_id=215,
+            )
+
+            from_only = await client.get(
+                OVERVIEW_URL,
+                params={"from": from_date.isoformat()},
+                headers=headers,
+            )
+            to_only = await client.get(
+                OVERVIEW_URL,
+                params={"to": today.isoformat()},
+                headers=headers,
+            )
+
+        assert from_only.status_code == status.HTTP_200_OK
+        assert [item["recordId"] for item in from_only.json()] == [from_end_boundary.id, from_boundary.id]
+        assert to_only.status_code == status.HTTP_200_OK
+        assert [item["recordId"] for item in to_only.json()] == [today_boundary.id]
+
+    async def test_overview_rejects_reversed_or_over_five_year_range(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "overview-invalid-range@example.com", "01023000018")
+            reversed_range = await client.get(
+                OVERVIEW_URL,
+                params={"from": today.isoformat(), "to": (today - timedelta(days=1)).isoformat()},
+                headers=headers,
+            )
+            over_five_years = await client.get(
+                OVERVIEW_URL,
+                params={
+                    "from": (today - relativedelta(years=5, days=1)).isoformat(),
+                    "to": today.isoformat(),
+                },
+                headers=headers,
+            )
+
+        assert reversed_range.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert over_five_years.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_overview_is_finished_only_after_end_date(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "overview-finished@example.com"
+            headers = await authentication_headers(client, email, "01023000019")
+            user = await User.get(email=email)
+            finished = await create_overview_episode(
+                user,
+                start_date=today - timedelta(days=1),
+                source_ocr_job_id=216,
+            )
+            ending_today = await create_overview_episode(
+                user,
+                start_date=today,
+                source_ocr_job_id=217,
+            )
+            ending_tomorrow = await create_overview_episode(
+                user,
+                start_date=today,
+                days=2,
+                source_ocr_job_id=218,
+            )
+
+            response = await client.get(OVERVIEW_URL, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        finished_by_id = {item["recordId"]: item["isFinished"] for item in response.json()}
+        assert finished_by_id == {
+            finished.id: True,
+            ending_today.id: False,
+            ending_tomorrow.id: False,
+        }
 
     async def test_overview_includes_episode_without_start_slot(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
@@ -208,7 +435,7 @@ class TestMedicationOverviewAPI(TestCase):
             scheduled = await Medication.create(
                 care_episode=first,
                 name="셀레콕시브",
-                dose="200mg",
+                strength="200mg",
                 times_per_day=2,
                 days=7,
             )
@@ -218,7 +445,7 @@ class TestMedicationOverviewAPI(TestCase):
             until_complete = await Medication.create(
                 care_episode=first,
                 name="리바록사반",
-                dose="10mg",
+                strength="10mg",
                 times_per_day=1,
                 days=None,
             )
@@ -227,7 +454,7 @@ class TestMedicationOverviewAPI(TestCase):
             as_needed = await Medication.create(
                 care_episode=first,
                 name="아세트아미노펜",
-                dose="650mg",
+                strength="650mg",
                 times_per_day=None,
                 days=7,
             )
@@ -245,7 +472,7 @@ class TestMedicationOverviewAPI(TestCase):
             second_medication = await Medication.create(
                 care_episode=second,
                 name="아목시실린",
-                dose="500mg",
+                strength="500mg",
                 times_per_day=3,
                 days=5,
             )
@@ -262,13 +489,14 @@ class TestMedicationOverviewAPI(TestCase):
             response = await client.get(OVERVIEW_URL, headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == [
+        assert sorted(response.json(), key=lambda overview: overview["recordId"]) == [
             {
                 "recordId": first.id,
                 "documentImageUrl": "/api/v1/ocr/jobs/12/image",
                 "start": {"date": first_start.isoformat(), "slot": "morning"},
                 "endDate": (first_start + timedelta(days=9)).isoformat(),
                 "daysRemaining": 8,
+                "isFinished": False,
                 "mealTimes": {
                     "morning": "07:30",
                     "lunch": "12:00",
@@ -312,6 +540,7 @@ class TestMedicationOverviewAPI(TestCase):
                 "start": {"date": second_start.isoformat(), "slot": "lunch"},
                 "endDate": (second_start + timedelta(days=4)).isoformat(),
                 "daysRemaining": 4,
+                "isFinished": False,
                 "mealTimes": {
                     "morning": "07:30",
                     "lunch": "12:00",

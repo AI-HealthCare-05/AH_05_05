@@ -343,6 +343,65 @@ class TestUserSupplementNutrientAPI(TestCase):
         assert reregistered.json()["status"] == "ACTIVE"
         assert reregistered.json()["score"] == 5
 
+    async def test_patch_review_body_normalizes_text_and_preserves_other_fields(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "suppl-review-patch@example.com", "01021000027")
+            product = await create_supplement("USER-REVIEW-001", "후기 수정 영양제")
+            payload = registration_payload()
+            payload["note"] = "개인 메모"
+            created = await client.put(
+                f"/api/v1/med/user-suppl-nutr/{product.id}",
+                json=payload,
+                headers=headers,
+            )
+            registration_id = created.json()["id"]
+
+            reviewed = await client.patch(
+                f"/api/v1/med/user-suppl-nutr/{registration_id}",
+                json={"review_body": "  공개 후기예요  "},
+                headers=headers,
+            )
+            cleared = await client.patch(
+                f"/api/v1/med/user-suppl-nutr/{registration_id}",
+                json={"review_body": "   "},
+                headers=headers,
+            )
+
+        assert reviewed.status_code == status.HTTP_200_OK
+        assert reviewed.json()["review_body"] == "공개 후기예요"
+        assert reviewed.json()["note"] == "개인 메모"
+        assert cleared.status_code == status.HTTP_200_OK
+        assert cleared.json()["review_body"] is None
+        assert cleared.json()["note"] == "개인 메모"
+
+    async def test_reregistering_completed_supplement_preserves_review_body(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "suppl-review-reregister@example.com", "01021000028")
+            product = await create_supplement("USER-REVIEW-002", "후기 재등록 영양제")
+            created = await client.put(
+                f"/api/v1/med/user-suppl-nutr/{product.id}",
+                json=registration_payload(),
+                headers=headers,
+            )
+            registration_id = created.json()["id"]
+            await client.patch(
+                f"/api/v1/med/user-suppl-nutr/{registration_id}",
+                json={"score": 4, "review_body": "다 먹고 남긴 후기"},
+                headers=headers,
+            )
+            await client.delete(f"/api/v1/med/user-suppl-nutr/{registration_id}", headers=headers)
+
+            reregistered = await client.put(
+                f"/api/v1/med/user-suppl-nutr/{product.id}",
+                json=registration_payload(slots=["LUNCH"]),
+                headers=headers,
+            )
+
+        assert reregistered.status_code == status.HTTP_200_OK
+        assert reregistered.json()["id"] == registration_id
+        assert reregistered.json()["score"] == 4
+        assert reregistered.json()["review_body"] == "다 먹고 남긴 후기"
+
     async def test_patch_can_set_and_clear_note(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await authentication_headers(client, "suppl-note-regression@example.com", "01021000025")

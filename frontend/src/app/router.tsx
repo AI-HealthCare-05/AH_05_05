@@ -3,12 +3,20 @@ import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
-import { MedicationEpisodePage, MedicationsPage } from '@/pages/medications';
-import { MyPage, MyProfilePage } from '@/pages/my';
+import { MedicationsPage } from '@/pages/medications';
+import {
+  FollowUpVisitsPage,
+  MyPage,
+  MyProfilePage,
+} from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
-import { SupplementsPage, type NutrientStandardProfile } from '@/pages/supplements';
+import {
+  SupplementProductPage,
+  SupplementsPage,
+  type NutrientStandardProfile,
+} from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import type { ChatMessage, ChatSessionSummary, SendChatResult } from '@/entities/chat';
@@ -37,10 +45,12 @@ const EXISTING_CHAT_HISTORY: ChatMessage[] = [
 const DEV_NUTRIENT_PROFILE: NutrientStandardProfile = {
   birthDate: '2000-08-25',
   gender: 'male',
+  maskedName: '김*훈',
 };
 const MISSING_NUTRIENT_PROFILE: NutrientStandardProfile = {
   birthDate: null,
   gender: null,
+  maskedName: '김*훈',
 };
 const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
 const ACTIVE_MEDICATION_OVERVIEW = mockMedicationOverview();
@@ -52,6 +62,7 @@ const EMPTY_MEDICATION_OVERVIEW: MedicationOverview = {
 const ENDED_MEDICATION_OVERVIEW: MedicationOverview = {
   ...ACTIVE_MEDICATION_OVERVIEW,
   daysRemaining: 0,
+  isFinished: true,
 };
 const ONE_MEDICATION_OVERVIEW: MedicationOverview = {
   ...ACTIVE_MEDICATION_OVERVIEW,
@@ -72,6 +83,14 @@ const FOURTEEN_DAY_MEDICATION_OVERVIEW: MedicationOverview = {
     days: 14,
   })),
 };
+const CROSS_YEAR_MEDICATION_OVERVIEW: MedicationOverview = {
+  ...ACTIVE_MEDICATION_OVERVIEW,
+  recordId: 36,
+  start: { date: '2026-12-28', slot: 'morning' },
+  endDate: '2027-01-03',
+  daysRemaining: 7,
+  isFinished: false,
+};
 
 const loadEmptyMedicationOverview = async () => EMPTY_MEDICATION_OVERVIEW;
 const loadEndedMedicationOverview = async () => ENDED_MEDICATION_OVERVIEW;
@@ -79,6 +98,7 @@ const loadActiveMedicationOverview = async () => ACTIVE_MEDICATION_OVERVIEW;
 const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
 const loadFourteenDayMedicationOverview = async () => FOURTEEN_DAY_MEDICATION_OVERVIEW;
 const loadMultipleMedicationOverviews = async () => MULTIPLE_MEDICATION_OVERVIEWS;
+const loadCrossYearMedicationOverviews = async () => [CROSS_YEAR_MEDICATION_OVERVIEW];
 const failMedicationOverview = async (): Promise<MedicationOverview> => {
   throw new Error('잠시 후 다시 시도해주세요.');
 };
@@ -133,15 +153,16 @@ export function AppRouter() {
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/supplements" element={<SupplementsPage />} />
+        <Route path="/supplements/product/:productId" element={<SupplementProductPage />} />
         <Route path="/document-upload" element={<DocumentUploadPage />} />
         <Route path="/ocr-review" element={<OcrReviewPage />} />
         <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
         <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route path="/medications" element={<MedicationsPage />} />
-        <Route path="/medications/:recordId" element={<MedicationEpisodePage />} />
         <Route path="/chat" element={<AuthenticatedChatPage />} />
         <Route path="/my" element={<MyPage />} />
         <Route path="/my/profile" element={<MyProfilePage />} />
+        <Route path="/my/visits" element={<FollowUpVisitsPage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
@@ -177,6 +198,10 @@ export function AppRouter() {
           }
         />
         <Route path="/dev/medications" element={<MedicationsPage />} />
+        <Route
+          path="/dev/medications-cross-year"
+          element={<MedicationsPage overviewsLoader={loadCrossYearMedicationOverviews} />}
+        />
         <Route path="/dev/chat" element={<ChatPage />} />
         <Route
           path="/dev/chat-history"
@@ -210,6 +235,7 @@ export function AppRouter() {
           element={<MyPage authenticatedOverride />}
         />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
+        <Route path="/dev/my-visits" element={<FollowUpVisitsPage />} />
         <Route
           path="/dev/my-profile-save-error"
           element={<MyProfilePage profileSaver={failProfileSave} />}
@@ -217,6 +243,10 @@ export function AppRouter() {
         <Route
           path="/dev/supplements"
           element={<SupplementsPage profileOverride={DEV_NUTRIENT_PROFILE} />}
+        />
+        <Route
+          path="/dev/supplements/product/:productId"
+          element={<SupplementProductPage />}
         />
         <Route
           path="/dev/supplements-profile-missing"

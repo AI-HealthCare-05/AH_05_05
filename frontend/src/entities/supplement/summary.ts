@@ -34,12 +34,23 @@ export function summarizeNutrients(
   }
 
   return [...totals.values()].sort((left, right) => {
-    if (left.exceeded !== right.exceeded) return left.exceeded ? -1 : 1;
-    return standardRatio(right) - standardRatio(left);
+    const leftTier = standardTier(left);
+    const rightTier = standardTier(right);
+    if (leftTier !== rightTier) return leftTier - rightTier;
+    if (leftTier === 4) return left.name.localeCompare(right.name, 'ko');
+    return tierRatio(right, rightTier) - tierRatio(left, leftTier);
   });
 }
 
-function standardRatio(total: NutrientTotal): number {
-  const reference = total.ul ?? total.rni ?? total.ai;
+function standardTier(total: NutrientTotal): number {
+  const base = total.rni ?? total.ai;
+  if (total.exceeded) return 1;
+  if (total.ul !== null) return 2;
+  if (base !== null) return 3;
+  return 4;
+}
+
+function tierRatio(total: NutrientTotal, tier: number): number {
+  const reference = tier <= 2 ? total.ul : (total.rni ?? total.ai);
   return reference === null || reference === 0 ? 0 : total.amount / reference;
 }

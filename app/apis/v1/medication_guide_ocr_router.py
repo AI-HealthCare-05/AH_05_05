@@ -1,9 +1,8 @@
-from datetime import datetime
 from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Body, Depends, File, Header, Path, Response, UploadFile, status
 
-from app.core import config
+from app.core.api_timeout import api_timeout
 from app.core.exceptions import OcrJobStateConflictError
 from app.dependencies.medication_guide_ocr import get_medication_guide_ocr_job_service
 from app.dependencies.security import get_request_user
@@ -11,8 +10,6 @@ from app.dtos.medication_guide_ocr import (
     DocumentOcrConfirmRequest,
     DocumentOcrConfirmResponse,
     DocumentOcrFailedResponse,
-    DocumentOcrField,
-    DocumentOcrFields,
     DocumentOcrMedication,
     DocumentOcrPendingResponse,
     DocumentOcrReadyResponse,
@@ -20,7 +17,6 @@ from app.dtos.medication_guide_ocr import (
     DocumentOcrUploadResponse,
     MedicationConfirmation,
     MedicationGuideConfirmRequest,
-    MedicationReview,
     OcrErrorResponse,
     OcrJobStatusResponse,
 )
@@ -28,6 +24,7 @@ from app.models.users import User
 from app.services.medication_guide_ocr_jobs import MedicationGuideOcrJobService
 
 medication_guide_ocr_router = APIRouter(tags=["medication-guide-ocr"])
+OCR_FILE_API_TIMEOUT_SECONDS = 10.0
 
 CONFIRMED_OCR_RESULT_EXAMPLE = {
     "dispensedDate": "2026-08-25",
@@ -35,40 +32,31 @@ CONFIRMED_OCR_RESULT_EXAMPLE = {
         {
             "tempId": "med-1",
             "name": "에스오메프라졸캡슐",
-            "dose": "20mg",
-            "efficacy": "위산 과다, 속쓰림, 역류 증상 완화",
-            "administration": "아침 식사 30분 전에 물과 함께 복용하세요.",
-            "precautions": "캡슐을 씹거나 열지 마세요. 복통이나 설사가 지속되면 상담하세요.",
+            "strength": "20mg",
+            "doseQuantity": "1캡슐",
             "timesPerDay": 1,
             "days": 14,
         },
         {
             "tempId": "med-2",
             "name": "레바미피드정",
-            "dose": "100mg",
-            "efficacy": "위점막 보호",
-            "administration": "아침, 점심, 저녁 식후에 복용하세요.",
-            "precautions": "발진이나 가려움이 나타나면 상담하세요.",
+            "strength": "100mg",
+            "doseQuantity": "1정",
             "timesPerDay": 3,
             "days": 14,
         },
         {
             "tempId": "med-3",
             "name": "모사프리드정",
-            "dose": "5mg",
-            "efficacy": "위장 운동 촉진",
-            "administration": "식사 30분 전에 물과 함께 복용하세요.",
-            "precautions": "복통이나 설사가 지속되면 상담하세요.",
+            "strength": "5mg",
+            "doseQuantity": "1정",
             "timesPerDay": 3,
             "days": 14,
         },
         {
             "tempId": "med-4",
             "name": "락토바실러스캡슐",
-            "dose": "1캡슐",
-            "efficacy": "장내 균총 개선",
-            "administration": "식후에 미지근한 물과 함께 복용하세요.",
-            "precautions": "뜨거운 음료와 함께 복용하지 마세요.",
+            "doseQuantity": "1캡슐",
             "timesPerDay": 2,
             "days": 14,
         },
@@ -77,7 +65,7 @@ CONFIRMED_OCR_RESULT_EXAMPLE = {
 
 
 @medication_guide_ocr_router.post(
-    "/ocr/medication-guides",
+    "/ocr",
     response_model=DocumentOcrUploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
@@ -97,9 +85,14 @@ CONFIRMED_OCR_RESULT_EXAMPLE = {
             "model": OcrErrorResponse,
             "description": "OCR 대기열 오류 (OCR_QUEUE_UNAVAILABLE)",
         },
+        status.HTTP_504_GATEWAY_TIMEOUT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 파일 처리 제한 시간 초과 (API_TIMEOUT)",
+        },
     },
     summary="조제약 복약안내 OCR 작업 생성",
 )
+@api_timeout(OCR_FILE_API_TIMEOUT_SECONDS)
 async def submit_medication_guide_ocr(
     file: Annotated[UploadFile, File(description="JPG 또는 PNG 조제약 복약안내 이미지")],
     idempotency_key: Annotated[str, Header(min_length=8, max_length=100)],
@@ -134,9 +127,14 @@ async def submit_medication_guide_ocr(
             "model": OcrErrorResponse,
             "description": "OCR 작업 ID 검증 실패 (VALIDATION_ERROR)",
         },
+        status.HTTP_504_GATEWAY_TIMEOUT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 파일 처리 제한 시간 초과 (API_TIMEOUT)",
+        },
     },
     summary="조제약 복약안내 원본 이미지 조회",
 )
+@api_timeout(OCR_FILE_API_TIMEOUT_SECONDS)
 async def get_medication_guide_ocr_image(
     ocr_job_id: Annotated[int, Path(alias="ocrJobId")],
     user: Annotated[User, Depends(get_request_user)],
@@ -155,8 +153,47 @@ async def get_medication_guide_ocr_image(
 
 
 @medication_guide_ocr_router.get(
+    "/ocr/jobs/{ocrJobId}/processed-image",
+    response_class=Response,
+    responses={
+        status.HTTP_200_OK: {
+            "content": {"image/jpeg": {"schema": {"type": "string", "format": "binary"}}},
+            "description": "전처리된 문서 이미지",
+        },
+        status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음 (OCR_JOB_NOT_FOUND)"},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 작업 ID 검증 실패 (VALIDATION_ERROR)",
+        },
+        status.HTTP_504_GATEWAY_TIMEOUT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 파일 처리 제한 시간 초과 (API_TIMEOUT)",
+        },
+    },
+    summary="조제약 복약안내 전처리 이미지 조회",
+)
+@api_timeout(OCR_FILE_API_TIMEOUT_SECONDS)
+async def get_medication_guide_ocr_processed_image(
+    ocr_job_id: Annotated[int, Path(alias="ocrJobId")],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[MedicationGuideOcrJobService, Depends(get_medication_guide_ocr_job_service)],
+) -> Response:
+    content, media_type = await service.read_processed_bytes(user, ocr_job_id)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": 'inline; filename="medication-guide-processed.jpg"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@medication_guide_ocr_router.get(
     "/ocr/jobs/{ocrJobId}",
     response_model=DocumentOcrStatusResponse,
+    response_model_exclude_unset=True,
     responses={
         status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음 (OCR_JOB_NOT_FOUND)"},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
@@ -226,16 +263,7 @@ def _to_service_confirmation(request: DocumentOcrConfirmRequest) -> MedicationGu
     return MedicationGuideConfirmRequest(
         dispensing_date=request.dispensed_date,
         medications=[
-            MedicationConfirmation(
-                temp_id=medication.temp_id,
-                name=medication.name,
-                dose=medication.dose,
-                efficacy=medication.efficacy,
-                administration=medication.administration,
-                precautions=medication.precautions,
-                times_per_day=medication.times_per_day,
-                days=medication.days,
-            )
+            MedicationConfirmation.model_validate(medication.model_dump(mode="json", by_alias=True))
             for medication in request.medications
         ],
     )
@@ -246,6 +274,7 @@ def _to_public_ocr_response(status_response: OcrJobStatusResponse) -> DocumentOc
     if ocr_status == "failed":
         return DocumentOcrFailedResponse(
             batch_id=f"b_{status_response.ocr_job_id}",
+            ocr_status="failed",
             error_code=status_response.error_code or "EXTRACTION_FAILED",
         )
     if ocr_status not in {"ready_for_review", "complete"}:
@@ -257,43 +286,16 @@ def _to_public_ocr_response(status_response: OcrJobStatusResponse) -> DocumentOc
     result = status_response.result
     if result is None:
         raise OcrJobStateConflictError("OCR 검토 결과를 불러올 수 없습니다.")
-    dispensing_date = result.dispensing_date
-    raw_date_confidence = result.dispensing_date_confidence or 0.0
-    if dispensing_date is None:
-        raw_date_confidence = 0.0
-    elif dispensing_date > datetime.now(config.TIMEZONE).date():
-        dispensing_date = None
-        raw_date_confidence = 0.0
-    dispensed_date_confidence = _confidence_tier(raw_date_confidence)
-    medications = [
-        DocumentOcrMedication(
-            temp_id=medication.row_id,
-            name=medication.name,
-            dose=medication.dose or "",
-            efficacy=medication.efficacy or "",
-            administration=medication.administration or "",
-            precautions=medication.precautions or "",
-            times_per_day=medication.times_per_day,
-            days=medication.days,
-            confidence=_public_medication_confidence(medication),
-        )
-        for medication in result.medications
-    ]
-    low_confidence_count = int(dispensed_date_confidence == "low") + sum(
-        medication.confidence == "low" for medication in medications
-    )
     return DocumentOcrReadyResponse(
         batch_id=f"b_{status_response.ocr_job_id}",
         ocr_status=cast(Literal["ready_for_review", "complete"], ocr_status),
         document_image_url=f"/api/v1/ocr/jobs/{status_response.ocr_job_id}/image",
-        fields=DocumentOcrFields(
-            dispensed_date=DocumentOcrField(
-                value=dispensing_date.isoformat() if dispensing_date is not None else None,
-                confidence=dispensed_date_confidence,
-            )
-        ),
-        medications=medications,
-        low_confidence_count=low_confidence_count,
+        fields=result.fields,
+        medications=[
+            DocumentOcrMedication.model_validate(medication.model_dump(mode="json", by_alias=True))
+            for medication in result.medications
+        ],
+        low_confidence_count=result.low_confidence_count,
     )
 
 
@@ -310,21 +312,3 @@ def _to_public_status(status_name: str) -> PublicOcrStatus:
         "CANCELLED": "cancelled",
     }
     return status_by_name[status_name]
-
-
-def _confidence_tier(confidence: float) -> Literal["high", "medium", "low"]:
-    if confidence >= 0.99:
-        return "high"
-    if confidence >= 0.90:
-        return "medium"
-    return "low"
-
-
-def _public_medication_confidence(
-    medication: MedicationReview,
-) -> Literal["high", "medium", "low"] | None:
-    if medication.confidence is None:
-        return None
-    if medication.needs_review:
-        return "low"
-    return _confidence_tier(medication.confidence)

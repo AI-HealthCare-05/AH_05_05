@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, ConfigDict, EmailStr, Field
 
-from app.core.validators import optional_after_validator, validate_password, validate_phone_number
+from app.core.validators import optional_after_validator, validate_name, validate_password, validate_phone_number
 from app.dtos.base import CamelModel
 from app.models.enums import AccountStatus, Gender
 
@@ -20,7 +20,13 @@ class UserUpdateRequest(CamelModel):
 
     # 상한은 DB 컬럼 폭이 아니라 화면에서 받아야 할 길이 기준이다.
     # 회원가입(SignUpRequest)·프론트 상수와 같은 값을 쓴다.
-    name: Annotated[str | None, Field(None, min_length=2, max_length=20)]
+    # 선택 필드라 optional_after_validator 를 쓴다. 그냥 AfterValidator 를 붙이면
+    # 「이름을 안 보낸」 요청이 None 을 검사하다 죽는다(phone_number 와 같은 방식).
+    name: Annotated[
+        str | None,
+        Field(None, min_length=2, max_length=20),
+        optional_after_validator(validate_name),
+    ]
     email: Annotated[
         EmailStr | None,
         Field(None, max_length=40),
@@ -62,6 +68,7 @@ class WithdrawRequest(CamelModel):
 class UserInfoResponse(CamelModel):
     id: int
     name: str
+    masked_name: str = "익명"
     email: str
     # validation_alias 는 입력에만 걸린다. DB 컬럼이 phone 이라 여기서 읽고,
     # 응답 키는 CamelModel 의 별칭 생성기가 phoneNumber 로 만든다. 둘이 충돌하지 않는다.

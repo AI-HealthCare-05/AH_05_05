@@ -1,6 +1,7 @@
 export {
   confirmOcrResult,
   getOcrDocumentImageUrl,
+  getOcrProcessedImageUrl,
   getOcrResult,
   releaseOcrDocumentImageUrl,
   uploadDocument,

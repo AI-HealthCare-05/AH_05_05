@@ -8,4 +8,4 @@
  * 대조용으로 받는 칸에는 절대 걸지 않는다. 이 정책이 생기기 전에 더 긴 비밀번호로 가입한
  * 계정이 로그인·탈퇴·변경 자체를 못 하게 된다.
  */
-export const PASSWORD_MAX_LENGTH = 32;
+export const PASSWORD_MAX_LENGTH = 30;

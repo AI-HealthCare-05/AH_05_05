@@ -8,7 +8,8 @@ import type {
 } from './types';
 
 let currentProfile: AccountProfile = {
-  name: 'RxVita 사용자',
+  name: 'RxVita사용자',
+  maskedName: 'R***자',
   phoneNumber: '01012345678',
   birthDate: '1980-08-02',
   gender: 'female',
@@ -18,6 +19,7 @@ let currentPassword = 'password1234';
 export function mockCreateAccount(payload: CreateAccountPayload): AccountProfile {
   currentProfile = {
     name: payload.name,
+    maskedName: '김*훈',
     phoneNumber: payload.phoneNumber,
     birthDate: payload.birthDate,
     gender: payload.gender,
@@ -31,7 +33,7 @@ export function mockGetMyProfile(): AccountProfile {
 }
 
 export function mockUpdateMyProfile(payload: UpdateAccountProfilePayload): AccountProfile {
-  currentProfile = { ...payload };
+  currentProfile = { ...currentProfile, ...payload };
   return { ...currentProfile };
 }
 

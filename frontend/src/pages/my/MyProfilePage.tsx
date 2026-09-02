@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
-  NAME_MAX_LENGTH,
   getMyProfile,
   updateMyProfile,
   type AccountProfile,
@@ -14,6 +13,7 @@ import {
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
+import { NAME_MAX_LENGTH, validateName } from '@/shared/lib/name';
 import {
   PHONE_NUMBER_MAX_LENGTH,
   formatPhoneNumberInput,
@@ -80,7 +80,7 @@ export function MyProfilePage({
     event?.preventDefault();
     if (!profile || !gender || !changed || saving) return;
     const nextBirthDateError = validateBirthDate(birthDate);
-    const nextNameError = name.trim().length >= 2 ? null : '이름을 두 글자 이상 입력해 주세요.';
+    const nextNameError = validateName(name);
     const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
     setBirthDateError(nextBirthDateError);
     setNameError(nextNameError);
@@ -90,7 +90,7 @@ export function MyProfilePage({
     setSaving(true);
     setSaveError(null);
     try {
-      const savedProfile = await profileSaver({ name, phoneNumber, birthDate, gender });
+      const savedProfile = await profileSaver({ name: name.trim(), phoneNumber, birthDate, gender });
       setProfile(savedProfile);
       setName(savedProfile.name);
       setPhoneNumber(formatPhoneNumberInput(savedProfile.phoneNumber));

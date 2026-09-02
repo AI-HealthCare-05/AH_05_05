@@ -27,6 +27,8 @@
 ```
 
 - 모든 API는 로그인 사용자의 Bearer 인증이 필요하다.
+- 업로드 `POST /api/v1/ocr`와 원본·전처리 이미지 `GET`은 10초 HTTP 제한 시간을 사용한다. 상태 `GET`과 확정 `PATCH`는 공통 3초 제한을 사용한다. 10초 엔드포인트의 데코레이터는 라우트 데코레이터를 위에, `@api_timeout(10)`을 아래에 둔다.
+- HTTP 제한 시간을 초과하면 `504`와 `{"code":"API_TIMEOUT","message":"요청 처리 시간이 초과되었습니다."}`를 반환한다. 전처리·CLOVA OCR·조건부 LLM·검증은 worker에서 비동기로 실행되므로 이 HTTP 제한 시간과 별개다.
 - 다른 사용자의 OCR 작업은 존재 여부를 노출하지 않고 `404 OCR_JOB_NOT_FOUND`로 처리한다.
 - OCR 완료 전에는 `CareEpisode`와 `Medication`을 생성하지 않는다.
 - 사용자가 최종 저장할 때만 하나의 DB 트랜잭션으로 RDB에 저장한다.
@@ -68,7 +70,7 @@ Authorization: Bearer <access-token>
 | 항목 | 값 |
 |---|---|
 | Method | `POST` |
-| URL | `/api/v1/ocr/medication-guides` |
+| URL | `/api/v1/ocr` |
 | Content-Type | `multipart/form-data` |
 | 인증 | Bearer 필수 |
 | 성공 상태 | `202 Accepted` |
@@ -142,6 +144,7 @@ const ocrJobId = response.documentIds[0];
 | 422 | `VALIDATION_ERROR` | 헤더 또는 multipart 형식 검증 실패 |
 | 422 | `INVALID_IMAGE` | 파일 형식, 실제 내용, 크기, 해상도 또는 디코딩 검증 실패 |
 | 503 | `OCR_QUEUE_UNAVAILABLE` | 임시 파일 저장 또는 Redis/ARQ 대기열 등록 실패 |
+| 504 | `API_TIMEOUT` | 업로드 처리 시간이 10초를 초과 |
 
 ---
 
@@ -223,10 +226,8 @@ lowConfidenceCount
     {
       "tempId": "med-1",
       "name": "아세트아미노펜정",
-      "dose": "500mg",
-      "efficacy": "발열, 두통, 근육통 완화",
-      "administration": "식후 30분에 물과 함께 복용하세요.",
-      "precautions": "정해진 용법과 용량을 지키고 음주를 피하세요.",
+      "strength": "500mg",
+      "doseQuantity": "1정",
       "timesPerDay": 3,
       "days": 3,
       "confidence": "high"
@@ -243,7 +244,7 @@ lowConfidenceCount
 | `batchId` | string | `b_{ocrJobId}` 형식 |
 | `ocrStatus` | string | `ready_for_review` 또는 `complete` |
 | `documentImageUrl` | string | 인증이 필요한 원본 이미지 상대 URL |
-| `fields.dispensedDate.value` | string \| null | `YYYY-MM-DD`. 읽지 못했거나 미래 날짜이면 `null` |
+| `fields.dispensedDate.value` | string | `YYYY-MM-DD`. 조제일을 읽지 못하면 `dispensedDate` 키 자체를 생략 |
 | `fields.dispensedDate.confidence` | string | `high`, `medium`, `low` |
 | `medications` | array | OCR로 구조화한 약 목록 |
 | `lowConfidenceCount` | integer | 조제일 및 약 블록 중 `low`인 항목 수. `medium`은 제외 |
@@ -253,21 +254,19 @@ lowConfidenceCount
 | 필드 | 타입 | 규칙 |
 |---|---|---|
 | `tempId` | string | 검토 화면의 임시 행 ID. RDB PK가 아님 |
-| `name` | string | 약품명 |
-| `dose` | string | 용량. 추출 실패 시 빈 문자열 |
-| `efficacy` | string | 효능. 추출 실패 시 빈 문자열 |
-| `administration` | string | 복용 방법. 추출 실패 시 빈 문자열 |
-| `precautions` | string | 주의사항. 추출 실패 시 빈 문자열 |
-| `timesPerDay` | integer \| null | 1~6. `null`은 필요 시 복용 또는 횟수 미확정 |
-| `days` | integer \| null | 1~365. 읽지 못하면 `null` |
-| `confidence` | string | `high`, `medium`, `low`. 사용자 추가 약의 완료 응답에서는 생략 가능 |
+| `name` | string | 1~100자 비공백 약품명 |
+| `strength` | string | 선택. 1~50자 비공백 함량 |
+| `doseQuantity` | string | 선택. 1~50자 비공백 1회 투약량 |
+| `timesPerDay` | integer | 선택. 1~6 |
+| `days` | integer | 선택. 1~365 |
+| `confidence` | string | `high`, `medium`, `low` |
 
 신뢰도 등급:
 
 ```text
-high    confidence >= 0.99
-medium  0.90 <= confidence < 0.99
-low     confidence < 0.90 또는 needsReview=true
+high    confidence >= 0.90
+medium  0.70 <= confidence < 0.90
+low     confidence < 0.70 또는 필수값 누락·검증 오류
 ```
 
 ### 프론트 polling 규칙
@@ -279,7 +278,7 @@ if (ocrStatus === 'queued' || ocrStatus === 'processing') {
 ```
 
 - `ready_for_review`, `complete`, `failed`, `cancelled`에서는 polling을 종료한다.
-- OCR 소요 시간 자체에는 API 제한을 두지 않는다.
+- OCR 소요 시간은 HTTP 제한 시간과 별개의 worker 작업이다.
 - 프론트가 장시간 안내를 보여주더라도 백엔드 작업을 임의로 실패 처리하지 않는다.
 
 ### 오류 응답
@@ -292,7 +291,22 @@ if (ocrStatus === 'queued' || ocrStatus === 'processing') {
 
 ---
 
-## 3. API 이름: 조제약 복약안내 OCR 원본 이미지 조회
+## 3. API 이름: 조제약 복약안내 OCR 검토 이미지 조회
+
+### 3-1. 전처리 이미지
+
+| 항목 | 값 |
+|---|---|
+| Method | `GET` |
+| URL | `/api/v1/ocr/jobs/{ocrJobId}/processed-image` |
+| 인증 | Bearer 필수 |
+| 성공 상태 | `200 OK` |
+| 응답 형식 | `image/jpeg` binary |
+| 설명 | OCR에 사용한 전처리 결과. `ready_for_review` 또는 `complete`일 때만 반환한다. |
+
+응답은 원본 이미지와 같은 인증·private cache 규칙을 따르며, 작업 상태가 아직 검토 가능하지 않거나 전처리 이미지가 없으면 `404 OCR_JOB_NOT_FOUND`다. 이 이미지와 원본 이미지 조회는 10초 HTTP 제한을 사용하며, 시간 초과 시 `504 API_TIMEOUT`을 반환한다.
+
+### 3-2. 원본 이미지
 
 ### 기본 정보
 
@@ -346,6 +360,7 @@ const imageUrl = URL.createObjectURL(blob);
 | 401 | `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN` | 인증 실패 |
 | 404 | `OCR_JOB_NOT_FOUND` | 이미지·작업 없음 또는 다른 사용자의 작업 |
 | 422 | `VALIDATION_ERROR` | `ocrJobId` 형식 오류 |
+| 504 | `API_TIMEOUT` | 원본 또는 전처리 이미지 읽기가 10초를 초과 |
 
 ---
 
@@ -380,40 +395,32 @@ const imageUrl = URL.createObjectURL(blob);
     {
       "tempId": "med-1",
       "name": "아세트아미노펜정",
-      "dose": "500mg",
-      "efficacy": "발열, 두통, 근육통 완화",
-      "administration": "식후 30분에 물과 함께 복용하세요. 복용 간격은 4시간 이상 유지하세요.",
-      "precautions": "정해진 용법과 용량을 지키고 음주를 피하세요.",
+      "strength": "500mg",
+      "doseQuantity": "1정",
       "timesPerDay": 3,
       "days": 3
     },
     {
       "tempId": "med-2",
       "name": "세티리진정",
-      "dose": "10mg",
-      "efficacy": "알레르기성 비염, 재채기, 가려움 완화",
-      "administration": "취침 전에 물과 함께 복용하세요.",
-      "precautions": "졸음이 나타날 수 있으므로 운전과 음주를 피하세요.",
+      "strength": "10mg",
+      "doseQuantity": "1정",
       "timesPerDay": 1,
       "days": 5
     },
     {
       "tempId": "med-3",
       "name": "암브록솔정",
-      "dose": "30mg",
-      "efficacy": "가래 배출 도움",
-      "administration": "식후에 물과 함께 복용하고 충분한 수분을 섭취하세요.",
-      "precautions": "속쓰림이나 메스꺼움이 심하면 상담하세요.",
+      "strength": "30mg",
+      "doseQuantity": "1정",
       "timesPerDay": 3,
       "days": 5
     },
     {
       "tempId": "med-4",
       "name": "파모티딘정",
-      "dose": "20mg",
-      "efficacy": "속쓰림과 위산 과다 증상 완화",
-      "administration": "아침과 저녁 식전에 물과 함께 복용하세요.",
-      "precautions": "신장질환이 있으면 의사 또는 약사에게 알리고 임의로 증량하지 마세요.",
+      "strength": "20mg",
+      "doseQuantity": "1정",
       "timesPerDay": 2,
       "days": 5
     }
@@ -425,40 +432,18 @@ const imageUrl = URL.createObjectURL(blob);
 
 | 필드 | 타입 | 필수 | 제약 및 의미 |
 |---|---|---:|---|
-| `dispensedDate` | string(date) | O | `YYYY-MM-DD`, 오늘보다 미래일 수 없음 |
+| `dispensedDate` | string(date) | O | `YYYY-MM-DD`, 서울 기준 오늘부터 미래 31일까지 |
 | `medications` | array | O | 0~100개. 현재 화면의 최종 약 목록 전체 |
 | `medications[].tempId` | string | O | 1~100자. 검토 행 매칭용, RDB PK로 저장하지 않음 |
-| `medications[].name` | string | O | 1~255자 |
-| `medications[].dose` | string | O | 최대 100자, 값이 없으면 빈 문자열 |
-| `medications[].efficacy` | string | O | 최대 500자, 값이 없으면 빈 문자열 |
-| `medications[].administration` | string | O | 최대 500자, 값이 없으면 빈 문자열 |
-| `medications[].precautions` | string | O | 최대 500자, 값이 없으면 빈 문자열 |
-| `medications[].timesPerDay` | integer \| null | X | 1~6 또는 `null`. 생략 시 `null`, 확정된 `null`은 필요 시 복용 |
-| `medications[].days` | integer \| null | X | 1~365 또는 `null`. 생략 시 `null` |
+| `medications[].name` | string | O | 1~100자 비공백 |
+| `medications[].strength` | string | X | 1~50자 비공백. 없으면 생략 |
+| `medications[].doseQuantity` | string | X | 1~50자 비공백. 없으면 생략 |
+| `medications[].timesPerDay` | integer \| null | X | 1~6 또는 `null`; `null`은 필요 시 복용 확정일 때만 허용 |
+| `medications[].days` | integer | X | 1~365. 없으면 생략 |
 
-### 미수정 OCR 필드 보존 규칙
+### 확정 요청 규칙
 
-프론트는 `GET`에서 받은 약 객체 전체를 화면 상태로 유지한다. 사용자가 특정 약을 열어보지 않거나 이름만
-수정해도 나머지 OCR 추출 필드를 삭제하지 않는다.
-
-```ts
-medications: medications.map((medication) => ({
-  tempId: medication.tempId,
-  name: medication.name,
-  dose: medication.dose,
-  efficacy: medication.efficacy,
-  administration: medication.administration,
-  precautions: medication.precautions,
-  timesPerDay: medication.timesPerDay,
-  days: medication.days,
-}))
-```
-
-- 수정한 필드는 사용자 수정값을 전송한다.
-- 수정하지 않은 필드는 OCR 추출값을 그대로 전송한다.
-- 사용자가 삭제한 약은 최종 배열에서 제외한다.
-- 사용자가 추가한 약은 새 `tempId`와 직접 입력한 값을 포함한다.
-- OCR confidence는 확정 요청에 보내지 않는다.
+프론트는 GET의 약 목록을 최종 수정본으로 유지하고 `confidence`를 제외해 한 번의 PATCH로 전송한다. 수정하지 않은 선택 필드는 그대로 보내고, 없는 선택 필드는 빈 문자열·`null` 대신 생략한다. 사용자가 삭제한 약은 최종 배열에서 제외하며, 추가한 약은 새 `tempId`와 직접 입력한 값을 포함한다.
 
 ### 성공 응답
 
@@ -483,9 +468,10 @@ medications: medications.map((medication) => ({
 1. `care_episodes`에 조제약 기록 한 행 생성
 2. `medications` 배열 항목마다 `medications`에 한 행 생성
 3. `ocr_jobs.care_episode_id`와 `care_episodes.source_ocr_job_id` 연결
-4. 확정 시각과 본문 hash 저장
-5. OCR 작업 상태를 `COMPLETE`로 변경
-6. 사용자 확정 결과 스냅샷 보존
+4. 각 `medications.source_ocr_job_id`를 OCR 작업에 연결
+5. 확정 시각과 본문 hash 저장
+6. OCR 작업 상태를 `COMPLETE`로 변경
+7. 사용자 확정 결과 스냅샷 보존
 
 테이블별 주요 저장값:
 
@@ -520,6 +506,7 @@ medications    4행
 | 404 | `OCR_JOB_NOT_FOUND` | 작업 없음, 다른 사용자의 작업, 검토 시간 만료 |
 | 409 | `OCR_JOB_STATE_CONFLICT` | 확정할 수 없는 상태 또는 다른 본문으로 재확정 |
 | 422 | `VALIDATION_ERROR` | 날짜, 약 목록, 필드 길이 또는 값 범위 검증 실패 |
+| 504 | `API_TIMEOUT` | 확정 처리 시간이 공통 3초를 초과 |
 
 ---
 
@@ -550,7 +537,7 @@ QUEUED / PROCESSING
 
 1. `/api/v1/auth/login`으로 로그인하여 access token을 받는다.
 2. Swagger 우측 상단 `Authorize`에 access token을 입력한다.
-3. **1번 API** `POST /api/v1/ocr/medication-guides`를 실행한다.
+3. **1번 API** `POST /api/v1/ocr`를 실행한다.
 4. `Idempotency-Key`에 `ocr-`로 시작하는 UUID를 입력하고 JPG/PNG 한 장을 선택한다.
 5. 응답의 `documentIds[0]`을 복사한다.
 6. **2번 API** `GET /api/v1/ocr/jobs/{ocrJobId}`를 `queued` 또는 `processing` 동안 반복 실행한다.

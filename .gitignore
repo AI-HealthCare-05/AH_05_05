@@ -18,6 +18,7 @@ wheels/
 .coverage.*
 .env
 .codex-work/
+frontend/package-lock.json
 
 # OS-generated metadata
 .DS_Store

@@ -32,6 +32,9 @@ export type { ImageViewerProps } from './ImageViewer';
 export { Header } from './Header';
 export type { HeaderProps } from './Header';
 
+export { TimePickerSheet } from './TimePickerSheet';
+export type { TimePickerSheetProps } from './TimePickerSheet';
+
 export { BottomTabbar, TABS } from './BottomTabbar';
 export type { BottomTabbarProps, TabKey } from './BottomTabbar';
 

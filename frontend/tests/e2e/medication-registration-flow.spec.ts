@@ -40,10 +40,8 @@ const readyOcrResult = {
     {
       tempId: 'm1',
       name: '셀레콕시브',
-      dose: '200mg',
-      efficacy: '염증과 통증 완화',
-      administration: '아침·저녁 식후',
-      precautions: '위장장애가 있으면 상담하세요.',
+      strength: '200mg',
+      doseQuantity: '1정',
       timesPerDay: 2,
       days: 7,
       confidence: 'high',
@@ -51,10 +49,8 @@ const readyOcrResult = {
     {
       tempId: 'm2',
       name: '리바록사반',
-      dose: '10mg',
-      efficacy: '혈전 생성 억제',
-      administration: '아침·저녁 식후',
-      precautions: '출혈 증상이 있으면 상담하세요.',
+      strength: '10mg',
+      doseQuantity: '1정',
       timesPerDay: 2,
       days: 7,
       confidence: 'low',
@@ -62,23 +58,14 @@ const readyOcrResult = {
     {
       tempId: 'm3',
       name: '아세트아미노펜',
-      dose: '650mg',
-      efficacy: '해열 및 진통',
-      administration: '필요 시, 6시간 이상 간격',
-      precautions: '과량 복용하지 마세요.',
-      timesPerDay: null,
+      strength: '650mg',
+      doseQuantity: '1정',
       days: 7,
       confidence: 'high',
     },
     {
       tempId: 'm4',
-      name: '파모티딘',
-      dose: '20mg',
-      efficacy: '위산 분비 억제',
-      administration: '아침·저녁 식후',
-      precautions: '임의로 증량하지 마세요.',
-      timesPerDay: 2,
-      days: 7,
+      name: ' 파모티딘 원문 ',
       confidence: 'high',
     },
   ],
@@ -159,11 +146,11 @@ async function interceptDocumentRegistration(page: Page): Promise<DocumentApiTra
     { batchId: 'ocr-batch-501', ocrStatus: 'processing' },
   ];
 
-  await page.route('**/api/v1/ocr/**', async (route) => {
+  await page.route(/\/api\/v1\/ocr(?:\/.*)?$/, async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
 
-    if (request.method() === 'POST' && path === '/api/v1/ocr/medication-guides') {
+    if (request.method() === 'POST' && path === '/api/v1/ocr') {
       trace.uploads.push(capture(route));
       await fulfillJson(route, {
         batchId: 'upload-response-is-not-the-polling-id',
@@ -181,7 +168,11 @@ async function interceptDocumentRegistration(page: Page): Promise<DocumentApiTra
       return;
     }
 
-    if (request.method() === 'GET' && path === `/api/v1/ocr/jobs/${DOCUMENT_ID}/image`) {
+    if (
+      request.method() === 'GET' &&
+      (path === `/api/v1/ocr/jobs/${DOCUMENT_ID}/image` ||
+        path === `/api/v1/ocr/jobs/${DOCUMENT_ID}/processed-image`)
+    ) {
       trace.images.push(capture(route));
       await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
       return;
@@ -224,6 +215,115 @@ async function selectGalleryPng(page: Page) {
     buffer: ONE_PIXEL_PNG,
   });
 }
+
+test('OCR 검토는 전처리 이미지를 작게 맞춰 보여주고 확대 화면에서 원본으로 전환한다', async ({ page }) => {
+  await authenticate(page);
+  const requestedImages: string[] = [];
+
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21' });
+      return;
+    }
+    if (
+      request.method() === 'GET' &&
+      (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
+        path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+    ) {
+      requestedImages.push(path);
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/dev/ocr-review');
+
+  const preview = page.getByRole('img', { name: '전처리한 약봉투' });
+  await expect(preview).toBeVisible();
+  expect(await preview.evaluate((image) => getComputedStyle(image).objectFit)).toBe('contain');
+  const previewBox = await preview.boundingBox();
+  expect(previewBox).not.toBeNull();
+  expect(previewBox!.height).toBeGreaterThanOrEqual(287);
+  expect(previewBox!.height).toBeLessThanOrEqual(288);
+
+  await page.getByRole('button', { name: '전처리한 약봉투 크게 보기' }).click();
+  const viewer = page.getByRole('dialog');
+  const enlarged = viewer.getByRole('img', { name: '확대한 전처리 약봉투' });
+  await expect(enlarged).toBeVisible();
+  const processedSrc = await enlarged.getAttribute('src');
+  await expect(viewer.getByRole('button', { name: '전처리 후' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+
+  await viewer.getByRole('button', { name: '원본 보기' }).click();
+  await expect(viewer.getByRole('img', { name: '확대한 약봉투 원본' })).toBeVisible();
+  await expect(viewer.getByRole('img', { name: '확대한 약봉투 원본' })).not.toHaveAttribute(
+    'src',
+    processedSrc ?? '',
+  );
+  expect(requestedImages).toEqual([
+    '/api/v1/ocr/jobs/b_mock_9f21/processed-image',
+    '/api/v1/ocr/jobs/b_mock_9f21/image',
+  ]);
+});
+
+test('OCR 검토의 직접 추가 버튼과 입력 제한을 간결하게 표시한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21' });
+      return;
+    }
+    if (
+      request.method() === 'GET' &&
+      (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
+        path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+    ) {
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/dev/ocr-review');
+  await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
+  await expect(page.getByText('복용 시작일을 이 날짜로 채워둘게요.')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '빠진 약 직접 추가' })).toHaveCount(0);
+
+  const directAdd = page.getByRole('button', { name: '직접 추가', exact: true });
+  await expect(directAdd).toBeVisible();
+  await directAdd.click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: '약 추가' })).toBeVisible();
+  await expect(dialog.getByText('약봉투와 다른 내용만 고쳐주세요.')).toHaveCount(0);
+
+  const name = dialog.getByLabel('약품명');
+  const strength = dialog.getByLabel('함량');
+  const doseQuantity = dialog.getByLabel('1회 투약량');
+  const days = dialog.getByLabel('복용 일수');
+  await expect(name).toHaveAttribute('maxlength', '100');
+  await expect(strength).toHaveAttribute('maxlength', '50');
+  await expect(doseQuantity).toHaveAttribute('maxlength', '50');
+  await expect(days).toHaveAttribute('maxlength', '3');
+  await expect(days).toHaveAttribute('inputmode', 'numeric');
+  expect(
+    await name.evaluate((input) =>
+      getComputedStyle(input.parentElement?.parentElement ?? input).paddingLeft,
+    ),
+  ).toBe('4px');
+
+  await days.fill('999');
+  await expect(days).toHaveValue('');
+  await days.fill('365');
+  await expect(days).toHaveValue('365');
+});
 
 test('OCR 결과를 확정하면 해당 복약 시간 설정 화면으로 이동한다', async ({ page }) => {
   await authenticate(page);
@@ -555,6 +655,44 @@ test('선택한 약봉투 사진을 누르면 전체 화면 원본을 열고 닫
   await expect(viewer).toHaveCount(0);
 });
 
+test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할 수 있다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await authenticate(page);
+  const patches: CapturedRequest[] = [];
+
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patches.push(capture(route));
+      await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
+      return;
+    }
+    await fulfillJson(route, {
+      ...readyOcrResult,
+      batchId: 'b_mock_9f21',
+      medications: [{ ...readyOcrResult.medications[0] }],
+      lowConfidenceCount: 0,
+    });
+  });
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/image', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+  });
+  await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
+    await fulfillJson(route, { start: null, mealTimes: null, medications: [] });
+  });
+
+  await page.goto('/dev/ocr-review');
+  const dispensedDate = page.getByLabel('조제일');
+  await expect(dispensedDate).toHaveAttribute('max', '2026-09-25');
+  await dispensedDate.fill('2026-09-25');
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+
+  await expect(page).toHaveURL('/medication-schedule?recordId=315&ocrJobId=b_mock_9f21');
+  expect(patches).toHaveLength(1);
+  expect((JSON.parse(patches[0].body) as { dispensedDate: string }).dispensedDate).toBe(
+    '2026-09-25',
+  );
+});
+
 test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한다', async ({ page }) => {
   test.slow();
   await authenticate(page);
@@ -593,21 +731,40 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await expect(page.getByLabel('조제일')).toHaveValue('2026-08-22');
   await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
   await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
-  await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveAttribute(
+  await expect(page.getByRole('img', { name: '전처리한 약봉투' })).toHaveAttribute(
     'src',
     /^blob:/,
   );
 
+  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('함량 미추출');
+  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('1회 투약량 미추출');
+  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('1일 횟수 미추출');
+  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('투약일수 미추출');
+
   await page.getByRole('button', { name: /리바록사반 10mg/ }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('리바록사반 수정');
-  await editDialog.getByLabel('주의사항').fill('출혈 증상을 확인하고 이상이 있으면 상담하세요.');
+  await editDialog.getByLabel('함량').fill('15mg');
+  await editDialog.getByLabel('1회 투약량').fill('0.5정');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page.getByRole('button', { name: /리바록사반 수정 10mg/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /리바록사반 수정 15mg/ })).toBeVisible();
 
-  await page.getByRole('button', { name: '빠진 약 직접 추가' }).click();
+  await page.getByRole('button', { name: /아세트아미노펜 650mg/ }).click();
+  const prnDialog = page.getByRole('dialog');
+  await prnDialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '필요 시', exact: true }).click();
+  await prnDialog.getByRole('button', { name: '저장', exact: true }).click();
+
+  await page.getByRole('button', { name: /파모티딘 원문/ }).click();
+  const sourceNameDialog = page.getByRole('dialog');
+  await sourceNameDialog.getByLabel('1회 투약량').fill('0.75');
+  await sourceNameDialog.getByRole('button', { name: '저장', exact: true }).click();
+
+  await page.getByRole('button', { name: '직접 추가', exact: true }).click();
   const addDialog = page.getByRole('dialog');
   await addDialog.getByLabel('약품명').fill('새 약');
+  await addDialog.getByLabel('함량').fill('500mg');
+  await addDialog.getByLabel('1회 투약량').fill('1캡슐');
   await addDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByRole('heading', { name: '약 5개' })).toBeVisible();
 
@@ -646,26 +803,37 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   };
   expect(Object.keys(patchPayload).sort()).toEqual(['dispensedDate', 'medications']);
   expect(patchPayload.dispensedDate).toBe('2026-08-22');
+  expect(patchPayload.medications).toHaveLength(4);
+  expect(patchPayload.medications).toEqual(
+    expect.arrayContaining([
+      {
+        tempId: 'm2',
+        name: '리바록사반 수정',
+        strength: '15mg',
+        doseQuantity: '0.5정',
+        timesPerDay: 2,
+        days: 7,
+      },
+      { tempId: 'm3', name: '아세트아미노펜', strength: '650mg', doseQuantity: '1정', timesPerDay: null, days: 7 },
+      { tempId: 'm4', name: ' 파모티딘 원문 ', doseQuantity: '0.75' },
+      {
+        tempId: expect.stringMatching(/^new_/),
+        name: '새 약',
+        strength: '500mg',
+        doseQuantity: '1캡슐',
+      },
+    ]),
+  );
   expect(
     patchPayload.medications.every(
       (medication) =>
-        Object.keys(medication).sort().join(',') ===
-        'administration,days,dose,efficacy,name,precautions,tempId,timesPerDay',
+        !('confidence' in medication) &&
+        !('dose' in medication) &&
+        !('efficacy' in medication) &&
+        !('administration' in medication) &&
+        !('precautions' in medication),
     ),
   ).toBe(true);
-  expect(patchPayload.medications).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        tempId: 'm2',
-        name: '리바록사반 수정',
-        dose: '10mg',
-        efficacy: '혈전 생성 억제',
-        administration: '아침·저녁 식후',
-        precautions: '출혈 증상을 확인하고 이상이 있으면 상담하세요.',
-      }),
-      expect.objectContaining({ name: '새 약' }),
-    ]),
-  );
   expect(patchPayload.medications).not.toEqual(
     expect.arrayContaining([expect.objectContaining({ tempId: 'm1' })]),
   );
@@ -791,7 +959,7 @@ test('활성 처방이 두 건이어도 복용 기록은 사용자 단위로 한
   ]);
 });
 
-test('복약 정보 삭제는 오류를 팝업에 남기고 성공하면 목록으로 이동한다', async ({ page }) => {
+test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목록에서 제거한다', async ({ page }) => {
   await authenticate(page);
   let deleteAttempts = 0;
   let deleted = false;
@@ -801,6 +969,7 @@ test('복약 정보 삭제는 오류를 팝업에 남기고 성공하면 목록�
     start: { date: '2026-08-22', slot: 'morning' },
     endDate: '2026-08-31',
     daysRemaining: 7,
+    isFinished: false,
     mealTimes: {
       morning: '08:00',
       lunch: '13:00',
@@ -836,40 +1005,32 @@ test('복약 정보 삭제는 오류를 팝업에 남기고 성공하면 목록�
     fulfillJson(route, deleted ? [] : [overview], 200),
   );
 
-  await page.goto('/medications/12');
-  const deleteButton = page.getByRole('button', { name: '복약 정보 삭제' });
-  await expect(deleteButton).toBeVisible();
-  const deleteButtonBox = await deleteButton.boundingBox();
-  const viewport = page.viewportSize();
-  expect(deleteButtonBox).not.toBeNull();
-  expect(viewport).not.toBeNull();
-  expect(deleteButtonBox!.x + deleteButtonBox!.width / 2).toBeCloseTo(viewport!.width / 2, 0);
-
-  await deleteButton.click();
+  await page.goto('/medications');
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
+  await page.getByRole('button', { name: '삭제하기' }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: '이 복약 정보를 삭제할까요?' })).toBeVisible();
-  await expect(dialog).toContainText('다시 등록하려면 약봉투를 다시 찍어야 해요.');
-  await expect(dialog).not.toContainText('복용 기록도');
+  await expect(dialog.getByRole('heading', { name: '1개를 삭제할까요?' })).toBeVisible();
+  await expect(dialog).toContainText('삭제한 처방은 약봉투를 다시 등록해야 복구할 수 있어요.');
   await dialog.getByRole('button', { name: '삭제하기' }).click();
-  await expect(dialog).toContainText('복약 정보를 찾지 못했어요');
-  await dialog.getByRole('button', { name: '삭제하기' }).click();
-  await expect(dialog).toContainText('삭제 서버 오류');
-  await dialog.getByRole('button', { name: '삭제하기' }).click();
+  await expect(dialog).toContainText('선택한 복약 정보를 삭제하지 못했어요. 다시 시도해주세요.');
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
+  await expect(dialog).toContainText('선택한 복약 정보를 삭제하지 못했어요. 다시 시도해주세요.');
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
 
   await expect(page).toHaveURL('/medications');
-  await expect(page.getByText('복약 정보를 삭제했어요.')).toBeVisible();
+  await expect(page.getByText('1개를 삭제했어요')).toBeVisible();
+  await expect(page.getByText('이 기간에 등록한 처방이 없어요')).toBeVisible();
   await expect(page.getByRole('button', { name: '되돌리기' })).toHaveCount(0);
-  await page.goBack();
-  await expect(page).not.toHaveURL(/\/medications\/12$/);
 });
 
 test('업로드 응답에 문서 ID가 없으면 polling을 시작하지 않는다', async ({ page }) => {
   await authenticate(page);
   let pollCount = 0;
-  await page.route('**/api/v1/ocr/**', async (route) => {
+  await page.route(/\/api\/v1\/ocr(?:\/.*)?$/, async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (request.method() === 'POST' && path === '/api/v1/ocr/medication-guides') {
+    if (request.method() === 'POST' && path === '/api/v1/ocr') {
       await fulfillJson(route, {
         batchId: 'server-batch-kept-intact',
         documentIds: [],

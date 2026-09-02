@@ -9,10 +9,10 @@
 
 ```text
 프론트엔드
-  └─ POST /api/v1/ocr/medication-guides
+  └─ POST /api/v1/ocr
        ├─ FastAPI: OcrJob 생성 + 원본 이미지 임시 저장
        └─ Redis: OCR 작업 대기열 등록
-            └─ ocr-worker: CLOVA OCR 호출 및 결과 구조화
+            └─ ocr-worker: 전처리 → CLOVA OCR → 조건부 LLM → 검증
                  └─ MySQL: READY_FOR_REVIEW 결과 저장
 
 프론트엔드가 2초마다 GET /api/v1/ocr/jobs/{ocrJobId} 조회
@@ -22,6 +22,8 @@
 ```
 
 OCR을 실행하려면 `fastapi`만 아니라 다음 네 서비스가 모두 필요하다.
+
+업로드와 원본·전처리 이미지 조회는 10초 HTTP 제한 시간(`@api_timeout(10)`: 라우트 데코레이터 아래)을 사용하고, 상태 조회·확정은 공통 3초 제한을 사용한다. 제한 시간 초과 응답은 `504 {"code":"API_TIMEOUT","message":"요청 처리 시간이 초과되었습니다."}`다. worker의 전처리·CLOVA·조건부 LLM·검증은 대기열에서 비동기로 실행되므로 이 HTTP 제한 시간과 별개다.
 
 | 서비스 | 역할 |
 | --- | --- |
@@ -273,7 +275,7 @@ MySQL `medications` 테이블에는 약마다 한 행씩 총 4행이 저장된�
 
 1. `POST /api/v1/auth/login`을 실행해 `access_token`을 받는다.
 2. Swagger 우측 상단 **Authorize**에 access token을 입력한다.
-3. `POST /api/v1/ocr/medication-guides`를 실행한다.
+3. `POST /api/v1/ocr`를 실행한다.
    - `Idempotency-Key`: `ocr-`로 시작하는 UUID
    - `file`: JPG 또는 PNG 한 장
 4. 응답의 `documentIds[0]` 값을 `ocrJobId`로 사용한다.

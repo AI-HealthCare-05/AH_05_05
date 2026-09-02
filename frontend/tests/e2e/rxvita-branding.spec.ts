@@ -1,5 +1,7 @@
 import { expect, test } from 'playwright/test';
 
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
 const ASSISTANT_AVATAR = 'img[src="/images/rxvita-mark-128.png"]';
 
 test('스플래시와 게스트·로그인 홈이 RxVita 로고를 서비스명으로 제공한다', async ({ page }) => {
@@ -43,6 +45,7 @@ test('챗 시작 가이드가 장식용 RxVita 마크를 보여준다', async ({
 test('연속 어시스턴트 메시지는 첫 메시지에만 아바타를 보이고 같은 들여쓰기를 유지한다', async ({
   page,
 }) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   const account = 'avatar@example.com';
   const storageKey = `poke.mock-chat-sessions:${encodeURIComponent(account)}`;
   await page.addInitScript(
@@ -93,6 +96,7 @@ test('연속 어시스턴트 메시지는 첫 메시지에만 아바타를 보�
 });
 
 test('진행 중 말풍선과 도착한 답변은 아바타를 유지하며 옆으로 움직이지 않는다', async ({ page }) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.goto('/dev/chat');
 
   await page.getByRole('button', { name: '지금 먹는 약을 같이 먹어도 되나요?' }).click();
@@ -111,6 +115,7 @@ test('진행 중 말풍선과 도착한 답변은 아바타를 유지하며 옆�
 });
 
 test('마이페이지와 영양제 랭킹에서 RxVita 서비스명을 보여준다', async ({ page }) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.goto('/dev/my-authenticated');
   await expect(page.getByText('RxVita 사용자', { exact: true })).toBeVisible();
 

@@ -5,6 +5,7 @@ from fastapi import Response as EmptyResponse  # 본문 없는 204 용. ORJSONRe
 from fastapi.responses import ORJSONResponse as Response
 
 from app.core.phone_encryption import decrypt_phone_number
+from app.core.validators.user_validators import mask_name
 from app.dependencies.security import get_request_user
 from app.dtos.users import (
     PasswordChangeRequest,
@@ -21,7 +22,10 @@ user_router = APIRouter(prefix="/users", tags=["users"])
 
 def _user_info_response(user: User) -> Response:
     response = UserInfoResponse.model_validate(user).model_copy(
-        update={"phone_number": decrypt_phone_number(user.phone)}
+        update={
+            "phone_number": decrypt_phone_number(user.phone),
+            "masked_name": mask_name(user.name),
+        }
     )
     # by_alias 가 없으면 CamelModel 이라도 snake_case 로 나간다. 여기서는 응답을 직접
     # 만들어 FastAPI 의 직렬화(기본 by_alias=True)를 거치지 않기 때문이다.

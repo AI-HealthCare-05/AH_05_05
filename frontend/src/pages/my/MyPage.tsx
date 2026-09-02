@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
+import { CalendarDays, ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -17,10 +17,12 @@ import {
 import {
   getNotifySettings,
   updateNotifySettings,
+  type MedicationTimes,
   type NotifySettingKey,
   type NotifySettings,
   type UpdateNotifySettingsPayload,
 } from '@/entities/settings';
+import { isMealTimeOrderValid } from '@/shared/model/mealSlot';
 import {
   getPushPermission,
   requestPushPermission,
@@ -28,6 +30,7 @@ import {
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
 import { WithdrawAccountDialog } from './WithdrawAccountDialog';
+import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
 
 const TAB_ROUTES: Record<TabKey, string> = {
   home: '/home',
@@ -36,6 +39,24 @@ const TAB_ROUTES: Record<TabKey, string> = {
   chat: '/chat',
   my: '/my',
 };
+
+function medicationTimesFromSettings(settings: NotifySettings): MedicationTimes {
+  return {
+    morningMedicationTime: settings.morningMedicationTime,
+    lunchMedicationTime: settings.lunchMedicationTime,
+    eveningMedicationTime: settings.eveningMedicationTime,
+    bedtimeMedicationTime: settings.bedtimeMedicationTime,
+  };
+}
+
+function mealSlotTimesFromMedicationTimes(times: MedicationTimes) {
+  return {
+    morning: times.morningMedicationTime,
+    lunch: times.lunchMedicationTime,
+    evening: times.eveningMedicationTime,
+    bedtime: times.bedtimeMedicationTime,
+  };
+}
 
 interface MyPageProps {
   authenticatedOverride?: boolean;
@@ -69,6 +90,9 @@ export function MyPage({
   const [blockedDialogOpen, setBlockedDialogOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [pendingSettingKeys, setPendingSettingKeys] = useState<NotifySettingKey[]>([]);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
+  const [timeDraft, setTimeDraft] = useState<MedicationTimes | null>(null);
+  const [timeSaveError, setTimeSaveError] = useState<string | null>(null);
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
@@ -212,6 +236,48 @@ export function MyPage({
     }
   }
 
+  function openMedicationTimeSheet() {
+    if (!notifySettings) return;
+    setTimeDraft(medicationTimesFromSettings(notifySettings));
+    setTimeSaveError(null);
+    setTimeSheetOpen(true);
+  }
+
+  function cancelMedicationTimeSheet() {
+    setTimeSheetOpen(false);
+    setTimeDraft(null);
+    setTimeSaveError(null);
+  }
+
+  function updateMedicationTimeDraft(values: MedicationTimes) {
+    setTimeDraft(values);
+    setTimeSaveError(null);
+  }
+
+  async function saveMedicationTimes() {
+    if (!timeDraft) return;
+    if (!isMealTimeOrderValid(mealSlotTimesFromMedicationTimes(timeDraft))) {
+      setTimeSaveError('아침 < 점심 < 저녁 < 자기전 순서로 정해주세요');
+      return;
+    }
+
+    setNotificationBusy(true);
+    setTimeSaveError(null);
+    try {
+      const updated = await notifySettingsUpdater(timeDraft);
+      setNotifySettings(updated);
+      setTimeSheetOpen(false);
+      setTimeDraft(null);
+      toast.success('알림 시간을 바꿨어요.');
+    } catch (error: unknown) {
+      setTimeSaveError(
+        error instanceof Error ? error.message : '알림 설정을 저장하지 못했어요.',
+      );
+    } finally {
+      setNotificationBusy(false);
+    }
+  }
+
   async function handlePermissionAccept() {
     const key = pendingToggle;
     if (!key) return;
@@ -303,6 +369,13 @@ export function MyPage({
                   onClick={() => navigate('/supplements')}
                   divided
                 />
+                <ManagementRow
+                  icon={CalendarDays}
+                  label="진료일정"
+                  value="관리"
+                  onClick={() => navigate('/my/visits')}
+                  divided
+                />
               </Card>
             </section>
 
@@ -339,6 +412,19 @@ export function MyPage({
                       }
                       divided
                     />
+                    <button
+                      type="button"
+                      className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
+                      onClick={openMedicationTimeSheet}
+                    >
+                      <span className="flex-1 text-base font-bold text-foreground">
+                        알림 시간 설정
+                      </span>
+                      <ChevronRight
+                        aria-hidden
+                        className="size-5 shrink-0 text-disabled-foreground"
+                      />
+                    </button>
                   </>
                 ) : (
                   <p className="p-4 text-sm text-muted-foreground">알림 설정을 불러오는 중...</p>
@@ -403,6 +489,17 @@ export function MyPage({
           retry?.();
         }}
       />
+      {notifySettings && timeDraft && (
+        <MedicationTimeSettingsSheet
+          open={timeSheetOpen}
+          values={timeDraft}
+          busy={notificationBusy}
+          error={timeSaveError}
+          onChange={updateMedicationTimeDraft}
+          onSave={() => void saveMedicationTimes()}
+          onCancel={cancelMedicationTimeSheet}
+        />
+      )}
       <WithdrawAccountDialog
         open={withdrawDialogOpen}
         onOpenChange={setWithdrawDialogOpen}

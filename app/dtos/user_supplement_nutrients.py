@@ -90,6 +90,7 @@ class UserSupplementNutrientUpdateRequest(BaseModel):
     status: SupplementStatus | None = None
     slots: list[MealSlot] | None = Field(default=None, min_length=1, max_length=4)
     note: str | None = Field(default=None, max_length=500)
+    review_body: str | None = Field(default=None, max_length=500)
     score: int | None = Field(default=None, ge=1, le=5)
 
     @field_validator("dose_unit", mode="before")
@@ -97,9 +98,9 @@ class UserSupplementNutrientUpdateRequest(BaseModel):
     def normalize_dose_unit(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("note", mode="before")
+    @field_validator("note", "review_body", mode="before")
     @classmethod
-    def normalize_note(cls, value: object) -> object:
+    def normalize_optional_text(cls, value: object) -> object:
         if not isinstance(value, str):
             return value
         normalized = value.strip()
@@ -133,6 +134,7 @@ class UserSupplementNutrientResponse(BaseModel):
     end_date: date | None
     status: SupplementStatus
     note: str | None
+    review_body: str | None
     score: int | None
     created_at: datetime
     updated_at: datetime | None

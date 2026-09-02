@@ -1,8 +1,10 @@
 export {
   addSupplement,
+  fetchSupplementReviews,
   getSupplementProduct,
   getSupplementRanking,
   getSupplements,
+  reportSupplementReview,
   searchSupplementProducts,
   stopSupplement,
   updateSupplement,
@@ -26,7 +28,10 @@ export type {
   SupplementProduct,
   SupplementRanking,
   SupplementRankingItem,
+  SupplementReview,
+  SupplementReviewList,
   SupplementSearchPage,
+  SupplementSortKey,
   SupplementSlot,
   UpdateSupplementPayload,
 } from './types';

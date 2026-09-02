@@ -1,10 +1,11 @@
 import asyncio
-from datetime import date, datetime, time
+from datetime import datetime, time, timedelta
 
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase, TruncationTestCase
 
+from app.core import config
 from app.main import app
 from app.models.alarms import Alarm
 from app.models.care import CareEpisode
@@ -15,29 +16,30 @@ from app.tests.med_apis.helpers import authentication_headers
 
 
 async def create_ocr_medications(user: User) -> tuple[CareEpisode, Medication, Medication]:
+    today = datetime.now(config.TIMEZONE).date()
     episode = await CareEpisode.create(
         user=user,
-        title="2026-08-25 조제약 복약안내",
-        medication_start_date=date(2026, 8, 25),
+        title=f"{today.isoformat()} 조제약 복약안내",
+        medication_start_date=today,
         medication_days=7,
     )
     scheduled = await Medication.create(
         care_episode=episode,
         name="셀레콕시브",
-        dose="200mg",
+        strength="200mg",
         administration="아침·저녁 식후",
         times_per_day=2,
         days=7,
-        prescribed_at=date(2026, 8, 25),
+        prescribed_at=today,
     )
     as_needed = await Medication.create(
         care_episode=episode,
         name="아세트아미노펜",
-        dose="650mg",
+        strength="650mg",
         administration="6시간 이상 간격",
         times_per_day=None,
         days=7,
-        prescribed_at=date(2026, 8, 25),
+        prescribed_at=today,
     )
     return episode, scheduled, as_needed
 
@@ -47,8 +49,9 @@ def schedule_url(record_id: int) -> str:
 
 
 def schedule_payload(medication_id: int) -> dict[str, object]:
+    today = datetime.now(config.TIMEZONE).date().isoformat()
     return {
-        "start": {"date": "2026-08-25", "slot": "morning"},
+        "start": {"date": today, "slot": "morning"},
         "mealTimes": {
             "morning": "08:00",
             "lunch": "12:30",
@@ -208,7 +211,10 @@ class TestMedicationScheduleAPI(TestCase):
         assert saved.status_code == status.HTTP_200_OK
         assert saved.json() == {"saved": True}
         assert loaded.status_code == status.HTTP_200_OK
-        assert loaded.json()["start"] == {"date": "2026-08-25", "slot": "morning"}
+        assert loaded.json()["start"] == {
+            "date": datetime.now(config.TIMEZONE).date().isoformat(),
+            "slot": "morning",
+        }
         assert loaded.json()["mealTimes"] == {
             "morning": "08:00",
             "lunch": "12:30",
@@ -218,9 +224,36 @@ class TestMedicationScheduleAPI(TestCase):
         assert loaded.json()["medications"][0]["slots"] == ["morning", "evening"]
 
         stored_episode = await CareEpisode.get(id=episode.id)
-        assert stored_episode.medication_start_date == date(2026, 8, 25)
+        assert stored_episode.medication_start_date == datetime.now(config.TIMEZONE).date()
         assert stored_episode.medication_start_slot == MealSlot.MORNING
         assert await MedicationSlot.filter(medication=scheduled).count() == 2
+
+    async def test_save_rejects_finished_episode_without_partial_writes(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "schedule-finished@example.com"
+            headers = await authentication_headers(client, email, "01022000013")
+            user = await User.get(email=email)
+            episode, scheduled, _ = await create_ocr_medications(user)
+            episode.medication_start_date = today - timedelta(days=7)
+            episode.medication_days = 7
+            await episode.save(update_fields=["medication_start_date", "medication_days"])
+
+            response = await client.put(
+                schedule_url(episode.id),
+                json=schedule_payload(scheduled.id),
+                headers=headers,
+            )
+
+        stored_episode = await CareEpisode.get(id=episode.id)
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json() == {
+            "code": "MEDICATION_SCHEDULE_FINISHED",
+            "message": "이미 끝난 처방은 수정할 수 없습니다",
+        }
+        assert stored_episode.medication_start_slot is None
+        assert await MedicationSlot.filter(medication=scheduled).count() == 0
+        assert await Alarm.filter(user=user, alarm_type=AlarmType.MEDICATION).count() == 0
 
     async def test_save_creates_active_user_slot_medication_alarms(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -229,7 +262,7 @@ class TestMedicationScheduleAPI(TestCase):
             user = await User.get(email=email)
             episode, scheduled, _ = await create_ocr_medications(user)
             payload = schedule_payload(scheduled.id)
-            payload["start"]["date"] = datetime.now().date().isoformat()  # type: ignore[index]
+            payload["start"]["date"] = datetime.now(config.TIMEZONE).date().isoformat()  # type: ignore[index]
 
             response = await client.put(
                 schedule_url(episode.id),

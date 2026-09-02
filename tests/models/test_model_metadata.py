@@ -49,6 +49,8 @@ def load_recovery_chat_models():
             "app.models.recovery",
             "app.models.chat",
             "app.models.medications",
+            "app.models.interactions",
+            "app.models.supplement_nutrients",
         ),
         "models",
     )
@@ -225,7 +227,25 @@ def test_ocr_job_uses_temporary_structured_result_contract() -> None:
     )
     assert ocr.OcrJob._meta.fields_map["input_manifest"].null is False
     assert ocr.OcrJob._meta.fields_map["structured_result"].null is True
-    assert {"ocr_model", "structuring_model", "ready_at", "expires_at"} <= ocr.OcrJob._meta.db_fields
+    assert ocr.OcrJob._meta.fields_map["structuring_model"].null is True
+    assert ocr.OcrJob._meta.fields_map["prompt_version"].null is True
+    assert ocr.OcrJob._meta.fields_map["stage_results"].null is True
+    assert ocr.OcrJob._meta.fields_map["avg_field_confidence"].max_digits == 5
+    assert ocr.OcrJob._meta.fields_map["avg_field_confidence"].decimal_places == 4
+    assert ocr.OcrJob._meta.fields_map["confidence_field_count"].null is True
+    assert ocr.OcrJob._meta.fields_map["user_review_match_rate"].max_digits == 5
+    assert ocr.OcrJob._meta.fields_map["user_review_match_rate"].decimal_places == 4
+    assert {
+        "ocr_model",
+        "structuring_model",
+        "stage_results",
+        "avg_field_confidence",
+        "confidence_field_count",
+        "user_review_match_rate",
+        "ready_at",
+        "expires_at",
+    } <= ocr.OcrJob._meta.db_fields
+    assert "target_field_count" not in ocr.OcrJob._meta.fields_map
     assert not hasattr(ocr, "OcrExtractedField")
 
 
@@ -273,6 +293,16 @@ def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
 def test_chat_and_source_retention_v4_metadata() -> None:
     recovery, chat = load_recovery_chat_models()
 
+    score = chat.ChatSession._meta.fields_map["score"]
+    assert isinstance(score, fields.IntField)
+    assert score.null is True
+    assert score.description == "채팅 별점"
+    assert {validator.__class__.__name__ for validator in score.validators} == {
+        "MinValueValidator",
+        "MaxValueValidator",
+    }
+    assert score.validators[0].min_value == 1
+    assert score.validators[1].max_value == 5
     assert chat.ChatSession._meta.fields_map["user"].null is False
     assert chat.ChatSession._meta.fields_map["user"].model_name == "models.User"
     assert chat.ChatSession._meta.fields_map["user"].on_delete == fields.CASCADE
@@ -333,6 +363,18 @@ def test_medication_v4_metadata() -> None:
     assert medication_fields["note"].max_length == 500
     assert any(getattr(validator, "min_value", None) == 1 for validator in medication_fields["days"].validators)
     assert any(getattr(validator, "max_value", None) == 365 for validator in medication_fields["days"].validators)
+
+
+def test_medication_ocr_v3_storage_metadata() -> None:
+    medications = load_medication_models()
+
+    medication_fields = medications.Medication._meta.fields_map
+    assert "dose" not in medication_fields
+    assert medication_fields["strength"].null is True
+    assert medication_fields["strength"].max_length == 100
+    assert medication_fields["dose_quantity"].null is True
+    assert medication_fields["dose_quantity"].max_length == 50
+    assert "dose_unit" not in medication_fields
 
 
 def test_all_19_domain_tables_are_registered() -> None:
