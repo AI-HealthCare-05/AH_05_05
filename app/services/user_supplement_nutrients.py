@@ -1,6 +1,7 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
@@ -16,18 +17,22 @@ from app.dtos.user_supplement_nutrients import (
     UserSupplementNutrientUpdateRequest,
     UserSupplementNutrientUpsertRequest,
 )
-from app.models.enums import Gender, MealSlot, SupplementStatus
+from app.models.enums import AlarmType, Gender, MealSlot, SupplementStatus
 from app.models.supplement_nutrients import NutrientStandard, UserSupplementNutrient
 from app.models.users import User, UserSettings
 from app.repositories.user_supplement_nutrient_repository import UserSupplementNutrientRepository
 from app.services.nutrient_standards import resolve_age_range
+from app.services.slot_alarms import SLOT_ORDER, sync_slot_alarms
 
-SLOT_ORDER = {
+SLOT_SORT_ORDER = {
     MealSlot.MORNING: 0,
     MealSlot.LUNCH: 1,
     MealSlot.EVENING: 2,
     MealSlot.BEDTIME: 3,
 }
+
+NUTRIENT_ALARM_TITLE = "영양제 알림"
+NUTRIENT_ALARM_MESSAGE = "영양제 챙기실 시간이에요"
 
 SLOT_TIME_FIELDS = {
     MealSlot.MORNING: "morning_medication_time",
@@ -73,7 +78,7 @@ class UserSupplementNutrientService:
         data: ManualSupplementNutrientCreateRequest,
     ) -> UserSupplementNutrientResponse:
         async with in_transaction() as connection:
-            await self.repository.get_or_create_settings(user.id, connection)
+            settings = await self.repository.get_or_create_settings(user.id, connection)
             values = data.model_dump(exclude={"slots"})
             registration = await UserSupplementNutrient.create(
                 user_id=user.id,
@@ -83,6 +88,7 @@ class UserSupplementNutrientService:
                 **values,
             )
             await self.repository.replace_slots(registration.id, data.slots, connection)
+            await self._sync_nutrient_alarms(user.id, settings, connection)
             registration_id = registration.id
         return await self.get(user, registration_id)
 
@@ -93,7 +99,7 @@ class UserSupplementNutrientService:
         data: UserSupplementNutrientUpsertRequest,
     ) -> int:
         async with in_transaction() as connection:
-            await self.repository.get_or_create_settings(user_id, connection)
+            settings = await self.repository.get_or_create_settings(user_id, connection)
             registration = await self.repository.get_by_user_product_for_update(
                 user_id,
                 supplement_nutrient_id,
@@ -117,7 +123,41 @@ class UserSupplementNutrientService:
                     update_fields=[*values, "updated_at"],
                 )
             await self.repository.replace_slots(registration.id, data.slots, connection)
+            await self._sync_nutrient_alarms(user_id, settings, connection)
             return registration.id
+
+    @classmethod
+    async def _sync_nutrient_alarms(
+        cls,
+        user_id: int,
+        settings: UserSettings,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        registrations = (
+            await UserSupplementNutrient.filter(
+                user_id=user_id,
+                status=SupplementStatus.ACTIVE,
+            )
+            .using_db(connection)
+            .prefetch_related("slots")
+        )
+        windows: dict[MealSlot, list[tuple[date, date | None]]] = {slot: [] for slot in SLOT_ORDER}
+        for registration in registrations:
+            for supplement_slot in registration.slots:
+                windows[supplement_slot.slot].append((registration.start_date, registration.end_date))
+
+        meal_times = {
+            slot: normalize_mysql_time(getattr(settings, field_name)) for slot, field_name in SLOT_TIME_FIELDS.items()
+        }
+        await sync_slot_alarms(
+            user_id=user_id,
+            alarm_type=AlarmType.NUTRIENT,
+            meal_times=meal_times,
+            windows=windows,
+            title=NUTRIENT_ALARM_TITLE,
+            message=NUTRIENT_ALARM_MESSAGE,
+            connection=connection,
+        )
 
     async def list(
         self,
@@ -163,6 +203,7 @@ class UserSupplementNutrientService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User supplement nutrient not found.",
                 )
+            settings = await self.repository.get_or_create_settings(user.id, connection)
             updates = data.model_dump(exclude_unset=True)
             slots = updates.pop("slots", None)
             merged_start_date = updates.get("start_date", registration.start_date)
@@ -185,6 +226,7 @@ class UserSupplementNutrientService:
                 )
             if slots is not None:
                 await self.repository.replace_slots(registration.id, slots, connection)
+            await self._sync_nutrient_alarms(user.id, settings, connection)
         return await self.get(user, registration_id)
 
     async def complete(self, user: User, registration_id: int) -> None:
@@ -195,16 +237,17 @@ class UserSupplementNutrientService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User supplement nutrient not found.",
                 )
-            if registration.status == SupplementStatus.COMPLETED:
-                return
-            now = datetime.now(config.TIMEZONE)
-            registration.status = SupplementStatus.COMPLETED
-            registration.end_date = now.date()
-            registration.updated_at = now
-            await registration.save(
-                using_db=connection,
-                update_fields=["status", "end_date", "updated_at"],
-            )
+            settings = await self.repository.get_or_create_settings(user.id, connection)
+            if registration.status != SupplementStatus.COMPLETED:
+                now = datetime.now(config.TIMEZONE)
+                registration.status = SupplementStatus.COMPLETED
+                registration.end_date = now.date()
+                registration.updated_at = now
+                await registration.save(
+                    using_db=connection,
+                    update_fields=["status", "end_date", "updated_at"],
+                )
+            await self._sync_nutrient_alarms(user.id, settings, connection)
 
     @staticmethod
     async def _resolve_nutrient_standard(user: User) -> UserNutrientStandardResponse | None:
@@ -262,7 +305,7 @@ class UserSupplementNutrientService:
         registration: UserSupplementNutrient,
         settings: UserSettings,
     ) -> UserSupplementNutrientResponse:
-        slots = sorted(registration.slots, key=lambda item: SLOT_ORDER[item.slot])
+        slots = sorted(registration.slots, key=lambda item: SLOT_SORT_ORDER[item.slot])
         return UserSupplementNutrientResponse(
             id=registration.id,
             custom_name=registration.custom_name,

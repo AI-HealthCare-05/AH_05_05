@@ -59,12 +59,13 @@ async function stubPushManager(page: Page) {
   });
 }
 
-test('알림 설정은 복약·영양제 모두 꺼진 서버 기본값으로 시작한다', async ({ page }) => {
+test('알림 설정은 복약·영양제·일정 모두 꺼진 서버 기본값으로 시작한다', async ({ page }) => {
   await stubNotificationPermission(page, 'default');
   await page.goto('/dev/my-authenticated');
 
   await expect(page.locator('[role="switch"][aria-label="복약 알림"]')).not.toBeChecked();
   await expect(page.locator('[role="switch"][aria-label="영양제 알림"]')).not.toBeChecked();
+  await expect(page.locator('[role="switch"][aria-label="일정 알림"]')).not.toBeChecked();
 });
 
 test('마이페이지에서 default 권한의 토글을 켜면 브라우저 요청보다 사전 팝업을 먼저 연다', async ({
@@ -120,6 +121,7 @@ test('마이페이지 허용에서는 누른 토글만 켜고 기존 알람 구�
     timeout: 200,
   });
   await expect(page.getByRole('switch', { name: '영양제 알림' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: '일정 알림' })).not.toBeChecked();
   expect(subscriptions).toEqual([
     {
       method: 'PUT',
@@ -140,12 +142,13 @@ test('마이페이지 허용에서는 누른 토글만 켜고 기존 알람 구�
   expect(subscriptions).toHaveLength(1);
 });
 
-test('알림 미지원 브라우저에서는 두 토글을 비활성화하고 안내한다', async ({ page }) => {
+test('알림 미지원 브라우저에서는 세 토글을 비활성화하고 안내한다', async ({ page }) => {
   await stubNotificationPermission(page, 'unsupported');
   await page.goto('/dev/my-authenticated');
 
   await expect(page.getByRole('switch', { name: '복약 알림' })).toBeDisabled();
   await expect(page.getByRole('switch', { name: '영양제 알림' })).toBeDisabled();
+  await expect(page.getByRole('switch', { name: '일정 알림' })).toBeDisabled();
   await expect(page.getByText('이 브라우저에서는 알림을 지원하지 않아요')).toBeVisible();
 });
 
@@ -262,4 +265,5 @@ test('복약시간 최초 허용은 복약·영양제 토글을 함께 켠다', 
   });
   await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '영양제 알림' })).toBeChecked();
+  await expect(page.getByRole('switch', { name: '일정 알림' })).not.toBeChecked();
 });

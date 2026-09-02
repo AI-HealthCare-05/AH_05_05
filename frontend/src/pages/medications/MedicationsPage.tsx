@@ -11,27 +11,19 @@ import {
   type MedicationOverviewItem,
   type MedicationOverviewRange,
 } from '@/entities/medication';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
   Button,
   Card,
   ErrorDialog,
   Header,
-  type TabKey,
 } from '@/shared/ui';
 import { MedicationBulkDeleteDialog } from './MedicationBulkDeleteDialog';
 import { MedicationEpisodeCard } from './MedicationEpisodeCard';
 import { MedicationPeriodFilterSheet } from './MedicationPeriodFilterSheet';
 import { MedicationSlotSheet } from './MedicationSlotSheet';
 import { medicationPeriodLabel, medicationRangeFromSearchParams } from './medicationPeriod';
-
-const TAB_ROUTES: Record<TabKey, string> = {
-  home: '/home',
-  medication: '/medications',
-  supplement: '/supplements',
-  chat: '/chat',
-  my: '/my',
-};
 
 interface MedicationsPageProps {
   overviewsLoader?: (range?: MedicationOverviewRange) => Promise<MedicationOverview[]>;

@@ -506,7 +506,7 @@ test('가장자리 라벨을 트랙 안에 가두고 가까운 두 눈금 라벨
   );
 });
 
-test('상한 없는 안내를 눈금 라벨 영역 밖의 상태 문구로 표시한다', async ({ page }) => {
+test('상한 없는 성분은 눈금 라벨 밖에 비율만 표시한다', async ({ page }) => {
   await openSupplementFixture(page, MIXED_STANDARD_PRODUCT, MALE_NUTRIENT_STANDARD);
 
   const protein = page.getByRole('article', { name: '단백질 성분 합계' });
@@ -515,8 +515,7 @@ test('상한 없는 안내를 눈금 라벨 영역 밖의 상태 문구로 표�
   await expect(baseLabel.getByText('권장', { exact: true })).toBeVisible();
   await expect(baseLabel.getByText('65', { exact: true })).toBeVisible();
   await expect(labels.getByText('상한 기준이 없어요', { exact: true })).toHaveCount(0);
-  await expect(protein.getByText('권장량의 231%예요 · 상한 기준이 없어요', { exact: true }))
-    .toBeVisible();
+  await expect(protein.getByText('권장량의 231%예요', { exact: true })).toBeVisible();
 });
 
 test('상한 없는 성분은 권장 눈금을 70%에 두고 마커를 트랙 안에 고정한다', async ({ page }) => {
@@ -597,12 +596,12 @@ test('권장과 충분 기준에 맞춰 상태 문구의 기준량 이름을 구
 
   const protein = page.getByRole('article', { name: '단백질 성분 합계' });
   await expect(
-    protein.getByText('권장량의 231%예요 · 상한 기준이 없어요', { exact: true }),
+    protein.getByText('권장량의 231%예요', { exact: true }),
   ).toBeVisible();
 
   const potassium = page.getByRole('article', { name: '칼륨 성분 합계' });
   await expect(
-    potassium.getByText('충분섭취량의 27%예요 · 상한 기준이 없어요', { exact: true }),
+    potassium.getByText('충분섭취량의 27%예요', { exact: true }),
   ).toBeVisible();
 });
 

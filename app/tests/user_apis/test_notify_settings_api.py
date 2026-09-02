@@ -10,6 +10,7 @@ from app.models.alarms import Alarm
 from app.models.care import CareEpisode
 from app.models.enums import AlarmType, MealSlot
 from app.models.medications import Medication
+from app.models.supplement_nutrients import UserSupplementNutrient, UserSupplementNutrientSlot
 from app.models.users import User, UserSettings
 
 
@@ -53,6 +54,7 @@ class TestNotifySettingsApis(TestCase):
         assert response.json() == {
             "notifyMedication": False,
             "notifySupplement": False,
+            "notifySchedule": False,
             "notifyConsentedAt": None,
             "morningMedicationTime": "08:00:00",
             "lunchMedicationTime": "13:00:00",
@@ -156,6 +158,35 @@ class TestNotifySettingsApis(TestCase):
         assert alarm.scheduled_at.strftime("%H:%M") == "09:00"
         assert alarm.next_trigger_at == alarm.scheduled_at
 
+    async def test_patch_resynchronizes_existing_nutrient_alarm(self):
+        email = "notify-nutrient-time@example.com"
+        client, headers = await self.create_authenticated_client(email)
+        user = await User.get(email=email)
+        today = datetime.now(config.TIMEZONE).date()
+        registration = await UserSupplementNutrient.create(
+            user=user,
+            custom_name="시간 변경 영양제",
+            dose_amount="1.000",
+            dose_unit="정",
+            start_date=today,
+        )
+        await UserSupplementNutrientSlot.create(
+            user_suppl_nutrient=registration,
+            slot=MealSlot.MORNING,
+        )
+        try:
+            patched = await client.patch(
+                "/api/v1/me/settings",
+                headers=headers,
+                json={"morningMedicationTime": "09:30"},
+            )
+        finally:
+            await client.aclose()
+
+        alarm = await Alarm.get(user=user, alarm_type=AlarmType.NUTRIENT, meal_slot=MealSlot.MORNING)
+        assert patched.status_code == status.HTTP_200_OK
+        assert alarm.scheduled_at.strftime("%H:%M") == "09:30"
+
     async def test_patch_updates_only_supplied_setting_and_records_first_consent(self):
         client, headers = await self.create_authenticated_client("notify-patch@example.com")
         try:
@@ -168,6 +199,11 @@ class TestNotifySettingsApis(TestCase):
                 "/api/v1/me/settings",
                 headers=headers,
                 json={"notifySupplement": True},
+            )
+            third_response = await client.patch(
+                "/api/v1/me/settings",
+                headers=headers,
+                json={"notifySchedule": True},
             )
         finally:
             await client.aclose()
@@ -185,9 +221,14 @@ class TestNotifySettingsApis(TestCase):
         assert second_body["notifyConsentedAt"] == first_body["notifyConsentedAt"]
 
         settings = await UserSettings.get(user__email="notify-patch@example.com")
+
+        assert third_response.status_code == status.HTTP_200_OK
+        third_body = third_response.json()
+        assert third_body["notifySchedule"] is True
+        assert third_body["notifyConsentedAt"] == first_body["notifyConsentedAt"]
         assert settings.is_notify_medication is True
         assert settings.is_notify_supplement is True
-        assert settings.is_notify_schedule is False
+        assert settings.is_notify_schedule is True
         assert settings.is_notify_guide is False
 
     async def test_empty_patch_records_consent_without_changing_toggles(self):

@@ -15,6 +15,7 @@ import {
   type Supplement,
   type UpdateSupplementPayload,
 } from '@/entities/supplement';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { calculateFullAge } from '@/shared/lib/birthDate';
 import { mealSlotLabel } from '@/shared/model/mealSlot';
 import {
@@ -24,19 +25,10 @@ import {
   ErrorDialog,
   Header,
   StatusBadge,
-  type TabKey,
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
 import { SupplementsBrowseView } from './SupplementsBrowseView';
-
-const TAB_ROUTES: Record<TabKey, string> = {
-  home: '/home',
-  medication: '/medications',
-  supplement: '/supplements',
-  chat: '/chat',
-  my: '/my',
-};
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
 
@@ -479,7 +471,7 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
   const evaluation = evaluateNutrientStandard(total);
   const baseLabel = evaluation.baseKind === 'ai' ? '충분섭취량' : '권장량';
   if (evaluation.status === 'unrated') {
-    return <p className="text-sm text-muted-foreground">이 성분은 섭취 기준이 없어요</p>;
+    return null;
   }
   if (evaluation.status === 'over-upper-limit') {
     return <p className="text-sm font-bold text-danger-strong">상한 초과</p>;
@@ -488,7 +480,6 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
     return (
       <p className="text-sm text-muted-foreground">
         {baseLabel}의 {numberFormat.format(evaluation.percentOfBase)}%예요
-        {total.ul === null && ' · 상한 기준이 없어요'}
       </p>
     );
   }
@@ -496,7 +487,7 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
     if (total.ul === null && evaluation.percentOfBase !== null) {
       return (
         <p className="text-sm text-muted-foreground">
-          {baseLabel}의 {numberFormat.format(evaluation.percentOfBase)}%예요 · 상한 기준이 없어요
+          {baseLabel}의 {numberFormat.format(evaluation.percentOfBase)}%예요
         </p>
       );
     }

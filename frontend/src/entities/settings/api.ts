@@ -6,6 +6,7 @@ import type { NotifySettings, UpdateNotifySettingsPayload } from './types';
 interface NotifySettingsApiResponse {
   notifyMedication: boolean;
   notifySupplement: boolean;
+  notifySchedule: boolean;
   notifyConsentedAt: string | null;
   morningMedicationTime: string;
   lunchMedicationTime: string;

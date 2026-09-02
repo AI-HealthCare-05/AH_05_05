@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
@@ -11,6 +11,7 @@ import {
 } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
+import { PrivacyPage, TermsPage } from '@/pages/legal';
 import { SplashPage } from '@/pages/splash';
 import {
   SupplementProductPage,
@@ -133,9 +134,18 @@ const failChatSessionHistory = async (_sessionId: number): Promise<ChatMessage[]
   throw new Error('대화 이력 API가 아직 준비되지 않았어요.');
 };
 
-function AuthenticatedChatPage() {
+function RequireAuthentication() {
   const { authenticated, principalKey } = useSession();
-  return authenticated && principalKey ? <ChatPage /> : <Navigate to="/login" replace />;
+  const location = useLocation();
+  return authenticated && principalKey ? (
+    <Outlet />
+  ) : (
+    <Navigate
+      to="/login"
+      replace
+      state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+    />
+  );
 }
 
 /**
@@ -152,17 +162,21 @@ export function AppRouter() {
         <Route path="/" element={<SplashPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
-        <Route path="/supplements" element={<SupplementsPage />} />
-        <Route path="/supplements/product/:productId" element={<SupplementProductPage />} />
-        <Route path="/document-upload" element={<DocumentUploadPage />} />
-        <Route path="/ocr-review" element={<OcrReviewPage />} />
-        <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
-        <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
-        <Route path="/medications" element={<MedicationsPage />} />
-        <Route path="/chat" element={<AuthenticatedChatPage />} />
-        <Route path="/my" element={<MyPage />} />
-        <Route path="/my/profile" element={<MyProfilePage />} />
-        <Route path="/my/visits" element={<FollowUpVisitsPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route element={<RequireAuthentication />}>
+          <Route path="/supplements" element={<SupplementsPage />} />
+          <Route path="/supplements/product/:productId" element={<SupplementProductPage />} />
+          <Route path="/document-upload" element={<DocumentUploadPage />} />
+          <Route path="/ocr-review" element={<OcrReviewPage />} />
+          <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
+          <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
+          <Route path="/medications" element={<MedicationsPage />} />
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/my" element={<MyPage />} />
+          <Route path="/my/profile" element={<MyProfilePage />} />
+          <Route path="/my/visits" element={<FollowUpVisitsPage />} />
+        </Route>
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
