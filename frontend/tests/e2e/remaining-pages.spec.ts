@@ -14,6 +14,13 @@ async function chooseAlarmTime(page: Page, hour: string, minute: string) {
   await page.getByRole('option', { name: `${minute}분`, exact: true }).click();
 }
 
+async function seedAuthenticatedSession(page: Page) {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'remaining-pages-token');
+    sessionStorage.setItem('poke.account-principal', 'remaining-pages@example.com');
+  });
+}
+
 test.setTimeout(20_000);
 
 test('복약 화면은 처방 회차 목록을 보여준다', async ({ page }) => {
@@ -90,11 +97,14 @@ test('개발용 게스트 마이페이지는 리디렉션하지 않고 로그인
 test('로그인 페이지는 법적 안내와 게스트 안전 하단 탭을 제공한다', async ({ page }) => {
   await page.goto('/login');
 
-  await expect(page.getByRole('link', { name: '이용약관' })).toHaveAttribute('href', '/terms');
-  await expect(page.getByRole('link', { name: '개인정보 처리 안내' })).toHaveAttribute(
+  const footer = page.getByRole('contentinfo');
+  await expect(footer.getByRole('img', { name: 'RxVita' })).toBeVisible();
+  await expect(footer.getByRole('link', { name: '이용약관' })).toHaveAttribute('href', '/terms');
+  await expect(footer.getByRole('link', { name: '개인정보 처리 안내' })).toHaveAttribute(
     'href',
     '/privacy',
   );
+  await expect(footer.getByText('|', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '마이', exact: true })).toHaveAttribute(
     'aria-current',
     'page',
@@ -103,6 +113,32 @@ test('로그인 페이지는 법적 안내와 게스트 안전 하단 탭을 제
   await expect(page).toHaveURL(/\/login$/);
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await expect(page).toHaveURL(/\/home$/);
+});
+
+test('로그인 페이지의 이용약관 링크는 공개 약관과 AI 의료 안내를 보여준다', async ({ page }) => {
+  await page.goto('/login');
+
+  await page.getByRole('link', { name: '이용약관' }).click();
+
+  await expect(page).toHaveURL(/\/terms$/);
+  await expect(page.getByRole('heading', { name: '이용약관' })).toBeVisible();
+  await expect(page.getByText(/의료인의 진단·처방·치료를 대체하지 않습니다/)).toBeVisible();
+  await expect(
+    page.getByText(/AI 챗봇의 답변은 이용자가 등록한 처방약과 영양제 정보/),
+  ).toBeVisible();
+});
+
+test('로그인 페이지의 개인정보 링크는 공개 처리 안내와 담당자 정보를 보여준다', async ({
+  page,
+}) => {
+  await page.goto('/login');
+
+  await page.getByRole('link', { name: '개인정보 처리 안내' }).click();
+
+  await expect(page).toHaveURL(/\/privacy$/);
+  await expect(page.getByRole('heading', { name: '개인정보 처리 안내' })).toBeVisible();
+  await expect(page.getByText('김은미', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'blesseunmi@gmail.com' })).toBeVisible();
 });
 
 test('로그인 마이페이지는 내 관리와 알림 토글, 계정을 보여준다', async ({ page }) => {
@@ -309,6 +345,7 @@ test('복약 시작 시간대는 알림을 위한 필수 선택임을 표시한�
 });
 
 test('복용약 카드를 누르면 그 약의 시간대만 시트에서 바꾼다', async ({ page }) => {
+  await seedAuthenticatedSession(page);
   await page.goto('/dev/medications');
   await page.getByRole('button', { name: /2026년 8월 22일 처방.*약 4개/ }).click();
   await page.getByRole('button', { name: /셀레콕시브 200mg 복용 시간 수정/ }).click();

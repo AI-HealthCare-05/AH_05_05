@@ -2,9 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from app.dependencies.security import get_request_user
 from app.dtos.supplement_rank_displays import SupplementRankDisplayResponse
-from app.models.users import User
 from app.services.supplement_rank_displays import SupplementRankDisplayService
 
 display_router = APIRouter(prefix="/display", tags=["display"])
@@ -21,7 +19,6 @@ def get_supplement_rank_display_service() -> SupplementRankDisplayService:
     summary="현재 영양제 랭킹 전시 조회",
 )
 async def get_current_supplement_rank_display(
-    _user: Annotated[User, Depends(get_request_user)],
     service: Annotated[SupplementRankDisplayService, Depends(get_supplement_rank_display_service)],
 ) -> SupplementRankDisplayResponse:
     """현재 전시기간에 포함되고 활성화된 영양제 랭킹 한 건을 순위와 함께 조회한다."""

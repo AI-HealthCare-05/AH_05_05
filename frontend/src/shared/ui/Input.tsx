@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, Ref } from 'react';
+import type { InputHTMLAttributes, ReactNode, Ref } from 'react';
 import { useId } from 'react';
 import { cn } from '@/shared/lib/cn';
 
@@ -14,11 +14,22 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   error?: string;
   /** 에러가 아닌 보조 설명 */
   hint?: string;
+  /** 입력창 우측에 배치할 버튼 등의 액션 */
+  trailingAction?: ReactNode;
   inputRef?: Ref<HTMLInputElement>;
   className?: string;
 }
 
-export function Input({ label, error, hint, inputRef, className, id, ...rest }: InputProps) {
+export function Input({
+  label,
+  error,
+  hint,
+  trailingAction,
+  inputRef,
+  className,
+  id,
+  ...rest
+}: InputProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
   const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
@@ -30,21 +41,27 @@ export function Input({ label, error, hint, inputRef, className, id, ...rest }: 
           {label}
         </label>
       )}
-      <input
-        ref={inputRef}
-        id={inputId}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy}
-        className={cn(
-          'h-touch w-full rounded-input border bg-card px-3.5 text-base text-foreground',
-          'placeholder:text-disabled-foreground',
-          'focus:outline-none focus:ring-2 focus:ring-ring',
-          // type="date"의 달력 아이콘. 기본 크기가 작아 NFR-ACC-001 기준에 맞게 키웁니다.
-          '[&::-webkit-calendar-picker-indicator]:size-6 [&::-webkit-calendar-picker-indicator]:cursor-pointer',
-          error ? 'border-danger' : 'border-input',
+      <div className="relative">
+        <input
+          ref={inputRef}
+          id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          className={cn(
+            'h-touch w-full rounded-input border bg-card px-3.5 text-base text-foreground',
+            'placeholder:text-disabled-foreground',
+            'focus:outline-none focus:ring-2 focus:ring-ring',
+            // type="date"의 달력 아이콘. 기본 크기가 작아 NFR-ACC-001 기준에 맞게 키웁니다.
+            '[&::-webkit-calendar-picker-indicator]:size-6 [&::-webkit-calendar-picker-indicator]:cursor-pointer',
+            trailingAction && 'pr-12',
+            error ? 'border-danger' : 'border-input',
+          )}
+          {...rest}
+        />
+        {trailingAction && (
+          <div className="absolute inset-y-0 right-1 flex items-center">{trailingAction}</div>
         )}
-        {...rest}
-      />
+      </div>
       {error && (
         <p id={`${inputId}-error`} className="text-sm text-danger-strong">
           {error}

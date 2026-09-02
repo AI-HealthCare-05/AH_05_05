@@ -15,7 +15,7 @@ async function openSignup(page: Page) {
 async function fillSignupBase(page: Page) {
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
-  await page.getByLabel('비밀번호 확인').fill('password1234');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('password1234');
   await page.getByLabel('이름').fill('신동훈');
   await page.getByLabel('전화번호').fill('01012345678');
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
@@ -25,7 +25,7 @@ async function fillSignupBase(page: Page) {
 test('회원가입은 비밀번호 확인 다음에 이름과 전화번호를 필수로 받는다', async ({ page }) => {
   await openSignup(page);
 
-  const passwordConfirm = page.getByLabel('비밀번호 확인');
+  const passwordConfirm = page.getByLabel('비밀번호 확인', { exact: true });
   const name = page.getByLabel('이름');
   const phoneNumber = page.getByLabel('전화번호');
   const birthDate = page.getByLabel('생년월일');
@@ -80,7 +80,9 @@ test('회원가입은 생년월일 다음에 기본 선택 없는 성별을 필�
   await expect(male).not.toBeChecked();
   await expect(female).not.toBeChecked();
 
-  const passwordConfirmBox = await page.getByLabel('비밀번호 확인').boundingBox();
+  const passwordConfirmBox = await page
+    .getByLabel('비밀번호 확인', { exact: true })
+    .boundingBox();
   const birthDateBox = await birthDate.boundingBox();
   const genderBox = await page.getByRole('group', { name: '성별' }).boundingBox();
   const termsBox = await page.getByText('필수 동의', { exact: true }).boundingBox();
@@ -131,7 +133,7 @@ test('미래 생년월일과 일치하지 않는 비밀번호 확인으로 가�
   await expect(page).toHaveURL(/\/login$/);
 
   await page.getByLabel('생년월일').fill('1990-01-01');
-  await page.getByLabel('비밀번호 확인').fill('different-password');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('different-password');
   await page.getByRole('button', { name: '회원가입 완료' }).click();
   await expect(page.getByText('비밀번호가 일치하지 않아요.')).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);

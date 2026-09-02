@@ -84,15 +84,7 @@ export function HomePage({
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      setSupplementRanking(null);
-      setRegisteredProductIds(new Set());
-      setSupplementRegistrationPending(false);
-      return;
-    }
-
     let cancelled = false;
-    setSupplementRegistrationPending(true);
     getSupplementRanking()
       .then((ranking) => {
         if (!cancelled) {
@@ -102,6 +94,21 @@ export function HomePage({
       .catch(() => {
         if (!cancelled) setSupplementRanking(null);
       });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setRegisteredProductIds(new Set());
+      setSupplementRegistrationPending(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSupplementRegistrationPending(true);
     getSupplements()
       .then((result) => {
         if (!cancelled) {
@@ -225,7 +232,7 @@ export function HomePage({
     medicationOverviews?.some((overview) => overview.medications.length > 0),
   );
   const pageDataReady = overviewDataReady && (!hasMedication || doseRecords !== null);
-  const visibleSupplementRanking = isAuthenticated && supplementRanking
+  const visibleSupplementRanking = supplementRanking
     ? {
         ...supplementRanking,
         items: supplementRanking.items.map((item) => ({
@@ -306,11 +313,14 @@ export function HomePage({
         {visibleSupplementRanking && (
           <SupplementRankingCard
             ranking={visibleSupplementRanking}
-            registrationPending={supplementRegistrationPending}
+            registrationPending={isAuthenticated && supplementRegistrationPending}
             maxItems={3}
-            onMore={() => navigate('/supplements?tab=browse')}
-            onSelect={(productId) =>
-              navigate('/supplements', { state: { presetProductId: String(productId) } })
+            onMore={isAuthenticated ? () => navigate('/supplements?tab=browse') : undefined}
+            onSelect={
+              isAuthenticated
+                ? (productId) =>
+                    navigate('/supplements', { state: { presetProductId: String(productId) } })
+                : undefined
             }
           />
         )}
@@ -359,9 +369,10 @@ export function HomePage({
 
         {!isAuthenticated && (
           <p className="mt-auto py-4 text-center text-sm text-disabled-foreground">
-            기능을 쓰려면 로그인이 필요해요
+            로그인하고, 나만의 복약관리를 시작해 보세요.
           </p>
         )}
+
       </main>
 
       <BottomTabbar

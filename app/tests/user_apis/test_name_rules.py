@@ -41,15 +41,10 @@ def signup_data(email: str, **overrides):
 
 
 class TestSignupNameRules(TestCase):
-    """이름은 한글 완성형과 영문만 받는다.
+    """이름은 언어와 무관하게 문자만 받고 숫자·공백·기호는 거부한다."""
 
-    공백을 막는 이유는 「김 진형」과 「김진형」이 같은 사람인데 다르게 저장되면
-    관리자 콘솔 검색에서 갈리기 때문이다.
-    낱자를 막는 이유는 한글 IME 조합이 끝나지 않은 값이 그대로 넘어오기 때문이다.
-    """
-
-    async def test_accepts_korean_english_and_mixed(self):
-        allowed = ("김진형", "KimJinhyeong", "김Kim", "AB", "홍길")
+    async def test_accepts_names_written_with_unicode_letters(self):
+        allowed = ("김진형", "KimJinhyeong", "Élodie", "山田", "Мария", "김É山")
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for index, name in enumerate(allowed):
@@ -63,8 +58,6 @@ class TestSignupNameRules(TestCase):
         rejected = (
             "김 진형",  # 공백
             "김진형2",  # 숫자
-            "ㅋㅋㅋ",  # 낱자
-            "金鎭亨",  # 한자
             "김철수😀",  # 이모지
             "Kim-Jinhyeong",  # 하이픈
             "김진형!",  # 특수문자
@@ -79,19 +72,23 @@ class TestSignupNameRules(TestCase):
                 assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, name
                 assert response.json()["field"] == "name", name
 
-    async def test_trims_surrounding_whitespace_before_checking(self):
-        """앞뒤 공백은 잘라낸 뒤에 검사한다.
-
-        서버 DTO 가 strip_whitespace=True 라 검증기는 이미 다듬어진 값을 본다.
-        프론트도 trim 후에 검사하므로 두 규칙이 어긋나지 않는다.
-        """
-        email = "trim@example.com"
+    async def test_rejects_surrounding_whitespace(self):
+        email = "space@example.com"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/v1/auth/signup", json=signup_data(email, name="  김진형  "))
 
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["field"] == "name"
+
+    async def test_normalizes_name_to_unicode_nfc(self):
+        email = "normalized@example.com"
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/v1/auth/signup", json=signup_data(email, name="E\u0301lodie"))
+
         assert response.status_code == status.HTTP_201_CREATED
-        assert (await User.get(email=email)).name == "김진형"
+        assert (await User.get(email=email)).name == "Élodie"
 
 
 class TestProfileUpdateNameRules(TestCase):
@@ -117,10 +114,10 @@ class TestProfileUpdateNameRules(TestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await self._signed_in(client)
 
-            response = await client.patch("/api/v1/users/me", headers=headers, json={"name": "KimJinhyeong"})
+            response = await client.patch("/api/v1/users/me", headers=headers, json={"name": "山田Élodie"})
 
         assert response.status_code == status.HTTP_200_OK
-        assert (await User.get(email=self.EMAIL)).name == "KimJinhyeong"
+        assert (await User.get(email=self.EMAIL)).name == "山田Élodie"
 
     async def test_other_fields_can_be_updated_without_sending_name(self):
         """**이 테스트가 이번 작업의 핵심 회귀 방지다.**

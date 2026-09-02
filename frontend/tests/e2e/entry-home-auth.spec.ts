@@ -16,6 +16,16 @@ async function logIn(page: Page) {
   await expect(page).toHaveURL(/\/home$/);
 }
 
+async function seedSessionWithExpiry(page: Page, expiresAtSeconds: number) {
+  await page.addInitScript((expiresAt) => {
+    const encode = (value: object) =>
+      btoa(JSON.stringify(value)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+    const token = `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ exp: expiresAt })}.signature`;
+    sessionStorage.setItem('poke.access-token', token);
+    sessionStorage.setItem('poke.account-principal', 'expired-user@example.com');
+  }, expiresAtSeconds);
+}
+
 test('첫 진입은 버튼 없는 스플래시를 거쳐 게스트 홈으로 자동 이동한다', async ({ page }) => {
   await page.goto('/');
 
@@ -40,6 +50,12 @@ test('게스트 홈은 기능 중복 카드 없이 소개 배너와 탭바를 �
   await expect(page.getByRole('button', { name: /복용약 관리/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /영양제 관리/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /AI 상담/ })).toHaveCount(0);
+});
+
+test('메인 하단에는 법적 안내 푸터를 표시하지 않는다', async ({ page }) => {
+  await page.goto('/home');
+
+  await expect(page.getByRole('contentinfo')).toHaveCount(0);
 });
 
 test('로그인 홈도 복약 상태 위에 소개 배너를 유지한다', async ({ page }) => {
@@ -68,6 +84,60 @@ test('로그인하지 않고 챗봇 주소를 직접 열면 로그인 화면으�
   await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible();
 });
 
+test('로그인하지 않고 보호 화면을 직접 열면 로그인 화면으로 보낸다', async ({ page }) => {
+  await page.goto('/supplements');
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible();
+});
+
+test('보호 화면에서 로그인하면 원래 요청한 화면으로 돌아간다', async ({ page }) => {
+  await page.goto('/supplements');
+  await expect(page).toHaveURL(/\/login$/);
+
+  await page.getByLabel('이메일').fill('patient@example.com');
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+
+  await expect(page).toHaveURL(/\/supplements$/);
+});
+
+test('이미 만료된 토큰으로 보호 화면을 열면 세션을 지우고 로그인 화면으로 보낸다', async ({
+  page,
+}) => {
+  await seedSessionWithExpiry(page, Math.floor(Date.now() / 1000) - 60);
+
+  await page.goto('/my');
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        token: sessionStorage.getItem('poke.access-token'),
+        principal: sessionStorage.getItem('poke.account-principal'),
+      })),
+    )
+    .toEqual({ token: null, principal: null });
+});
+
+test('홈에서는 토큰이 만료되어도 로그인 화면으로 이동하지 않고 게스트 상태로 전환한다', async ({
+  page,
+}) => {
+  await seedSessionWithExpiry(page, Math.floor(Date.now() / 1000) + 3);
+
+  await page.goto('/home');
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem('poke.access-token')), {
+      timeout: 5_000,
+    })
+    .toBeNull();
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByText('오늘의 복약', { exact: true })).toHaveCount(0);
+});
+
 test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
@@ -80,12 +150,57 @@ test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있
   await expect(submit).toBeEnabled();
 });
 
+test('회원가입 비밀번호와 비밀번호 확인은 각각 독립적으로 표시하고 다시 숨긴다', async ({
+  page,
+}) => {
+  await page.goto('/login');
+  await expect(page.getByRole('button', { name: '비밀번호 보기' })).toHaveCount(0);
+  await page.getByRole('button', { name: '회원가입' }).click();
+
+  const password = page.getByLabel('비밀번호', { exact: true });
+  const passwordConfirm = page.getByLabel('비밀번호 확인', { exact: true });
+  await password.fill('Password123!');
+  await passwordConfirm.fill('Password123!');
+
+  await page.getByRole('button', { name: '비밀번호 보기', exact: true }).click();
+  await expect(password).toHaveAttribute('type', 'text');
+  await expect(passwordConfirm).toHaveAttribute('type', 'password');
+  await expect(password).toHaveValue('Password123!');
+
+  await page.getByRole('button', { name: '비밀번호 확인 보기' }).click();
+  await expect(passwordConfirm).toHaveAttribute('type', 'text');
+  await expect(passwordConfirm).toHaveValue('Password123!');
+
+  await page.getByRole('button', { name: '비밀번호 숨기기', exact: true }).click();
+  await page.getByRole('button', { name: '비밀번호 확인 숨기기' }).click();
+  await expect(password).toHaveAttribute('type', 'password');
+  await expect(passwordConfirm).toHaveAttribute('type', 'password');
+});
+
+test('회원가입 이름 입력은 숫자·공백·특수문자를 제거하고 여러 언어의 문자를 남긴다', async ({
+  page,
+}) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '회원가입' }).click();
+
+  const nameInput = page.getByLabel('이름');
+  await nameInput.fill('홍길동 Élodie山田Мария 123!😀');
+
+  await expect(nameInput).toHaveValue('홍길동Élodie山田Мария');
+
+  await nameInput.fill('E\u0301lodie');
+  await expect(nameInput).toHaveValue('Élodie');
+  await expect(
+    page.getByText('이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.'),
+  ).toHaveCount(0);
+});
+
 test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한다', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '회원가입' }).click();
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
-  await page.getByLabel('비밀번호 확인').fill('password1234');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('password1234');
   await page.getByLabel('이름').fill('신규사용자');
   await page.getByLabel('전화번호').fill('01012345678');
   await page.getByLabel('생년월일').fill('1990-01-01');
@@ -103,7 +218,7 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
   await page.getByRole('button', { name: '회원가입' }).click();
   await page.getByLabel('이메일').fill('new-patient@example.com');
   await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
-  await page.getByLabel('비밀번호 확인').fill('password1234');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('password1234');
   await page.getByLabel('이름').fill('신규사용자');
   await page.getByLabel('전화번호').fill('01012345678');
   await page.getByLabel('생년월일').fill('1990-01-01');

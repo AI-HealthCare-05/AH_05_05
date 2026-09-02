@@ -1,5 +1,7 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  AUTH_SESSION_EXPIRED_EVENT,
+  accessTokenExpiresAt,
   restoreAccessToken,
   restoreAccountPrincipal,
   setAccessToken,
@@ -20,6 +22,38 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(restoreAccessToken() && restoreAccountPrincipal()),
   );
+
+  useEffect(() => {
+    const expireCurrentSession = () => {
+      setAccessToken(null);
+      setAccountPrincipal(null);
+      setPrincipalKey(null);
+      setAuthenticated(false);
+    };
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
+
+    const token = restoreAccessToken();
+    const expiresAt = token ? accessTokenExpiresAt(token) : null;
+    if (expiresAt === null) {
+      return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
+    }
+
+    const remainingMs = expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      expireCurrentSession();
+      return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
+    }
+
+    const expirationTimer = window.setTimeout(
+      expireCurrentSession,
+      Math.min(remainingMs, 2_147_483_647),
+    );
+    return () => {
+      window.clearTimeout(expirationTimer);
+      window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expireCurrentSession);
+    };
+  }, [authenticated, principalKey]);
+
   const value = useMemo(
     () => ({
       authenticated,
