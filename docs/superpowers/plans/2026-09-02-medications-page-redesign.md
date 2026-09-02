@@ -4,7 +4,7 @@
 
 **Goal:** Replace the prescription detail route with a filterable, multi-expand medication list that uses server-computed completion state and supports sequential multi-delete.
 
-**Architecture:** FastAPI resolves calendar-month query bounds and prescription end dates in shared pure service functions, then exposes `isFinished` through the existing medication overview contract. React keeps filters in URL search params while expansion and selection remain local state; page-specific cards and dialogs isolate the accordion, filtering, authenticated image viewing, and partial-delete behavior.
+**Architecture:** FastAPI resolves calendar-month query bounds and prescription end dates in shared pure service functions, then exposes `isFinished` through the existing medication overview contract. React keeps filters in URL search params while expansion and selection remain local state; page-specific cards and dialogs isolate the accordion, filtering, and partial-delete behavior.
 
 **Tech Stack:** Python 3.13, FastAPI, Tortoise ORM, Pydantic `CamelModel`, React 19, TypeScript, React Router 7, Tailwind CSS, Radix UI, Playwright.
 
@@ -470,9 +470,7 @@ git commit -m "[feature/225][신동훈]복약 완료 상태 계약 연결"
 
 **Interfaces:**
 - Produces: page-local `expandedRecordIds: Set<number>`
-- Produces: `MedicationEpisodeCard` with separate expand, select, medication-edit, and image actions
-- Produces: `getMedicationDocumentImageUrl(documentImageUrl: string) -> Promise<string>`
-- Produces: `releaseMedicationDocumentImageUrl(url: string) -> void`
+- Produces: `MedicationEpisodeCard` with separate expand, select, and medication-edit actions
 - Preserves: active regular-medication slot editing through `saveMedicationSchedule`
 
 - [ ] **Step 1: Rewrite detail-route tests as accordion behavior tests**
@@ -481,8 +479,7 @@ Change the old “navigate to detail” test to click two prescription expand co
 
 - the active card exposes a regular medication edit action;
 - the finished card contains no medication edit action;
-- both cards can expose `약봉투 사진 보기`;
-- a real-API image request carries the existing bearer token and the viewer receives a blob URL rather than the protected API URL;
+- neither card exposes `약봉투 사진 보기` or requests the source image;
 - `/medications/12` no longer renders `처방 상세`;
 - the existing delete-flow test starts from `/medications`, enters selection mode, and uses the new confirmation path rather than the removed route.
 
@@ -511,25 +508,7 @@ Do not compare `endDate` with `new Date()`.
 
 - [ ] **Step 4: Move detail behavior into `MedicationsPage`**
 
-Add independent `Set<number>` expansion toggling, active-medication schedule save, authenticated image loading/viewing, and existing error handling. Multiple IDs remain in the set at once. Use `ImageViewer` only after the user clicks the link; do not fetch every envelope during list load.
-
-Add the authenticated image helpers to the medication entity API:
-
-```ts
-export async function getMedicationDocumentImageUrl(documentImageUrl: string): Promise<string> {
-  if (USE_MOCK) return documentImageUrl;
-  const apiPath = documentImageUrl.startsWith('/api')
-    ? documentImageUrl.slice('/api'.length)
-    : documentImageUrl;
-  return URL.createObjectURL(await http.getBlob(apiPath));
-}
-
-export function releaseMedicationDocumentImageUrl(url: string): void {
-  if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-}
-```
-
-The page owns the returned URL and releases it when the viewer closes or the page unmounts.
+Add independent `Set<number>` expansion toggling, active-medication schedule save, and existing error handling. Multiple IDs remain in the set at once. Do not expose or request the source envelope image.
 
 - [ ] **Step 5: Remove the detail page and route**
 

@@ -54,9 +54,9 @@ test('완료 상태는 daysRemaining이 아니라 서버 isFinished만 따른다
   await expect(page.getByRole('button', { name: /2026년 8월 24일 처방.*복용 완료/ })).toBeVisible();
 });
 
-test('URL의 조회 범위와 인증된 약봉투 이미지 요청을 그대로 전달한다', async ({ page }) => {
+test('URL의 조회 범위를 그대로 전달하고 약봉투 이미지는 요청하지 않는다', async ({ page }) => {
   const overviewRequests: URL[] = [];
-  let imageAuthorization = '';
+  let imageRequests = 0;
   await page.route('**/api/v1/medications*', async (route) => {
     const url = new URL(route.request().url());
     if (/\/medications\/\d+$/.test(url.pathname)) {
@@ -67,7 +67,7 @@ test('URL의 조회 범위와 인증된 약봉투 이미지 요청을 그대로 
     await fulfillJson(route, [overview(12, false, 3)]);
   });
   await page.route('**/api/v1/ocr/jobs/12/image', async (route) => {
-    imageAuthorization = route.request().headers().authorization ?? '';
+    imageRequests += 1;
     await route.fulfill({ status: 200, contentType: 'image/png', body: 'image' });
   });
 
@@ -77,9 +77,8 @@ test('URL의 조회 범위와 인증된 약봉투 이미지 요청을 그대로 
   expect(overviewRequests[0].searchParams.get('to')).toBe('2026-08-31');
 
   await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
-  await page.getByRole('button', { name: '약봉투 사진 보기' }).click();
-  await expect(page.getByRole('img', { name: '확대한 약봉투 원본' })).toHaveAttribute('src', /^blob:/);
-  expect(imageAuthorization).toBe('Bearer medication-management-token');
+  await expect(page.getByRole('button', { name: '약봉투 사진 보기' })).toHaveCount(0);
+  expect(imageRequests).toBe(0);
 });
 
 test('선택 삭제는 순차 실행하고 부분 실패 항목만 선택 상태로 남긴다', async ({ page }) => {

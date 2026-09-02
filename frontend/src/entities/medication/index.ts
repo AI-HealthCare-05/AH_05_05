@@ -1,11 +1,9 @@
 export {
   cancelMedication,
-  getMedicationDocumentImageUrl,
   getMedicationOverviews,
   getDoseRecords,
   getMedicationSchedule,
   prepareMedicationStateForNewAccount,
-  releaseMedicationDocumentImageUrl,
   saveMedicationSchedule,
   saveDoseTaken,
 } from './api';

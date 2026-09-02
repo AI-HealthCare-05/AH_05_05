@@ -52,18 +52,6 @@ export async function getMedicationOverviews(
   }
 }
 
-export async function getMedicationDocumentImageUrl(documentImageUrl: string): Promise<string> {
-  if (USE_MOCK) return documentImageUrl;
-  const apiPath = documentImageUrl.startsWith('/api')
-    ? documentImageUrl.slice('/api'.length)
-    : documentImageUrl;
-  return URL.createObjectURL(await http.getBlob(apiPath));
-}
-
-export function releaseMedicationDocumentImageUrl(url: string): void {
-  if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-}
-
 export function prepareMedicationStateForNewAccount(): void {
   if (USE_MOCK) resetMockMedicationForNewAccount();
 }
