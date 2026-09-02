@@ -58,6 +58,13 @@ class ChatSessionSummaryRecord:
     last_message_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ChatSessionDetailRecord:
+    session: ChatSession
+    messages: list[ChatMessage]
+    sources_by_message_id: dict[int, list[ChatMessageSource]]
+
+
 @dataclass(slots=True)
 class AcceptedChatRequest:
     session: ChatSession
@@ -136,6 +143,52 @@ class ChatRepository:
             reverse=True,
         )
         return records
+
+    async def get_session_detail(
+        self,
+        *,
+        user_id: int,
+        session_id: int,
+    ) -> ChatSessionDetailRecord:
+        session = await ChatSession.filter(
+            id=session_id,
+            user_id=user_id,
+            status=ChatSessionStatus.ACTIVE,
+            deleted_at__isnull=True,
+        ).first()
+        if session is None:
+            raise ChatSessionNotFoundError
+
+        messages = await ChatMessage.filter(
+            chat_session_id=session.id,
+            role__in=[
+                ChatMessageRole.USER,
+                ChatMessageRole.ASSISTANT,
+            ],
+        ).order_by("sequence_no")
+        message_ids = [message.id for message in messages]
+        sources_by_message_id: dict[int, list[ChatMessageSource]] = {}
+        if message_ids:
+            sources = (
+                await ChatMessageSource.filter(
+                    chat_message_id__in=message_ids,
+                )
+                .order_by("chat_message_id", "citation_order")
+                .prefetch_related(
+                    "medication",
+                    "user_suppl_nutrient__supplement_nutrient",
+                    "interaction_rule__left_entity",
+                    "interaction_rule__right_entity",
+                )
+            )
+            for source in sources:
+                sources_by_message_id.setdefault(source.chat_message_id, []).append(source)
+
+        return ChatSessionDetailRecord(
+            session=session,
+            messages=messages,
+            sources_by_message_id=sources_by_message_id,
+        )
 
     async def accept_request(
         self,

@@ -36,7 +36,7 @@ from app.core.exceptions import (
     ChatUpstreamUnavailableError,
 )
 from app.models.chat import ChatMessageSource
-from app.models.enums import ChatMessageRole, ChatSourceType
+from app.models.enums import ChatMessageRole, ChatMessageStatus, ChatSessionStatus, ChatSourceType
 from app.models.users import User
 from app.repositories.chat_repository import (
     AcceptedChatRequest,
@@ -84,6 +84,38 @@ class ChatSessionSummaryView:
     last_message_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ChatSessionSourceView:
+    source_type: str
+    source_name: str
+    vector_chunk_id: str | None
+    source_organization: str | None
+    source_url: str | None
+    dataset_version: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatSessionMessageView:
+    message_id: int
+    role: ChatMessageRole
+    content: str
+    status: ChatMessageStatus
+    reply_to_message_id: int | None
+    guide_id: int | None
+    sources: list[ChatSessionSourceView]
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ChatSessionDetailView:
+    session_id: int
+    care_episode_key: str | None
+    status: ChatSessionStatus
+    last_message_at: datetime | None
+    created_at: datetime
+    messages: list[ChatSessionMessageView]
+
+
 class ChatSessionQueryService:
     def __init__(self, repository: ChatRepository | None = None) -> None:
         self._repository = repository or ChatRepository()
@@ -99,6 +131,41 @@ class ChatSessionQueryService:
             )
             for record in records
         ]
+
+    async def get_session(self, *, user: User, session_id: int) -> ChatSessionDetailView:
+        try:
+            record = await self._repository.get_session_detail(
+                user_id=user.id,
+                session_id=session_id,
+            )
+        except ChatSessionNotFoundError as error:
+            raise ChatConversationNotFoundError from error
+
+        session = record.session
+        return ChatSessionDetailView(
+            session_id=session.id,
+            care_episode_key=(
+                f"care_episode_{session.care_episode_id}" if session.care_episode_id is not None else None
+            ),
+            status=session.status,
+            last_message_at=session.last_message_at,
+            created_at=session.created_at,
+            messages=[
+                ChatSessionMessageView(
+                    message_id=message.id,
+                    role=message.role,
+                    content=message.content,
+                    status=message.status,
+                    reply_to_message_id=message.reply_to_message_id,
+                    guide_id=message.guide_id,
+                    sources=[
+                        _session_source_view(source) for source in record.sources_by_message_id.get(message.id, [])
+                    ],
+                    created_at=message.created_at,
+                )
+                for message in record.messages
+            ],
+        )
 
 
 class ChatApplicationService:
@@ -320,36 +387,58 @@ class ChatApplicationService:
         )
 
     @staticmethod
-    def _saved_source_view(
-        source: ChatMessageSource,
-    ) -> ChatSourceView:
-        if source.source_type == ChatSourceType.PATIENT_SAVED_FIELD:
-            name = source.medication.name if source.medication is not None else "확정 복약정보"
-            return ChatSourceView(
-                scope="personal",
-                title=f"사용자 확정 복약정보 · {name}",
-            )
-        if source.source_type == ChatSourceType.USER_SUPPLEMENT:
-            registration = source.user_suppl_nutrient
-            if registration is None:
-                name = "복용 영양제"
-            elif registration.supplement_nutrient is not None:
-                name = registration.supplement_nutrient.name
-            else:
-                name = registration.custom_name or "복용 영양제"
-            return ChatSourceView(
-                scope="personal",
-                title=f"사용자 복용 영양제 · {name}",
-            )
-        if source.source_type == ChatSourceType.INTERACTION_RULE:
-            rule = source.interaction_rule
-            title = "승인된 상호작용 규칙"
-            if rule is not None:
-                title += f" · {rule.left_entity.canonical_name} · {rule.right_entity.canonical_name}"
-            return ChatSourceView(scope="official", title=title)
+    def _saved_source_view(source: ChatMessageSource) -> ChatSourceView:
+        return _saved_source_view(source)
+
+
+def _session_source_view(source: ChatMessageSource) -> ChatSessionSourceView:
+    display = _saved_source_view(source)
+    return ChatSessionSourceView(
+        source_type=(
+            "PATIENT_DOCUMENT"
+            if source.source_type
+            in {
+                ChatSourceType.PATIENT_SAVED_FIELD,
+                ChatSourceType.USER_SUPPLEMENT,
+            }
+            else "PUBLIC_DATA"
+        ),
+        source_name=display.title,
+        vector_chunk_id=source.vector_chunk_id,
+        source_organization=source.source_organization,
+        source_url=source.source_url,
+        dataset_version=source.dataset_version,
+    )
+
+
+def _saved_source_view(source: ChatMessageSource) -> ChatSourceView:
+    if source.source_type == ChatSourceType.PATIENT_SAVED_FIELD:
+        name = source.medication.name if source.medication is not None else "확정 복약정보"
         return ChatSourceView(
-            scope="official",
-            title=source.source_title or "공공 의약품·영양제 자료",
-            organization=source.source_organization,
-            url=source.source_url,
+            scope="personal",
+            title=f"사용자 확정 복약정보 · {name}",
         )
+    if source.source_type == ChatSourceType.USER_SUPPLEMENT:
+        registration = source.user_suppl_nutrient
+        if registration is None:
+            name = "복용 영양제"
+        elif registration.supplement_nutrient is not None:
+            name = registration.supplement_nutrient.name
+        else:
+            name = registration.custom_name or "복용 영양제"
+        return ChatSourceView(
+            scope="personal",
+            title=f"사용자 복용 영양제 · {name}",
+        )
+    if source.source_type == ChatSourceType.INTERACTION_RULE:
+        rule = source.interaction_rule
+        title = "승인된 상호작용 규칙"
+        if rule is not None:
+            title += f" · {rule.left_entity.canonical_name} · {rule.right_entity.canonical_name}"
+        return ChatSourceView(scope="official", title=title)
+    return ChatSourceView(
+        scope="official",
+        title=source.source_title or "공공 의약품·영양제 자료",
+        organization=source.source_organization,
+        url=source.source_url,
+    )
