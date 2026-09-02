@@ -1,23 +1,36 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import type { MealSlot, MealTimes } from '@/entities/medication';
 import {
-  getMedicationOverview,
-  saveMedicationSchedule,
-  type MealSlot,
-  type MealTimes,
-  type MedicationOverview,
-} from '@/entities/medication';
-import { Card, ErrorDialog, Header } from '@/shared/ui';
+  getNotifySettings,
+  updateNotifySettings,
+  type MedicationTimes,
+  type NotifySettings,
+} from '@/entities/settings';
 import { cn } from '@/shared/lib/cn';
-import { TimePickerSheet } from './TimePickerSheet';
 import { MEAL_SLOTS, isMealTimeOrderValid } from '@/shared/model/mealSlot';
+import { Card, ErrorDialog, Header, TimePickerSheet } from '@/shared/ui';
+
+const SETTINGS_FIELD_BY_SLOT: Record<MealSlot, keyof MedicationTimes> = {
+  morning: 'morningMedicationTime',
+  lunch: 'lunchMedicationTime',
+  evening: 'eveningMedicationTime',
+  bedtime: 'bedtimeMedicationTime',
+};
+
+function mealTimesFromSettings(settings: NotifySettings): MealTimes {
+  return {
+    morning: settings.morningMedicationTime,
+    lunch: settings.lunchMedicationTime,
+    evening: settings.eveningMedicationTime,
+    bedtime: settings.bedtimeMedicationTime,
+  };
+}
 
 export function MedicationAlarmTimesPage() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const recordId = (location.state as { recordId?: number } | null)?.recordId;
-  const [overview, setOverview] = useState<MedicationOverview | null>(null);
+  const [settings, setSettings] = useState<NotifySettings | null>(null);
   const [editingSlot, setEditingSlot] = useState<MealSlot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<{ message: string; retry: () => void } | null>(null);
@@ -25,9 +38,9 @@ export function MedicationAlarmTimesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getMedicationOverview(recordId)
+    getNotifySettings()
       .then((data) => {
-        if (!cancelled) setOverview(data);
+        if (!cancelled) setSettings(data);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -37,43 +50,34 @@ export function MedicationAlarmTimesPage() {
     return () => {
       cancelled = true;
     };
-  }, [recordId]);
+  }, []);
 
-  async function persist(nextMealTimes: MealTimes) {
-    if (!overview) return;
+  async function persist(slot: MealSlot, time: string) {
     setSaveError(null);
     try {
-      await saveMedicationSchedule(overview.recordId, {
-        start: overview.start,
-        mealTimes: nextMealTimes,
-        medications: overview.medications
-          .filter((medication) => !medication.asNeeded)
-          .map((medication) => ({
-            medicationId: medication.medicationId,
-            slots: medication.slots,
-          })),
-      });
-      setOverview({ ...overview, mealTimes: nextMealTimes });
+      const saved = await updateNotifySettings({ [SETTINGS_FIELD_BY_SLOT[slot]]: time });
+      setSettings(saved);
       setEditingSlot(null);
       toast.success('알림 시간을 바꿨어요.');
     } catch (error: unknown) {
       setSaveError({
         message: error instanceof Error ? error.message : '알림 시간을 저장하지 못했어요.',
-        retry: () => void persist(nextMealTimes),
+        retry: () => void persist(slot, time),
       });
     }
   }
 
   function applyTime(time: string) {
-    if (!overview || !editingSlot) return;
-    const nextMealTimes = { ...overview.mealTimes, [editingSlot]: time };
+    if (!settings || !editingSlot) return;
+    const nextMealTimes = { ...mealTimesFromSettings(settings), [editingSlot]: time };
     if (!isMealTimeOrderValid(nextMealTimes)) {
       setTimeOrderError(true);
       return;
     }
-    void persist(nextMealTimes);
+    void persist(editingSlot, time);
   }
 
+  const mealTimes = settings ? mealTimesFromSettings(settings) : null;
   const editingLabel = editingSlot
     ? MEAL_SLOTS.find((slot) => slot.value === editingSlot)?.label
     : undefined;
@@ -84,7 +88,7 @@ export function MedicationAlarmTimesPage() {
       <main className="flex flex-1 flex-col px-page-x py-5">
         {loadError ? (
           <Card title="알림 시간을 불러오지 못했어요">{loadError}</Card>
-        ) : !overview ? (
+        ) : !mealTimes ? (
           <p className="text-sm text-muted-foreground">불러오는 중...</p>
         ) : (
           <section aria-label="알림 시간 네 개" className="flex flex-col gap-3">
@@ -103,9 +107,7 @@ export function MedicationAlarmTimesPage() {
                   )}
                 >
                   <span className="w-16 text-sm font-bold text-foreground">{slot.label}</span>
-                  <span className="text-base text-foreground tnum">
-                    {overview.mealTimes[slot.value]}
-                  </span>
+                  <span className="text-base text-foreground tnum">{mealTimes[slot.value]}</span>
                   <span aria-hidden className="ml-auto text-muted-foreground">
                     ›
                   </span>
@@ -119,7 +121,7 @@ export function MedicationAlarmTimesPage() {
       <TimePickerSheet
         open={editingSlot !== null}
         description={editingLabel ? `${editingLabel} 알림 시각` : ''}
-        value={editingSlot && overview ? overview.mealTimes[editingSlot] : '08:00'}
+        value={editingSlot && mealTimes ? mealTimes[editingSlot] : '08:00'}
         onApply={applyTime}
         onCancel={() => setEditingSlot(null)}
       />

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
+import { CalendarDays, ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -12,15 +12,22 @@ import {
   NotifyBlockedDialog,
   NotifyPermissionDialog,
   Switch,
+  TimePickerSheet,
   type TabKey,
 } from '@/shared/ui';
 import {
   getNotifySettings,
   updateNotifySettings,
+  type MedicationTimes,
   type NotifySettingKey,
   type NotifySettings,
   type UpdateNotifySettingsPayload,
 } from '@/entities/settings';
+import {
+  MEAL_SLOTS,
+  isMealTimeOrderValid,
+  type MealSlot,
+} from '@/shared/model/mealSlot';
 import {
   getPushPermission,
   requestPushPermission,
@@ -36,6 +43,29 @@ const TAB_ROUTES: Record<TabKey, string> = {
   chat: '/chat',
   my: '/my',
 };
+
+const SETTINGS_FIELD_BY_SLOT: Record<MealSlot, keyof MedicationTimes> = {
+  morning: 'morningMedicationTime',
+  lunch: 'lunchMedicationTime',
+  evening: 'eveningMedicationTime',
+  bedtime: 'bedtimeMedicationTime',
+};
+
+const MY_TIME_LABELS: Record<MealSlot, string> = {
+  morning: '아침',
+  lunch: '점심',
+  evening: '저녁',
+  bedtime: '자기전',
+};
+
+function medicationTimesFromSettings(settings: NotifySettings): Record<MealSlot, string> {
+  return {
+    morning: settings.morningMedicationTime,
+    lunch: settings.lunchMedicationTime,
+    evening: settings.eveningMedicationTime,
+    bedtime: settings.bedtimeMedicationTime,
+  };
+}
 
 interface MyPageProps {
   authenticatedOverride?: boolean;
@@ -69,6 +99,8 @@ export function MyPage({
   const [blockedDialogOpen, setBlockedDialogOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [pendingSettingKeys, setPendingSettingKeys] = useState<NotifySettingKey[]>([]);
+  const [editingSlot, setEditingSlot] = useState<MealSlot | null>(null);
+  const [timeOrderError, setTimeOrderError] = useState(false);
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
@@ -212,6 +244,29 @@ export function MyPage({
     }
   }
 
+  async function persistMedicationTime(slot: MealSlot, value: string) {
+    const updated = await persistNotifySettings(
+      { [SETTINGS_FIELD_BY_SLOT[slot]]: value },
+      () => void persistMedicationTime(slot, value),
+    );
+    if (!updated) return;
+    setEditingSlot(null);
+    toast.success('알림 시간을 바꿨어요.');
+  }
+
+  function applyMedicationTime(value: string) {
+    if (!notifySettings || !editingSlot) return;
+    const nextTimes = {
+      ...medicationTimesFromSettings(notifySettings),
+      [editingSlot]: value,
+    };
+    if (!isMealTimeOrderValid(nextTimes)) {
+      setTimeOrderError(true);
+      return;
+    }
+    void persistMedicationTime(editingSlot, value);
+  }
+
   async function handlePermissionAccept() {
     const key = pendingToggle;
     if (!key) return;
@@ -303,6 +358,13 @@ export function MyPage({
                   onClick={() => navigate('/supplements')}
                   divided
                 />
+                <ManagementRow
+                  icon={CalendarDays}
+                  label="진료일정"
+                  value="관리"
+                  onClick={() => navigate('/my/visits')}
+                  divided
+                />
               </Card>
             </section>
 
@@ -339,6 +401,41 @@ export function MyPage({
                       }
                       divided
                     />
+                    <div className="border-t border-border px-4 pt-4 pb-1">
+                      <p className="text-sm font-bold text-foreground">알림 시간</p>
+                    </div>
+                    {MEAL_SLOTS.map((slot) => (
+                      <button
+                        key={slot.value}
+                        type="button"
+                        onClick={() => setEditingSlot(slot.value)}
+                        className="flex min-h-14 w-full items-center gap-3 px-4 text-left"
+                      >
+                        <span className="flex-1 text-base font-bold text-foreground">
+                          {MY_TIME_LABELS[slot.value]}
+                        </span>
+                        <span className="text-base text-foreground tnum">
+                          {notifySettings[SETTINGS_FIELD_BY_SLOT[slot.value]]}
+                        </span>
+                        <ChevronRight
+                          aria-hidden
+                          className="size-5 shrink-0 text-disabled-foreground"
+                        />
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
+                      onClick={() => navigate('/my/alarms')}
+                    >
+                      <span className="flex-1 text-base font-bold text-foreground">
+                        예약된 알림
+                      </span>
+                      <ChevronRight
+                        aria-hidden
+                        className="size-5 shrink-0 text-disabled-foreground"
+                      />
+                    </button>
                   </>
                 ) : (
                   <p className="p-4 text-sm text-muted-foreground">알림 설정을 불러오는 중...</p>
@@ -402,6 +499,24 @@ export function MyPage({
           setNotifyActionError(null);
           retry?.();
         }}
+      />
+      <TimePickerSheet
+        open={editingSlot !== null}
+        description={editingSlot ? `${MY_TIME_LABELS[editingSlot]} 복약 시각` : ''}
+        value={
+          editingSlot && notifySettings
+            ? notifySettings[SETTINGS_FIELD_BY_SLOT[editingSlot]]
+            : '08:00'
+        }
+        onApply={applyMedicationTime}
+        onCancel={() => setEditingSlot(null)}
+      />
+      <ErrorDialog
+        open={timeOrderError}
+        title="시간을 적용할 수 없어요"
+        message="복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요."
+        retryLabel="확인"
+        onRetry={() => setTimeOrderError(false)}
       />
       <WithdrawAccountDialog
         open={withdrawDialogOpen}
