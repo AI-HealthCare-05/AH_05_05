@@ -16,7 +16,7 @@ services:
 
   # 2. Vector Database
   qdrant:
-    image: qdrant/qdrant:1.19.0
+    image: qdrant/qdrant:v1.19.0
     container_name: qdrant
     restart: always
     ports:
