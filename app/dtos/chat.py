@@ -11,6 +11,7 @@ from app.services.chat import (
     ChatSessionSourceView,
     ChatSessionSummaryView,
     ChatSourceView,
+    DeletedChatSessionView,
     SendChatResult,
 )
 
@@ -146,6 +147,26 @@ class ChatSessionDetailDataResponse(CamelModel):
 class ChatSessionDetailResponse(CamelModel):
     success: Literal[True] = True
     data: ChatSessionDetailDataResponse
+    error: None = None
+
+
+class DeletedChatSessionDataResponse(CamelModel):
+    session_id: int
+    status: Literal["DELETED"]
+    deleted_at: datetime
+
+    @classmethod
+    def from_view(cls, view: DeletedChatSessionView) -> "DeletedChatSessionDataResponse":
+        return cls(
+            session_id=view.session_id,
+            status=view.status,
+            deleted_at=view.deleted_at,
+        )
+
+
+class DeletedChatSessionResponse(CamelModel):
+    success: Literal[True] = True
+    data: DeletedChatSessionDataResponse
     error: None = None
 
 

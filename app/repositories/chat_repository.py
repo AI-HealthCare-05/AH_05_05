@@ -34,6 +34,10 @@ class ChatSessionNotFoundError(ChatRepositoryError):
     pass
 
 
+class ChatSessionAccessDeniedRepositoryError(ChatRepositoryError):
+    pass
+
+
 class CareEpisodeNotFoundError(ChatRepositoryError):
     pass
 
@@ -63,6 +67,13 @@ class ChatSessionDetailRecord:
     session: ChatSession
     messages: list[ChatMessage]
     sources_by_message_id: dict[int, list[ChatMessageSource]]
+
+
+@dataclass(frozen=True, slots=True)
+class DeletedChatSessionRecord:
+    session_id: int
+    status: ChatSessionStatus
+    deleted_at: datetime
 
 
 @dataclass(slots=True)
@@ -188,6 +199,34 @@ class ChatRepository:
             session=session,
             messages=messages,
             sources_by_message_id=sources_by_message_id,
+        )
+
+    async def delete_session(
+        self,
+        *,
+        user_id: int,
+        session_id: int,
+    ) -> DeletedChatSessionRecord:
+        async with in_transaction() as connection:
+            session = await ChatSession.filter(id=session_id).using_db(connection).select_for_update().first()
+            if session is None or session.status != ChatSessionStatus.ACTIVE or session.deleted_at is not None:
+                raise ChatSessionNotFoundError
+            if session.user_id != user_id:
+                raise ChatSessionAccessDeniedRepositoryError
+
+            deleted_at = now()
+            session.status = ChatSessionStatus.DELETED
+            session.deleted_at = deleted_at
+            session.updated_at = deleted_at
+            await session.save(
+                using_db=connection,
+                update_fields=["status", "deleted_at", "updated_at"],
+            )
+
+        return DeletedChatSessionRecord(
+            session_id=session.id,
+            status=session.status,
+            deleted_at=deleted_at,
         )
 
     async def accept_request(

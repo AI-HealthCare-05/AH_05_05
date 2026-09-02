@@ -319,6 +319,12 @@ class ChatConversationNotFoundError(AppError):
     message = "채팅 세션을 찾을 수 없습니다."
 
 
+class ChatSessionAccessDeniedError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "CHAT_SESSION_ACCESS_DENIED"
+    message = "해당 채팅 세션을 삭제할 권한이 없습니다."
+
+
 class ChatCareEpisodeNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "CARE_EPISODE_NOT_FOUND"

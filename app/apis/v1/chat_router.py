@@ -18,6 +18,8 @@ from app.dtos.chat import (
     ChatSessionDetailResponse,
     ChatSessionListResponse,
     ChatSessionSummaryResponse,
+    DeletedChatSessionDataResponse,
+    DeletedChatSessionResponse,
     SendChatRequest,
     SendChatResponse,
 )
@@ -128,6 +130,18 @@ _CHAT_SESSION_DETAIL_RESPONSES = {
     404: _CHAT_RESPONSES[404],
 }
 
+_CHAT_SESSION_DELETE_RESPONSES = {
+    200: {
+        "description": "인증 사용자가 소유한 채팅 세션의 소프트 삭제 완료",
+    },
+    401: _CHAT_RESPONSES[401],
+    403: {
+        "model": ChatErrorResponse,
+        "description": "다른 사용자의 채팅 세션을 삭제할 권한이 없음",
+    },
+    404: _CHAT_RESPONSES[404],
+}
+
 
 def get_chat_session_query_service() -> ChatSessionQueryService:
     """AI/Qdrant 초기화 없이 채팅 세션 요약만 조회한다."""
@@ -170,6 +184,26 @@ async def get_chat_session(
     detail = await service.get_session(user=user, session_id=session_id)
     return ChatSessionDetailResponse(
         data=ChatSessionDetailDataResponse.from_view(detail),
+    )
+
+
+@chat_router.delete(
+    "/sessions/{session_id}",
+    response_model=DeletedChatSessionResponse,
+    summary="내 채팅 세션 삭제",
+    responses=_CHAT_SESSION_DELETE_RESPONSES,
+)
+async def delete_chat_session(
+    session_id: int,
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[
+        ChatSessionQueryService,
+        Depends(get_chat_session_query_service),
+    ],
+) -> DeletedChatSessionResponse:
+    deleted = await service.delete_session(user=user, session_id=session_id)
+    return DeletedChatSessionResponse(
+        data=DeletedChatSessionDataResponse.from_view(deleted),
     )
 
 

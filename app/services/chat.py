@@ -33,6 +33,7 @@ from app.core.exceptions import (
     ChatIdempotencyConflictError,
     ChatProcessingFailedError,
     ChatRequestConflictError,
+    ChatSessionAccessDeniedError,
     ChatUpstreamUnavailableError,
 )
 from app.models.chat import ChatMessageSource
@@ -45,6 +46,7 @@ from app.repositories.chat_repository import (
     ChatRepository,
     ChatRequestInProgressError,
     ChatRequestPayloadMismatchError,
+    ChatSessionAccessDeniedRepositoryError,
     ChatSessionNotFoundError,
 )
 
@@ -116,6 +118,13 @@ class ChatSessionDetailView:
     messages: list[ChatSessionMessageView]
 
 
+@dataclass(frozen=True, slots=True)
+class DeletedChatSessionView:
+    session_id: int
+    status: ChatSessionStatus
+    deleted_at: datetime
+
+
 class ChatSessionQueryService:
     def __init__(self, repository: ChatRepository | None = None) -> None:
         self._repository = repository or ChatRepository()
@@ -165,6 +174,27 @@ class ChatSessionQueryService:
                 )
                 for message in record.messages
             ],
+        )
+
+    async def delete_session(
+        self,
+        *,
+        user: User,
+        session_id: int,
+    ) -> DeletedChatSessionView:
+        try:
+            record = await self._repository.delete_session(
+                user_id=user.id,
+                session_id=session_id,
+            )
+        except ChatSessionAccessDeniedRepositoryError as error:
+            raise ChatSessionAccessDeniedError from error
+        except ChatSessionNotFoundError as error:
+            raise ChatConversationNotFoundError from error
+        return DeletedChatSessionView(
+            session_id=record.session_id,
+            status=record.status,
+            deleted_at=record.deleted_at,
         )
 
 
