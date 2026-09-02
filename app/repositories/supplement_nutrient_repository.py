@@ -1,11 +1,13 @@
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from tortoise.expressions import Q
-from tortoise.functions import Count
+from tortoise.functions import Avg, Count
 
 from app.models.enums import SupplementStatus
 from app.models.supplement_nutrients import SupplementNutrient, UserSupplementNutrient
+
+SupplementSort = Literal["name", "registered", "rating", "reviews"]
 
 
 class SupplementNutrientRepository:
@@ -13,12 +15,29 @@ class SupplementNutrientRepository:
         self,
         name: str,
         *,
+        sort: SupplementSort,
         offset: int,
         limit: int,
     ) -> tuple[list[SupplementNutrient], int]:
         query = SupplementNutrient.filter(name__icontains=name)
         total = await query.count()
-        items = await query.order_by("name", "id").offset(offset).limit(limit)
+        review_filter = Q(user_registrations__score__isnull=False)
+        active_registration_filter = Q(user_registrations__status=SupplementStatus.ACTIVE)
+        annotated = query.annotate(
+            rating_average=Avg("user_registrations__score", _filter=review_filter),
+            review_count=Count("user_registrations", _filter=review_filter),
+            registration_count=Count(
+                "user_registrations",
+                _filter=active_registration_filter,
+            ),
+        )
+        orderings: dict[SupplementSort, tuple[str, ...]] = {
+            "name": ("name", "id"),
+            "registered": ("-registration_count", "id"),
+            "rating": ("-rating_average", "-review_count", "id"),
+            "reviews": ("-review_count", "-rating_average", "id"),
+        }
+        items = await annotated.order_by(*orderings[sort]).offset(offset).limit(limit)
         return items, total
 
     async def get(self, supplement_nutrient_id: int) -> SupplementNutrient | None:

@@ -4,7 +4,10 @@ from fastapi import HTTPException, status
 
 from app.core import config
 from app.models.supplement_nutrients import SupplementNutrient
-from app.repositories.supplement_nutrient_repository import SupplementNutrientRepository
+from app.repositories.supplement_nutrient_repository import (
+    SupplementNutrientRepository,
+    SupplementSort,
+)
 
 
 class SupplementNutrientService:
@@ -15,6 +18,7 @@ class SupplementNutrientService:
         self,
         name: str,
         *,
+        sort: SupplementSort = "name",
         offset: int,
         limit: int,
     ) -> tuple[list[SupplementNutrient], int]:
@@ -24,7 +28,7 @@ class SupplementNutrientService:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="name must not be blank.",
             )
-        return await self.repository.search(normalized_name, offset=offset, limit=limit)
+        return await self.repository.search(normalized_name, sort=sort, offset=offset, limit=limit)
 
     async def get(self, supplement_nutrient_id: int) -> SupplementNutrient:
         product = await self.repository.get(supplement_nutrient_id)

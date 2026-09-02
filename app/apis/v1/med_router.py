@@ -18,6 +18,7 @@ from app.dtos.user_supplement_nutrients import (
 )
 from app.models.enums import SupplementStatus
 from app.models.users import User
+from app.repositories.supplement_nutrient_repository import SupplementSort
 from app.services.nutrient_standards import NutrientStandardService
 from app.services.supplement_nutrients import SupplementNutrientService
 from app.services.user_supplement_nutrients import UserSupplementNutrientService
@@ -69,11 +70,12 @@ async def search_supplement_nutrients(
     _user: Annotated[User, Depends(get_request_user)],
     service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
     name: Annotated[str, Query(min_length=1, max_length=100)],
+    sort: Annotated[SupplementSort, Query(description="검색 결과 정렬 기준")] = "name",
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> SupplementNutrientListResponse:
     """제품명 앞뒤 부분 검색으로 건강기능식품 기준정보를 페이지 단위로 조회한다."""
-    products, total = await service.search(name, offset=offset, limit=limit)
+    products, total = await service.search(name, sort=sort, offset=offset, limit=limit)
     return SupplementNutrientListResponse(
         items=[SupplementNutrientResponse.model_validate(product) for product in products],
         total=total,

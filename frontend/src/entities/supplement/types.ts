@@ -1,6 +1,7 @@
 import type { MealSlot } from '@/shared/model/mealSlot';
 
 export type SupplementSlot = MealSlot;
+export type SupplementSortKey = 'name' | 'registered' | 'rating' | 'reviews';
 
 export interface SupplementNutrientAmount {
   nutrientId: string;
@@ -59,6 +60,8 @@ export interface SupplementProduct {
   recommendedDoseAmount: number | null;
   doseUnit: string;
   recommendedSlots: SupplementSlot[];
+  ratingAverage: number | null;
+  reviewCount: number;
   /** 1개 단위 기준 성분량. 합계에서 회당 수량과 슬롯 수를 곱합니다. */
   nutrients: SupplementNutrientAmount[];
 }
@@ -83,6 +86,7 @@ export interface SupplementRanking {
 
 export interface SearchSupplementProductsParams {
   query: string;
+  sort?: SupplementSortKey;
   offset?: number;
   limit?: number;
 }

@@ -76,6 +76,8 @@ interface SupplementNutrientApiResponse {
   serving_size: string;
   daily_freq: string;
   target: string | null;
+  rating_average: NumericApiValue;
+  review_count: number;
 }
 
 interface SupplementNutrientListApiResponse {
@@ -291,6 +293,7 @@ export async function searchSupplementProducts(
     offset: String(params.offset ?? 0),
     limit: String(params.limit ?? 20),
   });
+  if (params.sort) query.set('sort', params.sort);
   const response = await http.get<SupplementNutrientListApiResponse>(
     `/v1/med/nutr?${query.toString()}`,
   );
@@ -349,6 +352,8 @@ function mapSupplementProduct(product: SupplementNutrientApiResponse): Supplemen
     recommendedDoseAmount: serving.amount,
     doseUnit: serving.unit,
     recommendedSlots: defaultSlotsForDailyFrequency(product.daily_freq),
+    ratingAverage: toNumberOrNull(product.rating_average),
+    reviewCount: Number(product.review_count ?? 0),
     nutrients: mapNutrients(product, serving.amount),
   };
 }

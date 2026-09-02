@@ -6,26 +6,40 @@ interface SupplementRankingCardProps {
   ranking: SupplementRanking;
   registrationPending: boolean;
   onSelect: (productId: string) => void;
+  maxItems?: number;
+  onMore?: () => void;
 }
 
 export function SupplementRankingCard({
   ranking,
   registrationPending,
   onSelect,
+  maxItems,
+  onMore,
 }: SupplementRankingCardProps) {
+  const items = maxItems === undefined ? ranking.items : ranking.items.slice(0, maxItems);
+
   return (
-    <section
-      aria-label="영양제 랭킹"
-      className="flex flex-col gap-3"
-    >
-      <div>
-        <h2 className="text-xl font-bold text-foreground">{ranking.title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">RxVita가 골랐어요</p>
+    <section aria-label="영양제 랭킹" className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">{ranking.title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">RxVita가 골랐어요</p>
+        </div>
+        {onMore && (
+          <button
+            type="button"
+            className="min-h-touch shrink-0 px-1 text-sm font-bold text-primary-strong"
+            onClick={onMore}
+          >
+            더보기
+          </button>
+        )}
       </div>
 
       <Card className="gap-0 overflow-hidden p-0">
         <ol>
-          {ranking.items.map((item) => (
+          {items.map((item) => (
             <li
               key={item.productId}
               className="min-h-touch border-t border-border first:border-t-0"

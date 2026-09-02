@@ -8,7 +8,11 @@ import { MyPage, MyProfilePage } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
-import { SupplementsPage, type NutrientStandardProfile } from '@/pages/supplements';
+import {
+  SupplementProductPage,
+  SupplementsPage,
+  type NutrientStandardProfile,
+} from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import type { ChatMessage, ChatSessionSummary, SendChatResult } from '@/entities/chat';
@@ -133,6 +137,7 @@ export function AppRouter() {
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/supplements" element={<SupplementsPage />} />
+        <Route path="/supplements/product/:productId" element={<SupplementProductPage />} />
         <Route path="/document-upload" element={<DocumentUploadPage />} />
         <Route path="/ocr-review" element={<OcrReviewPage />} />
         <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
@@ -217,6 +222,10 @@ export function AppRouter() {
         <Route
           path="/dev/supplements"
           element={<SupplementsPage profileOverride={DEV_NUTRIENT_PROFILE} />}
+        />
+        <Route
+          path="/dev/supplements/product/:productId"
+          element={<SupplementProductPage />}
         />
         <Route
           path="/dev/supplements-profile-missing"

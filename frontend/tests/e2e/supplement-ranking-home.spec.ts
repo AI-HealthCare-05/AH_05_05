@@ -14,6 +14,9 @@ const RANKING_RESPONSE = {
   items: [
     { supplement_nutrient_id: 701, name: '튼튼 철분 캡슐', rank_no: 1 },
     { supplement_nutrient_id: 702, name: '종합비타민', rank_no: 2 },
+    { supplement_nutrient_id: 703, name: '오메가3', rank_no: 3 },
+    { supplement_nutrient_id: 704, name: '비타민 D', rank_no: 4 },
+    { supplement_nutrient_id: 705, name: '밀크씨슬', rank_no: 5 },
   ],
 };
 
@@ -149,10 +152,22 @@ test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제
   await expect(ranking).not.toContainText(/인기|많이|베스트|추천|명이 등록|전시 기간/);
 
   const rows = ranking.getByRole('listitem');
-  await expect(rows).toHaveCount(2);
-  for (let index = 0; index < 2; index += 1) {
+  await expect(rows).toHaveCount(3);
+  await expect(ranking.getByText('비타민 D', { exact: true })).toHaveCount(0);
+  for (let index = 0; index < 3; index += 1) {
     expect((await rows.nth(index).boundingBox())?.height).toBeGreaterThanOrEqual(44);
   }
+});
+
+test('홈 랭킹 더보기는 둘러보기 탭으로 바로 이동한다', async ({ page }) => {
+  await authenticate(page);
+  await routeCommon(page);
+  await page.goto('/dev/home-empty');
+
+  const ranking = page.getByRole('region', { name: '영양제 랭킹' });
+  await ranking.getByRole('button', { name: '더보기' }).click();
+
+  await expect(page).toHaveURL(/\/supplements\?tab=browse$/);
 });
 
 test('등록 목록 조회가 실패해도 랭킹은 배지 없이 표시한다', async ({ page }) => {
