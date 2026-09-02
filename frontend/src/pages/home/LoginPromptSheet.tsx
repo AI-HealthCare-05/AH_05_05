@@ -9,7 +9,7 @@ interface LoginPromptSheetProps {
 
 const BENEFITS = [
   '약봉투를 등록하고 복약 알림 받기',
-  '영양제 성분 합계와 상한 비교',
+  '영양제 성분 합계와 복약 표준 가이드',
   '내 약을 근거로 답하는 AI 상담',
 ] as const;
 
@@ -19,10 +19,7 @@ export function LoginPromptSheet({ open, onOpenChange, onLogin }: LoginPromptShe
       <DialogContent variant="sheet" showCloseButton={false} aria-describedby="login-prompt-copy">
         <div aria-hidden className="mx-auto h-1 w-10 rounded-pill bg-border" />
         <div className="flex flex-col gap-2 pt-2">
-          <DialogTitle className="text-xl">로그인하면 바로 쓸 수 있어요</DialogTitle>
-          <DialogDescription id="login-prompt-copy" className="text-base">
-            복용약과 영양제는 사람마다 달라 저장할 곳이 필요해요.
-          </DialogDescription>
+          <DialogTitle className="text-xl">로그인하고, 나만의 복약관리를 시작해 보세요.</DialogTitle>
         </div>
 
         <ul className="flex flex-col gap-3" aria-label="로그인 후 이용할 수 있는 기능">

@@ -8,6 +8,7 @@ import {
   type Gender,
   type UpdateAccountProfilePayload,
 } from '@/entities/account';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   MIN_BIRTH_DATE,
   formatDateInputValue,
@@ -19,7 +20,15 @@ import {
   formatPhoneNumberInput,
   validatePhoneNumber,
 } from '@/shared/lib/phoneNumber';
-import { Button, Card, ErrorDialog, GenderRadioGroup, Header, Input } from '@/shared/ui';
+import {
+  BottomTabbar,
+  Button,
+  Card,
+  ErrorDialog,
+  GenderRadioGroup,
+  Header,
+  Input,
+} from '@/shared/ui';
 import { PasswordChangeSheet } from './PasswordChangeSheet';
 
 interface MyProfilePageProps {
@@ -173,6 +182,12 @@ export function MyProfilePage({
           </>
         )}
       </main>
+
+      <BottomTabbar
+        active="my"
+        onChange={(key) => navigate(TAB_ROUTES[key])}
+        className="border-t border-border"
+      />
 
       <PasswordChangeSheet open={passwordSheetOpen} onOpenChange={setPasswordSheetOpen} />
       <ErrorDialog

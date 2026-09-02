@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from datetime import date, datetime
 
 from dateutil.relativedelta import relativedelta
@@ -43,27 +44,23 @@ def validate_password(password: str) -> str:
     return password
 
 
-# 프론트 shared/lib/name.ts 의 NAME_PATTERN 과 같은 규칙이다. 한쪽만 고치면 안 된다.
-_NAME_PATTERN = re.compile(r"[가-힣a-zA-Z]+")
 MASK_MAX = 3
 
 
 def validate_name(name: str) -> str:
-    """이름은 한글 완성형과 영문만 받는다.
+    """모든 언어의 문자와 결합 문자만 이름으로 받는다.
 
     프론트에서 막아도 API 를 직접 부르면 들어오므로 여기서도 막는다
     (validate_ascii_email 과 같은 이유다).
 
-    공백을 허용하지 않는다 — 「김 진형」과 「김진형」이 같은 사람인데 다르게 저장되면
-    관리자 콘솔 검색에서 갈린다. 영문 이름은 붙여 쓴다.
-    낱자(ㄱ, ㅏ)도 막는다 — 한글 IME 조합이 끝나지 않은 값이 그대로 넘어온다.
-
-    DTO 가 strip_whitespace 로 앞뒤 공백을 먼저 잘라내므로 여기에는 이미 다듬어진 값이 온다.
+    Unicode 표기가 달라도 같은 이름이 동일하게 저장되도록 NFC 로 정규화한다.
+    숫자·공백·문장부호·기호(이모지 포함)는 허용하지 않는다.
     """
-    if not _NAME_PATTERN.fullmatch(name):
-        raise ValueError("이름은 한글과 영문만 사용할 수 있습니다.")
+    normalized = unicodedata.normalize("NFC", name)
+    if not normalized or any(unicodedata.category(char)[0] not in {"L", "M"} for char in normalized):
+        raise ValueError("이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.")
 
-    return name
+    return normalized
 
 
 def mask_name(raw: str) -> str:

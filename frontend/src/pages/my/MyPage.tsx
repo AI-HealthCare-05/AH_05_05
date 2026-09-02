@@ -3,6 +3,7 @@ import { CalendarDays, ChevronRight, Pill, Sprout, UserRound } from 'lucide-reac
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
   Button,
@@ -31,14 +32,6 @@ import {
 import { registerPushNotifications } from '@/shared/push/register';
 import { WithdrawAccountDialog } from './WithdrawAccountDialog';
 import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
-
-const TAB_ROUTES: Record<TabKey, string> = {
-  home: '/home',
-  medication: '/medications',
-  supplement: '/supplements',
-  chat: '/chat',
-  my: '/my',
-};
 
 function medicationTimesFromSettings(settings: NotifySettings): MedicationTimes {
   return {
@@ -412,6 +405,17 @@ export function MyPage({
                       }
                       divided
                     />
+                    <NotificationRow
+                      label="일정 알림"
+                      checked={notifySettings.notifySchedule}
+                      disabled={
+                        pendingSettingKeys.includes('notifySchedule') || pushUnsupported
+                      }
+                      onCheckedChange={(checked) =>
+                        handleNotificationChange('notifySchedule', checked)
+                      }
+                      divided
+                    />
                     <button
                       type="button"
                       className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
@@ -469,7 +473,9 @@ export function MyPage({
         title={
           pendingToggle === 'notifySupplement'
             ? '영양제 알림을 보내드릴까요?'
-            : '복약 시간에 알림을 보내드릴까요?'
+            : pendingToggle === 'notifySchedule'
+              ? '일정 알림을 보내드릴까요?'
+              : '복약 시간에 알림을 보내드릴까요?'
         }
         busy={notificationBusy}
         onAccept={() => void handlePermissionAccept()}

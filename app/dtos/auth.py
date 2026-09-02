@@ -34,10 +34,10 @@ class SignUpRequest(BaseModel):
     ]
     password: Annotated[str, Field(min_length=8), AfterValidator(validate_password)]
     # 상한은 DB 컬럼 폭(varchar 100)이 아니라 화면 기준이다. 프론트 NAME_MAX_LENGTH 와 같은 값.
-    # strip_whitespace 가 먼저 돌아 앞뒤 공백은 잘린 값이 validate_name 으로 간다.
+    # 공백도 금지 대상이므로 strip_whitespace 로 자동 제거하지 않고 validate_name 에서 거부한다.
     name: Annotated[
         str,
-        StringConstraints(strip_whitespace=True, min_length=2, max_length=20),
+        StringConstraints(min_length=2, max_length=20),
         AfterValidator(validate_name),
     ]
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]

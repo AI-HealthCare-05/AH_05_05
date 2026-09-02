@@ -21,6 +21,7 @@ test('설정 API 시간은 HH:MM으로 보이고 한 필드 PATCH는 camelCase�
   const response = {
     notifyMedication: false,
     notifySupplement: false,
+    notifySchedule: false,
     notifyConsentedAt: null,
     morningMedicationTime: '08:00:00',
     lunchMedicationTime: '13:00:00',
@@ -71,6 +72,7 @@ test('마이페이지 알림 시간은 네 필드를 PATCH 한 번으로 저장�
   const response = {
     notifyMedication: false,
     notifySupplement: false,
+    notifySchedule: false,
     notifyConsentedAt: null,
     morningMedicationTime: '06:00:00',
     lunchMedicationTime: '11:00:00',
@@ -134,6 +136,7 @@ test('마이페이지 시간 순서가 어긋나면 PATCH를 보내지 않는다
   const response = {
     notifyMedication: false,
     notifySupplement: false,
+    notifySchedule: false,
     notifyConsentedAt: null,
     morningMedicationTime: '08:00:00',
     lunchMedicationTime: '13:00:00',
@@ -167,6 +170,7 @@ test('마이페이지 알림 시간 PATCH가 실패하면 서버 메시지와 �
   const response = {
     notifyMedication: false,
     notifySupplement: false,
+    notifySchedule: false,
     notifyConsentedAt: null,
     morningMedicationTime: '08:00:00',
     lunchMedicationTime: '13:00:00',
@@ -240,4 +244,42 @@ test('진료일정 목록은 start_date 쿼리와 snake_case 응답을 화면 �
   expect(requestUrl!.searchParams.get('start_date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(requestUrl!.searchParams.get('offset')).toBe('0');
   expect(requestUrl!.searchParams.get('limit')).toBe('100');
+});
+
+test('마이페이지 일정 알림 토글은 notifySchedule만 PATCH한다', async ({ page }) => {
+  const patchBodies: unknown[] = [];
+  const response = {
+    notifyMedication: false,
+    notifySupplement: false,
+    notifySchedule: true,
+    notifyConsentedAt: '2026-09-02T10:00:00+09:00',
+    morningMedicationTime: '08:00:00',
+    lunchMedicationTime: '13:00:00',
+    eveningMedicationTime: '19:00:00',
+    bedtimeMedicationTime: '22:00:00',
+  };
+  await page.route('**/api/v1/me/settings', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patchBodies.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...response, notifySchedule: false }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.goto('/dev/my-authenticated');
+  const scheduleSwitch = page.getByRole('switch', { name: '일정 알림' });
+  await expect(scheduleSwitch).toBeChecked();
+  await scheduleSwitch.click();
+
+  await expect(scheduleSwitch).not.toBeChecked();
+  expect(patchBodies).toEqual([{ notifySchedule: false }]);
 });

@@ -10,7 +10,8 @@ import {
   type FollowUpVisit,
   type FollowUpVisitInput,
 } from '@/entities/follow-up-visit';
-import { Card, ErrorDialog, Header } from '@/shared/ui';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { BottomTabbar, Card, ErrorDialog, Header } from '@/shared/ui';
 import { DeleteFollowUpVisitDialog } from './DeleteFollowUpVisitDialog';
 import { FollowUpVisitSheet } from './FollowUpVisitSheet';
 
@@ -169,6 +170,12 @@ export function FollowUpVisitsPage() {
           </section>
         )}
       </main>
+
+      <BottomTabbar
+        active="my"
+        onChange={(key) => navigate(TAB_ROUTES[key])}
+        className="border-t border-border"
+      />
 
       <FollowUpVisitSheet
         open={sheetOpen}

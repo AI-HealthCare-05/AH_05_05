@@ -276,7 +276,7 @@ class TestMedicationScheduleAPI(TestCase):
         assert all(alarm.status == AlarmStatus.ACTIVE for alarm in alarms)
         assert all(alarm.care_episode_id is None for alarm in alarms)
         assert all(alarm.title == "복약 알림" for alarm in alarms)
-        assert all(alarm.message == "약을 복용할 시간입니다." for alarm in alarms)
+        assert all(alarm.message == "약 드실 시간이에요" for alarm in alarms)
         assert all(alarm.recurrence_rule and alarm.recurrence_rule.startswith("FREQ=DAILY;COUNT=") for alarm in alarms)
         assert {alarm.scheduled_at.strftime("%H:%M") for alarm in alarms} == {"08:00", "18:30"}
         assert all(alarm.next_trigger_at == alarm.scheduled_at for alarm in alarms)

@@ -16,8 +16,12 @@ test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가�
   await expect(exceeded).toBeVisible();
   await expect(exceededCard.getByText('상한 초과', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('3,200', { exact: true })).toBeVisible();
-  await expect(exceededCard.getByText('권장 800', { exact: true })).toBeVisible();
-  await expect(exceededCard.getByText('상한 3,000', { exact: true })).toBeVisible();
+  const baseLabel = exceededCard.locator('[data-threshold-label="base"]');
+  const upperLabel = exceededCard.locator('[data-threshold-label="upper-limit"]');
+  await expect(baseLabel.getByText('권장', { exact: true })).toBeVisible();
+  await expect(baseLabel.getByText('800', { exact: true })).toBeVisible();
+  await expect(upperLabel.getByText('상한', { exact: true })).toBeVisible();
+  await expect(upperLabel.getByText('3,000', { exact: true })).toBeVisible();
   await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuenow', '3000');
   await expect(exceededCard.getByRole('meter')).toHaveAttribute('aria-valuetext', /3,200/);
   await expect(exceededCard.locator('[data-threshold="upper-limit"]')).toBeVisible();
@@ -49,12 +53,16 @@ test('기준과 상한의 누락 조합을 숨기거나 임의 판정하지 않�
   const upperOnly = totals.getByRole('article', { name: '아연 성분 합계' });
   const noStandards = totals.getByRole('article', { name: '셀레늄 성분 합계' });
 
-  await expect(baseOnly.getByText('상한 2,000', { exact: true })).toBeVisible();
-  await expect(baseOnly.getByText('권장 100', { exact: true })).toBeVisible();
-  await expect(upperOnly.getByText('상한 35', { exact: true })).toHaveCount(0);
+  const baseOnlyLabel = baseOnly.locator('[data-threshold-label="base"]');
+  const baseOnlyUpperLabel = baseOnly.locator('[data-threshold-label="upper-limit"]');
+  await expect(baseOnlyLabel.getByText('권장', { exact: true })).toBeVisible();
+  await expect(baseOnlyLabel.getByText('100', { exact: true })).toBeVisible();
+  await expect(baseOnlyUpperLabel.getByText('상한', { exact: true })).toBeVisible();
+  await expect(baseOnlyUpperLabel.getByText('2,000', { exact: true })).toBeVisible();
+  await expect(upperOnly.locator('[data-threshold-label="upper-limit"]')).toHaveCount(0);
   await expect(upperOnly.getByRole('meter')).toHaveCount(0);
   await expect(noStandards.getByText('55', { exact: true })).toBeVisible();
-  await expect(noStandards.getByText('기준이 없는 성분이에요', { exact: true })).toHaveCount(0);
+  await expect(noStandards.getByText('이 성분은 섭취 기준이 없어요', { exact: true })).toHaveCount(0);
   await expect(noStandards.getByRole('meter')).toHaveCount(0);
 });
 
@@ -79,6 +87,7 @@ test('생년월일이나 성별이 없으면 기준을 숨기고 기본정보 �
   await expect(totals.getByText('3,200', { exact: true })).toBeVisible();
   await expect(totals.getByRole('meter')).toHaveCount(0);
   await expect(totals.getByText('상한 초과', { exact: true })).toHaveCount(0);
+  await expect(totals.getByText('이 성분은 섭취 기준이 없어요', { exact: true })).toHaveCount(0);
   const profileLink = page.getByRole('button', {
     name: '생년월일과 성별을 입력하면 나이·성별에 맞는 기준을 보여드려요',
   });

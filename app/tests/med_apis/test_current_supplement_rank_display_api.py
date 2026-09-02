@@ -48,11 +48,32 @@ class TestCurrentSupplementRankDisplayAPI(TestCase):
             {"supplement_nutrient_id": second.id, "name": "철분", "rank_no": 2},
         ]
 
-    async def test_requires_user_authentication(self) -> None:
+    async def test_allows_unauthenticated_users_to_read_current_display(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        display = await DisplaySupplementNutrientRank.create(
+            title="비로그인 공개 랭킹",
+            start_at=now - timedelta(hours=1),
+            end_at=now + timedelta(hours=1),
+            is_enabled=True,
+        )
+        product = await create_supplement("PUBLIC-RANK-001", "공개 비타민")
+        await SupplementNutrientRankItem.create(
+            display=display,
+            supplement_nutrient=product,
+            rank_no=1,
+        )
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(CURRENT_DISPLAY_URL)
 
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"] == [
+            {
+                "supplement_nutrient_id": product.id,
+                "name": "공개 비타민",
+                "rank_no": 1,
+            }
+        ]
 
     async def test_returns_404_when_displays_are_disabled_or_outside_the_current_period(self) -> None:
         now = datetime.now(config.TIMEZONE)
