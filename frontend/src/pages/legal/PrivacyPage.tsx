@@ -44,7 +44,6 @@ export function PrivacyPage() {
           <li>OCR 정보: 업로드한 약봉투 이미지, 추출 결과, 이용자가 수정·확정한 값</li>
           <li>AI 이용정보: 채팅 질문과 답변, 참조자료, 대화 별점</li>
           <li>알림정보: 알림 설정, 예약·발송 이력, Web Push 구독 및 기기 정보</li>
-          <li>자동 생성 정보: 접속기록, IP 주소, 브라우저·기기 정보 및 오류기록</li>
         </LegalList>
         <p className="mt-2">
           건강과 진료에 관한 정보는 민감정보에 해당할 수 있으며, 서비스는 별도 동의를 받은
@@ -53,10 +52,47 @@ export function PrivacyPage() {
       </LegalSection>
 
       <LegalSection title="4. 보유 및 이용 기간">
-        <p>
-          개인정보는 원칙적으로 회원 탈퇴 또는 처리 목적 달성 시까지 보유합니다. 다만 관계
-          법령에 보존 의무가 있거나 분쟁 처리에 필요한 경우에는 해당 목적과 기간에 한해
-          분리하여 보관할 수 있습니다.
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table aria-label="개인정보 보유기간" className="w-full min-w-[27rem] text-left text-xs">
+            <thead className="bg-muted/60 text-foreground">
+              <tr>
+                <th className="px-3 py-2 font-semibold">처리 항목</th>
+                <th className="px-3 py-2 font-semibold">보유 기준</th>
+                <th className="px-3 py-2 font-semibold">파기 시점</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              <tr>
+                <td className="px-3 py-2">회원·계정정보</td>
+                <td className="px-3 py-2">회원 탈퇴 시까지</td>
+                <td className="px-3 py-2">탈퇴 처리 후 지체 없이</td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2">복약·진료정보 및 OCR 확정정보</td>
+                <td className="px-3 py-2">이용자가 삭제하거나 회원 탈퇴할 때까지</td>
+                <td className="px-3 py-2">삭제 요청 또는 탈퇴 처리 후 지체 없이</td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2">AI 채팅 질문·답변 및 별점</td>
+                <td className="px-3 py-2">대화 삭제 또는 회원 탈퇴 시까지</td>
+                <td className="px-3 py-2">삭제 요청 또는 탈퇴 처리 후 지체 없이</td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2">알림 설정 및 Web Push 구독정보</td>
+                <td className="px-3 py-2">구독 해지 또는 회원 탈퇴 시까지</td>
+                <td className="px-3 py-2">구독 해지 또는 탈퇴 처리 후 지체 없이</td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2">접속·오류·발송 기록</td>
+                <td className="px-3 py-2">처리 목적 달성 또는 관계 법령상 보존기간까지</td>
+                <td className="px-3 py-2">보존기간 종료 후 지체 없이</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2">
+          관계 법령에 보존 의무가 있거나 분쟁·부정 이용 대응을 위해 보존이 필요한 경우에는
+          해당 근거, 항목 및 기간에 한해 다른 개인정보와 분리하여 보관한 후 파기합니다.
         </p>
       </LegalSection>
 
@@ -69,7 +105,32 @@ export function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="6. 개인정보의 파기">
+      <LegalSection title="6. AI 데이터 처리">
+        <LegalList>
+          <li>
+            AI 챗봇 답변을 생성하기 위해 이용자의 질문과 답변, 등록한 처방약·영양제 및 복약
+            관련 정보, 이용자가 확정한 OCR 정보와 필요한 참고자료를 처리할 수 있습니다.
+          </li>
+          <li>
+            AI에 전달하는 정보는 답변 생성과 안전성 확인에 필요한 범위로 제한하며, 외부 AI
+            서비스가 사용되는 경우 제5조의 처리위탁 및 국외 이전 고지에 따릅니다.
+          </li>
+          <li>
+            챗봇 화면에는 AI가 생성한 답변임을 알리고, 답변은 의료인의 진단·처방·치료를
+            대체하지 않는 참고정보로 제공합니다.
+          </li>
+          <li>
+            AI 답변은 이용자에게 법적 효과 또는 중대한 영향을 미치는 자동화된 결정에 사용하지
+            않습니다.
+          </li>
+          <li>
+            이용자는 서비스의 대화 관리 기능을 통해 대화를 목록에서 제외할 수 있으며, AI
+            대화정보의 열람·삭제 및 처리정지는 개인정보 보호책임자에게 요청할 수 있습니다.
+          </li>
+        </LegalList>
+      </LegalSection>
+
+      <LegalSection title="7. 개인정보의 파기">
         <p>
           보유기간이 끝나거나 처리 목적이 달성된 개인정보는 복구하기 어렵도록 지체 없이
           파기합니다. 전자 파일은 안전한 삭제 방법으로 삭제하고, 출력물은 분쇄 또는 소각하는
@@ -77,7 +138,7 @@ export function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="7. 이용자의 권리와 행사 방법">
+      <LegalSection title="8. 이용자의 권리와 행사 방법">
         <p>
           이용자는 자신의 개인정보에 대해 열람, 정정, 삭제, 처리정지 및 동의 철회를 요청할
           수 있습니다. 서비스의 계정·설정 기능을 이용하거나 개인정보 보호 담당자 이메일로
@@ -85,7 +146,7 @@ export function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="8. 안전성 확보 조치">
+      <LegalSection title="9. 안전성 확보 조치">
         <LegalList>
           <li>비밀번호의 단방향 암호화 및 전화번호 등 중요 정보 암호화</li>
           <li>접근권한 최소화와 인증정보 관리</li>
@@ -94,7 +155,7 @@ export function PrivacyPage() {
         </LegalList>
       </LegalSection>
 
-      <LegalSection title="9. 자동 수집 장치와 알림정보">
+      <LegalSection title="10. 자동 수집 장치와 알림정보">
         <p>
           로그인 유지와 서비스 제공을 위해 브라우저 저장소 또는 쿠키를 사용할 수 있습니다.
           이용자는 브라우저 설정에서 저장소와 알림 권한을 삭제하거나 거부할 수 있으나 일부
@@ -102,7 +163,7 @@ export function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="10. 처리방침 변경">
+      <LegalSection title="11. 처리방침 변경">
         <p>
           본 안내가 변경되는 경우 적용일과 변경 내용을 서비스에서 알립니다. 중요한 변경으로
           추가 동의가 필요한 경우에는 별도의 동의를 받습니다.
