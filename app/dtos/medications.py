@@ -32,6 +32,7 @@ class MedicationOverview(CamelModel):
     start: MedicationStart
     end_date: date
     days_remaining: int
+    is_finished: bool
     meal_times: MedicationMealTimes
     medications: list[MedicationOverviewItem]
 

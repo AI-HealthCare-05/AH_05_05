@@ -307,6 +307,12 @@ class MedicationRecordNotFoundError(AppError):
     message = "복약 기록을 찾을 수 없습니다."
 
 
+class InvalidMedicationOverviewDateRangeError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_MEDICATION_OVERVIEW_DATE_RANGE"
+    message = "복약 목록 조회 기간이 올바르지 않습니다."
+
+
 class InvalidDoseDateRangeError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "INVALID_DOSE_DATE_RANGE"
