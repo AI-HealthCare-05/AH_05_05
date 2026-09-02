@@ -110,6 +110,7 @@ function registrationFor(
     end_date: null,
     status: 'ACTIVE',
     score: null,
+    review_body: null,
     note: null,
     created_at: '2026-08-27T09:00:00+09:00',
     updated_at: null,
@@ -147,6 +148,7 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
   await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
+      maskedName: '테***자',
       phoneNumber: '01012345678',
       birthDate: '2000-01-01',
       gender: 'MALE',
@@ -174,6 +176,7 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
     slots: ['MORNING'],
     score: 3,
     note: '저녁 식후',
+    review_body: null,
   });
   await expect(iron.getByLabel('별 3점')).toBeVisible();
 });
