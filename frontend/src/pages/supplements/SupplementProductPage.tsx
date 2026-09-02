@@ -9,6 +9,7 @@ import {
 } from '@/entities/supplement';
 import { Button, Card, ErrorDialog, Header } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
+import { SupplementReviewSection } from './SupplementReviewSection';
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
 
@@ -107,6 +108,8 @@ export function SupplementProductPage() {
                 </dl>
               </Card>
             </section>
+
+            <SupplementReviewSection productId={product.productId} />
 
             <Button
               className="mt-auto"
