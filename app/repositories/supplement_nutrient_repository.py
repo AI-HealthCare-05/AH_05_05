@@ -25,10 +25,8 @@ class SupplementNutrientRepository:
     ) -> tuple[list[SupplementNutrient], int]:
         query = SupplementNutrient.filter(name__icontains=name)
         total = await query.count()
-        hidden_ids = await self.review_repository.list_hidden_registration_ids()
-        withdrawn_ids = await self.review_repository.list_withdrawn_owner_registration_ids()
+        excluded_ids = await self.review_repository.list_excluded_registration_ids()
         review_filter = Q(user_registrations__score__isnull=False)
-        excluded_ids = hidden_ids + withdrawn_ids
         if excluded_ids:
             review_filter &= ~Q(user_registrations__id__in=excluded_ids)
         active_registration_filter = Q(user_registrations__status=SupplementStatus.ACTIVE)
