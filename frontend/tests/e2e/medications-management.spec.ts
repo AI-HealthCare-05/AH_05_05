@@ -48,33 +48,73 @@ test('제거한 처방 상세 URL은 더 이상 상세 화면을 렌더링하지
 test('기간 필터는 URL에 남고 기본값은 쿼리를 제거한다', async ({ page }) => {
   await page.goto('/dev/medications');
   await expect(page).toHaveURL(/\/dev\/medications$/);
+  await expect(page.getByRole('button', { name: '최근 6개월' })).toBeVisible();
 
-  await page.getByRole('button', { name: '최근 3개월' }).click();
-  await page.getByRole('radio', { name: '최근 6개월' }).check();
+  await page.getByRole('button', { name: '최근 6개월' }).click();
+  await expect(page.getByRole('radio', { name: '최근 1개월' })).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: '최근 1년' })).toBeVisible();
+  await page.getByRole('dialog').getByText('최근 3개월', { exact: true }).click();
   await page.getByRole('button', { name: '적용' }).click();
-  await expect(page).toHaveURL(/from=2026-03-02&to=2026-09-02/);
+  await expect(page).toHaveURL(/from=2026-06-02&to=2026-09-02/);
 
   await page.goBack();
   await expect(page).toHaveURL(/\/dev\/medications$/);
-  await expect(page.getByRole('button', { name: '최근 3개월' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '최근 6개월' })).toBeVisible();
   await page.goForward();
-  await expect(page).toHaveURL(/from=2026-03-02&to=2026-09-02/);
+  await expect(page).toHaveURL(/from=2026-06-02&to=2026-09-02/);
 
-  await page.getByRole('button', { name: '최근 6개월' }).click();
-  await page.getByRole('radio', { name: '최근 3개월' }).check();
+  await page.getByRole('button', { name: '최근 3개월' }).click();
+  await page.getByRole('dialog').getByText('최근 6개월', { exact: true }).click();
   await page.getByRole('button', { name: '적용' }).click();
   await expect(page).toHaveURL(/\/dev\/medications$/);
+
+  await page.getByRole('button', { name: '최근 6개월' }).click();
+  await page.getByRole('dialog').getByText('최근 1년', { exact: true }).click();
+  await page.getByRole('button', { name: '적용' }).click();
+  await expect(page).toHaveURL(/from=2025-09-02&to=2026-09-02/);
 });
 
 test('직접 지정 역전 범위는 시트 안에서 막는다', async ({ page }) => {
   await page.goto('/dev/medications');
-  await page.getByRole('button', { name: '최근 3개월' }).click();
-  await page.getByRole('radio', { name: '직접 지정' }).check();
+  await page.getByRole('button', { name: '최근 6개월' }).click();
+  await page.getByRole('dialog').getByText('직접 지정', { exact: true }).click();
   await page.getByLabel('시작일').fill('2026-09-02');
   await page.getByLabel('종료일').fill('2026-09-01');
   await page.getByRole('button', { name: '적용' }).click();
 
   await expect(page.getByRole('dialog')).toContainText('시작일은 종료일보다 늦을 수 없어요.');
+});
+
+test('직접 지정은 오늘부터 과거 2년까지만 허용한다', async ({ page }) => {
+  await page.goto('/dev/medications');
+  await page.getByRole('button', { name: '최근 6개월' }).click();
+  await page.getByRole('dialog').getByText('직접 지정', { exact: true }).click();
+  await page.getByLabel('시작일').fill('2024-09-02');
+  await page.getByLabel('종료일').fill('2026-09-02');
+  await page.getByRole('button', { name: '적용' }).click();
+  await expect(page).toHaveURL(/from=2024-09-02&to=2026-09-02/);
+
+  await page.getByRole('button', { name: '직접 지정' }).click();
+  await page.getByLabel('시작일').fill('2024-09-01');
+  await page.getByRole('button', { name: '적용' }).click();
+  await expect(page.getByRole('dialog')).toContainText(
+    '조회 기간은 오늘부터 과거 2년까지만 선택할 수 있어요.',
+  );
+
+  await page.getByLabel('시작일').fill('2026-09-02');
+  await page.getByLabel('종료일').fill('2026-09-03');
+  await page.getByRole('button', { name: '적용' }).click();
+  await expect(page.getByRole('dialog')).toContainText(
+    '조회 기간은 오늘부터 과거 2년까지만 선택할 수 있어요.',
+  );
+});
+
+test('처방 기록은 조회 결과 전체를 처음부터 표시한다', async ({ page }) => {
+  await page.goto('/dev/medications-many');
+
+  const cards = page.getByRole('button', { name: /처방 · 약/ });
+  await expect(page.getByText('41개', { exact: true })).toBeVisible();
+  await expect(cards).toHaveCount(41);
 });
 
 test('선택 모드에서는 카드 클릭이 펼침 대신 선택이고 순차 삭제한다', async ({ page }) => {

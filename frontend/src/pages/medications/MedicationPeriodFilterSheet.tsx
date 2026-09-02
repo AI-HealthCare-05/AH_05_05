@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { MedicationOverviewRange } from '@/entities/medication';
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@/shared/ui';
 import {
+  addCalendarYears,
+  localIsoDate,
   type MedicationPeriodPreset,
   presetForRange,
   presetRange,
@@ -15,9 +17,9 @@ interface MedicationPeriodFilterSheetProps {
 }
 
 const OPTIONS: Array<{ value: MedicationPeriodPreset; label: string }> = [
-  { value: 'one-month', label: '최근 1개월' },
   { value: 'three-months', label: '최근 3개월' },
   { value: 'six-months', label: '최근 6개월' },
+  { value: 'one-year', label: '최근 1년' },
   { value: 'custom', label: '직접 지정' },
 ];
 
@@ -27,10 +29,12 @@ export function MedicationPeriodFilterSheet({
   onOpenChange,
   onApply,
 }: MedicationPeriodFilterSheetProps) {
-  const [preset, setPreset] = useState<MedicationPeriodPreset>('three-months');
+  const [preset, setPreset] = useState<MedicationPeriodPreset>('six-months');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const today = localIsoDate(new Date());
+  const earliestDate = addCalendarYears(today, -2);
 
   useEffect(() => {
     if (!open) return;
@@ -41,11 +45,11 @@ export function MedicationPeriodFilterSheet({
   }, [open, range]);
 
   function apply() {
-    if (preset === 'three-months') {
+    if (preset === 'six-months') {
       onApply({});
       return;
     }
-    if (preset === 'one-month' || preset === 'six-months') {
+    if (preset === 'three-months' || preset === 'one-year') {
       onApply(presetRange(preset, new Date()));
       return;
     }
@@ -55,6 +59,10 @@ export function MedicationPeriodFilterSheet({
     }
     if (from > to) {
       setError('시작일은 종료일보다 늦을 수 없어요.');
+      return;
+    }
+    if (from < earliestDate || to > today) {
+      setError('조회 기간은 오늘부터 과거 2년까지만 선택할 수 있어요.');
       return;
     }
     onApply({ from, to });
@@ -104,6 +112,8 @@ export function MedicationPeriodFilterSheet({
               <input
                 type="date"
                 value={from}
+                min={earliestDate}
+                max={to && to < today ? to : today}
                 className="min-h-touch min-w-0 rounded-input border border-input bg-card px-3 text-foreground"
                 onChange={(event) => {
                   setFrom(event.target.value);
@@ -116,6 +126,8 @@ export function MedicationPeriodFilterSheet({
               <input
                 type="date"
                 value={to}
+                min={from && from > earliestDate ? from : earliestDate}
+                max={today}
                 className="min-h-touch min-w-0 rounded-input border border-input bg-card px-3 text-foreground"
                 onChange={(event) => {
                   setTo(event.target.value);

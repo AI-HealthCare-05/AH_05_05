@@ -55,6 +55,27 @@ const MISSING_NUTRIENT_PROFILE: NutrientStandardProfile = {
 const AUTO_ASSIGNED_MEDICATION_SCHEDULE = mockMedicationScheduleWithAutoAssigned();
 const ACTIVE_MEDICATION_OVERVIEW = mockMedicationOverview();
 const MULTIPLE_MEDICATION_OVERVIEWS = mockMedicationOverviews();
+const MANY_MEDICATION_OVERVIEWS: MedicationOverview[] = Array.from({ length: 41 }, (_, index) => {
+  const startDate = new Date(2026, 7, 24);
+  startDate.setDate(startDate.getDate() - index);
+  const date = [
+    startDate.getFullYear(),
+    String(startDate.getMonth() + 1).padStart(2, '0'),
+    String(startDate.getDate()).padStart(2, '0'),
+  ].join('-');
+  return {
+    ...ACTIVE_MEDICATION_OVERVIEW,
+    recordId: 1_000 + index,
+    start: { ...ACTIVE_MEDICATION_OVERVIEW.start, date },
+    endDate: date,
+    daysRemaining: 0,
+    isFinished: true,
+    medications: ACTIVE_MEDICATION_OVERVIEW.medications.map((medication) => ({
+      ...medication,
+      medicationId: medication.medicationId + index * 100,
+    })),
+  };
+});
 const EMPTY_MEDICATION_OVERVIEW: MedicationOverview = {
   ...ACTIVE_MEDICATION_OVERVIEW,
   medications: [],
@@ -98,6 +119,7 @@ const loadActiveMedicationOverview = async () => ACTIVE_MEDICATION_OVERVIEW;
 const loadOneMedicationOverview = async () => ONE_MEDICATION_OVERVIEW;
 const loadFourteenDayMedicationOverview = async () => FOURTEEN_DAY_MEDICATION_OVERVIEW;
 const loadMultipleMedicationOverviews = async () => MULTIPLE_MEDICATION_OVERVIEWS;
+const loadManyMedicationOverviews = async () => MANY_MEDICATION_OVERVIEWS;
 const loadCrossYearMedicationOverviews = async () => [CROSS_YEAR_MEDICATION_OVERVIEW];
 const failMedicationOverview = async (): Promise<MedicationOverview> => {
   throw new Error('잠시 후 다시 시도해주세요.');
@@ -198,6 +220,10 @@ export function AppRouter() {
           }
         />
         <Route path="/dev/medications" element={<MedicationsPage />} />
+        <Route
+          path="/dev/medications-many"
+          element={<MedicationsPage overviewsLoader={loadManyMedicationOverviews} />}
+        />
         <Route
           path="/dev/medications-cross-year"
           element={<MedicationsPage overviewsLoader={loadCrossYearMedicationOverviews} />}

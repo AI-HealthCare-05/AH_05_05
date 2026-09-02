@@ -7,8 +7,8 @@ from app.core.exceptions import InvalidMedicationOverviewDateRangeError
 from app.models.care import CareEpisode
 from app.models.medications import Medication
 
-DEFAULT_OVERVIEW_MONTHS = 3
-MAX_OVERVIEW_YEARS = 5
+DEFAULT_OVERVIEW_MONTHS = 6
+MAX_OVERVIEW_YEARS = 2
 UNKNOWN_DAYS = 1
 
 
@@ -30,11 +30,13 @@ def resolve_medication_overview_range(
         resolved_from = from_date
         resolved_to = to_date
 
+    earliest_date = today - relativedelta(years=MAX_OVERVIEW_YEARS)
     if (
         resolved_from is None
         or resolved_to is None
         or resolved_from > resolved_to
-        or resolved_to > resolved_from + relativedelta(years=MAX_OVERVIEW_YEARS)
+        or resolved_from < earliest_date
+        or resolved_to > today
     ):
         raise InvalidMedicationOverviewDateRangeError()
     return resolved_from, resolved_to
