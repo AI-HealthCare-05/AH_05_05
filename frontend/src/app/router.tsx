@@ -179,17 +179,6 @@ export function AppRouter() {
           <Route path="/my/visits" element={<FollowUpVisitsPage />} />
           <Route path="/my/alarms" element={<ScheduledAlarmsPage />} />
         </Route>
-        <Route path="/supplements" element={<SupplementsPage />} />
-        <Route path="/supplements/product/:productId" element={<SupplementProductPage />} />
-        <Route path="/document-upload" element={<DocumentUploadPage />} />
-        <Route path="/ocr-review" element={<OcrReviewPage />} />
-        <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
-        <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
-        <Route path="/medications" element={<MedicationsPage />} />
-        <Route path="/chat" element={<AuthenticatedChatPage />} />
-        <Route path="/my" element={<MyPage />} />
-        <Route path="/my/profile" element={<MyProfilePage />} />
-        <Route path="/my/visits" element={<FollowUpVisitsPage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
