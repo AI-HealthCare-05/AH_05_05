@@ -182,6 +182,11 @@ class UserSupplementNutrient(models.Model):
     end_date = fields.DateField(null=True)
     status = fields.CharEnumField(SupplementStatus, default=SupplementStatus.ACTIVE)
     note = fields.CharField(max_length=500, null=True)
+    review_body = fields.CharField(
+        max_length=500,
+        null=True,
+        description="다른 사용자에게 공개되는 후기 본문",
+    )
     score = fields.IntField(
         null=True,
         validators=[MinValueValidator(1), MaxValueValidator(5)],
@@ -194,6 +199,26 @@ class UserSupplementNutrient(models.Model):
         table = "user_suppl_nutrient"
         unique_together = (("user", "supplement_nutrient"),)
         indexes = (("user", "status"),)
+
+
+class SupplementReviewReport(models.Model):
+    id = fields.BigIntField(primary_key=True)
+    user = fields.ForeignKeyField(
+        "models.User",
+        related_name="supplement_review_reports",
+        on_delete=fields.CASCADE,
+    )
+    registration = fields.ForeignKeyField(
+        "models.UserSupplementNutrient",
+        related_name="reports",
+        on_delete=fields.CASCADE,
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "supplement_review_report"
+        unique_together = (("user", "registration"),)
+        indexes = (("registration",),)
 
 
 class UserSupplementNutrientSlot(models.Model):
