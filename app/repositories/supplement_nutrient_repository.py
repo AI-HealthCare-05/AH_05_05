@@ -6,11 +6,15 @@ from tortoise.functions import Avg, Count
 
 from app.models.enums import SupplementStatus
 from app.models.supplement_nutrients import SupplementNutrient, UserSupplementNutrient
+from app.repositories.supplement_review_repository import SupplementReviewRepository
 
 SupplementSort = Literal["name", "registered", "rating", "reviews"]
 
 
 class SupplementNutrientRepository:
+    def __init__(self, review_repository: SupplementReviewRepository | None = None) -> None:
+        self.review_repository = review_repository or SupplementReviewRepository()
+
     async def search(
         self,
         name: str,
@@ -21,7 +25,12 @@ class SupplementNutrientRepository:
     ) -> tuple[list[SupplementNutrient], int]:
         query = SupplementNutrient.filter(name__icontains=name)
         total = await query.count()
+        hidden_ids = await self.review_repository.list_hidden_registration_ids()
+        withdrawn_ids = await self.review_repository.list_withdrawn_owner_registration_ids()
         review_filter = Q(user_registrations__score__isnull=False)
+        excluded_ids = hidden_ids + withdrawn_ids
+        if excluded_ids:
+            review_filter &= ~Q(user_registrations__id__in=excluded_ids)
         active_registration_filter = Q(user_registrations__status=SupplementStatus.ACTIVE)
         annotated = query.annotate(
             rating_average=Avg("user_registrations__score", _filter=review_filter),
