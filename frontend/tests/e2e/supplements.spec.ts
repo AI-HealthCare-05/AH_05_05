@@ -62,7 +62,7 @@ test('기준과 상한의 누락 조합을 숨기거나 임의 판정하지 않�
   await expect(upperOnly.locator('[data-threshold-label="upper-limit"]')).toHaveCount(0);
   await expect(upperOnly.getByRole('meter')).toHaveCount(0);
   await expect(noStandards.getByText('55', { exact: true })).toBeVisible();
-  await expect(noStandards.getByText('이 성분은 섭취 기준이 없어요', { exact: true })).toBeVisible();
+  await expect(noStandards.getByText('이 성분은 섭취 기준이 없어요', { exact: true })).toHaveCount(0);
   await expect(noStandards.getByRole('meter')).toHaveCount(0);
 });
 
