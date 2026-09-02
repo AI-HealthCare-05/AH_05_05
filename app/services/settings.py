@@ -7,11 +7,14 @@ from app.core import config
 from app.dtos.settings import NotifySettingsUpdateRequest
 from app.models.enums import MealSlot
 from app.models.users import User, UserSettings
+from app.services.follow_up_visit_alarms import FollowUpVisitAlarmService
 from app.services.medication_schedule import SLOT_ORDER, MedicationScheduleService
+from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
 _SETTING_FIELD_MAP = {
     "notify_medication": "is_notify_medication",
     "notify_supplement": "is_notify_supplement",
+    "notify_schedule": "is_notify_schedule",
 }
 _TIME_FIELDS = {
     MealSlot.MORNING: "morning_medication_time",
@@ -99,5 +102,16 @@ class NotifySettingsService:
                     meal_times,
                     connection,
                 )
+                await UserSupplementNutrientService._sync_nutrient_alarms(
+                    user.id,
+                    settings,
+                    connection,
+                )
+                if "evening_medication_time" in time_update_fields:
+                    await FollowUpVisitAlarmService.sync_future_alarms(
+                        user.id,
+                        meal_times[MealSlot.EVENING],
+                        connection,
+                    )
 
         return settings

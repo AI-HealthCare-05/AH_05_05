@@ -11,6 +11,7 @@ class NotifySettingsUpdateRequest(CamelModel):
 
     notify_medication: bool | None = None
     notify_supplement: bool | None = None
+    notify_schedule: bool | None = None
     morning_medication_time: time | None = None
     lunch_medication_time: time | None = None
     evening_medication_time: time | None = None
@@ -20,6 +21,7 @@ class NotifySettingsUpdateRequest(CamelModel):
 class NotifySettingsResponse(CamelModel):
     notify_medication: bool
     notify_supplement: bool
+    notify_schedule: bool
     notify_consented_at: datetime | None
     morning_medication_time: time
     lunch_medication_time: time

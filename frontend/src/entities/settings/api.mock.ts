@@ -3,6 +3,7 @@ import type { NotifySettings, UpdateNotifySettingsPayload } from './types';
 let settings: NotifySettings = {
   notifyMedication: false,
   notifySupplement: false,
+  notifySchedule: false,
   notifyConsentedAt: null,
   morningMedicationTime: '08:00',
   lunchMedicationTime: '13:00',

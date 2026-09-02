@@ -412,6 +412,17 @@ export function MyPage({
                       }
                       divided
                     />
+                    <NotificationRow
+                      label="일정 알림"
+                      checked={notifySettings.notifySchedule}
+                      disabled={
+                        pendingSettingKeys.includes('notifySchedule') || pushUnsupported
+                      }
+                      onCheckedChange={(checked) =>
+                        handleNotificationChange('notifySchedule', checked)
+                      }
+                      divided
+                    />
                     <button
                       type="button"
                       className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
@@ -469,7 +480,9 @@ export function MyPage({
         title={
           pendingToggle === 'notifySupplement'
             ? '영양제 알림을 보내드릴까요?'
-            : '복약 시간에 알림을 보내드릴까요?'
+            : pendingToggle === 'notifySchedule'
+              ? '일정 알림을 보내드릴까요?'
+              : '복약 시간에 알림을 보내드릴까요?'
         }
         busy={notificationBusy}
         onAccept={() => void handlePermissionAccept()}
