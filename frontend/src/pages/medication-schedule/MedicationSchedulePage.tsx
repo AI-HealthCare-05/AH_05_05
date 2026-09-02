@@ -7,6 +7,7 @@ import {
   Header,
   Input,
   NotifyPermissionDialog,
+  TimePickerSheet,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
 import {
@@ -30,7 +31,6 @@ import {
   type PushPermission,
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
-import { TimePickerSheet } from './TimePickerSheet';
 import {
   DEFAULT_MEAL_TIMES,
   MEAL_SLOTS,

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -134,23 +133,6 @@ export function MedicationEpisodePage() {
                 </span>
               </div>
             </Card>
-
-            <button
-              type="button"
-              className="flex min-h-20 items-center gap-3 rounded-card bg-card px-4 py-3 text-left shadow-card"
-              onClick={() =>
-                navigate('/medication-alarm-times', { state: { recordId: overview.recordId } })
-              }
-            >
-              <span className="min-w-0 flex-1">
-                <strong className="block text-lg text-foreground">알림 시간</strong>
-                <span className="mt-1 block text-sm text-muted-foreground tnum">
-                  아침 {overview.mealTimes.morning} · 점심 {overview.mealTimes.lunch} · 저녁{' '}
-                  {overview.mealTimes.evening}
-                </span>
-              </span>
-              <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
-            </button>
 
             <section className="flex flex-col gap-3" aria-labelledby="medication-list-title">
               <h2 id="medication-list-title" className="text-xl font-bold text-foreground">
