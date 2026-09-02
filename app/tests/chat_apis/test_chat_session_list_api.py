@@ -64,17 +64,31 @@ async def test_get_chat_sessions_returns_only_visible_owned_sessions_in_summary_
     await _create_message(
         conversation,
         sequence_no=3,
+        role=ChatMessageRole.USER,
+        content="두 번째 질문",
+        completed_at=datetime(2026, 9, 2, 9, 45),
+    )
+    await _create_message(
+        conversation,
+        sequence_no=4,
         role=ChatMessageRole.ASSISTANT,
         content="최신 답변",
         completed_at=answer_at,
     )
     await _create_message(
         conversation,
-        sequence_no=4,
+        sequence_no=5,
         role=ChatMessageRole.ASSISTANT,
         content="실패한 답변",
         message_status=ChatMessageStatus.FAILED,
         completed_at=datetime(2026, 9, 2, 11, 0),
+    )
+    await _create_message(
+        conversation,
+        sequence_no=6,
+        role=ChatMessageRole.ASSISTANT,
+        content="",
+        completed_at=datetime(2026, 9, 2, 11, 30),
     )
 
     question_only = await ChatSession.create(user=user, last_message_at=first_question_at)
