@@ -49,6 +49,8 @@ def load_recovery_chat_models():
             "app.models.recovery",
             "app.models.chat",
             "app.models.medications",
+            "app.models.interactions",
+            "app.models.supplement_nutrients",
         ),
         "models",
     )
@@ -273,6 +275,16 @@ def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
 def test_chat_and_source_retention_v4_metadata() -> None:
     recovery, chat = load_recovery_chat_models()
 
+    score = chat.ChatSession._meta.fields_map["score"]
+    assert isinstance(score, fields.IntField)
+    assert score.null is True
+    assert score.description == "채팅 별점"
+    assert {validator.__class__.__name__ for validator in score.validators} == {
+        "MinValueValidator",
+        "MaxValueValidator",
+    }
+    assert score.validators[0].min_value == 1
+    assert score.validators[1].max_value == 5
     assert chat.ChatSession._meta.fields_map["user"].null is False
     assert chat.ChatSession._meta.fields_map["user"].model_name == "models.User"
     assert chat.ChatSession._meta.fields_map["user"].on_delete == fields.CASCADE

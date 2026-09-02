@@ -71,6 +71,15 @@ class OcrDocumentStats(CamelModel):
     avg_field_confidence: float | None = None
 
 
+class ChatResponseStats(CamelModel):
+    """선택 기간에 종료된 AI 응답 건수와 채팅 세션 만족도."""
+
+    total: int
+    completed: int
+    failed: int
+    average_score: float | None = None
+
+
 class MemberStats(CamelModel):
     """회원 현황.
 
@@ -100,7 +109,7 @@ class MemberStats(CamelModel):
 class DashboardSummaryResponse(CamelModel):
     """REQ-DASH-001 대시보드 요약.
 
-    회원 현황, ALARM 백그라운드 작업 및 OCR 문서 처리 현황을 반환한다.
+    회원, ALARM, OCR 및 AI 챗봇 응답 현황을 반환한다.
     """
 
     period: DashboardPeriod
@@ -108,3 +117,4 @@ class DashboardSummaryResponse(CamelModel):
     members: MemberStats
     alarm_notifications: AlarmNotificationStats
     ocr_documents: OcrDocumentStats
+    chat_responses: ChatResponseStats
