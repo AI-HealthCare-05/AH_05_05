@@ -423,6 +423,19 @@ export function MyPage({
                         />
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
+                      onClick={() => navigate('/my/alarms')}
+                    >
+                      <span className="flex-1 text-base font-bold text-foreground">
+                        예약된 알림
+                      </span>
+                      <ChevronRight
+                        aria-hidden
+                        className="size-5 shrink-0 text-disabled-foreground"
+                      />
+                    </button>
                   </>
                 ) : (
                   <p className="p-4 text-sm text-muted-foreground">알림 설정을 불러오는 중...</p>

@@ -4,7 +4,12 @@ import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
 import { MedicationEpisodePage, MedicationsPage } from '@/pages/medications';
-import { FollowUpVisitsPage, MyPage, MyProfilePage } from '@/pages/my';
+import {
+  FollowUpVisitsPage,
+  MyPage,
+  MyProfilePage,
+  ScheduledAlarmsPage,
+} from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { SplashPage } from '@/pages/splash';
@@ -28,6 +33,8 @@ import { registerPushNotifications } from '@/shared/push/register';
 import { DevGallery } from './DevGallery';
 import { ChatSessionProvider } from './ChatSessionContext';
 import { useSession } from './SessionContext';
+
+const loadNoScheduledAlarms = async () => [];
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
 const EXISTING_CHAT_HISTORY: ChatMessage[] = [
@@ -148,6 +155,7 @@ export function AppRouter() {
         <Route path="/my" element={<MyPage />} />
         <Route path="/my/profile" element={<MyProfilePage />} />
         <Route path="/my/visits" element={<FollowUpVisitsPage />} />
+        <Route path="/my/alarms" element={<ScheduledAlarmsPage />} />
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
@@ -217,6 +225,11 @@ export function AppRouter() {
         />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
         <Route path="/dev/my-visits" element={<FollowUpVisitsPage />} />
+        <Route path="/dev/my-alarms" element={<ScheduledAlarmsPage />} />
+        <Route
+          path="/dev/my-alarms-empty"
+          element={<ScheduledAlarmsPage alarmLoader={loadNoScheduledAlarms} />}
+        />
         <Route
           path="/dev/my-profile-save-error"
           element={<MyProfilePage profileSaver={failProfileSave} />}
