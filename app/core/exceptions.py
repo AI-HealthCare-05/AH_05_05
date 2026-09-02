@@ -283,6 +283,12 @@ class InvalidMedicationScheduleError(AppError):
     message = "복약 시간표 입력값이 올바르지 않습니다."
 
 
+class MedicationScheduleFinishedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "MEDICATION_SCHEDULE_FINISHED"
+    message = "이미 끝난 처방은 수정할 수 없습니다"
+
+
 class InvalidDoseDateError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "INVALID_DOSE_DATE"
@@ -305,6 +311,12 @@ class MedicationRecordNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "MEDICATION_RECORD_NOT_FOUND"
     message = "복약 기록을 찾을 수 없습니다."
+
+
+class InvalidMedicationOverviewDateRangeError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_MEDICATION_OVERVIEW_DATE_RANGE"
+    message = "복약 목록 조회 기간이 올바르지 않습니다."
 
 
 class InvalidDoseDateRangeError(AppError):

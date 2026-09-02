@@ -959,7 +959,7 @@ test('활성 처방이 두 건이어도 복용 기록은 사용자 단위로 한
   ]);
 });
 
-test('복약 정보 삭제는 오류를 팝업에 남기고 성공하면 목록으로 이동한다', async ({ page }) => {
+test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목록에서 제거한다', async ({ page }) => {
   await authenticate(page);
   let deleteAttempts = 0;
   let deleted = false;
@@ -969,6 +969,7 @@ test('복약 정보 삭제는 오류를 팝업에 남기고 성공하면 목록�
     start: { date: '2026-08-22', slot: 'morning' },
     endDate: '2026-08-31',
     daysRemaining: 7,
+    isFinished: false,
     mealTimes: {
       morning: '08:00',
       lunch: '13:00',
@@ -1004,31 +1005,23 @@ test('복약 정보 삭제는 오류를 팝업에 남기고 성공하면 목록�
     fulfillJson(route, deleted ? [] : [overview], 200),
   );
 
-  await page.goto('/medications/12');
-  const deleteButton = page.getByRole('button', { name: '복약 정보 삭제' });
-  await expect(deleteButton).toBeVisible();
-  const deleteButtonBox = await deleteButton.boundingBox();
-  const viewport = page.viewportSize();
-  expect(deleteButtonBox).not.toBeNull();
-  expect(viewport).not.toBeNull();
-  expect(deleteButtonBox!.x + deleteButtonBox!.width / 2).toBeCloseTo(viewport!.width / 2, 0);
-
-  await deleteButton.click();
+  await page.goto('/medications');
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
+  await page.getByRole('button', { name: '삭제하기' }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: '이 복약 정보를 삭제할까요?' })).toBeVisible();
-  await expect(dialog).toContainText('다시 등록하려면 약봉투를 다시 찍어야 해요.');
-  await expect(dialog).not.toContainText('복용 기록도');
+  await expect(dialog.getByRole('heading', { name: '1개를 삭제할까요?' })).toBeVisible();
+  await expect(dialog).toContainText('삭제한 처방은 약봉투를 다시 등록해야 복구할 수 있어요.');
   await dialog.getByRole('button', { name: '삭제하기' }).click();
-  await expect(dialog).toContainText('복약 정보를 찾지 못했어요');
-  await dialog.getByRole('button', { name: '삭제하기' }).click();
-  await expect(dialog).toContainText('삭제 서버 오류');
-  await dialog.getByRole('button', { name: '삭제하기' }).click();
+  await expect(dialog).toContainText('선택한 복약 정보를 삭제하지 못했어요. 다시 시도해주세요.');
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
+  await expect(dialog).toContainText('선택한 복약 정보를 삭제하지 못했어요. 다시 시도해주세요.');
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
 
   await expect(page).toHaveURL('/medications');
-  await expect(page.getByText('복약 정보를 삭제했어요.')).toBeVisible();
+  await expect(page.getByText('1개를 삭제했어요')).toBeVisible();
+  await expect(page.getByText('이 기간에 등록한 처방이 없어요')).toBeVisible();
   await expect(page.getByRole('button', { name: '되돌리기' })).toHaveCount(0);
-  await page.goBack();
-  await expect(page).not.toHaveURL(/\/medications\/12$/);
 });
 
 test('업로드 응답에 문서 ID가 없으면 polling을 시작하지 않는다', async ({ page }) => {
