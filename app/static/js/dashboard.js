@@ -1,9 +1,7 @@
 /**
  * 운영 대시보드.
  *
- * 회원 현황, 알림 발송 현황과 OCR 문서 처리를 GET /api/v1/admin/dashboard/summary 에 연결한다.
- * 챗봇 카드는 백엔드에 지표가 없어 목 데이터를 그대로 둔다 —
- * 0 으로 채우면 화면이 정상값으로 그려 "기능이 죽었다"는 오해를 부른다.
+ * 회원, 알림, OCR 및 AI 챗봇 현황을 GET /api/v1/admin/dashboard/summary 에 연결한다.
  */
 
 import { ApiError, formatDate, get, requireLogin } from "./api.js";
@@ -28,11 +26,37 @@ export function signupsLabel(periodLabel) {
   return PERIOD_VALUES[periodLabel] ? `${periodLabel} 가입` : "신규 가입";
 }
 
+export function alarmTrendLabel() {
+  return "최근 14일 성공 발송";
+}
+
+export function trendGridColumns(pointCount) {
+  return `repeat(${Math.max(1, pointCount)}, minmax(0, 1fr))`;
+}
+
 export function formatOcrConfidence(value) {
   if (value === null || value === undefined) return "데이터 없음";
   const confidence = Number(value);
   if (!Number.isFinite(confidence)) return "데이터 없음";
   return `${(confidence * 100).toFixed(1)}%`;
+}
+
+export function formatChatSatisfaction(value) {
+  const score = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(score) || score < 1 || score > 5) {
+    return {
+      text: "데이터 없음",
+      fillPercent: 0,
+      ariaLabel: "챗봇 만족도 평가 데이터 없음",
+    };
+  }
+
+  const rounded = Math.round(score * 10) / 10;
+  return {
+    text: `${rounded.toFixed(1)} / 5.0`,
+    fillPercent: Math.round((rounded / 5) * 100),
+    ariaLabel: `챗봇 만족도 5점 만점에 ${rounded.toFixed(1)}점`,
+  };
 }
 
 // 카드 안에서 이미 쓰고 있는 색이다. 새 색을 만들지 않는다.
@@ -117,6 +141,7 @@ function renderTrend(
   } = {},
 ) {
   container.replaceChildren();
+  container.style.gridTemplateColumns = trendGridColumns(points.length);
 
   itemBuilder(points).forEach((item, index) => {
     const column = document.createElement("div");
@@ -166,11 +191,18 @@ function initializeDashboard() {
     alarmQueued: document.querySelector("[data-alarm-queued]"),
     alarmCompleted: document.querySelector("[data-alarm-completed]"),
     alarmFailed: document.querySelector("[data-alarm-failed]"),
+    alarmTrendLabel: document.querySelector("[data-alarm-trend-label]"),
     ocrTotal: document.querySelector("[data-ocr-total]"),
     ocrQueued: document.querySelector("[data-ocr-queued]"),
     ocrCompleted: document.querySelector("[data-ocr-completed]"),
     ocrFailed: document.querySelector("[data-ocr-failed]"),
     ocrAccuracy: document.querySelector("[data-ocr-accuracy]"),
+    chatTotal: document.querySelector("[data-chat-total]"),
+    chatCompleted: document.querySelector("[data-chat-completed]"),
+    chatFailed: document.querySelector("[data-chat-failed]"),
+    chatSatisfaction: document.querySelector("[data-chat-satisfaction]"),
+    chatSatisfactionFill: document.querySelector("[data-chat-satisfaction-fill]"),
+    chatSatisfactionValue: document.querySelector("[data-chat-satisfaction-value]"),
   };
   const trend = document.querySelector("[data-member-trend]");
   const alarmTrend = document.querySelector("[data-alarm-trend]");
@@ -200,6 +232,9 @@ function initializeDashboard() {
       slots.ocrQueued,
       slots.ocrCompleted,
       slots.ocrFailed,
+      slots.chatTotal,
+      slots.chatCompleted,
+      slots.chatFailed,
     ].forEach((slot) => {
       if (slot) slot.textContent = PLACEHOLDER;
     });
@@ -210,6 +245,10 @@ function initializeDashboard() {
     if (trend) renderTrend(trend, []);
     if (alarmTrend) renderTrend(alarmTrend, []);
     if (slots.ocrAccuracy) slots.ocrAccuracy.textContent = "데이터 없음";
+    const satisfaction = formatChatSatisfaction(null);
+    if (slots.chatSatisfaction) slots.chatSatisfaction.setAttribute("aria-label", satisfaction.ariaLabel);
+    if (slots.chatSatisfactionFill) slots.chatSatisfactionFill.style.width = `${satisfaction.fillPercent}%`;
+    if (slots.chatSatisfactionValue) slots.chatSatisfactionValue.textContent = satisfaction.text;
   };
 
   const render = (body) => {
@@ -254,6 +293,14 @@ function initializeDashboard() {
     if (slots.ocrAccuracy) {
       slots.ocrAccuracy.textContent = formatOcrConfidence(ocrDocuments.avgFieldConfidence);
     }
+    const chatResponses = body.chatResponses;
+    if (slots.chatTotal) slots.chatTotal.textContent = formatCount(chatResponses.total);
+    if (slots.chatCompleted) slots.chatCompleted.textContent = formatCount(chatResponses.completed);
+    if (slots.chatFailed) slots.chatFailed.textContent = formatCount(chatResponses.failed);
+    const satisfaction = formatChatSatisfaction(chatResponses.averageScore);
+    if (slots.chatSatisfaction) slots.chatSatisfaction.setAttribute("aria-label", satisfaction.ariaLabel);
+    if (slots.chatSatisfactionFill) slots.chatSatisfactionFill.style.width = `${satisfaction.fillPercent}%`;
+    if (slots.chatSatisfactionValue) slots.chatSatisfactionValue.textContent = satisfaction.text;
     setState(members.total === 0 ? "집계된 회원이 없습니다" : "");
   };
 
@@ -263,6 +310,8 @@ function initializeDashboard() {
     setState("불러오는 중…");
     // 라벨은 응답이 아니라 선택한 탭을 따른다. 실패해도 숫자와 라벨이 어긋나지 않는다.
     if (slots.signupsLabel) slots.signupsLabel.textContent = signupsLabel(selectedLabel);
+    if (slots.alarmTrendLabel) slots.alarmTrendLabel.textContent = alarmTrendLabel();
+    if (alarmTrend) alarmTrend.setAttribute("aria-label", `${alarmTrendLabel()} 추이`);
     // 첫 조회 전에는 화면에 목 숫자가 남아 있다. 실제 값처럼 읽히지 않게 비운다.
     if (!loaded) clearNumbers();
 
@@ -273,7 +322,7 @@ function initializeDashboard() {
     } catch (error) {
       clearNumbers();
       const message = error instanceof ApiError ? error.message : "회원 현황을 불러오지 못했습니다.";
-      setState(`${message} 새로고침을 눌러 주세요.`);
+      setState(`${message} 잠시 후 다시 시도해 주세요.`);
     }
   };
 
@@ -288,12 +337,9 @@ function initializeDashboard() {
       });
 
       selectedLabel = button.dataset.period;
-      // period 는 신규 가입과 증감률에만 걸린다. 전체·활성·정지가 그대로인 것은 정상이다.
       load();
     });
   });
-
-  document.querySelector("[data-refresh]")?.addEventListener("click", load);
 
   load();
 }

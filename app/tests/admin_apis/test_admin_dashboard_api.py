@@ -9,15 +9,22 @@ from tortoise.contrib.test import TestCase
 from app.core import config
 from app.core.jwt.tokens import AccessToken
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import AccountStatus, AdminRole, BackgroundJobStatus, BackgroundJobType, OcrJobStatus
+from app.models.chat import ChatMessage, ChatSession
+from app.models.enums import (
+    AccountStatus,
+    AdminRole,
+    BackgroundJobStatus,
+    BackgroundJobType,
+    ChatMessageRole,
+    ChatMessageStatus,
+    OcrJobStatus,
+)
 from app.models.ocr import OcrJob
 from app.models.users import User
 from app.tests.admin_apis.conftest import auth_header, create_admin, create_user, request
 
 DASHBOARD_SUMMARY_URL = "/api/v1/admin/dashboard/summary"
 TREND_DAYS = 14
-ALARM_TREND_DAYS = 7
-
 _sequence = counter(1)
 
 
@@ -381,7 +388,14 @@ class TestDashboardContract(DashboardTestBase):
     async def test_response_has_dashboard_stat_blocks(self) -> None:
         body = await self.fetch()
 
-        assert set(body) == {"period", "generatedAt", "members", "alarmNotifications", "ocrDocuments"}
+        assert set(body) == {
+            "period",
+            "generatedAt",
+            "members",
+            "alarmNotifications",
+            "ocrDocuments",
+            "chatResponses",
+        }
 
     async def test_member_block_fields(self) -> None:
         assert set(await self.members()) == {
@@ -405,13 +419,18 @@ class TestDashboardAlarmNotifications(DashboardTestBase):
         *,
         job_type: BackgroundJobType = BackgroundJobType.ALARM,
         completed_at: datetime | None = None,
+        created_at: datetime | None = None,
     ) -> BackgroundJob:
-        return await BackgroundJob.create(
+        job = await BackgroundJob.create(
             idempotency_key=f"dashboard-alarm-{next(_sequence)}",
             job_type=job_type,
             status=job_status,
             completed_at=completed_at,
         )
+        if created_at is not None:
+            await BackgroundJob.filter(id=job.id).update(created_at=created_at)
+            job.created_at = created_at
+        return job
 
     async def test_counts_only_alarm_jobs_in_requested_statuses(self) -> None:
         await self.create_job(BackgroundJobStatus.QUEUED)
@@ -429,20 +448,33 @@ class TestDashboardAlarmNotifications(DashboardTestBase):
         assert notifications["completed"] == 1
         assert notifications["failed"] == 1
 
-    async def test_completed_trend_returns_seven_days_and_uses_completed_at(self) -> None:
+    async def test_status_counts_include_only_jobs_created_in_selected_period(self) -> None:
+        await self.create_job(BackgroundJobStatus.QUEUED, created_at=at(0))
+        await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(0), created_at=at(6))
+        await self.create_job(BackgroundJobStatus.FAILED, created_at=at(7))
+
+        notifications = (await self.fetch("LAST_7_DAYS"))["alarmNotifications"]
+
+        assert notifications["queued"] == 1
+        assert notifications["completed"] == 1
+        assert notifications["failed"] == 0
+
+    async def test_completed_trend_is_fixed_to_fourteen_days_and_uses_completed_at(self) -> None:
         await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(0))
         await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(2))
         await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(7))
+        await self.create_job(BackgroundJobStatus.COMPLETED, completed_at=at(14))
         await self.create_job(BackgroundJobStatus.FAILED, completed_at=at(1))
 
-        trend = (await self.fetch())["alarmNotifications"]["completedTrend"]
         today = now_kst().date()
+        for period in ("TODAY", "LAST_7_DAYS", "LAST_30_DAYS"):
+            trend = (await self.fetch(period))["alarmNotifications"]["completedTrend"]
 
-        assert len(trend) == ALARM_TREND_DAYS
-        assert [point["date"] for point in trend] == sorted(point["date"] for point in trend)
-        assert trend[-1]["date"] == today.isoformat()
-        assert trend[0]["date"] == (today - timedelta(days=ALARM_TREND_DAYS - 1)).isoformat()
-        assert sum(point["count"] for point in trend) == 2
+            assert len(trend) == 14
+            assert [point["date"] for point in trend] == sorted(point["date"] for point in trend)
+            assert trend[-1]["date"] == today.isoformat()
+            assert trend[0]["date"] == (today - timedelta(days=13)).isoformat()
+            assert sum(point["count"] for point in trend) == 3
 
 
 class TestDashboardOcrDocuments(DashboardTestBase):
@@ -494,6 +526,19 @@ class TestDashboardOcrDocuments(DashboardTestBase):
             "avgFieldConfidence": None,
         }
 
+    async def test_counts_include_only_jobs_created_in_selected_period(self) -> None:
+        user = await create_user(name="OCR 회원", email=unique_email("ocr-period"))
+        await self.create_ocr_job(OcrJobStatus.QUEUED, user, created_at=at(0))
+        await self.create_ocr_job(OcrJobStatus.COMPLETE, user, created_at=at(6))
+        await self.create_ocr_job(OcrJobStatus.FAILED, user, created_at=at(7))
+
+        documents = (await self.fetch("LAST_7_DAYS"))["ocrDocuments"]
+
+        assert documents["total"] == 2
+        assert documents["queued"] == 1
+        assert documents["completed"] == 1
+        assert documents["failed"] == 0
+
     async def test_field_confidence_averages_jobs_in_selected_created_at_period(self) -> None:
         user = await create_user(name="OCR 회원", email=unique_email("ocr-confidence"))
         await self.create_ocr_job(
@@ -524,6 +569,76 @@ class TestDashboardOcrDocuments(DashboardTestBase):
         documents = (await self.fetch("LAST_7_DAYS"))["ocrDocuments"]
 
         assert documents["avgFieldConfidence"] == 0.75
+
+
+class TestDashboardChatResponses(DashboardTestBase):
+    async def create_session(self, *, score: int | None = None, created_at: datetime | None = None) -> ChatSession:
+        user = await create_user(name="챗봇 회원", email=unique_email("chat"))
+        session = await ChatSession.create(user=user, score=score)
+        if created_at is not None:
+            await ChatSession.filter(id=session.id).update(created_at=created_at)
+            session.created_at = created_at
+        return session
+
+    @staticmethod
+    async def create_message(
+        session: ChatSession,
+        *,
+        role: ChatMessageRole = ChatMessageRole.ASSISTANT,
+        message_status: ChatMessageStatus,
+        completed_at: datetime | None,
+    ) -> ChatMessage:
+        return await ChatMessage.create(
+            chat_session=session,
+            sequence_no=1,
+            role=role,
+            content="테스트 메시지",
+            status=message_status,
+            completed_at=completed_at,
+        )
+
+    async def test_counts_only_terminal_assistant_responses_in_selected_period(self) -> None:
+        await self.create_message(
+            await self.create_session(),
+            message_status=ChatMessageStatus.COMPLETED,
+            completed_at=at(0),
+        )
+        await self.create_message(
+            await self.create_session(),
+            message_status=ChatMessageStatus.FAILED,
+            completed_at=at(2),
+        )
+        await self.create_message(
+            await self.create_session(),
+            message_status=ChatMessageStatus.PENDING,
+            completed_at=None,
+        )
+        await self.create_message(
+            await self.create_session(),
+            role=ChatMessageRole.USER,
+            message_status=ChatMessageStatus.COMPLETED,
+            completed_at=at(0),
+        )
+        await self.create_message(
+            await self.create_session(),
+            message_status=ChatMessageStatus.COMPLETED,
+            completed_at=at(8),
+        )
+
+        responses = (await self.fetch("LAST_7_DAYS"))["chatResponses"]
+
+        assert responses == {"total": 2, "completed": 1, "failed": 1, "averageScore": None}
+
+    async def test_average_score_uses_only_rated_sessions_created_in_selected_period(self) -> None:
+        await self.create_session(score=5, created_at=at(0))
+        await self.create_session(score=4, created_at=at(1))
+        await self.create_session(score=4, created_at=at(2))
+        await self.create_session(score=None, created_at=at(0))
+        await self.create_session(score=1, created_at=at(8))
+
+        responses = (await self.fetch("LAST_7_DAYS"))["chatResponses"]
+
+        assert responses["averageScore"] == 4.3
 
 
 class TestDashboardPermissions(DashboardTestBase):

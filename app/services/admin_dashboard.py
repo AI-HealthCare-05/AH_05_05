@@ -7,6 +7,7 @@ from tortoise.functions import Count
 from app.core import config
 from app.dtos.admin_dashboard import (
     AlarmNotificationStats,
+    ChatResponseStats,
     DashboardPeriod,
     DashboardSummaryQuery,
     DashboardSummaryResponse,
@@ -16,7 +17,15 @@ from app.dtos.admin_dashboard import (
     SignupTrendPoint,
 )
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import AccountStatus, BackgroundJobStatus, BackgroundJobType, OcrJobStatus
+from app.models.chat import ChatMessage, ChatSession
+from app.models.enums import (
+    AccountStatus,
+    BackgroundJobStatus,
+    BackgroundJobType,
+    ChatMessageRole,
+    ChatMessageStatus,
+    OcrJobStatus,
+)
 from app.models.ocr import OcrJob
 from app.models.users import User
 
@@ -29,7 +38,7 @@ PERIOD_DAYS = {
 
 # 화면의 "14일간 가입 추이" 차트는 고정 길이라 선택한 기간을 따르지 않는다.
 SIGNUP_TREND_DAYS = 14
-ALARM_TREND_DAYS = 7
+ALARM_TREND_DAYS = 14
 
 # total 로 세는 상태. 화면이 활성 95% + 정지 5% = 100% 로 표시하므로 둘만 넣는다.
 TOTAL_STATUSES = (AccountStatus.ACTIVE, AccountStatus.SUSPENDED)
@@ -56,8 +65,7 @@ def day_range(first: date, last: date) -> tuple[datetime, datetime]:
 class AdminDashboardService:
     """REQ-DASH-001 대시보드 집계.
 
-    회원 현황, ALARM 백그라운드 작업 기반 알림 발송 현황과 OCR 작업 현황을 제공한다.
-    챗봇·보안 지표는 담당 데이터가 아직 없어 응답에 넣지 않는다.
+    회원, ALARM 백그라운드 작업, OCR 작업 및 AI 챗봇 응답 현황을 제공한다.
     """
 
     async def get_summary(self, query: DashboardSummaryQuery) -> DashboardSummaryResponse:
@@ -74,20 +82,59 @@ class AdminDashboardService:
             period=query.period,
             generated_at=now,
             members=await self._members(now, start, previous_start, previous_end),
-            alarm_notifications=await self._alarm_notifications(now.date()),
+            alarm_notifications=await self._alarm_notifications(start, now),
             ocr_documents=await self._ocr_documents(start, now),
+            chat_responses=await self._chat_responses(start, now),
+        )
+
+    @staticmethod
+    async def _chat_responses(start: datetime, end: datetime) -> ChatResponseStats:
+        """선택 기간에 종료된 AI 응답과 같은 기간에 생성된 세션 별점 평균을 집계한다."""
+        terminal_statuses = (ChatMessageStatus.COMPLETED, ChatMessageStatus.FAILED)
+        rows: list[dict[str, Any]] = (
+            await ChatMessage.filter(
+                role=ChatMessageRole.ASSISTANT,
+                status__in=list(terminal_statuses),
+                completed_at__gte=start,
+                completed_at__lte=end,
+            )
+            .annotate(total=Count("id"))
+            .group_by("status")
+            .values("status", "total")
+        )
+        counts = {status: 0 for status in terminal_statuses}
+        for row in rows:
+            counts[ChatMessageStatus(row["status"])] = row["total"]
+
+        score_rows: list[dict[str, Any]] = await (
+            ChatSession.filter(
+                created_at__gte=start,
+                created_at__lte=end,
+                score__not_isnull=True,
+            )
+            # Tortoise의 Avg(IntField)는 결과 변환 시 정수로 잘릴 수 있어
+            # DB 평균의 소수부를 보존하도록 원시 집계식을 사용한다.
+            .annotate(average_score=RawSQL("AVG(`score`)"))
+            .values("average_score")
+        )
+        average_score = score_rows[0]["average_score"] if score_rows else None
+
+        return ChatResponseStats(
+            total=sum(counts.values()),
+            completed=counts[ChatMessageStatus.COMPLETED],
+            failed=counts[ChatMessageStatus.FAILED],
+            average_score=round(float(average_score), 1) if average_score is not None else None,
         )
 
     @staticmethod
     async def _ocr_documents(start: datetime, end: datetime) -> OcrDocumentStats:
         """OCR 상태 건수와 선택 기간의 작업별 필드 confidence 평균을 집계한다."""
+        period_jobs = OcrJob.filter(created_at__gte=start, created_at__lte=end)
         rows: list[dict[str, Any]] = (
-            await OcrJob.all().annotate(total=Count("id")).group_by("status").values("status", "total")
+            await period_jobs.annotate(total=Count("id")).group_by("status").values("status", "total")
         )
         counts = {OcrJobStatus(row["status"]): row["total"] for row in rows}
-        payloads = await OcrJob.filter(created_at__gte=start, created_at__lte=end).values_list(
-            "structured_result", flat=True
-        )
+        payloads = await period_jobs.values_list("structured_result", flat=True)
         job_confidences = [
             average
             for payload in payloads
@@ -123,8 +170,8 @@ class AdminDashboardService:
         return sum(confidences) / len(confidences) if confidences else None
 
     @staticmethod
-    async def _alarm_notifications(today: date) -> AlarmNotificationStats:
-        """ALARM 작업 상태와 최근 7일 성공 발송 수를 집계한다."""
+    async def _alarm_notifications(start: datetime, end: datetime) -> AlarmNotificationStats:
+        """선택 기간의 ALARM 상태 건수와 최근 14일 성공 발송 추이를 집계한다."""
         displayed_statuses = (
             BackgroundJobStatus.QUEUED,
             BackgroundJobStatus.COMPLETED,
@@ -132,6 +179,7 @@ class AdminDashboardService:
         )
         rows: list[dict[str, Any]] = (
             await BackgroundJob.filter(job_type=BackgroundJobType.ALARM, status__in=list(displayed_statuses))
+            .filter(created_at__gte=start, created_at__lte=end)
             .annotate(total=Count("id"))
             .group_by("status")
             .values("status", "total")
@@ -140,14 +188,14 @@ class AdminDashboardService:
         for row in rows:
             counts[BackgroundJobStatus(row["status"])] = row["total"]
 
-        first = today - timedelta(days=ALARM_TREND_DAYS - 1)
-        start, end = day_range(first, today)
+        first = end.date() - timedelta(days=ALARM_TREND_DAYS - 1)
+        trend_start = day_start(first)
         trend_rows: list[dict[str, Any]] = (
             await BackgroundJob.filter(
                 job_type=BackgroundJobType.ALARM,
                 status=BackgroundJobStatus.COMPLETED,
-                completed_at__gte=start,
-                completed_at__lt=end,
+                completed_at__gte=trend_start,
+                completed_at__lte=end,
             )
             .annotate(day=RawSQL("DATE(`completed_at`)"), total=Count("id"))
             .group_by("day")
