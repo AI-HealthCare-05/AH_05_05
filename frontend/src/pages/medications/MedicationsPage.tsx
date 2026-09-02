@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, Plus } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -40,6 +40,11 @@ export function MedicationsPage({
   medicationCanceller = cancelMedication,
 }: MedicationsPageProps) {
   const navigate = useNavigate();
+  const overviewRequestRef = useRef<{
+    key: string;
+    loader: typeof overviewsLoader;
+    promise: Promise<MedicationOverview[]>;
+  } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const queryKey = searchParams.toString();
   const range = useMemo(
@@ -62,9 +67,24 @@ export function MedicationsPage({
 
   useEffect(() => {
     let cancelled = false;
+    const requestKey = `${queryKey}:${reloadKey}`;
+    if (
+      overviewRequestRef.current?.key !== requestKey ||
+      overviewRequestRef.current.loader !== overviewsLoader
+    ) {
+      overviewRequestRef.current = {
+        key: requestKey,
+        loader: overviewsLoader,
+        promise: overviewsLoader(range),
+      };
+    }
+    setExpandedRecordIds(new Set());
+    setSelectionMode(false);
+    setSelectedRecordIds(new Set());
+    window.scrollTo(0, 0);
     setLoadError(null);
     setOverviews(null);
-    overviewsLoader(range)
+    overviewRequestRef.current.promise
       .then((data) => {
         if (cancelled) return;
         const next = data.filter((overview) => overview.medications.length > 0);
@@ -81,7 +101,7 @@ export function MedicationsPage({
     return () => {
       cancelled = true;
     };
-  }, [overviewsLoader, range, reloadKey]);
+  }, [overviewsLoader, queryKey, range, reloadKey]);
 
   function toggleExpanded(recordId: number) {
     setExpandedRecordIds((current) => {

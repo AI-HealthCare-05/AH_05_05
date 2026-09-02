@@ -119,9 +119,9 @@ class TestMedicationOverviewAPI(TestCase):
             older_start_first.id,
         ]
 
-    async def test_overview_defaults_to_recent_three_calendar_months(self) -> None:
+    async def test_overview_defaults_to_recent_six_calendar_months(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
-        boundary = today - relativedelta(months=3)
+        boundary = today - relativedelta(months=6)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "overview-default-range@example.com"
             headers = await authentication_headers(client, email, "01023000015")
@@ -198,8 +198,8 @@ class TestMedicationOverviewAPI(TestCase):
 
     async def test_overview_resolves_single_sided_ranges(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
-        from_date = today - relativedelta(months=6)
-        from_range_end = from_date + relativedelta(months=3)
+        from_date = today - relativedelta(months=12)
+        from_range_end = from_date + relativedelta(months=6)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "overview-single-sided-range@example.com"
             headers = await authentication_headers(client, email, "01023000017")
@@ -236,7 +236,7 @@ class TestMedicationOverviewAPI(TestCase):
         assert to_only.status_code == status.HTTP_200_OK
         assert [item["recordId"] for item in to_only.json()] == [today_boundary.id]
 
-    async def test_overview_rejects_reversed_or_over_five_year_range(self) -> None:
+    async def test_overview_allows_last_two_years_and_rejects_older_or_future_dates(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await authentication_headers(client, "overview-invalid-range@example.com", "01023000018")
@@ -245,17 +245,32 @@ class TestMedicationOverviewAPI(TestCase):
                 params={"from": today.isoformat(), "to": (today - timedelta(days=1)).isoformat()},
                 headers=headers,
             )
-            over_five_years = await client.get(
+            exact_two_years = await client.get(
                 OVERVIEW_URL,
                 params={
-                    "from": (today - relativedelta(years=5, days=1)).isoformat(),
+                    "from": (today - relativedelta(years=2)).isoformat(),
                     "to": today.isoformat(),
                 },
                 headers=headers,
             )
+            too_old = await client.get(
+                OVERVIEW_URL,
+                params={
+                    "from": (today - relativedelta(years=2, days=1)).isoformat(),
+                    "to": today.isoformat(),
+                },
+                headers=headers,
+            )
+            future = await client.get(
+                OVERVIEW_URL,
+                params={"from": today.isoformat(), "to": (today + timedelta(days=1)).isoformat()},
+                headers=headers,
+            )
 
         assert reversed_range.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert over_five_years.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert exact_two_years.status_code == status.HTTP_200_OK
+        assert too_old.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert future.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_overview_is_finished_only_after_end_date(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
