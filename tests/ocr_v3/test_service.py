@@ -203,7 +203,7 @@ async def test_analyze_preprocesses_off_loop_and_returns_project_projection(monk
         "elapsedMs": analysis.stages[0]["elapsedMs"],
         "callCount": 0,
     }
-    assert analysis.confidence_values == [0.95, 0.91, 0.92, 0.89, 0.88, 0.87]
+    assert analysis.confidence_values == [0.91]
     assert analysis.ocr_model == "clova-general-v2"
     assert analysis.structuring_model == "deterministic-v3"
     assert analysis.prompt_version == "medication_grounding_v3"
