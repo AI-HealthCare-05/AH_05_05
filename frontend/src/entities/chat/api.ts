@@ -172,16 +172,23 @@ export async function getChatMessages(sessionId: number): Promise<ChatMessage[]>
   return messages;
 }
 
-/** #111 임시 세션 목록 경계. 백엔드 계약이 확정되면 내부만 HTTP 조회로 교체합니다. */
+/** #111 세션 목록 경계. */
 export async function listChatSessions(): Promise<ChatSessionSummary[]> {
-  if (!USE_MOCK) throw new Error('대화 목록 API가 아직 준비되지 않았어요.');
   const requestAuthGeneration = getAuthGeneration();
   const requestPrincipal = restoreAccountPrincipal();
-  await mockDelay();
+  if (USE_MOCK) {
+    await mockDelay();
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
+    }
+    return mockListChatSessions(requestPrincipal);
+  }
+
+  const { items } = await http.get<{ items: ChatSessionSummary[] }>('/v1/chat/sessions');
   if (requestAuthGeneration !== getAuthGeneration()) {
     throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
   }
-  return mockListChatSessions(requestPrincipal);
+  return items;
 }
 
 /** #111 임시 다중 삭제 경계. 실제 소프트 삭제 계약은 백엔드 API 확정 후 연결합니다. */
