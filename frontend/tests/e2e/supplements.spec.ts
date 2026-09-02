@@ -306,6 +306,23 @@ test('편집 시트는 기존 별점과 메모를 채우고 선택한 별 재클
     .toHaveValue('');
 });
 
+test('편집 시트는 비공개 메모와 공개 후기를 구분하고 마스킹 이름을 미리 보여준다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+  const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
+  await supplementList.getByRole('button', { name: /오메가3/ }).click();
+
+  const sheet = page.getByRole('dialog', { name: '오메가3' });
+  await expect(sheet.getByText('나만 볼 수 있어요')).toBeVisible();
+  await expect(sheet.getByText('김*훈 으로 다른 사람에게 보여요')).toBeVisible();
+  const review = sheet.getByRole('textbox', { name: /후기/ });
+  await review.fill('꾸준히 먹기 편했어요.');
+  await sheet.getByRole('button', { name: '저장' }).click();
+
+  await supplementList.getByRole('button', { name: /오메가3/ }).click();
+  await expect(page.getByRole('dialog', { name: '오메가3' }).getByRole('textbox', { name: /후기/ }))
+    .toHaveValue('꾸준히 먹기 편했어요.');
+});
+
 test('복용 중단을 확인하면 삭제 문구 없이 활성 목록과 성분 합계에서 제외한다', async ({ page }) => {
   await page.goto('/dev/supplements');
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });

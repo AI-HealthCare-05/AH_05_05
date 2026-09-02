@@ -6,8 +6,8 @@ from tortoise.contrib.test import TestCase
 
 from app.core import config
 from app.main import app
-from app.models.enums import SupplementStatus
-from app.models.supplement_nutrients import UserSupplementNutrient
+from app.models.enums import AccountStatus, SupplementStatus
+from app.models.supplement_nutrients import SupplementReviewReport, UserSupplementNutrient
 from app.models.users import User
 from app.tests.med_apis.helpers import authentication_headers, create_supplement
 
@@ -21,11 +21,15 @@ class TestMedNutrAPI(TestCase):
         index: int,
         score: int | None = None,
         registration_status: SupplementStatus = SupplementStatus.ACTIVE,
-    ) -> None:
+        account_status: AccountStatus = AccountStatus.ACTIVE,
+    ) -> UserSupplementNutrient:
         email = f"nutr-sort-{index}@example.com"
         await authentication_headers(client, email, f"0103{index:07d}")
         user = await User.get(email=email)
-        await UserSupplementNutrient.create(
+        if user.status != account_status:
+            user.status = account_status
+            await user.save(update_fields=["status"])
+        return await UserSupplementNutrient.create(
             user=user,
             supplement_nutrient_id=product_id,
             custom_name=None if product_id is not None else f"직접 입력 {index}",
@@ -256,6 +260,61 @@ class TestMedNutrAPI(TestCase):
         item = response.json()["items"][0]
         assert item["rating_average"] is None
         assert item["review_count"] == 0
+
+    async def test_search_rating_excludes_withdrawn_and_three_report_hidden_reviews(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "sort-public-review@example.com", "01020000014")
+            product = await create_supplement("SORT-PUBLIC-REVIEW", "공개 후기 집계 제품")
+            await self._create_registration(client, product.id, index=151, score=5)
+            await self._create_registration(
+                client,
+                product.id,
+                index=152,
+                score=1,
+                account_status=AccountStatus.WITHDRAWN,
+            )
+            hidden = await self._create_registration(client, product.id, index=153, score=2)
+            await self._create_registration(
+                client,
+                product.id,
+                index=154,
+                score=3,
+                registration_status=SupplementStatus.COMPLETED,
+            )
+            for index in range(155, 158):
+                await authentication_headers(client, f"reporter-{index}@example.com", f"0103{index:07d}")
+                reporter = await User.get(email=f"reporter-{index}@example.com")
+                await SupplementReviewReport.create(user=reporter, registration=hidden)
+
+            response = await client.get(
+                "/api/v1/med/nutr",
+                params={"name": "공개 후기 집계", "sort": "rating"},
+                headers=headers,
+            )
+
+        item = response.json()["items"][0]
+        assert item["rating_average"] == "4.0"
+        assert item["review_count"] == 2
+
+    async def test_search_rating_without_reports_keeps_unreviewed_product(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "sort-no-report@example.com", "01020000015")
+            rated = await create_supplement("SORT-NO-REPORT-1", "신고 없음 평가 제품")
+            unreviewed = await create_supplement("SORT-NO-REPORT-2", "신고 없음 미평가 제품")
+            await self._create_registration(client, rated.id, index=158, score=4)
+
+            response = await client.get(
+                "/api/v1/med/nutr",
+                params={"name": "신고 없음", "sort": "rating"},
+                headers=headers,
+            )
+
+        items = response.json()["items"]
+        assert [item["id"] for item in items] == [rated.id, unreviewed.id]
+        assert items[0]["rating_average"] == "4.0"
+        assert items[0]["review_count"] == 1
+        assert items[1]["rating_average"] is None
+        assert items[1]["review_count"] == 0
 
     async def test_search_rejects_unknown_sort(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

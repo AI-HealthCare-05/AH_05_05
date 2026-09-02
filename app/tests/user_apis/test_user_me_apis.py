@@ -33,6 +33,7 @@ class TestUserMeApis(TestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["email"] == email
         assert response.json()["name"] == "내정보테스터"
+        assert response.json()["maskedName"] == "내***터"
         assert response.json()["phoneNumber"] == signup_data["phone_number"]
         stored_user = await User.get(email=email)
         assert stored_user.phone != signup_data["phone_number"]

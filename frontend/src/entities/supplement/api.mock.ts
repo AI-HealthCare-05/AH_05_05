@@ -6,6 +6,8 @@ import type {
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementRanking,
+  SupplementReview,
+  SupplementReviewList,
   SupplementSearchPage,
   UpdateSupplementPayload,
 } from './types';
@@ -219,6 +221,7 @@ function initialSupplements(): Supplement[] {
       doseUnit: '정',
       slots: ['morning', 'evening'],
       score: 4,
+      reviewBody: '꾸준히 챙겨 먹기 편해요.',
       note: '아침 식후에 먹기',
       nutrientDataAvailable: true,
       nutrients: [
@@ -233,6 +236,7 @@ function initialSupplements(): Supplement[] {
       doseUnit: '정',
       slots: ['morning'],
       score: null,
+      reviewBody: null,
       note: null,
       nutrientDataAvailable: true,
       nutrients: [
@@ -254,6 +258,7 @@ function initialSupplements(): Supplement[] {
       doseUnit: '정',
       slots: ['evening'],
       score: null,
+      reviewBody: null,
       note: null,
       nutrientDataAvailable: true,
       nutrients: [
@@ -329,6 +334,7 @@ export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
     doseUnit: payload.doseUnit,
     slots: [...payload.slots],
     score: null,
+    reviewBody: null,
     note: null,
     nutrientDataAvailable: Boolean(standardProduct),
     nutrients: standardProduct
@@ -350,6 +356,8 @@ export function mockUpdateSupplement(
     doseAmount: payload.doseAmount,
     slots: [...payload.slots],
     score: 'score' in payload ? (payload.score ?? null) : supplementStore[index].score,
+    reviewBody:
+      'reviewBody' in payload ? (payload.reviewBody ?? null) : supplementStore[index].reviewBody,
     note: 'note' in payload ? (payload.note ?? null) : supplementStore[index].note,
   };
   supplementStore = supplementStore.map((supplement, itemIndex) =>
@@ -362,4 +370,38 @@ export function mockStopSupplement(supplementId: number): void {
   const exists = supplementStore.some((supplement) => supplement.supplementId === supplementId);
   if (!exists) throw new Error('영양제를 찾지 못했어요.');
   supplementStore = supplementStore.filter((supplement) => supplement.supplementId !== supplementId);
+}
+
+const MOCK_REVIEWS: SupplementReview[] = [
+  { id: 9001, authorLabel: '김*훈', score: 5, reviewBody: '두 달째 꾸준히 먹고 있어요.', updatedAt: '2026-09-02T09:00:00', isMine: false, reportedByMe: false },
+  { id: 9002, authorLabel: '김*훈', score: 4, reviewBody: '목 넘김이 편했어요.', updatedAt: '2026-09-01T18:00:00', isMine: false, reportedByMe: false },
+  { id: 9003, authorLabel: '박*', score: 3, reviewBody: '포장이 간편해요.', updatedAt: '2026-08-31T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9004, authorLabel: '남**훈', score: 2, reviewBody: '저에게는 잘 맞지 않았어요.', updatedAt: '2026-08-30T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9005, authorLabel: 'K***g', score: null, reviewBody: '본문만 남긴 후기예요.', updatedAt: '2026-08-29T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9006, authorLabel: '이*영', score: 4, reviewBody: null, updatedAt: '2026-08-28T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9007, authorLabel: '황***이', score: 5, reviewBody: '제 후기예요.', updatedAt: '2026-08-27T12:00:00', isMine: true, reportedByMe: false },
+  { id: 9008, authorLabel: '최*우', score: 4, reviewBody: '매일 챙겨 먹고 있어요.', updatedAt: '2026-08-26T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9009, authorLabel: '정*민', score: 5, reviewBody: '재구매했어요.', updatedAt: '2026-08-25T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9010, authorLabel: '한*진', score: 4, reviewBody: '크기가 적당해요.', updatedAt: '2026-08-24T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9011, authorLabel: '오*서', score: 3, reviewBody: '무난하게 먹고 있어요.', updatedAt: '2026-08-23T12:00:00', isMine: false, reportedByMe: false },
+  { id: 9012, authorLabel: '윤*호', score: 5, reviewBody: '꾸준히 먹기 좋아요.', updatedAt: '2026-08-22T12:00:00', isMine: false, reportedByMe: false },
+];
+
+export function mockFetchSupplementReviews(
+  productId: string,
+  { offset, limit }: { offset: number; limit: number },
+): SupplementReviewList {
+  const source = productId === 'mock-501' ? MOCK_REVIEWS : [];
+  return {
+    items: source.slice(offset, offset + limit).map((review) => ({ ...review })),
+    total: source.length,
+    offset,
+    limit,
+    ratingAverage: source.length === 0 ? null : 4.1,
+    reviewCount: source.filter((review) => review.score !== null).length,
+  };
+}
+
+export function mockReportSupplementReview(registrationId: number): void {
+  if (registrationId === 9004) throw new Error('잠시 후 다시 시도해주세요');
 }

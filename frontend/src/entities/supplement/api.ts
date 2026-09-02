@@ -3,6 +3,8 @@ import { USE_MOCK } from '@/shared/config/env';
 import {
   mockAddSupplement,
   mockNutrientStandards,
+  mockFetchSupplementReviews,
+  mockReportSupplementReview,
   mockSearchSupplementProducts,
   mockStopSupplement,
   mockSupplementProduct,
@@ -19,6 +21,7 @@ import type {
   SupplementNutrientAmount,
   SupplementProduct,
   SupplementRanking,
+  SupplementReviewList,
   SupplementSearchPage,
   SupplementSlot,
   UpdateSupplementPayload,
@@ -98,6 +101,7 @@ interface UserSupplementNutrientApiResponse {
   end_date: string | null;
   status: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
   score: number | null;
+  review_body: string | null;
   note: string | null;
   created_at: string;
   updated_at: string | null;
@@ -137,6 +141,23 @@ interface UserSupplementNutrientListApiResponse {
   offset: number;
   limit: number;
   nutrient_standard: UserNutrientStandardApiResponse | null;
+}
+
+interface SupplementReviewListApiResponse {
+  items: Array<{
+    id: number;
+    author_label: string;
+    score: number | null;
+    review_body: string | null;
+    updated_at: string;
+    is_mine: boolean;
+    reported_by_me: boolean;
+  }>;
+  total: number;
+  offset: number;
+  limit: number;
+  rating_average: NumericApiValue;
+  review_count: number;
 }
 
 const SLOT_TO_API: Record<SupplementSlot, SupplementSlotApi> = {
@@ -217,6 +238,44 @@ export async function getSupplementProduct(productId: string): Promise<Supplemen
   return mapSupplementProduct(response);
 }
 
+export async function fetchSupplementReviews(
+  productId: string,
+  { offset = 0, limit = 10 }: { offset?: number; limit?: number } = {},
+): Promise<SupplementReviewList> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockFetchSupplementReviews(productId, { offset, limit });
+  }
+  const response = await http.get<SupplementReviewListApiResponse>(
+    `/v1/med/nutr/${encodeURIComponent(productId)}/reviews?offset=${offset}&limit=${limit}`,
+  );
+  return {
+    items: response.items.map((item) => ({
+      id: item.id,
+      authorLabel: item.author_label,
+      score: item.score,
+      reviewBody: item.review_body,
+      updatedAt: item.updated_at,
+      isMine: item.is_mine,
+      reportedByMe: item.reported_by_me,
+    })),
+    total: response.total,
+    offset: response.offset,
+    limit: response.limit,
+    ratingAverage: toNumberOrNull(response.rating_average),
+    reviewCount: response.review_count,
+  };
+}
+
+export async function reportSupplementReview(registrationId: number): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay();
+    mockReportSupplementReview(registrationId);
+    return;
+  }
+  await http.post<void>(`/v1/med/nutr/reviews/${registrationId}/report`);
+}
+
 export async function addSupplement(payload: AddSupplementPayload): Promise<Supplement> {
   if (USE_MOCK) {
     await mockDelay();
@@ -265,6 +324,7 @@ export async function updateSupplement(
   };
   if ('score' in payload) body.score = payload.score;
   if ('note' in payload) body.note = payload.note;
+  if ('reviewBody' in payload) body.review_body = payload.reviewBody;
   const response = await http.patch<UserSupplementNutrientApiResponse>(
     `/v1/med/user-suppl-nutr/${supplementId}`,
     body,
@@ -316,6 +376,7 @@ function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Sup
       doseUnit: registration.dose_unit,
       slots: registration.slots.map(({ slot }) => API_TO_SLOT[slot]),
       score: registration.score ?? null,
+      reviewBody: registration.review_body ?? null,
       note: registration.note ?? null,
       nutrientDataAvailable: false,
       nutrients: [],
@@ -330,6 +391,7 @@ function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Sup
     doseUnit: registration.dose_unit,
     slots: registration.slots.map(({ slot }) => API_TO_SLOT[slot]),
     score: registration.score ?? null,
+    reviewBody: registration.review_body ?? null,
     note: registration.note ?? null,
     nutrientDataAvailable: product.nutrients.length > 0,
     nutrients: product.nutrients,

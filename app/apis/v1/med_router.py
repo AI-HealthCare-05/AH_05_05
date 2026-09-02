@@ -9,6 +9,7 @@ from app.dtos.supplement_nutrients import (
     SupplementNutrientListResponse,
     SupplementNutrientResponse,
 )
+from app.dtos.supplement_reviews import SupplementReviewListResponse
 from app.dtos.user_supplement_nutrients import (
     ManualSupplementNutrientCreateRequest,
     UserSupplementNutrientListResponse,
@@ -21,6 +22,7 @@ from app.models.users import User
 from app.repositories.supplement_nutrient_repository import SupplementSort
 from app.services.nutrient_standards import NutrientStandardService
 from app.services.supplement_nutrients import SupplementNutrientService
+from app.services.supplement_reviews import SupplementReviewService
 from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
 med_router = APIRouter(prefix="/med", tags=["med-nutrition"])
@@ -36,6 +38,10 @@ def get_nutrient_standard_service() -> NutrientStandardService:
 
 def get_user_supplement_nutrient_service() -> UserSupplementNutrientService:
     return UserSupplementNutrientService()
+
+
+def get_supplement_review_service() -> SupplementReviewService:
+    return SupplementReviewService()
 
 
 @med_router.get(
@@ -96,6 +102,37 @@ async def list_popular_supplement_nutrients(
     """현재 복용 중인 사용자 수가 많은 영양제 상위 5개의 ID와 이름을 조회한다."""
     products = await service.list_popular()
     return [PopularSupplementNutrientResponse(id=product.id, name=product.name) for product in products]
+
+
+@med_router.post(
+    "/nutr/reviews/{registration_id}/report",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="영양제 후기 신고",
+)
+async def report_supplement_review(
+    registration_id: Annotated[int, Path(ge=1, description="신고할 사용자 영양제 등록 ID")],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[SupplementReviewService, Depends(get_supplement_review_service)],
+) -> Response:
+    """공개 후기 한 건을 신고한다. 같은 사용자의 재시도는 멱등하게 처리한다."""
+    await service.report(user, registration_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@med_router.get(
+    "/nutr/{supplement_nutrient_id}/reviews",
+    response_model=SupplementReviewListResponse,
+    summary="영양제 공개 후기 목록 조회",
+)
+async def list_supplement_reviews(
+    supplement_nutrient_id: Annotated[int, Path(ge=1, description="건강기능식품 기준정보 ID")],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[SupplementReviewService, Depends(get_supplement_review_service)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> SupplementReviewListResponse:
+    """탈퇴·신고 숨김 대상을 제외한 공개 후기를 최신순으로 조회한다."""
+    return await service.list(user, supplement_nutrient_id, offset=offset, limit=limit)
 
 
 @med_router.get(

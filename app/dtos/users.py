@@ -68,6 +68,7 @@ class WithdrawRequest(CamelModel):
 class UserInfoResponse(CamelModel):
     id: int
     name: str
+    masked_name: str = "익명"
     email: str
     # validation_alias 는 입력에만 걸린다. DB 컬럼이 phone 이라 여기서 읽고,
     # 응답 키는 CamelModel 의 별칭 생성기가 phoneNumber 로 만든다. 둘이 충돌하지 않는다.

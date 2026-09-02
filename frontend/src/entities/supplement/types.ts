@@ -20,7 +20,9 @@ export interface Supplement {
   slots: SupplementSlot[];
   /** 사용자가 남긴 별점 1~5. 안 남겼으면 null */
   score: number | null;
-  /** 사용자가 남긴 복용 메모. 안 남겼으면 null */
+  /** 다른 사용자에게 공개되는 후기 본문. 안 썼으면 null */
+  reviewBody: string | null;
+  /** 사용자만 보는 복용 메모. 안 남겼으면 null */
   note: string | null;
   /** false면 직접 입력 제품으로, 성분 합계에서 제외합니다. */
   nutrientDataAvailable: boolean;
@@ -70,6 +72,27 @@ export interface SupplementSearchPage {
   items: SupplementProduct[];
   total: number;
   nextOffset: number | null;
+}
+
+export interface SupplementReview {
+  /** registration_id. 신고할 때 이 값을 보냅니다. */
+  id: number;
+  /** 서버에서 이미 마스킹된 이름입니다. 프론트에서 다시 가공하지 않습니다. */
+  authorLabel: string;
+  score: number | null;
+  reviewBody: string | null;
+  updatedAt: string;
+  isMine: boolean;
+  reportedByMe: boolean;
+}
+
+export interface SupplementReviewList {
+  items: SupplementReview[];
+  total: number;
+  offset: number;
+  limit: number;
+  ratingAverage: number | null;
+  reviewCount: number;
 }
 
 export interface SupplementRankingItem {
@@ -127,4 +150,5 @@ export interface UpdateSupplementPayload {
   slots: SupplementSlot[];
   score?: number | null;
   note?: string | null;
+  reviewBody?: string | null;
 }
