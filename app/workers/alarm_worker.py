@@ -13,6 +13,7 @@ from app.core import config
 from app.core.db.databases import TORTOISE_ORM
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
+from app.models.care import FollowUpVisit
 from app.models.enums import (
     AlarmEventType,
     AlarmStatus,
@@ -178,8 +179,13 @@ async def send_alarm_push(
         if not nutrient_items:
             await _cancel_claimed_job(job)
             return
+    follow_up_visit = await _current_follow_up_visit(alarm)
+    if alarm.alarm_type == AlarmType.FOLLOW_UP_VISIT and follow_up_visit is None:
+        await _cancel_claimed_job(job)
+        return
+
     push_service: WebPushService = ctx["push_service"]
-    payload = push_service.build_payload(alarm, medications, nutrient_items)
+    payload = push_service.build_payload(alarm, medications, nutrient_items, follow_up_visit)
     payload["triggerAt"] = trigger_at_value
     result = await push_service.send(subscription, payload)
 
@@ -197,6 +203,12 @@ async def send_alarm_push(
         result,
         deactivate=result.kind == PushResultKind.EXPIRED,
     )
+
+
+async def _current_follow_up_visit(alarm: Alarm) -> FollowUpVisit | None:
+    if alarm.alarm_type != AlarmType.FOLLOW_UP_VISIT:
+        return None
+    return await FollowUpVisit.get_or_none(id=alarm.follow_up_visit_id)
 
 
 async def _cancel_claimed_job(job: BackgroundJob) -> None:

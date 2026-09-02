@@ -8,6 +8,7 @@ from tortoise.contrib.test import TestCase
 from app.core import config
 from app.models.alarms import AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
+from app.models.care import FollowUpVisit
 from app.models.enums import AlarmEventType, AlarmType, BackgroundJobStatus, MealSlot, SupplementStatus
 from app.models.supplement_nutrients import UserSupplementNutrient, UserSupplementNutrientSlot
 from app.models.users import UserSettings
@@ -70,6 +71,8 @@ class TestAlarmWorker(TestCase):
         assert await BackgroundJob.all().count() == 0
         event = await AlarmEvent.get(alarm=self.alarm, event_type=AlarmEventType.SKIPPED)
         assert event.payload == {"reason": "USER_NOTIFICATION_DISABLED"}
+        await self.alarm.refresh_from_db()
+        assert self.alarm.status == "ACTIVE"
         self.redis_pool.enqueue_job.assert_not_awaited()
 
     async def test_due_alarm_fans_out_one_job_per_active_subscription(self):
@@ -186,6 +189,46 @@ class TestAlarmWorker(TestCase):
         payload = self.push_service.send.await_args.args[1]
         assert payload["title"] == "영양제 알림"
         assert payload["body"] == "영양제 챙기실 시간이에요"
+
+    async def test_follow_up_push_uses_current_visit_time_and_hospital(self):
+        visit = await FollowUpVisit.create(
+            user=self.user,
+            visit_date=datetime.now(config.TIMEZONE).date() + timedelta(days=1),
+            visit_time="14:30:00",
+            hospital="서울성모병원",
+        )
+        self.alarm.alarm_type = AlarmType.FOLLOW_UP_VISIT
+        self.alarm.meal_slot = None
+        self.alarm.care_episode_id = None
+        self.alarm.follow_up_visit_id = visit.id
+        self.alarm.title = "오래된 제목"
+        self.alarm.message = "오래된 문구"
+        await self.alarm.save(
+            update_fields=[
+                "alarm_type",
+                "meal_slot",
+                "care_episode_id",
+                "follow_up_visit_id",
+                "title",
+                "message",
+            ],
+        )
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        self.push_service.build_payload = WebPushService.build_payload
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+
+        await send_alarm_push(
+            self.context(),
+            job.id,
+            self.alarm.id,
+            subscription.id,
+            self.alarm.next_trigger_at.isoformat(),
+        )
+
+        payload = self.push_service.send.await_args.args[1]
+        assert payload["title"] == "진료 일정 알림"
+        assert payload["body"] == "내일 14:30 서울성모병원 진료가 있어요"
 
     async def test_retryable_failure_moves_job_to_retry_waiting(self):
         subscription = await self.create_subscription()

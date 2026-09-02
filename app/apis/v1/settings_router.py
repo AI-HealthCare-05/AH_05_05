@@ -14,6 +14,7 @@ def _response(settings: UserSettings) -> NotifySettingsResponse:
     return NotifySettingsResponse(
         notify_medication=settings.is_notify_medication,
         notify_supplement=settings.is_notify_supplement,
+        notify_schedule=settings.is_notify_schedule,
         notify_consented_at=settings.notify_consented_at,
         morning_medication_time=normalize_medication_time(settings.morning_medication_time),
         lunch_medication_time=normalize_medication_time(settings.lunch_medication_time),

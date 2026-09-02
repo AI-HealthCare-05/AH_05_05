@@ -1,6 +1,7 @@
 from datetime import date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
+from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.dtos.follow_up_visits import (
@@ -10,8 +11,9 @@ from app.dtos.follow_up_visits import (
     FollowUpVisitUpdateRequest,
 )
 from app.models.care import FollowUpVisit
-from app.models.users import User
+from app.models.users import User, UserSettings
 from app.repositories.follow_up_visit_repository import FollowUpVisitRepository
+from app.services.follow_up_visit_alarms import FollowUpVisitAlarmService
 
 
 class FollowUpVisitService:
@@ -19,7 +21,14 @@ class FollowUpVisitService:
         self.repository = repository or FollowUpVisitRepository()
 
     async def create(self, user: User, data: FollowUpVisitCreateRequest) -> FollowUpVisitResponse:
-        visit = await self.repository.create(user.id, **data.model_dump())
+        async with in_transaction() as connection:
+            visit = await FollowUpVisit.create(
+                user_id=user.id,
+                using_db=connection,
+                **data.model_dump(),
+            )
+            settings, _ = await UserSettings.get_or_create(user_id=user.id, using_db=connection)
+            await FollowUpVisitAlarmService.sync_alarm(visit, settings.evening_medication_time, connection)
         return self._to_response(visit)
 
     async def list(
@@ -59,18 +68,43 @@ class FollowUpVisitService:
         visit_id: int,
         data: FollowUpVisitUpdateRequest,
     ) -> FollowUpVisitResponse:
-        visit = await self._get_owned(user.id, visit_id)
         updates = data.model_dump(exclude_unset=True)
         if "visit_date" in updates and updates["visit_date"] is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="visit_date cannot be null.",
             )
-        if updates:
-            for field_name, value in updates.items():
-                setattr(visit, field_name, value)
-            visit.updated_at = datetime.now(config.TIMEZONE)
-            await visit.save(update_fields=[*updates, "updated_at"])
+        async with in_transaction() as connection:
+            visit = (
+                await FollowUpVisit.filter(id=visit_id, user_id=user.id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if visit is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Follow-up visit not found.",
+                )
+            original_visit_date = visit.visit_date
+            if updates:
+                for field_name, value in updates.items():
+                    setattr(visit, field_name, value)
+                visit.updated_at = datetime.now(config.TIMEZONE)
+                await visit.save(
+                    using_db=connection,
+                    update_fields=[*updates, "updated_at"],
+                )
+            if visit.visit_date != original_visit_date:
+                settings, _ = await UserSettings.get_or_create(
+                    user_id=user.id,
+                    using_db=connection,
+                )
+                await FollowUpVisitAlarmService.sync_alarm(
+                    visit,
+                    settings.evening_medication_time,
+                    connection,
+                )
         return self._to_response(visit)
 
     async def delete(self, user: User, visit_id: int) -> None:
