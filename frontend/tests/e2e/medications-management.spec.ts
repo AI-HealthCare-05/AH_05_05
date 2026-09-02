@@ -50,7 +50,8 @@ test('기간 필터는 URL에 남고 기본값은 쿼리를 제거한다', async
   await expect(page).toHaveURL(/\/dev\/medications$/);
 
   await page.getByRole('button', { name: '최근 3개월' }).click();
-  await page.getByRole('radio', { name: '최근 6개월' }).check();
+  await page.getByText('최근 6개월', { exact: true }).click();
+  await expect(page.getByRole('radio', { name: '최근 6개월' })).toBeChecked();
   await page.getByRole('button', { name: '적용' }).click();
   await expect(page).toHaveURL(/from=2026-03-02&to=2026-09-02/);
 
@@ -61,7 +62,8 @@ test('기간 필터는 URL에 남고 기본값은 쿼리를 제거한다', async
   await expect(page).toHaveURL(/from=2026-03-02&to=2026-09-02/);
 
   await page.getByRole('button', { name: '최근 6개월' }).click();
-  await page.getByRole('radio', { name: '최근 3개월' }).check();
+  await page.getByText('최근 3개월', { exact: true }).click();
+  await expect(page.getByRole('radio', { name: '최근 3개월' })).toBeChecked();
   await page.getByRole('button', { name: '적용' }).click();
   await expect(page).toHaveURL(/\/dev\/medications$/);
 });
@@ -69,7 +71,8 @@ test('기간 필터는 URL에 남고 기본값은 쿼리를 제거한다', async
 test('직접 지정 역전 범위는 시트 안에서 막는다', async ({ page }) => {
   await page.goto('/dev/medications');
   await page.getByRole('button', { name: '최근 3개월' }).click();
-  await page.getByRole('radio', { name: '직접 지정' }).check();
+  await page.getByText('직접 지정', { exact: true }).click();
+  await expect(page.getByRole('radio', { name: '직접 지정' })).toBeChecked();
   await page.getByLabel('시작일').fill('2026-09-02');
   await page.getByLabel('종료일').fill('2026-09-01');
   await page.getByRole('button', { name: '적용' }).click();

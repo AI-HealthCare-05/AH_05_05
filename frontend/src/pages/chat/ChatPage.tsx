@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useChatSession } from '@/app/ChatSessionContext';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
   Button,
@@ -253,14 +254,7 @@ export function ChatPage({
 
   function handleTabChange(key: TabKey) {
     if (key === 'chat') return;
-    const routes: Record<TabKey, string> = {
-      home: '/home',
-      medication: '/medications',
-      supplement: '/supplements',
-      chat: '/chat',
-      my: '/my',
-    };
-    navigate(routes[key]);
+    navigate(TAB_ROUTES[key]);
   }
 
   function openSession(sessionId: number) {

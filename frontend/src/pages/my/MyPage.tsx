@@ -3,6 +3,7 @@ import { CalendarDays, ChevronRight, Pill, Sprout, UserRound } from 'lucide-reac
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
   Button,
@@ -31,14 +32,6 @@ import {
 import { registerPushNotifications } from '@/shared/push/register';
 import { WithdrawAccountDialog } from './WithdrawAccountDialog';
 import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
-
-const TAB_ROUTES: Record<TabKey, string> = {
-  home: '/home',
-  medication: '/medications',
-  supplement: '/supplements',
-  chat: '/chat',
-  my: '/my',
-};
 
 function medicationTimesFromSettings(settings: NotifySettings): MedicationTimes {
   return {

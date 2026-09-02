@@ -7,7 +7,8 @@ import {
   type AddSupplementPayload,
   type SupplementProduct,
 } from '@/entities/supplement';
-import { Button, Card, ErrorDialog, Header } from '@/shared/ui';
+import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { BottomTabbar, Button, Card, ErrorDialog, Header } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { SupplementReviewSection } from './SupplementReviewSection';
 
@@ -131,6 +132,12 @@ export function SupplementProductPage() {
           </>
         )}
       </main>
+
+      <BottomTabbar
+        active="supplement"
+        onChange={(key) => navigate(TAB_ROUTES[key])}
+        className="border-t border-border"
+      />
 
       <AddSupplementSheet
         open={addOpen}
