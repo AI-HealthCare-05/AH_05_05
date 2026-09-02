@@ -26,11 +26,9 @@ from app.services.medication_ocr_v3.pipeline.analyze import (
     StageResult,
     analyze_processed_image,
 )
-from app.services.medication_ocr_v3.pipeline.grounding import GroundedMedication, GroundedResult
 from app.services.medication_ocr_v3.pipeline.medication_rows import (
     MedicationField,
     MedicationIssueCode,
-    MedicationRow,
 )
 from app.services.medication_ocr_v3.pipeline.preprocess import preprocess_image
 from app.services.medication_ocr_v3.pipeline.privacy_artifact import (
@@ -244,12 +242,7 @@ def _raise_job_provider_error(
 
 def _confidence_values(result: AnalyzePipelineResult) -> list[float]:
     review = _project_review(result)
-    grounded = result.grounded
     values: list[float] = []
-    fields = review.get("fields")
-    if isinstance(fields, dict) and "dispensedDate" in fields and grounded is not None:
-        _append_grounded_confidence(values, grounded.dispensed_date)
-
     public_medications = review.get("medications")
     if not isinstance(public_medications, list):
         return values
@@ -260,17 +253,7 @@ def _confidence_values(result: AnalyzePipelineResult) -> list[float]:
         if source_index is None or not 1 <= source_index <= len(result.medication_rows.medications):
             continue
         row = result.medication_rows.medications[source_index - 1]
-        grounded_medication = _grounded_medication(grounded, row, source_index)
         _append_medication_confidence(values, row.fields.name)
-        if "strength" in medication and grounded_medication is not None:
-            _append_grounded_confidence(values, grounded_medication.strength)
-        for key, field in (
-            ("doseQuantity", row.fields.dose_quantity),
-            ("timesPerDay", row.fields.times_per_day),
-            ("days", row.fields.days),
-        ):
-            if key in medication:
-                _append_medication_confidence(values, field)
     return values
 
 
@@ -283,34 +266,10 @@ def _source_index(value: object) -> int | None:
         return None
 
 
-def _grounded_medication(
-    grounded: GroundedResult | None,
-    row: MedicationRow,
-    source_index: int,
-) -> GroundedMedication | None:
-    if grounded is None:
-        return None
-    name_block_ids = set(row.fields.name.block_ids)
-    matches = tuple(
-        medication for medication in grounded.medications if name_block_ids.intersection(medication.name.block_ids)
-    )
-    if len(matches) == 1:
-        return matches[0]
-    row_id = f"row-{source_index:04d}"
-    matches = tuple(medication for medication in grounded.medications if medication.row_id == row_id)
-    return matches[0] if len(matches) == 1 else None
-
-
 def _append_medication_confidence(values: list[float], field: MedicationField) -> None:
     if _VALIDATION_ISSUES.intersection(field.issues):
         return
     _append_numeric_confidence(values, field.confidence)
-
-
-def _append_grounded_confidence(values: list[float], field: object) -> None:
-    if getattr(field, "issues", ()):
-        return
-    _append_numeric_confidence(values, getattr(field, "confidence", None))
 
 
 def _append_numeric_confidence(values: list[float], value: object) -> None:
