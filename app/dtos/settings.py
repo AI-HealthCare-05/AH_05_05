@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 
 from pydantic import ConfigDict
 
@@ -11,9 +11,17 @@ class NotifySettingsUpdateRequest(CamelModel):
 
     notify_medication: bool | None = None
     notify_supplement: bool | None = None
+    morning_medication_time: time | None = None
+    lunch_medication_time: time | None = None
+    evening_medication_time: time | None = None
+    bedtime_medication_time: time | None = None
 
 
 class NotifySettingsResponse(CamelModel):
     notify_medication: bool
     notify_supplement: bool
     notify_consented_at: datetime | None
+    morning_medication_time: time
+    lunch_medication_time: time
+    evening_medication_time: time
+    bedtime_medication_time: time
