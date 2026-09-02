@@ -6,14 +6,23 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from tortoise import Tortoise
 from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.core.db.databases import TORTOISE_ORM
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import AlarmEventType, AlarmStatus, AlarmType, BackgroundJobStatus, BackgroundJobType
+from app.models.enums import (
+    AlarmEventType,
+    AlarmStatus,
+    AlarmType,
+    BackgroundJobStatus,
+    BackgroundJobType,
+    SupplementStatus,
+)
 from app.models.medications import Medication
+from app.models.supplement_nutrients import UserSupplementNutrient
 from app.models.users import UserSettings
 from app.services.alarm_schedule import next_occurrence
 from app.services.background_jobs import BackgroundJobService
@@ -153,8 +162,24 @@ async def send_alarm_push(
             care_episode_id=alarm.care_episode_id,
             slots__slot=alarm.meal_slot,
         ).distinct()
+    nutrient_items: list[UserSupplementNutrient] = []
+    if alarm.alarm_type == AlarmType.NUTRIENT and alarm.meal_slot is not None:
+        trigger_date = datetime.fromisoformat(trigger_at_value).astimezone(config.TIMEZONE).date()
+        nutrient_items = await (
+            UserSupplementNutrient.filter(
+                user_id=alarm.user_id,
+                status=SupplementStatus.ACTIVE,
+                start_date__lte=trigger_date,
+                slots__slot=alarm.meal_slot,
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=trigger_date))
+            .distinct()
+        )
+        if not nutrient_items:
+            await _cancel_claimed_job(job)
+            return
     push_service: WebPushService = ctx["push_service"]
-    payload = push_service.build_payload(alarm, medications)
+    payload = push_service.build_payload(alarm, medications, nutrient_items)
     payload["triggerAt"] = trigger_at_value
     result = await push_service.send(subscription, payload)
 

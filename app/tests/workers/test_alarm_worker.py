@@ -8,7 +8,8 @@ from tortoise.contrib.test import TestCase
 from app.core import config
 from app.models.alarms import AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import AlarmEventType, AlarmType, BackgroundJobStatus
+from app.models.enums import AlarmEventType, AlarmType, BackgroundJobStatus, MealSlot, SupplementStatus
+from app.models.supplement_nutrients import UserSupplementNutrient, UserSupplementNutrientSlot
 from app.models.users import UserSettings
 from app.services.alarms import AlarmService
 from app.services.background_jobs import BackgroundJobService
@@ -147,6 +148,44 @@ class TestAlarmWorker(TestCase):
             push_subscription=subscription,
             event_type=AlarmEventType.SENT,
         ).exists()
+
+    async def test_nutrient_push_uses_current_active_slot_content(self):
+        self.alarm.alarm_type = AlarmType.NUTRIENT
+        self.alarm.care_episode_id = None
+        self.alarm.title = "오래된 제목"
+        self.alarm.message = "오래된 문구"
+        await self.alarm.save(
+            update_fields=["alarm_type", "care_episode_id", "title", "message"],
+        )
+        registration = await UserSupplementNutrient.create(
+            user=self.user,
+            supplement_nutrient_id=None,
+            custom_name="현재 복용 중인 영양제",
+            dose_amount=1,
+            dose_unit="정",
+            start_date=datetime.now(config.TIMEZONE).date(),
+            status=SupplementStatus.ACTIVE,
+        )
+        await UserSupplementNutrientSlot.create(
+            user_suppl_nutrient=registration,
+            slot=MealSlot.MORNING,
+        )
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        self.push_service.build_payload = WebPushService.build_payload
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+
+        await send_alarm_push(
+            self.context(),
+            job.id,
+            self.alarm.id,
+            subscription.id,
+            self.alarm.next_trigger_at.isoformat(),
+        )
+
+        payload = self.push_service.send.await_args.args[1]
+        assert payload["title"] == "영양제 알림"
+        assert payload["body"] == "영양제 챙기실 시간이에요"
 
     async def test_retryable_failure_moves_job_to_retry_waiting(self):
         subscription = await self.create_subscription()
