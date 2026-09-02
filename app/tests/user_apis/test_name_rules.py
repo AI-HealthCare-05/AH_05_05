@@ -1,11 +1,29 @@
+import pytest
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.core.validators.user_validators import mask_name
 from app.main import app
 from app.models.users import User
 
 PASSWORD = "Password123!"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("김훈", "김*"),
+        ("김동훈", "김*훈"),
+        ("남궁동훈", "남**훈"),
+        ("황보동훈이", "황***이"),
+        ("KimJinhyeong", "K***g"),
+        ("", "익명"),
+        ("ABCDEFGHIJKLMNOPQRST", "A***T"),
+    ],
+)
+def test_mask_name_hides_middle_with_at_most_three_stars(raw: str, expected: str):
+    assert mask_name(raw) == expected
 
 
 def signup_data(email: str, **overrides):

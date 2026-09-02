@@ -45,6 +45,7 @@ def validate_password(password: str) -> str:
 
 # 프론트 shared/lib/name.ts 의 NAME_PATTERN 과 같은 규칙이다. 한쪽만 고치면 안 된다.
 _NAME_PATTERN = re.compile(r"[가-힣a-zA-Z]+")
+MASK_MAX = 3
 
 
 def validate_name(name: str) -> str:
@@ -63,6 +64,19 @@ def validate_name(name: str) -> str:
         raise ValueError("이름은 한글과 영문만 사용할 수 있습니다.")
 
     return name
+
+
+def mask_name(raw: str) -> str:
+    """공개 후기 작성자 이름의 가운데를 최대 세 글자까지 가린다."""
+    name = (raw or "").strip()
+    if not name:
+        return "익명"
+    if len(name) == 1:
+        return "*"
+    if len(name) == 2:
+        return f"{name[0]}*"
+    stars = "*" * min(len(name) - 2, MASK_MAX)
+    return f"{name[0]}{stars}{name[-1]}"
 
 
 def validate_ascii_email(email: str) -> str:
