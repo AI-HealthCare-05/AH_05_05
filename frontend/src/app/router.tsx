@@ -172,12 +172,10 @@ export function AppRouter() {
           <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
           <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
           <Route path="/medications" element={<MedicationsPage />} />
-          <Route path="/medications/:recordId" element={<MedicationEpisodePage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/my" element={<MyPage />} />
           <Route path="/my/profile" element={<MyProfilePage />} />
           <Route path="/my/visits" element={<FollowUpVisitsPage />} />
-          <Route path="/my/alarms" element={<ScheduledAlarmsPage />} />
         </Route>
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
