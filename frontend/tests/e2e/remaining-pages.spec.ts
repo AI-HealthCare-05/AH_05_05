@@ -126,6 +126,9 @@ test('로그인 페이지의 이용약관 링크는 공개 약관과 AI 의료 �
   await expect(
     page.getByText(/AI 챗봇의 답변은 이용자가 등록한 처방약과 영양제 정보/),
   ).toBeVisible();
+  await expect(page.getByRole('heading', { name: /회원가입, 계정 및 탈퇴/ })).toBeVisible();
+  await expect(page.getByText(/알림이 지연되거나 전달되지 않을 수 있습니다/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: /준거법 및 분쟁 해결/ })).toBeVisible();
 });
 
 test('로그인 페이지의 개인정보 링크는 공개 처리 안내와 담당자 정보를 보여준다', async ({
@@ -139,6 +142,9 @@ test('로그인 페이지의 개인정보 링크는 공개 처리 안내와 담�
   await expect(page.getByRole('heading', { name: '개인정보 처리 안내' })).toBeVisible();
   await expect(page.getByText('김은미', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('link', { name: 'blesseunmi@gmail.com' })).toBeVisible();
+  await expect(page.getByRole('table', { name: '개인정보 보유기간' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /AI 데이터 처리/ })).toBeVisible();
+  await expect(page.getByText(/법적 효과 또는 중대한 영향을 미치는 자동화된 결정/)).toBeVisible();
 });
 
 test('로그인 마이페이지는 내 관리와 알림 토글, 계정을 보여준다', async ({ page }) => {
