@@ -9,7 +9,14 @@ from app.core import config
 from app.models.alarms import AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
 from app.models.care import FollowUpVisit
-from app.models.enums import AlarmEventType, AlarmType, BackgroundJobStatus, MealSlot, SupplementStatus
+from app.models.enums import (
+    AccountStatus,
+    AlarmEventType,
+    AlarmType,
+    BackgroundJobStatus,
+    MealSlot,
+    SupplementStatus,
+)
 from app.models.supplement_nutrients import UserSupplementNutrient, UserSupplementNutrientSlot
 from app.models.users import UserSettings
 from app.services.alarms import AlarmService
@@ -107,6 +114,43 @@ class TestAlarmWorker(TestCase):
             AlarmType.NUTRIENT,
             "is_notify_supplement",
         )
+
+    async def assert_account_status_blocks_alarm(self, status: AccountStatus) -> None:
+        self.user.status = status
+        await self.user.save(update_fields=["status"])
+        await self.create_subscription()
+
+        await poll_due_alarms(self.context())
+
+        assert await BackgroundJob.all().count() == 0
+        event = await AlarmEvent.get(alarm=self.alarm, event_type=AlarmEventType.SKIPPED)
+        assert event.payload == {"reason": "USER_NOT_ACTIVE"}
+
+    async def test_skips_delivery_when_user_withdrawn(self):
+        await self.assert_account_status_blocks_alarm(AccountStatus.WITHDRAWN)
+
+    async def test_skips_delivery_when_user_suspended(self):
+        await self.assert_account_status_blocks_alarm(AccountStatus.SUSPENDED)
+
+    async def test_withdrawn_after_queue_skips_send(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        self.user.status = AccountStatus.WITHDRAWN
+        await self.user.save(update_fields=["status"])
+
+        await send_alarm_push(
+            self.context(),
+            job.id,
+            self.alarm.id,
+            subscription.id,
+            self.alarm.next_trigger_at.isoformat(),
+        )
+
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.CANCELLED
+        event = await AlarmEvent.get(alarm=self.alarm, event_type=AlarmEventType.SKIPPED)
+        assert event.payload == {"reason": "USER_NOT_ACTIVE"}
+        self.push_service.send.assert_not_awaited()
 
     async def test_notification_disabled_after_queue_skips_send(self):
         subscription = await self.create_subscription()
