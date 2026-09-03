@@ -39,6 +39,18 @@ from app.dtos.background_jobs import (
     AdminBackgroundJobListQuery,
     AdminBackgroundJobStatsResponse,
 )
+from app.dtos.common_codes import (
+    CommonCodeCreateRequest,
+    CommonCodeGroupCreateRequest,
+    CommonCodeGroupListQuery,
+    CommonCodeGroupListResponse,
+    CommonCodeGroupResponse,
+    CommonCodeGroupUpdateRequest,
+    CommonCodeListQuery,
+    CommonCodeListResponse,
+    CommonCodeResponse,
+    CommonCodeUpdateRequest,
+)
 from app.dtos.pagination import PageResponse
 from app.dtos.supplement_nutrients import (
     PopularSupplementNutrientResponse,
@@ -56,6 +68,7 @@ from app.services.admin_dashboard import AdminDashboardService
 from app.services.admin_users import AdminUserQueryService
 from app.services.admins import AdminQueryService
 from app.services.background_jobs import BackgroundJobService
+from app.services.common_codes import CommonCodeService
 from app.services.supplement_nutrients import SupplementNutrientService
 from app.services.supplement_rank_displays import SupplementRankDisplayService
 
@@ -81,6 +94,10 @@ def get_supplement_nutrient_service() -> SupplementNutrientService:
 
 def get_supplement_rank_display_service() -> SupplementRankDisplayService:
     return SupplementRankDisplayService()
+
+
+def get_common_code_service() -> CommonCodeService:
+    return CommonCodeService()
 
 
 @admin_router.get(
@@ -642,3 +659,139 @@ async def get_user(
     - **404 USER_NOT_FOUND**
     """
     return await service.get_user(user_id)
+
+
+@admin_router.get(
+    "/common-code-groups",
+    response_model=CommonCodeGroupListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="공통코드 그룹 목록 조회",
+)
+async def list_common_code_groups(
+    _: AdminOrStaff,
+    query: Annotated[CommonCodeGroupListQuery, Query()],
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeGroupListResponse:
+    """대분류·그룹코드·그룹명·사용여부 조건으로 공통코드 그룹을 조회한다."""
+    groups, total = await service.list_groups(query)
+    return CommonCodeGroupListResponse(
+        total_count=total,
+        offset=query.offset,
+        limit=query.limit,
+        items=[CommonCodeGroupResponse.model_validate(group) for group in groups],
+    )
+
+
+@admin_router.post(
+    "/common-code-groups",
+    response_model=CommonCodeGroupResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="공통코드 그룹 등록",
+)
+async def create_common_code_group(
+    actor: AdminOnly,
+    request: CommonCodeGroupCreateRequest,
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeGroupResponse:
+    """ADMIN이 대분류를 포함한 공통코드 그룹을 등록한다."""
+    return CommonCodeGroupResponse.model_validate(await service.create_group(request, actor.admin_id))
+
+
+@admin_router.get(
+    "/common-code-groups/{group_id}",
+    response_model=CommonCodeGroupResponse,
+    status_code=status.HTTP_200_OK,
+    summary="공통코드 그룹 상세 조회",
+)
+async def get_common_code_group(
+    _: AdminOrStaff,
+    group_id: Annotated[int, Path(gt=0)],
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeGroupResponse:
+    """ADMIN·STAFF가 공통코드 그룹 한 건을 조회한다."""
+    return CommonCodeGroupResponse.model_validate(await service.get_group(group_id))
+
+
+@admin_router.patch(
+    "/common-code-groups/{group_id}",
+    response_model=CommonCodeGroupResponse,
+    status_code=status.HTTP_200_OK,
+    summary="공통코드 그룹 수정",
+)
+async def update_common_code_group(
+    actor: AdminOnly,
+    group_id: Annotated[int, Path(gt=0)],
+    request: CommonCodeGroupUpdateRequest,
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeGroupResponse:
+    """ADMIN이 대분류·그룹명·설명·사용여부를 수정한다. 그룹코드는 변경하지 않는다."""
+    return CommonCodeGroupResponse.model_validate(await service.update_group(group_id, request, actor.admin_id))
+
+
+@admin_router.get(
+    "/common-code-groups/{group_id}/codes",
+    response_model=CommonCodeListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="상세 공통코드 목록 조회",
+)
+async def list_common_codes(
+    _: AdminOrStaff,
+    group_id: Annotated[int, Path(gt=0)],
+    query: Annotated[CommonCodeListQuery, Query()],
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeListResponse:
+    """선택한 그룹의 상세코드를 코드·이름·사용여부 조건으로 조회한다."""
+    codes, total = await service.list_codes(group_id, query)
+    return CommonCodeListResponse(
+        total_count=total,
+        offset=query.offset,
+        limit=query.limit,
+        items=[CommonCodeResponse.model_validate(code) for code in codes],
+    )
+
+
+@admin_router.post(
+    "/common-code-groups/{group_id}/codes",
+    response_model=CommonCodeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="상세 공통코드 등록",
+)
+async def create_common_code(
+    actor: AdminOnly,
+    group_id: Annotated[int, Path(gt=0)],
+    request: CommonCodeCreateRequest,
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeResponse:
+    """ADMIN이 선택한 그룹에 상세코드를 등록한다."""
+    return CommonCodeResponse.model_validate(await service.create_code(group_id, request, actor.admin_id))
+
+
+@admin_router.get(
+    "/common-codes/{code_id}",
+    response_model=CommonCodeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="상세 공통코드 조회",
+)
+async def get_common_code(
+    _: AdminOrStaff,
+    code_id: Annotated[int, Path(gt=0)],
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeResponse:
+    """ADMIN·STAFF가 상세 공통코드 한 건을 조회한다."""
+    return CommonCodeResponse.model_validate(await service.get_code(code_id))
+
+
+@admin_router.patch(
+    "/common-codes/{code_id}",
+    response_model=CommonCodeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="상세 공통코드 수정",
+)
+async def update_common_code(
+    actor: AdminOnly,
+    code_id: Annotated[int, Path(gt=0)],
+    request: CommonCodeUpdateRequest,
+    service: Annotated[CommonCodeService, Depends(get_common_code_service)],
+) -> CommonCodeResponse:
+    """ADMIN이 상세코드명·설명·정렬순서·사용여부를 수정한다. 상세코드는 변경하지 않는다."""
+    return CommonCodeResponse.model_validate(await service.update_code(code_id, request, actor.admin_id))

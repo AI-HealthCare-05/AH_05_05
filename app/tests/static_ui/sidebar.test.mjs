@@ -147,6 +147,35 @@ test("shared sidebar uses the RxVita symbol with an administrator label", async 
   assert.match(managementStyles, /\.sidebar-brand-logo\s*\{[^}]*position:\s*absolute;[^}]*width:\s*auto;/s);
 });
 
+test("shared sidebar exposes common code management under basic management", async () => {
+  const html = await readFile(
+    new URL("../../static/templates/partials/sidebar.html", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(html, />기본관리<\/span>/);
+  assert.match(
+    html,
+    /href="common-code-management\.html"[^>]+data-nav="common-codes"/,
+  );
+  assert.match(html, />공통코드관리<\/span>/);
+});
+
+test("common code management page participates in shared navigation", async () => {
+  const { getActiveSection } = await import("../../static/js/sidebar.js");
+  const html = await readFile(
+    new URL("../../static/templates/common-code-management.html", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(
+    getActiveSection("/templates/common-code-management.html"),
+    "common-codes",
+  );
+  assert.match(html, /data-sidebar[^>]+data-active-nav="common-codes"/s);
+  assert.match(html, />공통코드 관리<\/h1>/);
+});
+
 test("administrator display name prefers the signed-in profile name", async () => {
   const { getAdminDisplayName, getAdminRoleLabel } = await import("../../static/js/sidebar.js");
 
@@ -167,6 +196,7 @@ test("administrator pages expose a shared fixed top area", async () => {
     "user-management.html",
     "screen-4-admin-management.html",
     "screen-5-task-management.html",
+    "common-code-management.html",
     "supplement-ranking.html",
   ];
 
@@ -188,7 +218,7 @@ test("administrator pages expose a shared fixed top area", async () => {
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260831-8"/, page);
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260903-1"/, page);
   }
 });
 

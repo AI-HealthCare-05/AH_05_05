@@ -114,7 +114,29 @@ body.dashboard-page > main { height: calc(100vh - 56px) !important; }
 .rank-selected-list .rank-selected-empty { justify-content: center; color: #6b7280; border-style: dashed; }
 .rank-form-error { min-height: 21px; margin-top: 10px; color: #b91c1c; font-size: 13px; }
 .rank-form-actions { justify-content: flex-end; margin-top: 8px; }
+.common-code-split { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 20px; }
+.common-code-panel { min-width: 0; }
+.common-code-panel .management-table-wrap { min-height: 360px; }
+.common-code-detail-search { display: grid; grid-template-columns: repeat(2, minmax(120px, 160px)) 90px 74px 74px; align-items: center; justify-content: start; gap: 8px; padding: 12px; border-bottom: 1px solid #e5e7eb; }
+.common-code-detail-search .ui-control, .common-code-detail-search .ui-button { width: 100%; height: 36px; min-height: 36px; }
+.common-code-detail-search .ui-button { white-space: nowrap; }
+.common-code-pagination { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 60px; padding: 10px; }
+.common-code-panel tbody tr[data-group-id] { cursor: pointer; }
+.common-code-panel tbody tr.is-selected { background: var(--brand-primary-soft); box-shadow: inset 3px 0 var(--brand-primary); }
+.common-code-dialog { width: min(520px, calc(100vw - 32px)); border: 0; border-radius: 12px; padding: 0; box-shadow: 0 24px 60px rgba(15, 23, 42, .28); }
+.common-code-dialog::backdrop { background: rgba(15, 23, 42, .45); }
+.common-code-dialog header, .common-code-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #e5e7eb; }
+.common-code-dialog header h2 { font-size: 18px; font-weight: 700; }
+.common-code-dialog header button { border: 0; background: transparent; color: #64748b; font-size: 28px; cursor: pointer; }
+.common-code-dialog footer { justify-content: flex-end; border-top: 1px solid #e5e7eb; border-bottom: 0; }
+.common-code-dialog-body { display: grid; gap: 14px; padding: 20px; }
+.common-code-dialog-body label:not(.common-code-checkbox) { display: grid; gap: 6px; color: #374151; font-size: 13px; font-weight: 600; }
+.common-code-dialog textarea.ui-control { min-height: 86px; padding: 9px 10px; resize: vertical; }
+.common-code-checkbox { display: flex; align-items: center; gap: 7px; color: #374151; }
+.common-code-form-error { min-height: 20px; color: #b91c1c; font-size: 13px; }
 [data-sidebar-error="true"] { color: #b91c1c; font-size: 13px; padding: 24px 16px; }
 @media (max-width: 900px) { .desktop-sidebar { width: 190px !important; } .management-toolbar { align-items: stretch !important; flex-direction: column; } }
 @media (max-width: 1100px) { .rank-form-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 1280px) { .common-code-split { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .common-code-detail-search { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .desktop-sidebar { display: none !important; } .management-page main { width: 100%; } }

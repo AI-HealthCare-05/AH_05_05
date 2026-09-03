@@ -35,6 +35,7 @@ from app.core.exceptions import (
     ChatRequestConflictError,
     ChatSessionAccessDeniedError,
     ChatUpstreamUnavailableError,
+    InvalidChatFeedbackReasonError,
 )
 from app.models.chat import ChatMessageSource
 from app.models.enums import ChatMessageRole, ChatMessageStatus, ChatSessionStatus, ChatSourceType
@@ -43,12 +44,14 @@ from app.repositories.chat_repository import (
     AcceptedChatRequest,
     CareEpisodeNotFoundError,
     ChatContextMismatchError,
+    ChatFeedbackRecord,
     ChatRepository,
     ChatRequestInProgressError,
     ChatRequestPayloadMismatchError,
     ChatSessionAccessDeniedRepositoryError,
     ChatSessionNotFoundError,
 )
+from app.services.common_codes import CommonCodeService, normalize_common_code
 
 CHAT_ANSWER_TIMEOUT_SECONDS = 30.0
 CHAT_API_GUARD_TIMEOUT_SECONDS = 31.0
@@ -125,9 +128,21 @@ class DeletedChatSessionView:
     deleted_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ChatFeedbackView:
+    session_id: int
+    is_like: bool | None
+    reason_code: str | None
+
+
 class ChatSessionService:
-    def __init__(self, repository: ChatRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: ChatRepository | None = None,
+        common_code_service: CommonCodeService | None = None,
+    ) -> None:
         self._repository = repository or ChatRepository()
+        self._common_code_service = common_code_service or CommonCodeService()
 
     async def list_sessions(self, *, user: User) -> list[ChatSessionSummaryView]:
         records = await self._repository.list_session_summaries(user_id=user.id)
@@ -195,6 +210,39 @@ class ChatSessionService:
             session_id=record.session_id,
             status=record.status,
             deleted_at=record.deleted_at,
+        )
+
+    async def update_feedback(
+        self,
+        *,
+        user: User,
+        session_id: int,
+        is_like: bool | None,
+        reason_code: str | None,
+    ) -> ChatFeedbackView:
+        normalized_reason = normalize_common_code(reason_code) if reason_code else None
+        if is_like is None and normalized_reason is not None:
+            raise InvalidChatFeedbackReasonError()
+        if normalized_reason is not None:
+            group_code = "P_REASON" if is_like else "N_REASON"
+            if not await self._common_code_service.is_active_code("CHAT", group_code, normalized_reason):
+                raise InvalidChatFeedbackReasonError()
+
+        try:
+            record: ChatFeedbackRecord = await self._repository.update_feedback(
+                user_id=user.id,
+                session_id=session_id,
+                is_like=is_like,
+                reason_code=normalized_reason,
+            )
+        except ChatSessionAccessDeniedRepositoryError as error:
+            raise ChatSessionAccessDeniedError from error
+        except ChatSessionNotFoundError as error:
+            raise ChatConversationNotFoundError from error
+        return ChatFeedbackView(
+            session_id=record.session_id,
+            is_like=record.is_like,
+            reason_code=record.reason_code,
         )
 
 

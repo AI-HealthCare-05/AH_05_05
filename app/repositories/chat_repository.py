@@ -76,6 +76,13 @@ class DeletedChatSessionRecord:
     deleted_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ChatFeedbackRecord:
+    session_id: int
+    is_like: bool | None
+    reason_code: str | None
+
+
 @dataclass(slots=True)
 class AcceptedChatRequest:
     session: ChatSession
@@ -227,6 +234,35 @@ class ChatRepository:
             session_id=session.id,
             status=session.status,
             deleted_at=deleted_at,
+        )
+
+    async def update_feedback(
+        self,
+        *,
+        user_id: int,
+        session_id: int,
+        is_like: bool | None,
+        reason_code: str | None,
+    ) -> ChatFeedbackRecord:
+        async with in_transaction() as connection:
+            session = await ChatSession.filter(id=session_id).using_db(connection).select_for_update().first()
+            if session is None or session.status != ChatSessionStatus.ACTIVE or session.deleted_at is not None:
+                raise ChatSessionNotFoundError
+            if session.user_id != user_id:
+                raise ChatSessionAccessDeniedRepositoryError
+
+            session.is_like = is_like
+            session.reason_code = reason_code
+            session.updated_at = now()
+            await session.save(
+                using_db=connection,
+                update_fields=["is_like", "reason_code", "updated_at"],
+            )
+
+        return ChatFeedbackRecord(
+            session_id=session.id,
+            is_like=session.is_like,
+            reason_code=session.reason_code,
         )
 
     async def accept_request(

@@ -10,6 +10,7 @@ test("getNavigationTarget maps each sidebar section to its page", () => {
   assert.equal(getNavigationTarget("users"), "user-management.html");
   assert.equal(getNavigationTarget("admins"), "screen-4-admin-management.html");
   assert.equal(getNavigationTarget("tasks"), "screen-5-task-management.html");
+  assert.equal(getNavigationTarget("common-codes"), "common-code-management.html");
   assert.equal(getNavigationTarget("supplement-ranking"), "supplement-ranking.html");
   assert.equal(getNavigationTarget("logout"), "login.html");
 });

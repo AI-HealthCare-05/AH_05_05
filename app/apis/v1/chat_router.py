@@ -14,6 +14,9 @@ from app.dependencies.chat import get_chat_application_service
 from app.dependencies.security import get_request_user
 from app.dtos.chat import (
     ChatErrorResponse,
+    ChatFeedbackDataResponse,
+    ChatFeedbackRequest,
+    ChatFeedbackResponse,
     ChatSessionDetailDataResponse,
     ChatSessionDetailResponse,
     ChatSessionListResponse,
@@ -221,6 +224,28 @@ async def delete_chat_session(
     return DeletedChatSessionResponse(
         data=DeletedChatSessionDataResponse.from_view(deleted),
     )
+
+
+@chat_router.put(
+    "/sessions/{session_id}/feedback",
+    response_model=ChatFeedbackResponse,
+    summary="채팅 세션 평가 저장",
+    responses=_CHAT_SESSION_DETAIL_RESPONSES,
+)
+async def update_chat_feedback(
+    session_id: int,
+    request: ChatFeedbackRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[ChatSessionService, Depends(get_chat_session_service)],
+) -> ChatFeedbackResponse:
+    """본인 채팅에 좋아요·싫어요와 선택 사유를 저장하거나 평가를 취소한다."""
+    feedback = await service.update_feedback(
+        user=user,
+        session_id=session_id,
+        is_like=request.is_like,
+        reason_code=request.reason_code,
+    )
+    return ChatFeedbackResponse(data=ChatFeedbackDataResponse.from_view(feedback))
 
 
 @chat_router.post(

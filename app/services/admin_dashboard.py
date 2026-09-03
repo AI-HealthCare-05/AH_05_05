@@ -89,7 +89,7 @@ class AdminDashboardService:
 
     @staticmethod
     async def _chat_responses(start: datetime, end: datetime) -> ChatResponseStats:
-        """선택 기간에 종료된 AI 응답과 같은 기간에 생성된 세션 별점 평균을 집계한다."""
+        """선택 기간에 종료된 AI 응답과 같은 기간에 생성된 세션의 긍정 평가율을 집계한다."""
         terminal_statuses = (ChatMessageStatus.COMPLETED, ChatMessageStatus.FAILED)
         rows: list[dict[str, Any]] = (
             await ChatMessage.filter(
@@ -106,24 +106,20 @@ class AdminDashboardService:
         for row in rows:
             counts[ChatMessageStatus(row["status"])] = row["total"]
 
-        score_rows: list[dict[str, Any]] = await (
-            ChatSession.filter(
-                created_at__gte=start,
-                created_at__lte=end,
-                score__not_isnull=True,
-            )
-            # Tortoise의 Avg(IntField)는 결과 변환 시 정수로 잘릴 수 있어
-            # DB 평균의 소수부를 보존하도록 원시 집계식을 사용한다.
-            .annotate(average_score=RawSQL("AVG(`score`)"))
-            .values("average_score")
+        evaluated_sessions = ChatSession.filter(
+            created_at__gte=start,
+            created_at__lte=end,
+            is_like__not_isnull=True,
         )
-        average_score = score_rows[0]["average_score"] if score_rows else None
+        evaluated_count = await evaluated_sessions.count()
+        liked_count = await evaluated_sessions.filter(is_like=True).count()
+        like_rate = round(liked_count / evaluated_count * 100, 1) if evaluated_count else None
 
         return ChatResponseStats(
             total=sum(counts.values()),
             completed=counts[ChatMessageStatus.COMPLETED],
             failed=counts[ChatMessageStatus.FAILED],
-            average_score=round(float(average_score), 1) if average_score is not None else None,
+            like_rate=like_rate,
         )
 
     @staticmethod

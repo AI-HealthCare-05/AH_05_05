@@ -10,25 +10,20 @@
   min-width: 108px;
 }
 
-.chat-satisfaction-stars {
-  display: inline-block;
-  font-size: 20px;
-  letter-spacing: 1px;
-  line-height: 1;
-  position: relative;
-}
-
-.chat-satisfaction-stars-empty {
-  color: #d1d5db;
-}
-
-.chat-satisfaction-stars-fill {
-  color: #f59e0b;
-  left: 0;
+.chat-satisfaction-progress {
+  background: #dbeafe;
+  border-radius: 999px;
+  display: block;
+  height: 10px;
   overflow: hidden;
-  position: absolute;
-  top: 0;
-  white-space: nowrap;
+  width: 100px;
+}
+
+.chat-satisfaction-progress-fill {
+  background: #2563eb;
+  display: block;
+  height: 100%;
+  transition: width 180ms ease;
 }
 
 .chat-satisfaction-value {

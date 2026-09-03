@@ -136,15 +136,15 @@ test("OCR field confidence is formatted as one decimal percent or no-data text",
   assert.equal(dashboard.formatOcrConfidence(null), "데이터 없음");
 });
 
-test("chat satisfaction formats a fractional five-star average", () => {
-  assert.deepEqual(formatChatSatisfaction(4.3), {
-    text: "4.3 / 5.0",
-    fillPercent: 86,
-    ariaLabel: "챗봇 만족도 5점 만점에 4.3점",
+test("chat satisfaction formats a positive feedback percentage", () => {
+  assert.deepEqual(formatChatSatisfaction(66.7), {
+    text: "66.7%",
+    fillPercent: 66.7,
+    ariaLabel: "챗봇 긍정 평가 비율 66.7%",
   });
 });
 
-test("chat satisfaction leaves stars empty when no rating exists", () => {
+test("chat satisfaction leaves progress empty when no feedback exists", () => {
   assert.deepEqual(formatChatSatisfaction(null), {
     text: "데이터 없음",
     fillPercent: 0,
@@ -152,7 +152,7 @@ test("chat satisfaction leaves stars empty when no rating exists", () => {
   });
 });
 
-test("chatbot card exposes API slots and an accessible five-star visualization", async () => {
+test("chatbot card exposes API slots and an accessible percentage visualization", async () => {
   const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
   const chatbotIndex = html.indexOf("AI 챗봇 응답 현황");
   const chatbotCard = html.slice(chatbotIndex);
@@ -164,17 +164,17 @@ test("chatbot card exposes API slots and an accessible five-star visualization",
   assert.match(chatbotCard, /data-chat-satisfaction-fill/);
   assert.match(chatbotCard, /data-chat-satisfaction-value/);
   assert.match(chatbotCard, /챗봇 만족도/);
-  assert.match(chatbotCard, /챗봇 사용자의 별점 평균을 나타냅니다\./);
+  assert.match(chatbotCard, /챗봇 사용자의 긍정 평가 비율을 나타냅니다\./);
   assert.doesNotMatch(chatbotCard, /자동 해결률|4,821|4,210|611/);
 });
 
-test("dashboard loads fractional star styles without changing the shared stylesheet version", async () => {
+test("dashboard loads chat satisfaction progress styles", async () => {
   const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
   const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
 
   assert.match(html, /styles\.css\?v=20260831-9/);
   assert.match(html, /dashboard\.css\?v=20260902-1/);
-  assert.match(styles, /\.chat-satisfaction-stars-fill\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(styles, /\.chat-satisfaction-progress-fill\s*\{[^}]*background:/s);
 });
 
 test("OCR accuracy and chatbot satisfaction use the same insight area height", async () => {

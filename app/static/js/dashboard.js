@@ -42,8 +42,8 @@ export function formatOcrConfidence(value) {
 }
 
 export function formatChatSatisfaction(value) {
-  const score = Number(value);
-  if (value === null || value === undefined || !Number.isFinite(score) || score < 1 || score > 5) {
+  const rate = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(rate) || rate < 0 || rate > 100) {
     return {
       text: "데이터 없음",
       fillPercent: 0,
@@ -51,11 +51,11 @@ export function formatChatSatisfaction(value) {
     };
   }
 
-  const rounded = Math.round(score * 10) / 10;
+  const rounded = Math.round(rate * 10) / 10;
   return {
-    text: `${rounded.toFixed(1)} / 5.0`,
-    fillPercent: Math.round((rounded / 5) * 100),
-    ariaLabel: `챗봇 만족도 5점 만점에 ${rounded.toFixed(1)}점`,
+    text: `${rounded.toFixed(1)}%`,
+    fillPercent: rounded,
+    ariaLabel: `챗봇 긍정 평가 비율 ${rounded.toFixed(1)}%`,
   };
 }
 
@@ -297,7 +297,7 @@ function initializeDashboard() {
     if (slots.chatTotal) slots.chatTotal.textContent = formatCount(chatResponses.total);
     if (slots.chatCompleted) slots.chatCompleted.textContent = formatCount(chatResponses.completed);
     if (slots.chatFailed) slots.chatFailed.textContent = formatCount(chatResponses.failed);
-    const satisfaction = formatChatSatisfaction(chatResponses.averageScore);
+    const satisfaction = formatChatSatisfaction(chatResponses.likeRate);
     if (slots.chatSatisfaction) slots.chatSatisfaction.setAttribute("aria-label", satisfaction.ariaLabel);
     if (slots.chatSatisfactionFill) slots.chatSatisfactionFill.style.width = `${satisfaction.fillPercent}%`;
     if (slots.chatSatisfactionValue) slots.chatSatisfactionValue.textContent = satisfaction.text;

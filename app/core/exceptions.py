@@ -32,6 +32,36 @@ class ForbiddenError(AppError):
     message = "접근 권한이 없습니다."
 
 
+class CommonCodeGroupNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "COMMON_CODE_GROUP_NOT_FOUND"
+    message = "공통코드 그룹을 찾을 수 없습니다."
+
+
+class CommonCodeNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "COMMON_CODE_NOT_FOUND"
+    message = "공통코드를 찾을 수 없습니다."
+
+
+class CommonCodeAlreadyExistsError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "COMMON_CODE_ALREADY_EXISTS"
+    message = "이미 등록된 공통코드입니다."
+
+
+class InvalidCommonCodeError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_COMMON_CODE"
+    message = "공통코드는 영문 대문자, 숫자, 밑줄만 사용할 수 있습니다."
+
+
+class InvalidChatFeedbackReasonError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_CHAT_FEEDBACK_REASON"
+    message = "선택한 채팅 평가 사유를 사용할 수 없습니다."
+
+
 class AdminNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "ADMIN_NOT_FOUND"

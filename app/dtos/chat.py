@@ -6,6 +6,7 @@ from pydantic import Field, field_validator
 
 from app.dtos.base import CamelModel
 from app.services.chat import (
+    ChatFeedbackView,
     ChatSessionDetailView,
     ChatSessionMessageView,
     ChatSessionSourceView,
@@ -167,6 +168,35 @@ class DeletedChatSessionDataResponse(CamelModel):
 class DeletedChatSessionResponse(CamelModel):
     success: Literal[True] = True
     data: DeletedChatSessionDataResponse
+    error: None = None
+
+
+class ChatFeedbackRequest(CamelModel):
+    is_like: bool | None
+    reason_code: str | None = Field(default=None, max_length=20)
+
+    @field_validator("reason_code", mode="before")
+    @classmethod
+    def normalize_reason_code(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().upper()
+        return normalized or None
+
+
+class ChatFeedbackDataResponse(CamelModel):
+    session_id: int
+    is_like: bool | None
+    reason_code: str | None
+
+    @classmethod
+    def from_view(cls, view: ChatFeedbackView) -> "ChatFeedbackDataResponse":
+        return cls(session_id=view.session_id, is_like=view.is_like, reason_code=view.reason_code)
+
+
+class ChatFeedbackResponse(CamelModel):
+    success: Literal[True] = True
+    data: ChatFeedbackDataResponse
     error: None = None
 
 

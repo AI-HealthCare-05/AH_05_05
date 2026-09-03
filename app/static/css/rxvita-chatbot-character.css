@@ -1,0 +1,29 @@
+.rxvita-chatbot-character {
+"
+    "  display: block;
+"
+    "  width: clamp(96px, 20vw, 220px);
+"
+    "  height: auto;
+"
+    "  transform-origin: 50% 62%;
+"
+    "  animation: rxvita-friendly-wave 2s ease-in-out infinite;
+"
+    "}
+
+"
+    "@keyframes rxvita-friendly-wave {
+"
+    "  0%, 100% { transform: translateY(6px) rotate(-1.5deg) scale(.98); }
+"
+    "  50% { transform: translateY(-8px) rotate(1.5deg) scale(1); }
+"
+    "}
+
+"
+    "@media (prefers-reduced-motion: reduce) {
+"
+    "  .rxvita-chatbot-character { animation: none; }
+"
+    "}

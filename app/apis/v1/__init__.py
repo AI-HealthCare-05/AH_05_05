@@ -6,6 +6,7 @@ from app.apis.v1.admin_settings_router import admin_settings_router
 from app.apis.v1.alarm_router import alarm_router
 from app.apis.v1.auth_routers import auth_router
 from app.apis.v1.chat_router import chat_router
+from app.apis.v1.common_code_router import common_code_router
 from app.apis.v1.display_router import display_router
 from app.apis.v1.follow_up_visit_router import follow_up_visit_router
 from app.apis.v1.job_router import job_router
@@ -19,6 +20,7 @@ from app.apis.v1.user_routers import user_router
 v1_routers = APIRouter(prefix="/api/v1")
 v1_routers.include_router(auth_router)
 v1_routers.include_router(chat_router)
+v1_routers.include_router(common_code_router)
 v1_routers.include_router(display_router)
 v1_routers.include_router(follow_up_visit_router)
 v1_routers.include_router(user_router)

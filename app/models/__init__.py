@@ -4,6 +4,7 @@ from .alarms import Alarm, AlarmEvent
 from .background_jobs import BackgroundJob
 from .care import CareAdvice, CareEpisode, FollowUpVisit
 from .chat import ChatMessage, ChatMessageSource, ChatSession
+from .common_codes import CommonCode, CommonCodeGroup
 from .interactions import (
     InteractionEntity,
     InteractionEntityAlias,

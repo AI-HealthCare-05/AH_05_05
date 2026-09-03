@@ -1,0 +1,384 @@
+<style>
+  #common-code-split-detail {
+    --cd-bg: light-dark(#f5f7fb, #10141c);
+    --cd-surface: light-dark(#ffffff, #1b2230);
+    --cd-text: light-dark(#111827, #eef2ff);
+    --cd-muted: light-dark(#667085, #a8b2c7);
+    --cd-line: light-dark(#e1e6ef, #344057);
+    --cd-primary: light-dark(#2463eb, #78a2ff);
+    --cd-primary-soft: light-dark(#edf3ff, #22345f);
+    --cd-success: light-dark(#157c56, #6bd6ad);
+    --cd-success-soft: light-dark(#e8f7ef, #173b31);
+    --cd-off: light-dark(#7b8495, #a8b2c7);
+    --cd-off-soft: light-dark(#eef0f4, #2b3342);
+    --cd-danger: light-dark(#bf3737, #ff8c8c);
+  }
+
+  #common-code-split-detail .cd-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.65fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  #common-code-split-detail .cd-window {
+    display: grid;
+    grid-template-columns: 165px minmax(0, 1fr);
+    min-height: 590px;
+    overflow: hidden;
+    border: 1px solid var(--cd-line);
+    border-radius: 15px;
+    background: var(--cd-bg);
+    color: var(--cd-text);
+    box-shadow: 0 14px 34px color-mix(in srgb, var(--foreground) 10%, transparent);
+  }
+
+  #common-code-split-detail .cd-sidebar {
+    padding: 18px 12px;
+    border-right: 1px solid var(--cd-line);
+    background: var(--cd-surface);
+  }
+
+  #common-code-split-detail .cd-brand {
+    margin-bottom: 23px;
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-menu,
+  #common-code-split-detail .cd-submenu {
+    margin-bottom: 2px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    color: var(--cd-muted);
+    font-size: 12px;
+  }
+
+  #common-code-split-detail .cd-menu.group {
+    margin-top: 6px;
+    color: var(--cd-text);
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-submenu {
+    margin-left: 10px;
+  }
+
+  #common-code-split-detail .cd-submenu.active {
+    background: var(--cd-primary-soft);
+    color: var(--cd-primary);
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-main {
+    min-width: 0;
+  }
+
+  #common-code-split-detail .cd-top {
+    display: flex;
+    justify-content: space-between;
+    padding: 17px 20px;
+    border-bottom: 1px solid var(--cd-line);
+    background: var(--cd-surface);
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-body {
+    padding: 16px;
+  }
+
+  #common-code-split-detail .cd-search {
+    display: grid;
+    grid-template-columns: 1fr 1fr 110px auto auto;
+    gap: 8px;
+    margin-bottom: 13px;
+    padding: 11px;
+    border-radius: 11px;
+    background: var(--cd-surface);
+  }
+
+  #common-code-split-detail .cd-control,
+  #common-code-split-detail .cd-btn {
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 1px solid var(--cd-line);
+    border-radius: 8px;
+    background: var(--cd-surface);
+    color: var(--cd-muted);
+    font-size: 11px;
+  }
+
+  #common-code-split-detail .cd-btn.primary {
+    border-color: var(--cd-primary);
+    background: var(--cd-primary);
+    color: light-dark(#ffffff, #0c1425);
+  }
+
+  #common-code-split-detail .cd-panels {
+    display: grid;
+    grid-template-columns: minmax(215px, 0.78fr) minmax(325px, 1.22fr);
+    gap: 11px;
+  }
+
+  #common-code-split-detail .cd-panel {
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 11px;
+    background: var(--cd-surface);
+  }
+
+  #common-code-split-detail .cd-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 11px;
+    border-bottom: 1px solid var(--cd-line);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+
+  #common-code-split-detail .cd-table th,
+  #common-code-split-detail .cd-table td {
+    padding: 9px 7px;
+    border-bottom: 1px solid var(--cd-line);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  #common-code-split-detail .cd-table th {
+    color: var(--cd-muted);
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-table tr.selected td {
+    background: var(--cd-primary-soft);
+    color: var(--cd-primary);
+  }
+
+  #common-code-split-detail .cd-status {
+    display: inline-block;
+    padding: 3px 6px;
+    border-radius: 99px;
+    background: var(--cd-success-soft);
+    color: var(--cd-success);
+  }
+
+  #common-code-split-detail .cd-status.off {
+    background: var(--cd-off-soft);
+    color: var(--cd-off);
+  }
+
+  #common-code-split-detail .cd-paging {
+    padding: 11px;
+    color: var(--cd-muted);
+    text-align: center;
+    font-size: 11px;
+  }
+
+  #common-code-split-detail .cd-side {
+    display: grid;
+    gap: 14px;
+  }
+
+  #common-code-split-detail .cd-modal {
+    overflow: hidden;
+    border: 1px solid var(--cd-line);
+    border-radius: 14px;
+    background: var(--cd-surface);
+    color: var(--cd-text);
+    box-shadow: 0 14px 34px color-mix(in srgb, var(--foreground) 10%, transparent);
+  }
+
+  #common-code-split-detail .cd-modal-head {
+    display: flex;
+    justify-content: space-between;
+    padding: 14px 15px;
+    border-bottom: 1px solid var(--cd-line);
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-modal-body {
+    padding: 14px 15px;
+  }
+
+  #common-code-split-detail .cd-field {
+    margin-bottom: 12px;
+  }
+
+  #common-code-split-detail .cd-label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  #common-code-split-detail .cd-value {
+    min-height: 38px;
+    padding: 9px 10px;
+    border: 1px solid var(--cd-line);
+    border-radius: 8px;
+    color: var(--cd-muted);
+    font-size: 12px;
+  }
+
+  #common-code-split-detail .cd-value.readonly {
+    background: var(--cd-off-soft);
+  }
+
+  #common-code-split-detail .cd-hint {
+    margin-top: 5px;
+    color: var(--cd-muted);
+    font-size: 11px;
+  }
+
+  #common-code-split-detail .cd-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 38px;
+    padding: 8px 10px;
+    border: 1px solid var(--cd-line);
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  #common-code-split-detail .cd-toggle {
+    width: 34px;
+    height: 19px;
+    padding: 2px;
+    border-radius: 99px;
+    background: var(--cd-primary);
+  }
+
+  #common-code-split-detail .cd-toggle::after {
+    display: block;
+    width: 15px;
+    height: 15px;
+    margin-left: 15px;
+    border-radius: 50%;
+    background: light-dark(#ffffff, #0c1425);
+    content: "";
+  }
+
+  #common-code-split-detail .cd-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 15px;
+  }
+
+  #common-code-split-detail .cd-policy {
+    padding: 13px;
+    border-radius: 12px;
+    background: var(--card);
+    color: var(--card-foreground);
+  }
+
+  #common-code-split-detail .cd-policy ul {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    color: var(--muted-foreground);
+  }
+
+  @media (max-width: 900px) {
+    #common-code-split-detail .cd-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div id="common-code-split-detail">
+  <h2>A안 상세 설계</h2>
+  <p class="subtitle">검색과 반복 편집은 한 화면에서, 등록·수정은 기존 관리자 화면과 같은 팝업에서 처리합니다.</p>
+
+  <div class="cd-grid">
+    <div class="cd-window" aria-label="공통코드 관리 분할 화면">
+      <aside class="cd-sidebar">
+        <div class="cd-brand">RxVita 관리자</div>
+        <div class="cd-menu">대시보드</div>
+        <div class="cd-menu">회원 관리</div>
+        <div class="cd-menu">관리자 관리</div>
+        <div class="cd-menu">작업 모니터링</div>
+        <div class="cd-menu group">⚙ 기본관리</div>
+        <div class="cd-submenu active">공통코드관리</div>
+        <div class="cd-menu group">메인관리</div>
+        <div class="cd-submenu">영양제 랭킹</div>
+      </aside>
+
+      <main class="cd-main">
+        <div class="cd-top"><span>공통코드관리</span><span>ADMIN ▾</span></div>
+        <div class="cd-body">
+          <div class="cd-search">
+            <div class="cd-control">코드그룹 검색</div>
+            <div class="cd-control">코드그룹명 검색</div>
+            <div class="cd-control">전체 ▾</div>
+            <div class="cd-btn">초기화</div>
+            <div class="cd-btn primary">조회</div>
+          </div>
+
+          <div class="cd-panels">
+            <section class="cd-panel">
+              <div class="cd-panel-head"><span>코드그룹 · 총 3건</span><span class="cd-btn primary">그룹 등록</span></div>
+              <table class="cd-table">
+                <thead><tr><th>그룹코드</th><th>그룹명</th><th>사용</th><th>작업</th></tr></thead>
+                <tbody>
+                  <tr class="selected"><td>REGION</td><td>지역</td><td><span class="cd-status">사용</span></td><td>수정</td></tr>
+                  <tr><td>ROUTINE_TYPE</td><td>루틴 유형</td><td><span class="cd-status">사용</span></td><td>수정</td></tr>
+                  <tr><td>INQUIRY_TYPE</td><td>문의 유형</td><td><span class="cd-status off">미사용</span></td><td>수정</td></tr>
+                </tbody>
+              </table>
+              <div class="cd-paging">이전　1　다음</div>
+            </section>
+
+            <section class="cd-panel">
+              <div class="cd-panel-head"><span>지역(REGION) 상세코드 · 총 3건</span><span class="cd-btn primary">상세코드 등록</span></div>
+              <table class="cd-table">
+                <thead><tr><th>상세코드</th><th>상세코드명</th><th>순서</th><th>사용</th><th>작업</th></tr></thead>
+                <tbody>
+                  <tr><td>SEOUL</td><td>서울</td><td>1</td><td><span class="cd-status">사용</span></td><td>수정</td></tr>
+                  <tr><td>BUSAN</td><td>부산</td><td>2</td><td><span class="cd-status">사용</span></td><td>수정</td></tr>
+                  <tr><td>JEJU</td><td>제주</td><td>3</td><td><span class="cd-status off">미사용</span></td><td>수정</td></tr>
+                </tbody>
+              </table>
+              <div class="cd-paging">이전　1　다음　　총 3건　페이지당 20개 ▾</div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div class="cd-side">
+      <section class="cd-modal" aria-label="상세코드 등록 팝업">
+        <div class="cd-modal-head"><span>상세코드 등록</span><span>×</span></div>
+        <div class="cd-modal-body">
+          <div class="cd-field"><span class="cd-label">코드그룹</span><div class="cd-value readonly">REGION · 지역</div></div>
+          <div class="cd-field"><span class="cd-label">상세코드 *</span><div class="cd-value">영문 대문자, 숫자, _</div><div class="cd-hint">등록 후 변경할 수 없습니다.</div></div>
+          <div class="cd-field"><span class="cd-label">상세코드명 *</span><div class="cd-value">상세코드명 입력</div></div>
+          <div class="cd-field"><span class="cd-label">설명</span><div class="cd-value">설명 입력</div></div>
+          <div class="cd-field"><span class="cd-label">정렬순서 *</span><div class="cd-value">1</div></div>
+          <div class="cd-switch"><span>사용여부</span><span class="cd-toggle"></span></div>
+          <div class="cd-actions"><div class="cd-btn">취소</div><div class="cd-btn primary">저장</div></div>
+        </div>
+      </section>
+
+      <section class="cd-policy">
+        <h3>화면 동작</h3>
+        <ul>
+          <li>그룹 행 선택 시 오른쪽 상세코드만 다시 조회</li>
+          <li>그룹 검색은 조회 버튼을 눌렀을 때 실행</li>
+          <li>그룹 미사용이어도 상세 상태는 보존</li>
+          <li>ADMIN만 등록·수정 버튼 노출</li>
+          <li>STAFF는 동일 화면을 읽기 전용으로 사용</li>
+          <li>저장 성공 후 현재 선택과 검색조건 유지</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+

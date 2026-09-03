@@ -1,0 +1,38 @@
+.rxvita-doodle-mascot {
+"
+    "  display: block;
+"
+    "  width: clamp(88px, 18vw, 200px);
+"
+    "  height: auto;
+"
+    "  transform-origin: 50% 70%;
+"
+    "  animation: rxvita-doodle-idle 2s ease-in-out infinite;
+"
+    "}
+
+"
+    ".rxvita-doodle-mascot--vitamin { animation-delay: -.2s; }
+"
+    ".rxvita-doodle-mascot--reminder { animation-delay: -.4s; }
+"
+    ".rxvita-doodle-mascot--safety { animation-delay: -.6s; }
+"
+    ".rxvita-doodle-mascot--chat { animation-delay: -.8s; }
+
+"
+    "@keyframes rxvita-doodle-idle {
+"
+    "  0%, 100% { transform: translateY(5px) rotate(-1.2deg) scale(.985); }
+"
+    "  50% { transform: translateY(-7px) rotate(1.2deg) scale(1); }
+"
+    "}
+
+"
+    "@media (prefers-reduced-motion: reduce) {
+"
+    "  .rxvita-doodle-mascot { animation: none; }
+"
+    "}

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>공통코드 관리 - RxVita</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/styles.css?v=20260831-9">
+    <link rel="stylesheet" href="../css/management.css?v=20260903-1">
+    <script type="module" src="../js/navigation.js?v=20260903-1"></script>
+    <script type="module" src="../js/sidebar.js?v=20260903-1"></script>
+    <script type="module" src="../js/common-code-management.js?v=20260903-2"></script>
+</head>
+<body class="management-page flex min-h-screen">
+<aside data-sidebar data-active-nav="common-codes"
+       class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0"
+       aria-label="관리자 메뉴"><span class="text-sm text-gray-500">메뉴 불러오는 중...</span>
+</aside>
+<main class="flex-1 min-w-0">
+    <header class="bg-white h-16 px-6 flex items-center border-b">
+        <h1 class="text-xl font-semibold">공통코드 관리</h1>
+    </header>
+    <section class="p-6">
+        <form data-group-search class="bg-white rounded-xl border p-5 mb-6 flex flex-wrap items-end gap-4" aria-label="코드 그룹 검색">
+            <label class="grid gap-1 text-sm text-gray-700"><span>대분류</span><input class="ui-control common-code-input" name="category" maxlength="20" pattern="[A-Z0-9_]*" placeholder="예: CHAT"></label>
+            <label class="grid gap-1 text-sm text-gray-700"><span>코드그룹</span><input class="ui-control common-code-input" name="group_code" maxlength="20" pattern="[A-Z0-9_]*" placeholder="예: P_REASON"></label>
+            <label class="grid gap-1 text-sm text-gray-700"><span>코드그룹명</span><input class="ui-control" name="group_name" maxlength="20" placeholder="코드그룹명 입력"></label>
+            <label class="grid gap-1 text-sm text-gray-700"><span>사용여부</span><select class="ui-control" name="is_active"><option value="">전체</option><option value="true">사용</option><option value="false">미사용</option></select></label>
+            <button type="reset" class="ui-button">초기화</button><button type="submit" class="ui-button ui-button-primary">조회</button>
+        </form>
+
+        <div class="common-code-split">
+            <section class="common-code-panel bg-white rounded-xl border overflow-hidden" aria-labelledby="code-group-heading">
+                <div class="p-5 flex items-center justify-between border-b">
+                    <div><h2 id="code-group-heading" class="text-lg font-semibold">코드 그룹</h2><p class="text-sm text-gray-500 mt-1" data-group-total>총 -건</p></div>
+                    <button type="button" class="ui-button ui-button-primary" data-group-create data-write-control>그룹 등록</button>
+                </div>
+                <div class="management-table-wrap"><table class="management-table w-full text-sm">
+                    <thead class="bg-gray-50"><tr><th>대분류</th><th>코드그룹</th><th>코드그룹명</th><th>사용여부</th><th>작업</th></tr></thead>
+                    <tbody data-group-list><tr><td colspan="5" class="empty-row">불러오는 중…</td></tr></tbody>
+                </table></div>
+                <nav class="common-code-pagination" data-group-pagination aria-label="코드 그룹 페이지"></nav>
+            </section>
+
+            <section class="common-code-panel bg-white rounded-xl border overflow-hidden" aria-labelledby="detail-code-heading">
+                <div class="p-5 flex items-center justify-between border-b">
+                    <div><h2 id="detail-code-heading" class="text-lg font-semibold">상세 코드</h2><p class="text-sm text-gray-500 mt-1" data-selected-group>왼쪽에서 코드 그룹을 선택해 주세요.</p></div>
+                    <button type="button" class="ui-button ui-button-primary" data-code-create data-write-control disabled>상세코드 등록</button>
+                </div>
+                <form data-code-search class="common-code-detail-search" aria-label="상세 코드 검색">
+                    <input class="ui-control detail-code-input" name="detail_code" maxlength="20" placeholder="상세코드"><input class="ui-control" name="detail_name" maxlength="20" placeholder="상세코드명">
+                    <select class="ui-control" name="is_active"><option value="">전체</option><option value="true">사용</option><option value="false">미사용</option></select>
+                    <button type="reset" class="ui-button">초기화</button><button type="submit" class="ui-button ui-button-primary">조회</button>
+                </form>
+                <div class="management-table-wrap"><table class="management-table w-full text-sm">
+                    <thead class="bg-gray-50"><tr><th>상세코드</th><th>상세코드명</th><th>정렬</th><th>사용여부</th><th>작업</th></tr></thead>
+                    <tbody data-code-list><tr><td colspan="5" class="empty-row">코드 그룹을 선택해 주세요.</td></tr></tbody>
+                </table></div>
+                <nav class="common-code-pagination" data-code-pagination aria-label="상세 코드 페이지"></nav>
+            </section>
+        </div>
+    </section>
+</main>
+
+<dialog class="common-code-dialog" data-group-dialog><form method="dialog" data-group-form>
+    <header><h2 data-group-dialog-title>코드 그룹 등록</h2><button type="button" data-dialog-close aria-label="닫기">×</button></header>
+    <div class="common-code-dialog-body">
+        <label>대분류<input class="ui-control common-code-input" name="category" maxlength="20" pattern="[A-Z0-9_]+" required placeholder="영문, 숫자, _"></label>
+        <label>코드그룹<input class="ui-control common-code-input" name="group_code" maxlength="20" pattern="[A-Z0-9_]+" required placeholder="영문, 숫자, _"></label>
+        <label>코드그룹명<input class="ui-control" name="group_name" maxlength="20" required></label>
+        <label>설명<textarea class="ui-control" name="description" maxlength="200"></textarea></label>
+        <label class="common-code-checkbox"><input type="checkbox" name="is_active" checked> 사용</label><p class="common-code-form-error" data-group-form-error></p>
+    </div>
+    <footer><button type="button" class="ui-button" data-dialog-close>취소</button><button type="submit" class="ui-button ui-button-primary">저장</button></footer>
+</form></dialog>
+
+<dialog class="common-code-dialog" data-code-dialog><form method="dialog" data-code-form>
+    <header><h2 data-code-dialog-title>상세 코드 등록</h2><button type="button" data-dialog-close aria-label="닫기">×</button></header>
+    <div class="common-code-dialog-body">
+        <label>상세코드<input class="ui-control detail-code-input" name="detail_code" maxlength="20" pattern="[A-Z0-9_]+" required placeholder="영문, 숫자, _"></label>
+        <label>상세코드명<input class="ui-control" name="detail_name" maxlength="20" required></label>
+        <label>설명<textarea class="ui-control" name="description" maxlength="200"></textarea></label>
+        <label>정렬순서<input class="ui-control" name="sort_order" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="0" required></label>
+        <label class="common-code-checkbox"><input type="checkbox" name="is_active" checked> 사용</label><p class="common-code-form-error" data-code-form-error></p>
+    </div>
+    <footer><button type="button" class="ui-button" data-dialog-close>취소</button><button type="submit" class="ui-button ui-button-primary">저장</button></footer>
+</form></dialog>
+</body>
+</html>
