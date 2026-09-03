@@ -5,6 +5,9 @@ from datetime import date
 import pytest
 
 from ai_worker.domain.errors import ChatAnswerGenerationError
+from ai_worker.domain.medication_question_resolver import (
+    RuleBasedMedicationQuestionResolver,
+)
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
@@ -120,6 +123,14 @@ class RecordingGuideRepository:
 class UnexpectedGuideRepository:
     async def find_by_name(self, product_name: str) -> MedicationGuideLookup:
         raise AssertionError(f"영양제 상호작용 질문에서 의약품 제품 조회를 호출했습니다: {product_name}")
+
+
+class StaticExpressionCatalog:
+    def __init__(self, expressions: list[str]) -> None:
+        self.expressions = expressions
+
+    async def list_expressions(self) -> list[str]:
+        return self.expressions
 
 
 class FakeRuleRepository:
@@ -306,6 +317,17 @@ class FailingMedicationGenerator:
         )
 
 
+class UnexpectedMedicationGenerator:
+    async def generate(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationAnswerGenerationOutcome:
+        raise AssertionError("결정론적 응답에서 답변 LLM을 호출하면 안 됩니다.")
+
+
 class RecordingValidator:
     def __init__(self) -> None:
         self.received: MedicationChatResult | None = None
@@ -410,6 +432,7 @@ def build_use_case(
     tracer=None,
     answer_generator=None,
     grounded_claim_validator=None,
+    question_resolver=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -419,7 +442,101 @@ def build_use_case(
         answer_generator=answer_generator or PassthroughGenerator(),
         grounded_claim_validator=(grounded_claim_validator or PassthroughValidator()),
         tracer=tracer,
+        question_resolver=question_resolver,
     )
+
+
+async def test_execute_auto_corrects_unique_typo_before_search() -> None:
+    use_case = AnswerMedicationQuestionUseCase(
+        context_provider=FakeContextProvider(ActiveIntakeContext(user_id=1)),
+        guide_repository=ExactNameGuideRepository(
+            expected_name="타이레놀",
+            lookup=MedicationGuideLookup(guide=build_guide()),
+        ),
+        interaction_rule_repository=FakeRuleRepository([]),
+        knowledge_retriever=FakeKnowledgeRetriever(),
+        answer_generator=PassthroughGenerator(),
+        grounded_claim_validator=PassthroughValidator(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["타이레놀"]),
+        ),
+    )
+
+    result = await use_case.execute(
+        build_request("타이래놀"),
+    )
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert result.answer.startswith(
+        "입력하신 ‘타이래놀’을 ‘타이레놀’로 이해하고 검색했습니다.",
+    )
+    assert "통증과 발열을 완화합니다" in result.answer
+
+
+async def test_execute_requests_clarification_before_search_for_tied_typo() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        answer_generator=UnexpectedMedicationGenerator(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["타이레놀", "타이레널"]),
+        ),
+    ).execute(build_request("타이레늘 복용법 알려줘"))
+
+    assert result.route == MedicationChatRoute.CLARIFICATION
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == ["AMBIGUOUS_QUERY_EXPRESSION"]
+    assert "타이레널, 타이레놀" in result.answer
+    assert retriever.received_kwargs is None
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_text"),
+    [
+        (
+            "안녕하세요",
+            "의약품의 효능·사용법·주의사항",
+        ),
+        (
+            "오늘 너무 배고파요",
+            "의약품·복약·영양제 정보와 상호작용",
+        ),
+    ],
+)
+async def test_execute_returns_deterministic_out_of_scope_guidance(
+    question: str,
+    expected_text: str,
+) -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        answer_generator=UnexpectedMedicationGenerator(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request(question))
+
+    assert result.route == MedicationChatRoute.OUT_OF_SCOPE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert expected_text in result.answer
+    assert retriever.received_kwargs is None
+
+
+async def test_execute_distinguishes_in_scope_question_without_evidence() -> None:
+    result = await build_use_case(
+        answer_generator=UnexpectedMedicationGenerator(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request("처음 보는 약의 복용 시 주의사항을 알려줘"),
+    )
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
+    assert "현재 보유한 승인 규칙과 검색 자료에서는" in result.answer
+    assert "안전하다는 의미가 아닙니다" in result.answer
 
 
 async def test_general_drug_question_runs_without_episode() -> None:

@@ -43,11 +43,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dataset-version", required=True)
     parser.add_argument(
+        "--tokenizer-encoding",
+        choices=("cl100k_base", "o200k_base"),
+        default="cl100k_base",
+        help=("청크 토큰 수 계산에 사용할 tiktoken encoding입니다."),
+    )
+    parser.add_argument(
         "--interaction-annotations",
         type=Path,
         default=Path("data/knowledge/manifests/interaction_annotations.yaml"),
     )
     return parser.parse_args()
+
+
+def build_splitter(
+    *,
+    tokenizer_encoding: str,
+    interaction_annotations: KnowledgeInteractionAnnotationRegistry | None,
+) -> KnowledgeSplitter:
+    return KnowledgeSplitter(
+        interaction_annotations=interaction_annotations,
+        tokenizer_encoding=tokenizer_encoding,
+    )
 
 
 def main() -> None:
@@ -58,7 +75,8 @@ def main() -> None:
         repo_root=repo_root,
         loader=KnowledgePdfLoader(),
         normalizer=KnowledgeNormalizer(),
-        splitter=KnowledgeSplitter(
+        splitter=build_splitter(
+            tokenizer_encoding=args.tokenizer_encoding,
             interaction_annotations=interaction_annotations,
         ),
     )

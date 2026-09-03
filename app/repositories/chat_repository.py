@@ -556,6 +556,7 @@ class ChatRepository:
             MedicationChatRoute.GENERAL_GUIDANCE: ChatRouteType.GENERAL_LIFESTYLE,
             MedicationChatRoute.CLARIFICATION: ChatRouteType.SAFETY_RESPONSE,
             MedicationChatRoute.RESTRICTED: ChatRouteType.SAFETY_RESPONSE,
+            MedicationChatRoute.OUT_OF_SCOPE: (ChatRouteType.OUT_OF_SCOPE_RESPONSE),
         }
         return route_mapping[result.route]
 

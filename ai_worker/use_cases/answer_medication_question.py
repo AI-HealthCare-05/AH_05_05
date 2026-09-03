@@ -17,6 +17,7 @@ from ai_worker.domain.interfaces import (
     MedicationAnswerGenerator,
     MedicationGuideRepository,
     MedicationKnowledgeRetriever,
+    MedicationQuestionResolver,
 )
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
@@ -53,7 +54,10 @@ from ai_worker.schemas.medication_chat import (
 )
 from ai_worker.schemas.medication_search import (
     InteractionRuleLookupStatus,
+    MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
+    MedicationQuestionResolution,
+    MedicationQuestionScope,
     MedicationSearchExecutionObservation,
     MedicationSearchExecutionPlan,
 )
@@ -86,6 +90,7 @@ class AnswerMedicationQuestionUseCase:
         answer_generator: MedicationAnswerGenerator,
         grounded_claim_validator: GroundedClaimValidator,
         tracer: ChatTracer | None = None,
+        question_resolver: MedicationQuestionResolver | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -94,6 +99,7 @@ class AnswerMedicationQuestionUseCase:
         self._answer_generator = answer_generator
         self._grounded_claim_validator = grounded_claim_validator
         self._tracer = tracer or NoOpChatTracer()
+        self._question_resolver = question_resolver
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -122,6 +128,12 @@ class AnswerMedicationQuestionUseCase:
                     "context_hash": self._context_hash(context),
                 }
             )
+        request, resolution, early_result = await self._prepare_question(
+            request=request,
+            context=context,
+        )
+        if early_result is not None:
+            return early_result
         async with self._tracer.span("query.plan") as query_span:
             query_plan = MedicationKnowledgeQueryBuilder().build(
                 request.question,
@@ -232,21 +244,10 @@ class AnswerMedicationQuestionUseCase:
                     interaction_question=interaction_question,
                 )
             )
-            family_reference = False
-            if (
-                guide_lookup.is_ambiguous
-                and guide_lookup.representative_guide is not None
-                and not self._EXACT_PRODUCT_REQUIRED_PATTERN.search(
-                    request.question,
-                )
-            ):
-                family_reference = True
-                guide_lookup = guide_lookup.model_copy(
-                    update={
-                        "guide": guide_lookup.representative_guide,
-                        "is_ambiguous": False,
-                    }
-                )
+            guide_lookup, family_reference = self._resolve_family_reference(
+                request=request,
+                guide_lookup=guide_lookup,
+            )
             guide_span.end(
                 {
                     "guide_found": guide_lookup.guide is not None,
@@ -285,6 +286,25 @@ class AnswerMedicationQuestionUseCase:
             ),
         )
         ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
+        if resolution is not None and not self._has_grounded_evidence(
+            request=request,
+            context=context,
+            query_plan=query_plan,
+            guide_lookup=guide_lookup,
+            rules=rules,
+            chunks=answer_chunks,
+        ):
+            await self._report_progress(
+                progress_callback,
+                MedicationChatProgressStage.SAFETY_CHECKING,
+            )
+            return self._no_evidence_result(
+                request=request,
+                context=context,
+                execution_plan=execution_plan,
+                resolution=resolution,
+                rag_unavailable=rag_unavailable,
+            )
         unsupported_pairs = self._unsupported_interaction_pairs(
             query_plan=query_plan,
             rules=rules,
@@ -297,13 +317,10 @@ class AnswerMedicationQuestionUseCase:
             interaction_question=interaction_question,
             chunks=answer_chunks,
         )
-        safety_reason_codes = []
-        if rag_unavailable:
-            safety_reason_codes.append("RAG_UNAVAILABLE")
-        if execution_plan.approved_rule_status == InteractionRuleLookupStatus.RULE_REPOSITORY_UNAVAILABLE:
-            safety_reason_codes.append(
-                "INTERACTION_RULE_REPOSITORY_UNAVAILABLE",
-            )
+        safety_reason_codes = self._safety_reason_codes(
+            rag_unavailable=rag_unavailable,
+            rule_status=execution_plan.approved_rule_status,
+        )
         safety_status = SafetyStatus.RESTRICTED if safety_reason_codes else SafetyStatus.SAFE
         async with self._tracer.span("answer.draft") as draft_span:
             draft = MedicationChatResult(
@@ -366,7 +383,10 @@ class AnswerMedicationQuestionUseCase:
                     }
                 )
                 raise
-            generated = outcome.result
+            generated = self._apply_correction_notice(
+                outcome.result,
+                resolution=resolution,
+            )
             generated = generated.model_copy(
                 update={
                     "answer": compact_chat_content(
@@ -408,6 +428,247 @@ class AnswerMedicationQuestionUseCase:
                 }
             )
         return validated
+
+    async def _prepare_question(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> tuple[
+        MedicationChatRequest,
+        MedicationQuestionResolution | None,
+        MedicationChatResult | None,
+    ]:
+        resolution = await self._resolve_question(
+            request=request,
+            context=context,
+        )
+        if resolution is None:
+            return request, None, None
+        if resolution.scope in {
+            MedicationQuestionScope.GREETING,
+            MedicationQuestionScope.OUT_OF_SCOPE,
+        }:
+            return (
+                request,
+                resolution,
+                self._out_of_scope_result(
+                    request=request,
+                    context=context,
+                    resolution=resolution,
+                ),
+            )
+        if resolution.status == MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED:
+            return (
+                request,
+                resolution,
+                self._expression_clarification_result(
+                    request=request,
+                    context=context,
+                    resolution=resolution,
+                ),
+            )
+        return (
+            request.model_copy(
+                update={"question": resolution.resolved_question},
+            ),
+            resolution,
+            None,
+        )
+
+    @classmethod
+    def _resolve_family_reference(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        guide_lookup: MedicationGuideLookup,
+    ) -> tuple[MedicationGuideLookup, bool]:
+        use_family_reference = bool(
+            guide_lookup.is_ambiguous
+            and guide_lookup.representative_guide is not None
+            and not cls._EXACT_PRODUCT_REQUIRED_PATTERN.search(
+                request.question,
+            )
+        )
+        if not use_family_reference:
+            return guide_lookup, False
+        return (
+            guide_lookup.model_copy(
+                update={
+                    "guide": guide_lookup.representative_guide,
+                    "is_ambiguous": False,
+                }
+            ),
+            True,
+        )
+
+    @staticmethod
+    def _safety_reason_codes(
+        *,
+        rag_unavailable: bool,
+        rule_status: InteractionRuleLookupStatus,
+    ) -> list[str]:
+        reasons = ["RAG_UNAVAILABLE"] if rag_unavailable else []
+        if rule_status == InteractionRuleLookupStatus.RULE_REPOSITORY_UNAVAILABLE:
+            reasons.append("INTERACTION_RULE_REPOSITORY_UNAVAILABLE")
+        return reasons
+
+    @classmethod
+    def _apply_correction_notice(
+        cls,
+        result: MedicationChatResult,
+        *,
+        resolution: MedicationQuestionResolution | None,
+    ) -> MedicationChatResult:
+        if resolution is None or resolution.status != MedicationExpressionResolutionStatus.AUTO_CORRECTED:
+            return result
+        return result.model_copy(update={"answer": (cls._correction_notice(resolution) + "\n\n" + result.answer)})
+
+    async def _resolve_question(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> MedicationQuestionResolution | None:
+        if self._question_resolver is None:
+            return None
+        async with self._tracer.span("question.resolve") as resolution_span:
+            try:
+                resolution = await self._question_resolver.resolve(
+                    question=request.question,
+                    additional_names=[
+                        *(item.name for item in context.medications),
+                        *(item.name for item in context.supplements),
+                    ],
+                )
+            except Exception:
+                resolution_span.end({"status": "UNAVAILABLE"})
+                return None
+            outputs = {
+                "scope": resolution.scope.value,
+                "status": resolution.status.value,
+                "correction_count": len(resolution.corrections),
+                "candidate_count": len(resolution.candidate_names),
+            }
+            if self._tracer.capture_content:
+                outputs["corrections"] = [correction.model_dump() for correction in resolution.corrections]
+                outputs["candidate_names"] = resolution.candidate_names
+            resolution_span.end(outputs)
+            return resolution
+
+    @classmethod
+    def _out_of_scope_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        resolution: MedicationQuestionResolution,
+    ) -> MedicationChatResult:
+        if resolution.scope == MedicationQuestionScope.GREETING:
+            answer = "안녕하세요. 의약품의 효능·사용법·주의사항과 약·영양제·음식 간 상호작용을 질문해 주세요."
+        else:
+            answer = "이 챗봇은 의약품·복약·영양제 정보와 상호작용을 안내합니다. 관련 내용으로 질문해 주세요."
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=answer,
+            route=MedicationChatRoute.OUT_OF_SCOPE,
+            safety_status=SafetyStatus.SAFE,
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+        )
+
+    @classmethod
+    def _expression_clarification_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        resolution: MedicationQuestionResolution,
+    ) -> MedicationChatResult:
+        names = ", ".join(resolution.candidate_names)
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=(
+                "입력하신 이름만으로는 제품이나 성분을 정확히 "
+                "확인하기 어렵습니다. 다음 중 어떤 대상을 말씀하셨는지 "
+                f"확인해 주세요: {names}"
+            ),
+            route=MedicationChatRoute.CLARIFICATION,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=["AMBIGUOUS_QUERY_EXPRESSION"],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+        )
+
+    @classmethod
+    def _no_evidence_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        execution_plan: MedicationSearchExecutionPlan,
+        resolution: MedicationQuestionResolution,
+        rag_unavailable: bool,
+    ) -> MedicationChatResult:
+        answer = (
+            "질문은 의약품·복약·영양제 관련 내용이지만, 현재 보유한 "
+            "승인 규칙과 검색 자료에서는 답변 근거를 찾지 못했습니다. "
+            "확인되지 않았다는 뜻이지 안전하다는 의미가 아닙니다. "
+            "정확한 제품명이나 성분명을 확인하거나 의료진 또는 "
+            "약사와 상담해 주세요."
+        )
+        if resolution.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED:
+            answer = cls._correction_notice(resolution) + "\n\n" + answer
+        reason_codes = ["IN_SCOPE_NO_EVIDENCE"]
+        if rag_unavailable:
+            reason_codes.append("RAG_UNAVAILABLE")
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=answer,
+            route=MedicationChatRoute.RESTRICTED,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=reason_codes,
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+            search_observation=(
+                MedicationSearchExecutionObservation.from_execution_plan(
+                    execution_plan,
+                )
+            ),
+        )
+
+    @classmethod
+    def _has_grounded_evidence(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        query_plan: MedicationKnowledgeQueryPlan,
+        guide_lookup: MedicationGuideLookup,
+        rules: list[InteractionRuleFact],
+        chunks: list,
+    ) -> bool:
+        if guide_lookup.guide is not None or rules or chunks:
+            return True
+        if not context.medications and not context.supplements:
+            return False
+        if cls._PATIENT_CONTEXT_CUE_PATTERN.search(request.question):
+            return True
+        query_names = {cls._normalize_entity_name(name) for name in query_plan.entity_names}
+        context_names = {cls._normalize_entity_name(item.name) for item in [*context.medications, *context.supplements]}
+        return bool(query_names.intersection(context_names))
+
+    @staticmethod
+    def _correction_notice(
+        resolution: MedicationQuestionResolution,
+    ) -> str:
+        descriptions = [
+            f"‘{correction.original}’을 ‘{correction.replacement}’로" for correction in resolution.corrections
+        ]
+        return "입력하신 " + ", ".join(descriptions) + " 이해하고 검색했습니다."
 
     @staticmethod
     async def _report_progress(

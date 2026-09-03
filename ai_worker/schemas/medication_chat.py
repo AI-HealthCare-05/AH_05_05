@@ -22,6 +22,7 @@ class MedicationChatRoute(StrEnum):
     GENERAL_GUIDANCE = "GENERAL_GUIDANCE"
     CLARIFICATION = "CLARIFICATION"
     RESTRICTED = "RESTRICTED"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
 class MedicationChatProgressStage(StrEnum):

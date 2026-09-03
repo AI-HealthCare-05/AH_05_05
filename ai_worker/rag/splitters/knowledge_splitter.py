@@ -207,12 +207,20 @@ class KnowledgeSplitter:
         self,
         token_counter: TokenCounter | None = None,
         interaction_annotations: KnowledgeInteractionAnnotationRegistry | None = None,
+        tokenizer_encoding: str = "cl100k_base",
     ) -> None:
-        self._token_counter = token_counter or TiktokenTokenCounter()
+        self._tokenizer_encoding = tokenizer_encoding.strip()
+        if not self._tokenizer_encoding:
+            raise ValueError("tokenizer_encoding은 비어 있을 수 없습니다.")
+        self._token_counter = token_counter or TiktokenTokenCounter(self._tokenizer_encoding)
         self._supplement_code_parser = SupplementCodeParser()
         self._entity_extractor = KnowledgeEntityExtractor(
             interaction_annotations=interaction_annotations,
         )
+
+    @property
+    def tokenizer_encoding(self) -> str:
+        return self._tokenizer_encoding
 
     def split(self, pages: list[KnowledgePage]) -> list[KnowledgeChunk]:
         if not pages:
@@ -495,25 +503,45 @@ class KnowledgeSplitter:
             separators=self._SEPARATORS,
             is_separator_regex=False,
         )
-        chunks: list[tuple[str, int, int]] = []
-        previous_start = -1
-        for chunk in splitter.split_text(content):
-            start = content.find(chunk, previous_start + 1)
-            if start < 0:
-                raise ValueError("재귀 분할 청크의 원문 위치를 찾지 못했습니다.")
-            previous_start = start
-            chunks.append(
-                (
-                    chunk,
-                    start,
-                    start + len(chunk),
-                )
-            )
+        chunks = self._locate_split_chunks(
+            content,
+            splitter.split_text(content),
+        )
         return self._merge_small_fragments(
             content,
             chunks,
             policy,
         )
+
+    @staticmethod
+    def _locate_split_chunks(
+        source: str,
+        split_chunks: list[str],
+    ) -> list[tuple[str, int, int]]:
+        located: list[tuple[str, int, int]] = []
+        previous_start = -1
+
+        for chunk in split_chunks:
+            start = source.find(chunk, previous_start + 1)
+            if start < 0 and located:
+                previous_content, nested_start, _ = located[-1]
+                if chunk.startswith(previous_content) and source.startswith(
+                    chunk,
+                    nested_start,
+                ):
+                    located[-1] = (
+                        chunk,
+                        nested_start,
+                        nested_start + len(chunk),
+                    )
+                    previous_start = nested_start
+                    continue
+            if start < 0:
+                raise ValueError("재귀 분할 청크의 원문 위치를 찾지 못했습니다.")
+            previous_start = start
+            located.append((chunk, start, start + len(chunk)))
+
+        return located
 
     def _merge_small_fragments(
         self,
