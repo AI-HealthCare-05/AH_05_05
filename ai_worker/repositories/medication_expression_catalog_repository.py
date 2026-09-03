@@ -1,6 +1,7 @@
 import asyncio
 import re
 import time
+from itertools import chain
 
 from app.models.interactions import (
     InteractionEntity,
@@ -53,11 +54,11 @@ class DbMedicationExpressionCatalog:
         expressions = sorted(
             {
                 str(value).strip()
-                for value in (
-                    *product_expressions,
-                    *entity_names,
-                    *aliases,
-                    *supplement_names,
+                for value in chain(
+                    product_expressions,
+                    entity_names,
+                    aliases,
+                    supplement_names,
                 )
                 if str(value).strip()
             },
@@ -75,8 +76,12 @@ class DbMedicationExpressionCatalog:
         name_without_ingredient = cls._INGREDIENT_SUFFIX.sub("", full_name).strip()
         dosage_form = cls._DOSAGE_FORM_BOUNDARY.search(name_without_ingredient)
         if dosage_form is None:
-            return [full_name]
+            return list(dict.fromkeys([full_name, name_without_ingredient]))
         family_name = name_without_ingredient[: dosage_form.start()].rstrip(" -")
         if len(family_name) < 2:
-            return [full_name]
-        return [full_name, family_name]
+            return list(dict.fromkeys([full_name, name_without_ingredient]))
+        return list(
+            dict.fromkeys(
+                [full_name, name_without_ingredient, family_name],
+            )
+        )

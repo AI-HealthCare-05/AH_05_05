@@ -27,7 +27,8 @@ class RuleBasedGroundedClaimValidator:
         r"(?:질환|질병|증후군)의\s*가능성이\s*높습니다"
     )
     _TREATMENT_PATTERN = re.compile(
-        r"(?:수술|시술|입원|치료)[^.!?。！？]{0,20}"
+        r"(?:수술|시술|입원|치료)(?:\s*변경)?"
+        r"(?:이|가|을|를)?\s*"
         r"(?:필요합니다|시작하세요|받으세요)"
     )
 

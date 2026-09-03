@@ -9,6 +9,8 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
     supplement_pair_matches_text,
 )
 from ai_worker.schemas.knowledge import (
+    KnowledgeCandidateDiagnostic,
+    KnowledgeCandidateRejectionReason,
     KnowledgeDocumentType,
     KnowledgeRetrievalDiagnostics,
     KnowledgeRetrievalResult,
@@ -37,6 +39,13 @@ class _EligibilityReason(StrEnum):
     BELOW_SCORE = "BELOW_SCORE"
     ENTITY_MISMATCH = "ENTITY_MISMATCH"
     PAIR_MISMATCH = "PAIR_MISMATCH"
+
+
+@dataclass(frozen=True)
+class _CandidateObservation:
+    result: RetrievedKnowledgeChunk
+    search_tier: KnowledgeSearchTier
+    raw_rank: int
 
 
 class MedicationKnowledgeSearchStore(Protocol):
@@ -118,6 +127,7 @@ class MedicationKnowledgeRetriever:
             *(self._embedding_provider.embed_query(query) for query in queries),
         )
         results: list[RetrievedKnowledgeChunk] = []
+        candidate_observations: list[_CandidateObservation] = []
         eligibility_reasons: list[_EligibilityReason] = []
         eligible: list[RetrievedKnowledgeChunk] = []
         attempted_search_tiers: list[KnowledgeSearchTier] = []
@@ -143,6 +153,15 @@ class MedicationKnowledgeRetriever:
                 )
             )
             tier_results = [result for batch in tier_batches for result in batch]
+            candidate_observations.extend(
+                _CandidateObservation(
+                    result=result,
+                    search_tier=tier.name,
+                    raw_rank=raw_rank,
+                )
+                for batch in tier_batches
+                for raw_rank, result in enumerate(batch, start=1)
+            )
             tier_reasons = [self._eligibility_reason(result, plan=plan) for result in tier_results]
             tier_eligible = [
                 result
@@ -205,11 +224,84 @@ class MedicationKnowledgeRetriever:
             ),
             attempted_search_tiers=attempted_search_tiers,
             selected_search_tier=selected_search_tier,
+            candidate_diagnostics=self._candidate_diagnostics(
+                observations=candidate_observations,
+                selected=selected,
+                plan=plan,
+            ),
         )
         return KnowledgeRetrievalResult(
             chunks=selected,
             diagnostics=diagnostics,
         )
+
+    def _candidate_diagnostics(
+        self,
+        *,
+        observations: list[_CandidateObservation],
+        selected: list[RetrievedKnowledgeChunk],
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> list[KnowledgeCandidateDiagnostic]:
+        unique_observations: list[_CandidateObservation] = []
+        seen_hashes: set[str] = set()
+        for observation in observations:
+            content_hash = observation.result.metadata.content_hash
+            if content_hash in seen_hashes:
+                continue
+            seen_hashes.add(content_hash)
+            unique_observations.append(observation)
+
+        ranked = sorted(
+            unique_observations,
+            key=lambda observation: self._ranking_score(
+                observation.result,
+                plan=plan,
+            ),
+            reverse=True,
+        )[:20]
+        selected_ids = {result.chunk_id for result in selected}
+        pair_required = bool(plan.interaction_pair is not None or self._requires_entity_pair_match(plan))
+        diagnostics: list[KnowledgeCandidateDiagnostic] = []
+        for adjusted_rank, observation in enumerate(ranked, start=1):
+            result = observation.result
+            reason = self._eligibility_reason(
+                result,
+                plan=plan,
+            )
+            raw_score = result.similarity_score
+            adjusted_score = self._ranking_score(result, plan=plan)[0]
+            diagnostics.append(
+                KnowledgeCandidateDiagnostic(
+                    document_id=result.metadata.document_id,
+                    chunk_id=result.chunk_id,
+                    search_tier=observation.search_tier,
+                    raw_rank=observation.raw_rank,
+                    raw_similarity_score=raw_score,
+                    boost_score=round(adjusted_score - raw_score, 6),
+                    adjusted_score=round(adjusted_score, 6),
+                    adjusted_rank=adjusted_rank,
+                    entity_matched=(
+                        not self._normalized_query_entities(plan) or self._matches_query_target(result, plan=plan)
+                    ),
+                    section_matched=(
+                        not plan.section_types
+                        or bool(
+                            set(plan.section_types).intersection(
+                                self._effective_section_types(result),
+                            )
+                        )
+                    ),
+                    pair_matched=(self._matches_any_interaction_pair(result, plan=plan) if pair_required else None),
+                    eligible=reason == _EligibilityReason.ELIGIBLE,
+                    rejection_reason=(
+                        None
+                        if reason == _EligibilityReason.ELIGIBLE
+                        else KnowledgeCandidateRejectionReason(reason.value)
+                    ),
+                    selected_in_top_5=result.chunk_id in selected_ids,
+                )
+            )
+        return diagnostics
 
     @classmethod
     def _select_diverse(

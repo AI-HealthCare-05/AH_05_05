@@ -1,8 +1,11 @@
 import re
 import time
 import unicodedata
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
+from ai_worker.domain.medication_expression_vocabulary import (
+    SUPPORTED_SUPPLEMENT_NAMES,
+)
 from ai_worker.schemas.medication_search import (
     MedicationExpressionCorrection,
     MedicationExpressionResolutionStatus,
@@ -13,6 +16,20 @@ from ai_worker.schemas.medication_search import (
 
 class MedicationExpressionCatalog(Protocol):
     async def list_expressions(self) -> list[str]: ...
+
+
+class _QuestionToken(NamedTuple):
+    start: int
+    end: int
+    surface: str
+
+
+class _SpacingCorrection(NamedTuple):
+    start: int
+    end: int
+    original: str
+    replacement: str
+    token_count: int
 
 
 class RuleBasedMedicationQuestionResolver:
@@ -94,11 +111,22 @@ class RuleBasedMedicationQuestionResolver:
                 status=MedicationExpressionResolutionStatus.UNCHANGED,
             )
 
-        catalog = (await self._base_catalog()).copy()
-        catalog.update(
-            self._normalized_catalog(additional_names or []),
+        catalog = await self._base_catalog()
+        additional_catalog = self._normalized_catalog(additional_names or [])
+        if additional_catalog:
+            catalog = catalog.copy()
+            catalog.update(additional_catalog)
+
+        tokens = self._question_tokens(normalized_question)
+        spacing_resolution = self._spacing_resolution(
+            question=normalized_question,
+            catalog=catalog,
+            tokens=tokens,
         )
-        surfaces = self._candidate_surfaces(normalized_question)
+        if spacing_resolution is not None:
+            return spacing_resolution
+
+        surfaces = self._candidate_surfaces(tokens)
 
         if self._contains_exact_expression(
             question=normalized_question,
@@ -109,6 +137,19 @@ class RuleBasedMedicationQuestionResolver:
                 question=normalized_question,
                 scope=MedicationQuestionScope.IN_SCOPE,
                 status=MedicationExpressionResolutionStatus.UNCHANGED,
+            )
+
+        prefix_candidates = self._ambiguous_prefix_candidates(
+            surfaces=surfaces,
+            catalog=catalog,
+        )
+        if prefix_candidates:
+            return MedicationQuestionResolution(
+                original_question=normalized_question,
+                resolved_question=normalized_question,
+                scope=MedicationQuestionScope.IN_SCOPE,
+                status=(MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED),
+                candidate_names=prefix_candidates,
             )
 
         ranked = self._rank_candidates(surfaces=surfaces, catalog=catalog)
@@ -177,14 +218,17 @@ class RuleBasedMedicationQuestionResolver:
         now = time.monotonic()
         if self._cached_catalog is not None and now < self._cache_expires_at:
             return self._cached_catalog
-        expressions = await self._catalog.list_expressions()
+        expressions = [
+            *(await self._catalog.list_expressions()),
+            *SUPPORTED_SUPPLEMENT_NAMES,
+        ]
         self._cached_catalog = self._normalized_catalog(expressions)
         self._cache_expires_at = now + self._cache_ttl_seconds
         return self._cached_catalog
 
     @staticmethod
     def _normalize_question(value: str) -> str:
-        normalized = unicodedata.normalize("NFKC", value)
+        normalized = unicodedata.normalize("NFC", value)
         return re.sub(r"\s+", " ", normalized).strip()
 
     @staticmethod
@@ -206,17 +250,132 @@ class RuleBasedMedicationQuestionResolver:
         return catalog
 
     @classmethod
-    def _candidate_surfaces(cls, question: str) -> list[str]:
-        surfaces: list[str] = []
+    def _question_tokens(cls, question: str) -> list[_QuestionToken]:
+        tokens: list[_QuestionToken] = []
         for match in cls._TOKEN.finditer(question):
             surface = match.group()
             previous = ""
             while previous != surface:
                 previous = surface
                 surface = cls._TRAILING_PARTICLE.sub("", surface)
-            if len(cls._normalize_expression(surface)) >= 1 and surface not in cls._NON_ENTITY_TOKENS:
-                surfaces.append(surface)
-        return list(dict.fromkeys(surfaces))
+            if surface:
+                tokens.append(
+                    _QuestionToken(
+                        start=match.start(),
+                        end=match.start() + len(surface),
+                        surface=surface,
+                    )
+                )
+        return tokens
+
+    @classmethod
+    def _candidate_surfaces(
+        cls,
+        tokens: list[_QuestionToken],
+    ) -> list[str]:
+        return list(dict.fromkeys(token.surface for token in tokens if token.surface not in cls._NON_ENTITY_TOKENS))
+
+    @classmethod
+    def _spacing_corrections(
+        cls,
+        *,
+        question: str,
+        catalog: dict[str, str],
+        tokens: list[_QuestionToken],
+    ) -> list[_SpacingCorrection]:
+        matches = [
+            correction
+            for window in cls._token_windows(tokens)
+            if (
+                correction := cls._spacing_correction_for_window(
+                    question=question,
+                    catalog=catalog,
+                    window=window,
+                )
+            )
+            is not None
+        ]
+
+        selected: list[_SpacingCorrection] = []
+        occupied_until = -1
+        for correction in sorted(
+            matches,
+            key=lambda item: (item.start, -item.token_count, item.end),
+        ):
+            if correction.start < occupied_until:
+                continue
+            selected.append(correction)
+            occupied_until = correction.end
+        return selected
+
+    @classmethod
+    def _spacing_resolution(
+        cls,
+        *,
+        question: str,
+        catalog: dict[str, str],
+        tokens: list[_QuestionToken],
+    ) -> MedicationQuestionResolution | None:
+        corrections = cls._spacing_corrections(
+            question=question,
+            catalog=catalog,
+            tokens=tokens,
+        )
+        if not corrections:
+            return None
+
+        resolved_question = question
+        for correction in reversed(corrections):
+            resolved_question = (
+                resolved_question[: correction.start] + correction.replacement + resolved_question[correction.end :]
+            )
+        return MedicationQuestionResolution(
+            original_question=question,
+            resolved_question=resolved_question,
+            scope=MedicationQuestionScope.IN_SCOPE,
+            status=MedicationExpressionResolutionStatus.AUTO_CORRECTED,
+            corrections=[
+                MedicationExpressionCorrection(
+                    original=correction.original,
+                    replacement=correction.replacement,
+                )
+                for correction in corrections
+            ],
+        )
+
+    @staticmethod
+    def _token_windows(
+        tokens: list[_QuestionToken],
+    ) -> list[list[_QuestionToken]]:
+        return [
+            tokens[start_index:end_index]
+            for start_index in range(len(tokens))
+            for end_index in range(start_index + 2, min(start_index + 4, len(tokens)) + 1)
+        ]
+
+    @classmethod
+    def _spacing_correction_for_window(
+        cls,
+        *,
+        question: str,
+        catalog: dict[str, str],
+        window: list[_QuestionToken],
+    ) -> _SpacingCorrection | None:
+        start = window[0].start
+        end = window[-1].end
+        original = question[start:end]
+        if not re.search(r"\s", original):
+            return None
+        replacement = catalog.get(cls._normalize_expression(original))
+        if replacement is None or replacement == original:
+            return None
+        return _SpacingCorrection(
+            start=start,
+            end=end,
+            original=original,
+            replacement=replacement,
+            token_count=len(window),
+        )
 
     @classmethod
     def _contains_exact_expression(
@@ -249,29 +408,43 @@ class RuleBasedMedicationQuestionResolver:
         surfaces: list[str],
         catalog: dict[str, str],
     ) -> list[tuple[int, str, str]]:
+        candidates_by_length: dict[int, set[str]] = {}
+        candidates_by_bigram: dict[str, set[str]] = {}
+        for normalized_candidate in catalog:
+            candidates_by_length.setdefault(
+                len(normalized_candidate),
+                set(),
+            ).add(normalized_candidate)
+            for bigram in cls._bigrams(normalized_candidate):
+                candidates_by_bigram.setdefault(bigram, set()).add(
+                    normalized_candidate,
+                )
+
         ranked: list[tuple[int, str, str]] = []
         for surface in surfaces:
             normalized_surface = cls._normalize_expression(surface)
-            if len(normalized_surface) < 3:
+            maximum_distance = cls._auto_correct_distance(surface)
+            if maximum_distance is None:
                 continue
-            for normalized_candidate, display_name in catalog.items():
-                length_gap = abs(len(normalized_surface) - len(normalized_candidate))
-                if length_gap > 3:
-                    continue
-                distance = cls._edit_distance(
-                    normalized_surface,
-                    normalized_candidate,
-                    limit=3,
+
+            surface_ranked = cls._rank_surface_candidates(
+                surface=surface,
+                normalized_surface=normalized_surface,
+                catalog=catalog,
+                candidates_by_length=candidates_by_length,
+                candidates_by_bigram=candidates_by_bigram,
+                limit=maximum_distance,
+            )
+            if not surface_ranked and maximum_distance < 3:
+                surface_ranked = cls._rank_surface_candidates(
+                    surface=surface,
+                    normalized_surface=normalized_surface,
+                    catalog=catalog,
+                    candidates_by_length=candidates_by_length,
+                    candidates_by_bigram=candidates_by_bigram,
+                    limit=maximum_distance + 1,
                 )
-                if distance > 3:
-                    continue
-                similarity = 1 - distance / max(
-                    len(normalized_surface),
-                    len(normalized_candidate),
-                )
-                if similarity < 0.6:
-                    continue
-                ranked.append((distance, surface, display_name))
+            ranked.extend(surface_ranked)
         return sorted(
             set(ranked),
             key=lambda item: (
@@ -280,6 +453,111 @@ class RuleBasedMedicationQuestionResolver:
                 item[2].casefold(),
             ),
         )
+
+    @classmethod
+    def _rank_surface_candidates(
+        cls,
+        *,
+        surface: str,
+        normalized_surface: str,
+        catalog: dict[str, str],
+        candidates_by_length: dict[int, set[str]],
+        candidates_by_bigram: dict[str, set[str]],
+        limit: int,
+    ) -> list[tuple[int, str, str]]:
+        candidate_keys = cls._shortlisted_candidate_keys(
+            normalized_surface=normalized_surface,
+            candidates_by_length=candidates_by_length,
+            candidates_by_bigram=candidates_by_bigram,
+            limit=limit,
+        )
+        ranked: list[tuple[int, str, str]] = []
+        for normalized_candidate in candidate_keys:
+            distance = cls._edit_distance(
+                normalized_surface,
+                normalized_candidate,
+                limit=limit,
+            )
+            if distance > limit:
+                continue
+            similarity = 1 - distance / max(
+                len(normalized_surface),
+                len(normalized_candidate),
+            )
+            if similarity < 0.6:
+                continue
+            ranked.append(
+                (
+                    distance,
+                    surface,
+                    catalog[normalized_candidate],
+                )
+            )
+        return ranked
+
+    @classmethod
+    def _shortlisted_candidate_keys(
+        cls,
+        *,
+        normalized_surface: str,
+        candidates_by_length: dict[int, set[str]],
+        candidates_by_bigram: dict[str, set[str]],
+        limit: int,
+    ) -> set[str]:
+        surface_length = len(normalized_surface)
+        shared_bigram_candidates: set[str] = set()
+        for bigram in cls._bigrams(normalized_surface):
+            shared_bigram_candidates.update(
+                candidates_by_bigram.get(bigram, ()),
+            )
+
+        shortlisted: set[str] = set()
+        for candidate_length in range(
+            max(1, surface_length - limit),
+            surface_length + limit + 1,
+        ):
+            length_candidates = candidates_by_length.get(
+                candidate_length,
+                set(),
+            )
+            guaranteed_shared_bigram_count = max(surface_length, candidate_length) - 1 - 2 * limit
+            if guaranteed_shared_bigram_count <= 0:
+                shortlisted.update(length_candidates)
+            else:
+                shortlisted.update(
+                    length_candidates.intersection(
+                        shared_bigram_candidates,
+                    )
+                )
+        return shortlisted
+
+    @staticmethod
+    def _bigrams(value: str) -> set[str]:
+        return {value[index : index + 2] for index in range(len(value) - 1)}
+
+    @classmethod
+    def _ambiguous_prefix_candidates(
+        cls,
+        *,
+        surfaces: list[str],
+        catalog: dict[str, str],
+    ) -> list[str]:
+        for surface in surfaces:
+            normalized_surface = cls._normalize_expression(surface)
+            if len(normalized_surface) < 2:
+                continue
+            candidates = sorted(
+                {
+                    display_name
+                    for normalized_candidate, display_name in catalog.items()
+                    if normalized_candidate != normalized_surface
+                    and normalized_candidate.startswith(normalized_surface)
+                },
+                key=str.casefold,
+            )
+            if len(candidates) >= 2:
+                return candidates[:5]
+        return []
 
     @staticmethod
     def _auto_correct_distance(surface: str) -> int | None:

@@ -5,6 +5,9 @@ from itertools import combinations
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
+from ai_worker.domain.medication_expression_vocabulary import (
+    SUPPORTED_SUPPLEMENT_NAMES,
+)
 from ai_worker.rag.metadata.supplement_ingredient_family_registry import (
     find_supplement_ingredient_family,
 )
@@ -134,19 +137,7 @@ class MedicationQueryEntityNormalizer:
         "역할",
         "일일",
     }
-    _SUPPLEMENT_NAMES = {
-        "마그네슘",
-        "칼슘",
-        "철",
-        "철분",
-        "아연",
-        "구리",
-        "셀레늄",
-        "엽산",
-        "오메가3",
-        "프로바이오틱스",
-        "유산균",
-    }
+    _SUPPLEMENT_NAMES = SUPPORTED_SUPPLEMENT_NAMES
     _BRAND_ALIASES = {
         "타이레놀",
     }

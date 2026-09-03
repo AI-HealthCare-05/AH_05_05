@@ -60,6 +60,44 @@ async def test_validator_preserves_existing_restricted_status() -> None:
     assert result.safety_reason_codes == ["RAG_UNAVAILABLE"]
 
 
+async def test_validator_allows_grounded_interaction_severity_wording() -> None:
+    answer = (
+        "따라서 이 두 약물의 병용은 치료 변경을 고려해야 할 정도로 "
+        "주의가 필요합니다. "
+        "이 안내는 의료진의 진료를 대체하지 않습니다."
+    )
+
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(answer),
+    )
+
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.answer == answer
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        "현재 상태에는 수술이 필요합니다.",
+        "현재 치료 변경이 필요합니다.",
+        "오늘부터 치료를 시작하세요.",
+    ],
+)
+async def test_validator_still_blocks_direct_treatment_decisions(
+    decision: str,
+) -> None:
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(
+            f"{decision} 이 안내는 의료진의 진료를 대체하지 않습니다.",
+        ),
+    )
+
+    assert result.safety_status == SafetyStatus.BLOCKED
+    assert "TREATMENT_DECISION" in result.safety_reason_codes
+
+
 @pytest.mark.parametrize(
     "instruction",
     [

@@ -211,9 +211,16 @@ class AnswerMedicationQuestionUseCase:
                 execution_plan=execution_plan,
             )
             chunks = retrieval.chunks
+            retrieval_outputs = retrieval.diagnostics.model_dump(
+                exclude={"candidate_diagnostics"},
+            )
+            if self._tracer.capture_content:
+                retrieval_outputs["candidate_diagnostics"] = [
+                    diagnostic.model_dump() for diagnostic in retrieval.diagnostics.candidate_diagnostics
+                ]
             rag_span.end(
                 {
-                    **retrieval.diagnostics.model_dump(),
+                    **retrieval_outputs,
                     "query_plan_hash": execution_plan.query_plan_hash,
                     "execution_plan_hash": execution_plan.execution_plan_hash,
                     "rag_unavailable": rag_unavailable,

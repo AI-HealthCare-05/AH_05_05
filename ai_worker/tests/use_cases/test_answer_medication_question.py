@@ -14,10 +14,12 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
+    KnowledgeCandidateDiagnostic,
     KnowledgeChunkMetadata,
     KnowledgeDocumentType,
     KnowledgeRetrievalDiagnostics,
     KnowledgeRetrievalResult,
+    KnowledgeSearchTier,
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
@@ -473,6 +475,36 @@ async def test_execute_auto_corrects_unique_typo_before_search() -> None:
     assert "통증과 발열을 완화합니다" in result.answer
 
 
+async def test_execute_uses_trailing_typo_correction_for_product_lookup() -> None:
+    guide_repository = ExactNameGuideRepository(
+        expected_name="타이레놀",
+        lookup=MedicationGuideLookup(guide=build_guide()),
+    )
+    use_case = AnswerMedicationQuestionUseCase(
+        context_provider=FakeContextProvider(
+            ActiveIntakeContext(user_id=1),
+        ),
+        guide_repository=guide_repository,
+        interaction_rule_repository=FakeRuleRepository([]),
+        knowledge_retriever=FakeKnowledgeRetriever(),
+        answer_generator=PassthroughGenerator(),
+        grounded_claim_validator=PassthroughValidator(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["타이레놀"]),
+        ),
+    )
+
+    result = await use_case.execute(
+        build_request("타이레놀ㄹ 복용법 알려줘"),
+    )
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert result.answer.startswith(
+        "입력하신 ‘타이레놀ㄹ’을 ‘타이레놀’로 이해하고 검색했습니다.",
+    )
+    assert "제품 설명서와 전문가의 안내를 따릅니다" in result.answer
+
+
 async def test_execute_requests_clarification_before_search_for_tied_typo() -> None:
     retriever = RecordingQueryPlanRetriever()
     result = await build_use_case(
@@ -809,9 +841,36 @@ async def test_execute_records_provider_failure_reason_and_reraises() -> None:
 
 async def test_execute_records_losartan_search_diagnostics_in_content_mode() -> None:
     tracer = RecordingChatTracer(capture_content=True)
+    chunk = build_losartan_chunk()
     use_case = build_use_case(
         retriever=FakeKnowledgeRetriever(
-            chunks=[build_losartan_chunk()],
+            chunks=[chunk],
+            diagnostics=KnowledgeRetrievalDiagnostics(
+                raw_candidate_count=1,
+                entity_filtered_count=1,
+                broad_candidate_count=0,
+                eligible_candidate_count=1,
+                rejected_below_score_count=0,
+                rejected_entity_mismatch_count=0,
+                rejected_pair_mismatch_count=0,
+                accepted_count=1,
+                candidate_diagnostics=[
+                    KnowledgeCandidateDiagnostic(
+                        document_id=chunk.metadata.document_id,
+                        chunk_id=chunk.chunk_id,
+                        search_tier=KnowledgeSearchTier.ENTITY,
+                        raw_rank=1,
+                        raw_similarity_score=chunk.similarity_score,
+                        boost_score=0.2,
+                        adjusted_score=1.02,
+                        adjusted_rank=1,
+                        entity_matched=True,
+                        section_matched=True,
+                        eligible=True,
+                        selected_in_top_5=True,
+                    )
+                ],
+            ),
         ),
         tracer=tracer,
     )
@@ -825,6 +884,7 @@ async def test_execute_records_losartan_search_diagnostics_in_content_mode() -> 
         "DRUG_ENCYCLOPEDIA",
     ]
     assert tracer.spans[3].outputs["drug_encyclopedia_evidence_count"] == 1
+    assert tracer.spans[3].outputs["candidate_diagnostics"][0]["document_id"] == chunk.metadata.document_id
 
 
 async def test_execute_records_selected_and_candidate_entity_roles() -> None:

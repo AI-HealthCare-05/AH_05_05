@@ -432,6 +432,56 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
         "max_score": 0.8,
         "attempted_search_tiers": ["ENTITY", "SEMANTIC"],
         "selected_search_tier": "SEMANTIC",
+        "candidate_diagnostics": [
+            {
+                "document_id": "supplement-guide",
+                "chunk_id": "a" * 64,
+                "search_tier": "SEMANTIC",
+                "raw_rank": 1,
+                "raw_similarity_score": 0.8,
+                "boost_score": 0.2,
+                "adjusted_score": 1.0,
+                "adjusted_rank": 1,
+                "entity_matched": True,
+                "section_matched": True,
+                "pair_matched": None,
+                "eligible": True,
+                "rejection_reason": None,
+                "selected_in_top_5": True,
+            },
+            {
+                "document_id": "supplement-guide",
+                "chunk_id": "b" * 64,
+                "search_tier": "SEMANTIC",
+                "raw_rank": 2,
+                "raw_similarity_score": 0.54,
+                "boost_score": 0.2,
+                "adjusted_score": 0.74,
+                "adjusted_rank": 2,
+                "entity_matched": True,
+                "section_matched": True,
+                "pair_matched": None,
+                "eligible": False,
+                "rejection_reason": "BELOW_SCORE",
+                "selected_in_top_5": False,
+            },
+            {
+                "document_id": "supplement-guide",
+                "chunk_id": "c" * 64,
+                "search_tier": "SEMANTIC",
+                "raw_rank": 3,
+                "raw_similarity_score": 0.59,
+                "boost_score": 0.08,
+                "adjusted_score": 0.67,
+                "adjusted_rank": 3,
+                "entity_matched": False,
+                "section_matched": True,
+                "pair_matched": None,
+                "eligible": False,
+                "rejection_reason": "ENTITY_MISMATCH",
+                "selected_in_top_5": False,
+            },
+        ],
     }
 
 
@@ -451,6 +501,35 @@ async def test_search_excludes_results_below_minimum_score() -> None:
     )
 
     assert [result.similarity_score for result in results] == [0.8]
+
+
+async def test_candidate_diagnostics_are_deduplicated_and_limited_to_twenty() -> None:
+    chunks = [
+        build_chunk(
+            0.9 - index / 100,
+            chunk_id=f"{index:064x}",
+            ingredient_names=["마그네슘"],
+            section_type=KnowledgeSectionType.FUNCTION,
+        )
+        for index in range(25)
+    ]
+    store = FakeKnowledgeStore(responses=[chunks])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2-interaction-metadata",
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "마그네슘은 왜 먹나요?",
+            supplement_names=["마그네슘"],
+        ),
+    )
+
+    assert len(result.diagnostics.candidate_diagnostics) == 20
+    assert [diagnostic.adjusted_rank for diagnostic in result.diagnostics.candidate_diagnostics] == list(range(1, 21))
+    assert sum(diagnostic.selected_in_top_5 for diagnostic in result.diagnostics.candidate_diagnostics) == 2
 
 
 async def test_search_requests_twenty_candidates_for_final_five() -> None:
