@@ -13,7 +13,7 @@ def test_common_code_models_expose_category_and_lookup_indexes() -> None:
     code_model = models.CommonCode
 
     assert group_model._meta.db_table == "common_code_groups"
-    assert group_model._meta.fields_map["category"].max_length == 50
+    assert group_model._meta.fields_map["category"].max_length == 20
     assert group_model._meta.fields_map["group_code"].unique is True
     assert ("category", "is_active", "group_code") in group_model._meta.indexes
 

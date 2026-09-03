@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 IMAGE_ROOT = PROJECT_ROOT / "app/static/images/chatbot"
 CSS_ROOT = PROJECT_ROOT / "app/static/css"
