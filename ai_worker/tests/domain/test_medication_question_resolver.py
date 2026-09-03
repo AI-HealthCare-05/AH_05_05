@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from ai_worker.domain.medication_question_resolver import (
@@ -17,6 +19,28 @@ class StaticExpressionCatalog:
     async def list_expressions(self) -> list[str]:
         self.call_count += 1
         return self.expressions
+
+
+class CountingEditDistanceResolver(RuleBasedMedicationQuestionResolver):
+    edit_distance_call_count = 0
+
+    @staticmethod
+    def _edit_distance(left: str, right: str, *, limit: int) -> int:
+        CountingEditDistanceResolver.edit_distance_call_count += 1
+        return RuleBasedMedicationQuestionResolver._edit_distance(
+            left,
+            right,
+            limit=limit,
+        )
+
+
+class CountingBigramResolver(RuleBasedMedicationQuestionResolver):
+    bigram_call_count = 0
+
+    @staticmethod
+    def _bigrams(value: str) -> set[str]:
+        CountingBigramResolver.bigram_call_count += 1
+        return RuleBasedMedicationQuestionResolver._bigrams(value)
 
 
 @pytest.mark.asyncio
@@ -64,6 +88,78 @@ async def test_resolver_auto_corrects_trailing_keyboard_typo() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_shortlists_typo_candidates_before_edit_distance() -> None:
+    CountingEditDistanceResolver.edit_distance_call_count = 0
+    unrelated_expressions = [f"제품{i:05d}정" for i in range(5_000)]
+    resolver = CountingEditDistanceResolver(
+        catalog=StaticExpressionCatalog(
+            ["타이레놀", *unrelated_expressions],
+        ),
+    )
+
+    result = await resolver.resolve(
+        question="타이레놀ㄹ 복용법 알려줘",
+    )
+
+    assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert result.resolved_question == "타이레놀 복용법 알려줘"
+    assert CountingEditDistanceResolver.edit_distance_call_count < 100
+
+
+@pytest.mark.asyncio
+async def test_resolver_does_not_regex_scan_entire_multiword_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    regex_search_call_count = 0
+    original_search = re.search
+
+    def counting_search(*args: object, **kwargs: object) -> re.Match[str] | None:
+        nonlocal regex_search_call_count
+        regex_search_call_count += 1
+        return original_search(*args, **kwargs)
+
+    monkeypatch.setattr(re, "search", counting_search)
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog(
+            [
+                "타이레놀",
+                *(f"검색 대상이 아닌 제품 {index:05d}" for index in range(5_000)),
+            ],
+        ),
+    )
+
+    result = await resolver.resolve(
+        question="타이래놀의 효능과 주의사항을 알려줘",
+    )
+
+    assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert result.resolved_question == "타이레놀의 효능과 주의사항을 알려줘"
+    assert regex_search_call_count < 100
+
+
+@pytest.mark.asyncio
+async def test_resolver_reuses_candidate_indexes_for_cached_catalog() -> None:
+    CountingBigramResolver.bigram_call_count = 0
+    resolver = CountingBigramResolver(
+        catalog=StaticExpressionCatalog(
+            [
+                "타이레놀",
+                *(f"제품{index:05d}정" for index in range(1_000)),
+            ],
+        ),
+    )
+
+    first = await resolver.resolve(question="타이래놀 복용법 알려줘")
+    first_call_count = CountingBigramResolver.bigram_call_count
+    second = await resolver.resolve(question="타이래놀 복용법 알려줘")
+    repeated_call_count = CountingBigramResolver.bigram_call_count - first_call_count
+
+    assert first.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert second.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert repeated_call_count < 20
+
+
+@pytest.mark.asyncio
 async def test_resolver_uses_same_rule_for_other_ingredients() -> None:
     resolver = RuleBasedMedicationQuestionResolver(
         catalog=StaticExpressionCatalog(["아세트아미노펜", "마그네슘"]),
@@ -75,6 +171,69 @@ async def test_resolver_uses_same_rule_for_other_ingredients() -> None:
 
     assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
     assert result.resolved_question == "아세트아미노펜 부작용 알려줘"
+
+
+@pytest.mark.asyncio
+async def test_resolver_restores_spacing_only_when_joined_expression_is_known() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog(["마그네슘"]),
+    )
+
+    result = await resolver.resolve(
+        question="마그 네슘은 왜 먹나요?",
+    )
+
+    assert result.scope == MedicationQuestionScope.IN_SCOPE
+    assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert result.resolved_question == "마그네슘은 왜 먹나요?"
+    assert result.corrections[0].original == "마그 네슘"
+    assert result.corrections[0].replacement == "마그네슘"
+
+
+@pytest.mark.asyncio
+async def test_resolver_keeps_correct_multiword_ingredient_unchanged() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog(["비타민 K"]),
+    )
+
+    result = await resolver.resolve(
+        question="비타민 K 영양제를 먹어도 되나요?",
+    )
+
+    assert result.scope == MedicationQuestionScope.IN_SCOPE
+    assert result.status == MedicationExpressionResolutionStatus.UNCHANGED
+    assert result.corrections == []
+
+
+@pytest.mark.asyncio
+async def test_resolver_recognizes_controlled_supplement_names_without_db_rows() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog([]),
+    )
+
+    result = await resolver.resolve(
+        question="칼슘과 철분을 같이 먹어도 되나요?",
+    )
+
+    assert result.scope == MedicationQuestionScope.IN_SCOPE
+    assert result.status == MedicationExpressionResolutionStatus.UNCHANGED
+
+
+@pytest.mark.asyncio
+async def test_resolver_requests_clarification_for_shared_product_prefix() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog(
+            ["마그네슘", "마그네정", "마그네캡슐"],
+        ),
+    )
+
+    result = await resolver.resolve(
+        question="마그 복용법 알려줘",
+    )
+
+    assert result.scope == MedicationQuestionScope.IN_SCOPE
+    assert result.status == (MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED)
+    assert result.candidate_names == ["마그네슘", "마그네정", "마그네캡슐"]
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,9 @@
 import asyncio
 import re
 import time
+from itertools import chain
 
+from ai_worker.domain.interfaces import SupplementIngredientCatalog
 from app.models.interactions import (
     InteractionEntity,
     InteractionEntityAlias,
@@ -19,8 +21,14 @@ class DbMedicationExpressionCatalog:
         r"시럽|과립|캡슐|정|산|액)(?=\d|$)",
     )
 
-    def __init__(self, *, cache_ttl_seconds: float = 300.0) -> None:
+    def __init__(
+        self,
+        *,
+        cache_ttl_seconds: float = 300.0,
+        supplement_catalog: SupplementIngredientCatalog | None = None,
+    ) -> None:
         self._cache_ttl_seconds = cache_ttl_seconds
+        self._supplement_catalog = supplement_catalog
         self._cached_expressions: list[str] | None = None
         self._cache_expires_at = 0.0
 
@@ -29,7 +37,7 @@ class DbMedicationExpressionCatalog:
         if self._cached_expressions is not None and now < self._cache_expires_at:
             return self._cached_expressions.copy()
 
-        product_names, entity_names, aliases, supplement_names = await asyncio.gather(
+        product_names, entity_names, aliases, supplement_names, additional_names = await asyncio.gather(
             MedicationProductGuide.all().values_list(
                 "product_name",
                 flat=True,
@@ -46,6 +54,7 @@ class DbMedicationExpressionCatalog:
                 "name",
                 flat=True,
             ),
+            self._list_additional_names(),
         )
         product_expressions = [
             expression for product_name in product_names for expression in self._product_expressions(str(product_name))
@@ -53,11 +62,12 @@ class DbMedicationExpressionCatalog:
         expressions = sorted(
             {
                 str(value).strip()
-                for value in (
-                    *product_expressions,
-                    *entity_names,
-                    *aliases,
-                    *supplement_names,
+                for value in chain(
+                    product_expressions,
+                    entity_names,
+                    aliases,
+                    supplement_names,
+                    additional_names,
                 )
                 if str(value).strip()
             },
@@ -67,6 +77,11 @@ class DbMedicationExpressionCatalog:
         self._cache_expires_at = now + self._cache_ttl_seconds
         return expressions.copy()
 
+    async def _list_additional_names(self) -> list[str]:
+        if self._supplement_catalog is None:
+            return []
+        return await self._supplement_catalog.list_names()
+
     @classmethod
     def _product_expressions(cls, product_name: str) -> list[str]:
         full_name = product_name.strip()
@@ -75,8 +90,12 @@ class DbMedicationExpressionCatalog:
         name_without_ingredient = cls._INGREDIENT_SUFFIX.sub("", full_name).strip()
         dosage_form = cls._DOSAGE_FORM_BOUNDARY.search(name_without_ingredient)
         if dosage_form is None:
-            return [full_name]
+            return list(dict.fromkeys([full_name, name_without_ingredient]))
         family_name = name_without_ingredient[: dosage_form.start()].rstrip(" -")
         if len(family_name) < 2:
-            return [full_name]
-        return [full_name, family_name]
+            return list(dict.fromkeys([full_name, name_without_ingredient]))
+        return list(
+            dict.fromkeys(
+                [full_name, name_without_ingredient, family_name],
+            )
+        )

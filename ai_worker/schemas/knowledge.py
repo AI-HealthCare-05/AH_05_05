@@ -48,6 +48,12 @@ class KnowledgeSearchTier(StrEnum):
     SEMANTIC = "SEMANTIC"
 
 
+class KnowledgeCandidateRejectionReason(StrEnum):
+    BELOW_SCORE = "BELOW_SCORE"
+    ENTITY_MISMATCH = "ENTITY_MISMATCH"
+    PAIR_MISMATCH = "PAIR_MISMATCH"
+
+
 class KnowledgeEvidenceLevel(StrEnum):
     REGULATORY = "REGULATORY"
     SYSTEMATIC_REVIEW = "SYSTEMATIC_REVIEW"
@@ -211,6 +217,25 @@ class RetrievedKnowledgeChunk(KnowledgeChunk):
     similarity_score: float = Field(ge=-1.0, le=1.0)
 
 
+class KnowledgeCandidateDiagnostic(BaseModel):
+    """평가·추적에서만 사용하는 검색 후보의 순위 결정 근거."""
+
+    document_id: str = Field(min_length=1)
+    chunk_id: str = Field(min_length=64, max_length=64)
+    search_tier: KnowledgeSearchTier
+    raw_rank: int = Field(ge=1)
+    raw_similarity_score: float = Field(ge=-1.0, le=1.0)
+    boost_score: float
+    adjusted_score: float
+    adjusted_rank: int = Field(ge=1)
+    entity_matched: bool
+    section_matched: bool
+    pair_matched: bool | None = None
+    eligible: bool
+    rejection_reason: KnowledgeCandidateRejectionReason | None = None
+    selected_in_top_5: bool = False
+
+
 class KnowledgeRetrievalDiagnostics(BaseModel):
     raw_candidate_count: int = Field(ge=0)
     entity_filtered_count: int = Field(ge=0)
@@ -227,6 +252,10 @@ class KnowledgeRetrievalDiagnostics(BaseModel):
         default_factory=list,
     )
     selected_search_tier: KnowledgeSearchTier | None = None
+    candidate_diagnostics: list[KnowledgeCandidateDiagnostic] = Field(
+        default_factory=list,
+        max_length=20,
+    )
 
 
 class KnowledgeRetrievalResult(BaseModel):

@@ -14,6 +14,11 @@ from app.models.interactions import (
 )
 
 
+class StaticSupplementIngredientCatalog:
+    async def list_names(self) -> list[str]:
+        return ["비타민 K"]
+
+
 @pytest_asyncio.fixture
 async def initialized_db() -> None:
     await Tortoise.init(
@@ -62,3 +67,40 @@ async def test_catalog_combines_product_entity_and_alias_names(
         "타이레놀정500밀리그람",
         "해열진통제",
     ]
+
+
+@pytest.mark.asyncio
+async def test_catalog_includes_product_name_without_parenthetical_ingredient(
+    initialized_db: None,
+) -> None:
+    await MedicationProductGuide.create(
+        item_seq="200",
+        product_name="마그오캡슐500mg(산화마그네슘)",
+        manufacturer_name="테스트제약",
+        efficacy="제산 작용에 사용합니다.",
+        usage_instructions="정해진 용법을 따릅니다.",
+        pre_use_warning="성분을 확인합니다.",
+        precautions="주의사항을 확인합니다.",
+        drug_food_interactions="상호작용을 확인합니다.",
+        adverse_reactions="이상반응을 확인합니다.",
+        storage_instructions="실온 보관합니다.",
+    )
+
+    result = await DbMedicationExpressionCatalog().list_expressions()
+
+    assert "마그오캡슐500mg(산화마그네슘)" in result
+    assert "마그오캡슐500mg" in result
+    assert "마그오" in result
+
+
+@pytest.mark.asyncio
+async def test_catalog_includes_dynamic_qdrant_ingredient_names(
+    initialized_db: None,
+) -> None:
+    catalog = DbMedicationExpressionCatalog(
+        supplement_catalog=StaticSupplementIngredientCatalog(),
+    )
+
+    result = await catalog.list_expressions()
+
+    assert "비타민 K" in result

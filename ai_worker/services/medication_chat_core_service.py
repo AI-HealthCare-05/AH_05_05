@@ -34,6 +34,11 @@ from ai_worker.repositories.medication_expression_catalog_repository import (
 from ai_worker.repositories.medication_product_guide_repository import (
     DbMedicationProductGuideRepository,
 )
+from ai_worker.repositories.supplement_ingredient_catalog_repository import (
+    CompositeSupplementIngredientCatalog,
+    DbSupplementIngredientCatalog,
+    QdrantSupplementIngredientCatalog,
+)
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
@@ -96,6 +101,19 @@ def build_medication_chat_core_service(
         collection_name=settings.KNOWLEDGE_QDRANT_COLLECTION,
         vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
     )
+    supplement_ingredient_catalog = CompositeSupplementIngredientCatalog(
+        sources=[
+            DbSupplementIngredientCatalog(),
+            QdrantSupplementIngredientCatalog(
+                client=qdrant_client,
+                collection_name=settings.KNOWLEDGE_QDRANT_COLLECTION,
+                dataset_version=settings.KNOWLEDGE_DATASET_VERSION,
+            ),
+        ]
+    )
+    expression_catalog = DbMedicationExpressionCatalog(
+        supplement_catalog=supplement_ingredient_catalog,
+    )
     use_case = AnswerMedicationQuestionUseCase(
         context_provider=DbActiveIntakeContextProvider(),
         guide_repository=DbMedicationProductGuideRepository(),
@@ -117,8 +135,9 @@ def build_medication_chat_core_service(
         grounded_claim_validator=RuleBasedGroundedClaimValidator(),
         tracer=chat_tracer,
         question_resolver=RuleBasedMedicationQuestionResolver(
-            catalog=DbMedicationExpressionCatalog(),
+            catalog=expression_catalog,
         ),
+        supplement_ingredient_catalog=supplement_ingredient_catalog,
     )
     return MedicationChatCoreService(
         use_case=use_case,

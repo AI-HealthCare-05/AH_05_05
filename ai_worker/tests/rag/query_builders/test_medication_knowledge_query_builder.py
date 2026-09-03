@@ -10,7 +10,10 @@ from ai_worker.schemas.interaction import (
     InteractionPairType,
     build_interaction_pair_key,
 )
-from ai_worker.schemas.knowledge import KnowledgeSectionType
+from ai_worker.schemas.knowledge import (
+    KnowledgeDocumentType,
+    KnowledgeSectionType,
+)
 
 
 def test_build_expands_supplement_function_question() -> None:
@@ -23,6 +26,21 @@ def test_build_expands_supplement_function_question() -> None:
     assert "기능성" in plan.expanded_query
     assert plan.section_types == [KnowledgeSectionType.FUNCTION]
     assert plan.has_medication_product_cue is False
+
+
+def test_build_uses_dynamic_supplement_names_for_document_routing() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        supplement_names=["루테인"],
+    ).build(
+        "루테인은 왜 먹나요?",
+    )
+
+    assert plan.entity_names == ["루테인"]
+    assert plan.entities[0].kind == InteractionEntityKind.SUPPLEMENT
+    assert plan.document_types == [
+        KnowledgeDocumentType.SUPPLEMENT_CODE,
+        KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+    ]
 
 
 def test_build_detects_daily_intake_intent() -> None:

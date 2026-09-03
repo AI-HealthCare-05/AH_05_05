@@ -3,6 +3,9 @@ import pytest
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.observability.chat_tracer import NoOpChatTracer
+from ai_worker.repositories.supplement_ingredient_catalog_repository import (
+    CompositeSupplementIngredientCatalog,
+)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
     MedicationChatProgress,
@@ -94,3 +97,20 @@ def test_builder_reuses_injected_chat_tracer() -> None:
     )
 
     assert service.tracer is tracer
+
+
+def test_builder_shares_dynamic_supplement_catalog_with_resolver_and_use_case() -> None:
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            KNOWLEDGE_QDRANT_COLLECTION="knowledge-release-v2",
+            KNOWLEDGE_DATASET_VERSION="knowledge-v2",
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+    )
+
+    use_case = service._use_case
+    catalog = use_case._supplement_ingredient_catalog
+    assert isinstance(catalog, CompositeSupplementIngredientCatalog)
+    assert use_case._question_resolver._catalog._supplement_catalog is catalog
