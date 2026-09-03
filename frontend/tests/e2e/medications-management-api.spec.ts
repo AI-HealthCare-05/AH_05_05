@@ -32,6 +32,19 @@ function overview(recordId: number, isFinished: boolean, daysRemaining: number) 
   };
 }
 
+function manyOverviews(count = 41) {
+  return Array.from({ length: count }, (_, index) => {
+    const item = overview(1_000 + index, true, 0);
+    const startDate = new Date(2026, 7, 24 - index);
+    const date = [
+      startDate.getFullYear(),
+      String(startDate.getMonth() + 1).padStart(2, '0'),
+      String(startDate.getDate()).padStart(2, '0'),
+    ].join('-');
+    return { ...item, start: { ...item.start, date }, endDate: date };
+  });
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
@@ -72,13 +85,36 @@ test('URL의 조회 범위를 그대로 전달하고 약봉투 이미지는 요�
   });
 
   await page.goto('/medications?from=2026-08-01&to=2026-08-31');
-  expect(overviewRequests).toHaveLength(1);
+  await expect.poll(() => overviewRequests.length).toBe(1);
   expect(overviewRequests[0].searchParams.get('from')).toBe('2026-08-01');
   expect(overviewRequests[0].searchParams.get('to')).toBe('2026-08-31');
 
   await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
   await expect(page.getByRole('button', { name: '약봉투 사진 보기' })).toHaveCount(0);
   expect(imageRequests).toBe(0);
+});
+
+test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 반영한다', async ({ page }) => {
+  let overviewRequests = 0;
+  await page.route('**/api/v1/medications', async (route) => {
+    overviewRequests += 1;
+    await fulfillJson(route, manyOverviews());
+  });
+  await page.route('**/api/v1/medications/*', (route) => route.fulfill({ status: 204 }));
+
+  await page.goto('/medications');
+  const cards = page.getByRole('button', { name: /처방 · 약/ });
+  await expect(cards).toHaveCount(41);
+
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('checkbox').first().check();
+  await page.getByRole('button', { name: '삭제하기' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '삭제하기' }).click();
+
+  await expect(page.getByText('1개를 삭제했어요')).toBeVisible();
+  await expect(page.getByText('40개', { exact: true })).toBeVisible();
+  await expect(cards).toHaveCount(40);
+  expect(overviewRequests).toBe(1);
 });
 
 test('선택 삭제는 순차 실행하고 부분 실패 항목만 선택 상태로 남긴다', async ({ page }) => {
@@ -140,7 +176,7 @@ test('선택 삭제가 전부 실패하면 같은 항목들을 순서대로 재�
   await dialog.getByRole('button', { name: '삭제하기' }).click();
 
   await expect(dialog).toContainText('선택한 복약 정보를 삭제하지 못했어요. 다시 시도해주세요.');
-  await expect(page.getByRole('checkbox', { name: /처방 선택/ })).toHaveCount(2);
+  await expect(page.locator('button[role="checkbox"][data-state="checked"]')).toHaveCount(2);
   await dialog.getByRole('button', { name: '다시 시도' }).click();
 
   await expect(page.getByText('2개를 삭제했어요')).toBeVisible();
