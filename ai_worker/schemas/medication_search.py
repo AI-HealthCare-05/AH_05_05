@@ -36,6 +36,39 @@ class MedicationQueryResolutionStatus(StrEnum):
     AMBIGUOUS = "AMBIGUOUS"
 
 
+class MedicationQuestionScope(StrEnum):
+    IN_SCOPE = "IN_SCOPE"
+    GREETING = "GREETING"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"
+
+
+class MedicationExpressionResolutionStatus(StrEnum):
+    UNCHANGED = "UNCHANGED"
+    AUTO_CORRECTED = "AUTO_CORRECTED"
+    CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
+    UNRESOLVED = "UNRESOLVED"
+
+
+class MedicationExpressionCorrection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    original: str = Field(min_length=1)
+    replacement: str = Field(min_length=1)
+
+
+class MedicationQuestionResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    original_question: str = Field(min_length=1)
+    resolved_question: str = Field(min_length=1)
+    scope: MedicationQuestionScope
+    status: MedicationExpressionResolutionStatus
+    corrections: list[MedicationExpressionCorrection] = Field(
+        default_factory=list,
+    )
+    candidate_names: list[str] = Field(default_factory=list)
+
+
 class InteractionRuleLookupStatus(StrEnum):
     MATCHED = "MATCHED"
     NO_APPROVED_RULE = "NO_APPROVED_RULE"

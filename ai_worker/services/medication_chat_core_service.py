@@ -2,6 +2,9 @@ from qdrant_client import AsyncQdrantClient
 
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
+from ai_worker.domain.medication_question_resolver import (
+    RuleBasedMedicationQuestionResolver,
+)
 from ai_worker.llm.generators.medication_answer_generator import (
     OpenAIMedicationAnswerGenerator,
 )
@@ -24,6 +27,9 @@ from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
 )
 from ai_worker.repositories.interaction_rule_repository import (
     DbInteractionRuleRepository,
+)
+from ai_worker.repositories.medication_expression_catalog_repository import (
+    DbMedicationExpressionCatalog,
 )
 from ai_worker.repositories.medication_product_guide_repository import (
     DbMedicationProductGuideRepository,
@@ -110,6 +116,9 @@ def build_medication_chat_core_service(
         ),
         grounded_claim_validator=RuleBasedGroundedClaimValidator(),
         tracer=chat_tracer,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=DbMedicationExpressionCatalog(),
+        ),
     )
     return MedicationChatCoreService(
         use_case=use_case,

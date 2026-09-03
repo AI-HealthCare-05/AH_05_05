@@ -1,7 +1,10 @@
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from ai_worker.schemas.medication_search import MedicationSearchExecutionPlan
+    from ai_worker.schemas.medication_search import (
+        MedicationQuestionResolution,
+        MedicationSearchExecutionPlan,
+    )
 
 from ai_worker.schemas.chat import (
     ChatAnswerRequest,
@@ -134,6 +137,15 @@ class MedicationGuideRepository(Protocol):
         self,
         product_name: str,
     ) -> MedicationGuideLookup: ...
+
+
+class MedicationQuestionResolver(Protocol):
+    async def resolve(
+        self,
+        *,
+        question: str,
+        additional_names: list[str] | None = None,
+    ) -> "MedicationQuestionResolution": ...
 
 
 class InteractionRuleRepository(Protocol):
