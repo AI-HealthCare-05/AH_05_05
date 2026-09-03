@@ -807,3 +807,23 @@ def test_recursive_chunks_track_their_actual_page_range() -> None:
     assert len(chunks) > 1
     assert chunks[-1].metadata.page_start == 2
     assert chunks[-1].metadata.page_end == 2
+
+
+def test_locate_split_chunks_replaces_nested_fragment_at_same_position() -> None:
+    source = "앞 문장\n\n스테로이드제\n가려움증 안내\n\n다음 문장"
+
+    located = KnowledgeSplitter._locate_split_chunks(
+        source,
+        [
+            "앞 문장",
+            "스테로이드제",
+            "스테로이드제\n가려움증 안내",
+            "다음 문장",
+        ],
+    )
+
+    assert [content for content, _, _ in located] == [
+        "앞 문장",
+        "스테로이드제\n가려움증 안내",
+        "다음 문장",
+    ]

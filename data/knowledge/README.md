@@ -149,8 +149,14 @@ uv run --group ai python -m scripts.evaluate_knowledge_retrieval \
 ```bash
 uv run --group ai python -m scripts.preprocess_knowledge_corpus \
   --output data/knowledge/processed/full-v2 \
-  --dataset-version knowledge-full-v2-interaction-metadata
+  --dataset-version knowledge-full-v2-interaction-metadata \
+  --tokenizer-encoding cl100k_base
 ```
+
+tokenizer 비교 실험은 기존 산출물과 컬렉션을 덮어쓰지 않도록 다른 `--output`,
+`--dataset-version`, `--collection`을 사용한다. `--tokenizer-encoding`은
+`cl100k_base`와 `o200k_base`만 허용한다. 2026-09-02 비교 결과와 활성화 판정은
+`docs/experiments/2026-09-02-o200k-tokenizer-comparison.md`에 기록되어 있다.
 
 실제 외부 임베딩 전송 승인을 받은 뒤에만 새 컬렉션을 생성합니다.
 

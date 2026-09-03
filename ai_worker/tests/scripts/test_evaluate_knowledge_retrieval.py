@@ -226,3 +226,27 @@ def test_pilot_manifest_covers_search_precision_contracts() -> None:
     assert cases["vitamin-a-daily-intake"].expected_document_ids == [
         "food_safety_korea_supplement_ingredients-1d2702336f22ecc4",
     ]
+
+
+def test_pilot_manifest_is_frozen_for_tokenizer_comparison() -> None:
+    manifest = module.load_evaluation_manifest(Path("data/knowledge/evaluation/pilot_queries.yaml"))
+
+    assert [case.query_id for case in manifest.cases] == [
+        "vitamin-b6-function",
+        "vitamin-b6-daily-intake",
+        "vitamin-a-daily-intake",
+        "hepatitis-a-vaccine-purpose",
+        "doxazosin-dizziness-case",
+        "ibs-symptom-management",
+        "calcium-iron-absorption",
+        "fexofenadine-fruit-juice",
+        "bisphosphonate-food",
+        "supplement-sleep-function",
+        "warfarin-vitamin-k",
+        "warfarin-metronidazole",
+        "acetaminophen-brand-alias",
+        "losartan-hard-negative",
+    ]
+    assert manifest.thresholds.min_hit_at_5 == 1.0
+    assert manifest.thresholds.min_citation_accuracy == 1.0
+    assert manifest.thresholds.max_wrong_entity_mixing_count == 0
