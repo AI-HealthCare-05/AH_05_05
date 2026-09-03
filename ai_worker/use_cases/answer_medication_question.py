@@ -18,6 +18,7 @@ from ai_worker.domain.interfaces import (
     MedicationGuideRepository,
     MedicationKnowledgeRetriever,
     MedicationQuestionResolver,
+    SupplementIngredientCatalog,
 )
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
@@ -91,6 +92,7 @@ class AnswerMedicationQuestionUseCase:
         grounded_claim_validator: GroundedClaimValidator,
         tracer: ChatTracer | None = None,
         question_resolver: MedicationQuestionResolver | None = None,
+        supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -100,6 +102,7 @@ class AnswerMedicationQuestionUseCase:
         self._grounded_claim_validator = grounded_claim_validator
         self._tracer = tracer or NoOpChatTracer()
         self._question_resolver = question_resolver
+        self._supplement_ingredient_catalog = supplement_ingredient_catalog
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -135,7 +138,10 @@ class AnswerMedicationQuestionUseCase:
         if early_result is not None:
             return early_result
         async with self._tracer.span("query.plan") as query_span:
-            query_plan = MedicationKnowledgeQueryBuilder().build(
+            supplement_names = await self._supplement_ingredient_names()
+            query_plan = MedicationKnowledgeQueryBuilder(
+                supplement_names=supplement_names,
+            ).build(
                 request.question,
             )
             query_outputs = {
@@ -143,6 +149,7 @@ class AnswerMedicationQuestionUseCase:
                 "section_count": len(query_plan.section_types),
                 "interaction_pair_present": (query_plan.interaction_pair is not None),
                 "medication_product_cue": (query_plan.has_medication_product_cue),
+                "supplement_vocabulary_count": len(supplement_names),
                 "query_plan_hash": query_plan.query_plan_hash,
             }
             if self._tracer.capture_content:
@@ -562,6 +569,14 @@ class AnswerMedicationQuestionUseCase:
                 outputs["candidate_names"] = resolution.candidate_names
             resolution_span.end(outputs)
             return resolution
+
+    async def _supplement_ingredient_names(self) -> list[str]:
+        if self._supplement_ingredient_catalog is None:
+            return []
+        try:
+            return await self._supplement_ingredient_catalog.list_names()
+        except Exception:
+            return []
 
     @classmethod
     def _out_of_scope_result(

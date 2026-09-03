@@ -164,6 +164,18 @@ class MedicationQueryEntityNormalizer:
         "증후군",
     )
 
+    def __init__(
+        self,
+        *,
+        supplement_names: list[str] | None = None,
+    ) -> None:
+        self._supplement_names = frozenset(
+            {
+                *SUPPORTED_SUPPLEMENT_NAMES,
+                *(name.strip() for name in supplement_names or [] if name.strip()),
+            }
+        )
+
     def normalize(
         self,
         question: str,
@@ -222,31 +234,29 @@ class MedicationQueryEntityNormalizer:
     def has_medication_product_cue(cls, question: str) -> bool:
         return bool(cls._MEDICATION_PRODUCT_CUE.search(question))
 
-    @classmethod
-    def _clean_surface(cls, value: str) -> str:
+    def _clean_surface(self, value: str) -> str:
         normalized = unicodedata.normalize("NFKC", value)
         normalized = re.sub(r"\s+", " ", normalized).strip(
             " .,!?:;()[]{}\"'",
         )
-        if normalized in cls._STOPWORDS:
+        if normalized in self._STOPWORDS:
             return normalized
         previous = ""
         while previous != normalized:
             previous = normalized
-            normalized = cls._TRAILING_PARTICLE.sub("", normalized)
+            normalized = self._TRAILING_PARTICLE.sub("", normalized)
         if normalized.endswith("나"):
             candidate = normalized[:-1]
             if (
-                cls._is_food(candidate)
-                or cls._is_supplement(candidate)
-                or candidate in cls._BRAND_ALIASES
-                or cls._MEDICATION_PRODUCT_CUE.fullmatch(candidate)
+                self._is_food(candidate)
+                or self._is_supplement(candidate)
+                or candidate in self._BRAND_ALIASES
+                or self._MEDICATION_PRODUCT_CUE.fullmatch(candidate)
             ):
                 normalized = candidate
         return normalized.strip()
 
-    @classmethod
-    def _canonical_name(cls, value: str) -> str:
+    def _canonical_name(self, value: str) -> str:
         compact = re.sub(r"\s+", "", value)
         vitamin_match = re.fullmatch(
             r"비타민([A-Za-z0-9]+)(?:제)?",
@@ -257,83 +267,77 @@ class MedicationQueryEntityNormalizer:
             return f"비타민 {vitamin_match.group(1).upper()}"
         if compact.casefold() == "오메가3":
             return "오메가3"
-        if compact.endswith("제") and compact[:-1] in cls._SUPPLEMENT_NAMES:
+        if compact.endswith("제") and compact[:-1] in self._supplement_names:
             return compact[:-1]
         return value
 
-    @classmethod
     def _is_entity_candidate(
-        cls,
+        self,
         surface: str,
         canonical_name: str,
     ) -> bool:
-        if len(canonical_name) == 1 and canonical_name not in cls._SUPPLEMENT_NAMES:
+        if len(canonical_name) == 1 and canonical_name not in self._supplement_names:
             return False
         return bool(
             canonical_name
-            and canonical_name not in cls._STOPWORDS
-            and surface not in cls._STOPWORDS
+            and canonical_name not in self._STOPWORDS
+            and surface not in self._STOPWORDS
             and not canonical_name.isdigit()
-            and cls._NON_ENTITY_PREDICATE.fullmatch(canonical_name) is None
+            and self._NON_ENTITY_PREDICATE.fullmatch(canonical_name) is None
         )
 
-    @classmethod
     def _entity_kind(
-        cls,
+        self,
         canonical_name: str,
     ) -> InteractionEntityKind | None:
-        if cls._is_topic(canonical_name):
+        if self._is_topic(canonical_name):
             return None
-        if cls._is_food(canonical_name):
+        if self._is_food(canonical_name):
             return InteractionEntityKind.FOOD
-        if cls._is_supplement(canonical_name):
+        if self._is_supplement(canonical_name):
             return InteractionEntityKind.SUPPLEMENT
         return InteractionEntityKind.DRUG
 
-    @classmethod
     def _entity_type(
-        cls,
+        self,
         canonical_name: str,
     ) -> MedicationQueryEntityType:
-        if cls._is_topic(canonical_name):
+        if self._is_topic(canonical_name):
             return MedicationQueryEntityType.TOPIC
         if find_supplement_ingredient_family(canonical_name) is not None:
             return MedicationQueryEntityType.INGREDIENT_FAMILY
-        if cls._is_food(canonical_name):
+        if self._is_food(canonical_name):
             return MedicationQueryEntityType.FOOD_CATEGORY
-        if cls._MEDICATION_PRODUCT_CUE.search(canonical_name):
+        if self._MEDICATION_PRODUCT_CUE.search(canonical_name):
             return MedicationQueryEntityType.PRODUCT_NAME
-        if canonical_name in cls._BRAND_ALIASES:
+        if canonical_name in self._BRAND_ALIASES:
             return MedicationQueryEntityType.BRAND_ALIAS
         return MedicationQueryEntityType.INGREDIENT_NAME
 
-    @classmethod
     def _candidate_types(
-        cls,
+        self,
         canonical_name: str,
     ) -> list[MedicationQueryEntityType]:
-        if canonical_name in cls._BRAND_INGREDIENT_ALIASES:
+        if canonical_name in self._BRAND_INGREDIENT_ALIASES:
             return [
                 MedicationQueryEntityType.PRODUCT_NAME,
                 MedicationQueryEntityType.BRAND_ALIAS,
                 MedicationQueryEntityType.INGREDIENT_NAME,
             ]
-        return [cls._entity_type(canonical_name)]
+        return [self._entity_type(canonical_name)]
 
-    @classmethod
     def _entity_source(
-        cls,
+        self,
         canonical_name: str,
     ) -> MedicationQueryEntitySource:
-        if canonical_name in cls._BRAND_ALIASES:
+        if canonical_name in self._BRAND_ALIASES:
             return MedicationQueryEntitySource.ALIAS
-        if cls._is_supplement(canonical_name) or cls._is_food(canonical_name):
+        if self._is_supplement(canonical_name) or self._is_food(canonical_name):
             return MedicationQueryEntitySource.CATALOG
         return MedicationQueryEntitySource.REGEX
 
-    @classmethod
-    def _is_supplement(cls, canonical_name: str) -> bool:
-        return canonical_name.startswith("비타민 ") or canonical_name in cls._SUPPLEMENT_NAMES
+    def _is_supplement(self, canonical_name: str) -> bool:
+        return canonical_name.startswith("비타민 ") or canonical_name in self._supplement_names
 
     @classmethod
     def _is_food(cls, canonical_name: str) -> bool:
@@ -354,8 +358,14 @@ class MedicationKnowledgeQueryBuilder:
         InteractionPairType.SUPPLEMENT_SUPPLEMENT: 3,
     }
 
-    def __init__(self) -> None:
-        self._entity_normalizer = MedicationQueryEntityNormalizer()
+    def __init__(
+        self,
+        *,
+        supplement_names: list[str] | None = None,
+    ) -> None:
+        self._entity_normalizer = MedicationQueryEntityNormalizer(
+            supplement_names=supplement_names,
+        )
 
     def build(self, question: str) -> MedicationKnowledgeQueryPlan:
         normalized = question.strip()

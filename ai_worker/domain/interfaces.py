@@ -148,6 +148,10 @@ class MedicationQuestionResolver(Protocol):
     ) -> "MedicationQuestionResolution": ...
 
 
+class SupplementIngredientCatalog(Protocol):
+    async def list_names(self) -> list[str]: ...
+
+
 class InteractionRuleRepository(Protocol):
     async def find_approved_rules(
         self,

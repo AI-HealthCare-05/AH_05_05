@@ -14,6 +14,11 @@ from app.models.interactions import (
 )
 
 
+class StaticSupplementIngredientCatalog:
+    async def list_names(self) -> list[str]:
+        return ["비타민 K"]
+
+
 @pytest_asyncio.fixture
 async def initialized_db() -> None:
     await Tortoise.init(
@@ -86,3 +91,16 @@ async def test_catalog_includes_product_name_without_parenthetical_ingredient(
     assert "마그오캡슐500mg(산화마그네슘)" in result
     assert "마그오캡슐500mg" in result
     assert "마그오" in result
+
+
+@pytest.mark.asyncio
+async def test_catalog_includes_dynamic_qdrant_ingredient_names(
+    initialized_db: None,
+) -> None:
+    catalog = DbMedicationExpressionCatalog(
+        supplement_catalog=StaticSupplementIngredientCatalog(),
+    )
+
+    result = await catalog.list_expressions()
+
+    assert "비타민 K" in result

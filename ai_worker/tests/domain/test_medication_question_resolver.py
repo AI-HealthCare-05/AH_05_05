@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from ai_worker.domain.medication_question_resolver import (
@@ -30,6 +32,15 @@ class CountingEditDistanceResolver(RuleBasedMedicationQuestionResolver):
             right,
             limit=limit,
         )
+
+
+class CountingBigramResolver(RuleBasedMedicationQuestionResolver):
+    bigram_call_count = 0
+
+    @staticmethod
+    def _bigrams(value: str) -> set[str]:
+        CountingBigramResolver.bigram_call_count += 1
+        return RuleBasedMedicationQuestionResolver._bigrams(value)
 
 
 @pytest.mark.asyncio
@@ -93,6 +104,59 @@ async def test_resolver_shortlists_typo_candidates_before_edit_distance() -> Non
     assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
     assert result.resolved_question == "타이레놀 복용법 알려줘"
     assert CountingEditDistanceResolver.edit_distance_call_count < 100
+
+
+@pytest.mark.asyncio
+async def test_resolver_does_not_regex_scan_entire_multiword_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    regex_search_call_count = 0
+    original_search = re.search
+
+    def counting_search(*args: object, **kwargs: object) -> re.Match[str] | None:
+        nonlocal regex_search_call_count
+        regex_search_call_count += 1
+        return original_search(*args, **kwargs)
+
+    monkeypatch.setattr(re, "search", counting_search)
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog(
+            [
+                "타이레놀",
+                *(f"검색 대상이 아닌 제품 {index:05d}" for index in range(5_000)),
+            ],
+        ),
+    )
+
+    result = await resolver.resolve(
+        question="타이래놀의 효능과 주의사항을 알려줘",
+    )
+
+    assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert result.resolved_question == "타이레놀의 효능과 주의사항을 알려줘"
+    assert regex_search_call_count < 100
+
+
+@pytest.mark.asyncio
+async def test_resolver_reuses_candidate_indexes_for_cached_catalog() -> None:
+    CountingBigramResolver.bigram_call_count = 0
+    resolver = CountingBigramResolver(
+        catalog=StaticExpressionCatalog(
+            [
+                "타이레놀",
+                *(f"제품{index:05d}정" for index in range(1_000)),
+            ],
+        ),
+    )
+
+    first = await resolver.resolve(question="타이래놀 복용법 알려줘")
+    first_call_count = CountingBigramResolver.bigram_call_count
+    second = await resolver.resolve(question="타이래놀 복용법 알려줘")
+    repeated_call_count = CountingBigramResolver.bigram_call_count - first_call_count
+
+    assert first.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert second.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert repeated_call_count < 20
 
 
 @pytest.mark.asyncio

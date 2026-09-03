@@ -12,6 +12,7 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeCandidateDiagnostic,
@@ -133,6 +134,14 @@ class StaticExpressionCatalog:
 
     async def list_expressions(self) -> list[str]:
         return self.expressions
+
+
+class StaticSupplementIngredientCatalog:
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+
+    async def list_names(self) -> list[str]:
+        return self.names
 
 
 class FakeRuleRepository:
@@ -435,6 +444,7 @@ def build_use_case(
     answer_generator=None,
     grounded_claim_validator=None,
     question_resolver=None,
+    supplement_ingredient_catalog=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -445,6 +455,7 @@ def build_use_case(
         grounded_claim_validator=(grounded_claim_validator or PassthroughValidator()),
         tracer=tracer,
         question_resolver=question_resolver,
+        supplement_ingredient_catalog=supplement_ingredient_catalog,
     )
 
 
@@ -582,6 +593,25 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "통증과 발열을 완화합니다" in result.answer
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
+
+
+async def test_execute_uses_dynamic_supplement_names_in_query_plan() -> None:
+    retriever = RecordingQueryPlanRetriever()
+
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=(StaticSupplementIngredientCatalog(["루테인"])),
+    ).execute(
+        build_request("루테인은 왜 먹나요?"),
+    )
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entities[0].kind == InteractionEntityKind.SUPPLEMENT
+    assert query_plan.document_types == [
+        KnowledgeDocumentType.SUPPLEMENT_CODE,
+        KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+    ]
 
 
 async def test_execute_forwards_question_query_plan_without_patient_or_rule_signals() -> None:

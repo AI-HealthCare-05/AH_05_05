@@ -32,6 +32,12 @@ class _SpacingCorrection(NamedTuple):
     token_count: int
 
 
+class _CatalogIndex(NamedTuple):
+    catalog: dict[str, str]
+    candidates_by_length: dict[int, set[str]]
+    candidates_by_bigram: dict[str, set[str]]
+
+
 class RuleBasedMedicationQuestionResolver:
     """보유 어휘를 기준으로 질문 범위와 사용자 표현을 안전하게 해석한다."""
 
@@ -94,7 +100,7 @@ class RuleBasedMedicationQuestionResolver:
     ) -> None:
         self._catalog = catalog
         self._cache_ttl_seconds = cache_ttl_seconds
-        self._cached_catalog: dict[str, str] | None = None
+        self._cached_catalog_index: _CatalogIndex | None = None
         self._cache_expires_at = 0.0
 
     async def resolve(
@@ -111,11 +117,14 @@ class RuleBasedMedicationQuestionResolver:
                 status=MedicationExpressionResolutionStatus.UNCHANGED,
             )
 
-        catalog = await self._base_catalog()
+        catalog_index = await self._base_catalog_index()
         additional_catalog = self._normalized_catalog(additional_names or [])
         if additional_catalog:
-            catalog = catalog.copy()
-            catalog.update(additional_catalog)
+            catalog_index = self._extend_catalog_index(
+                catalog_index,
+                additional_catalog,
+            )
+        catalog = catalog_index.catalog
 
         tokens = self._question_tokens(normalized_question)
         spacing_resolution = self._spacing_resolution(
@@ -131,6 +140,7 @@ class RuleBasedMedicationQuestionResolver:
         if self._contains_exact_expression(
             question=normalized_question,
             surfaces=surfaces,
+            tokens=tokens,
             catalog=catalog,
         ):
             return self._result(
@@ -152,7 +162,10 @@ class RuleBasedMedicationQuestionResolver:
                 candidate_names=prefix_candidates,
             )
 
-        ranked = self._rank_candidates(surfaces=surfaces, catalog=catalog)
+        ranked = self._rank_candidates(
+            surfaces=surfaces,
+            catalog_index=catalog_index,
+        )
         can_resolve_fuzzy = bool(
             self._is_domain_related(normalized_question)
             or self._FUZZY_CONTEXT_CUE.search(normalized_question)
@@ -214,17 +227,77 @@ class RuleBasedMedicationQuestionResolver:
             status=MedicationExpressionResolutionStatus.UNRESOLVED,
         )
 
-    async def _base_catalog(self) -> dict[str, str]:
+    async def _base_catalog_index(self) -> _CatalogIndex:
         now = time.monotonic()
-        if self._cached_catalog is not None and now < self._cache_expires_at:
-            return self._cached_catalog
+        if self._cached_catalog_index is not None and now < self._cache_expires_at:
+            return self._cached_catalog_index
         expressions = [
             *(await self._catalog.list_expressions()),
             *SUPPORTED_SUPPLEMENT_NAMES,
         ]
-        self._cached_catalog = self._normalized_catalog(expressions)
+        self._cached_catalog_index = self._build_catalog_index(self._normalized_catalog(expressions))
         self._cache_expires_at = now + self._cache_ttl_seconds
-        return self._cached_catalog
+        return self._cached_catalog_index
+
+    @classmethod
+    def _build_catalog_index(
+        cls,
+        catalog: dict[str, str],
+    ) -> _CatalogIndex:
+        candidates_by_length: dict[int, set[str]] = {}
+        candidates_by_bigram: dict[str, set[str]] = {}
+        for normalized_candidate in catalog:
+            candidates_by_length.setdefault(
+                len(normalized_candidate),
+                set(),
+            ).add(normalized_candidate)
+            for bigram in cls._bigrams(normalized_candidate):
+                candidates_by_bigram.setdefault(bigram, set()).add(
+                    normalized_candidate,
+                )
+        return _CatalogIndex(
+            catalog=catalog,
+            candidates_by_length=candidates_by_length,
+            candidates_by_bigram=candidates_by_bigram,
+        )
+
+    @classmethod
+    def _extend_catalog_index(
+        cls,
+        base: _CatalogIndex,
+        additional_catalog: dict[str, str],
+    ) -> _CatalogIndex:
+        catalog = base.catalog.copy()
+        catalog.update(additional_catalog)
+        new_candidates = additional_catalog.keys() - base.catalog.keys()
+        if not new_candidates:
+            return _CatalogIndex(
+                catalog=catalog,
+                candidates_by_length=base.candidates_by_length,
+                candidates_by_bigram=base.candidates_by_bigram,
+            )
+
+        candidates_by_length = base.candidates_by_length.copy()
+        candidates_by_bigram = base.candidates_by_bigram.copy()
+        copied_lengths: set[int] = set()
+        copied_bigrams: set[str] = set()
+        for normalized_candidate in new_candidates:
+            candidate_length = len(normalized_candidate)
+            if candidate_length not in copied_lengths:
+                candidates_by_length[candidate_length] = set(candidates_by_length.get(candidate_length, ()))
+                copied_lengths.add(candidate_length)
+            candidates_by_length[candidate_length].add(normalized_candidate)
+
+            for bigram in cls._bigrams(normalized_candidate):
+                if bigram not in copied_bigrams:
+                    candidates_by_bigram[bigram] = set(candidates_by_bigram.get(bigram, ()))
+                    copied_bigrams.add(bigram)
+                candidates_by_bigram[bigram].add(normalized_candidate)
+        return _CatalogIndex(
+            catalog=catalog,
+            candidates_by_length=candidates_by_length,
+            candidates_by_bigram=candidates_by_bigram,
+        )
 
     @staticmethod
     def _normalize_question(value: str) -> str:
@@ -383,43 +456,25 @@ class RuleBasedMedicationQuestionResolver:
         *,
         question: str,
         surfaces: list[str],
+        tokens: list[_QuestionToken],
         catalog: dict[str, str],
     ) -> bool:
         surface_keys = {cls._normalize_expression(surface) for surface in surfaces}
         if surface_keys.intersection(catalog):
             return True
-        return any(
-            " " in display_name
-            and re.search(
-                r"(?<![가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9])"
-                + r"\s*".join(re.escape(part) for part in display_name.split())
-                + r"(?![가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9])",
-                question,
-                flags=re.IGNORECASE,
-            )
-            is not None
-            for display_name in catalog.values()
-        )
+        window_keys = {
+            cls._normalize_expression(question[window[0].start : window[-1].end])
+            for window in cls._token_windows(tokens)
+        }
+        return bool(window_keys.intersection(catalog))
 
     @classmethod
     def _rank_candidates(
         cls,
         *,
         surfaces: list[str],
-        catalog: dict[str, str],
+        catalog_index: _CatalogIndex,
     ) -> list[tuple[int, str, str]]:
-        candidates_by_length: dict[int, set[str]] = {}
-        candidates_by_bigram: dict[str, set[str]] = {}
-        for normalized_candidate in catalog:
-            candidates_by_length.setdefault(
-                len(normalized_candidate),
-                set(),
-            ).add(normalized_candidate)
-            for bigram in cls._bigrams(normalized_candidate):
-                candidates_by_bigram.setdefault(bigram, set()).add(
-                    normalized_candidate,
-                )
-
         ranked: list[tuple[int, str, str]] = []
         for surface in surfaces:
             normalized_surface = cls._normalize_expression(surface)
@@ -430,18 +485,18 @@ class RuleBasedMedicationQuestionResolver:
             surface_ranked = cls._rank_surface_candidates(
                 surface=surface,
                 normalized_surface=normalized_surface,
-                catalog=catalog,
-                candidates_by_length=candidates_by_length,
-                candidates_by_bigram=candidates_by_bigram,
+                catalog=catalog_index.catalog,
+                candidates_by_length=(catalog_index.candidates_by_length),
+                candidates_by_bigram=(catalog_index.candidates_by_bigram),
                 limit=maximum_distance,
             )
             if not surface_ranked and maximum_distance < 3:
                 surface_ranked = cls._rank_surface_candidates(
                     surface=surface,
                     normalized_surface=normalized_surface,
-                    catalog=catalog,
-                    candidates_by_length=candidates_by_length,
-                    candidates_by_bigram=candidates_by_bigram,
+                    catalog=catalog_index.catalog,
+                    candidates_by_length=(catalog_index.candidates_by_length),
+                    candidates_by_bigram=(catalog_index.candidates_by_bigram),
                     limit=maximum_distance + 1,
                 )
             ranked.extend(surface_ranked)
