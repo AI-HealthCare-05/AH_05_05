@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -15,6 +16,7 @@ from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
 from app.models.care import FollowUpVisit
 from app.models.enums import (
+    AccountStatus,
     AlarmEventType,
     AlarmStatus,
     AlarmType,
@@ -24,7 +26,7 @@ from app.models.enums import (
 )
 from app.models.medications import Medication
 from app.models.supplement_nutrients import UserSupplementNutrient
-from app.models.users import UserSettings
+from app.models.users import User, UserSettings
 from app.services.alarm_schedule import next_occurrence
 from app.services.background_jobs import BackgroundJobService
 from app.services.web_push import PushResult, PushResultKind, WebPushService
@@ -56,6 +58,16 @@ async def _notification_enabled(alarm: Alarm, connection: BaseDBAsyncClient) -> 
     return bool(getattr(user_settings, setting_name))
 
 
+async def _account_active(alarm: Alarm, connection: BaseDBAsyncClient) -> bool:
+    """탈퇴·정지 계정에는 보내지 않는다.
+
+    행을 지우지 않고 보낼 때 거르는 이유는 _notification_enabled 와 같다.
+    정지는 풀릴 수 있고, 그때 알람이 남아 있어야 복약 알림이 이어진다.
+    """
+    status = await User.filter(id=alarm.user_id).using_db(connection).values_list("status", flat=True)
+    return bool(status) and status[0] == AccountStatus.ACTIVE
+
+
 async def _prepare_alarm_delivery(
     alarm: Alarm,
     trigger_at: datetime,
@@ -63,6 +75,17 @@ async def _prepare_alarm_delivery(
     job_service: BackgroundJobService,
     connection: BaseDBAsyncClient,
 ) -> list[tuple[BackgroundJob, int, int, datetime]]:
+    # 계정이 없어진 사람에게 알림 설정을 물어볼 이유가 없어 설정 확인보다 앞에 둔다.
+    if not await _account_active(alarm, connection):
+        await AlarmEvent.create(
+            using_db=connection,
+            alarm_id=alarm.id,
+            event_type=AlarmEventType.SKIPPED,
+            event_at=now,
+            payload={"reason": "USER_NOT_ACTIVE"},
+        )
+        return []
+
     if not await _notification_enabled(alarm, connection):
         await AlarmEvent.create(
             using_db=connection,
@@ -154,7 +177,7 @@ async def send_alarm_push(
     if alarm is None or subscription is None or not subscription.is_active or alarm.status != AlarmStatus.ACTIVE:
         await _cancel_claimed_job(job)
         return
-    if await _skip_claimed_job_when_notification_disabled(job, alarm):
+    if await _skip_claimed_job_when_undeliverable(job, alarm):
         return
 
     medications: list[Medication] = []
@@ -220,17 +243,26 @@ async def _cancel_claimed_job(job: BackgroundJob) -> None:
     await job.save(update_fields=["status", "completed_at", "updated_at", "duration_ms"])
 
 
-async def _skip_claimed_job_when_notification_disabled(job: BackgroundJob, alarm: Alarm) -> bool:
+async def _skip_claimed_job(
+    job: BackgroundJob,
+    alarm: Alarm,
+    predicate: Callable[[Alarm, BaseDBAsyncClient], Awaitable[bool]],
+    reason: str,
+) -> bool:
+    """predicate 가 False 면 SKIPPED 이벤트를 남기고 작업을 취소한다.
+
+    poll 과 실제 발송 사이에 상태가 바뀌는 창이 있어 발송 직전에 한 번 더 본다.
+    """
     now = datetime.now(config.TIMEZONE)
     async with in_transaction() as connection:
-        if await _notification_enabled(alarm, connection):
+        if await predicate(alarm, connection):
             return False
         await AlarmEvent.create(
             using_db=connection,
             alarm_id=alarm.id,
             event_type=AlarmEventType.SKIPPED,
             event_at=now,
-            payload={"reason": "USER_NOTIFICATION_DISABLED"},
+            payload={"reason": reason},
         )
         job.status = BackgroundJobStatus.CANCELLED
         job.completed_at = now
@@ -241,6 +273,20 @@ async def _skip_claimed_job_when_notification_disabled(job: BackgroundJob, alarm
             update_fields=["status", "completed_at", "updated_at", "duration_ms"],
         )
     return True
+
+
+async def _skip_claimed_job_when_undeliverable(job: BackgroundJob, alarm: Alarm) -> bool:
+    """계정 상태와 알림 설정을 차례로 본다.
+
+    _prepare_alarm_delivery 와 같은 순서다 — 계정이 없어진 사람에게 설정을 물어볼 이유가 없다.
+    """
+    for predicate, reason in (
+        (_account_active, "USER_NOT_ACTIVE"),
+        (_notification_enabled, "USER_NOTIFICATION_DISABLED"),
+    ):
+        if await _skip_claimed_job(job, alarm, predicate, reason):
+            return True
+    return False
 
 
 async def _complete_push(

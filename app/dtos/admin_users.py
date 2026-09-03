@@ -62,6 +62,7 @@ class AdminUserDetailResponse(CamelModel):
     is_terms_agreed: bool = False
     created_at: datetime
     # alarms.status = 'ACTIVE' 인 행의 수 (alarm_type 무관).
-    # 복약 알람이 (사용자 x 시간대) 단위라 사용자당 최대 4건이므로,
-    # 화면이 기대하는 "활성 알림 수"와 같은지 알림 담당자 확인이 남아 있다.
+    # 복약 알람이 (사용자 x 시간대) 단위라 사용자당 최대 4건이다.
+    # 「등록된」 수이지 「발송될」 수가 아니다 — 알림 설정이 꺼져 있거나 계정이
+    # 활성이 아니면 발송 시점에 SKIPPED 로 걸러진다(#258).
     active_alarm_count: int = 0
