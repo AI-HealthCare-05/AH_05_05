@@ -1,0 +1,301 @@
+<style>
+  #routine-entry-layouts {
+    --rx-bg: light-dark(#f6f8fc, #10141c);
+    --rx-surface: light-dark(#ffffff, #1b2230);
+    --rx-text: light-dark(#111827, #eef2ff);
+    --rx-muted: light-dark(#667085, #a8b2c7);
+    --rx-line: light-dark(#e4e9f2, #313c50);
+    --rx-primary: light-dark(#2864eb, #76a0ff);
+    --rx-primary-soft: light-dark(#eaf1ff, #22345f);
+    --rx-success: light-dark(#16805b, #66d9ad);
+  }
+
+  #routine-entry-layouts .rx-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  #routine-entry-layouts .rx-choice {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 14px;
+    background: var(--card);
+    color: var(--card-foreground);
+  }
+
+  #routine-entry-layouts .rx-choice.is-selected {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+
+  #routine-entry-layouts .rx-choice-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  #routine-entry-layouts .rx-letter {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex: none;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-weight: 500;
+  }
+
+  #routine-entry-layouts .rx-choice h3,
+  #routine-entry-layouts .rx-choice p {
+    margin: 0;
+  }
+
+  #routine-entry-layouts .rx-choice p {
+    margin-top: 4px;
+    color: var(--muted-foreground);
+  }
+
+  #routine-entry-layouts .rx-phone {
+    max-width: 270px;
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--rx-line);
+    border-radius: 26px;
+    background: var(--rx-bg);
+    color: var(--rx-text);
+    box-shadow: 0 14px 32px color-mix(in srgb, var(--foreground) 10%, transparent);
+  }
+
+  #routine-entry-layouts .rx-status {
+    height: 18px;
+    background: var(--rx-surface);
+  }
+
+  #routine-entry-layouts .rx-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--rx-surface);
+    font-weight: 500;
+  }
+
+  #routine-entry-layouts .rx-main {
+    min-height: 390px;
+    padding: 14px;
+  }
+
+  #routine-entry-layouts .rx-greeting {
+    margin: 0 0 12px;
+    font-weight: 500;
+  }
+
+  #routine-entry-layouts .rx-card {
+    margin-bottom: 10px;
+    padding: 12px;
+    border-radius: 15px;
+    background: var(--rx-surface);
+  }
+
+  #routine-entry-layouts .rx-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 9px;
+  }
+
+  #routine-entry-layouts .rx-title {
+    font-weight: 500;
+  }
+
+  #routine-entry-layouts .rx-caption {
+    color: var(--rx-muted);
+    font-size: 12px;
+  }
+
+  #routine-entry-layouts .rx-progress {
+    height: 7px;
+    margin-top: 10px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--rx-muted) 18%, transparent);
+  }
+
+  #routine-entry-layouts .rx-progress > span {
+    display: block;
+    width: 60%;
+    height: 100%;
+    background: var(--rx-primary);
+  }
+
+  #routine-entry-layouts .rx-check {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--rx-primary-soft);
+    color: var(--rx-primary);
+  }
+
+  #routine-entry-layouts .rx-check.done {
+    background: color-mix(in srgb, var(--rx-success) 18%, var(--rx-surface));
+    color: var(--rx-success);
+  }
+
+  #routine-entry-layouts .rx-nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    padding: 9px 4px 12px;
+    border-top: 1px solid var(--rx-line);
+    background: var(--rx-surface);
+    color: var(--rx-muted);
+    text-align: center;
+    font-size: 11px;
+  }
+
+  #routine-entry-layouts .rx-nav .active {
+    color: var(--rx-primary);
+    font-weight: 500;
+  }
+
+  #routine-entry-layouts .rx-fab {
+    margin-top: 14px;
+    padding: 11px;
+    border-radius: 12px;
+    background: var(--rx-primary);
+    color: light-dark(#ffffff, #0d1424);
+    text-align: center;
+    font-weight: 500;
+  }
+
+  #routine-entry-layouts .rx-chat {
+    margin: 8px 0;
+    padding: 10px 11px;
+    border-radius: 14px 14px 14px 4px;
+    background: var(--rx-surface);
+  }
+
+  #routine-entry-layouts .rx-chat.user {
+    margin-left: 32px;
+    border-radius: 14px 14px 4px 14px;
+    background: var(--rx-primary-soft);
+  }
+
+  #routine-entry-layouts .rx-recommend {
+    padding: 11px;
+    border: 1px solid var(--rx-primary);
+    border-radius: 12px;
+    background: var(--rx-surface);
+  }
+
+  #routine-entry-layouts .rx-recommended {
+    margin-top: 12px;
+    color: var(--primary);
+    font-weight: 500;
+  }
+
+  @media (max-width: 850px) {
+    #routine-entry-layouts .rx-options {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div id="routine-entry-layouts">
+  <h2>생활습관 루틴은 어디서 시작할까요?</h2>
+  <p class="subtitle">통합형 기능의 첫 진입 구조를 선택해 주세요. 카드를 클릭하면 선택됩니다.</p>
+
+  <div class="rx-options">
+    <article class="rx-choice" data-choice="home-first" onclick="toggleSelect(this)">
+      <div class="rx-choice-head">
+        <div class="rx-letter">A</div>
+        <div>
+          <h3>홈 중심형</h3>
+          <p>오늘 해야 할 복약과 생활 루틴을 한 타임라인에서 관리</p>
+        </div>
+      </div>
+      <div class="rx-phone" aria-label="홈 중심형 모바일 화면">
+        <div class="rx-status"></div>
+        <div class="rx-header"><span>RxVita</span><span>9월 3일</span></div>
+        <div class="rx-main">
+          <p class="rx-greeting">김은미 님, 오늘도 차근차근 해봐요</p>
+          <div class="rx-card">
+            <div class="rx-row"><span class="rx-title">오늘의 루틴</span><span>3 / 5</span></div>
+            <div class="rx-progress"><span></span></div>
+            <div class="rx-row"><span>08:00 아침약 복용</span><span class="rx-check done">✓</span></div>
+            <div class="rx-row"><span>10:00 물 한 컵</span><span class="rx-check">○</span></div>
+            <div class="rx-row"><span>18:30 20분 걷기</span><span class="rx-check">○</span></div>
+          </div>
+          <div class="rx-card">
+            <div class="rx-title">AI 추천 루틴</div>
+            <div class="rx-caption">등록한 복약정보와 목표를 참고한 일반 건강관리 제안</div>
+            <div class="rx-fab">추천 루틴 확인</div>
+          </div>
+        </div>
+        <div class="rx-nav"><span class="active">홈</span><span>복약</span><span>영양제</span><span>챗봇</span><span>마이</span></div>
+      </div>
+      <div class="rx-recommended">추천 · 기존 홈과 알림 구조를 가장 잘 활용</div>
+    </article>
+
+    <article class="rx-choice" data-choice="dedicated-tab" onclick="toggleSelect(this)">
+      <div class="rx-choice-head">
+        <div class="rx-letter">B</div>
+        <div>
+          <h3>전용 루틴 탭형</h3>
+          <p>하단 메뉴에 루틴을 두고 캘린더·통계·템플릿을 집중 제공</p>
+        </div>
+      </div>
+      <div class="rx-phone" aria-label="전용 루틴 탭형 모바일 화면">
+        <div class="rx-status"></div>
+        <div class="rx-header"><span>나의 루틴</span><span>＋</span></div>
+        <div class="rx-main">
+          <div class="rx-card">
+            <div class="rx-row"><span class="rx-title">이번 주 달성률</span><span>72%</span></div>
+            <div class="rx-progress"><span style="width:72%"></span></div>
+          </div>
+          <div class="rx-card">
+            <div class="rx-title">오늘 · 수요일</div>
+            <div class="rx-row"><span>아침 스트레칭</span><span class="rx-check done">✓</span></div>
+            <div class="rx-row"><span>식후 10분 걷기</span><span class="rx-check">○</span></div>
+            <div class="rx-row"><span>23시 전에 잠들기</span><span class="rx-check">○</span></div>
+          </div>
+          <div class="rx-fab">새 루틴 만들기</div>
+        </div>
+        <div class="rx-nav"><span>홈</span><span>복약</span><span class="active">루틴</span><span>챗봇</span><span>마이</span></div>
+      </div>
+      <div class="rx-caption" style="margin-top:12px">장점: 확장성 높음 · 단점: 기존 5개 탭 재편 필요</div>
+    </article>
+
+    <article class="rx-choice" data-choice="chat-first" onclick="toggleSelect(this)">
+      <div class="rx-choice-head">
+        <div class="rx-letter">C</div>
+        <div>
+          <h3>챗봇 추천형</h3>
+          <p>대화로 목표를 정하고 AI가 루틴 초안을 만들어 등록</p>
+        </div>
+      </div>
+      <div class="rx-phone" aria-label="챗봇 추천형 모바일 화면">
+        <div class="rx-status"></div>
+        <div class="rx-header"><span>AI 루틴 코치</span><span>⋯</span></div>
+        <div class="rx-main">
+          <div class="rx-chat">어떤 생활습관을 만들고 싶으세요?</div>
+          <div class="rx-chat user">저녁마다 가볍게 걷고 싶어요.</div>
+          <div class="rx-chat">복약 시간을 피해서 주 5회, 저녁 7시 30분에 20분 걷기를 제안할게요.</div>
+          <div class="rx-recommend">
+            <div class="rx-title">저녁 걷기 루틴</div>
+            <div class="rx-caption">월–금 · 19:30 · 20분</div>
+            <div class="rx-fab">이 루틴 등록</div>
+          </div>
+        </div>
+        <div class="rx-nav"><span>홈</span><span>복약</span><span>영양제</span><span class="active">챗봇</span><span>마이</span></div>
+      </div>
+      <div class="rx-caption" style="margin-top:12px">장점: 개인화 경험 · 단점: AI 안전성·설명 책임이 큼</div>
+    </article>
+  </div>
+</div>

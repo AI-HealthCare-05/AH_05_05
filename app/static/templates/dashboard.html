@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="../css/dashboard.css?v=20260902-1"/>
     <script type="module" src="../js/dashboard.js?v=20260902-1"></script>
     <script type="module" src="../js/navigation.js?v=20260827-2"></script>
-    <script type="module" src="../js/sidebar.js?v=20260831-8"></script>
+    <script type="module" src="../js/sidebar.js?v=20260903-1"></script>
 </head>
 <body class="dashboard-page m-0 flex items-start w-full min-h-screen">
 
@@ -188,16 +188,15 @@
                          style="background:#f7f8fa;">
                         <div data-chat-satisfaction class="chat-satisfaction shrink-0" role="img"
                              aria-label="챗봇 만족도 평가 데이터 없음">
-                            <span class="chat-satisfaction-stars" aria-hidden="true">
-                                <span class="chat-satisfaction-stars-empty">★★★★★</span>
-                                <span data-chat-satisfaction-fill class="chat-satisfaction-stars-fill"
-                                      style="width:0;">★★★★★</span>
+                            <span class="chat-satisfaction-progress" aria-hidden="true">
+                                <span data-chat-satisfaction-fill class="chat-satisfaction-progress-fill"
+                                      style="width:0;"></span>
                             </span>
                             <span data-chat-satisfaction-value class="chat-satisfaction-value">데이터 없음</span>
                         </div>
                         <div class="flex flex-col gap-1 items-start flex-1 min-w-0">
                             <p class="font-semibold text-[12px] w-full" style="color:#111827;">챗봇 만족도</p>
-                            <p class="font-normal text-[11px] w-full" style="color:#4b5563;">챗봇 사용자의 별점 평균을 나타냅니다.</p>
+                            <p class="font-normal text-[11px] w-full" style="color:#4b5563;">챗봇 사용자의 긍정 평가 비율을 나타냅니다.</p>
                         </div>
                     </div>
                 </div>

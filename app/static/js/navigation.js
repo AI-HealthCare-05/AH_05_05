@@ -5,6 +5,7 @@ const TARGETS = Object.freeze({
   users: "user-management.html",
   admins: "screen-4-admin-management.html",
   tasks: "screen-5-task-management.html",
+  "common-codes": "common-code-management.html",
   "supplement-ranking": "supplement-ranking.html",
   logout: "login.html",
 });

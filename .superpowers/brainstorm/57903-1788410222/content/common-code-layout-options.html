@@ -1,0 +1,350 @@
+<style>
+  #common-code-layout-options {
+    --cc-bg: light-dark(#f5f7fb, #10141c);
+    --cc-surface: light-dark(#ffffff, #1b2230);
+    --cc-text: light-dark(#111827, #eef2ff);
+    --cc-muted: light-dark(#667085, #a8b2c7);
+    --cc-line: light-dark(#e2e7ef, #344057);
+    --cc-primary: light-dark(#2463eb, #78a2ff);
+    --cc-primary-soft: light-dark(#edf3ff, #22345f);
+    --cc-success: light-dark(#157c56, #6bd6ad);
+    --cc-success-soft: light-dark(#e8f7ef, #173b31);
+    --cc-disabled: light-dark(#7b8495, #a8b2c7);
+    --cc-disabled-soft: light-dark(#eef0f4, #2b3342);
+  }
+
+  #common-code-layout-options .cc-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  #common-code-layout-options .cc-option {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 14px;
+    background: var(--card);
+    color: var(--card-foreground);
+  }
+
+  #common-code-layout-options .cc-option.is-selected {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+
+  #common-code-layout-options .cc-option-head {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  #common-code-layout-options .cc-letter {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-weight: 500;
+  }
+
+  #common-code-layout-options h3,
+  #common-code-layout-options p {
+    margin: 0;
+  }
+
+  #common-code-layout-options .cc-option-head p,
+  #common-code-layout-options .cc-footnote {
+    margin-top: 4px;
+    color: var(--muted-foreground);
+  }
+
+  #common-code-layout-options .cc-window {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    min-height: 490px;
+    overflow: hidden;
+    border: 1px solid var(--cc-line);
+    border-radius: 14px;
+    background: var(--cc-bg);
+    color: var(--cc-text);
+    box-shadow: 0 12px 30px color-mix(in srgb, var(--foreground) 9%, transparent);
+  }
+
+  #common-code-layout-options .cc-sidebar {
+    padding: 16px 10px;
+    border-right: 1px solid var(--cc-line);
+    background: var(--cc-surface);
+  }
+
+  #common-code-layout-options .cc-brand {
+    margin-bottom: 20px;
+    font-weight: 500;
+  }
+
+  #common-code-layout-options .cc-menu,
+  #common-code-layout-options .cc-submenu {
+    padding: 8px 9px;
+    border-radius: 8px;
+    color: var(--cc-muted);
+    font-size: 12px;
+  }
+
+  #common-code-layout-options .cc-menu.group {
+    margin-top: 6px;
+    color: var(--cc-text);
+    font-weight: 500;
+  }
+
+  #common-code-layout-options .cc-submenu {
+    margin-left: 8px;
+  }
+
+  #common-code-layout-options .cc-submenu.active {
+    background: var(--cc-primary-soft);
+    color: var(--cc-primary);
+    font-weight: 500;
+  }
+
+  #common-code-layout-options .cc-workspace {
+    min-width: 0;
+  }
+
+  #common-code-layout-options .cc-topbar {
+    padding: 15px 18px;
+    border-bottom: 1px solid var(--cc-line);
+    background: var(--cc-surface);
+    font-weight: 500;
+  }
+
+  #common-code-layout-options .cc-content {
+    padding: 14px;
+  }
+
+  #common-code-layout-options .cc-filter {
+    display: grid;
+    grid-template-columns: 1fr 1fr 90px auto;
+    gap: 7px;
+    margin-bottom: 11px;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--cc-surface);
+  }
+
+  #common-code-layout-options .cc-input,
+  #common-code-layout-options .cc-button {
+    min-height: 30px;
+    padding: 6px 8px;
+    border: 1px solid var(--cc-line);
+    border-radius: 7px;
+    background: var(--cc-surface);
+    color: var(--cc-muted);
+    font-size: 11px;
+  }
+
+  #common-code-layout-options .cc-button.primary {
+    border-color: var(--cc-primary);
+    background: var(--cc-primary);
+    color: light-dark(#ffffff, #0c1425);
+  }
+
+  #common-code-layout-options .cc-split {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(250px, 1.2fr);
+    gap: 10px;
+  }
+
+  #common-code-layout-options .cc-panel {
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--cc-surface);
+  }
+
+  #common-code-layout-options .cc-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px;
+    border-bottom: 1px solid var(--cc-line);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  #common-code-layout-options .cc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+
+  #common-code-layout-options .cc-table th,
+  #common-code-layout-options .cc-table td {
+    padding: 8px 7px;
+    border-bottom: 1px solid var(--cc-line);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  #common-code-layout-options .cc-table th {
+    color: var(--cc-muted);
+    font-weight: 500;
+  }
+
+  #common-code-layout-options .cc-table tr.selected td {
+    background: var(--cc-primary-soft);
+    color: var(--cc-primary);
+  }
+
+  #common-code-layout-options .cc-status {
+    display: inline-block;
+    padding: 3px 6px;
+    border-radius: 99px;
+    background: var(--cc-success-soft);
+    color: var(--cc-success);
+  }
+
+  #common-code-layout-options .cc-status.off {
+    background: var(--cc-disabled-soft);
+    color: var(--cc-disabled);
+  }
+
+  #common-code-layout-options .cc-full-list {
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--cc-surface);
+  }
+
+  #common-code-layout-options .cc-pagination {
+    padding: 11px;
+    color: var(--cc-muted);
+    text-align: center;
+    font-size: 11px;
+  }
+
+  #common-code-layout-options .cc-recommended {
+    margin-top: 12px;
+    color: var(--primary);
+    font-weight: 500;
+  }
+
+  @media (max-width: 900px) {
+    #common-code-layout-options .cc-options {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div id="common-code-layout-options">
+  <h2>공통코드 관리 화면 구성</h2>
+  <p class="subtitle">그룹과 상세코드를 어떤 방식으로 탐색·편집할지 선택해 주세요.</p>
+
+  <div class="cc-options">
+    <article class="cc-option" data-choice="split-view" onclick="toggleSelect(this)">
+      <div class="cc-option-head">
+        <div class="cc-letter">A</div>
+        <div>
+          <h3>그룹·상세 분할 화면</h3>
+          <p>왼쪽에서 그룹을 선택하면 오른쪽 상세코드가 즉시 변경됩니다.</p>
+        </div>
+      </div>
+      <div class="cc-window" aria-label="그룹 상세 분할 화면 와이어프레임">
+        <aside class="cc-sidebar">
+          <div class="cc-brand">RxVita 관리자</div>
+          <div class="cc-menu">대시보드</div>
+          <div class="cc-menu">회원 관리</div>
+          <div class="cc-menu">관리자 관리</div>
+          <div class="cc-menu group">⚙ 기본관리</div>
+          <div class="cc-submenu active">공통코드관리</div>
+          <div class="cc-menu group">메인관리</div>
+          <div class="cc-submenu">영양제 랭킹</div>
+        </aside>
+        <div class="cc-workspace">
+          <div class="cc-topbar">공통코드관리</div>
+          <div class="cc-content">
+            <div class="cc-filter">
+              <div class="cc-input">코드그룹 검색</div>
+              <div class="cc-input">코드그룹명 검색</div>
+              <div class="cc-input">전체 상태⌄</div>
+              <div class="cc-button primary">조회</div>
+            </div>
+            <div class="cc-split">
+              <section class="cc-panel">
+                <div class="cc-panel-head"><span>코드그룹 · 총 3건</span><span class="cc-button primary">그룹 등록</span></div>
+                <table class="cc-table">
+                  <thead><tr><th>그룹코드</th><th>그룹명</th><th>사용</th></tr></thead>
+                  <tbody>
+                    <tr class="selected"><td>REGION</td><td>지역</td><td><span class="cc-status">사용</span></td></tr>
+                    <tr><td>ROUTINE_TYPE</td><td>루틴 유형</td><td><span class="cc-status">사용</span></td></tr>
+                    <tr><td>INQUIRY_TYPE</td><td>문의 유형</td><td><span class="cc-status off">미사용</span></td></tr>
+                  </tbody>
+                </table>
+              </section>
+              <section class="cc-panel">
+                <div class="cc-panel-head"><span>지역(REGION) 상세코드 · 총 3건</span><span class="cc-button primary">상세코드 등록</span></div>
+                <table class="cc-table">
+                  <thead><tr><th>상세코드</th><th>상세코드명</th><th>순서</th><th>사용</th><th>작업</th></tr></thead>
+                  <tbody>
+                    <tr><td>SEOUL</td><td>서울</td><td>1</td><td><span class="cc-status">사용</span></td><td>수정</td></tr>
+                    <tr><td>BUSAN</td><td>부산</td><td>2</td><td><span class="cc-status">사용</span></td><td>수정</td></tr>
+                    <tr><td>JEJU</td><td>제주</td><td>3</td><td><span class="cc-status off">미사용</span></td><td>수정</td></tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cc-recommended">추천 · 선택 맥락을 유지하며 빠르게 반복 편집</div>
+    </article>
+
+    <article class="cc-option" data-choice="drill-down" onclick="toggleSelect(this)">
+      <div class="cc-option-head">
+        <div class="cc-letter">B</div>
+        <div>
+          <h3>그룹 목록 → 상세 화면</h3>
+          <p>그룹 목록에서 행을 클릭해 별도 상세코드 화면으로 이동합니다.</p>
+        </div>
+      </div>
+      <div class="cc-window" aria-label="그룹 목록 중심 화면 와이어프레임">
+        <aside class="cc-sidebar">
+          <div class="cc-brand">RxVita 관리자</div>
+          <div class="cc-menu">대시보드</div>
+          <div class="cc-menu">회원 관리</div>
+          <div class="cc-menu">관리자 관리</div>
+          <div class="cc-menu group">⚙ 기본관리</div>
+          <div class="cc-submenu active">공통코드관리</div>
+          <div class="cc-menu group">메인관리</div>
+          <div class="cc-submenu">영양제 랭킹</div>
+        </aside>
+        <div class="cc-workspace">
+          <div class="cc-topbar">공통코드관리</div>
+          <div class="cc-content">
+            <div class="cc-filter">
+              <div class="cc-input">코드그룹 검색</div>
+              <div class="cc-input">코드그룹명 검색</div>
+              <div class="cc-input">전체 상태⌄</div>
+              <div class="cc-button primary">조회</div>
+            </div>
+            <section class="cc-full-list">
+              <div class="cc-panel-head"><span>코드그룹 · 총 3건</span><span class="cc-button primary">그룹 등록</span></div>
+              <table class="cc-table">
+                <thead><tr><th>그룹코드</th><th>코드그룹명</th><th>상세코드 수</th><th>사용여부</th><th>작업</th></tr></thead>
+                <tbody>
+                  <tr><td>REGION</td><td>지역</td><td>3</td><td><span class="cc-status">사용</span></td><td>상세보기 ›</td></tr>
+                  <tr><td>ROUTINE_TYPE</td><td>루틴 유형</td><td>4</td><td><span class="cc-status">사용</span></td><td>상세보기 ›</td></tr>
+                  <tr><td>INQUIRY_TYPE</td><td>문의 유형</td><td>5</td><td><span class="cc-status off">미사용</span></td><td>상세보기 ›</td></tr>
+                </tbody>
+              </table>
+              <div class="cc-pagination">이전　1　다음</div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div class="cc-footnote">장점: 한 화면이 단순함 · 단점: 그룹을 오갈 때 페이지 이동이 반복됨</div>
+    </article>
+  </div>
+</div>

@@ -13,6 +13,7 @@ TORTOISE_APP_MODELS = [
     "app.models.ocr",
     "app.models.recovery",
     "app.models.chat",
+    "app.models.common_codes",
     "app.models.alarms",
     "app.models.background_jobs",
     "app.models.medications",

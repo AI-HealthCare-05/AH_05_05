@@ -1,4 +1,4 @@
-import { initializeNavigation } from "./navigation.js?v=20260827-2";
+import { initializeNavigation } from "./navigation.js?v=20260903-1";
 import { session } from "./api.js";
 import { openSmtpSettings } from "./smtp-settings.js";
 
@@ -8,6 +8,7 @@ const PAGE_SECTIONS = Object.freeze({
   "user-management.html": "users",
   "screen-4-admin-management.html": "admins",
   "screen-5-task-management.html": "tasks",
+  "common-code-management.html": "common-codes",
   "supplement-ranking.html": "supplement-ranking",
 });
 

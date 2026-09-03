@@ -77,7 +77,7 @@ class ChatResponseStats(CamelModel):
     total: int
     completed: int
     failed: int
-    average_score: float | None = None
+    like_rate: float | None = None
 
 
 class MemberStats(CamelModel):

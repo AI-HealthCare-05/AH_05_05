@@ -572,9 +572,9 @@ class TestDashboardOcrDocuments(DashboardTestBase):
 
 
 class TestDashboardChatResponses(DashboardTestBase):
-    async def create_session(self, *, score: int | None = None, created_at: datetime | None = None) -> ChatSession:
+    async def create_session(self, *, is_like: bool | None = None, created_at: datetime | None = None) -> ChatSession:
         user = await create_user(name="챗봇 회원", email=unique_email("chat"))
-        session = await ChatSession.create(user=user, score=score)
+        session = await ChatSession.create(user=user, is_like=is_like)
         if created_at is not None:
             await ChatSession.filter(id=session.id).update(created_at=created_at)
             session.created_at = created_at
@@ -627,18 +627,18 @@ class TestDashboardChatResponses(DashboardTestBase):
 
         responses = (await self.fetch("LAST_7_DAYS"))["chatResponses"]
 
-        assert responses == {"total": 2, "completed": 1, "failed": 1, "averageScore": None}
+        assert responses == {"total": 2, "completed": 1, "failed": 1, "likeRate": None}
 
-    async def test_average_score_uses_only_rated_sessions_created_in_selected_period(self) -> None:
-        await self.create_session(score=5, created_at=at(0))
-        await self.create_session(score=4, created_at=at(1))
-        await self.create_session(score=4, created_at=at(2))
-        await self.create_session(score=None, created_at=at(0))
-        await self.create_session(score=1, created_at=at(8))
+    async def test_like_rate_uses_only_evaluated_sessions_created_in_selected_period(self) -> None:
+        await self.create_session(is_like=True, created_at=at(0))
+        await self.create_session(is_like=True, created_at=at(1))
+        await self.create_session(is_like=False, created_at=at(2))
+        await self.create_session(is_like=None, created_at=at(0))
+        await self.create_session(is_like=False, created_at=at(8))
 
         responses = (await self.fetch("LAST_7_DAYS"))["chatResponses"]
 
-        assert responses["averageScore"] == 4.3
+        assert responses["likeRate"] == 66.7
 
 
 class TestDashboardPermissions(DashboardTestBase):
