@@ -1,0 +1,125 @@
+schema_version: medication-search-baseline-v1
+dataset_version: knowledge-full-v2-interaction-metadata
+collection_name: medication_knowledge_full_v2
+frontend_preset: false
+min_similarity_score: 0.65
+final_top_k: 5
+candidate_top_k: 20
+cases:
+  - query_id: exact-product-magnesium
+    expression_category: EXACT_PRODUCT
+    question: 마그오캡슐500mg의 효능과 복용법을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [마그오캡슐500mg]
+    expected_section_types: [FUNCTION, DAILY_INTAKE]
+
+  - query_id: typo-brand-tylenol
+    expression_category: PRODUCT_TYPO
+    question: 타이래놀의 효능과 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 타이레놀의 효능과 주의사항을 알려줘.
+    expected_entity_names: [타이레놀]
+    expected_section_types: [FUNCTION, CAUTION]
+
+  - query_id: typo-ingredient-acetaminophen
+    expression_category: INGREDIENT_TYPO
+    question: 아세트아미노팬 부작용을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 아세트아미노펜 부작용을 알려줘.
+    expected_entity_names: [아세트아미노펜]
+    expected_section_types: [CAUTION]
+    expected_document_ids: [kpicia_drug_encyclopedia-33898a903b6cbca7]
+
+  - query_id: keyboard-tail-tylenol
+    expression_category: KEYBOARD_TYPO
+    question: 타이레놀ㄹ 복용법 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 타이레놀 복용법 알려줘.
+    expected_entity_names: [타이레놀]
+    expected_section_types: [DAILY_INTAKE]
+
+  - query_id: spacing-magnesium
+    expression_category: SPACING_VARIATION
+    question: 마그 네슘은 왜 먹나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 마그네슘은 왜 먹나요?
+    expected_entity_names: [마그네슘]
+    expected_section_types: [FUNCTION]
+    expected_document_ids: [food_safety_korea_supplement_ingredients-d4b61ec6752184e6]
+
+  - query_id: common-name-tylenol
+    expression_category: COMMON_NAME
+    question: 타이레놀의 효능과 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [타이레놀]
+    expected_section_types: [FUNCTION, CAUTION]
+
+  - query_id: ambiguous-near-product
+    expression_category: AMBIGUOUS
+    question: 마그 복용법 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: CLARIFICATION_REQUIRED
+
+  - query_id: short-unsafe-correction
+    expression_category: SHORT_EXPRESSION
+    question: 찰 영양제는 왜 먹나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNRESOLVED
+    expected_section_types: [FUNCTION]
+
+  - query_id: out-of-scope-hungry
+    expression_category: OUT_OF_SCOPE
+    question: 오늘 너무 배고파요.
+    expected_scope: OUT_OF_SCOPE
+    expected_resolution_status: UNRESOLVED
+
+  - query_id: in-scope-no-evidence
+    expression_category: IN_SCOPE_NO_EVIDENCE
+    question: 처음 보는 약의 복용 시 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNRESOLVED
+    expected_section_types: [CAUTION]
+
+  - query_id: drug-drug-warfarin-metronidazole
+    expression_category: DRUG_DRUG
+    question: 와파린과 메트로니다졸을 같이 복용해도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [와파린, 메트로니다졸]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [kpicia_pharm_review-e8127943c02a5a76]
+
+  - query_id: drug-supplement-warfarin-vitamin-k
+    expression_category: DRUG_SUPPLEMENT
+    question: 와파린과 비타민 K 영양제를 같이 먹어도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [와파린, 비타민 K]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [kpicia_pharm_review-c4ea8e68b35b65b3]
+
+  - query_id: supplement-supplement-calcium-iron
+    expression_category: SUPPLEMENT_SUPPLEMENT
+    question: 칼슘과 철분을 같이 먹어도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [칼슘, 철분]
+    expected_section_types: [INTERACTION]
+    expected_document_ids:
+      - research_supplement_interactions-016c81c9a3e29ebd
+      - research_supplement_interactions-7983c60e9a092828
+
+  - query_id: drug-food-fexofenadine-fruit-juice
+    expression_category: DRUG_FOOD
+    question: 펙소페나딘을 먹을 때 과일주스를 피해야 하나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [펙소페나딘, 과일주스]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [mfds_drug_food_interaction_guide-53bfb2433f48a8b0]
