@@ -4,7 +4,7 @@ import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
 
 const ASSISTANT_AVATAR = 'img[src="/images/rxvita-mark-128.png"]';
 
-test('스플래시와 게스트·로그인 홈이 RxVita 로고를 서비스명으로 제공한다', async ({ page }) => {
+test('스플래시와 튜토리얼을 거쳐 게스트·로그인 홈이 RxVita 로고를 서비스명으로 제공한다', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.removeItem('poke:splash-seen'));
   await page.goto('/');
 
@@ -14,7 +14,10 @@ test('스플래시와 게스트·로그인 홈이 RxVita 로고를 서비스명�
   await expect(splashLogo).toHaveAttribute('width', '960');
   await expect(splashLogo).toHaveAttribute('height', '248');
 
-  await expect(page).toHaveURL(/\/home$/, { timeout: 3_000 });
+  await expect(page).toHaveURL(/\/tutorial$/, { timeout: 3_000 });
+  await expect(page.getByRole('heading', { name: /약봉투를 찍으면.*복약 일정이 만들어져요/ })).toBeVisible();
+  await page.getByRole('button', { name: '건너뛰기' }).click();
+  await expect(page).toHaveURL(/\/home$/);
   let homeHeading = page.getByRole('heading', { level: 1, name: 'RxVita' });
   await expect(homeHeading).toBeVisible();
   await expect(homeHeading.getByRole('img', { name: 'RxVita' })).toHaveAttribute(
@@ -29,7 +32,7 @@ test('스플래시와 게스트·로그인 홈이 RxVita 로고를 서비스명�
     'src',
     '/images/rxvita-logo-480.png',
   );
-  await expect(page).toHaveTitle('RxVita · 퇴원 후 회복 안내');
+  await expect(page).toHaveTitle('RxVita · 건강한 복약관리');
 });
 
 test('챗 시작 가이드가 장식용 RxVita 마크를 보여준다', async ({ page }) => {
@@ -114,12 +117,12 @@ test('진행 중 말풍선과 도착한 답변은 아바타를 유지하며 옆�
   expect(answerBox?.x).toBe(pendingBox?.x);
 });
 
-test('마이페이지와 영양제 랭킹에서 RxVita 서비스명을 보여준다', async ({ page }) => {
+test('마이페이지와 로그인 홈의 영양제 랭킹에서 RxVita 서비스명을 보여준다', async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.goto('/dev/my-authenticated');
   await expect(page.getByText('RxVita 사용자', { exact: true })).toBeVisible();
 
   await page.goto('/dev/home-empty');
   await expect(page.getByText('RxVita가 골랐어요', { exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toHaveCount(0);
 });

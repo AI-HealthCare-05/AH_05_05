@@ -33,21 +33,21 @@ async function seedSessionWithExpiry(page: Page, expiresAtSeconds: number) {
   }, expiresAtSeconds);
 }
 
-test('첫 진입은 버튼 없는 스플래시를 거쳐 게스트 홈으로 자동 이동한다', async ({ page }) => {
+test('첫 진입은 버튼 없는 스플래시를 거쳐 튜토리얼로 이동한다', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByText('약봉투 한 장이면 충분해요')).toBeVisible();
   await expect(page.getByRole('button')).toHaveCount(0);
-  await expect(page).toHaveURL(/\/home$/, { timeout: 3_000 });
-  await expect(page.getByRole('heading', { name: 'RxVita' })).toBeVisible();
+  await expect(page).toHaveURL(/\/tutorial$/, { timeout: 3_000 });
+  await expect(page.getByRole('heading', { name: /약봉투를 찍으면.*복약 일정이 만들어져요/ })).toBeVisible();
 });
 
-test('같은 브라우저 세션의 두 번째 진입은 스플래시를 다시 기다리지 않는다', async ({ page }) => {
+test('같은 브라우저 세션은 튜토리얼을 완료하기 전까지 다시 진입해도 튜토리얼을 유지한다', async ({ page }) => {
   await page.goto('/');
-  await expect(page).toHaveURL(/\/home$/, { timeout: 3_000 });
+  await expect(page).toHaveURL(/\/tutorial$/, { timeout: 3_000 });
 
   await page.goto('/');
-  await expect(page).toHaveURL(/\/home$/, { timeout: 500 });
+  await expect(page).toHaveURL(/\/tutorial$/, { timeout: 500 });
 });
 
 test('게스트 홈은 기능 중복 카드 없이 소개 배너와 탭바를 유지한다', async ({ page }) => {

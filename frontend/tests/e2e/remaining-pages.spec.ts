@@ -94,25 +94,18 @@ test('개발용 게스트 마이페이지는 리디렉션하지 않고 로그인
   await expect(page.getByRole('navigation', { name: '주요 화면' })).toBeVisible();
 });
 
-test('로그인 페이지는 법적 안내와 게스트 안전 하단 탭을 제공한다', async ({ page }) => {
+test('로그인 페이지는 법적 안내만 제공하고 로고와 하단 탭을 숨긴다', async ({ page }) => {
   await page.goto('/login');
 
   const footer = page.getByRole('contentinfo');
-  await expect(footer.getByRole('img', { name: 'RxVita' })).toBeVisible();
+  await expect(footer.getByRole('img', { name: 'RxVita' })).toHaveCount(0);
   await expect(footer.getByRole('link', { name: '이용약관' })).toHaveAttribute('href', '/terms');
   await expect(footer.getByRole('link', { name: '개인정보 처리 안내' })).toHaveAttribute(
     'href',
     '/privacy',
   );
   await expect(footer.getByText('|', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '마이', exact: true })).toHaveAttribute(
-    'aria-current',
-    'page',
-  );
-  await page.getByRole('button', { name: '복약', exact: true }).click();
-  await expect(page).toHaveURL(/\/login$/);
-  await page.getByRole('button', { name: '홈', exact: true }).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByRole('navigation', { name: '주요 화면' })).toHaveCount(0);
 });
 
 test('로그인 페이지의 이용약관 링크는 공개 약관과 AI 의료 안내를 보여준다', async ({ page }) => {
@@ -128,7 +121,7 @@ test('로그인 페이지의 이용약관 링크는 공개 약관과 AI 의료 �
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: /회원가입, 계정 및 탈퇴/ })).toBeVisible();
   await expect(page.getByText(/알림이 지연되거나 전달되지 않을 수 있습니다/)).toBeVisible();
-  await expect(page.getByRole('heading', { name: /준거법 및 분쟁 해결/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /서비스 변경, 중단 및 종료/ })).toBeVisible();
 });
 
 test('로그인 페이지의 개인정보 링크는 공개 처리 안내와 담당자 정보를 보여준다', async ({
