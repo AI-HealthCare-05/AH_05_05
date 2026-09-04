@@ -114,6 +114,10 @@
   --text-sm--line-height: 21px;
   --text-tagline: 15px;
   --text-tagline--line-height: 22px;
+  --text-caption: 13px;
+  --text-caption--line-height: 21px;
+  --text-control: 15px;
+  --text-control--line-height: 22px;
   --text-base: 16px;
   --text-base--line-height: 25.6px;
   --text-lg: 18px;

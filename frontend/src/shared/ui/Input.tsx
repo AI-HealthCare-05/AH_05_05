@@ -48,7 +48,7 @@ export function Input({
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
           className={cn(
-            'h-control w-full rounded-input border bg-card px-3.5 text-base text-foreground',
+            'h-control w-full rounded-input border bg-card px-3.5 text-[length:var(--text-control)] text-foreground',
             'placeholder:text-tertiary-foreground',
             'focus:outline-none focus:ring-2 focus:ring-ring',
             // type="date"의 달력 아이콘. 기본 크기가 작아 NFR-ACC-001 기준에 맞게 키웁니다.

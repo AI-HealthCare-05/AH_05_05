@@ -13,12 +13,33 @@ test('로그인 기본 화면은 Figma 모바일 기준 레이아웃을 제공�
   await expect(page.getByLabel('비밀번호')).toBeVisible();
   await expect(page.getByRole('navigation', { name: '주요 화면' })).toHaveCount(0);
   await expect(page.getByAltText('RxVita')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: '이용약관' })).toBeVisible();
-  await expect(page.getByRole('link', { name: '개인정보 처리 안내' })).toBeVisible();
+  const termsLink = page.getByRole('link', { name: '이용약관' });
+  const privacyLink = page.getByRole('link', { name: '개인정보 처리 안내' });
+  await expect(termsLink).toBeVisible();
+  await expect(privacyLink).toBeVisible();
+
+  const termsBox = await termsLink.boundingBox();
+  const privacyBox = await privacyLink.boundingBox();
+  expect.soft(termsBox?.height).toBeGreaterThanOrEqual(44);
+  expect.soft(privacyBox?.height).toBeGreaterThanOrEqual(44);
+
+  await expect
+    .soft(page.getByText('로그인하면 저장한 복용약과 영양제를 이어서 볼 수 있어요.', { exact: true }))
+    .toHaveCSS('font-size', '13px');
+  await expect
+    .soft(page.getByText('입력한 정보는 안전하게 보호해요.', { exact: true }))
+    .toHaveCSS('font-size', '13px');
+  await expect
+    .soft(page.getByText('비밀번호를 잊으셨나요? 재설정', { exact: true }))
+    .toHaveCSS('font-size', '13px');
 
   const headerBox = await page.getByRole('banner').boundingBox();
-  const emailBox = await page.getByLabel('이메일').boundingBox();
-  const passwordBox = await page.getByLabel('비밀번호').boundingBox();
+  const emailInput = page.getByLabel('이메일');
+  const passwordInput = page.getByLabel('비밀번호');
+  const emailBox = await emailInput.boundingBox();
+  const passwordBox = await passwordInput.boundingBox();
+  await expect.soft(emailInput).toHaveCSS('font-size', '15px');
+  await expect.soft(passwordInput).toHaveCSS('font-size', '15px');
   const loginButtonBox = await page
     .getByRole('button', { name: '로그인', exact: true })
     .last()

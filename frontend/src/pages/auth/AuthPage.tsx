@@ -197,11 +197,19 @@ export function AuthPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-card">
+    <div
+      className={`mx-auto flex min-h-dvh w-full max-w-app flex-col ${
+        mode === 'login' ? 'bg-card' : 'bg-background'
+      }`}
+    >
       <Header title="로그인 · 회원가입" onBack={() => navigate(-1)} />
-      <main className="flex flex-1 flex-col px-page-x pt-5">
+      <main
+        className={`flex flex-1 flex-col px-page-x ${mode === 'login' ? 'pt-5' : 'py-6'}`}
+      >
         <div
-          className="grid h-12 grid-cols-2 rounded-input bg-muted-bg p-1"
+          className={`grid grid-cols-2 rounded-input bg-muted-bg p-1 ${
+            mode === 'login' ? 'h-12' : ''
+          }`}
           role="group"
           aria-label="인증 방식"
         >
@@ -212,8 +220,14 @@ export function AuthPage() {
                 key={item}
                 type="button"
                 aria-pressed={selected}
-                className={`min-h-touch rounded-input text-sm font-bold ${
-                  selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
+                className={`rounded-input text-sm font-bold ${
+                  mode === 'login'
+                    ? `relative -my-1 h-12 min-h-touch ${
+                        selected ? 'text-primary' : 'text-muted-foreground'
+                      }`
+                    : `min-h-touch ${
+                        selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
+                      }`
                 }`}
                 onClick={() => {
                   // 같은 탭을 다시 눌렀을 때는 지우지 않습니다. 이 가드가 없으면
@@ -224,7 +238,17 @@ export function AuthPage() {
                   resetAuthForm();
                 }}
               >
-                {item === 'login' ? '로그인' : '회원가입'}
+                {mode === 'login' ? (
+                  <span
+                    className={`pointer-events-none absolute inset-x-0 top-1 flex h-10 items-center justify-center rounded-[10px] ${
+                      selected ? 'bg-card shadow-card' : 'bg-transparent'
+                    }`}
+                  >
+                    {item === 'login' ? '로그인' : '회원가입'}
+                  </span>
+                ) : (
+                  item === 'login' ? '로그인' : '회원가입'
+                )}
               </button>
             );
           })}
@@ -238,14 +262,19 @@ export function AuthPage() {
           >
             {mode === 'login' ? '다시 만나서 반가워요' : '내 복약 기록을 안전하게 보관해요'}
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p
+            className={`mt-2 ${mode === 'login' ? 'text-caption' : 'text-sm'} text-muted-foreground`}
+          >
             {mode === 'login'
               ? '로그인하면 저장한 복용약과 영양제를 이어서 볼 수 있어요.'
               : '필수 동의는 각각 내용을 확인하고 선택해 주세요.'}
           </p>
         </div>
 
-        <form className="mt-5 flex flex-1 flex-col gap-4" onSubmit={complete}>
+        <form
+          className={`${mode === 'login' ? 'mt-5' : 'mt-6'} flex flex-1 flex-col gap-4`}
+          onSubmit={complete}
+        >
           <Input
             label="이메일"
             inputRef={emailInputRef}
@@ -311,7 +340,7 @@ export function AuthPage() {
           />
 
           {mode === 'login' && (
-            <p className="text-sm text-muted-foreground">입력한 정보는 안전하게 보호해요.</p>
+            <p className="text-caption text-muted-foreground">입력한 정보는 안전하게 보호해요.</p>
           )}
 
           {mode === 'signup' && (
@@ -408,7 +437,7 @@ export function AuthPage() {
           )}
 
           {mode === 'login' && (
-            <p className="mt-auto text-center text-xs text-muted-foreground">
+            <p className="mt-auto text-center text-caption text-muted-foreground">
               비밀번호를 잊으셨나요? 재설정
             </p>
           )}
@@ -422,12 +451,28 @@ export function AuthPage() {
           </Button>
         </form>
       </main>
-      <footer className="flex h-15 min-h-15 shrink-0 items-start justify-center gap-2 px-page-x pt-4 text-xs text-muted-foreground">
-        <Link to="/terms" className="hover:text-foreground">
+      <footer
+        className={`flex shrink-0 justify-center gap-2 px-page-x text-xs text-muted-foreground ${
+          mode === 'login'
+            ? 'h-15 min-h-15 items-start pt-4'
+            : 'min-h-touch items-center border-t border-border'
+        }`}
+      >
+        <Link
+          to="/terms"
+          className={`hover:text-foreground ${
+            mode === 'login' ? 'flex min-h-touch items-start' : ''
+          }`}
+        >
           이용약관
         </Link>
         <span aria-hidden="true">|</span>
-        <Link to="/privacy" className="hover:text-foreground">
+        <Link
+          to="/privacy"
+          className={`hover:text-foreground ${
+            mode === 'login' ? 'flex min-h-touch items-start' : ''
+          }`}
+        >
           개인정보 처리 안내
         </Link>
       </footer>
