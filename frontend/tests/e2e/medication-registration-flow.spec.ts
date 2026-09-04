@@ -125,6 +125,62 @@ async function authenticate(page: Page) {
   }, ACCESS_TOKEN);
 }
 
+async function stubNotificationPermission(
+  page: Page,
+  permission: NotificationPermission,
+  requestedPermission: NotificationPermission = 'granted',
+) {
+  await page.addInitScript(
+    ({ initialPermission, nextPermission }) => {
+      class StubNotification {
+        static permission = initialPermission;
+
+        static async requestPermission() {
+          StubNotification.permission = nextPermission;
+          return nextPermission;
+        }
+      }
+
+      Object.defineProperty(window, 'Notification', {
+        configurable: true,
+        value: StubNotification,
+      });
+    },
+    { initialPermission: permission, nextPermission: requestedPermission },
+  );
+}
+
+async function stubPushManager(page: Page, alreadyRegistered = true) {
+  await page.addInitScript(({ hasExistingSubscription }) => {
+    const subscription = {
+      endpoint: 'https://push.example.test/real-feature-252-device',
+      expirationTime: null,
+      keys: { p256dh: 'real-feature-252-p256dh', auth: 'real-feature-252-auth' },
+    };
+    const existing = hasExistingSubscription ? { toJSON: () => subscription } : null;
+    const pushState = window as Window & { __feature252PushSubscribeCalls: number };
+    Object.defineProperty(pushState, '__feature252PushSubscribeCalls', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        register: async () => ({
+          pushManager: {
+            getSubscription: async () => existing,
+            subscribe: async () => {
+              pushState.__feature252PushSubscribeCalls += 1;
+              return { toJSON: () => subscription };
+            },
+          },
+        }),
+      },
+    });
+  }, { hasExistingSubscription: alreadyRegistered });
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -879,7 +935,14 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
 test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload에 포함한다', async ({ page }) => {
   test.slow();
   await authenticate(page);
+  await stubNotificationPermission(page, 'granted');
+  await stubPushManager(page, true);
   const trace = await interceptDocumentRegistration(page);
+  const pushPayloads: unknown[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    pushPayloads.push(route.request().postDataJSON());
+    await fulfillJson(route, { id: 1 });
+  });
   await page.goto('/ocr-review?batchId=501');
 
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible({ timeout: 10_000 });
@@ -893,7 +956,13 @@ test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload�
   await page.getByRole('button', { name: '시작 아침약' }).click();
   await page.getByRole('button', { name: '확인', exact: true }).click();
 
-  await page.getByRole('switch', { name: '복약 알림' }).setChecked(true);
+  await page.getByRole('switch', { name: '복약 알림' }).click();
+  await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked();
+  expect(pushPayloads).toHaveLength(1);
+  expect(await page.evaluate(() => {
+    const state = window as Window & { __feature252PushSubscribeCalls: number };
+    return state.__feature252PushSubscribeCalls;
+  })).toBe(0);
   await page.getByRole('button', { name: '아침약 알람 시간' }).click();
   const timeDialog = page.getByRole('dialog');
   await timeDialog.getByLabel('시').click();
@@ -913,6 +982,15 @@ test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload�
     eveningMedicationTime: '19:00',
     bedtimeMedicationTime: '22:00',
   });
+  expect(pushPayloads).toEqual([
+    {
+      endpoint: 'https://push.example.test/real-feature-252-device',
+      p256dh_key: 'real-feature-252-p256dh',
+      auth_key: 'real-feature-252-auth',
+      platform: 'web',
+      user_agent: expect.any(String),
+    },
+  ]);
 });
 
 test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여준다', async ({ page }) => {

@@ -536,6 +536,9 @@ export function MedicationSchedulePage({
         scheduleSaver={scheduleSaver}
         notifySettingsLoader={notifySettingsLoader}
         notifySettingsUpdater={notifySettingsUpdater}
+        permissionReader={permissionReader}
+        permissionRequester={permissionRequester}
+        pushRegistrar={pushRegistrar}
         initialSlots={slots}
         initialMealTimes={mealTimes}
         initialStartDate={startDate || dispensedDate || todayISO()}
@@ -792,6 +795,9 @@ interface MedicationRegistrationWizardProps {
   scheduleSaver: typeof saveMedicationSchedule;
   notifySettingsLoader: () => Promise<NotifySettings>;
   notifySettingsUpdater: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
+  permissionReader: () => PushPermission;
+  permissionRequester: () => Promise<PushPermission>;
+  pushRegistrar: () => Promise<void>;
   initialSlots: Record<number, MealSlot[]>;
   initialMealTimes: MealTimes;
   initialStartDate: string;
@@ -810,6 +816,9 @@ function MedicationRegistrationWizard({
   scheduleSaver,
   notifySettingsLoader,
   notifySettingsUpdater,
+  permissionReader,
+  permissionRequester,
+  pushRegistrar,
   initialSlots,
   initialMealTimes,
   initialStartDate,
@@ -825,9 +834,13 @@ function MedicationRegistrationWizard({
   const [startDate, setStartDate] = useState(initialStartDate);
   const [startSlot, setStartSlot] = useState<MealSlot | null>(initialStartSlot);
   const [notifyMedication, setNotifyMedication] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [permissionBusy, setPermissionBusy] = useState(false);
   const [alarmSettingsError, setAlarmSettingsError] = useState<string | null>(null);
   const [editingAlarmSlot, setEditingAlarmSlot] = useState<MealSlot | null>(null);
   const notifyMedicationEditedRef = useRef(false);
+  const notificationReadyRef = useRef(false);
   const alarmTimesEditedRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -847,7 +860,12 @@ function MedicationRegistrationWizard({
     notifySettingsLoader()
       .then((settings) => {
         if (cancelled) return;
-        if (!notifyMedicationEditedRef.current) setNotifyMedication(settings.notifyMedication);
+        if (!notifyMedicationEditedRef.current) {
+          // 서버 설정만으로 토글을 켜지 않습니다. 브라우저 권한이 실제로 허용된
+          // 경우에만 활성 상태를 보여야, 차단·미지원 환경에서 거짓 상태가 남지 않습니다.
+          setNotifyMedication(settings.notifyMedication && permissionReader() === 'granted');
+          notificationReadyRef.current = false;
+        }
         if (!alarmTimesEditedRef.current) {
           setMealTimes({
             morning: settings.morningMedicationTime,
@@ -891,10 +909,103 @@ function MedicationRegistrationWizard({
     setSaveError(null);
   }
 
+  async function registerMedicationNotifications(): Promise<boolean> {
+    setPermissionBusy(true);
+    setNotificationError(null);
+    try {
+      await pushRegistrar();
+      notificationReadyRef.current = true;
+      setNotifyMedication(true);
+      return true;
+    } catch (error: unknown) {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError(
+        error instanceof Error ? error.message : '복약 알림을 등록하지 못했어요.',
+      );
+      return false;
+    } finally {
+      setPermissionBusy(false);
+    }
+  }
+
+  async function handleNotificationToggle(checked: boolean) {
+    notifyMedicationEditedRef.current = true;
+    if (!checked) {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError(null);
+      return;
+    }
+
+    const permission = permissionReader();
+    if (permission === 'default') {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError(null);
+      setPermissionDialogOpen(true);
+      return;
+    }
+    if (permission === 'denied') {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError('알림 권한이 차단되어 있어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.');
+      return;
+    }
+    if (permission === 'unsupported') {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError('이 브라우저에서는 복약 알림을 사용할 수 없어요.');
+      return;
+    }
+
+    await registerMedicationNotifications();
+  }
+
+  async function handleRegistrationPermissionAccept() {
+    setPermissionBusy(true);
+    let permission: PushPermission;
+    try {
+      permission = await permissionRequester();
+    } catch (error: unknown) {
+      setPermissionDialogOpen(false);
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setPermissionBusy(false);
+      setNotificationError(
+        error instanceof Error ? error.message : '알림 권한을 확인하지 못했어요.',
+      );
+      return;
+    }
+    setPermissionDialogOpen(false);
+    setPermissionBusy(false);
+
+    if (permission === 'granted') {
+      await registerMedicationNotifications();
+      return;
+    }
+
+    notificationReadyRef.current = false;
+    setNotifyMedication(false);
+    setNotificationError(
+      permission === 'denied'
+        ? '알림 권한이 차단되어 있어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.'
+        : '알림 권한을 허용해야 복약 알림을 켤 수 있어요.',
+    );
+  }
+
+  function handleRegistrationPermissionDismiss() {
+    setPermissionDialogOpen(false);
+    notificationReadyRef.current = false;
+    setNotifyMedication(false);
+    setNotificationError('알림 권한을 허용해야 복약 알림을 켤 수 있어요.');
+  }
+
   async function completeRegistration() {
     if (recordId === null || !startSlot || !startDate || saving) return;
     setSaving(true);
     setSaveError(null);
+    const selectedNotifyMedication = notifyMedication;
     try {
       await scheduleSaver(recordId, {
         start: { date: startDate, slot: startSlot },
@@ -904,8 +1015,25 @@ function MedicationRegistrationWizard({
           slots: slots[medication.medicationId] ?? [],
         })),
       });
+      if (selectedNotifyMedication) {
+        const permission = permissionReader();
+        if (permission !== 'granted') {
+          notificationReadyRef.current = false;
+          setNotifyMedication(false);
+          setNotificationError(
+            permission === 'denied'
+              ? '알림 권한이 차단되어 있어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.'
+              : '알림 권한을 허용해야 복약 알림을 켤 수 있어요.',
+          );
+          return;
+        }
+        if (!notificationReadyRef.current) {
+          const registered = await registerMedicationNotifications();
+          if (!registered) return;
+        }
+      }
       await notifySettingsUpdater({
-        notifyMedication,
+        notifyMedication: selectedNotifyMedication,
         morningMedicationTime: mealTimes.morning,
         lunchMedicationTime: mealTimes.lunch,
         eveningMedicationTime: mealTimes.evening,
@@ -914,6 +1042,10 @@ function MedicationRegistrationWizard({
       setMedicationAlias(recordId, alias, { scope: principalKey });
       setCompleted(true);
     } catch (error: unknown) {
+      if (selectedNotifyMedication) {
+        notificationReadyRef.current = false;
+        setNotifyMedication(false);
+      }
       setSaveError(error instanceof Error ? error.message : '복약 등록을 완료하지 못했어요.');
     } finally {
       setSaving(false);
@@ -1105,10 +1237,8 @@ function MedicationRegistrationWizard({
                 <Switch
                   aria-label="복약 알림"
                   checked={notifyMedication}
-                  onCheckedChange={(checked) => {
-                    notifyMedicationEditedRef.current = true;
-                    setNotifyMedication(checked);
-                  }}
+                  disabled={permissionBusy || saving}
+                  onCheckedChange={(checked) => void handleNotificationToggle(checked)}
                 />
               </div>
               <div className="border-t border-border">
@@ -1144,6 +1274,11 @@ function MedicationRegistrationWizard({
                 {alarmSettingsError}
               </p>
             )}
+            {notificationError && (
+              <p role="alert" className="text-sm text-danger-strong">
+                {notificationError}
+              </p>
+            )}
             <Card tone="info" className="p-4">
               저장하면 복약 일정과 알람 설정이 함께 끝나요.
             </Card>
@@ -1166,6 +1301,13 @@ function MedicationRegistrationWizard({
         value={editingAlarmSlot ? mealTimes[editingAlarmSlot] : '08:00'}
         onApply={applyAlarmTime}
         onCancel={() => setEditingAlarmSlot(null)}
+      />
+      <NotifyPermissionDialog
+        open={permissionDialogOpen}
+        mealTimes={mealTimes}
+        busy={permissionBusy}
+        onAccept={() => void handleRegistrationPermissionAccept()}
+        onDismiss={handleRegistrationPermissionDismiss}
       />
     </div>
   );

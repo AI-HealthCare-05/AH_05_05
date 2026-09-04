@@ -1,4 +1,4 @@
-import { expect, test } from 'playwright/test';
+import { expect, test, type Page } from 'playwright/test';
 
 import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
 
@@ -9,6 +9,79 @@ const ONE_PIXEL_PNG = Buffer.from(
   'base64',
 );
 
+type StubbedPermission = NotificationPermission | 'unsupported';
+
+async function stubNotificationPermission(
+  page: Page,
+  permission: StubbedPermission,
+  requestedPermission: NotificationPermission = 'granted',
+) {
+  await page.addInitScript(
+    ({ initialPermission, nextPermission }) => {
+      if (initialPermission === 'unsupported') {
+        Reflect.deleteProperty(window, 'Notification');
+        return;
+      }
+
+      class StubNotification {
+        static permission = initialPermission;
+
+        static async requestPermission() {
+          StubNotification.permission = nextPermission;
+          return nextPermission;
+        }
+      }
+
+      Object.defineProperty(window, 'Notification', {
+        configurable: true,
+        value: StubNotification,
+      });
+    },
+    { initialPermission: permission, nextPermission: requestedPermission },
+  );
+}
+
+async function stubPushManager(page: Page, alreadyRegistered = false) {
+  await page.addInitScript(({ hasExistingSubscription }) => {
+    const subscription = {
+      endpoint: 'https://push.example.test/feature-252-device',
+      expirationTime: null,
+      keys: { p256dh: 'feature-252-p256dh', auth: 'feature-252-auth' },
+    };
+    const existing = hasExistingSubscription ? { toJSON: () => subscription } : null;
+    const pushState = window as Window & { __feature252PushSubscribeCalls: number };
+    Object.defineProperty(pushState, '__feature252PushSubscribeCalls', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        register: async () => ({
+          pushManager: {
+            getSubscription: async () => existing,
+            subscribe: async () => {
+              pushState.__feature252PushSubscribeCalls += 1;
+              return { toJSON: () => subscription };
+            },
+          },
+        }),
+      },
+    });
+  }, { hasExistingSubscription: alreadyRegistered });
+}
+
+async function enterRegistrationAlarmStep(page: Page, alias = '알람 권한 처방') {
+  await page.goto('/dev/ocr-review');
+  await page.getByLabel('복약 별칭').fill(alias);
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '시작 점심약' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+}
+
 test.beforeEach(async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.clock.setFixedTime(new Date('2026-09-03T12:00:00+09:00'));
@@ -17,7 +90,11 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem('poke.account-principal', 'feature-252-medication@example.com');
     if (sessionStorage.getItem('feature-252-storage-cleaned') === '1') return;
     for (const key of Object.keys(localStorage)) {
-      if (key.startsWith('rxvita.medication-notes:') || key.startsWith('rxvita.medication-aliases:')) {
+      if (
+        key.startsWith('rxvita.medication-notes:') ||
+        key.startsWith('rxvita.medication-aliases:') ||
+        key.startsWith('rxvita.notify-settings:')
+      ) {
         localStorage.removeItem(key);
       }
     }
@@ -71,17 +148,31 @@ test('선택한 약봉투는 업로드 뒤 OCR 진행률과 결과 검토로 이
 });
 
 test('5단계 알람은 전체 알림과 시간 행을 편집하고 저장한다', async ({ page }) => {
-  await page.goto('/dev/ocr-review');
-  await page.getByLabel('복약 별칭').fill('알람 저장 처방');
-  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
-  await page.getByRole('button', { name: '확인', exact: true }).click();
-  await page.getByRole('button', { name: '시작 점심약' }).click();
-  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await stubNotificationPermission(page, 'default', 'granted');
+  await stubPushManager(page);
+  const pushPayloads: unknown[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    pushPayloads.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1 }),
+    });
+  });
+  await enterRegistrationAlarmStep(page, '알람 저장 처방');
 
   const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
   await expect(medicationNotifications).toBeVisible();
-  await medicationNotifications.setChecked(true);
+  await medicationNotifications.click();
+  const permissionDialog = page.getByRole('dialog', { name: '복약 시간에 알림을 보내드릴까요?' });
+  await expect(permissionDialog).toBeVisible();
+  await expect(page.locator('[role="switch"][aria-label="복약 알림"]')).toHaveAttribute(
+    'aria-checked',
+    'false',
+  );
+  await permissionDialog.getByRole('button', { name: '좋아요' }).click();
+  await expect(medicationNotifications).toBeChecked();
+  expect(pushPayloads).toHaveLength(1);
 
   const morningAlarm = page.getByRole('button', { name: '아침약 알람 시간' });
   await morningAlarm.click();
@@ -98,6 +189,125 @@ test('5단계 알람은 전체 알림과 시간 행을 편집하고 저장한다
   await expect(page.getByText(/알림 07:30/)).toBeVisible();
   await page.goto('/dev/medication-alarm-times');
   await expect(page.getByRole('button', { name: '아침약' })).toContainText('07:30');
+});
+
+test('등록 5단계는 default 권한을 허용한 뒤에만 알림을 켜고 구독을 등록한다', async ({ page }) => {
+  await stubNotificationPermission(page, 'default', 'granted');
+  await stubPushManager(page);
+  const pushPayloads: unknown[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    pushPayloads.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1 }),
+    });
+  });
+
+  await enterRegistrationAlarmStep(page);
+  const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
+  await medicationNotifications.click();
+
+  const permissionDialog = page.getByRole('dialog', { name: '복약 시간에 알림을 보내드릴까요?' });
+  await expect(permissionDialog).toBeVisible();
+  await expect(page.locator('[role="switch"][aria-label="복약 알림"]')).toHaveAttribute(
+    'aria-checked',
+    'false',
+  );
+  await permissionDialog.getByRole('button', { name: '좋아요' }).click();
+
+  await expect(medicationNotifications).toBeChecked();
+  expect(pushPayloads).toEqual([
+    {
+      endpoint: 'https://push.example.test/feature-252-device',
+      p256dh_key: 'feature-252-p256dh',
+      auth_key: 'feature-252-auth',
+      platform: 'web',
+      user_agent: expect.any(String),
+    },
+  ]);
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+});
+
+test('등록 5단계는 denied 권한에서 알림을 켜지 않고 구독도 등록하지 않는다', async ({ page }) => {
+  await stubNotificationPermission(page, 'denied');
+  await stubPushManager(page);
+  const pushPayloads: unknown[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    pushPayloads.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1 }),
+    });
+  });
+
+  await enterRegistrationAlarmStep(page);
+  const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
+  await medicationNotifications.click();
+
+  await expect(medicationNotifications).not.toBeChecked();
+  await expect(page.getByRole('alert')).toContainText('알림 권한이 차단되어 있어요');
+  expect(pushPayloads).toHaveLength(0);
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  await page.goto('/dev/my-authenticated');
+  await expect(page.getByRole('switch', { name: '복약 알림' })).not.toBeChecked();
+});
+
+test('등록 5단계는 구독 등록 실패 뒤 알림을 켠 상태로 저장하지 않는다', async ({ page }) => {
+  await stubNotificationPermission(page, 'granted');
+  await stubPushManager(page);
+  const pushPayloads: unknown[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    pushPayloads.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'push_unavailable', message: '구독 등록에 실패했어요.' }),
+    });
+  });
+
+  await enterRegistrationAlarmStep(page);
+  const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
+  await medicationNotifications.click();
+
+  await expect(medicationNotifications).not.toBeChecked();
+  await expect(page.getByRole('alert')).toContainText('구독 등록에 실패했어요.');
+  expect(pushPayloads).toHaveLength(1);
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  await page.goto('/dev/my-authenticated');
+  await expect(page.getByRole('switch', { name: '복약 알림' })).not.toBeChecked();
+});
+
+test('등록 5단계는 granted 기존 구독을 재사용하고 중복 subscribe하지 않는다', async ({ page }) => {
+  await stubNotificationPermission(page, 'granted');
+  await stubPushManager(page, true);
+  const pushPayloads: unknown[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    pushPayloads.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1 }),
+    });
+  });
+
+  await enterRegistrationAlarmStep(page);
+  const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
+  await medicationNotifications.click();
+
+  await expect(medicationNotifications).toBeChecked();
+  expect(pushPayloads).toHaveLength(1);
+  expect(await page.evaluate(() => {
+    const state = window as Window & { __feature252PushSubscribeCalls: number };
+    return state.__feature252PushSubscribeCalls;
+  })).toBe(0);
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  expect(pushPayloads).toHaveLength(1);
 });
 
 test('OCR 낮은 확신 약은 확인 필요 상태에서 편집할 수 있다', async ({ page }) => {
