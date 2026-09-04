@@ -170,7 +170,7 @@ test('홈 랭킹 더보기는 둘러보기 탭으로 바로 이동한다', async
   await expect(page).toHaveURL(/\/supplements\?tab=browse$/);
 });
 
-test('비로그인 홈은 개인 복약 조회 없이 랭킹만 읽기 전용으로 표시한다', async ({ page }) => {
+test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭킹을 표시한다', async ({ page }) => {
   let supplementListRequests = 0;
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
     await fulfillJson(route, RANKING_RESPONSE);
@@ -184,12 +184,17 @@ test('비로그인 홈은 개인 복약 조회 없이 랭킹만 읽기 전용으
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
   await expect(ranking).toBeVisible();
-  await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
+  await expect(ranking.getByRole('heading', { name: '인기 영양제' })).toBeVisible();
+  await expect(
+    ranking.getByText('개인별 복용 추천이 아닌 일반 인기 정보예요', { exact: true }),
+  ).toBeVisible();
   await expect(ranking.getByRole('button', { name: '더보기' })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /영양제 추가/ })).toHaveCount(0);
   await expect(ranking.locator('svg')).toHaveCount(0);
   await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('오늘의 복약', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
+  await expect(ranking.getByRole('listitem')).toHaveCount(5);
   expect(supplementListRequests).toBe(0);
 });
 
@@ -201,7 +206,7 @@ test('등록 목록 조회가 실패해도 랭킹은 배지 없이 표시한다'
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
   await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
   await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 
 test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지한다', async ({ page }) => {
@@ -218,7 +223,7 @@ test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지�
   await page.goto('/dev/home-empty');
 
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 
   await page.unroute('**/api/v1/display/med/nutr/rank');
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
@@ -227,7 +232,7 @@ test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지�
   await page.reload();
 
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toHaveCount(0);
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 
 test('미등록 랭킹 행은 검색 없이 상세 API로 제품을 채운 추가 시트를 연다', async ({ page }) => {

@@ -29,7 +29,7 @@ test('404 복약 목록은 홈과 복용약 탭에서 등록 CTA를 제공한다
 
   await page.goto('/home');
 
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
   await expect(
     page.getByText('복약정보를 등록하시면 시간에 맞춰 알림을 받으실 수 있어요.', { exact: true }),
   ).toBeVisible();

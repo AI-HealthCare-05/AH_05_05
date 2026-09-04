@@ -16,6 +16,7 @@ import {
   getSupplementRanking,
   getSupplements,
   type SupplementRanking,
+  type Supplement,
 } from '@/entities/supplement';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
@@ -48,6 +49,8 @@ interface DoseBatchChange {
   date: string;
   slot: MealSlot;
   taken: boolean;
+  /** 선택한 회차의 UI 범위. 저장 API는 기존처럼 날짜+슬롯 단위입니다. */
+  recordIds: number[];
 }
 
 export function HomePage({
@@ -69,10 +72,12 @@ export function HomePage({
   const [failedDoseChange, setFailedDoseChange] = useState<DoseBatchChange | null>(null);
   const [animatedDoseKey, setAnimatedDoseKey] = useState<string | null>(null);
   const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
+  const [registeredSupplements, setRegisteredSupplements] = useState<Supplement[]>([]);
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
     () => new Set(),
   );
   const [supplementRegistrationPending, setSupplementRegistrationPending] = useState(false);
+  const [homeTab, setHomeTab] = useState<'medication' | 'supplement'>('medication');
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -95,6 +100,7 @@ export function HomePage({
 
   useEffect(() => {
     if (!isAuthenticated) {
+      setRegisteredSupplements([]);
       setRegisteredProductIds(new Set());
       setSupplementRegistrationPending(false);
       return;
@@ -105,6 +111,7 @@ export function HomePage({
     getSupplements()
       .then((result) => {
         if (!cancelled) {
+          setRegisteredSupplements(result.items);
           setRegisteredProductIds(
             new Set(
               result.items.flatMap((supplement) =>
@@ -115,7 +122,10 @@ export function HomePage({
         }
       })
       .catch(() => {
-        if (!cancelled) setRegisteredProductIds(new Set());
+        if (!cancelled) {
+          setRegisteredSupplements([]);
+          setRegisteredProductIds(new Set());
+        }
       })
       .finally(() => {
         if (!cancelled) setSupplementRegistrationPending(false);
@@ -252,8 +262,8 @@ export function HomePage({
     openFeature(key);
   }
 
-  async function changeDose(change: DoseBatchChange, showUndo = true) {
-    if (!doseRecords) return;
+  async function changeDose(change: DoseBatchChange, showUndo = true): Promise<boolean> {
+    if (!doseRecords) return false;
     const previousRecords = doseRecords;
     setFailedDoseChange(null);
     setAnimatedDoseKey(change.taken ? doseKey(change.date, change.slot) : null);
@@ -270,10 +280,12 @@ export function HomePage({
           },
         });
       }
+      return true;
     } catch {
       setDoseRecords(previousRecords);
       setAnimatedDoseKey(null);
       setFailedDoseChange(change);
+      return false;
     }
   }
 
@@ -300,73 +312,94 @@ export function HomePage({
         </header>
       )}
 
-      <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
-        <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />
-
-        {visibleSupplementRanking && (
-          <SupplementRankingCard
-            ranking={visibleSupplementRanking}
-            registrationPending={isAuthenticated && supplementRegistrationPending}
-            maxItems={3}
-            onMore={isAuthenticated ? () => navigate('/supplements?tab=browse') : undefined}
-            onSelect={
-              isAuthenticated
-                ? (productId) =>
-                    navigate('/supplements', { state: { presetProductId: String(productId) } })
-                : undefined
-            }
-          />
-        )}
-
+      <main className={`flex flex-1 flex-col overflow-y-auto px-page-x py-5 ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
-          medicationLoadError || doseLoadError ? (
-            <Card title="복약 정보를 불러오지 못했어요">
-              {medicationLoadError ?? doseLoadError}
-            </Card>
-          ) : resolvedMedicationState && pageDataReady ? (
-            <>
-              <LoggedInMedicationContent
-                state={resolvedMedicationState}
-                overviews={medicationOverviews ?? []}
-                doseRecords={doseRecords ?? []}
-                currentDate={currentDate}
-                onDoseChange={(recordIds, slot, taken) =>
-                  recordIds.length > 0
-                    ? void changeDose({ date: currentDate, slot, taken })
-                    : undefined
-                }
-                onMemo={() => navigate('/medications/notes/new')}
-                onUpload={() => navigate('/document-upload')}
+          <>
+            <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />
+            {medicationLoadError || doseLoadError ? (
+              <Card title="복약 정보를 불러오지 못했어요">
+                {medicationLoadError ?? doseLoadError}
+              </Card>
+            ) : resolvedMedicationState && pageDataReady ? (
+              <>
+                {homeTab === 'medication' ? (
+                  <div
+                    id="home-panel-medication"
+                    role="tabpanel"
+                    aria-labelledby="home-tab-medication"
+                  >
+                    <LoggedInMedicationContent
+                      state={resolvedMedicationState}
+                      overviews={medicationOverviews ?? []}
+                      doseRecords={doseRecords ?? []}
+                      currentDate={currentDate}
+                      onDoseChange={(recordIds, slot, taken) => {
+                        if (recordIds.length === 0) return;
+                        return changeDose({ date: currentDate, slot, taken, recordIds });
+                      }}
+                      onMemo={() => navigate('/medications/notes/new')}
+                      onUpload={() => navigate('/document-upload')}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    id="home-panel-supplement"
+                    role="tabpanel"
+                    aria-labelledby="home-tab-supplement"
+                  >
+                    <SupplementTodayCard
+                      supplements={registeredSupplements}
+                      onBrowse={() => navigate('/supplements?tab=browse')}
+                    />
+                  </div>
+                )}
+                {hasMedication && doseRecords ? (
+                  <MedicationRecordGrid
+                    overviews={medicationOverviews ?? []}
+                    records={doseRecords}
+                    now={new Date()}
+                    animatedRecordKey={animatedDoseKey}
+                    onMarkTaken={(date, slot, recordIds) => {
+                      if (recordIds.length === 0) return;
+                      void changeDose({ date, slot, taken: true, recordIds });
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <div
+                role="status"
+                aria-label="복약 정보 불러오는 중"
+                className="min-h-84 animate-pulse rounded-card bg-muted-bg"
               />
-              {hasMedication && doseRecords ? (
-                <MedicationRecordGrid
-                  overviews={medicationOverviews ?? []}
-                  records={doseRecords}
-                  now={new Date()}
-                  animatedRecordKey={animatedDoseKey}
-                  onMarkTaken={(date, slot, recordIds) =>
-                    recordIds.length > 0
-                      ? void changeDose({ date, slot, taken: true })
-                      : undefined
-                  }
-                />
-              ) : null}
-            </>
-          ) : (
-            <div
-              role="status"
-              aria-label="복약 정보 불러오는 중"
-              className="min-h-84 animate-pulse rounded-card bg-muted-bg"
-            />
-          )
-        ) : null}
-
-        {!isAuthenticated && (
-          <p className="mt-auto py-4 text-center text-sm text-disabled-foreground">
-            로그인하고, 나만의 복약관리를 시작해 보세요.
-          </p>
+            )}
+            {visibleSupplementRanking && (
+              <SupplementRankingCard
+                ranking={visibleSupplementRanking}
+                registrationPending={supplementRegistrationPending}
+                maxItems={3}
+                onMore={() => navigate('/supplements?tab=browse')}
+                onSelect={(productId) =>
+                  navigate('/supplements', { state: { presetProductId: String(productId) } })
+                }
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <GuestMedicationPrompt onLogin={() => navigate('/login')} />
+            {visibleSupplementRanking && (
+              <SupplementRankingCard
+                ranking={visibleSupplementRanking}
+                registrationPending={false}
+                maxItems={5}
+                title="인기 영양제"
+                subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
+              />
+            )}
+          </>
         )}
-
+        <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />
       </main>
 
       <BottomTabbar
@@ -393,6 +426,149 @@ export function HomePage({
   );
 }
 
+function HomeSectionTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: 'medication' | 'supplement';
+  onChange: (tab: 'medication' | 'supplement') => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="오늘의 홈 탭"
+      className="grid grid-cols-2 rounded-input bg-muted-bg p-1"
+    >
+      {([
+        ['medication', '오늘의 복약'],
+        ['supplement', '오늘의 영양제'],
+      ] as const).map(([tab, label]) => {
+        const selected = activeTab === tab;
+        return (
+          <button
+            key={tab}
+            id={`home-tab-${tab}`}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            aria-controls={`home-panel-${tab}`}
+            className={`min-h-touch rounded-input text-sm font-bold ${
+              selected ? 'bg-card text-primary shadow-card' : 'text-muted-foreground'
+            }`}
+            onClick={() => onChange(tab)}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function GuestMedicationPrompt({ onLogin }: { onLogin: () => void }) {
+  return (
+    <section aria-labelledby="guest-medication-title" className="flex flex-col gap-3">
+      <div>
+        <h2 id="guest-medication-title" className="text-2xl font-bold text-foreground">
+          오늘의 복약
+        </h2>
+        <p className="mt-1 text-base text-muted-foreground">
+          로그인하면 오늘 먹을 약을 바로 확인할 수 있어요
+        </p>
+      </div>
+      <Card className="gap-3 p-5">
+        <p className="text-lg font-bold text-foreground">복약 일정을 확인해보세요</p>
+        <p>로그인하면 기록과 알림을 이어서 볼 수 있어요.</p>
+        <Button onClick={onLogin}>로그인하고 시작하기</Button>
+      </Card>
+    </section>
+  );
+}
+
+function SupplementTodayCard({
+  supplements,
+  onBrowse,
+}: {
+  supplements: Supplement[];
+  onBrowse: () => void;
+}) {
+  const [individualSelection, setIndividualSelection] = useState(false);
+  const [takenCount, setTakenCount] = useState(0);
+  const visibleSupplements = supplements.slice(0, 3);
+
+  return (
+    <section aria-labelledby="today-supplement-title" className="flex flex-col gap-3">
+      <h2 id="today-supplement-title" className="text-2xl font-bold text-foreground">
+        오늘의 영양제
+      </h2>
+      <Card className="gap-3 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-base font-bold text-foreground">점심 13:00</p>
+          <button
+            type="button"
+            aria-pressed={individualSelection}
+            className="min-h-touch px-2 text-sm font-bold text-primary-strong"
+            onClick={() => setIndividualSelection((value) => !value)}
+          >
+            개별 선택
+          </button>
+        </div>
+        <ul className="flex flex-col gap-2" aria-label="오늘 먹을 영양제">
+          {visibleSupplements.length > 0 ? (
+            visibleSupplements.map((supplement) => (
+              <li key={supplement.supplementId} className="flex items-center gap-3">
+                <span
+                  aria-hidden
+                  className={`flex size-5 shrink-0 items-center justify-center rounded-pill border-2 border-primary ${
+                    takenCount > 0 ? 'bg-primary text-card' : 'text-transparent'
+                  }`}
+                >
+                  ✓
+                </span>
+                <span className="min-w-0 flex-1 text-base font-bold text-foreground">
+                  {supplement.name}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {supplement.doseAmount}
+                  {supplement.doseUnit}
+                </span>
+              </li>
+            ))
+          ) : (
+            <li className="text-sm text-muted-foreground">등록한 영양제가 없어요</li>
+          )}
+        </ul>
+        <div className="flex gap-2">
+          <Button
+            fullWidth={false}
+            variant="secondary"
+            className="flex-1 px-3"
+            aria-pressed={takenCount === 1}
+            onClick={() => setTakenCount(1)}
+          >
+            1개 먹었어요
+          </Button>
+          <Button
+            fullWidth={false}
+            className="flex-1 px-3"
+            aria-pressed={takenCount === visibleSupplements.length}
+            onClick={() => setTakenCount(visibleSupplements.length)}
+          >
+            다 먹었어요
+          </Button>
+        </div>
+      </Card>
+      <button
+        type="button"
+        className="self-end text-sm font-bold text-primary-strong"
+        onClick={onBrowse}
+      >
+        영양제 살펴보기
+      </button>
+    </section>
+  );
+}
+
 function LoggedInMedicationContent({
   state,
   overviews,
@@ -406,7 +582,7 @@ function LoggedInMedicationContent({
   overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
-  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void;
+  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void | Promise<boolean>;
   onMemo: () => void;
   onUpload: () => void;
 }) {

@@ -65,11 +65,11 @@ test('메인 하단에는 법적 안내 푸터를 표시하지 않는다', async
   await expect(page.getByRole('contentinfo')).toHaveCount(0);
 });
 
-test('로그인 홈도 복약 상태 위에 소개 배너를 유지한다', async ({ page }) => {
+test('로그인 홈은 복약 상태와 소개 배너를 함께 유지한다', async ({ page }) => {
   await page.goto('/dev/home-data-empty');
 
   await expect(page.getByRole('region', { name: 'RxVita 기능 소개' })).toBeVisible();
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 
 test('게스트 탭은 조회 화면으로 가지 않고 같은 로그인 시트를 연다', async ({ page }) => {
@@ -134,7 +134,7 @@ test('홈에서는 토큰이 만료되어도 로그인 화면으로 이동하지
 
   await page.goto('/home');
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
 
   await expect
     .poll(() => page.evaluate(() => sessionStorage.getItem('poke.access-token')), {
@@ -142,7 +142,8 @@ test('홈에서는 토큰이 만료되어도 로그인 화면으로 이동하지
     })
     .toBeNull();
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByText('오늘의 복약', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
 });
 
 test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있다', async ({ page }) => {
@@ -218,7 +219,7 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 
 test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태가 된다', async ({ page }) => {
@@ -229,7 +230,7 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
     gender: '여성',
   });
   await page.getByRole('button', { name: '회원가입 완료' }).click();
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 
   await page.getByRole('button', { name: '약봉투 등록하기', exact: true }).click();
   await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
@@ -247,7 +248,7 @@ test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태
 
 test('로그인 홈은 약 없음·복약 중·복약 종료 상태를 모두 표현한다', async ({ page }) => {
   await page.goto('/dev/home-data-empty');
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 
   await page.goto('/dev/home-active');
   await expect(page.getByText('오늘의 복약')).toBeVisible();

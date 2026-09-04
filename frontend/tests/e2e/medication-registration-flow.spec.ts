@@ -874,7 +874,7 @@ test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여
 
   await page.goto('/home');
 
-  await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
   await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
 });
 

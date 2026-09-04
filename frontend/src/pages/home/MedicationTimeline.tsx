@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import type {
   DoseRecord,
@@ -37,7 +37,11 @@ interface MedicationTimelineProps {
   overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
-  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void;
+  onDoseChange: (
+    recordIds: number[],
+    slot: MealSlot,
+    taken: boolean,
+  ) => void | Promise<boolean>;
   onMemo: () => void;
 }
 
@@ -78,6 +82,7 @@ export function MedicationTimeline({
             key={item.slot}
             item={item}
             divided={index > 0}
+            currentDate={currentDate}
             onDoseChange={onDoseChange}
             onMemo={onMemo}
           />
@@ -90,11 +95,13 @@ export function MedicationTimeline({
 function TimelineItem({
   item,
   divided,
+  currentDate,
   onDoseChange,
   onMemo,
 }: {
   item: TimelineItemData;
   divided: boolean;
+  currentDate: string;
   onDoseChange: MedicationTimelineProps['onDoseChange'];
   onMemo: MedicationTimelineProps['onMemo'];
 }) {
@@ -104,6 +111,18 @@ function TimelineItem({
   const [completedEpisodes, setCompletedEpisodes] = useState<Set<number>>(() => new Set());
   const current = item.status === 'current';
   const completed = item.status === 'completed';
+  const previousCompleted = useRef(completed);
+  const episodeFingerprint = item.episodes
+    .map((episode) =>
+      [
+        episode.recordId,
+        episode.startDate,
+        ...episode.medications.map((medication) =>
+          [medication.medicationId, medication.name, medication.dose].join(':'),
+        ),
+      ].join('|'),
+    )
+    .join('||');
   const statusLabel = completed
     ? '완료'
     : current
@@ -111,6 +130,20 @@ function TimelineItem({
       : item.status === 'next'
         ? '다음'
         : null;
+
+  useEffect(() => {
+    setExpandedEpisodes(new Set());
+    setSelectedEpisodes(new Set());
+    setCompletedEpisodes(new Set());
+  }, [currentDate, episodeFingerprint]);
+
+  useEffect(() => {
+    if (previousCompleted.current && !completed) {
+      setSelectedEpisodes(new Set());
+      setCompletedEpisodes(new Set());
+    }
+    previousCompleted.current = completed;
+  }, [completed]);
 
   function toggleEpisode(recordId: number) {
     setExpandedEpisodes((currentEpisodes) => {
@@ -138,13 +171,22 @@ function TimelineItem({
   );
   const actionRecordIds = actionEpisodes.map((episode) => episode.recordId);
 
-  function handleDoseAction() {
+  async function handleDoseAction() {
     setCompletedEpisodes((currentEpisodes) => {
       if (completed) return new Set();
       return new Set([...currentEpisodes, ...actionRecordIds]);
     });
     setSelectedEpisodes(new Set());
-    onDoseChange(actionRecordIds, item.slot, !completed);
+    let saved = true;
+    try {
+      saved = (await onDoseChange(actionRecordIds, item.slot, !completed)) !== false;
+    } catch {
+      saved = false;
+    }
+    if (saved === false) {
+      setCompletedEpisodes(new Set());
+      setSelectedEpisodes(new Set());
+    }
   }
 
   return (
