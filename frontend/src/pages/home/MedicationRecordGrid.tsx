@@ -47,7 +47,7 @@ export function MedicationRecordGrid({
       .filter((record) => record.taken)
       .map((record) => `${record.date}:${record.slot}`),
   );
-  const gridTemplateColumns = `max-content repeat(${dates.length}, minmax(0, var(--spacing-record-cell-w)))`;
+  const gridTemplateColumns = `max-content repeat(${dates.length}, minmax(0, 1fr))`;
 
   return (
     <section aria-label="복약 기록">
@@ -60,7 +60,7 @@ export function MedicationRecordGrid({
                 type="button"
                 aria-label="이전 10일"
                 disabled={!hasPreviousPage}
-                className="flex size-10 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-muted-bg disabled:text-disabled-foreground disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex size-touch shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-muted-bg disabled:text-disabled-foreground disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => {
                   const previousDate = datePages[pageIndex - 1]?.[0];
                   if (previousDate) setSelectedDate(previousDate);
@@ -78,7 +78,7 @@ export function MedicationRecordGrid({
                 type="button"
                 aria-label="다음 10일"
                 disabled={!hasNextPage}
-                className="flex size-10 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-muted-bg disabled:text-disabled-foreground disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex size-touch shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-muted-bg disabled:text-disabled-foreground disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => {
                   const nextDate = datePages[pageIndex + 1]?.[0];
                   if (nextDate) setSelectedDate(nextDate);
@@ -93,7 +93,11 @@ export function MedicationRecordGrid({
             role="grid"
             aria-label="복약 기간 기록"
             className="grid w-full gap-x-record-gap gap-y-record-gap overflow-hidden"
-            style={{ gridTemplateColumns }}
+            style={{
+              gridTemplateColumns,
+              width: 'calc(100% + (var(--spacing-touch) - var(--spacing-record-cell-h)) / 2)',
+              paddingRight: 'calc((var(--spacing-touch) - var(--spacing-record-cell-h)) / 2)',
+            }}
           >
             <span aria-hidden />
             {dates.map((date) => (
@@ -138,9 +142,15 @@ export function MedicationRecordGrid({
                         type="button"
                         role="gridcell"
                         aria-label={label}
-                        className="h-record-cell-h min-w-0 rounded-record-cell bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex size-touch min-w-0 items-center justify-center justify-self-center rounded-record-cell bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => onMarkTaken(date, slot, recordIds)}
-                      />
+                      >
+                        <span
+                          aria-hidden
+                          data-record-cell-visual
+                          className="block aspect-square h-record-cell-h rounded-record-cell bg-border"
+                        />
+                      </button>
                     );
                   }
 
@@ -152,8 +162,14 @@ export function MedicationRecordGrid({
                         role="gridcell"
                         aria-label={label}
                         disabled
-                        className="h-record-cell-h min-w-0 rounded-record-cell bg-muted-bg"
-                      />
+                        className="flex size-touch min-w-0 items-center justify-center justify-self-center rounded-record-cell bg-transparent"
+                      >
+                        <span
+                          aria-hidden
+                          data-record-cell-visual
+                          className="block aspect-square h-record-cell-h rounded-record-cell bg-muted-bg"
+                        />
+                      </button>
                     );
                   }
 

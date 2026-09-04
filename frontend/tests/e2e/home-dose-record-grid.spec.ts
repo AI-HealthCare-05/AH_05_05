@@ -228,6 +228,65 @@ test('480px에서도 슬롯명과 첫 날짜 사이가 목업 간격을 유지�
   expect(labelToFirstDateGap).toBeLessThanOrEqual(24);
 });
 
+test('복약 기록의 기간 이동과 과거 기록 셀은 375·390px에서 44px 터치 영역을 제공한다', async ({
+  page,
+}) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+    await page.goto('/dev/home-14-days');
+
+    const tabbarBox = await page.getByRole('navigation', { name: '주요 화면' }).boundingBox();
+    expect(tabbarBox?.height, `tabbar height at ${viewport.width}px`).toBe(64);
+
+    const grid = page.getByRole('grid', { name: '복약 기간 기록' });
+    for (const label of ['이전 10일', '다음 10일']) {
+      const box = await page.getByRole('button', { name: label }).boundingBox();
+      expect(box?.width, `${label} width at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
+      expect(box?.height, `${label} height at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
+    }
+
+    const interactiveCells = grid.locator('button[role="gridcell"]');
+    const cellBoxes = await interactiveCells.evaluateAll((elements) =>
+      elements.map((element) => {
+        const { width, height } = element.getBoundingClientRect();
+        return { width, height };
+      }),
+    );
+    expect(cellBoxes.length).toBeGreaterThan(0);
+    for (const box of cellBoxes) {
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    const visualBoxes = await interactiveCells
+      .locator('[data-record-cell-visual]')
+      .evaluateAll((elements) =>
+        elements.map((element) => {
+          const { width, height } = element.getBoundingClientRect();
+          return { width, height };
+        }),
+      );
+    expect(visualBoxes.length).toBe(cellBoxes.length);
+    for (const box of visualBoxes) {
+      expect(box.width).toBeLessThanOrEqual(30);
+      expect(box.height).toBeLessThanOrEqual(22);
+    }
+
+    const overflow = await page.evaluate(() => ({
+      viewportWidth: document.documentElement.clientWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      mainWidth: document.querySelector('main')?.scrollWidth ?? 0,
+    }));
+    expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth);
+    expect(overflow.mainWidth).toBeLessThanOrEqual(overflow.viewportWidth);
+  }
+});
+
 test('복약이 끝난 홈에도 그 회차의 기록 잔디가 남고 복약 탭에는 중복하지 않는다', async ({
   page,
 }) => {
