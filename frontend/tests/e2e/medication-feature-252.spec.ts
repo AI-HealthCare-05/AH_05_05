@@ -310,6 +310,45 @@ test('등록 5단계는 granted 기존 구독을 재사용하고 중복 subscrib
   expect(pushPayloads).toHaveLength(1);
 });
 
+test('등록 5단계는 푸시 등록이 끝날 때까지 완료를 막고 일관된 알림 상태를 저장한다', async ({
+  page,
+}) => {
+  await stubNotificationPermission(page, 'granted');
+  await stubPushManager(page);
+  const pushPayloads: unknown[] = [];
+  let releasePushRegistration!: () => void;
+  const pushRegistrationSettled = new Promise<void>((resolve) => {
+    releasePushRegistration = resolve;
+  });
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    pushPayloads.push(route.request().postDataJSON());
+    await pushRegistrationSettled;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1 }),
+    });
+  });
+
+  await enterRegistrationAlarmStep(page);
+  const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
+  await medicationNotifications.click();
+  const completionButton = page.getByRole('button', { name: '등록 완료', exact: true });
+
+  await expect(completionButton).toBeDisabled();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toHaveCount(0);
+  expect(pushPayloads).toHaveLength(1);
+
+  releasePushRegistration();
+  await expect(medicationNotifications).toBeChecked();
+  await expect(completionButton).toBeEnabled();
+  await completionButton.click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  await expect(page.getByText(/알림 08:00/)).toBeVisible();
+  await page.goto('/dev/my-authenticated');
+  await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked();
+});
+
 test('OCR 낮은 확신 약은 확인 필요 상태에서 편집할 수 있다', async ({ page }) => {
   await page.goto('/dev/ocr-review');
 

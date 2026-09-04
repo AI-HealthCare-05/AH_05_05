@@ -840,6 +840,7 @@ function MedicationRegistrationWizard({
   const [alarmSettingsError, setAlarmSettingsError] = useState<string | null>(null);
   const [editingAlarmSlot, setEditingAlarmSlot] = useState<MealSlot | null>(null);
   const notifyMedicationEditedRef = useRef(false);
+  const notificationBusyRef = useRef(false);
   const notificationReadyRef = useRef(false);
   const alarmTimesEditedRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -910,6 +911,7 @@ function MedicationRegistrationWizard({
   }
 
   async function registerMedicationNotifications(): Promise<boolean> {
+    notificationBusyRef.current = true;
     setPermissionBusy(true);
     setNotificationError(null);
     try {
@@ -925,6 +927,7 @@ function MedicationRegistrationWizard({
       );
       return false;
     } finally {
+      notificationBusyRef.current = false;
       setPermissionBusy(false);
     }
   }
@@ -963,6 +966,7 @@ function MedicationRegistrationWizard({
   }
 
   async function handleRegistrationPermissionAccept() {
+    notificationBusyRef.current = true;
     setPermissionBusy(true);
     let permission: PushPermission;
     try {
@@ -971,6 +975,7 @@ function MedicationRegistrationWizard({
       setPermissionDialogOpen(false);
       notificationReadyRef.current = false;
       setNotifyMedication(false);
+      notificationBusyRef.current = false;
       setPermissionBusy(false);
       setNotificationError(
         error instanceof Error ? error.message : '알림 권한을 확인하지 못했어요.',
@@ -987,6 +992,7 @@ function MedicationRegistrationWizard({
 
     notificationReadyRef.current = false;
     setNotifyMedication(false);
+    notificationBusyRef.current = false;
     setNotificationError(
       permission === 'denied'
         ? '알림 권한이 차단되어 있어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.'
@@ -997,12 +1003,22 @@ function MedicationRegistrationWizard({
   function handleRegistrationPermissionDismiss() {
     setPermissionDialogOpen(false);
     notificationReadyRef.current = false;
+    notificationBusyRef.current = false;
     setNotifyMedication(false);
     setNotificationError('알림 권한을 허용해야 복약 알림을 켤 수 있어요.');
   }
 
   async function completeRegistration() {
-    if (recordId === null || !startSlot || !startDate || saving) return;
+    if (
+      recordId === null ||
+      !startSlot ||
+      !startDate ||
+      saving ||
+      permissionBusy ||
+      notificationBusyRef.current
+    ) {
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     const selectedNotifyMedication = notifyMedication;
@@ -1284,7 +1300,10 @@ function MedicationRegistrationWizard({
             </Card>
             {saveError && <p role="alert" className="text-sm text-danger-strong">{saveError}</p>}
             <div className="mt-auto pb-4">
-              <Button disabled={saving} onClick={() => void completeRegistration()}>
+              <Button
+                disabled={saving || permissionBusy}
+                onClick={() => void completeRegistration()}
+              >
                 {saving ? '등록 중...' : '등록 완료'}
               </Button>
             </div>
