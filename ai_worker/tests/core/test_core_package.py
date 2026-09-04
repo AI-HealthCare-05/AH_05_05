@@ -2,6 +2,7 @@ from ai_worker.core import (
     Config,
     setup_logger,
 )
+from ai_worker.schemas.knowledge import KnowledgeSearchMode
 
 
 def test_core_package_uses_ai_worker_dependencies() -> None:
@@ -23,6 +24,12 @@ def test_config_limits_openai_and_qdrant_calls_to_ten_seconds() -> None:
 
     assert settings.OPENAI_TIMEOUT_SECONDS == 10.0
     assert settings.QDRANT_TIMEOUT_SECONDS == 10.0
+
+
+def test_config_defaults_to_dense_knowledge_search() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.DENSE
 
 
 def test_config_reads_openai_chat_integration_settings(
@@ -52,6 +59,7 @@ def test_config_reads_openai_chat_integration_settings(
         "KNOWLEDGE_DATASET_VERSION",
         "knowledge-test-v1",
     )
+    monkeypatch.setenv("KNOWLEDGE_SEARCH_MODE", "HYBRID")
     monkeypatch.setenv(
         "INTERACTION_RULE_DATASET_VERSION",
         "interaction-test-v1",
@@ -78,6 +86,7 @@ def test_config_reads_openai_chat_integration_settings(
     assert settings.QDRANT_COLLECTION == "public-guidelines-test"
     assert settings.KNOWLEDGE_QDRANT_COLLECTION == "medication-knowledge-test"
     assert settings.KNOWLEDGE_DATASET_VERSION == "knowledge-test-v1"
+    assert settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.HYBRID
     assert settings.INTERACTION_RULE_DATASET_VERSION == "interaction-test-v1"
     assert settings.MEDICATION_SAFETY_RULE_DATASET_VERSION == ("medication-safety-test-v1")
     assert settings.RAG_MIN_SIMILARITY_SCORE == 0.7

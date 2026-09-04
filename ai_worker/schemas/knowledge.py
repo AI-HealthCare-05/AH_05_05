@@ -42,6 +42,12 @@ class KnowledgeSectionType(StrEnum):
     OTHER = "OTHER"
 
 
+class KnowledgeSearchMode(StrEnum):
+    DENSE = "DENSE"
+    BM25 = "BM25"
+    HYBRID = "HYBRID"
+
+
 class KnowledgeSearchTier(StrEnum):
     EXACT_PAIR = "EXACT_PAIR"
     ENTITY = "ENTITY"
@@ -215,6 +221,7 @@ class KnowledgeSearchQuery(BaseModel):
 class RetrievedKnowledgeChunk(KnowledgeChunk):
     point_id: str = Field(min_length=1)
     similarity_score: float = Field(ge=-1.0, le=1.0)
+    search_mode: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
 
 
 class KnowledgeCandidateDiagnostic(BaseModel):

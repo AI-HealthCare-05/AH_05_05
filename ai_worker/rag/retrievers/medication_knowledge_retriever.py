@@ -14,6 +14,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeRetrievalDiagnostics,
     KnowledgeRetrievalResult,
+    KnowledgeSearchMode,
     KnowledgeSearchQuery,
     KnowledgeSearchTier,
     KnowledgeSectionType,
@@ -478,6 +479,8 @@ class MedicationKnowledgeRetriever:
             and not self._matches_query_target(result, plan=plan)
         ):
             return _EligibilityReason.ENTITY_MISMATCH
+        if result.search_mode != KnowledgeSearchMode.DENSE:
+            return _EligibilityReason.ELIGIBLE
         if result.similarity_score >= self._min_similarity_score:
             return _EligibilityReason.ELIGIBLE
 

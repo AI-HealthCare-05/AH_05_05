@@ -8,6 +8,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunkMetadata,
     KnowledgeDocumentType,
+    KnowledgeSearchMode,
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
@@ -501,6 +502,31 @@ async def test_search_excludes_results_below_minimum_score() -> None:
     )
 
     assert [result.similarity_score for result in results] == [0.8]
+
+
+async def test_search_does_not_apply_dense_cosine_threshold_to_bm25_score() -> None:
+    bm25_result = build_chunk(
+        0.2,
+        ingredient_names=["비타민 D"],
+        section_type=KnowledgeSectionType.CAUTION,
+    ).model_copy(update={"search_mode": KnowledgeSearchMode.BM25})
+    store = FakeKnowledgeStore(responses=[[bm25_result]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-baseline-v1",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "비타민 D 주의사항을 알려줘",
+            supplement_names=["비타민 D"],
+        ),
+    )
+
+    assert result.chunks == [bm25_result]
+    assert result.diagnostics.rejected_below_score_count == 0
 
 
 async def test_candidate_diagnostics_are_deduplicated_and_limited_to_twenty() -> None:
