@@ -26,7 +26,11 @@ class AdminUserListQuery(PageQuery):
 
 
 class AdminUserStatusUpdateRequest(CamelModel):
-    """REQ-ADMIN-006 사용자 정지·해제 요청. 화면에서 체크박스로 여러 명을 선택한다."""
+    """REQ-ADMIN-006 사용자 정지·해제 요청.
+
+    API 는 여러 건을 받도록 되어 있으나, 현재 화면은 한 번에 한 명만 보낸다
+    (`userIds: [userId]`). 체크박스로 여럿을 고르는 화면은 만들어진 적이 없다.
+    """
 
     user_ids: list[int] = Field(min_length=1, max_length=100)
     # 계정 삭제(WITHDRAWN)는 여기서 다루지 않는다. 탈퇴는 본인 의사이고,

@@ -25,12 +25,13 @@ class AdminNameTestBase(TestCase):
 
 class TestAdminNameUpdateAPI(AdminNameTestBase):
     async def test_admin_can_rename_another_admin(self) -> None:
-        response = await request("PATCH", name_url(self.staff.id), headers=self.headers, json={"name": "김진형2"})
+        # 숫자를 넣으면 422 다(사용자 이름과 같은 규칙). 문자만으로 바꾼다.
+        response = await request("PATCH", name_url(self.staff.id), headers=self.headers, json={"name": "김진형둘"})
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"adminId": self.staff.id, "name": "김진형2"}
+        assert response.json() == {"adminId": self.staff.id, "name": "김진형둘"}
         await self.staff.refresh_from_db()
-        assert self.staff.name == "김진형2"
+        assert self.staff.name == "김진형둘"
 
     async def test_admin_can_rename_self(self) -> None:
         response = await request("PATCH", name_url(self.super_admin.id), headers=self.headers, json={"name": "은미"})

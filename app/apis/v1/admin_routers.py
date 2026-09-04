@@ -406,7 +406,8 @@ async def update_admin_status(
 ) -> AdminStatusUpdateResponse:
     """관리자 계정을 일괄 정지하거나 해제한다. ADMIN 전용. (REQ-ADMIN-011)
 
-    화면에서 체크박스로 여러 명을 고르므로 한 번에 최대 100건까지 받는다.
+    API 는 한 번에 최대 100건을 받는다. 다만 현재 화면은 한 명만 보낸다
+    (`adminIds: [adminId]`) — 체크박스로 여럿을 고르는 화면은 만들어진 적이 없다.
     `status` 는 `SUSPENDED` · `ACTIVE` · `PENDING` 중 하나다. 계정 삭제는 제공하지 않는다.
 
     **화면의 「활성화」는 `PENDING` 을 보낸다.** 정지 해제된 계정은 본인이 로그인해야
@@ -606,7 +607,8 @@ async def update_user_status(
 ) -> AdminUserStatusUpdateResponse:
     """회원 계정을 일괄 정지하거나 해제한다. ADMIN·STAFF 모두 가능하다. (REQ-ADMIN-006)
 
-    화면에서 체크박스로 여러 명을 고르므로 한 번에 최대 100건까지 받는다.
+    API 는 한 번에 최대 100건을 받는다. 다만 현재 화면은 한 명만 보낸다
+    (`userIds: [userId]`) — 체크박스로 여럿을 고르는 화면은 만들어진 적이 없다.
     `status` 는 `SUSPENDED` 또는 `ACTIVE` 만 가능하다.
 
     **강제 탈퇴는 이 API 로 하지 않는다.** 탈퇴는 본인 의사이고, 관리자에 의한
