@@ -53,10 +53,7 @@ from scripts.evaluate_medication_search_baseline import (
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "동일 평가 질문으로 Dense·BM25·RRF Hybrid 검색을 비교하고 "
-            "정확도 우선 활성화 여부를 판정합니다."
-        ),
+        description=("동일 평가 질문으로 Dense·BM25·RRF Hybrid 검색을 비교하고 정확도 우선 활성화 여부를 판정합니다."),
     )
     parser.add_argument("--evaluation-file", type=Path, required=True)
     parser.add_argument("--dense-collection", required=True)
@@ -80,9 +77,22 @@ def render_markdown(
         "",
         "- 판정 원칙: 속도보다 정확도 우선",
         f"- 최종 결정: `{comparison.decision.value}`",
-        "- 차단 사유: "
-        + (", ".join(comparison.blocking_reasons) or "없음"),
+        "- 차단 사유: " + (", ".join(comparison.blocking_reasons) or "없음"),
         "- 경고: " + (", ".join(comparison.warning_reasons) or "없음"),
+        "",
+        "## 실험 근거",
+        "",
+        f"- 목적: {reports[KnowledgeSearchMode.DENSE].experiment_goal or '기록되지 않음'}",
+        f"- 채택 기준: {reports[KnowledgeSearchMode.DENSE].activation_rule or '기록되지 않음'}",
+        "",
+        "| 지표 | 선정 이유 |",
+        "|---|---|",
+        *[
+            f"| {name} | {rationale} |"
+            for name, rationale in reports[KnowledgeSearchMode.DENSE].metric_rationales.items()
+        ],
+        "",
+        "## 모드별 결과",
         "",
         "| 모드 | Recall@20 | Hit@5 | MRR | 출처 정확도 | 근거 커버리지 | 잘못된 대상 혼입 | 중복률 | P95(ms) |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -113,10 +123,7 @@ def render_markdown(
             "",
             "| 지표 | 변화량 |",
             "|---|---:|",
-            *[
-                f"| {name} | {value:+.6f} |"
-                for name, value in comparison.metric_deltas.items()
-            ],
+            *[f"| {name} | {value:+.6f} |" for name, value in comparison.metric_deltas.items()],
             "",
             "Hybrid는 Hit@5 또는 MRR이 개선되고 Recall@20·출처 정확도·근거 "
             "커버리지가 하락하지 않으며 잘못된 대상 혼입과 중복이 늘지 않을 "
@@ -212,11 +219,7 @@ async def run_cli(
         stack.push_async_callback(client.close)
         reports = {}
         for mode in KnowledgeSearchMode:
-            collection = (
-                args.dense_collection
-                if mode == KnowledgeSearchMode.DENSE
-                else args.hybrid_collection
-            )
+            collection = args.dense_collection if mode == KnowledgeSearchMode.DENSE else args.hybrid_collection
             reports[mode] = await _evaluate_mode(
                 mode=mode,
                 collection_name=collection,
@@ -239,13 +242,11 @@ async def run_cli(
         encoding="utf-8",
     )
     for mode, report in reports.items():
-        path = args.output.with_name(
-            f"{args.output.stem}-{mode.value.casefold()}.json"
-        )
+        path = args.output.with_name(f"{args.output.stem}-{mode.value.casefold()}.json")
         path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    args.output.with_name(
-        f"{args.output.stem}-decision.json"
-    ).write_text(comparison.model_dump_json(indent=2), encoding="utf-8")
+    args.output.with_name(f"{args.output.stem}-decision.json").write_text(
+        comparison.model_dump_json(indent=2), encoding="utf-8"
+    )
     return comparison
 
 

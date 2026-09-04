@@ -247,6 +247,62 @@ async def test_evaluate_fails_when_no_evidence_case_returns_documents() -> None:
     )
 
     assert report.results[0].passed is False
-    assert "UNEXPECTED_EVIDENCE_RETRIEVED" in (
-        report.results[0].failure_reasons
+    assert "UNEXPECTED_EVIDENCE_RETRIEVED" in (report.results[0].failure_reasons)
+
+
+async def test_evaluate_preserves_gold_document_and_experiment_rationales() -> None:
+    evaluator = MedicationSearchBaselineEvaluator(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticCatalog(),
+        ),
+        query_builder=MedicationKnowledgeQueryBuilder(),
+        knowledge_retriever=FakeRetriever(),
     )
+    manifest = MedicationSearchBaselineManifest.model_validate(
+        {
+            "schema_version": "medication-search-baseline-v2",
+            "dataset_version": "knowledge-full-v2-interaction-metadata",
+            "collection_name": "medication_knowledge_full_v2",
+            "experiment_goal": "검색 방식별 골드 문서 순위를 비교합니다.",
+            "activation_rule": "정확도가 개선되고 안전 지표가 악화되지 않을 때만 채택합니다.",
+            "metric_rationales": {
+                "recall_at_20": "후보 포함 여부",
+                "hit_at_5": "상위 근거 포함 여부",
+                "mrr": "첫 정답 순위",
+                "source_accuracy": "출처 정확성",
+                "evidence_coverage_rate": "근거 범위",
+                "wrong_target_mixing_count": "다른 대상 혼입",
+                "duplicate_retrieval_rate": "중복 근거",
+                "search_p95_ms": "지연 감시",
+            },
+            "cases": [
+                {
+                    "query_id": "typo-brand",
+                    "question": "타이래놀 효능 알려줘",
+                    "expected_scope": "IN_SCOPE",
+                    "expected_resolution_status": "AUTO_CORRECTED",
+                    "expected_resolved_question": "타이레놀 효능 알려줘",
+                    "expected_entity_names": ["타이레놀"],
+                    "evidence_kind": "QDRANT_GOLD",
+                    "evaluation_rationale": "오타 교정 후 정답 근거가 유지되는지 검증합니다.",
+                    "expected_document_ids": ["acetaminophen-guide"],
+                    "gold_document_rationales": {"acetaminophen-guide": "교정된 성분을 직접 설명하는 문서입니다."},
+                }
+            ],
+        }
+    )
+
+    report = await evaluator.evaluate(
+        manifest,
+        git_commit="abc1234",
+        working_tree_dirty=False,
+        evaluation_file_sha256="f" * 64,
+    )
+
+    assert report.experiment_goal == "검색 방식별 골드 문서 순위를 비교합니다."
+    assert report.metric_rationales["mrr"] == "첫 정답 순위"
+    assert report.results[0].evaluation_rationale == ("오타 교정 후 정답 근거가 유지되는지 검증합니다.")
+    assert report.results[0].expected_document_ids == ["acetaminophen-guide"]
+    assert report.results[0].gold_document_rationales == {
+        "acetaminophen-guide": "교정된 성분을 직접 설명하는 문서입니다."
+    }

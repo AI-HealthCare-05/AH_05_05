@@ -9,6 +9,11 @@ from scripts.compare_medication_search_modes import render_markdown
 
 def build_report(mode: KnowledgeSearchMode) -> MedicationSearchBaselineReport:
     return MedicationSearchBaselineReport(
+        experiment_goal="골드 문서 기준으로 Dense와 Hybrid를 비교합니다.",
+        activation_rule=("정확도가 개선되고 안전 지표가 악화되지 않을 때만 Hybrid를 채택합니다."),
+        metric_rationales={
+            "mrr": "첫 정답 문서의 순위를 비교합니다.",
+        },
         dataset_version="knowledge-full-v2-interaction-metadata",
         collection_name=f"knowledge-{mode.value.lower()}",
         search_mode=mode,
@@ -40,10 +45,7 @@ def build_report(mode: KnowledgeSearchMode) -> MedicationSearchBaselineReport:
 
 
 def test_render_markdown_explains_accuracy_first_decision_and_all_modes() -> None:
-    reports = {
-        mode: build_report(mode)
-        for mode in KnowledgeSearchMode
-    }
+    reports = {mode: build_report(mode) for mode in KnowledgeSearchMode}
     comparison = MedicationSearchModeComparisonReport(
         dense_collection_name="knowledge-dense",
         bm25_collection_name="knowledge-bm25",
@@ -63,3 +65,5 @@ def test_render_markdown_explains_accuracy_first_decision_and_all_modes() -> Non
     assert "HYBRID" in rendered
     assert "근거 커버리지" in rendered
     assert "KEEP_DENSE" in rendered
+    assert "골드 문서 기준으로 Dense와 Hybrid를 비교" in rendered
+    assert "첫 정답 문서의 순위를 비교" in rendered

@@ -94,6 +94,15 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         f"- 후보/최종: Top-{report.candidate_top_k} / Top-{report.final_top_k}",
         f"- 평가 YAML SHA-256: `{report.evaluation_file_sha256}`",
         "",
+        "## 실험 근거",
+        "",
+        f"- 목적: {report.experiment_goal or '기록되지 않음'}",
+        f"- 채택 기준: {report.activation_rule or '기록되지 않음'}",
+        "",
+        "| 지표 | 선정 이유 |",
+        "|---|---|",
+        *[f"| {name} | {rationale} |" for name, rationale in report.metric_rationales.items()],
+        "",
         "## 집계",
         "",
         "| 지표 | 값 |",
@@ -134,6 +143,25 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
             )
             + " |"
         )
+    lines.extend(["", "## 질문별 정답 근거", ""])
+    for result in report.results:
+        lines.extend(
+            [
+                f"### {result.query_id}",
+                "",
+                f"- 평가 이유: {result.evaluation_rationale or '기록되지 않음'}",
+                f"- 근거 유형: `{result.evidence_kind.value if result.evidence_kind else '미지정'}`",
+            ]
+        )
+        if result.expected_document_ids:
+            lines.append("- 정답 문서:")
+            lines.extend(
+                f"  - `{document_id}`: {result.gold_document_rationales[document_id]}"
+                for document_id in result.expected_document_ids
+            )
+        else:
+            lines.append("- 정답 Qdrant 문서: 해당 없음")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 

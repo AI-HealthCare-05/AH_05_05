@@ -11,9 +11,20 @@ def test_user_expression_manifest_is_frozen_and_covers_failure_classes() -> None
     )
 
     assert manifest.frontend_preset is False
+    assert manifest.schema_version == "medication-search-baseline-v2"
+    assert manifest.experiment_goal
+    assert manifest.activation_rule
+    assert manifest.metric_rationales
     assert manifest.candidate_top_k == 20
     assert manifest.final_top_k == 5
     assert len(manifest.cases) >= 12
+    assert all(case.evaluation_rationale for case in manifest.cases)
+    assert all(case.evidence_kind is not None for case in manifest.cases)
+    assert all(
+        set(case.gold_document_rationales) == set(case.expected_document_ids)
+        for case in manifest.cases
+        if case.expected_document_ids
+    )
     categories = {case.expression_category for case in manifest.cases}
     assert {
         "EXACT_PRODUCT",

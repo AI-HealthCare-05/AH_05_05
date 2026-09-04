@@ -59,9 +59,7 @@ class MedicationSearchBaselineEvaluator:
         self._embedding_model_name = embedding_model_name
         self._embedding_dimension = embedding_dimension
         self._search_mode = search_mode
-        self._evidence_coverage_evaluator = (
-            MedicationEvidenceCoverageEvaluator()
-        )
+        self._evidence_coverage_evaluator = MedicationEvidenceCoverageEvaluator()
 
     async def evaluate(
         self,
@@ -104,6 +102,9 @@ class MedicationSearchBaselineEvaluator:
         latencies = sorted(result.search_latency_ms for result in retrieval_results)
 
         return MedicationSearchBaselineReport(
+            experiment_goal=manifest.experiment_goal,
+            activation_rule=manifest.activation_rule,
+            metric_rationales=manifest.metric_rationales,
             dataset_version=manifest.dataset_version,
             collection_name=manifest.collection_name,
             search_mode=self._search_mode,
@@ -260,6 +261,10 @@ class MedicationSearchBaselineEvaluator:
         return MedicationSearchBaselineCaseResult(
             query_id=case.query_id,
             expression_category=case.expression_category,
+            evidence_kind=case.evidence_kind,
+            evaluation_rationale=case.evaluation_rationale,
+            expected_document_ids=case.expected_document_ids,
+            gold_document_rationales=case.gold_document_rationales,
             observed_scope=resolution.scope,
             observed_resolution_status=resolution.status,
             observed_resolved_question=resolution.resolved_question,
@@ -296,11 +301,7 @@ class MedicationSearchBaselineEvaluator:
         query_plan,
         selected_chunks,
     ) -> float | None:
-        if (
-            query_plan is None
-            or not case.expected_document_ids
-            or not case.expected_section_types
-        ):
+        if query_plan is None or not case.expected_document_ids or not case.expected_section_types:
             return None
         coverage = self._evidence_coverage_evaluator.evaluate(
             query_plan=query_plan,
