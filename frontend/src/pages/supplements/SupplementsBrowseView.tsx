@@ -259,7 +259,7 @@ function SearchResultItem({
         <span className="min-w-0 flex-1">
           <strong className="block truncate text-base text-foreground">{product.productName}</strong>
           {product.ratingAverage !== null && product.reviewCount > 0 && (
-            <span className="mt-1 block text-sm font-bold text-primary">
+            <span className="mt-1 block text-sm font-bold text-warning-strong">
               ★{product.ratingAverage.toFixed(1)} · {product.reviewCount}
             </span>
           )}

@@ -276,6 +276,7 @@ export function AppRouter() {
           path="/dev/my-authenticated"
           element={<MyPage authenticatedOverride />}
         />
+        <Route path="/dev/my/profile" element={<MyProfilePage />} />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
         <Route path="/dev/my-visits" element={<FollowUpVisitsPage />} />
         <Route

@@ -102,7 +102,7 @@ export function SupplementReviewSection({ productId }: { productId: string }) {
           후기
         </h2>
         {result && result.reviewCount > 0 && (
-          <p className="text-sm font-bold text-foreground">
+          <p className="text-sm font-bold text-warning-strong">
             ★{result.ratingAverage?.toFixed(1)} · {result.reviewCount}개
           </p>
         )}
@@ -144,7 +144,7 @@ export function SupplementReviewSection({ productId }: { productId: string }) {
                     <Star
                       key={index}
                       aria-hidden
-                      className={`size-4 text-primary ${index < review.score! ? 'fill-current' : ''}`}
+                      className={`size-4 text-warning-strong ${index < review.score! ? 'fill-current' : ''}`}
                     />
                   ))}
                 </div>
