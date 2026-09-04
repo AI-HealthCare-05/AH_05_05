@@ -1,5 +1,12 @@
 import { expect, test, type Page } from 'playwright/test';
 
+async function seedAuthenticatedSession(page: Page) {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'e2e-tabbar-token');
+    sessionStorage.setItem('poke.account-principal', 'patient@example.com');
+  });
+}
+
 async function expectTabbarWithoutOverlap(page: Page, activeTab: string) {
   const navigation = page.getByRole('navigation', { name: '주요 화면' });
   await expect(navigation).toBeVisible();
@@ -43,40 +50,43 @@ async function expectTabbarWithoutOverlap(page: Page, activeTab: string) {
 }
 
 test('기본정보 수정 화면은 마이 탭을 유지하며 다른 탭으로 이동한다', async ({ page }) => {
+  await seedAuthenticatedSession(page);
   await page.goto('/dev/my-authenticated');
-  await page.goto('/my/profile');
+  await page.goto('/dev/my-profile');
 
   await expectTabbarWithoutOverlap(page, '마이');
   await page.getByRole('button', { name: '뒤로 가기' }).click();
   await expect(page).toHaveURL(/\/dev\/my-authenticated$/);
   await page.goForward();
-  await expect(page).toHaveURL(/\/my\/profile$/);
+  await expect(page).toHaveURL(/\/dev\/my-profile$/);
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await expect(page).toHaveURL(/\/home$/);
 });
 
 test('진료일정 화면은 마이 탭을 유지하며 다른 탭으로 이동한다', async ({ page }) => {
+  await seedAuthenticatedSession(page);
   await page.goto('/dev/my-authenticated');
-  await page.goto('/my/visits');
+  await page.goto('/dev/my-visits');
 
   await expectTabbarWithoutOverlap(page, '마이');
   await page.getByRole('button', { name: '뒤로 가기' }).click();
   await expect(page).toHaveURL(/\/dev\/my-authenticated$/);
   await page.goForward();
-  await expect(page).toHaveURL(/\/my\/visits$/);
+  await expect(page).toHaveURL(/\/dev\/my-visits$/);
   await page.getByRole('button', { name: '영양제', exact: true }).click();
   await expect(page).toHaveURL(/\/supplements$/);
 });
 
 test('영양제 제품 상세 화면은 영양제 탭을 유지하며 다른 탭으로 이동한다', async ({ page }) => {
+  await seedAuthenticatedSession(page);
   await page.goto('/dev/supplements?tab=browse');
-  await page.goto('/supplements/product/sp-001');
+  await page.goto('/dev/supplements/product/sp-001');
 
   await expectTabbarWithoutOverlap(page, '영양제');
   await page.getByRole('button', { name: '뒤로 가기' }).click();
   await expect(page).toHaveURL(/\/dev\/supplements\?tab=browse$/);
   await page.goForward();
-  await expect(page).toHaveURL(/\/supplements\/product\/sp-001$/);
+  await expect(page).toHaveURL(/\/dev\/supplements\/product\/sp-001$/);
   await page.getByRole('button', { name: '복약', exact: true }).click();
   await expect(page).toHaveURL(/\/medications$/);
 });

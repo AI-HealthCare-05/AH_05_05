@@ -383,7 +383,7 @@ export function MyPage({
   function handleSignOut() {
     logoutNavigationRef.current = true;
     signOut();
-    navigate('/home', { replace: true });
+    window.location.replace('/home');
   }
 
   return (
