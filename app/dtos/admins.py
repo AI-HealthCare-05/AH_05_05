@@ -1,11 +1,23 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import EmailStr, Field
+from pydantic import AfterValidator, EmailStr, Field, StringConstraints
 
+from app.core.validators.user_validators import validate_name
 from app.dtos.base import CamelModel
 from app.dtos.pagination import PageQuery
 from app.models.enums import AccountStatus, AdminRole, BackgroundJobStatus
+
+# 사용자 회원가입(SignUpRequest.name)과 같은 규칙이다. 한 서비스 안에서 이름 규칙이
+# 갈리면 관리자 목록의 이름 검색이 사용자 쪽과 다르게 동작한다.
+#
+# strip_whitespace 를 넣지 않는다. 앞뒤 공백을 잘라내지 않고 validate_name 이 거부한다
+# (사용자 쪽과 같은 방식이다). 화면이 trim() 해서 보내므로 실사용에 지장이 없다.
+AdminName = Annotated[
+    str,
+    StringConstraints(min_length=2, max_length=20),
+    AfterValidator(validate_name),
+]
 
 
 class AdminListQuery(PageQuery):
@@ -23,7 +35,7 @@ class AdminListQuery(PageQuery):
 class AdminCreateRequest(CamelModel):
     """REQ-ADMIN-008 관리자 등록 요청. 비밀번호는 서버가 생성하므로 받지 않는다."""
 
-    name: str = Field(min_length=1, max_length=100)
+    name: AdminName
     email: EmailStr = Field(max_length=255)
     role: AdminRole
     # true -> ACTIVE, false -> PENDING(임시 비밀번호 변경 대기)
@@ -65,7 +77,7 @@ class AdminNameUpdateRequest(CamelModel):
     이메일은 로그인 식별자라 바꾸지 않는다. 역할은 PATCH /accounts/{id}/role 이 맡는다.
     """
 
-    name: str = Field(min_length=1, max_length=100)
+    name: AdminName
 
 
 class AdminNameUpdateResponse(CamelModel):
