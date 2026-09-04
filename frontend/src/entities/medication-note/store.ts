@@ -1,70 +1,73 @@
+import { restoreAccountPrincipal } from '@/shared/api/client';
 import type { MedicationNote, MedicationNoteDraft } from './types';
 
-const STORAGE_KEY = 'rxvita.medication-notes';
+const STORAGE_KEY_PREFIX = 'rxvita.medication-notes';
 
-const SEED_NOTES: MedicationNote[] = [
-  {
-    id: 'seed-1',
-    recordId: 12,
-    medicationId: 301,
-    prescriptionLabel: '2026년 8월 22일 처방',
-    medicineLabel: '셀레콕시브 200mg',
-    takenAt: '2026-09-02T08:00',
-    experience: '속이 편했어요.',
-  },
-  {
-    id: 'seed-2',
-    recordId: 12,
-    medicationId: 302,
-    prescriptionLabel: '2026년 8월 22일 처방',
-    medicineLabel: '리바록사반 10mg',
-    takenAt: '2026-09-01T19:00',
-    experience: '저녁에 먹으니 잊지 않았어요.',
-  },
-  {
-    id: 'seed-3',
-    recordId: 24,
-    medicationId: 501,
-    prescriptionLabel: '2026년 8월 24일 처방',
-    medicineLabel: '아목시실린 500mg',
-    takenAt: '2026-08-28T13:00',
-    experience: '복용 뒤 조금 졸렸어요.',
-  },
-];
+/**
+ * 메모는 서버 계약이 없는 동안만 사용하는 로컬 어댑터입니다.
+ *
+ * scope를 화면에서 전달하면 SessionContext의 principalKey와 저장 범위를 정확히 맞출 수
+ * 있고, 직접 호출하는 코드에는 현재 로그인 주체를 기본값으로 사용합니다. seedNotes는
+ * 개발용 화면/테스트가 명시적으로 넘길 때만 쓰이며, 운영 첫 상태는 항상 빈 목록입니다.
+ */
+export interface MedicationNoteStoreOptions {
+  scope?: string | null;
+  seedNotes?: readonly MedicationNote[];
+}
 
-let memoryNotes = [...SEED_NOTES];
+const memoryNotesByScope = new Map<string, MedicationNote[]>();
 
 function canUseStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-function clone(notes: MedicationNote[]): MedicationNote[] {
+function resolveScope(scope?: string | null): string {
+  const principal = scope ?? restoreAccountPrincipal();
+  return principal?.trim().toLowerCase() || 'anonymous';
+}
+
+function storageKey(scope?: string | null): string {
+  return `${STORAGE_KEY_PREFIX}:${encodeURIComponent(resolveScope(scope))}`;
+}
+
+function clone(notes: readonly MedicationNote[]): MedicationNote[] {
   return notes.map((note) => ({ ...note }));
 }
 
-function readNotes(): MedicationNote[] {
-  if (!canUseStorage()) return clone(memoryNotes);
+function readNotes(options: MedicationNoteStoreOptions = {}): MedicationNote[] {
+  const scope = resolveScope(options.scope);
+  const key = storageKey(scope);
+  if (!canUseStorage()) {
+    return clone(memoryNotesByScope.get(scope) ?? options.seedNotes ?? []);
+  }
+
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_NOTES));
-      return clone(SEED_NOTES);
+      const initial = clone(options.seedNotes ?? []);
+      memoryNotesByScope.set(scope, initial);
+      window.localStorage.setItem(key, JSON.stringify(initial));
+      return clone(initial);
     }
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return clone(memoryNotes);
-    return parsed.filter(isMedicationNote).map((note) => ({ ...note }));
+    if (!Array.isArray(parsed)) return clone(memoryNotesByScope.get(scope) ?? []);
+    const notes = parsed.filter(isMedicationNote).map((note) => ({ ...note }));
+    memoryNotesByScope.set(scope, notes);
+    return clone(notes);
   } catch {
-    return clone(memoryNotes);
+    return clone(memoryNotesByScope.get(scope) ?? options.seedNotes ?? []);
   }
 }
 
-function writeNotes(notes: MedicationNote[]): void {
-  memoryNotes = clone(notes);
+function writeNotes(notes: MedicationNote[], options: MedicationNoteStoreOptions = {}): void {
+  const scope = resolveScope(options.scope);
+  const next = clone(notes);
+  memoryNotesByScope.set(scope, next);
   if (!canUseStorage()) return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+    window.localStorage.setItem(storageKey(scope), JSON.stringify(next));
   } catch {
-    // 사생활 보호 설정 등으로 storage가 막힌 경우 메모리 어댑터로 계속 동작합니다.
+    // 사생활 보호 설정 등으로 storage가 막힌 경우 현재 탭 메모리로 계속 동작합니다.
   }
 }
 
@@ -89,15 +92,21 @@ function newId(): string {
   return `note-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function listMedicationNotes(): MedicationNote[] {
-  return readNotes().sort((a, b) => b.takenAt.localeCompare(a.takenAt));
+export function listMedicationNotes(options: MedicationNoteStoreOptions = {}): MedicationNote[] {
+  return readNotes(options).sort((a, b) => b.takenAt.localeCompare(a.takenAt));
 }
 
-export function getMedicationNote(noteId: string): MedicationNote | null {
-  return readNotes().find((note) => note.id === noteId) ?? null;
+export function getMedicationNote(
+  noteId: string,
+  options: MedicationNoteStoreOptions = {},
+): MedicationNote | null {
+  return readNotes(options).find((note) => note.id === noteId) ?? null;
 }
 
-export function createMedicationNote(draft: MedicationNoteDraft): MedicationNote {
+export function createMedicationNote(
+  draft: MedicationNoteDraft,
+  options: MedicationNoteStoreOptions = {},
+): MedicationNote {
   const note: MedicationNote = {
     id: newId(),
     recordId: draft.recordId,
@@ -107,15 +116,16 @@ export function createMedicationNote(draft: MedicationNoteDraft): MedicationNote
     takenAt: draft.takenAt,
     experience: draft.experience,
   };
-  writeNotes([...readNotes(), note]);
+  writeNotes([...readNotes(options), note], options);
   return { ...note };
 }
 
 export function updateMedicationNote(
   noteId: string,
   draft: MedicationNoteDraft,
+  options: MedicationNoteStoreOptions = {},
 ): MedicationNote | null {
-  const notes = readNotes();
+  const notes = readNotes(options);
   const index = notes.findIndex((note) => note.id === noteId);
   if (index < 0) return null;
   const next: MedicationNote = {
@@ -125,14 +135,17 @@ export function updateMedicationNote(
     medicineLabel: draft.medicineLabel ?? notes[index].medicineLabel,
   };
   notes[index] = next;
-  writeNotes(notes);
+  writeNotes(notes, options);
   return { ...next };
 }
 
-export function deleteMedicationNote(noteId: string): boolean {
-  const notes = readNotes();
+export function deleteMedicationNote(
+  noteId: string,
+  options: MedicationNoteStoreOptions = {},
+): boolean {
+  const notes = readNotes(options);
   const next = notes.filter((note) => note.id !== noteId);
   if (next.length === notes.length) return false;
-  writeNotes(next);
+  writeNotes(next, options);
   return true;
 }

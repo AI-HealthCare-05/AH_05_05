@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { useSession } from '@/app/SessionContext';
 import {
   createMedicationNote,
   deleteMedicationNote,
@@ -7,6 +8,7 @@ import {
   updateMedicationNote,
   type MedicationNote,
 } from '@/entities/medication-note';
+import { applyMedicationAliases } from '@/entities/medication-alias';
 import {
   getMedicationOverviews,
   type MedicationOverview,
@@ -42,7 +44,7 @@ const EMPTY_FORM: NoteFormState = {
 };
 
 function prescriptionLabel(overview: MedicationOverview): string {
-  return `${formatDateLabel(overview.start.date, { includeYear: true })} 처방`;
+  return overview.alias ?? `${formatDateLabel(overview.start.date, { includeYear: true })} 처방`;
 }
 
 function medicineLabel(medication: MedicationOverviewItem): string {
@@ -67,6 +69,7 @@ function initialForm(note: MedicationNote | null): NoteFormState {
 export function MedicationNoteFormPage() {
   const navigate = useNavigate();
   const { noteId } = useParams<{ noteId?: string }>();
+  const { principalKey } = useSession();
   const editing = noteId !== undefined;
   const [note, setNote] = useState<MedicationNote | null>(null);
   const [overviews, setOverviews] = useState<MedicationOverview[] | null>(null);
@@ -77,7 +80,9 @@ export function MedicationNoteFormPage() {
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    const loadedNote = noteId ? getMedicationNote(decodeURIComponent(noteId)) : null;
+    const loadedNote = noteId
+      ? getMedicationNote(decodeURIComponent(noteId), { scope: principalKey })
+      : null;
     if (noteId && !loadedNote) {
       setLoadError('복약 메모를 찾지 못했어요.');
       return () => {
@@ -88,7 +93,14 @@ export function MedicationNoteFormPage() {
     setForm(initialForm(loadedNote));
     getMedicationOverviews()
       .then((data) => {
-        if (!cancelled) setOverviews(data.filter((overview) => overview.medications.length > 0));
+        if (!cancelled) {
+          setOverviews(
+            applyMedicationAliases(
+              data.filter((overview) => overview.medications.length > 0),
+              { scope: principalKey },
+            ),
+          );
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -98,7 +110,7 @@ export function MedicationNoteFormPage() {
     return () => {
       cancelled = true;
     };
-  }, [noteId]);
+  }, [noteId, principalKey]);
 
   const selectedOverview = useMemo(
     () => overviews?.find((overview) => String(overview.recordId) === form.recordId) ?? null,
@@ -139,16 +151,16 @@ export function MedicationNoteFormPage() {
       medicineLabel: medicineLabel(selectedMedication),
     };
     if (editing && noteId) {
-      updateMedicationNote(decodeURIComponent(noteId), payload);
+      updateMedicationNote(decodeURIComponent(noteId), payload, { scope: principalKey });
     } else {
-      createMedicationNote(payload);
+      createMedicationNote(payload, { scope: principalKey });
     }
     navigate('/medications/notes', { replace: true });
   }
 
   function remove() {
     if (!noteId) return;
-    deleteMedicationNote(decodeURIComponent(noteId));
+    deleteMedicationNote(decodeURIComponent(noteId), { scope: principalKey });
     setDeleteOpen(false);
     navigate('/medications/notes', { replace: true });
   }

@@ -27,6 +27,7 @@ interface DocumentApiTrace {
   images: CapturedRequest[];
   patches: CapturedRequest[];
   scheduleRequests: CapturedRequest[];
+  settingsRequests: CapturedRequest[];
 }
 
 const readyOcrResult = {
@@ -139,6 +140,7 @@ async function interceptDocumentRegistration(page: Page): Promise<DocumentApiTra
     images: [],
     patches: [],
     scheduleRequests: [],
+    settingsRequests: [],
   };
   let pollIndex = 0;
   const pendingOcrResults = [
@@ -203,6 +205,34 @@ async function interceptDocumentRegistration(page: Page): Promise<DocumentApiTra
         },
       ],
     });
+  });
+
+  let settings = {
+    notifyMedication: false,
+    notifySupplement: false,
+    notifySchedule: false,
+    notifyConsentedAt: null,
+    morningMedicationTime: '08:00:00',
+    lunchMedicationTime: '13:00:00',
+    eveningMedicationTime: '19:00:00',
+    bedtimeMedicationTime: '22:00:00',
+  };
+  await page.route('**/api/v1/me/settings', async (route) => {
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, settings);
+      return;
+    }
+    if (route.request().method() === 'PATCH') {
+      trace.settingsRequests.push(capture(route));
+      settings = {
+        ...settings,
+        ...(route.request().postDataJSON() as Partial<typeof settings>),
+        notifyConsentedAt: new Date().toISOString(),
+      };
+      await fulfillJson(route, settings);
+      return;
+    }
+    await route.continue();
   });
 
   return trace;
@@ -844,6 +874,45 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
       (request) => new URL(request.url).pathname === '/api/v1/med/medication/schedule/314',
     ),
   ).toBe(true);
+});
+
+test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload에 포함한다', async ({ page }) => {
+  test.slow();
+  await authenticate(page);
+  const trace = await interceptDocumentRegistration(page);
+  await page.goto('/ocr-review?batchId=501');
+
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible({ timeout: 10_000 });
+  await page.getByLabel('복약 별칭').fill('실 API 알람 처방');
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
+  await expect(page).toHaveURL(/\/medication-schedule\?recordId=314&ocrJobId=501/);
+
+  await expect(page.getByText('3 / 5', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '시작 아침약' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+
+  await page.getByRole('switch', { name: '복약 알림' }).setChecked(true);
+  await page.getByRole('button', { name: '아침약 알람 시간' }).click();
+  const timeDialog = page.getByRole('dialog');
+  await timeDialog.getByLabel('시').click();
+  await page.getByRole('option', { name: '07시' }).click();
+  await timeDialog.getByLabel('분').click();
+  await page.getByRole('option', { name: '30분' }).click();
+  await timeDialog.getByRole('button', { name: '이 시간 적용' }).click();
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+
+  const settingsPatch = trace.settingsRequests.find((request) => request.url.includes('/me/settings'));
+  expect(settingsPatch).toBeDefined();
+  expect(JSON.parse(settingsPatch!.body)).toMatchObject({
+    notifyMedication: true,
+    morningMedicationTime: '07:30',
+    lunchMedicationTime: '13:00',
+    eveningMedicationTime: '19:00',
+    bedtimeMedicationTime: '22:00',
+  });
 });
 
 test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여준다', async ({ page }) => {

@@ -4,12 +4,24 @@ import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
 
 test.setTimeout(30_000);
 
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8+QAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 test.beforeEach(async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.clock.setFixedTime(new Date('2026-09-03T12:00:00+09:00'));
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'feature-252-medication-token');
     sessionStorage.setItem('poke.account-principal', 'feature-252-medication@example.com');
+    if (sessionStorage.getItem('feature-252-storage-cleaned') === '1') return;
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('rxvita.medication-notes:') || key.startsWith('rxvita.medication-aliases:')) {
+        localStorage.removeItem(key);
+      }
+    }
+    sessionStorage.setItem('feature-252-storage-cleaned', '1');
   });
 });
 
@@ -40,17 +52,144 @@ test('약봉투 등록은 OCR·별칭·복용 시간·첫 복용·알람의 5단
   await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
 });
 
+test('선택한 약봉투는 업로드 뒤 OCR 진행률과 결과 검토로 이어진다', async ({ page }) => {
+  await page.goto('/dev/document-upload');
+  await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
+    name: 'feature-252-envelope.png',
+    mimeType: 'image/png',
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.getByRole('img', { name: '선택한 약봉투 미리보기' })).toBeVisible();
+  await expect(page.getByText('feature-252-envelope.png')).toBeVisible();
+  await page.getByRole('button', { name: '등록하기' }).click();
+
+  await expect(page).toHaveURL('/ocr-review');
+  await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: '약봉투 판독 진행률' })).toBeVisible();
+  await expect(page.getByRole('status', { name: '약봉투 판독 단계' })).toContainText('/ 3 단계');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible({ timeout: 10_000 });
+});
+
+test('5단계 알람은 전체 알림과 시간 행을 편집하고 저장한다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+  await page.getByLabel('복약 별칭').fill('알람 저장 처방');
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '시작 점심약' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+
+  const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
+  await expect(medicationNotifications).toBeVisible();
+  await medicationNotifications.setChecked(true);
+
+  const morningAlarm = page.getByRole('button', { name: '아침약 알람 시간' });
+  await morningAlarm.click();
+  const timeDialog = page.getByRole('dialog');
+  await timeDialog.getByLabel('시').click();
+  await page.getByRole('option', { name: '07시' }).click();
+  await timeDialog.getByLabel('분').click();
+  await page.getByRole('option', { name: '30분' }).click();
+  await timeDialog.getByRole('button', { name: '이 시간 적용' }).click();
+  await expect(morningAlarm).toContainText('07:30');
+
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  await expect(page.getByText(/알림 07:30/)).toBeVisible();
+  await page.goto('/dev/medication-alarm-times');
+  await expect(page.getByRole('button', { name: '아침약' })).toContainText('07:30');
+});
+
+test('OCR 낮은 확신 약은 확인 필요 상태에서 편집할 수 있다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+
+  await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
+  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: /리바록사반 10mg/ }).click();
+  const editDialog = page.getByRole('dialog');
+  await editDialog.getByLabel('약품명').fill('리바록사반 확인');
+  await editDialog.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByRole('button', { name: /리바록사반 확인/ })).toBeVisible();
+});
+
 test('복약 목록은 활성 회차를 편집하고 완료 회차를 읽기 전용으로 연다', async ({ page }) => {
   await page.goto('/medications');
 
-  await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+  const activeCard = page.getByRole('button', { name: /2026년 8월 22일 처방/ });
+  await expect(activeCard).toContainText('셀레콕시브 200mg');
+  await expect(activeCard).toContainText('아침 08:00');
+  await activeCard.click();
   await expect(page.getByRole('dialog').getByRole('heading', { name: '처방 편집' })).toBeVisible();
   await expect(page.getByLabel('복약 별칭')).toBeVisible();
   await page.getByRole('dialog').getByRole('button', { name: '닫기' }).click();
 
   await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
-  await expect(page.getByRole('dialog').getByRole('heading', { name: '완료된 처방' })).toBeVisible();
-  await expect(page.getByRole('dialog').getByText('완료된 처방은 내용만 확인할 수 있어요.')).toBeVisible();
+  const completedDialog = page.getByRole('dialog');
+  await expect(completedDialog.getByRole('heading', { name: '완료된 처방' })).toBeVisible();
+  await expect(completedDialog.getByText('지난 처방', { exact: true })).toBeVisible();
+  await expect(completedDialog.getByText('2026년 8월 24일 ~ 28일', { exact: true })).toBeVisible();
+  await expect(completedDialog.getByText(/아목시실린 500mg/)).toBeVisible();
+  await expect(completedDialog.getByText(/아침약 08:00/)).toBeVisible();
+  await expect(completedDialog.getByLabel('복약 별칭')).toHaveCount(0);
+  await expect(completedDialog.getByRole('button', { name: /아목시실린 아침약/ })).toHaveCount(0);
+});
+
+test('등록 별칭과 회차 편집 별칭은 새로고침 뒤에도 메모에서 사용한다', async ({ page }) => {
+  await page.goto('/dev/ocr-review');
+  await page.getByLabel('복약 별칭').fill('OCR 등록 별칭');
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '시작 아침약' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+
+  await page.goto('/medications');
+  await expect(page.getByText('OCR 등록 별칭', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('OCR 등록 별칭', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+  const episodeDialog = page.getByRole('dialog');
+  await episodeDialog.getByLabel('복약 별칭').fill('회차 편집 별칭');
+  await episodeDialog.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('회차 편집 별칭', { exact: true })).toBeVisible();
+
+  await page.goto('/medications/notes/new');
+  await expect(page.getByLabel('처방').locator('option[value="12"]')).toContainText('회차 편집 별칭');
+  await page.getByLabel('처방').selectOption('12');
+  await expect(page.getByLabel('약').locator('option[value="301"]')).toContainText('셀레콕시브 200mg');
+  await page.getByLabel('약').selectOption('301');
+  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
+  await page.getByLabel('복용 후 느낀 점').fill('별칭을 포함한 메모');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('회차 편집 별칭', { exact: true })).toBeVisible();
+});
+
+test('복약 메모는 SessionContext principal별로 격리된다', async ({ page }) => {
+  await page.goto('/medications/notes/new');
+  await page.getByLabel('처방').selectOption('12');
+  await page.getByLabel('약').selectOption('301');
+  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
+  await page.getByLabel('복용 후 느낀 점').fill('계정 A의 메모');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('계정 A의 메모')).toBeVisible();
+
+  const otherPage = await page.context().newPage();
+  await otherPage.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'feature-252-medication-token');
+    sessionStorage.setItem('poke.account-principal', 'feature-252-other@example.com');
+  });
+  await otherPage.goto('/medications/notes');
+  await expect(otherPage.getByText('계정 A의 메모')).toHaveCount(0);
+  await expect(otherPage.getByText('복용 후 느낀 점을 남겨두면 다음 진료 때 도움이 돼요.')).toBeVisible();
+  await otherPage.close();
+
+  await page.reload();
+  await expect(page.getByText('계정 A의 메모')).toBeVisible();
 });
 
 test('복약 메모는 작성·수정·삭제할 수 있다', async ({ page }) => {

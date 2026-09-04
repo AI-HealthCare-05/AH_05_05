@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { listMedicationNotes, type MedicationNote } from '@/entities/medication-note';
+import { applyMedicationAliases } from '@/entities/medication-alias';
+import { getMedicationOverviews, type MedicationOverview } from '@/entities/medication';
+import { useSession } from '@/app/SessionContext';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
 import { BottomTabbar, Button, Card, Header } from '@/shared/ui';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
@@ -15,11 +18,39 @@ function noteDateLabel(value: string): string {
 
 export function MedicationNotesPage() {
   const navigate = useNavigate();
+  const { principalKey } = useSession();
   const [notes, setNotes] = useState<MedicationNote[] | null>(null);
+  const [overviews, setOverviews] = useState<MedicationOverview[] | null>(null);
 
   useEffect(() => {
-    setNotes(listMedicationNotes());
-  }, []);
+    let cancelled = false;
+    setNotes(listMedicationNotes({ scope: principalKey }));
+    setOverviews(null);
+    getMedicationOverviews()
+      .then((data) => {
+        if (!cancelled) {
+          setOverviews(
+            applyMedicationAliases(
+              data.filter((overview) => overview.medications.length > 0),
+              { scope: principalKey },
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setOverviews([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [principalKey]);
+
+  function prescriptionLabel(note: MedicationNote): string {
+    return (
+      overviews?.find((overview) => overview.recordId === note.recordId)?.alias ??
+      note.prescriptionLabel
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -59,7 +90,7 @@ export function MedicationNotesPage() {
                   <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                     <span className="tnum">{noteDateLabel(note.takenAt)}</span>
                     <span className="rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
-                      {note.prescriptionLabel}
+                      {prescriptionLabel(note)}
                     </span>
                   </div>
                   <p className="font-bold text-foreground">{note.medicineLabel}</p>

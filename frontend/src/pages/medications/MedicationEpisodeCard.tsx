@@ -1,7 +1,7 @@
 import { ChevronDown, Clock3 } from 'lucide-react';
 import type { MedicationOverview, MedicationOverviewItem } from '@/entities/medication';
 import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
-import { mealSlotLabel } from '@/shared/model/mealSlot';
+import { SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Checkbox } from '@/shared/ui';
 
 interface MedicationEpisodeCardProps {
@@ -32,6 +32,14 @@ export function MedicationEpisodeCard({
   const panelId = `medication-episode-${overview.recordId}`;
   const statusLabel = overview.isFinished ? '복용 완료' : '복용 중';
   const dDay = overview.daysRemaining <= 1 ? 'D-Day' : `D-${overview.daysRemaining - 1}`;
+  const medicineSummary = overview.medications
+    .map((medication) => `${medication.name} ${medication.dose}`)
+    .join(' · ');
+  const timeSummary = SLOT_ORDER.filter((slot) =>
+    overview.medications.some((medication) => medication.slots.includes(slot)),
+  )
+    .map((slot) => `${mealSlotLabel(slot)} ${overview.mealTimes[slot]}`)
+    .join(' · ');
 
   return (
     <article className="overflow-hidden rounded-card bg-card shadow-card">
@@ -57,6 +65,16 @@ export function MedicationEpisodeCard({
             <strong className="block text-lg text-foreground">
               {feature252 && overview.alias ? overview.alias : `${dateLabel} 처방`}
             </strong>
+            {feature252 && (
+              <>
+                <span className="mt-1 block truncate text-sm text-foreground">
+                  {medicineSummary}
+                </span>
+                <span className="mt-1 block truncate text-sm text-muted-foreground tnum">
+                  {timeSummary || '필요 시 복용'}
+                </span>
+              </>
+            )}
             <span className="mt-1 block text-sm text-muted-foreground tnum">
               {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })} · 약{' '}
               {overview.medications.length}개
