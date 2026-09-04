@@ -3,7 +3,7 @@ import { cn } from '@/shared/lib/cn';
 
 /**
  * Figma: Header
- * 높이 56px(size/header). 뒤로가기 버튼은 44x44(size/touch-min)를 확보합니다.
+ * 높이 64px(size/header). 뒤로가기 버튼은 44x44(size/touch-min)를 확보합니다.
  */
 export interface HeaderProps {
   title: ReactNode;
@@ -17,7 +17,10 @@ export interface HeaderProps {
 export function Header({ title, onBack, right, className }: HeaderProps) {
   return (
     <header
-      className={cn('flex h-header shrink-0 items-center gap-1 bg-card px-page-x', className)}
+      className={cn(
+        'flex h-header shrink-0 items-center gap-1 border-b border-border bg-card px-page-x',
+        className,
+      )}
     >
       {onBack && (
         <button

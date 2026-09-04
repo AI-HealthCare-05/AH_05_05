@@ -36,7 +36,7 @@ export function Button({
       className={cn(
         // 공통 — 최소 터치 영역 44px 보장(NFR-ACC-001)
         'inline-flex min-h-touch items-center justify-center rounded-button px-4 text-sm font-bold transition-colors',
-        'h-12', // 48px, Figma 기준
+        'h-control',
         fullWidth && 'w-full',
         // 변형
         variant === 'primary' && !disabled && 'bg-primary text-card hover:bg-primary-strong',

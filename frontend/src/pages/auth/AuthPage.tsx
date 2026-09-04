@@ -20,13 +20,11 @@ import {
   validatePhoneNumber,
 } from '@/shared/lib/phoneNumber';
 import {
-  BottomTabbar,
   Button,
   CheckboxField,
   GenderRadioGroup,
   Header,
   Input,
-  type TabKey,
 } from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
@@ -198,15 +196,15 @@ export function AuthPage() {
     navigate(destination, { replace: true });
   }
 
-  function handleTabChange(key: TabKey) {
-    if (key === 'home') navigate('/home');
-  }
-
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-card">
       <Header title="로그인 · 회원가입" onBack={() => navigate(-1)} />
-      <main className="flex flex-1 flex-col px-page-x py-6">
-        <div className="grid grid-cols-2 rounded-input bg-muted-bg p-1" role="group" aria-label="인증 방식">
+      <main className="flex flex-1 flex-col px-page-x pt-5">
+        <div
+          className="grid h-12 grid-cols-2 rounded-input bg-muted-bg p-1"
+          role="group"
+          aria-label="인증 방식"
+        >
           {(['login', 'signup'] as const).map((item) => {
             const selected = item === mode;
             return (
@@ -234,7 +232,9 @@ export function AuthPage() {
 
         <div className="mt-8">
           <h1
-            className={`${mode === 'signup' ? 'text-xl' : 'text-2xl'} font-bold text-foreground`}
+            className={`${mode === 'signup' ? 'text-xl' : 'text-2xl'} font-bold text-foreground ${
+              mode === 'login' ? 'leading-8' : ''
+            }`}
           >
             {mode === 'login' ? '다시 만나서 반가워요' : '내 복약 기록을 안전하게 보관해요'}
           </h1>
@@ -245,7 +245,7 @@ export function AuthPage() {
           </p>
         </div>
 
-        <form className="mt-6 flex flex-1 flex-col gap-4" onSubmit={complete}>
+        <form className="mt-5 flex flex-1 flex-col gap-4" onSubmit={complete}>
           <Input
             label="이메일"
             inputRef={emailInputRef}
@@ -253,6 +253,7 @@ export function AuthPage() {
             // 화면의 한글을 코드가 볼 수 없습니다. 자세한 이유는 EMAIL_INPUT_PATTERN 주석 참고.
             type="text"
             inputMode="email"
+            placeholder="name@example.com"
             pattern={EMAIL_INPUT_PATTERN}
             autoComplete="email"
             // text 로 바뀌면서 모바일 자동 대문자·맞춤법 교정이 붙습니다. 이메일에는 방해가 됩니다.
@@ -282,6 +283,7 @@ export function AuthPage() {
             label="비밀번호"
             type={mode === 'signup' && showPassword ? 'text' : 'password'}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            placeholder={mode === 'login' ? '••••••••' : undefined}
             value={password}
             // 로그인에는 상한을 걸지 않습니다. 이 정책이 생기기 전에 더 긴 비밀번호로
             // 가입한 사람이 로그인 자체를 못 하게 됩니다.
@@ -307,6 +309,10 @@ export function AuthPage() {
             }
             required
           />
+
+          {mode === 'login' && (
+            <p className="text-sm text-muted-foreground">입력한 정보는 안전하게 보호해요.</p>
+          )}
 
           {mode === 'signup' && (
             <>
@@ -401,17 +407,22 @@ export function AuthPage() {
             </>
           )}
 
+          {mode === 'login' && (
+            <p className="mt-auto text-center text-xs text-muted-foreground">
+              비밀번호를 잊으셨나요? 재설정
+            </p>
+          )}
+
           <Button
             type="submit"
-            className="mt-auto"
+            className={mode === 'login' ? 'text-base' : 'mt-auto'}
             disabled={saving || (mode === 'signup' && (!recordTerms || !aiTerms))}
           >
             {mode === 'login' ? '로그인' : '회원가입 완료'}
           </Button>
         </form>
       </main>
-      <footer className="flex min-h-touch shrink-0 items-center justify-center gap-2 border-t border-border px-page-x text-xs text-muted-foreground">
-        <img src="/images/rxvita-logo-480.png" alt="RxVita" className="h-4 w-auto" />
+      <footer className="flex h-15 min-h-15 shrink-0 items-start justify-center gap-2 px-page-x pt-4 text-xs text-muted-foreground">
         <Link to="/terms" className="hover:text-foreground">
           이용약관
         </Link>
@@ -420,7 +431,6 @@ export function AuthPage() {
           개인정보 처리 안내
         </Link>
       </footer>
-      <BottomTabbar active="my" onChange={handleTabChange} className="border-t border-border" />
     </div>
   );
 }

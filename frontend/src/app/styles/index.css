@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /* ============================================================
-   RxVita 디자인 토큰 — B 방향(부드러운 케어) 적용본
-   2026.08 · UI 레퍼런스 조사 결과 반영 (MyTherapy·마보 계열)
+   RxVita 디자인 토큰 — Figma Light 기준
+   2026.09 · 로그인 기본 화면 기준 정합화
 
    2단 구조를 그대로 유지합니다.
      1) Primitives — 실제 색값. 테마를 바꿀 때 여기만 수정.
@@ -11,17 +11,18 @@
 
 @theme {
   /* ---------- 1) Primitives ---------- */
-  --color-warm-50: #fbf6f3;
-  --color-warm-100: #f5efec;
-  --color-warm-200: #ede4e0;
-  --color-warm-400: #a39a9c;
-  --color-warm-600: #6f6769;
-  --color-warm-900: #241e20;
+  --color-warm-50: #f7f9f9;
+  --color-warm-100: #f2f4f5;
+  --color-warm-200: #e1e7e6;
+  --color-warm-400: #879290;
+  --color-warm-500: #6a7472;
+  --color-warm-600: #596462;
+  --color-warm-900: #202525;
   --color-white: #ffffff;
 
-  --color-teal-50: #e6f7f6;
-  --color-teal-600: #0aa79e;
-  --color-teal-700: #088f88;
+  --color-teal-50: #ddf4f1;
+  --color-teal-600: #077a74;
+  --color-teal-700: #055f5a;
   --color-teal-800: #077a74;
   --color-navy-700: #002c68;
 
@@ -38,15 +39,18 @@
   --color-card: var(--color-white);
   --color-foreground: var(--color-warm-900);
   --color-muted-foreground: var(--color-warm-600);
+  --color-tertiary-foreground: var(--color-warm-500);
   --color-disabled-foreground: var(--color-warm-400);
   --color-muted-bg: var(--color-warm-100);
   --color-border: var(--color-warm-200);
-  --color-input: var(--color-warm-200);
+  --color-input: var(--color-warm-400);
   --color-ring: var(--color-teal-600);
 
   --color-primary: var(--color-teal-600);
   --color-primary-strong: var(--color-teal-700);
   --color-primary-bg: var(--color-teal-50);
+  --color-info: var(--color-primary);
+  --color-info-bg: var(--color-primary-bg);
   --color-brand: var(--color-navy-700);
 
   --color-danger: var(--color-rose-600);
@@ -74,7 +78,7 @@
 
   /* ---------- 모서리 ---------- */
   --radius-card: 16px;
-  --radius-button: 12px;
+  --radius-button: 14px;
   --radius-input: 12px;
   --radius-sheet: 24px;
   --radius-pill: 9999px;
@@ -85,7 +89,8 @@
   --shadow-sheet: 0 -4px 24px rgba(36, 30, 32, 0.12);
 
   /* ---------- 크기 ---------- */
-  --spacing-header: 56px;
+  --spacing-header: 64px;
+  --spacing-control: 52px;
   --spacing-tabbar: 56px;
   --spacing-touch: 44px;
   --spacing-page-x: 20px;
@@ -100,7 +105,7 @@
   --animate-record-grow: record-cell-grow var(--duration-record-grow) var(--ease-record-grow);
 
   --container-page: 375px;
-  --container-app: 480px;
+  --container-app: 390px;
 
   /* ---------- 타이포 ---------- */
   --font-sans: "Noto Sans KR", system-ui, -apple-system, sans-serif;
