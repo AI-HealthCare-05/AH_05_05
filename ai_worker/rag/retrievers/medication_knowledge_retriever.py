@@ -278,6 +278,9 @@ class MedicationKnowledgeRetriever:
                     search_tier=observation.search_tier,
                     raw_rank=observation.raw_rank,
                     raw_similarity_score=raw_score,
+                    dense_similarity_score=self._dense_confidence_score(
+                        result,
+                    ),
                     boost_score=round(adjusted_score - raw_score, 6),
                     adjusted_score=round(adjusted_score, 6),
                     adjusted_rank=adjusted_rank,
@@ -479,9 +482,23 @@ class MedicationKnowledgeRetriever:
             and not self._matches_query_target(result, plan=plan)
         ):
             return _EligibilityReason.ENTITY_MISMATCH
-        if result.search_mode != KnowledgeSearchMode.DENSE:
+        if result.search_mode == KnowledgeSearchMode.BM25:
             return _EligibilityReason.ELIGIBLE
-        if result.similarity_score >= self._min_similarity_score:
+        return self._dense_score_eligibility_reason(
+            result,
+            plan=plan,
+        )
+
+    def _dense_score_eligibility_reason(
+        self,
+        result: RetrievedKnowledgeChunk,
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> _EligibilityReason:
+        confidence_score = self._dense_confidence_score(result)
+        if confidence_score is None:
+            return _EligibilityReason.BELOW_SCORE
+        if confidence_score >= self._min_similarity_score:
             return _EligibilityReason.ELIGIBLE
 
         eligibility_margin = self._eligibility_margin(
@@ -492,7 +509,7 @@ class MedicationKnowledgeRetriever:
             0.0,
             self._min_similarity_score - eligibility_margin,
         )
-        if result.similarity_score < minimum_raw_score:
+        if confidence_score < minimum_raw_score:
             return _EligibilityReason.BELOW_SCORE
         if plan.section_types and not set(plan.section_types).intersection(
             self._effective_section_types(result),
@@ -500,9 +517,26 @@ class MedicationKnowledgeRetriever:
             return _EligibilityReason.BELOW_SCORE
         if self._entity_match_bonus(result, plan=plan) <= 0.0:
             return _EligibilityReason.ENTITY_MISMATCH
-        if self._relevance_score(result, plan=plan) < self._min_similarity_score:
+        if (
+            self._relevance_score(
+                result,
+                plan=plan,
+                base_score=confidence_score,
+            )
+            < self._min_similarity_score
+        ):
             return _EligibilityReason.BELOW_SCORE
         return _EligibilityReason.ELIGIBLE
+
+    @staticmethod
+    def _dense_confidence_score(
+        result: RetrievedKnowledgeChunk,
+    ) -> float | None:
+        if result.search_mode == KnowledgeSearchMode.HYBRID:
+            return result.dense_similarity_score
+        if result.search_mode == KnowledgeSearchMode.DENSE:
+            return result.similarity_score
+        return None
 
     @classmethod
     def _eligibility_margin(
@@ -537,6 +571,7 @@ class MedicationKnowledgeRetriever:
         result: RetrievedKnowledgeChunk,
         *,
         plan: MedicationKnowledgeQueryPlan,
+        base_score: float | None = None,
     ) -> float:
         section_bonus = (
             cls._SECTION_BONUS if set(plan.section_types).intersection(cls._effective_section_types(result)) else 0.0
@@ -545,7 +580,7 @@ class MedicationKnowledgeRetriever:
             cls._PAIR_SAME_SENTENCE_BONUS if cls._has_same_sentence_interaction_pair(result, plan=plan) else 0.0
         )
         return (
-            result.similarity_score
+            (result.similarity_score if base_score is None else base_score)
             + cls._entity_match_bonus(result, plan=plan)
             + section_bonus
             + pair_relationship_bonus

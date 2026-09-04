@@ -20,10 +20,7 @@ def build_chunk() -> KnowledgeChunk:
     return KnowledgeChunk(
         chunk_id="a" * 64,
         content="마그네슘은 에너지 이용에 필요합니다.",
-        embedding_text=(
-            "[성분] 마그네슘\n[섹션] 기능성\n"
-            "마그네슘은 에너지 이용에 필요합니다."
-        ),
+        embedding_text=("[성분] 마그네슘\n[섹션] 기능성\n마그네슘은 에너지 이용에 필요합니다."),
         token_count=20,
         metadata=KnowledgeChunkMetadata(
             source_id="source-a",
@@ -97,6 +94,32 @@ class RecordingClient:
         )
 
 
+class HybridConfidenceRecordingClient(RecordingClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.query_calls: list[dict] = []
+
+    async def query_points(self, **kwargs):
+        self.query_calls.append(kwargs)
+        chunk = build_chunk()
+        score = 0.72 if kwargs.get("using") == "dense" else 3.0
+        return SimpleNamespace(
+            points=[
+                SimpleNamespace(
+                    id="point-a",
+                    score=score,
+                    payload={
+                        "chunk_id": chunk.chunk_id,
+                        "content": chunk.content,
+                        "embedding_text": chunk.embedding_text,
+                        "token_count": chunk.token_count,
+                        "metadata": chunk.metadata.model_dump(mode="json"),
+                    },
+                )
+            ]
+        )
+
+
 async def test_create_release_collection_uses_named_dense_and_bm25_vectors() -> None:
     client = RecordingClient()
     store = QdrantHybridKnowledgeStore(
@@ -138,7 +161,7 @@ async def test_upsert_preserves_dense_vector_and_builds_multilingual_bm25_docume
 
 
 async def test_hybrid_search_prefetches_dense_and_bm25_then_uses_rrf() -> None:
-    client = RecordingClient()
+    client = HybridConfidenceRecordingClient()
     store = QdrantHybridKnowledgeStore(
         client=client,
         collection_name="knowledge_hybrid",
@@ -157,12 +180,18 @@ async def test_hybrid_search_prefetches_dense_and_bm25_then_uses_rrf() -> None:
         search_query=search_query,
     )
 
-    prefetch = client.query_kwargs["prefetch"]
+    assert len(client.query_calls) == 2
+    hybrid_query = client.query_calls[0]
+    dense_query = client.query_calls[1]
+    prefetch = hybrid_query["prefetch"]
     assert [item.using for item in prefetch] == ["dense", "bm25"]
     assert prefetch[0].limit == 20
     assert prefetch[1].query.options == {"tokenizer": "multilingual"}
-    assert client.query_kwargs["query"].fusion == models.Fusion.RRF
+    assert hybrid_query["query"].fusion == models.Fusion.RRF
+    assert dense_query["query"] == [1.0, 0.0, 0.0]
+    assert dense_query["using"] == "dense"
     assert results[0].search_mode == KnowledgeSearchMode.HYBRID
+    assert results[0].dense_similarity_score == 0.72
 
 
 async def test_bm25_search_uses_sparse_vector_without_dense_threshold_semantics() -> None:

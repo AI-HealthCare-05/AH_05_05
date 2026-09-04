@@ -222,6 +222,11 @@ class RetrievedKnowledgeChunk(KnowledgeChunk):
     point_id: str = Field(min_length=1)
     similarity_score: float = Field(ge=-1.0, le=1.0)
     search_mode: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
+    dense_similarity_score: float | None = Field(
+        default=None,
+        ge=-1.0,
+        le=1.0,
+    )
 
 
 class KnowledgeCandidateDiagnostic(BaseModel):
@@ -232,6 +237,11 @@ class KnowledgeCandidateDiagnostic(BaseModel):
     search_tier: KnowledgeSearchTier
     raw_rank: int = Field(ge=1)
     raw_similarity_score: float = Field(ge=-1.0, le=1.0)
+    dense_similarity_score: float | None = Field(
+        default=None,
+        ge=-1.0,
+        le=1.0,
+    )
     boost_score: float
     adjusted_score: float
     adjusted_rank: int = Field(ge=1)

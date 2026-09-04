@@ -1,3 +1,5 @@
+import asyncio
+
 from qdrant_client.http import models
 
 from ai_worker.rag.rerankers.knowledge_search_result_refiner import (
@@ -37,10 +39,7 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
 
     async def create_release_collection(self) -> None:
         if await self._client.collection_exists(self._collection_name):
-            raise ValueError(
-                "release 컬렉션이 이미 존재합니다: "
-                f"{self._collection_name}"
-            )
+            raise ValueError(f"release 컬렉션이 이미 존재합니다: {self._collection_name}")
 
         await self._client.create_collection(
             collection_name=self._collection_name,
@@ -64,9 +63,7 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
         vectors: list[list[float]],
     ) -> list[str]:
         if len(chunks) != len(vectors):
-            raise ValueError(
-                "Knowledge 청크와 임베딩 벡터 개수가 일치하지 않습니다."
-            )
+            raise ValueError("Knowledge 청크와 임베딩 벡터 개수가 일치하지 않습니다.")
         if not chunks:
             return []
 
@@ -121,15 +118,37 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
             query_text=search_query.query,
             candidate_limit=candidate_limit,
         )
-        response = await self._client.query_points(
-            collection_name=self._collection_name,
-            query_filter=self._build_filter(search_query),
-            limit=candidate_limit,
-            with_payload=True,
-            with_vectors=False,
-            **request,
+        query_filter = self._build_filter(search_query)
+        query_kwargs = {
+            "collection_name": self._collection_name,
+            "query_filter": query_filter,
+            "limit": candidate_limit,
+            "with_payload": True,
+            "with_vectors": False,
+        }
+        dense_scores: dict[str, float] | None = None
+        if self._search_mode == KnowledgeSearchMode.HYBRID:
+            response, dense_response = await asyncio.gather(
+                self._client.query_points(
+                    **query_kwargs,
+                    **request,
+                ),
+                self._client.query_points(
+                    **query_kwargs,
+                    query=query_vector,
+                    using=self._DENSE_VECTOR_NAME,
+                ),
+            )
+            dense_scores = self._point_scores(dense_response.points)
+        else:
+            response = await self._client.query_points(
+                **query_kwargs,
+                **request,
+            )
+        results = self._deserialize_points(
+            response.points,
+            dense_scores=dense_scores,
         )
-        results = self._deserialize_points(response.points)
         return KnowledgeSearchResultRefiner.refine(
             results,
             query=search_query.query,
@@ -170,12 +189,20 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
             "query": models.FusionQuery(fusion=models.Fusion.RRF),
         }
 
-    def _deserialize_points(self, points: list) -> list[RetrievedKnowledgeChunk]:
+    def _deserialize_points(
+        self,
+        points: list,
+        *,
+        dense_scores: dict[str, float] | None = None,
+    ) -> list[RetrievedKnowledgeChunk]:
         results: list[RetrievedKnowledgeChunk] = []
         for point in points:
             payload = point.payload or {}
             try:
                 score = float(point.score)
+                dense_similarity_score = (
+                    score if self._search_mode == KnowledgeSearchMode.DENSE else (dense_scores or {}).get(str(point.id))
+                )
                 if self._search_mode != KnowledgeSearchMode.DENSE:
                     score = self._bounded_relevance_score(score)
                 results.append(
@@ -183,6 +210,7 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
                         point_id=str(point.id),
                         similarity_score=score,
                         search_mode=self._search_mode,
+                        dense_similarity_score=dense_similarity_score,
                         chunk_id=payload["chunk_id"],
                         content=payload["content"],
                         embedding_text=payload["embedding_text"],
@@ -194,6 +222,16 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
                 continue
         return results
 
+    @staticmethod
+    def _point_scores(points: list) -> dict[str, float]:
+        scores: dict[str, float] = {}
+        for point in points:
+            try:
+                scores[str(point.id)] = float(point.score)
+            except (TypeError, ValueError):
+                continue
+        return scores
+
     async def _validate_existing_collection(self) -> None:
         if self._collection_validated:
             return
@@ -203,31 +241,18 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
             if not await self._client.collection_exists(
                 self._collection_name,
             ):
-                raise ValueError(
-                    "release 컬렉션을 찾을 수 없습니다: "
-                    f"{self._collection_name}"
-                )
+                raise ValueError(f"release 컬렉션을 찾을 수 없습니다: {self._collection_name}")
             collection = await self._client.get_collection(
                 self._collection_name,
             )
             vector_params = collection.config.params.vectors
             sparse_params = collection.config.params.sparse_vectors
-            dense = (
-                vector_params.get(self._DENSE_VECTOR_NAME)
-                if isinstance(vector_params, dict)
-                else None
-            )
-            sparse = (
-                sparse_params.get(self._BM25_VECTOR_NAME)
-                if isinstance(sparse_params, dict)
-                else None
-            )
+            dense = vector_params.get(self._DENSE_VECTOR_NAME) if isinstance(vector_params, dict) else None
+            sparse = sparse_params.get(self._BM25_VECTOR_NAME) if isinstance(sparse_params, dict) else None
             if not isinstance(dense, models.VectorParams):
                 raise ValueError("dense named vector가 없습니다.")
             if dense.size != self._vector_size:
-                raise ValueError(
-                    "기존 컬렉션의 dense 벡터 차원이 설정값과 일치하지 않습니다."
-                )
+                raise ValueError("기존 컬렉션의 dense 벡터 차원이 설정값과 일치하지 않습니다.")
             if dense.distance != models.Distance.COSINE:
                 raise ValueError("dense named vector의 거리 방식이 COSINE이 아닙니다.")
             if not isinstance(sparse, models.SparseVectorParams):
