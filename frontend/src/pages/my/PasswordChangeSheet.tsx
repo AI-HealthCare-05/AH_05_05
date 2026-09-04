@@ -99,7 +99,11 @@ export function PasswordChangeSheet({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent variant="sheet" aria-describedby="password-change-description">
+      <DialogContent
+        variant="sheet"
+        aria-describedby="password-change-description"
+        className="max-h-[90dvh] overflow-y-auto"
+      >
         <div aria-hidden className="mx-auto h-1 w-10 rounded-pill bg-border" />
         <div className="flex flex-col gap-1 pt-2">
           <DialogTitle className="text-xl">비밀번호 변경</DialogTitle>
@@ -107,7 +111,7 @@ export function PasswordChangeSheet({
             현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿉니다.
           </DialogDescription>
         </div>
-        <form className="flex flex-col gap-4" onSubmit={submit}>
+        <form className="flex flex-col gap-3" onSubmit={submit}>
           <Input
             label="현재 비밀번호"
             type="password"

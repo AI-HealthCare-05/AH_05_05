@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarDays, ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
-  Button,
-  Card,
   ErrorDialog,
   Header,
   NotifyBlockedDialog,
@@ -30,7 +28,6 @@ import {
   type PushPermission,
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
-import { WithdrawAccountDialog } from './WithdrawAccountDialog';
 import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
 
 function medicationTimesFromSettings(settings: NotifySettings): MedicationTimes {
@@ -86,7 +83,6 @@ export function MyPage({
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [timeDraft, setTimeDraft] = useState<MedicationTimes | null>(null);
   const [timeSaveError, setTimeSaveError] = useState<string | null>(null);
-  const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
 
@@ -326,57 +322,54 @@ export function MyPage({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="마이페이지" />
-      <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5">
+      <main className="flex flex-1 flex-col overflow-y-auto px-page-x pb-3 pt-3">
         {isAuthenticated ? (
           <>
             <button
               type="button"
-              className="flex min-h-20 items-center gap-4 rounded-card bg-card p-4 text-left shadow-card"
+              className="flex min-h-[84px] items-center gap-4 rounded-card border border-border bg-card p-3.5 text-left"
               onClick={() => navigate('/my/profile')}
             >
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-muted-foreground">
-                <UserRound aria-hidden className="size-6" />
+              <span className="flex size-14 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-sm font-bold text-muted-foreground">
+                사람
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-lg font-bold text-foreground">RxVita 사용자</p>
+                <p className="text-[17px] font-bold text-foreground">RxVita 사용자</p>
                 <p className="text-sm text-muted-foreground">기본정보</p>
               </div>
-              <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
+              <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
             </button>
 
-            <section className="flex flex-col gap-3" aria-labelledby="my-management-title">
+            <section className="mt-5 flex flex-col" aria-labelledby="my-management-title">
               <h2 id="my-management-title" className="text-xl font-bold text-foreground">
                 내 관리
               </h2>
-              <Card className="gap-0 overflow-hidden p-0">
+              <div className="mt-3 overflow-hidden bg-card">
                 <ManagementRow
-                  icon={Pill}
                   label="복용약"
                   value="4개"
                   onClick={() => navigate('/medications')}
                 />
                 <ManagementRow
-                  icon={Sprout}
                   label="영양제"
                   value="3개"
                   onClick={() => navigate('/supplements')}
                   divided
                 />
                 <ManagementRow
-                  icon={CalendarDays}
                   label="진료일정"
-                  value="관리"
+                  value="예정 1개"
                   onClick={() => navigate('/my/visits')}
                   divided
                 />
-              </Card>
+              </div>
             </section>
 
-            <section className="flex flex-col gap-3" aria-labelledby="notification-title">
+            <section className="mt-4 flex flex-col" aria-labelledby="notification-title">
               <h2 id="notification-title" className="text-xl font-bold text-foreground">
                 알림
               </h2>
-              <Card className="gap-0 overflow-hidden p-0">
+              <div className="mt-3 overflow-hidden rounded-card border border-border bg-card">
                 {notifyLoadError ? (
                   <div className="p-4">
                     <p className="font-bold text-foreground">알림 설정을 불러오지 못했어요</p>
@@ -421,8 +414,16 @@ export function MyPage({
                       className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
                       onClick={openMedicationTimeSheet}
                     >
-                      <span className="flex-1 text-base font-bold text-foreground">
-                        알림 시간 설정
+                      <span className="flex min-w-0 flex-1 flex-col text-left">
+                        <span className="text-[15px] font-bold text-foreground">알림 시간 설정</span>
+                        <span className="truncate text-sm text-muted-foreground">
+                          {[
+                            notifySettings.morningMedicationTime,
+                            notifySettings.lunchMedicationTime,
+                            notifySettings.eveningMedicationTime,
+                            notifySettings.bedtimeMedicationTime,
+                          ].join(' · ')}
+                        </span>
                       </span>
                       <ChevronRight
                         aria-hidden
@@ -433,7 +434,7 @@ export function MyPage({
                 ) : (
                   <p className="p-4 text-sm text-muted-foreground">알림 설정을 불러오는 중...</p>
                 )}
-              </Card>
+              </div>
               {pushUnsupported && (
                 <p className="text-sm text-muted-foreground">
                   이 브라우저에서는 알림을 지원하지 않아요
@@ -441,25 +442,13 @@ export function MyPage({
               )}
             </section>
 
-            <section className="flex flex-col gap-3" aria-labelledby="account-title">
-              <h2 id="account-title" className="text-xl font-bold text-foreground">
-                계정
-              </h2>
-              <Card className="p-4">
-                <div className="flex flex-col gap-4">
-                  <Button variant="secondary" onClick={handleSignOut}>
-                    로그아웃
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="text-danger-strong"
-                    onClick={() => setWithdrawDialogOpen(true)}
-                  >
-                    회원 탈퇴
-                  </Button>
-                </div>
-              </Card>
-            </section>
+            <button
+              type="button"
+              className="mt-1 h-11 min-h-touch w-full rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground transition-colors hover:bg-muted-bg"
+              onClick={handleSignOut}
+            >
+              로그아웃
+            </button>
           </>
         ) : null}
       </main>
@@ -506,31 +495,16 @@ export function MyPage({
           onCancel={cancelMedicationTimeSheet}
         />
       )}
-      <WithdrawAccountDialog
-        open={withdrawDialogOpen}
-        onOpenChange={setWithdrawDialogOpen}
-        onWithdrawn={() => {
-          logoutNavigationRef.current = true;
-          signOut();
-          navigate('/', { replace: true });
-          // Toaster 가 앱 루트(main.tsx)에 있어 화면을 옮겨도 그대로 떠 있습니다.
-          // 되돌릴 수 없는 동작인데 화면만 바뀌면 눌린 건지 알 수 없고,
-          // 이동한 홈은 비로그인 상태라 원래도 휑합니다.
-          toast.success('탈퇴되었습니다. 그동안 이용해 주셔서 감사합니다.');
-        }}
-      />
     </div>
   );
 }
 
 function ManagementRow({
-  icon: Icon,
   label,
   value,
   onClick,
   divided = false,
 }: {
-  icon: typeof Pill;
   label: string;
   value: string;
   onClick: () => void;
@@ -540,14 +514,11 @@ function ManagementRow({
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-20 w-full items-center gap-3 px-4 text-left ${
+      className={`flex min-h-16 w-full items-center gap-3 px-4 text-left ${
         divided ? 'border-t border-border' : ''
       }`}
     >
-      <span className="flex size-12 items-center justify-center rounded-pill bg-primary-bg text-primary-strong">
-        <Icon aria-hidden className="size-6" />
-      </span>
-      <span className="flex-1 text-base font-bold text-foreground">{label}</span>
+      <span className="flex-1 text-[15px] font-bold text-foreground">{label}</span>
       <span className="text-sm text-muted-foreground">{value}</span>
       <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
     </button>
@@ -568,7 +539,7 @@ function NotificationRow({
   divided?: boolean;
 }) {
   return (
-    <div className={`flex min-h-20 items-center justify-between px-4 ${divided ? 'border-t border-border' : ''}`}>
+    <div className={`flex min-h-16 items-center justify-between px-4 ${divided ? 'border-t border-border' : ''}`}>
       <label htmlFor={`notification-${label}`} className="text-base font-bold text-foreground">
         {label}
       </label>

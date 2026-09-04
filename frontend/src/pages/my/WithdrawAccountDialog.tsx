@@ -54,7 +54,10 @@ export function WithdrawAccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-describedby="withdraw-account-description">
+      <DialogContent
+        aria-describedby="withdraw-account-description"
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle>정말 탈퇴하시겠어요?</DialogTitle>
           {/*
@@ -62,13 +65,15 @@ export function WithdrawAccountDialog({
             탈퇴해도 user 행이 남아 회원가입의 중복 검사에 걸립니다.
             되돌릴 수 없는 동작이라 누르기 전에 알아야 합니다.
           */}
-          <DialogDescription id="withdraw-account-description" className="leading-relaxed">
-            복약 기록과 등록한 영양제를 다시 볼 수 없어요.{' '}
-            <strong className="font-bold text-danger-strong">
-              탈퇴하면 같은 이메일로 다시 가입할 수 없어요.
-            </strong>
+          <DialogDescription id="withdraw-account-description">
+            복약 기록과 등록한 영양제를 다시 볼 수 없어요.
           </DialogDescription>
         </DialogHeader>
+        <div className="rounded-input bg-danger-bg p-3">
+          <p className="text-sm font-bold leading-relaxed text-danger-strong">
+            탈퇴하면 같은 이메일로 다시 가입할 수 없어요.
+          </p>
+        </div>
         <Input
           label="비밀번호"
           type="password"
