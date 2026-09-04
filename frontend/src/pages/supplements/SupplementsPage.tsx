@@ -127,12 +127,25 @@ export function SupplementsPage({
   async function stopSelectedSupplements() {
     if (selectedSupplementIds.size === 0 || bulkStopping) return;
     setBulkStopping(true);
+    const selectedIds = [...selectedSupplementIds];
+    const failedIds = new Set<number>();
     try {
-      await Promise.all([...selectedSupplementIds].map((supplementId) => stopActiveSupplement(supplementId)));
-      setSelectedSupplementIds(new Set());
-      setListEditOpen(false);
-    } catch {
-      // stopActiveSupplement이 부모 오류 대화상자를 표시합니다.
+      for (const supplementId of selectedIds) {
+        try {
+          await stopActiveSupplement(supplementId);
+        } catch {
+          failedIds.add(supplementId);
+        }
+      }
+      const visibleFailedIds = new Set(
+        selectedIds.filter(
+          (supplementId) =>
+            failedIds.has(supplementId) &&
+            supplements?.some((supplement) => supplement.supplementId === supplementId),
+        ),
+      );
+      setSelectedSupplementIds(visibleFailedIds);
+      if (visibleFailedIds.size === 0) setListEditOpen(false);
     } finally {
       setBulkStopping(false);
     }

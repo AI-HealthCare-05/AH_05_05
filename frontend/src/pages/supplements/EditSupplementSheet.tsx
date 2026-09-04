@@ -149,7 +149,7 @@ export function EditSupplementSheet({
                       {supplement.note ? ' · 메모 있음' : ''}
                     </p>
                   </div>
-                  {supplement.score !== null && (
+                  {score !== null && (
                     <span
                       aria-label={`별 ${score}점`}
                       className="shrink-0 text-lg font-bold text-warning-strong"
@@ -327,11 +327,15 @@ export function EditSupplementSheet({
                 type="button"
                 aria-label={`별 ${value}점`}
                 aria-pressed={ratingDraft === value}
-                className="flex size-touch items-center justify-center rounded-input text-warning-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={`flex size-touch items-center justify-center rounded-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  ratingDraft !== null && value <= ratingDraft
+                    ? 'text-warning-strong'
+                    : 'text-muted-foreground'
+                }`}
                 onClick={() => setRatingDraft(value)}
               >
                 <span aria-hidden className="text-[34px] leading-none">
-                  ★
+                  {ratingDraft !== null && value <= ratingDraft ? '★' : '☆'}
                 </span>
               </button>
             ))}
