@@ -12,7 +12,9 @@ test('마이페이지는 관리 항목과 세 알림 토글을 보여주고 로�
   await expect(page.getByRole('heading', { name: '마이페이지' })).toBeVisible();
   await expect(page.getByRole('button', { name: /복용약 4개/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /영양제 3개/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /진료일정 예정 1개/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /진료일정 예정 3개/ })).toBeVisible();
+  await expect(page.getByRole('status', { name: '내 관리 불러오는 중' })).toHaveCount(0);
+  await expect(page.getByRole('alert', { name: '관리 정보 불러오기 실패' })).toHaveCount(0);
   await expect(page.getByRole('switch', { name: '복약 알림' })).toHaveCount(1);
   await expect(page.getByRole('switch', { name: '영양제 알림' })).toHaveCount(1);
   await expect(page.getByRole('switch', { name: '일정 알림' })).toHaveCount(1);

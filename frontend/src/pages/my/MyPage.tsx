@@ -5,6 +5,12 @@ import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
+  getMedicationOverviews,
+  type MedicationOverview,
+} from '@/entities/medication';
+import { getSupplements } from '@/entities/supplement';
+import { listFollowUpVisits, type FollowUpVisit } from '@/entities/follow-up-visit';
+import {
   BottomTabbar,
   ErrorDialog,
   Header,
@@ -48,8 +54,35 @@ function mealSlotTimesFromMedicationTimes(times: MedicationTimes) {
   };
 }
 
+function todayString(): string {
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${today.getFullYear()}-${month}-${day}`;
+}
+
+function countActiveMedications(overviews: MedicationOverview[]): number {
+  return overviews
+    .filter((overview) => !overview.isFinished)
+    .reduce((total, overview) => total + overview.medications.length, 0);
+}
+
+function countUpcomingVisits(visits: FollowUpVisit[]): number {
+  const today = todayString();
+  return visits.filter((visit) => visit.visitDate >= today).length;
+}
+
+interface ManagementCounts {
+  medication: number;
+  supplement: number;
+  upcomingVisit: number;
+}
+
 interface MyPageProps {
   authenticatedOverride?: boolean;
+  medicationOverviewsLoader?: typeof getMedicationOverviews;
+  supplementsLoader?: typeof getSupplements;
+  followUpVisitsLoader?: typeof listFollowUpVisits;
   notifySettingsLoader?: () => Promise<NotifySettings>;
   notifySettingsUpdater?: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
   permissionReader?: () => PushPermission;
@@ -59,6 +92,9 @@ interface MyPageProps {
 
 export function MyPage({
   authenticatedOverride,
+  medicationOverviewsLoader = getMedicationOverviews,
+  supplementsLoader = getSupplements,
+  followUpVisitsLoader = listFollowUpVisits,
   notifySettingsLoader = getNotifySettings,
   notifySettingsUpdater = updateNotifySettings,
   permissionReader = getPushPermission,
@@ -69,6 +105,8 @@ export function MyPage({
   const { authenticated, signOut } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
   const logoutNavigationRef = useRef(false);
+  const [managementCounts, setManagementCounts] = useState<ManagementCounts | null>(null);
+  const [managementLoadError, setManagementLoadError] = useState<string | null>(null);
   const [notifySettings, setNotifySettings] = useState<NotifySettings | null>(null);
   const [notifyLoadError, setNotifyLoadError] = useState<string | null>(null);
   const [notifyActionError, setNotifyActionError] = useState<{
@@ -114,6 +152,35 @@ export function MyPage({
       cancelled = true;
     };
   }, [isAuthenticated, notifySettingsLoader]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    setManagementCounts(null);
+    setManagementLoadError(null);
+    Promise.all([
+      medicationOverviewsLoader(),
+      supplementsLoader(),
+      followUpVisitsLoader({ startDate: todayString() }),
+    ])
+      .then(([medicationOverviews, supplements, visits]) => {
+        if (cancelled) return;
+        setManagementCounts({
+          medication: countActiveMedications(medicationOverviews),
+          supplement: supplements.items.length,
+          upcomingVisit: countUpcomingVisits(visits),
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setManagementLoadError(
+          error instanceof Error ? error.message : '관리 정보를 불러오지 못했어요.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [followUpVisitsLoader, isAuthenticated, medicationOverviewsLoader, supplementsLoader]);
 
   async function persistNotifySettings(
     payload: UpdateNotifySettingsPayload,
@@ -340,25 +407,57 @@ export function MyPage({
               <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
             </button>
 
-            <section className="mt-5 flex flex-col" aria-labelledby="my-management-title">
+            <section
+              className="mt-5 flex flex-col"
+              aria-labelledby="my-management-title"
+              aria-busy={managementCounts === null && managementLoadError === null}
+            >
               <h2 id="my-management-title" className="text-xl font-bold text-foreground">
                 내 관리
               </h2>
+              {!managementCounts && !managementLoadError && (
+                <p role="status" aria-label="내 관리 불러오는 중" className="sr-only">
+                  관리 정보를 불러오는 중...
+                </p>
+              )}
+              {managementLoadError && (
+                <p role="alert" aria-label="관리 정보 불러오기 실패" className="mt-1 text-sm text-danger-strong">
+                  관리 항목 수를 확인하지 못했어요.
+                </p>
+              )}
               <div className="mt-3 overflow-hidden bg-card">
                 <ManagementRow
                   label="복용약"
-                  value="4개"
+                  value={
+                    managementCounts
+                      ? `${managementCounts.medication}개`
+                      : managementLoadError
+                        ? '확인 불가'
+                        : '확인 중'
+                  }
                   onClick={() => navigate('/medications')}
                 />
                 <ManagementRow
                   label="영양제"
-                  value="3개"
+                  value={
+                    managementCounts
+                      ? `${managementCounts.supplement}개`
+                      : managementLoadError
+                        ? '확인 불가'
+                        : '확인 중'
+                  }
                   onClick={() => navigate('/supplements')}
                   divided
                 />
                 <ManagementRow
                   label="진료일정"
-                  value="예정 1개"
+                  value={
+                    managementCounts
+                      ? `예정 ${managementCounts.upcomingVisit}개`
+                      : managementLoadError
+                        ? '확인 불가'
+                        : '확인 중'
+                  }
                   onClick={() => navigate('/my/visits')}
                   divided
                 />

@@ -13,7 +13,7 @@ async function authenticate(page: Page) {
     window.sessionStorage.removeItem('poke:splash-seen');
   });
   await page.goto('/home');
-  await page.goto('/my');
+  await page.goto('/my/profile');
 }
 
 async function openWithdrawalDialog(page: Page) {
@@ -52,7 +52,7 @@ test('회원 탈퇴는 로그아웃과 같은 외곽선 버튼에서 빨간 글�
   await expect(withdraw).toHaveClass(/bg-danger/);
   await cancel.click();
   await expect(dialog).toBeHidden();
-  await expect(page).toHaveURL(/\/my$/);
+  await expect(page).toHaveURL(/\/my\/profile$/);
 });
 
 test('틀린 비밀번호는 팝업 안에서 알리고 로그인 상태를 유지한다', async ({ page }) => {
@@ -64,7 +64,7 @@ test('틀린 비밀번호는 팝업 안에서 알리고 로그인 상태를 유�
 
   await expect(dialog.getByText('비밀번호가 일치하지 않아요')).toBeVisible();
   await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/my$/);
+  await expect(page).toHaveURL(/\/my\/profile$/);
   await expect
     .poll(() => page.evaluate(() => sessionStorage.getItem('poke.access-token')))
     .toBe('withdrawal-e2e-token');

@@ -119,8 +119,9 @@ export function MyProfilePage({
   }
 
   function handleWithdrawn() {
-    signOut();
     navigate('/', { replace: true });
+    // 보호 라우트가 위치를 반영한 다음 세션을 정리해 로그인 redirect를 피합니다.
+    window.setTimeout(signOut, 50);
     toast.success('탈퇴되었습니다. 그동안 이용해 주셔서 감사합니다.');
   }
 
@@ -205,7 +206,7 @@ export function MyProfilePage({
             </form>
             <button
               type="button"
-              className="mt-2 min-h-touch w-full text-center text-sm font-medium text-danger-strong"
+              className="mt-2 min-h-touch w-full rounded-button border border-border text-center text-sm font-medium text-danger-strong"
               onClick={() => setWithdrawDialogOpen(true)}
             >
               회원 탈퇴
