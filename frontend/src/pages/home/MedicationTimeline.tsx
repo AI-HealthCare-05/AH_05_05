@@ -17,11 +17,18 @@ interface TimelineMedication extends MedicationOverviewItem {
   startDate: string;
 }
 
+interface TimelineEpisode {
+  recordId: number;
+  startDate: string;
+  medications: TimelineMedication[];
+}
+
 interface TimelineItemData {
   slot: MealSlot;
   label: string;
   time: string;
   medications: TimelineMedication[];
+  episodes: TimelineEpisode[];
   recordIds: number[];
   status: TimelineStatus;
 }
@@ -31,6 +38,7 @@ interface MedicationTimelineProps {
   doseRecords: DoseRecord[];
   currentDate: string;
   onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void;
+  onMemo: () => void;
 }
 
 export function MedicationTimeline({
@@ -38,6 +46,7 @@ export function MedicationTimeline({
   doseRecords,
   currentDate,
   onDoseChange,
+  onMemo,
 }: MedicationTimelineProps) {
   const timeline = buildMedicationTimeline(overviews, new Date(), currentDate, doseRecords);
   const allTaken = timeline.length > 0 && timeline.every((item) => item.status === 'completed');
@@ -70,6 +79,7 @@ export function MedicationTimeline({
             item={item}
             divided={index > 0}
             onDoseChange={onDoseChange}
+            onMemo={onMemo}
           />
         ))}
       </div>
@@ -81,12 +91,17 @@ function TimelineItem({
   item,
   divided,
   onDoseChange,
+  onMemo,
 }: {
   item: TimelineItemData;
   divided: boolean;
   onDoseChange: MedicationTimelineProps['onDoseChange'];
+  onMemo: MedicationTimelineProps['onMemo'];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedEpisodes, setExpandedEpisodes] = useState<Set<number>>(() => new Set());
+  const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(() => new Set());
+  const [completedEpisodes, setCompletedEpisodes] = useState<Set<number>>(() => new Set());
   const current = item.status === 'current';
   const completed = item.status === 'completed';
   const statusLabel = completed
@@ -96,6 +111,41 @@ function TimelineItem({
       : item.status === 'next'
         ? '다음'
         : null;
+
+  function toggleEpisode(recordId: number) {
+    setExpandedEpisodes((currentEpisodes) => {
+      const next = new Set(currentEpisodes);
+      if (next.has(recordId)) next.delete(recordId);
+      else next.add(recordId);
+      return next;
+    });
+  }
+
+  function toggleSelectedEpisode(recordId: number) {
+    setSelectedEpisodes((currentEpisodes) => {
+      const next = new Set(currentEpisodes);
+      if (next.has(recordId)) next.delete(recordId);
+      else next.add(recordId);
+      return next;
+    });
+  }
+
+  const selected = item.episodes.filter((episode) => selectedEpisodes.has(episode.recordId));
+  const actionEpisodes = selected.length > 0 ? selected : item.episodes;
+  const actionMedicationCount = actionEpisodes.reduce(
+    (count, episode) => count + episode.medications.length,
+    0,
+  );
+  const actionRecordIds = actionEpisodes.map((episode) => episode.recordId);
+
+  function handleDoseAction() {
+    setCompletedEpisodes((currentEpisodes) => {
+      if (completed) return new Set();
+      return new Set([...currentEpisodes, ...actionRecordIds]);
+    });
+    setSelectedEpisodes(new Set());
+    onDoseChange(actionRecordIds, item.slot, !completed);
+  }
 
   return (
     <div className={divided ? 'border-t border-border' : ''}>
@@ -129,9 +179,7 @@ function TimelineItem({
         {statusLabel && (
           <span
             className={`ml-auto rounded-pill px-2.5 py-1 text-sm font-bold ${
-              current
-                ? 'bg-primary text-card'
-                : 'bg-muted-bg text-muted-foreground'
+              current ? 'bg-primary text-card' : 'bg-muted-bg text-muted-foreground'
             }`}
           >
             {statusLabel}
@@ -152,32 +200,123 @@ function TimelineItem({
           aria-label={`${item.label}약 상세`}
           className={`border-t border-border px-4 py-4 ${current ? 'bg-primary-bg' : 'bg-card'}`}
         >
-          <ul className="flex flex-col gap-3" aria-label={`${item.label}에 먹을 약`}>
-            {item.medications.map((medication) => (
-              <li
-                key={`${medication.recordId}:${medication.medicationId}`}
-                className="flex items-start justify-between gap-3"
-              >
-                <span className="text-base font-bold text-foreground">
-                  {medication.name}{' '}
-                  <span className="font-normal text-muted-foreground">{medication.dose}</span>
-                </span>
-                <span className="shrink-0 text-sm text-muted-foreground">
-                  {formatPrescriptionLabel(medication.startDate)}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {item.status !== 'missed' && (
+          <div className="flex flex-col gap-3">
+            {item.episodes.map((episode) => {
+              const episodeDate = formatDateLabel(episode.startDate);
+              const episodeExpanded = expandedEpisodes.has(episode.recordId);
+              const episodeCompleted =
+                completedEpisodes.size === 0 ? completed : completedEpisodes.has(episode.recordId);
+              const summary = episode.medications[0];
+              const remainingCount = Math.max(0, episode.medications.length - 1);
+
+              return (
+                <article
+                  key={episode.recordId}
+                  aria-label={`${episodeDate} 처방 · 약 ${episode.medications.length}개`}
+                  className={`rounded-button p-3 ${
+                    completed ? 'bg-primary-bg' : 'bg-muted-bg'
+                  }`}
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-base font-bold text-foreground">{episodeDate} 처방</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {summary?.name ?? '복약'}
+                        {remainingCount > 0 ? ` 외 ${remainingCount}개` : ''}
+                      </p>
+                      <p className="mt-1 truncate text-sm text-muted-foreground">
+                        {episode.medications.map(formatMedication).join(' · ')}
+                      </p>
+                      {episode.medications.length > 1 && (
+                        <span className="mt-1 block text-xs text-disabled-foreground">
+                          {episodeDate} 처방
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      aria-pressed={selectedEpisodes.has(episode.recordId)}
+                      aria-label={`${episodeDate} 처방 ${episodeCompleted ? '복용 완료' : '선택'}`}
+                      className={`flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                        selectedEpisodes.has(episode.recordId) || episodeCompleted
+                          ? 'bg-primary text-card'
+                          : 'border-2 border-primary text-transparent'
+                      }`}
+                      onClick={() => toggleSelectedEpisode(episode.recordId)}
+                    >
+                      <Check aria-hidden className="size-4" />
+                    </button>
+                  </div>
+
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      aria-expanded={episodeExpanded}
+                      aria-controls={`episode-detail-${item.slot}-${episode.recordId}`}
+                      aria-label={`${episodeDate} 처방 ${episodeExpanded ? '접기' : '펼치기'}`}
+                      className="min-h-touch rounded-control px-3 text-sm font-bold text-primary-strong hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => toggleEpisode(episode.recordId)}
+                    >
+                      {episodeExpanded ? '접기' : '펼치기'}
+                      <ChevronDown
+                        aria-hidden
+                        className={`ml-1 inline-block size-4 transition-transform motion-reduce:transition-none ${
+                          episodeExpanded ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {episodeExpanded && (
+                    <div
+                      id={`episode-detail-${item.slot}-${episode.recordId}`}
+                      role="group"
+                      aria-label={`${episodeDate} 처방 약 상세`}
+                      className="mt-2 border-t border-border pt-3"
+                    >
+                      <ul className="flex flex-col gap-2" aria-label={`${episodeDate} 처방 약 목록`}>
+                        {episode.medications.map((medication) => (
+                          <li
+                            key={`${medication.recordId}:${medication.medicationId}`}
+                            className="flex items-start justify-between gap-3"
+                          >
+                            <span className="text-base font-bold text-foreground">
+                              {medication.name}{' '}
+                              <span className="font-normal text-muted-foreground">
+                                {medication.dose}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-sm text-muted-foreground">
+                              {formatPrescriptionLabel(medication.startDate)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              className="min-h-touch flex-1 rounded-button border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={onMemo}
+            >
+              복약 메모 쓰기
+            </button>
             <Button
+              fullWidth={false}
               variant={current && !completed ? 'primary' : 'secondary'}
-              className="mt-4"
-              onClick={() => onDoseChange(item.recordIds, item.slot, !completed)}
+              className="min-h-touch flex-1 px-3"
+              onClick={handleDoseAction}
             >
               <Check aria-hidden className="size-5" />
-              {completed ? '복약 기록 되돌리기' : `${item.medications.length}개 먹었어요`}
+              {completed ? '복약 기록 되돌리기' : `${actionMedicationCount}개 먹었어요`}
             </Button>
-          )}
+          </div>
         </div>
       )}
     </div>
@@ -208,11 +347,23 @@ function buildMedicationTimeline(
 
   const items = SLOT_ORDER.map((slot) => {
     const slotMedications = medications.filter((medication) => medication.slots.includes(slot));
+    const episodes = overviews
+      .map((overview) => ({
+        recordId: overview.recordId,
+        startDate: overview.start.date,
+        medications: slotMedications.filter(
+          (medication) => medication.recordId === overview.recordId,
+        ),
+      }))
+      .filter((episode) => episode.medications.length > 0)
+      .sort((left, right) => left.startDate.localeCompare(right.startDate));
+
     return {
       slot,
       label: mealSlotLabel(slot, 'short'),
       time: firstOverview.mealTimes[slot],
       medications: slotMedications,
+      episodes,
       recordIds: [...new Set(slotMedications.map((medication) => medication.recordId))],
     };
   })
@@ -252,6 +403,10 @@ function formatSingleEpisodeProgress(
   if (!overview) return '';
   const dayNumber = Math.max(1, daysBetween(overview.start.date, currentDate) + 1);
   return `${dayNumber}일째 · ${overview.daysRemaining}일 남음`;
+}
+
+function formatMedication(medication: TimelineMedication): string {
+  return `${medication.name} ${medication.dose}`;
 }
 
 function formatPrescriptionLabel(value: string): string {

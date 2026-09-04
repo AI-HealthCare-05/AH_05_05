@@ -335,6 +335,7 @@ export function HomePage({
                     ? void changeDose({ date: currentDate, slot, taken })
                     : undefined
                 }
+                onMemo={() => navigate('/medications/notes/new')}
                 onUpload={() => navigate('/document-upload')}
               />
               {hasMedication && doseRecords ? (
@@ -398,6 +399,7 @@ function LoggedInMedicationContent({
   doseRecords,
   currentDate,
   onDoseChange,
+  onMemo,
   onUpload,
 }: {
   state: MedicationHomeState;
@@ -405,6 +407,7 @@ function LoggedInMedicationContent({
   doseRecords: DoseRecord[];
   currentDate: string;
   onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void;
+  onMemo: () => void;
   onUpload: () => void;
 }) {
   if (state === 'empty') {
@@ -440,6 +443,7 @@ function LoggedInMedicationContent({
       doseRecords={doseRecords}
       currentDate={currentDate}
       onDoseChange={onDoseChange}
+      onMemo={onMemo}
     />
   );
 }
