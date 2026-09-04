@@ -84,10 +84,7 @@ class KnowledgeHybridReleaseCloner:
 
         target_count = await self._target_store.count_points()
         if source_count != target_count:
-            raise RuntimeError(
-                "복제 후 포인트 수가 일치하지 않습니다: "
-                f"source={source_count}, target={target_count}"
-            )
+            raise RuntimeError(f"복제 후 포인트 수가 일치하지 않습니다: source={source_count}, target={target_count}")
         return KnowledgeHybridCloneResult(
             source_collection=source_name,
             target_collection=target_name,
@@ -100,12 +97,8 @@ class KnowledgeHybridReleaseCloner:
     def _deserialize_source_point(point) -> tuple[KnowledgeChunk, list[float]]:
         payload = point.payload or {}
         vector = point.vector
-        if not isinstance(vector, list) or not all(
-            isinstance(value, (int, float)) for value in vector
-        ):
-            raise ValueError(
-                "원본 컬렉션은 단일 Dense 벡터 구조여야 합니다."
-            )
+        if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
+            raise ValueError("원본 컬렉션은 단일 Dense 벡터 구조여야 합니다.")
         try:
             chunk = KnowledgeChunk(
                 chunk_id=payload["chunk_id"],

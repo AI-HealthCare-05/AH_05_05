@@ -23,10 +23,7 @@ class MedicationSearchModeComparator:
             bm25=bm25,
             hybrid=hybrid,
         )
-        accuracy_improved = (
-            hybrid.hit_at_5 > dense.hit_at_5 + self._EPSILON
-            or hybrid.mrr > dense.mrr + self._EPSILON
-        )
+        accuracy_improved = hybrid.hit_at_5 > dense.hit_at_5 + self._EPSILON or hybrid.mrr > dense.mrr + self._EPSILON
         if not accuracy_improved:
             blocking_reasons.append("NO_ACCURACY_IMPROVEMENT")
         if not hybrid.passed:
@@ -41,24 +38,19 @@ class MedicationSearchModeComparator:
                 "SOURCE_ACCURACY_REGRESSION",
             ),
             (
-                hybrid.evidence_coverage_rate + self._EPSILON
-                < dense.evidence_coverage_rate,
+                hybrid.evidence_coverage_rate + self._EPSILON < dense.evidence_coverage_rate,
                 "EVIDENCE_COVERAGE_REGRESSION",
             ),
             (
-                hybrid.wrong_target_mixing_count
-                > dense.wrong_target_mixing_count,
+                hybrid.wrong_target_mixing_count > dense.wrong_target_mixing_count,
                 "WRONG_TARGET_MIXING_REGRESSION",
             ),
             (
-                hybrid.duplicate_retrieval_rate
-                > dense.duplicate_retrieval_rate + self._EPSILON,
+                hybrid.duplicate_retrieval_rate > dense.duplicate_retrieval_rate + self._EPSILON,
                 "DUPLICATE_RETRIEVAL_REGRESSION",
             ),
         )
-        blocking_reasons.extend(
-            reason for regressed, reason in guardrails if regressed
-        )
+        blocking_reasons.extend(reason for regressed, reason in guardrails if regressed)
         warning_reasons = []
         if hybrid.search_p95_ms > dense.search_p95_ms + self._EPSILON:
             warning_reasons.append("SEARCH_P95_REGRESSION")
@@ -86,17 +78,12 @@ class MedicationSearchModeComparator:
                     6,
                 ),
                 "evidence_coverage_rate": round(
-                    hybrid.evidence_coverage_rate
-                    - dense.evidence_coverage_rate,
+                    hybrid.evidence_coverage_rate - dense.evidence_coverage_rate,
                     6,
                 ),
-                "wrong_target_mixing_count": float(
-                    hybrid.wrong_target_mixing_count
-                    - dense.wrong_target_mixing_count
-                ),
+                "wrong_target_mixing_count": float(hybrid.wrong_target_mixing_count - dense.wrong_target_mixing_count),
                 "duplicate_retrieval_rate": round(
-                    hybrid.duplicate_retrieval_rate
-                    - dense.duplicate_retrieval_rate,
+                    hybrid.duplicate_retrieval_rate - dense.duplicate_retrieval_rate,
                     6,
                 ),
                 "search_p95_ms": round(
@@ -120,13 +107,16 @@ class MedicationSearchModeComparator:
             or hybrid.search_mode != KnowledgeSearchMode.HYBRID
         ):
             reasons.append("SEARCH_MODE_MISMATCH")
-        if len(
-            {
-                dense.evaluation_file_sha256,
-                bm25.evaluation_file_sha256,
-                hybrid.evaluation_file_sha256,
-            }
-        ) != 1:
+        if (
+            len(
+                {
+                    dense.evaluation_file_sha256,
+                    bm25.evaluation_file_sha256,
+                    hybrid.evaluation_file_sha256,
+                }
+            )
+            != 1
+        ):
             reasons.append("EVALUATION_CONTRACT_MISMATCH")
         if len({dense.dataset_version, bm25.dataset_version, hybrid.dataset_version}) != 1:
             reasons.append("DATASET_VERSION_MISMATCH")
