@@ -19,7 +19,7 @@ async function authenticate(page: Page) {
 }
 
 test('홈 기능 배너는 compact 가로 레이아웃과 한 문장 제목을 사용한다', async ({ page }) => {
-  await page.goto('/dev/home-active');
+  await page.goto('/home');
 
   const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' });
   const firstCard = carousel.locator('article').first();

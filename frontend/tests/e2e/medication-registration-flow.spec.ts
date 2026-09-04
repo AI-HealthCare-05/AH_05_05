@@ -881,60 +881,10 @@ test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여
 test('활성 처방이 두 건이어도 복용 기록은 사용자 단위로 한 번만 조회하고 저장한다', async ({
   page,
 }) => {
-  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   const doseGets: string[] = [];
   const dosePosts: Array<Record<string, unknown>> = [];
-  const overviews = [
-    {
-      recordId: 12,
-      documentImageUrl: '/mock/medication-envelope.svg',
-      start: { date: '2026-08-22', slot: 'morning' },
-      endDate: '2026-08-31',
-      daysRemaining: 7,
-      mealTimes: {
-        morning: '08:00',
-        lunch: '13:00',
-        evening: '19:00',
-        bedtime: '22:30',
-      },
-      medications: [
-        {
-          medicationId: 301,
-          name: '셀레콕시브',
-          dose: '200mg',
-          days: 10,
-          daysRemaining: 7,
-          slots: ['morning'],
-          asNeeded: false,
-        },
-      ],
-    },
-    {
-      recordId: 24,
-      documentImageUrl: '/mock/medication-envelope.svg',
-      start: { date: '2026-08-24', slot: 'morning' },
-      endDate: '2026-08-28',
-      daysRemaining: 3,
-      mealTimes: {
-        morning: '08:00',
-        lunch: '13:00',
-        evening: '19:00',
-        bedtime: '22:30',
-      },
-      medications: [
-        {
-          medicationId: 501,
-          name: '아목시실린',
-          dose: '500mg',
-          days: 5,
-          daysRemaining: 3,
-          slots: ['morning'],
-          asNeeded: false,
-        },
-      ],
-    },
-  ];
   await page.route('**/api/v1/medications/doses*', async (route) => {
     const request = route.request();
     if (request.method() === 'GET') {
@@ -945,15 +895,23 @@ test('활성 처방이 두 건이어도 복용 기록은 사용자 단위로 한
     dosePosts.push(request.postDataJSON() as Record<string, unknown>);
     await fulfillJson(route, request.postDataJSON(), 200);
   });
-  await page.route('**/api/v1/medications', (route) => fulfillJson(route, overviews, 200));
-
-  await page.goto('/home');
-  await page.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
-  await page.getByRole('button', { name: '2개 먹었어요' }).click();
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.goto('/dev/home-multiple-episodes');
+  const action = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' })
+    .getByRole('button', { name: '3개 먹었어요' });
+  await action.click();
 
   await expect(page.getByLabel('8월 25일 아침 먹은 기록')).toBeVisible();
   expect(doseGets).toHaveLength(1);
   expect(new URL(doseGets[0]).searchParams.has('recordId')).toBe(false);
+  expect(Object.keys(dosePosts[0]).sort()).toEqual(['date', 'slot', 'taken']);
   expect(dosePosts).toEqual([
     { date: '2026-08-25', slot: 'morning', taken: true },
   ]);

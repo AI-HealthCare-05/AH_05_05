@@ -269,7 +269,11 @@ export function HomePage({
     setAnimatedDoseKey(change.taken ? doseKey(change.date, change.slot) : null);
     setDoseRecords(updateDoseRecords(previousRecords, change));
     try {
-      await doseRecordSaver(change);
+      await doseRecordSaver({
+        date: change.date,
+        slot: change.slot,
+        taken: change.taken,
+      });
       if (showUndo) {
         toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
           action: {
@@ -290,7 +294,7 @@ export function HomePage({
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+    <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
       {isAuthenticated ? (
         <Header
           title={
@@ -312,7 +316,7 @@ export function HomePage({
         </header>
       )}
 
-      <main className={`flex flex-1 flex-col overflow-y-auto px-page-x py-5 ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
+      <main className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
           <>
             <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />
@@ -399,7 +403,7 @@ export function HomePage({
             )}
           </>
         )}
-        <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />
+        {!isAuthenticated && <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />}
       </main>
 
       <BottomTabbar
@@ -492,8 +496,6 @@ function SupplementTodayCard({
   supplements: Supplement[];
   onBrowse: () => void;
 }) {
-  const [individualSelection, setIndividualSelection] = useState(false);
-  const [takenCount, setTakenCount] = useState(0);
   const visibleSupplements = supplements.slice(0, 3);
 
   return (
@@ -506,9 +508,8 @@ function SupplementTodayCard({
           <p className="text-base font-bold text-foreground">점심 13:00</p>
           <button
             type="button"
-            aria-pressed={individualSelection}
             className="min-h-touch px-2 text-sm font-bold text-primary-strong"
-            onClick={() => setIndividualSelection((value) => !value)}
+            onClick={onBrowse}
           >
             개별 선택
           </button>
@@ -519,9 +520,7 @@ function SupplementTodayCard({
               <li key={supplement.supplementId} className="flex items-center gap-3">
                 <span
                   aria-hidden
-                  className={`flex size-5 shrink-0 items-center justify-center rounded-pill border-2 border-primary ${
-                    takenCount > 0 ? 'bg-primary text-card' : 'text-transparent'
-                  }`}
+                  className="flex size-5 shrink-0 items-center justify-center rounded-pill border-2 border-primary text-transparent"
                 >
                   ✓
                 </span>
@@ -538,24 +537,13 @@ function SupplementTodayCard({
             <li className="text-sm text-muted-foreground">등록한 영양제가 없어요</li>
           )}
         </ul>
-        <div className="flex gap-2">
-          <Button
-            fullWidth={false}
-            variant="secondary"
-            className="flex-1 px-3"
-            aria-pressed={takenCount === 1}
-            onClick={() => setTakenCount(1)}
-          >
+        <div className="flex gap-2" aria-label="영양제 복용 기록은 준비 중">
+          <span className="flex min-h-touch flex-1 items-center justify-center rounded-button border border-border px-3 text-sm font-bold text-disabled-foreground">
             1개 먹었어요
-          </Button>
-          <Button
-            fullWidth={false}
-            className="flex-1 px-3"
-            aria-pressed={takenCount === visibleSupplements.length}
-            onClick={() => setTakenCount(visibleSupplements.length)}
-          >
+          </span>
+          <span className="flex min-h-touch flex-1 items-center justify-center rounded-button border border-border px-3 text-sm font-bold text-disabled-foreground">
             다 먹었어요
-          </Button>
+          </span>
         </div>
       </Card>
       <button

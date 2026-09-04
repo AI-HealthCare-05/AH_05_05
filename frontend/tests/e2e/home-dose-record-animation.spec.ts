@@ -8,7 +8,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function expandMorningMedication(page: import('playwright/test').Page) {
-  await page.getByRole('button', { name: /아침약 2개.*자세히 보기/ }).click();
+  await expect(
+    page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', { name: '아침약 상세' }),
+  ).toBeVisible();
 }
 
 test('첫 렌더의 기존 복약 기록은 자라나는 애니메이션을 재생하지 않는다', async ({

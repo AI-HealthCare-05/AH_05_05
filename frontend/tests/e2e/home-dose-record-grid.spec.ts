@@ -3,7 +3,9 @@ import { expect, test, type Page, type Route } from 'playwright/test';
 import { IS_REAL_API, MOCK_ONLY_REASON, REAL_API_ONLY_REASON } from './helpers/mode';
 
 async function expandMorningMedication(page: Page) {
-  await page.getByRole('button', { name: /아침약 \d+개.*자세히 보기/ }).click();
+  await expect(
+    page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', { name: '아침약 상세' }),
+  ).toBeVisible();
 }
 
 async function fulfillJson(route: Route, body: unknown) {
@@ -73,35 +75,38 @@ test('365일 처방과 새 30일 회차는 정확히 366일 범위로 복약 기
   expect(ranges[0].searchParams.get('to')).toBe('2026-09-23');
   await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
 });
-test('다중 care episode 목업은 서로 다른 회차의 약을 같은 홈에 제공한다', async ({ page }) => {
+test('다중 care episode 목업은 서로 다른 회차를 같은 복약 카드에 제공한다', async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/dev/home-multiple-episodes');
 
-  const disclosure = page.getByRole('button', { name: /아침약 3개.*08:00.*자세히 보기/ });
-  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  const morning = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+    name: '아침약 상세',
+  });
   await expect(page.getByText('셀레콕시브 200mg')).toHaveCount(0);
   await expect(page.getByText('아목시실린 500mg')).toHaveCount(0);
 
-  await disclosure.click();
-  const expandedDisclosure = page.getByRole('button', {
-    name: /아침약 3개.*08:00.*간단히 보기/,
-  });
-  await expect(expandedDisclosure).toHaveAttribute('aria-expanded', 'true');
-  const morning = page.getByRole('group', { name: '아침약 상세' });
-  await expect(morning.getByText('셀레콕시브 200mg')).toBeVisible();
-  await expect(morning.getByText('아목시실린 500mg')).toBeVisible();
-  await expect(morning.getByText('8월 22일 처방')).toHaveCount(2);
-  await expect(morning.getByText('8월 24일 처방')).toBeVisible();
+  await morning.getByRole('article', { name: /8월 22일 처방/ }).getByRole('button', { name: /펼치기/ }).click();
+  await expect(
+    morning.getByRole('article', { name: /8월 22일 처방/ })
+      .getByRole('group', { name: /처방 약 상세/ })
+      .getByText('셀레콕시브 200mg', { exact: true }),
+  ).toBeVisible();
+  await morning.getByRole('article', { name: /8월 24일 처방/ }).getByRole('button', { name: /펼치기/ }).click();
+  await expect(
+    morning.getByRole('article', { name: /8월 24일 처방/ })
+      .getByRole('list', { name: /처방 약 목록/ })
+      .getByText('아목시실린 500mg', { exact: true }),
+  ).toBeVisible();
+  await expect(morning.getByRole('heading', { name: '8월 22일 처방', exact: true })).toHaveCount(1);
+  await expect(
+    morning.getByRole('heading', { name: '8월 24일 처방', exact: true }),
+  ).toBeVisible();
 
   await morning.getByRole('button', { name: '3개 먹었어요' }).click();
   await expect(page.getByLabel('8월 25일 아침 먹은 기록')).toBeVisible();
 
-  await expandedDisclosure.click();
-  await expect(page.getByRole('button', { name: /아침약 3개.*자세히 보기/ })).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
+  await morning.getByRole('article', { name: /8월 22일 처방/ }).getByRole('button', { name: /접기/ }).click();
   await expect(page.getByText('셀레콕시브 200mg')).toHaveCount(0);
 });
 
