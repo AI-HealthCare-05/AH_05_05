@@ -338,6 +338,13 @@ test('등록 5단계는 푸시 등록이 끝날 때까지 완료를 막고 일�
   await expect(completionButton).toBeDisabled();
   await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toHaveCount(0);
   expect(pushPayloads).toHaveLength(1);
+  await completionButton.evaluate((button) => {
+    // disabled 속성을 우회한 프로그램적 click도 pending guard에서 멈춰야 합니다.
+    button.removeAttribute('disabled');
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/medication-schedule\?/);
 
   releasePushRegistration();
   await expect(medicationNotifications).toBeChecked();

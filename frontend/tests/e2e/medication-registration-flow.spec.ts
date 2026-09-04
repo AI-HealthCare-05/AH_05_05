@@ -939,8 +939,13 @@ test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload�
   await stubPushManager(page, true);
   const trace = await interceptDocumentRegistration(page);
   const pushPayloads: unknown[] = [];
+  let releasePushRegistration!: () => void;
+  const pushRegistrationSettled = new Promise<void>((resolve) => {
+    releasePushRegistration = resolve;
+  });
   await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
     pushPayloads.push(route.request().postDataJSON());
+    await pushRegistrationSettled;
     await fulfillJson(route, { id: 1 });
   });
   await page.goto('/ocr-review?batchId=501');
@@ -956,9 +961,22 @@ test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload�
   await page.getByRole('button', { name: '시작 아침약' }).click();
   await page.getByRole('button', { name: '확인', exact: true }).click();
 
-  await page.getByRole('switch', { name: '복약 알림' }).click();
-  await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked();
+  const medicationNotifications = page.getByRole('switch', { name: '복약 알림' });
+  await medicationNotifications.click();
+  const completionButton = page.getByRole('button', { name: '등록 완료', exact: true });
+  await expect(completionButton).toBeDisabled();
+  await completionButton.evaluate((button) => {
+    button.removeAttribute('disabled');
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/medication-schedule\?/);
+  await expect.poll(() => trace.settingsRequests.length).toBe(0);
   expect(pushPayloads).toHaveLength(1);
+
+  releasePushRegistration();
+  await expect(medicationNotifications).toBeChecked();
+  await expect(completionButton).toBeEnabled();
   expect(await page.evaluate(() => {
     const state = window as Window & { __feature252PushSubscribeCalls: number };
     return state.__feature252PushSubscribeCalls;
@@ -970,8 +988,9 @@ test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload�
   await timeDialog.getByLabel('분').click();
   await page.getByRole('option', { name: '30분' }).click();
   await timeDialog.getByRole('button', { name: '이 시간 적용' }).click();
-  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+  await completionButton.click();
   await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  await expect(page.getByText(/알림 07:30/)).toBeVisible();
 
   const settingsPatch = trace.settingsRequests.find((request) => request.url.includes('/me/settings'));
   expect(settingsPatch).toBeDefined();
