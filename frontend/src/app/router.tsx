@@ -13,6 +13,7 @@ import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { PrivacyPage, TermsPage } from '@/pages/legal';
 import { SplashPage } from '@/pages/splash';
+import { TutorialPage } from '@/pages/tutorial';
 import {
   SupplementProductPage,
   SupplementsPage,
@@ -182,6 +183,7 @@ export function AppRouter() {
       <ChatSessionProvider>
         <Routes>
         <Route path="/" element={<SplashPage />} />
+        <Route path="/tutorial" element={<TutorialPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/terms" element={<TermsPage />} />
