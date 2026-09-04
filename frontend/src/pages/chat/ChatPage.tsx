@@ -27,12 +27,13 @@ import {
   type SendChatResult,
 } from '@/entities/chat';
 import { ChatDeleteDialog } from './ChatDeleteDialog';
+import { ChatFeedbackSheet } from './ChatFeedbackSheet';
 import { ChatSessionList } from './ChatSessionList';
 import { ChatStartGuide } from './ChatStartGuide';
 import { SourceList } from './SourceList';
 
 /**
- * REQ-CHAT-001 · 화면 17 AI 상담 — 공공 근거를 보여주는 화면.
+ * REQ-CHAT-001 · 챗봇 — 공공 근거를 보여주는 화면.
  *
  * 말풍선은 Card를 재사용하지 않고 직접 만들었습니다 — 정렬과 최대폭 규칙이 다릅니다.
  */
@@ -99,6 +100,7 @@ export function ChatPage({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const handledSessionRevisionRef = useRef(sessionRevision);
   const suppressNextSessionRefreshRef = useRef(false);
@@ -312,6 +314,11 @@ export function ChatPage({
     navigate(-1);
   }
 
+  function openFeedback() {
+    if (messages.length === 0 || pending || chatRequestPending) return;
+    setFeedbackOpen(true);
+  }
+
   function toggleSelectionMode() {
     setSelectionMode((current) => {
       if (current) setSelectedSessionIds(new Set());
@@ -403,9 +410,25 @@ export function ChatPage({
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="AI 상담" onBack={handleRoomBack} />
+      <Header
+        title="챗봇"
+        onBack={handleRoomBack}
+        right={
+          messages.length > 0 && !historyLoading ? (
+            <Button
+              fullWidth={false}
+              variant="secondary"
+              aria-label="채팅 종료"
+              className="h-touch min-w-[88px] px-3 text-primary"
+              onClick={openFeedback}
+            >
+              채팅 종료
+            </Button>
+          ) : null
+        }
+      />
 
-      <main className="flex flex-1 flex-col gap-3 px-page-x py-4">
+      <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-page-x py-4">
         {historyLoading ? (
           <div
             role="status"
@@ -458,6 +481,8 @@ export function ChatPage({
                   alt=""
                   aria-hidden
                   className="mt-0.5 size-8 shrink-0"
+                  width={32}
+                  height={32}
                 />
               ) : (
                 <span aria-hidden className="size-8 shrink-0" />
@@ -465,6 +490,9 @@ export function ChatPage({
               <div className="flex flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
                 <p className="whitespace-pre-wrap text-base break-words text-foreground">
                   {message.text}
+                </p>
+                <p className="text-unit text-muted-foreground">
+                  오늘 · 근거 {message.sources.length}개
                 </p>
                 {message.sources.length > 0 ? (
                   <SourceList sources={message.sources} />
@@ -486,6 +514,8 @@ export function ChatPage({
               alt=""
               aria-hidden
               className="mt-0.5 size-8 shrink-0"
+              width={32}
+              height={32}
             />
             <p className="rounded-card bg-muted-bg px-3.5 py-2.5 text-base text-muted-foreground">
               {progressMessage}
@@ -522,6 +552,7 @@ export function ChatPage({
       </div>
 
       <BottomTabbar active="chat" onChange={handleTabChange} className="border-t border-border" />
+      <ChatFeedbackSheet open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </div>
   );
 }
