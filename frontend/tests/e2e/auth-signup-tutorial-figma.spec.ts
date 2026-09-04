@@ -1,5 +1,7 @@
 import { expect, test, type Page } from 'playwright/test';
 
+import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
 test.setTimeout(20_000);
 
 async function openSignup(page: Page) {
@@ -55,6 +57,24 @@ test('회원가입 단계의 뒤로가기는 이전 단계로 돌아가고 이�
   await expect(page.getByText('2 / 4 단계', { exact: true })).toBeVisible();
   await expect(page.getByText('keep@example.com 으로 6자리 코드를 보냈어요.')).toBeVisible();
   await expect(page.getByLabel('이메일')).toHaveCount(0);
+});
+
+test('비밀번호 표시 버튼은 레이아웃을 밀지 않고 44px 이상 터치 영역을 제공한다', async ({
+  page,
+}) => {
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('touch-target@example.com');
+  await page.getByRole('button', { name: '인증코드 받기' }).click();
+  await page.getByLabel('인증코드').fill('123456');
+  await page.getByRole('button', { name: '확인' }).click();
+
+  for (const name of ['비밀번호 보기', '비밀번호 확인 보기']) {
+    const button = page.getByRole('button', { name, exact: true });
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
 });
 
 test('튜토리얼은 한 브라우저 세션에서 한 번만 보이고 건너뛰기는 홈으로 간다', async ({ page }) => {
@@ -148,4 +168,73 @@ test('회원가입 완료는 기존 계정 생성 뒤 로그인 API 순서를 �
     email: 'new-patient@example.com',
     password: 'Password123!',
   });
+});
+
+test('회원가입 생성 API 오류는 가입 폼 안에 접근 가능한 오류로 표시한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+
+  await page.route('**/api/v1/auth/signup', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'SIGNUP_UNAVAILABLE', message: '가입을 완료하지 못했어요.' }),
+    });
+  });
+
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('signup-error@example.com');
+  await page.getByRole('button', { name: '인증코드 받기' }).click();
+  await page.getByLabel('인증코드').fill('123456');
+  await page.getByRole('button', { name: '확인' }).click();
+  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('Password123!');
+  await page.getByRole('button', { name: '다음' }).click();
+  await page.getByLabel('이름').fill('오류회원');
+  await page.getByLabel('전화번호').fill('010-1234-5678');
+  await page.getByLabel('생년월일').fill('1990-01-01');
+  await page.getByRole('radio', { name: '여성' }).check();
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await expect(page.getByRole('alert')).toHaveText('가입을 완료하지 못했어요.');
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test('회원가입 후 로그인 API 오류는 가입 폼 안에 접근 가능한 오류로 표시한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+
+  await page.route('**/api/v1/auth/signup', async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: '회원가입이 성공적으로 완료되었습니다.' }),
+    });
+  });
+  await page.route('**/api/v1/auth/login', async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'INVALID_CREDENTIALS', message: '로그인에 실패했어요.' }),
+    });
+  });
+
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('login-error@example.com');
+  await page.getByRole('button', { name: '인증코드 받기' }).click();
+  await page.getByLabel('인증코드').fill('123456');
+  await page.getByRole('button', { name: '확인' }).click();
+  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('Password123!');
+  await page.getByRole('button', { name: '다음' }).click();
+  await page.getByLabel('이름').fill('로그인오류회원');
+  await page.getByLabel('전화번호').fill('010-1234-5678');
+  await page.getByLabel('생년월일').fill('1990-01-01');
+  await page.getByRole('radio', { name: '남성' }).check();
+  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await page.getByRole('button', { name: '회원가입 완료' }).click();
+
+  await expect(page.getByRole('alert')).toHaveText('로그인에 실패했어요.');
+  await expect(page).toHaveURL(/\/login$/);
 });

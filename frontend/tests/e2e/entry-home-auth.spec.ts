@@ -1,6 +1,13 @@
 import { expect, test, type Page } from 'playwright/test';
 
 import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+import {
+  advanceSignupToPassword,
+  advanceSignupToProfile,
+  fillSignup,
+  fillSignupProfile,
+  openSignup,
+} from './helpers/signup';
 
 test.beforeEach(() => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
@@ -139,8 +146,14 @@ test('홈에서는 토큰이 만료되어도 로그인 화면으로 이동하지
 });
 
 test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있다', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
+  await openSignup(page);
+  await advanceSignupToProfile(page);
+  await fillSignupProfile(page, {
+    name: '동의회원',
+    phoneNumber: '01012345678',
+    birthDate: '1990-01-01',
+    gender: '여성',
+  });
 
   const submit = page.getByRole('button', { name: '회원가입 완료' });
   await expect(submit).toBeDisabled();
@@ -153,9 +166,9 @@ test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있
 test('회원가입 비밀번호와 비밀번호 확인은 각각 독립적으로 표시하고 다시 숨긴다', async ({
   page,
 }) => {
-  await page.goto('/login');
+  await openSignup(page);
   await expect(page.getByRole('button', { name: '비밀번호 보기' })).toHaveCount(0);
-  await page.getByRole('button', { name: '회원가입' }).click();
+  await advanceSignupToPassword(page);
 
   const password = page.getByLabel('비밀번호', { exact: true });
   const passwordConfirm = page.getByLabel('비밀번호 확인', { exact: true });
@@ -180,8 +193,8 @@ test('회원가입 비밀번호와 비밀번호 확인은 각각 독립적으로
 test('회원가입 이름 입력은 숫자·공백·특수문자를 제거하고 여러 언어의 문자를 남긴다', async ({
   page,
 }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
+  await openSignup(page);
+  await advanceSignupToProfile(page);
 
   const nameInput = page.getByLabel('이름');
   await nameInput.fill('홍길동 Élodie山田Мария 123!😀');
@@ -196,17 +209,12 @@ test('회원가입 이름 입력은 숫자·공백·특수문자를 제거하고
 });
 
 test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한다', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
-  await page.getByLabel('이메일').fill('new-patient@example.com');
-  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
-  await page.getByLabel('비밀번호 확인', { exact: true }).fill('password1234');
-  await page.getByLabel('이름').fill('신규사용자');
-  await page.getByLabel('전화번호').fill('01012345678');
-  await page.getByLabel('생년월일').fill('1990-01-01');
-  await page.getByRole('radio', { name: '여성' }).check();
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
-  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await openSignup(page);
+  await fillSignup(page, {
+    name: '신규사용자',
+    birthDate: '1990-01-01',
+    gender: '여성',
+  });
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page).toHaveURL(/\/home$/);
@@ -214,17 +222,12 @@ test('신규 회원은 약을 등록하기 전에 빈 복약 상태로 시작한
 });
 
 test('신규 회원이 약봉투 OCR 결과를 확정하면 저장 완료 상태가 된다', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
-  await page.getByLabel('이메일').fill('new-patient@example.com');
-  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
-  await page.getByLabel('비밀번호 확인', { exact: true }).fill('password1234');
-  await page.getByLabel('이름').fill('신규사용자');
-  await page.getByLabel('전화번호').fill('01012345678');
-  await page.getByLabel('생년월일').fill('1990-01-01');
-  await page.getByRole('radio', { name: '여성' }).check();
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
-  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await openSignup(page);
+  await fillSignup(page, {
+    name: '신규사용자',
+    birthDate: '1990-01-01',
+    gender: '여성',
+  });
   await page.getByRole('button', { name: '회원가입 완료' }).click();
   await expect(page.getByText('오늘의 복약', { exact: true })).toBeVisible();
 

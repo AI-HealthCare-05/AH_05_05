@@ -15,6 +15,13 @@ async function openSignupTab(page: Page) {
 }
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+import {
+  advanceSignupToPassword,
+  advanceSignupToProfile,
+  fillSignup,
+  fillSignupProfile,
+  openSignup,
+} from './helpers/signup';
 
 test.beforeEach(() => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
@@ -41,17 +48,15 @@ test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 �
     });
   });
 
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
-  await page.getByLabel('이메일').fill('new-patient@example.com');
-  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
-  await page.getByLabel('비밀번호 확인', { exact: true }).fill('Password123!');
-  await page.getByLabel('이름').fill('  신규사용자  ');
-  await page.getByLabel('전화번호').fill('011-123-4567');
-  await page.getByLabel('생년월일').fill('1990-01-01');
-  await page.getByRole('radio', { name: '여성' }).check();
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
-  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await openSignup(page);
+  await fillSignup(page, {
+    email: 'new-patient@example.com',
+    password: 'Password123!',
+    name: '  신규사용자  ',
+    phoneNumber: '011-123-4567',
+    birthDate: '1990-01-01',
+    gender: '여성',
+  });
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page).toHaveURL(/\/home$/);
@@ -82,8 +87,7 @@ test('이메일 pattern 은 브라우저가 실제로 컴파일하고 적용한�
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
 
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
+  await openSignup(page);
   const emailInput = page.getByLabel('이메일');
 
   expect(consoleErrors.filter((text) => text.includes('Pattern attribute value'))).toEqual([]);
@@ -121,8 +125,7 @@ test('이메일 pattern 은 브라우저가 실제로 컴파일하고 적용한�
 });
 
 test('회원가입 이메일 칸은 한글을 지우고 이유를 알린다', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
+  await openSignup(page);
 
   const emailInput = page.getByLabel('이메일');
   await emailInput.fill('한글주소@예시.한국');
@@ -140,8 +143,7 @@ test('이메일 @ 뒤에 한글을 조합해도 앞서 입력한 주소가 남�
   // 화면에는 한글이 보이는데 코드는 ASCII 만 보고 통과시켰다. fill() 로는 재현되지 않아
   // CDP 로 실제 IME 조합을 흉내낸다.
   const cdp = await page.context().newCDPSession(page);
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
+  await openSignup(page);
 
   const emailInput = page.getByLabel('이메일');
   await emailInput.click();
@@ -181,18 +183,20 @@ test('회원가입 이메일 API 검증 오류는 브라우저 검증 말풍선�
     });
   });
 
-  await page.goto('/login');
-  await page.getByRole('button', { name: '회원가입' }).click();
+  await openSignup(page);
   const emailInput = page.getByLabel('이메일');
-  await emailInput.fill('patient@localhost');
-  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
-  await page.getByLabel('비밀번호 확인', { exact: true }).fill('Password123!');
-  await page.getByLabel('이름').fill('테스트회원');
-  await page.getByLabel('전화번호').fill('010-1234-5678');
-  await page.getByLabel('생년월일').fill('1990-01-01');
-  await page.getByRole('radio', { name: '여성' }).check();
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
-  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await advanceSignupToProfile(page, {
+    email: 'patient@localhost',
+    password: 'Password123!',
+  });
+  await fillSignupProfile(page, {
+    name: '테스트회원',
+    phoneNumber: '010-1234-5678',
+    birthDate: '1990-01-01',
+    gender: '여성',
+    recordTerms: true,
+    aiTerms: true,
+  });
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect
@@ -210,6 +214,7 @@ test('탭을 옮기면 폼이 새로 시작된다', async ({ page }) => {
 
   // 로그인 칸에 쳐둔 값이 회원가입 폼에 따라오면 안 된다.
   await expect(page.getByLabel('이메일')).toHaveValue('');
+  await advanceSignupToPassword(page);
   await expect(page.getByLabel('비밀번호', { exact: true })).toHaveValue('');
 });
 
@@ -220,12 +225,14 @@ test('같은 탭을 다시 눌러도 채워둔 값이 남는다', async ({ page 
   await openSignupTab(page);
 
   await page.getByLabel('이메일').fill('keep@example.com');
-  await page.getByLabel('이름').fill('유지');
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
+  await openSignupTab(page);
+  await expect(page.getByLabel('이메일')).toHaveValue('keep@example.com');
+
+  await advanceSignupToProfile(page, { email: 'keep@example.com' });
+  await fillSignupProfile(page, { name: '유지', recordTerms: true });
 
   await openSignupTab(page);
 
-  await expect(page.getByLabel('이메일')).toHaveValue('keep@example.com');
   await expect(page.getByLabel('이름')).toHaveValue('유지');
   await expect(page.getByRole('checkbox', { name: /진료기록 수집/ })).toBeChecked();
 });
@@ -233,11 +240,13 @@ test('같은 탭을 다시 눌러도 채워둔 값이 남는다', async ({ page 
 test('탭을 옮기면 필수 동의도 꺼진다', async ({ page }) => {
   await page.goto('/login');
   await openSignupTab(page);
+  await advanceSignupToProfile(page);
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
 
   await loginTab(page).click();
   await openSignupTab(page);
+  await advanceSignupToProfile(page);
 
   // 이전 세션의 흔적으로 필수 동의가 켜져 있으면 안 된다.
   await expect(page.getByRole('checkbox', { name: /진료기록 수집/ })).not.toBeChecked();
@@ -246,17 +255,20 @@ test('탭을 옮기면 필수 동의도 꺼진다', async ({ page }) => {
 
 test('회원가입 입력창 상한은 화면 기준이다', async ({ page }) => {
   // DB 컬럼 폭(email 255 · name 100)이 아니라 화면에서 받아야 할 길이 기준이다.
-  await page.goto('/login');
-  await openSignupTab(page);
+  await openSignup(page);
 
   await expect(page.getByLabel('이메일')).toHaveAttribute('maxlength', '40');
-  await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '20');
-  await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');
+  await advanceSignupToPassword(page);
   await expect(page.getByLabel('비밀번호', { exact: true })).toHaveAttribute('maxlength', '30');
   await expect(page.getByLabel('비밀번호 확인', { exact: true })).toHaveAttribute(
     'maxlength',
     '30',
   );
+  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('password1234');
+  await page.getByRole('button', { name: '다음' }).click();
+  await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '20');
+  await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');
 
   await page.getByLabel('이름').fill('가'.repeat(25));
   await expect(page.getByLabel('이름')).toHaveValue('가'.repeat(20));
@@ -275,8 +287,8 @@ test('로그인 비밀번호에는 상한을 걸지 않는다', async ({ page })
 });
 
 test('이름 칸은 숫자·공백·특수문자를 제거하고 여러 언어의 문자를 받는다', async ({ page }) => {
-  await page.goto('/login');
-  await openSignupTab(page);
+  await openSignup(page);
+  await advanceSignupToProfile(page);
   const name = page.getByLabel('이름');
 
   await name.fill('Élodie 山田Мария123!-😀');

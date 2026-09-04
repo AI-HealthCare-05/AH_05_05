@@ -459,7 +459,7 @@ export function AuthPage() {
                       <button
                         type="button"
                         aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
-                        className="flex size-10 items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
+                        className="flex size-touch items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
                         onClick={() => setShowPassword((visible) => !visible)}
                       >
                         {showPassword ? (
@@ -488,7 +488,7 @@ export function AuthPage() {
                         aria-label={
                           showPasswordConfirm ? '비밀번호 확인 숨기기' : '비밀번호 확인 보기'
                         }
-                        className="flex size-10 items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
+                        className="flex size-touch items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
                         onClick={() => setShowPasswordConfirm((visible) => !visible)}
                       >
                         {showPasswordConfirm ? (
@@ -573,6 +573,11 @@ export function AuthPage() {
                       required
                     />
                   </fieldset>
+                  {loginError && (
+                    <p role="alert" aria-live="assertive" className="text-sm text-danger-strong">
+                      {loginError}
+                    </p>
+                  )}
                   <Button
                     type="submit"
                     className="mt-auto"
