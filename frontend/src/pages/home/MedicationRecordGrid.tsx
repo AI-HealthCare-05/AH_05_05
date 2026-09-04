@@ -47,7 +47,7 @@ export function MedicationRecordGrid({
       .filter((record) => record.taken)
       .map((record) => `${record.date}:${record.slot}`),
   );
-  const gridTemplateColumns = `max-content repeat(${dates.length}, minmax(0, 1fr))`;
+  const gridTemplateColumns = `max-content repeat(${dates.length}, var(--spacing-touch))`;
 
   return (
     <section aria-label="복약 기록">
@@ -90,104 +90,89 @@ export function MedicationRecordGrid({
           </div>
 
           <div
-            role="grid"
-            aria-label="복약 기간 기록"
-            className="grid w-full gap-x-record-gap gap-y-record-gap overflow-hidden"
-            style={{
-              gridTemplateColumns,
-              width: 'calc(100% + (var(--spacing-touch) - var(--spacing-record-cell-h)) / 2)',
-              paddingRight: 'calc((var(--spacing-touch) - var(--spacing-record-cell-h)) / 2)',
-            }}
+            data-record-grid-scroll
+            role="group"
+            aria-label="복약 기록 가로 스크롤"
+            tabIndex={0}
+            className="min-w-0 overflow-x-auto overscroll-x-contain"
           >
-            <span aria-hidden />
-            {dates.map((date) => (
-              <span
-                key={date}
-                role="columnheader"
-                aria-label={formatDateLabel(date)}
-                className={`min-w-0 text-center text-sm tnum ${
-                  date === today
-                    ? 'font-bold text-foreground'
-                    : 'font-normal text-disabled-foreground'
-                }`}
-              >
-                {Number(date.slice(8, 10))}
-              </span>
-            ))}
-
-            {slots.map((slot) => (
-              <div key={slot} role="row" aria-label={mealSlotLabel(slot)} className="contents">
+            <div
+              role="grid"
+              aria-label="복약 기간 기록"
+              className="grid w-max min-w-full gap-x-record-gap gap-y-0"
+              style={{ gridTemplateColumns }}
+            >
+              <span aria-hidden />
+              {dates.map((date) => (
                 <span
-                  role="rowheader"
-                  className="self-center whitespace-nowrap text-sm text-muted-foreground"
+                  key={date}
+                  role="columnheader"
+                  aria-label={formatDateLabel(date)}
+                  className={`min-w-0 text-center text-sm tnum ${
+                    date === today
+                      ? 'font-bold text-foreground'
+                      : 'font-normal text-disabled-foreground'
+                  }`}
                 >
-                  {mealSlotLabel(slot)}
+                  {Number(date.slice(8, 10))}
                 </span>
-                {dates.map((date) => {
-                  const recordIds = episodeTargetsForCell(overviews, date, slot);
-                  const state = getCellState({
-                    overviews,
-                    date,
-                    slot,
-                    recordIds,
-                    now,
-                    takenRecords,
-                  });
-                  const label = `${formatDateLabel(date)} ${mealSlotLabel(slot)} ${CELL_LABEL[state]}`;
+              ))}
 
-                  if (state === 'missing') {
+              {slots.map((slot) => (
+                <div key={slot} role="row" aria-label={mealSlotLabel(slot)} className="contents">
+                  <span
+                    role="rowheader"
+                    className="self-center whitespace-nowrap text-sm text-muted-foreground"
+                  >
+                    {mealSlotLabel(slot)}
+                  </span>
+                  {dates.map((date) => {
+                    const recordIds = episodeTargetsForCell(overviews, date, slot);
+                    const state = getCellState({
+                      overviews,
+                      date,
+                      slot,
+                      recordIds,
+                      now,
+                      takenRecords,
+                    });
+                    const label = `${formatDateLabel(date)} ${mealSlotLabel(slot)} ${CELL_LABEL[state]}`;
+
+                    if (state === 'missing') {
+                      return (
+                        <button
+                          key={date}
+                          type="button"
+                          role="gridcell"
+                          aria-label={label}
+                          className="flex size-touch min-w-0 items-center justify-center justify-self-center rounded-record-cell bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => onMarkTaken(date, slot, recordIds)}
+                        >
+                          <span
+                            aria-hidden
+                            data-record-cell-visual
+                            className="block aspect-square h-record-cell-h rounded-record-cell bg-border"
+                          />
+                        </button>
+                      );
+                    }
+
                     return (
-                      <button
+                      <span
                         key={date}
-                        type="button"
                         role="gridcell"
                         aria-label={label}
-                        className="flex size-touch min-w-0 items-center justify-center justify-self-center rounded-record-cell bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => onMarkTaken(date, slot, recordIds)}
-                      >
-                        <span
-                          aria-hidden
-                          data-record-cell-visual
-                          className="block aspect-square h-record-cell-h rounded-record-cell bg-border"
-                        />
-                      </button>
+                        className={`h-record-cell-h w-record-cell-w min-w-0 self-center justify-self-center rounded-record-cell ${CELL_CLASS[state]} ${
+                          state === 'taken' && animatedRecordKey === `${date}:${slot}`
+                            ? 'origin-bottom animate-record-grow motion-reduce:animate-none'
+                            : ''
+                        }`}
+                      />
                     );
-                  }
-
-                  if (state === 'future') {
-                    return (
-                      <button
-                        key={date}
-                        type="button"
-                        role="gridcell"
-                        aria-label={label}
-                        disabled
-                        className="flex size-touch min-w-0 items-center justify-center justify-self-center rounded-record-cell bg-transparent"
-                      >
-                        <span
-                          aria-hidden
-                          data-record-cell-visual
-                          className="block aspect-square h-record-cell-h rounded-record-cell bg-muted-bg"
-                        />
-                      </button>
-                    );
-                  }
-
-                  return (
-                    <span
-                      key={date}
-                      role="gridcell"
-                      aria-label={label}
-                      className={`h-record-cell-h min-w-0 rounded-record-cell ${CELL_CLASS[state]} ${
-                        state === 'taken' && animatedRecordKey === `${date}:${slot}`
-                          ? 'origin-bottom animate-record-grow motion-reduce:animate-none'
-                          : ''
-                      }`}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">

@@ -166,12 +166,13 @@ test('지난 기록 없음 칸은 뒤늦게 체크되고 아직 칸은 반응하
   const past = page.getByLabel('8월 24일 저녁 기록 없음');
   const future = page.getByLabel('8월 25일 저녁 아직');
 
-  await expect(future).toBeDisabled();
+  await expect(page.getByRole('button', { name: '8월 25일 저녁 아직' })).toHaveCount(0);
+  await expect(future).toBeVisible();
   await past.click();
   await expect(page.getByLabel('8월 24일 저녁 먹은 기록')).toBeVisible();
 });
 
-test('14일 복약 기록은 375px 홈에서 10일씩 이동하며 가로 스크롤이 생기지 않는다', async ({
+test('14일 복약 기록은 375px 홈에서 10일씩 이동하고 내부 가로 스크롤을 제공한다', async ({
   page,
 }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
@@ -185,11 +186,12 @@ test('14일 복약 기록은 375px 홈에서 10일씩 이동하며 가로 스크
   await expect(grid.getByRole('columnheader')).toHaveCount(10);
   await expect(previous).toBeDisabled();
   await expect(next).toBeEnabled();
-  const overflow = await grid.evaluate((element) => ({
+  const gridViewport = page.locator('[data-record-grid-scroll]');
+  const overflow = await gridViewport.evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
   }));
-  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+  expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth);
   const viewportOverflow = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
@@ -254,14 +256,26 @@ test('복약 기록의 기간 이동과 과거 기록 셀은 375·390px에서 44
     const interactiveCells = grid.locator('button[role="gridcell"]');
     const cellBoxes = await interactiveCells.evaluateAll((elements) =>
       elements.map((element) => {
-        const { width, height } = element.getBoundingClientRect();
-        return { width, height };
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return { x, y, width, height };
       }),
     );
     expect(cellBoxes.length).toBeGreaterThan(0);
     for (const box of cellBoxes) {
       expect(box.width).toBeGreaterThanOrEqual(44);
       expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    for (let index = 0; index < cellBoxes.length; index += 1) {
+      for (let nextIndex = index + 1; nextIndex < cellBoxes.length; nextIndex += 1) {
+        const first = cellBoxes[index];
+        const second = cellBoxes[nextIndex];
+        const overlaps =
+          first.x < second.x + second.width &&
+          first.x + first.width > second.x &&
+          first.y < second.y + second.height &&
+          first.y + first.height > second.y;
+        expect(overlaps, `interactive cells ${index} and ${nextIndex} overlap`).toBe(false);
+      }
     }
     const visualBoxes = await interactiveCells
       .locator('[data-record-cell-visual]')
@@ -284,6 +298,14 @@ test('복약 기록의 기간 이동과 과거 기록 셀은 375·390px에서 44
     }));
     expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth);
     expect(overflow.mainWidth).toBeLessThanOrEqual(overflow.viewportWidth);
+
+    const recordBox = await page
+      .getByRole('region', { name: '복약 기록', exact: true })
+      .boundingBox();
+    expect(recordBox).not.toBeNull();
+    expect(recordBox!.height, `record section height at ${viewport.width}px`).toBeLessThanOrEqual(
+      240,
+    );
   }
 });
 
