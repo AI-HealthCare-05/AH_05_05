@@ -21,6 +21,7 @@ import {
   ImageViewer,
   Input,
   RxVitaFeatureCarousel,
+  RegistrationProgress,
   StatusBadge,
   type StatusBadgeType,
 } from '@/shared/ui';
@@ -31,6 +32,8 @@ interface OcrReviewLocationState {
   batchId?: string;
   file?: File;
   scheduleStartDate?: string;
+  episodeAlias?: string;
+  registrationFlow?: boolean;
 }
 
 type ReadingStage = 'uploading' | 'reading' | 'organizing' | 'complete';
@@ -102,6 +105,7 @@ export function OcrReviewPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const [dispensedDate, setDispensedDate] = useState('');
+  const [episodeAlias, setEpisodeAlias] = useState(state.episodeAlias ?? '');
   const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(null);
   const [medications, setMedications] = useState<EditableOcrMedication[]>([]);
   const [medicationEditorTarget, setMedicationEditorTarget] =
@@ -216,6 +220,7 @@ export function OcrReviewPage() {
                 ...(state.scheduleStartDate !== undefined
                   ? { scheduleStartDate: state.scheduleStartDate }
                   : {}),
+                ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
               },
             });
           }, 400);
@@ -309,7 +314,13 @@ export function OcrReviewPage() {
           ocrJobId: batchId,
         });
         navigate(`/medication-schedule?${params.toString()}`, {
-          state: { recordId, dispensedDate, ocrJobId: batchId },
+          state: {
+            recordId,
+            dispensedDate,
+            ocrJobId: batchId,
+            registrationFlow: true,
+            ...(episodeAlias.trim() ? { episodeAlias: episodeAlias.trim() } : {}),
+          },
         });
       } else {
         navigate('/home', { replace: true });
@@ -396,6 +407,8 @@ export function OcrReviewPage() {
         ...(state.scheduleStartDate !== undefined
           ? { draftStartDate: state.scheduleStartDate }
           : {}),
+        ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
+        ...(state.registrationFlow ? { registrationFlow: true } : {}),
       },
     });
   };
@@ -407,6 +420,7 @@ export function OcrReviewPage() {
         onBack={scheduleReturnUrl ? returnToSchedule : () => navigate(-1)}
       />
       <main className="flex flex-1 flex-col gap-5 px-page-x py-5">
+        <RegistrationProgress step={2} />
         {confirmedReviewMode ? (
           <Card tone="info" title="저장한 내용을 다시 확인해보세요">
             확인을 마치면 복약 시간 설정으로 돌아갈 수 있어요.
@@ -430,6 +444,15 @@ export function OcrReviewPage() {
             저장하기 전에 조제일과 약 정보를 한 번 확인해주세요.
           </Card>
         )}
+
+        <Input
+          label="복약 별칭 (선택)"
+          aria-label="복약 별칭"
+          placeholder="감기약"
+          value={episodeAlias}
+          onChange={(event) => setEpisodeAlias(event.target.value)}
+          disabled={confirmedReviewMode}
+        />
 
         {imageUnavailable && (
           <Card tone="info" title="원본 미리보기를 불러오지 못했어요">
@@ -685,7 +708,9 @@ function ReadingScreen({
   const details = STAGE_DETAILS[stage];
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+      <Header title="약봉투 등록" onBack={onCancel} />
       <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x pt-8 pb-4">
+        <RegistrationProgress step={1} />
         <section aria-labelledby="ocr-reading-title">
           <h1 id="ocr-reading-title" className="text-2xl font-bold text-foreground">
             약봉투를 읽고 있어요

@@ -12,6 +12,9 @@ interface MedicationEpisodeCardProps {
   onToggleExpanded: () => void;
   onToggleSelected: () => void;
   onEditMedication: (medication: MedicationOverviewItem) => void;
+  /** Feature #252 본 경로에서는 회차 전체를 바로 편집/열람합니다. */
+  feature252?: boolean;
+  onOpenEpisode?: () => void;
 }
 
 export function MedicationEpisodeCard({
@@ -22,6 +25,8 @@ export function MedicationEpisodeCard({
   onToggleExpanded,
   onToggleSelected,
   onEditMedication,
+  feature252 = false,
+  onOpenEpisode,
 }: MedicationEpisodeCardProps) {
   const dateLabel = formatDateLabel(overview.start.date, { includeYear: true });
   const panelId = `medication-episode-${overview.recordId}`;
@@ -46,10 +51,12 @@ export function MedicationEpisodeCard({
           aria-controls={panelId}
           aria-label={`${dateLabel} 처방 · 약 ${overview.medications.length}개 · ${statusLabel}`}
           className="flex min-h-24 min-w-0 flex-1 items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          onClick={selectionMode ? onToggleSelected : onToggleExpanded}
+          onClick={selectionMode ? onToggleSelected : (onOpenEpisode ?? onToggleExpanded)}
         >
           <span className="min-w-0 flex-1">
-            <strong className="block text-lg text-foreground">{dateLabel} 처방</strong>
+            <strong className="block text-lg text-foreground">
+              {feature252 && overview.alias ? overview.alias : `${dateLabel} 처방`}
+            </strong>
             <span className="mt-1 block text-sm text-muted-foreground tnum">
               {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })} · 약{' '}
               {overview.medications.length}개
@@ -66,7 +73,9 @@ export function MedicationEpisodeCard({
               {statusLabel}
             </span>
             {!overview.isFinished && (
-              <span className="text-xs font-bold text-primary-strong tnum">{dDay}</span>
+              <span className="text-xs font-bold text-primary-strong tnum">
+                {feature252 ? `${Math.max(0, overview.daysRemaining)}일 남음` : dDay}
+              </span>
             )}
           </span>
           <ChevronDown

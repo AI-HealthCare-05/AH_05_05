@@ -55,6 +55,7 @@ function primaryMedicationOverview(): MedicationOverview {
   ] : [];
   return {
     recordId: 12,
+    alias: '감기약',
     documentImageUrl: '/mock/medication-envelope.svg',
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),
@@ -83,6 +84,7 @@ function secondaryMedicationOverview(): MedicationOverview {
   ];
   return {
     recordId: 24,
+    alias: '지난 처방',
     documentImageUrl: '/mock/medication-envelope.svg',
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),

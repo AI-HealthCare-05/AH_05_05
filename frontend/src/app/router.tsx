@@ -3,7 +3,11 @@ import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
 import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
-import { MedicationsPage } from '@/pages/medications';
+import {
+  MedicationNoteFormPage,
+  MedicationNotesPage,
+  MedicationsPage,
+} from '@/pages/medications';
 import {
   FollowUpVisitsPage,
   MyPage,
@@ -195,7 +199,10 @@ export function AppRouter() {
           <Route path="/ocr-review" element={<OcrReviewPage />} />
           <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
           <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
-          <Route path="/medications" element={<MedicationsPage />} />
+          <Route path="/medications/notes/new" element={<MedicationNoteFormPage />} />
+          <Route path="/medications/notes/:noteId" element={<MedicationNoteFormPage />} />
+          <Route path="/medications/notes" element={<MedicationNotesPage />} />
+          <Route path="/medications" element={<MedicationsPage feature252 />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/my" element={<MyPage />} />
           <Route path="/my/profile" element={<MyProfilePage />} />

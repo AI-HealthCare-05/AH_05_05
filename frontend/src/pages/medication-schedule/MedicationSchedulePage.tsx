@@ -7,6 +7,7 @@ import {
   Header,
   Input,
   NotifyPermissionDialog,
+  RegistrationProgress,
   TimePickerSheet,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
@@ -56,6 +57,8 @@ interface ScheduleLocationState {
   dispensedDate?: string;
   draftStartDate?: string;
   ocrJobId?: string;
+  registrationFlow?: boolean;
+  episodeAlias?: string;
 }
 
 interface MedicationSchedulePageProps {
@@ -162,6 +165,7 @@ export function MedicationSchedulePage({
   const dispensedDate = state.dispensedDate;
   const draftStartDate = state.draftStartDate;
   const ocrJobId = state.ocrJobId ?? queryOcrJobId;
+  const registrationFlow = state.registrationFlow === true;
 
   const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
   const [mealTimes, setMealTimes] = useState<MealTimes>(DEFAULT_MEAL_TIMES);
@@ -429,6 +433,7 @@ export function MedicationSchedulePage({
         state: {
           batchId: ocrJobId,
           ...(startDateEdited ? { scheduleStartDate: startDate } : {}),
+          ...(registrationFlow ? { registrationFlow: true, episodeAlias: state.episodeAlias } : {}),
         },
       });
       return;
@@ -519,6 +524,22 @@ export function MedicationSchedulePage({
         : null);
 
   const canSave = blocker === null;
+
+  if (registrationFlow) {
+    return (
+      <MedicationRegistrationWizard
+        recordId={recordId}
+        schedule={schedule}
+        scheduleSaver={scheduleSaver}
+        initialSlots={slots}
+        initialMealTimes={mealTimes}
+        initialStartDate={startDate || dispensedDate || todayISO()}
+        initialStartSlot={startSlot}
+        alias={state.episodeAlias ?? ''}
+        onBack={handleBack}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -756,6 +777,318 @@ export function MedicationSchedulePage({
         retryLabel="확인"
         onRetry={() => setTimeOrderError(false)}
       />
+    </div>
+  );
+}
+
+interface MedicationRegistrationWizardProps {
+  recordId: number | null;
+  schedule: MedicationSchedule;
+  scheduleSaver: typeof saveMedicationSchedule;
+  initialSlots: Record<number, MealSlot[]>;
+  initialMealTimes: MealTimes;
+  initialStartDate: string;
+  initialStartSlot: MealSlot | null;
+  alias: string;
+  onBack: () => void;
+}
+
+/**
+ * OCR 확인 뒤에만 사용하는 3~5단계 등록 흐름입니다.
+ * 기존 `/dev/medication-schedule`와 설정 화면은 위의 기존 계약을 그대로 사용합니다.
+ */
+function MedicationRegistrationWizard({
+  recordId,
+  schedule,
+  scheduleSaver,
+  initialSlots,
+  initialMealTimes,
+  initialStartDate,
+  initialStartSlot,
+  alias,
+  onBack,
+}: MedicationRegistrationWizardProps) {
+  const navigate = useNavigate();
+  const [step, setStep] = useState<3 | 4 | 5>(3);
+  const [slots, setSlots] = useState<Record<number, MealSlot[]>>(initialSlots);
+  const [mealTimes] = useState<MealTimes>(initialMealTimes);
+  const [startDate, setStartDate] = useState(initialStartDate);
+  const [startSlot, setStartSlot] = useState<MealSlot | null>(initialStartSlot);
+  const [enabledAlarmSlots, setEnabledAlarmSlots] = useState<MealSlot[]>(() =>
+    SLOT_ORDER.filter((slot) =>
+      Object.values(initialSlots).some((medicationSlots) => medicationSlots.includes(slot)),
+    ),
+  );
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [completed, setCompleted] = useState(false);
+
+  const scheduledMeds = schedule.medications.filter((medication) => medication.timesPerDay !== null);
+  const usedSlots = new Set<MealSlot>(scheduledMeds.flatMap((medication) => slots[medication.medicationId] ?? []));
+  const selectedAlarmSlots = SLOT_ORDER.filter(
+    (slot) => usedSlots.has(slot) && enabledAlarmSlots.includes(slot),
+  );
+  const canContinueFromSlots = scheduledMeds.every(
+    (medication) => (slots[medication.medicationId] ?? []).length > 0,
+  );
+
+  function toggleSlot(medicationId: number, slot: MealSlot) {
+    setSlots((current) => {
+      const next = new Set(current[medicationId] ?? []);
+      const wasSelected = next.has(slot);
+      if (next.has(slot)) next.delete(slot);
+      else next.add(slot);
+      if (!wasSelected) {
+        setEnabledAlarmSlots((enabled) =>
+          enabled.includes(slot) ? enabled : SLOT_ORDER.filter((value) => value === slot || enabled.includes(value)),
+        );
+      }
+      return { ...current, [medicationId]: SLOT_ORDER.filter((value) => next.has(value)) };
+    });
+  }
+
+  async function completeRegistration() {
+    if (recordId === null || !startSlot || !startDate || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await scheduleSaver(recordId, {
+        start: { date: startDate, slot: startSlot },
+        mealTimes,
+        medications: scheduledMeds.map((medication) => ({
+          medicationId: medication.medicationId,
+          slots: slots[medication.medicationId] ?? [],
+        })),
+      });
+      setCompleted(true);
+    } catch (error: unknown) {
+      setSaveError(error instanceof Error ? error.message : '복약 등록을 완료하지 못했어요.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function formatCompletionStart(): string {
+    const [, month, day] = startDate.split('-');
+    const slotLabel = MEAL_SLOTS.find((slot) => slot.value === startSlot)?.label ?? '';
+    return month && day ? `${Number(month)}월 ${Number(day)}일 ${slotLabel}` : slotLabel;
+  }
+
+  function handleWizardBack() {
+    if (step === 5) {
+      setStep(4);
+      return;
+    }
+    if (step === 4) {
+      setStep(3);
+      return;
+    }
+    onBack();
+  }
+
+  if (completed) {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+        <Header title="약봉투 등록" onBack={onBack} />
+        <main className="flex flex-1 flex-col items-center gap-5 px-page-x py-8 text-center">
+          <RegistrationProgress step={5} />
+          <div className="mt-10 flex size-16 items-center justify-center rounded-full bg-success-bg text-success-strong">
+            <span aria-hidden className="text-3xl">✓</span>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">약 등록을 완료했어요</h1>
+            <p className="mt-2 text-base text-muted-foreground">
+              오늘 일정부터 홈에서 확인할 수 있어요.
+            </p>
+          </div>
+          <Card className="w-full gap-2 p-4 text-left">
+            <p className="font-bold text-foreground">등록한 약 {scheduledMeds.length}개</p>
+            <p className="text-sm text-muted-foreground">첫 복용 {formatCompletionStart()}</p>
+            <p className="text-sm text-muted-foreground">
+              알림 {selectedAlarmSlots.map((slot) => mealTimes[slot]).join(' · ') || '없음'}
+            </p>
+            {alias && <p className="text-sm text-muted-foreground">별칭 {alias}</p>}
+          </Card>
+          <div className="mt-auto w-full pb-4">
+            <Button onClick={() => navigate('/home', { replace: true })}>홈에서 확인</Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+      <Header title="약봉투 등록" onBack={handleWizardBack} />
+      <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
+        <RegistrationProgress step={step} />
+
+        {step === 3 && (
+          <>
+            <section>
+              <h1 className="text-2xl font-bold text-foreground">약마다 먹는 시간을 확인해주세요</h1>
+              <p className="mt-1 text-base text-muted-foreground">
+                봉투에서 읽은 시간이에요. 다르면 눌러 바꿔주세요.
+              </p>
+            </section>
+            {/* 이전 계약에서 바로 노출하던 날짜 입력도 유지해, 새 흐름에서도 값 확인이 가능합니다. */}
+            <Input
+              label="첫 복용 날짜"
+              aria-label="복용 시작 날짜"
+              type="date"
+              value={startDate}
+              max={todayISO()}
+              onChange={(event) => setStartDate(event.target.value)}
+            />
+            <div className="flex flex-col gap-3">
+              {scheduledMeds.map((medication) => (
+                <Card key={medication.medicationId} className="gap-3 p-4">
+                  <div>
+                    <p className="font-bold text-foreground">{medication.name} {medication.dose}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{medication.timing || '복용 시간을 선택해주세요'}</p>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 border-t border-border pt-3">
+                    {MEAL_SLOTS.map((slot) => {
+                      const selected = (slots[medication.medicationId] ?? []).includes(slot.value);
+                      return (
+                        <button
+                          key={slot.value}
+                          type="button"
+                          aria-pressed={selected}
+                          aria-label={`${medication.name} ${slot.label}`}
+                          onClick={() => toggleSlot(medication.medicationId, slot.value)}
+                          className={cn(
+                            'min-h-touch rounded-input border text-sm',
+                            selected
+                              ? 'border-primary bg-primary font-bold text-card'
+                              : 'border-border bg-card text-muted-foreground',
+                          )}
+                        >
+                          {slot.value === 'bedtime' ? '자기전' : slot.short}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    선택한 복용 시간{' '}
+                    {(slots[medication.medicationId] ?? [])
+                      .map((slot) => MEAL_SLOTS.find((item) => item.value === slot)?.label)
+                      .join(' · ') || '없음'}
+                  </p>
+                </Card>
+              ))}
+            </div>
+            <div className="mt-auto pb-4">
+              <Button disabled={!canContinueFromSlots} onClick={() => setStep(4)}>
+                확인
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <section>
+              <h1 className="text-2xl font-bold text-foreground">처음 약을 언제 드셨나요?</h1>
+              <p className="mt-1 text-base text-muted-foreground">
+                복용 기록이 시작되는 날짜와 시간이에요.
+              </p>
+            </section>
+            <div className="flex flex-col gap-4">
+              <Input
+                label="첫 복용 날짜"
+                aria-label="복용 시작 날짜"
+                type="date"
+                value={startDate}
+                max={todayISO()}
+                onChange={(event) => setStartDate(event.target.value)}
+              />
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-bold text-foreground">첫 복용 시간</p>
+                <div className="flex flex-wrap gap-2">
+                  {MEAL_SLOTS.map((slot) => (
+                    <button
+                      key={slot.value}
+                      type="button"
+                      aria-pressed={startSlot === slot.value}
+                      aria-label={`시작 ${slot.label}`}
+                      onClick={() => setStartSlot(slot.value)}
+                      className={cn(
+                        'min-h-touch rounded-pill border px-4 text-sm',
+                        startSlot === slot.value
+                          ? 'border-primary bg-primary-bg font-bold text-primary-strong'
+                          : 'border-border bg-card text-foreground',
+                      )}
+                    >
+                      {slot.value === 'bedtime' ? '자기전' : slot.short}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="mt-auto pb-4">
+              <Button disabled={!startDate || !startSlot} onClick={() => setStep(5)}>
+                확인
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === 5 && (
+          <>
+            <section>
+              <h1 className="text-2xl font-bold text-foreground">알람 시간을 확인해주세요</h1>
+              <p className="mt-1 text-base text-muted-foreground">쓰지 않는 시간은 끌 수 있어요.</p>
+            </section>
+            <div className="overflow-hidden rounded-card border border-border bg-card">
+              {MEAL_SLOTS.map((slot, index) => {
+                const used = usedSlots.has(slot.value);
+                return (
+                  <label
+                    key={slot.value}
+                    className={cn(
+                      'flex min-h-touch items-center gap-3 px-4 py-3',
+                      index > 0 && 'border-t border-border',
+                      !used && 'text-disabled-foreground',
+                    )}
+                  >
+                    <span className="w-16 font-bold">
+                      {slot.value === 'bedtime' ? '자기전' : slot.short}
+                    </span>
+                    <span className="tnum">{mealTimes[slot.value]}</span>
+                    <span className="ml-auto flex items-center gap-2 text-sm">
+                      {used ? '사용' : '사용 안 함'}
+                      <input
+                        type="checkbox"
+                        aria-label={`${slot.label} 복약 알림`}
+                        checked={used && enabledAlarmSlots.includes(slot.value)}
+                        disabled={!used}
+                        onChange={() =>
+                          setEnabledAlarmSlots((current) =>
+                            current.includes(slot.value)
+                              ? current.filter((value) => value !== slot.value)
+                              : SLOT_ORDER.filter((value) => value === slot.value || current.includes(value)),
+                          )
+                        }
+                        className="size-5 accent-primary"
+                      />
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <Card tone="info" className="p-4">
+              저장하면 복약 일정과 알람 설정이 함께 끝나요.
+            </Card>
+            {saveError && <p role="alert" className="text-sm text-danger-strong">{saveError}</p>}
+            <div className="mt-auto pb-4">
+              <Button disabled={saving} onClick={() => void completeRegistration()}>
+                {saving ? '등록 중...' : '등록 완료'}
+              </Button>
+            </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }

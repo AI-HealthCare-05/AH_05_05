@@ -37,6 +37,7 @@ export type { TimePickerSheetProps } from './TimePickerSheet';
 
 export { BottomTabbar, TABS } from './BottomTabbar';
 export type { BottomTabbarProps, TabKey } from './BottomTabbar';
+export { RegistrationProgress } from './RegistrationProgress';
 
 // 인터랙티브 컴포넌트 — shadcn/ui(Radix 기반). 계약서 3장 "shadcn/ui와의 분업" 참고.
 export { Checkbox } from './checkbox';
