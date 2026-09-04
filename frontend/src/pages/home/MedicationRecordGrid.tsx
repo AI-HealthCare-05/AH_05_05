@@ -151,7 +151,7 @@ export function MedicationRecordGrid({
                           <span
                             aria-hidden
                             data-record-cell-visual
-                            className="block aspect-square h-record-cell-h rounded-record-cell bg-border"
+                            className="block h-record-cell-h w-record-cell-w rounded-record-cell bg-border"
                           />
                         </button>
                       );

@@ -287,8 +287,8 @@ test('복약 기록의 기간 이동과 과거 기록 셀은 375·390px에서 44
       );
     expect(visualBoxes.length).toBe(cellBoxes.length);
     for (const box of visualBoxes) {
-      expect(box.width).toBeLessThanOrEqual(30);
-      expect(box.height).toBeLessThanOrEqual(22);
+      expect(box.width).toBe(30);
+      expect(box.height).toBe(22);
     }
 
     const overflow = await page.evaluate(() => ({
