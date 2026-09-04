@@ -3,13 +3,20 @@ from collections.abc import Callable
 from time import perf_counter
 from typing import Protocol
 
+from ai_worker.domain.medication_evidence_coverage import (
+    MedicationEvidenceCoverageEvaluator,
+)
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
-from ai_worker.schemas.knowledge import KnowledgeRetrievalResult
+from ai_worker.schemas.knowledge import (
+    KnowledgeRetrievalResult,
+    KnowledgeSearchMode,
+)
+from ai_worker.schemas.medication_chat import MedicationGuideLookup
 from ai_worker.schemas.medication_search import (
     MedicationExpressionResolutionStatus,
     MedicationQuestionScope,
@@ -43,6 +50,7 @@ class MedicationSearchBaselineEvaluator:
         timer: Callable[[], float] = perf_counter,
         embedding_model_name: str | None = None,
         embedding_dimension: int | None = None,
+        search_mode: KnowledgeSearchMode = KnowledgeSearchMode.DENSE,
     ) -> None:
         self._question_resolver = question_resolver
         self._query_builder = query_builder
@@ -50,6 +58,10 @@ class MedicationSearchBaselineEvaluator:
         self._timer = timer
         self._embedding_model_name = embedding_model_name
         self._embedding_dimension = embedding_dimension
+        self._search_mode = search_mode
+        self._evidence_coverage_evaluator = (
+            MedicationEvidenceCoverageEvaluator()
+        )
 
     async def evaluate(
         self,
@@ -94,6 +106,7 @@ class MedicationSearchBaselineEvaluator:
         return MedicationSearchBaselineReport(
             dataset_version=manifest.dataset_version,
             collection_name=manifest.collection_name,
+            search_mode=self._search_mode,
             embedding_model_name=self._embedding_model_name,
             embedding_dimension=self._embedding_dimension,
             min_similarity_score=manifest.min_similarity_score,
@@ -138,6 +151,13 @@ class MedicationSearchBaselineEvaluator:
                 [result.reciprocal_rank or 0.0 for result in evidence_results],
             ),
             source_accuracy=self._ratio(relevant_selected, selected_total),
+            evidence_coverage_rate=self._average(
+                [
+                    result.evidence_coverage_rate
+                    for result in evidence_results
+                    if result.evidence_coverage_rate is not None
+                ],
+            ),
             wrong_target_mixing_count=sum("FORBIDDEN_DOCUMENT_MIXED" in result.failure_reasons for result in results),
             duplicate_retrieval_rate=self._ratio(
                 duplicate_total,
@@ -225,6 +245,17 @@ class MedicationSearchBaselineEvaluator:
             failure_reasons.append("EXPECTED_DOCUMENT_NOT_IN_TOP_5")
         if set(case.forbidden_document_ids).intersection(selected_document_ids):
             failure_reasons.append("FORBIDDEN_DOCUMENT_MIXED")
+        failure_reasons.extend(
+            self._evidence_expectation_failures(
+                case=case,
+                selected_document_ids=selected_document_ids,
+            )
+        )
+        evidence_coverage_rate = self._evidence_coverage_rate(
+            case=case,
+            query_plan=query_plan,
+            selected_chunks=selected_chunks,
+        )
 
         return MedicationSearchBaselineCaseResult(
             query_id=case.query_id,
@@ -251,11 +282,45 @@ class MedicationSearchBaselineEvaluator:
                 if expected_documents and first_selected_rank is not None
                 else (0.0 if expected_documents else None)
             ),
+            evidence_coverage_rate=evidence_coverage_rate,
             fallback_used=(retrieval.diagnostics.fallback_used if retrieval is not None else False),
             search_latency_ms=latency_ms,
             failure_reasons=failure_reasons,
             passed=not failure_reasons,
         )
+
+    def _evidence_coverage_rate(
+        self,
+        *,
+        case: MedicationSearchBaselineCase,
+        query_plan,
+        selected_chunks,
+    ) -> float | None:
+        if (
+            query_plan is None
+            or not case.expected_document_ids
+            or not case.expected_section_types
+        ):
+            return None
+        coverage = self._evidence_coverage_evaluator.evaluate(
+            query_plan=query_plan,
+            guide_lookup=MedicationGuideLookup(),
+            rules=[],
+            chunks=selected_chunks,
+        )
+        expected = set(case.expected_section_types)
+        covered = expected.intersection(coverage.covered_section_types)
+        return round(len(covered) / len(expected), 6)
+
+    @staticmethod
+    def _evidence_expectation_failures(
+        *,
+        case: MedicationSearchBaselineCase,
+        selected_document_ids: list[str],
+    ) -> list[str]:
+        if case.expect_no_evidence and selected_document_ids:
+            return ["UNEXPECTED_EVIDENCE_RETRIEVED"]
+        return []
 
     @staticmethod
     def _ratio(numerator: int, denominator: int) -> float:

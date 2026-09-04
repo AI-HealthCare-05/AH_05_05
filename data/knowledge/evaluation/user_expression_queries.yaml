@@ -72,6 +72,7 @@ cases:
     expected_scope: IN_SCOPE
     expected_resolution_status: UNRESOLVED
     expected_section_types: [FUNCTION]
+    expect_no_evidence: true
 
   - query_id: out-of-scope-hungry
     expression_category: OUT_OF_SCOPE
@@ -85,6 +86,7 @@ cases:
     expected_scope: IN_SCOPE
     expected_resolution_status: UNRESOLVED
     expected_section_types: [CAUTION]
+    expect_no_evidence: true
 
   - query_id: drug-drug-warfarin-metronidazole
     expression_category: DRUG_DRUG

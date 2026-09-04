@@ -3,7 +3,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ai_worker.schemas.knowledge import KnowledgeSectionType
+from ai_worker.schemas.knowledge import (
+    KnowledgeSearchMode,
+    KnowledgeSectionType,
+)
 from ai_worker.schemas.medication_search import (
     MedicationExpressionResolutionStatus,
     MedicationQuestionScope,
@@ -40,6 +43,7 @@ class MedicationSearchBaselineCase(BaseModel):
     expected_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     expected_document_ids: list[str] = Field(default_factory=list)
     forbidden_document_ids: list[str] = Field(default_factory=list)
+    expect_no_evidence: bool = False
 
     @field_validator("query_id", "question")
     @classmethod
@@ -57,6 +61,14 @@ class MedicationSearchBaselineCase(BaseModel):
     @classmethod
     def normalize_unique_values(cls, values: list[str]) -> list[str]:
         return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @model_validator(mode="after")
+    def require_consistent_evidence_expectation(self):
+        if self.expect_no_evidence and self.expected_document_ids:
+            raise ValueError(
+                "expect_no_evidence와 expected_document_ids는 함께 지정할 수 없습니다."
+            )
+        return self
 
 
 class MedicationSearchBaselineManifest(BaseModel):
@@ -100,6 +112,11 @@ class MedicationSearchBaselineCaseResult(BaseModel):
     hit_at_5: bool | None = None
     recall_at_20: bool | None = None
     reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence_coverage_rate: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
     fallback_used: bool = False
     search_latency_ms: float = Field(ge=0.0)
     failure_reasons: list[str] = Field(default_factory=list)
@@ -110,6 +127,7 @@ class MedicationSearchBaselineReport(BaseModel):
     schema_version: str = "medication-search-baseline-report-v1"
     dataset_version: str
     collection_name: str
+    search_mode: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
     embedding_model_name: str | None = None
     embedding_dimension: int | None = Field(default=None, ge=1)
     min_similarity_score: float = Field(ge=0.0, le=1.0)
@@ -128,6 +146,7 @@ class MedicationSearchBaselineReport(BaseModel):
     hit_at_5: float = Field(ge=0.0, le=1.0)
     mrr: float = Field(ge=0.0, le=1.0)
     source_accuracy: float = Field(ge=0.0, le=1.0)
+    evidence_coverage_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     wrong_target_mixing_count: int = Field(ge=0)
     duplicate_retrieval_rate: float = Field(ge=0.0, le=1.0)
     fallback_rate: float = Field(ge=0.0, le=1.0)
@@ -135,3 +154,18 @@ class MedicationSearchBaselineReport(BaseModel):
     search_p95_ms: float = Field(ge=0.0)
     passed: bool
     results: list[MedicationSearchBaselineCaseResult]
+
+
+class MedicationSearchModeDecision(StrEnum):
+    KEEP_DENSE = "KEEP_DENSE"
+    ACTIVATE_HYBRID = "ACTIVATE_HYBRID"
+
+
+class MedicationSearchModeComparisonReport(BaseModel):
+    dense_collection_name: str
+    bm25_collection_name: str
+    hybrid_collection_name: str
+    decision: MedicationSearchModeDecision
+    blocking_reasons: list[str] = Field(default_factory=list)
+    warning_reasons: list[str] = Field(default_factory=list)
+    metric_deltas: dict[str, float] = Field(default_factory=dict)
