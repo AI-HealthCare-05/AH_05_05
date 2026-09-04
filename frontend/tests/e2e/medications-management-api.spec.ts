@@ -94,6 +94,59 @@ test('URL의 조회 범위를 그대로 전달하고 약봉투 이미지는 요�
   expect(imageRequests).toBe(0);
 });
 
+test('느린 회차 저장 중 반복 클릭해도 일정 저장 요청은 한 번만 보낸다', async ({ page }) => {
+  let saveCalls = 0;
+  let savePayload: unknown;
+  let releaseSave!: () => void;
+  const saveSettled = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  await page.route('**/api/v1/medications', (route) =>
+    fulfillJson(route, [overview(12, false, 3)]),
+  );
+  await page.route('**/api/v1/med/medication/schedule/12', async (route) => {
+    if (route.request().method() !== 'PUT') {
+      await route.continue();
+      return;
+    }
+    saveCalls += 1;
+    savePayload = route.request().postDataJSON();
+    await saveSettled;
+    await fulfillJson(route, { saved: true });
+  });
+
+  await page.goto('/medications');
+  await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+  const dialog = page.getByRole('dialog');
+  const saveButton = dialog.getByRole('button', { name: /저장/ });
+  await expect(saveButton).toHaveText('저장');
+  await saveButton.click();
+
+  await expect(saveButton).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: '저장 중...', exact: true })).toBeVisible();
+  await saveButton.evaluate((button) => {
+    // disabled 속성을 우회한 프로그램적 click도 중복 저장을 만들면 안 됩니다.
+    button.removeAttribute('disabled');
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => saveCalls).toBe(1);
+
+  expect(savePayload).toEqual({
+    start: { date: '2026-08-22', slot: 'morning' },
+    mealTimes: {
+      morning: '08:00',
+      lunch: '13:00',
+      evening: '19:00',
+      bedtime: '22:30',
+    },
+    medications: [{ medicationId: 120, slots: ['morning'] }],
+  });
+  releaseSave();
+  await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  expect(saveCalls).toBe(1);
+});
+
 test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 반영한다', async ({ page }) => {
   let overviewRequests = 0;
   await page.route('**/api/v1/medications', async (route) => {

@@ -78,6 +78,7 @@ export function MedicationsPage({
   const [episodeEditing, setEpisodeEditing] = useState<MedicationOverview | null>(null);
   const [episodeAlias, setEpisodeAlias] = useState('');
   const [episodeSlots, setEpisodeSlots] = useState<Record<number, MealSlot[]>>({});
+  const [episodeSaving, setEpisodeSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
@@ -163,7 +164,8 @@ export function MedicationsPage({
   }
 
   async function saveEpisode() {
-    if (!episodeEditing) return;
+    if (!episodeEditing || episodeSaving) return;
+    setEpisodeSaving(true);
     setSaveError(null);
     try {
       await saveMedicationSchedule(episodeEditing.recordId, {
@@ -195,6 +197,8 @@ export function MedicationsPage({
       toast.success('처방을 저장했어요.');
     } catch (error: unknown) {
       setSaveError(error instanceof Error ? error.message : '처방을 저장하지 못했어요.');
+    } finally {
+      setEpisodeSaving(false);
     }
   }
 
@@ -482,6 +486,7 @@ export function MedicationsPage({
         onOpenChange={(open) => {
           if (!open) setEpisodeEditing(null);
         }}
+        saving={episodeSaving}
         onSave={() => void saveEpisode()}
       />
       <MedicationBulkDeleteDialog
@@ -514,6 +519,7 @@ interface MedicationEpisodeSheetProps {
   onAliasChange: (value: string) => void;
   onToggleSlot: (medicationId: number, slot: MealSlot) => void;
   onOpenChange: (open: boolean) => void;
+  saving: boolean;
   onSave: () => void;
 }
 
@@ -524,6 +530,7 @@ function MedicationEpisodeSheet({
   onAliasChange,
   onToggleSlot,
   onOpenChange,
+  saving,
   onSave,
 }: MedicationEpisodeSheetProps) {
   const readOnly = overview?.isFinished ?? false;
@@ -642,7 +649,9 @@ function MedicationEpisodeSheet({
               </div>
             )}
             <DialogFooter>
-              <Button onClick={onSave}>저장</Button>
+              <Button disabled={saving} onClick={onSave}>
+                {saving ? '저장 중...' : '저장'}
+              </Button>
             </DialogFooter>
           </>
         )}

@@ -8,6 +8,10 @@ test.beforeEach(() => {
 
 test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 액션을 나눈다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'home-figma-medication-token');
+    sessionStorage.setItem('poke.account-principal', 'home-figma-medication@example.com');
+  });
   await page.goto('/dev/home-multiple-episodes');
 
   const today = page.getByRole('region', { name: '오늘의 복약' });
