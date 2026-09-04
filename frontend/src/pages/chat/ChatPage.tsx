@@ -425,7 +425,7 @@ export function ChatPage({
   const composerDisabled = chatRequestPending || pending || historyLoading || view === 'loading';
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+    <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
         title="챗봇"
         onBack={handleRoomBack}
