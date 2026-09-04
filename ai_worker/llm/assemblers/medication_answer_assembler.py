@@ -1,7 +1,11 @@
-from ai_worker.schemas.knowledge import RetrievedKnowledgeChunk
+from ai_worker.schemas.knowledge import (
+    KnowledgeSectionType,
+    RetrievedKnowledgeChunk,
+)
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
+    MedicationEvidenceCoverage,
     MedicationGuideFact,
 )
 from ai_worker.schemas.medication_search import SupplementIngredientFamily
@@ -37,6 +41,7 @@ class MedicationAnswerAssembler:
         ingredient_family_reference: bool = False,
         ingredient_family: SupplementIngredientFamily | None = None,
         unsupported_pairs: list[str] | None = None,
+        evidence_coverage: MedicationEvidenceCoverage | None = None,
     ) -> str:
         sections: list[str] = []
         patient_lines = self._patient_lines(context)
@@ -55,6 +60,7 @@ class MedicationAnswerAssembler:
                 "뜻은 아닙니다."
             )
         if guide is not None:
+            covered = self._covered_sections(evidence_coverage)
             guide_lines = [
                 (
                     f"- 기준 제품: {guide.product_name} ({guide.manufacturer_name})"
@@ -77,16 +83,49 @@ class MedicationAnswerAssembler:
             else:
                 guide_lines.extend(
                     self._guide_line(label, value)
-                    for label, value in (
-                        ("효능", guide.efficacy),
-                        ("사용법", guide.usage_instructions),
-                        ("사용 전 확인", guide.pre_use_warning),
-                        ("주의사항", guide.precautions),
-                        ("함께 주의할 약·음식", guide.drug_food_interactions),
-                        ("이상반응", guide.adverse_reactions),
-                        ("보관법", guide.storage_instructions),
+                    for label, value, section_type in (
+                        (
+                            "효능",
+                            guide.efficacy,
+                            KnowledgeSectionType.FUNCTION,
+                        ),
+                        (
+                            "사용법",
+                            guide.usage_instructions,
+                            KnowledgeSectionType.DAILY_INTAKE,
+                        ),
+                        (
+                            "사용 전 확인",
+                            guide.pre_use_warning,
+                            KnowledgeSectionType.CAUTION,
+                        ),
+                        (
+                            "주의사항",
+                            guide.precautions,
+                            KnowledgeSectionType.CAUTION,
+                        ),
+                        (
+                            "함께 주의할 약·음식",
+                            guide.drug_food_interactions,
+                            KnowledgeSectionType.INTERACTION,
+                        ),
+                        (
+                            "이상반응",
+                            guide.adverse_reactions,
+                            KnowledgeSectionType.CAUTION,
+                        ),
+                        (
+                            "보관법",
+                            guide.storage_instructions,
+                            None,
+                        ),
                     )
                     if self._has_guide_value(value)
+                    and self._section_is_allowed(
+                        section_type,
+                        coverage=evidence_coverage,
+                        covered=covered,
+                    )
                 )
                 section_title = "일반 제품 안내"
             sections.append(section_title + "\n" + "\n".join(guide_lines))
@@ -117,6 +156,8 @@ class MedicationAnswerAssembler:
             unsupported_pairs or [],
         )
         sections.extend([unsupported_section] if unsupported_section else [])
+        missing_section = self._missing_evidence_section(evidence_coverage)
+        sections.extend([missing_section] if missing_section else [])
         if not sections:
             sections.append(
                 "현재 보유한 RDBMS와 공공자료에서 질문에 답할 근거를 "
@@ -133,6 +174,39 @@ class MedicationAnswerAssembler:
     @staticmethod
     def _guide_line(label: str, value: str) -> str:
         return f"- {label}: {value.strip()}"
+
+    @staticmethod
+    def _covered_sections(
+        coverage: MedicationEvidenceCoverage | None,
+    ) -> set[KnowledgeSectionType]:
+        return set(coverage.covered_section_types) if coverage else set()
+
+    @staticmethod
+    def _section_is_allowed(
+        section_type: KnowledgeSectionType | None,
+        *,
+        coverage: MedicationEvidenceCoverage | None,
+        covered: set[KnowledgeSectionType],
+    ) -> bool:
+        if coverage is None or not coverage.requested_section_types:
+            return True
+        return section_type in covered
+
+    @staticmethod
+    def _missing_evidence_section(
+        coverage: MedicationEvidenceCoverage | None,
+    ) -> str:
+        if coverage is None or not coverage.missing_section_types:
+            return ""
+        labels = {
+            KnowledgeSectionType.FUNCTION: "효능",
+            KnowledgeSectionType.DAILY_INTAKE: "복용법",
+            KnowledgeSectionType.CAUTION: "주의사항",
+            KnowledgeSectionType.INTERACTION: "상호작용",
+        }
+        return "근거를 확인하지 못한 항목\n" + "\n".join(
+            f"- {labels[section]}: 현재 근거에서 확인하지 못했습니다." for section in coverage.missing_section_types
+        )
 
     @staticmethod
     def _unsupported_pairs_section(pairs: list[str]) -> str:

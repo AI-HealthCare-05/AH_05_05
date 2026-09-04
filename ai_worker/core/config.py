@@ -7,6 +7,8 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from ai_worker.schemas.knowledge import KnowledgeSearchMode
+
 
 class Config(BaseSettings):
     model_config = SettingsConfigDict(
@@ -42,6 +44,7 @@ class Config(BaseSettings):
     QDRANT_COLLECTION: str = "public_guidelines_small_v1"
     KNOWLEDGE_QDRANT_COLLECTION: str = "medication_knowledge_full_v1"
     KNOWLEDGE_DATASET_VERSION: str = "knowledge-full-v1"
+    KNOWLEDGE_SEARCH_MODE: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
     INTERACTION_RULE_DATASET_VERSION: str = "interaction-pilot-v1"
     MEDICATION_SAFETY_RULE_DATASET_VERSION: str = "medication-safety-v1"
     QDRANT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)

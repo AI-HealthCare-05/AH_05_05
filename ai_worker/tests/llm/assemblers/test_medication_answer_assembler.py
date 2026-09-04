@@ -10,6 +10,7 @@ from ai_worker.schemas.knowledge import (
 )
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    MedicationEvidenceCoverage,
     MedicationGuideFact,
 )
 from ai_worker.schemas.medication_search import SupplementIngredientFamily
@@ -58,6 +59,28 @@ def test_assemble_omits_no_information_markers() -> None:
     )
 
     assert "함께 주의할 약·음식" not in answer
+
+
+def test_assemble_only_includes_guide_sections_with_requested_evidence() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.DAILY_INTAKE,
+            ],
+            covered_section_types=[KnowledgeSectionType.FUNCTION],
+            missing_section_types=[KnowledgeSectionType.DAILY_INTAKE],
+        ),
+    )
+
+    assert "효능: 위산 과다 증상 완화" in answer
+    assert "사용법: 1일 1~2캡슐" not in answer
+    assert "복용법: 현재 근거에서 확인하지 못했습니다" in answer
 
 
 def test_assemble_does_not_claim_missing_when_interaction_evidence_exists() -> None:

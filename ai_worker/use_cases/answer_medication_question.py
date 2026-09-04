@@ -20,6 +20,9 @@ from ai_worker.domain.interfaces import (
     MedicationQuestionResolver,
     SupplementIngredientCatalog,
 )
+from ai_worker.domain.medication_evidence_coverage import (
+    MedicationEvidenceCoverageEvaluator,
+)
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
 )
@@ -336,6 +339,25 @@ class AnswerMedicationQuestionUseCase:
             rule_status=execution_plan.approved_rule_status,
         )
         safety_status = SafetyStatus.RESTRICTED if safety_reason_codes else SafetyStatus.SAFE
+        evidence_coverage = MedicationEvidenceCoverageEvaluator().evaluate(
+            query_plan=query_plan,
+            guide_lookup=guide_lookup,
+            rules=rules,
+            chunks=answer_chunks,
+        )
+        async with self._tracer.span(
+            "answer.evidence_coverage",
+        ) as coverage_span:
+            coverage_span.end(
+                {
+                    "requested_section_types": [section.value for section in evidence_coverage.requested_section_types],
+                    "covered_section_types": [section.value for section in evidence_coverage.covered_section_types],
+                    "missing_section_types": [section.value for section in evidence_coverage.missing_section_types],
+                    "verified_interaction_pair_count": len(
+                        evidence_coverage.verified_interaction_pair_keys,
+                    ),
+                }
+            )
         async with self._tracer.span("answer.draft") as draft_span:
             draft = MedicationChatResult(
                 request_id=request.request_id,
@@ -349,6 +371,7 @@ class AnswerMedicationQuestionUseCase:
                     ingredient_family_reference=(ingredient_family_reference),
                     ingredient_family=query_plan.ingredient_family,
                     unsupported_pairs=unsupported_pairs,
+                    evidence_coverage=evidence_coverage,
                 ),
                 route=route,
                 safety_status=safety_status,
@@ -367,6 +390,7 @@ class AnswerMedicationQuestionUseCase:
                         execution_plan,
                     )
                 ),
+                evidence_coverage=evidence_coverage,
             )
             draft_span.end(
                 {

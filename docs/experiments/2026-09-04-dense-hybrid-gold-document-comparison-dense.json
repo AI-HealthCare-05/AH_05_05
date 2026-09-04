@@ -1,0 +1,561 @@
+{
+  "schema_version": "medication-search-baseline-report-v1",
+  "dataset_version": "knowledge-full-v2-interaction-metadata",
+  "collection_name": "medication_knowledge_full_v2",
+  "search_mode": "DENSE",
+  "experiment_goal": "동일한 사용자 질문과 정답 문서 계약으로 Dense와 Hybrid 검색을 비교하여, 관련 근거를 더 앞에 배치하면서 다른 약·성분 문서를 섞지 않는 검색 방식을 선택한다.",
+  "activation_rule": "Hybrid의 Hit@5 또는 MRR이 Dense보다 개선되고 Recall@20·출처 정확도·근거 커버리지가 하락하지 않으며 잘못된 대상 혼입과 중복 검색이 늘지 않을 때만 Hybrid를 활성화한다. 속도는 정확도 조건을 통과한 뒤 운영 경고 지표로 판단한다.",
+  "metric_rationales": {
+    "recall_at_20": "관련 문서가 재정렬 전 후보 20건 안에 들어오는지 확인한다.",
+    "hit_at_5": "최종 답변 생성에 전달되는 상위 5건에 정답 근거가 포함되는지 확인한다.",
+    "mrr": "첫 정답 문서가 사용자 답변에 사용되기 좋은 앞 순위에 배치되는지 확인한다.",
+    "source_accuracy": "선택된 문서 중 질문 대상과 직접 관련된 골드 문서의 비율을 확인한다.",
+    "evidence_coverage_rate": "사용자가 요청한 효능·복용법·주의사항·상호작용 근거가 빠짐없이 검색되는지 확인한다.",
+    "wrong_target_mixing_count": "이름이나 주제가 비슷한 다른 약·성분의 근거가 섞이는 안전성 오류를 측정한다.",
+    "duplicate_retrieval_rate": "같은 청크가 반복되어 근거 다양성과 답변 품질을 낮추는지 확인한다.",
+    "search_p95_ms": "정확도 조건을 통과한 검색 방식의 최악 구간 지연이 운영 가능한지 감시한다."
+  },
+  "embedding_model_name": "text-embedding-3-small",
+  "embedding_dimension": 1536,
+  "min_similarity_score": 0.65,
+  "final_top_k": 5,
+  "candidate_top_k": 20,
+  "git_commit": "e98408ef02c53bc278b67282414850516dddbe28",
+  "working_tree_dirty": true,
+  "evaluation_file_sha256": "ebec209347e393240c4abd433ba63e1a59b9c1b3bc24cac7b5f6163757bdf8a0",
+  "query_count": 14,
+  "resolution_accuracy": 1.0,
+  "scope_accuracy": 1.0,
+  "correction_accuracy": 1.0,
+  "false_correction_rate": 0.0,
+  "ambiguity_accuracy": 1.0,
+  "recall_at_20": 1.0,
+  "hit_at_5": 1.0,
+  "mrr": 1.0,
+  "source_accuracy": 1.0,
+  "evidence_coverage_rate": 1.0,
+  "wrong_target_mixing_count": 0,
+  "duplicate_retrieval_rate": 0.0,
+  "fallback_rate": 0.416667,
+  "search_p50_ms": 252.464,
+  "search_p95_ms": 735.206,
+  "passed": true,
+  "results": [
+    {
+      "query_id": "exact-product-magnesium",
+      "expression_category": "EXACT_PRODUCT",
+      "evidence_kind": "RDBMS_GUIDE",
+      "evaluation_rationale": "정확한 제품명 질문은 구조화된 의약품 제품 가이드 조회가 우선되는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "마그오캡슐500mg의 효능과 복용법을 알려줘.",
+      "observed_entity_names": [
+        "마그오캡슐500mg"
+      ],
+      "observed_section_types": [
+        "FUNCTION",
+        "DAILY_INTAKE"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 735.206,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "typo-brand-tylenol",
+      "expression_category": "PRODUCT_TYPO",
+      "evidence_kind": "RDBMS_GUIDE",
+      "evaluation_rationale": "흔한 제품명 오타를 교정한 뒤 구조화된 제품 가이드로 연결되는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "타이레놀의 효능과 주의사항을 알려줘.",
+      "observed_entity_names": [
+        "타이레놀"
+      ],
+      "observed_section_types": [
+        "FUNCTION",
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 252.557,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "typo-ingredient-acetaminophen",
+      "expression_category": "INGREDIENT_TYPO",
+      "evidence_kind": "QDRANT_GOLD",
+      "evaluation_rationale": "성분명 오타를 교정한 뒤 해당 성분의 부작용 근거 문서를 검색하는지 검증한다.",
+      "expected_document_ids": [
+        "kpicia_drug_encyclopedia-33898a903b6cbca7"
+      ],
+      "gold_document_rationales": {
+        "kpicia_drug_encyclopedia-33898a903b6cbca7": "아세트아미노펜의 부작용과 주의사항을 직접 설명하는 약물백과 문서다."
+      },
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "아세트아미노펜 부작용을 알려줘.",
+      "observed_entity_names": [
+        "아세트아미노펜"
+      ],
+      "observed_section_types": [
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY"
+      ],
+      "candidate_count": 15,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "kpicia_drug_encyclopedia-33898a903b6cbca7",
+        "kpicia_drug_encyclopedia-33898a903b6cbca7"
+      ],
+      "selected_chunk_ids": [
+        "3ea28315f394fec5ef1038dbf21cec7a46c946802d4dd24d7ef7b1e28069214d",
+        "814ee5d1767a1b202bd381c15691e7804f1e4cd438860c17ba3d69e139bddd5e"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 283.847,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "keyboard-tail-tylenol",
+      "expression_category": "KEYBOARD_TYPO",
+      "evidence_kind": "RDBMS_GUIDE",
+      "evaluation_rationale": "불필요한 자판 문자를 제거한 뒤 특정 제품의 복용법 조회로 연결되는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "타이레놀 복용법 알려줘.",
+      "observed_entity_names": [
+        "타이레놀"
+      ],
+      "observed_section_types": [
+        "DAILY_INTAKE"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 282.471,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "spacing-magnesium",
+      "expression_category": "SPACING_VARIATION",
+      "evidence_kind": "QDRANT_GOLD",
+      "evaluation_rationale": "띄어쓰기 오류가 있어도 마그네슘 기능성 근거를 검색하는지 검증한다.",
+      "expected_document_ids": [
+        "food_safety_korea_supplement_ingredients-d4b61ec6752184e6"
+      ],
+      "gold_document_rationales": {
+        "food_safety_korea_supplement_ingredients-d4b61ec6752184e6": "마그네슘의 공인 기능성 내용을 성분 단위로 직접 제공하는 문서다."
+      },
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "마그네슘은 왜 먹나요?",
+      "observed_entity_names": [
+        "마그네슘"
+      ],
+      "observed_section_types": [
+        "FUNCTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY"
+      ],
+      "candidate_count": 3,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "food_safety_korea_supplement_ingredients-d4b61ec6752184e6"
+      ],
+      "selected_chunk_ids": [
+        "991b484f068c642b5fe215ae8925d4196b0257c94f6226943eb187e8868d341d"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 226.654,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "common-name-tylenol",
+      "expression_category": "COMMON_NAME",
+      "evidence_kind": "RDBMS_GUIDE",
+      "evaluation_rationale": "사용자가 통칭으로 질문해도 해당 의약품 제품 가이드의 효능과 주의사항으로 연결되는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "타이레놀의 효능과 주의사항을 알려줘.",
+      "observed_entity_names": [
+        "타이레놀"
+      ],
+      "observed_section_types": [
+        "FUNCTION",
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 248.606,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "ambiguous-near-product",
+      "expression_category": "AMBIGUOUS",
+      "evidence_kind": "NOT_APPLICABLE",
+      "evaluation_rationale": "여러 제품이나 성분으로 해석될 수 있는 짧은 표현을 임의 교정하지 않고 재질문하는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "CLARIFICATION_REQUIRED",
+      "observed_resolved_question": "마그 복용법 알려줘.",
+      "observed_entity_names": [],
+      "observed_section_types": [],
+      "retrieval_executed": false,
+      "attempted_search_tiers": [],
+      "candidate_count": 0,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": false,
+      "search_latency_ms": 0.0,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "short-unsafe-correction",
+      "expression_category": "SHORT_EXPRESSION",
+      "evidence_kind": "NO_EVIDENCE",
+      "evaluation_rationale": "신뢰도가 낮은 짧은 표현을 특정 영양성분으로 오교정하거나 무관한 근거와 연결하지 않는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNRESOLVED",
+      "observed_resolved_question": "찰 영양제는 왜 먹나요?",
+      "observed_entity_names": [],
+      "observed_section_types": [
+        "FUNCTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": false,
+      "search_latency_ms": 177.842,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "out-of-scope-hungry",
+      "expression_category": "OUT_OF_SCOPE",
+      "evidence_kind": "NOT_APPLICABLE",
+      "evaluation_rationale": "복약·영양제 범위 밖의 일상 질문을 지식 검색으로 보내지 않는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "OUT_OF_SCOPE",
+      "observed_resolution_status": "UNRESOLVED",
+      "observed_resolved_question": "오늘 너무 배고파요.",
+      "observed_entity_names": [],
+      "observed_section_types": [],
+      "retrieval_executed": false,
+      "attempted_search_tiers": [],
+      "candidate_count": 0,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": false,
+      "search_latency_ms": 0.0,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "in-scope-no-evidence",
+      "expression_category": "IN_SCOPE_NO_EVIDENCE",
+      "evidence_kind": "NO_EVIDENCE",
+      "evaluation_rationale": "의료 범위 질문이지만 대상이 특정되지 않은 경우 무관한 문서를 근거로 사용하지 않는지 검증한다.",
+      "expected_document_ids": [],
+      "gold_document_rationales": {},
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNRESOLVED",
+      "observed_resolved_question": "처음 보는 약의 복용 시 주의사항을 알려줘.",
+      "observed_entity_names": [
+        "처음"
+      ],
+      "observed_section_types": [
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 285.341,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "drug-drug-warfarin-metronidazole",
+      "expression_category": "DRUG_DRUG",
+      "evidence_kind": "QDRANT_GOLD",
+      "evaluation_rationale": "두 의약품 성분을 모두 포함하는 약-약 상호작용 근거가 검색되는지 검증한다.",
+      "expected_document_ids": [
+        "kpicia_pharm_review-e8127943c02a5a76"
+      ],
+      "gold_document_rationales": {
+        "kpicia_pharm_review-e8127943c02a5a76": "와파린과 메트로니다졸의 병용 시 상호작용을 직접 다루는 팜리뷰 문서다."
+      },
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "와파린과 메트로니다졸을 같이 복용해도 되나요?",
+      "observed_entity_names": [
+        "와파린",
+        "메트로니다졸"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 3,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "kpicia_pharm_review-e8127943c02a5a76",
+        "kpicia_pharm_review-e8127943c02a5a76"
+      ],
+      "selected_chunk_ids": [
+        "4598144c343d3c4449aa8a43336d06d775b16a16b29a6eef624688357d4dce27",
+        "bd631f91887bc1fb5d41ac5c91121f2aa04e31c8872beaf1c559187d3d1d691f"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 252.464,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "drug-supplement-warfarin-vitamin-k",
+      "expression_category": "DRUG_SUPPLEMENT",
+      "evidence_kind": "QDRANT_GOLD",
+      "evaluation_rationale": "의약품과 영양성분을 함께 인식하여 약-영양제 상호작용 근거를 검색하는지 검증한다.",
+      "expected_document_ids": [
+        "kpicia_pharm_review-c4ea8e68b35b65b3"
+      ],
+      "gold_document_rationales": {
+        "kpicia_pharm_review-c4ea8e68b35b65b3": "와파린과 비타민 K 섭취의 관계를 직접 설명하는 팜리뷰 문서다."
+      },
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
+      "observed_entity_names": [
+        "와파린",
+        "비타민 K"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 1,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "kpicia_pharm_review-c4ea8e68b35b65b3"
+      ],
+      "selected_chunk_ids": [
+        "1cd9f8e1782c9031297ba6398279761356c1b603d8986165e3f442ac4b393eca"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 236.782,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "supplement-supplement-calcium-iron",
+      "expression_category": "SUPPLEMENT_SUPPLEMENT",
+      "evidence_kind": "QDRANT_GOLD",
+      "evaluation_rationale": "칼슘과 철분의 흡수 관계를 다룬 연구가 검색되고 아연-철분 연구가 섞이지 않는지 검증한다.",
+      "expected_document_ids": [
+        "research_supplement_interactions-016c81c9a3e29ebd",
+        "research_supplement_interactions-7983c60e9a092828"
+      ],
+      "gold_document_rationales": {
+        "research_supplement_interactions-016c81c9a3e29ebd": "칼슘과 철분 흡수 기전 및 공중보건 관련성을 직접 다룬 연구다.",
+        "research_supplement_interactions-7983c60e9a092828": "칼슘 섭취가 철분 흡수에 미치는 영향을 직접 평가한 연구다."
+      },
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "칼슘과 철분을 같이 먹어도 되나요?",
+      "observed_entity_names": [
+        "칼슘",
+        "철분"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "research_supplement_interactions-7983c60e9a092828",
+        "research_supplement_interactions-7983c60e9a092828"
+      ],
+      "selected_chunk_ids": [
+        "e29a5876ef80ffbf8324c6dfb7139aa8a4a878d1186f89a0c16f307345bd0853",
+        "de06581cabb60c0b0670689193ed937a3a1a28b1232621b8f23c3446435e00d0"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 263.078,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "drug-food-fexofenadine-fruit-juice",
+      "expression_category": "DRUG_FOOD",
+      "evidence_kind": "QDRANT_GOLD",
+      "evaluation_rationale": "약 이름과 음식 범주를 함께 인식하여 약-음식 상호작용 공공 근거를 검색하는지 검증한다.",
+      "expected_document_ids": [
+        "mfds_drug_food_interaction_guide-53bfb2433f48a8b0"
+      ],
+      "gold_document_rationales": {
+        "mfds_drug_food_interaction_guide-53bfb2433f48a8b0": "펙소페나딘과 과일주스 병용 주의사항을 직접 안내하는 식약처 자료다."
+      },
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
+      "observed_entity_names": [
+        "펙소페나딘",
+        "과일주스"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 1,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "mfds_drug_food_interaction_guide-53bfb2433f48a8b0"
+      ],
+      "selected_chunk_ids": [
+        "bb68ade3c615d3aee922086e90193c47fea55c3e0b76dcd1ce0351db28f09ce5"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 251.418,
+      "failure_reasons": [],
+      "passed": true
+    }
+  ]
+}
