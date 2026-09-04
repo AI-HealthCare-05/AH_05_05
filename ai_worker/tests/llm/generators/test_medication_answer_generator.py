@@ -5,6 +5,7 @@ from ai_worker.llm.generators.medication_answer_generator import (
     OpenAIMedicationAnswerGenerator,
 )
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationAnswerFallbackReason,
@@ -14,6 +15,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
     MedicationChatSource,
     MedicationChatSourceKind,
+    MedicationEvidenceCoverage,
 )
 
 
@@ -171,6 +173,40 @@ async def test_generator_falls_back_to_safe_draft_when_rewrite_adds_claims() -> 
     assert outcome.observation.status == MedicationAnswerRewriteStatus.DRAFT_FALLBACK
     assert outcome.observation.fallback_used is True
     assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.UNSUPPORTED_SAFETY_ASSERTION
+
+
+async def test_generator_falls_back_when_rewrite_adds_uncovered_section() -> None:
+    initial = build_result().model_copy(
+        update={
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.FUNCTION],
+                covered_section_types=[KnowledgeSectionType.FUNCTION],
+            )
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=FakeAnswerClient(
+            response={
+                "answer": (
+                    "효능: 통증을 완화합니다.\n"
+                    "주의사항: 졸릴 수 있습니다.\n\n"
+                    "이 안내는 의료진의 진료를 대체하지 않습니다."
+                ),
+                "section_types": ["FUNCTION", "CAUTION"],
+            }
+        ),
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.result.answer == initial.answer
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.DRAFT_FALLBACK
+    assert outcome.observation.fallback_reason == (MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION)
 
 
 async def test_generator_reports_dosage_fallback_reason() -> None:
