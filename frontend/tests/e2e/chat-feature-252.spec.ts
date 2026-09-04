@@ -23,14 +23,17 @@ test('챗봇은 챗봇 이름과 최종 답변의 근거 메타데이터를 보�
   await expect(page.getByRole('button', { name: '채팅 종료' })).toBeVisible();
 });
 
-test('채팅 종료는 content-height 평가 시트를 열고 좋아요·아쉬워요·건너뛰기 흐름을 제공한다', async ({ page }) => {
+test('채팅 종료는 하단 content-height 시트에서 평가를 제출하고 새 대화로 종료한다', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await openAnsweredChat(page);
   await page.getByRole('button', { name: '채팅 종료' }).click();
 
   const endSheet = page.getByRole('dialog', { name: '상담 종료' });
   await expect(endSheet).toBeVisible();
   const endSheetBox = await endSheet.boundingBox();
+  expect(endSheetBox).not.toBeNull();
   expect(endSheetBox?.height).toBeLessThan(844);
+  expect(Math.abs((endSheetBox?.y ?? 0) + (endSheetBox?.height ?? 0) - 844)).toBeLessThanOrEqual(1);
 
   await endSheet.getByRole('button', { name: '좋아요' }).click();
   const positiveSheet = page.getByRole('dialog', { name: '상담 평가' });
@@ -38,18 +41,37 @@ test('채팅 종료는 content-height 평가 시트를 열고 좋아요·아쉬�
   await positiveSheet.getByRole('button', { name: '이해하기 쉬워요' }).click();
   await positiveSheet.getByRole('button', { name: '제출하고 종료' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();
+
+  // 종료 뒤 새 상담을 시작하면 mock API가 새 sessionId를 발급한다.
+  // 이는 ChatPage가 다음 요청에 conversationId:null을 전달했음을 검증한다.
+  await page.getByRole('button', { name: '새 채팅' }).click();
+  await page.getByRole('button', { name: '이 약은 왜 먹는 건가요?' }).click();
+  await expect(page.getByText('리바록사반을 복용하는 동안', { exact: false })).toBeVisible();
+  const sessionsAfterNewMessage = await page.evaluate(() => {
+    const raw = localStorage.getItem('poke.mock-chat-sessions:guest');
+    return raw ? (JSON.parse(raw) as { sessions: Array<{ sessionId: number }> }).sessions : [];
+  });
+  expect(sessionsAfterNewMessage).toHaveLength(2);
+  expect(new Set(sessionsAfterNewMessage.map((session) => session.sessionId)).size).toBe(2);
 
   await page.getByRole('button', { name: '채팅 종료' }).click();
+  await page.getByRole('dialog', { name: '상담 종료' }).getByRole('button', { name: '건너뛰고 종료' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();
+});
+
+test('아쉬워요 평가를 제출하면 현재 상담도 종료한다', async ({ page }) => {
+  await openAnsweredChat(page);
+  await page.getByRole('button', { name: '채팅 종료' }).click();
   await page.getByRole('dialog', { name: '상담 종료' }).getByRole('button', { name: '아쉬워요' }).click();
+
   const negativeSheet = page.getByRole('dialog', { name: '상담 평가' });
   await expect(negativeSheet).toContainText('아쉬웠던 점을 선택해주세요');
   await negativeSheet.getByRole('button', { name: '답변이 어려워요' }).click();
   await negativeSheet.getByRole('button', { name: '제출하고 종료' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-
-  await page.getByRole('button', { name: '채팅 종료' }).click();
-  await page.getByRole('dialog', { name: '상담 종료' }).getByRole('button', { name: '건너뛰고 종료' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();
 });
 
 test('대화 삭제 선택 화면은 Figma 제목과 확인 흐름을 사용한다', async ({ page }) => {

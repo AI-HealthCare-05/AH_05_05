@@ -319,6 +319,22 @@ export function ChatPage({
     setFeedbackOpen(true);
   }
 
+  function finishChat() {
+    setFeedbackOpen(false);
+    startNewSession();
+    setMessages([]);
+    setConversationId(null);
+    setDraft('');
+    setHistoryError(null);
+    setSessionListError(null);
+    setNewChatRequested(false);
+    setSelectionMode(false);
+    setSelectedSessionIds(new Set());
+    setHistoryLoading(true);
+    setView('loading');
+    setSessionListReloadKey((current) => current + 1);
+  }
+
   function toggleSelectionMode() {
     setSelectionMode((current) => {
       if (current) setSelectedSessionIds(new Set());
@@ -552,7 +568,11 @@ export function ChatPage({
       </div>
 
       <BottomTabbar active="chat" onChange={handleTabChange} className="border-t border-border" />
-      <ChatFeedbackSheet open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+      <ChatFeedbackSheet
+        open={feedbackOpen}
+        onOpenChange={setFeedbackOpen}
+        onFinish={finishChat}
+      />
     </div>
   );
 }

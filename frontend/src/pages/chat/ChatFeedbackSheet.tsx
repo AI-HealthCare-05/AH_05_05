@@ -19,10 +19,11 @@ const REASONS = {
 interface ChatFeedbackSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onFinish: () => void;
 }
 
 /** API가 생기기 전까지는 평가를 화면 상태로만 처리하고 상담을 닫습니다. */
-export function ChatFeedbackSheet({ open, onOpenChange }: ChatFeedbackSheetProps) {
+export function ChatFeedbackSheet({ open, onOpenChange, onFinish }: ChatFeedbackSheetProps) {
   const [step, setStep] = useState<FeedbackStep>('end');
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
 
@@ -39,16 +40,14 @@ export function ChatFeedbackSheet({ open, onOpenChange }: ChatFeedbackSheetProps
 
   function finish() {
     onOpenChange(false);
+    onFinish();
   }
 
   const title = step === 'end' ? '상담 종료' : '상담 평가';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="w-[calc(100%-2.5rem)] max-w-[350px] rounded-sheet p-5"
-      >
+      <DialogContent showCloseButton={false} variant="sheet">
         <DialogTitle className="pr-10 text-xl">
           {title}
         </DialogTitle>
