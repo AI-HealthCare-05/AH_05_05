@@ -1,5 +1,60 @@
 import { expect, test, type Page } from 'playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  // These layout tests seed a local session, so all authenticated API dependencies
+  // must use fixtures rather than sending the synthetic token to the real server.
+  for (const path of [
+    '**/api/v1/medications',
+    '**/api/v1/medications/doses?**',
+  ]) {
+    await page.route(path, (route) => route.fulfill({ json: [] }));
+  }
+  for (const path of [
+    '**/api/v1/med/user-suppl-nutr?**',
+    '**/api/v1/user/follow-up-visits?**',
+  ]) {
+    await page.route(path, (route) =>
+      route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 100 } }),
+    );
+  }
+  await page.route('**/api/v1/users/me', (route) =>
+    route.fulfill({
+      json: { name: '테스트 사용자', phoneNumber: '01012345678', birthDate: '1990-01-01', gender: 'female' },
+    }),
+  );
+  await page.route('**/api/v1/med/nutr/sp-001', (route) =>
+    route.fulfill({
+      json: {
+        id: 1,
+        name: '센트룸 실버 우먼',
+        serving_desc: '1정',
+        serving_size: '90정',
+        daily_freq: '1일 1회',
+        target: null,
+        rating_average: null,
+        review_count: 0,
+      },
+    }),
+  );
+  await page.route('**/api/v1/med/nutr/*/reviews?**', (route) =>
+    route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 100 } }),
+  );
+  await page.route('**/api/v1/me/settings', (route) =>
+    route.fulfill({
+      json: {
+        notifyMedication: false,
+        notifySupplement: false,
+        notifySchedule: false,
+        notifyConsentedAt: null,
+        morningMedicationTime: '08:00',
+        lunchMedicationTime: '13:00',
+        eveningMedicationTime: '19:00',
+        bedtimeMedicationTime: '22:00',
+      },
+    }),
+  );
+});
+
 async function seedAuthenticatedSession(page: Page) {
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'e2e-tabbar-token');

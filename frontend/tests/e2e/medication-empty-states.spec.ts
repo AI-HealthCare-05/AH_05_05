@@ -7,6 +7,9 @@ test.beforeEach(() => {
 });
 
 async function authenticate(page: Page) {
+  await page.route('**/api/v1/med/user-suppl-nutr?**', (route) =>
+    fulfillJson(route, { items: [], total: 0, offset: 0, limit: 100 }, 200),
+  );
   await page.addInitScript(() => {
     window.sessionStorage.setItem('poke.access-token', 'e2e-medication-empty-token');
     window.sessionStorage.setItem('poke.account-principal', 'medication-empty-e2e@example.com');
@@ -39,9 +42,9 @@ test('404 복약 목록은 홈과 복용약 탭에서 등록 CTA를 제공한다
 
   await page.goto('/medications');
 
-  await expect(page.getByText('복용약을 등록해 주세요.', { exact: true })).toBeVisible();
+  await expect(page.getByText('이 기간에 등록한 처방이 없어요', { exact: true })).toBeVisible();
   await expect(page.getByText('복용약을 불러오지 못했어요')).toHaveCount(0);
-  await page.getByRole('button', { name: '약봉투 등록하기', exact: true }).click();
+  await page.getByRole('button', { name: '처방 추가', exact: true }).click();
   await expect(page).toHaveURL('/document-upload');
 });
 
