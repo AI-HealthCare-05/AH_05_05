@@ -28,6 +28,7 @@ import type {
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,
 } from './types';
+import { mockMedicationAlias } from '@/entities/medication-alias/api.mock';
 
 let hasRegisteredMedication = true;
 const cancelledMedicationRecordIds = new Set<number>();
@@ -53,9 +54,10 @@ function primaryMedicationOverview(): MedicationOverview {
     { medicationId: 304, name: '파모티딘', dose: '20mg', days: 7, daysRemaining: 3, slots: ['morning', 'evening'] as const, asNeeded: false },
     { medicationId: 303, name: '아세트아미노펜', dose: '650mg', days: 7, daysRemaining: null, slots: [] as const, asNeeded: true },
   ] : [];
+  const alias = mockMedicationAlias(12, '감기약');
   return {
     recordId: 12,
-    alias: '감기약',
+    ...(alias ? { alias } : {}),
     documentImageUrl: '/mock/medication-envelope.svg',
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),
@@ -82,9 +84,10 @@ function secondaryMedicationOverview(): MedicationOverview {
       asNeeded: false,
     },
   ];
+  const alias = mockMedicationAlias(24, '지난 처방');
   return {
     recordId: 24,
-    alias: '지난 처방',
+    ...(alias ? { alias } : {}),
     documentImageUrl: '/mock/medication-envelope.svg',
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),

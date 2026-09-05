@@ -8,7 +8,6 @@ import {
   updateMedicationNote,
   type MedicationNote,
 } from '@/entities/medication-note';
-import { applyMedicationAliases } from '@/entities/medication-alias';
 import {
   getMedicationOverviews,
   type MedicationOverview,
@@ -58,10 +57,10 @@ function toLocalDateTime(value: string): string {
 function initialForm(note: MedicationNote | null): NoteFormState {
   return note
     ? {
-        recordId: String(note.recordId),
-        medicationId: String(note.medicationId),
-        takenAt: toLocalDateTime(note.takenAt),
-        experience: note.experience,
+        recordId: String(note.careEpisodeId),
+        medicationId: note.medicationId === null ? '' : String(note.medicationId),
+        takenAt: toLocalDateTime(note.dosedAt),
+        experience: note.body,
       }
     : EMPTY_FORM;
 }
@@ -80,27 +79,20 @@ export function MedicationNoteFormPage() {
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    const loadedNote = noteId
-      ? getMedicationNote(decodeURIComponent(noteId), { scope: principalKey })
-      : null;
-    if (noteId && !loadedNote) {
-      setLoadError('복약 메모를 찾지 못했어요.');
-      return () => {
-        cancelled = true;
-      };
-    }
-    setNote(loadedNote);
-    setForm(initialForm(loadedNote));
-    getMedicationOverviews()
-      .then((data) => {
-        if (!cancelled) {
-          setOverviews(
-            applyMedicationAliases(
-              data.filter((overview) => overview.medications.length > 0),
-              { scope: principalKey },
-            ),
-          );
+    setOverviews(null);
+    Promise.all([
+      noteId ? getMedicationNote(decodeURIComponent(noteId)) : Promise.resolve(null),
+      getMedicationOverviews(),
+    ])
+      .then(([loadedNote, data]) => {
+        if (cancelled) return;
+        if (noteId && !loadedNote) {
+          setLoadError('복약 메모를 찾지 못했어요.');
+          return;
         }
+        setNote(loadedNote);
+        setForm(initialForm(loadedNote));
+        setOverviews(data.filter((overview) => overview.medications.length > 0));
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -123,7 +115,6 @@ export function MedicationNoteFormPage() {
   const canSave =
     overviews !== null &&
     form.recordId !== '' &&
-    form.medicationId !== '' &&
     form.takenAt !== '' &&
     form.experience.trim() !== '';
 
@@ -140,29 +131,38 @@ export function MedicationNoteFormPage() {
     }));
   }
 
-  function save() {
-    if (!canSave || !selectedOverview || !selectedMedication) return;
-    const payload = {
-      recordId: Number(form.recordId),
-      medicationId: Number(form.medicationId),
-      takenAt: form.takenAt,
-      experience: form.experience.trim(),
-      prescriptionLabel: prescriptionLabel(selectedOverview),
-      medicineLabel: medicineLabel(selectedMedication),
-    };
-    if (editing && noteId) {
-      updateMedicationNote(decodeURIComponent(noteId), payload, { scope: principalKey });
-    } else {
-      createMedicationNote(payload, { scope: principalKey });
+  async function save() {
+    if (!canSave || !selectedOverview || (form.medicationId !== '' && !selectedMedication)) return;
+    try {
+      if (editing && noteId) {
+        await updateMedicationNote(decodeURIComponent(noteId), {
+          medicationId: form.medicationId === '' ? null : Number(form.medicationId),
+          dosedAt: form.takenAt,
+          body: form.experience.trim(),
+        });
+      } else {
+        await createMedicationNote({
+          careEpisodeId: Number(form.recordId),
+          ...(form.medicationId !== '' ? { medicationId: Number(form.medicationId) } : {}),
+          dosedAt: form.takenAt,
+          body: form.experience.trim(),
+        });
+      }
+      navigate('/medications/notes', { replace: true });
+    } catch (error: unknown) {
+      setLoadError(error instanceof Error ? error.message : '복약 메모를 저장하지 못했어요.');
     }
-    navigate('/medications/notes', { replace: true });
   }
 
-  function remove() {
+  async function remove() {
     if (!noteId) return;
-    deleteMedicationNote(decodeURIComponent(noteId), { scope: principalKey });
-    setDeleteOpen(false);
-    navigate('/medications/notes', { replace: true });
+    try {
+      await deleteMedicationNote(decodeURIComponent(noteId));
+      setDeleteOpen(false);
+      navigate('/medications/notes', { replace: true });
+    } catch (error: unknown) {
+      setLoadError(error instanceof Error ? error.message : '복약 메모를 삭제하지 못했어요.');
+    }
   }
 
   const title = editing ? '복약 메모 수정' : '복약 메모 작성';
@@ -179,7 +179,7 @@ export function MedicationNoteFormPage() {
           <>
             <section className="flex flex-col gap-1">
               <h2 id="note-form-intro" className="text-xl font-bold text-foreground">
-                복용 후 느낀 점을 기록해보세요
+                느낀 점을 해당 복용 기록과 함께 남겨보세요.
               </h2>
               <p className="text-sm text-muted-foreground">
                 다음 진료 때 의료진과 함께 확인할 수 있어요.
@@ -213,7 +213,7 @@ export function MedicationNoteFormPage() {
                   disabled={!selectedOverview}
                   className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
                 >
-                  <option value="">약을 선택해주세요</option>
+                  <option value="">처방 전체</option>
                   {availableMedications.map((medication) => (
                     <option key={medication.medicationId} value={medication.medicationId}>
                       {medicineLabel(medication)}
@@ -237,7 +237,8 @@ export function MedicationNoteFormPage() {
                   value={form.experience}
                   onChange={(event) => setField('experience', event.target.value)}
                   rows={5}
-                  placeholder="복용 후 몸의 변화를 적어주세요."
+                  maxLength={500}
+                  placeholder="복용 후 느낀 점을 적어주세요."
                   className="w-full resize-y rounded-input border border-input bg-card px-3.5 py-3 text-base font-normal text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </label>
@@ -246,7 +247,7 @@ export function MedicationNoteFormPage() {
         )}
 
         <div className="mt-auto flex flex-col gap-2 pb-4">
-          <Button onClick={save} disabled={!canSave}>
+          <Button onClick={() => void save()} disabled={!canSave}>
             {editing ? '수정 저장' : '저장'}
           </Button>
           {editing && (
@@ -266,13 +267,13 @@ export function MedicationNoteFormPage() {
         <DialogContent variant="sheet">
           <DialogHeader>
             <DialogTitle>이 메모를 삭제할까요?</DialogTitle>
-            <DialogDescription>삭제한 복약 메모는 다시 복구할 수 없습니다.</DialogDescription>
+            <DialogDescription>삭제한 복약 메모는 다시 복구할 수 없어요.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDeleteOpen(false)}>
               취소
             </Button>
-            <Button variant="danger" onClick={remove}>
+            <Button variant="danger" onClick={() => void remove()}>
               삭제
             </Button>
           </DialogFooter>

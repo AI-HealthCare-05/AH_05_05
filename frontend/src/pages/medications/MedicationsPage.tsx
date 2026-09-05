@@ -12,7 +12,7 @@ import {
   type MedicationOverviewItem,
   type MedicationOverviewRange,
 } from '@/entities/medication';
-import { applyMedicationAliases, setMedicationAlias } from '@/entities/medication-alias';
+import { updateEpisodeAlias } from '@/entities/medication-alias';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
@@ -107,10 +107,7 @@ export function MedicationsPage({
     overviewRequestRef.current.promise
       .then((data) => {
         if (cancelled) return;
-        const next = applyMedicationAliases(
-          data.filter((overview) => overview.medications.length > 0),
-          { scope: principalKey },
-        );
+        const next = data.filter((overview) => overview.medications.length > 0);
         const nextIds = new Set(next.map((overview) => overview.recordId));
         setOverviews(next);
         setExpandedRecordIds((current) => new Set([...current].filter((id) => nextIds.has(id))));
@@ -178,7 +175,7 @@ export function MedicationsPage({
             slots: episodeSlots[medication.medicationId] ?? [],
           })),
       });
-      setMedicationAlias(episodeEditing.recordId, episodeAlias, { scope: principalKey });
+      await updateEpisodeAlias(episodeEditing.recordId, episodeAlias);
       setOverviews((current) =>
         current?.map((overview) =>
           overview.recordId === episodeEditing.recordId
@@ -604,6 +601,7 @@ function MedicationEpisodeSheet({
                   label="복약 별칭"
                   aria-label="복약 별칭"
                   placeholder="예: 감기약"
+                  maxLength={50}
                   value={alias}
                   onChange={(event) => onAliasChange(event.target.value)}
                 />

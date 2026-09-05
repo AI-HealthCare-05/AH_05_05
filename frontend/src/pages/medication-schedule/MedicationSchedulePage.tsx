@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { useSession } from '@/app/SessionContext';
 import {
   Button,
   Card,
@@ -28,7 +27,6 @@ import {
   type NotifySettings,
   type UpdateNotifySettingsPayload,
 } from '@/entities/settings';
-import { setMedicationAlias } from '@/entities/medication-alias';
 import {
   getPushPermission,
   requestPushPermission,
@@ -827,7 +825,6 @@ function MedicationRegistrationWizard({
   onBack,
 }: MedicationRegistrationWizardProps) {
   const navigate = useNavigate();
-  const { principalKey } = useSession();
   const [step, setStep] = useState<3 | 4 | 5>(3);
   const [slots, setSlots] = useState<Record<number, MealSlot[]>>(initialSlots);
   const [mealTimes, setMealTimes] = useState<MealTimes>(initialMealTimes);
@@ -1055,7 +1052,6 @@ function MedicationRegistrationWizard({
         eveningMedicationTime: mealTimes.evening,
         bedtimeMedicationTime: mealTimes.bedtime,
       });
-      setMedicationAlias(recordId, alias, { scope: principalKey });
       setCompleted(true);
     } catch (error: unknown) {
       if (selectedNotifyMedication) {

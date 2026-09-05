@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { listMedicationNotes, type MedicationNote } from '@/entities/medication-note';
-import { applyMedicationAliases } from '@/entities/medication-alias';
 import { getMedicationOverviews, type MedicationOverview } from '@/entities/medication';
 import { useSession } from '@/app/SessionContext';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
@@ -21,24 +20,25 @@ export function MedicationNotesPage() {
   const { principalKey } = useSession();
   const [notes, setNotes] = useState<MedicationNote[] | null>(null);
   const [overviews, setOverviews] = useState<MedicationOverview[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setNotes(listMedicationNotes({ scope: principalKey }));
+    setNotes(null);
     setOverviews(null);
-    getMedicationOverviews()
-      .then((data) => {
-        if (!cancelled) {
-          setOverviews(
-            applyMedicationAliases(
-              data.filter((overview) => overview.medications.length > 0),
-              { scope: principalKey },
-            ),
-          );
-        }
+    setLoadError(null);
+    Promise.all([listMedicationNotes(), getMedicationOverviews()])
+      .then(([nextNotes, data]) => {
+        if (cancelled) return;
+        setNotes(nextNotes);
+        setOverviews(data.filter((overview) => overview.medications.length > 0));
       })
-      .catch(() => {
-        if (!cancelled) setOverviews([]);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : '복약 메모를 불러오지 못했어요.');
+          setNotes([]);
+          setOverviews([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -46,10 +46,17 @@ export function MedicationNotesPage() {
   }, [principalKey]);
 
   function prescriptionLabel(note: MedicationNote): string {
-    return (
-      overviews?.find((overview) => overview.recordId === note.recordId)?.alias ??
-      note.prescriptionLabel
-    );
+    const overview = overviews?.find((item) => item.recordId === note.careEpisodeId);
+    return overview?.alias ??
+      (overview ? `${formatDateLabel(overview.start.date, { includeYear: true })} 처방` : '처방');
+  }
+
+  function medicineLabel(note: MedicationNote): string {
+    if (note.medicationId === null) return '처방 전체';
+    const medication = overviews
+      ?.flatMap((overview) => overview.medications)
+      .find((item) => item.medicationId === note.medicationId);
+    return medication ? `${medication.name} ${medication.dose}` : '약';
   }
 
   return (
@@ -71,7 +78,9 @@ export function MedicationNotesPage() {
               복약 메모 {notes ? `${notes.length}개` : ''}
             </h2>
           </div>
-          {notes === null ? (
+          {loadError ? (
+            <p role="alert" className="text-sm text-danger-strong">{loadError}</p>
+          ) : notes === null ? (
             <div role="status" aria-label="복약 메모 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
           ) : notes.length === 0 ? (
             <Card className="p-5">
@@ -83,18 +92,18 @@ export function MedicationNotesPage() {
                 <button
                   key={note.id}
                   type="button"
-                  aria-label={`${note.medicineLabel} ${note.experience}`}
+                  aria-label={`${medicineLabel(note)} ${note.body}`}
                   className="flex min-h-28 w-full flex-col gap-2 rounded-card bg-card p-4 text-left shadow-card transition-colors hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`)}
                 >
                   <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                    <span className="tnum">{noteDateLabel(note.takenAt)}</span>
+                    <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
                     <span className="rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
                       {prescriptionLabel(note)}
                     </span>
                   </div>
-                  <p className="font-bold text-foreground">{note.medicineLabel}</p>
-                  <p className="text-sm text-muted-foreground">{note.experience}</p>
+                  <p className="font-bold text-foreground">{medicineLabel(note)}</p>
+                  <p className="truncate text-sm text-muted-foreground">{note.body}</p>
                 </button>
               ))}
             </div>
