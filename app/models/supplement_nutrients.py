@@ -241,7 +241,9 @@ class SupplementDose(models.Model):
 
     id = fields.BigIntField(primary_key=True)
     registration = fields.ForeignKeyField(
-        "models.UserSupplementNutrient", related_name="doses", on_delete=fields.CASCADE,
+        "models.UserSupplementNutrient",
+        related_name="doses",
+        on_delete=fields.CASCADE,
     )
     dose_date = fields.DateField()
     slot = fields.CharEnumField(MealSlot)

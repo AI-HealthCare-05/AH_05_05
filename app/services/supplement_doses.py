@@ -26,7 +26,10 @@ class SupplementDoseService:
         records.sort(key=lambda item: (SLOT_ORDER[item.slot], item.registration_id))
         return [
             SupplementDoseResponse(
-                supplement_id=item.registration_id, date=item.dose_date, slot=item.slot.value.lower(), taken=True,
+                supplement_id=item.registration_id,
+                date=item.dose_date,
+                slot=item.slot.value.lower(),
+                taken=True,
             )
             for item in records
         ]
@@ -35,7 +38,9 @@ class SupplementDoseService:
         async with in_transaction() as connection:
             # Lock the registration so concurrent save/undo and registration edits serialize.
             registration = await UserSupplementNutrientRepository().get_owned_for_update(
-                data.supplement_id, user.id, connection,
+                data.supplement_id,
+                user.id,
+                connection,
             )
             if registration is None:
                 raise HTTPException(status_code=404, detail="영양제를 찾지 못했어요.")
@@ -43,9 +48,14 @@ class SupplementDoseService:
             slot = MealSlot(data.slot.upper())
             key = {"registration_id": registration.id, "dose_date": data.date, "slot": slot}
             if data.taken:
-                has_slot = await UserSupplementNutrientSlot.filter(
-                    user_suppl_nutrient_id=registration.id, slot=slot,
-                ).using_db(connection).exists()
+                has_slot = (
+                    await UserSupplementNutrientSlot.filter(
+                        user_suppl_nutrient_id=registration.id,
+                        slot=slot,
+                    )
+                    .using_db(connection)
+                    .exists()
+                )
                 if (
                     registration.status != SupplementStatus.ACTIVE
                     or data.date < registration.start_date

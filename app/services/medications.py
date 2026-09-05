@@ -180,10 +180,7 @@ class MedicationService:
         cursor_key = self._decode_note_cursor(cursor)
         if cursor_key is not None:
             cursor_dosed_at, cursor_id = cursor_key
-            query = query.filter(
-                Q(dosed_at__lt=cursor_dosed_at)
-                | (Q(dosed_at=cursor_dosed_at) & Q(id__lt=cursor_id))
-            )
+            query = query.filter(Q(dosed_at__lt=cursor_dosed_at) | (Q(dosed_at=cursor_dosed_at) & Q(id__lt=cursor_id)))
 
         page = list(await query.order_by("-dosed_at", "-id").limit(limit + 1))
         has_next = len(page) > limit

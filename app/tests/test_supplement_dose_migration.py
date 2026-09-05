@@ -14,8 +14,10 @@ MIGRATIONS = Path(__file__).parents[1] / "core/db/migrations/models"
 def snapshot(filename: str) -> dict:
     tree = ast.parse((MIGRATIONS / filename).read_text(encoding="utf-8"))
     assignment = next(
-        node for node in tree.body
-        if isinstance(node, ast.Assign) and any(getattr(target, "id", None) == "MODELS_STATE" for target in node.targets)
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(getattr(target, "id", None) == "MODELS_STATE" for target in node.targets)
     )
     return json.loads(zlib.decompress(base64.b64decode(ast.literal_eval(assignment.value))))
 

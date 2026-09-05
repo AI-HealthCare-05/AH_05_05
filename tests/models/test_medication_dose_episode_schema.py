@@ -5,7 +5,6 @@ from tortoise import Tortoise, fields
 
 from app.core.db.databases import TORTOISE_APP_MODELS
 
-
 MIGRATION_NAME = "29_20260905164657_dose_care_episode"
 
 
@@ -59,10 +58,7 @@ async def test_downgrade_allows_same_slot_rows_from_multiple_episodes_to_remain(
 def test_migration_state_keeps_episode_relation_required() -> None:
     migration = import_module(f"app.core.db.migrations.models.{MIGRATION_NAME}")
     state = decompress_dict(migration.MODELS_STATE)
-    fields_by_name = {
-        field["name"]: field
-        for field in state["models.MedicationDose"]["fk_fields"]
-    }
+    fields_by_name = {field["name"]: field for field in state["models.MedicationDose"]["fk_fields"]}
 
     assert fields_by_name["care_episode"]["nullable"] is False
     assert fields_by_name["care_episode"]["on_delete"] == "CASCADE"

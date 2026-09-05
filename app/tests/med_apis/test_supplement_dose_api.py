@@ -20,14 +20,20 @@ class TestSupplementDoseAPI(TestCase):
             "/api/v1/med/user-suppl-nutr",
             headers=self.headers,
             json={
-                "custom_name": "테스트 영양제", "dose_amount": "1", "dose_unit": "정",
-                "start_date": (self.today - timedelta(days=1)).isoformat(), "slots": ["MORNING", "EVENING"],
+                "custom_name": "테스트 영양제",
+                "dose_amount": "1",
+                "dose_unit": "정",
+                "start_date": (self.today - timedelta(days=1)).isoformat(),
+                "slots": ["MORNING", "EVENING"],
             },
         )
         assert created.status_code == 201
         self.registration_id = created.json()["id"]
         self.payload = {
-            "supplementId": self.registration_id, "date": self.today.isoformat(), "slot": "morning", "taken": True,
+            "supplementId": self.registration_id,
+            "date": self.today.isoformat(),
+            "slot": "morning",
+            "taken": True,
         }
 
     async def asyncTearDown(self) -> None:
@@ -36,7 +42,9 @@ class TestSupplementDoseAPI(TestCase):
 
     async def save(self, **changes):
         return await self.client.put(
-            "/api/v1/med/supplement-doses", headers=self.headers, json={**self.payload, **changes},
+            "/api/v1/med/supplement-doses",
+            headers=self.headers,
+            json={**self.payload, **changes},
         )
 
     async def test_record_is_idempotent_and_undo_only_removes_selected_slot(self) -> None:
@@ -47,7 +55,9 @@ class TestSupplementDoseAPI(TestCase):
         assert await SupplementDose.all().count() == 1
         await self.save(slot="evening")
         listed = await self.client.get(
-            "/api/v1/med/supplement-doses", params={"date": self.today.isoformat()}, headers=self.headers,
+            "/api/v1/med/supplement-doses",
+            params={"date": self.today.isoformat()},
+            headers=self.headers,
         )
         assert [item["slot"] for item in listed.json()] == ["morning", "evening"]
         for _ in range(2):
@@ -61,13 +71,17 @@ class TestSupplementDoseAPI(TestCase):
         await self.save()
         for taken in (True, False):
             response = await self.client.put(
-                "/api/v1/med/supplement-doses", headers=self.other_headers, json={**self.payload, "taken": taken},
+                "/api/v1/med/supplement-doses",
+                headers=self.other_headers,
+                json={**self.payload, "taken": taken},
             )
             assert response.status_code == 404
         missing = await self.save(supplementId=99999999)
         assert missing.status_code == 404
         listed = await self.client.get(
-            "/api/v1/med/supplement-doses", params={"date": self.today.isoformat()}, headers=self.other_headers,
+            "/api/v1/med/supplement-doses",
+            params={"date": self.today.isoformat()},
+            headers=self.other_headers,
         )
         assert listed.status_code == 200
         assert listed.json() == []
@@ -78,7 +92,8 @@ class TestSupplementDoseAPI(TestCase):
             {"date": (self.today + timedelta(days=1)).isoformat()},
             {"date": (self.today - timedelta(days=366)).isoformat()},
             {"date": (self.today - timedelta(days=2)).isoformat()},
-            {"slot": "lunch"}, {"slot": "dinner"},
+            {"slot": "lunch"},
+            {"slot": "dinner"},
         ):
             response = await self.save(**changes)
             assert response.status_code == 422
@@ -88,7 +103,8 @@ class TestSupplementDoseAPI(TestCase):
         await self.save()
         await self.client.patch(
             f"/api/v1/med/user-suppl-nutr/{self.registration_id}",
-            headers=self.headers, json={"slots": ["EVENING"]},
+            headers=self.headers,
+            json={"slots": ["EVENING"]},
         )
         assert (await self.save()).status_code == 422
         assert (await self.save(taken=False)).status_code == 200
@@ -106,10 +122,14 @@ class TestSupplementDoseAPI(TestCase):
 
     async def test_records_are_isolated_by_registration_and_date(self) -> None:
         other = await self.client.post(
-            "/api/v1/med/user-suppl-nutr", headers=self.headers,
+            "/api/v1/med/user-suppl-nutr",
+            headers=self.headers,
             json={
-                "custom_name": "다른 영양제", "dose_amount": "1", "dose_unit": "정",
-                "start_date": self.today.isoformat(), "slots": ["MORNING"],
+                "custom_name": "다른 영양제",
+                "dose_amount": "1",
+                "dose_unit": "정",
+                "start_date": self.today.isoformat(),
+                "slots": ["MORNING"],
             },
         )
         assert other.status_code == 201
@@ -120,10 +140,14 @@ class TestSupplementDoseAPI(TestCase):
         assert (await self.save(date=yesterday)).status_code == 200
         assert (await self.save(taken=False)).status_code == 200
         current = await self.client.get(
-            "/api/v1/med/supplement-doses", headers=self.headers, params={"date": self.today.isoformat()},
+            "/api/v1/med/supplement-doses",
+            headers=self.headers,
+            params={"date": self.today.isoformat()},
         )
         previous = await self.client.get(
-            "/api/v1/med/supplement-doses", headers=self.headers, params={"date": yesterday},
+            "/api/v1/med/supplement-doses",
+            headers=self.headers,
+            params={"date": yesterday},
         )
         assert current.json() == [{**self.payload, "supplementId": other_id}]
         assert previous.json() == [{**self.payload, "date": yesterday}]

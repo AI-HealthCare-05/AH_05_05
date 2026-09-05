@@ -899,12 +899,15 @@ class TestMedicationCancellationAPI(TestCase):
 
         assert saved.status_code == status.HTTP_200_OK
         assert cancelled.status_code == status.HTTP_204_NO_CONTENT
-        assert await MedicationDose.filter(
-            user=user,
-            dose_date=today,
-            slot=MealSlot.MORNING,
-            care_episode=episode,
-        ).count() == 1
+        assert (
+            await MedicationDose.filter(
+                user=user,
+                dose_date=today,
+                slot=MealSlot.MORNING,
+                care_episode=episode,
+            ).count()
+            == 1
+        )
 
     async def test_cancel_other_users_record_returns_403_and_missing_returns_404(self) -> None:
         today = datetime.now(config.TIMEZONE).date()

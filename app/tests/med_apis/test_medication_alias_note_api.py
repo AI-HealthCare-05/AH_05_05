@@ -185,9 +185,9 @@ class TestMedicationNotesAPI(TestCase):
         assert second.json()["total"] == 3
         assert len(second.json()["items"]) == 1
         assert second.json()["nextCursor"] is None
-        assert {
-            item["id"] for item in first.json()["items"] + second.json()["items"]
-        } == {note.id for note in await MedicationNote.filter(care_episode=episode)}
+        assert {item["id"] for item in first.json()["items"] + second.json()["items"]} == {
+            note.id for note in await MedicationNote.filter(care_episode=episode)
+        }
 
     async def test_note_cursor_keeps_unseen_notes_when_cursor_note_time_changes(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -343,7 +343,7 @@ class TestMedicationNotesAPI(TestCase):
 
     async def test_deleting_episode_cascades_notes_and_deleting_medication_nulls_reference(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            headers = await authentication_headers(client, "note-cascade@example.com", "01025000007")
+            await authentication_headers(client, "note-cascade@example.com", "01025000007")
             user = await User.get(email="note-cascade@example.com")
             episode = await create_episode(user, title="2026-09-03 조제약 복약안내")
             medication = await Medication.create(

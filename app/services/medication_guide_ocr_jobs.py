@@ -502,34 +502,9 @@ class MedicationGuideOcrJobService:
                         connection=connection,
                     ):
                         raise OcrJobStateConflictError()
-                    await Medication.filter(care_episode_id=episode.id).using_db(connection).delete()
-                    dispensing_date = request.dispensing_date
-                    episode.title = f"{dispensing_date.isoformat()} 조제약 복약안내"
-                    if "alias" in request.model_fields_set:
-                        episode.alias = request.alias
-                    episode.medication_start_date = dispensing_date
-                    episode.medication_days = max(
-                        (item.days for item in request.medications if "days" in item.model_fields_set),
-                        default=None,
+                    await self._replace_registration_medications(
+                        connection, episode, job, request, confirmation_hash, now
                     )
-                    episode.confirmation_hash = confirmation_hash
-                    episode.updated_at = now
-                    await episode.save(
-                        using_db=connection,
-                        update_fields=[
-                            "title",
-                            "alias",
-                            "medication_start_date",
-                            "medication_days",
-                            "confirmation_hash",
-                            "updated_at",
-                        ],
-                    )
-                    for item in request.medications:
-                        await self._create_medication(connection, episode.id, job.id, dispensing_date, item)
-                    job.structured_result = self._confirmed_review_payload(job, request)
-                    job.updated_at = now
-                    await job.save(using_db=connection, update_fields=["structured_result", "updated_at"])
                     return self._confirmed(job, episode)
                 if "alias" in request.model_fields_set:
                     episode.alias = request.alias
@@ -591,6 +566,44 @@ class MedicationGuideOcrJobService:
                 ],
             )
         return self._confirmed(job, episode)
+
+    async def _replace_registration_medications(
+        self,
+        connection: Any,
+        episode: CareEpisode,
+        job: OcrJob,
+        request: MedicationGuideConfirmRequest,
+        confirmation_hash: str,
+        now: datetime,
+    ) -> None:
+        await Medication.filter(care_episode_id=episode.id).using_db(connection).delete()
+        dispensing_date = request.dispensing_date
+        episode.title = f"{dispensing_date.isoformat()} 조제약 복약안내"
+        if "alias" in request.model_fields_set:
+            episode.alias = request.alias
+        episode.medication_start_date = dispensing_date
+        episode.medication_days = max(
+            (item.days for item in request.medications if "days" in item.model_fields_set),
+            default=None,
+        )
+        episode.confirmation_hash = confirmation_hash
+        episode.updated_at = now
+        await episode.save(
+            using_db=connection,
+            update_fields=[
+                "title",
+                "alias",
+                "medication_start_date",
+                "medication_days",
+                "confirmation_hash",
+                "updated_at",
+            ],
+        )
+        for item in request.medications:
+            await self._create_medication(connection, episode.id, job.id, dispensing_date, item)
+        job.structured_result = self._confirmed_review_payload(job, request)
+        job.updated_at = now
+        await job.save(using_db=connection, update_fields=["structured_result", "updated_at"])
 
     @staticmethod
     async def _can_edit_registration(episode: CareEpisode, *, connection: Any) -> bool:

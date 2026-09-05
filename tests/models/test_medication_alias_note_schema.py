@@ -6,7 +6,6 @@ from tortoise import Tortoise, fields
 
 from app.core.db.databases import TORTOISE_APP_MODELS
 
-
 MIGRATION_DIR = Path(__file__).resolve().parents[2] / "app" / "core" / "db" / "migrations" / "models"
 ALIAS_MIGRATION_NAME = "27_20260904230000_add_care_episode_alias"
 NOTES_MIGRATION_NAME = "28_20260904230001_add_medication_notes"
@@ -31,10 +30,7 @@ def load_migration_state(name: str) -> dict:
 
 
 def state_field(state: dict, model_name: str, field_name: str) -> dict:
-    fields_by_name = {
-        field["name"]: field
-        for field in state[f"models.{model_name}"]["data_fields"]
-    }
+    fields_by_name = {field["name"]: field for field in state[f"models.{model_name}"]["data_fields"]}
     return fields_by_name[field_name]
 
 
