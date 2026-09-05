@@ -34,6 +34,17 @@ def build_pages(*contents: str) -> list[KnowledgePage]:
     ]
 
 
+def build_regulatory_pages(*contents: str) -> list[KnowledgePage]:
+    pages = build_pages(*contents)
+    metadata = pages[0].metadata.model_copy(
+        update={
+            "source_id": "fda_regulatory_drug_labels",
+            "document_type": KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        }
+    )
+    return [page.model_copy(update={"metadata": metadata}) for page in pages]
+
+
 def test_normalize_pages_removes_repeated_header_and_page_numbers() -> None:
     pages = build_pages(
         "대한약사회 환자안전약물관리본부\n환자 정보: 72세 남성\n1/3",
@@ -212,6 +223,37 @@ def test_normalize_pages_skips_fda_table_of_contents_page() -> None:
     assert len(normalized) == 1
     assert normalized[0].page_number == 2
     assert "replacement therapy" in normalized[0].content
+
+
+def test_normalize_pages_skips_fda_highlights_before_full_information() -> None:
+    pages = build_regulatory_pages(
+        "HIGHLIGHTS OF PRESCRIBING INFORMATION\nINDICATIONS AND USAGE\nSummary duplicated from the full label. (1)",
+        "FULL PRESCRIBING INFORMATION: CONTENTS*\n1 INDICATIONS AND USAGE",
+        "FULL PRESCRIBING INFORMATION\n1 INDICATIONS AND USAGE\nLEVO-T is indicated as replacement therapy.",
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert [page.page_number for page in normalized] == [3]
+    assert "Summary duplicated" not in normalized[0].content
+
+
+def test_normalize_pages_removes_fda_cross_references_but_keeps_doses() -> None:
+    pages = build_regulatory_pages(
+        "7 DRUG INTERACTIONS\n"
+        "Thyroid hormones do not readily cross the placental barrier "
+        "[see Use in Specific Populations (8.1)].\n"
+        "The response may change (see Tables 2-5 below).\n"
+        "Administer 2 to 3 mcg/kg/day and monitor every 6 to 12 months."
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert "[see" not in normalized[0].content
+    assert "(see Tables" not in normalized[0].content
+    assert "(8.1)" not in normalized[0].content
+    assert "2 to 3 mcg/kg/day" in normalized[0].content
+    assert "6 to 12 months" in normalized[0].content
 
 
 def test_normalize_pages_removes_known_academic_page_furniture() -> None:

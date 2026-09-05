@@ -22,7 +22,7 @@ _TABLE_CAPTION_PATTERN = re.compile(
     r"(?i)\btable\s*(?:\d+|[IVXLCDM]+)\b",
 )
 _TABLE_CAPTION_LINE_PATTERN = re.compile(
-    r"(?i)^\s*table\s*(?:\d+|[IVXLCDM]+)\b.*$",
+    r"(?i)^\s*table\s*(?:\d+|[IVXLCDM]+)\b[.:]?\s*(?P<title>.*)$",
 )
 _TABLE_SUPER_HEADER_PATTERN = re.compile(
     r"(?i)^\s*(?:effect\s+on\s+nutrient(?:\s+status(?:\s+or\s+function)?)?|"
@@ -44,6 +44,12 @@ _SCIENTIFIC_INTERACTION_HEADERS = [
 ]
 _DUPLICATED_GLYPH_PATTERN = re.compile(r"(?i)([a-z])\1")
 _SUSPICIOUS_SINGLE_LETTER_PATTERN = re.compile(r"\b(?!a\b|i\b)[a-z]\b")
+_TABLE_HEADER_CELL_PATTERN = re.compile(
+    r"(?i)\b(?:age|dose|weight|drug|class|effect|ingredient|result|"
+    r"strength|color|shape|markings|hormone|ratio|potency|binding|"
+    r"number|study|patients|dosage|nutriment|nutrient|references?|ndc|"
+    r"group|cases|recommendation)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -202,6 +208,9 @@ class PdfLayoutExtractor:
     def _find_tables(self, page: Any, page_text: str) -> list[Any]:
         default_tables = page.find_tables() or []
         if not _TABLE_CAPTION_PATTERN.search(page_text):
+            return default_tables
+
+        if any(self._table_column_count(table) > 1 for table in default_tables):
             return default_tables
 
         text_tables = page.find_tables(self._TEXT_TABLE_SETTINGS) or []
@@ -433,6 +442,7 @@ class PdfLayoutExtractor:
         raw_rows = [list(row or []) for row in (table.extract(x_tolerance=1) or [])]
         rows = [[self._normalize_cell(cell) for cell in row] for row in raw_rows if row is not None]
         validation_errors: list[str] = []
+        table_super_headers: list[str] = []
         column_count = max((len(row) for row in rows), default=1)
         if not rows:
             validation_errors.append("EMPTY_TABLE")
@@ -442,20 +452,25 @@ class PdfLayoutExtractor:
             if any(len(row) != column_count for row in rows):
                 validation_errors.append("COLUMN_COUNT_MISMATCH")
             rows = [[*row, *([""] * (column_count - len(row)))] for row in rows]
-            headers = self._headers(rows[0], column_count)
+            headers, data_rows, raw_data_rows, table_super_headers = self._prepare_table_rows(
+                rows=rows,
+                raw_rows=raw_rows,
+                column_count=column_count,
+            )
             restored_rows = self._restore_scientific_merged_rows(
                 table=table,
-                raw_rows=raw_rows,
+                raw_rows=[headers, *raw_data_rows],
                 words=words,
                 headers=headers,
             )
             if restored_rows is not None:
-                raw_rows = restored_rows
-                rows = [[self._normalize_cell(cell) for cell in row] for row in raw_rows]
-                rows = [[*row, *([""] * (column_count - len(row)))] for row in rows]
-            if any(self._has_multiple_primary_entities(row[0]) for row in raw_rows[1:] if row):
+                normalized_restored = [[self._normalize_cell(cell) for cell in row] for row in restored_rows]
+                normalized_restored = [[*row, *([""] * (column_count - len(row)))] for row in normalized_restored]
+                data_rows = normalized_restored[1:]
+                raw_data_rows = restored_rows[1:]
+            if any(self._has_multiple_primary_entities(row[0]) for row in raw_data_rows if row):
                 validation_errors.append("MULTI_ENTITY_ROW")
-            body_rows = self._inherit_primary_entity(rows[1:])
+            body_rows = self._inherit_primary_entity(data_rows)
 
         serialized_rows = [self._serialize_row(headers, row) for row in body_rows if any(row)]
         serialized_rows = self._expand_row_references(
@@ -474,7 +489,7 @@ class PdfLayoutExtractor:
         ]
         if table_words and not self._tokens_are_preserved(
             source=" ".join(table_words),
-            rendered=" ".join([*headers, content]),
+            rendered=" ".join([*table_super_headers, *headers, content]),
         ):
             validation_errors.append("SOURCE_TOKEN_LOSS")
         if not self._totals_are_consistent(body_rows):
@@ -490,8 +505,49 @@ class PdfLayoutExtractor:
             headers=headers,
             rows=[KnowledgeTableRow(cells=row) for row in body_rows],
             column_count=column_count,
+            table_super_headers=table_super_headers,
             validation_errors=list(dict.fromkeys(validation_errors)),
         )
+
+    def _prepare_table_rows(
+        self,
+        *,
+        rows: list[list[str]],
+        raw_rows: list[list[Any]],
+        column_count: int,
+    ) -> tuple[list[str], list[list[str]], list[list[Any]], list[str]]:
+        leading_context_count = 0
+        table_super_headers: list[str] = []
+        while (
+            leading_context_count + 1 < len(rows)
+            and sum(bool(cell) for cell in rows[leading_context_count]) == 1
+            and self._looks_like_table_header(rows[leading_context_count + 1])
+        ):
+            table_super_headers.extend(cell for cell in rows[leading_context_count] if cell)
+            leading_context_count += 1
+
+        table_rows = rows[leading_context_count:]
+        raw_table_rows = raw_rows[leading_context_count:]
+        if table_rows and self._looks_like_table_header(table_rows[0]):
+            return (
+                self._headers(table_rows[0], column_count),
+                table_rows[1:],
+                raw_table_rows[1:],
+                table_super_headers,
+            )
+        return (
+            [f"열 {index + 1}" for index in range(column_count)],
+            table_rows,
+            raw_table_rows,
+            table_super_headers,
+        )
+
+    @staticmethod
+    def _looks_like_table_header(row: list[str]) -> bool:
+        nonempty = [cell.strip() for cell in row if cell.strip()]
+        if len(nonempty) < 2:
+            return False
+        return sum(bool(_TABLE_HEADER_CELL_PATTERN.search(cell)) for cell in nonempty) >= min(2, len(nonempty))
 
     @staticmethod
     def _is_scientific_interaction_table(headers: list[str]) -> bool:
@@ -646,11 +702,8 @@ class PdfLayoutExtractor:
         updated_text_blocks = list(text_blocks)
         updated_table_blocks: list[KnowledgePageBlock] = []
         for table_block in table_blocks:
-            if not self._is_scientific_interaction_table(table_block.headers):
-                updated_table_blocks.append(table_block)
-                continue
             table_title: str | None = None
-            super_headers: list[str] = []
+            super_headers: list[str] = list(table_block.table_super_headers)
             block_updates: dict[int, list[str]] = {}
             for block_index, block in enumerate(updated_text_blocks):
                 gap = table_block.bbox.top - block.bbox.bottom
@@ -690,8 +743,9 @@ class PdfLayoutExtractor:
         super_headers: list[str] = []
         for line in content.splitlines():
             normalized = re.sub(r"\s+", " ", line).strip()
-            if _TABLE_CAPTION_LINE_PATTERN.match(normalized):
-                table_title = normalized
+            caption_match = _TABLE_CAPTION_LINE_PATTERN.match(normalized)
+            if caption_match:
+                table_title = caption_match.group("title").strip(" .:-") or None
             elif _TABLE_SUPER_HEADER_PATTERN.match(normalized):
                 super_headers.append(normalized)
             else:

@@ -83,6 +83,21 @@ class FakeScientificTablePage(FakeLayoutPage):
         return [self._text_table]
 
 
+class FakeRuledTablePage(FakeLayoutPage):
+    def __init__(self, *, words, default_tables, text_table, line_table):
+        super().__init__(words=words)
+        self._default_tables = default_tables
+        self._text_table = text_table
+        self._line_table = line_table
+
+    def find_tables(self, table_settings=None):
+        if not table_settings:
+            return self._default_tables
+        if table_settings.get("horizontal_strategy") == "lines":
+            return [self._line_table]
+        return [self._text_table]
+
+
 class FakeLayeredTextPage(FakeLayoutPage):
     def __init__(self, *, layers):
         self._layers = layers
@@ -351,6 +366,110 @@ def test_extract_prefers_line_bounded_rows_for_scientific_table() -> None:
     assert "INR jumped from 18 months stable INR 2.0-2.9 to 12.3 in a week" in table.content
 
 
+def test_extract_prefers_valid_default_ruled_table_over_fragmented_candidates() -> None:
+    default_table = FakeTable(
+        (30, 100, 500, 240),
+        [
+            ["Drug or Drug Class", "Effect"],
+            ["Calcium Carbonate", "May reduce levothyroxine absorption."],
+        ],
+    )
+    fragmented_table = FakeTable(
+        (30, 100, 500, 240),
+        [
+            ["Drug", "or", "Drug", "Class", "Effect"],
+            ["Calcium", "Carbonate", "May", "reduce", "absorption"],
+        ],
+    )
+    page = FakeRuledTablePage(
+        words=[
+            word("Table", 40, 70, 75, 82),
+            word("2.", 78, 70, 88, 82),
+            word("Interactions", 92, 70, 160, 82),
+            word("Calcium", 40, 140, 90, 152),
+        ],
+        default_tables=[default_table],
+        text_table=fragmented_table,
+        line_table=fragmented_table,
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
+    assert table.headers == ["Drug or Drug Class", "Effect"]
+    assert table.rows[0].cells == [
+        "Calcium Carbonate",
+        "May reduce levothyroxine absorption.",
+    ]
+    assert table.table_title == "Interactions"
+
+
+def test_extract_preserves_first_row_of_headerless_continued_table() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("Salicylates", 40, 140, 100, 152),
+            word("inhibit", 300, 140, 340, 152),
+        ],
+        tables=[
+            FakeTable(
+                (30, 100, 500, 200),
+                [
+                    ["Salicylates (> 2 g/day)", "Salicylates inhibit T4 and T3 binding."],
+                    ["Other drugs", "May displace thyroid hormones."],
+                ],
+            )
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+    table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
+    assert table.headers == ["열 1", "열 2"]
+    assert table.rows[0].cells == [
+        "Salicylates (> 2 g/day)",
+        "Salicylates inhibit T4 and T3 binding.",
+    ]
+
+    inherited = PdfLayoutExtractor().inherit_continued_table_headers(
+        extraction,
+        ["Drug or Drug Class", "Effect"],
+    )
+
+    continued = next(block for block in inherited.blocks if block.kind == KnowledgeContentKind.TABLE)
+    assert continued.headers == ["Drug or Drug Class", "Effect"]
+    assert "Drug or Drug Class=Salicylates (> 2 g/day)" in continued.content
+
+
+def test_extract_keeps_spanning_table_context_as_metadata() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("Potential", 40, 110, 95, 122),
+            word("impact:", 100, 110, 145, 122),
+            word("Drug", 40, 140, 68, 152),
+            word("Effect", 300, 140, 345, 152),
+        ],
+        tables=[
+            FakeTable(
+                (30, 100, 500, 220),
+                [
+                    ["Potential impact: Concurrent use may reduce efficacy.", ""],
+                    ["Drug or Drug Class", "Effect"],
+                    ["Calcium Carbonate", "May reduce absorption."],
+                ],
+            )
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
+    assert table.headers == ["Drug or Drug Class", "Effect"]
+    assert table.table_super_headers == ["Potential impact: Concurrent use may reduce efficacy."]
+    assert table.rows[0].cells == [
+        "Calcium Carbonate",
+        "May reduce absorption.",
+    ]
+
+
 def test_extract_rejects_single_column_false_table() -> None:
     false_table = FakeTable(
         (30, 100, 500, 300),
@@ -550,7 +669,7 @@ def test_extract_separates_scientific_table_caption_and_super_headers() -> None:
 
     table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
     text = "\n".join(block.content for block in extraction.blocks if block.kind == KnowledgeContentKind.TEXT)
-    assert table.table_title == "Table 2. Summary"
+    assert table.table_title == "Summary"
     assert table.table_super_headers == [
         "Effect on Nutrient",
         "Human Studies",

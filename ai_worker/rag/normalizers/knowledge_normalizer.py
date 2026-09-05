@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from ai_worker.schemas.knowledge import (
     KnowledgeContentKind,
+    KnowledgeDocumentType,
     KnowledgePage,
     KnowledgeTableRow,
 )
@@ -61,6 +62,19 @@ class KnowledgeNormalizer:
     _FDA_CONTENTS_PATTERN = re.compile(
         r"^FULL PRESCRIBING INFORMATION:\s*CONTENTS\*?",
         flags=re.IGNORECASE,
+    )
+    _FDA_FULL_INFORMATION_PATTERN = re.compile(
+        r"(?im)^\s*FULL PRESCRIBING INFORMATION\s*$",
+    )
+    _FDA_SEE_REFERENCE_PATTERN = re.compile(
+        r"\s*(?:"
+        r"\[\s*see\b[^\]]*\]"
+        r"|\(\s*see\b(?:[^()]|\([^()]*\))*\)"
+        r")",
+        flags=re.IGNORECASE,
+    )
+    _FDA_NUMERIC_CROSS_REFERENCE_PATTERN = re.compile(
+        r"\s*\(\s*\d+(?:\.\d+)*(?:\s*[,;]\s*\d+(?:\.\d+)*)*\s*\)",
     )
     _ACADEMIC_PAGE_FURNITURE_PATTERNS = (
         re.compile(
@@ -135,9 +149,17 @@ class KnowledgeNormalizer:
             return []
 
         replacements = verified_text_replacements or {}
+        document_type = pages[0].metadata.document_type
+        pages = self._drop_regulatory_front_matter(
+            pages,
+            document_type=document_type,
+        )
         normalized_texts = [
             self._apply_verified_text_replacements(
-                self._normalize_text(page.content),
+                self._normalize_document_text(
+                    page.content,
+                    document_type=document_type,
+                ),
                 replacements,
             )
             for page in pages
@@ -172,6 +194,7 @@ class KnowledgeNormalizer:
             for block in sorted(page.blocks, key=lambda item: item.order):
                 block_content = self._normalize_block_content(
                     block.content,
+                    document_type=document_type,
                     intact_words=intact_words,
                     repeated_edge_signatures=repeated_edge_signatures,
                     verified_text_replacements=replacements,
@@ -185,7 +208,10 @@ class KnowledgeNormalizer:
                 if block.kind == KnowledgeContentKind.TABLE:
                     update["headers"] = [
                         self._apply_verified_text_replacements(
-                            self._normalize_text(header),
+                            self._normalize_document_text(
+                                header,
+                                document_type=document_type,
+                            ),
                             replacements,
                         )
                         for header in block.headers
@@ -194,7 +220,10 @@ class KnowledgeNormalizer:
                         KnowledgeTableRow(
                             cells=[
                                 self._apply_verified_text_replacements(
-                                    self._normalize_text(cell),
+                                    self._normalize_document_text(
+                                        cell,
+                                        document_type=document_type,
+                                    ),
                                     replacements,
                                 )
                                 for cell in row.cells
@@ -221,11 +250,15 @@ class KnowledgeNormalizer:
         self,
         content: str,
         *,
+        document_type: KnowledgeDocumentType,
         intact_words: set[str],
         repeated_edge_signatures: set[str],
         verified_text_replacements: dict[str, str],
     ) -> str:
-        normalized = self._normalize_text(content)
+        normalized = self._normalize_document_text(
+            content,
+            document_type=document_type,
+        )
         normalized = self._apply_verified_text_replacements(
             normalized,
             verified_text_replacements,
@@ -247,6 +280,34 @@ class KnowledgeNormalizer:
             repeated_edge_signatures,
         )
         return "\n".join(retained).strip()
+
+    def _drop_regulatory_front_matter(
+        self,
+        pages: list[KnowledgePage],
+        *,
+        document_type: KnowledgeDocumentType,
+    ) -> list[KnowledgePage]:
+        if document_type != KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            return pages
+        for index, page in enumerate(pages):
+            normalized = self._normalize_text(page.content)
+            if self._FDA_FULL_INFORMATION_PATTERN.search(normalized):
+                return pages[index:]
+        return pages
+
+    def _normalize_document_text(
+        self,
+        content: str,
+        *,
+        document_type: KnowledgeDocumentType,
+    ) -> str:
+        normalized = self._normalize_text(content)
+        if document_type != KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            return normalized
+        normalized = self._FDA_SEE_REFERENCE_PATTERN.sub("", normalized)
+        normalized = self._FDA_NUMERIC_CROSS_REFERENCE_PATTERN.sub("", normalized)
+        normalized = re.sub(r"[ \t]+([.,;:])", r"\1", normalized)
+        return normalized
 
     @staticmethod
     def _apply_verified_text_replacements(

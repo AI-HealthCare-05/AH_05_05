@@ -238,6 +238,14 @@ _RESEARCH_NUTRIENT_SUBHEADING = re.compile(
     r"(?im)^\s*(?P<title>[A-Z][A-Za-z]*(?:[\s/–—-]+[A-Za-z]+){0,5}"
     r"\s*\((?:B\s*\d+|[A-Z])\))\s*$"
 )
+_REGULATORY_NUMBERED_SUBSECTION_HEADING = re.compile(
+    r"(?im)^\s*\d+\.\d+(?:\.\d+)*\s+"
+    r"(?P<title>[A-Z][^\n]{1,120}?)\s*$"
+)
+_REGULATORY_BODY_SUBHEADING = re.compile(
+    r"(?im)^\s*(?P<title>Adults|Pediatrics|Absorption|Distribution|"
+    r"Elimination|Metabolism|Excretion|Secondary and Tertiary Hypothyroidism)\s*$"
+)
 
 _HeadingCandidate = tuple[
     int,
@@ -303,12 +311,10 @@ class KnowledgeSplitter:
         chunks: list[KnowledgeChunk] = []
 
         for section in sections:
-            if section.section_type == KnowledgeSectionType.REFERENCES:
-                continue
-            if metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE and section.section_type in {
-                KnowledgeSectionType.STANDARD,
-                KnowledgeSectionType.TEST_METHOD,
-            }:
+            if self._should_skip_section(
+                section,
+                document_type=metadata.document_type,
+            ):
                 continue
             if not self._has_meaningful_body(section):
                 continue
@@ -352,6 +358,21 @@ class KnowledgeSplitter:
                 )
 
         return chunks
+
+    @staticmethod
+    def _should_skip_section(
+        section: KnowledgeSection,
+        *,
+        document_type: KnowledgeDocumentType,
+    ) -> bool:
+        if section.section_type == KnowledgeSectionType.REFERENCES:
+            return True
+        if document_type == KnowledgeDocumentType.REGULATORY_DRUG_LABEL and section.section_title == "10 OVERDOSAGE":
+            return True
+        return document_type == KnowledgeDocumentType.SUPPLEMENT_CODE and section.section_type in {
+            KnowledgeSectionType.STANDARD,
+            KnowledgeSectionType.TEST_METHOD,
+        }
 
     def _split_block_pages(
         self,
@@ -796,6 +817,8 @@ class KnowledgeSplitter:
                     headings,
                 )
             )
+        elif document_type == KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            candidates.extend(KnowledgeSplitter._regulatory_heading_candidates(content))
 
         selected: list[_HeadingCandidate] = []
         last_selected_end = -1
@@ -813,6 +836,24 @@ class KnowledgeSplitter:
             last_start_by_heading[normalized_heading] = start
 
         return KnowledgeSplitter._resolve_inherited_heading_types(selected)
+
+    @staticmethod
+    def _regulatory_heading_candidates(
+        content: str,
+    ) -> list[_HeadingCandidate]:
+        matches = [
+            *_REGULATORY_NUMBERED_SUBSECTION_HEADING.finditer(content),
+            *_REGULATORY_BODY_SUBHEADING.finditer(content),
+        ]
+        return [
+            (
+                match.start(),
+                match.end(),
+                match.group("title").strip(),
+                None,
+            )
+            for match in matches
+        ]
 
     @staticmethod
     def _research_heading_candidates(
@@ -1190,6 +1231,10 @@ class KnowledgeSplitter:
             prefixes.append(f"[연구 대상] {population_label}")
         section_name = metadata.section_title or metadata.section_type.value
         prefixes.append(f"[섹션] {section_name}")
+        if metadata.table_title:
+            prefixes.append(f"[표 제목] {metadata.table_title}")
+        if metadata.table_super_headers:
+            prefixes.append(f"[표 설명] {', '.join(metadata.table_super_headers)}")
         return "\n".join([*prefixes, "[원문]", content])
 
     @staticmethod

@@ -143,6 +143,8 @@ def test_split_preserves_table_context_as_chunk_metadata() -> None:
     assert table_chunk.metadata.table_title == ("Table 2. Clinically relevant interactions")
     assert table_chunk.metadata.table_super_headers == ["Human Studies"]
     assert table_chunk.metadata.section_type == KnowledgeSectionType.INTERACTION
+    assert "[표 제목] Table 2. Clinically relevant interactions" in (table_chunk.embedding_text)
+    assert "[표 설명] Human Studies" in table_chunk.embedding_text
 
 
 def test_split_uses_dni_table_title_for_every_grouped_chunk() -> None:
@@ -631,6 +633,61 @@ def test_split_regulatory_drug_label_preserves_safety_sections() -> None:
         hard_max_tokens=600,
         overlap_tokens=40,
     )
+
+
+def test_split_regulatory_subsections_keep_heading_with_its_body() -> None:
+    page = build_page(
+        "7 DRUG INTERACTIONS\n"
+        "7.9 Anticoagulants (Oral)\nWarfarin response may be affected.\n"
+        "7.10 Drug-Laboratory Test Interactions\n"
+        "Changes in TBG concentration must be considered.\n"
+        "Familial hyper- or hypo-thyroxine binding globulinemias have been described, "
+        "with the incidence of TBG deficiency approximating 1 in 9000.\n"
+        "8 USE IN SPECIFIC POPULATIONS\nPregnancy information follows.",
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        title="LEVO-T prescribing information",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    laboratory_chunk = next(chunk for chunk in chunks if "7.10 Drug-Laboratory" in chunk.content)
+    assert laboratory_chunk.metadata.section_type == KnowledgeSectionType.INTERACTION
+    assert "TBG deficiency approximating 1 in 9000" in laboratory_chunk.content
+
+
+def test_split_regulatory_pharmacokinetic_subheadings_preserve_boundaries() -> None:
+    page = build_page(
+        "12 CLINICAL PHARMACOLOGY\n"
+        "Absorption\nAbsorption varies by fasting state.\n"
+        "Distribution\nThyroid hormones are highly bound to plasma proteins.\n"
+        "Elimination\n"
+        "Metabolism\nT4 is slowly eliminated through sequential deiodination.\n"
+        "Excretion\nThyroid hormones are excreted through bile and gut.",
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        title="LEVO-T prescribing information",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    metabolism_chunk = next(chunk for chunk in chunks if "Metabolism" in chunk.content)
+    assert metabolism_chunk.content.startswith("Elimination\nMetabolism")
+    assert "sequential deiodination" in metabolism_chunk.content
+    assert "Absorption varies" not in metabolism_chunk.content
+
+
+def test_split_excludes_regulatory_overdosage_section() -> None:
+    page = build_page(
+        "10 OVERDOSAGE\nTreatment instructions that are outside chatbot scope.\n"
+        "11 DESCRIPTION\nLEVO-T contains levothyroxine sodium.",
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        title="LEVO-T prescribing information",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    combined = "\n".join(chunk.content for chunk in chunks)
+    assert "Treatment instructions" not in combined
+    assert "contains levothyroxine sodium" in combined
 
 
 def test_split_regulatory_drug_label_recognizes_decorated_highlight_headings() -> None:
