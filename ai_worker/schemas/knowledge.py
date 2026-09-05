@@ -245,6 +245,8 @@ class KnowledgeChunkMetadata(KnowledgeMetadata):
     section_title: str | None = None
     table_title: str | None = None
     table_super_headers: list[str] = Field(default_factory=list)
+    table_group_id: str | None = None
+    table_sequence: int | None = Field(default=None, ge=0)
     page_start: int = Field(ge=1)
     page_end: int = Field(ge=1)
     chunk_index: int = Field(ge=0)

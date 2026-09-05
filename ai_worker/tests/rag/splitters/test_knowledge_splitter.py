@@ -786,6 +786,36 @@ def test_split_excludes_decorated_research_correspondence_front_matter() -> None
     assert "author@example.org" not in chunks[0].content
 
 
+def test_split_keeps_structured_abstract_labels_in_one_summary_section() -> None:
+    page = build_page(
+        "Medications and Food Interfering with Levothyroxine\n"
+        "Abstract\n"
+        "Purpose: Levothyroxine bioavailability can be altered.\n"
+        "Methods: Human studies were reviewed.\n"
+        "Results: Calcium and iron interactions were reported.\n"
+        "Conclusion: Clinicians should consider interactions.\n"
+        "Keywords: L-T4, drug, interference\n"
+        "Introduction\n"
+        "Levothyroxine is widely prescribed.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Medications and Food Interfering with Levothyroxine",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    summary_chunks = [chunk for chunk in chunks if chunk.metadata.section_type == KnowledgeSectionType.SUMMARY]
+    assert len(summary_chunks) == 1
+    assert "Purpose:" in summary_chunks[0].content
+    assert "Methods:" in summary_chunks[0].content
+    assert "Results:" in summary_chunks[0].content
+    assert "Conclusion:" in summary_chunks[0].content
+    assert "Keywords:" in summary_chunks[0].content
+    assert any(
+        chunk.metadata.section_type == KnowledgeSectionType.INTRODUCTION and "widely prescribed" in chunk.content
+        for chunk in chunks
+    )
+
+
 def test_split_excludes_regulatory_manufacturer_block() -> None:
     page = build_page(
         "17 PATIENT COUNSELING INFORMATION\n"
@@ -1077,6 +1107,99 @@ def test_split_adds_interaction_evidence_metadata_to_embedding_text() -> None:
     assert "[상호작용] 영양제-영양제" in chunk.embedding_text
     assert "[근거 수준] 임상시험" in chunk.embedding_text
     assert "[연구 대상] 사람" in chunk.embedding_text
+
+
+def test_split_keeps_shared_table_substances_as_searchable_ingredients() -> None:
+    page = build_research_page_with_table(
+        table_rows=[
+            [
+                "Calcium carbonate; Calcium acetate; Calcium citrate",
+                "Calcium supplement",
+            ]
+        ],
+        table_title=("Summary of Mechanisms of Interfering Substances and Recommendations for Clinicians"),
+    )
+
+    table_chunk = next(
+        chunk
+        for chunk in KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+        if chunk.metadata.content_kind == KnowledgeContentKind.TABLE
+    )
+
+    assert table_chunk.metadata.ingredient_names == [
+        "Calcium carbonate",
+        "Calcium acetate",
+        "Calcium citrate",
+    ]
+
+
+def test_split_assigns_one_group_and_sequence_to_continued_table_pages() -> None:
+    title = "Summary of Mechanisms of Interfering Substances and Recommendations for Clinicians"
+    first = build_research_page_with_table(
+        table_rows=[["Calcium carbonate", "Calcium supplement"]],
+        table_title=title,
+    )
+    second = build_research_page_with_table(
+        table_rows=[["Ferrous sulfate", "Iron supplement"]],
+        table_title=title,
+    ).model_copy(update={"page_number": 2})
+
+    table_chunks = [
+        chunk
+        for chunk in KnowledgeSplitter(token_counter=WordTokenCounter()).split([first, second])
+        if chunk.metadata.content_kind == KnowledgeContentKind.TABLE
+    ]
+
+    assert len(table_chunks) == 2
+    assert table_chunks[0].metadata.table_group_id
+    assert {chunk.metadata.table_group_id for chunk in table_chunks} == {table_chunks[0].metadata.table_group_id}
+    assert [chunk.metadata.table_sequence for chunk in table_chunks] == [0, 1]
+
+
+def test_split_connects_body_text_across_table_only_pages() -> None:
+    before = build_page(
+        "Results\nSamples were collected from the supernatant after",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Levothyroxine interaction review",
+        page_number=3,
+    )
+    before.blocks = [
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TEXT,
+            order=0,
+            bbox=KnowledgeBoundingBox(x0=10, top=10, x1=500, bottom=80),
+            content=before.content,
+        )
+    ]
+    table_page = build_research_page_with_table(
+        table_rows=[["Calcium carbonate", "Calcium supplement"]],
+        table_title="Interaction summary",
+    ).model_copy(
+        update={
+            "page_number": 4,
+            "metadata": before.metadata,
+        }
+    )
+    table_page.blocks = [block for block in table_page.blocks if block.kind == KnowledgeContentKind.TABLE]
+    after = build_page(
+        "2-hour incubation and 10-min centrifugation.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Levothyroxine interaction review",
+        page_number=9,
+    )
+    after.blocks = [
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TEXT,
+            order=0,
+            bbox=KnowledgeBoundingBox(x0=10, top=10, x1=500, bottom=80),
+            content=after.content,
+        )
+    ]
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([before, table_page, after])
+    body = "\n".join(chunk.content for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TEXT)
+
+    assert "supernatant after 2-hour incubation and 10-min centrifugation." in body
 
 
 def test_split_uses_korean_label_for_drug_food_interaction() -> None:

@@ -258,3 +258,49 @@ LEVO-T 수동 검수에서 확인한 중복 요약, 절 경계 단절, 페이지
 - 청크 45는 소아 용량표, 청크 48~52는 상호작용 표, 청크 50은 p.10에서 이어진 Salicylates 행이다.
 - 표 제목과 `Potential impact`는 원문 출처 추적 및 검색 재현을 위해 메타데이터와 임베딩 텍스트에 남기되, 사용자 답변에 `Table 1` 같은 내부 번호를 직접 노출할 필요는 없다.
 - 수동 상태는 자동으로 승인하지 않았다. 현재 `PENDING` 35개와 `REPAIR_REQUIRED` 23개이며, 남은 경고를 문서·청크 단위로 계속 검수한다.
+
+## 7차 Levothyroxine 체계적 문헌고찰 정돈 결과
+
+`Medications and Food Interfering with the Bioavailability of Levothyroxine: A Systematic Review`의 첫 페이지 출판사 장식, 저자 정보, 초록 경계, 페이지 머리말·꼬리말, 표 탐지 오인을 보완하고 `additional-research-pilot-v17-o200k`로 다시 처리했다.
+
+| 확인한 문제 | 원인 | 보완 방법 | v17 결과 |
+| --- | --- | --- | --- |
+| `REVIEW` 배지와 우측 장식 문구가 제목보다 먼저 배치됨 | 첫 페이지 우측의 짧은 배지를 두 번째 본문 열로 오인 | 페이지 상·하단 장식을 제외하고, 서로 인접한 본문 줄이 충분한 경우에만 독립 열로 판정 | 문서 제목이 첫 줄로 복원되고 제목 전 장식 문구가 제거됨 |
+| 저자·소속·이메일·Correspondence가 검색 본문에 남음 | 제목과 `Purpose:` 사이를 일반 본문으로 취급 | 학술논문 첫 페이지에서 메타데이터 제목을 기준으로 제목을 복원하고 제목 뒤부터 `Purpose:`/`Abstract` 전까지 저자 영역을 제외 | 제목과 초록은 보존하고 저자·소속·이메일은 제거됨 |
+| `Methods:`·`Results:`·`Conclusion:`이 별도 대단원으로 분리됨 | 초록 내부 라벨을 본문 절 제목으로 오인 | `Abstract`와 `Introduction` 사이의 콜론형 라벨은 하나의 `SUMMARY` 의미 단위로 유지 | Purpose·Methods·Results·Conclusion·Keywords가 청크 0 하나에 보존됨 |
+| 본문의 `Table 1` 언급 때문에 p.3 전체를 표로 탐지 | 표 탐지식이 줄 중간의 `Table N`까지 허용 | 줄 시작의 실제 표 캡션만 표 후보로 허용 | `Results > Literature Selection`과 Calcium 본문이 정상 본문 청크로 복원됨 |
+| `Therapeutics / andClinicalRiskManagement / 2023:19`, `Liu / et / al`과 DOI가 본문에 섞임 | 세로 방향 출판 정보와 실행 머리말이 여러 줄·블록으로 분리됨 | 분리된 학술지명·저자 실행 머리말·DOI·Dove 라이선스 문구를 페이지 장식으로 판정 | 본문 후보에서 학술지 머리말·꼬리말과 라이선스 문구가 제거됨 |
+| 정상 문장의 `assessment`, `checklist`와 `a)·b)·c)`가 읽기 순서 오류로 차단됨 | 이중 자음과 열거 라벨을 OCR 중복 글자·단일 글자 파편으로 과탐 | 세 글자쌍 이상 연속 반복만 중복 글자 손상으로 보고, 괄호형 열거 라벨은 단일 글자 파편 검사에서 제외 | p.1 초록과 p.2 방법 청크의 잘못된 `READING_ORDER_UNSAFE`가 제거됨 |
+
+### 결정론적 확인 결과
+
+- 청크 0은 문서 제목과 구조화 초록 전체를 가진 `SUMMARY`이다.
+- 청크 1은 p.1의 `followed by`와 p.2의 `hypoglycemics (17.4%)`를 연결하며 `food interactions with LT4.`에서 끝난다.
+- 청크 2는 `Materials and Methods` 전체를 보존하고 `(HQ. Liu & M. Lu) ... (QY. Feng).`에서 끝난다.
+- 청크 3은 `Results > Literature Selection`으로 시작한다.
+- 저자·소속·이메일, Dove 라이선스, 실행 머리말·꼬리말 및 참고문헌 섹션은 검색 후보에 없다.
+- 전체 29개 청크 중 자동 손상 사유가 없는 18개는 `PENDING`, 표 또는 표 페이지와 결합된 11개(청크 3, 19~28)는 `REPAIR_REQUIRED`이다.
+
+자동 검사는 수동 승인을 대신하지 않는다. 따라서 내용이 정상으로 확인된 일반 본문도 `APPROVED`로 자동 변경하지 않았고, 다음 수동 검수는 p.4~8의 연속 상호작용 표와 해당 페이지 범위를 포함하는 청크 3 및 19~28에만 집중한다.
+
+## 8차 Levothyroxine 연속 표·본문 경계 복원 결과
+
+사용자 수동 대조에서 확인한 p.3~9 본문 단절, p.4~8 연속 표, 공통 근거를 공유하는 칼슘염 행, Figure 참조, 표 인용번호와 중복 단독행을 기준으로 일반 규칙을 보완하고 `additional-research-pilot-v20-o200k`로 다시 처리했다.
+
+| 확인한 문제 | 원인 | 보완 방법 | v20 결과 |
+| --- | --- | --- | --- |
+| `supernatant after` 뒤에 p.4~8 표가 끼어 본문이 끊김 | 페이지 순서만 따라 본문과 표를 하나의 흐름으로 연결 | 표 전용 페이지는 표 청크로 독립시키고, 앞뒤 본문 페이지를 연결할 때 공백을 보존 | `supernatant after 2-hour incubation and 10-min centrifugation`으로 복원 |
+| p.4~8의 한 표가 페이지마다 별개 표로 보임 | 연속 페이지에 표 제목과 머리글이 반복되지 않음 | 직전 표 제목·머리글을 같은 열 수의 후속 표에 상속하고, 문서 ID와 표 제목의 SHA-256으로 `table_group_id` 생성, 페이지 순서를 `table_sequence`로 기록 | 표 청크 8개가 그룹 1개, 순번 0~7로 연결 |
+| Calcium carbonate·acetate·citrate가 같은 근거를 공유 | 원문 한 행의 첫 셀에 여러 물질이 줄바꿈으로 기록됨 | 원문 행을 임의 복제하지 않고 첫 셀을 세미콜론 구분 목록으로 보존하며 각 물질명은 검색 메타데이터에 별도 등록 | 공통 근거는 한 번만 보존하고 세 물질명 모두 검색 가능 |
+| `Evidencesa`, `two-arm40`, `studies15–17`이 남음 | 표 머리글·연구설계 단어에 각주 번호가 붙어 추출됨 | 연구 표의 머리글 각주와 `study`, `report`, `trial`, `crossover`, `arm` 뒤 인용번호만 제거 | `Evidences`, `two-arm`, `studies`로 정돈. `1200 mg`, `2–8h`, 연구 수는 보존 |
+| `Sucralfate`, `Androgenb`가 내용 없는 단독행으로 반복 | 페이지 끝에서 첫 열만 한 번 더 추출됨 | 직전 완전한 행과 첫 셀이 같고 나머지 셀이 모두 비어 있을 때만 중복행 제거 | 내용이 있는 원행은 유지하고 단독 중복행 제거 |
+| 본문에 `(Figure 1 and Supplement 3)`가 남음 | 기존 규칙이 단독 Figure 참조만 처리 | 그림을 제공하지 않는 검색 본문에서 Figure·Supplement 복합 위치 참조를 제거하고 주변 주장 문장은 유지 | 본문 Figure 참조 0건 |
+| 복원 후에도 원래 추출 경고가 유지됨 | 표 정규화 후 구조를 다시 판정하지 않음 | 의미 있는 머리글, 일정한 열 수, 두 개 이상 값이 있는 행을 확인한 경우 복원 대상 오류만 해제 | `TABLE_STRUCTURE_UNSAFE` 9건이 해소됨 |
+
+### 결정론적 확인 결과
+
+- 전체 27개 청크는 모두 `PENDING`이며 `REPAIR_REQUIRED`는 0개다.
+- `PENDING`은 자동 승인 상태가 아니다. 원문 대조가 가능한 후보라는 뜻이며 Qdrant 릴리스 전 수동 승인 절차는 유지한다.
+- 칼슘염 공통행은 한 번만 존재하고 `Calcium carbonate`, `Calcium acetate`, `Calcium citrate`가 검색 메타데이터에 포함된다.
+- `Figure N`, `Evidencesa`, `two-arm40`, 내용 없는 `Sucralfate`·`Androgenb` 단독행은 후보 청크에 없다.
+- 참고문헌 번호를 제거해도 문서명, DOI, 원문 URL, 페이지 범위와 청크 ID는 메타데이터에 남아 출처 추적성을 유지한다.

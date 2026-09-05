@@ -19,7 +19,7 @@ _SAME_AS_PATTERN = re.compile(r"(?i)\bsame\s+as\b")
 _TOTAL_PATTERN = re.compile(r"(?i)^(?:total|합계)$")
 _SIMPLE_NUMBER_PATTERN = re.compile(r"^\s*(-?\d+(?:[.,]\d+)?)\s*$")
 _TABLE_CAPTION_PATTERN = re.compile(
-    r"(?i)\btable\s*(?:\d+|[IVXLCDM]+)\b",
+    r"(?im)^\s*table\s*(?:\d+|[IVXLCDM]+)\b",
 )
 _TABLE_CAPTION_LINE_PATTERN = re.compile(
     r"(?i)^\s*table\s*(?:\d+|[IVXLCDM]+)\b[.:]?\s*(?P<title>.*)$",
@@ -42,12 +42,13 @@ _SCIENTIFIC_INTERACTION_HEADERS = [
     "Result",
     "References",
 ]
-_DUPLICATED_GLYPH_PATTERN = re.compile(r"(?i)([a-z])\1")
+_DUPLICATED_GLYPH_PATTERN = re.compile(r"(?i)(?:([a-z])\1){3,}")
 _SUSPICIOUS_SINGLE_LETTER_PATTERN = re.compile(r"\b(?!a\b|i\b)[a-z]\b")
+_ENUMERATION_LABEL_PATTERN = re.compile(r"\b[a-z]\)")
 _TABLE_HEADER_CELL_PATTERN = re.compile(
     r"(?i)\b(?:age|dose|weight|drug|class|effect|ingredient|result|"
     r"strength|color|shape|markings|hormone|ratio|potency|binding|"
-    r"number|study|patients|dosage|nutriment|nutrient|references?|ndc|"
+    r"number|study|patients|dosage|nutriment|nutrient|evidences?|references?|ndc|"
     r"group|cases|recommendation)\b"
 )
 
@@ -101,7 +102,13 @@ class PdfLayoutExtractor:
             )
             or []
         )
-        page_text = " ".join(word["text"] for _, word in words)
+        page_text = "\n".join(
+            line.content
+            for line in self._cluster_lines(
+                words,
+                page_width=float(page.width),
+            )
+        )
         tables = [table for table in self._find_tables(page, page_text) if self._table_column_count(table) > 1]
         table_bboxes = [self._bbox(table.bbox) for table in tables]
         warnings: list[KnowledgeExtractionWarning] = []
@@ -125,6 +132,7 @@ class PdfLayoutExtractor:
         text_blocks, reading_order_safe, is_multi_column = self._build_text_blocks(
             body_words,
             page_width=float(page.width),
+            page_height=float(page.height),
         )
         text_blocks, table_blocks = self._separate_table_context(
             text_blocks=text_blocks,
@@ -134,12 +142,10 @@ class PdfLayoutExtractor:
             warnings.append(KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT)
         has_merged_body_token = any(re.search(r"\S{120,}", block.content) for block in text_blocks)
         has_residual_duplicated_glyphs = any(
-            len(_DUPLICATED_GLYPH_PATTERN.findall(line)) >= 5
-            for block in text_blocks
-            for line in block.content.splitlines()
+            _DUPLICATED_GLYPH_PATTERN.search(line) for block in text_blocks for line in block.content.splitlines()
         )
         has_fragmented_body_line = any(
-            len(_SUSPICIOUS_SINGLE_LETTER_PATTERN.findall(line)) >= 3
+            len(_SUSPICIOUS_SINGLE_LETTER_PATTERN.findall(_ENUMERATION_LABEL_PATTERN.sub("", line))) >= 3
             for block in text_blocks
             for line in block.content.splitlines()
         )
@@ -440,7 +446,17 @@ class PdfLayoutExtractor:
         warnings: list[KnowledgeExtractionWarning],
     ) -> KnowledgePageBlock:
         raw_rows = [list(row or []) for row in (table.extract(x_tolerance=1) or [])]
-        rows = [[self._normalize_cell(cell) for cell in row] for row in raw_rows if row is not None]
+        rows = [
+            [
+                self._normalize_cell(
+                    cell,
+                    preserve_line_boundaries=(column_index == 0),
+                )
+                for column_index, cell in enumerate(row)
+            ]
+            for row in raw_rows
+            if row is not None
+        ]
         validation_errors: list[str] = []
         table_super_headers: list[str] = []
         column_count = max((len(row) for row in rows), default=1)
@@ -468,7 +484,10 @@ class PdfLayoutExtractor:
                 normalized_restored = [[*row, *([""] * (column_count - len(row)))] for row in normalized_restored]
                 data_rows = normalized_restored[1:]
                 raw_data_rows = restored_rows[1:]
-            if any(self._has_multiple_primary_entities(row[0]) for row in raw_data_rows if row):
+            has_shared_class_column = any(header.strip().casefold() == "class" for header in headers)
+            if not has_shared_class_column and any(
+                self._has_multiple_primary_entities(row[0]) for row in raw_data_rows if row
+            ):
                 validation_errors.append("MULTI_ENTITY_ROW")
             body_rows = self._inherit_primary_entity(data_rows)
 
@@ -753,10 +772,18 @@ class PdfLayoutExtractor:
         return retained_lines, table_title, super_headers
 
     @staticmethod
-    def _normalize_cell(value: Any) -> str:
+    def _normalize_cell(
+        value: Any,
+        *,
+        preserve_line_boundaries: bool = False,
+    ) -> str:
         if value is None:
             return ""
-        return re.sub(r"\s+", " ", str(value)).strip()
+        text = str(value)
+        if preserve_line_boundaries:
+            parts = [re.sub(r"\s+", " ", part).strip() for part in text.splitlines() if part.strip()]
+            return "; ".join(parts)
+        return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def _has_multiple_primary_entities(value: Any) -> bool:
@@ -853,6 +880,7 @@ class PdfLayoutExtractor:
         words: list[tuple[int, dict[str, Any]]],
         *,
         page_width: float,
+        page_height: float,
     ) -> tuple[list[KnowledgePageBlock], bool, bool]:
         if not words:
             return [], True, False
@@ -880,7 +908,19 @@ class PdfLayoutExtractor:
                 max(line.bbox.bottom for line in left_lines),
                 max(line.bbox.bottom for line in right_lines),
             )
-        is_multi_column = bool(left_lines and right_lines and column_bottom > column_top)
+        is_multi_column = bool(
+            left_lines
+            and right_lines
+            and column_bottom > column_top
+            and self._has_substantial_column(
+                left_lines,
+                page_height=page_height,
+            )
+            and self._has_substantial_column(
+                right_lines,
+                page_height=page_height,
+            )
+        )
         if not is_multi_column:
             grouped_lines = self._group_lines(lines)
         else:
@@ -903,6 +943,26 @@ class PdfLayoutExtractor:
         reading_order_safe = Counter(assigned_ids) == Counter(source_ids)
         blocks = [self._text_block(group) for group in grouped_lines if group]
         return blocks, reading_order_safe, is_multi_column
+
+    @classmethod
+    def _has_substantial_column(
+        cls,
+        lines: list[_Line],
+        *,
+        page_height: float,
+    ) -> bool:
+        body_lines = sorted(
+            (line for line in lines if line.bbox.top >= page_height * 0.08 and line.bbox.bottom <= page_height * 0.92),
+            key=lambda line: line.bbox.top,
+        )
+        return any(
+            following.bbox.top - previous.bbox.bottom <= cls._BLOCK_GAP * 2
+            for previous, following in zip(
+                body_lines,
+                body_lines[1:],
+                strict=False,
+            )
+        )
 
     @staticmethod
     def _exclude_publication_sidebar(

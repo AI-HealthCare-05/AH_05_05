@@ -401,6 +401,7 @@ class KnowledgeSplitter:
         chunks = self.split(text_pages) if text_pages else []
         metadata = pages[0].metadata
         policy = _POLICIES[metadata.document_type]
+        table_sequences: dict[str, int] = {}
         for page in pages:
             for block in sorted(
                 page.blocks,
@@ -408,6 +409,10 @@ class KnowledgeSplitter:
             ):
                 if block.kind != KnowledgeContentKind.TABLE:
                     continue
+                table_group_id = self._table_group_id(
+                    document_id=metadata.document_id,
+                    table_title=block.table_title,
+                )
                 for table_content in self._group_table_rows(
                     block.content,
                     policy,
@@ -442,9 +447,24 @@ class KnowledgeSplitter:
                             content_kind=KnowledgeContentKind.TABLE,
                             table_title=block.table_title,
                             table_super_headers=block.table_super_headers,
+                            table_group_id=table_group_id,
+                            table_sequence=(table_sequences.get(table_group_id, 0) if table_group_id else None),
                         )
                     )
+                    if table_group_id:
+                        table_sequences[table_group_id] = table_sequences.get(table_group_id, 0) + 1
         return chunks
+
+    @staticmethod
+    def _table_group_id(
+        *,
+        document_id: str,
+        table_title: str | None,
+    ) -> str | None:
+        if not table_title:
+            return None
+        key = f"{document_id}|{table_title.strip().casefold()}"
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
     def _group_table_rows(
         self,
@@ -785,6 +805,15 @@ class KnowledgeSplitter:
 
         for heading, section_type in sorted(headings.items(), key=lambda item: len(item[0]), reverse=True):
             for match in re.finditer(re.escape(heading), content, flags=re.IGNORECASE):
+                if (
+                    document_type == KnowledgeDocumentType.RESEARCH_ARTICLE
+                    and KnowledgeSplitter._is_inline_abstract_label(
+                        content,
+                        match.start(),
+                        match.end(),
+                    )
+                ):
+                    continue
                 is_decorated_heading = KnowledgeSplitter._is_decorated_heading_line(
                     content,
                     match.start(),
@@ -836,6 +865,20 @@ class KnowledgeSplitter:
             last_start_by_heading[normalized_heading] = start
 
         return KnowledgeSplitter._resolve_inherited_heading_types(selected)
+
+    @staticmethod
+    def _is_inline_abstract_label(
+        content: str,
+        start: int,
+        end: int,
+    ) -> bool:
+        if not content[end:].lstrip().startswith(":"):
+            return False
+        abstract_start = re.search(r"(?im)^\s*Abstract\s*$", content)
+        body_start = re.search(r"(?im)^\s*Introduction\s*$", content)
+        if not abstract_start or start <= abstract_start.start():
+            return False
+        return body_start is None or start < body_start.start()
 
     @staticmethod
     def _regulatory_heading_candidates(
@@ -1143,6 +1186,8 @@ class KnowledgeSplitter:
         content_kind: KnowledgeContentKind = KnowledgeContentKind.TEXT,
         table_title: str | None = None,
         table_super_headers: list[str] | None = None,
+        table_group_id: str | None = None,
+        table_sequence: int | None = None,
     ) -> KnowledgeChunk:
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         chunk_key = "|".join(
@@ -1183,6 +1228,8 @@ class KnowledgeSplitter:
                 "content_kind": content_kind,
                 "table_title": table_title,
                 "table_super_headers": table_super_headers or [],
+                "table_group_id": table_group_id,
+                "table_sequence": table_sequence,
             }
         )
         chunk_metadata = KnowledgeChunkMetadata(

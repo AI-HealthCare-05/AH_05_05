@@ -7,6 +7,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeBoundingBox,
     KnowledgeContentKind,
     KnowledgeDocumentType,
+    KnowledgeExtractionWarning,
     KnowledgeMetadata,
     KnowledgePage,
     KnowledgePageBlock,
@@ -40,6 +41,20 @@ def build_regulatory_pages(*contents: str) -> list[KnowledgePage]:
         update={
             "source_id": "fda_regulatory_drug_labels",
             "document_type": KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        }
+    )
+    return [page.model_copy(update={"metadata": metadata}) for page in pages]
+
+
+def build_research_pages(*contents: str) -> list[KnowledgePage]:
+    pages = build_pages(*contents)
+    metadata = pages[0].metadata.model_copy(
+        update={
+            "source_id": "research_drug_nutrient_interactions",
+            "document_type": KnowledgeDocumentType.RESEARCH_ARTICLE,
+            "title": (
+                "Medications and Food Interfering with the Bioavailability of Levothyroxine: A Systematic Review"
+            ),
         }
     )
     return [page.model_copy(update={"metadata": metadata}) for page in pages]
@@ -305,6 +320,30 @@ def test_normalize_pages_removes_figure_labels_but_preserves_claims_and_tables()
     )
 
 
+def test_normalize_pages_removes_figure_caption_without_punctuation() -> None:
+    pages = build_pages(
+        "Results\nSamples were collected from the supernatant after\nFigure 1 The flow chart of literature selection."
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content == ("Results\nSamples were collected from the supernatant after")
+
+
+def test_normalize_pages_removes_figure_and_supplement_cross_reference() -> None:
+    pages = build_research_pages(
+        "Results\n"
+        "The other studies met the exclusions (Figure 1 and Supplement 3).\n"
+        "The clinical finding remains relevant."
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content == (
+        "Results\nThe other studies met the exclusions.\nThe clinical finding remains relevant."
+    )
+
+
 def test_normalize_pages_removes_numeric_reference_column_from_table_content() -> None:
     page = build_pages("Nutriment=niacin | Result=INR increased | References=[271]")[0]
     page.blocks = [
@@ -327,6 +366,130 @@ def test_normalize_pages_removes_numeric_reference_column_from_table_content() -
         "INR increased",
         "",
     ]
+
+
+def test_normalize_pages_removes_attached_table_citations_but_keeps_counts_and_doses() -> None:
+    page = build_research_pages(
+        "Interfering Substances=Calcium carbonate; Calcium acetate; Calcium citrate "
+        "| Class=Calcium supplement "
+        "| Evidencesa=For interaction 1 randomized crossover study14 "
+        "3 prospective studies15–17 4 retrospective studies3,18–20 "
+        "| Recommendation=separate by 2–8h and use 1200 mg"
+    )[0]
+    page.blocks = [
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TABLE,
+            order=0,
+            bbox=KnowledgeBoundingBox(x0=10, top=10, x1=500, bottom=100),
+            content=page.content,
+            headers=[
+                "Interfering Substances",
+                "Class",
+                "Evidencesa",
+                "Recommendation",
+            ],
+            rows=[
+                KnowledgeTableRow(
+                    cells=[
+                        "Calcium carbonate; Calcium acetate; Calcium citrate",
+                        "Calcium supplement",
+                        (
+                            "For interaction 1 randomized crossover study14 "
+                            "3 prospective studies15–17 "
+                            "4 retrospective studies3,18–20"
+                        ),
+                        "separate by 2–8h and use 1200 mg",
+                    ]
+                )
+            ],
+            column_count=4,
+        )
+    ]
+
+    normalized = KnowledgeNormalizer().normalize_pages([page])
+    table = normalized[0].blocks[0]
+
+    assert table.headers[2] == "Evidences"
+    assert table.rows[0].cells[2] == (
+        "For interaction 1 randomized crossover study 3 prospective studies 4 retrospective studies"
+    )
+    assert table.rows[0].cells[3] == "separate by 2–8h and use 1200 mg"
+
+
+def test_normalize_pages_promotes_repeated_table_header_and_drops_orphan_duplicate() -> None:
+    page = build_research_pages(
+        "열 1=Interfering Substances | 열 2=Class | 열 3=Evidencesa\n"
+        "열 1=Sucralfate | 열 2=Gastric protectant | 열 3=1 randomized two-arm40 study\n"
+        "열 1=Sucralfate"
+    )[0]
+    page.blocks = [
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TABLE,
+            order=0,
+            bbox=KnowledgeBoundingBox(x0=10, top=10, x1=500, bottom=100),
+            content=page.content,
+            headers=["열 1", "열 2", "열 3"],
+            rows=[
+                KnowledgeTableRow(cells=["Interfering Substances", "Class", "Evidencesa"]),
+                KnowledgeTableRow(
+                    cells=[
+                        "Sucralfate",
+                        "Gastric protectant",
+                        "1 randomized two-arm40 study",
+                    ]
+                ),
+                KnowledgeTableRow(cells=["Sucralfate", "", ""]),
+            ],
+            column_count=3,
+            validation_errors=["MULTI_ENTITY_ROW", "SOURCE_TOKEN_LOSS"],
+        )
+    ]
+    page.extraction_warnings = [KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE]
+
+    normalized = KnowledgeNormalizer().normalize_pages([page])
+    table = normalized[0].blocks[0]
+
+    assert table.headers == [
+        "Interfering Substances",
+        "Class",
+        "Evidences",
+    ]
+    assert [row.cells for row in table.rows] == [["Sucralfate", "Gastric protectant", "1 randomized two-arm study"]]
+    assert table.content == (
+        "Interfering Substances=Sucralfate | Class=Gastric protectant | Evidences=1 randomized two-arm study"
+    )
+    assert table.validation_errors == []
+    assert KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE not in normalized[0].extraction_warnings
+
+
+def test_normalize_pages_moves_research_table_notes_out_of_body_text() -> None:
+    page = build_research_pages(
+        "Interfering Substances=Calcium carbonate | Class=Calcium supplement\n"
+        "Notes: Some comparisons may show conflicting results."
+    )[0]
+    page.blocks = [
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TABLE,
+            order=0,
+            bbox=KnowledgeBoundingBox(x0=10, top=10, x1=500, bottom=100),
+            content=("Interfering Substances=Calcium carbonate | Class=Calcium supplement"),
+            headers=["Interfering Substances", "Class"],
+            rows=[KnowledgeTableRow(cells=["Calcium carbonate", "Calcium supplement"])],
+            column_count=2,
+            table_title="Interaction summary",
+        ),
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TEXT,
+            order=1,
+            bbox=KnowledgeBoundingBox(x0=10, top=110, x1=500, bottom=140),
+            content="Notes: Some comparisons may show conflicting results.",
+        ),
+    ]
+
+    normalized = KnowledgeNormalizer().normalize_pages([page])
+
+    assert [block.kind for block in normalized[0].blocks] == [KnowledgeContentKind.TABLE]
+    assert normalized[0].blocks[0].table_super_headers == ["Notes: Some comparisons may show conflicting results."]
 
 
 def test_normalize_pages_repairs_verified_word_across_page_boundary() -> None:
@@ -385,6 +548,76 @@ def test_normalize_pages_removes_embedded_publisher_license_block() -> None:
     assert "Dove Medical Press" not in normalized[0].content
     assert "Received:" not in normalized[0].content
     assert "iron and calcium supplements" in normalized[0].content
+
+
+def test_normalize_pages_keeps_research_title_and_abstract_but_removes_authors() -> None:
+    pages = build_research_pages(
+        "Therapeutics and Clinical Risk Management\n"
+        "open access to scientific and medical research\n"
+        "Open Access Full Text Article\n"
+        "R E V I E W\n"
+        "Medications and Food Interfering with the\n"
+        "Bioavailability of Levothyroxine: A Systematic Review\n"
+        "Hanqing Liu, Man Lu, Jiawei Hu\n"
+        "Department of Breast and Thyroid Surgery\n"
+        "Correspondence: author@example.org\n"
+        "Purpose: Levothyroxine bioavailability can be altered.\n"
+        "Methods: Human studies were reviewed.\n"
+        "Results: Calcium and iron interactions were reported.\n"
+        "Conclusion: Clinicians should consider interactions.\n"
+        "Keywords: L-T4, drug, interference\n"
+        "Introduction\n"
+        "Levothyroxine is widely prescribed.\n"
+        "© 2023 Liu et al. This work is published and licensed by "
+        "Dove Medical Pres Limited. License terms follow."
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content.startswith(
+        "Medications and Food Interfering with the Bioavailability "
+        "of Levothyroxine: A Systematic Review\nAbstract\nPurpose:"
+    )
+    assert "Methods: Human studies were reviewed." in normalized[0].content
+    assert "Keywords: L-T4, drug, interference" in normalized[0].content
+    assert "Introduction\nLevothyroxine is widely prescribed." in normalized[0].content
+    assert "Hanqing Liu" not in normalized[0].content
+    assert "Department of" not in normalized[0].content
+    assert "author@example.org" not in normalized[0].content
+    assert "Dove Medical Pres" not in normalized[0].content
+
+
+def test_normalize_pages_removes_research_running_headers_and_footers() -> None:
+    pages = build_research_pages(
+        "Liu et al\n"
+        "hypoglycemics (17.4%), and iron supplements (16.1%).\n"
+        "interactions with LT4.\n"
+        "504 ht ps:/ doi.org/10.2147/TCRM.S414460\n"
+        "Therapeutics andClinicalRiskManagement 2023:19\n"
+        "Powerd byTCPDF (w .tcpdforg)"
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content == ("hypoglycemics (17.4%), and iron supplements (16.1%).\ninteractions with LT4.")
+
+
+def test_normalize_pages_removes_fragmented_vertical_research_footer() -> None:
+    pages = build_research_pages(
+        "The quality assessment was completed.\n"
+        "Therapeutics\n"
+        "andClinicalRiskManagement\n"
+        "2023:19\n"
+        "Liu\n"
+        "et\n"
+        "al\n"
+        "htps:/doi.org/^10.^2147/TCRM.S414460\n"
+        "Table 1 (Continued)."
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content == "The quality assessment was completed."
 
 
 def test_normalize_pages_applies_same_cleanup_to_structured_blocks() -> None:

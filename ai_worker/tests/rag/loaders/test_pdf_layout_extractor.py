@@ -439,6 +439,37 @@ def test_extract_preserves_first_row_of_headerless_continued_table() -> None:
     assert "Drug or Drug Class=Salicylates (> 2 g/day)" in continued.content
 
 
+def test_extract_keeps_shared_multi_substance_row_without_duplicating_evidence() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("Interfering", 40, 110, 100, 122),
+            word("Substances", 105, 110, 170, 122),
+            word("Class", 220, 110, 260, 122),
+            word("Evidences", 320, 110, 390, 122),
+        ],
+        tables=[
+            FakeTable(
+                (30, 100, 500, 220),
+                [
+                    ["Interfering Substances", "Class", "Evidences"],
+                    [
+                        "Calcium carbonate\nCalcium acetate\nCalcium citrate",
+                        "Calcium supplement",
+                        "1 randomized crossover study14",
+                    ],
+                ],
+            )
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+    table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
+
+    assert len(table.rows) == 1
+    assert table.rows[0].cells[0] == ("Calcium carbonate; Calcium acetate; Calcium citrate")
+    assert table.content.count("1 randomized crossover study14") == 1
+
+
 def test_extract_keeps_spanning_table_context_as_metadata() -> None:
     page = FakeLayoutPage(
         words=[
@@ -790,6 +821,32 @@ def test_extract_marks_corrupted_single_letter_fragments_unsafe() -> None:
     assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE in extraction.warnings
 
 
+def test_extract_accepts_normal_double_letters_and_enumeration_labels() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word(
+                "The NHLBI study quality assessment tools and the JBI critical "
+                "appraisal checklist were used to assess the quality",
+                40,
+                140,
+                500,
+                152,
+            ),
+            word(
+                "Exclusions were a) review, b) non-human studies, c) missing treatment, d) unavailable outcomes",
+                40,
+                160,
+                500,
+                172,
+            ),
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE not in (extraction.warnings)
+
+
 def test_extract_accepts_scientific_single_letter_labels() -> None:
     page = FakeLayoutPage(
         words=[
@@ -854,6 +911,49 @@ def test_extract_uses_text_table_strategy_only_when_table_caption_exists() -> No
     assert any(block.kind == KnowledgeContentKind.TABLE for block in extraction.blocks)
     assert page.table_settings[0] is None
     assert page.table_settings[1]["vertical_strategy"] == "text"
+
+
+def test_extract_does_not_build_table_from_inline_table_reference() -> None:
+    false_table = FakeTable(
+        (30, 100, 500, 180),
+        [["Results body", "was split incorrectly"]],
+    )
+    page = FakeBorderlessTablePage(
+        words=[
+            word("Several", 40, 70, 85, 82),
+            word("studies", 90, 70, 135, 82),
+            word("are", 140, 70, 160, 82),
+            word("summarized", 165, 70, 235, 82),
+            word("in", 240, 70, 252, 82),
+            word("Table", 257, 70, 292, 82),
+            word("1.", 296, 70, 306, 82),
+        ],
+        table=false_table,
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert all(block.kind != KnowledgeContentKind.TABLE for block in extraction.blocks)
+    assert page.table_settings == [None]
+
+
+def test_extract_does_not_mark_spaced_review_badge_as_unsafe() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("R", 500, 80, 506, 92),
+            word("E", 510, 80, 516, 92),
+            word("V", 520, 80, 526, 92),
+            word("I", 530, 80, 533, 92),
+            word("E", 537, 80, 543, 92),
+            word("W", 547, 80, 555, 92),
+            word("Purpose:", 40, 200, 100, 212),
+            word("summary", 105, 200, 165, 212),
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE not in extraction.warnings
 
 
 def test_extract_keeps_source_numbers_and_units_in_their_cells() -> None:
@@ -948,6 +1048,31 @@ def test_extract_does_not_treat_non_overlapping_left_and_right_lines_as_columns(
         "Left heading",
         "Centered content",
         "Right footer",
+    ]
+
+
+def test_extract_does_not_treat_single_review_badge_as_second_column() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("Journal", 40, 20, 90, 32),
+            word("banner", 95, 20, 140, 32),
+            word("REVIEW", 500, 80, 550, 92),
+            word("Article", 40, 100, 90, 112),
+            word("title", 95, 100, 130, 112),
+            word("Purpose:", 40, 200, 100, 212),
+            word("summary", 105, 200, 165, 212),
+            word("Introduction", 40, 300, 120, 312),
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT not in extraction.warnings
+    assert [block.content for block in extraction.blocks] == [
+        "Journal banner",
+        "REVIEW\nArticle title",
+        "Purpose: summary",
+        "Introduction",
     ]
 
 

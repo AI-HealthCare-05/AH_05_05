@@ -239,6 +239,42 @@ class FakeCoordinateExtractor:
         )
 
 
+class FakeContinuedTableExtractor:
+    def extract(self, page) -> PdfLayoutExtraction:
+        is_first = not isinstance(page, FakeBrokenCoordinatePage)
+        return PdfLayoutExtraction(
+            blocks=[
+                KnowledgePageBlock(
+                    kind=KnowledgeContentKind.TABLE,
+                    order=0,
+                    bbox=KnowledgeBoundingBox(
+                        x0=10,
+                        top=40,
+                        x1=300,
+                        bottom=100,
+                    ),
+                    content=(
+                        "Drug=Calcium | Effect=Reduced absorption"
+                        if is_first
+                        else "Drug=Iron | Effect=Reduced absorption"
+                    ),
+                    headers=["Drug", "Effect"],
+                    rows=[
+                        {
+                            "cells": [
+                                "Calcium" if is_first else "Iron",
+                                "Reduced absorption",
+                            ]
+                        }
+                    ],
+                    column_count=2,
+                    table_title=("Shared interaction table" if is_first else None),
+                )
+            ],
+            warnings=[],
+        )
+
+
 class FakeTwoPageReader:
     def __init__(self, _: Path) -> None:
         self.pages = [FakeMultiColumnPage(), FakeMultiColumnPage()]
@@ -337,3 +373,38 @@ def test_load_falls_back_only_the_page_with_coordinate_failure(
     assert pages[0].blocks
     assert pages[1].blocks == []
     assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE in (pages[1].extraction_warnings)
+
+
+def test_load_inherits_title_for_consecutive_continued_table_pages(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(
+        knowledge_pdf_loader,
+        "PdfReader",
+        FakeTwoPageReader,
+    )
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-table",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeContinuedTableExtractor(),
+        layout_document_opener=lambda _: FakeTwoPageLayoutDocument(),
+    ).load(pdf_path, metadata)
+
+    table_titles = [
+        block.table_title for page in pages for block in page.blocks if block.kind == KnowledgeContentKind.TABLE
+    ]
+    assert table_titles == [
+        "Shared interaction table",
+        "Shared interaction table",
+    ]

@@ -71,7 +71,7 @@ class KnowledgePdfLoader:
                 ],
             )
 
-    def _load_coordinate_pages(
+    def _load_coordinate_pages(  # noqa: C901
         self,
         reader: PdfReader,
         layout_document: Any,
@@ -82,6 +82,9 @@ class KnowledgePdfLoader:
 
         pages: list[KnowledgePage] = []
         previous_table_headers: list[str] | None = None
+        previous_table_title: str | None = None
+        previous_table_column_count: int | None = None
+        previous_page_had_table = False
         for page_number, (page, layout_page) in enumerate(
             zip(reader.pages, layout_document.pages, strict=True),
             start=1,
@@ -117,6 +120,17 @@ class KnowledgePdfLoader:
                 extraction.blocks,
                 key=lambda block: block.order,
             )
+            if previous_page_had_table and previous_table_title:
+                blocks = [
+                    (
+                        block.model_copy(update={"table_title": previous_table_title})
+                        if block.kind == KnowledgeContentKind.TABLE
+                        and block.table_title is None
+                        and block.column_count == previous_table_column_count
+                        else block
+                    )
+                    for block in blocks
+                ]
             complete_table_headers = [
                 block.headers
                 for block in blocks
@@ -126,6 +140,15 @@ class KnowledgePdfLoader:
             ]
             if complete_table_headers:
                 previous_table_headers = complete_table_headers[-1]
+            table_blocks = [block for block in blocks if block.kind == KnowledgeContentKind.TABLE]
+            if table_blocks:
+                previous_page_had_table = True
+                previous_table_title = table_blocks[-1].table_title
+                previous_table_column_count = table_blocks[-1].column_count
+            else:
+                previous_page_had_table = False
+                previous_table_title = None
+                previous_table_column_count = None
             content = "\n\n".join(block.content.strip() for block in blocks if block.content.strip()).strip()
             if not content:
                 content = self._extract_text(page, metadata).strip()
