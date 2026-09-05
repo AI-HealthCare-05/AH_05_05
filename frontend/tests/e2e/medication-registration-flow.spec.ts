@@ -885,10 +885,12 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   expectAuthenticated(trace.patches);
   const patchPayload = JSON.parse(trace.patches[0].body) as {
     dispensedDate: string;
+    alias: string | null;
     medications: Array<Record<string, unknown>>;
   };
-  expect(Object.keys(patchPayload).sort()).toEqual(['dispensedDate', 'medications']);
+  expect(Object.keys(patchPayload).sort()).toEqual(['alias', 'dispensedDate', 'medications']);
   expect(patchPayload.dispensedDate).toBe('2026-08-22');
+  expect(patchPayload.alias).toBe(null);
   expect(patchPayload.medications).toHaveLength(4);
   expect(patchPayload.medications).toEqual(
     expect.arrayContaining([
@@ -1350,6 +1352,65 @@ test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장�
   expect(patches).toHaveLength(1);
   expectAuthenticated(images);
   expectAuthenticated(patches);
+});
+
+test('OCR 별칭 저장이 실패해도 같은 확정을 재시도하고 중복 회차를 만들지 않는다', async ({ page }) => {
+  await authenticate(page);
+  const patches: CapturedRequest[] = [];
+  const mediumOnlyResult = {
+    ...readyOcrResult,
+    batchId: 'b_mock_9f21',
+  };
+
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, mediumOnlyResult);
+      return;
+    }
+    if (
+      request.method() === 'GET' &&
+      (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
+        path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+    ) {
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    if (request.method() === 'PATCH' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      patches.push(capture(route));
+      if (patches.length === 1) {
+        await fulfillJson(route, { code: 'temporary', message: '잠시 후 다시 시도해주세요.' }, 503);
+      } else {
+        await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
+      }
+      return;
+    }
+    await route.continue();
+  });
+  await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
+    await fulfillJson(route, { start: null, mealTimes: null, medications: [] });
+  });
+
+  await page.goto('/dev/ocr-review');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await page.getByLabel('복약 별칭').fill('재시도 OCR 처방');
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })
+    .getByRole('button', { name: '확인 후 저장', exact: true })
+    .click();
+
+  const errorDialog = page.getByRole('dialog').filter({ hasText: '저장하지 못했어요' });
+  await expect(errorDialog).toBeVisible();
+  await expect(page.getByLabel('복약 별칭')).toHaveValue('재시도 OCR 처방');
+  await errorDialog.getByRole('button', { name: '다시 시도', exact: true }).click();
+  await expect(page).toHaveURL('/medication-schedule?recordId=315&ocrJobId=b_mock_9f21');
+
+  expect(patches).toHaveLength(2);
+  expect(patches.map((request) => (JSON.parse(request.body) as { alias: string | null }).alias)).toEqual([
+    '재시도 OCR 처방',
+    '재시도 OCR 처방',
+  ]);
 });
 
 test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으로 보여준다', async ({ page }) => {

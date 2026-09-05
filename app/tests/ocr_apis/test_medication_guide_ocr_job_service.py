@@ -66,24 +66,25 @@ async def create_user(email: str) -> User:
     )
 
 
-def confirm_request(*, name: str = "수정한 약품 10mg") -> MedicationGuideConfirmRequest:
-    return MedicationGuideConfirmRequest.model_validate(
-        {
-            "dispensingDate": "2026-08-25",
-            "medications": [
-                {
-                    "tempId": "med-1",
-                    "name": name,
-                    "strength": "10mg",
-                    "doseQuantity": "1.5정",
-                    "timesPerDay": 3,
-                    "days": 5,
-                },
-                {"tempId": "user-2", "name": "추가한 약품", "timesPerDay": 1, "days": 3},
-                {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None},
-            ],
-        }
-    )
+def confirm_request(*, name: str = "수정한 약품 10mg", alias: str | None = None) -> MedicationGuideConfirmRequest:
+    payload: dict[str, object] = {
+        "dispensingDate": "2026-08-25",
+        "medications": [
+            {
+                "tempId": "med-1",
+                "name": name,
+                "strength": "10mg",
+                "doseQuantity": "1.5정",
+                "timesPerDay": 3,
+                "days": 5,
+            },
+            {"tempId": "user-2", "name": "추가한 약품", "timesPerDay": 1, "days": 3},
+            {"tempId": "user-3", "name": "필요 시 약품", "timesPerDay": None},
+        ],
+    }
+    if alias is not None:
+        payload["alias"] = alias
+    return MedicationGuideConfirmRequest.model_validate(payload)
 
 
 def test_review_projection_marks_values_outside_public_ranges_for_review() -> None:
@@ -741,15 +742,27 @@ class TestMedicationGuideOcrJobService(TestCase):
                 storage=TemporaryOcrStorage(Path(directory)),
                 redis_pool=FakeRedis(),
             )
-            request = confirm_request()
+            request = confirm_request(alias="OCR 등록 별칭")
 
             first = await service.confirm(user, job.id, request)
             second = await service.confirm(user, job.id, request)
+            renamed = await service.confirm(user, job.id, confirm_request(alias="OCR 변경 별칭"))
+            clear_alias_payload = request.model_dump(mode="json", by_alias=True)
+            clear_alias_payload["alias"] = None
+            cleared = await service.confirm(
+                user,
+                job.id,
+                MedicationGuideConfirmRequest.model_validate(clear_alias_payload),
+            )
 
             assert first == second
+            assert renamed.care_episode_id == first.care_episode_id
+            assert cleared.care_episode_id == first.care_episode_id
             episode = await CareEpisode.get(id=int(first.care_episode_id))
             assert episode.user_id == user.id
             assert episode.title == "2026-08-25 조제약 복약안내"
+            assert episode.alias is None
+            assert await CareEpisode.filter(source_ocr_job_id=job.id).count() == 1
             assert episode.medication_start_date == date(2026, 8, 25)
             assert episode.medication_days == 5
             assert episode.source_ocr_job_id == job.id

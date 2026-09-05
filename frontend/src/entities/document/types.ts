@@ -93,6 +93,8 @@ export type OcrResult = OcrResultPending | OcrResultFailed | OcrResultReady;
 
 export interface ConfirmOcrResultPayload {
   dispensedDate: string;
+  /** OCR 확정과 함께 저장되는 처방 별칭. 재시도 시 중복 처방을 만들지 않습니다. */
+  alias?: string | null;
   medications: Array<{
     tempId: string;
     name: string;

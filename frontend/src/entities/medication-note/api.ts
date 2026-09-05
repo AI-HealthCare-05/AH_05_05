@@ -11,10 +11,11 @@ import type {
   CreateMedicationNotePayload,
   MedicationNote,
   MedicationNoteListParams,
+  MedicationNotePage,
   UpdateMedicationNotePayload,
 } from './types';
 
-type MedicationNoteListResponse = MedicationNote[] | { items: MedicationNote[] };
+type MedicationNoteListResponse = MedicationNotePage;
 
 function notePath(noteId: number | string): string {
   return `/v1/med/notes/${encodeURIComponent(String(noteId))}`;
@@ -22,7 +23,7 @@ function notePath(noteId: number | string): string {
 
 export async function listMedicationNotes(
   params: MedicationNoteListParams = {},
-): Promise<MedicationNote[]> {
+): Promise<MedicationNotePage> {
   if (USE_MOCK) {
     await mockDelay();
     return mockListMedicationNotes(params);
@@ -33,7 +34,7 @@ export async function listMedicationNotes(
   if (params.cursor) query.set('cursor', params.cursor);
   const suffix = query.toString() ? `?${query.toString()}` : '';
   const response = await http.get<MedicationNoteListResponse>(`/v1/med/notes${suffix}`);
-  return Array.isArray(response) ? response : response.items;
+  return response;
 }
 
 export async function getMedicationNote(noteId: number | string): Promise<MedicationNote | null> {

@@ -7,6 +7,7 @@ from app.dependencies.security import get_request_user
 from app.dtos.medications import (
     CreateMedicationNoteRequest,
     MedicationDoseResponse,
+    MedicationNoteListResponse,
     MedicationNoteResponse,
     MedicationOverview,
     SaveMedicationDoseRequest,
@@ -56,26 +57,22 @@ async def update_episode_alias(
 
 @medication_resource_router.get(
     "/notes",
-    response_model=list[MedicationNoteResponse],
+    response_model=MedicationNoteListResponse,
     summary="복약 메모 목록 조회",
 )
 async def list_medication_notes(
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[MedicationService, Depends(get_medication_service)],
-    response: Response,
     episode_id: Annotated[int | None, Query(alias="episodeId", ge=1)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: Annotated[str | None, Query(max_length=200)] = None,
-) -> list[MedicationNoteResponse]:
-    notes, next_cursor = await service.list_notes_page(
+) -> MedicationNoteListResponse:
+    return await service.list_notes_page(
         user,
         episode_id=episode_id,
         limit=limit,
         cursor=cursor,
     )
-    if next_cursor is not None:
-        response.headers["X-Next-Cursor"] = next_cursor
-    return notes
 
 
 @medication_resource_router.post(

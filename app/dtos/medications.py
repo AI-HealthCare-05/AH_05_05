@@ -3,6 +3,7 @@ from datetime import date, datetime
 from pydantic import Field, field_validator, model_validator
 
 from app.dtos.base import CamelModel
+from app.models.enums import CareEpisodeStatus
 
 
 class MedicationStart(CamelModel):
@@ -112,14 +113,32 @@ class UpdateMedicationNoteRequest(CamelModel):
         return self
 
 
+class MedicationNoteMedicationResponse(CamelModel):
+    id: int
+    name: str
+    dose: str | None = None
+
+
 class MedicationNoteResponse(CamelModel):
     id: int
     care_episode_id: int
+    care_episode_title: str
+    care_episode_alias: str | None = None
+    care_episode_start_date: date | None = None
+    care_episode_status: CareEpisodeStatus
+    available_medications: list[MedicationNoteMedicationResponse] = Field(default_factory=list)
     medication_id: int | None = None
+    medication: MedicationNoteMedicationResponse | None = None
     dosed_at: datetime
     body: str
     created_at: datetime
     updated_at: datetime | None = None
+
+
+class MedicationNoteListResponse(CamelModel):
+    items: list[MedicationNoteResponse]
+    total: int = Field(ge=0)
+    next_cursor: str | None = None
 
 
 # 이름을 명시적으로 풀어 쓴 코드와 짧은 코드가 모두 읽기 쉽도록 호환 별칭을 둔다.

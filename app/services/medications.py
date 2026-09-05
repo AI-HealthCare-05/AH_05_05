@@ -2,6 +2,8 @@ import base64
 from datetime import date, datetime, time, timedelta
 from typing import cast
 
+from tortoise.expressions import Q
+
 from app.core import config
 from app.core.exceptions import (
     InvalidDoseDateError,
@@ -16,6 +18,8 @@ from app.dtos.medications import (
     CreateMedicationNoteRequest,
     MedicationDoseResponse,
     MedicationMealTimes,
+    MedicationNoteListResponse,
+    MedicationNoteMedicationResponse,
     MedicationNoteResponse,
     MedicationOverview,
     MedicationOverviewItem,
@@ -155,7 +159,7 @@ class MedicationService:
             dosed_at=request.dosed_at,
             body=request.body,
         )
-        return self._note_response(note)
+        return await self._note_response(note)
 
     async def list_notes_page(
         self,
@@ -164,18 +168,28 @@ class MedicationService:
         episode_id: int | None = None,
         limit: int = 20,
         cursor: str | None = None,
-    ) -> tuple[list[MedicationNoteResponse], str | None]:
+    ) -> MedicationNoteListResponse:
         query = MedicationNote.filter(user_id=user.id)
         if episode_id is not None:
             query = query.filter(care_episode_id=episode_id)
-        notes = list(await query.order_by("-dosed_at", "-id"))
+        total = await query.count()
+        cursor_key = self._decode_note_cursor(cursor)
+        if cursor_key is not None:
+            cursor_dosed_at, cursor_id = cursor_key
+            query = query.filter(
+                Q(dosed_at__lt=cursor_dosed_at)
+                | (Q(dosed_at=cursor_dosed_at) & Q(id__lt=cursor_id))
+            )
 
-        start = self._cursor_offset(notes, cursor)
-        page = notes[start : start + limit + 1]
+        page = list(await query.order_by("-dosed_at", "-id").limit(limit + 1))
         has_next = len(page) > limit
         page = page[:limit]
-        next_cursor = self._encode_note_cursor(page[-1].id) if has_next and page else None
-        return [self._note_response(note) for note in page], next_cursor
+        next_cursor = self._encode_note_cursor(page[-1]) if has_next and page else None
+        return MedicationNoteListResponse(
+            items=[await self._note_response(note) for note in page],
+            total=total,
+            next_cursor=next_cursor,
+        )
 
     async def list_notes(
         self,
@@ -185,17 +199,17 @@ class MedicationService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> list[MedicationNoteResponse]:
-        notes, _next_cursor = await self.list_notes_page(
+        page = await self.list_notes_page(
             user,
             episode_id=episode_id,
             limit=limit,
             cursor=cursor,
         )
-        return notes
+        return page.items
 
     async def get_note(self, user: User, note_id: int) -> MedicationNoteResponse:
         note = await self._get_owned_note(user, note_id)
-        return self._note_response(note)
+        return await self._note_response(note)
 
     async def update_note(
         self,
@@ -214,7 +228,7 @@ class MedicationService:
             note.body = request.body
         note.updated_at = datetime.now(config.TIMEZONE)
         await note.save(update_fields=["medication_id", "dosed_at", "body", "updated_at"])
-        return self._note_response(note)
+        return await self._note_response(note)
 
     async def delete_note(self, user: User, note_id: int) -> None:
         note = await self._get_owned_note(user, note_id)
@@ -242,11 +256,31 @@ class MedicationService:
         return note
 
     @staticmethod
-    def _note_response(note: MedicationNote) -> MedicationNoteResponse:
+    async def _note_response(note: MedicationNote) -> MedicationNoteResponse:
+        episode = await CareEpisode.get(id=note.care_episode_id)
+        medications = await Medication.filter(care_episode_id=episode.id).order_by("id")
+        available_medications = [
+            MedicationNoteMedicationResponse(
+                id=medication.id,
+                name=medication.name,
+                dose=medication.strength,
+            )
+            for medication in medications
+        ]
+        selected_medication = next(
+            (medication for medication in available_medications if medication.id == note.medication_id),
+            None,
+        )
         return MedicationNoteResponse(
             id=note.id,
             care_episode_id=cast(int, note.care_episode_id),  # type: ignore[attr-defined]
+            care_episode_title=episode.title,
+            care_episode_alias=episode.alias,
+            care_episode_start_date=episode.medication_start_date,
+            care_episode_status=episode.status,
+            available_medications=available_medications,
             medication_id=cast(int | None, note.medication_id),  # type: ignore[attr-defined]
+            medication=selected_medication,
             dosed_at=note.dosed_at,
             body=note.body,
             created_at=note.created_at,
@@ -254,22 +288,25 @@ class MedicationService:
         )
 
     @staticmethod
-    def _encode_note_cursor(note_id: int) -> str:
-        return base64.urlsafe_b64encode(str(note_id).encode()).decode().rstrip("=")
+    def _encode_note_cursor(note: MedicationNote) -> str:
+        value = f"{note.dosed_at.isoformat()}|{note.id}"
+        return base64.urlsafe_b64encode(value.encode()).decode().rstrip("=")
 
     @staticmethod
-    def _cursor_offset(notes: list[MedicationNote], cursor: str | None) -> int:
+    def _decode_note_cursor(cursor: str | None) -> tuple[datetime, int] | None:
         if not cursor:
-            return 0
+            return None
         try:
             padded = cursor + "=" * (-len(cursor) % 4)
-            note_id = int(base64.urlsafe_b64decode(padded.encode()).decode())
+            value = base64.urlsafe_b64decode(padded.encode()).decode()
+            dosed_at_value, note_id_value = value.rsplit("|", 1)
+            dosed_at = datetime.fromisoformat(dosed_at_value)
+            note_id = int(note_id_value)
+            if note_id <= 0:
+                return None
+            return dosed_at, note_id
         except (ValueError, UnicodeDecodeError, base64.binascii.Error):
-            return 0
-        for index, note in enumerate(notes):
-            if note.id == note_id:
-                return index + 1
-        return 0
+            return None
 
     @staticmethod
     async def _get_episode(user: User, record_id: int) -> CareEpisode:

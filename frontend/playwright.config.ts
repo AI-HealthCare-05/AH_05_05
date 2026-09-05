@@ -1,7 +1,7 @@
 import { defineConfig } from 'playwright/test';
 
 const testUseMock = process.env.VITE_USE_MOCK === 'false' ? 'false' : 'true';
-const testPort = 44175;
+const testPort = Number(process.env.PLAYWRIGHT_TEST_PORT ?? '44175');
 const testMode = testUseMock === 'false' ? 'e2e-real' : 'e2e-mock';
 const testVapidPublicKey =
   'BAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE';

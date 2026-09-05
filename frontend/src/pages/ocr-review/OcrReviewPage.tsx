@@ -13,7 +13,6 @@ import {
   type OcrResult,
 } from '@/entities/document';
 import type { EditableOcrMedication } from '@/entities/document/types';
-import { updateEpisodeAlias } from '@/entities/medication-alias';
 import {
   Button,
   Card,
@@ -306,8 +305,8 @@ export function OcrReviewPage() {
             : {}),
           ...(medication.days !== undefined ? { days: medication.days } : {}),
         })),
+        alias: episodeAlias.trim() || null,
       });
-      await updateEpisodeAlias(recordId, episodeAlias);
       releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
       if (hasMedication) {

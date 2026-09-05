@@ -8,6 +8,8 @@ export {
 export type {
   CreateMedicationNotePayload,
   MedicationNote,
+  MedicationNoteMedication,
   MedicationNoteListParams,
+  MedicationNotePage,
   UpdateMedicationNotePayload,
 } from './types';
