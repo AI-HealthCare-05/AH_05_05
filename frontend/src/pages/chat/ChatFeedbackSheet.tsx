@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { XIcon } from 'lucide-react';
 import { listCommonCodes, type CommonCodeItem } from '@/entities/common-code';
 import {
@@ -49,6 +49,7 @@ export function ChatFeedbackSheet({
   const [reasonsRetryKey, setReasonsRetryKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const saveGenerationRef = useRef(0);
 
   useEffect(() => {
     if (!open || step === 'end') return;
@@ -80,6 +81,7 @@ export function ChatFeedbackSheet({
 
   useEffect(() => {
     if (!open) {
+      saveGenerationRef.current += 1;
       setStep('end');
       setReasons([]);
       setSelectedReason(null);
@@ -92,14 +94,20 @@ export function ChatFeedbackSheet({
   }, [open]);
 
   function chooseStep(nextStep: Exclude<FeedbackStep, 'end'>) {
+    saveGenerationRef.current += 1;
     setStep(nextStep);
     setSelectedReason(null);
     setReasonsError(null);
     setSaveError(null);
   }
 
-  function skip() {
+  function closeSheet() {
+    saveGenerationRef.current += 1;
     onOpenChange(false);
+  }
+
+  function skip() {
+    closeSheet();
     onFinish();
   }
 
@@ -115,6 +123,8 @@ export function ChatFeedbackSheet({
       return;
     }
 
+    const saveGeneration = saveGenerationRef.current + 1;
+    saveGenerationRef.current = saveGeneration;
     setSaving(true);
     setSaveError(null);
     try {
@@ -122,20 +132,27 @@ export function ChatFeedbackSheet({
         isLike: step === 'positive',
         reasonCode: selectedReason,
       });
-      onOpenChange(false);
+      if (saveGenerationRef.current !== saveGeneration) return;
+      closeSheet();
       onFinish();
     } catch {
+      if (saveGenerationRef.current !== saveGeneration) return;
       setSaveError(FEEDBACK_SAVE_ERROR);
     } finally {
-      setSaving(false);
+      if (saveGenerationRef.current === saveGeneration) setSaving(false);
     }
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) saveGenerationRef.current += 1;
+    onOpenChange(nextOpen);
   }
 
   const title = step === 'end' ? '상담 종료' : '상담 평가';
   const positive = step === 'positive';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
         variant="sheet"
@@ -145,7 +162,7 @@ export function ChatFeedbackSheet({
         <button
           type="button"
           aria-label="평가 닫기"
-          onClick={() => onOpenChange(false)}
+          onClick={closeSheet}
           className="absolute right-3 top-3 flex size-touch items-center justify-center rounded-input text-muted-foreground hover:bg-muted-bg"
         >
           <XIcon aria-hidden className="size-6" />
