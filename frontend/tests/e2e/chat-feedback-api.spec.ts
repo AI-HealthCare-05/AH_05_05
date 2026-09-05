@@ -309,3 +309,53 @@ test('지연된 이전 저장이 닫았다가 다시 연 부정 평가를 닫지
   await negativeSheet.getByRole('button', { name: '평가 닫기' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+test('저장 중 화면을 떠나면 지연된 응답이 현재 채팅 선택을 초기화하지 않는다', async ({ page }) => {
+  let saveSettled = false;
+  await installFeedbackHarness(page, {
+    feedbackHandler: async (route, payload) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { sessionId: 101, ...payload },
+          error: null,
+        }),
+      });
+      saveSettled = true;
+    },
+  });
+  await page.route('**/api/v1/chat/sessions/101', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          messages: [
+            { role: 'USER', content: '평가 API 계약을 확인해 주세요.', status: 'COMPLETED', sources: [] },
+            { role: 'ASSISTANT', content: ANSWER, status: 'COMPLETED', sources: [] },
+          ],
+        },
+        error: null,
+      }),
+    });
+  });
+  await openAnsweredChat(page);
+
+  const feedbackSheet = await openFeedbackStep(page, 'positive');
+  await feedbackSheet.getByRole('button', { name: '제출하고 종료' }).click();
+  await expect.poll(() => saveSettled).toBe(false);
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/terms');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/terms$/);
+  await expect.poll(() => saveSettled, { timeout: 10_000 }).toBe(true);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByText(ANSWER, { exact: true })).toBeVisible();
+});

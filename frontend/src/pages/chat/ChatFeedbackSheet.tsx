@@ -51,6 +51,10 @@ export function ChatFeedbackSheet({
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveGenerationRef = useRef(0);
 
+  useEffect(() => () => {
+    saveGenerationRef.current += 1;
+  }, []);
+
   useEffect(() => {
     if (!open || step === 'end') return;
 
