@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { AlertTriangle, ChevronRight, Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { formatMedicationLabel } from '@/shared/lib/medicationLabel';
 import {
   confirmOcrResult,
   getOcrDocumentImageUrl,
@@ -10,6 +11,7 @@ import {
   releaseOcrDocumentImageUrl,
   uploadDocument,
   type Confidence,
+  type OcrRegistrationDraft,
   type OcrResult,
 } from '@/entities/document';
 import type { EditableOcrMedication } from '@/entities/document/types';
@@ -34,6 +36,7 @@ interface OcrReviewLocationState {
   scheduleStartDate?: string;
   episodeAlias?: string;
   registrationFlow?: boolean;
+  ocrRegistrationDraft?: OcrRegistrationDraft;
 }
 
 type ReadingStage = 'uploading' | 'reading' | 'organizing' | 'complete';
@@ -104,25 +107,67 @@ export function OcrReviewPage() {
   const confirmedReviewMode = searchParams.get('mode') === 'confirmed' && confirmedRecordId !== null;
   const registrationFlow =
     state.registrationFlow === true || searchParams.get('flow') === 'registration';
+  const registrationEditMode =
+    searchParams.get('mode') === 'registration-edit' &&
+    confirmedRecordId !== null &&
+    registrationFlow;
+  const initialBatchId = state.batchId ?? queryBatchId ?? (state.file ? null : 'b_mock_9f21');
+  const initialRegistrationDraft =
+    registrationEditMode && state.ocrRegistrationDraft?.batchId === initialBatchId
+      ? state.ocrRegistrationDraft
+      : null;
   const [batchId, setBatchId] = useState<string | null>(
-    state.batchId ?? queryBatchId ?? (state.file ? null : 'b_mock_9f21'),
+    initialBatchId,
   );
 
-  const [result, setResult] = useState<OcrResult | null>(null);
-  const [readingStage, setReadingStage] = useState<ReadingStage>(
-    state.file ? 'uploading' : 'reading',
+  const [result, setResult] = useState<OcrResult | null>(() =>
+    initialRegistrationDraft
+      ? {
+          batchId: initialRegistrationDraft.batchId,
+          ocrStatus: 'complete',
+          documentImageUrl: initialRegistrationDraft.documentImageUrl,
+          fields: initialRegistrationDraft.dispensedDateConfidence
+            ? {
+                dispensedDate: {
+                  value: initialRegistrationDraft.dispensedDate,
+                  confidence: initialRegistrationDraft.dispensedDateConfidence,
+                },
+              }
+            : {},
+          medications: initialRegistrationDraft.medications.map(
+            ({ timesPerDay, ...medication }) => ({
+              ...medication,
+              ...(timesPerDay !== null ? { timesPerDay } : {}),
+            }),
+          ),
+          lowConfidenceCount: initialRegistrationDraft.lowConfidenceCount,
+        }
+      : null,
   );
-  const [progress, setProgress] = useState(state.file ? 0 : 33);
+  const [readingStage, setReadingStage] = useState<ReadingStage>(
+    initialRegistrationDraft ? 'complete' : state.file ? 'uploading' : 'reading',
+  );
+  const [progress, setProgress] = useState(initialRegistrationDraft ? 100 : state.file ? 0 : 33);
   const [uploadAttempt, setUploadAttempt] = useState(0);
   const [pollAttempt, setPollAttempt] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
-  const [dispensedDate, setDispensedDate] = useState('');
-  const [episodeAlias, setEpisodeAlias] = useState(state.episodeAlias ?? '');
-  const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(null);
-  const [medications, setMedications] = useState<EditableOcrMedication[]>([]);
-  const [reviewedMedicationIds, setReviewedMedicationIds] = useState<Set<string>>(new Set());
-  const [dispensedDateReviewed, setDispensedDateReviewed] = useState(false);
+  const [dispensedDate, setDispensedDate] = useState(initialRegistrationDraft?.dispensedDate ?? '');
+  const [episodeAlias, setEpisodeAlias] = useState(
+    initialRegistrationDraft?.episodeAlias ?? state.episodeAlias ?? '',
+  );
+  const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(
+    initialRegistrationDraft?.dispensedDateConfidence ?? null,
+  );
+  const [medications, setMedications] = useState<EditableOcrMedication[]>(
+    initialRegistrationDraft?.medications ?? [],
+  );
+  const [reviewedMedicationIds, setReviewedMedicationIds] = useState<Set<string>>(
+    () => new Set(initialRegistrationDraft?.reviewedMedicationIds ?? []),
+  );
+  const [dispensedDateReviewed, setDispensedDateReviewed] = useState(
+    initialRegistrationDraft?.dispensedDateReviewed ?? false,
+  );
   const [medicationEditorTarget, setMedicationEditorTarget] =
     useState<MedicationEditorTarget | null>(null);
   const [reviewConfirmOpen, setReviewConfirmOpen] = useState(false);
@@ -146,6 +191,26 @@ export function OcrReviewPage() {
       if (batchId) releaseOcrDocumentImageUrl(batchId);
     };
   }, [batchId]);
+
+  useEffect(() => {
+    if (!batchId || !initialRegistrationDraft) return;
+    let cancelled = false;
+    void Promise.allSettled([
+      getOcrProcessedImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
+      getOcrDocumentImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
+    ]).then(([processed, original]) => {
+      if (cancelled) return;
+      const nextProcessed = processed.status === 'fulfilled' ? processed.value : null;
+      const nextOriginal = original.status === 'fulfilled' ? original.value : null;
+      setProcessedImageUrl(nextProcessed);
+      setOriginalImageUrl(nextOriginal);
+      setImageView(nextProcessed ? 'processed' : 'original');
+      setImageUnavailable(!nextProcessed && !nextOriginal);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId, initialRegistrationDraft]);
 
   useEffect(() => {
     if (!state.file || batchId) return;
@@ -182,7 +247,7 @@ export function OcrReviewPage() {
   }, [batchId, location.pathname, navigate, state.file, uploadAttempt]);
 
   useEffect(() => {
-    if (!batchId) return;
+    if (!batchId || initialRegistrationDraft) return;
     let cancelled = false;
     let pollTimer: number | undefined;
     let completionTimer: number | undefined;
@@ -214,7 +279,11 @@ export function OcrReviewPage() {
             setDispensedDate(data.fields.dispensedDate?.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
             setMedications(data.medications);
-            if (data.ocrStatus === 'ready_for_review' || confirmedReviewMode) {
+            if (
+              data.ocrStatus === 'ready_for_review' ||
+              confirmedReviewMode ||
+              registrationEditMode
+            ) {
               void Promise.allSettled([
                 getOcrProcessedImageUrl(batchId, data.documentImageUrl),
                 getOcrDocumentImageUrl(batchId, data.documentImageUrl),
@@ -259,7 +328,17 @@ export function OcrReviewPage() {
       if (pollTimer) window.clearTimeout(pollTimer);
       if (completionTimer) window.clearTimeout(completionTimer);
     };
-  }, [batchId, confirmedReviewMode, location.pathname, location.search, navigate, pollAttempt, registrationFlow]);
+  }, [
+    batchId,
+    confirmedReviewMode,
+    initialRegistrationDraft,
+    location.pathname,
+    location.search,
+    navigate,
+    pollAttempt,
+    registrationEditMode,
+    registrationFlow,
+  ]);
 
   useEffect(() => {
     const details = STAGE_DETAILS[readingStage];
@@ -298,6 +377,27 @@ export function OcrReviewPage() {
   const dispensedDateTooLate = dispensedDate > maxDispensedDate;
   const canSave = Boolean(dispensedDate) && !dispensedDateTooLate && !saving;
 
+  function createRegistrationDraft(): OcrRegistrationDraft | undefined {
+    if (
+      !batchId ||
+      !result ||
+      (result.ocrStatus !== 'ready_for_review' && result.ocrStatus !== 'complete')
+    ) {
+      return undefined;
+    }
+    return {
+      batchId,
+      documentImageUrl: result.documentImageUrl,
+      dispensedDate,
+      dispensedDateConfidence,
+      dispensedDateReviewed,
+      episodeAlias,
+      medications,
+      reviewedMedicationIds: [...reviewedMedicationIds],
+      lowConfidenceCount: result.lowConfidenceCount,
+    };
+  }
+
   function handleSaveClick() {
     if (!canSave) return;
     if (reviewItemNames.length > 0) {
@@ -308,24 +408,37 @@ export function OcrReviewPage() {
   }
 
   async function save() {
-    if (!result || result.ocrStatus !== 'ready_for_review' || !batchId || !dispensedDate) return;
+    if (
+      !result ||
+      (result.ocrStatus !== 'ready_for_review' &&
+        !(registrationEditMode && result.ocrStatus === 'complete')) ||
+      !batchId ||
+      !dispensedDate
+    ) {
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
-      const { recordId, hasMedication } = await confirmOcrResult(batchId, {
-        dispensedDate,
-        medications: medications.map((medication) => ({
-          tempId: medication.tempId,
-          name: medication.name,
-          ...(medication.strength ? { strength: medication.strength } : {}),
-          ...(medication.doseQuantity ? { doseQuantity: medication.doseQuantity } : {}),
-          ...(medication.timesPerDay !== undefined
-            ? { timesPerDay: medication.timesPerDay }
-            : {}),
-          ...(medication.days !== undefined ? { days: medication.days } : {}),
-        })),
-        alias: episodeAlias.trim() || null,
-      });
+      const { recordId, hasMedication } = await confirmOcrResult(
+        batchId,
+        {
+          dispensedDate,
+          medications: medications.map((medication) => ({
+            tempId: medication.tempId,
+            name: medication.name,
+            ...(medication.strength ? { strength: medication.strength } : {}),
+            ...(medication.doseQuantity ? { doseQuantity: medication.doseQuantity } : {}),
+            ...(medication.timesPerDay !== undefined
+              ? { timesPerDay: medication.timesPerDay }
+              : {}),
+            ...(medication.days !== undefined ? { days: medication.days } : {}),
+          })),
+          alias: episodeAlias.trim() || null,
+        },
+        { registrationEdit: registrationEditMode },
+      );
+      const ocrRegistrationDraft = createRegistrationDraft();
       releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
       if (hasMedication) {
@@ -341,6 +454,7 @@ export function OcrReviewPage() {
             ocrJobId: batchId,
             registrationFlow: true,
             ...(episodeAlias.trim() ? { episodeAlias: episodeAlias.trim() } : {}),
+            ...(ocrRegistrationDraft ? { ocrRegistrationDraft } : {}),
           },
         });
       } else {
@@ -353,7 +467,30 @@ export function OcrReviewPage() {
     }
   }
 
-  if (result?.ocrStatus === 'complete' && !confirmedReviewMode) {
+  const scheduleReturnUrl =
+    (confirmedReviewMode || registrationEditMode) && batchId
+      ? `/medication-schedule?${new URLSearchParams({
+          recordId: String(confirmedRecordId),
+          ocrJobId: batchId,
+          ...(registrationFlow ? { flow: 'registration' } : {}),
+        }).toString()}`
+      : null;
+
+  if (registrationEditMode && result === null) {
+    return (
+      <PageFrame
+        onBack={() =>
+          scheduleReturnUrl ? navigate(scheduleReturnUrl, { replace: true }) : navigate(-1)
+        }
+      >
+        <p role="status" className="text-sm text-muted-foreground">
+          저장한 정보를 불러오는 중...
+        </p>
+      </PageFrame>
+    );
+  }
+
+  if (result?.ocrStatus === 'complete' && !confirmedReviewMode && !registrationEditMode) {
     return (
       <PageFrame onBack={() => navigate(-1)}>
         <Card tone="success" title="이미 등록된 약봉투예요">
@@ -411,16 +548,9 @@ export function OcrReviewPage() {
   const ocrFailed = result.ocrStatus === 'failed';
   const ocrCancelled = result.ocrStatus === 'cancelled';
   const showOcrFailure = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
-  const scheduleReturnUrl =
-    confirmedReviewMode && batchId
-      ? `/medication-schedule?${new URLSearchParams({
-          recordId: String(confirmedRecordId),
-          ocrJobId: batchId,
-          ...(registrationFlow ? { flow: 'registration' } : {}),
-        }).toString()}`
-      : null;
   const returnToSchedule = () => {
     if (!scheduleReturnUrl) return;
+    const ocrRegistrationDraft = createRegistrationDraft();
     navigate(scheduleReturnUrl, {
       replace: true,
       state: {
@@ -431,6 +561,7 @@ export function OcrReviewPage() {
           : {}),
         ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
         ...(registrationFlow ? { registrationFlow: true } : {}),
+        ...(ocrRegistrationDraft ? { ocrRegistrationDraft } : {}),
       },
     });
   };
@@ -510,7 +641,9 @@ export function OcrReviewPage() {
             <label htmlFor="dispensedDate" className="text-base font-bold text-foreground">
               조제일
             </label>
-            <ConfidenceBadge confidence={dispensedDateConfidence ?? undefined} />
+            <ConfidenceBadge
+              confidence={dispensedDateReviewed ? undefined : dispensedDateConfidence ?? undefined}
+            />
           </div>
           <Input
             id="dispensedDate"
@@ -564,7 +697,7 @@ export function OcrReviewPage() {
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <strong className="text-lg text-foreground">
-                    {[medication.name, medication.strength].filter(Boolean).join(' ')}
+                    {formatMedicationLabel(medication.name, medication.strength)}
                   </strong>
                   {hasMissingExtractedMedicationField(medication) ||
                   (medication.confidence === 'low' &&

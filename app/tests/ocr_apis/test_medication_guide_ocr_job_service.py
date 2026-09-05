@@ -32,8 +32,8 @@ from app.dtos.medication_guide_ocr import (
     MedicationGuideResult,
 )
 from app.models.care import CareEpisode
-from app.models.enums import AccountStatus, OcrJobStatus
-from app.models.medications import Medication
+from app.models.enums import AccountStatus, MealSlot, OcrJobStatus
+from app.models.medications import Medication, MedicationDose, MedicationNote
 from app.models.ocr import OcrJob
 from app.models.users import User
 from app.services.medication_guide_ocr_jobs import (
@@ -812,6 +812,62 @@ class TestMedicationGuideOcrJobService(TestCase):
 
             with pytest.raises(OcrJobStateConflictError):
                 await service.confirm(user, job.id, confirm_request(name="다르게 수정한 약품"))
+
+            revised = await service.confirm(
+                user,
+                job.id,
+                confirm_request(name="등록 중 다시 수정한 약품"),
+                allow_registration_edit=True,
+            )
+
+            assert revised.care_episode_id == first.care_episode_id
+            assert await CareEpisode.filter(source_ocr_job_id=job.id).count() == 1
+            assert await Medication.filter(care_episode=episode).count() == 3
+            assert (
+                await Medication.filter(care_episode=episode).order_by("id").first()
+            ).name == "등록 중 다시 수정한 약품"
+
+            await MedicationDose.create(
+                user=user,
+                care_episode=episode,
+                dose_date=date(2026, 8, 25),
+                slot=MealSlot.MORNING,
+            )
+            with pytest.raises(OcrJobStateConflictError):
+                await service.confirm(
+                    user,
+                    job.id,
+                    confirm_request(name="복약 기록 뒤 수정 시도"),
+                    allow_registration_edit=True,
+                )
+            await MedicationDose.filter(care_episode=episode).delete()
+
+            medication = await Medication.filter(care_episode=episode).order_by("id").first()
+            await MedicationNote.create(
+                user=user,
+                care_episode=episode,
+                medication=medication,
+                dosed_at=now,
+                body="등록 중 메모",
+            )
+            with pytest.raises(OcrJobStateConflictError):
+                await service.confirm(
+                    user,
+                    job.id,
+                    confirm_request(name="복약 메모 뒤 수정 시도"),
+                    allow_registration_edit=True,
+                )
+            await MedicationNote.filter(care_episode=episode).delete()
+
+            episode.medication_start_slot = MealSlot.MORNING
+            await episode.save(update_fields=["medication_start_slot"])
+            with pytest.raises(OcrJobStateConflictError):
+                await service.confirm(
+                    user,
+                    job.id,
+                    confirm_request(name="복약시간 저장 뒤 수정 시도"),
+                    allow_registration_edit=True,
+                )
 
     def test_user_review_match_rate_counts_user_filled_missing_strength_as_mismatch(self) -> None:
         job = OcrJob(

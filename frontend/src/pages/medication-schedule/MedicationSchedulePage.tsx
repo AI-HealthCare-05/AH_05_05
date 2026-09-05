@@ -12,6 +12,8 @@ import {
   TimePickerSheet,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
+import { formatMedicationLabel } from '@/shared/lib/medicationLabel';
+import type { OcrRegistrationDraft } from '@/entities/document';
 import {
   getMedicationSchedule,
   saveMedicationSchedule,
@@ -63,6 +65,7 @@ interface ScheduleLocationState {
   ocrJobId?: string;
   registrationFlow?: boolean;
   episodeAlias?: string;
+  ocrRegistrationDraft?: OcrRegistrationDraft;
 }
 
 type FirstDoseSelection = MealSlot | 'not_taken';
@@ -434,7 +437,7 @@ export function MedicationSchedulePage({
       const params = new URLSearchParams({
         batchId: ocrJobId,
         recordId: String(recordId),
-        mode: 'confirmed',
+        mode: registrationFlow ? 'registration-edit' : 'confirmed',
         ...(registrationFlow ? { flow: 'registration' } : {}),
       });
       navigate(`/ocr-review?${params.toString()}`, {
@@ -443,6 +446,7 @@ export function MedicationSchedulePage({
           batchId: ocrJobId,
           ...(scheduleStartDate !== undefined ? { scheduleStartDate } : {}),
           ...(registrationFlow ? { registrationFlow: true, episodeAlias: state.episodeAlias } : {}),
+          ...(state.ocrRegistrationDraft ? { ocrRegistrationDraft: state.ocrRegistrationDraft } : {}),
         },
       });
       return;
@@ -581,7 +585,7 @@ export function MedicationSchedulePage({
                   >
                     <div className="flex flex-col gap-0.5">
                       <p className="text-base font-bold text-foreground">
-                        {med.name} {med.dose}
+                        {formatMedicationLabel(med.name, med.dose)}
                       </p>
                       <p className="text-sm text-muted-foreground">{medicationMetaText(med)}</p>
                     </div>
@@ -1153,7 +1157,9 @@ function MedicationRegistrationWizard({
               {scheduledMeds.map((medication) => (
                 <Card key={medication.medicationId} className="gap-3 p-4">
                   <div>
-                    <p className="font-bold text-foreground">{medication.name} {medication.dose}</p>
+                    <p className="font-bold text-foreground">
+                      {formatMedicationLabel(medication.name, medication.dose)}
+                    </p>
                     {medication.timing && (
                       <p className="mt-1 text-sm text-muted-foreground">{medication.timing}</p>
                     )}

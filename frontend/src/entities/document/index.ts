@@ -12,6 +12,7 @@ export type {
   ConfirmOcrResultResponse,
   OcrField,
   OcrMedication,
+  OcrRegistrationDraft,
   OcrResult,
   OcrStatus,
   UploadDocumentsResult,
