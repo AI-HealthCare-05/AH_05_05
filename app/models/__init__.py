@@ -22,6 +22,7 @@ from .recovery import RecoveryGuide, RecoveryGuideSource
 from .supplement_nutrients import (
     DisplaySupplementNutrientRank,
     NutrientStandard,
+    SupplementDose,
     SupplementNutrient,
     SupplementNutrientRankItem,
     UserSupplementNutrient,

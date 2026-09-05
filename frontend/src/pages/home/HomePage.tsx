@@ -31,6 +31,7 @@ import {
 import { LoginPromptSheet } from './LoginPromptSheet';
 import { MedicationTimeline } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
+import { SupplementTodayCard } from './SupplementTodayCard';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
@@ -75,6 +76,8 @@ export function HomePage({
     () => new Set(),
   );
   const [supplementRegistrationPending, setSupplementRegistrationPending] = useState(false);
+  const [supplementLoadError, setSupplementLoadError] = useState<string | null>(null);
+  const [supplementReloadKey, setSupplementReloadKey] = useState(0);
   const [homeTab, setHomeTab] = useState<'medication' | 'supplement'>('medication');
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
@@ -106,6 +109,7 @@ export function HomePage({
 
     let cancelled = false;
     setSupplementRegistrationPending(true);
+    setSupplementLoadError(null);
     getSupplements()
       .then((result) => {
         if (!cancelled) {
@@ -123,6 +127,7 @@ export function HomePage({
         if (!cancelled) {
           setRegisteredSupplements([]);
           setRegisteredProductIds(new Set());
+          setSupplementLoadError('영양제 목록을 불러오지 못했어요.');
         }
       })
       .finally(() => {
@@ -132,7 +137,7 @@ export function HomePage({
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, supplementReloadKey]);
 
   useEffect(() => {
     if (!isAuthenticated || (medicationState !== undefined && medicationState !== 'active')) {
@@ -349,13 +354,13 @@ export function HomePage({
         {isAuthenticated ? (
           <>
             <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />
-            {medicationLoadError || doseLoadError ? (
+            {homeTab === 'medication' && (medicationLoadError || doseLoadError) ? (
               <Card title="복약 정보를 불러오지 못했어요">
                 {medicationLoadError ?? doseLoadError}
               </Card>
-            ) : resolvedMedicationState && pageDataReady ? (
+            ) : homeTab === 'supplement' || (resolvedMedicationState && pageDataReady) ? (
               <>
-                {homeTab === 'medication' ? (
+                {homeTab === 'medication' && resolvedMedicationState ? (
                   <div
                     id="home-panel-medication"
                     role="tabpanel"
@@ -381,8 +386,14 @@ export function HomePage({
                     aria-labelledby="home-tab-supplement"
                   >
                     <SupplementTodayCard
+                      key={currentDate}
                       supplements={registeredSupplements}
+                      date={currentDate}
+                      loading={supplementRegistrationPending}
+                      loadError={supplementLoadError}
+                      onRetry={() => setSupplementReloadKey(key => key + 1)}
                       onBrowse={() => navigate('/supplements?tab=browse')}
+                      onManage={(editSupplementId) => navigate('/supplements', { state: { editSupplementId } })}
                     />
                   </div>
                 )}
@@ -515,74 +526,6 @@ function GuestMedicationPrompt({ onLogin }: { onLogin: () => void }) {
         <p>로그인하면 기록과 알림을 이어서 볼 수 있어요.</p>
         <Button onClick={onLogin}>로그인하고 시작하기</Button>
       </Card>
-    </section>
-  );
-}
-
-function SupplementTodayCard({
-  supplements,
-  onBrowse,
-}: {
-  supplements: Supplement[];
-  onBrowse: () => void;
-}) {
-  const visibleSupplements = supplements.slice(0, 3);
-
-  return (
-    <section aria-labelledby="today-supplement-title" className="flex flex-col gap-3">
-      <h2 id="today-supplement-title" className="text-2xl font-bold text-foreground">
-        오늘의 영양제
-      </h2>
-      <Card className="gap-3 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-base font-bold text-foreground">점심 13:00</p>
-          <button
-            type="button"
-            className="min-h-touch px-2 text-sm font-bold text-primary-strong"
-            onClick={onBrowse}
-          >
-            개별 선택
-          </button>
-        </div>
-        <ul className="flex flex-col gap-2" aria-label="오늘 먹을 영양제">
-          {visibleSupplements.length > 0 ? (
-            visibleSupplements.map((supplement) => (
-              <li key={supplement.supplementId} className="flex items-center gap-3">
-                <span
-                  aria-hidden
-                  className="flex size-5 shrink-0 items-center justify-center rounded-pill border-2 border-primary text-transparent"
-                >
-                  ✓
-                </span>
-                <span className="min-w-0 flex-1 text-base font-bold text-foreground">
-                  {supplement.name}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  {supplement.doseAmount}
-                  {supplement.doseUnit}
-                </span>
-              </li>
-            ))
-          ) : (
-            <li className="text-sm text-muted-foreground">등록한 영양제가 없어요</li>
-          )}
-        </ul>
-        <div className="flex gap-2" aria-label="영양제 복용 기록은 준비 중">
-          <span className="flex min-h-touch flex-1 items-center justify-center rounded-button border border-border px-3 text-sm font-bold text-disabled-foreground">
-            1개 먹었어요
-          </span>
-          <span className="flex min-h-touch flex-1 items-center justify-center rounded-button border border-border px-3 text-sm font-bold text-disabled-foreground">
-            다 먹었어요
-          </span>
-        </div>
-      </Card>
-      <button
-        type="button"
-        className="self-end text-sm font-bold text-primary-strong"
-        onClick={onBrowse}
-      >
-        영양제 살펴보기
-      </button>
     </section>
   );
 }
