@@ -350,7 +350,7 @@ export function HomePage({
         </header>
       )}
 
-      <main className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
+      <main className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-gutter:stable] ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
           <>
             <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />

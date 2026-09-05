@@ -6,6 +6,44 @@ test.beforeEach(() => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
 });
 
+test('처방 상세를 펼쳐 세로 스크롤이 생겨도 복약 카드 폭과 액션 높이를 유지한다', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 940 });
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'home-expand-layout-token');
+    sessionStorage.setItem('poke.account-principal', 'home-expand-layout@example.com');
+  });
+  await page.goto('/dev/home-multiple-episodes');
+
+  const main = page.locator('main');
+  const timeline = page.getByRole('region', { name: '오늘의 복약' });
+  const outerCard = timeline.locator(':scope > div').first();
+  const action = timeline.getByRole('button', { name: '먹었어요' });
+  const beforeCard = await outerCard.boundingBox();
+  const beforeAction = await action.boundingBox();
+  expect(beforeCard).not.toBeNull();
+  expect(beforeAction).not.toBeNull();
+
+  await timeline.getByRole('button', { name: /8월 22일 처방.*펼치기/ }).click();
+
+  const afterCard = await outerCard.boundingBox();
+  const afterAction = await action.boundingBox();
+  expect(afterCard).not.toBeNull();
+  expect(afterAction).not.toBeNull();
+  expect(Math.abs(afterCard!.x - beforeCard!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(afterCard!.width - beforeCard!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(afterAction!.height - beforeAction!.height)).toBeLessThanOrEqual(1);
+  await expect(main).toHaveCSS('scrollbar-gutter', 'stable');
+  expect(await main.evaluate((element) => element.scrollWidth)).toBe(
+    await main.evaluate((element) => element.clientWidth),
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    await page.evaluate(() => document.documentElement.clientWidth),
+  );
+});
+
 test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 액션을 나눈다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.addInitScript(() => {
