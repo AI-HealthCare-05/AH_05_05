@@ -92,6 +92,13 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   await expect(detail.getByRole('article')).toHaveCount(3);
   await expect(detail.getByRole('heading', { name: '8월 25일 처방', exact: true })).toBeVisible();
   const thirdEpisode = detail.getByRole('article').nth(2);
+  await thirdEpisode
+    .getByRole('button', { name: '8월 25일 처방 펼치기', exact: true })
+    .click();
+  await expect(thirdEpisode.getByText('8월 25일 처방', { exact: true })).toHaveCount(1);
+  await expect(
+    thirdEpisode.getByRole('list', { name: '8월 25일 처방 약 목록' }).getByText(/처방/),
+  ).toHaveCount(0);
   const thirdSelector = thirdEpisode.getByRole('button', { name: '8월 25일 처방 선택' });
   await thirdSelector.click();
   await expect(thirdSelector).toHaveAttribute('aria-pressed', 'true');
@@ -147,7 +154,6 @@ test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 �
   await first.getByRole('button', { name: /8월 22일 처방.*펼치기/ }).click();
   const medicationList = first.getByRole('list', { name: '8월 22일 처방 약 목록' });
   await expect(medicationList.getByRole('listitem')).toHaveCount(3);
-  await expect(first.getByText('8월 22일 처방', { exact: true })).toHaveCount(1);
   await expect(medicationList.getByText(/처방/)).toHaveCount(0);
   const more = first.getByRole('button', { name: '약 2개 더보기' });
   await expect(more).toBeVisible();

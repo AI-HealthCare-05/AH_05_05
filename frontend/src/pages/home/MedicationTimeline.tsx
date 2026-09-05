@@ -323,9 +323,6 @@ function TimelineItem({
                   aria-label={`${episodeDate} 처방 약 상세`}
                   className="w-full min-w-0 max-w-full border-b border-border px-3 py-3"
                 >
-                  <p className="mb-2 text-sm font-medium text-muted-foreground">
-                    {formatPrescriptionLabel(episode.startDate)}
-                  </p>
                   <ul className="flex flex-col gap-2" aria-label={`${episodeDate} 처방 약 목록`}>
                     {visibleMedications.map((medication) => (
                       <li
@@ -503,11 +500,6 @@ function formatSingleEpisodeProgress(
   if (!overview) return '';
   const dayNumber = Math.max(1, daysBetween(overview.start.date, currentDate) + 1);
   return `${dayNumber}일째 · ${overview.daysRemaining}일 남음`;
-}
-
-function formatPrescriptionLabel(value: string): string {
-  const label = formatDateLabel(value);
-  return label === value ? '등록한 처방' : `${label} 처방`;
 }
 
 function timeInMinutes(value: string): number {
