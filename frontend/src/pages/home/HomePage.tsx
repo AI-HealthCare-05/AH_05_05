@@ -393,7 +393,6 @@ export function HomePage({
                       loadError={supplementLoadError}
                       onRetry={() => setSupplementReloadKey(key => key + 1)}
                       onBrowse={() => navigate('/supplements?tab=browse')}
-                      onManage={(editSupplementId) => navigate('/supplements', { state: { editSupplementId } })}
                     />
                   </div>
                 )}

@@ -10,7 +10,6 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
   let records: Dose[] = [];
   let failId = options.failId;
   let failLookup = options.failLookup;
-  let removedRegistrationId: number | undefined;
   await page.clock.setFixedTime(new Date(`${DATE}T12:00:00+09:00`));
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'supplement-dose-test');
@@ -28,7 +27,7 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
         { id: 501, name: '오메가3', slots: ['MORNING', 'EVENING'] },
         { id: 502, name: '종합비타민', slots: ['MORNING'] },
         { id: 503, name: '비타민 D', slots: ['EVENING'] },
-      ].filter(item => item.id !== removedRegistrationId).map(item => ({
+      ].map(item => ({
         id: item.id, custom_name: item.name, dose_amount: '1.000', dose_unit: '정',
         start_date: '2026-09-01', end_date: null, status: 'ACTIVE', score: null,
         review_body: null, note: null, created_at: '2026-09-01T09:00:00+09:00', updated_at: null,
@@ -65,26 +64,63 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
     requests,
     recoverLookup: () => { failLookup = false; },
     failNextSave: (id: number) => { failId = id; },
-    removeRegistration: (id: number) => { removedRegistrationId = id; },
     morning: page.getByRole('group', { name: '아침 영양제' }),
   };
 }
 
+test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액션을 제공한다', async ({ page }) => {
+  const { morning } = await openHome(page);
+
+  await expect(morning.getByText('개별 선택', { exact: true })).toHaveCount(0);
+  const omega = morning.getByRole('button', { name: '오메가3 선택' });
+  await expect(omega).toHaveAttribute('aria-pressed', 'false');
+
+  const indicatorBox = await omega.locator('[data-supplement-selection-indicator]').boundingBox();
+  const rowBox = await omega.boundingBox();
+  const cardBox = await morning.locator('..').boundingBox();
+  expect(indicatorBox).not.toBeNull();
+  expect(indicatorBox!.width).toBe(24);
+  expect(indicatorBox!.height).toBe(24);
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.height).toBeGreaterThanOrEqual(44);
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.height).toBeLessThanOrEqual(220);
+
+  const selectedAction = morning.getByRole('button', { name: '0개 먹었어요' });
+  const allAction = morning.getByRole('button', { name: '다 먹었어요' });
+  await expect(selectedAction).toBeDisabled();
+  const [selectedActionBox, allActionBox] = await Promise.all([
+    selectedAction.boundingBox(),
+    allAction.boundingBox(),
+  ]);
+  expect(selectedActionBox).not.toBeNull();
+  expect(allActionBox).not.toBeNull();
+  expect(Math.abs(selectedActionBox!.y - allActionBox!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(selectedActionBox!.width - allActionBox!.width)).toBeLessThanOrEqual(2);
+  expect(selectedActionBox!.height).toBeGreaterThanOrEqual(44);
+  expect(allActionBox!.height).toBeGreaterThanOrEqual(44);
+  expect(selectedActionBox!.y).toBeGreaterThan(rowBox!.y + rowBox!.height);
+
+  await omega.click();
+  await expect(omega).toHaveAttribute('aria-pressed', 'true');
+  await morning.getByRole('button', { name: '1개 먹었어요' }).click();
+  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+
+  await omega.click();
+  await expect(morning.getByRole('button', { name: '1개 되돌리기' })).toBeEnabled();
+});
+
 test('일부 영양제만 기록하면 새로고침 뒤 유지되고 완료 항목을 선택해 되돌린다', async ({ page }) => {
   const { morning, requests } = await openHome(page);
-  await morning.getByRole('button', { name: '개별 선택' }).click();
-  await expect(morning.getByRole('button', { name: '오메가3 관리' })).toHaveCount(0);
-  await morning.getByRole('checkbox', { name: '오메가3 선택' }).check();
+  await morning.getByRole('button', { name: '오메가3 선택' }).click();
   await expect(page).toHaveURL(/\/dev\/home-empty$/);
   await morning.getByRole('button', { name: '1개 먹었어요' }).click();
-  await expect(morning.getByRole('checkbox', { name: '오메가3 선택' })).toHaveCount(0);
   await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
   if (IS_REAL_API) expect(requests).toEqual([{ supplementId: 501, date: DATE, slot: 'morning', taken: true }]);
   await page.reload();
   await page.getByRole('tab', { name: '오늘의 영양제' }).click();
   await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
-  await morning.getByRole('button', { name: '개별 선택' }).click();
-  await morning.getByRole('checkbox', { name: '오메가3 선택' }).check();
+  await morning.getByRole('button', { name: '오메가3 선택' }).click();
   await morning.getByRole('button', { name: '1개 되돌리기' }).click();
   await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(0);
   if (IS_REAL_API) expect(requests.at(-1)).toEqual({ supplementId: 501, date: DATE, slot: 'morning', taken: false });
@@ -141,17 +177,17 @@ test('목업 영양제 복용 기록은 로그인 계정별로 분리한다', as
 
 test('완료와 미완료를 섞어 선택하지 않으며 선택을 비우면 전체 복용으로 돌아간다', async ({ page }) => {
   const { morning, requests } = await openHome(page);
-  await morning.getByRole('button', { name: '개별 선택' }).click();
-  await morning.getByRole('checkbox', { name: '오메가3 선택' }).check();
+  const omega = morning.getByRole('button', { name: '오메가3 선택' });
+  const multi = morning.getByRole('button', { name: '종합비타민 선택' });
+  await omega.click();
   await morning.getByRole('button', { name: '1개 먹었어요' }).click();
-  await expect(morning.getByRole('button', { name: '개별 선택' })).toBeVisible();
-  await morning.getByRole('button', { name: '개별 선택' }).click();
-  await morning.getByRole('checkbox', { name: '오메가3 선택' }).check();
+  await omega.click();
   await expect(morning.getByRole('button', { name: '1개 되돌리기' })).toBeVisible();
-  await morning.getByRole('checkbox', { name: '종합비타민 선택' }).check();
-  await expect(morning.getByRole('checkbox', { name: '오메가3 선택' })).not.toBeChecked();
+  await multi.click();
+  await expect(omega).toHaveAttribute('aria-pressed', 'false');
   await expect(morning.getByRole('button', { name: '1개 먹었어요' })).toBeVisible();
-  await morning.getByRole('checkbox', { name: '종합비타민 선택' }).uncheck();
+  await multi.click();
+  await expect(morning.getByRole('button', { name: '0개 먹었어요' })).toBeDisabled();
   await morning.getByRole('button', { name: '다 먹었어요' }).click();
   await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
   if (IS_REAL_API) expect(requests.map(item => item.supplementId)).toEqual([501, 502]);
@@ -163,8 +199,7 @@ test('되돌리기 실패는 완료 상태를 유지하고 같은 false 요청�
   await morning.getByRole('button', { name: '다 먹었어요' }).click();
   await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
   failNextSave(501);
-  await morning.getByRole('button', { name: '개별 선택' }).click();
-  await morning.getByRole('checkbox', { name: '오메가3 선택' }).check();
+  await morning.getByRole('button', { name: '오메가3 선택' }).click();
   await morning.getByRole('button', { name: '1개 되돌리기' }).click();
   await expect(morning.getByRole('alert')).toBeVisible();
   await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
@@ -176,30 +211,11 @@ test('되돌리기 실패는 완료 상태를 유지하고 같은 false 요청�
   ]);
 });
 
-test('홈 영양제 행은 해당 등록의 관리 시트로 진입하고 닫은 뒤 다시 열리지 않는다', async ({ page }) => {
+test('홈 영양제 살펴보기는 둘러보기 탭으로 진입한다', async ({ page }) => {
   const { morning, requests } = await openHome(page);
-  await morning.getByRole('button', { name: '종합비타민 관리' }).click();
-  await expect(page).toHaveURL(/\/supplements$/);
-  const sheet = page.getByRole('dialog', { name: '종합비타민', exact: true });
-  await expect(sheet).toBeVisible();
-  await expect(sheet.getByRole('heading', { name: '내 영양제', exact: true })).toBeVisible();
-  await expect(sheet.getByRole('group', { name: '내 메모' })).toBeVisible();
-  await expect(sheet.getByRole('group', { name: '내 후기' })).toBeVisible();
-  await expect(sheet.locator('textarea')).toHaveCount(0);
+  await expect(morning.getByRole('button', { name: '종합비타민 선택' })).toBeVisible();
+  await page.getByRole('button', { name: '영양제 살펴보기' }).click();
+  await expect(page).toHaveURL(/\/supplements\?tab=browse$/);
+  await expect(page.getByRole('button', { name: '둘러보기' })).toHaveAttribute('aria-pressed', 'true');
   expect(requests).toHaveLength(0);
-  await sheet.getByRole('button', { name: '닫기', exact: true }).click();
-  await page.reload();
-  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 3개' })).toBeVisible();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-});
-
-test('홈 진입 후 소유 목록에서 사라진 등록은 관리 시트를 열지 않고 진입 상태를 소비한다', async ({ page }) => {
-  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
-  const { morning, removeRegistration } = await openHome(page);
-  await expect(morning.getByRole('button', { name: '오메가3 관리' })).toBeVisible();
-  removeRegistration(501);
-  await morning.getByRole('button', { name: '오메가3 관리' }).click();
-  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 2개' })).toBeVisible();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.history.state?.usr ?? null)).toBeNull();
 });
