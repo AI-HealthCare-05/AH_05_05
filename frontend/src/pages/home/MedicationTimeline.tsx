@@ -119,6 +119,7 @@ function TimelineItem({
       [
         episode.recordId,
         episode.startDate,
+        episode.alias ?? '',
         ...episode.medications.map((medication) =>
           [
             medication.medicationId,
@@ -228,6 +229,10 @@ function TimelineItem({
       <div className="flex flex-col">
         {visibleEpisodes.map((episode) => {
           const episodeDate = formatDateLabel(episode.startDate);
+          const episodeAlias = episode.alias?.trim();
+          const episodeAccessibleName = episodeAlias
+            ? `${episodeAlias} · ${episodeDate} 처방`
+            : `${episodeDate} 처방`;
           const episodeExpanded = expandedEpisodes.has(episode.recordId);
           const medicationsExpanded = expandedMedicationEpisodes.has(episode.recordId);
           const episodeCompleted = completedEpisodes.has(episode.recordId);
@@ -236,19 +241,19 @@ function TimelineItem({
           const visibleMedications = medicationsExpanded
             ? episode.medications
             : episode.medications.slice(0, 3);
-          const episodeTitle = episode.alias?.trim() || `${episodeDate} 처방`;
+          const episodeTitle = episodeAlias || `${episodeDate} 처방`;
 
           return (
             <article
               key={episode.recordId}
-              aria-label={`${episodeDate} 처방 · 약 ${episode.medications.length}개`}
+              aria-label={`${episodeAccessibleName} · 약 ${episode.medications.length}개`}
               className="relative"
             >
               <button
                 type="button"
                 data-episode-row
                 aria-pressed={selectedEpisodes.has(episode.recordId)}
-                aria-label={`${episodeDate} 처방 ${episodeCompleted ? '복용 완료' : '선택'}`}
+                aria-label={`${episodeAccessibleName} ${episodeCompleted ? '복용 완료' : '선택'}`}
                 className={`flex h-14 min-h-14 w-full items-center gap-3 border-b border-border px-3 py-1 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                   selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
                 }`}
@@ -291,7 +296,7 @@ function TimelineItem({
                 type="button"
                 aria-expanded={episodeExpanded}
                 aria-controls={`episode-detail-${item.slot}-${episode.recordId}`}
-                aria-label={`${episodeDate} 처방 ${episodeExpanded ? '접기' : '펼치기'}`}
+                aria-label={`${episodeAccessibleName} ${episodeExpanded ? '접기' : '펼치기'}`}
                 className="absolute right-1 top-1/2 flex size-touch -translate-y-1/2 items-center justify-center rounded-control text-primary-strong hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -335,6 +340,9 @@ function TimelineItem({
                     <button
                       type="button"
                       aria-expanded={medicationsExpanded}
+                      aria-label={
+                        medicationsExpanded ? '약 목록 접기' : `약 ${hiddenMedicationCount}개 더보기`
+                      }
                       className="mt-2 flex min-h-touch w-full items-center justify-end px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => toggleMedicationList(episode.recordId)}
                     >
@@ -350,10 +358,11 @@ function TimelineItem({
           <button
             type="button"
             aria-expanded={showAllEpisodes}
+            aria-label={showAllEpisodes ? '다른 처방 접기' : '다른 처방 펼치기'}
             className="flex min-h-touch items-center justify-end px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={toggleAllEpisodes}
           >
-            {showAllEpisodes ? '접기' : '다른 처방 펼치기'}
+            {showAllEpisodes ? '다른 처방 접기' : '다른 처방 펼치기'}
           </button>
         )}
       </div>

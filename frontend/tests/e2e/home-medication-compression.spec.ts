@@ -86,7 +86,11 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   await expandOthers.click();
   await expect(detail.getByRole('article')).toHaveCount(3);
   await expect(detail.getByRole('heading', { name: '8월 25일 처방', exact: true })).toBeVisible();
-  const collapseOthers = detail.getByRole('button', { name: '접기', exact: true });
+  const thirdEpisode = detail.getByRole('article').nth(2);
+  const thirdSelector = thirdEpisode.getByRole('button', { name: '8월 25일 처방 선택' });
+  await thirdSelector.click();
+  await expect(thirdSelector).toHaveAttribute('aria-pressed', 'true');
+  const collapseOthers = detail.getByRole('button', { name: '다른 처방 접기', exact: true });
   await expect(collapseOthers).toHaveCount(1);
   await expect(collapseOthers).toHaveAttribute('aria-expanded', 'true');
   await collapseOthers.click();
@@ -106,6 +110,24 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   );
 });
 
+test('처방 별칭은 article과 행·chevron 접근성 이름에 포함된다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await routeHome(page);
+  await page.goto('/home');
+
+  const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+    name: '아침약 상세',
+  });
+  const first = detail.getByRole('article', { name: /첫 처방/ });
+  await expect(first).toHaveAccessibleName(/첫 처방.*8월 22일 처방/);
+  await expect(first.locator('[data-episode-row]')).toHaveAccessibleName(
+    /첫 처방.*8월 22일 처방.*선택/,
+  );
+  await expect(
+    first.getByRole('button', { name: /첫 처방.*8월 22일 처방.*펼치기/ }),
+  ).toBeVisible();
+});
+
 test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 펼친다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await routeHome(page);
@@ -115,7 +137,7 @@ test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 �
     name: '아침약 상세',
   });
   const first = detail.getByRole('article').first();
-  await first.getByRole('button', { name: '8월 22일 처방 펼치기' }).click();
+  await first.getByRole('button', { name: /8월 22일 처방.*펼치기/ }).click();
   const medicationList = first.getByRole('list', { name: '8월 22일 처방 약 목록' });
   await expect(medicationList.getByRole('listitem')).toHaveCount(3);
   const more = first.getByRole('button', { name: '약 2개 더보기' });
@@ -123,7 +145,7 @@ test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 �
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   await more.click();
   await expect(medicationList.getByRole('listitem')).toHaveCount(5);
-  const medicationCollapse = first.getByRole('button', { name: '접기', exact: true });
+  const medicationCollapse = first.getByRole('button', { name: '약 목록 접기', exact: true });
   await expect(medicationCollapse).toHaveCount(1);
   await expect(medicationCollapse).toHaveAttribute('aria-expanded', 'true');
   await medicationCollapse.click();
