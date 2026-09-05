@@ -40,6 +40,43 @@ test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 
   await expect(page).toHaveURL(/\/medications\/notes\/new$/);
 });
 
+test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-multiple-episodes');
+
+  const morning = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+    name: '아침약 상세',
+  });
+  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
+  const secondEpisode = morning.getByRole('article', { name: /8월 24일 처방/ });
+  await expect(page.getByText('셀레콕시브 200mg')).toHaveCount(0);
+  await expect(page.getByText('아목시실린 500mg')).toHaveCount(0);
+
+  await firstEpisode.getByRole('button', { name: /펼치기/ }).click();
+  await expect(
+    firstEpisode.getByRole('group', { name: /처방 약 상세/ }).getByText('셀레콕시브 200mg', {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await secondEpisode.getByRole('button', { name: /펼치기/ }).click();
+  await expect(
+    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린 500mg', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(morning.getByRole('heading', { name: '8월 22일 처방', exact: true })).toHaveCount(1);
+  await expect(morning.getByRole('heading', { name: '8월 24일 처방', exact: true })).toBeVisible();
+
+  await firstEpisode.getByRole('button', { name: /접기/ }).click();
+  await expect(firstEpisode.getByText('셀레콕시브 200mg', { exact: true })).toHaveCount(0);
+  await expect(
+    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린 500mg', {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
 test('로그인 홈은 오늘의 복약과 오늘의 영양제 탭 아래 카드 구성을 제공한다', async ({ page }) => {
   await page.goto('/dev/home-active');
 
@@ -65,6 +102,24 @@ test('로그인 홈은 오늘의 복약과 오늘의 영양제 탭 아래 카드
     'aria-pressed',
   );
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toBeVisible();
+});
+
+test('로그인 홈은 챌린지 자리만 비대화형 카드로 예약한다', async ({ page }) => {
+  await page.goto('/dev/home-active');
+
+  const challenge = page.getByRole('region', { name: '챌린지' });
+  await expect(challenge).toBeVisible();
+  const placeholder = challenge.locator('[data-challenge-placeholder]');
+  await expect(placeholder).toHaveCount(1);
+  await expect(placeholder).toHaveCSS('height', '132px');
+  expect(
+    await placeholder.evaluate((element) => ({
+      role: element.getAttribute('role'),
+      tabIndex: element.getAttribute('tabindex'),
+      hasInteractiveSemantics: element.matches('button, a, input, [role="button"], [tabindex]') ||
+        element.querySelector('button, a, input, [role="button"], [tabindex]') !== null,
+    })),
+  ).toEqual({ role: null, tabIndex: null, hasInteractiveSemantics: false });
 });
 
 test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 회차를 독립적으로 기록한다', async ({

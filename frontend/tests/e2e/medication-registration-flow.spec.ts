@@ -1044,6 +1044,113 @@ test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여
   await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
 });
 
+test('400일 전 ACTIVE 회차는 from을 처방 시작일로 유지한다', async ({ page }) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const ranges: URL[] = [];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    ranges.push(new URL(route.request().url()));
+    await fulfillJson(route, []);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [
+    {
+      recordId: 400,
+      documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2025-07-21', slot: 'morning' },
+      endDate: '2025-08-10',
+      daysRemaining: 0,
+      mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+      medications: [
+        {
+          medicationId: 400,
+          name: '지난 처방',
+          dose: '1정',
+          days: 21,
+          daysRemaining: 0,
+          slots: ['morning'],
+          asNeeded: false,
+        },
+      ],
+    },
+  ]));
+
+  await page.goto('/home');
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
+  expect(ranges).toHaveLength(1);
+  expect(ranges[0].searchParams.get('from')).toBe('2025-07-21');
+  expect(ranges[0].searchParams.get('to')).toBe('2025-08-10');
+  await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
+});
+
+test('365일 처방과 새 30일 회차는 정확히 366일 범위로 복약 기록을 조회한다', async ({ page }) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const ranges: URL[] = [];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    ranges.push(new URL(route.request().url()));
+    await fulfillJson(route, []);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [
+    {
+      recordId: 365,
+      documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2025-08-25', slot: 'morning' },
+      endDate: '2026-08-24',
+      daysRemaining: 0,
+      mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+      medications: [
+        {
+          medicationId: 365,
+          name: '365일 처방',
+          dose: '1정',
+          days: 365,
+          daysRemaining: 0,
+          slots: ['morning'],
+          asNeeded: false,
+        },
+      ],
+    },
+    {
+      recordId: 366,
+      documentImageUrl: '/mock/medication-envelope.svg',
+      start: { date: '2026-08-25', slot: 'morning' },
+      endDate: '2026-09-23',
+      daysRemaining: 30,
+      mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
+      medications: [
+        {
+          medicationId: 366,
+          name: '새 처방',
+          dose: '1정',
+          days: 30,
+          daysRemaining: 30,
+          slots: ['morning'],
+          asNeeded: false,
+        },
+      ],
+    },
+  ]));
+
+  await page.goto('/home');
+  await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
+  expect(ranges).toHaveLength(1);
+  expect(ranges[0].searchParams.get('from')).toBe('2025-09-23');
+  expect(ranges[0].searchParams.get('to')).toBe('2026-09-23');
+  await expect(page.getByText('복약 정보를 불러오지 못했어요')).toHaveCount(0);
+});
+
 test('활성 처방이 두 건이어도 복용 기록은 사용자 단위로 한 번만 조회하고 저장한다', async ({
   page,
 }) => {

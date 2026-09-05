@@ -29,7 +29,6 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
-import { MedicationRecordGrid } from './MedicationRecordGrid';
 import { MedicationTimeline } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
 
@@ -70,7 +69,6 @@ export function HomePage({
   const [doseRecords, setDoseRecords] = useState<DoseRecord[] | null>(null);
   const [doseLoadError, setDoseLoadError] = useState<string | null>(null);
   const [failedDoseChange, setFailedDoseChange] = useState<DoseBatchChange | null>(null);
-  const [animatedDoseKey, setAnimatedDoseKey] = useState<string | null>(null);
   const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
   const [registeredSupplements, setRegisteredSupplements] = useState<Supplement[]>([]);
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
@@ -266,7 +264,6 @@ export function HomePage({
     if (!doseRecords) return false;
     const previousRecords = doseRecords;
     setFailedDoseChange(null);
-    setAnimatedDoseKey(change.taken ? doseKey(change.date, change.slot) : null);
     setDoseRecords(updateDoseRecords(previousRecords, change));
     try {
       await doseRecordSaver({
@@ -287,7 +284,6 @@ export function HomePage({
       return true;
     } catch {
       setDoseRecords(previousRecords);
-      setAnimatedDoseKey(null);
       setFailedDoseChange(change);
       return false;
     }
@@ -358,16 +354,17 @@ export function HomePage({
                   </div>
                 )}
                 {hasMedication && doseRecords ? (
-                  <MedicationRecordGrid
-                    overviews={medicationOverviews ?? []}
-                    records={doseRecords}
-                    now={new Date()}
-                    animatedRecordKey={animatedDoseKey}
-                    onMarkTaken={(date, slot, recordIds) => {
-                      if (recordIds.length === 0) return;
-                      void changeDose({ date, slot, taken: true, recordIds });
-                    }}
-                  />
+                  <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
+                    <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">
+                      챌린지
+                    </h2>
+                    <div
+                      data-challenge-placeholder
+                      className="flex h-[132px] items-center justify-center rounded-card bg-card shadow-card"
+                    >
+                      <p className="text-caption text-tertiary-foreground">준비 중이에요</p>
+                    </div>
+                  </section>
                 ) : null}
               </>
             ) : (
@@ -618,10 +615,6 @@ function updateDoseRecords(records: DoseRecord[], change: DoseBatchChange): Dose
   );
   if (!change.taken) return remaining;
   return [...remaining, { date: change.date, slot: change.slot, taken: true }];
-}
-
-function doseKey(date: string, slot: MealSlot): string {
-  return `${date}:${slot}`;
 }
 
 function localISODate(date: Date): string {
