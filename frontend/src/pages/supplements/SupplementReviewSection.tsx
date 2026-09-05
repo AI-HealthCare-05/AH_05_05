@@ -168,7 +168,7 @@ export function SupplementReviewSection({ productId }: { productId: string }) {
         </Button>
       )}
       {result && result.total > 0 && (
-        <p className="text-xs text-muted-foreground">개인의 경험이며 효능을 보장하지 않습니다</p>
+        <p className="text-xs text-muted-foreground">개인의 경험이며 효능을 보장하지 않아요</p>
       )}
 
       <Dialog open={reportTarget !== null} onOpenChange={(open) => !open && setReportTarget(null)}>

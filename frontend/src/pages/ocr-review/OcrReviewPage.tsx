@@ -503,7 +503,7 @@ export function OcrReviewPage() {
             error={dispensedDateTooLate ? '조제일은 오늘 기준 31일 뒤까지만 고를 수 있어요.' : undefined}
             hint={
               confirmedReviewMode
-                ? '저장된 조제일입니다.'
+                ? '저장된 조제일이에요.'
                 : dispensedDate
                   ? undefined
                   : '미추출 — 직접 입력해주세요.'
@@ -558,7 +558,7 @@ export function OcrReviewPage() {
         <p className="text-sm text-muted-foreground">
           {confirmedReviewMode
             ? '복약 시간 설정 전에 저장된 약 정보를 다시 확인할 수 있어요.'
-            : '사진에서 읽은 내용입니다. 실제 약봉투와 다르면 고쳐주세요.'}
+            : '사진에서 읽은 내용이에요. 실제 약봉투와 다르면 고쳐주세요.'}
         </p>
 
         <div className="mt-auto flex flex-col gap-2 pb-4">

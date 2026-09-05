@@ -1,5 +1,5 @@
 import type { MedicationTimes } from '@/entities/settings';
-import { MEAL_SLOTS, type MealSlot } from '@/shared/model/mealSlot';
+import { MEAL_SLOTS, mealSlotLabel, type MealSlot } from '@/shared/model/mealSlot';
 import {
   Button,
   Dialog,
@@ -21,13 +21,6 @@ const SETTINGS_FIELD_BY_SLOT: Record<MealSlot, keyof MedicationTimes> = {
   lunch: 'lunchMedicationTime',
   evening: 'eveningMedicationTime',
   bedtime: 'bedtimeMedicationTime',
-};
-
-const TIME_LABELS: Record<MealSlot, string> = {
-  morning: '아침',
-  lunch: '점심',
-  evening: '저녁',
-  bedtime: '자기전',
 };
 
 interface MedicationTimeSettingsSheetProps {
@@ -79,7 +72,7 @@ export function MedicationTimeSettingsSheet({
 
         <div className="overflow-hidden rounded-card border border-border bg-card">
           {MEAL_SLOTS.map((slot, index) => {
-            const label = TIME_LABELS[slot.value];
+            const label = mealSlotLabel(slot.value, 'short');
             const field = SETTINGS_FIELD_BY_SLOT[slot.value];
             const [hour = '00', minute = '00'] = values[field].split(':');
 
@@ -141,6 +134,10 @@ export function MedicationTimeSettingsSheet({
             );
           })}
         </div>
+
+        <p className="text-sm text-muted-foreground">
+          알림이 꺼져 있어도 시간 설정은 유지돼요.
+        </p>
 
         {error && (
           <p role="alert" className="text-sm font-bold text-danger-strong">

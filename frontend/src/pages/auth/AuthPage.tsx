@@ -119,7 +119,7 @@ export function AuthPage() {
     if (sanitized !== typed) input.value = sanitized;
     setName(sanitized);
     setNameError(
-      sanitized === normalized ? null : '이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.',
+      sanitized === normalized ? null : '이름에는 숫자, 공백, 특수문자를 쓸 수 없어요.',
     );
   }
 

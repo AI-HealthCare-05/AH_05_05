@@ -13,11 +13,11 @@ test('제품 상세는 공개 후기 10개를 표시하고 더 보기로 이어 
   await expect(reviews.getByText('남**훈', { exact: true })).toBeVisible();
   await expect(reviews.getByText('K***g', { exact: true })).toBeVisible();
   await expect(reviews.getByText('내 후기', { exact: true })).toBeVisible();
-  await expect(reviews.getByText('개인의 경험이며 효능을 보장하지 않습니다')).toHaveCount(1);
+  await expect(reviews.getByText('개인의 경험이며 효능을 보장하지 않아요')).toHaveCount(1);
 
   await reviews.getByRole('button', { name: '더 보기' }).click();
   await expect(reviews.getByRole('article')).toHaveCount(12);
-  await expect(reviews.getByText('개인의 경험이며 효능을 보장하지 않습니다')).toHaveCount(1);
+  await expect(reviews.getByText('개인의 경험이며 효능을 보장하지 않아요')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 

@@ -106,6 +106,9 @@ test('약봉투 등록은 OCR·별칭·복용 시간·첫 복용·알람의 5단
   await page.goto('/dev/ocr-review');
 
   await expect(page.getByText('2 / 5', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('사진에서 읽은 내용이에요. 실제 약봉투와 다르면 고쳐주세요.'),
+  ).toBeVisible();
   await expect(page.getByLabel('복약 별칭')).toBeVisible();
   await page.getByLabel('복약 별칭').fill('감기약');
 
@@ -119,11 +122,13 @@ test('약봉투 등록은 OCR·별칭·복용 시간·첫 복용·알람의 5단
 
   await expect(page.getByText('4 / 5', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '처음 약을 언제 드셨나요?' })).toBeVisible();
+  await expect(page.getByText('이렇게 기록해요', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '시작 점심약' }).click();
   await page.getByRole('button', { name: '확인', exact: true }).click();
 
   await expect(page.getByText('5 / 5', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '알람 시간을 확인해주세요' })).toBeVisible();
+  await expect(page.getByText('사용 안 함', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '등록 완료', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
@@ -131,6 +136,7 @@ test('약봉투 등록은 OCR·별칭·복용 시간·첫 복용·알람의 5단
 
 test('선택한 약봉투는 업로드 뒤 OCR 진행률과 결과 검토로 이어진다', async ({ page }) => {
   await page.goto('/dev/document-upload');
+  await expect(page.getByText('약국에서 받은 봉투 앞면이면 돼요.')).toBeVisible();
   await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
     name: 'feature-252-envelope.png',
     mimeType: 'image/png',
@@ -187,8 +193,11 @@ test('5단계 알람은 전체 알림과 시간 행을 편집하고 저장한다
   await page.getByRole('button', { name: '등록 완료', exact: true }).click();
   await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
   await expect(page.getByText(/알림 07:30/)).toBeVisible();
-  await page.goto('/dev/medication-alarm-times');
-  await expect(page.getByRole('button', { name: '아침약' })).toContainText('07:30');
+  await page.goto('/dev/my-authenticated');
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  const settingsSheet = page.getByRole('dialog', { name: '알림 시간' });
+  await expect(settingsSheet.getByLabel('아침 시')).toContainText('07');
+  await expect(settingsSheet.getByLabel('아침 분')).toContainText('30');
 });
 
 test('등록 5단계는 default 권한을 허용한 뒤에만 알림을 켜고 구독을 등록한다', async ({ page }) => {
@@ -382,12 +391,27 @@ test('복약 목록은 활성 회차를 편집하고 완료 회차를 읽기 전
   await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
   const completedDialog = page.getByRole('dialog');
   await expect(completedDialog.getByRole('heading', { name: '완료된 처방' })).toBeVisible();
+  await expect(completedDialog).toContainText('완료된 처방은 내용만 확인할 수 있어요.');
   await expect(completedDialog.getByText('지난 처방', { exact: true })).toBeVisible();
   await expect(completedDialog.getByText('2026년 8월 24일 ~ 28일', { exact: true })).toBeVisible();
   await expect(completedDialog.getByText(/아목시실린 500mg/)).toBeVisible();
   await expect(completedDialog.getByText(/아침약 08:00/)).toBeVisible();
   await expect(completedDialog.getByLabel('복약 별칭')).toHaveCount(0);
   await expect(completedDialog.getByRole('button', { name: /아목시실린 아침약/ })).toHaveCount(0);
+});
+
+test('복약 삭제 선택 모드는 고정 안내와 비활성 위험 버튼을 먼저 보여준다', async ({ page }) => {
+  await page.goto('/medications');
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
+  const deleteButton = page.getByRole('button', { name: '선택한 처방 삭제' });
+  await expect(deleteButton).toBeDisabled();
+  await expect(deleteButton).toHaveClass(/bg-muted-bg/);
+
+  await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
+  await expect(deleteButton).toBeEnabled();
+  await expect(deleteButton).toHaveClass(/bg-danger/);
 });
 
 test('등록 별칭과 회차 편집 별칭은 새로고침 뒤에도 메모에서 사용한다', async ({ page }) => {
@@ -471,6 +495,7 @@ test('복약 메모는 작성·수정·삭제할 수 있다', async ({ page }) =
   await page.getByRole('button', { name: /수정한 메모예요/ }).click();
   await expect(page).toHaveURL(/\/medications\/notes\/[^/]+/);
   await page.getByRole('button', { name: '삭제' }).click();
+  await expect(page.getByRole('dialog')).toContainText('삭제한 복약 메모는 다시 볼 수 없어요.');
   await page.getByRole('dialog').getByRole('button', { name: '삭제', exact: true }).click();
   await expect(page).toHaveURL('/medications/notes');
   await expect(page.getByText('수정한 메모예요.')).toHaveCount(0);

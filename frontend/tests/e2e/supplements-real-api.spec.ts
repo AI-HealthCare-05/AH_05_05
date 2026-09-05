@@ -833,7 +833,7 @@ test('권장 슬롯과 회당 수량을 선택해 med 사용자 영양제 API에
   const morning = product.getByRole('button', { name: '아침' });
   const lunch = product.getByRole('button', { name: '점심' });
   const evening = product.getByRole('button', { name: '저녁' });
-  const bedtime = product.getByRole('button', { name: '취침' });
+  const bedtime = product.getByRole('button', { name: '자기전' });
   await expect(morning).toHaveAttribute('aria-pressed', 'true');
   await expect(lunch).toHaveAttribute('aria-pressed', 'false');
   await expect(evening).toHaveAttribute('aria-pressed', 'true');
@@ -977,17 +977,17 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   await product.getByRole('button', { name: /튼튼 철분 캡슐/ }).click();
   await product.getByRole('button', { name: '아침' }).click();
   await product.getByRole('button', { name: '저녁' }).click();
-  await product.getByRole('button', { name: '취침' }).click();
+  await product.getByRole('button', { name: '자기전' }).click();
   await product.getByRole('button', { name: '추가하기' }).click();
 
   const list = page.getByRole('region', { name: '먹고 있는 영양제' });
   await expect(list.getByRole('button')).toHaveCount(1);
-  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
 
   await page.reload();
   await expect(page.getByText('먹고 있는 영양제 1개')).toBeVisible();
   await expect(list.getByRole('button')).toHaveCount(1);
-  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
   expect(listRequests.length).toBeGreaterThanOrEqual(2);
   expect(listRequests.every((request) => request.searchParams.get('status') === 'ACTIVE')).toBe(true);
   expect(listRequests.every((request) => request.searchParams.get('offset') === '0')).toBe(true);
@@ -1146,7 +1146,7 @@ test('직접 입력으로 등록하면 목록에 뜨고 성분 합계에서 제�
     .getByRole('button', { name: /실 API 직접 입력 오메가3/ });
   await expect(manualCard).toContainText('성분 정보 없음');
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
   ).toBeVisible();
 });
 
@@ -1192,9 +1192,9 @@ test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async (
     .getByRole('region', { name: '먹고 있는 영양제' })
     .getByRole('button', { name: /성분 없는 직접 입력 제품/ });
   await expect(manualCard).toContainText('성분 정보 없음');
-  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
   await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('article')).toHaveCount(0);
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
   ).toBeVisible();
 });

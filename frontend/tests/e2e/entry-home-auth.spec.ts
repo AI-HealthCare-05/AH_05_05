@@ -205,7 +205,7 @@ test('회원가입 이름 입력은 숫자·공백·특수문자를 제거하고
   await nameInput.fill('E\u0301lodie');
   await expect(nameInput).toHaveValue('Élodie');
   await expect(
-    page.getByText('이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.'),
+    page.getByText('이름에는 숫자, 공백, 특수문자를 쓸 수 없어요.'),
   ).toHaveCount(0);
 });
 

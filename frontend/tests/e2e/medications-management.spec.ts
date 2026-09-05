@@ -120,7 +120,8 @@ test('처방 기록은 조회 결과 전체를 처음부터 표시한다', async
 test('선택 모드에서는 카드 클릭이 펼침 대신 선택이고 순차 삭제한다', async ({ page }) => {
   await page.goto('/dev/medications');
   await page.getByRole('button', { name: '삭제', exact: true }).click();
-  await expect(page.getByRole('button', { name: '삭제하기' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '선택한 처방 삭제' })).toBeDisabled();
   await expect(page.getByRole('checkbox')).toHaveCount(2);
   await expect(page.getByRole('checkbox', { name: /전체/ })).toHaveCount(0);
 
@@ -128,9 +129,9 @@ test('선택 모드에서는 카드 클릭이 펼침 대신 선택이고 순차 
   await first.click();
   await expect(first).toHaveAttribute('aria-expanded', 'false');
   await page.getByRole('checkbox', { name: /2026년 8월 24일 처방 선택/ }).check();
-  await expect(page.getByRole('heading', { name: '2개 선택' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
 
-  await page.getByRole('button', { name: '삭제하기' }).click();
+  await page.getByRole('button', { name: '선택한 처방 삭제' }).click();
   await expect(page.getByRole('dialog')).toContainText('2개를 삭제할까요?');
   await page.getByRole('dialog').getByRole('button', { name: '삭제하기' }).click();
 

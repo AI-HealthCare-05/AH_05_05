@@ -40,8 +40,11 @@ import {
   defaultSlotsFor,
   exceedsSlotCapacity,
   isMealTimeOrderValid,
+  mealSlotLabel,
   needsSlotConfirmation,
 } from '@/shared/model/mealSlot';
+
+const MEDICATION_SLOT_ORDER = SLOT_ORDER.map((slot) => mealSlotLabel(slot, 'label')).join(' → ');
 
 /**
  * REQ-CARE-003 · 통합 슬롯 구조 (2026-08-14 기획 결정)
@@ -519,7 +522,7 @@ export function MedicationSchedulePage({
   const blocker: Blocker | null =
     startPointBlocker ??
     (!orderValid
-      ? { message: '시간을 아침약 → 점심약 → 저녁약 → 취침약 순서로 맞춰주세요.', tone: 'error' }
+      ? { message: `시간을 ${MEDICATION_SLOT_ORDER} 순서로 맞춰주세요.`, tone: 'error' }
       : emptyMedIds.size > 0
         ? { message: `복용 시간이 비어 있는 약이 ${emptyMedIds.size}개 있어요.`, tone: 'error' }
         : null);
@@ -560,7 +563,7 @@ export function MedicationSchedulePage({
               <p className="mt-1 text-sm text-muted-foreground">
                 {hasAutomaticallyAssignedMeds
                   ? '봉투에 시간대가 없는 약은 복용 횟수에 맞춰 정했어요.'
-                  : '봉투에서 읽은 시간입니다. 맞는지 확인해주세요.'}
+                  : '봉투에서 읽은 시간이에요. 다르면 눌러 바꿔주세요.'}
               </p>
             </div>
             <div className="flex flex-col gap-3">
@@ -779,7 +782,7 @@ export function MedicationSchedulePage({
       <ErrorDialog
         open={timeOrderError}
         title="시간을 적용할 수 없어요"
-        message="복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요."
+        message={`복약 시간은 ${MEDICATION_SLOT_ORDER} 순서로 설정해주세요.`}
         retryLabel="확인"
         onRetry={() => setTimeOrderError(false)}
       />
@@ -898,7 +901,7 @@ function MedicationRegistrationWizard({
     if (!editingAlarmSlot) return;
     const nextMealTimes = { ...mealTimes, [editingAlarmSlot]: time };
     if (!isMealTimeOrderValid(nextMealTimes)) {
-      setSaveError('복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요.');
+      setSaveError(`복약 시간은 ${MEDICATION_SLOT_ORDER} 순서로 설정해주세요.`);
       return;
     }
     alarmTimesEditedRef.current = true;
@@ -1160,7 +1163,7 @@ function MedicationRegistrationWizard({
                               : 'border-border bg-card text-muted-foreground',
                           )}
                         >
-                          {slot.value === 'bedtime' ? '자기전' : slot.short}
+                          {slot.short}
                         </button>
                       );
                     })}
@@ -1216,12 +1219,17 @@ function MedicationRegistrationWizard({
                           : 'border-border bg-card text-foreground',
                       )}
                     >
-                      {slot.value === 'bedtime' ? '자기전' : slot.short}
+                      {slot.short}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
+            <Card title="이렇게 기록해요" tone="info" className="p-4">
+              {startSlot
+                ? `${formatStartPoint(startDate, startSlot)}부터 복용한 것으로 기록해요.`
+                : '첫 복용 시간을 고르면 여기에 보여드려요.'}
+            </Card>
             <div className="mt-auto pb-4">
               <Button disabled={!startDate || !startSlot} onClick={() => setStep(5)}>
                 확인
@@ -1271,7 +1279,7 @@ function MedicationRegistrationWizard({
                       <span className="w-16 font-bold">{slot.label}</span>
                       <span className="tnum">{mealTimes[slot.value]}</span>
                       <span className="ml-auto text-sm text-muted-foreground">
-                        {used ? '복용 약 있음' : '복용 약 없음'}
+                        {used ? '복용 약 있음' : '사용 안 함'}
                       </span>
                       <span aria-hidden className="text-muted-foreground">
                         ›

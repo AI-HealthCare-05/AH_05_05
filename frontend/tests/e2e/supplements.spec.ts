@@ -72,7 +72,7 @@ test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시
   await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 남성')).toBeVisible();
   await expect(
     page.getByText(
-      '등록한 건강기능식품 3개만 더한 값입니다. 음식과 의약품을 통한 섭취량은 포함되지 않았습니다.',
+      '등록한 영양제의 성분만 더한 값이에요',
     ),
   ).toBeVisible();
   await expect(
@@ -152,7 +152,7 @@ test('제품을 고르면 하나의 행만 펼쳐지고 1회 섭취량과 추천
   const slots = first.getByRole('group', { name: '복용 시간' });
   await expect(slots.getByRole('button')).toHaveCount(4);
   await expect(slots.getByRole('button', { name: '아침' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(slots.getByRole('button', { name: '취침' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(slots.getByRole('button', { name: '자기전' })).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(first.getByText('제품 표시사항의 섭취방법을 채워놨어요.')).toBeVisible();
 
@@ -230,7 +230,7 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   await expect(sheet.getByRole('textbox', { name: '직접 입력 제품명' })).toBeVisible();
   const slots = sheet.getByRole('group', { name: '복용 시간' });
   await expect(slots.getByRole('button')).toHaveCount(4);
-  await slots.getByRole('button', { name: '취침' }).click();
+  await slots.getByRole('button', { name: '자기전' }).click();
   await slots.getByRole('button', { name: '아침' }).click();
   await expect(sheet.getByText('성분을 입력', { exact: false })).toHaveCount(0);
   await sheet.getByRole('textbox', { name: '직접 입력 제품명' }).fill('우리집 영양제');
@@ -240,13 +240,13 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   const manual = supplementList.getByRole('button').first();
   await expect(manual).toContainText('우리집 영양제');
   await expect(manual).toContainText('성분 정보 없음');
-  await expect(manual).toContainText('하루 1회 · 1회 1정 · 취침');
+  await expect(manual).toContainText('하루 1회 · 1회 1정 · 자기전');
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
   ).toBeVisible();
   await expect(
     page.getByText(
-      '등록한 건강기능식품 3개만 더한 값입니다. 음식과 의약품을 통한 섭취량은 포함되지 않았습니다.',
+      '등록한 영양제의 성분만 더한 값이에요',
     ),
   ).toBeVisible();
 });

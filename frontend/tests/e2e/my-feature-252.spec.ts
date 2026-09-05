@@ -72,8 +72,10 @@ test('알림 시간 설정은 네 식사 슬롯을 유지하고 설명을 보여
   const sheet = page.getByRole('dialog', { name: '알림 시간' });
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText('언제 알려드릴까요?');
+  await expect(sheet).toContainText('알림이 꺼져 있어도 시간 설정은 유지돼요.');
   await expect(sheet.getByLabel('아침 시')).toBeVisible();
   await expect(sheet.getByLabel('점심 시')).toBeVisible();
   await expect(sheet.getByLabel('저녁 시')).toBeVisible();
   await expect(sheet.getByLabel('자기전 시')).toBeVisible();
+  await expect(sheet.getByText('취침', { exact: true })).toHaveCount(0);
 });

@@ -653,6 +653,7 @@ test('복약 시간 설정의 뒤로가기는 완료된 OCR의 4개 약 검토 �
   );
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
+  await expect(page.getByText('저장된 조제일이에요.')).toBeVisible();
   await expect(page.getByText('이미 등록된 약봉투예요')).toHaveCount(0);
 
   await page.getByRole('button', { name: '뒤로 가기' }).click();

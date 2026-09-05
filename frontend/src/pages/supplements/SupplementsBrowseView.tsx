@@ -135,7 +135,7 @@ export function SupplementsBrowseView({
         <input
           type="search"
           value={query}
-          placeholder="제품명을 검색해 주세요"
+          placeholder="제품명 또는 성분 검색"
           className="h-12 w-full rounded-input border border-border bg-card pl-11 pr-4 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
           onChange={(event) => setQuery(event.target.value)}
         />

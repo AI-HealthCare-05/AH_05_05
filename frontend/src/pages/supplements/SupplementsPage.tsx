@@ -462,15 +462,15 @@ export function SupplementsPage({
                 <div className="flex flex-col gap-1 text-sm text-muted-foreground">
                   <p>{standardSourceLabel(profile)}</p>
                   {supplementsWithNutrients > 0 && (
-                    <p>
-                      등록한 건강기능식품 {supplementsWithNutrients}개만 더한 값입니다. 음식과 의약품을
-                      통한 섭취량은 포함되지 않았습니다.
-                    </p>
+                    <>
+                      <p>등록한 영양제의 성분만 더한 값이에요</p>
+                      <p>음식과 의약품을 통한 섭취량은 포함되지 않아요.</p>
+                    </>
                   )}
                   {manuallyEnteredSupplements > 0 && (
                     <p>
                       직접 입력한 {manuallyEnteredSupplements}개는 성분을 알 수 없어 합계에 포함하지
-                      않았습니다.
+                      않았어요.
                     </p>
                   )}
                   {profileResolved && !hasStandardProfile && (

@@ -286,7 +286,7 @@ export function MedicationsPage({
     setDeletePending(false);
   }
 
-  const headerTitle = selectionMode ? `${selectedRecordIds.size}개 선택` : '복약';
+  const headerTitle = selectionMode ? '삭제할 처방을 선택하세요' : '복약';
   const periodLabel = medicationPeriodLabel(range, new Date());
   const activeOverviews = overviews?.filter((overview) => !overview.isFinished) ?? [];
   const finishedOverviews = overviews?.filter((overview) => overview.isFinished) ?? [];
@@ -318,15 +318,6 @@ export function MedicationsPage({
         right={
           selectionMode ? (
             <div className="flex shrink-0 items-center gap-1">
-              {selectedRecordIds.size > 0 && (
-                <button
-                  type="button"
-                  className="min-h-touch px-2 text-sm font-bold text-danger-strong"
-                  onClick={openDeleteConfirmation}
-                >
-                  삭제하기
-                </button>
-              )}
               <button
                 type="button"
                 className="min-h-touch px-2 text-sm font-bold text-muted-foreground"
@@ -447,6 +438,16 @@ export function MedicationsPage({
             {overviews.map(renderEpisodeCard)}
           </section>
         )}
+
+        {selectionMode && (
+          <Button
+            variant="danger"
+            disabled={selectedRecordIds.size === 0}
+            onClick={openDeleteConfirmation}
+          >
+            선택한 처방 삭제
+          </Button>
+        )}
       </main>
 
       <BottomTabbar
@@ -538,7 +539,7 @@ function MedicationEpisodeSheet({
           <>
             <DialogHeader>
               <DialogTitle>완료된 처방</DialogTitle>
-              <DialogDescription>완료된 처방의 복약 정보만 확인할 수 있어요.</DialogDescription>
+              <DialogDescription>완료된 처방은 내용만 확인할 수 있어요.</DialogDescription>
             </DialogHeader>
             {overview && (
               <div className="flex flex-col gap-4" aria-label="완료된 처방 정보">

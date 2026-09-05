@@ -403,7 +403,7 @@ export function MedicationNoteFormPage() {
         <DialogContent variant="sheet">
           <DialogHeader>
             <DialogTitle>이 메모를 삭제할까요?</DialogTitle>
-            <DialogDescription>삭제한 복약 메모는 다시 복구할 수 없어요.</DialogDescription>
+            <DialogDescription>삭제한 복약 메모는 다시 볼 수 없어요.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={deleting}>

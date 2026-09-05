@@ -185,7 +185,7 @@ test('복약시간 저장 성공 뒤 방금 정한 네 시각으로 최초 권�
 
   await expect(page).toHaveURL(/\/dev\/medication-schedule$/);
   const dialog = page.getByRole('dialog', { name: '복약 시간에 알림을 보내드릴까요?' });
-  await expect(dialog).toContainText('아침 08:00 · 점심 13:00 · 저녁 19:00 · 취침 22:00');
+  await expect(dialog).toContainText('아침 08:00 · 점심 13:00 · 저녁 19:00 · 자기전 22:00');
 });
 
 test('목업 모드에서는 공개키가 없어도 이미 허용된 사용자의 복약 저장을 막지 않는다', async ({
