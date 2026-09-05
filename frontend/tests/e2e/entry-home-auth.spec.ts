@@ -329,7 +329,7 @@ test('복약 중 홈은 overview의 시각과 슬롯별 약만 타임라인에 �
       exact: true,
     }),
   ).toBeVisible();
-  await expect(morning.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
+  await expect(morning.getByRole('button', { name: '먹었어요' })).toBeVisible();
   await expect(today.getByRole('group', { name: '저녁약 상세' })).toHaveCount(0);
   await expect(today.getByText('7일 중 4일째')).toHaveCount(0);
   await expect(today.getByText('8월 22일 시작')).toHaveCount(0);
@@ -347,7 +347,7 @@ test('약 하나가 한 슬롯에만 있으면 타임라인도 한 칸과 실제
     name: '아침약 상세',
   });
   await expect(detail.getByRole('article', { name: /약 1개/ })).toBeVisible();
-  await expect(detail.getByRole('button', { name: '1개 먹었어요' })).toBeVisible();
+  await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
 });
 
 test('약별 days가 지난 뒤에는 아직 복용 중인 약의 슬롯만 남는다', async ({ page }) => {
@@ -383,7 +383,7 @@ test('먹었어요를 누르면 즉시 완료되고 다른 슬롯은 접힌 상�
   const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
     name: '아침약 상세',
   });
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
 
   await expect(detail.getByRole('button', { name: '복약 기록 되돌리기' })).toBeVisible();
   await expect(page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', { name: '저녁약 상세' })).toHaveCount(0);
@@ -397,10 +397,10 @@ test('복약 기록 토스트의 되돌리기는 완료 칸을 다시 현재 칸
   const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
     name: '아침약 상세',
   });
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   await page.getByRole('button', { name: '되돌리기' }).click();
 
-  await expect(detail.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
+  await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
 });
 
 test('복약 카드의 전체 회차 기록은 되돌릴 수 있다', async ({ page }) => {
@@ -410,10 +410,10 @@ test('복약 카드의 전체 회차 기록은 되돌릴 수 있다', async ({ p
     name: '아침약 상세',
   });
 
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(detail.getByRole('button', { name: '복약 기록 되돌리기' })).toBeVisible();
   await detail.getByRole('button', { name: '복약 기록 되돌리기' }).click();
-  await expect(detail.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
+  await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
 });
 
 test('복약 기록 저장 실패는 낙관적 표시를 원복하고 같은 화면에 오류 팝업을 띄운다', async ({
@@ -424,7 +424,7 @@ test('복약 기록 저장 실패는 낙관적 표시를 원복하고 같은 화
   const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
     name: '아침약 상세',
   });
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   const dialog = page.getByRole('dialog', { name: '기록하지 못했어요' });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('다시 시도해주세요.');

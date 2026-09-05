@@ -1178,10 +1178,10 @@ test('활성 처방이 두 건이어도 복용 기록은 사용자 단위로 한
   const action = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' })
-    .getByRole('button', { name: '3개 먹었어요' });
+    .getByRole('button', { name: '먹었어요' });
   await action.click();
 
-  await expect(page.getByLabel('8월 25일 아침 먹은 기록')).toBeVisible();
+  await expect(page.getByRole('button', { name: '복약 기록 되돌리기' })).toBeVisible();
   expect(doseGets).toHaveLength(1);
   expect(new URL(doseGets[0]).searchParams.has('recordId')).toBe(false);
   expect(Object.keys(dosePosts[0]).sort()).toEqual(['date', 'slot', 'taken']);

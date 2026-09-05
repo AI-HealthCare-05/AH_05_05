@@ -20,6 +20,7 @@ interface TimelineMedication extends MedicationOverviewItem {
 interface TimelineEpisode {
   recordId: number;
   startDate: string;
+  alias?: string;
   medications: TimelineMedication[];
 }
 
@@ -100,6 +101,10 @@ function TimelineItem({
   onMemo: MedicationTimelineProps['onMemo'];
 }) {
   const [expandedEpisodes, setExpandedEpisodes] = useState<Set<number>>(() => new Set());
+  const [expandedMedicationEpisodes, setExpandedMedicationEpisodes] = useState<Set<number>>(
+    () => new Set(),
+  );
+  const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(() => new Set());
   const current = item.status === 'current';
   const completed = item.status === 'completed';
@@ -130,6 +135,8 @@ function TimelineItem({
   ].join('||');
   useEffect(() => {
     setExpandedEpisodes(new Set());
+    setExpandedMedicationEpisodes(new Set());
+    setShowAllEpisodes(false);
     setSelectedEpisodes(new Set());
     setCompletedEpisodes(
       completed ? new Set(item.episodes.map((episode) => episode.recordId)) : new Set(),
@@ -162,12 +169,31 @@ function TimelineItem({
     });
   }
 
-  const selected = item.episodes.filter((episode) => selectedEpisodes.has(episode.recordId));
-  const actionEpisodes = selected.length > 0 ? selected : item.episodes;
-  const actionMedicationCount = actionEpisodes.reduce(
-    (count, episode) => count + episode.medications.length,
-    0,
-  );
+  function toggleMedicationList(recordId: number) {
+    setExpandedMedicationEpisodes((currentEpisodes) => {
+      const next = new Set(currentEpisodes);
+      if (next.has(recordId)) next.delete(recordId);
+      else next.add(recordId);
+      return next;
+    });
+  }
+
+  function toggleAllEpisodes() {
+    const nextShowAllEpisodes = !showAllEpisodes;
+    setShowAllEpisodes(nextShowAllEpisodes);
+    if (!nextShowAllEpisodes) {
+      const visibleRecordIds = new Set(
+        item.episodes.slice(0, 2).map((episode) => episode.recordId),
+      );
+      setSelectedEpisodes((currentEpisodes) =>
+        new Set([...currentEpisodes].filter((recordId) => visibleRecordIds.has(recordId))),
+      );
+    }
+  }
+
+  const visibleEpisodes = showAllEpisodes ? item.episodes : item.episodes.slice(0, 2);
+  const selected = visibleEpisodes.filter((episode) => selectedEpisodes.has(episode.recordId));
+  const actionEpisodes = selected.length > 0 ? selected : visibleEpisodes;
   const actionRecordIds = actionEpisodes.map((episode) => episode.recordId);
   const actionCompleted =
     actionEpisodes.length > 0 &&
@@ -199,74 +225,96 @@ function TimelineItem({
 
   return (
     <div role="group" aria-label={`${item.label}약 상세`} className="px-4 pb-4 pt-3">
-      <div className="flex flex-col gap-3">
-        {item.episodes.map((episode) => {
+      <div className="flex flex-col">
+        {visibleEpisodes.map((episode) => {
           const episodeDate = formatDateLabel(episode.startDate);
           const episodeExpanded = expandedEpisodes.has(episode.recordId);
+          const medicationsExpanded = expandedMedicationEpisodes.has(episode.recordId);
           const episodeCompleted = completedEpisodes.has(episode.recordId);
           const summary = episode.medications[0];
-          const remainingCount = Math.max(0, episode.medications.length - 1);
+          const hiddenMedicationCount = Math.max(0, episode.medications.length - 3);
+          const visibleMedications = medicationsExpanded
+            ? episode.medications
+            : episode.medications.slice(0, 3);
+          const episodeTitle = episode.alias?.trim() || `${episodeDate} 처방`;
 
           return (
             <article
               key={episode.recordId}
               aria-label={`${episodeDate} 처방 · 약 ${episode.medications.length}개`}
-              className={`rounded-button p-3 ${episodeCompleted ? 'bg-primary-bg' : 'bg-muted-bg'}`}
+              className="relative"
             >
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-bold text-foreground">{episodeDate} 처방</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {summary?.name ?? '복약'}
-                    {remainingCount > 0 ? ` 외 ${remainingCount}개` : ''}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-pressed={selectedEpisodes.has(episode.recordId)}
-                  aria-label={`${episodeDate} 처방 ${episodeCompleted ? '복용 완료' : '선택'}`}
-                  className={`flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              <button
+                type="button"
+                data-episode-row
+                aria-pressed={selectedEpisodes.has(episode.recordId)}
+                aria-label={`${episodeDate} 처방 ${episodeCompleted ? '복용 완료' : '선택'}`}
+                className={`flex h-14 min-h-14 w-full items-center gap-3 border-b border-border px-3 py-1 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                  selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
+                }`}
+                onClick={() => toggleSelectedEpisode(episode.recordId)}
+              >
+                <span
+                  data-episode-selection-glyph
+                  aria-hidden
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-pill ${
                     selectedEpisodes.has(episode.recordId) || episodeCompleted
                       ? 'bg-primary text-card'
                       : 'border-2 border-primary text-transparent'
                   }`}
-                  onClick={() => toggleSelectedEpisode(episode.recordId)}
                 >
-                  <Check aria-hidden className="size-4" />
-                </button>
-              </div>
+                  <Check className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <h3 className="truncate text-base font-bold text-foreground">{episodeTitle}</h3>
+                    {episodeCompleted && (
+                      <span
+                        data-episode-completed-badge
+                        className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-primary-bg px-2 py-0.5 text-xs font-bold text-primary-strong"
+                      >
+                        복용 완료
+                        <Check aria-hidden className="size-5" />
+                      </span>
+                    )}
+                  </span>
+                  <span className="block truncate text-sm text-muted-foreground">
+                    {summary?.name ?? '복약'}
+                    {episode.medications.length > 1
+                      ? ` 외 ${episode.medications.length - 1}개`
+                      : ''}
+                  </span>
+                </span>
+              </button>
 
-              <div className="mt-2 flex justify-end">
-                <button
-                  type="button"
-                  aria-expanded={episodeExpanded}
-                  aria-controls={`episode-detail-${item.slot}-${episode.recordId}`}
-                  aria-label={`${episodeDate} 처방 ${episodeExpanded ? '접기' : '펼치기'}`}
-                  className="min-h-touch rounded-control px-3 text-sm font-bold text-primary-strong hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => toggleEpisode(episode.recordId)}
-                >
-                  {episodeExpanded ? '접기' : '펼치기'}
-                  <ChevronDown
-                    aria-hidden
-                    className={`ml-1 inline-block size-4 transition-transform motion-reduce:transition-none ${
-                      episodeExpanded ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-              </div>
+              <button
+                type="button"
+                aria-expanded={episodeExpanded}
+                aria-controls={`episode-detail-${item.slot}-${episode.recordId}`}
+                aria-label={`${episodeDate} 처방 ${episodeExpanded ? '접기' : '펼치기'}`}
+                className="absolute right-1 top-1/2 flex size-touch -translate-y-1/2 items-center justify-center rounded-control text-primary-strong hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleEpisode(episode.recordId);
+                }}
+              >
+                <ChevronDown
+                  aria-hidden
+                  className={`size-5 transition-transform motion-reduce:transition-none ${
+                    episodeExpanded ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
               {episodeExpanded && (
                 <div
                   id={`episode-detail-${item.slot}-${episode.recordId}`}
                   role="group"
                   aria-label={`${episodeDate} 처방 약 상세`}
-                  className="mt-2 border-t border-border pt-3"
+                  className="border-b border-border px-3 py-3"
                 >
-                  <p className="mb-3 text-sm text-muted-foreground">
-                    {episode.medications.map(formatMedication).join(' · ')}
-                  </p>
                   <ul className="flex flex-col gap-2" aria-label={`${episodeDate} 처방 약 목록`}>
-                    {episode.medications.map((medication) => (
+                    {visibleMedications.map((medication) => (
                       <li
                         key={`${medication.recordId}:${medication.medicationId}`}
                         className="flex items-start justify-between gap-3"
@@ -283,31 +331,50 @@ function TimelineItem({
                       </li>
                     ))}
                   </ul>
+                  {hiddenMedicationCount > 0 && (
+                    <button
+                      type="button"
+                      aria-expanded={medicationsExpanded}
+                      className="mt-2 flex min-h-touch w-full items-center justify-end px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => toggleMedicationList(episode.recordId)}
+                    >
+                      {medicationsExpanded ? '접기' : `약 ${hiddenMedicationCount}개 더보기`}
+                    </button>
+                  )}
                 </div>
               )}
             </article>
           );
         })}
-        </div>
-
-        <div className="mt-3 flex gap-2">
+        {item.episodes.length > 2 && (
           <button
             type="button"
-            className="min-h-touch flex-1 rounded-button border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onMemo}
+            aria-expanded={showAllEpisodes}
+            className="flex min-h-touch items-center justify-end px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={toggleAllEpisodes}
           >
-            복약 메모 쓰기
+            {showAllEpisodes ? '접기' : '다른 처방 펼치기'}
           </button>
-          <Button
-            fullWidth={false}
-            variant={current && !actionCompleted ? 'primary' : 'secondary'}
-            className="min-h-touch flex-1 px-3"
-            onClick={handleDoseAction}
-          >
-            <Check aria-hidden className="size-5" />
-            {actionCompleted ? '복약 기록 되돌리기' : `${actionMedicationCount}개 먹었어요`}
-          </Button>
-        </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          className="min-h-touch flex-1 rounded-button border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={onMemo}
+        >
+          복약 메모
+        </button>
+        <Button
+          fullWidth={false}
+          variant={current && !actionCompleted ? 'primary' : 'secondary'}
+          className="min-h-touch flex-1 px-3"
+          onClick={handleDoseAction}
+        >
+          {actionCompleted ? '복약 기록 되돌리기' : '먹었어요'}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -340,6 +407,7 @@ function buildMedicationTimeline(
       .map((overview) => ({
         recordId: overview.recordId,
         startDate: overview.start.date,
+        alias: overview.alias,
         medications: slotMedications.filter(
           (medication) => medication.recordId === overview.recordId,
         ),
@@ -401,10 +469,6 @@ function formatSingleEpisodeProgress(
   if (!overview) return '';
   const dayNumber = Math.max(1, daysBetween(overview.start.date, currentDate) + 1);
   return `${dayNumber}일째 · ${overview.daysRemaining}일 남음`;
-}
-
-function formatMedication(medication: TimelineMedication): string {
-  return `${medication.name} ${medication.dose}`;
 }
 
 function formatPrescriptionLabel(value: string): string {

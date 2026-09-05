@@ -49,6 +49,7 @@
   --color-primary: var(--color-teal-600);
   --color-primary-strong: var(--color-teal-700);
   --color-primary-bg: var(--color-teal-50);
+  --color-action-soft: var(--color-primary-bg);
   --color-info: var(--color-primary);
   --color-info-bg: var(--color-primary-bg);
   --color-brand: var(--color-navy-700);

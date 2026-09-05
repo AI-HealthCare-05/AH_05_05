@@ -30,13 +30,13 @@ test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 
   ).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: '8월 22일 처방 선택' }).click();
-  await expect(detail.getByRole('button', { name: '2개 먹었어요' })).toBeVisible();
-  await expect(detail.getByRole('button', { name: '복약 메모 쓰기' })).toBeVisible();
+  await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
+  await expect(detail.getByRole('button', { name: '복약 메모' })).toBeVisible();
   await expect(detail.getByRole('button', { name: /먹었어요/ })).toBeVisible();
   await detail.getByRole('button', { name: /먹었어요/ }).click();
-  await expect(page.getByLabel('8월 25일 아침 먹은 기록')).toBeVisible();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
 
-  await detail.getByRole('button', { name: '복약 메모 쓰기' }).click();
+  await detail.getByRole('button', { name: '복약 메모' }).click();
   await expect(page).toHaveURL(/\/medications\/notes\/new$/);
 });
 
@@ -65,8 +65,8 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
       exact: true,
     }),
   ).toBeVisible();
-  await expect(morning.getByRole('heading', { name: '8월 22일 처방', exact: true })).toHaveCount(1);
-  await expect(morning.getByRole('heading', { name: '8월 24일 처방', exact: true })).toBeVisible();
+  await expect(morning.getByRole('heading', { name: '감기약', exact: true })).toBeVisible();
+  await expect(morning.getByRole('heading', { name: '지난 처방', exact: true })).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: /접기/ }).click();
   await expect(firstEpisode.getByText('셀레콕시브 200mg', { exact: true })).toHaveCount(0);
@@ -75,6 +75,76 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
       exact: true,
     }),
   ).toBeVisible();
+});
+
+test('처방 행은 별칭과 24px 선택 glyph를 사용하고 chevron만 펼침을 토글한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-multiple-episodes');
+
+  const morning = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+    name: '아침약 상세',
+  });
+  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
+  const row = firstEpisode.locator('[data-episode-row]');
+  const selection = firstEpisode.getByRole('button', { name: '8월 22일 처방 선택' });
+  const glyph = firstEpisode.locator('[data-episode-selection-glyph]');
+  const rowBox = await row.boundingBox();
+  const glyphBox = await glyph.boundingBox();
+
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.height).toBeGreaterThanOrEqual(56);
+  expect(rowBox!.height).toBeLessThanOrEqual(64);
+  expect(glyphBox).not.toBeNull();
+  expect(glyphBox!.width).toBe(24);
+  expect(glyphBox!.height).toBe(24);
+  await expect(row).toHaveAttribute('aria-pressed', 'false');
+  await expect(firstEpisode.getByRole('heading', { name: '감기약', exact: true })).toBeVisible();
+  await expect(morning.getByRole('button', { name: '다른 처방 펼치기' })).toHaveCount(0);
+  const chevron = firstEpisode.getByRole('button', { name: '8월 22일 처방 펼치기' });
+  await expect(chevron).toHaveAttribute('aria-expanded', 'false');
+
+  await row.click();
+  await expect(selection).toHaveAttribute('aria-pressed', 'true');
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  await expect(row).toHaveClass(/bg-action-soft/);
+  await expect(chevron).toHaveAttribute('aria-expanded', 'false');
+
+  await chevron.click();
+  await expect(firstEpisode.getByRole('button', { name: '8월 22일 처방 접기' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await expect(selection).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌릴 수 있다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-active');
+
+  const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+    name: '아침약 상세',
+  });
+  const firstEpisode = detail.getByRole('article', { name: /8월 22일 처방/ });
+  const action = detail.getByRole('button', { name: '먹었어요' });
+  await expect(action).toBeVisible();
+  await expect(detail.getByRole('button', { name: /개 먹었어요/ })).toHaveCount(0);
+  await expect(action.locator('svg')).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: '복약 메모' })).toBeVisible();
+
+  await firstEpisode.getByRole('button', { name: '8월 22일 처방 선택' }).click();
+  await action.click();
+  await expect(firstEpisode.getByRole('button', { name: '8월 22일 처방 복용 완료' })).toBeVisible();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toContainText('복용 완료');
+  const badgeCheck = firstEpisode.locator('[data-episode-completed-badge] svg');
+  const badgeCheckBox = await badgeCheck.boundingBox();
+  expect(badgeCheckBox).not.toBeNull();
+  expect(badgeCheckBox!.width).toBe(20);
+  expect(badgeCheckBox!.height).toBe(20);
+
+  const undo = detail.getByRole('button', { name: '복약 기록 되돌리기' });
+  await expect(undo).toBeVisible();
+  await undo.click();
+  await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
 });
 
 test('로그인 홈은 오늘의 복약과 오늘의 영양제 탭 아래 카드 구성을 제공한다', async ({ page }) => {
@@ -135,14 +205,14 @@ test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 �
   const second = detail.getByRole('article', { name: /8월 24일 처방/ });
 
   await first.getByRole('button', { name: '8월 22일 처방 선택' }).click();
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(first.getByRole('button', { name: /8월 22일 처방 복용 완료/ })).toBeVisible();
 
   const secondSelector = second.getByRole('button', { name: '8월 24일 처방 선택' });
   await expect(secondSelector).toBeVisible();
   await secondSelector.click();
-  await expect(detail.getByRole('button', { name: '1개 먹었어요' })).toBeVisible();
-  await detail.getByRole('button', { name: '1개 먹었어요' }).click();
+  await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(second.getByRole('button', { name: /8월 24일 처방 복용 완료/ })).toBeVisible();
 });
 
@@ -163,7 +233,7 @@ test('회차 선택은 다른 회차를 미완료로 유지하고 되돌리기 �
   await firstSelector.click();
   await expect(firstSelector).toHaveAttribute('aria-pressed', 'true');
   await expect(secondSelector).toHaveAttribute('aria-pressed', 'false');
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(first.getByRole('button', { name: /8월 22일 처방 복용 완료/ })).toBeVisible();
   await expect(second.getByRole('button', { name: '8월 24일 처방 선택' })).toBeVisible();
 
@@ -181,7 +251,7 @@ test('회차 복약 기록 실패와 날짜 변경은 낙관적 회차 상태를
   });
   const episode = detail
     .getByRole('article', { name: /8월 22일 처방/, includeHidden: true });
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
   await expect(
     page.locator('article[aria-label^="8월 22일 처방"]').first().locator('button[aria-label="8월 22일 처방 선택"]'),
@@ -197,7 +267,7 @@ test('날짜 변경은 성공한 회차의 낙관 상태를 초기화한다', as
   });
   const episode = detail.getByRole('article', { name: /8월 22일 처방/ });
   await episode.getByRole('button', { name: '8월 22일 처방 선택' }).click();
-  await detail.getByRole('button', { name: '2개 먹었어요' }).click();
+  await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(episode.getByRole('button', { name: /8월 22일 처방 복용 완료/ })).toBeVisible();
 
   await page.clock.setFixedTime(new Date('2026-08-26T12:00:00+09:00'));

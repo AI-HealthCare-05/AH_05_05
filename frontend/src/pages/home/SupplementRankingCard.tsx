@@ -38,7 +38,7 @@ export function SupplementRankingCard({
             className="min-h-touch shrink-0 px-1 text-sm font-bold text-primary-strong"
             onClick={onMore}
           >
-            더보기
+            전체 보기 ›
           </button>
         )}
       </div>

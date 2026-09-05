@@ -159,13 +159,13 @@ test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제
   }
 });
 
-test('홈 랭킹 더보기는 둘러보기 탭으로 바로 이동한다', async ({ page }) => {
+test('홈 랭킹 전체 보기는 둘러보기 탭으로 바로 이동한다', async ({ page }) => {
   await authenticate(page);
   await routeCommon(page);
   await page.goto('/dev/home-empty');
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
-  await ranking.getByRole('button', { name: '더보기' }).click();
+  await ranking.getByRole('button', { name: '전체 보기 ›' }).click();
 
   await expect(page).toHaveURL(/\/supplements\?tab=browse$/);
 });
@@ -188,7 +188,7 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
   await expect(
     ranking.getByText('개인별 복용 추천이 아닌 일반 인기 정보예요', { exact: true }),
   ).toBeVisible();
-  await expect(ranking.getByRole('button', { name: '더보기' })).toHaveCount(0);
+  await expect(ranking.getByRole('button', { name: '전체 보기 ›' })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /영양제 추가/ })).toHaveCount(0);
   await expect(ranking.locator('svg')).toHaveCount(0);
   await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);
