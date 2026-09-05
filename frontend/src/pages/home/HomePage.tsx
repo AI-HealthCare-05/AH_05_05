@@ -48,7 +48,7 @@ interface DoseBatchChange {
   date: string;
   slot: MealSlot;
   taken: boolean;
-  /** 선택한 회차의 UI 범위. 저장 API는 기존처럼 날짜+슬롯 단위입니다. */
+  /** 선택한 처방 회차. 저장 API를 recordId마다 한 번 호출합니다. */
   recordIds: number[];
 }
 
@@ -260,33 +260,66 @@ export function HomePage({
     openFeature(key);
   }
 
-  async function changeDose(change: DoseBatchChange, showUndo = true): Promise<boolean> {
+  async function changeDose(
+    change: DoseBatchChange,
+    showUndo = true,
+    knownChangedRecordIds?: number[],
+  ): Promise<boolean> {
     if (!doseRecords) return false;
     const previousRecords = doseRecords;
-    setFailedDoseChange(null);
-    setDoseRecords(updateDoseRecords(previousRecords, change));
-    try {
-      await doseRecordSaver({
-        date: change.date,
-        slot: change.slot,
-        taken: change.taken,
+    const changedRecordIds = knownChangedRecordIds ??
+      change.recordIds.filter((recordId) => {
+        const wasTaken = previousRecords.some(
+          (record) =>
+            record.date === change.date &&
+            record.slot === change.slot &&
+            record.recordId === recordId &&
+            record.taken,
+        );
+        return wasTaken !== change.taken;
       });
+    if (changedRecordIds.length === 0) return true;
+    const appliedChange = { ...change, recordIds: changedRecordIds };
+    setFailedDoseChange(null);
+    setDoseRecords(updateDoseRecords(previousRecords, appliedChange));
+    const results = await Promise.allSettled(
+      changedRecordIds.map((recordId) =>
+        doseRecordSaver({
+          date: change.date,
+          slot: change.slot,
+          taken: change.taken,
+          recordId,
+        }),
+      ),
+    );
+    const failedRecordIds = changedRecordIds.filter(
+      (_recordId, index) => results[index]?.status === 'rejected',
+    );
+    if (failedRecordIds.length === 0) {
       if (showUndo) {
         toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
           action: {
             label: '되돌리기',
             onClick: () => {
-              void changeDose({ ...change, taken: !change.taken }, false);
+              void changeDose(
+                { ...appliedChange, taken: !change.taken },
+                false,
+                appliedChange.recordIds,
+              );
             },
           },
         });
       }
       return true;
-    } catch {
-      setDoseRecords(previousRecords);
-      setFailedDoseChange(change);
-      return false;
     }
+    const failedChange = { ...appliedChange, recordIds: failedRecordIds };
+    setDoseRecords((currentRecords) =>
+      currentRecords
+        ? restoreFailedDoseRecords(currentRecords, previousRecords, failedChange)
+        : currentRecords,
+    );
+    setFailedDoseChange(failedChange);
+    return false;
   }
 
   return (
@@ -610,11 +643,44 @@ function LoggedInMedicationContent({
 }
 
 function updateDoseRecords(records: DoseRecord[], change: DoseBatchChange): DoseRecord[] {
+  const changedRecordIds = new Set(change.recordIds);
   const remaining = records.filter(
-    (record) => record.date !== change.date || record.slot !== change.slot,
+    (record) =>
+      record.date !== change.date ||
+      record.slot !== change.slot ||
+      !changedRecordIds.has(record.recordId),
   );
   if (!change.taken) return remaining;
-  return [...remaining, { date: change.date, slot: change.slot, taken: true }];
+  return [
+    ...remaining,
+    ...change.recordIds.map((recordId) => ({
+      date: change.date,
+      slot: change.slot,
+      taken: true,
+      recordId,
+    })),
+  ];
+}
+
+function restoreFailedDoseRecords(
+  currentRecords: DoseRecord[],
+  previousRecords: DoseRecord[],
+  failedChange: DoseBatchChange,
+): DoseRecord[] {
+  const failedRecordIds = new Set(failedChange.recordIds);
+  const withoutFailedOptimisticRecords = currentRecords.filter(
+    (record) =>
+      record.date !== failedChange.date ||
+      record.slot !== failedChange.slot ||
+      !failedRecordIds.has(record.recordId),
+  );
+  const previousFailedRecords = previousRecords.filter(
+    (record) =>
+      record.date === failedChange.date &&
+      record.slot === failedChange.slot &&
+      failedRecordIds.has(record.recordId),
+  );
+  return [...withoutFailedOptimisticRecords, ...previousFailedRecords];
 }
 
 function localISODate(date: Date): string {

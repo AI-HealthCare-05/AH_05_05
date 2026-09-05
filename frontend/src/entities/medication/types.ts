@@ -104,6 +104,7 @@ export interface DoseRecord {
   date: string;
   slot: MealSlot;
   taken: boolean;
+  recordId: number;
 }
 
 export interface SaveDoseTakenPayload {
@@ -111,6 +112,7 @@ export interface SaveDoseTakenPayload {
   date: string;
   slot: MealSlot;
   taken: boolean;
+  recordId: number;
 }
 
 export interface DoseRecordRange {

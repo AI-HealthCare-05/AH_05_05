@@ -578,17 +578,32 @@ class TestMedicationOverviewAPI(TestCase):
 
 
 class TestMedicationDoseAPI(TestCase):
-    async def test_save_without_record_id_and_delete_are_idempotent(self) -> None:
+    async def test_save_requires_record_id(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "dose-required@example.com", "01023000003")
+            response = await client.post(
+                DOSES_URL,
+                json={"date": today.isoformat(), "slot": "morning", "taken": True},
+                headers=headers,
+            )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["field"] == "recordId"
+
+    async def test_save_and_delete_are_idempotent_per_episode(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
         target_date = today - timedelta(days=1)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "dose-idempotent@example.com"
-            headers = await authentication_headers(client, email, "01023000003")
+            headers = await authentication_headers(client, email, "01023000019")
             user = await User.get(email=email)
+            episode = await create_episode(user, start_date=target_date)
             payload = {
                 "date": target_date.isoformat(),
                 "slot": "morning",
                 "taken": True,
+                "recordId": episode.id,
             }
 
             first = await client.post(DOSES_URL, json=payload, headers=headers)
@@ -603,6 +618,7 @@ class TestMedicationDoseAPI(TestCase):
                     user=user,
                     dose_date=target_date,
                     slot=MealSlot.MORNING,
+                    care_episode=episode,
                 ).count()
                 == 1
             )
@@ -617,14 +633,61 @@ class TestMedicationDoseAPI(TestCase):
         assert deleted_again.json() == payload
         assert await MedicationDose.filter(user=user).count() == 0
 
-    async def test_dose_is_shared_across_episodes(self) -> None:
+    async def test_doses_are_independent_across_episodes_and_delete_only_target(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "dose-shared@example.com"
             headers = await authentication_headers(client, email, "01023000013")
             user = await User.get(email=email)
-            await create_episode(user, start_date=today - timedelta(days=2))
-            await create_episode(user, start_date=today - timedelta(days=1))
+            first_episode = await create_episode(user, start_date=today - timedelta(days=2))
+            second_episode = await create_episode(user, start_date=today - timedelta(days=1))
+
+            first = await client.post(
+                DOSES_URL,
+                json={
+                    "date": today.isoformat(),
+                    "slot": "morning",
+                    "taken": True,
+                    "recordId": first_episode.id,
+                },
+                headers=headers,
+            )
+            second = await client.post(
+                DOSES_URL,
+                json={
+                    "date": today.isoformat(),
+                    "slot": "morning",
+                    "taken": True,
+                    "recordId": second_episode.id,
+                },
+                headers=headers,
+            )
+            deleted_first = await client.post(
+                DOSES_URL,
+                json={
+                    "date": today.isoformat(),
+                    "slot": "morning",
+                    "taken": False,
+                    "recordId": first_episode.id,
+                },
+                headers=headers,
+            )
+
+        assert first.status_code == status.HTTP_200_OK
+        assert second.status_code == status.HTTP_200_OK
+        assert deleted_first.status_code == status.HTTP_200_OK
+        assert await MedicationDose.filter(user=user, dose_date=today, slot=MealSlot.MORNING).count() == 1
+        assert await MedicationDose.filter(care_episode=first_episode).count() == 0
+        assert await MedicationDose.filter(care_episode=second_episode).count() == 1
+
+    async def test_save_for_another_users_episode_returns_404(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            owner_email = "dose-owner@example.com"
+            await authentication_headers(client, owner_email, "01023000020")
+            other_headers = await authentication_headers(client, "dose-other@example.com", "01023000021")
+            owner = await User.get(email=owner_email)
+            episode = await create_episode(owner, start_date=today)
 
             response = await client.post(
                 DOSES_URL,
@@ -632,17 +695,22 @@ class TestMedicationDoseAPI(TestCase):
                     "date": today.isoformat(),
                     "slot": "morning",
                     "taken": True,
+                    "recordId": episode.id,
                 },
-                headers=headers,
+                headers=other_headers,
             )
 
-        assert response.status_code == status.HTTP_200_OK
-        assert await MedicationDose.filter(user=user, dose_date=today, slot=MealSlot.MORNING).count() == 1
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["code"] == "MEDICATION_RECORD_NOT_FOUND"
+        assert await MedicationDose.all().count() == 0
 
     async def test_save_accepts_366_day_window_and_rejects_dates_outside_it(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            headers = await authentication_headers(client, "dose-validation@example.com", "01023000004")
+            email = "dose-validation@example.com"
+            headers = await authentication_headers(client, email, "01023000004")
+            user = await User.get(email=email)
+            episode = await create_episode(user, start_date=today)
 
             earliest = await client.post(
                 DOSES_URL,
@@ -650,6 +718,7 @@ class TestMedicationDoseAPI(TestCase):
                     "date": (today - timedelta(days=365)).isoformat(),
                     "slot": "morning",
                     "taken": True,
+                    "recordId": episode.id,
                 },
                 headers=headers,
             )
@@ -659,6 +728,7 @@ class TestMedicationDoseAPI(TestCase):
                     "date": (today - timedelta(days=366)).isoformat(),
                     "slot": "morning",
                     "taken": True,
+                    "recordId": episode.id,
                 },
                 headers=headers,
             )
@@ -668,6 +738,7 @@ class TestMedicationDoseAPI(TestCase):
                     "date": (today + timedelta(days=1)).isoformat(),
                     "slot": "morning",
                     "taken": True,
+                    "recordId": episode.id,
                 },
                 headers=headers,
             )
@@ -677,6 +748,7 @@ class TestMedicationDoseAPI(TestCase):
                     "date": today.isoformat(),
                     "slot": "breakfast",
                     "taken": True,
+                    "recordId": episode.id,
                 },
                 headers=headers,
             )
@@ -697,15 +769,29 @@ class TestMedicationDoseAPI(TestCase):
             user = await User.get(email=email)
             other_headers = await authentication_headers(client, "dose-history-other@example.com", "01023000014")
             other_user = await User.get(email="dose-history-other@example.com")
+            morning_episode = await create_episode(user, start_date=start_date)
+            evening_episode = await create_episode(user, start_date=start_date)
+            later_episode = await create_episode(user, start_date=start_date)
+            other_episode = await create_episode(other_user, start_date=start_date)
 
-            await MedicationDose.create(user=user, dose_date=start_date, slot=MealSlot.EVENING)
-            await MedicationDose.create(user=user, dose_date=start_date, slot=MealSlot.MORNING)
-            await MedicationDose.create(
-                user=user,
-                dose_date=start_date + timedelta(days=4),
-                slot=MealSlot.BEDTIME,
+            for payload in (
+                {"date": start_date.isoformat(), "slot": "evening", "taken": True, "recordId": evening_episode.id},
+                {"date": start_date.isoformat(), "slot": "morning", "taken": True, "recordId": morning_episode.id},
+                {
+                    "date": (start_date + timedelta(days=4)).isoformat(),
+                    "slot": "bedtime",
+                    "taken": True,
+                    "recordId": later_episode.id,
+                },
+            ):
+                saved = await client.post(DOSES_URL, json=payload, headers=headers)
+                assert saved.status_code == status.HTTP_200_OK
+            other_saved = await client.post(
+                DOSES_URL,
+                json={"date": start_date.isoformat(), "slot": "lunch", "taken": True, "recordId": other_episode.id},
+                headers=other_headers,
             )
-            await MedicationDose.create(user=other_user, dose_date=start_date, slot=MealSlot.LUNCH)
+            assert other_saved.status_code == status.HTTP_200_OK
 
             response = await client.get(
                 DOSES_URL,
@@ -723,11 +809,13 @@ class TestMedicationDoseAPI(TestCase):
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
-            {"date": start_date.isoformat(), "slot": "morning", "taken": True},
-            {"date": start_date.isoformat(), "slot": "evening", "taken": True},
+            {"date": start_date.isoformat(), "slot": "morning", "taken": True, "recordId": morning_episode.id},
+            {"date": start_date.isoformat(), "slot": "evening", "taken": True, "recordId": evening_episode.id},
         ]
         assert other_response.status_code == status.HTTP_200_OK
-        assert other_response.json() == [{"date": start_date.isoformat(), "slot": "lunch", "taken": True}]
+        assert other_response.json() == [
+            {"date": start_date.isoformat(), "slot": "lunch", "taken": True, "recordId": other_episode.id}
+        ]
 
     async def test_history_accepts_366_days_and_rejects_367_days(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
@@ -799,14 +887,24 @@ class TestMedicationCancellationAPI(TestCase):
 
             saved = await client.post(
                 DOSES_URL,
-                json={"date": today.isoformat(), "slot": "morning", "taken": True},
+                json={
+                    "date": today.isoformat(),
+                    "slot": "morning",
+                    "taken": True,
+                    "recordId": episode.id,
+                },
                 headers=headers,
             )
             cancelled = await client.delete(f"{OVERVIEW_URL}/{episode.id}", headers=headers)
 
         assert saved.status_code == status.HTTP_200_OK
         assert cancelled.status_code == status.HTTP_204_NO_CONTENT
-        assert await MedicationDose.filter(user=user, dose_date=today, slot=MealSlot.MORNING).count() == 1
+        assert await MedicationDose.filter(
+            user=user,
+            dose_date=today,
+            slot=MealSlot.MORNING,
+            care_episode=episode,
+        ).count() == 1
 
     async def test_cancel_other_users_record_returns_403_and_missing_returns_404(self) -> None:
         today = datetime.now(config.TIMEZONE).date()

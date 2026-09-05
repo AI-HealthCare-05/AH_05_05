@@ -40,6 +40,58 @@ test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 
   await expect(page).toHaveURL(/\/medications\/notes\/new$/);
 });
 
+test('목업에서도 한 처방만 기록하면 새로고침 뒤 그 처방만 완료다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'home-dose-refresh-token');
+    sessionStorage.setItem('poke.account-principal', 'home-dose-refresh@example.com');
+  });
+  await page.goto('/dev/home-multiple-episodes');
+
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
+  const secondEpisode = morning.getByRole('article', { name: /8월 24일 처방/ });
+  await firstEpisode.getByRole('button', { name: /8월 22일 처방.*선택/ }).click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(page.getByRole('button', { name: '되돌리기', exact: true })).toBeVisible();
+  await page.reload();
+
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+});
+
+test('목업 복용 기록은 로그인 principal별로 격리된다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('poke.account-principal')) {
+      sessionStorage.setItem('poke.account-principal', 'dose-account-a@example.com');
+    }
+  });
+  await page.goto('/dev/home-multiple-episodes');
+
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
+  await firstEpisode.getByRole('button', { name: /8월 22일 처방.*선택/ }).click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(page.getByRole('button', { name: '되돌리기', exact: true })).toBeVisible();
+
+  await page.evaluate(() => {
+    sessionStorage.setItem('poke.account-principal', 'dose-account-b@example.com');
+  });
+  await page.reload();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+
+  await page.evaluate(() => {
+    sessionStorage.setItem('poke.account-principal', 'dose-account-a@example.com');
+  });
+  await page.reload();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+});
+
 test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/dev/home-multiple-episodes');

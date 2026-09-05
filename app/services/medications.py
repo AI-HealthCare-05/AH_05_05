@@ -94,28 +94,32 @@ class MedicationService:
         return [self._dose_response(dose) for dose in ordered]
 
     async def save_dose(self, user: User, request: SaveMedicationDoseRequest) -> MedicationDoseResponse:
-        slot = self._parse_slot(request.slot)
         today = datetime.now(config.TIMEZONE).date()
         earliest = today - timedelta(days=MAX_DOSE_HISTORY_DAYS - 1)
         if request.date < earliest or request.date > today:
             raise InvalidDoseDateError()
 
+        episode = await self._get_owned_episode(request.record_id, user)
+        slot = self._parse_slot(request.slot)
         if request.taken:
             await MedicationDose.get_or_create(
                 user_id=user.id,
                 dose_date=request.date,
                 slot=slot,
+                care_episode_id=episode.id,
             )
         else:
             await MedicationDose.filter(
                 user_id=user.id,
                 dose_date=request.date,
                 slot=slot,
+                care_episode_id=episode.id,
             ).delete()
         return MedicationDoseResponse(
             date=request.date,
             slot=slot.value.lower(),
             taken=request.taken,
+            record_id=episode.id,
         )
 
     async def cancel(self, user: User, record_id: int) -> None:
@@ -421,4 +425,5 @@ class MedicationService:
             date=dose.dose_date,
             slot=dose.slot.value.lower(),
             taken=True,
+            record_id=cast(int, dose.care_episode_id),  # type: ignore[attr-defined]
         )
