@@ -77,6 +77,24 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
   ).toBeVisible();
 });
 
+test('처방 별칭은 화면 제목에만 사용하고 날짜 기반 접근성 이름을 유지한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/dev/home-multiple-episodes');
+
+  const firstEpisode = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' })
+    .getByRole('article', { name: /8월 22일 처방/ });
+
+  await expect(firstEpisode.getByRole('heading', { name: '감기약', exact: true })).toBeVisible();
+  await expect(
+    firstEpisode.getByRole('button', { name: '8월 22일 처방 선택', exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    firstEpisode.getByRole('button', { name: '8월 22일 처방 펼치기', exact: true }),
+  ).toHaveCount(1);
+});
+
 test('처방 행은 별칭과 24px 선택 glyph를 사용하고 chevron만 펼침을 토글한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/dev/home-multiple-episodes');
@@ -86,7 +104,7 @@ test('처방 행은 별칭과 24px 선택 glyph를 사용하고 chevron만 펼�
   });
   const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
   const row = firstEpisode.locator('[data-episode-row]');
-  const selection = firstEpisode.getByRole('button', { name: /감기약.*8월 22일 처방.*선택/ });
+  const selection = firstEpisode.getByRole('button', { name: '8월 22일 처방 선택', exact: true });
   const glyph = firstEpisode.locator('[data-episode-selection-glyph]');
   const rowBox = await row.boundingBox();
   const glyphBox = await glyph.boundingBox();
@@ -101,7 +119,8 @@ test('처방 행은 별칭과 24px 선택 glyph를 사용하고 chevron만 펼�
   await expect(firstEpisode.getByRole('heading', { name: '감기약', exact: true })).toBeVisible();
   await expect(morning.getByRole('button', { name: '다른 처방 펼치기' })).toHaveCount(0);
   const chevron = firstEpisode.getByRole('button', {
-    name: /감기약.*8월 22일 처방.*(펼치기|접기)/,
+    name: '8월 22일 처방 펼치기',
+    exact: true,
   });
   const chevronBox = await chevron.boundingBox();
   expect(chevronBox).not.toBeNull();
@@ -113,9 +132,7 @@ test('처방 행은 별칭과 24px 선택 glyph를 사용하고 chevron만 펼�
   await expect(chevron).toHaveAttribute('aria-expanded', 'true');
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await expect(selection).toHaveAttribute('aria-pressed', 'false');
-  await firstEpisode
-    .getByRole('button', { name: /감기약.*8월 22일 처방.*접기/ })
-    .click();
+  await firstEpisode.getByRole('button', { name: '8월 22일 처방 접기', exact: true }).click();
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await expect(selection).toHaveAttribute('aria-pressed', 'false');
 
@@ -126,10 +143,9 @@ test('처방 행은 별칭과 24px 선택 glyph를 사용하고 chevron만 펼�
   await expect(chevron).toHaveAttribute('aria-expanded', 'false');
 
   await chevron.click();
-  await expect(firstEpisode.getByRole('button', { name: /감기약.*8월 22일 처방.*접기/ })).toHaveAttribute(
-    'aria-expanded',
-    'true',
-  );
+  await expect(
+    firstEpisode.getByRole('button', { name: '8월 22일 처방 접기', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
   await expect(selection).toHaveAttribute('aria-pressed', 'true');
 });
 

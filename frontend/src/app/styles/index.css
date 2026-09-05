@@ -113,6 +113,8 @@
 
   --text-sm: 14px;
   --text-sm--line-height: 21px;
+  --text-micro: 11px;
+  --text-micro--line-height: 16px;
   --text-tagline: 15px;
   --text-tagline--line-height: 22px;
   --text-caption: 13px;
