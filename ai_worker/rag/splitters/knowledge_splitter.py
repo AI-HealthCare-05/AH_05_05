@@ -17,6 +17,7 @@ from ai_worker.rag.parsers.supplement_code_parser import (
 from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
     KnowledgeChunkMetadata,
+    KnowledgeContentKind,
     KnowledgeDocumentType,
     KnowledgeEvidenceLevel,
     KnowledgePage,
@@ -55,6 +56,7 @@ class ChunkingPolicy:
 
 
 _POLICIES = {
+    KnowledgeDocumentType.REGULATORY_DRUG_LABEL: ChunkingPolicy(250, 600, 40),
     KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE: ChunkingPolicy(150, 450, 0),
     KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE: ChunkingPolicy(250, 600, 40),
     KnowledgeDocumentType.SUPPLEMENT_CODE: ChunkingPolicy(200, 500, 0),
@@ -119,6 +121,32 @@ _KPICIA_ATTACHED_DRUG_ENCYCLOPEDIA_HEADINGS = {
 
 
 _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
+    KnowledgeDocumentType.REGULATORY_DRUG_LABEL: {
+        "HIGHLIGHTS OF PRESCRIBING INFORMATION": KnowledgeSectionType.SUMMARY,
+        "WARNING: NOT FOR TREATMENT OF OBESITY OR FOR WEIGHT LOSS": KnowledgeSectionType.CAUTION,
+        "INDICATIONS AND USAGE": KnowledgeSectionType.FUNCTION,
+        "1 INDICATIONS AND USAGE": KnowledgeSectionType.FUNCTION,
+        "DOSAGE AND ADMINISTRATION": KnowledgeSectionType.DAILY_INTAKE,
+        "2 DOSAGE AND ADMINISTRATION": KnowledgeSectionType.DAILY_INTAKE,
+        "DOSAGE FORMS AND STRENGTHS": KnowledgeSectionType.DAILY_INTAKE,
+        "3 DOSAGE FORMS AND STRENGTHS": KnowledgeSectionType.DAILY_INTAKE,
+        "CONTRAINDICATIONS": KnowledgeSectionType.CAUTION,
+        "4 CONTRAINDICATIONS": KnowledgeSectionType.CAUTION,
+        "WARNINGS AND PRECAUTIONS": KnowledgeSectionType.CAUTION,
+        "5 WARNINGS AND PRECAUTIONS": KnowledgeSectionType.CAUTION,
+        "ADVERSE REACTIONS": KnowledgeSectionType.ADVERSE_EVENT,
+        "6 ADVERSE REACTIONS": KnowledgeSectionType.ADVERSE_EVENT,
+        "DRUG INTERACTIONS": KnowledgeSectionType.INTERACTION,
+        "7 DRUG INTERACTIONS": KnowledgeSectionType.INTERACTION,
+        "USE IN SPECIFIC POPULATIONS": KnowledgeSectionType.CAUTION,
+        "8 USE IN SPECIFIC POPULATIONS": KnowledgeSectionType.CAUTION,
+        "10 OVERDOSAGE": KnowledgeSectionType.CAUTION,
+        "11 DESCRIPTION": KnowledgeSectionType.OVERVIEW,
+        "12 CLINICAL PHARMACOLOGY": KnowledgeSectionType.OVERVIEW,
+        "13 NONCLINICAL TOXICOLOGY": KnowledgeSectionType.OVERVIEW,
+        "16 HOW SUPPLIED/STORAGE AND HANDLING": KnowledgeSectionType.OVERVIEW,
+        "17 PATIENT COUNSELING INFORMATION": KnowledgeSectionType.CAUTION,
+    },
     KnowledgeDocumentType.SUPPLEMENT_CODE: {
         "원료": KnowledgeSectionType.INGREDIENT,
         "규격": KnowledgeSectionType.STANDARD,
@@ -170,6 +198,10 @@ _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
         "Conclusions": KnowledgeSectionType.CONCLUSION,
         "References": KnowledgeSectionType.REFERENCES,
         "Bibliography": KnowledgeSectionType.REFERENCES,
+        "Drug-Nutrient Interactions": KnowledgeSectionType.INTERACTION,
+        "Drug–Nutrient Interactions": KnowledgeSectionType.INTERACTION,
+        "Food-Drug Interactions": KnowledgeSectionType.INTERACTION,
+        "Food–Drug Interactions": KnowledgeSectionType.INTERACTION,
     },
     KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE: {
         "의약품-식품간 상호작용 요약서": KnowledgeSectionType.INTERACTION,
@@ -187,6 +219,32 @@ _ATTACHED_BODY_HEADINGS_BY_SOURCE = {
 }
 
 _ATTACHED_BODY_PROSE_CONTINUATION = re.compile(r"^(?:하면|하자면|은|는|이|가|을|를|의|도|만|에서|에는|으로)(?:\s|$)")
+_RESEARCH_NUMBERED_INTERACTION_HEADING = re.compile(
+    r"(?im)^\s*\d+(?:\.\d+)*\.?\s+"
+    r"(?P<title>[^\n]{0,80}\b(?:DNIs?|"
+    r"Drug[\s–—-]*Nutrient\s+Interactions?|"
+    r"Food[\s–—-]*Drug\s+Interactions?)"
+    r"(?:\s*\([^\n)]+\))?)\s*$"
+)
+_RESEARCH_NUMBERED_SUBSECTION_HEADING = re.compile(
+    r"(?im)^\s*\d+(?:\.\d+)+\.?\s+"
+    r"(?P<title>[A-Z][^\n]{1,120}?)\s*$"
+)
+_RESEARCH_NUMBERED_TOP_LEVEL_HEADING = re.compile(
+    r"(?im)^\s*\d+\.\s+"
+    r"(?P<title>[A-Z][^\n]{1,120}?)\s*$"
+)
+_RESEARCH_NUTRIENT_SUBHEADING = re.compile(
+    r"(?im)^\s*(?P<title>[A-Z][A-Za-z]*(?:[\s/–—-]+[A-Za-z]+){0,5}"
+    r"\s*\((?:B\s*\d+|[A-Z])\))\s*$"
+)
+
+_HeadingCandidate = tuple[
+    int,
+    int,
+    str,
+    KnowledgeSectionType | None,
+]
 
 
 class KnowledgeSplitter:
@@ -227,13 +285,21 @@ class KnowledgeSplitter:
             return []
 
         self._validate_single_document(pages)
+        if any(page.blocks for page in pages):
+            return self._split_block_pages(pages)
+
         metadata = pages[0].metadata
         policy = _POLICIES[metadata.document_type]
         sections, page_ranges = self._split_sections(pages)
+        sections = self._drop_publication_front_matter(
+            sections,
+            metadata.document_type,
+        )
         sections = self._merge_leading_context(
             sections,
             policy,
         )
+        sections = self._merge_heading_only_sections(sections)
         chunks: list[KnowledgeChunk] = []
 
         for section in sections:
@@ -247,7 +313,11 @@ class KnowledgeSplitter:
             if not self._has_meaningful_body(section):
                 continue
 
-            contents = self._split_section_content(section.content, policy)
+            contents = self._split_section_content(
+                section.content,
+                policy,
+                document_type=metadata.document_type,
+            )
             for content, local_start, local_end in contents:
                 cleaned = content.strip()
                 if not cleaned or not self._has_meaningful_text(
@@ -282,6 +352,138 @@ class KnowledgeSplitter:
                 )
 
         return chunks
+
+    def _split_block_pages(
+        self,
+        pages: list[KnowledgePage],
+    ) -> list[KnowledgeChunk]:
+        text_pages: list[KnowledgePage] = []
+        for page in pages:
+            text_content = "\n\n".join(
+                block.content
+                for block in sorted(
+                    page.blocks,
+                    key=lambda item: item.order,
+                )
+                if block.kind == KnowledgeContentKind.TEXT
+            ).strip()
+            if text_content:
+                text_pages.append(
+                    page.model_copy(
+                        update={
+                            "content": text_content,
+                            "blocks": [],
+                        }
+                    )
+                )
+
+        chunks = self.split(text_pages) if text_pages else []
+        metadata = pages[0].metadata
+        policy = _POLICIES[metadata.document_type]
+        for page in pages:
+            for block in sorted(
+                page.blocks,
+                key=lambda item: item.order,
+            ):
+                if block.kind != KnowledgeContentKind.TABLE:
+                    continue
+                for table_content in self._group_table_rows(
+                    block.content,
+                    policy,
+                ):
+                    section = KnowledgeSection(
+                        content=table_content,
+                        section_type=self._table_section_type(
+                            "\n".join(
+                                filter(
+                                    None,
+                                    [
+                                        block.table_title,
+                                        *block.table_super_headers,
+                                        table_content,
+                                    ],
+                                )
+                            ),
+                            metadata,
+                        ),
+                        section_title=block.table_title or "표",
+                        page_start=page.page_number,
+                        page_end=page.page_number,
+                        source_start=0,
+                        source_end=len(table_content),
+                    )
+                    chunks.append(
+                        self._build_chunk(
+                            content=table_content,
+                            section=section,
+                            chunk_index=len(chunks),
+                            metadata=metadata,
+                            content_kind=KnowledgeContentKind.TABLE,
+                            table_title=block.table_title,
+                            table_super_headers=block.table_super_headers,
+                        )
+                    )
+        return chunks
+
+    def _group_table_rows(
+        self,
+        content: str,
+        policy: ChunkingPolicy,
+    ) -> list[str]:
+        rows = [row.strip() for row in content.splitlines() if row.strip()]
+        groups: list[str] = []
+        current_rows: list[str] = []
+        for row in rows:
+            candidate = "\n".join([*current_rows, row])
+            if current_rows and self._token_counter.count(candidate) > policy.hard_max_tokens:
+                groups.append("\n".join(current_rows))
+                current_rows = [row]
+            else:
+                current_rows.append(row)
+        if current_rows:
+            groups.append("\n".join(current_rows))
+        return groups
+
+    @staticmethod
+    def _table_section_type(
+        content: str,
+        metadata,
+    ) -> KnowledgeSectionType:
+        if metadata.interaction_type or re.search(
+            r"(?i)interaction|\bDNIs?\b|상호작용",
+            content,
+        ):
+            return KnowledgeSectionType.INTERACTION
+        if re.search(r"(?i)adverse|부작용|이상사례", content):
+            return KnowledgeSectionType.ADVERSE_EVENT
+        if re.search(r"(?i)dosage|dose|용량|섭취량", content):
+            return KnowledgeSectionType.DAILY_INTAKE
+        return KnowledgeSectionType.OTHER
+
+    @staticmethod
+    def _drop_publication_front_matter(
+        sections: list[KnowledgeSection],
+        document_type: KnowledgeDocumentType,
+    ) -> list[KnowledgeSection]:
+        if (
+            document_type != KnowledgeDocumentType.RESEARCH_ARTICLE
+            or len(sections) < 2
+            or sections[0].section_type != KnowledgeSectionType.OTHER
+        ):
+            return sections
+        front_matter = sections[0].content
+        if not re.search(
+            r"(?im)^[ \t]*(?:[*†‡]\s*)?"
+            r"(?:Citation|Copyright|Correspondence|Received|Published):",
+            front_matter,
+        ):
+            return sections
+        if sections[1].section_type not in {
+            KnowledgeSectionType.SUMMARY,
+            KnowledgeSectionType.INTRODUCTION,
+        }:
+            return sections
+        return sections[1:]
 
     @staticmethod
     def _has_meaningful_body(section: KnowledgeSection) -> bool:
@@ -337,6 +539,53 @@ class KnowledgeSplitter:
         return [merged, *sections[2:]]
 
     @staticmethod
+    def _merge_heading_only_sections(
+        sections: list[KnowledgeSection],
+    ) -> list[KnowledgeSection]:
+        if len(sections) < 2:
+            return sections
+
+        merged: list[KnowledgeSection] = []
+        pending_headings: list[KnowledgeSection] = []
+        for section in sections:
+            if KnowledgeSplitter._is_heading_only_section(section):
+                pending_headings.append(section)
+                continue
+
+            if pending_headings:
+                prefix = "\n".join(heading.content for heading in pending_headings)
+                first_heading = pending_headings[0]
+                section = section.model_copy(
+                    update={
+                        "content": f"{prefix}\n{section.content}",
+                        "page_start": min(
+                            first_heading.page_start,
+                            section.page_start,
+                        ),
+                        "source_start": first_heading.source_start,
+                    }
+                )
+                pending_headings.clear()
+            merged.append(section)
+
+        merged.extend(pending_headings)
+        return merged
+
+    @staticmethod
+    def _is_heading_only_section(section: KnowledgeSection) -> bool:
+        if not section.section_title:
+            return False
+        body = re.sub(
+            rf"^\s*(?:\d+(?:\.\d+)*\.?\s+)?"
+            rf"{re.escape(section.section_title)}",
+            "",
+            section.content,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        return re.search(r"[A-Za-z0-9가-힣]", body) is None
+
+    @staticmethod
     def policy_for(document_type: KnowledgeDocumentType) -> ChunkingPolicy:
         return _POLICIES[document_type]
 
@@ -351,14 +600,20 @@ class KnowledgeSplitter:
                 return supplement_sections, supplement_page_ranges
         headings = _HEADINGS.get(metadata.document_type, {})
         combined, page_ranges = self._combine_pages(pages)
+        combined = self._truncate_document_back_matter(
+            combined,
+            metadata.document_type,
+        )
         matches = self._find_heading_matches(
             combined,
             headings,
+            document_type=metadata.document_type,
             attached_body_headings=_ATTACHED_BODY_HEADINGS_BY_SOURCE.get(
                 metadata.source_id,
                 frozenset(),
             ),
         )
+        matches = self._truncate_after_references(matches)
 
         if not matches:
             content = combined.strip()
@@ -380,7 +635,10 @@ class KnowledgeSplitter:
         for index, (start, title, section_type) in enumerate(boundaries):
             end = boundaries[index + 1][0] if index + 1 < len(boundaries) else len(combined)
             raw_content = combined[start:end]
-            content = raw_content.strip()
+            content = self._clean_section_content(
+                raw_content.strip(),
+                title=title,
+            )
             if not content:
                 continue
             source_start = start + len(raw_content) - len(raw_content.lstrip())
@@ -405,6 +663,60 @@ class KnowledgeSplitter:
         return sections, page_ranges
 
     @staticmethod
+    def _truncate_document_back_matter(
+        content: str,
+        document_type: KnowledgeDocumentType,
+    ) -> str:
+        if document_type == KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            marker = re.search(
+                r"(?im)^\s*Manufactured and Distributed by:\s*",
+                content,
+            )
+            return content[: marker.start()].rstrip() if marker else content
+
+        if document_type != KnowledgeDocumentType.RESEARCH_ARTICLE:
+            return content
+
+        marker = re.search(
+            r"(?im)^\s*(?:Abbreviations|Data Sharing Statement|"
+            r"Author Contributions|Funding|Acknowledgments|"
+            r"Conflicts? of Interest|Disclosure)\s*:?[^\n]*$",
+            content,
+        )
+        if marker and marker.start() >= len(content) * 0.25:
+            return content[: marker.start()].rstrip()
+        return content
+
+    @staticmethod
+    def _clean_section_content(
+        content: str,
+        *,
+        title: str | None,
+    ) -> str:
+        if not title:
+            return content
+        lines = content.splitlines()
+        if not lines:
+            return content
+        lines[0] = re.sub(
+            rf"^({re.escape(title)})\s*[-–—\u00ad]+\s*$",
+            r"\1",
+            lines[0],
+            flags=re.IGNORECASE,
+        )
+        lines = [line for line in lines if re.fullmatch(r"\s*[-–—\u00ad]{4,}\s*", line) is None]
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _truncate_after_references(
+        matches: list[tuple[int, str, KnowledgeSectionType]],
+    ) -> list[tuple[int, str, KnowledgeSectionType]]:
+        for index, (_, _, section_type) in enumerate(matches):
+            if section_type == KnowledgeSectionType.REFERENCES:
+                return matches[: index + 1]
+        return matches
+
+    @staticmethod
     def _combine_pages(
         pages: list[KnowledgePage],
     ) -> tuple[str, list[tuple[int, int, int]]]:
@@ -412,38 +724,80 @@ class KnowledgeSplitter:
         ranges: list[tuple[int, int, int]] = []
         offset = 0
 
+        previous_content = ""
         for page in pages:
             if parts:
-                parts.append("\n\n")
-                offset += 2
+                separator = KnowledgeSplitter._page_separator(
+                    previous_content,
+                    page.content,
+                )
+                parts.append(separator)
+                offset += len(separator)
             start = offset
             parts.append(page.content)
             offset += len(page.content)
             ranges.append((start, offset, page.page_number))
+            previous_content = page.content
 
         return "".join(parts), ranges
+
+    @staticmethod
+    def _page_separator(previous: str, following: str) -> str:
+        previous = previous.rstrip()
+        following = following.lstrip()
+        if not previous or not following:
+            return "\n\n"
+        first_word = re.search(r"[A-Za-z가-힣]", following)
+        if first_word and first_word.group(0).islower() and previous[-1] not in ".!?。！？:;":
+            return " "
+        return "\n\n"
 
     @staticmethod
     def _find_heading_matches(
         content: str,
         headings: dict[str, KnowledgeSectionType],
         *,
+        document_type: KnowledgeDocumentType,
         attached_body_headings: frozenset[str],
     ) -> list[tuple[int, str, KnowledgeSectionType]]:
-        candidates: list[tuple[int, int, str, KnowledgeSectionType]] = []
+        candidates: list[_HeadingCandidate] = []
 
         for heading, section_type in sorted(headings.items(), key=lambda item: len(item[0]), reverse=True):
             for match in re.finditer(re.escape(heading), content, flags=re.IGNORECASE):
-                if not KnowledgeSplitter._is_heading_boundary(
+                is_decorated_heading = KnowledgeSplitter._is_decorated_heading_line(
+                    content,
+                    match.start(),
+                    match.end(),
+                )
+                if not is_decorated_heading and not KnowledgeSplitter._is_heading_boundary(
                     content,
                     match.start(),
                     match.end(),
                     allow_attached_body=(heading in attached_body_headings),
                 ):
                     continue
-                candidates.append((match.start(), match.end(), heading, section_type))
+                candidate_start = KnowledgeSplitter._numbered_heading_start(
+                    content,
+                    match.start(),
+                )
+                candidates.append(
+                    (
+                        candidate_start,
+                        match.end(),
+                        heading,
+                        section_type,
+                    )
+                )
 
-        selected: list[tuple[int, int, str, KnowledgeSectionType]] = []
+        if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE:
+            candidates.extend(
+                KnowledgeSplitter._research_heading_candidates(
+                    content,
+                    headings,
+                )
+            )
+
+        selected: list[_HeadingCandidate] = []
         last_selected_end = -1
         last_start_by_heading: dict[str, int] = {}
         for candidate in sorted(candidates, key=lambda item: (item[0], -(item[1] - item[0]))):
@@ -458,7 +812,93 @@ class KnowledgeSplitter:
             last_selected_end = end
             last_start_by_heading[normalized_heading] = start
 
-        return [(start, heading, section_type) for start, _, heading, section_type in sorted(selected)]
+        return KnowledgeSplitter._resolve_inherited_heading_types(selected)
+
+    @staticmethod
+    def _research_heading_candidates(
+        content: str,
+        headings: dict[str, KnowledgeSectionType],
+    ) -> list[_HeadingCandidate]:
+        candidates: list[_HeadingCandidate] = [
+            (
+                match.start(),
+                match.end(),
+                match.group("title").strip(),
+                KnowledgeSectionType.INTERACTION,
+            )
+            for match in _RESEARCH_NUMBERED_INTERACTION_HEADING.finditer(content)
+        ]
+        known_headings = {heading.casefold() for heading in headings}
+        for match in _RESEARCH_NUMBERED_SUBSECTION_HEADING.finditer(content):
+            title = match.group("title").strip()
+            if title.casefold() in known_headings:
+                continue
+            candidates.append(
+                (
+                    match.start(),
+                    match.end(),
+                    title,
+                    None,
+                )
+            )
+        for match in _RESEARCH_NUMBERED_TOP_LEVEL_HEADING.finditer(content):
+            title = match.group("title").strip()
+            if title.casefold() in known_headings or re.search(
+                r"(?i)\b(?:DNIs?|interaction)s?\b",
+                title,
+            ):
+                continue
+            candidates.append(
+                (
+                    match.start(),
+                    match.end(),
+                    title,
+                    KnowledgeSectionType.OTHER,
+                )
+            )
+        return candidates
+
+    @staticmethod
+    def _resolve_inherited_heading_types(
+        selected: list[_HeadingCandidate],
+    ) -> list[tuple[int, str, KnowledgeSectionType]]:
+        resolved: list[tuple[int, str, KnowledgeSectionType]] = []
+        inherited_type = KnowledgeSectionType.OTHER
+        for start, _, heading, section_type in sorted(selected):
+            if section_type is not None:
+                inherited_type = section_type
+            resolved.append(
+                (
+                    start,
+                    heading,
+                    section_type or inherited_type,
+                )
+            )
+        return resolved
+
+    @staticmethod
+    def _numbered_heading_start(content: str, heading_start: int) -> int:
+        line_start = content.rfind("\n", 0, heading_start) + 1
+        prefix = content[line_start:heading_start]
+        if re.fullmatch(r"\s*\d+(?:\.\d+)*[.)]?\s+", prefix):
+            return line_start
+        return heading_start
+
+    @staticmethod
+    def _is_decorated_heading_line(
+        content: str,
+        start: int,
+        end: int,
+    ) -> bool:
+        line_start = content.rfind("\n", 0, start) + 1
+        line_end = content.find("\n", end)
+        if line_end < 0:
+            line_end = len(content)
+
+        prefix = content[line_start:start].strip()
+        suffix = content[end:line_end].strip()
+        decorations = f"{prefix}{suffix}"
+        return bool(decorations) and re.fullmatch(r"[-–—\u00ad]+", decorations) is not None
 
     @staticmethod
     def _is_heading_boundary(
@@ -471,9 +911,17 @@ class KnowledgeSplitter:
         at_line_start = start == 0
         if start > 0:
             prefix = content[:start]
-            at_line_start = not prefix.rsplit("\n", maxsplit=1)[-1].strip()
+            line_prefix = prefix.rsplit("\n", maxsplit=1)[-1]
+            at_line_start = not line_prefix.strip()
+            follows_numbered_prefix = (
+                re.fullmatch(
+                    r"\s*\d+(?:\.\d+)*[.)]?\s+",
+                    line_prefix,
+                )
+                is not None
+            )
             previous_non_space = prefix.rstrip()
-            if not at_line_start and previous_non_space:
+            if not at_line_start and not follows_numbered_prefix and previous_non_space:
                 if previous_non_space[-1] not in ".!?。:;)]}":
                     return False
 
@@ -492,10 +940,88 @@ class KnowledgeSplitter:
         self,
         content: str,
         policy: ChunkingPolicy,
+        *,
+        document_type: KnowledgeDocumentType | None = None,
     ) -> list[tuple[str, int, int]]:
         if self._token_counter.count(content) <= policy.hard_max_tokens:
             return [(content, 0, len(content))]
 
+        if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE:
+            nutrient_chunks = self._split_research_nutrient_units(
+                content,
+                policy,
+            )
+            if nutrient_chunks:
+                return nutrient_chunks
+
+        return self._recursive_split_content(content, policy)
+
+    def _split_research_nutrient_units(
+        self,
+        content: str,
+        policy: ChunkingPolicy,
+    ) -> list[tuple[str, int, int]]:
+        matches = list(_RESEARCH_NUTRIENT_SUBHEADING.finditer(content))
+        if len(matches) < 2:
+            return []
+
+        units: list[tuple[int, int]] = []
+        for index, match in enumerate(matches):
+            start = 0 if index == 0 else match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            units.append((start, end))
+
+        grouped: list[tuple[str, int, int]] = []
+        group_start, group_end = units[0]
+        for unit_start, unit_end in units[1:]:
+            candidate = content[group_start:unit_end].strip()
+            if self._token_counter.count(candidate) <= policy.hard_max_tokens:
+                group_end = unit_end
+                continue
+            grouped.extend(
+                self._bounded_semantic_group(
+                    content,
+                    group_start,
+                    group_end,
+                    policy,
+                )
+            )
+            group_start, group_end = unit_start, unit_end
+        grouped.extend(
+            self._bounded_semantic_group(
+                content,
+                group_start,
+                group_end,
+                policy,
+            )
+        )
+        return grouped
+
+    def _bounded_semantic_group(
+        self,
+        source: str,
+        start: int,
+        end: int,
+        policy: ChunkingPolicy,
+    ) -> list[tuple[str, int, int]]:
+        content = source[start:end].strip()
+        leading = len(source[start:end]) - len(source[start:end].lstrip())
+        absolute_start = start + leading
+        if self._token_counter.count(content) <= policy.hard_max_tokens:
+            return [(content, absolute_start, absolute_start + len(content))]
+        return [
+            (chunk, absolute_start + local_start, absolute_start + local_end)
+            for chunk, local_start, local_end in self._recursive_split_content(
+                content,
+                policy,
+            )
+        ]
+
+    def _recursive_split_content(
+        self,
+        content: str,
+        policy: ChunkingPolicy,
+    ) -> list[tuple[str, int, int]]:
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=policy.hard_max_tokens,
             chunk_overlap=policy.overlap_tokens,
@@ -573,6 +1099,9 @@ class KnowledgeSplitter:
         section: KnowledgeSection,
         chunk_index: int,
         metadata,
+        content_kind: KnowledgeContentKind = KnowledgeContentKind.TEXT,
+        table_title: str | None = None,
+        table_super_headers: list[str] | None = None,
     ) -> KnowledgeChunk:
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         chunk_key = "|".join(
@@ -610,6 +1139,9 @@ class KnowledgeSplitter:
                     if entities.study_population != KnowledgeStudyPopulation.UNKNOWN
                     else metadata.study_population
                 ),
+                "content_kind": content_kind,
+                "table_title": table_title,
+                "table_super_headers": table_super_headers or [],
             }
         )
         chunk_metadata = KnowledgeChunkMetadata(

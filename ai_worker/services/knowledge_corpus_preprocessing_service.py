@@ -3,6 +3,10 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
+from ai_worker.schemas.knowledge import (
+    KnowledgeEvidenceLevel,
+    KnowledgeStudyPopulation,
+)
 from ai_worker.schemas.knowledge_manifest import (
     KnowledgeManualReviewStatus,
     KnowledgePilotEntry,
@@ -24,6 +28,15 @@ class KnowledgeCorpusDocument(BaseModel):
     repo_path: Path
     processing_status: KnowledgeProcessingStatus
     sha256: str = Field(min_length=64, max_length=64)
+    title: str | None = None
+    source_url: str | None = None
+    doi: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publication_year: int | None = Field(default=None, ge=1900, le=2100)
+    drug_names: list[str] = Field(default_factory=list)
+    ingredient_names: list[str] = Field(default_factory=list)
+    evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
+    study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
 
 
 class KnowledgeCorpusManifestBuilder:
@@ -68,6 +81,15 @@ class KnowledgeCorpusManifestBuilder:
                     processing_status=document.processing_status,
                     selection_reason=("대표 문서 품질 승인을 상속한 전체 코퍼스 전처리"),
                     manual_review_status=KnowledgeManualReviewStatus.APPROVED,
+                    title=document.title,
+                    source_url=document.source_url,
+                    doi=document.doi,
+                    authors=document.authors,
+                    publication_year=document.publication_year,
+                    drug_names=document.drug_names,
+                    ingredient_names=document.ingredient_names,
+                    evidence_level=document.evidence_level,
+                    study_population=document.study_population,
                 )
             )
 

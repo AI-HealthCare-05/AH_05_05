@@ -1,0 +1,72 @@
+{
+  "policy": "추가 약물·영양소 상호작용 자료의 유형별 대표 PDF만 먼저 전처리하고 수동 검수한다.",
+  "pilots": [
+    {
+      "source_id": "fda_regulatory_drug_labels",
+      "document_id": "fda_regulatory_drug_labels-67244a6c56f4a3e8",
+      "repo_path": "data/knowledge/raw/public/fda/drug_labels/fda_levothyroxine_levo_t_prescribing_information.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "FDA 허가문서의 효능·용법·경고·상호작용 경계 검증",
+      "title": "LEVO-T (levothyroxine sodium) tablets, for oral use",
+      "source_url": "https://www.fda.gov/drugsatfda",
+      "authors": ["U.S. Food and Drug Administration"],
+      "publication_year": 2017,
+      "drug_names": ["LEVO-T", "levothyroxine sodium", "levothyroxine"],
+      "evidence_level": "REGULATORY",
+      "study_population": "NOT_APPLICABLE"
+    },
+    {
+      "source_id": "research_drug_nutrient_interactions",
+      "document_id": "research_drug_nutrient_interactions-9ee306da46e38bdf",
+      "repo_path": "data/knowledge/raw/demo_restricted/research/drug_nutrient_interactions/research_levothyroxine_food_drug_interactions_2023.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "긴 체계적 문헌고찰의 절 순서와 참고문헌 제외 검증",
+      "title": "Medications and Food Interfering with the Bioavailability of Levothyroxine: A Systematic Review",
+      "source_url": "https://doi.org/10.2147/TCRM.S414460",
+      "doi": "10.2147/TCRM.S414460",
+      "authors": ["Hanqing Liu", "Man Lu", "Jiawei Hu", "Guangzhao Fu", "Qinyu Feng", "Shengrong Sun", "Chuang Chen"],
+      "publication_year": 2023,
+      "drug_names": ["levothyroxine", "LT4"],
+      "evidence_level": "SYSTEMATIC_REVIEW",
+      "study_population": "HUMAN"
+    },
+    {
+      "source_id": "research_drug_nutrient_interactions",
+      "document_id": "research_drug_nutrient_interactions-3dd5c1de206c9a88",
+      "repo_path": "data/knowledge/raw/demo_restricted/research/drug_nutrient_interactions/research_aspirin_warfarin_nutrient_interactions_2024.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "다수 약물·영양소가 포함된 논문의 대상 혼입 여부 검증",
+      "title": "Potential Drug–Nutrient Interactions of 45 Vitamins, Minerals, Trace Elements, and Associated Dietary Compounds with Acetylsalicylic Acid and Warfarin—A Review of the Literature",
+      "source_url": "https://doi.org/10.3390/nu16070950",
+      "doi": "10.3390/nu16070950",
+      "authors": ["David Renaud", "Alexander Höller", "Miriam Michel"],
+      "publication_year": 2024,
+      "drug_names": ["acetylsalicylic acid", "aspirin", "ASA", "warfarin"],
+      "evidence_level": "REVIEW_ARTICLE",
+      "study_population": "MIXED",
+      "verified_text_replacements": {
+        "mi-nor": "minor"
+      },
+      "approved_chunk_content_hashes": [
+        "9430a03c52be78cb6d97901819531dc929d6c3794359682b916b172d5ca67d4f",
+        "0ed97500cd0ef694156fe429cf475d887524631783d241da19e1d4ca313f0267",
+        "52bd3bdb20313aa5c230a29b7f3d3d2b41332bf1fe30a60b44e0302e8a400158"
+      ]
+    },
+    {
+      "source_id": "research_supplement_adverse_effects",
+      "document_id": "research_supplement_adverse_effects-69b9c0581b9f9612",
+      "repo_path": "data/knowledge/raw/demo_restricted/research/supplement_adverse_effects/research_botanical_supplement_adverse_effects.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "식물성 보충제 이상사례·인과성 설명의 의미 단위 검증",
+      "title": "Adverse effects of plant food supplements and botanical preparations: a systematic review with critical evaluation of causality",
+      "source_url": "https://doi.org/10.1111/bcp.12519",
+      "doi": "10.1111/bcp.12519",
+      "authors": ["Chiara Di Lorenzo", "Alessandro Ceschi", "Hugo Kupferschmidt", "Saskia Lüde", "Elizabeth De Souza Nascimento", "Ariana Dos Santos", "Francesca Colombo", "Gianfranco Frigerio", "Karin Nørby", "Jenny Plumb", "Paul Finglas", "Patrizia Restani"],
+      "publication_year": 2015,
+      "ingredient_names": ["plant food supplements", "botanical preparations"],
+      "evidence_level": "SYSTEMATIC_REVIEW",
+      "study_population": "HUMAN"
+    }
+  ]
+}

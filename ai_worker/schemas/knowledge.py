@@ -10,6 +10,7 @@ class KnowledgeAccessScope(StrEnum):
 
 
 class KnowledgeDocumentType(StrEnum):
+    REGULATORY_DRUG_LABEL = "REGULATORY_DRUG_LABEL"
     DRUG_FOOD_INTERACTION_GUIDE = "DRUG_FOOD_INTERACTION_GUIDE"
     SUPPLEMENT_FUNCTION_GUIDE = "SUPPLEMENT_FUNCTION_GUIDE"
     SUPPLEMENT_CODE = "SUPPLEMENT_CODE"
@@ -18,6 +19,18 @@ class KnowledgeDocumentType(StrEnum):
     PHARM_REVIEW = "PHARM_REVIEW"
     RESEARCH_ARTICLE = "RESEARCH_ARTICLE"
     SUPPLEMENT_INTERACTION_MONOGRAPH = "SUPPLEMENT_INTERACTION_MONOGRAPH"
+
+
+class KnowledgeExtractionWarning(StrEnum):
+    MULTI_COLUMN_LAYOUT = "MULTI_COLUMN_LAYOUT"
+    ROTATED_TEXT = "ROTATED_TEXT"
+    TABLE_STRUCTURE_UNSAFE = "TABLE_STRUCTURE_UNSAFE"
+    READING_ORDER_UNSAFE = "READING_ORDER_UNSAFE"
+
+
+class KnowledgeContentKind(StrEnum):
+    TEXT = "TEXT"
+    TABLE = "TABLE"
 
 
 class KnowledgeSectionType(StrEnum):
@@ -89,6 +102,9 @@ class KnowledgeMetadata(BaseModel):
     document_type: KnowledgeDocumentType
     dataset_version: str = Field(min_length=1)
     source_url: str | None = None
+    doi: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publication_year: int | None = Field(default=None, ge=1900, le=2100)
     file_name: str | None = None
     entity_type: str | None = None
     drug_names: list[str] = Field(default_factory=list)
@@ -103,6 +119,7 @@ class KnowledgeMetadata(BaseModel):
     @field_validator(
         "drug_names",
         "ingredient_names",
+        "authors",
         "special_populations",
     )
     @classmethod
@@ -128,10 +145,80 @@ class KnowledgeMetadata(BaseModel):
         return normalize_interaction_pair_keys(values)
 
 
+class KnowledgeBoundingBox(BaseModel):
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+
+    @model_validator(mode="after")
+    def require_ordered_coordinates(self):
+        if self.x1 < self.x0:
+            raise ValueError("x1은 x0보다 작을 수 없습니다.")
+        if self.bottom < self.top:
+            raise ValueError("bottom은 top보다 작을 수 없습니다.")
+        return self
+
+
+class KnowledgeTableRow(BaseModel):
+    cells: list[str] = Field(min_length=1)
+
+    @field_validator("cells")
+    @classmethod
+    def normalize_cells(cls, cells: list[str]) -> list[str]:
+        return [cell.strip() for cell in cells]
+
+
+class KnowledgePageBlock(BaseModel):
+    kind: KnowledgeContentKind
+    order: int = Field(ge=0)
+    bbox: KnowledgeBoundingBox
+    content: str = Field(min_length=1)
+    headers: list[str] = Field(default_factory=list)
+    rows: list[KnowledgeTableRow] = Field(default_factory=list)
+    column_count: int | None = Field(default=None, ge=1)
+    table_title: str | None = None
+    table_super_headers: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+
+    @field_validator("table_title")
+    @classmethod
+    def normalize_table_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("table_super_headers")
+    @classmethod
+    def normalize_table_super_headers(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @model_validator(mode="after")
+    def require_table_shape(self):
+        if self.kind == KnowledgeContentKind.TEXT:
+            if (
+                self.headers
+                or self.rows
+                or self.column_count is not None
+                or self.table_title is not None
+                or self.table_super_headers
+            ):
+                raise ValueError("TEXT 블록에는 표 구조를 지정할 수 없습니다.")
+            return self
+        if self.column_count is None:
+            raise ValueError("TABLE 블록에는 column_count가 필요합니다.")
+        return self
+
+
 class KnowledgePage(BaseModel):
     content: str = Field(min_length=1)
     metadata: KnowledgeMetadata
     page_number: int = Field(ge=1)
+    blocks: list[KnowledgePageBlock] = Field(default_factory=list)
+    extraction_warnings: list[KnowledgeExtractionWarning] = Field(
+        default_factory=list,
+    )
 
 
 class KnowledgeSection(BaseModel):
@@ -153,8 +240,11 @@ class KnowledgeSection(BaseModel):
 
 
 class KnowledgeChunkMetadata(KnowledgeMetadata):
+    content_kind: KnowledgeContentKind = KnowledgeContentKind.TEXT
     section_type: KnowledgeSectionType
     section_title: str | None = None
+    table_title: str | None = None
+    table_super_headers: list[str] = Field(default_factory=list)
     page_start: int = Field(ge=1)
     page_end: int = Field(ge=1)
     chunk_index: int = Field(ge=0)

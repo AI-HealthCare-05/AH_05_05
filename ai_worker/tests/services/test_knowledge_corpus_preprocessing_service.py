@@ -168,6 +168,74 @@ sources:
     assert [entry.document_id for entry in manifest.pilots] == ["first-document"]
 
 
+def test_builder_preserves_reviewed_document_metadata(tmp_path: Path) -> None:
+    documents_path = tmp_path / "documents.jsonl"
+    sources_path = tmp_path / "sources.yaml"
+    pilot_report_path = tmp_path / "quality.json"
+    write_jsonl(
+        documents_path,
+        [
+            {
+                "source_id": "research",
+                "document_id": "review-document",
+                "repo_path": "raw/review.pdf",
+                "processing_status": "TEXT_EXTRACTABLE",
+                "sha256": "a" * 64,
+                "title": "Reviewed interaction article",
+                "source_url": "https://doi.org/10.1234/review",
+                "doi": "10.1234/review",
+                "authors": ["Example Author"],
+                "publication_year": 2024,
+                "drug_names": ["warfarin"],
+                "ingredient_names": ["vitamin K"],
+                "evidence_level": "SYSTEMATIC_REVIEW",
+                "study_population": "HUMAN",
+            }
+        ],
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: research
+    provider: Journal
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    pilot_report_path.write_text(
+        json.dumps(
+            {
+                "dataset_version": "pilot-v1",
+                "processed_document_count": 1,
+                "chunk_count": 1,
+                "ready_for_bulk_source_ids": ["research"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = KnowledgeCorpusManifestBuilder().build(
+        documents_path=documents_path,
+        sources_path=sources_path,
+        pilot_quality_report_path=pilot_report_path,
+    )
+
+    entry = manifest.pilots[0]
+    assert entry.title == "Reviewed interaction article"
+    assert entry.source_url == "https://doi.org/10.1234/review"
+    assert entry.doi == "10.1234/review"
+    assert entry.authors == ["Example Author"]
+    assert entry.publication_year == 2024
+    assert entry.drug_names == ["warfarin"]
+    assert entry.ingredient_names == ["vitamin K"]
+    assert entry.evidence_level.value == "SYSTEMATIC_REVIEW"
+    assert entry.study_population.value == "HUMAN"
+
+
 def build_report(
     document_id: str,
     status: KnowledgeAutomaticQualityStatus,
@@ -175,6 +243,7 @@ def build_report(
     return KnowledgeDocumentPreprocessingReport(
         document_id=document_id,
         source_id="source",
+        source_document_path=Path(f"raw/{document_id}.pdf"),
         document_type=KnowledgeDocumentType.SUPPLEMENT_CODE,
         selection_reason="전체 전처리",
         automatic_status=status,

@@ -29,7 +29,18 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/knowledge/processed"),
     )
     parser.add_argument("--dataset-version", default="knowledge-pilot-v1")
+    parser.add_argument(
+        "--tokenizer-encoding",
+        choices=("cl100k_base", "o200k_base"),
+        default="cl100k_base",
+    )
     return parser.parse_args()
+
+
+def build_splitter(*, tokenizer_encoding: str) -> KnowledgeSplitter:
+    return KnowledgeSplitter(
+        tokenizer_encoding=tokenizer_encoding,
+    )
 
 
 def main() -> None:
@@ -39,7 +50,9 @@ def main() -> None:
         repo_root=repo_root,
         loader=KnowledgePdfLoader(),
         normalizer=KnowledgeNormalizer(),
-        splitter=KnowledgeSplitter(),
+        splitter=build_splitter(
+            tokenizer_encoding=args.tokenizer_encoding,
+        ),
     )
     result = service.preprocess(
         manifest_path=repo_root / args.manifest,

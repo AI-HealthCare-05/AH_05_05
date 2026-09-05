@@ -62,8 +62,13 @@ class KnowledgeEntityExtractor:
         r"single-meal|double-blind|placebo)\b",
         flags=re.IGNORECASE,
     )
+    _REGULATORY_LABEL_DRUG = re.compile(
+        r"\b(?P<brand>[A-Z][A-Z0-9-]{2,})®?\s*"
+        r"\(\s*(?P<generic>[a-z][a-z0-9 -]{2,})\s*\)",
+    )
 
     _REGULATORY_DOCUMENT_TYPES = {
+        KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
         KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
         KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
         KnowledgeDocumentType.SUPPLEMENT_CODE,
@@ -153,6 +158,10 @@ class KnowledgeEntityExtractor:
             if self._interaction_annotations is not None and document_id
             else []
         )
+        regulatory_drug_names = self._regulatory_drug_names(
+            document_type=document_type,
+            content=content,
+        )
         if annotated:
             pair_types = {match.pair_type.value for match in annotated}
             interaction_type = next(iter(pair_types)) if len(pair_types) == 1 else None
@@ -171,6 +180,9 @@ class KnowledgeEntityExtractor:
         if pair is None:
             return title_entities.model_copy(
                 update={
+                    "drug_names": self._unique(
+                        [*title_entities.drug_names, *regulatory_drug_names]
+                    ),
                     "evidence_level": evidence_level,
                     "study_population": study_population,
                 }
@@ -183,6 +195,21 @@ class KnowledgeEntityExtractor:
                 "evidence_level": evidence_level,
                 "study_population": study_population,
             }
+        )
+
+    @classmethod
+    def _regulatory_drug_names(
+        cls,
+        *,
+        document_type: KnowledgeDocumentType,
+        content: str,
+    ) -> list[str]:
+        if document_type != KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            return []
+        return cls._unique(
+            name.strip()
+            for match in cls._REGULATORY_LABEL_DRUG.finditer(content)
+            for name in (match.group("brand"), match.group("generic"))
         )
 
     @classmethod

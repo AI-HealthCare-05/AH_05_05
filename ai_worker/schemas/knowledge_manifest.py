@@ -1,14 +1,18 @@
+import re
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeDocumentType,
+    KnowledgeEvidenceLevel,
+    KnowledgeStudyPopulation,
 )
 
 _SAFE_IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class KnowledgeSourceTarget(StrEnum):
@@ -77,6 +81,41 @@ class KnowledgePilotEntry(BaseModel):
     processing_status: KnowledgeProcessingStatus
     selection_reason: str = Field(min_length=1)
     manual_review_status: KnowledgeManualReviewStatus = KnowledgeManualReviewStatus.PENDING
+    title: str | None = None
+    source_url: str | None = None
+    doi: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publication_year: int | None = Field(default=None, ge=1900, le=2100)
+    drug_names: list[str] = Field(default_factory=list)
+    ingredient_names: list[str] = Field(default_factory=list)
+    evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
+    study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
+    verified_text_replacements: dict[str, str] = Field(default_factory=dict)
+    approved_chunk_content_hashes: list[str] = Field(default_factory=list)
+
+    @field_validator("approved_chunk_content_hashes")
+    @classmethod
+    def validate_approved_chunk_content_hashes(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            content_hash = value.strip().lower()
+            if not _SHA256_PATTERN.fullmatch(content_hash):
+                raise ValueError("수동 승인 청크 content_hash는 64자리 SHA-256이어야 합니다.")
+            if content_hash not in normalized:
+                normalized.append(content_hash)
+        return normalized
+
+    @model_validator(mode="after")
+    def require_valid_verified_text_replacements(self):
+        for source, replacement in self.verified_text_replacements.items():
+            if not source.strip() or not replacement.strip():
+                raise ValueError("검증된 텍스트 치환의 원문과 대체문은 비어 있을 수 없습니다.")
+            if source == replacement:
+                raise ValueError("검증된 텍스트 치환의 원문과 대체문은 달라야 합니다.")
+        return self
 
 
 class KnowledgePilotManifest(BaseModel):

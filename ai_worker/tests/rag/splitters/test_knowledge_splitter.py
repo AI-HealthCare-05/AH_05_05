@@ -15,12 +15,16 @@ from ai_worker.rag.splitters.knowledge_splitter import (
 )
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
+    KnowledgeBoundingBox,
+    KnowledgeContentKind,
     KnowledgeDocumentType,
     KnowledgeEvidenceLevel,
     KnowledgeMetadata,
     KnowledgePage,
+    KnowledgePageBlock,
     KnowledgeSectionType,
     KnowledgeStudyPopulation,
+    KnowledgeTableRow,
 )
 
 
@@ -46,6 +50,131 @@ def build_page(
             ingredient_names=[title],
         ),
     )
+
+
+def build_research_page_with_table(
+    *,
+    table_rows: list[list[str]],
+    table_title: str | None = None,
+    table_super_headers: list[str] | None = None,
+) -> KnowledgePage:
+    headers = ["Ingredient", "Result"]
+    table_content = "\n".join(
+        " | ".join(f"{header}={cell}" for header, cell in zip(headers, row, strict=True)) for row in table_rows
+    )
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-table",
+        title="Nutrient interaction study",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+        ingredient_names=["철분"],
+        interaction_type="SUPPLEMENT_SUPPLEMENT",
+    )
+    return KnowledgePage(
+        content=f"Results\n\n{table_content}",
+        page_number=1,
+        metadata=metadata,
+        blocks=[
+            KnowledgePageBlock(
+                kind=KnowledgeContentKind.TEXT,
+                order=0,
+                bbox=KnowledgeBoundingBox(
+                    x0=10,
+                    top=10,
+                    x1=500,
+                    bottom=50,
+                ),
+                content="Results\n본문 결과입니다.",
+            ),
+            KnowledgePageBlock(
+                kind=KnowledgeContentKind.TABLE,
+                order=1,
+                bbox=KnowledgeBoundingBox(
+                    x0=10,
+                    top=60,
+                    x1=500,
+                    bottom=200,
+                ),
+                content=table_content,
+                headers=headers,
+                rows=[KnowledgeTableRow(cells=row) for row in table_rows],
+                column_count=2,
+                table_title=table_title,
+                table_super_headers=table_super_headers or [],
+            ),
+        ],
+    )
+
+
+def test_split_keeps_table_rows_whole_and_marks_content_kind() -> None:
+    page = build_research_page_with_table(
+        table_rows=[
+            ["Calcium", "Reduced iron absorption"],
+            ["Zinc", "Lower copper status"],
+        ]
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    text_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TEXT]
+    table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
+    assert len(text_chunks) == 1
+    assert len(table_chunks) == 1
+    assert "Ingredient=Calcium | Result=Reduced iron absorption" in (table_chunks[0].content)
+    assert "Ingredient=Zinc | Result=Lower copper status" in (table_chunks[0].content)
+    assert "Ingredient=Calcium" not in text_chunks[0].content
+
+
+def test_split_preserves_table_context_as_chunk_metadata() -> None:
+    page = build_research_page_with_table(
+        table_rows=[["Calcium", "Reduced iron absorption"]],
+        table_title="Table 2. Clinically relevant interactions",
+        table_super_headers=["Human Studies"],
+    )
+    page = page.model_copy(update={"metadata": page.metadata.model_copy(update={"interaction_type": None})})
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    table_chunk = next(chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE)
+    assert table_chunk.metadata.section_title == ("Table 2. Clinically relevant interactions")
+    assert table_chunk.metadata.table_title == ("Table 2. Clinically relevant interactions")
+    assert table_chunk.metadata.table_super_headers == ["Human Studies"]
+    assert table_chunk.metadata.section_type == KnowledgeSectionType.INTERACTION
+
+
+def test_split_uses_dni_table_title_for_every_grouped_chunk() -> None:
+    repeated_result = " ".join(["observed"] * 500)
+    page = build_research_page_with_table(
+        table_rows=[
+            ["Magnesium", repeated_result],
+            ["Astaxanthin", repeated_result],
+        ],
+        table_title=("Table 2. Summary of clinically relevant DNIs with warfarin."),
+        table_super_headers=["Human Studies"],
+    )
+    page = page.model_copy(update={"metadata": page.metadata.model_copy(update={"interaction_type": None})})
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
+    assert len(table_chunks) == 2
+    assert all(chunk.metadata.section_type == KnowledgeSectionType.INTERACTION for chunk in table_chunks)
+
+
+def test_split_does_not_break_an_oversized_table_row() -> None:
+    oversized_result = " ".join(["result"] * 900)
+    page = build_research_page_with_table(
+        table_rows=[["Calcium", oversized_result]],
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    table_chunk = next(chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE)
+    assert table_chunk.token_count > 800
+    assert table_chunk.content.count("Ingredient=Calcium") == 1
 
 
 def test_split_uses_supplement_field_headings_before_size_split() -> None:
@@ -471,6 +600,297 @@ def test_split_excludes_research_references() -> None:
     assert KnowledgeSectionType.REFERENCES not in {chunk.metadata.section_type for chunk in chunks}
 
 
+def test_split_regulatory_drug_label_preserves_safety_sections() -> None:
+    page = build_page(
+        "1 INDICATIONS AND USAGE\n"
+        "LEVO-T is indicated as replacement therapy.\n"
+        "2 DOSAGE AND ADMINISTRATION\n"
+        "Administer once daily on an empty stomach.\n"
+        "5 WARNINGS AND PRECAUTIONS\n"
+        "Overtreatment may increase cardiovascular risk.\n"
+        "7 DRUG INTERACTIONS\n"
+        "Calcium may reduce levothyroxine absorption.\n"
+        "17 PATIENT COUNSELING INFORMATION\n"
+        "Tell patients to take LEVO-T with water.",
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        title="LEVO-T prescribing information",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+        KnowledgeSectionType.INTERACTION,
+        KnowledgeSectionType.CAUTION,
+    ]
+    assert "Calcium may reduce" in chunks[3].content
+    assert KnowledgeSplitter.policy_for(KnowledgeDocumentType.REGULATORY_DRUG_LABEL) == ChunkingPolicy(
+        target_min_tokens=250,
+        hard_max_tokens=600,
+        overlap_tokens=40,
+    )
+
+
+def test_split_regulatory_drug_label_recognizes_decorated_highlight_headings() -> None:
+    page = build_page(
+        "HIGHLIGHTS OF PRESCRIBING INFORMATION\n"
+        "----------------------------INDICATIONS AND USAGE--------------------------\n"
+        "LEVO-T is indicated as replacement therapy.\n"
+        "---------------------------------DRUG INTERACTIONS---------------------------\n"
+        "Calcium may reduce levothyroxine absorption.",
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        title="LEVO-T prescribing information",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    section_types = [chunk.metadata.section_type for chunk in chunks]
+    assert KnowledgeSectionType.FUNCTION in section_types
+    assert KnowledgeSectionType.INTERACTION in section_types
+    assert all("----------------" not in chunk.content for chunk in chunks)
+
+
+def test_split_excludes_research_publication_back_matter() -> None:
+    page = build_page(
+        "Results\nWarfarin and nutrients require careful interpretation.\n"
+        "Conclusions\nThe evidence remains limited.\n"
+        "Author Contributions: A.B. wrote the manuscript.\n"
+        "Funding: This research received no external funding.\n"
+        "Conflicts of Interest: The authors declare no conflict.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    combined = "\n".join(chunk.content for chunk in chunks)
+    assert "evidence remains limited" in combined
+    assert "Author Contributions" not in combined
+    assert "Conflicts of Interest" not in combined
+
+
+def test_split_excludes_research_back_matter_without_colon() -> None:
+    page = build_page(
+        "Abstract\nThis systematic review evaluates levothyroxine interactions.\n"
+        "Conclusion\nCalcium and iron may reduce levothyroxine absorption.\n"
+        "Abbreviations\nLT4, levothyroxine; TSH, thyrotropin.\n"
+        "Data Sharing Statement\nAll data are included in this article.\n"
+        "Author Contributions\nAll authors reviewed the manuscript.\n"
+        "Funding\nThis work was supported by a grant.\n"
+        "Disclosure\nThe authors report no conflicts.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Levothyroxine interactions: a systematic review",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    combined = "\n".join(chunk.content for chunk in chunks)
+    assert "Calcium and iron" in combined
+    assert "Abbreviations" not in combined
+    assert "Author Contributions" not in combined
+    assert "Funding" not in combined
+
+
+def test_split_excludes_research_publication_front_matter() -> None:
+    page = build_page(
+        "Citation: Example et al. Nutrients 2024.\n"
+        "Copyright: © 2024 by the authors.\n"
+        "Correspondence: author@example.org\n"
+        "Abstract\nWarfarin and nutrient interactions were reviewed.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert len(chunks) == 1
+    assert chunks[0].metadata.section_type == KnowledgeSectionType.SUMMARY
+    assert "interactions were reviewed" in chunks[0].content
+    assert "Citation:" not in chunks[0].content
+
+
+def test_split_excludes_decorated_research_correspondence_front_matter() -> None:
+    page = build_page(
+        "David Renaud, Alexander Höller and Miriam Michel\n"
+        "Institute of Nutritional Medicine\n"
+        "* Correspondence: author@example.org\n"
+        "Abstract\nWarfarin and nutrient interactions were reviewed.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert len(chunks) == 1
+    assert chunks[0].metadata.section_type == KnowledgeSectionType.SUMMARY
+    assert chunks[0].content.startswith("Abstract")
+    assert "author@example.org" not in chunks[0].content
+
+
+def test_split_excludes_regulatory_manufacturer_block() -> None:
+    page = build_page(
+        "17 PATIENT COUNSELING INFORMATION\n"
+        "Tell patients to take LEVO-T with water.\n"
+        "Manufactured and Distributed by: Example Pharma LLC\n"
+        "Revised: 08/2026",
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        title="LEVO-T prescribing information",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert len(chunks) == 1
+    assert "take LEVO-T with water" in chunks[0].content
+    assert "Example Pharma" not in chunks[0].content
+
+
+def test_split_recognizes_numbered_interaction_subsection() -> None:
+    page = build_page(
+        "2 Materials and Methods\nThe review method is described.\n"
+        "4.2 Drug-Nutrient Interactions\n"
+        "Warfarin and vitamin K evidence is summarized.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.METHODS,
+        KnowledgeSectionType.INTERACTION,
+    ]
+
+
+def test_split_recognizes_generic_numbered_dni_heading() -> None:
+    page = build_page(
+        "2. Methods\nThe review method is described.\n"
+        "4. ASA and DNIs\n"
+        "Aspirin and nutrient interaction evidence is summarized.\n"
+        "6. Discussion\nThe evidence remains limited.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Aspirin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.METHODS,
+        KnowledgeSectionType.INTERACTION,
+        KnowledgeSectionType.DISCUSSION,
+    ]
+    assert "Aspirin and nutrient" in chunks[1].content
+
+
+def test_split_research_numbered_subsections_inherit_parent_section_type() -> None:
+    page = build_page(
+        "4. Warfarin and DNIs\n"
+        "4.1.1. Water-Soluble Vitamins\n"
+        "Vitamin B interactions are summarized here.\n"
+        "4.1.2. Fat-Soluble Vitamins\n"
+        "Vitamin K interactions are summarized here.\n"
+        "6. Discussion\n"
+        "The evidence remains limited.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INTERACTION,
+        KnowledgeSectionType.INTERACTION,
+        KnowledgeSectionType.DISCUSSION,
+    ]
+    assert "Water-Soluble Vitamins" in chunks[0].content
+    assert "Fat-Soluble Vitamins" not in chunks[0].content
+    assert chunks[1].content.startswith("4.1.2. Fat-Soluble Vitamins")
+
+
+def test_split_research_top_level_heading_resets_inherited_section_type() -> None:
+    page = build_page(
+        "2. Methods\nThe review method is described.\n"
+        "3. Defining the Hidden Hunger Essentiality\n"
+        "Other important nutrients include two macronutrients.\n"
+        "4. ASA and DNIs\nAspirin interactions are summarized.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Aspirin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.METHODS,
+        KnowledgeSectionType.OTHER,
+        KnowledgeSectionType.INTERACTION,
+    ]
+
+
+def test_split_connects_lowercase_sentence_across_page_boundary() -> None:
+    first_page = build_page(
+        "Other important nutrients include two macronutrients,",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Aspirin nutrient interactions",
+        page_number=4,
+    )
+    second_page = build_page(
+        "fatty acids and dietary amino acids, are also critical for metabolism.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Aspirin nutrient interactions",
+        page_number=5,
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([first_page, second_page])
+
+    assert len(chunks) == 1
+    assert "two macronutrients, fatty acids" in chunks[0].content
+    assert (chunks[0].metadata.page_start, chunks[0].metadata.page_end) == (4, 5)
+
+
+def test_split_research_vitamin_subheadings_before_recursive_fallback() -> None:
+    filler = " ".join(f"evidence{index}" for index in range(240))
+    page = build_page(
+        "4. Warfarin and DNIs\n"
+        "4.1.1. Water-Soluble Vitamins\n"
+        f"Thiamine (B1)\n{filler}.\n"
+        f"Niacin (B3)\n{filler}.\n"
+        f"Folate (B9)\n{filler}.\n"
+        f"Cobalamins (B12)\n{filler}.\n"
+        f"Ascorbic Acid (C)\n{filler}.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert len(chunks) > 1
+    assert all(chunk.token_count <= 800 for chunk in chunks)
+    assert all(chunk.metadata.section_title == "Water-Soluble Vitamins" for chunk in chunks)
+    assert any(chunk.content.startswith("Cobalamins (B12)") for chunk in chunks)
+    assert any("Ascorbic Acid (C)" in chunk.content for chunk in chunks)
+
+
+def test_split_merges_heading_only_research_fragment_into_next_section() -> None:
+    page = build_page(
+        "1. Introduction\n"
+        "1.1. Drug–Nutrient Interactions (DNIs)\n"
+        "Medication and nutrients can affect each other through absorption.\n"
+        "2. Methods\nThe review method is described.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Drug nutrient interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INTERACTION,
+        KnowledgeSectionType.METHODS,
+    ]
+    assert chunks[0].content.startswith("1. Introduction")
+    assert "Drug–Nutrient Interactions" in chunks[0].content
+
+
 def test_split_excludes_decorated_korean_references() -> None:
     page = build_page(
         "개요 과민성대장증후군의 주요 내용을 설명합니다.\n◘ 참고문헌 ◘\n1. 검색 근거로 사용하지 않을 참고문헌입니다.",
@@ -482,6 +902,23 @@ def test_split_excludes_decorated_korean_references() -> None:
 
     assert len(chunks) == 1
     assert "참고문헌" not in chunks[0].content
+
+
+def test_split_does_not_resume_research_body_inside_references() -> None:
+    page = build_page(
+        "Conclusion The evidence remains limited.\n"
+        "References\n"
+        "1. Example A. Abstract P59: aspirin and niacin. Journal 2021.\n"
+        "2. Example B. Results from a clinical study. Journal 2022.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Drug nutrient review",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert len(chunks) == 1
+    assert chunks[0].metadata.section_type == KnowledgeSectionType.CONCLUSION
+    assert "Abstract P59" not in chunks[0].content
 
 
 def test_split_excludes_drug_food_publication_colophon() -> None:
