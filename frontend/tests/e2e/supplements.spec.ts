@@ -303,7 +303,7 @@ test('별점 별도 창 취소는 기존 값을 유지하고 메모를 비우면
   await omega.click();
   const reopenedSheet = page.getByRole('dialog', { name: '오메가3' });
   await reopenedSheet.getByRole('group', { name: '내 메모' }).getByRole('button', { name: '수정하기' }).click();
-  const records = page.getByRole('dialog', { name: '내 기록 편집' });
+  const records = page.getByRole('dialog', { name: '메모 편집' });
   const reopenedNote = records.getByRole('textbox', { name: /^메모/ });
   await expect(reopenedNote).toHaveValue('아침 식후에 먹기');
   await reopenedNote.fill('   ');
@@ -319,8 +319,8 @@ test('편집 시트는 비공개 메모와 공개 후기를 구분하고 마스�
 
   const sheet = page.getByRole('dialog', { name: '오메가3' });
   await sheet.getByRole('group', { name: '내 후기' }).getByRole('button', { name: '수정하기' }).click();
-  const records = page.getByRole('dialog', { name: '내 기록 편집' });
-  await expect(records.getByText('나만 볼 수 있어요')).toBeVisible();
+  const records = page.getByRole('dialog', { name: '후기 편집' });
+  await expect(records.getByText('나만 볼 수 있어요')).toHaveCount(0);
   await expect(records.getByText('김*훈 으로 다른 사람에게 보여요')).toBeVisible();
   const review = records.getByRole('textbox', { name: /후기/ });
   await review.fill('꾸준히 먹기 편했어요.');

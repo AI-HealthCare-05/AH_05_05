@@ -45,7 +45,7 @@ export function EditSupplementSheet({
   const [ratingEditOpen, setRatingEditOpen] = useState(false);
   const [ratingDraft, setRatingDraft] = useState<number | null>(null);
   const [ratingSaving, setRatingSaving] = useState(false);
-  const [recordEditOpen, setRecordEditOpen] = useState(false);
+  const [recordEditTarget, setRecordEditTarget] = useState<'note' | 'review' | null>(null);
 
   useEffect(() => {
     if (!open || !supplement) return;
@@ -61,7 +61,7 @@ export function EditSupplementSheet({
     setRatingEditOpen(false);
     setRatingDraft(supplement.score);
     setRatingSaving(false);
-    setRecordEditOpen(false);
+    setRecordEditTarget(null);
   }, [open, supplement]);
 
   async function save() {
@@ -117,8 +117,10 @@ export function EditSupplementSheet({
     }
   }
 
-  async function saveRecords(nextNote: string, nextReview: string) {
+  async function saveRecord(target: 'note' | 'review', value: string) {
     if (!supplement) return;
+    const nextNote = target === 'note' ? value : note;
+    const nextReview = target === 'review' ? value : reviewBody;
     await onSave(supplement.supplementId, {
       // Record editing must not silently save unsubmitted dose/slot edits underneath it.
       doseAmount: supplement.doseAmount,
@@ -129,7 +131,7 @@ export function EditSupplementSheet({
     });
     setNote(nextNote);
     setReviewBody(nextReview);
-    setRecordEditOpen(false);
+    setRecordEditTarget(null);
   }
 
   return (
@@ -203,7 +205,7 @@ export function EditSupplementSheet({
                 <div role="group" aria-label="내 메모" className="rounded-card border border-border bg-card p-4 shadow-card">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-base font-bold text-foreground">내 메모</h3>
-                    <button type="button" className="min-h-touch px-1 text-sm font-bold text-primary-strong" onClick={() => setRecordEditOpen(true)}>
+                    <button type="button" className="min-h-touch px-1 text-sm font-bold text-primary-strong" onClick={() => setRecordEditTarget('note')}>
                       {note.trim() ? '수정하기' : '등록하기'}
                     </button>
                   </div>
@@ -214,7 +216,7 @@ export function EditSupplementSheet({
                 <div role="group" aria-label="내 후기" className="rounded-card border border-border bg-card p-4 shadow-card">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-base font-bold text-foreground">내 후기</h3>
-                    <button type="button" className="min-h-touch px-1 text-sm font-bold text-primary-strong" onClick={() => setRecordEditOpen(true)}>
+                    <button type="button" className="min-h-touch px-1 text-sm font-bold text-primary-strong" onClick={() => setRecordEditTarget('review')}>
                       {reviewBody.trim() ? '수정하기' : '등록하기'}
                     </button>
                   </div>
@@ -268,10 +270,11 @@ export function EditSupplementSheet({
         </DialogContent>
       </Dialog>
 
-      {open && recordEditOpen && (
+      {open && recordEditTarget !== null && (
         <SupplementRecordEditor
-          note={note} reviewBody={reviewBody} maskedName={maskedName}
-          onClose={() => setRecordEditOpen(false)} onSave={saveRecords}
+          key={recordEditTarget} target={recordEditTarget}
+          value={recordEditTarget === 'note' ? note : reviewBody} maskedName={maskedName}
+          onClose={() => setRecordEditTarget(null)} onSave={value => saveRecord(recordEditTarget, value)}
         />
       )}
 
@@ -356,25 +359,24 @@ function formatDose(amount: number, unit: string): string {
   return `${new Intl.NumberFormat('ko-KR').format(amount)}${unit}`;
 }
 
-function SupplementRecordEditor({ note, reviewBody, maskedName, onSave, onClose }: {
-  note: string;
-  reviewBody: string;
+function SupplementRecordEditor({ target, value, maskedName, onSave, onClose }: {
+  target: 'note' | 'review';
+  value: string;
   maskedName: string;
-  onSave: (note: string, reviewBody: string) => Promise<void>;
+  onSave: (value: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const noteId = useId();
-  const reviewId = useId();
+  const fieldId = useId();
   const descriptionId = useId();
-  const [noteDraft, setNoteDraft] = useState(note);
-  const [reviewDraft, setReviewDraft] = useState(reviewBody);
+  const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
+  const label = target === 'note' ? '메모' : '후기';
 
   async function save() {
     if (saving) return;
     setSaving(true);
     try {
-      await onSave(noteDraft.trim(), reviewDraft.trim());
+      await onSave(draft.trim());
     } catch {
       // The parent's error dialog explains the failure; keep this editor and its draft.
     } finally {
@@ -385,28 +387,20 @@ function SupplementRecordEditor({ note, reviewBody, maskedName, onSave, onClose 
   return (
     <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen && !saving) onClose(); }}>
       <DialogContent variant="sheet" aria-describedby={descriptionId} className="max-h-[92dvh] overflow-y-auto pb-6">
-        <DialogTitle className="text-2xl">내 기록 편집</DialogTitle>
-        <DialogDescription id={descriptionId}>메모와 후기를 편집한 뒤 저장해주세요.</DialogDescription>
+        <DialogTitle className="text-2xl">{label} 편집</DialogTitle>
+        <DialogDescription id={descriptionId}>{label}를 편집한 뒤 저장해주세요.</DialogDescription>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor={noteId} className="text-sm font-bold text-foreground">
-            메모 <span className="text-xs font-normal text-muted-foreground">나만 볼 수 있어요</span>
+          <label htmlFor={fieldId} className="text-sm font-bold text-foreground">
+            {label}{' '}
+            <span className="text-xs font-normal text-muted-foreground">
+              {target === 'note' ? '나만 볼 수 있어요' : `${maskedName} 으로 다른 사람에게 보여요`}
+            </span>
           </label>
           <textarea
-            id={noteId} value={noteDraft} maxLength={500} rows={3} disabled={saving}
-            placeholder="복용하면서 기억할 점"
+            id={fieldId} value={draft} maxLength={500} rows={3} disabled={saving}
+            placeholder={target === 'note' ? '복용하면서 기억할 점' : '먹어본 경험을 남겨주세요'}
             className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            onChange={event => setNoteDraft(event.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor={reviewId} className="text-sm font-bold text-foreground">
-            후기 <span className="text-xs font-normal text-muted-foreground">{maskedName} 으로 다른 사람에게 보여요</span>
-          </label>
-          <textarea
-            id={reviewId} value={reviewDraft} maxLength={500} rows={3} disabled={saving}
-            placeholder="먹어본 경험을 남겨주세요"
-            className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            onChange={event => setReviewDraft(event.target.value)}
+            onChange={event => setDraft(event.target.value)}
           />
         </div>
         <Button disabled={saving} onClick={() => void save()}>{saving ? '저장 중...' : '저장'}</Button>

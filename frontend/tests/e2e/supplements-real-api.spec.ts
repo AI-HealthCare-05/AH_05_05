@@ -262,7 +262,7 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
   await ratingSheet.getByRole('button', { name: '저장' }).click();
   await expect(ratingSheet).toBeHidden();
   await sheet.getByRole('group', { name: '내 메모' }).getByRole('button', { name: '수정하기' }).click();
-  const recordEditor = page.getByRole('dialog', { name: '내 기록 편집' });
+  const recordEditor = page.getByRole('dialog', { name: '메모 편집' });
   await expect(recordEditor.getByRole('textbox', { name: /^메모/ })).toHaveValue('아침 식후');
   await recordEditor.getByRole('textbox', { name: /^메모/ }).fill('  저녁 식후  ');
   await recordEditor.getByRole('button', { name: '저장' }).click();
