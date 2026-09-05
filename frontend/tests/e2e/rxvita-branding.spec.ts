@@ -102,7 +102,10 @@ test('진행 중 말풍선과 도착한 답변은 아바타를 유지하며 옆�
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.goto('/dev/chat');
 
-  await page.getByRole('button', { name: '지금 먹는 약을 같이 먹어도 되나요?' }).click();
+  await page
+    .getByRole('textbox', { name: '질문 입력' })
+    .fill('지금 먹는 약을 같이 먹어도 되나요?');
+  await page.getByRole('button', { name: '보내기' }).click();
   const pendingBubble = page.getByText('질문 확인 중', { exact: true });
   await expect(pendingBubble).toBeVisible();
   await expect(page.locator(ASSISTANT_AVATAR)).toHaveCount(1);
