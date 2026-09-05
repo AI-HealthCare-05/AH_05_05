@@ -183,8 +183,9 @@ test('홈 영양제 행은 해당 등록의 관리 시트로 진입하고 닫은
   const sheet = page.getByRole('dialog', { name: '종합비타민', exact: true });
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole('heading', { name: '내 영양제', exact: true })).toBeVisible();
-  await expect(sheet.getByRole('textbox', { name: /메모/ })).toBeVisible();
-  await expect(sheet.getByRole('textbox', { name: /후기/ })).toBeVisible();
+  await expect(sheet.getByRole('group', { name: '내 메모' })).toBeVisible();
+  await expect(sheet.getByRole('group', { name: '내 후기' })).toBeVisible();
+  await expect(sheet.locator('textarea')).toHaveCount(0);
   expect(requests).toHaveLength(0);
   await sheet.getByRole('button', { name: '닫기', exact: true }).click();
   await page.reload();
