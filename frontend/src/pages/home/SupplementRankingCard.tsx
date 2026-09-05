@@ -8,6 +8,8 @@ interface SupplementRankingCardProps {
   onSelect?: (productId: string) => void;
   maxItems?: number;
   onMore?: () => void;
+  title?: string;
+  subtitle?: string;
 }
 
 export function SupplementRankingCard({
@@ -16,6 +18,8 @@ export function SupplementRankingCard({
   onSelect,
   maxItems,
   onMore,
+  title,
+  subtitle,
 }: SupplementRankingCardProps) {
   const items = maxItems === undefined ? ranking.items : ranking.items.slice(0, maxItems);
 
@@ -23,16 +27,18 @@ export function SupplementRankingCard({
     <section aria-label="영양제 랭킹" className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-foreground">{ranking.title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">RxVita가 골랐어요</p>
+          <h2 className="text-lg font-bold text-foreground">{title ?? ranking.title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {subtitle ?? 'RxVita가 골랐어요'}
+          </p>
         </div>
         {onMore && (
           <button
             type="button"
-            className="min-h-touch shrink-0 px-1 text-sm font-bold text-primary-strong"
+            className="min-h-touch shrink-0 px-1 text-caption font-bold text-primary-strong"
             onClick={onMore}
           >
-            더보기
+            전체 보기 ›
           </button>
         )}
       </div>

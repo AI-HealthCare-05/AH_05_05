@@ -40,7 +40,7 @@ from app.dtos.medication_guide_ocr import (
 )
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, OcrJobStatus
-from app.models.medications import Medication
+from app.models.medications import Medication, MedicationDose, MedicationNote, MedicationSlot
 from app.models.ocr import OcrJob
 from app.models.users import User
 from app.services.ocr_image_input import ValidatedImage, validate_image
@@ -479,6 +479,8 @@ class MedicationGuideOcrJobService:
         user: User,
         job_id: int,
         request: MedicationGuideConfirmRequest,
+        *,
+        allow_registration_edit: bool = False,
     ) -> OcrConfirmationResponse:
         confirmation_hash = self._confirmation_hash(request)
         now = datetime.now(config.TIMEZONE)
@@ -492,8 +494,22 @@ class MedicationGuideOcrJobService:
                     .using_db(connection)
                     .first()
                 )
-                if episode is None or episode.confirmation_hash != confirmation_hash or episode.confirmed_at is None:
+                if episode is None or episode.confirmed_at is None:
                     raise OcrJobStateConflictError()
+                if episode.confirmation_hash != confirmation_hash:
+                    if not allow_registration_edit or not await self._can_edit_registration(
+                        episode,
+                        connection=connection,
+                    ):
+                        raise OcrJobStateConflictError()
+                    await self._replace_registration_medications(
+                        connection, episode, job, request, confirmation_hash, now
+                    )
+                    return self._confirmed(job, episode)
+                if "alias" in request.model_fields_set:
+                    episode.alias = request.alias
+                    episode.updated_at = now
+                    await episode.save(using_db=connection, update_fields=["alias", "updated_at"])
                 return self._confirmed(job, episode)
             if job.status != OcrJobStatus.READY_FOR_REVIEW:
                 raise OcrJobStateConflictError()
@@ -509,6 +525,7 @@ class MedicationGuideOcrJobService:
                 using_db=connection,
                 user_id=user.id,
                 title=f"{dispensing_date.isoformat()} 조제약 복약안내",
+                alias=request.alias,
                 status=CareEpisodeStatus.ACTIVE,
                 medication_start_date=dispensing_date,
                 medication_days=medication_days,
@@ -523,22 +540,11 @@ class MedicationGuideOcrJobService:
             episode.updated_at = now
             await episode.save(
                 using_db=connection,
-                update_fields=["source_ocr_job_id", "confirmation_hash", "confirmed_at", "updated_at"],
+                update_fields=["alias", "source_ocr_job_id", "confirmation_hash", "confirmed_at", "updated_at"],
             )
 
             for item in request.medications:
-                dose_quantity = item.dose_quantity if "dose_quantity" in item.model_fields_set else None
-                await Medication.create(
-                    using_db=connection,
-                    care_episode_id=episode.id,
-                    name=item.name,
-                    strength=item.strength if "strength" in item.model_fields_set else None,
-                    dose_quantity=dose_quantity,
-                    times_per_day=item.times_per_day if "times_per_day" in item.model_fields_set else None,
-                    days=item.days if "days" in item.model_fields_set else None,
-                    prescribed_at=dispensing_date,
-                    source_ocr_job_id=job.id,
-                )
+                await self._create_medication(connection, episode.id, job.id, dispensing_date, item)
 
             job.status = OcrJobStatus.COMPLETE
             job.user_review_match_rate = self._user_review_match_rate(job, request)
@@ -560,6 +566,79 @@ class MedicationGuideOcrJobService:
                 ],
             )
         return self._confirmed(job, episode)
+
+    async def _replace_registration_medications(
+        self,
+        connection: Any,
+        episode: CareEpisode,
+        job: OcrJob,
+        request: MedicationGuideConfirmRequest,
+        confirmation_hash: str,
+        now: datetime,
+    ) -> None:
+        await Medication.filter(care_episode_id=episode.id).using_db(connection).delete()
+        dispensing_date = request.dispensing_date
+        episode.title = f"{dispensing_date.isoformat()} 조제약 복약안내"
+        if "alias" in request.model_fields_set:
+            episode.alias = request.alias
+        episode.medication_start_date = dispensing_date
+        episode.medication_days = max(
+            (item.days for item in request.medications if "days" in item.model_fields_set),
+            default=None,
+        )
+        episode.confirmation_hash = confirmation_hash
+        episode.updated_at = now
+        await episode.save(
+            using_db=connection,
+            update_fields=[
+                "title",
+                "alias",
+                "medication_start_date",
+                "medication_days",
+                "confirmation_hash",
+                "updated_at",
+            ],
+        )
+        for item in request.medications:
+            await self._create_medication(connection, episode.id, job.id, dispensing_date, item)
+        job.structured_result = self._confirmed_review_payload(job, request)
+        job.updated_at = now
+        await job.save(using_db=connection, update_fields=["structured_result", "updated_at"])
+
+    @staticmethod
+    async def _can_edit_registration(episode: CareEpisode, *, connection: Any) -> bool:
+        if episode.status != CareEpisodeStatus.ACTIVE or episode.medication_start_slot is not None:
+            return False
+        related_queries = (
+            MedicationSlot.filter(medication__care_episode_id=episode.id),
+            MedicationDose.filter(care_episode_id=episode.id),
+            MedicationNote.filter(care_episode_id=episode.id),
+        )
+        for query in related_queries:
+            if await query.using_db(connection).exists():
+                return False
+        return True
+
+    @staticmethod
+    async def _create_medication(
+        connection: Any,
+        care_episode_id: int,
+        ocr_job_id: int,
+        dispensing_date: Any,
+        item: Any,
+    ) -> None:
+        dose_quantity = item.dose_quantity if "dose_quantity" in item.model_fields_set else None
+        await Medication.create(
+            using_db=connection,
+            care_episode_id=care_episode_id,
+            name=item.name,
+            strength=item.strength if "strength" in item.model_fields_set else None,
+            dose_quantity=dose_quantity,
+            times_per_day=item.times_per_day if "times_per_day" in item.model_fields_set else None,
+            days=item.days if "days" in item.model_fields_set else None,
+            prescribed_at=dispensing_date,
+            source_ocr_job_id=ocr_job_id,
+        )
 
     async def cleanup_expired(self, *, now: datetime | None = None) -> int:
         current = now or datetime.now(config.TIMEZONE)
@@ -810,7 +889,7 @@ class MedicationGuideOcrJobService:
     @staticmethod
     def _confirmation_hash(request: MedicationGuideConfirmRequest) -> str:
         canonical = json.dumps(
-            request.model_dump(mode="json", by_alias=True),
+            request.model_dump(mode="json", by_alias=True, exclude={"alias"}),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

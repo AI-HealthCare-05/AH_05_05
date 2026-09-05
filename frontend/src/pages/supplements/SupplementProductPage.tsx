@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import {
   addSupplement,
   getSupplementProduct,
@@ -16,6 +16,7 @@ const numberFormat = new Intl.NumberFormat('ko-KR');
 
 export function SupplementProductPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { productId = '' } = useParams();
   const [product, setProduct] = useState<SupplementProduct | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -87,6 +88,19 @@ export function SupplementProductPage() {
               <p className="text-sm text-muted-foreground">
                 {product.manufacturer} · {product.servingDescription} · {product.dailyFrequency}
               </p>
+              <Card className="mt-2 flex-row items-center justify-between gap-3 px-4 py-4">
+                <strong className="text-base text-foreground">
+                  {product.servingDescription} · {product.dailyFrequency}
+                </strong>
+                {product.ratingAverage !== null && (
+                  <span
+                    aria-label={`평점 ${product.ratingAverage.toFixed(1)}점`}
+                    className="text-lg font-bold text-warning-strong"
+                  >
+                    {displayStars(product.ratingAverage)}
+                  </span>
+                )}
+              </Card>
             </section>
 
             <section className="flex flex-col gap-3" aria-labelledby="product-nutrients-title">
@@ -117,7 +131,7 @@ export function SupplementProductPage() {
               disabled={registrationPending}
               onClick={() => {
                 if (alreadyRegistered) {
-                  navigate('/supplements');
+                  navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements');
                 } else {
                   setAddOpen(true);
                 }
@@ -154,4 +168,9 @@ export function SupplementProductPage() {
       />
     </div>
   );
+}
+
+function displayStars(rating: number): string {
+  const filled = Math.max(0, Math.min(5, Math.round(rating)));
+  return `${'★'.repeat(filled)}${'☆'.repeat(5 - filled)}`;
 }

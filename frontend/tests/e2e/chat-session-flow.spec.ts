@@ -41,7 +41,8 @@ test.beforeEach(async ({ page }) => {
 
 test('다른 하단 탭에 다녀오면 활성 채팅방과 메시지를 다시 불러온다', async ({ page }) => {
   const question = '지금 먹는 약을 같이 먹어도 되나요?';
-  await page.getByRole('button', { name: question }).click();
+  await page.getByRole('textbox', { name: '질문 입력' }).fill(question);
+  await page.getByRole('button', { name: '보내기' }).click();
   await expect(page.getByText('리바록사반을 복용하는 동안', { exact: false })).toBeVisible();
 
   await page.getByRole('button', { name: '홈' }).click();
@@ -53,7 +54,8 @@ test('다른 하단 탭에 다녀오면 활성 채팅방과 메시지를 다시 
 
 test('새로고침하면 최신 대화 목록을 보여주고 선택한 세션을 연다', async ({ page }) => {
   const question = '영양제와 같이 먹어도 괜찮나요?';
-  await page.getByRole('button', { name: question }).click();
+  await page.getByRole('textbox', { name: '질문 입력' }).fill(question);
+  await page.getByRole('button', { name: '보내기' }).click();
   await expect(page.getByText('리바록사반을 복용하는 동안', { exact: false })).toBeVisible();
 
   await page.reload();
@@ -71,7 +73,8 @@ test('새로고침하면 최신 대화 목록을 보여주고 선택한 세션�
 
 test('새 채팅 버튼은 빈 세션을 저장하지 않고 시작 가이드를 연다', async ({ page }) => {
   const question = '이 약은 왜 먹는 건가요?';
-  await page.getByRole('button', { name: question }).click();
+  await page.getByRole('textbox', { name: '질문 입력' }).fill(question);
+  await page.getByRole('button', { name: '보내기' }).click();
   await expect(page.getByText('리바록사반을 복용하는 동안', { exact: false })).toBeVisible();
   await page.reload();
 

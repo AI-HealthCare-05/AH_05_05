@@ -16,6 +16,7 @@ export {
 } from './api.mock';
 export { summarizeNutrients } from './summary';
 export { evaluateNutrientStandard } from './standard';
+export { getSupplementDoses, saveSupplementDose } from './dose.api';
 export type { NutrientStandardEvaluation, NutrientStandardStatus } from './standard';
 export type {
   AddSupplementPayload,
@@ -23,6 +24,7 @@ export type {
   NutrientTotal,
   SearchSupplementProductsParams,
   Supplement,
+  SupplementDoseRecord,
   SupplementListResult,
   SupplementNutrientAmount,
   SupplementProduct,

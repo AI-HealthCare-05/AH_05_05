@@ -15,10 +15,13 @@ import {
   mockDeleteChatSessions,
   mockGetChatMessages,
   mockListChatSessions,
+  mockSaveChatFeedback,
   mockSendChat,
 } from './api.mock';
 import type {
   ChatMessage,
+  ChatFeedbackPayload,
+  ChatFeedbackResult,
   ChatProgress,
   ChatProgressHandler,
   ChatProgressStage,
@@ -26,6 +29,8 @@ import type {
   SendChatPayload,
   SendChatResult,
 } from './types';
+
+export type { ChatFeedbackPayload, ChatFeedbackResult } from './types';
 
 export class ChatSessionNotFoundError extends Error {
   constructor() {
@@ -67,6 +72,14 @@ export interface ChatSessionDeleteResult {
   deletedSessionIds: number[];
   failedSessionIds: number[];
 }
+
+interface ChatFeedbackApiResponse {
+  success: true;
+  data: ChatFeedbackResult;
+  error: null;
+}
+
+const CHAT_FEEDBACK_SAVE_ERROR_MESSAGE = '평가를 저장하지 못했어요. 다시 시도해주세요.';
 
 const PROGRESS_MESSAGES: Record<ChatProgressStage, string> = {
   QUESTION_CHECKING: '질문 확인 중',
@@ -245,6 +258,42 @@ export async function listChatSessions(): Promise<ChatSessionSummary[]> {
     throw new Error('로그인 상태가 바뀌어 대화 목록 조회를 중단했어요.');
   }
   return items;
+}
+
+export async function saveChatFeedback(
+  sessionId: number,
+  payload: ChatFeedbackPayload,
+): Promise<ChatFeedbackResult> {
+  const normalizedPayload: ChatFeedbackPayload = {
+    isLike: payload.isLike,
+    reasonCode: payload.isLike === null ? null : payload.reasonCode,
+  };
+  const requestAuthGeneration = getAuthGeneration();
+
+  try {
+    if (USE_MOCK) {
+      const requestPrincipal = restoreAccountPrincipal();
+      await mockDelay();
+      if (requestAuthGeneration !== getAuthGeneration()) {
+        throw new Error('로그인 상태가 바뀌어 평가 저장을 중단했어요.');
+      }
+      return mockSaveChatFeedback(sessionId, normalizedPayload, requestPrincipal);
+    }
+
+    const response = await http.put<ChatFeedbackApiResponse>(
+      `/v1/chat/sessions/${sessionId}/feedback`,
+      normalizedPayload,
+    );
+    if (requestAuthGeneration !== getAuthGeneration()) {
+      throw new Error('로그인 상태가 바뀌어 평가 저장을 중단했어요.');
+    }
+    return response.data;
+  } catch (error: unknown) {
+    if (error instanceof ApiError && error.code === 'INVALID_CHAT_FEEDBACK_REASON') {
+      throw new Error(CHAT_FEEDBACK_SAVE_ERROR_MESSAGE);
+    }
+    throw error;
+  }
 }
 
 export async function deleteChatSessions(

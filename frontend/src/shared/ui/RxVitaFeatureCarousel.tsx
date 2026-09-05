@@ -4,7 +4,7 @@ import { MessageCircle, ShoppingBag, Sprout } from 'lucide-react';
 const BANNERS = [
   {
     title: '약봉투를 찍으면\n먹을 시간을 알려드려요',
-    description: '약 이름을 몰라도 됩니다. 사진 한 장으로 등록해요.',
+    description: '약 이름을 몰라도 돼요. 사진 한 장으로 등록해요.',
     icon: ShoppingBag,
     tone: 'bg-primary-bg text-primary',
   },

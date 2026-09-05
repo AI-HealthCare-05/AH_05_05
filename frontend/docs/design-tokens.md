@@ -58,7 +58,7 @@ Figma에는 2단 구조로 되어 있습니다. `Primitives`는 실제 색값이
 | 모서리 | `radius/input` | 8 | 입력창 |
 | 모서리 | `radius/pill` | 9999 | 뱃지 |
 | 크기 | `size/header` | 56 | 상단 헤더 높이 |
-| 크기 | `size/tabbar` | 56 | 하단 탭바 높이 |
+| 크기 | `size/tabbar` | 64 | 하단 탭바 높이 |
 | 크기 | `size/touch-min` | 44 | 최소 터치 영역(NFR-ACC-001) |
 | 크기 | `size/page-width` | 375 | 기준 화면 폭 |
 | 크기 | `size/page-height` | 812 | 기준 화면 높이 |

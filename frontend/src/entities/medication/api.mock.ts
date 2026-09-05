@@ -28,21 +28,25 @@ import type {
   SaveMedicationSchedulePayload,
   SaveMedicationScheduleResponse,
 } from './types';
+import { mockMedicationAlias } from '@/entities/medication-alias/api.mock';
+import { restoreAccountPrincipal } from '@/shared/api/client';
 
 let hasRegisteredMedication = true;
 const cancelledMedicationRecordIds = new Set<number>();
-let doseRecords: DoseRecord[] = [
-  { date: '2026-08-22', slot: 'morning', taken: true },
-  { date: '2026-08-22', slot: 'evening', taken: true },
-  { date: '2026-08-23', slot: 'morning', taken: true },
-  { date: '2026-08-23', slot: 'evening', taken: true },
-  { date: '2026-08-24', slot: 'morning', taken: true },
+const DOSE_RECORDS_STORAGE_KEY = 'poke.mock-medication-dose-records';
+const initialDoseRecords: DoseRecord[] = [
+  { date: '2026-08-22', slot: 'morning', taken: true, recordId: 12 },
+  { date: '2026-08-22', slot: 'evening', taken: true, recordId: 12 },
+  { date: '2026-08-23', slot: 'morning', taken: true, recordId: 12 },
+  { date: '2026-08-23', slot: 'evening', taken: true, recordId: 12 },
+  { date: '2026-08-24', slot: 'morning', taken: true, recordId: 12 },
 ];
+const doseRecordsByPrincipal = new Map<string, DoseRecord[]>();
 
 export function resetMockMedicationForNewAccount(): void {
   hasRegisteredMedication = false;
   cancelledMedicationRecordIds.clear();
-  doseRecords = [];
+  writeMockDoseRecords([]);
 }
 
 function primaryMedicationOverview(): MedicationOverview {
@@ -53,8 +57,10 @@ function primaryMedicationOverview(): MedicationOverview {
     { medicationId: 304, name: '파모티딘', dose: '20mg', days: 7, daysRemaining: 3, slots: ['morning', 'evening'] as const, asNeeded: false },
     { medicationId: 303, name: '아세트아미노펜', dose: '650mg', days: 7, daysRemaining: null, slots: [] as const, asNeeded: true },
   ] : [];
+  const alias = mockMedicationAlias(12, '감기약');
   return {
     recordId: 12,
+    ...(alias ? { alias } : {}),
     documentImageUrl: '/mock/medication-envelope.svg',
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),
@@ -81,8 +87,10 @@ function secondaryMedicationOverview(): MedicationOverview {
       asNeeded: false,
     },
   ];
+  const alias = mockMedicationAlias(24, '지난 처방');
   return {
     recordId: 24,
+    ...(alias ? { alias } : {}),
     documentImageUrl: '/mock/medication-envelope.svg',
     start: { date: startDate, slot: 'morning' },
     endDate: medicationEndDate(startDate, medications),
@@ -161,15 +169,20 @@ export function mockSaveMedicationSchedule(
 }
 
 export function mockSaveDoseTaken(payload: SaveDoseTakenPayload): DoseRecord {
-  doseRecords = doseRecords.filter(
-    (record) => record.date !== payload.date || record.slot !== payload.slot,
+  const currentRecords = readMockDoseRecords();
+  const nextRecords = currentRecords.filter(
+    (record) =>
+      record.date !== payload.date ||
+      record.slot !== payload.slot ||
+      record.recordId !== payload.recordId,
   );
-  if (payload.taken) doseRecords.push({ ...payload });
+  if (payload.taken) nextRecords.push({ ...payload });
+  writeMockDoseRecords(nextRecords);
   return { ...payload };
 }
 
 export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] {
-  return doseRecords
+  return readMockDoseRecords()
     .filter(
       (record) =>
         record.taken &&
@@ -177,6 +190,52 @@ export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] 
         record.date <= to,
     )
     .map((record) => ({ ...record }));
+}
+
+function dosePrincipal(): string {
+  return restoreAccountPrincipal()?.trim().toLowerCase() || 'anonymous';
+}
+
+function doseStorageKey(principal: string): string {
+  return `${DOSE_RECORDS_STORAGE_KEY}:${encodeURIComponent(principal)}`;
+}
+
+function cloneDoseRecords(records: DoseRecord[]): DoseRecord[] {
+  return records.map((record) => ({ ...record }));
+}
+
+function readMockDoseRecords(): DoseRecord[] {
+  const principal = dosePrincipal();
+  const memoryRecords = doseRecordsByPrincipal.get(principal) ?? initialDoseRecords;
+  if (typeof window === 'undefined' || typeof window.sessionStorage === 'undefined') {
+    return cloneDoseRecords(memoryRecords);
+  }
+  try {
+    const stored = window.sessionStorage.getItem(doseStorageKey(principal));
+    if (!stored) return cloneDoseRecords(memoryRecords);
+    const parsed = JSON.parse(stored) as DoseRecord[];
+    doseRecordsByPrincipal.set(principal, cloneDoseRecords(parsed));
+    return cloneDoseRecords(parsed);
+  } catch {
+    try {
+      window.sessionStorage.removeItem(doseStorageKey(principal));
+    } catch {
+      // sessionStorage가 막혀도 principal별 메모리 저장소로 계속 동작합니다.
+    }
+    return cloneDoseRecords(memoryRecords);
+  }
+}
+
+function writeMockDoseRecords(records: DoseRecord[]): void {
+  const principal = dosePrincipal();
+  const nextRecords = cloneDoseRecords(records);
+  doseRecordsByPrincipal.set(principal, nextRecords);
+  if (typeof window === 'undefined' || typeof window.sessionStorage === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(doseStorageKey(principal), JSON.stringify(nextRecords));
+  } catch {
+    // sessionStorage가 막혀도 principal별 메모리 저장소로 계속 동작합니다.
+  }
 }
 
 export function mockCancelMedication(recordId: number): void {

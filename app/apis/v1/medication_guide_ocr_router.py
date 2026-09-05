@@ -1,6 +1,6 @@
 from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Body, Depends, File, Header, Path, Response, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Header, Path, Query, Response, UploadFile, status
 
 from app.core.api_timeout import api_timeout
 from app.core.exceptions import OcrJobStateConflictError
@@ -245,9 +245,15 @@ async def confirm_medication_guide_ocr_job(
     response: Response,
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[MedicationGuideOcrJobService, Depends(get_medication_guide_ocr_job_service)],
+    registration_edit: Annotated[bool, Query(alias="registrationEdit")] = False,
 ) -> DocumentOcrConfirmResponse:
     _set_private_response_headers(response)
-    confirmation = await service.confirm(user, ocr_job_id, _to_service_confirmation(request))
+    confirmation = await service.confirm(
+        user,
+        ocr_job_id,
+        _to_service_confirmation(request),
+        allow_registration_edit=registration_edit,
+    )
     return DocumentOcrConfirmResponse(
         record_id=int(confirmation.care_episode_id),
         has_medication=bool(request.medications),
@@ -260,13 +266,16 @@ def _set_private_response_headers(response: Response) -> None:
 
 
 def _to_service_confirmation(request: DocumentOcrConfirmRequest) -> MedicationGuideConfirmRequest:
-    return MedicationGuideConfirmRequest(
-        dispensing_date=request.dispensed_date,
-        medications=[
+    payload: dict[str, object] = {
+        "dispensing_date": request.dispensed_date,
+        "medications": [
             MedicationConfirmation.model_validate(medication.model_dump(mode="json", by_alias=True))
             for medication in request.medications
         ],
-    )
+    }
+    if "alias" in request.model_fields_set:
+        payload["alias"] = request.alias
+    return MedicationGuideConfirmRequest.model_validate(payload)
 
 
 def _to_public_ocr_response(status_response: OcrJobStatusResponse) -> DocumentOcrStatusResponse:

@@ -25,7 +25,10 @@ export function ChatDeleteDialog({
 }: ChatDeleteDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && !deleting && onCancel()}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent
+        showCloseButton={false}
+        className="w-[calc(100%-2.5rem)] max-w-[350px] rounded-card p-5"
+      >
         <DialogHeader>
           <DialogTitle>선택한 대화를 삭제할까요?</DialogTitle>
           <DialogDescription>

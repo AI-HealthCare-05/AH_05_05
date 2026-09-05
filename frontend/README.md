@@ -106,7 +106,7 @@ docs/
 
 주요 토큰: `background` `card` `foreground` `muted-foreground` `disabled-foreground` `muted-bg` `border` `input` `ring` `primary` `primary-strong` `primary-bg` `danger(-strong/-bg)` `warning(-strong/-bg)` `success(-strong/-bg)`
 
-크기: `rounded-card`(12) `rounded-button`(8) `rounded-input`(8) `rounded-pill` / `h-header`(56) `h-tabbar`(56) `h-touch`·`size-touch`(44, NFR-ACC-001 최소 터치 영역) `px-page-x`(16) `max-w-app`(480)
+크기: `rounded-card`(12) `rounded-button`(8) `rounded-input`(8) `rounded-pill` / `h-header`(56) `h-tabbar`(64) `h-touch`·`size-touch`(44, NFR-ACC-001 최소 터치 영역) `px-page-x`(16) `max-w-app`(480)
 
 shadcn/ui(Radix 기반) 컴포넌트가 요구하는 이름(`destructive`, `muted`, `accent`, `popover` 등)은 새 색을 만들지 않고 기존 값을 가리키는 **별칭**으로만 추가했습니다. 자세한 내용은 `index.css`의 "shadcn/ui 별칭 토큰" 블록 주석 참고.
 

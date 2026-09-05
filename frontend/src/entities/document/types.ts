@@ -51,6 +51,19 @@ export interface EditableOcrMedication extends Omit<OcrMedication, 'timesPerDay'
   timesPerDay?: number | null;
 }
 
+/** OCR 확정 직후 복약시간 설정에서 검토 화면으로 즉시 돌아가기 위한 등록 중 초안. */
+export interface OcrRegistrationDraft {
+  batchId: string;
+  documentImageUrl: string;
+  dispensedDate: string;
+  dispensedDateConfidence: Confidence | null;
+  dispensedDateReviewed: boolean;
+  episodeAlias: string;
+  medications: EditableOcrMedication[];
+  reviewedMedicationIds: string[];
+  lowConfidenceCount: number;
+}
+
 /** 결과 필드가 오는 상태. 명세 4번은 이 두 상태에서만 fields·medications 를 보냅니다. */
 export type OcrResultReadyStatus = 'ready_for_review' | 'complete';
 
@@ -93,6 +106,8 @@ export type OcrResult = OcrResultPending | OcrResultFailed | OcrResultReady;
 
 export interface ConfirmOcrResultPayload {
   dispensedDate: string;
+  /** OCR 확정과 함께 저장되는 처방 별칭. 재시도 시 중복 처방을 만들지 않습니다. */
+  alias?: string | null;
   medications: Array<{
     tempId: string;
     name: string;
