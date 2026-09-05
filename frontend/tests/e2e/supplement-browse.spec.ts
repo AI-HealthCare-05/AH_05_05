@@ -50,7 +50,7 @@ test('둘러보기에서 내 영양제로 돌아오면 기존 목록과 성분 �
 
   await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: '성분 합계' })).toBeVisible();
-  await expect(page.getByText(/등록한 건강기능식품 .*개만 더한 값입니다/)).toBeVisible();
+  await expect(page.getByText('등록한 영양제의 성분만 더한 값이에요')).toBeVisible();
 });
 test('둘러보기는 랭킹 5개와 등록된 제품 상태를 보여준다', async ({ page }) => {
   test.skip(IS_REAL_API, '목업의 고정 랭킹과 등록 상태를 확인하는 테스트입니다.');
@@ -66,7 +66,7 @@ test('검색 결과는 평점 집계를 보여주고 제품 상세로 이동한�
   test.skip(IS_REAL_API, '목업 제품으로 검색 결과와 상세 이동을 확인하는 테스트입니다.');
   await page.goto('/dev/supplements?tab=browse');
 
-  await page.getByPlaceholder('제품명을 검색해 주세요').fill('센트룸');
+  await page.getByPlaceholder('제품명 또는 성분 검색').fill('센트룸');
   const results = page.getByLabel('영양제 검색 결과');
   await expect(results.getByText('센트룸 실버 우먼', { exact: true })).toBeVisible();
   await expect(results.getByText('★4.2 · 12', { exact: true })).toBeVisible();
@@ -92,7 +92,7 @@ test('정렬 칩은 URL을 바꾸지 않고 실 검색 API 정렬을 첫 페이�
   });
   await page.goto('/dev/supplements?tab=browse');
 
-  await page.getByPlaceholder('제품명을 검색해 주세요').fill('비타민');
+  await page.getByPlaceholder('제품명 또는 성분 검색').fill('비타민');
   await page.getByRole('button', { name: '평점순' }).click();
 
   await expect.poll(() => requests.at(-1)?.searchParams.get('sort')).toBe('rating');

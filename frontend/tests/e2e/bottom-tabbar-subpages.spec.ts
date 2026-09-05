@@ -91,15 +91,18 @@ test('영양제 제품 상세 화면은 영양제 탭을 유지하며 다른 탭
   await expect(page).toHaveURL(/\/medications$/);
 });
 
-test('진행 중 흐름 화면에는 하단 탭바를 표시하지 않는다', async ({ page }) => {
+test('진행 중 흐름 화면에는 하단 탭바를 표시하지 않고 알림 시간은 마이페이지에서 연다', async ({ page }) => {
   for (const path of [
     '/dev/document-upload',
     '/dev/ocr-review',
     '/dev/medication-schedule',
-    '/dev/medication-alarm-times',
     '/',
   ]) {
     await page.goto(path);
     await expect(page.getByRole('navigation', { name: '주요 화면' })).toHaveCount(0);
   }
+
+  await page.goto('/dev/my-authenticated');
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  await expect(page.getByRole('dialog', { name: '알림 시간' })).toBeVisible();
 });

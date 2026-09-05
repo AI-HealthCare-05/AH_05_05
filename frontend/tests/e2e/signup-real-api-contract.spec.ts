@@ -295,6 +295,6 @@ test('이름 칸은 숫자·공백·특수문자를 제거하고 여러 언어�
 
   await expect(name).toHaveValue('Élodie山田Мария');
   await expect(
-    page.getByText('이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.'),
+    page.getByText('이름에는 숫자, 공백, 특수문자를 쓸 수 없어요.'),
   ).toBeVisible();
 });

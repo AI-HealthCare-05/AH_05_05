@@ -27,7 +27,7 @@ import {
   type NotifySettings,
   type UpdateNotifySettingsPayload,
 } from '@/entities/settings';
-import { isMealTimeOrderValid } from '@/shared/model/mealSlot';
+import { SLOT_ORDER, isMealTimeOrderValid, mealSlotLabel } from '@/shared/model/mealSlot';
 import {
   getPushPermission,
   requestPushPermission,
@@ -35,6 +35,8 @@ import {
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
 import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
+
+const SHORT_MEAL_SLOT_ORDER = SLOT_ORDER.map((slot) => mealSlotLabel(slot, 'short')).join(' < ');
 
 function medicationTimesFromSettings(settings: NotifySettings): MedicationTimes {
   return {
@@ -313,7 +315,7 @@ export function MyPage({
   async function saveMedicationTimes() {
     if (!timeDraft) return;
     if (!isMealTimeOrderValid(mealSlotTimesFromMedicationTimes(timeDraft))) {
-      setTimeSaveError('아침 < 점심 < 저녁 < 자기전 순서로 정해주세요');
+      setTimeSaveError(`${SHORT_MEAL_SLOT_ORDER} 순서로 정해주세요`);
       return;
     }
 

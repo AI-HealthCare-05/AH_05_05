@@ -107,7 +107,7 @@ export function DocumentUploadPage() {
           <>
             <div>
               <h1 className="text-2xl font-bold text-foreground">약봉투를 한 장 담아주세요</h1>
-              <p className="mt-1 text-base text-muted-foreground">약국에서 받은 봉투 앞면이면 됩니다.</p>
+              <p className="mt-1 text-base text-muted-foreground">약국에서 받은 봉투 앞면이면 돼요.</p>
             </div>
 
             <div className="flex aspect-square items-center justify-center rounded-card bg-muted-bg p-8 text-primary shadow-card">

@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'rea
 import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
-import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
+import { MedicationSchedulePage } from '@/pages/medication-schedule';
 import {
   MedicationNoteFormPage,
   MedicationNotesPage,
@@ -198,7 +198,6 @@ export function AppRouter() {
           <Route path="/document-upload" element={<DocumentUploadPage />} />
           <Route path="/ocr-review" element={<OcrReviewPage />} />
           <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
-          <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
           <Route path="/medications/notes/new" element={<MedicationNoteFormPage />} />
           <Route path="/medications/notes/:noteId" element={<MedicationNoteFormPage />} />
           <Route path="/medications/notes" element={<MedicationNotesPage />} />
@@ -235,7 +234,6 @@ export function AppRouter() {
             />
           }
         />
-        <Route path="/dev/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route
           path="/dev/medication-schedule-auto-assigned"
           element={

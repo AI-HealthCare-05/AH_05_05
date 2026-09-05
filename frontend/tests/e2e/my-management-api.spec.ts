@@ -6,15 +6,7 @@ test.beforeEach(() => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
-async function chooseTime(page: Page, hour: string, minute: string) {
-  const sheet = page.getByRole('dialog', { name: '시간 선택' });
-  await sheet.getByLabel('시').click();
-  await page.getByRole('option', { name: `${hour}시`, exact: true }).click();
-  await sheet.getByLabel('분').click();
-  await page.getByRole('option', { name: `${minute}분`, exact: true }).click();
-}
-
-test('설정 API 시간은 HH:MM으로 보이고 한 필드 PATCH는 camelCase를 유지한다', async ({
+test('설정 API 시간은 마이페이지에서 HH:MM으로 보이고 저장 PATCH는 camelCase를 유지한다', async ({
   page,
 }) => {
   const patchBodies: unknown[] = [];
@@ -45,13 +37,17 @@ test('설정 API 시간은 HH:MM으로 보이고 한 필드 PATCH는 camelCase�
     });
   });
 
-  await page.goto('/dev/medication-alarm-times');
-  await page.getByRole('button', { name: /아침약 08:00/ }).click();
-  await chooseTime(page, '08', '30');
-  await page.getByRole('button', { name: '이 시간 적용' }).click();
+  await page.goto('/dev/my-authenticated');
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  await chooseMyTime(page, '아침', '08', '30');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
 
-  await expect(page.getByRole('button', { name: /아침약 08:30/ })).toBeVisible();
-  expect(patchBodies).toEqual([{ morningMedicationTime: '08:30' }]);
+  expect(patchBodies).toEqual([{
+    morningMedicationTime: '08:30',
+    lunchMedicationTime: '13:00',
+    eveningMedicationTime: '19:00',
+    bedtimeMedicationTime: '22:00',
+  }]);
 });
 
 async function chooseMyTime(
