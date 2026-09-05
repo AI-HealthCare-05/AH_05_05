@@ -52,6 +52,7 @@ export function SupplementsPage({
   const [searchParams] = useSearchParams();
   const activeView = searchParams.get('tab') === 'browse' ? 'browse' : 'my';
   const routePresetProductId = presetProductIdFromState(location.state);
+  const routeEditSupplementId = editSupplementIdFromState(location.state);
   const [supplements, setSupplements] = useState<Supplement[] | null>(supplementsOverride ?? null);
   const [standards, setStandards] = useState<NutrientStandards | null>(null);
   const [profile, setProfile] = useState<NutrientStandardProfile | null>(
@@ -94,6 +95,15 @@ export function SupplementsPage({
     setAddOpen(true);
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, navigate, routePresetProductId]);
+
+  useEffect(() => {
+    if (routeEditSupplementId === null || supplements === null || loadError !== null) return;
+    // Resolve only from the authenticated user's loaded registrations, never fetch an arbitrary ID.
+    const owned = supplements.find(item => item.supplementId === routeEditSupplementId);
+    if (owned) setEditingSupplement(owned);
+    // Consume the one-shot intent even when the registration was removed in the meantime.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [loadError, location.pathname, location.search, navigate, routeEditSupplementId, supplements]);
 
   function openAddSheet() {
     setPresetProductId(null);
@@ -792,4 +802,10 @@ function presetProductIdFromState(state: unknown): string | null {
   if (state === null || typeof state !== 'object' || !('presetProductId' in state)) return null;
   const productId = (state as { presetProductId?: unknown }).presetProductId;
   return typeof productId === 'string' && productId ? productId : null;
+}
+
+function editSupplementIdFromState(state: unknown): number | null {
+  if (state === null || typeof state !== 'object' || !('editSupplementId' in state)) return null;
+  const id = (state as { editSupplementId?: unknown }).editSupplementId;
+  return typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : null;
 }

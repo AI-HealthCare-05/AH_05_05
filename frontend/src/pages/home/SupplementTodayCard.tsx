@@ -13,9 +13,10 @@ interface Props {
   loadError: string | null;
   onRetry: () => void;
   onBrowse: () => void;
+  onManage: (supplementId: number) => void;
 }
 
-export function SupplementTodayCard({ supplements, date, loading, loadError, onRetry, onBrowse }: Props) {
+export function SupplementTodayCard({ supplements, date, loading, loadError, onRetry, onBrowse, onManage }: Props) {
   const [records, setRecords] = useState<SupplementDoseRecord[] | null>(null);
   const [recordError, setRecordError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -66,6 +67,7 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
             supplements={items}
             records={records}
             onSaved={updateRecord}
+            onManage={onManage}
           />
         ) : null;
       })}
@@ -76,12 +78,13 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
   );
 }
 
-function SupplementSlotCard({ date, slot, supplements, records, onSaved }: {
+function SupplementSlotCard({ date, slot, supplements, records, onSaved, onManage }: {
   date: string;
   slot: SupplementSlot;
   supplements: Supplement[];
   records: SupplementDoseRecord[];
   onSaved: (record: SupplementDoseRecord) => void;
+  onManage: (supplementId: number) => void;
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
@@ -155,22 +158,35 @@ function SupplementSlotCard({ date, slot, supplements, records, onSaved }: {
         <ul className="flex flex-col gap-2" aria-label={`${mealSlotLabel(slot, 'short')}에 먹을 영양제`}>
           {supplements.map(supplement => {
             const taken = takenIds.has(supplement.supplementId);
+            const details = (
+              <>
+                <span className="min-w-0 flex-1 text-base font-bold text-foreground">{supplement.name}</span>
+                <span className="shrink-0 text-sm text-muted-foreground">
+                  {supplement.doseAmount}{supplement.doseUnit}
+                </span>
+                {taken && <span className="shrink-0 text-sm font-bold text-primary-strong">복용 완료</span>}
+              </>
+            );
             return (
               <li key={supplement.supplementId}>
-                <label className={`flex min-h-touch items-center gap-3 ${selecting ? 'cursor-pointer' : ''}`}>
-                  {selecting && (
+                {selecting ? (
+                  <label className="flex min-h-touch cursor-pointer items-center gap-3">
                     <input
                       type="checkbox" aria-label={`${supplement.name} 선택`}
                       checked={selected.includes(supplement.supplementId)} disabled={pending}
                       onChange={() => toggle(supplement.supplementId)} className="size-6 shrink-0 accent-primary"
                     />
-                  )}
-                  <span className="min-w-0 flex-1 text-base font-bold text-foreground">{supplement.name}</span>
-                  <span className="shrink-0 text-sm text-muted-foreground">
-                    {supplement.doseAmount}{supplement.doseUnit}
-                  </span>
-                  {taken && <span className="shrink-0 text-sm font-bold text-primary-strong">복용 완료</span>}
-                </label>
+                    {details}
+                  </label>
+                ) : (
+                  <button
+                    type="button" aria-label={`${supplement.name} 관리`} disabled={pending}
+                    className="flex min-h-touch w-full items-center gap-3 rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
+                    onClick={() => onManage(supplement.supplementId)}
+                  >
+                    {details}
+                  </button>
+                )}
               </li>
             );
           })}

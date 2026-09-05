@@ -10,6 +10,7 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
   let records: Dose[] = [];
   let failId = options.failId;
   let failLookup = options.failLookup;
+  let removedRegistrationId: number | undefined;
   await page.clock.setFixedTime(new Date(`${DATE}T12:00:00+09:00`));
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'supplement-dose-test');
@@ -18,13 +19,16 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
     }
   });
   if (IS_REAL_API) {
+    await page.route('**/api/v1/users/me', route => route.fulfill({ json: {
+      name: '테스트', maskedName: '테*트', phoneNumber: null, birthDate: null, gender: null,
+    } }));
     await page.route('**/api/v1/display/med/nutr/rank', route => route.fulfill({ status: 204 }));
     await page.route('**/api/v1/med/user-suppl-nutr?**', route => route.fulfill({ json: {
       items: [
         { id: 501, name: '오메가3', slots: ['MORNING', 'EVENING'] },
         { id: 502, name: '종합비타민', slots: ['MORNING'] },
         { id: 503, name: '비타민 D', slots: ['EVENING'] },
-      ].map(item => ({
+      ].filter(item => item.id !== removedRegistrationId).map(item => ({
         id: item.id, custom_name: item.name, dose_amount: '1.000', dose_unit: '정',
         start_date: '2026-09-01', end_date: null, status: 'ACTIVE', score: null,
         review_body: null, note: null, created_at: '2026-09-01T09:00:00+09:00', updated_at: null,
@@ -61,6 +65,7 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
     requests,
     recoverLookup: () => { failLookup = false; },
     failNextSave: (id: number) => { failId = id; },
+    removeRegistration: (id: number) => { removedRegistrationId = id; },
     morning: page.getByRole('group', { name: '아침 영양제' }),
   };
 }
@@ -68,7 +73,9 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
 test('일부 영양제만 기록하면 새로고침 뒤 유지되고 완료 항목을 선택해 되돌린다', async ({ page }) => {
   const { morning, requests } = await openHome(page);
   await morning.getByRole('button', { name: '개별 선택' }).click();
+  await expect(morning.getByRole('button', { name: '오메가3 관리' })).toHaveCount(0);
   await morning.getByRole('checkbox', { name: '오메가3 선택' }).check();
+  await expect(page).toHaveURL(/\/dev\/home-empty$/);
   await morning.getByRole('button', { name: '1개 먹었어요' }).click();
   await expect(morning.getByRole('checkbox', { name: '오메가3 선택' })).toHaveCount(0);
   await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
@@ -167,4 +174,31 @@ test('되돌리기 실패는 완료 상태를 유지하고 같은 false 요청�
     { supplementId: 501, date: DATE, slot: 'morning', taken: false },
     { supplementId: 501, date: DATE, slot: 'morning', taken: false },
   ]);
+});
+
+test('홈 영양제 행은 해당 등록의 관리 시트로 진입하고 닫은 뒤 다시 열리지 않는다', async ({ page }) => {
+  const { morning, requests } = await openHome(page);
+  await morning.getByRole('button', { name: '종합비타민 관리' }).click();
+  await expect(page).toHaveURL(/\/supplements$/);
+  const sheet = page.getByRole('dialog', { name: '종합비타민', exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole('heading', { name: '내 영양제', exact: true })).toBeVisible();
+  await expect(sheet.getByRole('textbox', { name: /메모/ })).toBeVisible();
+  await expect(sheet.getByRole('textbox', { name: /후기/ })).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await sheet.getByRole('button', { name: '닫기', exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 3개' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('홈 진입 후 소유 목록에서 사라진 등록은 관리 시트를 열지 않고 진입 상태를 소비한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  const { morning, removeRegistration } = await openHome(page);
+  await expect(morning.getByRole('button', { name: '오메가3 관리' })).toBeVisible();
+  removeRegistration(501);
+  await morning.getByRole('button', { name: '오메가3 관리' }).click();
+  await expect(page.getByRole('heading', { name: '먹고 있는 영양제 2개' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.history.state?.usr ?? null)).toBeNull();
 });
