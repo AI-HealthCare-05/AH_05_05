@@ -38,7 +38,7 @@ test('채팅 종료는 하단 content-height 시트에서 평가를 제출하고
   await endSheet.getByRole('button', { name: '좋아요' }).click();
   const positiveSheet = page.getByRole('dialog', { name: '상담 평가' });
   await expect(positiveSheet).toContainText('좋았던 점을 선택해주세요');
-  await positiveSheet.getByRole('button', { name: '이해하기 쉬워요' }).click();
+  await positiveSheet.locator('button[aria-pressed]').first().click();
   await positiveSheet.getByRole('button', { name: '제출하고 종료' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();
@@ -68,7 +68,7 @@ test('아쉬워요 평가를 제출하면 현재 상담도 종료한다', async 
 
   const negativeSheet = page.getByRole('dialog', { name: '상담 평가' });
   await expect(negativeSheet).toContainText('아쉬웠던 점을 선택해주세요');
-  await negativeSheet.getByRole('button', { name: '답변이 어려워요' }).click();
+  await negativeSheet.locator('button[aria-pressed]').first().click();
   await negativeSheet.getByRole('button', { name: '제출하고 종료' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '최근 대화' })).toBeVisible();

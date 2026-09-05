@@ -18,8 +18,11 @@ import {
   deleteChatSessions,
   getChatMessages,
   listChatSessions,
+  saveChatFeedback,
   sendChat,
   type ChatMessage,
+  type ChatFeedbackPayload,
+  type ChatFeedbackResult,
   type ChatProgressHandler,
   type ChatSessionDeleteResult,
   type ChatSessionSummary,
@@ -51,6 +54,10 @@ type ChatSessionHistoryLoader = (sessionId: number) => Promise<ChatMessage[]>;
 type ChatSessionDeleter = (
   sessionIds: readonly number[],
 ) => Promise<ChatSessionDeleteResult | void>;
+type ChatFeedbackSaver = (
+  sessionId: number,
+  payload: ChatFeedbackPayload,
+) => Promise<ChatFeedbackResult>;
 type ChatView = 'loading' | 'list' | 'room';
 
 interface ChatPageProps {
@@ -59,6 +66,7 @@ interface ChatPageProps {
   sessionListLoader?: ChatSessionListLoader;
   sessionHistoryLoader?: ChatSessionHistoryLoader;
   sessionDeleter?: ChatSessionDeleter;
+  feedbackSaver?: ChatFeedbackSaver;
 }
 
 export function ChatPage({
@@ -67,6 +75,7 @@ export function ChatPage({
   sessionListLoader = listChatSessions,
   sessionHistoryLoader = getChatMessages,
   sessionDeleter = deleteChatSessions,
+  feedbackSaver = saveChatFeedback,
 }: ChatPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -570,8 +579,10 @@ export function ChatPage({
       <BottomTabbar active="chat" onChange={handleTabChange} className="border-t border-border" />
       <ChatFeedbackSheet
         open={feedbackOpen}
+        sessionId={conversationId ?? activeSessionId}
         onOpenChange={setFeedbackOpen}
         onFinish={finishChat}
+        feedbackSaver={feedbackSaver}
       />
     </div>
   );
