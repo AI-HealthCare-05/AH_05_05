@@ -253,9 +253,21 @@ test('로그인 홈은 오늘의 복약과 오늘의 영양제 탭 아래 카드
   const supplements = page.getByRole('region', { name: '오늘의 영양제' });
   await expect(supplements).toBeVisible();
   const morningSupplements = supplements.getByRole('group', { name: '아침 영양제' });
-  await expect(morningSupplements.getByRole('button', { name: '개별 선택' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(morningSupplements.getByRole('button', { name: /선택$/ }).first()).toHaveAttribute('aria-pressed', 'false');
+  await expect(morningSupplements.getByRole('button', { name: '0개 먹었어요' })).toBeDisabled();
   await expect(morningSupplements.getByRole('button', { name: '다 먹었어요' })).toBeEnabled();
-  await expect(page.getByRole('region', { name: '영양제 랭킹' })).toBeVisible();
+  const challenge = page.getByRole('region', { name: '챌린지' });
+  const ranking = page.getByRole('region', { name: '영양제 랭킹' });
+  await expect(challenge).toBeVisible();
+  await expect(ranking).toBeVisible();
+  const [supplementBox, challengeBox, rankingBox] = await Promise.all([
+    supplements.boundingBox(), challenge.boundingBox(), ranking.boundingBox(),
+  ]);
+  expect(supplementBox).not.toBeNull();
+  expect(challengeBox).not.toBeNull();
+  expect(rankingBox).not.toBeNull();
+  expect(challengeBox!.y).toBeGreaterThan(supplementBox!.y);
+  expect(rankingBox!.y).toBeGreaterThan(challengeBox!.y);
 });
 
 test('로그인 홈은 챌린지 자리만 비대화형 카드로 예약한다', async ({ page }) => {
