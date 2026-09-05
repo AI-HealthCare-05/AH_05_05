@@ -7,6 +7,7 @@ import type {
   MedicationOverviewItem,
 } from '@/entities/medication';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
+import { medicationStrengthSuffix } from '@/shared/lib/medicationLabel';
 import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Button } from '@/shared/ui';
 
@@ -235,7 +236,9 @@ function TimelineItem({
         {visibleEpisodes.map((episode) => {
           const episodeDate = formatDateLabel(episode.startDate);
           const episodeAlias = episode.alias?.trim();
-          const episodeAccessibleName = `${episodeDate} 처방`;
+          const episodeAccessibleName = episodeAlias
+            ? `${episodeAlias} · ${episodeDate} 처방`
+            : `${episodeDate} 처방`;
           const episodeExpanded = expandedEpisodes.has(episode.recordId);
           const medicationsExpanded = expandedMedicationEpisodes.has(episode.recordId);
           const episodeCompleted = completedEpisodes.has(episode.recordId);
@@ -324,19 +327,27 @@ function TimelineItem({
                   className="w-full min-w-0 max-w-full border-b border-border px-3 py-3"
                 >
                   <ul className="flex flex-col gap-2" aria-label={`${episodeDate} 처방 약 목록`}>
-                    {visibleMedications.map((medication) => (
-                      <li
-                        key={`${medication.recordId}:${medication.medicationId}`}
-                        className="flex min-w-0 items-start"
-                      >
-                        <span className="min-w-0 break-words text-base font-bold text-foreground">
-                          {medication.name}{' '}
-                          <span className="font-normal text-muted-foreground">
-                            {medication.dose}
+                    {visibleMedications.map((medication) => {
+                      const doseSuffix = medicationStrengthSuffix(
+                        medication.name,
+                        medication.dose,
+                      );
+                      return (
+                        <li
+                          key={`${medication.recordId}:${medication.medicationId}`}
+                          className="flex min-w-0 items-start"
+                        >
+                          <span className="min-w-0 break-words text-base font-bold text-foreground">
+                            {medication.name}
+                            {doseSuffix && (
+                              <span className="font-normal text-muted-foreground">
+                                {' '}{doseSuffix}
+                              </span>
+                            )}
                           </span>
-                        </span>
-                      </li>
-                    ))}
+                        </li>
+                      );
+                    })}
                   </ul>
                   {hiddenMedicationCount > 0 && (
                     <button
@@ -370,7 +381,7 @@ function TimelineItem({
             className="flex min-h-touch w-full items-center justify-end px-1 text-micro font-medium text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={toggleAllEpisodes}
           >
-            {showAllEpisodes ? '다른 처방 접기' : '다른 처방 펼치기'}
+            {showAllEpisodes ? '접기' : '펼치기'}
           </button>
         )}
       </div>

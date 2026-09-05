@@ -5,12 +5,17 @@ test.setTimeout(30_000);
 const DATE = '2026-09-05';
 type Dose = { supplementId: number; date: string; slot: string; taken: boolean };
 
-async function openHome(page: Page, options: { failId?: number; failLookup?: boolean } = {}) {
+async function openHome(page: Page, options: {
+  failId?: number;
+  failLookup?: boolean;
+  at?: string;
+  slotTimeOverrides?: Partial<Record<string, string>>;
+} = {}) {
   const requests: Dose[] = [];
   let records: Dose[] = [];
   let failId = options.failId;
   let failLookup = options.failLookup;
-  await page.clock.setFixedTime(new Date(`${DATE}T12:00:00+09:00`));
+  await page.clock.setFixedTime(new Date(`${DATE}T${options.at ?? '12:00:00'}+09:00`));
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'supplement-dose-test');
     if (!sessionStorage.getItem('poke.account-principal')) {
@@ -31,7 +36,11 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
         id: item.id, custom_name: item.name, dose_amount: '1.000', dose_unit: '정',
         start_date: '2026-09-01', end_date: null, status: 'ACTIVE', score: null,
         review_body: null, note: null, created_at: '2026-09-01T09:00:00+09:00', updated_at: null,
-        slots: item.slots.map(slot => ({ slot, time: slot === 'MORNING' ? '07:30:00' : '18:00:00' })),
+        slots: item.slots.map(slot => ({
+          slot,
+          time: options.slotTimeOverrides?.[slot]
+            ?? (slot === 'MORNING' ? '07:30:00' : '18:00:00'),
+        })),
         supplement: null,
       })), total: 3, offset: 0, limit: 100, nutrient_standard: null,
     } }));
@@ -67,6 +76,35 @@ async function openHome(page: Page, options: { failId?: number; failLookup?: boo
     morning: page.getByRole('group', { name: '아침 영양제' }),
   };
 }
+
+test('영양제는 현재 이전의 가장 가까운 시간대 하나만 보이고 제목을 반복하지 않는다', async ({ page }) => {
+  const { morning } = await openHome(page, { at: '06:00:00' });
+  const panel = page.getByRole('tabpanel', { name: '오늘의 영양제' });
+  await expect(panel.getByRole('heading', { name: '오늘의 영양제', exact: true })).toHaveCount(0);
+  await expect(morning).toBeVisible();
+  await expect(panel.getByRole('group', { name: '저녁 영양제' })).toHaveCount(0);
+
+  await page.clock.setFixedTime(new Date(`${DATE}T19:30:00+09:00`));
+  await page.reload();
+  await page.getByRole('tab', { name: '오늘의 영양제' }).click();
+  await expect(panel.getByRole('group', { name: '아침 영양제' })).toHaveCount(0);
+  await expect(panel.getByRole('group', { name: '저녁 영양제' })).toBeVisible();
+});
+
+test('영양제 회차는 API 시간순으로 고르고 누락 시간은 기본 시간으로 계산한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  const { morning } = await openHome(page, {
+    at: '12:00:00',
+    slotTimeOverrides: { MORNING: '10:00:00', EVENING: '' },
+  });
+  const panel = page.getByRole('tabpanel', { name: '오늘의 영양제' });
+  await expect(morning).toContainText('10:00');
+  await expect(panel.getByRole('group', { name: '저녁 영양제' })).toHaveCount(0);
+
+  await page.reload();
+  await page.getByRole('tab', { name: '오늘의 영양제' }).click();
+  await expect(morning).toBeVisible();
+});
 
 test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액션을 제공한다', async ({ page }) => {
   const { morning } = await openHome(page);

@@ -4,7 +4,7 @@ import {
   getSupplementDoses, saveSupplementDose,
   type Supplement, type SupplementDoseRecord, type SupplementSlot,
 } from '@/entities/supplement';
-import { SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
+import { DEFAULT_MEAL_TIMES, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
 
 interface Props {
@@ -34,6 +34,17 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
   const scheduled = supplements.filter(item =>
     (!item.startDate || item.startDate <= date) && (!item.endDate || item.endDate >= date),
   );
+  const supplementSlots = SLOT_ORDER.map(slot => {
+    const slotSupplements = scheduled.filter(item => item.slots.includes(slot));
+    return {
+      slot,
+      supplements: slotSupplements,
+      time: slotSupplements[0]?.slotTimes?.[slot] || DEFAULT_MEAL_TIMES[slot],
+    };
+  })
+    .filter(item => item.supplements.length > 0)
+    .sort((left, right) => timeInMinutes(left.time) - timeInMinutes(right.time));
+  const primarySlot = selectPrimarySupplementSlot(supplementSlots, new Date());
   function updateRecord(record: SupplementDoseRecord) {
     setRecords(current => [
       ...(current ?? []).filter(item => !(item.supplementId === record.supplementId && item.slot === record.slot)),
@@ -42,8 +53,7 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
   }
 
   return (
-    <section aria-labelledby="today-supplement-title" className="flex flex-col gap-3">
-      <h2 id="today-supplement-title" className="text-2xl font-bold text-foreground">오늘의 영양제</h2>
+    <section aria-label="오늘의 영양제" className="flex flex-col gap-3">
       {loadError || recordError ? (
         <Card className="gap-3 p-4">
           <p role="alert" className="text-sm text-danger-strong">
@@ -57,19 +67,17 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
         <p role="status" className="text-sm text-muted-foreground">영양제 복용 정보를 불러오는 중이에요.</p>
       ) : scheduled.length === 0 ? (
         <Card className="p-4"><p className="text-sm text-muted-foreground">오늘 먹을 영양제가 없어요.</p></Card>
-      ) : SLOT_ORDER.map(slot => {
-        const items = scheduled.filter(item => item.slots.includes(slot));
-        return items.length > 0 ? (
+      ) : primarySlot ? (
           <SupplementSlotCard
-            key={`${date}:${slot}`}
+            key={`${date}:${primarySlot.slot}`}
             date={date}
-            slot={slot}
-            supplements={items}
+            slot={primarySlot.slot}
+            time={primarySlot.time}
+            supplements={primarySlot.supplements}
             records={records}
             onSaved={updateRecord}
           />
-        ) : null;
-      })}
+      ) : null}
       <button type="button" className="min-h-touch self-end text-sm font-bold text-primary-strong" onClick={onBrowse}>
         영양제 살펴보기
       </button>
@@ -77,9 +85,23 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
   );
 }
 
-function SupplementSlotCard({ date, slot, supplements, records, onSaved }: {
+function selectPrimarySupplementSlot(
+  slots: Array<{ slot: SupplementSlot; supplements: Supplement[]; time: string }>,
+  now: Date,
+) {
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  return slots.filter(item => timeInMinutes(item.time) <= nowMinutes).at(-1) ?? slots[0];
+}
+
+function timeInMinutes(value: string): number {
+  const [hours = '0', minutes = '0'] = value.split(':');
+  return Number(hours) * 60 + Number(minutes);
+}
+
+function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }: {
   date: string;
   slot: SupplementSlot;
+  time: string;
   supplements: Supplement[];
   records: SupplementDoseRecord[];
   onSaved: (record: SupplementDoseRecord) => void;
@@ -133,7 +155,7 @@ function SupplementSlotCard({ date, slot, supplements, records, onSaved }: {
     <Card className="gap-2 p-4">
       <div role="group" aria-label={`${mealSlotLabel(slot, 'short')} 영양제`} className="flex flex-col gap-2">
         <h3 className="text-base font-bold text-foreground">
-          {mealSlotLabel(slot, 'short')} {supplements[0]?.slotTimes?.[slot] ?? ''}
+          {mealSlotLabel(slot, 'short')} {time}
         </h3>
         <ul className="flex flex-col" aria-label={`${mealSlotLabel(slot, 'short')}에 먹을 영양제`}>
           {supplements.map(supplement => {

@@ -51,14 +51,14 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-async function routeHome(page: Page) {
+async function routeHome(page: Page, overviews = MEDICATION_OVERVIEWS) {
   await page.addInitScript(() => {
     window.sessionStorage.setItem('poke.access-token', 'home-compression-token');
     window.sessionStorage.setItem('poke.account-principal', 'home-compression@example.com');
   });
   await page.route('**/api/v1/medications/doses*', (route) => fulfillJson(route, []));
   await page.route(/\/api\/v1\/medications(?:\?.*)?$/, (route) =>
-    fulfillJson(route, MEDICATION_OVERVIEWS),
+    fulfillJson(route, overviews),
   );
   await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
     fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
@@ -70,6 +70,45 @@ async function routeHome(page: Page) {
 
 test.beforeEach(() => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+});
+
+test('같은 조제일 처방은 별칭을 접근성 이름에 포함해 서로 구분한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const sameDateOverviews = MEDICATION_OVERVIEWS.slice(0, 2).map((overview) => ({
+    ...overview,
+    start: { ...overview.start, date: '2026-08-22' },
+  }));
+  await routeHome(page, sameDateOverviews);
+  await page.goto('/home');
+
+  const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+    name: '아침약 상세',
+  });
+  await expect(detail.getByRole('button', { name: '첫 처방 · 8월 22일 처방 선택' })).toHaveCount(1);
+  await expect(detail.getByRole('button', { name: '둘째 처방 · 8월 22일 처방 선택' })).toHaveCount(1);
+  await expect(detail.getByText('8월 22일 처방', { exact: true })).toHaveCount(0);
+});
+
+test('약 이름에 포함된 함량은 펼친 상세에서 반복하지 않는다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const duplicatedStrengthOverviews = MEDICATION_OVERVIEWS.map((overview, overviewIndex) =>
+    overviewIndex === 0
+      ? {
+          ...overview,
+          medications: overview.medications.map((medication, medicationIndex) =>
+            medicationIndex === 0
+              ? { ...medication, name: '아모잘탄정 5/50mg', dose: '5/50mg' }
+              : medication,
+          ),
+        }
+      : overview,
+  );
+  await routeHome(page, duplicatedStrengthOverviews);
+  await page.goto('/home');
+
+  const first = page.getByRole('region', { name: '오늘의 복약' }).getByRole('article').first();
+  await first.getByRole('button', { name: /첫 처방.*펼치기/ }).click();
+  await expect(first.getByRole('listitem').first()).toHaveText('아모잘탄정 5/50mg');
 });
 
 test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방은 기록하지 않는다', async ({ page }) => {
@@ -84,6 +123,7 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   await expect(detail.getByRole('heading', { name: '8월 25일 처방', exact: true })).toHaveCount(0);
   const expandOthers = detail.getByRole('button', { name: '다른 처방 펼치기' });
   await expect(expandOthers).toBeVisible();
+  await expect(expandOthers).toHaveText('펼치기');
   await expect(expandOthers).toHaveCSS('font-size', '11px');
   await expect(expandOthers).toHaveCSS('font-weight', '500');
   await expect(expandOthers).toHaveAttribute('aria-expanded', 'false');
@@ -104,6 +144,7 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   await expect(thirdSelector).toHaveAttribute('aria-pressed', 'true');
   const collapseOthers = detail.getByRole('button', { name: '다른 처방 접기', exact: true });
   await expect(collapseOthers).toHaveCount(1);
+  await expect(collapseOthers).toHaveText('접기');
   await expect(collapseOthers).toHaveAttribute('aria-expanded', 'true');
   expect((await detail.boundingBox())!.width).toBe(collapsedWidth);
   expect(await detail.evaluate((element) => element.scrollWidth)).toBe(
@@ -126,7 +167,7 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   );
 });
 
-test('처방 별칭은 화면 제목에만 사용하고 날짜 기반 접근성 이름을 유지한다', async ({ page }) => {
+test('처방 별칭은 화면 제목과 날짜 기반 접근성 이름에 함께 사용한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await routeHome(page);
   await page.goto('/home');
@@ -136,9 +177,9 @@ test('처방 별칭은 화면 제목에만 사용하고 날짜 기반 접근성 
   });
   const first = detail.getByRole('article', { name: /8월 22일 처방/ });
   await expect(first.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
-  await expect(first.locator('[data-episode-row]')).toHaveAccessibleName('8월 22일 처방 선택');
+  await expect(first.locator('[data-episode-row]')).toHaveAccessibleName('첫 처방 · 8월 22일 처방 선택');
   await expect(
-    first.getByRole('button', { name: '8월 22일 처방 펼치기', exact: true }),
+    first.getByRole('button', { name: '첫 처방 · 8월 22일 처방 펼치기', exact: true }),
   ).toBeVisible();
 });
 
@@ -183,11 +224,11 @@ test('처방 상세 화살표는 약 목록을 펼쳐도 같은 자리에 유지
   const first = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('article', { name: /8월 22일 처방/ });
-  const expand = first.getByRole('button', { name: '8월 22일 처방 펼치기', exact: true });
+  const expand = first.getByRole('button', { name: '첫 처방 · 8월 22일 처방 펼치기', exact: true });
   const before = await expand.boundingBox();
   expect(before).not.toBeNull();
   await expand.click();
-  const collapse = first.getByRole('button', { name: '8월 22일 처방 접기', exact: true });
+  const collapse = first.getByRole('button', { name: '첫 처방 · 8월 22일 처방 접기', exact: true });
   const after = await collapse.boundingBox();
   expect(after).not.toBeNull();
 
