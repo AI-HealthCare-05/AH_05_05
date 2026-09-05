@@ -513,9 +513,18 @@ export function ChatPage({
                 <span aria-hidden className="size-8 shrink-0" />
               )}
               <div className="flex flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
-                <p className="whitespace-pre-wrap text-base break-words text-foreground">
+                <p
+                  aria-label="답변 본문"
+                  className="whitespace-pre-wrap text-base break-words text-foreground"
+                >
                   {message.text}
                 </p>
+                <section className="border-t border-border pt-2" aria-label="주의와 한계">
+                  <h3 className="text-sm font-bold text-foreground">주의와 한계</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    이 답변은 진단이나 처방을 대신하지 않아요.
+                  </p>
+                </section>
                 <p className="text-unit text-muted-foreground">
                   오늘 · 근거 {message.sources.length}개
                 </p>

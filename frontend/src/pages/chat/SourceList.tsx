@@ -27,7 +27,7 @@ export function SourceList({ sources, className }: SourceListProps) {
 
   return (
     <div className={cn('flex flex-col gap-1.5 border-t border-border pt-2', className)}>
-      <p className="text-sm font-bold text-foreground">근거</p>
+      <h3 className="text-sm font-bold text-foreground">근거</h3>
       <ul className="flex flex-col gap-1.5">
         {sources.map((source, index) => (
           <li key={`${source.scope}-${source.title}-${index}`} className="flex flex-col gap-0.5">
@@ -37,7 +37,7 @@ export function SourceList({ sources, className }: SourceListProps) {
                   'shrink-0 rounded-pill px-2 py-0.5 text-sm',
                   source.scope === 'personal'
                     ? 'bg-primary-bg text-primary-strong'
-                    : 'bg-success-bg text-success-strong',
+                    : 'bg-info-bg text-info',
                 )}
               >
                 {SCOPE_LABEL[source.scope]}
@@ -55,7 +55,7 @@ export function SourceList({ sources, className }: SourceListProps) {
                 rel="noopener noreferrer"
                 className="inline-flex min-h-touch items-center text-sm text-primary underline"
               >
-                원문 보기
+                새 창에서 열기
               </a>
             )}
           </li>

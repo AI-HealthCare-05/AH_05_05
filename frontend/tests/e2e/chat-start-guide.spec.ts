@@ -7,14 +7,18 @@ test.beforeEach(() => {
 });
 
 const FAQS = [
-  '지금 먹는 약을 같이 먹어도 되나요?',
-  '이 약은 왜 먹는 건가요?',
-  '영양제와 같이 먹어도 괜찮나요?',
-  '약을 먹다가 놓쳤으면 어떻게 하나요?',
+  '같이 먹어도 될까요?',
+  '언제 먹는 게 좋나요?',
+  '주의할 증상이 있나요?',
 ] as const;
 
-test('빈 대화에는 확정된 4줄 가이드와 네 개의 질문, 안전 안내를 모두 보여준다', async ({ page }) => {
+test('H-2 빈 대화에는 시작 제목과 세 개의 자주 묻는 질문, 안전 안내를 보여준다', async ({ page }) => {
   await page.goto('/dev/chat');
+
+  await expect(page.getByRole('heading', { name: '무엇이 궁금하세요?' })).toBeVisible();
+  await expect(
+    page.getByText('등록한 복용 정보를 바탕으로 답변해요.', { exact: true }),
+  ).toBeVisible();
 
   const guide = page.getByRole('region', { name: '챗봇 시작 가이드' });
   await expect(guide.getByRole('heading', { name: '이 챗봇에서 확인할 수 있어요' })).toBeVisible();
@@ -30,14 +34,15 @@ test('빈 대화에는 확정된 4줄 가이드와 네 개의 질문, 안전 안
   await expect(guide.getByText('답변에는 근거 자료의 출처를 함께 보여드려요')).toBeVisible();
 
   const faq = page.getByRole('region', { name: '자주 묻는 질문' });
+  await expect(faq.getByRole('heading', { name: '자주 묻는 질문' })).toBeVisible();
   const buttons = faq.getByRole('button');
-  await expect(buttons).toHaveCount(4);
+  await expect(buttons).toHaveCount(3);
   for (const [index, question] of FAQS.entries()) {
     await expect(buttons.nth(index)).toHaveText(question);
   }
 
   await expect(
-    page.getByText('제공되는 내용은 참고 정보이며 진단이나 처방을 대신하지 않습니다.'),
+    page.getByText('제공되는 내용은 참고 정보이며 진단이나 처방을 대신하지 않아요.'),
   ).toBeVisible();
   await expect(
     page.getByText('복용 변경이 필요한 경우 의료진 또는 약사와 상담해 주세요.'),

@@ -136,7 +136,11 @@ export function ChatFeedbackSheet({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} variant="sheet">
+      <DialogContent
+        showCloseButton={false}
+        variant="sheet"
+        className="max-h-[100dvh] overflow-hidden"
+      >
         <DialogTitle className="pr-10 text-xl">{title}</DialogTitle>
         <button
           type="button"
@@ -203,30 +207,37 @@ export function ChatFeedbackSheet({
             )}
 
             {!reasonsLoading && reasonsError === null && reasons.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {reasons.map((reason) => {
-                  const selected = reason.detailCode === selectedReason;
-                  return (
-                    <button
-                      key={reason.detailCode}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => chooseReason(reason.detailCode)}
-                      className={cn(
-                        'min-h-touch max-w-full shrink-0 rounded-input border px-4 text-left text-caption font-medium',
-                        positive
-                          ? selected
-                            ? 'border-[1.5px] border-primary bg-action-soft font-bold text-primary'
-                            : 'border-border bg-card text-muted-foreground hover:bg-muted-bg'
-                          : selected
-                            ? 'border-[1.5px] border-danger bg-danger-bg font-bold text-danger'
-                            : 'border-border bg-card text-muted-foreground hover:bg-muted-bg',
-                      )}
-                    >
-                      {reason.detailName}
-                    </button>
-                  );
-                })}
+              <div
+                role="region"
+                aria-label="평가 사유"
+                className="min-h-0 w-full overflow-y-auto overscroll-contain"
+                style={{ maxHeight: 'calc(100dvh - 220px)' }}
+              >
+                <div className="mx-auto flex w-full max-w-[310px] flex-col gap-1.5">
+                  {reasons.map((reason) => {
+                    const selected = reason.detailCode === selectedReason;
+                    return (
+                      <button
+                        key={reason.detailCode}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => chooseReason(reason.detailCode)}
+                        className={cn(
+                          'min-h-touch w-full rounded-input border px-4 text-left text-caption font-medium',
+                          positive
+                            ? selected
+                              ? 'border-[1.5px] border-primary bg-action-soft font-bold text-primary'
+                              : 'border-border bg-card text-muted-foreground hover:bg-muted-bg'
+                            : selected
+                              ? 'border-[1.5px] border-danger bg-danger-bg font-bold text-danger'
+                              : 'border-border bg-card text-muted-foreground hover:bg-muted-bg',
+                        )}
+                      >
+                        {reason.detailName}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -236,13 +247,15 @@ export function ChatFeedbackSheet({
               </p>
             )}
 
-            <Button
-              variant={positive ? 'primary' : 'danger'}
-              disabled={saving}
-              onClick={() => void submit()}
-            >
-              제출하고 종료
-            </Button>
+            <div className="sticky bottom-0 bg-card pt-1">
+              <Button
+                variant={positive ? 'primary' : 'danger'}
+                disabled={saving}
+                onClick={() => void submit()}
+              >
+                제출하고 종료
+              </Button>
+            </div>
           </>
         )}
       </DialogContent>

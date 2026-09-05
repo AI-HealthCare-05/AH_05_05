@@ -6,10 +6,9 @@ const GUIDE_ITEMS = [
 ] as const;
 
 const FREQUENT_QUESTIONS = [
-  '지금 먹는 약을 같이 먹어도 되나요?',
-  '이 약은 왜 먹는 건가요?',
-  '영양제와 같이 먹어도 괜찮나요?',
-  '약을 먹다가 놓쳤으면 어떻게 하나요?',
+  '같이 먹어도 될까요?',
+  '언제 먹는 게 좋나요?',
+  '주의할 증상이 있나요?',
 ] as const;
 
 interface ChatStartGuideProps {
@@ -21,6 +20,11 @@ interface ChatStartGuideProps {
 export function ChatStartGuide({ pending, onQuestion }: ChatStartGuideProps) {
   return (
     <div className="flex flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-[26px] font-bold leading-tight text-foreground">무엇이 궁금하세요?</h1>
+        <p className="text-sm text-muted-foreground">등록한 복용 정보를 바탕으로 답변해요.</p>
+      </header>
+
       <section
         aria-label="챗봇 시작 가이드"
         className="flex flex-col gap-3 rounded-card bg-card p-4 shadow-card"
@@ -50,7 +54,7 @@ export function ChatStartGuide({ pending, onQuestion }: ChatStartGuideProps) {
       </section>
 
       <section aria-label="자주 묻는 질문" className="flex flex-col gap-2">
-        <h2 className="text-base font-bold text-foreground">이런 걸 물어보세요</h2>
+        <h2 className="text-base font-bold text-foreground">자주 묻는 질문</h2>
         <div className="flex flex-col gap-2">
           {FREQUENT_QUESTIONS.map((question) => (
             <button
@@ -67,7 +71,7 @@ export function ChatStartGuide({ pending, onQuestion }: ChatStartGuideProps) {
       </section>
 
       <div className="flex flex-col gap-0.5 text-unit leading-4 text-muted-foreground">
-        <p>제공되는 내용은 참고 정보이며 진단이나 처방을 대신하지 않습니다.</p>
+        <p>제공되는 내용은 참고 정보이며 진단이나 처방을 대신하지 않아요.</p>
         <p>복용 변경이 필요한 경우 의료진 또는 약사와 상담해 주세요.</p>
       </div>
     </div>
