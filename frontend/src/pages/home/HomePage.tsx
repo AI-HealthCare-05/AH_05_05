@@ -260,13 +260,30 @@ export function HomePage({
     openFeature(key);
   }
 
-  async function changeDose(change: DoseBatchChange, showUndo = true): Promise<boolean> {
+  async function changeDose(
+    change: DoseBatchChange,
+    showUndo = true,
+    knownChangedRecordIds?: number[],
+  ): Promise<boolean> {
     if (!doseRecords) return false;
     const previousRecords = doseRecords;
+    const changedRecordIds = knownChangedRecordIds ??
+      change.recordIds.filter((recordId) => {
+        const wasTaken = previousRecords.some(
+          (record) =>
+            record.date === change.date &&
+            record.slot === change.slot &&
+            record.recordId === recordId &&
+            record.taken,
+        );
+        return wasTaken !== change.taken;
+      });
+    if (changedRecordIds.length === 0) return true;
+    const appliedChange = { ...change, recordIds: changedRecordIds };
     setFailedDoseChange(null);
-    setDoseRecords(updateDoseRecords(previousRecords, change));
+    setDoseRecords(updateDoseRecords(previousRecords, appliedChange));
     const results = await Promise.allSettled(
-      change.recordIds.map((recordId) =>
+      changedRecordIds.map((recordId) =>
         doseRecordSaver({
           date: change.date,
           slot: change.slot,
@@ -275,7 +292,7 @@ export function HomePage({
         }),
       ),
     );
-    const failedRecordIds = change.recordIds.filter(
+    const failedRecordIds = changedRecordIds.filter(
       (_recordId, index) => results[index]?.status === 'rejected',
     );
     if (failedRecordIds.length === 0) {
@@ -284,14 +301,18 @@ export function HomePage({
           action: {
             label: '되돌리기',
             onClick: () => {
-              void changeDose({ ...change, taken: !change.taken }, false);
+              void changeDose(
+                { ...appliedChange, taken: !change.taken },
+                false,
+                appliedChange.recordIds,
+              );
             },
           },
         });
       }
       return true;
     }
-    const failedChange = { ...change, recordIds: failedRecordIds };
+    const failedChange = { ...appliedChange, recordIds: failedRecordIds };
     setDoseRecords((currentRecords) =>
       currentRecords
         ? restoreFailedDoseRecords(currentRecords, previousRecords, failedChange)

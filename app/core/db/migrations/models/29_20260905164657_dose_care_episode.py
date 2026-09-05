@@ -20,8 +20,7 @@ async def downgrade(db: BaseDBAsyncClient) -> str:
         ALTER TABLE `medication_doses` DROP FOREIGN KEY `fk_dose_care_episode`;
         ALTER TABLE `medication_doses` DROP INDEX `idx_dose_episode_date`;
         ALTER TABLE `medication_doses` DROP INDEX `uid_dose_user_date_slot_ep`;
-        ALTER TABLE `medication_doses` DROP COLUMN `care_episode_id`;
-        ALTER TABLE `medication_doses` ADD UNIQUE INDEX `uid_medication__user_dose_slot` (`user_id`, `dose_date`, `slot`);"""
+        ALTER TABLE `medication_doses` DROP COLUMN `care_episode_id`;"""
 
 
 MODELS_STATE = (

@@ -29,6 +29,7 @@ import type {
   SaveMedicationScheduleResponse,
 } from './types';
 import { mockMedicationAlias } from '@/entities/medication-alias/api.mock';
+import { restoreAccountPrincipal } from '@/shared/api/client';
 
 let hasRegisteredMedication = true;
 const cancelledMedicationRecordIds = new Set<number>();
@@ -40,15 +41,12 @@ const initialDoseRecords: DoseRecord[] = [
   { date: '2026-08-23', slot: 'evening', taken: true, recordId: 12 },
   { date: '2026-08-24', slot: 'morning', taken: true, recordId: 12 },
 ];
-let doseRecords: DoseRecord[] = initialDoseRecords.map((record) => ({ ...record }));
+const doseRecordsByPrincipal = new Map<string, DoseRecord[]>();
 
 export function resetMockMedicationForNewAccount(): void {
   hasRegisteredMedication = false;
   cancelledMedicationRecordIds.clear();
-  doseRecords = [];
-  if (typeof sessionStorage !== 'undefined') {
-    sessionStorage.removeItem(DOSE_RECORDS_STORAGE_KEY);
-  }
+  writeMockDoseRecords([]);
 }
 
 function primaryMedicationOverview(): MedicationOverview {
@@ -194,22 +192,49 @@ export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] 
     .map((record) => ({ ...record }));
 }
 
+function dosePrincipal(): string {
+  return restoreAccountPrincipal()?.trim().toLowerCase() || 'anonymous';
+}
+
+function doseStorageKey(principal: string): string {
+  return `${DOSE_RECORDS_STORAGE_KEY}:${encodeURIComponent(principal)}`;
+}
+
+function cloneDoseRecords(records: DoseRecord[]): DoseRecord[] {
+  return records.map((record) => ({ ...record }));
+}
+
 function readMockDoseRecords(): DoseRecord[] {
-  if (typeof sessionStorage === 'undefined') return doseRecords;
-  const stored = sessionStorage.getItem(DOSE_RECORDS_STORAGE_KEY);
-  if (!stored) return doseRecords;
+  const principal = dosePrincipal();
+  const memoryRecords = doseRecordsByPrincipal.get(principal) ?? initialDoseRecords;
+  if (typeof window === 'undefined' || typeof window.sessionStorage === 'undefined') {
+    return cloneDoseRecords(memoryRecords);
+  }
   try {
-    return JSON.parse(stored) as DoseRecord[];
+    const stored = window.sessionStorage.getItem(doseStorageKey(principal));
+    if (!stored) return cloneDoseRecords(memoryRecords);
+    const parsed = JSON.parse(stored) as DoseRecord[];
+    doseRecordsByPrincipal.set(principal, cloneDoseRecords(parsed));
+    return cloneDoseRecords(parsed);
   } catch {
-    sessionStorage.removeItem(DOSE_RECORDS_STORAGE_KEY);
-    return doseRecords;
+    try {
+      window.sessionStorage.removeItem(doseStorageKey(principal));
+    } catch {
+      // sessionStorage가 막혀도 principal별 메모리 저장소로 계속 동작합니다.
+    }
+    return cloneDoseRecords(memoryRecords);
   }
 }
 
 function writeMockDoseRecords(records: DoseRecord[]): void {
-  doseRecords = records.map((record) => ({ ...record }));
-  if (typeof sessionStorage !== 'undefined') {
-    sessionStorage.setItem(DOSE_RECORDS_STORAGE_KEY, JSON.stringify(doseRecords));
+  const principal = dosePrincipal();
+  const nextRecords = cloneDoseRecords(records);
+  doseRecordsByPrincipal.set(principal, nextRecords);
+  if (typeof window === 'undefined' || typeof window.sessionStorage === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(doseStorageKey(principal), JSON.stringify(nextRecords));
+  } catch {
+    // sessionStorage가 막혀도 principal별 메모리 저장소로 계속 동작합니다.
   }
 }
 

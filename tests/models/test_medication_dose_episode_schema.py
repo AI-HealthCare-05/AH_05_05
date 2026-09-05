@@ -38,7 +38,22 @@ async def test_migration_replaces_slot_unique_with_episode_unique_after_deleting
     assert "(`user_id`, `dose_date`, `slot`, `care_episode_id`)" in upgrade
     assert "REFERENCES `care_episodes` (`id`) ON DELETE CASCADE" in upgrade
     assert "(`care_episode_id`, `dose_date`)" in upgrade
-    assert "ADD UNIQUE INDEX `uid_medication__user_dose_slot`" in downgrade
+    assert "DROP COLUMN `care_episode_id`" in downgrade
+    assert "ADD UNIQUE" not in downgrade
+
+
+async def test_downgrade_allows_same_slot_rows_from_multiple_episodes_to_remain() -> None:
+    migration = import_module(f"app.core.db.migrations.models.{MIGRATION_NAME}")
+    downgrade = " ".join((await migration.downgrade(None)).split())
+    rows = [
+        (1, "2026-09-05", "MORNING", 10),
+        (1, "2026-09-05", "MORNING", 20),
+    ]
+    projected_slot_keys = [(user_id, dose_date, slot) for user_id, dose_date, slot, _ in rows]
+
+    assert len(projected_slot_keys) > len(set(projected_slot_keys))
+    assert "DROP COLUMN `care_episode_id`" in downgrade
+    assert "ADD UNIQUE" not in downgrade
 
 
 def test_migration_state_keeps_episode_relation_required() -> None:

@@ -1230,6 +1230,7 @@ test('처방 2개 중 1개만 기록하고 새로고침해도 그 처방만 완�
   const secondEpisode = morning.getByRole('article', { name: /8월 24일 처방/ });
   await firstEpisode.getByRole('button', { name: /8월 22일 처방.*선택/ }).click();
   await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(page.getByRole('button', { name: '되돌리기', exact: true })).toBeVisible();
   await page.reload();
 
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
@@ -1268,13 +1269,65 @@ test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page 
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
-  const secondEpisode = morning.getByRole('article', { name: /8월 24일 처방/ });
+  const firstEpisode = page.locator('article[aria-label^="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label^="8월 24일 처방"]');
   await morning.getByRole('button', { name: '먹었어요' }).click();
 
+  await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
   await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
   expect(savedRecordIds).toEqual([12]);
+});
+
+test('이미 완료된 처방과 함께 기록한 batch를 되돌려도 기존 완료는 유지한다', async ({ page }) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const storedDoses: Array<Record<string, unknown>> = [
+    { date: '2026-08-25', slot: 'morning', taken: true, recordId: 12 },
+  ];
+  const dosePosts: Array<Record<string, unknown>> = [];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, storedDoses, 200);
+      return;
+    }
+    const payload = request.postDataJSON() as Record<string, unknown>;
+    dosePosts.push(payload);
+    const remaining = storedDoses.filter(
+      (dose) =>
+        dose.date !== payload.date || dose.slot !== payload.slot || dose.recordId !== payload.recordId,
+    );
+    storedDoses.splice(0, storedDoses.length, ...remaining);
+    if (payload.taken) storedDoses.push(payload);
+    await fulfillJson(route, payload, 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
+  const secondEpisode = morning.getByRole('article', { name: /8월 24일 처방/ });
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(page.getByRole('button', { name: '되돌리기', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '되돌리기', exact: true }).click();
+
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  expect(dosePosts).toEqual([
+    { date: '2026-08-25', slot: 'morning', taken: true, recordId: 24 },
+    { date: '2026-08-25', slot: 'morning', taken: false, recordId: 24 },
+  ]);
+  expect(storedDoses).toEqual([
+    { date: '2026-08-25', slot: 'morning', taken: true, recordId: 12 },
+  ]);
 });
 
 test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목록에서 제거한다', async ({ page }) => {
