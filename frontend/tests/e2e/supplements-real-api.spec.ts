@@ -686,7 +686,7 @@ test('제품명 검색을 실제 RDB 검색 API 계약으로 보낸다', async (
       limit: 20,
     });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -753,7 +753,7 @@ test('이전 검색의 지연된 다음 페이지를 새 검색 결과에 섞지
     }
     await fulfillJson(route, { items: [IRON_PRODUCT], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -820,7 +820,7 @@ test('권장 슬롯과 회당 수량을 선택해 med 사용자 영양제 API에
       limit: 20,
     });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -894,7 +894,7 @@ test('RDB의 소수 및 20 초과 1회 섭취량을 그대로 선택하고 저�
     const product = name === '방울' ? DROPS_PRODUCT : HALF_SCOOP_PRODUCT;
     await fulfillJson(route, { items: [product], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -967,7 +967,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   await page.route('**/api/v1/med/nutr?**', async (route) => {
     await fulfillJson(route, { items: [IRON_PRODUCT], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -1010,7 +1010,7 @@ test('검색 실패 시 서버 detail 을 숨기고 기본 문구를 시트 안�
   await page.route('**/api/v1/med/nutr?**', async (route) => {
     await fulfillJson(route, { detail: '영양제 검색 서버가 응답하지 않았습니다.' }, 500);
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -1055,7 +1055,7 @@ test('저장 실패 시 서버 detail 을 숨기고 기본 문구를 보여주�
   await page.route('**/api/v1/med/nutr?**', async (route) => {
     await fulfillJson(route, { items: [IRON_PRODUCT], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',

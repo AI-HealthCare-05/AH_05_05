@@ -219,7 +219,9 @@ test('처방 행은 별칭과 24px 선택 glyph를 사용하고 chevron만 펼�
   await expect(chevron).toHaveAttribute('aria-expanded', 'false');
 
   await chevron.click();
-  await expect(chevron).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    firstEpisode.getByRole('button', { name: '8월 22일 처방 접기', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await expect(selection).toHaveAttribute('aria-pressed', 'false');
   await firstEpisode.getByRole('button', { name: '8월 22일 처방 접기', exact: true }).click();
