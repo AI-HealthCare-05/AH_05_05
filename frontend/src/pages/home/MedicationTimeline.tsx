@@ -230,9 +230,7 @@ function TimelineItem({
         {visibleEpisodes.map((episode) => {
           const episodeDate = formatDateLabel(episode.startDate);
           const episodeAlias = episode.alias?.trim();
-          const episodeAccessibleName = episodeAlias
-            ? `${episodeAlias} · ${episodeDate} 처방`
-            : `${episodeDate} 처방`;
+          const episodeAccessibleName = `${episodeDate} 처방`;
           const episodeExpanded = expandedEpisodes.has(episode.recordId);
           const medicationsExpanded = expandedMedicationEpisodes.has(episode.recordId);
           const episodeCompleted = completedEpisodes.has(episode.recordId);
@@ -343,7 +341,7 @@ function TimelineItem({
                       aria-label={
                         medicationsExpanded ? '약 목록 접기' : `약 ${hiddenMedicationCount}개 더보기`
                       }
-                      className="mt-2 flex min-h-touch w-full items-center justify-end px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="mt-2 flex min-h-touch w-full items-center justify-end px-1 text-xs font-medium text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => toggleMedicationList(episode.recordId)}
                     >
                       {medicationsExpanded ? '접기' : `약 ${hiddenMedicationCount}개 더보기`}
@@ -359,7 +357,7 @@ function TimelineItem({
             type="button"
             aria-expanded={showAllEpisodes}
             aria-label={showAllEpisodes ? '다른 처방 접기' : '다른 처방 펼치기'}
-            className="flex min-h-touch items-center justify-end px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex min-h-touch items-center justify-end px-1 text-xs font-medium text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={toggleAllEpisodes}
           >
             {showAllEpisodes ? '다른 처방 접기' : '다른 처방 펼치기'}
