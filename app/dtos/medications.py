@@ -45,12 +45,14 @@ class SaveMedicationDoseRequest(CamelModel):
     date: date
     slot: str
     taken: bool
+    record_id: int
 
 
 class MedicationDoseResponse(CamelModel):
     date: date
     slot: str
     taken: bool
+    record_id: int
 
 
 class UpdateCareEpisodeAliasRequest(CamelModel):

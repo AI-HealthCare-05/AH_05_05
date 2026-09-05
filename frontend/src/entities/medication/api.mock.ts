@@ -32,18 +32,23 @@ import { mockMedicationAlias } from '@/entities/medication-alias/api.mock';
 
 let hasRegisteredMedication = true;
 const cancelledMedicationRecordIds = new Set<number>();
-let doseRecords: DoseRecord[] = [
-  { date: '2026-08-22', slot: 'morning', taken: true },
-  { date: '2026-08-22', slot: 'evening', taken: true },
-  { date: '2026-08-23', slot: 'morning', taken: true },
-  { date: '2026-08-23', slot: 'evening', taken: true },
-  { date: '2026-08-24', slot: 'morning', taken: true },
+const DOSE_RECORDS_STORAGE_KEY = 'poke.mock-medication-dose-records';
+const initialDoseRecords: DoseRecord[] = [
+  { date: '2026-08-22', slot: 'morning', taken: true, recordId: 12 },
+  { date: '2026-08-22', slot: 'evening', taken: true, recordId: 12 },
+  { date: '2026-08-23', slot: 'morning', taken: true, recordId: 12 },
+  { date: '2026-08-23', slot: 'evening', taken: true, recordId: 12 },
+  { date: '2026-08-24', slot: 'morning', taken: true, recordId: 12 },
 ];
+let doseRecords: DoseRecord[] = initialDoseRecords.map((record) => ({ ...record }));
 
 export function resetMockMedicationForNewAccount(): void {
   hasRegisteredMedication = false;
   cancelledMedicationRecordIds.clear();
   doseRecords = [];
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(DOSE_RECORDS_STORAGE_KEY);
+  }
 }
 
 function primaryMedicationOverview(): MedicationOverview {
@@ -166,15 +171,20 @@ export function mockSaveMedicationSchedule(
 }
 
 export function mockSaveDoseTaken(payload: SaveDoseTakenPayload): DoseRecord {
-  doseRecords = doseRecords.filter(
-    (record) => record.date !== payload.date || record.slot !== payload.slot,
+  const currentRecords = readMockDoseRecords();
+  const nextRecords = currentRecords.filter(
+    (record) =>
+      record.date !== payload.date ||
+      record.slot !== payload.slot ||
+      record.recordId !== payload.recordId,
   );
-  if (payload.taken) doseRecords.push({ ...payload });
+  if (payload.taken) nextRecords.push({ ...payload });
+  writeMockDoseRecords(nextRecords);
   return { ...payload };
 }
 
 export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] {
-  return doseRecords
+  return readMockDoseRecords()
     .filter(
       (record) =>
         record.taken &&
@@ -182,6 +192,25 @@ export function mockGetDoseRecords({ from, to }: DoseRecordRange): DoseRecord[] 
         record.date <= to,
     )
     .map((record) => ({ ...record }));
+}
+
+function readMockDoseRecords(): DoseRecord[] {
+  if (typeof sessionStorage === 'undefined') return doseRecords;
+  const stored = sessionStorage.getItem(DOSE_RECORDS_STORAGE_KEY);
+  if (!stored) return doseRecords;
+  try {
+    return JSON.parse(stored) as DoseRecord[];
+  } catch {
+    sessionStorage.removeItem(DOSE_RECORDS_STORAGE_KEY);
+    return doseRecords;
+  }
+}
+
+function writeMockDoseRecords(records: DoseRecord[]): void {
+  doseRecords = records.map((record) => ({ ...record }));
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem(DOSE_RECORDS_STORAGE_KEY, JSON.stringify(doseRecords));
+  }
 }
 
 export function mockCancelMedication(recordId: number): void {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import type {
   DoseRecord,
@@ -30,6 +30,7 @@ interface TimelineItemData {
   time: string;
   medications: TimelineMedication[];
   episodes: TimelineEpisode[];
+  completedEpisodeRecordIds: number[];
   status: TimelineStatus;
 }
 
@@ -107,11 +108,9 @@ function TimelineItem({
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(() => new Set());
   const current = item.status === 'current';
-  const completed = item.status === 'completed';
   const [completedEpisodes, setCompletedEpisodes] = useState<Set<number>>(() =>
-    completed ? new Set(item.episodes.map((episode) => episode.recordId)) : new Set(),
+    new Set(item.completedEpisodeRecordIds),
   );
-  const previousCompleted = useRef(completed);
   const episodeFingerprint = [
     item.slot,
     item.time,
@@ -134,23 +133,18 @@ function TimelineItem({
       ].join('|'),
     ),
   ].join('||');
+  const completionFingerprint = item.completedEpisodeRecordIds.join(',');
   useEffect(() => {
     setExpandedEpisodes(new Set());
     setExpandedMedicationEpisodes(new Set());
     setShowAllEpisodes(false);
     setSelectedEpisodes(new Set());
-    setCompletedEpisodes(
-      completed ? new Set(item.episodes.map((episode) => episode.recordId)) : new Set(),
-    );
+    setCompletedEpisodes(new Set(item.completedEpisodeRecordIds));
   }, [currentDate, episodeFingerprint]);
 
   useEffect(() => {
-    if (previousCompleted.current && !completed) {
-      setSelectedEpisodes(new Set());
-      setCompletedEpisodes(new Set());
-    }
-    previousCompleted.current = completed;
-  }, [completed]);
+    setCompletedEpisodes(new Set(item.completedEpisodeRecordIds));
+  }, [completionFingerprint]);
 
   function toggleEpisode(recordId: number) {
     setExpandedEpisodes((currentEpisodes) => {
@@ -440,14 +434,23 @@ function buildMedicationTimeline(
   });
 
   return items.map((item, index) => {
-    const completed = doseRecords.some(
-      (record) =>
-        record.date === currentDate &&
-        record.slot === item.slot &&
-        record.taken,
-    );
+    const completedEpisodeRecordIds = item.episodes
+      .filter((episode) =>
+        doseRecords.some(
+          (record) =>
+            record.date === currentDate &&
+            record.slot === item.slot &&
+            record.recordId === episode.recordId &&
+            record.taken,
+        ),
+      )
+      .map((episode) => episode.recordId);
+    const completed =
+      item.episodes.length > 0 &&
+      item.episodes.every((episode) => completedEpisodeRecordIds.includes(episode.recordId));
     return {
       ...item,
+      completedEpisodeRecordIds,
       status: completed
         ? 'completed'
         : index === currentIndex
