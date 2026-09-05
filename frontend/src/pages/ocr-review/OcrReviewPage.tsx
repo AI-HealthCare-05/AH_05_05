@@ -83,6 +83,17 @@ function ConfidenceBadge({ confidence }: { confidence?: Confidence }) {
   return <StatusBadge type={badge.type}>{badge.label}</StatusBadge>;
 }
 
+function hasMissingExtractedMedicationField(medication: EditableOcrMedication): boolean {
+  if (medication.confidence === undefined) return false;
+  return (
+    !medication.name.trim() ||
+    !medication.strength?.trim() ||
+    !medication.doseQuantity?.trim() ||
+    medication.timesPerDay === undefined ||
+    medication.days === undefined
+  );
+}
+
 export function OcrReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -91,6 +102,8 @@ export function OcrReviewPage() {
   const queryBatchId = searchParams.get('batchId')?.trim() || null;
   const confirmedRecordId = parsePositiveInteger(searchParams.get('recordId'));
   const confirmedReviewMode = searchParams.get('mode') === 'confirmed' && confirmedRecordId !== null;
+  const registrationFlow =
+    state.registrationFlow === true || searchParams.get('flow') === 'registration';
   const [batchId, setBatchId] = useState<string | null>(
     state.batchId ?? queryBatchId ?? (state.file ? null : 'b_mock_9f21'),
   );
@@ -108,6 +121,8 @@ export function OcrReviewPage() {
   const [episodeAlias, setEpisodeAlias] = useState(state.episodeAlias ?? '');
   const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(null);
   const [medications, setMedications] = useState<EditableOcrMedication[]>([]);
+  const [reviewedMedicationIds, setReviewedMedicationIds] = useState<Set<string>>(new Set());
+  const [dispensedDateReviewed, setDispensedDateReviewed] = useState(false);
   const [medicationEditorTarget, setMedicationEditorTarget] =
     useState<MedicationEditorTarget | null>(null);
   const [reviewConfirmOpen, setReviewConfirmOpen] = useState(false);
@@ -221,6 +236,7 @@ export function OcrReviewPage() {
                   ? { scheduleStartDate: state.scheduleStartDate }
                   : {}),
                 ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
+                ...(registrationFlow ? { registrationFlow: true } : {}),
               },
             });
           }, 400);
@@ -243,7 +259,7 @@ export function OcrReviewPage() {
       if (pollTimer) window.clearTimeout(pollTimer);
       if (completionTimer) window.clearTimeout(completionTimer);
     };
-  }, [batchId, confirmedReviewMode, location.pathname, location.search, navigate, pollAttempt]);
+  }, [batchId, confirmedReviewMode, location.pathname, location.search, navigate, pollAttempt, registrationFlow]);
 
   useEffect(() => {
     const details = STAGE_DETAILS[readingStage];
@@ -266,11 +282,14 @@ export function OcrReviewPage() {
   }
 
   const reviewItemNames: string[] = [];
-  if (dispensedDateConfidence === 'low') {
+  if (!dispensedDate || (dispensedDateConfidence === 'low' && !dispensedDateReviewed)) {
     reviewItemNames.push('조제일');
   }
   for (const medication of medications) {
-    if (medication.confidence === 'low') {
+    if (
+      hasMissingExtractedMedicationField(medication) ||
+      (medication.confidence === 'low' && !reviewedMedicationIds.has(medication.tempId))
+    ) {
       reviewItemNames.push(medication.name || '복약 정보');
     }
   }
@@ -313,6 +332,7 @@ export function OcrReviewPage() {
         const params = new URLSearchParams({
           recordId: String(recordId),
           ocrJobId: batchId,
+          flow: 'registration',
         });
         navigate(`/medication-schedule?${params.toString()}`, {
           state: {
@@ -396,6 +416,7 @@ export function OcrReviewPage() {
       ? `/medication-schedule?${new URLSearchParams({
           recordId: String(confirmedRecordId),
           ocrJobId: batchId,
+          ...(registrationFlow ? { flow: 'registration' } : {}),
         }).toString()}`
       : null;
   const returnToSchedule = () => {
@@ -409,7 +430,7 @@ export function OcrReviewPage() {
           ? { draftStartDate: state.scheduleStartDate }
           : {}),
         ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
-        ...(state.registrationFlow ? { registrationFlow: true } : {}),
+        ...(registrationFlow ? { registrationFlow: true } : {}),
       },
     });
   };
@@ -465,7 +486,7 @@ export function OcrReviewPage() {
         {(processedImageUrl || originalImageUrl) && (
           <button
             type="button"
-            aria-label="전처리한 약봉투 크게 보기"
+            aria-label="약봉투 크게 보기"
             className="w-full overflow-hidden rounded-card bg-card text-left shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               setImageView(processedImageUrl ? 'processed' : 'original');
@@ -474,11 +495,11 @@ export function OcrReviewPage() {
           >
             <img
               src={processedImageUrl ?? originalImageUrl ?? ''}
-              alt="전처리한 약봉투"
+              alt="약봉투 미리보기"
               className="h-72 w-full bg-muted/40 object-contain p-2"
             />
             <span className="flex min-h-touch items-center justify-between gap-3 px-4 text-sm font-bold text-foreground">
-              전처리한 약봉투
+              약봉투
               <span className="text-muted-foreground">눌러서 확대</span>
             </span>
           </button>
@@ -497,7 +518,10 @@ export function OcrReviewPage() {
             type="date"
             max={maxDispensedDate}
             value={dispensedDate}
-            onChange={(event) => setDispensedDate(event.target.value)}
+            onChange={(event) => {
+              setDispensedDate(event.target.value);
+              setDispensedDateReviewed(true);
+            }}
             onClick={openDatePicker}
             disabled={confirmedReviewMode}
             error={dispensedDateTooLate ? '조제일은 오늘 기준 31일 뒤까지만 고를 수 있어요.' : undefined}
@@ -542,7 +566,19 @@ export function OcrReviewPage() {
                   <strong className="text-lg text-foreground">
                     {[medication.name, medication.strength].filter(Boolean).join(' ')}
                   </strong>
-                  <ConfidenceBadge confidence={medication.confidence} />
+                  {hasMissingExtractedMedicationField(medication) ||
+                  (medication.confidence === 'low' &&
+                    !reviewedMedicationIds.has(medication.tempId)) ? (
+                    <StatusBadge type="review">확인 필요</StatusBadge>
+                  ) : (
+                    <ConfidenceBadge
+                      confidence={
+                        reviewedMedicationIds.has(medication.tempId)
+                          ? undefined
+                          : medication.confidence
+                      }
+                    />
+                  )}
                 </span>
                 <span className="mt-1 block text-sm text-muted-foreground">
                   {medicationSummary(medication)}
@@ -591,6 +627,11 @@ export function OcrReviewPage() {
           if (!open) setMedicationEditorTarget(null);
         }}
         onSave={(savedMedication) => {
+          if (medicationEditorTarget?.mode === 'edit') {
+            setReviewedMedicationIds((current) =>
+              new Set(current).add(savedMedication.tempId),
+            );
+          }
           setMedications((current) =>
             medicationEditorTarget?.mode === 'edit'
               ? current.map((medication) =>
@@ -654,7 +695,7 @@ export function OcrReviewPage() {
               : (originalImageUrl ?? processedImageUrl ?? '')
           }
           title="약봉투 이미지 크게 보기"
-          alt={imageView === 'processed' ? '확대한 전처리 약봉투' : '확대한 약봉투 원본'}
+          alt={imageView === 'processed' ? '확대한 약봉투' : '확대한 약봉투 원본'}
           toolbar={
             <div
               role="group"
@@ -670,7 +711,7 @@ export function OcrReviewPage() {
                 }`}
                 onClick={() => setImageView('processed')}
               >
-                전처리 후
+                선명하게 보기
               </button>
               <button
                 type="button"

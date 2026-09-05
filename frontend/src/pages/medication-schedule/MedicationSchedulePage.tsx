@@ -65,6 +65,8 @@ interface ScheduleLocationState {
   episodeAlias?: string;
 }
 
+type FirstDoseSelection = MealSlot | 'not_taken';
+
 interface MedicationSchedulePageProps {
   scheduleOverride?: MedicationSchedule;
   defaultRecordId?: number;
@@ -169,7 +171,8 @@ export function MedicationSchedulePage({
   const dispensedDate = state.dispensedDate;
   const draftStartDate = state.draftStartDate;
   const ocrJobId = state.ocrJobId ?? queryOcrJobId;
-  const registrationFlow = state.registrationFlow === true;
+  const registrationFlow =
+    state.registrationFlow === true || searchParams.get('flow') === 'registration';
 
   const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
   const [mealTimes, setMealTimes] = useState<MealTimes>(DEFAULT_MEAL_TIMES);
@@ -425,18 +428,20 @@ export function MedicationSchedulePage({
     );
   }
 
-  function handleBack() {
+  function handleBack(currentStartDate?: string) {
     if (recordId !== null && ocrJobId) {
+      const scheduleStartDate = currentStartDate ?? (startDateEdited ? startDate : undefined);
       const params = new URLSearchParams({
         batchId: ocrJobId,
         recordId: String(recordId),
         mode: 'confirmed',
+        ...(registrationFlow ? { flow: 'registration' } : {}),
       });
       navigate(`/ocr-review?${params.toString()}`, {
         replace: true,
         state: {
           batchId: ocrJobId,
-          ...(startDateEdited ? { scheduleStartDate: startDate } : {}),
+          ...(scheduleStartDate !== undefined ? { scheduleStartDate } : {}),
           ...(registrationFlow ? { registrationFlow: true, episodeAlias: state.episodeAlias } : {}),
         },
       });
@@ -804,7 +809,7 @@ interface MedicationRegistrationWizardProps {
   initialStartDate: string;
   initialStartSlot: MealSlot | null;
   alias: string;
-  onBack: () => void;
+  onBack: (startDate?: string) => void;
 }
 
 /**
@@ -832,7 +837,7 @@ function MedicationRegistrationWizard({
   const [slots, setSlots] = useState<Record<number, MealSlot[]>>(initialSlots);
   const [mealTimes, setMealTimes] = useState<MealTimes>(initialMealTimes);
   const [startDate, setStartDate] = useState(initialStartDate);
-  const [startSlot, setStartSlot] = useState<MealSlot | null>(initialStartSlot);
+  const [startSlot, setStartSlot] = useState<FirstDoseSelection | null>(initialStartSlot);
   const [notifyMedication, setNotifyMedication] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
@@ -1009,9 +1014,13 @@ function MedicationRegistrationWizard({
   }
 
   async function completeRegistration() {
+    const scheduleStartSlot =
+      startSlot === 'not_taken'
+        ? SLOT_ORDER.find((slot) => usedSlots.has(slot)) ?? 'morning'
+        : startSlot;
     if (
       recordId === null ||
-      !startSlot ||
+      !scheduleStartSlot ||
       !startDate ||
       saving ||
       permissionBusy ||
@@ -1024,7 +1033,7 @@ function MedicationRegistrationWizard({
     const selectedNotifyMedication = notifyMedication;
     try {
       await scheduleSaver(recordId, {
-        start: { date: startDate, slot: startSlot },
+        start: { date: startDate, slot: scheduleStartSlot },
         mealTimes,
         medications: scheduledMeds.map((medication) => ({
           medicationId: medication.medicationId,
@@ -1068,6 +1077,7 @@ function MedicationRegistrationWizard({
   }
 
   function formatCompletionStart(): string {
+    if (startSlot === 'not_taken') return '아직 복용 전';
     const [, month, day] = startDate.split('-');
     const slotLabel = MEAL_SLOTS.find((slot) => slot.value === startSlot)?.label ?? '';
     return month && day ? `${Number(month)}월 ${Number(day)}일 ${slotLabel}` : slotLabel;
@@ -1082,7 +1092,7 @@ function MedicationRegistrationWizard({
       setStep(3);
       return;
     }
-    onBack();
+    onBack(startDate);
   }
 
   if (completed) {
@@ -1144,7 +1154,9 @@ function MedicationRegistrationWizard({
                 <Card key={medication.medicationId} className="gap-3 p-4">
                   <div>
                     <p className="font-bold text-foreground">{medication.name} {medication.dose}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{medication.timing || '복용 시간을 선택해주세요'}</p>
+                    {medication.timing && (
+                      <p className="mt-1 text-sm text-muted-foreground">{medication.timing}</p>
+                    )}
                   </div>
                   <div className="grid grid-cols-4 gap-2 border-t border-border pt-3">
                     {MEAL_SLOTS.map((slot) => {
@@ -1168,12 +1180,6 @@ function MedicationRegistrationWizard({
                       );
                     })}
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    선택한 복용 시간{' '}
-                    {(slots[medication.medicationId] ?? [])
-                      .map((slot) => MEAL_SLOTS.find((item) => item.value === slot)?.label)
-                      .join(' · ') || '없음'}
-                  </p>
                 </Card>
               ))}
             </div>
@@ -1194,6 +1200,25 @@ function MedicationRegistrationWizard({
               </p>
             </section>
             <div className="flex flex-col gap-4">
+              <button
+                type="button"
+                aria-pressed={startSlot === 'not_taken'}
+                onClick={() => {
+                  setStartSlot('not_taken');
+                  setStartDate(todayISO());
+                }}
+                className={cn(
+                  'min-h-touch rounded-input border px-4 py-3 text-left',
+                  startSlot === 'not_taken'
+                    ? 'border-primary bg-primary-bg text-primary-strong'
+                    : 'border-border bg-card text-foreground',
+                )}
+              >
+                <span className="block font-bold">아직 안 먹었어요</span>
+                <span className="mt-1 block text-sm font-normal text-muted-foreground">
+                  약을 먹은 뒤 홈에서 기록할 수 있어요.
+                </span>
+              </button>
               <Input
                 label="첫 복용 날짜"
                 aria-label="복용 시작 날짜"
@@ -1226,12 +1251,14 @@ function MedicationRegistrationWizard({
               </div>
             </div>
             <Card title="이렇게 기록해요" tone="info" className="p-4">
-              {startSlot
+              {startSlot === 'not_taken'
+                ? '아직 복용하지 않은 상태로 일정을 시작해요.'
+                : startSlot
                 ? `${formatStartPoint(startDate, startSlot)}부터 복용한 것으로 기록해요.`
                 : '첫 복용 시간을 고르면 여기에 보여드려요.'}
             </Card>
             <div className="mt-auto pb-4">
-              <Button disabled={!startDate || !startSlot} onClick={() => setStep(5)}>
+              <Button disabled={!startSlot || (startSlot !== 'not_taken' && !startDate)} onClick={() => setStep(5)}>
                 확인
               </Button>
             </div>
