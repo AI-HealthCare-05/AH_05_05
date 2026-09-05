@@ -147,6 +147,47 @@ test('느린 회차 저장 중 반복 클릭해도 일정 저장 요청은 한 �
   expect(saveCalls).toBe(1);
 });
 
+test('별칭 PATCH 뒤 홈 진입과 재진입은 후속 처방 조회의 별칭을 표시한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  let alias: string | undefined;
+  const aliasPayloads: unknown[] = [];
+  await page.route(/\/api\/v1\/medications(?:\?.*)?$/, async (route) => {
+    const item = overview(12, false, 3);
+    await fulfillJson(route, [{ ...item, ...(alias ? { alias } : {}) }]);
+  });
+  await page.route('**/api/v1/med/medication/schedule/12', (route) =>
+    fulfillJson(route, { saved: true }),
+  );
+  await page.route('**/api/v1/med/episodes/12/alias', async (route) => {
+    const payload = route.request().postDataJSON() as { alias: string | null };
+    aliasPayloads.push(payload);
+    alias = payload.alias ?? undefined;
+    await route.fulfill({ status: 204 });
+  });
+  await page.route('**/api/v1/medications/doses*', (route) => fulfillJson(route, []));
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/medications');
+  await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+  const episodeDialog = page.getByRole('dialog');
+  await episodeDialog.getByLabel('복약 별칭').fill('실 API 홈 별칭');
+  await episodeDialog.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
+  expect(aliasPayloads).toEqual([{ alias: '실 API 홈 별칭' }]);
+
+  await page.getByRole('button', { name: '홈', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '실 API 홈 별칭', exact: true })).toBeVisible();
+  await page.goto('/medications');
+  await expect(page.getByText('실 API 홈 별칭', { exact: true })).toBeVisible();
+  await page.goto('/home');
+  await expect(page.getByRole('heading', { name: '실 API 홈 별칭', exact: true })).toBeVisible();
+});
+
 test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 반영한다', async ({ page }) => {
   let overviewRequests = 0;
   await page.route('**/api/v1/medications', async (route) => {

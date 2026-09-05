@@ -398,7 +398,7 @@ test('복약 기록 토스트의 되돌리기는 완료 칸을 다시 현재 칸
     name: '아침약 상세',
   });
   await detail.getByRole('button', { name: '먹었어요' }).click();
-  await page.getByRole('button', { name: '되돌리기' }).click();
+  await page.getByRole('button', { name: '되돌리기', exact: true }).click();
 
   await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
 });
@@ -411,8 +411,11 @@ test('복약 카드의 전체 회차 기록은 되돌릴 수 있다', async ({ p
   });
 
   await detail.getByRole('button', { name: '먹었어요' }).click();
-  await expect(detail.getByRole('button', { name: '복약 기록 되돌리기' })).toBeVisible();
-  await detail.getByRole('button', { name: '복약 기록 되돌리기' }).click();
+  const undo = detail.getByRole('button', { name: '복약 기록 되돌리기' });
+  await expect(undo).toBeDisabled();
+  await detail.getByRole('button', { name: /8월 22일 처방.*복용 완료/ }).click();
+  await expect(undo).toBeEnabled();
+  await undo.click();
   await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
 });
 

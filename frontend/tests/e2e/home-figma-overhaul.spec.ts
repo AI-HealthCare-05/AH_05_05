@@ -227,6 +227,11 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
 
   const undo = detail.getByRole('button', { name: '복약 기록 되돌리기' });
   await expect(undo).toBeVisible();
+  await expect(undo).toBeDisabled();
+  await expect(undo).toHaveClass(/bg-card/);
+  await firstEpisode.getByRole('button', { name: /8월 22일 처방.*복용 완료/ }).click();
+  await expect(undo).toBeEnabled();
+  await expect(undo).toHaveClass(/bg-primary/);
   await undo.click();
   await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
 });
@@ -291,13 +296,23 @@ test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 �
   await first.getByRole('button', { name: /8월 22일 처방.*선택/ }).click();
   await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(first.getByRole('button', { name: /8월 22일 처방 복용 완료/ })).toBeVisible();
+  const inactiveAction = detail.getByRole('button', { name: '먹었어요' });
+  await expect(inactiveAction).toBeDisabled();
+  await expect(inactiveAction).toHaveClass(/bg-card/);
 
   const secondSelector = second.getByRole('button', { name: /8월 24일 처방.*선택/ });
   await expect(secondSelector).toBeVisible();
   await secondSelector.click();
-  await expect(detail.getByRole('button', { name: '먹었어요' })).toBeVisible();
-  await detail.getByRole('button', { name: '먹었어요' }).click();
+  const activeAction = detail.getByRole('button', { name: '먹었어요' });
+  await expect(activeAction).toBeEnabled();
+  await expect(activeAction).toHaveClass(/bg-primary/);
+  await activeAction.click();
   await expect(second.getByRole('button', { name: /8월 24일 처방 복용 완료/ })).toBeVisible();
+  const completedAction = detail.getByRole('button', { name: '복약 기록 되돌리기' });
+  await expect(completedAction).toBeDisabled();
+  await second.getByRole('button', { name: /8월 24일 처방.*복용 완료/ }).click();
+  await expect(completedAction).toBeEnabled();
+  await expect(completedAction).toHaveClass(/bg-primary/);
 });
 
 test('회차 선택은 다른 회차를 미완료로 유지하고 되돌리기 뒤 회차 상태를 되돌린다', async ({
