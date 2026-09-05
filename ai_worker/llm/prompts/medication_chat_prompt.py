@@ -38,7 +38,9 @@ SYSTEM_PROMPT = "\n\n".join(
             "핵심만 요약하세요. 효능·복용법·주의사항 중 초안에 근거가 없는 항목은 "
             "만들지 말고 확인하지 못했다고 분명히 표현하세요.\n"
             "답변에는 #, ** 같은 Markdown 기호를 사용하지 말고 일반 텍스트 제목과 "
-            "`사용법:`, `주의사항:` 같은 짧은 항목명만 사용하세요."
+            "`사용법:`, `주의사항:` 같은 짧은 항목명만 사용하세요. 구조화 출력의 "
+            "section_types에는 실제 답변에 사용한 FUNCTION, DAILY_INTAKE, CAUTION, "
+            "INTERACTION만 넣으세요."
         ),
     )
 )
@@ -58,6 +60,11 @@ def build_medication_chat_messages(
         "draft_answer": result.answer,
         "source_titles": [source.title for source in result.sources],
         "route": result.route.value,
+        "covered_section_types": (
+            [section.value for section in result.evidence_coverage.covered_section_types]
+            if result.evidence_coverage is not None
+            else []
+        ),
     }
     return [
         SystemMessage(content=SYSTEM_PROMPT),

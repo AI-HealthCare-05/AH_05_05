@@ -10,6 +10,7 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
     MEDICATION_CHAT_PROMPT_VERSION,
     build_medication_chat_messages,
 )
+from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationAnswerFallbackReason,
@@ -24,6 +25,7 @@ from ai_worker.schemas.medication_chat import (
 
 class MedicationAnswerPayload(BaseModel):
     answer: str = Field(min_length=1)
+    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
 
 
 class AsyncMedicationAnswerClient(Protocol):
@@ -119,6 +121,10 @@ class OpenAIMedicationAnswerGenerator:
         fallback_reason = self._grounding_failure_reason(
             draft_answer=result.answer,
             generated_answer=generated_answer,
+            declared_section_types=payload.section_types,
+            covered_section_types=(
+                result.evidence_coverage.covered_section_types if result.evidence_coverage is not None else None
+            ),
         )
         if fallback_reason is not None:
             fallback_result = result.model_copy(
@@ -160,7 +166,13 @@ class OpenAIMedicationAnswerGenerator:
         *,
         draft_answer: str,
         generated_answer: str,
+        declared_section_types: list[KnowledgeSectionType] | None = None,
+        covered_section_types: list[KnowledgeSectionType] | None = None,
     ) -> MedicationAnswerFallbackReason | None:
+        if covered_section_types is not None and not set(
+            declared_section_types or [],
+        ).issubset(covered_section_types):
+            return MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION
         if cls._SAFETY_ASSERTION_PATTERN.search(generated_answer) and not cls._SAFETY_ASSERTION_PATTERN.search(
             draft_answer
         ):

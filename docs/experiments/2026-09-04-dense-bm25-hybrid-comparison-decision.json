@@ -1,0 +1,22 @@
+{
+  "dense_collection_name": "medication_knowledge_full_v2",
+  "bm25_collection_name": "medication_knowledge_full_v2_hybrid_exp_20260904",
+  "hybrid_collection_name": "medication_knowledge_full_v2_hybrid_exp_20260904",
+  "decision": "KEEP_DENSE",
+  "blocking_reasons": [
+    "NO_ACCURACY_IMPROVEMENT",
+    "HYBRID_EVALUATION_FAILED",
+    "SOURCE_ACCURACY_REGRESSION"
+  ],
+  "warning_reasons": [],
+  "metric_deltas": {
+    "recall_at_20": 0.0,
+    "hit_at_5": 0.0,
+    "mrr": 0.0,
+    "source_accuracy": -0.076923,
+    "evidence_coverage_rate": 0.0,
+    "wrong_target_mixing_count": 0.0,
+    "duplicate_retrieval_rate": 0.0,
+    "search_p95_ms": -102.184
+  }
+}

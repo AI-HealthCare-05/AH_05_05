@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>의약품·영양제 Chat/RAG 다음 개선 후보</title>
+  <style>
+    :root { --bg:#f6f8f7; --paper:#fff; --ink:#18312b; --muted:#5e706b; --line:#d9e5e1; --accent:#1f8a70; --soft:#e9f5f1; --warn:#fff5df; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family:Inter,Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.65; }
+    main { width:min(940px,calc(100% - 32px)); margin:36px auto 72px; }
+    header, section, footer { background:var(--paper); border:1px solid var(--line); border-radius:18px; padding:28px; margin-bottom:18px; }
+    h1 { margin:0 0 10px; font-size:2rem; line-height:1.25; }
+    h2 { margin:0 0 18px; font-size:1.35rem; }
+    h3 { margin:0 0 12px; font-size:1.12rem; }
+    p { max-width:74ch; margin:8px 0; }
+    code { background:#edf2f0; border-radius:6px; padding:2px 6px; }
+    .meta,.chips { display:flex; flex-wrap:wrap; gap:8px; color:var(--muted); }
+    .chip { border-radius:999px; padding:5px 10px; background:var(--soft); color:#176652; font-size:.86rem; }
+    .axes { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
+    .axis { border:1px solid var(--line); border-radius:12px; padding:12px; background:#fbfcfc; }
+    nav ol { columns:2; padding-left:22px; }
+    nav a { color:var(--accent); text-decoration:none; }
+    .idea { border-top:1px solid var(--line); padding-top:24px; margin-top:24px; scroll-margin-top:20px; }
+    .idea:first-of-type { border-top:0; padding-top:0; }
+    .label { color:var(--muted); font-size:.86rem; letter-spacing:.02em; text-transform:uppercase; }
+    .basis { border-left:4px solid var(--accent); background:var(--soft); padding:12px 14px; border-radius:0 10px 10px 0; }
+    .tradeoff { background:var(--warn); padding:10px 14px; border-radius:10px; }
+    table { width:100%; border-collapse:collapse; font-size:.94rem; }
+    th,td { padding:11px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:#f0f6f4; }
+    .rank { color:var(--accent); font-weight:800; margin-right:8px; }
+    footer { color:var(--muted); font-size:.85rem; }
+    @media (max-width:680px) { nav ol { columns:1; } header,section,footer { padding:20px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="chips"><span class="chip">개선 아이디어</span><span class="chip">정확도 우선</span><span class="chip">AI Worker</span></div>
+    <h1>의약품·영양제 Chat/RAG 다음 개선 후보</h1>
+    <p>현재의 결정론적 전처리·계층형 청킹·Dense 검색·메타데이터 재정렬·안전성 검사 위에서, 정확도를 먼저 높이고 복잡성은 측정 결과가 요구할 때만 추가하는 방향이다.</p>
+    <div class="meta"><span>작성일 <time datetime="2026-09-04">2026-09-04</time></span><span>주제 medication-chat-rag-improvements</span><span>범위 현재 저장소의 Chat/RAG</span></div>
+  </header>
+
+  <section id="context">
+    <h2>Codebase Context</h2>
+    <p>현재 검색은 질문 해석, Query Plan, 정확 조합·엔터티·Semantic 단계 검색, 중복 제거, Score Boost와 규칙 기반 Rerank를 거친다. 답변은 RDBMS 승인 규칙과 Qdrant 근거로 초안을 만든 뒤 LLM이 한국어로 정리하고 근거 충실도·출력 안전성 검사를 통과해야 노출된다.</p>
+    <p>대표 14질문 기준 v2 정제 후 Hit@5·MRR·출처 정확도는 1.0이지만, 평가 세트가 작고 실제 사용자 표현·세션 후속 질문·근거 없음·유사 제품 혼입을 충분히 대표하지 않는다. 전체 Chat P95는 Qdrant 검색 P95와 별도로 관리해야 한다.</p>
+  </section>
+
+  <section id="axes">
+    <h2>Topic Axes</h2>
+    <div class="axes">
+      <div class="axis">원문·지식 품질</div><div class="axis">검색 정확도</div><div class="axis">답변·안전성</div><div class="axis">평가·관측성</div><div class="axis">대화 UX·운영</div>
+    </div>
+  </section>
+
+  <section id="ideas">
+    <h2>Ranked Ideas</h2>
+    <nav aria-label="개선 후보 바로가기"><ol>
+      <li><a href="#idea-1">질문별 근거 커버리지 계약</a></li><li><a href="#idea-2">Dense+Sparse 후보 결합</a></li><li><a href="#idea-3">선택적 Reranker 실험</a></li><li><a href="#idea-4">세션 문맥 해석 계층</a></li><li><a href="#idea-5">LangSmith 릴리스 게이트</a></li><li><a href="#idea-6">전처리 커버리지 지도</a></li><li><a href="#idea-7">사용자 피드백 하드 네거티브 루프</a></li>
+    </ol></nav>
+
+    <article class="idea" id="idea-1"><h3><span class="rank">1.</span>질문별 근거 커버리지 계약</h3>
+      <p><span class="label">Description</span><br>질문 의도가 요구하는 FUNCTION·DOSAGE·CAUTION·INTERACTION 각각에 대해 어떤 출처가 확보됐는지 기록하고, 근거가 없는 항목은 LLM 생성 전에 제거한다. 제품 질문은 정확 제품 RDBMS, 성분 질문은 해당 성분 Qdrant, 상호작용은 쌍 근거를 각각 요구한다.</p>
+      <p><span class="label">Axis</span><br>답변·안전성</p>
+      <p class="basis"><strong>direct:</strong> 현재 평가기는 섹션 커버리지를 확인하지만 실제 답변 단계의 항목별 근거 계약은 더 세분화할 여지가 있다. 근거가 맞아도 답변이 틀리는 실패를 검색 실패와 분리할 수 있다.</p>
+      <p><strong>Rationale:</strong> 의료·복약 챗봇에서는 자연스러운 문장보다 각 주장에 근거가 있는지가 우선이다. 검색 성공과 답변 충실도를 연결하는 가장 직접적인 개선이다.</p>
+      <p class="tradeoff"><strong>Downsides:</strong> 스키마와 평가 결과 항목이 늘고 일부 답변이 더 보수적으로 짧아질 수 있다.</p>
+      <div class="chips"><span class="chip">Confidence 95%</span><span class="chip">Complexity Medium</span></div>
+    </article>
+
+    <article class="idea" id="idea-2"><h3><span class="rank">2.</span>Dense+Sparse 후보 결합 A/B 실험</h3>
+      <p><span class="label">Description</span><br>현재 Dense 후보는 유지하고 제품명·성분명·문서 제목·정확한 표현에 강한 BM25/Sparse 후보를 별도로 만든 뒤 RRF 같은 결정론적 방식으로 합친다. 기존 14질문에 통칭·오타·하드 네거티브를 추가해 Dense 단독과 비교한다.</p>
+      <p><span class="label">Axis</span><br>검색 정확도</p>
+      <p class="basis"><strong>direct:</strong> 영어 논문·정확 제품명·희귀 성분은 의미 유사도만으로 후보에 들지 않는 사례가 있었고, 저장소 실험 문서도 Dense 기준선 위 Sparse 결합을 다음 비교 대상으로 기록한다.</p>
+      <p><strong>Rationale:</strong> Reranker는 후보에 없는 정답을 복구할 수 없다. 먼저 후보 회수율을 올리는 실험이 순서상 앞선다.</p>
+      <p class="tradeoff"><strong>Downsides:</strong> 인덱스·결합 로직이 추가되고 일반 단어가 많은 질문은 Sparse 노이즈가 늘 수 있다.</p>
+      <div class="chips"><span class="chip">Confidence 90%</span><span class="chip">Complexity Medium</span></div>
+    </article>
+
+    <article class="idea" id="idea-3"><h3><span class="rank">3.</span>Recall@20 기반 선택적 Reranker 실험</h3>
+      <p><span class="label">Description</span><br>정답이 후보 20개 안에는 있지만 현재 규칙 재정렬 후 Top 5에 들지 못하는 질문만 모아 Cross-encoder를 비교한다. 모든 요청에 적용하지 않고 상위 점수 간격이 작거나 근거 쌍이 충돌하는 경우에만 실행하는 선택적 구조를 검토한다.</p>
+      <p><span class="label">Axis</span><br>검색 정확도</p>
+      <p class="basis"><strong>reasoned:</strong> 현재 규칙 기반 Reranker는 엔터티·섹션 일치에는 강하지만 문장 수준의 질문-근거 관련성을 완전히 판단하지 못한다. 반대로 후보 회수 실패에는 모델 Reranker가 도움이 되지 않는다.</p>
+      <p><strong>Rationale:</strong> 도입 조건을 명확히 하면 정확도 향상 여부와 추가 지연·비용을 분리해서 판단할 수 있다.</p>
+      <p class="tradeoff"><strong>Downsides:</strong> 추가 모델 지연과 비용이 생기며 한국어 의약 문장에 맞는 모델 검증이 필요하다.</p>
+      <div class="chips"><span class="chip">Confidence 82%</span><span class="chip">Complexity High</span></div>
+    </article>
+
+    <article class="idea" id="idea-4"><h3><span class="rank">4.</span>세션 문맥 해석 계층</h3>
+      <p><span class="label">Description</span><br>“그 약은?”, “주의사항은?”, “그러면 같이 먹어도 돼?” 같은 후속 질문에서 이전 턴의 제품·성분·상호작용 쌍을 구조화해 현재 질문에 보충한다. 답변 원문 전체가 아니라 확정된 엔터티와 의도만 짧은 세션 상태로 유지한다.</p>
+      <p><span class="label">Axis</span><br>대화 UX·운영</p>
+      <p class="basis"><strong>direct:</strong> 현재 user prompt에는 축약 이력이 포함되지만 검색 전 Question Resolve와 Query Plan이 대명사·생략된 대상을 안정적으로 이어받는 계약은 별도로 필요하다.</p>
+      <p><strong>Rationale:</strong> 한 채팅 세션에서 자연스러운 후속 질문을 지원하면서도 오래된 진료·다른 약을 잘못 이어붙이는 위험을 제한한다.</p>
+      <p class="tradeoff"><strong>Downsides:</strong> 세션 상태 만료, 새 주제 전환, 복수 후보 시 재질문 규칙이 필요하다.</p>
+      <div class="chips"><span class="chip">Confidence 91%</span><span class="chip">Complexity Medium</span></div>
+    </article>
+
+    <article class="idea" id="idea-5"><h3><span class="rank">5.</span>LangSmith 평가·릴리스 게이트</h3>
+      <p><span class="label">Description</span><br>검색 릴리스마다 동일 평가 세트를 실행하고 Route, 정규화 엔터티, 검색 tier, Recall@20, Top5, 근거 커버리지, fallback 이유, 안전성, P50/P95를 한 보고서로 묶는다. 정확도 또는 안전성 회귀가 있으면 컬렉션 활성화를 막는다.</p>
+      <p><span class="label">Axis</span><br>평가·관측성</p>
+      <p class="basis"><strong>direct:</strong> 현재 LangSmith span과 평가 스키마는 이미 존재하지만, 작은 수동 질문 묶음과 컬렉션 전환을 자동 승인 규칙으로 완전히 연결하는 단계가 남아 있다.</p>
+      <p><strong>Rationale:</strong> “답변이 좋아 보인다”를 반복 가능한 수치와 실패 분류로 바꾸며 v1·v2·토크나이저·검색 전략 비교를 같은 기준으로 만든다.</p>
+      <p class="tradeoff"><strong>Downsides:</strong> 정답 문서와 허용 출처를 지속적으로 관리해야 하며 평가 세트 자체의 편향을 점검해야 한다.</p>
+      <div class="chips"><span class="chip">Confidence 94%</span><span class="chip">Complexity Medium</span></div>
+    </article>
+
+    <article class="idea" id="idea-6"><h3><span class="rank">6.</span>코퍼스 전처리 커버리지 지도</h3>
+      <p><span class="label">Description</span><br>문서 유형별로 페이지 추출 성공률, OCR 필요 페이지, 섹션 인식률, 단위·괄호 오류, 인덱싱 제외 이유를 집계한다. 대표 문서만 통과한 규칙이 전체 동형 문서에서도 유지되는지 샘플링한다.</p>
+      <p><span class="label">Axis</span><br>원문·지식 품질</p>
+      <p class="basis"><strong>direct:</strong> PDF 유형마다 layout, 번호 계층, 표와 참고문헌 구조가 달랐고 비타민 A 같은 문서에서 글자 순서 복원 오류가 실제로 발견됐다.</p>
+      <p><strong>Rationale:</strong> 검색 모델이 아무리 좋아도 원문이 깨지거나 적절한 섹션이 인덱싱되지 않으면 정답 후보를 만들 수 없다.</p>
+      <p class="tradeoff"><strong>Downsides:</strong> 표본 수동 검수 시간이 필요하고 OCR 도메인과 책임 경계를 분명히 해야 한다.</p>
+      <div class="chips"><span class="chip">Confidence 88%</span><span class="chip">Complexity Medium</span></div>
+    </article>
+
+    <article class="idea" id="idea-7"><h3><span class="rank">7.</span>사용자 피드백 기반 하드 네거티브 루프</h3>
+      <p><span class="label">Description</span><br>사용자가 “도움 안 됨”을 선택한 답변에서 개인정보를 제외한 질문 유형, 선택 출처, 잘못 섞인 대상, 실패 구간만 저장한다. 검토된 실패를 평가 YAML의 하드 네거티브와 회귀 테스트로 승격한다.</p>
+      <p><span class="label">Axis</span><br>평가·관측성</p>
+      <p class="basis"><strong>reasoned:</strong> 현재 대표 질문만으로는 실제 사용자의 통칭·오타·생략·복합 질문 분포를 계속 따라가기 어렵다. 실패를 재현 가능한 평가 사례로 전환해야 개선이 누적된다.</p>
+      <p><strong>Rationale:</strong> 피드백 수집을 단순 만족도 UI가 아니라 다음 검색 릴리스의 정답 세트로 연결한다.</p>
+      <p class="tradeoff"><strong>Downsides:</strong> 피드백이 곧 정답은 아니므로 사람 검수, 보존 기간과 개인정보 비식별화가 필요하다.</p>
+      <div class="chips"><span class="chip">Confidence 84%</span><span class="chip">Complexity Medium</span></div>
+    </article>
+  </section>
+
+  <section id="rejections"><h2>Rejection Summary</h2>
+    <table><thead><tr><th>#</th><th>검토한 방향</th><th>제외 이유</th></tr></thead><tbody>
+      <tr><td>1</td><td>전역 유사도 임계값 하향</td><td>관련 없는 약·성분 청크를 근거로 채택할 위험이 커 정확도 우선 원칙과 충돌한다.</td></tr>
+      <tr><td>2</td><td>모든 질문을 LLM으로 오타 교정</td><td>비결정성·비용·지연이 늘고 제품명을 임의 교정할 위험이 있어 현재 후보 인덱스와 신뢰도 분기가 더 적합하다.</td></tr>
+      <tr><td>3</td><td>즉시 LangGraph 전환</td><td>현재 파이프라인은 선형 단계와 제한된 fallback으로 표현 가능하다. 반복 도구 호출·복잡한 상태 분기가 평가로 확인된 뒤 검토해야 한다.</td></tr>
+      <tr><td>4</td><td>관련 원문 전체를 LLM에 전달</td><td>다른 제품·환자 사례 혼입과 토큰 비용을 키운다. 검색·커버리지로 확정한 최소 근거만 전달해야 한다.</td></tr>
+    </tbody></table>
+  </section>
+
+  <footer class="composition-signal">Composed 2026-09-04T00:00+09:00 by ce-ideate from the current AI Worker Chat/RAG codebase and evaluation records.</footer>
+</main>
+</body>
+</html>

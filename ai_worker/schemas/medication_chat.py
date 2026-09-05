@@ -4,11 +4,12 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import (
     MedicationSearchExecutionObservation,
 )
@@ -42,6 +43,7 @@ class MedicationAnswerRewriteStatus(StrEnum):
 class MedicationAnswerFallbackReason(StrEnum):
     GENERATED_DOSAGE_NOT_IN_DRAFT = "GENERATED_DOSAGE_NOT_IN_DRAFT"
     UNSUPPORTED_SAFETY_ASSERTION = "UNSUPPORTED_SAFETY_ASSERTION"
+    UNSUPPORTED_EVIDENCE_SECTION = "UNSUPPORTED_EVIDENCE_SECTION"
     NO_GROUNDED_SOURCES = "NO_GROUNDED_SOURCES"
     CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
     CLIENT_ERROR = "CLIENT_ERROR"
@@ -77,6 +79,23 @@ class MedicationChatSourceKind(StrEnum):
     MEDICATION_GUIDE = "MEDICATION_GUIDE"
     INTERACTION_RULE = "INTERACTION_RULE"
     PUBLIC_KNOWLEDGE = "PUBLIC_KNOWLEDGE"
+
+
+class MedicationEvidenceCoverage(BaseModel):
+    """질문에서 요청한 답변 항목과 실제 근거의 결정론적 대응 결과."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requested_section_types: list[KnowledgeSectionType] = Field(
+        default_factory=list,
+    )
+    covered_section_types: list[KnowledgeSectionType] = Field(
+        default_factory=list,
+    )
+    missing_section_types: list[KnowledgeSectionType] = Field(
+        default_factory=list,
+    )
+    verified_interaction_pair_keys: list[str] = Field(default_factory=list)
 
 
 class MedicationChatRequest(BaseModel):
@@ -193,6 +212,10 @@ class MedicationChatResult(BaseModel):
     schema_version: str = Field(min_length=1)
     context_hash: str | None = Field(default=None, min_length=64, max_length=64)
     search_observation: MedicationSearchExecutionObservation | None = Field(
+        default=None,
+        exclude=True,
+    )
+    evidence_coverage: MedicationEvidenceCoverage | None = Field(
         default=None,
         exclude=True,
     )

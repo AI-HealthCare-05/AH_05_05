@@ -8,6 +8,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunkMetadata,
     KnowledgeDocumentType,
+    KnowledgeSearchMode,
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
@@ -64,6 +65,8 @@ def build_chunk(
     title: str = "건강기능식품 기능성 안내",
     document_type: KnowledgeDocumentType = (KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE),
     document_id: str = "supplement-guide",
+    search_mode: KnowledgeSearchMode = KnowledgeSearchMode.DENSE,
+    dense_similarity_score: float | None = None,
 ) -> RetrievedKnowledgeChunk:
     return RetrievedKnowledgeChunk(
         point_id="point-1",
@@ -72,6 +75,8 @@ def build_chunk(
         embedding_text="비타민 D 섭취 주의",
         token_count=20,
         similarity_score=score,
+        search_mode=search_mode,
+        dense_similarity_score=dense_similarity_score,
         metadata=KnowledgeChunkMetadata(
             source_id="MFDS",
             document_id=document_id,
@@ -88,6 +93,89 @@ def build_chunk(
             content_hash=chunk_id,
         ),
     )
+
+
+async def test_hybrid_rejects_high_rrf_candidate_without_dense_confidence() -> None:
+    candidate = build_chunk(
+        0.9,
+        ingredient_names=["마그네"],
+        section_type=KnowledgeSectionType.DAILY_INTAKE,
+        content="마그네슘 제품의 복용 정보를 설명합니다.",
+        title="마그네슘 제품",
+        search_mode=KnowledgeSearchMode.HYBRID,
+    )
+    store = FakeKnowledgeStore(responses=[[candidate], [candidate]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan("마그네 복용법 알려줘."),
+    )
+
+    assert result.chunks == []
+    assert result.diagnostics.rejected_below_score_count == 2
+
+
+async def test_hybrid_rejects_candidate_whose_dense_confidence_is_too_low() -> None:
+    candidate = build_chunk(
+        0.9,
+        ingredient_names=["마그네"],
+        section_type=KnowledgeSectionType.DAILY_INTAKE,
+        content="마그네슘 제품의 복용 정보를 설명합니다.",
+        title="마그네슘 제품",
+        search_mode=KnowledgeSearchMode.HYBRID,
+        dense_similarity_score=0.40,
+    )
+    store = FakeKnowledgeStore(responses=[[candidate], [candidate]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan("마그네 복용법 알려줘."),
+    )
+
+    assert result.chunks == []
+    assert result.diagnostics.rejected_below_score_count == 2
+
+
+async def test_hybrid_uses_dense_confidence_with_existing_pair_rescue() -> None:
+    execution_plan = build_execution_plan(
+        "칼슘과 철분을 같이 먹어도 되나요?",
+    )
+    candidate = build_chunk(
+        0.9,
+        ingredient_names=["칼슘", "철분"],
+        section_type=KnowledgeSectionType.INTERACTION,
+        content="칼슘과 철분을 함께 섭취할 때의 흡수 영향을 설명합니다.",
+        title="칼슘과 철분 상호작용",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        search_mode=KnowledgeSearchMode.HYBRID,
+        dense_similarity_score=0.46,
+    )
+    candidate.metadata.interaction_pair_keys = execution_plan.interaction_pair_keys
+    store = FakeKnowledgeStore(responses=[[candidate]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v2",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=execution_plan,
+    )
+
+    assert result.chunks == [candidate]
+    assert result.diagnostics.accepted_count == 1
+    assert result.diagnostics.candidate_diagnostics[0].dense_similarity_score == 0.46
 
 
 async def test_search_retries_without_entity_filters_when_filtered_search_is_empty() -> None:
@@ -439,6 +527,7 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
                 "search_tier": "SEMANTIC",
                 "raw_rank": 1,
                 "raw_similarity_score": 0.8,
+                "dense_similarity_score": 0.8,
                 "boost_score": 0.2,
                 "adjusted_score": 1.0,
                 "adjusted_rank": 1,
@@ -455,6 +544,7 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
                 "search_tier": "SEMANTIC",
                 "raw_rank": 2,
                 "raw_similarity_score": 0.54,
+                "dense_similarity_score": 0.54,
                 "boost_score": 0.2,
                 "adjusted_score": 0.74,
                 "adjusted_rank": 2,
@@ -471,6 +561,7 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
                 "search_tier": "SEMANTIC",
                 "raw_rank": 3,
                 "raw_similarity_score": 0.59,
+                "dense_similarity_score": 0.59,
                 "boost_score": 0.08,
                 "adjusted_score": 0.67,
                 "adjusted_rank": 3,
@@ -501,6 +592,31 @@ async def test_search_excludes_results_below_minimum_score() -> None:
     )
 
     assert [result.similarity_score for result in results] == [0.8]
+
+
+async def test_search_does_not_apply_dense_cosine_threshold_to_bm25_score() -> None:
+    bm25_result = build_chunk(
+        0.2,
+        ingredient_names=["비타민 D"],
+        section_type=KnowledgeSectionType.CAUTION,
+    ).model_copy(update={"search_mode": KnowledgeSearchMode.BM25})
+    store = FakeKnowledgeStore(responses=[[bm25_result]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-baseline-v1",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "비타민 D 주의사항을 알려줘",
+            supplement_names=["비타민 D"],
+        ),
+    )
+
+    assert result.chunks == [bm25_result]
+    assert result.diagnostics.rejected_below_score_count == 0
 
 
 async def test_candidate_diagnostics_are_deduplicated_and_limited_to_twenty() -> None:

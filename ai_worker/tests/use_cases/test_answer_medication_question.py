@@ -786,6 +786,7 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
         "interaction_rules.search",
         "rag.retrieve",
         "medication_guide.lookup",
+        "answer.evidence_coverage",
         "answer.draft",
         "llm.generate",
         "safety.validate",
@@ -830,6 +831,28 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert llm_outputs["fallback_reason"] is None
     assert len(llm_outputs["draft_answer_hash"]) == 64
     assert len(llm_outputs["generated_answer_hash"]) == 64
+
+
+async def test_execute_records_requested_covered_and_missing_answer_sections() -> None:
+    tracer = RecordingChatTracer()
+    await build_use_case(
+        lookup=MedicationGuideLookup(
+            guide=build_guide().model_copy(
+                update={"usage_instructions": ""},
+            )
+        ),
+        tracer=tracer,
+    ).execute(
+        build_request("타이레놀의 효능과 복용법을 알려줘"),
+    )
+
+    outputs = next(span.outputs for span in tracer.spans if span.name == "answer.evidence_coverage")
+    assert outputs == {
+        "requested_section_types": ["FUNCTION", "DAILY_INTAKE"],
+        "covered_section_types": ["FUNCTION"],
+        "missing_section_types": ["DAILY_INTAKE"],
+        "verified_interaction_pair_count": 0,
+    }
 
 
 async def test_execute_records_fallback_reason_without_answer_content() -> None:

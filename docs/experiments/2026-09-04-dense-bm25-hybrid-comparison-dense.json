@@ -1,0 +1,467 @@
+{
+  "schema_version": "medication-search-baseline-report-v1",
+  "dataset_version": "knowledge-full-v2-interaction-metadata",
+  "collection_name": "medication_knowledge_full_v2",
+  "search_mode": "DENSE",
+  "embedding_model_name": "text-embedding-3-small",
+  "embedding_dimension": 1536,
+  "min_similarity_score": 0.65,
+  "final_top_k": 5,
+  "candidate_top_k": 20,
+  "git_commit": "9c3c27c29c75cade5a56447895d09f3f6b200205",
+  "working_tree_dirty": true,
+  "evaluation_file_sha256": "d1171bf4e9b6933328dae3c293246e0952ebf4e1925294666f31d948dbb0652d",
+  "query_count": 14,
+  "resolution_accuracy": 1.0,
+  "scope_accuracy": 1.0,
+  "correction_accuracy": 1.0,
+  "false_correction_rate": 0.0,
+  "ambiguity_accuracy": 1.0,
+  "recall_at_20": 1.0,
+  "hit_at_5": 1.0,
+  "mrr": 1.0,
+  "source_accuracy": 1.0,
+  "evidence_coverage_rate": 1.0,
+  "wrong_target_mixing_count": 0,
+  "duplicate_retrieval_rate": 0.0,
+  "fallback_rate": 0.416667,
+  "search_p50_ms": 261.06,
+  "search_p95_ms": 566.592,
+  "passed": true,
+  "results": [
+    {
+      "query_id": "exact-product-magnesium",
+      "expression_category": "EXACT_PRODUCT",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "마그오캡슐500mg의 효능과 복용법을 알려줘.",
+      "observed_entity_names": [
+        "마그오캡슐500mg"
+      ],
+      "observed_section_types": [
+        "FUNCTION",
+        "DAILY_INTAKE"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 555.434,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "typo-brand-tylenol",
+      "expression_category": "PRODUCT_TYPO",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "타이레놀의 효능과 주의사항을 알려줘.",
+      "observed_entity_names": [
+        "타이레놀"
+      ],
+      "observed_section_types": [
+        "FUNCTION",
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 311.539,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "typo-ingredient-acetaminophen",
+      "expression_category": "INGREDIENT_TYPO",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "아세트아미노펜 부작용을 알려줘.",
+      "observed_entity_names": [
+        "아세트아미노펜"
+      ],
+      "observed_section_types": [
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY"
+      ],
+      "candidate_count": 15,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "kpicia_drug_encyclopedia-33898a903b6cbca7",
+        "kpicia_drug_encyclopedia-33898a903b6cbca7"
+      ],
+      "selected_chunk_ids": [
+        "3ea28315f394fec5ef1038dbf21cec7a46c946802d4dd24d7ef7b1e28069214d",
+        "814ee5d1767a1b202bd381c15691e7804f1e4cd438860c17ba3d69e139bddd5e"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 566.592,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "keyboard-tail-tylenol",
+      "expression_category": "KEYBOARD_TYPO",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "타이레놀 복용법 알려줘.",
+      "observed_entity_names": [
+        "타이레놀"
+      ],
+      "observed_section_types": [
+        "DAILY_INTAKE"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 276.346,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "spacing-magnesium",
+      "expression_category": "SPACING_VARIATION",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "AUTO_CORRECTED",
+      "observed_resolved_question": "마그네슘은 왜 먹나요?",
+      "observed_entity_names": [
+        "마그네슘"
+      ],
+      "observed_section_types": [
+        "FUNCTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY"
+      ],
+      "candidate_count": 3,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "food_safety_korea_supplement_ingredients-d4b61ec6752184e6"
+      ],
+      "selected_chunk_ids": [
+        "991b484f068c642b5fe215ae8925d4196b0257c94f6226943eb187e8868d341d"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 237.709,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "common-name-tylenol",
+      "expression_category": "COMMON_NAME",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "타이레놀의 효능과 주의사항을 알려줘.",
+      "observed_entity_names": [
+        "타이레놀"
+      ],
+      "observed_section_types": [
+        "FUNCTION",
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 261.06,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "ambiguous-near-product",
+      "expression_category": "AMBIGUOUS",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "CLARIFICATION_REQUIRED",
+      "observed_resolved_question": "마그 복용법 알려줘.",
+      "observed_entity_names": [],
+      "observed_section_types": [],
+      "retrieval_executed": false,
+      "attempted_search_tiers": [],
+      "candidate_count": 0,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": false,
+      "search_latency_ms": 0.0,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "short-unsafe-correction",
+      "expression_category": "SHORT_EXPRESSION",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNRESOLVED",
+      "observed_resolved_question": "찰 영양제는 왜 먹나요?",
+      "observed_entity_names": [],
+      "observed_section_types": [
+        "FUNCTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": false,
+      "search_latency_ms": 169.288,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "out-of-scope-hungry",
+      "expression_category": "OUT_OF_SCOPE",
+      "observed_scope": "OUT_OF_SCOPE",
+      "observed_resolution_status": "UNRESOLVED",
+      "observed_resolved_question": "오늘 너무 배고파요.",
+      "observed_entity_names": [],
+      "observed_section_types": [],
+      "retrieval_executed": false,
+      "attempted_search_tiers": [],
+      "candidate_count": 0,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": false,
+      "search_latency_ms": 0.0,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "in-scope-no-evidence",
+      "expression_category": "IN_SCOPE_NO_EVIDENCE",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNRESOLVED",
+      "observed_resolved_question": "처음 보는 약의 복용 시 주의사항을 알려줘.",
+      "observed_entity_names": [
+        "처음"
+      ],
+      "observed_section_types": [
+        "CAUTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "ENTITY",
+        "SEMANTIC"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": null,
+      "selected_document_ids": [],
+      "selected_chunk_ids": [],
+      "hit_at_5": null,
+      "recall_at_20": null,
+      "reciprocal_rank": null,
+      "evidence_coverage_rate": null,
+      "fallback_used": true,
+      "search_latency_ms": 306.416,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "drug-drug-warfarin-metronidazole",
+      "expression_category": "DRUG_DRUG",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "와파린과 메트로니다졸을 같이 복용해도 되나요?",
+      "observed_entity_names": [
+        "와파린",
+        "메트로니다졸"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 3,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "kpicia_pharm_review-e8127943c02a5a76",
+        "kpicia_pharm_review-e8127943c02a5a76"
+      ],
+      "selected_chunk_ids": [
+        "4598144c343d3c4449aa8a43336d06d775b16a16b29a6eef624688357d4dce27",
+        "bd631f91887bc1fb5d41ac5c91121f2aa04e31c8872beaf1c559187d3d1d691f"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 234.319,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "drug-supplement-warfarin-vitamin-k",
+      "expression_category": "DRUG_SUPPLEMENT",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "와파린과 비타민 K 영양제를 같이 먹어도 되나요?",
+      "observed_entity_names": [
+        "와파린",
+        "비타민 K"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 1,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "kpicia_pharm_review-c4ea8e68b35b65b3"
+      ],
+      "selected_chunk_ids": [
+        "1cd9f8e1782c9031297ba6398279761356c1b603d8986165e3f442ac4b393eca"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 248.974,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "supplement-supplement-calcium-iron",
+      "expression_category": "SUPPLEMENT_SUPPLEMENT",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "칼슘과 철분을 같이 먹어도 되나요?",
+      "observed_entity_names": [
+        "칼슘",
+        "철분"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 20,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "research_supplement_interactions-7983c60e9a092828",
+        "research_supplement_interactions-7983c60e9a092828"
+      ],
+      "selected_chunk_ids": [
+        "e29a5876ef80ffbf8324c6dfb7139aa8a4a878d1186f89a0c16f307345bd0853",
+        "de06581cabb60c0b0670689193ed937a3a1a28b1232621b8f23c3446435e00d0"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 264.308,
+      "failure_reasons": [],
+      "passed": true
+    },
+    {
+      "query_id": "drug-food-fexofenadine-fruit-juice",
+      "expression_category": "DRUG_FOOD",
+      "observed_scope": "IN_SCOPE",
+      "observed_resolution_status": "UNCHANGED",
+      "observed_resolved_question": "펙소페나딘을 먹을 때 과일주스를 피해야 하나요?",
+      "observed_entity_names": [
+        "펙소페나딘",
+        "과일주스"
+      ],
+      "observed_section_types": [
+        "INTERACTION"
+      ],
+      "retrieval_executed": true,
+      "attempted_search_tiers": [
+        "EXACT_PAIR"
+      ],
+      "candidate_count": 1,
+      "candidate_first_relevant_rank": 1,
+      "selected_document_ids": [
+        "mfds_drug_food_interaction_guide-53bfb2433f48a8b0"
+      ],
+      "selected_chunk_ids": [
+        "bb68ade3c615d3aee922086e90193c47fea55c3e0b76dcd1ce0351db28f09ce5"
+      ],
+      "hit_at_5": true,
+      "recall_at_20": true,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage_rate": 1.0,
+      "fallback_used": false,
+      "search_latency_ms": 234.896,
+      "failure_reasons": [],
+      "passed": true
+    }
+  ]
+}

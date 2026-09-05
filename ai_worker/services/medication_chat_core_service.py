@@ -22,6 +22,9 @@ from ai_worker.rag.embeddings.openai_embedding_provider import (
 from ai_worker.rag.retrievers.medication_knowledge_retriever import (
     MedicationKnowledgeRetriever,
 )
+from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
+    QdrantHybridKnowledgeStore,
+)
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
 )
@@ -42,6 +45,7 @@ from ai_worker.repositories.supplement_ingredient_catalog_repository import (
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
+from ai_worker.schemas.knowledge import KnowledgeSearchMode
 from ai_worker.schemas.medication_chat import (
     MedicationChatProgressCallback,
     MedicationChatRequest,
@@ -96,11 +100,18 @@ def build_medication_chat_core_service(
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
     )
-    vector_store = QdrantKnowledgeStore(
-        client=qdrant_client,
-        collection_name=settings.KNOWLEDGE_QDRANT_COLLECTION,
-        vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
-    )
+    vector_store_kwargs = {
+        "client": qdrant_client,
+        "collection_name": settings.KNOWLEDGE_QDRANT_COLLECTION,
+        "vector_size": settings.OPENAI_EMBEDDING_DIMENSIONS,
+    }
+    if settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.DENSE:
+        vector_store = QdrantKnowledgeStore(**vector_store_kwargs)
+    else:
+        vector_store = QdrantHybridKnowledgeStore(
+            search_mode=settings.KNOWLEDGE_SEARCH_MODE,
+            **vector_store_kwargs,
+        )
     supplement_ingredient_catalog = CompositeSupplementIngredientCatalog(
         sources=[
             DbSupplementIngredientCatalog(),

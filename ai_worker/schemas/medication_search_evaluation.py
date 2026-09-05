@@ -3,10 +3,26 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ai_worker.schemas.knowledge import KnowledgeSectionType
+from ai_worker.schemas.knowledge import (
+    KnowledgeSearchMode,
+    KnowledgeSectionType,
+)
 from ai_worker.schemas.medication_search import (
     MedicationExpressionResolutionStatus,
     MedicationQuestionScope,
+)
+
+REQUIRED_METRIC_RATIONALE_KEYS = frozenset(
+    {
+        "recall_at_20",
+        "hit_at_5",
+        "mrr",
+        "source_accuracy",
+        "evidence_coverage_rate",
+        "wrong_target_mixing_count",
+        "duplicate_retrieval_rate",
+        "search_p95_ms",
+    }
 )
 
 
@@ -27,6 +43,13 @@ class MedicationExpressionCategory(StrEnum):
     DRUG_FOOD = "DRUG_FOOD"
 
 
+class MedicationEvaluationEvidenceKind(StrEnum):
+    RDBMS_GUIDE = "RDBMS_GUIDE"
+    QDRANT_GOLD = "QDRANT_GOLD"
+    NO_EVIDENCE = "NO_EVIDENCE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
 class MedicationSearchBaselineCase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -40,6 +63,10 @@ class MedicationSearchBaselineCase(BaseModel):
     expected_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     expected_document_ids: list[str] = Field(default_factory=list)
     forbidden_document_ids: list[str] = Field(default_factory=list)
+    expect_no_evidence: bool = False
+    evidence_kind: MedicationEvaluationEvidenceKind | None = None
+    evaluation_rationale: str | None = None
+    gold_document_rationales: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("query_id", "question")
     @classmethod
@@ -58,6 +85,32 @@ class MedicationSearchBaselineCase(BaseModel):
     def normalize_unique_values(cls, values: list[str]) -> list[str]:
         return list(dict.fromkeys(value.strip() for value in values if value.strip()))
 
+    @field_validator("evaluation_rationale")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("gold_document_rationales")
+    @classmethod
+    def normalize_document_rationales(
+        cls,
+        values: dict[str, str],
+    ) -> dict[str, str]:
+        return {
+            document_id.strip(): rationale.strip()
+            for document_id, rationale in values.items()
+            if document_id.strip() and rationale.strip()
+        }
+
+    @model_validator(mode="after")
+    def require_consistent_evidence_expectation(self):
+        if self.expect_no_evidence and self.expected_document_ids:
+            raise ValueError("expect_no_evidence와 expected_document_ids는 함께 지정할 수 없습니다.")
+        return self
+
 
 class MedicationSearchBaselineManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -69,7 +122,28 @@ class MedicationSearchBaselineManifest(BaseModel):
     min_similarity_score: float = Field(default=0.65, ge=0.0, le=1.0)
     final_top_k: Literal[5] = 5
     candidate_top_k: Literal[20] = 20
+    experiment_goal: str | None = None
+    activation_rule: str | None = None
+    metric_rationales: dict[str, str] = Field(default_factory=dict)
     cases: list[MedicationSearchBaselineCase] = Field(min_length=1)
+
+    @field_validator("experiment_goal", "activation_rule")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("metric_rationales")
+    @classmethod
+    def normalize_metric_rationales(
+        cls,
+        values: dict[str, str],
+    ) -> dict[str, str]:
+        return {
+            name.strip(): rationale.strip() for name, rationale in values.items() if name.strip() and rationale.strip()
+        }
 
     @model_validator(mode="after")
     def validate_contract(self) -> "MedicationSearchBaselineManifest":
@@ -80,12 +154,37 @@ class MedicationSearchBaselineManifest(BaseModel):
         query_ids = [case.query_id for case in self.cases]
         if len(query_ids) != len(set(query_ids)):
             raise ValueError("평가 query_id는 중복될 수 없습니다.")
+        if self.schema_version == "medication-search-baseline-v2":
+            self._validate_v2_contract()
         return self
+
+    def _validate_v2_contract(self) -> None:
+        if not self.experiment_goal:
+            raise ValueError("v2 평가에는 실험 목적이 필요합니다.")
+        if not self.activation_rule:
+            raise ValueError("v2 평가에는 검색 방식 채택 기준이 필요합니다.")
+        missing_metrics = REQUIRED_METRIC_RATIONALE_KEYS.difference(self.metric_rationales)
+        if missing_metrics:
+            raise ValueError("v2 평가에는 모든 지표 선정 근거가 필요합니다: " + ", ".join(sorted(missing_metrics)))
+        for case in self.cases:
+            if case.evidence_kind is None or not case.evaluation_rationale:
+                raise ValueError(f"{case.query_id}: 근거 유형과 질문별 실험 근거가 필요합니다.")
+            expected_documents = set(case.expected_document_ids)
+            explained_documents = set(case.gold_document_rationales)
+            if case.evidence_kind == MedicationEvaluationEvidenceKind.QDRANT_GOLD:
+                if not expected_documents or expected_documents != explained_documents:
+                    raise ValueError(f"{case.query_id}: 모든 정답 문서에 골드 문서 선정 근거가 필요합니다.")
+            elif expected_documents or explained_documents:
+                raise ValueError(f"{case.query_id}: QDRANT_GOLD가 아닌 항목에는 정답 문서 ID를 지정할 수 없습니다.")
 
 
 class MedicationSearchBaselineCaseResult(BaseModel):
     query_id: str
     expression_category: MedicationExpressionCategory
+    evidence_kind: MedicationEvaluationEvidenceKind | None = None
+    evaluation_rationale: str | None = None
+    expected_document_ids: list[str] = Field(default_factory=list)
+    gold_document_rationales: dict[str, str] = Field(default_factory=dict)
     observed_scope: MedicationQuestionScope
     observed_resolution_status: MedicationExpressionResolutionStatus
     observed_resolved_question: str
@@ -100,6 +199,11 @@ class MedicationSearchBaselineCaseResult(BaseModel):
     hit_at_5: bool | None = None
     recall_at_20: bool | None = None
     reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence_coverage_rate: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
     fallback_used: bool = False
     search_latency_ms: float = Field(ge=0.0)
     failure_reasons: list[str] = Field(default_factory=list)
@@ -110,6 +214,10 @@ class MedicationSearchBaselineReport(BaseModel):
     schema_version: str = "medication-search-baseline-report-v1"
     dataset_version: str
     collection_name: str
+    search_mode: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
+    experiment_goal: str | None = None
+    activation_rule: str | None = None
+    metric_rationales: dict[str, str] = Field(default_factory=dict)
     embedding_model_name: str | None = None
     embedding_dimension: int | None = Field(default=None, ge=1)
     min_similarity_score: float = Field(ge=0.0, le=1.0)
@@ -128,6 +236,7 @@ class MedicationSearchBaselineReport(BaseModel):
     hit_at_5: float = Field(ge=0.0, le=1.0)
     mrr: float = Field(ge=0.0, le=1.0)
     source_accuracy: float = Field(ge=0.0, le=1.0)
+    evidence_coverage_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     wrong_target_mixing_count: int = Field(ge=0)
     duplicate_retrieval_rate: float = Field(ge=0.0, le=1.0)
     fallback_rate: float = Field(ge=0.0, le=1.0)
@@ -135,3 +244,18 @@ class MedicationSearchBaselineReport(BaseModel):
     search_p95_ms: float = Field(ge=0.0)
     passed: bool
     results: list[MedicationSearchBaselineCaseResult]
+
+
+class MedicationSearchModeDecision(StrEnum):
+    KEEP_DENSE = "KEEP_DENSE"
+    ACTIVATE_HYBRID = "ACTIVATE_HYBRID"
+
+
+class MedicationSearchModeComparisonReport(BaseModel):
+    dense_collection_name: str
+    bm25_collection_name: str
+    hybrid_collection_name: str
+    decision: MedicationSearchModeDecision
+    blocking_reasons: list[str] = Field(default_factory=list)
+    warning_reasons: list[str] = Field(default_factory=list)
+    metric_deltas: dict[str, float] = Field(default_factory=dict)
