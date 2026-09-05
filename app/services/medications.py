@@ -1,25 +1,35 @@
+import base64
 from datetime import date, datetime, time, timedelta
 from typing import cast
+
+from tortoise.expressions import Q
 
 from app.core import config
 from app.core.exceptions import (
     InvalidDoseDateError,
     InvalidDoseDateRangeError,
     InvalidDoseSlotError,
+    MedicationNoteNotFoundError,
     MedicationRecordForbiddenError,
     MedicationRecordNotFoundError,
 )
 from app.dtos.medications import (
+    CareEpisodeAliasResponse,
+    CreateMedicationNoteRequest,
     MedicationDoseResponse,
     MedicationMealTimes,
+    MedicationNoteListResponse,
+    MedicationNoteMedicationResponse,
+    MedicationNoteResponse,
     MedicationOverview,
     MedicationOverviewItem,
     MedicationStart,
     SaveMedicationDoseRequest,
+    UpdateMedicationNoteRequest,
 )
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, MealSlot
-from app.models.medications import Medication, MedicationDose
+from app.models.medications import Medication, MedicationDose, MedicationNote
 from app.models.users import User, UserSettings
 from app.services.medication_period import medication_end_date, resolve_medication_overview_range
 
@@ -116,6 +126,188 @@ class MedicationService:
         episode.updated_at = datetime.now(config.TIMEZONE)
         await episode.save(update_fields=["status", "updated_at"])
 
+    async def update_episode_alias(
+        self,
+        user: User,
+        record_id: int,
+        alias: str | None,
+    ) -> CareEpisodeAliasResponse:
+        """본인 처방의 표시 별칭만 변경한다.
+
+        별칭은 OCR이 만든 ``title``과 별개의 사용자 표시 값이다. 소유자가 아닌 처방은
+        존재 여부를 숨기기 위해 기존 취소 API와 달리 404로 처리한다.
+        """
+        episode = await self._get_owned_episode(record_id, user)
+        normalized_alias = alias.strip() if alias is not None else None
+        episode.alias = normalized_alias or None
+        episode.updated_at = datetime.now(config.TIMEZONE)
+        await episode.save(update_fields=["alias", "updated_at"])
+        return CareEpisodeAliasResponse(alias=episode.alias)
+
+    async def create_note(
+        self,
+        user: User,
+        request: CreateMedicationNoteRequest,
+    ) -> MedicationNoteResponse:
+        episode = await self._get_owned_episode(request.care_episode_id, user)
+        if request.medication_id is not None:
+            await self._get_episode_medication(episode.id, request.medication_id)
+        note = await MedicationNote.create(
+            user_id=user.id,
+            care_episode_id=episode.id,
+            medication_id=request.medication_id,
+            dosed_at=request.dosed_at,
+            body=request.body,
+        )
+        return await self._note_response(note)
+
+    async def list_notes_page(
+        self,
+        user: User,
+        *,
+        episode_id: int | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> MedicationNoteListResponse:
+        query = MedicationNote.filter(user_id=user.id)
+        if episode_id is not None:
+            query = query.filter(care_episode_id=episode_id)
+        total = await query.count()
+        cursor_key = self._decode_note_cursor(cursor)
+        if cursor_key is not None:
+            cursor_dosed_at, cursor_id = cursor_key
+            query = query.filter(
+                Q(dosed_at__lt=cursor_dosed_at)
+                | (Q(dosed_at=cursor_dosed_at) & Q(id__lt=cursor_id))
+            )
+
+        page = list(await query.order_by("-dosed_at", "-id").limit(limit + 1))
+        has_next = len(page) > limit
+        page = page[:limit]
+        next_cursor = self._encode_note_cursor(page[-1]) if has_next and page else None
+        return MedicationNoteListResponse(
+            items=[await self._note_response(note) for note in page],
+            total=total,
+            next_cursor=next_cursor,
+        )
+
+    async def list_notes(
+        self,
+        user: User,
+        *,
+        episode_id: int | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> list[MedicationNoteResponse]:
+        page = await self.list_notes_page(
+            user,
+            episode_id=episode_id,
+            limit=limit,
+            cursor=cursor,
+        )
+        return page.items
+
+    async def get_note(self, user: User, note_id: int) -> MedicationNoteResponse:
+        note = await self._get_owned_note(user, note_id)
+        return await self._note_response(note)
+
+    async def update_note(
+        self,
+        user: User,
+        note_id: int,
+        request: UpdateMedicationNoteRequest,
+    ) -> MedicationNoteResponse:
+        note = await self._get_owned_note(user, note_id)
+        if "medication_id" in request.model_fields_set:
+            if request.medication_id is not None:
+                await self._get_episode_medication(note.care_episode_id, request.medication_id)
+            note.medication_id = request.medication_id
+        if "dosed_at" in request.model_fields_set:
+            note.dosed_at = request.dosed_at
+        if "body" in request.model_fields_set:
+            note.body = request.body
+        note.updated_at = datetime.now(config.TIMEZONE)
+        await note.save(update_fields=["medication_id", "dosed_at", "body", "updated_at"])
+        return await self._note_response(note)
+
+    async def delete_note(self, user: User, note_id: int) -> None:
+        note = await self._get_owned_note(user, note_id)
+        await note.delete()
+
+    @staticmethod
+    async def _get_owned_episode(record_id: int, user: User) -> CareEpisode:
+        episode = await CareEpisode.get_or_none(id=record_id)
+        if episode is None or cast(int, episode.user_id) != user.id:  # type: ignore[attr-defined]
+            raise MedicationRecordNotFoundError()
+        return episode
+
+    @staticmethod
+    async def _get_episode_medication(episode_id: int, medication_id: int) -> Medication:
+        medication = await Medication.get_or_none(id=medication_id, care_episode_id=episode_id)
+        if medication is None:
+            raise MedicationRecordNotFoundError()
+        return medication
+
+    @staticmethod
+    async def _get_owned_note(user: User, note_id: int) -> MedicationNote:
+        note = await MedicationNote.get_or_none(id=note_id, user_id=user.id)
+        if note is None:
+            raise MedicationNoteNotFoundError()
+        return note
+
+    @staticmethod
+    async def _note_response(note: MedicationNote) -> MedicationNoteResponse:
+        episode = await CareEpisode.get(id=note.care_episode_id)
+        medications = await Medication.filter(care_episode_id=episode.id).order_by("id")
+        available_medications = [
+            MedicationNoteMedicationResponse(
+                id=medication.id,
+                name=medication.name,
+                dose=medication.strength,
+            )
+            for medication in medications
+        ]
+        selected_medication = next(
+            (medication for medication in available_medications if medication.id == note.medication_id),
+            None,
+        )
+        return MedicationNoteResponse(
+            id=note.id,
+            care_episode_id=cast(int, note.care_episode_id),  # type: ignore[attr-defined]
+            care_episode_title=episode.title,
+            care_episode_alias=episode.alias,
+            care_episode_start_date=episode.medication_start_date,
+            care_episode_status=episode.status,
+            available_medications=available_medications,
+            medication_id=cast(int | None, note.medication_id),  # type: ignore[attr-defined]
+            medication=selected_medication,
+            dosed_at=note.dosed_at,
+            body=note.body,
+            created_at=note.created_at,
+            updated_at=note.updated_at,
+        )
+
+    @staticmethod
+    def _encode_note_cursor(note: MedicationNote) -> str:
+        value = f"{note.dosed_at.isoformat()}|{note.id}"
+        return base64.urlsafe_b64encode(value.encode()).decode().rstrip("=")
+
+    @staticmethod
+    def _decode_note_cursor(cursor: str | None) -> tuple[datetime, int] | None:
+        if not cursor:
+            return None
+        try:
+            padded = cursor + "=" * (-len(cursor) % 4)
+            value = base64.urlsafe_b64decode(padded.encode()).decode()
+            dosed_at_value, note_id_value = value.rsplit("|", 1)
+            dosed_at = datetime.fromisoformat(dosed_at_value)
+            note_id = int(note_id_value)
+            if note_id <= 0:
+                return None
+            return dosed_at, note_id
+        except (ValueError, UnicodeDecodeError, base64.binascii.Error):
+            return None
+
     @staticmethod
     async def _get_episode(user: User, record_id: int) -> CareEpisode:
         episode = await CareEpisode.get_or_none(id=record_id)
@@ -177,7 +369,7 @@ class MedicationService:
             for medication in medications
         ]
         end_date = medication_end_date(episode, medications)
-        return MedicationOverview(
+        overview = MedicationOverview(
             record_id=episode.id,
             document_image_url=(
                 f"/api/v1/ocr/jobs/{episode.source_ocr_job_id}/image" if episode.source_ocr_job_id is not None else ""
@@ -189,6 +381,9 @@ class MedicationService:
             meal_times=meal_times,
             medications=items,
         )
+        if episode.alias is not None:
+            overview.alias = episode.alias
+        return overview
 
     @staticmethod
     def _medication_item(

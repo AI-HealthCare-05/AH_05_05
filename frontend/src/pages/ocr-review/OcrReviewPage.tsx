@@ -305,6 +305,7 @@ export function OcrReviewPage() {
             : {}),
           ...(medication.days !== undefined ? { days: medication.days } : {}),
         })),
+        alias: episodeAlias.trim() || null,
       });
       releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
@@ -448,7 +449,8 @@ export function OcrReviewPage() {
         <Input
           label="복약 별칭 (선택)"
           aria-label="복약 별칭"
-          placeholder="감기약"
+          placeholder="예: 감기약"
+          maxLength={50}
           value={episodeAlias}
           onChange={(event) => setEpisodeAlias(event.target.value)}
           disabled={confirmedReviewMode}

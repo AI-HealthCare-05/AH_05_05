@@ -494,6 +494,10 @@ class MedicationGuideOcrJobService:
                 )
                 if episode is None or episode.confirmation_hash != confirmation_hash or episode.confirmed_at is None:
                     raise OcrJobStateConflictError()
+                if "alias" in request.model_fields_set:
+                    episode.alias = request.alias
+                    episode.updated_at = now
+                    await episode.save(using_db=connection, update_fields=["alias", "updated_at"])
                 return self._confirmed(job, episode)
             if job.status != OcrJobStatus.READY_FOR_REVIEW:
                 raise OcrJobStateConflictError()
@@ -509,6 +513,7 @@ class MedicationGuideOcrJobService:
                 using_db=connection,
                 user_id=user.id,
                 title=f"{dispensing_date.isoformat()} 조제약 복약안내",
+                alias=request.alias,
                 status=CareEpisodeStatus.ACTIVE,
                 medication_start_date=dispensing_date,
                 medication_days=medication_days,
@@ -523,7 +528,7 @@ class MedicationGuideOcrJobService:
             episode.updated_at = now
             await episode.save(
                 using_db=connection,
-                update_fields=["source_ocr_job_id", "confirmation_hash", "confirmed_at", "updated_at"],
+                update_fields=["alias", "source_ocr_job_id", "confirmation_hash", "confirmed_at", "updated_at"],
             )
 
             for item in request.medications:
@@ -810,7 +815,7 @@ class MedicationGuideOcrJobService:
     @staticmethod
     def _confirmation_hash(request: MedicationGuideConfirmRequest) -> str:
         canonical = json.dumps(
-            request.model_dump(mode="json", by_alias=True),
+            request.model_dump(mode="json", by_alias=True, exclude={"alias"}),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

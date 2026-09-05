@@ -260,13 +260,16 @@ def _set_private_response_headers(response: Response) -> None:
 
 
 def _to_service_confirmation(request: DocumentOcrConfirmRequest) -> MedicationGuideConfirmRequest:
-    return MedicationGuideConfirmRequest(
-        dispensing_date=request.dispensed_date,
-        medications=[
+    payload: dict[str, object] = {
+        "dispensing_date": request.dispensed_date,
+        "medications": [
             MedicationConfirmation.model_validate(medication.model_dump(mode="json", by_alias=True))
             for medication in request.medications
         ],
-    )
+    }
+    if "alias" in request.model_fields_set:
+        payload["alias"] = request.alias
+    return MedicationGuideConfirmRequest.model_validate(payload)
 
 
 def _to_public_ocr_response(status_response: OcrJobStatusResponse) -> DocumentOcrStatusResponse:

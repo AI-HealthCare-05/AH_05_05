@@ -475,3 +475,119 @@ test('복약 메모는 작성·수정·삭제할 수 있다', async ({ page }) =
   await expect(page).toHaveURL('/medications/notes');
   await expect(page.getByText('수정한 메모예요.')).toHaveCount(0);
 });
+
+test('복약 메모 목록은 더 보기로 전체 개수를 유지하며 페이지를 이어서 연다', async ({ page }) => {
+  await page.addInitScript(() => {
+    const notes = Array.from({ length: 25 }, (_, index) => ({
+      id: index + 1,
+      careEpisodeId: 12,
+      careEpisodeTitle: '2026-08-22 조제약 복약안내',
+      careEpisodeAlias: '감기약',
+      careEpisodeStartDate: '2026-08-22',
+      careEpisodeStatus: 'ACTIVE',
+      availableMedications: [],
+      medicationId: null,
+      medication: null,
+      dosedAt: '2026-09-03T08:00:00',
+      body: `페이지 메모 ${index + 1}`,
+      createdAt: '2026-09-03T15:20:00',
+      updatedAt: null,
+    }));
+    sessionStorage.setItem(
+      'rxvita.mock.medication-notes:feature-252-medication%40example.com',
+      JSON.stringify(notes),
+    );
+  });
+  await page.goto('/medications/notes');
+  await expect(page.getByRole('heading', { name: '복약 메모 25개', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '더 보기', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '더 보기', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '복약 메모 25개', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '더 보기', exact: true })).toHaveCount(0);
+});
+
+test('복약 메모 저장 실패는 입력을 보존하고 재시도할 수 있다', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('rxvita.mock.medication-notes:fail-create-once', '1');
+  });
+
+  await page.goto('/medications/notes/new');
+  await page.getByLabel('처방').selectOption('12');
+  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
+  await page.getByLabel('복용 후 느낀 점').fill('재시도 메모');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('잠시 후 다시 시도해주세요.');
+  await expect(page.getByLabel('복용 후 느낀 점')).toHaveValue('재시도 메모');
+  await expect(page.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page).toHaveURL('/medications/notes');
+  await expect(page.getByText('재시도 메모', { exact: true })).toBeVisible();
+});
+
+test('복약 메모 저장·삭제 중 중복 클릭을 하나의 요청으로 제한한다', async ({ page }) => {
+  await page.goto('/medications/notes/new');
+  await page.getByLabel('처방').selectOption('12');
+  await page.getByLabel('약').selectOption('301');
+  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
+  await page.getByLabel('복용 후 느낀 점').fill('중복 저장 방지 메모');
+
+  const saveButton = page.getByRole('button', { name: /저장/ }).filter({ hasText: '저장' });
+  await saveButton.click();
+  await expect(saveButton).toBeDisabled();
+  await saveButton.evaluate((button) => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+  await expect(page).toHaveURL('/medications/notes');
+  await expect(page.getByRole('heading', { name: '복약 메모 1개', exact: true })).toBeVisible();
+  await expect(page.getByText('중복 저장 방지 메모', { exact: true })).toHaveCount(1);
+
+  await page.getByRole('button', { name: /중복 저장 방지 메모/ }).click();
+  const deleteButton = page.getByRole('button', { name: '삭제', exact: true });
+  await deleteButton.click();
+  const confirmDeleteButton = page.getByRole('dialog').getByRole('button', { name: /^삭제/ });
+  await confirmDeleteButton.click();
+  await expect(confirmDeleteButton).toBeDisabled();
+  await confirmDeleteButton.evaluate((button) => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+  await expect(page).toHaveURL('/medications/notes');
+  await expect(page.locator('#medication-notes-title')).toBeVisible();
+  await expect(page.getByText('중복 저장 방지 메모', { exact: true })).toHaveCount(0);
+});
+
+test('취소된 과거 처방 메모도 원래 처방을 보존한 채 수정할 수 있다', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      'rxvita.mock.medication-notes:feature-252-medication%40example.com',
+      JSON.stringify([
+        {
+          id: 404,
+          careEpisodeId: 999,
+          careEpisodeTitle: '2025-01-15 조제약 복약안내',
+          careEpisodeAlias: '지난 겨울 처방',
+          careEpisodeStartDate: '2025-01-15',
+          careEpisodeStatus: 'CANCELLED',
+          availableMedications: [],
+          medicationId: null,
+          medication: null,
+          dosedAt: '2025-01-16T08:00:00',
+          body: '기존 메모',
+          createdAt: '2025-01-16T08:00:00',
+          updatedAt: null,
+        },
+      ]),
+    );
+  });
+
+  await page.goto('/medications/notes/404');
+  await expect(page.getByLabel('처방')).toBeDisabled();
+  await expect(page.getByLabel('처방').locator('option:checked')).toHaveText('지난 겨울 처방');
+  await expect(page.getByText('약이 삭제되었거나 처방 전체에 대한 메모예요.')).toBeVisible();
+  await page.getByLabel('복용 일시').fill('2025-01-16T09:30');
+  await page.getByLabel('복용 후 느낀 점').fill('과거 처방도 수정했어요.');
+  await page.getByRole('button', { name: '수정 저장', exact: true }).click();
+
+  await expect(page).toHaveURL('/medications/notes');
+  await expect(page.getByText('지난 겨울 처방', { exact: true })).toBeVisible();
+  await expect(page.getByText('과거 처방도 수정했어요.', { exact: true })).toBeVisible();
+});

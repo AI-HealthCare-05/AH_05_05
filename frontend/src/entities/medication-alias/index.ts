@@ -1,6 +1,2 @@
-export {
-  applyMedicationAliases,
-  getMedicationAlias,
-  setMedicationAlias,
-} from './store';
+export { updateEpisodeAlias } from './api';
 export type { MedicationAliasStoreOptions } from './types';
