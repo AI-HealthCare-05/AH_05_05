@@ -15,6 +15,7 @@ test.beforeEach(() => {
 });
 
 interface CapturedRequest {
+  method: string;
   url: string;
   headers: Record<string, string>;
   body: string;
@@ -111,6 +112,7 @@ const template04ScheduleMedications = [
 function capture(route: Route): CapturedRequest {
   const request = route.request();
   return {
+    method: request.method(),
     url: request.url(),
     headers: request.headers(),
     body: request.postDataBuffer()?.toString('utf8') ?? '',
@@ -186,6 +188,21 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
     status,
     contentType: 'application/json',
     body: JSON.stringify(body),
+  });
+}
+
+async function interceptDefaultNotifySettings(page: Page) {
+  await page.route('**/api/v1/me/settings', async (route) => {
+    await fulfillJson(route, {
+      notifyMedication: false,
+      notifySupplement: false,
+      notifySchedule: false,
+      notifyConsentedAt: null,
+      morningMedicationTime: '08:00:00',
+      lunchMedicationTime: '13:00:00',
+      eveningMedicationTime: '19:00:00',
+      bedtimeMedicationTime: '22:00:00',
+    });
   });
 }
 
@@ -302,7 +319,7 @@ async function selectGalleryPng(page: Page) {
   });
 }
 
-test('OCR 검토는 전처리 이미지를 작게 맞춰 보여주고 확대 화면에서 원본으로 전환한다', async ({ page }) => {
+test('OCR 검토는 처리 방식을 드러내지 않고 약봉투를 보여주며 확대 화면에서 원본으로 전환한다', async ({ page }) => {
   await authenticate(page);
   const requestedImages: string[] = [];
 
@@ -327,20 +344,21 @@ test('OCR 검토는 전처리 이미지를 작게 맞춰 보여주고 확대 화
 
   await page.goto('/dev/ocr-review');
 
-  const preview = page.getByRole('img', { name: '전처리한 약봉투' });
+  const preview = page.getByRole('img', { name: '약봉투 미리보기' });
   await expect(preview).toBeVisible();
+  await expect(page.getByText('전처리한 약봉투', { exact: true })).toHaveCount(0);
   expect(await preview.evaluate((image) => getComputedStyle(image).objectFit)).toBe('contain');
   const previewBox = await preview.boundingBox();
   expect(previewBox).not.toBeNull();
   expect(previewBox!.height).toBeGreaterThanOrEqual(287);
   expect(previewBox!.height).toBeLessThanOrEqual(288);
 
-  await page.getByRole('button', { name: '전처리한 약봉투 크게 보기' }).click();
+  await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
   const viewer = page.getByRole('dialog');
-  const enlarged = viewer.getByRole('img', { name: '확대한 전처리 약봉투' });
+  const enlarged = viewer.getByRole('img', { name: '확대한 약봉투' });
   await expect(enlarged).toBeVisible();
   const processedSrc = await enlarged.getAttribute('src');
-  await expect(viewer.getByRole('button', { name: '전처리 후' })).toHaveAttribute(
+  await expect(viewer.getByRole('button', { name: '선명하게 보기' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
@@ -413,6 +431,7 @@ test('OCR 검토의 직접 추가 버튼과 입력 제한을 간결하게 표시
 
 test('OCR 결과를 확정하면 해당 복약 시간 설정 화면으로 이동한다', async ({ page }) => {
   await authenticate(page);
+  await interceptDefaultNotifySettings(page);
   const scheduleRequests: CapturedRequest[] = [];
 
   await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
@@ -427,7 +446,7 @@ test('OCR 결과를 확정하면 해당 복약 시간 설정 화면으로 이동
       lowConfidenceCount: 0,
     });
   });
-  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/image', async (route) => {
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/*image', async (route) => {
     await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
   });
   await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
@@ -453,7 +472,7 @@ test('OCR 결과를 확정하면 해당 복약 시간 설정 화면으로 이동
   await page.getByRole('button', { name: /저장/ }).click();
 
   await expect(page).toHaveURL(
-    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21',
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
   );
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
   expect(scheduleRequests.length).toBeGreaterThan(0);
@@ -608,6 +627,7 @@ test('복약 시간 설정의 뒤로가기는 완료된 OCR의 4개 약 검토 �
   page,
 }) => {
   await authenticate(page);
+  await interceptDefaultNotifySettings(page);
   let confirmed = false;
 
   await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
@@ -627,7 +647,7 @@ test('복약 시간 설정의 뒤로가기는 완료된 OCR의 4개 약 검토 �
       lowConfidenceCount: 0,
     });
   });
-  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/image', async (route) => {
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/*image', async (route) => {
     await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
   });
   await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
@@ -641,15 +661,23 @@ test('복약 시간 설정의 뒤로가기는 완료된 OCR의 4개 약 검토 �
   await page.goto('/dev/ocr-review');
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })
+    .getByRole('button', { name: '확인 후 저장', exact: true })
+    .click();
   await expect(page).toHaveURL(
-    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21',
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
   );
 
   await page.reload();
+  await expect(page).toHaveURL(
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
+  );
+  await expect(page.getByText('3 / 5', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '약마다 먹는 시간을 확인해주세요' })).toBeVisible();
   await page.getByRole('button', { name: '뒤로 가기' }).click();
 
   await expect(page).toHaveURL(
-    '/ocr-review?batchId=b_mock_9f21&recordId=315&mode=confirmed',
+    '/ocr-review?batchId=b_mock_9f21&recordId=315&mode=confirmed&flow=registration',
   );
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
@@ -658,13 +686,14 @@ test('복약 시간 설정의 뒤로가기는 완료된 OCR의 4개 약 검토 �
 
   await page.getByRole('button', { name: '뒤로 가기' }).click();
   await expect(page).toHaveURL(
-    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21',
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
   );
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
 });
 
 test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 유지된다', async ({ page }) => {
   await authenticate(page);
+  await interceptDefaultNotifySettings(page);
   let confirmed = false;
 
   await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
@@ -684,7 +713,7 @@ test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 
       lowConfidenceCount: 0,
     });
   });
-  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/image', async (route) => {
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/*image', async (route) => {
     await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
   });
   await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
@@ -698,6 +727,9 @@ test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 
   await page.goto('/dev/ocr-review');
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })
+    .getByRole('button', { name: '확인 후 저장', exact: true })
+    .click();
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
 
   await page.getByLabel('복용 시작 날짜').fill('2026-08-20');
@@ -706,6 +738,36 @@ test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 
   await page.getByRole('button', { name: '뒤로 가기' }).click();
 
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-20');
+});
+
+test('아직 안 먹었어요는 복용 완료를 만들지 않고 오늘 첫 사용 슬롯부터 기록한다', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date('2026-09-03T12:00:00+09:00'));
+  await authenticate(page);
+  const trace = await interceptDocumentRegistration(page);
+  const doseWrites: CapturedRequest[] = [];
+  await page.route('**/api/v1/medications/doses**', async (route) => {
+    if (route.request().method() === 'POST') doseWrites.push(capture(route));
+    await route.continue();
+  });
+
+  await page.goto(
+    '/medication-schedule?recordId=314&ocrJobId=b_mock_9f21&flow=registration',
+  );
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '아직 안 먹었어요' }).click();
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+  await page.getByRole('button', { name: '등록 완료', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  await expect(page.getByText('첫 복용 아직 복용 전')).toBeVisible();
+  const saveRequest = trace.scheduleRequests.find((request) => request.method === 'PUT');
+  expect(saveRequest).toBeDefined();
+  expect(JSON.parse(saveRequest!.body)).toMatchObject({
+    start: { date: '2026-09-03', slot: 'morning' },
+  });
+  expect(doseWrites).toHaveLength(0);
 });
 
 function expectAuthenticated(requests: CapturedRequest[]) {
@@ -773,7 +835,9 @@ test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할
   await dispensedDate.fill('2026-09-25');
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
 
-  await expect(page).toHaveURL('/medication-schedule?recordId=315&ocrJobId=b_mock_9f21');
+  await expect(page).toHaveURL(
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
+  );
   expect(patches).toHaveLength(1);
   expect((JSON.parse(patches[0].body) as { dispensedDate: string }).dispensedDate).toBe(
     '2026-09-25',
@@ -816,9 +880,10 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
 
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
   await expect(page.getByLabel('조제일')).toHaveValue('2026-08-22');
-  await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
-  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
-  await expect(page.getByRole('img', { name: '전처리한 약봉투' })).toHaveAttribute(
+  await expect(page.getByText('3곳만 확인해주세요')).toBeVisible();
+  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(3);
+  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('확인 필요');
+  await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toHaveAttribute(
     'src',
     /^blob:/,
   );
@@ -863,7 +928,9 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
 
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
-  await expect(page).toHaveURL('/medication-schedule?recordId=314&ocrJobId=501');
+  await expect(page).toHaveURL(
+    '/medication-schedule?recordId=314&ocrJobId=501&flow=registration',
+  );
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
 
   expectAuthenticated(trace.uploads);
@@ -1442,7 +1509,11 @@ test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장�
       await fulfillJson(route, mediumOnlyResult);
       return;
     }
-    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21/image') {
+    if (
+      request.method() === 'GET' &&
+      (path === '/api/v1/ocr/jobs/b_mock_9f21/image' ||
+        path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image')
+    ) {
       images.push(capture(route));
       await route.fulfill({
         status: 503,
@@ -1485,7 +1556,7 @@ test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장�
 
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await expect(page).toHaveURL(
-    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21',
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
   );
 
   expect(patches).toHaveLength(1);
@@ -1543,7 +1614,9 @@ test('OCR 별칭 저장이 실패해도 같은 확정을 재시도하고 중복 
   await expect(errorDialog).toBeVisible();
   await expect(page.getByLabel('복약 별칭')).toHaveValue('재시도 OCR 처방');
   await errorDialog.getByRole('button', { name: '다시 시도', exact: true }).click();
-  await expect(page).toHaveURL('/medication-schedule?recordId=315&ocrJobId=b_mock_9f21');
+  await expect(page).toHaveURL(
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
+  );
 
   expect(patches).toHaveLength(2);
   expect(patches.map((request) => (JSON.parse(request.body) as { alias: string | null }).alias)).toEqual([

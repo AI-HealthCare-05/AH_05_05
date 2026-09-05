@@ -118,12 +118,16 @@ test('약봉투 등록은 OCR·별칭·복용 시간·첫 복용·알람의 5단
   await expect(page).toHaveURL(/\/medication-schedule\?recordId=12&ocrJobId=b_mock_9f21/);
   await expect(page.getByText('3 / 5', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '약마다 먹는 시간을 확인해주세요' })).toBeVisible();
+  await expect(page.getByText('복용 시간을 선택해주세요', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/선택한 복용 시간/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '셀레콕시브 아침약' })).toBeVisible();
   await page.getByRole('button', { name: '확인', exact: true }).click();
 
   await expect(page.getByText('4 / 5', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '처음 약을 언제 드셨나요?' })).toBeVisible();
+  await page.getByRole('button', { name: '아직 안 먹었어요' }).click();
+  await expect(page.getByText('약을 먹은 뒤 홈에서 기록할 수 있어요.')).toBeVisible();
   await expect(page.getByText('이렇게 기록해요', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '시작 점심약' }).click();
   await page.getByRole('button', { name: '확인', exact: true }).click();
 
   await expect(page.getByText('5 / 5', { exact: true })).toBeVisible();
@@ -132,6 +136,7 @@ test('약봉투 등록은 OCR·별칭·복용 시간·첫 복용·알람의 5단
   await page.getByRole('button', { name: '등록 완료', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: '약 등록을 완료했어요' })).toBeVisible();
+  await expect(page.getByText('첫 복용 아직 복용 전')).toBeVisible();
 });
 
 test('선택한 약봉투는 업로드 뒤 OCR 진행률과 결과 검토로 이어진다', async ({ page }) => {
@@ -365,16 +370,20 @@ test('등록 5단계는 푸시 등록이 끝날 때까지 완료를 막고 일�
   await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked();
 });
 
-test('OCR 낮은 확신 약은 확인 필요 상태에서 편집할 수 있다', async ({ page }) => {
+test('OCR 확인 필요는 저신뢰 약을 고치면 사라지고 실제 미추출 약에만 남는다', async ({ page }) => {
   await page.goto('/dev/ocr-review');
 
-  await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
-  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('3곳만 확인해주세요')).toBeVisible();
+  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(3);
   await page.getByRole('button', { name: /리바록사반 10mg/ }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('리바록사반 확인');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page.getByRole('button', { name: /리바록사반 확인/ })).toBeVisible();
+  const reviewedMedication = page.getByRole('button', { name: /리바록사반 확인/ });
+  await expect(reviewedMedication).toBeVisible();
+  await expect(reviewedMedication).not.toContainText('확인 필요');
+  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(2);
+  await expect(page.getByText('2곳만 확인해주세요')).toBeVisible();
 });
 
 test('복약 목록은 활성 회차를 편집하고 완료 회차를 읽기 전용으로 연다', async ({ page }) => {
