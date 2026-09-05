@@ -647,6 +647,7 @@ function NotificationRow({
       <Switch
         id={`notification-${label}`}
         aria-label={label}
+        className="data-[state=unchecked]:bg-input"
         checked={checked}
         disabled={disabled}
         onCheckedChange={onCheckedChange}

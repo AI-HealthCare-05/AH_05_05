@@ -107,6 +107,7 @@ function TimelineItem({
   );
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(() => new Set());
+  const [doseActionSettled, setDoseActionSettled] = useState(false);
   const current = item.status === 'current';
   const [completedEpisodes, setCompletedEpisodes] = useState<Set<number>>(() =>
     new Set(item.completedEpisodeRecordIds),
@@ -139,6 +140,7 @@ function TimelineItem({
     setExpandedMedicationEpisodes(new Set());
     setShowAllEpisodes(false);
     setSelectedEpisodes(new Set());
+    setDoseActionSettled(false);
     setCompletedEpisodes(new Set(item.completedEpisodeRecordIds));
   }, [currentDate, episodeFingerprint]);
 
@@ -188,13 +190,20 @@ function TimelineItem({
 
   const visibleEpisodes = showAllEpisodes ? item.episodes : item.episodes.slice(0, 2);
   const selected = visibleEpisodes.filter((episode) => selectedEpisodes.has(episode.recordId));
+  const hasSelection = selected.length > 0;
   const actionEpisodes = selected.length > 0 ? selected : visibleEpisodes;
   const actionRecordIds = actionEpisodes.map((episode) => episode.recordId);
   const actionCompleted =
     actionEpisodes.length > 0 &&
     actionEpisodes.every((episode) => completedEpisodes.has(episode.recordId));
+  const allVisibleEpisodesCompleted =
+    visibleEpisodes.length > 0 &&
+    visibleEpisodes.every((episode) => completedEpisodes.has(episode.recordId));
+  const doseActionDisabled =
+    !hasSelection && (doseActionSettled || allVisibleEpisodesCompleted);
 
   async function handleDoseAction() {
+    if (doseActionDisabled) return;
     const previousCompletedEpisodes = completedEpisodes;
     const previousSelectedEpisodes = selectedEpisodes;
     setCompletedEpisodes((currentEpisodes) => {
@@ -215,7 +224,9 @@ function TimelineItem({
     if (saved === false) {
       setCompletedEpisodes(previousCompletedEpisodes);
       setSelectedEpisodes(previousSelectedEpisodes);
+      return;
     }
+    setDoseActionSettled(true);
   }
 
   return (
@@ -239,18 +250,19 @@ function TimelineItem({
             <article
               key={episode.recordId}
               aria-label={`${episodeAccessibleName} · 약 ${episode.medications.length}개`}
-              className="relative"
+              className="w-full min-w-0 max-w-full overflow-hidden"
             >
-              <button
-                type="button"
-                data-episode-row
-                aria-pressed={selectedEpisodes.has(episode.recordId)}
-                aria-label={`${episodeAccessibleName} ${episodeCompleted ? '복용 완료' : '선택'}`}
-                className={`flex h-14 min-h-14 w-full items-center gap-3 border-b border-border px-3 py-1 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                  selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
-                }`}
-                onClick={() => toggleSelectedEpisode(episode.recordId)}
-              >
+              <div className="relative w-full min-w-0">
+                <button
+                  type="button"
+                  data-episode-row
+                  aria-pressed={selectedEpisodes.has(episode.recordId)}
+                  aria-label={`${episodeAccessibleName} ${episodeCompleted ? '복용 완료' : '선택'}`}
+                  className={`flex h-14 min-h-14 w-full min-w-0 items-center gap-3 border-b border-border px-3 py-1 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                    selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
+                  }`}
+                  onClick={() => toggleSelectedEpisode(episode.recordId)}
+                >
                 <span
                   data-episode-selection-glyph
                   aria-hidden
@@ -282,48 +294,49 @@ function TimelineItem({
                       : ''}
                   </span>
                 </span>
-              </button>
+                </button>
 
-              <button
-                type="button"
-                aria-expanded={episodeExpanded}
-                aria-controls={`episode-detail-${item.slot}-${episode.recordId}`}
-                aria-label={`${episodeAccessibleName} ${episodeExpanded ? '접기' : '펼치기'}`}
-                className="absolute right-1 top-1/2 flex size-touch -translate-y-1/2 items-center justify-center rounded-control text-primary-strong hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  toggleEpisode(episode.recordId);
-                }}
-              >
-                <ChevronDown
-                  aria-hidden
-                  className={`size-5 transition-transform motion-reduce:transition-none ${
-                    episodeExpanded ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
+                <button
+                  type="button"
+                  aria-expanded={episodeExpanded}
+                  aria-controls={`episode-detail-${item.slot}-${episode.recordId}`}
+                  aria-label={`${episodeAccessibleName} ${episodeExpanded ? '접기' : '펼치기'}`}
+                  className="absolute right-1 top-1/2 flex size-touch -translate-y-1/2 items-center justify-center rounded-control text-primary-strong hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleEpisode(episode.recordId);
+                  }}
+                >
+                  <ChevronDown
+                    aria-hidden
+                    className={`size-5 transition-transform motion-reduce:transition-none ${
+                      episodeExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+              </div>
 
               {episodeExpanded && (
                 <div
                   id={`episode-detail-${item.slot}-${episode.recordId}`}
                   role="group"
                   aria-label={`${episodeDate} 처방 약 상세`}
-                  className="border-b border-border px-3 py-3"
+                  className="w-full min-w-0 max-w-full border-b border-border px-3 py-3"
                 >
+                  <p className="mb-2 text-sm font-medium text-muted-foreground">
+                    {formatPrescriptionLabel(episode.startDate)}
+                  </p>
                   <ul className="flex flex-col gap-2" aria-label={`${episodeDate} 처방 약 목록`}>
                     {visibleMedications.map((medication) => (
                       <li
                         key={`${medication.recordId}:${medication.medicationId}`}
-                        className="flex items-start justify-between gap-3"
+                        className="flex min-w-0 items-start"
                       >
-                        <span className="text-base font-bold text-foreground">
+                        <span className="min-w-0 break-words text-base font-bold text-foreground">
                           {medication.name}{' '}
                           <span className="font-normal text-muted-foreground">
                             {medication.dose}
                           </span>
-                        </span>
-                        <span className="shrink-0 text-sm text-muted-foreground">
-                          {formatPrescriptionLabel(medication.startDate)}
                         </span>
                       </li>
                     ))}
@@ -335,10 +348,16 @@ function TimelineItem({
                       aria-label={
                         medicationsExpanded ? '약 목록 접기' : `약 ${hiddenMedicationCount}개 더보기`
                       }
-                      className="mt-2 flex min-h-touch w-full items-center justify-end px-1 text-micro font-medium text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="mt-2 flex min-h-touch w-full items-center justify-end gap-1 px-1 text-micro font-medium text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => toggleMedicationList(episode.recordId)}
                     >
-                      {medicationsExpanded ? '접기' : `약 ${hiddenMedicationCount}개 더보기`}
+                      {!medicationsExpanded && `약 ${hiddenMedicationCount}개 더보기`}
+                      <ChevronDown
+                        aria-hidden
+                        className={`size-4 transition-transform motion-reduce:transition-none ${
+                          medicationsExpanded ? 'rotate-180' : ''
+                        }`}
+                      />
                     </button>
                   )}
                 </div>
@@ -351,7 +370,7 @@ function TimelineItem({
             type="button"
             aria-expanded={showAllEpisodes}
             aria-label={showAllEpisodes ? '다른 처방 접기' : '다른 처방 펼치기'}
-            className="flex min-h-touch items-center justify-end px-1 text-micro font-medium text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex min-h-touch w-full items-center justify-end px-1 text-micro font-medium text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={toggleAllEpisodes}
           >
             {showAllEpisodes ? '다른 처방 접기' : '다른 처방 펼치기'}
@@ -369,7 +388,12 @@ function TimelineItem({
         </button>
         <Button
           fullWidth={false}
-          variant={current && !actionCompleted ? 'primary' : 'secondary'}
+          variant={
+            !doseActionDisabled && (hasSelection || (current && !actionCompleted))
+              ? 'primary'
+              : 'secondary'
+          }
+          disabled={doseActionDisabled}
           className="min-h-touch flex-1 px-3"
           onClick={handleDoseAction}
         >

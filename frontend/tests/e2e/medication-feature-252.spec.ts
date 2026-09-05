@@ -449,6 +449,23 @@ test('등록 별칭과 회차 편집 별칭은 새로고침 뒤에도 메모에�
   await expect(page.getByText('회차 편집 별칭', { exact: true })).toBeVisible();
 });
 
+test('복약 탭에서 바꾼 처방 별칭은 홈 진입과 재진입에 바로 반영된다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.goto('/medications');
+  await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+  const episodeDialog = page.getByRole('dialog');
+  await episodeDialog.getByLabel('복약 별칭').fill('홈에 보일 별칭');
+  await episodeDialog.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
+
+  await page.getByRole('button', { name: '홈', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '홈에 보일 별칭', exact: true })).toBeVisible();
+  await page.goto('/medications');
+  await expect(page.getByText('홈에 보일 별칭', { exact: true })).toBeVisible();
+  await page.goto('/home');
+  await expect(page.getByRole('heading', { name: '홈에 보일 별칭', exact: true })).toBeVisible();
+});
+
 test('복약 메모는 SessionContext principal별로 격리된다', async ({ page }) => {
   await page.goto('/medications/notes/new');
   await page.getByLabel('처방').selectOption('12');
