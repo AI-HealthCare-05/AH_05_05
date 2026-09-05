@@ -282,37 +282,34 @@ test('목록에는 채운 별만 읽기 전용으로 표시하고 별점이 없�
   await expect(multivitamin.getByLabel(/별 \d점/)).toHaveCount(0);
 });
 
-test('편집 시트는 기존 별점과 메모를 채우고 선택한 별 재클릭을 저장할 때 해제한다', async ({ page }) => {
+test('별점 별도 창 취소는 기존 값을 유지하고 메모를 비우면 등록 CTA로 돌아간다', async ({ page }) => {
   await page.goto('/dev/supplements');
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   const omega = supplementList.getByRole('button', { name: /오메가3/ });
   await omega.click();
 
   const sheet = page.getByRole('dialog', { name: '오메가3' });
-  const stars = sheet.getByRole('group', { name: '먹어보니 어때요?' });
+  await sheet.getByRole('button', { name: '별점 수정' }).click();
+  const rating = page.getByRole('dialog', { name: '별점 수정' });
+  const stars = rating.getByRole('group', { name: '별점 선택' });
   const scoreFour = stars.getByRole('button', { name: '별 4점' });
-  const note = sheet.getByRole('textbox', { name: '메모' });
   await expect(stars.getByRole('button')).toHaveCount(5);
   await expect(scoreFour).toHaveAttribute('aria-pressed', 'true');
-  await expect(note).toHaveValue('아침 식후에 먹기');
-
-  await scoreFour.click();
+  await stars.getByRole('button', { name: '별 2점' }).click();
   await expect(scoreFour).toHaveAttribute('aria-pressed', 'false');
-  await expect(sheet).toBeVisible();
+  await rating.getByRole('button', { name: '닫기' }).click();
   await sheet.getByRole('button', { name: '닫기' }).click();
   await expect(omega.getByLabel('별 4점')).toBeVisible();
   await omega.click();
   const reopenedSheet = page.getByRole('dialog', { name: '오메가3' });
-  await reopenedSheet.getByRole('button', { name: '별 4점' }).click();
-  const reopenedNote = reopenedSheet.getByRole('textbox', { name: '메모' });
+  await reopenedSheet.getByRole('group', { name: '내 메모' }).getByRole('button', { name: '수정하기' }).click();
+  const records = page.getByRole('dialog', { name: '내 기록 편집' });
+  const reopenedNote = records.getByRole('textbox', { name: /^메모/ });
+  await expect(reopenedNote).toHaveValue('아침 식후에 먹기');
   await reopenedNote.fill('   ');
-  await reopenedSheet.getByRole('button', { name: '저장' }).click();
-
-  await expect(reopenedSheet).toBeHidden();
-  await expect(omega.getByLabel(/별 \d점/)).toHaveCount(0);
-  await omega.click();
-  await expect(page.getByRole('dialog', { name: '오메가3' }).getByRole('textbox', { name: '메모' }))
-    .toHaveValue('');
+  await records.getByRole('button', { name: '저장' }).click();
+  await expect(records).toBeHidden();
+  await expect(reopenedSheet.getByRole('group', { name: '내 메모' }).getByRole('button', { name: '등록하기' })).toBeVisible();
 });
 
 test('편집 시트는 비공개 메모와 공개 후기를 구분하고 마스킹 이름을 미리 보여준다', async ({ page }) => {
@@ -321,14 +318,16 @@ test('편집 시트는 비공개 메모와 공개 후기를 구분하고 마스�
   await supplementList.getByRole('button', { name: /오메가3/ }).click();
 
   const sheet = page.getByRole('dialog', { name: '오메가3' });
-  await expect(sheet.getByText('나만 볼 수 있어요')).toBeVisible();
-  await expect(sheet.getByText('김*훈 으로 다른 사람에게 보여요')).toBeVisible();
-  const review = sheet.getByRole('textbox', { name: /후기/ });
+  await sheet.getByRole('group', { name: '내 후기' }).getByRole('button', { name: '수정하기' }).click();
+  const records = page.getByRole('dialog', { name: '내 기록 편집' });
+  await expect(records.getByText('나만 볼 수 있어요')).toBeVisible();
+  await expect(records.getByText('김*훈 으로 다른 사람에게 보여요')).toBeVisible();
+  const review = records.getByRole('textbox', { name: /후기/ });
   await review.fill('꾸준히 먹기 편했어요.');
-  await sheet.getByRole('button', { name: '저장' }).click();
-
-  await supplementList.getByRole('button', { name: /오메가3/ }).click();
-  await expect(page.getByRole('dialog', { name: '오메가3' }).getByRole('textbox', { name: /후기/ }))
+  await records.getByRole('button', { name: '저장' }).click();
+  await expect(records).toBeHidden();
+  await sheet.getByRole('group', { name: '내 후기' }).getByRole('button', { name: '수정하기' }).click();
+  await expect(records.getByRole('textbox', { name: /후기/ }))
     .toHaveValue('꾸준히 먹기 편했어요.');
 });
 

@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { ChevronRight, Star } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import type { Supplement, UpdateSupplementPayload } from '@/entities/supplement';
 import { mealSlotLabel, type MealSlot } from '@/shared/model/mealSlot';
 import {
@@ -33,8 +33,6 @@ export function EditSupplementSheet({
   onStop,
   onProductInfo,
 }: EditSupplementSheetProps) {
-  const noteId = useId();
-  const reviewId = useId();
   const [doseAmount, setDoseAmount] = useState(1);
   const [doseStep, setDoseStep] = useState(1);
   const [slots, setSlots] = useState<MealSlot[]>(['morning']);
@@ -47,6 +45,7 @@ export function EditSupplementSheet({
   const [ratingEditOpen, setRatingEditOpen] = useState(false);
   const [ratingDraft, setRatingDraft] = useState<number | null>(null);
   const [ratingSaving, setRatingSaving] = useState(false);
+  const [recordEditOpen, setRecordEditOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !supplement) return;
@@ -62,6 +61,7 @@ export function EditSupplementSheet({
     setRatingEditOpen(false);
     setRatingDraft(supplement.score);
     setRatingSaving(false);
+    setRecordEditOpen(false);
   }, [open, supplement]);
 
   async function save() {
@@ -102,8 +102,8 @@ export function EditSupplementSheet({
     setRatingSaving(true);
     try {
       await onSave(supplement.supplementId, {
-        doseAmount,
-        slots,
+        doseAmount: supplement.doseAmount,
+        slots: supplement.slots,
         score: ratingDraft,
         note: note.trim() || null,
         reviewBody: reviewBody.trim() || null,
@@ -115,6 +115,21 @@ export function EditSupplementSheet({
     } finally {
       setRatingSaving(false);
     }
+  }
+
+  async function saveRecords(nextNote: string, nextReview: string) {
+    if (!supplement) return;
+    await onSave(supplement.supplementId, {
+      // Record editing must not silently save unsubmitted dose/slot edits underneath it.
+      doseAmount: supplement.doseAmount,
+      slots: supplement.slots,
+      score,
+      note: nextNote || null,
+      reviewBody: nextReview || null,
+    });
+    setNote(nextNote);
+    setReviewBody(nextReview);
+    setRecordEditOpen(false);
   }
 
   return (
@@ -146,7 +161,7 @@ export function EditSupplementSheet({
                     <p className="mt-1 text-sm text-muted-foreground">
                       {formatDose(supplement.doseAmount, supplement.doseUnit)} ·{' '}
                       {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
-                      {supplement.note ? ' · 메모 있음' : ''}
+                      {note.trim() ? ' · 메모 있음' : ''}
                     </p>
                   </div>
                   {score !== null && (
@@ -185,14 +200,24 @@ export function EditSupplementSheet({
                     {displayStars(score)}
                   </p>
                 </div>
-                <div className="rounded-card border border-border bg-card p-4 shadow-card">
-                  <h3 className="text-base font-bold text-foreground">내 메모</h3>
+                <div role="group" aria-label="내 메모" className="rounded-card border border-border bg-card p-4 shadow-card">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-base font-bold text-foreground">내 메모</h3>
+                    <button type="button" className="min-h-touch px-1 text-sm font-bold text-primary-strong" onClick={() => setRecordEditOpen(true)}>
+                      {note.trim() ? '수정하기' : '등록하기'}
+                    </button>
+                  </div>
                   <p className="mt-4 whitespace-pre-wrap break-words text-sm text-foreground">
                     {note.trim() || '작성한 메모가 없어요.'}
                   </p>
                 </div>
-                <div className="rounded-card border border-border bg-card p-4 shadow-card">
-                  <h3 className="text-base font-bold text-foreground">내 후기</h3>
+                <div role="group" aria-label="내 후기" className="rounded-card border border-border bg-card p-4 shadow-card">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-base font-bold text-foreground">내 후기</h3>
+                    <button type="button" className="min-h-touch px-1 text-sm font-bold text-primary-strong" onClick={() => setRecordEditOpen(true)}>
+                      {reviewBody.trim() ? '수정하기' : '등록하기'}
+                    </button>
+                  </div>
                   <p className="mt-4 whitespace-pre-wrap break-words text-sm text-foreground">
                     {reviewBody.trim() || '작성한 후기가 없어요.'}
                   </p>
@@ -230,67 +255,6 @@ export function EditSupplementSheet({
             onSlotsChange={setSlots}
           />
 
-          <div
-            role="group"
-            aria-labelledby="supplement-score-label"
-            className="flex flex-col gap-1.5"
-          >
-            <p id="supplement-score-label" className="text-sm font-bold text-foreground">
-              먹어보니 어때요?
-            </p>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: 5 }, (_, index) => index + 1).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-label={`별 ${value}점`}
-                  aria-pressed={score === value}
-                  className="flex size-touch items-center justify-center rounded-input text-warning-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setScore((current) => (current === value ? null : value))}
-                >
-                  <Star
-                    aria-hidden
-                    className={`size-7 ${score !== null && value <= score ? 'fill-current' : ''}`}
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={noteId} className="text-sm font-bold text-foreground">
-              메모{' '}
-              <span className="text-xs font-normal text-muted-foreground">나만 볼 수 있어요</span>
-            </label>
-            <textarea
-              id={noteId}
-              value={note}
-              maxLength={500}
-              rows={3}
-              placeholder="복용하면서 기억할 점"
-              className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              onChange={(event) => setNote(event.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={reviewId} className="text-sm font-bold text-foreground">
-              후기{' '}
-              <span className="text-xs font-normal text-muted-foreground">
-                {maskedName} 으로 다른 사람에게 보여요
-              </span>
-            </label>
-            <textarea
-              id={reviewId}
-              value={reviewBody}
-              maxLength={500}
-              rows={3}
-              placeholder="먹어본 경험을 남겨주세요"
-              className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              onChange={(event) => setReviewBody(event.target.value)}
-            />
-          </div>
-
           <Button disabled={slots.length === 0 || saving} onClick={() => void save()}>
             {saving ? '저장 중...' : '저장'}
           </Button>
@@ -303,6 +267,13 @@ export function EditSupplementSheet({
           </button>
         </DialogContent>
       </Dialog>
+
+      {open && recordEditOpen && (
+        <SupplementRecordEditor
+          note={note} reviewBody={reviewBody} maskedName={maskedName}
+          onClose={() => setRecordEditOpen(false)} onSave={saveRecords}
+        />
+      )}
 
       <Dialog
         open={ratingEditOpen}
@@ -383,6 +354,65 @@ export function EditSupplementSheet({
 
 function formatDose(amount: number, unit: string): string {
   return `${new Intl.NumberFormat('ko-KR').format(amount)}${unit}`;
+}
+
+function SupplementRecordEditor({ note, reviewBody, maskedName, onSave, onClose }: {
+  note: string;
+  reviewBody: string;
+  maskedName: string;
+  onSave: (note: string, reviewBody: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const noteId = useId();
+  const reviewId = useId();
+  const descriptionId = useId();
+  const [noteDraft, setNoteDraft] = useState(note);
+  const [reviewDraft, setReviewDraft] = useState(reviewBody);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave(noteDraft.trim(), reviewDraft.trim());
+    } catch {
+      // The parent's error dialog explains the failure; keep this editor and its draft.
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen && !saving) onClose(); }}>
+      <DialogContent variant="sheet" aria-describedby={descriptionId} className="max-h-[92dvh] overflow-y-auto pb-6">
+        <DialogTitle className="text-2xl">내 기록 편집</DialogTitle>
+        <DialogDescription id={descriptionId}>메모와 후기를 편집한 뒤 저장해주세요.</DialogDescription>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={noteId} className="text-sm font-bold text-foreground">
+            메모 <span className="text-xs font-normal text-muted-foreground">나만 볼 수 있어요</span>
+          </label>
+          <textarea
+            id={noteId} value={noteDraft} maxLength={500} rows={3} disabled={saving}
+            placeholder="복용하면서 기억할 점"
+            className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            onChange={event => setNoteDraft(event.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={reviewId} className="text-sm font-bold text-foreground">
+            후기 <span className="text-xs font-normal text-muted-foreground">{maskedName} 으로 다른 사람에게 보여요</span>
+          </label>
+          <textarea
+            id={reviewId} value={reviewDraft} maxLength={500} rows={3} disabled={saving}
+            placeholder="먹어본 경험을 남겨주세요"
+            className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            onChange={event => setReviewDraft(event.target.value)}
+          />
+        </div>
+        <Button disabled={saving} onClick={() => void save()}>{saving ? '저장 중...' : '저장'}</Button>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function displayStars(score: number | null): string {

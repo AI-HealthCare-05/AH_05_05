@@ -252,14 +252,21 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
   await iron.click();
 
   const sheet = page.getByRole('dialog', { name: '튼튼 철분 캡슐' });
-  await expect(sheet.getByRole('button', { name: '별 4점' })).toHaveAttribute(
+  await sheet.getByRole('button', { name: '별점 수정' }).click();
+  const ratingSheet = page.getByRole('dialog', { name: '별점 수정' });
+  await expect(ratingSheet.getByRole('button', { name: '별 4점' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await expect(sheet.getByRole('textbox', { name: '메모' })).toHaveValue('아침 식후');
-  await sheet.getByRole('button', { name: '별 3점' }).click();
-  await sheet.getByRole('textbox', { name: '메모' }).fill('  저녁 식후  ');
-  await sheet.getByRole('button', { name: '저장' }).click();
+  await ratingSheet.getByRole('button', { name: '별 3점' }).click();
+  await ratingSheet.getByRole('button', { name: '저장' }).click();
+  await expect(ratingSheet).toBeHidden();
+  await sheet.getByRole('group', { name: '내 메모' }).getByRole('button', { name: '수정하기' }).click();
+  const recordEditor = page.getByRole('dialog', { name: '내 기록 편집' });
+  await expect(recordEditor.getByRole('textbox', { name: /^메모/ })).toHaveValue('아침 식후');
+  await recordEditor.getByRole('textbox', { name: /^메모/ }).fill('  저녁 식후  ');
+  await recordEditor.getByRole('button', { name: '저장' }).click();
+  await expect(recordEditor).toBeHidden();
 
   expect(patchBody).toEqual({
     dose_amount: 1,
@@ -268,6 +275,7 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
     note: '저녁 식후',
     review_body: null,
   });
+  await sheet.getByRole('button', { name: '닫기', exact: true }).click();
   await expect(iron.getByLabel('별 3점')).toBeVisible();
 });
 
