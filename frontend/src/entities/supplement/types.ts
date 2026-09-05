@@ -18,6 +18,10 @@ export interface Supplement {
   doseAmount: number;
   doseUnit: string;
   slots: SupplementSlot[];
+  /** 서버가 사용자 설정에서 계산한 실제 시간대 시각. */
+  slotTimes?: Partial<Record<SupplementSlot, string>>;
+  startDate?: string;
+  endDate?: string | null;
   /** 사용자가 남긴 별점 1~5. 안 남겼으면 null */
   score: number | null;
   /** 다른 사용자에게 공개되는 후기 본문. 안 썼으면 null */
@@ -151,4 +155,11 @@ export interface UpdateSupplementPayload {
   score?: number | null;
   note?: string | null;
   reviewBody?: string | null;
+}
+
+export interface SupplementDoseRecord {
+  supplementId: number;
+  date: string;
+  slot: SupplementSlot;
+  taken: boolean;
 }

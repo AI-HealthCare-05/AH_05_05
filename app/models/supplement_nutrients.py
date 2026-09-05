@@ -234,3 +234,19 @@ class UserSupplementNutrientSlot(models.Model):
     class Meta:
         table = "user_suppl_nutrient_slots"
         unique_together = (("user_suppl_nutrient", "slot"),)
+
+
+class SupplementDose(models.Model):
+    """One taken dose per registered supplement, calendar day and meal slot."""
+
+    id = fields.BigIntField(primary_key=True)
+    registration = fields.ForeignKeyField(
+        "models.UserSupplementNutrient", related_name="doses", on_delete=fields.CASCADE,
+    )
+    dose_date = fields.DateField()
+    slot = fields.CharEnumField(MealSlot)
+    taken_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "supplement_doses"
+        unique_together = (("registration", "dose_date", "slot"),)

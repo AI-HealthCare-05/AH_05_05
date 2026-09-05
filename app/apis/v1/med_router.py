@@ -1,9 +1,11 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.dependencies.security import get_request_user
 from app.dtos.nutrient_standards import NutrientStandardListResponse, NutrientStandardResponse
+from app.dtos.supplement_doses import SupplementDoseRequest, SupplementDoseResponse
 from app.dtos.supplement_nutrients import (
     PopularSupplementNutrientResponse,
     SupplementNutrientListResponse,
@@ -21,11 +23,28 @@ from app.models.enums import SupplementStatus
 from app.models.users import User
 from app.repositories.supplement_nutrient_repository import SupplementSort
 from app.services.nutrient_standards import NutrientStandardService
+from app.services.supplement_doses import SupplementDoseService
 from app.services.supplement_nutrients import SupplementNutrientService
 from app.services.supplement_reviews import SupplementReviewService
 from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
 med_router = APIRouter(prefix="/med", tags=["med-nutrition"])
+
+
+@med_router.get("/supplement-doses", response_model=list[SupplementDoseResponse], summary="영양제 일일 복용 기록 조회")
+async def list_supplement_doses(
+    user: Annotated[User, Depends(get_request_user)],
+    dose_date: Annotated[date, Query(alias="date")],
+) -> list[SupplementDoseResponse]:
+    return await SupplementDoseService().list(user, dose_date)
+
+
+@med_router.put("/supplement-doses", response_model=SupplementDoseResponse, summary="영양제 복용 기록 저장·되돌리기")
+async def save_supplement_dose(
+    data: SupplementDoseRequest,
+    user: Annotated[User, Depends(get_request_user)],
+) -> SupplementDoseResponse:
+    return await SupplementDoseService().save(user, data)
 
 
 def get_supplement_nutrient_service() -> SupplementNutrientService:

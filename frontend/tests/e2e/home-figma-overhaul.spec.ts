@@ -247,14 +247,9 @@ test('로그인 홈은 오늘의 복약과 오늘의 영양제 탭 아래 카드
   await tabs.getByRole('tab', { name: '오늘의 영양제' }).click();
   const supplements = page.getByRole('region', { name: '오늘의 영양제' });
   await expect(supplements).toBeVisible();
-  await expect(supplements.getByRole('button', { name: '개별 선택' })).toBeVisible();
-  await expect(supplements.getByText('1개 먹었어요', { exact: true })).toBeVisible();
-  await expect(supplements.getByText('다 먹었어요', { exact: true })).toBeVisible();
-  await expect(supplements.getByRole('button', { name: '1개 먹었어요' })).toHaveCount(0);
-  await expect(supplements.getByRole('button', { name: '다 먹었어요' })).toHaveCount(0);
-  await expect(supplements.getByRole('button', { name: '개별 선택' })).not.toHaveAttribute(
-    'aria-pressed',
-  );
+  const morningSupplements = supplements.getByRole('group', { name: '아침 영양제' });
+  await expect(morningSupplements.getByRole('button', { name: '개별 선택' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(morningSupplements.getByRole('button', { name: '다 먹었어요' })).toBeEnabled();
   await expect(page.getByRole('region', { name: '영양제 랭킹' })).toBeVisible();
 });
 
