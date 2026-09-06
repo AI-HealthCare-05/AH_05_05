@@ -1,4 +1,75 @@
-from ai_worker.llm.prompts.medication_chat_prompt import SYSTEM_PROMPT
+import json
+from importlib import import_module
+
+from ai_worker.llm.prompts.medication_chat_prompt import (
+    SYSTEM_PROMPT,
+    build_medication_chat_messages,
+)
+from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.medication_chat import (
+    ActiveIntakeContext,
+    MedicationChatRequest,
+    MedicationChatResult,
+    MedicationChatRoute,
+)
+
+
+def test_prompt_document_parser_extracts_runtime_sections() -> None:
+    prompt_assets = import_module("ai_worker.llm.prompts.prompt_assets")
+    parser = getattr(
+        prompt_assets,
+        "parse_prompt_template_document",
+        None,
+    )
+
+    assert callable(parser)
+
+    document = parser(
+        """
+<!-- prompt:system:start -->
+시스템 지침
+<!-- prompt:system:end -->
+<!-- prompt:user:start -->
+질문: {payload_json}
+<!-- prompt:user:end -->
+<!-- prompt:assistant_example:start -->
+근거가 확인된 내용만 답변합니다.
+<!-- prompt:assistant_example:end -->
+"""
+    )
+
+    assert document.system == "시스템 지침"
+    assert document.user == "질문: {payload_json}"
+    assert document.assistant_example == ("근거가 확인된 내용만 답변합니다.")
+
+
+def test_build_messages_applies_markdown_user_template() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="타이레놀의 주의사항을 알려줘",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="주의사항: 확인된 초안입니다.",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    assert user_content.startswith("입력 데이터(JSON)\n")
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["question"] == "타이레놀의 주의사항을 알려줘"
+    assert payload["draft_answer"] == "주의사항: 확인된 초안입니다."
 
 
 def test_system_prompt_requires_compact_plain_text_product_answer() -> None:
