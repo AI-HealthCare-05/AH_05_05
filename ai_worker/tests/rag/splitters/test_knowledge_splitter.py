@@ -895,6 +895,109 @@ def test_split_research_numbered_subsections_inherit_parent_section_type() -> No
     assert chunks[1].content.startswith("4.1.2. Fat-Soluble Vitamins")
 
 
+def test_split_research_unnumbered_subheadings_inherit_parent_section() -> None:
+    page = build_page(
+        "Results\n"
+        "Sucralfate\nSucralfate evidence is summarized. "
+        + "Additional absorption evidence is summarized. "
+        * 12
+        + "Sucralfate was also evaluated in healthy volunteers.\n"
+        "Bile Acid Sequestrants\nBile acid evidence is summarized.\n"
+        "Phosphate Binders\nPhosphate binder evidence is summarized.\n"
+        "Other Medications\nOther medication evidence is summarized.\n"
+        "Medications Inducing Alterations in Mucosal Transport Processes\n"
+        "Transport evidence is summarized.\n"
+        "Discussion\nThe evidence remains limited.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Levothyroxine interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split(
+        [page],
+        verified_section_headings=[
+            "Sucralfate",
+            "Bile Acid Sequestrants",
+            "Phosphate Binders",
+            "Other Medications",
+            "Medications Inducing Alterations in Mucosal Transport Processes",
+        ],
+    )
+
+    assert [chunk.metadata.section_title for chunk in chunks] == [
+        "Sucralfate",
+        "Bile Acid Sequestrants",
+        "Phosphate Binders",
+        "Other Medications",
+        "Medications Inducing Alterations in Mucosal Transport Processes",
+        "Discussion",
+    ]
+    assert all(chunk.metadata.section_type == KnowledgeSectionType.RESULTS for chunk in chunks[:5])
+    assert "Transport evidence" not in chunks[3].content
+    assert "healthy volunteers" in chunks[0].content
+
+
+def test_split_research_matches_verified_heading_wrapped_across_lines() -> None:
+    page = build_page(
+        "Results and Discussion\n"
+        "Form responsible for adverse effects\n"
+        "The product description was considered in causality assessment.\n"
+        "Case reports and side-effects associated with\n"
+        "PFS and botanical ingredients: a review of the\n"
+        "top 14\n"
+        "Only botanicals supported by at least ten reports were reviewed.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Botanical supplement adverse effects",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split(
+        [page],
+        verified_section_headings=[
+            "Form responsible for adverse effects",
+            ("Case reports and side-effects associated with PFS and botanical ingredients: a review of the top 14"),
+        ],
+    )
+
+    assert [chunk.metadata.section_title for chunk in chunks][-2:] == [
+        "Form responsible for adverse effects",
+        ("Case reports and side-effects associated with PFS and botanical ingredients: a review of the top 14"),
+    ]
+    assert chunks[-2].content.endswith("causality assessment.")
+    assert chunks[-1].content.endswith("at least ten reports were reviewed.")
+
+
+def test_split_research_separates_nested_other_drugs_from_catabolism() -> None:
+    page = build_page(
+        "Results\n"
+        "Medications Altering the Catabolism of LT4\n"
+        "In livers, T4 is degraded through several routes.\n"
+        "Carbamazepine\nCarbamazepine is a drug that alters metabolism and may "
+        "eliminate hypothyroid symptoms due to these drugs.\n"
+        "Other Drugs\nMetformin\n"
+        "The TSH suppression by metformin was reported in a case series.\n"
+        "Food and Beverages\nFood interactions are summarized.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Levothyroxine interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split(
+        [page],
+        verified_section_headings=[
+            "Medications Altering the Catabolism of LT4",
+            "Other Drugs",
+            "Food and Beverages",
+        ],
+    )
+
+    catabolism = next(
+        chunk for chunk in chunks if chunk.metadata.section_title == "Medications Altering the Catabolism of LT4"
+    )
+    other_drugs = next(chunk for chunk in chunks if chunk.metadata.section_title == "Other Drugs")
+    assert "Carbamazepine is a drug" in catabolism.content
+    assert "Other Drugs" not in catabolism.content
+    assert "Metformin" in other_drugs.content
+    assert "Food and Beverages" not in other_drugs.content
+
+
 def test_split_research_top_level_heading_resets_inherited_section_type() -> None:
     page = build_page(
         "2. Methods\nThe review method is described.\n"
@@ -1006,6 +1109,51 @@ def test_split_does_not_resume_research_body_inside_references() -> None:
     assert len(chunks) == 1
     assert chunks[0].metadata.section_type == KnowledgeSectionType.CONCLUSION
     assert "Abstract P59" not in chunks[0].content
+
+
+def test_split_does_not_treat_inline_references_as_back_matter() -> None:
+    page = build_page(
+        "Results and Discussion\n"
+        "Number of\n"
+        "references due to interactions with conventional drugs\n"
+        "Adverse effects due to interaction with nutrients or conventional drugs\n"
+        "The interaction evidence remained available for clinical review.\n"
+        "Conclusions\n"
+        "Severe reactions were uncommon but were reported.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Botanical supplement adverse effects",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    content = "\n".join(chunk.content for chunk in chunks)
+    assert "interaction evidence remained available" in content
+    assert "Severe reactions were uncommon" in content
+
+
+def test_split_accepts_verified_botanical_heading_with_attached_body() -> None:
+    page = build_page(
+        "Results and Discussion\n"
+        "General findings from the review are described here.\n"
+        "Ginkgo biloba L. (Ginkgo/maidenhair tree) The review identified bleeding reports.\n"
+        "Glycine max (L.) Merr. (soybean) The review identified allergy reports.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Botanical supplement adverse effects",
+    )
+    page = page.model_copy(
+        update={"metadata": page.metadata.model_copy(update={"source_id": "research_supplement_adverse_effects"})}
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split(
+        [page],
+        verified_section_headings=[
+            "Ginkgo biloba L. (Ginkgo/maidenhair tree)",
+            "Glycine max (L.) Merr. (soybean)",
+        ],
+    )
+
+    assert any(chunk.content.startswith("Ginkgo biloba L. (Ginkgo/maidenhair tree)") for chunk in chunks)
+    assert any(chunk.content.startswith("Glycine max (L.) Merr. (soybean)") for chunk in chunks)
 
 
 def test_split_excludes_drug_food_publication_colophon() -> None:
@@ -1200,6 +1348,34 @@ def test_split_connects_body_text_across_table_only_pages() -> None:
     body = "\n".join(chunk.content for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TEXT)
 
     assert "supernatant after 2-hour incubation and 10-min centrifugation." in body
+
+
+def test_split_connects_lowercase_continuation_across_text_blocks() -> None:
+    page = build_page(
+        "Results\nEvidence for interactions with conventional drugs was reviewed.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Botanical supplement adverse effects",
+    )
+    page.blocks = [
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TEXT,
+            order=0,
+            bbox=KnowledgeBoundingBox(x0=10, top=10, x1=250, bottom=80),
+            content="Results\nEvidence for interactions with conventional",
+        ),
+        KnowledgePageBlock(
+            kind=KnowledgeContentKind.TEXT,
+            order=1,
+            bbox=KnowledgeBoundingBox(x0=300, top=10, x1=550, bottom=80),
+            content="drugs; assessment of causality was reported.",
+        ),
+    ]
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    content = "\n".join(chunk.content for chunk in chunks)
+    assert "conventional drugs; assessment of causality" in content
+    assert "conventional\n\ndrugs" not in content
 
 
 def test_split_uses_korean_label_for_drug_food_interaction() -> None:

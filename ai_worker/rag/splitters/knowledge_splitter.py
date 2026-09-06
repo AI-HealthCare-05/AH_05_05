@@ -1,5 +1,6 @@
 import hashlib
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -216,6 +217,23 @@ _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
 
 _ATTACHED_BODY_HEADINGS_BY_SOURCE = {
     "kpicia_drug_encyclopedia": frozenset(_KPICIA_ATTACHED_DRUG_ENCYCLOPEDIA_HEADINGS),
+    "research_supplement_adverse_effects": frozenset(
+        {
+            "Camellia sinensis (L.) Kuntze (green tea)",
+            "Cinnamomum verum J. Presl (Cinnamomum zeylanicum cinnamon)",
+            "Citrus aurantium L. (bitter orange)",
+            "Echinacea purpurea (L.) Moench (Eastern purple coneflower)",
+            "Ginkgo biloba L. (Ginkgo/maidenhair tree)",
+            "Glycine max (L.) Merr. (soybean)",
+            "Glycyrrhiza glabra L. (liquorice)",
+            "Harpagophytum procumbens (Burch.) DC. (Devil’s claw)",
+            "Hypericum perforatum L. (St John’s wort)",
+            "Panax ginseng C.A. Meyer (ginseng)",
+            "Valeriana officinalis L. (valerian)",
+            "Vitex agnus castus L. (vitex or ‘chaste tree’)",
+            "Vitis vinifera L. (grape)",
+        }
+    ),
 }
 
 _ATTACHED_BODY_PROSE_CONTINUATION = re.compile(r"^(?:하면|하자면|은|는|이|가|을|를|의|도|만|에서|에는|으로)(?:\s|$)")
@@ -288,17 +306,28 @@ class KnowledgeSplitter:
     def tokenizer_encoding(self) -> str:
         return self._tokenizer_encoding
 
-    def split(self, pages: list[KnowledgePage]) -> list[KnowledgeChunk]:
+    def split(
+        self,
+        pages: list[KnowledgePage],
+        *,
+        verified_section_headings: list[str] | None = None,
+    ) -> list[KnowledgeChunk]:
         if not pages:
             return []
 
         self._validate_single_document(pages)
         if any(page.blocks for page in pages):
-            return self._split_block_pages(pages)
+            return self._split_block_pages(
+                pages,
+                verified_section_headings=verified_section_headings,
+            )
 
         metadata = pages[0].metadata
         policy = _POLICIES[metadata.document_type]
-        sections, page_ranges = self._split_sections(pages)
+        sections, page_ranges = self._split_sections(
+            pages,
+            verified_section_headings=verified_section_headings,
+        )
         sections = self._drop_publication_front_matter(
             sections,
             metadata.document_type,
@@ -377,17 +406,28 @@ class KnowledgeSplitter:
     def _split_block_pages(
         self,
         pages: list[KnowledgePage],
+        *,
+        verified_section_headings: list[str] | None = None,
     ) -> list[KnowledgeChunk]:
         text_pages: list[KnowledgePage] = []
         for page in pages:
-            text_content = "\n\n".join(
+            text_blocks = [
                 block.content
                 for block in sorted(
                     page.blocks,
                     key=lambda item: item.order,
                 )
                 if block.kind == KnowledgeContentKind.TEXT
-            ).strip()
+            ]
+            text_content = ""
+            for block_content in text_blocks:
+                if text_content:
+                    text_content += self._page_separator(
+                        text_content,
+                        block_content,
+                    )
+                text_content += block_content
+            text_content = text_content.strip()
             if text_content:
                 text_pages.append(
                     page.model_copy(
@@ -398,7 +438,14 @@ class KnowledgeSplitter:
                     )
                 )
 
-        chunks = self.split(text_pages) if text_pages else []
+        chunks = (
+            self.split(
+                text_pages,
+                verified_section_headings=verified_section_headings,
+            )
+            if text_pages
+            else []
+        )
         metadata = pages[0].metadata
         policy = _POLICIES[metadata.document_type]
         table_sequences: dict[str, int] = {}
@@ -633,13 +680,16 @@ class KnowledgeSplitter:
     def _split_sections(
         self,
         pages: list[KnowledgePage],
+        *,
+        verified_section_headings: list[str] | None = None,
     ) -> tuple[list[KnowledgeSection], list[tuple[int, int, int]]]:
         metadata = pages[0].metadata
         if metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
             supplement_sections, supplement_page_ranges = self._supplement_code_parser.parse(pages)
             if supplement_sections:
                 return supplement_sections, supplement_page_ranges
-        headings = _HEADINGS.get(metadata.document_type, {})
+        headings: dict[str, KnowledgeSectionType | None] = dict(_HEADINGS.get(metadata.document_type, {}))
+        headings.update({heading: None for heading in verified_section_headings or []})
         combined, page_ranges = self._combine_pages(pages)
         combined = self._truncate_document_back_matter(
             combined,
@@ -796,7 +846,7 @@ class KnowledgeSplitter:
     @staticmethod
     def _find_heading_matches(
         content: str,
-        headings: dict[str, KnowledgeSectionType],
+        headings: dict[str, KnowledgeSectionType | None],
         *,
         document_type: KnowledgeDocumentType,
         attached_body_headings: frozenset[str],
@@ -804,14 +854,21 @@ class KnowledgeSplitter:
         candidates: list[_HeadingCandidate] = []
 
         for heading, section_type in sorted(headings.items(), key=lambda item: len(item[0]), reverse=True):
-            for match in re.finditer(re.escape(heading), content, flags=re.IGNORECASE):
-                if (
-                    document_type == KnowledgeDocumentType.RESEARCH_ARTICLE
-                    and KnowledgeSplitter._is_inline_abstract_label(
-                        content,
-                        match.start(),
-                        match.end(),
-                    )
+            for match in KnowledgeSplitter._heading_occurrences(
+                content,
+                heading,
+                require_standalone=KnowledgeSplitter._requires_standalone_heading(
+                    heading=heading,
+                    section_type=section_type,
+                    document_type=document_type,
+                    attached_body_headings=attached_body_headings,
+                ),
+            ):
+                if not KnowledgeSplitter._is_eligible_heading_match(
+                    content=content,
+                    match=match,
+                    section_type=section_type,
+                    document_type=document_type,
                 ):
                     continue
                 is_decorated_heading = KnowledgeSplitter._is_decorated_heading_line(
@@ -867,6 +924,104 @@ class KnowledgeSplitter:
         return KnowledgeSplitter._resolve_inherited_heading_types(selected)
 
     @staticmethod
+    def _requires_standalone_heading(
+        *,
+        heading: str,
+        section_type: KnowledgeSectionType | None,
+        document_type: KnowledgeDocumentType,
+        attached_body_headings: frozenset[str],
+    ) -> bool:
+        if section_type is None:
+            return heading not in attached_body_headings
+        return (
+            section_type == KnowledgeSectionType.REFERENCES and document_type != KnowledgeDocumentType.RESEARCH_ARTICLE
+        )
+
+    @staticmethod
+    def _is_eligible_heading_match(
+        *,
+        content: str,
+        match: re.Match[str],
+        section_type: KnowledgeSectionType | None,
+        document_type: KnowledgeDocumentType,
+    ) -> bool:
+        if document_type != KnowledgeDocumentType.RESEARCH_ARTICLE:
+            return True
+        if section_type == KnowledgeSectionType.REFERENCES:
+            return KnowledgeSplitter._is_references_section_start(
+                content,
+                match.start(),
+                match.end(),
+            )
+        return not KnowledgeSplitter._is_inline_abstract_label(
+            content,
+            match.start(),
+            match.end(),
+        )
+
+    @staticmethod
+    def _is_references_section_start(
+        content: str,
+        heading_start: int,
+        heading_end: int,
+    ) -> bool:
+        """표 머리글의 References와 실제 참고문헌 섹션을 구분합니다."""
+        if not KnowledgeSplitter._is_standalone_heading_line(
+            content,
+            heading_start,
+            heading_end,
+        ):
+            # 한 줄짜리 합성 테스트와 일부 PDF는 ``References`` 뒤에 바로
+            # 첫 인용문을 둡니다. 표 열 이름은 대개 소문자이므로 정확한
+            # 대문자 표기만 참고문헌 시작으로 인정합니다.
+            return content[heading_start:heading_end] in {
+                "References",
+                "Bibliography",
+            }
+        following = content[heading_end:]
+        first_entry = re.match(
+            r"\s*(?:\[?\d{1,3}\]?)[.)]?\s+[A-Z가-힣]",
+            following,
+        )
+        return first_entry is not None
+
+    @staticmethod
+    def _heading_occurrences(
+        content: str,
+        heading: str,
+        *,
+        require_standalone: bool,
+    ) -> Iterator[re.Match[str]]:
+        heading_parts = heading.split()
+        if not heading_parts:
+            return iter(())
+        pattern = r"\s+".join(re.escape(part) for part in heading_parts)
+        matches = re.finditer(pattern, content, flags=re.IGNORECASE)
+        if not require_standalone:
+            return matches
+        return (
+            match
+            for match in matches
+            if KnowledgeSplitter._is_standalone_heading_line(
+                content,
+                match.start(),
+                match.end(),
+            )
+        )
+
+    @staticmethod
+    def _is_standalone_heading_line(
+        content: str,
+        start: int,
+        end: int,
+    ) -> bool:
+        line_start = content.rfind("\n", 0, start) + 1
+        line_end = content.find("\n", end)
+        if line_end < 0:
+            line_end = len(content)
+        return not content[line_start:start].strip() and not content[end:line_end].strip()
+
+    @staticmethod
     def _is_inline_abstract_label(
         content: str,
         start: int,
@@ -901,7 +1056,7 @@ class KnowledgeSplitter:
     @staticmethod
     def _research_heading_candidates(
         content: str,
-        headings: dict[str, KnowledgeSectionType],
+        headings: dict[str, KnowledgeSectionType | None],
     ) -> list[_HeadingCandidate]:
         candidates: list[_HeadingCandidate] = [
             (

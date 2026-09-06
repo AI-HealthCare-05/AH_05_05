@@ -28,7 +28,32 @@
       "publication_year": 2023,
       "drug_names": ["levothyroxine", "LT4"],
       "evidence_level": "SYSTEMATIC_REVIEW",
-      "study_population": "HUMAN"
+      "study_population": "HUMAN",
+      "verified_text_replacements": {
+        "Psyl ium hydrophilic mucil oid": "Psyllium hydrophilic mucilloid",
+        "Vitamin Cb": "Vitamin Cᵇ",
+        "Cof ee": "Coffee",
+        "intestinal walll": "intestinal wall",
+        "intestinal wal (for grapefruit juice)": "intestinal wall (for grapefruit juice)"
+      },
+      "verified_section_headings": [
+        "Sucralfate",
+        "Bile Acid Sequestrants",
+        "Phosphate Binders",
+        "Other Medications",
+        "Medications Inducing Alterations in Mucosal Transport Processes",
+        "Medications Altering the Gastric pH",
+        "Proton Pump Inhibitors",
+        "Histamine H2-Receptor Antagonists",
+        "Vitamin C",
+        "Medications Affecting the Transport LT4 in the Systemic Circulation",
+        "Medications Altering the Catabolism of LT4",
+        "Other Drugs",
+        "Food and Beverages"
+      ],
+      "approved_chunk_content_hashes": [
+        "e6f3426571c281275a91bb21e667d7859684d259fe4f1a6ab2ae802ff918e802"
+      ]
     },
     {
       "source_id": "research_drug_nutrient_interactions",
@@ -66,7 +91,51 @@
       "publication_year": 2015,
       "ingredient_names": ["plant food supplements", "botanical preparations"],
       "evidence_level": "SYSTEMATIC_REVIEW",
-      "study_population": "HUMAN"
+      "study_population": "HUMAN",
+      "verified_text_replacements": {
+        "transplanta-tion": "transplantation",
+        "contamina-tion": "contamination",
+        "predomi-nant": "predominant",
+        "com-pound": "compound",
+        "hor-mones": "hormones",
+        "hypothyroid-ism": "hypothyroidism",
+        "suf-fering": "suffering",
+        "concomi-tantly": "concomitantly",
+        "Plant foot supplement": "Plant food supplement",
+        "Cinnamomum verum J. Prestl": "Cinnamomum verum J. Presl"
+      },
+      "approved_chunk_content_hashes": [
+        "b3e6a18c0fa48ff15e4f9806221f7ca4c5dfff06aa524886a14c9bd0e0d56ce1",
+        "2192587169c3e41c8345cba5994a05ec643b995fae45f7143818eaf1674f0b37",
+        "8ce094d52b9ad49aeda236605f0b47f29f019f8b1a15095c2a85e9c220b3ab1a",
+        "7a676465eaa9c71ee6cedca6b80c6b4a319f2fffd66776ec243060c906ec0ae0",
+        "c8d692c1e614612283de8d9da9343371aac7e9807d3528f6652376ea5fd158ce",
+        "4dcfaa51ba1ec6bb2bbb43504ef44bcfe5e0b0c9eba179acadc38b64021ac953",
+        "ec9556878b111c17761acf017048d27fa000c4aacd939f3706b3ebbc0309a7e4",
+        "809956f8e61605c2c80c07f4a79c5525d9132b77d764b9ad0b10e5b59c906efa"
+      ],
+      "verified_section_headings": [
+        "Botanical ingredients",
+        "Literature search",
+        "Causality assessment",
+        "Online supplementary data",
+        "Adverse effects due to interaction with nutrients or conventional drugs",
+        "Form responsible for adverse effects",
+        "Case reports and side-effects associated with PFS and botanical ingredients: a review of the top 14",
+        "Camellia sinensis (L.) Kuntze (green tea)",
+        "Cinnamomum verum J. Presl (Cinnamomum zeylanicum cinnamon)",
+        "Citrus aurantium L. (bitter orange)",
+        "Echinacea purpurea (L.) Moench (Eastern purple coneflower)",
+        "Ginkgo biloba L. (Ginkgo/maidenhair tree)",
+        "Glycine max (L.) Merr. (soybean)",
+        "Glycyrrhiza glabra L. (liquorice)",
+        "Harpagophytum procumbens (Burch.) DC. (Devil’s claw)",
+        "Hypericum perforatum L. (St John’s wort)",
+        "Panax ginseng C.A. Meyer (ginseng)",
+        "Valeriana officinalis L. (valerian)",
+        "Vitex agnus castus L. (vitex or ‘chaste tree’)",
+        "Vitis vinifera L. (grape)"
+      ]
     }
   ]
 }

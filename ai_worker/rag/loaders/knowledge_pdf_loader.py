@@ -6,6 +6,9 @@ from typing import Any
 import pdfplumber
 from pypdf import PdfReader
 
+from ai_worker.rag.loaders.botanical_review_layout_parser import (
+    BotanicalReviewLayoutParser,
+)
 from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtractor
 from ai_worker.schemas.knowledge import (
     KnowledgeContentKind,
@@ -27,9 +30,11 @@ class KnowledgePdfLoader:
         *,
         layout_extractor: PdfLayoutExtractor | None = None,
         layout_document_opener: Callable[[Path], Any] | None = None,
+        verified_layout_parser: BotanicalReviewLayoutParser | None = None,
     ) -> None:
         self._layout_extractor = layout_extractor or PdfLayoutExtractor()
         self._layout_document_opener = layout_document_opener or pdfplumber.open
+        self._verified_layout_parser = verified_layout_parser or BotanicalReviewLayoutParser()
 
     def load(
         self,
@@ -91,6 +96,13 @@ class KnowledgePdfLoader:
         ):
             try:
                 extraction = self._layout_extractor.extract(layout_page)
+                verified_extraction = self._verified_layout_parser.parse(
+                    page=layout_page,
+                    page_number=page_number,
+                    source_id=metadata.source_id,
+                )
+                if verified_extraction is not None:
+                    extraction = verified_extraction
                 inherit_headers = getattr(
                     self._layout_extractor,
                     "inherit_continued_table_headers",

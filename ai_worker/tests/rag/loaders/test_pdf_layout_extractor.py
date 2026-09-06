@@ -956,6 +956,21 @@ def test_extract_does_not_mark_spaced_review_badge_as_unsafe() -> None:
     assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE not in extraction.warnings
 
 
+def test_extract_does_not_treat_slash_s_search_terms_as_fragmented_text() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("adverse", 40, 100, 90, 112),
+            word("effect/s", 95, 100, 145, 112),
+            word("poisoning/s", 150, 100, 220, 112),
+            word("interaction/s", 225, 100, 305, 112),
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE not in extraction.warnings
+
+
 def test_extract_keeps_source_numbers_and_units_in_their_cells() -> None:
     page = FakeLayoutPage(
         words=[
@@ -1008,24 +1023,78 @@ def test_extract_orders_spanning_title_before_columns_and_footer() -> None:
     assert KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in (extraction.warnings)
 
 
-def test_extract_expands_same_as_reference_with_previous_row_context() -> None:
+def test_extract_separates_academic_columns_with_narrow_gutter() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("Left", 40, 100, 70, 112),
+            word("column", 75, 100, 120, 112),
+            word("continues", 125, 100, 280, 112),
+            word("Right", 305, 100, 340, 112),
+            word("column", 345, 100, 390, 112),
+            word("starts", 395, 100, 430, 112),
+            word("Left", 40, 130, 70, 142),
+            word("second", 75, 130, 120, 142),
+            word("Right", 305, 130, 340, 142),
+            word("second", 345, 130, 390, 142),
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert [block.content for block in extraction.blocks] == [
+        "Left column continues\nLeft second",
+        "Right column starts\nRight second",
+    ]
+    assert KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in extraction.warnings
+
+
+def test_extract_resolves_same_as_reference_by_named_row_without_repeating_row() -> None:
     page = FakeLayoutPage(
         words=[],
         tables=[
             FakeTable(
                 (30, 100, 500, 200),
                 [
-                    ["Nutrient", "Recommendation"],
-                    ["Calcium", "Separate by 4 hours"],
-                    ["Iron", "Same as calcium supplement"],
+                    ["Interfering Substances", "Class", "Recommendation"],
+                    ["Calcium carbonate", "Calcium supplement", "Separate by 4 hours"],
+                    ["Omeprazole", "Proton pump inhibitor", "Use another formulation"],
+                    ["Iron", "Iron supplement", "Same as calcium supplement"],
                 ],
             )
         ],
     )
 
     extraction = PdfLayoutExtractor().extract(page)
+    content = extraction.blocks[0].content
 
-    assert "참조 행: Nutrient=Calcium | Recommendation=Separate by 4 hours" in (extraction.blocks[0].content)
+    assert "Recommendation=Same as calcium supplement: Separate by 4 hours" in content
+    assert "참조 행:" not in content
+    assert content.count("Interfering Substances=Calcium carbonate") == 1
+
+
+def test_extract_keeps_multiple_interfering_substances_in_one_shared_row() -> None:
+    page = FakeLayoutPage(
+        words=[],
+        tables=[
+            FakeTable(
+                (30, 100, 500, 200),
+                [
+                    ["Interfering Substances", "Class", "Recommendation"],
+                    [
+                        "Imatinib\nSorafenib\nMotesanib",
+                        "Tyrosine kinase inhibitors",
+                        "Close monitoring",
+                    ],
+                ],
+            )
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+    table = extraction.blocks[0]
+
+    assert len(table.rows) == 1
+    assert table.rows[0].cells[0] == "Imatinib; Sorafenib; Motesanib"
 
 
 def test_extract_does_not_treat_non_overlapping_left_and_right_lines_as_columns() -> None:

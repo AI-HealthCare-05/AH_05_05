@@ -301,6 +301,20 @@ def test_normalize_pages_removes_mdpi_footer_and_numeric_citations_only() -> Non
     )
 
 
+def test_normalize_pages_removes_caret_citations_but_keeps_exponents() -> None:
+    pages = build_research_pages(
+        "Other medications may bind with LT4 molecules.^54,^55\n"
+        "The catabolism evidence was reported.^45,^46,^68,^69,^72–^75,^80,^89\n"
+        "The assay used 10^5 cells."
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert "^54" not in normalized[0].content
+    assert "^45" not in normalized[0].content
+    assert "10^5 cells" in normalized[0].content
+
+
 def test_normalize_pages_removes_figure_labels_but_preserves_claims_and_tables() -> None:
     pages = build_pages(
         "Results\n"
@@ -341,6 +355,62 @@ def test_normalize_pages_removes_figure_and_supplement_cross_reference() -> None
 
     assert normalized[0].content == (
         "Results\nThe other studies met the exclusions.\nThe clinical finding remains relevant."
+    )
+
+
+def test_normalize_pages_removes_british_clinical_pharmacology_furniture() -> None:
+    pages = build_research_pages(
+        "C. Di Lorenzo et al.\n"
+        "Botanical adverse effects were assessed.\n"
+        "580 / 79:4 / Br J Clin Pharmacol\n"
+        "Adverse effects of plant food supplements\n"
+        "Br J Clin Pharmacol / 79:4 / 581"
+    )
+
+    normalized = KnowledgeNormalizer().normalize_pages(pages)
+
+    assert normalized[0].content == "Botanical adverse effects were assessed."
+
+
+def test_normalize_pages_reconstructs_botanical_review_structured_abstract() -> None:
+    title = (
+        "Adverse effects of plant food supplements and botanical preparations: "
+        "a systematic review with critical evaluation of causality"
+    )
+    page = build_research_pages(
+        "British Journal of Clinical Pharmacology\n"
+        "AIMS\nfood supplements/botanicals and conventional drugs or nutrients.\n"
+        "METHODS\nRESULTS\n"
+        "Camellia sinensis/green tea (8.7%) and Ginkgo biloba/gingko (8.5%).\n"
+        "CONCLUSIONS\nIntroduction\n"
+        "The use of food supplements is growing in both Europe and the USA. "
+        "Food supplements can contain vitamins,\n"
+        "minerals, botanicals, amino acids, enzymes and many other ingredients.\n"
+        f"{title}\n"
+        "The objective of this review was to collect adverse effects and interactions between plant\n"
+        "PubMed/MEDLINE and Embase were searched. All papers were critically evaluated.\n"
+        "Data were obtained for 66 plants. Glycyrrhiza glabra/liquorice (12.2%),\n"
+        "Considering the length of time examined, severe reactions were uncommon.",
+    )[0]
+    page = page.model_copy(update={"metadata": page.metadata.model_copy(update={"title": title})})
+
+    normalized = KnowledgeNormalizer().normalize_pages([page])
+
+    assert normalized[0].content == (
+        f"{title}\n"
+        "AIMS\n"
+        "The objective of this review was to collect adverse effects and interactions between plant "
+        "food supplements/botanicals and conventional drugs or nutrients.\n"
+        "METHODS\n"
+        "PubMed/MEDLINE and Embase were searched. All papers were critically evaluated.\n"
+        "RESULTS\n"
+        "Data were obtained for 66 plants. Glycyrrhiza glabra/liquorice (12.2%), "
+        "Camellia sinensis/green tea (8.7%) and Ginkgo biloba/gingko (8.5%).\n"
+        "CONCLUSIONS\n"
+        "Considering the length of time examined, severe reactions were uncommon.\n"
+        "Introduction\n"
+        "The use of food supplements is growing in both Europe and the USA. "
+        "Food supplements can contain vitamins, minerals, botanicals, amino acids, enzymes and many other ingredients."
     )
 
 

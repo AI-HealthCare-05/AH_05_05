@@ -91,7 +91,23 @@ class KnowledgePilotEntry(BaseModel):
     evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
     study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
     verified_text_replacements: dict[str, str] = Field(default_factory=dict)
+    verified_section_headings: list[str] = Field(default_factory=list)
     approved_chunk_content_hashes: list[str] = Field(default_factory=list)
+
+    @field_validator("verified_section_headings")
+    @classmethod
+    def normalize_verified_section_headings(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            heading = value.strip()
+            if not heading:
+                raise ValueError("검증된 섹션 제목은 비어 있을 수 없습니다.")
+            if heading not in normalized:
+                normalized.append(heading)
+        return normalized
 
     @field_validator("approved_chunk_content_hashes")
     @classmethod

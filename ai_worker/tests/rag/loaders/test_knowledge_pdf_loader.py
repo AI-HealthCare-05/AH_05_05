@@ -239,6 +239,25 @@ class FakeCoordinateExtractor:
         )
 
 
+class FakeVerifiedLayoutParser:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def parse(self, *, page, page_number, source_id):
+        self.calls.append((page, page_number, source_id))
+        return PdfLayoutExtraction(
+            blocks=[
+                KnowledgePageBlock(
+                    kind=KnowledgeContentKind.TEXT,
+                    order=0,
+                    bbox=KnowledgeBoundingBox(x0=10, top=10, x1=300, bottom=30),
+                    content="검수 좌표로 복원한 본문",
+                )
+            ],
+            warnings=[KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT],
+        )
+
+
 class FakeContinuedTableExtractor:
     def extract(self, page) -> PdfLayoutExtraction:
         is_first = not isinstance(page, FakeBrokenCoordinatePage)
@@ -313,6 +332,35 @@ def test_load_uses_coordinate_blocks_for_research_document(
         KnowledgeContentKind.TABLE,
     ]
     assert layout_document.closed is True
+
+
+def test_load_prefers_verified_source_layout_over_generic_extraction(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(knowledge_pdf_loader, "PdfReader", FakeMultiColumnReader)
+    layout_document = FakeLayoutDocument()
+    verified_parser = FakeVerifiedLayoutParser()
+    metadata = KnowledgeMetadata(
+        source_id="research_supplement_adverse_effects",
+        document_id="research-coordinate",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeCoordinateExtractor(),
+        layout_document_opener=lambda _: layout_document,
+        verified_layout_parser=verified_parser,
+    ).load(pdf_path, metadata)
+
+    assert pages[0].content == "검수 좌표로 복원한 본문"
+    assert verified_parser.calls == [(layout_document.pages[0], 1, "research_supplement_adverse_effects")]
 
 
 def test_load_marks_layout_unsafe_when_coordinate_extraction_fails(

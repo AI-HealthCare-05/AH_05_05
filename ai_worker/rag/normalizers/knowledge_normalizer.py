@@ -94,6 +94,16 @@ class KnowledgeNormalizer:
             flags=re.IGNORECASE,
         ),
         re.compile(r"^.+\s+Dovepress$", flags=re.IGNORECASE),
+        re.compile(
+            r"^(?:\d+\s*/\s*79:4\s*/\s*(?:\d+[–-]\d+\s*/\s*)?"
+            r"Br J Clin Pharmacol|Br J Clin Pharmacol\s*/\s*79:4\s*/\s*\d+)$",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(r"^C\.\s*Di Lorenzo et al\.?$", flags=re.IGNORECASE),
+        re.compile(
+            r"^Adverse effects of plant food supplements$",
+            flags=re.IGNORECASE,
+        ),
     )
     _NUMERIC_CITATION_PATTERN = re.compile(r"[ \t]*\[\s*\d+(?:\s*(?:[,;]|[-–—])\s*\d+)*\s*\]")
     _FIGURE_CAPTION_PATTERN = re.compile(
@@ -152,6 +162,7 @@ class KnowledgeNormalizer:
         r"(?:\^)?\d+(?:\s*(?:[,;]|[-–—])\s*\d+)*",
         flags=re.IGNORECASE,
     )
+    _RESEARCH_CARET_CITATION_PATTERN = re.compile(r"(?<!\d)\^\d+(?:\s*(?:[,;]|[-–—])\s*\^?\d+)*")
     _RESEARCH_EVIDENCE_HEADER_FOOTNOTE_PATTERN = re.compile(
         r"^Evidences?[a-z]$",
         flags=re.IGNORECASE,
@@ -537,6 +548,10 @@ class KnowledgeNormalizer:
                 lambda match: match.group("label"),
                 normalized,
             )
+            normalized = self._RESEARCH_CARET_CITATION_PATTERN.sub(
+                "",
+                normalized,
+            )
             normalized = re.sub(r"[ \t]+([.,;:])", r"\1", normalized)
             return normalized
         if document_type != KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
@@ -594,12 +609,20 @@ class KnowledgeNormalizer:
             or ("doiorg" in compact and "tcrm" in compact)
         )
 
-    @staticmethod
+    @classmethod
     def _normalize_research_front_page(
+        cls,
         content: str,
         *,
         document_title: str,
     ) -> str:
+        botanical_review = cls._reconstruct_botanical_review_front_page(
+            content,
+            document_title=document_title,
+        )
+        if botanical_review is not None:
+            return botanical_review
+
         title_pattern = re.compile(
             re.escape(document_title).replace(r"\ ", r"\s+"),
             flags=re.IGNORECASE,
@@ -620,6 +643,96 @@ class KnowledgeNormalizer:
         if re.match(r"(?i)^Purpose\s*:", abstract_and_body):
             abstract_and_body = f"Abstract\n{abstract_and_body}"
         return f"{document_title}\n{abstract_and_body}".strip()
+
+    @staticmethod
+    def _reconstruct_botanical_review_front_page(
+        content: str,
+        *,
+        document_title: str,
+    ) -> str | None:
+        if not re.search(
+            r"(?i)adverse effects of plant food supplements.+systematic review",
+            document_title,
+        ):
+            return None
+
+        flattened = re.sub(r"\s+", " ", content).strip()
+
+        def between(start: str, end: str | None = None) -> str | None:
+            start_match = re.search(start, flattened, flags=re.IGNORECASE)
+            if not start_match:
+                return None
+            boundary = len(flattened)
+            if end:
+                end_match = re.search(
+                    end,
+                    flattened[start_match.end() :],
+                    flags=re.IGNORECASE,
+                )
+                if not end_match:
+                    return None
+                boundary = start_match.end() + end_match.start()
+            return flattened[start_match.start() : boundary].strip()
+
+        aims = between(r"The objective of this review\b", r"PubMed/MEDLINE\b")
+        methods = between(r"PubMed/MEDLINE\b", r"Data were obtained\b")
+        results = between(r"Data were obtained\b", r"Considering the length of time examined\b")
+        conclusions = between(r"Considering the length of time examined\b")
+        aims_tail = re.search(
+            r"food supplements/botanicals and conventional drugs or nutrients\.",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        results_tail = re.search(
+            r"Camellia sinensis/green tea\s*\(\s*8\.7%\) and "
+            r"Ginkgo biloba/gingko\s*\(8\.5%\)\.",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        intro_left = re.search(
+            r"The use of food supplements\b.*?Food supplements can contain vitamins,",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        intro_right = re.search(
+            r"minerals, botanicals, amino acids, enzymes and many other ingredients"
+            r"(?:.*?energy bars)?\.",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        required = (
+            aims,
+            methods,
+            results,
+            conclusions,
+            aims_tail,
+            results_tail,
+            intro_left,
+            intro_right,
+        )
+        if not all(required):
+            return None
+
+        if aims_tail.group(0).casefold() not in aims.casefold():
+            aims = f"{aims.rstrip()} {aims_tail.group(0)}"
+        if results_tail.group(0).casefold() not in results.casefold():
+            results = f"{results.rstrip()} {results_tail.group(0)}"
+        introduction = f"{intro_left.group(0).rstrip()} {intro_right.group(0).lstrip()}"
+        return "\n".join(
+            (
+                document_title,
+                "AIMS",
+                aims,
+                "METHODS",
+                methods,
+                "RESULTS",
+                results,
+                "CONCLUSIONS",
+                conclusions,
+                "Introduction",
+                introduction,
+            )
+        )
 
     @staticmethod
     def _replace_front_page_text_blocks(

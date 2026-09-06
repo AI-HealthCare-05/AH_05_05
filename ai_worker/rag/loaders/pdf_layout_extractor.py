@@ -45,6 +45,7 @@ _SCIENTIFIC_INTERACTION_HEADERS = [
 _DUPLICATED_GLYPH_PATTERN = re.compile(r"(?i)(?:([a-z])\1){3,}")
 _SUSPICIOUS_SINGLE_LETTER_PATTERN = re.compile(r"\b(?!a\b|i\b)[a-z]\b")
 _ENUMERATION_LABEL_PATTERN = re.compile(r"\b[a-z]\)")
+_SEARCH_TERM_PLURAL_PATTERN = re.compile(r"(?i)/s\b")
 _TABLE_HEADER_CELL_PATTERN = re.compile(
     r"(?i)\b(?:age|dose|weight|drug|class|effect|ingredient|result|"
     r"strength|color|shape|markings|hormone|ratio|potency|binding|"
@@ -145,7 +146,15 @@ class PdfLayoutExtractor:
             _DUPLICATED_GLYPH_PATTERN.search(line) for block in text_blocks for line in block.content.splitlines()
         )
         has_fragmented_body_line = any(
-            len(_SUSPICIOUS_SINGLE_LETTER_PATTERN.findall(_ENUMERATION_LABEL_PATTERN.sub("", line))) >= 3
+            len(
+                _SUSPICIOUS_SINGLE_LETTER_PATTERN.findall(
+                    _SEARCH_TERM_PLURAL_PATTERN.sub(
+                        "",
+                        _ENUMERATION_LABEL_PATTERN.sub("", line),
+                    )
+                )
+            )
+            >= 3
             for block in text_blocks
             for line in block.content.splitlines()
         )
@@ -837,17 +846,59 @@ class PdfLayoutExtractor:
     ) -> list[str]:
         expanded: list[str] = []
         serialized_index = 0
-        previous_serialized: str | None = None
+        reference_rows: dict[str, list[str]] = {}
         for row in source_rows:
             if not any(row):
                 continue
             serialized = serialized_rows[serialized_index]
             serialized_index += 1
-            if previous_serialized and any(_SAME_AS_PATTERN.search(cell) for cell in row):
-                serialized = f"{serialized} | 참조 행: {previous_serialized}"
+            for column_index, cell in enumerate(row):
+                if not _SAME_AS_PATTERN.search(cell):
+                    continue
+                resolved = PdfLayoutExtractor._resolve_named_row_reference(
+                    cell=cell,
+                    column_index=column_index,
+                    reference_rows=reference_rows,
+                )
+                if resolved != cell:
+                    serialized = serialized.replace(cell, resolved, 1)
             expanded.append(serialized)
-            previous_serialized = serialized_rows[serialized_index - 1]
+            for cell in row:
+                normalized = re.sub(r"\s+", " ", cell).strip().casefold()
+                if not normalized:
+                    continue
+                reference_rows[normalized] = row
+                if cell[:1].isupper() and normalized.endswith(("a", "b")):
+                    reference_rows.setdefault(normalized[:-1], row)
         return expanded
+
+    @staticmethod
+    def _resolve_named_row_reference(
+        *,
+        cell: str,
+        column_index: int,
+        reference_rows: dict[str, list[str]],
+    ) -> str:
+        match = re.search(r"(?i)\bsame\s+as\s+", cell)
+        if not match:
+            return cell
+        remainder = cell[match.end() :].strip()
+        for target in sorted(reference_rows, key=len, reverse=True):
+            target_match = re.match(re.escape(target), remainder, flags=re.IGNORECASE)
+            if not target_match:
+                continue
+            target_row = reference_rows[target]
+            if column_index >= len(target_row):
+                continue
+            referenced_value = target_row[column_index].strip()
+            if not referenced_value or _SAME_AS_PATTERN.search(referenced_value):
+                continue
+            suffix = remainder[target_match.end() :].strip()
+            resolved = f"{cell[: match.end()]}{remainder[: target_match.end()]}: {referenced_value}"
+            if suffix:
+                resolved = f"{resolved} {suffix}"
+            return resolved
+        return cell
 
     @staticmethod
     def _tokens_are_preserved(*, source: str, rendered: str) -> bool:
@@ -1012,7 +1063,10 @@ class PdfLayoutExtractor:
                 rows[-1].append(indexed_word)
 
         split_rows: list[list[tuple[int, dict[str, Any]]]] = []
-        horizontal_gap = max(28.0, page_width * 0.07)
+        # 학술지의 2단 본문은 단 사이 여백이 페이지 폭의 4% 안팎으로
+        # 좁은 경우가 많다. 일반 단어 간격보다 충분히 크면서 실제 단
+        # 여백은 분리할 수 있도록 고정 18pt/페이지 폭 3% 중 큰 값을 쓴다.
+        horizontal_gap = max(18.0, page_width * 0.03)
         for row in rows:
             current: list[tuple[int, dict[str, Any]]] = []
             for indexed_word in sorted(

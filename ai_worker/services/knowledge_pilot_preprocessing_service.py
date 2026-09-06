@@ -367,7 +367,10 @@ class KnowledgePilotPreprocessingService:
                 )
                 continue
 
-            chunks = self._splitter.split(normalized_pages)
+            chunks = self._splitter.split(
+                normalized_pages,
+                verified_section_headings=pilot.verified_section_headings,
+            )
             if not chunks:
                 failed_representative_source_ids.add(pilot.source_id)
                 skipped.append(
