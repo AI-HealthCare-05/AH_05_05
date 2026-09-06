@@ -1554,9 +1554,7 @@ def test_preprocess_releases_manually_verified_rotated_text(
                     "processing_status": "TEXT_EXTRACTABLE",
                     "selection_reason": "사람이 원문과 대조한 회전 텍스트",
                     "manual_review_status": "APPROVED",
-                    "approved_review_reason_codes": [
-                        "ROTATED_TEXT_REQUIRES_REVIEW"
-                    ],
+                    "approved_review_reason_codes": ["ROTATED_TEXT_REQUIRES_REVIEW"],
                     "title": "Interaction review",
                     "source_url": "https://doi.org/10.1234/rotated",
                     "drug_names": ["example drug"],

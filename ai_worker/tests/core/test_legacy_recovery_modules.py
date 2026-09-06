@@ -8,10 +8,6 @@ def test_legacy_discharge_recovery_prompt_modules_are_removed() -> None:
         "ai_worker.llm.prompts.recovery_guide_prompt",
     )
 
-    remaining_modules = [
-        module_name
-        for module_name in legacy_modules
-        if find_spec(module_name) is not None
-    ]
+    remaining_modules = [module_name for module_name in legacy_modules if find_spec(module_name) is not None]
 
     assert remaining_modules == []

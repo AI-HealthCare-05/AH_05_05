@@ -260,9 +260,7 @@ class FakeVerifiedLayoutParser:
 
     def repair(self, *, extraction, page_number, source_id):
         self.repair_calls.append((page_number, source_id))
-        repaired_block = extraction.blocks[0].model_copy(
-            update={"content": "검수 좌표로 복원하고 문맥을 보정한 본문"}
-        )
+        repaired_block = extraction.blocks[0].model_copy(update={"content": "검수 좌표로 복원하고 문맥을 보정한 본문"})
         return PdfLayoutExtraction(
             blocks=[repaired_block],
             warnings=extraction.warnings,

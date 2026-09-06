@@ -656,9 +656,7 @@ class KnowledgePilotPreprocessingService:
             )
             if chunk.metadata.content_kind != KnowledgeContentKind.TABLE:
                 reasons = [
-                    reason
-                    for reason in reasons
-                    if reason != KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE.value
+                    reason for reason in reasons if reason != KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE.value
                 ]
             if chunk.metadata.section_type == KnowledgeSectionType.REFERENCES:
                 status = KnowledgeChunkReviewStatus.EXCLUDED_NON_CONTENT

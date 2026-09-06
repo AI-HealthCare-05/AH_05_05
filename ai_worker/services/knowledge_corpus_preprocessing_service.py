@@ -46,6 +46,7 @@ class KnowledgeCorpusManifestBuilder:
         documents_path: Path,
         sources_path: Path,
         pilot_quality_report_path: Path,
+        pilot_manifest_path: Path | None = None,
     ) -> KnowledgePilotManifest:
         sources = KnowledgeSourcesManifest.model_validate(
             yaml.safe_load(Path(sources_path).read_text(encoding="utf-8"))
@@ -55,6 +56,9 @@ class KnowledgeCorpusManifestBuilder:
             Path(pilot_quality_report_path).read_text(encoding="utf-8")
         )
         approved_sources = set(pilot_quality.ready_for_bulk_source_ids)
+        reviewed_by_document_id = self._load_reviewed_entries(
+            pilot_manifest_path,
+        )
         selected: list[KnowledgePilotEntry] = []
         seen_hashes: set[str] = set()
 
@@ -73,23 +77,46 @@ class KnowledgeCorpusManifestBuilder:
             if document.sha256 in seen_hashes:
                 continue
             seen_hashes.add(document.sha256)
+            reviewed = reviewed_by_document_id.get(document.document_id)
             selected.append(
                 KnowledgePilotEntry(
                     source_id=document.source_id,
                     document_id=document.document_id,
                     repo_path=document.repo_path,
                     processing_status=document.processing_status,
-                    selection_reason=("대표 문서 품질 승인을 상속한 전체 코퍼스 전처리"),
-                    manual_review_status=KnowledgeManualReviewStatus.APPROVED,
-                    title=document.title,
-                    source_url=document.source_url,
-                    doi=document.doi,
-                    authors=document.authors,
-                    publication_year=document.publication_year,
-                    drug_names=document.drug_names,
-                    ingredient_names=document.ingredient_names,
-                    evidence_level=document.evidence_level,
-                    study_population=document.study_population,
+                    selection_reason=(
+                        reviewed.selection_reason
+                        if reviewed is not None
+                        else "대표 문서 품질 승인을 상속한 전체 코퍼스 전처리"
+                    ),
+                    manual_review_status=(
+                        reviewed.manual_review_status if reviewed is not None else KnowledgeManualReviewStatus.APPROVED
+                    ),
+                    title=document.title or (reviewed.title if reviewed else None),
+                    source_url=(document.source_url or (reviewed.source_url if reviewed else None)),
+                    doi=document.doi or (reviewed.doi if reviewed else None),
+                    authors=(document.authors or (reviewed.authors if reviewed else [])),
+                    publication_year=(document.publication_year or (reviewed.publication_year if reviewed else None)),
+                    drug_names=(document.drug_names or (reviewed.drug_names if reviewed else [])),
+                    ingredient_names=(document.ingredient_names or (reviewed.ingredient_names if reviewed else [])),
+                    evidence_level=(
+                        document.evidence_level
+                        if document.evidence_level != KnowledgeEvidenceLevel.UNKNOWN
+                        else (reviewed.evidence_level if reviewed is not None else KnowledgeEvidenceLevel.UNKNOWN)
+                    ),
+                    study_population=(
+                        document.study_population
+                        if document.study_population != KnowledgeStudyPopulation.UNKNOWN
+                        else (reviewed.study_population if reviewed is not None else KnowledgeStudyPopulation.UNKNOWN)
+                    ),
+                    verified_text_replacements=(reviewed.verified_text_replacements if reviewed is not None else {}),
+                    verified_section_headings=(reviewed.verified_section_headings if reviewed is not None else []),
+                    approved_chunk_content_hashes=(
+                        reviewed.approved_chunk_content_hashes if reviewed is not None else []
+                    ),
+                    approved_review_reason_codes=(
+                        reviewed.approved_review_reason_codes if reviewed is not None else []
+                    ),
                 )
             )
 
@@ -97,6 +124,17 @@ class KnowledgeCorpusManifestBuilder:
             policy=("품질 승인 출처의 텍스트 추출 가능 PDF를 중복 제거 후 전체 전처리한다."),
             pilots=selected,
         )
+
+    @staticmethod
+    def _load_reviewed_entries(
+        pilot_manifest_path: Path | None,
+    ) -> dict[str, KnowledgePilotEntry]:
+        if pilot_manifest_path is None:
+            return {}
+        manifest = KnowledgePilotManifest.model_validate_json(
+            Path(pilot_manifest_path).read_text(encoding="utf-8"),
+        )
+        return {entry.document_id: entry for entry in manifest.pilots}
 
     @staticmethod
     def _load_documents(
@@ -132,6 +170,7 @@ class KnowledgeCorpusPreprocessingService:
         documents_path: Path,
         sources_path: Path,
         pilot_quality_report_path: Path,
+        pilot_manifest_path: Path | None = None,
         output_root: Path,
         dataset_version: str,
     ) -> KnowledgePilotPreprocessingResult:
@@ -139,6 +178,7 @@ class KnowledgeCorpusPreprocessingService:
             documents_path=documents_path,
             sources_path=sources_path,
             pilot_quality_report_path=pilot_quality_report_path,
+            pilot_manifest_path=pilot_manifest_path,
         )
         report_root = Path(output_root) / "reports"
         report_root.mkdir(parents=True, exist_ok=True)

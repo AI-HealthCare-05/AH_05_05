@@ -65,10 +65,7 @@ class VerifiedKnowledgeLayoutParser:
             return self._set_table_title(
                 extraction,
                 required_header="Strength (mcg)",
-                title=(
-                    "LEVO-T (levothyroxine sodium, USP) tablets are supplied "
-                    "as follows"
-                ),
+                title=("LEVO-T (levothyroxine sodium, USP) tablets are supplied as follows"),
             )
         return extraction
 
@@ -89,13 +86,9 @@ class VerifiedKnowledgeLayoutParser:
         blocks: list[KnowledgePageBlock] = []
         table_index = 0
         for block in extraction.blocks:
-            if (
-                block.kind == KnowledgeContentKind.TEXT
-                and (
-                    block.content.strip().startswith("Potential impact (below):")
-                    or block.content.strip()
-                    == "Affecting Free Thyroxine (FT4) Concentration (Euthyroidism)"
-                )
+            if block.kind == KnowledgeContentKind.TEXT and (
+                block.content.strip().startswith("Potential impact (below):")
+                or block.content.strip() == "Affecting Free Thyroxine (FT4) Concentration (Euthyroidism)"
             ):
                 continue
             if block.kind != KnowledgeContentKind.TABLE:
@@ -145,9 +138,7 @@ class VerifiedKnowledgeLayoutParser:
 
         blocks = [block.model_copy(update={"order": index}) for index, block in enumerate(blocks)]
         warnings = [
-            warning
-            for warning in extraction.warnings
-            if warning != KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE
+            warning for warning in extraction.warnings if warning != KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE
         ]
         return PdfLayoutExtraction(blocks=blocks, warnings=warnings)
 
@@ -171,9 +162,7 @@ class VerifiedKnowledgeLayoutParser:
                 if row.cells and row.cells[0].startswith(footnote_prefix)
             ]
             rows = [
-                list(row.cells)
-                for row in block.rows
-                if not row.cells or not row.cells[0].startswith(footnote_prefix)
+                list(row.cells) for row in block.rows if not row.cells or not row.cells[0].startswith(footnote_prefix)
             ]
             blocks.append(
                 cls._replace_table(
@@ -214,8 +203,7 @@ class VerifiedKnowledgeLayoutParser:
         blocks = [
             (
                 block.model_copy(update={"table_title": title})
-                if block.kind == KnowledgeContentKind.TABLE
-                and required_header in block.headers
+                if block.kind == KnowledgeContentKind.TABLE and required_header in block.headers
                 else block
             )
             for block in extraction.blocks
@@ -232,11 +220,7 @@ class VerifiedKnowledgeLayoutParser:
         validation_errors: list[str],
     ) -> KnowledgePageBlock:
         content = "\n".join(
-            " | ".join(
-                f"{header}={cell}"
-                for header, cell in zip(block.headers, row, strict=True)
-            )
-            for row in rows
+            " | ".join(f"{header}={cell}" for header, cell in zip(block.headers, row, strict=True)) for row in rows
         )
         return block.model_copy(
             update={

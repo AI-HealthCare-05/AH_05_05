@@ -236,6 +236,98 @@ sources:
     assert entry.study_population.value == "HUMAN"
 
 
+def test_builder_inherits_verified_repairs_from_pilot_manifest(
+    tmp_path: Path,
+) -> None:
+    documents_path = tmp_path / "documents.jsonl"
+    sources_path = tmp_path / "sources.yaml"
+    pilot_report_path = tmp_path / "quality.json"
+    pilot_manifest_path = tmp_path / "pilot-manifest.json"
+    write_jsonl(
+        documents_path,
+        [
+            {
+                "source_id": "research",
+                "document_id": "review-document",
+                "repo_path": "raw/review.pdf",
+                "processing_status": "TEXT_EXTRACTABLE",
+                "sha256": "a" * 64,
+                "title": "Reviewed interaction article",
+            }
+        ],
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: research
+    provider: Journal
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    pilot_report_path.write_text(
+        json.dumps(
+            {
+                "dataset_version": "pilot-v1",
+                "processed_document_count": 1,
+                "chunk_count": 1,
+                "ready_for_bulk_source_ids": ["research"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    pilot_manifest_path.write_text(
+        json.dumps(
+            {
+                "policy": "대표 문서 검수",
+                "pilots": [
+                    {
+                        "source_id": "research",
+                        "document_id": "review-document",
+                        "repo_path": "raw/review.pdf",
+                        "processing_status": "TEXT_EXTRACTABLE",
+                        "selection_reason": "대표 문서",
+                        "manual_review_status": "APPROVED",
+                        "verified_text_replacements": {
+                            "intestinal wal": "intestinal wall",
+                        },
+                        "verified_section_headings": [
+                            "Drug Interactions",
+                        ],
+                        "approved_review_reason_codes": [
+                            "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW",
+                        ],
+                        "approved_chunk_content_hashes": ["b" * 64],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = KnowledgeCorpusManifestBuilder().build(
+        documents_path=documents_path,
+        sources_path=sources_path,
+        pilot_quality_report_path=pilot_report_path,
+        pilot_manifest_path=pilot_manifest_path,
+    )
+
+    entry = manifest.pilots[0]
+    assert entry.selection_reason == "대표 문서"
+    assert entry.verified_text_replacements == {
+        "intestinal wal": "intestinal wall",
+    }
+    assert entry.verified_section_headings == ["Drug Interactions"]
+    assert [code.value for code in entry.approved_review_reason_codes] == [
+        "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW",
+    ]
+    assert entry.approved_chunk_content_hashes == ["b" * 64]
+
+
 def build_report(
     document_id: str,
     status: KnowledgeAutomaticQualityStatus,

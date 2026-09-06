@@ -33,10 +33,7 @@ def build_table(
         order=order,
         bbox=KnowledgeBoundingBox(x0=0, top=order * 10, x1=100, bottom=order * 10 + 9),
         content="\n".join(
-            " | ".join(
-                f"{header}={cell}" for header, cell in zip(headers, row, strict=True)
-            )
-            for row in rows
+            " | ".join(f"{header}={cell}" for header, cell in zip(headers, row, strict=True)) for row in rows
         ),
         headers=headers,
         rows=[KnowledgeTableRow(cells=row) for row in rows],
@@ -96,9 +93,7 @@ def test_repair_fda_page_nine_keeps_table_note_and_group_context() -> None:
         block.content.strip() != "Affecting Free Thyroxine (FT4) Concentration (Euthyroidism)"
         for block in repaired.blocks
     )
-    repaired_tables = [
-        block for block in repaired.blocks if block.kind == KnowledgeContentKind.TABLE
-    ]
+    repaired_tables = [block for block in repaired.blocks if block.kind == KnowledgeContentKind.TABLE]
     assert repaired_tables[1].table_super_headers == [impact]
     assert repaired_tables[1].table_title == (
         "Drugs That May Alter T4 and Triiodothyronine (T3) Serum Transport "
@@ -109,9 +104,7 @@ def test_repair_fda_page_nine_keeps_table_note_and_group_context() -> None:
         "Other drugs: Antacids - Aluminum & Magnesium Hydroxides; "
         "Other drugs: Antacids - Simethicone"
     )
-    assert repaired_tables[1].rows[0].cells[0] == (
-        "Clofibrate; Estrogen-containing oral contraceptives"
-    )
+    assert repaired_tables[1].rows[0].cells[0] == ("Clofibrate; Estrogen-containing oral contraceptives")
     assert repaired.warnings == []
 
 
@@ -149,9 +142,7 @@ def test_repair_fda_table_titles_link_descriptions_across_pages() -> None:
         source_id="fda_regulatory_drug_labels",
     )
 
-    assert repaired_dosage.blocks[0].table_title == (
-        "LEVO-T tablets are available as follows"
-    )
+    assert repaired_dosage.blocks[0].table_title == ("LEVO-T tablets are available as follows")
     assert repaired_supplied.blocks[0].table_title == (
         "LEVO-T (levothyroxine sodium, USP) tablets are supplied as follows"
     )
@@ -184,8 +175,6 @@ def test_repair_fda_pediatric_table_moves_footnote_out_of_age_rows() -> None:
         source_id="fda_regulatory_drug_labels",
     )
 
-    assert [row.cells for row in repaired.blocks[0].rows] == [
-        ["Growth and puberty complete", "1.6 mcg/kg/day"]
-    ]
+    assert [row.cells for row in repaired.blocks[0].rows] == [["Growth and puberty complete", "1.6 mcg/kg/day"]]
     assert repaired.blocks[0].table_super_headers == [repaired_footnote]
     assert malformed_footnote not in repaired.blocks[0].content

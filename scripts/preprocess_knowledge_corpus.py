@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/knowledge/processed/reports/preprocessing-quality.json"),
     )
     parser.add_argument(
+        "--pilot-manifest",
+        type=Path,
+        default=None,
+        help=("대표 문서에서 승인한 텍스트 복원·섹션·청크 검수 정보를 전체 Manifest에 상속합니다."),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("data/knowledge/processed/full"),
@@ -86,6 +92,7 @@ def main() -> None:
         documents_path=repo_root / args.documents,
         sources_path=repo_root / args.sources,
         pilot_quality_report_path=repo_root / args.pilot_quality_report,
+        pilot_manifest_path=(repo_root / args.pilot_manifest if args.pilot_manifest is not None else None),
         output_root=repo_root / args.output,
         dataset_version=args.dataset_version,
     )
