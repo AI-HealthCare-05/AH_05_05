@@ -12,6 +12,7 @@ from datetime import date, datetime, time, timedelta
 import pytest
 
 from app.core import config
+from app.dtos.admin_dashboard import DashboardPeriod, validate_period
 from app.services.admin_dashboard import day_range, day_start
 
 # ──────────────────────────────── day_start ────────────────────────────────
@@ -151,3 +152,57 @@ def test_day_start_and_day_range_agree_on_the_same_day() -> None:
 
     assert start == day_start(day)
     assert isinstance(start, datetime)
+
+
+# ────────────────────────────── validate_period ─────────────────────────────
+#
+# Pydantic 기본 영문 메시지 대신 한글 메시지를 내려고 만든 함수인데, 그 문구가
+# 실제로 나오는지 확인하는 테스트가 없었다.
+
+
+@pytest.mark.parametrize("period", list(DashboardPeriod))
+def test_validate_period_passes_enum_members_through(period: DashboardPeriod) -> None:
+    assert validate_period(period) is period
+
+
+@pytest.mark.parametrize("period", list(DashboardPeriod))
+def test_validate_period_accepts_the_matching_string(period: DashboardPeriod) -> None:
+    """허용 값은 DashboardPeriod 에서 뽑는다. 문자열로 박으면 값이 늘 때 같이 안 는다."""
+    assert validate_period(period.value) == period
+
+
+@pytest.mark.parametrize("value", ["WEEK", "LAST_365_DAYS", "", "TODAY ", "today", "Today"])
+def test_validate_period_rejects_unknown_values(value: str) -> None:
+    """소문자도 거부한다 — `DashboardPeriod(str(value))` 는 값 비교라 대소문자를 가린다."""
+    with pytest.raises(ValueError, match="지원하지 않는 집계 기간입니다."):
+        validate_period(value)
+
+
+@pytest.mark.parametrize("value", [None, 123, 4.5, object()])
+def test_validate_period_rejects_non_string_values(value: object) -> None:
+    """`str(value)` 를 거쳐도 열거 값과 맞지 않으면 같은 한글 문구로 거부한다."""
+    with pytest.raises(ValueError, match="지원하지 않는 집계 기간입니다."):
+        validate_period(value)
+
+
+def test_validate_period_error_lists_every_allowed_value() -> None:
+    """사용자가 무엇을 넣어야 하는지 알 수 있게 허용 값을 모두 담는다."""
+    with pytest.raises(ValueError) as exc_info:
+        validate_period("WEEK")
+
+    message = str(exc_info.value)
+
+    for period in DashboardPeriod:
+        assert period.value in message, message
+
+
+def test_validate_period_error_message_is_korean() -> None:
+    """영문 pydantic 원문이 화면에 새어 나가지 않는지 본다."""
+    with pytest.raises(ValueError) as exc_info:
+        validate_period("WEEK")
+
+    message = str(exc_info.value)
+
+    assert message.startswith("지원하지 않는 집계 기간입니다.")
+    assert message.endswith("중 하나여야 합니다.")
+    assert "Input should be" not in message
