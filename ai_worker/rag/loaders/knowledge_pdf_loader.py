@@ -6,10 +6,10 @@ from typing import Any
 import pdfplumber
 from pypdf import PdfReader
 
-from ai_worker.rag.loaders.botanical_review_layout_parser import (
-    BotanicalReviewLayoutParser,
-)
 from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtractor
+from ai_worker.rag.loaders.verified_knowledge_layout_parser import (
+    VerifiedKnowledgeLayoutParser,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeContentKind,
     KnowledgeDocumentType,
@@ -30,11 +30,11 @@ class KnowledgePdfLoader:
         *,
         layout_extractor: PdfLayoutExtractor | None = None,
         layout_document_opener: Callable[[Path], Any] | None = None,
-        verified_layout_parser: BotanicalReviewLayoutParser | None = None,
+        verified_layout_parser: Any | None = None,
     ) -> None:
         self._layout_extractor = layout_extractor or PdfLayoutExtractor()
         self._layout_document_opener = layout_document_opener or pdfplumber.open
-        self._verified_layout_parser = verified_layout_parser or BotanicalReviewLayoutParser()
+        self._verified_layout_parser = verified_layout_parser or VerifiedKnowledgeLayoutParser()
 
     def load(
         self,
@@ -101,8 +101,20 @@ class KnowledgePdfLoader:
                     page_number=page_number,
                     source_id=metadata.source_id,
                 )
-                if verified_extraction is not None:
+                used_verified_extraction = verified_extraction is not None
+                if used_verified_extraction:
                     extraction = verified_extraction
+                repair_extraction = getattr(
+                    self._verified_layout_parser,
+                    "repair",
+                    None,
+                )
+                if callable(repair_extraction):
+                    extraction = repair_extraction(
+                        extraction=extraction,
+                        page_number=page_number,
+                        source_id=metadata.source_id,
+                    )
                 inherit_headers = getattr(
                     self._layout_extractor,
                     "inherit_continued_table_headers",
@@ -127,6 +139,8 @@ class KnowledgePdfLoader:
                         extraction_warnings=list(dict.fromkeys(warnings)),
                     )
                 )
+                continue
+            if used_verified_extraction and not extraction.blocks:
                 continue
             blocks = sorted(
                 extraction.blocks,
@@ -167,11 +181,15 @@ class KnowledgePdfLoader:
             if not content:
                 continue
 
-            warnings = [
-                warning
-                for warning in self._extraction_warnings(page, metadata)
-                if warning == KnowledgeExtractionWarning.ROTATED_TEXT
-            ]
+            warnings = (
+                []
+                if used_verified_extraction
+                else [
+                    warning
+                    for warning in self._extraction_warnings(page, metadata)
+                    if warning == KnowledgeExtractionWarning.ROTATED_TEXT
+                ]
+            )
             warnings.extend(extraction.warnings)
             pages.append(
                 KnowledgePage(

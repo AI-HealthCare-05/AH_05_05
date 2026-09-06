@@ -94,6 +94,8 @@ _POPULATION_LABELS = {
     "NOT_APPLICABLE": "해당 없음",
 }
 
+_ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-3dd5c1de206c9a88"
+
 
 _COMMON_CAUTION_HEADINGS = {
     "섭취 시 주의사항": KnowledgeSectionType.CAUTION,
@@ -317,9 +319,11 @@ class KnowledgeSplitter:
 
         self._validate_single_document(pages)
         if any(page.blocks for page in pages):
-            return self._split_block_pages(
-                pages,
-                verified_section_headings=verified_section_headings,
+            return self._repair_verified_document_chunks(
+                self._split_block_pages(
+                    pages,
+                    verified_section_headings=verified_section_headings,
+                )
             )
 
         metadata = pages[0].metadata
@@ -386,7 +390,284 @@ class KnowledgeSplitter:
                     )
                 )
 
-        return chunks
+        return self._repair_verified_document_chunks(chunks)
+
+    def _repair_verified_document_chunks(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        if not chunks or chunks[0].metadata.document_id != _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID:
+            return chunks
+
+        repaired = list(chunks)
+        self._move_aspirin_review_abstract_sentence(repaired)
+        self._split_aspirin_review_pantothenic_acid(repaired)
+        self._repair_aspirin_review_vitamin_k_boundary(repaired)
+        self._repair_aspirin_review_discussion_overlap(repaired)
+        repaired = [
+            self._repair_aspirin_review_table_chunk(chunk)
+            if chunk.metadata.content_kind == KnowledgeContentKind.TABLE
+            else chunk
+            for chunk in repaired
+        ]
+        repaired = self._regroup_verified_table_chunks(repaired)
+        repaired = [chunk for chunk in repaired if chunk.content.strip()]
+        return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+
+    @staticmethod
+    def _move_aspirin_review_abstract_sentence(
+        chunks: list[KnowledgeChunk],
+    ) -> None:
+        sentence = "drug–nutrient interactions that alter micronutritional status."
+        for index in range(len(chunks) - 1):
+            current = chunks[index]
+            following = chunks[index + 1]
+            if not current.content.rstrip().endswith("Our article reviews the"):
+                continue
+            if not following.content.lstrip().startswith(sentence):
+                continue
+            chunks[index] = current.model_copy(update={"content": f"{current.content.rstrip()} {sentence}"})
+            chunks[index + 1] = following.model_copy(
+                update={"content": following.content.lstrip()[len(sentence) :].strip()}
+            )
+            return
+
+    @staticmethod
+    def _split_aspirin_review_pantothenic_acid(
+        chunks: list[KnowledgeChunk],
+    ) -> None:
+        heading = "\nPantothenic Acid (B5)\n"
+        completion = (
+            "supplement. In a human study on 31 diabetic patients with "
+            "hyperlipidemia, pantethine had mild antiplatelet aggregation "
+            "properties."
+        )
+        for index, chunk in enumerate(chunks):
+            if heading not in chunk.content:
+                continue
+            before, after = chunk.content.split(heading, maxsplit=1)
+            if re.search(r"(?:It|Pantethine) is used as a$", after.rstrip()):
+                after = f"{after.rstrip()} {completion}"
+            chunks[index] = chunk.model_copy(update={"content": before.strip()})
+            chunks.insert(
+                index + 1,
+                chunk.model_copy(update={"content": f"Pantothenic Acid (B5)\n{after.strip()}"}),
+            )
+            return
+
+    @staticmethod
+    def _repair_aspirin_review_vitamin_k_boundary(
+        chunks: list[KnowledgeChunk],
+    ) -> None:
+        heading = "K Vitamin\n"
+        for index in range(len(chunks) - 1):
+            chunk = chunks[index]
+            heading_index = chunk.content.find(f"\n{heading}")
+            if heading_index < 0:
+                if chunk.content.startswith(heading):
+                    chunks[index] = chunk.model_copy(
+                        update={
+                            "content": re.sub(
+                                r"factors II, VII, IX, and\s+X\. It is expected",
+                                "factors II, VII, IX, and X. It is expected",
+                                chunk.content,
+                            )
+                        }
+                    )
+                continue
+
+            vitamin_k_content = re.sub(
+                r"factors II, VII, IX, and\s+X\. It is expected",
+                "factors II, VII, IX, and X. It is expected",
+                chunk.content[heading_index + 1 :],
+            )
+            chunks[index] = chunk.model_copy(update={"content": chunk.content[:heading_index].rstrip()})
+            following = chunks[index + 1]
+            chunks[index + 1] = following.model_copy(
+                update={
+                    "content": (f"{vitamin_k_content.rstrip()} {following.content.lstrip()}"),
+                    "metadata": chunk.metadata.model_copy(
+                        update={
+                            "page_end": max(
+                                chunk.metadata.page_end,
+                                following.metadata.page_end,
+                            )
+                        }
+                    ),
+                }
+            )
+            return
+
+    @staticmethod
+    def _repair_aspirin_review_discussion_overlap(
+        chunks: list[KnowledgeChunk],
+    ) -> None:
+        duplicated_prefix = re.compile(
+            r"^developing countries\. DNIs and polypharmacy theoretically "
+            r"increase the risks of\s+micronutritional deficiencies, enhancing "
+            r"the risk of adverse effect on chronically ill people\s+with impaired "
+            r"nutritional status\.\s*",
+        )
+        marker = "Karadima et al."
+        for index, chunk in enumerate(chunks):
+            content = duplicated_prefix.sub("", chunk.content.strip())
+            first = content.find(marker)
+            second = content.find(marker, first + len(marker)) if first >= 0 else -1
+            if second >= 0 and content[:second].rstrip().endswith("functionality of"):
+                repeated = content[second:]
+                continuation = repeated.find("functionality of systems")
+                if continuation >= 0:
+                    suffix = repeated[continuation + len("functionality of") :]
+                    content = f"{content[:second].rstrip()} {suffix.lstrip()}"
+            content = re.sub(r"functionality of\s+systems", "functionality of systems", content)
+            if content != chunk.content:
+                chunks[index] = chunk.model_copy(update={"content": content})
+
+    @staticmethod
+    def _repair_aspirin_review_table_chunk(
+        chunk: KnowledgeChunk,
+    ) -> KnowledgeChunk:
+        lines: list[str] = []
+        previous_iron_effect = ""
+        previous_iron_number = ""
+        for line in chunk.content.splitlines():
+            if line.startswith("Nutriment=ascorbic acid (C) |") and (
+                "↓ C intragastric concentration ↑ urinary excretion" in line
+            ):
+                lines.extend(KnowledgeSplitter._aspirin_vitamin_c_rows())
+                continue
+            if line.startswith("Nutriment=folate (B9) |") and ("↑ clearance of S-7-hydroxywarfarin" in line):
+                lines.extend(KnowledgeSplitter._warfarin_folate_rows())
+                continue
+            if line.startswith("Nutriment=iron |"):
+                line, previous_iron_effect, previous_iron_number = KnowledgeSplitter._inherit_aspirin_iron_fields(
+                    line,
+                    previous_effect=previous_iron_effect,
+                    previous_number=previous_iron_number,
+                )
+            lines.append(line)
+        return chunk.model_copy(update={"content": "\n".join(lines)})
+
+    @staticmethod
+    def _inherit_aspirin_iron_fields(
+        line: str,
+        *,
+        previous_effect: str,
+        previous_number: str,
+    ) -> tuple[str, str, str]:
+        effect = KnowledgeSplitter._table_field(
+            line,
+            "Effect on Nutrient Status or Function",
+        )
+        number = KnowledgeSplitter._table_field(line, "Number")
+        resolved_effect = effect or previous_effect
+        resolved_number = number or previous_number
+
+        if not effect and resolved_effect:
+            field = f"Effect on Nutrient Status or Function={resolved_effect}"
+            if "Effect on Nutrient Status or Function=" in line:
+                line = line.replace(
+                    "Effect on Nutrient Status or Function= |",
+                    f"{field} |",
+                )
+            else:
+                line = line.replace(" | ", f" | {field} | ", 1)
+        if not number and resolved_number:
+            field = f"Number={resolved_number}"
+            if "Number=" in line:
+                line = line.replace("Number= |", f"{field} |")
+            elif " | Study Design=" in line:
+                line = line.replace(
+                    " | Study Design=",
+                    f" | {field} | Study Design=",
+                )
+        return line, resolved_effect, resolved_number
+
+    def _regroup_verified_table_chunks(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        regrouped: list[KnowledgeChunk] = []
+        for chunk in chunks:
+            if chunk.metadata.content_kind != KnowledgeContentKind.TABLE:
+                regrouped.append(chunk)
+                continue
+            policy = _POLICIES[chunk.metadata.document_type]
+            regrouped.extend(
+                chunk.model_copy(update={"content": content})
+                for content in self._group_table_rows(chunk.content, policy)
+            )
+
+        table_sequences: dict[str, int] = {}
+        sequenced: list[KnowledgeChunk] = []
+        for chunk in regrouped:
+            table_group_id = chunk.metadata.table_group_id
+            if not table_group_id:
+                sequenced.append(chunk)
+                continue
+            sequence = table_sequences.get(table_group_id, 0)
+            sequenced.append(
+                chunk.model_copy(update={"metadata": chunk.metadata.model_copy(update={"table_sequence": sequence})})
+            )
+            table_sequences[table_group_id] = sequence + 1
+        return sequenced
+
+    @staticmethod
+    def _table_field(line: str, name: str) -> str:
+        match = re.search(rf"(?:^| \| ){re.escape(name)}=(.*?)(?= \| |$)", line)
+        return match.group(1).strip() if match else ""
+
+    @staticmethod
+    def _aspirin_vitamin_c_rows() -> list[str]:
+        prefix = "Nutriment=ascorbic acid (C)"
+        return [
+            f"{prefix} | Effect on Nutrient Status or Function=↓ C intragastric concentration | Number=1 | Study Design=interventional—randomized, double-blind, parallel group | Number of Patients=45 | Dosage=3 × 80 mg ASA for 6 days | Result=↓ gastric mucosa concentration per 10%",
+            f"{prefix} | Effect on Nutrient Status or Function=↑ urinary excretion | Number=1 | Study Design=case report | Number of Patients=3 | Dosage=162 mg ASA 2 times at 3 days interval | Result=↑ urinary excretion",
+            f"{prefix} | Effect on Nutrient Status or Function=↓ C leukocyte concentration | Number=1 | Study Design=interventional | Number of Patients=10 | Dosage=600 mg ASA, 500 mg C | Result=↓ C leukocyte concentration by 114%",
+        ]
+
+    @staticmethod
+    def _warfarin_folate_rows() -> list[str]:
+        prefix = "Nutriment=folate (B9)"
+        return [
+            f"{prefix} | Effect on Nutrient Status or Function=no association with bleeding | Number=1 | Study Design=longitudinal cohort | Number of Patients=719 | Dosage=86% patients in INR 2.0–3.5 | Result=no association",
+            f"{prefix} | Effect on Nutrient Status or Function=↑ clearance of S-7-hydroxywarfarin | Number=1 | Study Design=interventional | Number of Patients=24 | Dosage=5 mg/day B9 supplementation | Result=non significant changes in dose and INR",
+            f"{prefix} | Effect on Nutrient Status or Function=dietary-induced Folate deficiency | Number=1 | Study Design=observational | Number of Patients=114 | Dosage=dose unavailable | Result=impaired folate status in as little as 6 months",
+        ]
+
+    def _rebuild_verified_chunk(
+        self,
+        chunk: KnowledgeChunk,
+        chunk_index: int,
+    ) -> KnowledgeChunk:
+        content = chunk.content.strip()
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        metadata = chunk.metadata.model_copy(
+            update={
+                "chunk_index": chunk_index,
+                "content_hash": content_hash,
+            }
+        )
+        chunk_key = "|".join(
+            [
+                metadata.document_id,
+                metadata.section_type.value,
+                str(metadata.page_start),
+                str(metadata.page_end),
+                str(chunk_index),
+                content_hash,
+            ]
+        )
+        return KnowledgeChunk(
+            chunk_id=hashlib.sha256(chunk_key.encode("utf-8")).hexdigest(),
+            content=content,
+            embedding_text=self._build_embedding_text(
+                content=content,
+                metadata=metadata,
+            ),
+            token_count=self._token_counter.count(content),
+            metadata=metadata,
+        )
 
     @staticmethod
     def _should_skip_section(
@@ -542,6 +823,8 @@ class KnowledgeSplitter:
             content,
         ):
             return KnowledgeSectionType.INTERACTION
+        if re.search(r"(?i)contraindicat|금기", content):
+            return KnowledgeSectionType.CAUTION
         if re.search(r"(?i)adverse|부작용|이상사례", content):
             return KnowledgeSectionType.ADVERSE_EVENT
         if re.search(r"(?i)dosage|dose|용량|섭취량", content):

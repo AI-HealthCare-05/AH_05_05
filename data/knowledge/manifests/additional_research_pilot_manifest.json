@@ -13,7 +13,80 @@
       "publication_year": 2017,
       "drug_names": ["LEVO-T", "levothyroxine sodium", "levothyroxine"],
       "evidence_level": "REGULATORY",
-      "study_population": "NOT_APPLICABLE"
+      "study_population": "NOT_APPLICABLE",
+      "manual_review_status": "APPROVED",
+      "approved_review_reason_codes": [
+        "TABLE_STRUCTURE_UNSAFE",
+        "READING_ORDER_UNSAFE"
+      ],
+      "verified_text_replacements": {
+        "Other drugs:;": "Other drugs:",
+        "Non-Steroidal Anti-inflammatory; Drugs; -Fenamates": "Non-Steroidal Anti-inflammatory Drugs - Fenamates",
+        "Beta-adrenergic antagonists; (e.g., Propranolol > 160 mg/day)": "Beta-adrenergic antagonists (e.g., Propranolol > 160 mg/day)",
+        "Glucocorticoids; (e.g., Dexamethasone > 4; mg/day)": "Glucocorticoids (e.g., Dexamethasone > 4 mg/day)",
+        "Strength; (mcg)": "Strength (mcg)",
+        "6-7b": "6-7ᵇ"
+      },
+      "approved_chunk_content_hashes": [
+        "83b9ef765be4ea9e7ee7101239140a5616e38dfc1965d3383a7f45ce2ba0117d",
+        "c86b925f3f4d175768a4772a6503027b35881a1d3d27f940fbdb9740b6fcba8f",
+        "f1a6c4f17f18fa493173ed9db3111c8c6c87685725614a4e5dc3c54c4f68224c",
+        "660cfeaea971477b69bdcedd2c5638624bb2647d71ff286d69aabe16d02d70ea",
+        "651c954dcf75a589263f62c876aa7f09693416a21fc411f20cb5f9334376571c",
+        "3d089790430a321e758f502d26c605f31a54f0173af11faa83ffbc5b8d28e9a4",
+        "113b8d6c17b4db325bc16404fc630056189e2353edcc2f8edecf3b90ffa58e41",
+        "c9016f91c285a3686cd7eb3aa77c558db524fee2e3afc6d367d6f2086dc5ebc6",
+        "51839faeb5395afa4a90fb5bb5f4b04334df4fe51d4cd26fe9aa834a64faf6d6",
+        "efb718e63627ca6c8656a444428ae71aaab130e56439db040560def781d97d5b",
+        "73d707e658c0b8e17105e9c6ec080fe2c8ed432ecfd6ec91979b86b4e3e7734b",
+        "ecbf260b2ee39f90e0fc535ec474a100c278efbd25c827d95f3d26bcdb770c4c",
+        "606bf6ab7b57e6405de72db4c72383d2be61eee6fc2ae1dff4917015d6203e2c",
+        "731c478b7293502ef39aba6362740a756e7c08e2034cfe4a7c4e43484352c038",
+        "4c15d0b93d9bb7b06097b128acae5e7ea3ae03bb958cffc147491147f63faf4c",
+        "ca759b51f1481583c44105a46ccba584697e492f952bcf1c73e977b97438bb94",
+        "f0fda9bb02d8889851ff39203001ca94cf6a363c1ed7115c42f5a21cabb2db8c",
+        "40905d682b33fa9b73537469547993afa750dda547c51a41fc8e2309c6af0a64",
+        "3a6301508e7bf692ba743073ee7f7d8948274b0af8f4cee67dfd95d949c09b20",
+        "42ca51625ad66a62fc3278ff7d6ba8739c5f503dedcd592daf51649535698197",
+        "a33c033e33b79ff8b92d1c8e68ee3f830c946546414eae65524b1ea54dbda6fa",
+        "a5bfec6c09f33ad9449d401b9d1edabfd126c69e609a7f253a39ee8622a40076",
+        "73f3c2f41d8f13b3f4fe49348e624c98fe4dff8a80156457c7e435ce73086255",
+        "c5203da9afada89a731dd0bcfa10015ed401590777a83cc729a74a2890421282",
+        "e0155e95d8eb157c7ab42c0cdba4b94e718ec9430cb76f6e7c85d60701f32d6e",
+        "048b75746b871cbcc070f181aeea82c63abf67e0a822037ffa637ba09e9edf32",
+        "5e829ed45fd37fadba16d469d149add54a5c9f3ae9d9cba0a2a55b784f63a7e5",
+        "841dc4fb204e1b0723a3cd0d2469b68a1e56eb482ad5c6872ed49b2c226c1912",
+        "ca374a5baca3bcf009785728ae9119c11f135bb095811b8854e3ee211b5cc36f",
+        "05f0362b48408e9eaae7d54ad666503418753bfb726dc82b4acae038f91a7dec",
+        "0c753c2c7eb4a3ff4210908593f38a958fb01d9ec0fd15f42a5d9a5a04245af3",
+        "b0f03c98658c93c71aa17f3ded0d2647fd121031093faa460ca42e1af6543ad9",
+        "d5bb43910fec906b465affe46bb5c1a184a793a6bb74bbf8c376e066c6a1614c",
+        "c5eb626ffda15ec4dd23be2d014ea969361ddc91c53be5d2e302a42317a19d00",
+        "6db808d49e7aa5939068c4d41672b3ea62c46cb1397ee0e158d346d5ced2b4fa",
+        "f29a67e5835d73f9a563e5840f7376894ebab63beb7b561c2a3523e5fb657e63",
+        "a838a65df934b1602400926492d2c052752c69367807cf58470f7fc77ede6701",
+        "a1b0626cd5ccf57e1d9de9cc98a35c6faf36446e7d8298587ba9cfa88cf9e71b",
+        "757f155219eccebb47e2831258bf745587179e177431dbba06021eb1dc0f83af",
+        "991da6eab30dd7acb64af20a2cbb364a6703f5cb7916c3faf3f7fb070b5961a3",
+        "6470c196bb78e7a04212894add57c2ec955ca0a090a512f7797000c276932847",
+        "9c0ddcf546d7ff677470632f91e061b6456b2f4d088711c92bab4de207c4e08f",
+        "cafbcdad5cfb8d67ab54ed97c172b4576f781a897a25db12126a526b6733a990",
+        "82a54d2917aeeb8b06a3fb80cc1e768325d9206027b738cbf554e2158e104571",
+        "c15c5131866242ca7ad5c50d636931297ba26622156a3f043d5760bddb7149c2",
+        "9f530a0fbb381e93c3f29cecb5e8a37183360067076d2a9f1f876430495d9342",
+        "6bb5e652030a95fb8a8c7684b666e2069a41dc7a2df428cf2ce52f9d3bb4ce55",
+        "715d9ed17e22e2fa1c62248fbf0e848cd2ca0d9d6667e58da1067892cdda4660",
+        "77e95c8b9787a1bcf62a028a3da2af589468bfca158f747b94ade033dc393910",
+        "b34d8d1c5ec0eadcdc0de827d8b3034a8fa5bfcb826dfbaaa63938c90b99c904",
+        "3d99bb57d8f40861b2001b597cc1db3eaea17c26f324b98a6faac74e622aba18",
+        "ec15bfe75458fef3e09fcb3e8068e20b79b8d3d744cd5f3a2003360a5bd5a60b",
+        "47ba9896de336beb047bf5515dcccdd9cb42a07f546f54812be951f14de5ad90",
+        "ce0c4e3b83aacda05e14914d490f41f3687458088b18df5d3f36077e251764b1",
+        "8a5f3396aae735e6c7aeef1e6469ff16693b3b588e6406ba90b0240a3dd036c8",
+        "d6f795fa0f9644e19a6b0505c492950ee06f43235ab7973f0d31f9f1471655e1",
+        "375ab81b5b2db0879ca5711155be638ea9307a07b02bdedfec0b6dfb3faf0cc7",
+        "27b27646c67cf709340a494159a7571ed577361bd11840534524b0f1dd47c052"
+      ]
     },
     {
       "source_id": "research_drug_nutrient_interactions",
@@ -29,6 +102,11 @@
       "drug_names": ["levothyroxine", "LT4"],
       "evidence_level": "SYSTEMATIC_REVIEW",
       "study_population": "HUMAN",
+      "manual_review_status": "APPROVED",
+      "approved_review_reason_codes": [
+        "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW",
+        "ROTATED_TEXT_REQUIRES_REVIEW"
+      ],
       "verified_text_replacements": {
         "Psyl ium hydrophilic mucil oid": "Psyllium hydrophilic mucilloid",
         "Vitamin Cb": "Vitamin Cᵇ",
@@ -61,6 +139,7 @@
       "repo_path": "data/knowledge/raw/demo_restricted/research/drug_nutrient_interactions/research_aspirin_warfarin_nutrient_interactions_2024.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
       "selection_reason": "다수 약물·영양소가 포함된 논문의 대상 혼입 여부 검증",
+      "manual_review_status": "APPROVED",
       "title": "Potential Drug–Nutrient Interactions of 45 Vitamins, Minerals, Trace Elements, and Associated Dietary Compounds with Acetylsalicylic Acid and Warfarin—A Review of the Literature",
       "source_url": "https://doi.org/10.3390/nu16070950",
       "doi": "10.3390/nu16070950",
@@ -75,7 +154,12 @@
       "approved_chunk_content_hashes": [
         "9430a03c52be78cb6d97901819531dc929d6c3794359682b916b172d5ca67d4f",
         "0ed97500cd0ef694156fe429cf475d887524631783d241da19e1d4ca313f0267",
-        "52bd3bdb20313aa5c230a29b7f3d3d2b41332bf1fe30a60b44e0302e8a400158"
+        "52bd3bdb20313aa5c230a29b7f3d3d2b41332bf1fe30a60b44e0302e8a400158",
+        "d219185cfeefc0605aef8bd4b6aaa43bc521dc8206a11bd0997332d2c405a1c4",
+        "b1da1aae1cad53d9724f8513447d85b273eb439ad7c3a4a2d6c4b23891d3921c",
+        "87bbeff306704d45fa2379bbbb9977122ac6239ed2f87871a9e73a0de0f5660e",
+        "98e14a4667a1de4d0052dd7c80cc162a36d6e9ada9b3a3d1d964e07a18878b8b",
+        "38264a8f21f387ac2333962a8060da4ae971c32db0647e77f9ac1d5c9f58da2f"
       ]
     },
     {
@@ -84,6 +168,11 @@
       "repo_path": "data/knowledge/raw/demo_restricted/research/supplement_adverse_effects/research_botanical_supplement_adverse_effects.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
       "selection_reason": "식물성 보충제 이상사례·인과성 설명의 의미 단위 검증",
+      "manual_review_status": "APPROVED",
+      "approved_review_reason_codes": [
+        "COMPLEX_TABLE_REQUIRES_REVIEW",
+        "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW"
+      ],
       "title": "Adverse effects of plant food supplements and botanical preparations: a systematic review with critical evaluation of causality",
       "source_url": "https://doi.org/10.1111/bcp.12519",
       "doi": "10.1111/bcp.12519",
@@ -137,6 +226,26 @@
         "Vitex agnus castus L. (vitex or ‘chaste tree’)",
         "Vitis vinifera L. (grape)"
       ]
+    },
+    {
+      "source_id": "research_herb_drug_interactions",
+      "document_id": "research_herb_drug_interactions-638f66d3f3a41ba9",
+      "repo_path": "data/knowledge/raw/demo_restricted/research/herb_drug_interactions/research_herbal_supplement_interactions_systematic_review.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "허브·영양제와 의약품 상호작용 체계적 문헌고찰의 다단 본문·대규모 표 자동 복원 검증",
+      "manual_review_status": "APPROVED",
+      "approved_review_reason_codes": [
+        "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW"
+      ],
+      "title": "Evaluation of documented drug interactions and contraindications associated with herbs and dietary supplements: a systematic literature review",
+      "source_url": "https://doi.org/10.1111/j.1742-1241.2012.03008.x",
+      "doi": "10.1111/j.1742-1241.2012.03008.x",
+      "authors": ["H.-H. Tsai", "H.-W. Lin", "A. Simon Pickard", "H.-Y. Tsai", "G. B. Mahady"],
+      "publication_year": 2012,
+      "drug_names": ["warfarin", "insulin", "aspirin", "digoxin", "ticlopidine"],
+      "ingredient_names": ["St John’s wort", "magnesium", "calcium", "iron", "ginkgo", "flaxseed", "echinacea", "yohimbe"],
+      "evidence_level": "SYSTEMATIC_REVIEW",
+      "study_population": "MIXED"
     }
   ]
 }

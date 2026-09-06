@@ -14,9 +14,11 @@ from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunk,
     KnowledgeChunkMetadata,
+    KnowledgeContentKind,
     KnowledgeDocumentType,
     KnowledgeEvidenceLevel,
     KnowledgeExtractionWarning,
+    KnowledgeMetadata,
     KnowledgePage,
     KnowledgeSectionType,
     KnowledgeStudyPopulation,
@@ -1100,6 +1102,33 @@ def test_review_sample_indices_include_every_complex_table_chunk() -> None:
     assert 5 in sample_indices
 
 
+def test_review_document_includes_only_chunks_that_need_review() -> None:
+    reviews = [
+        SimpleNamespace(
+            chunk_index=0,
+            status=KnowledgeChunkReviewStatus.APPROVED,
+        ),
+        SimpleNamespace(
+            chunk_index=1,
+            status=KnowledgeChunkReviewStatus.PENDING,
+        ),
+        SimpleNamespace(
+            chunk_index=2,
+            status=KnowledgeChunkReviewStatus.REPAIR_REQUIRED,
+        ),
+        SimpleNamespace(
+            chunk_index=3,
+            status=KnowledgeChunkReviewStatus.EXCLUDED_NON_CONTENT,
+        ),
+    ]
+
+    indices = KnowledgePilotPreprocessingService._review_required_indices(
+        reviews,
+    )
+
+    assert indices == [1, 2]
+
+
 def test_preprocess_invalidates_previous_report_before_processing(
     tmp_path: Path,
 ) -> None:
@@ -1389,6 +1418,67 @@ sources:
     assert "- [ ] `REPROCESS_REQUIRED`" in review
 
 
+def test_preprocess_releases_manually_verified_multi_column_layout(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "research",
+                    "document_id": "verified-layout",
+                    "repo_path": "raw/layout.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "검수된 다단 읽기 순서",
+                    "manual_review_status": "APPROVED",
+                    "approved_review_reason_codes": ["MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW"],
+                    "title": "Interaction review",
+                    "source_url": "https://doi.org/10.1234/layout",
+                    "drug_names": ["example drug"],
+                    "evidence_level": "REVIEW_ARTICLE",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: research
+    provider: Journal
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeLayoutRiskKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=tmp_path / "processed",
+        dataset_version="pilot-v1",
+    )
+
+    report = result.document_reports[0]
+    assert report.automatic_status == KnowledgeAutomaticQualityStatus.PASS
+    assert report.reason_codes == []
+    assert report.pending_chunk_count == 0
+    assert report.release_ready is True
+    assert result.ready_for_bulk_source_ids == ["research"]
+
+
 def test_preprocess_marks_rotated_text_extraction_for_review(
     tmp_path: Path,
 ) -> None:
@@ -1445,6 +1535,68 @@ sources:
     assert report.rotated_text_warning_count == 1
     assert report.rotated_text_warning_pages == [1]
     assert "ROTATED_TEXT_REQUIRES_REVIEW" in [reason.value for reason in report.reason_codes]
+
+
+def test_preprocess_releases_manually_verified_rotated_text(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "research",
+                    "document_id": "verified-rotated-text",
+                    "repo_path": "raw/rotated.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "사람이 원문과 대조한 회전 텍스트",
+                    "manual_review_status": "APPROVED",
+                    "approved_review_reason_codes": [
+                        "ROTATED_TEXT_REQUIRES_REVIEW"
+                    ],
+                    "title": "Interaction review",
+                    "source_url": "https://doi.org/10.1234/rotated",
+                    "drug_names": ["example drug"],
+                    "evidence_level": "REVIEW_ARTICLE",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: research
+    provider: Journal
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeRotatedTextRiskKnowledgePdfLoader(),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=tmp_path / "processed",
+        dataset_version="pilot-v1",
+    )
+
+    report = result.document_reports[0]
+    assert report.automatic_status == KnowledgeAutomaticQualityStatus.PASS
+    assert report.reason_codes == []
+    assert report.pending_chunk_count == 0
+    assert report.release_ready is True
     review = (tmp_path / "processed" / report.review_sample_path).read_text(
         encoding="utf-8",
     )
@@ -1522,6 +1674,72 @@ sources:
     assert expected_reason in [reason.value for reason in report.reason_codes]
 
 
+@pytest.mark.parametrize(
+    "warning",
+    [
+        KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE,
+        KnowledgeExtractionWarning.READING_ORDER_UNSAFE,
+    ],
+)
+def test_preprocess_accepts_manually_verified_unsafe_layout_reason(
+    tmp_path: Path,
+    warning: KnowledgeExtractionWarning,
+) -> None:
+    manifest_path = tmp_path / "pilot_manifest.json"
+    sources_path = tmp_path / "sources.yaml"
+    write_json(
+        manifest_path,
+        {
+            "policy": "test",
+            "pilots": [
+                {
+                    "source_id": "research",
+                    "document_id": "verified-unsafe-layout",
+                    "repo_path": "raw/unsafe.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "사람이 원문과 대조한 좌표 추출",
+                    "manual_review_status": "APPROVED",
+                    "approved_review_reason_codes": [warning.value],
+                    "title": "Interaction review",
+                    "source_url": "https://doi.org/10.1234/unsafe",
+                    "drug_names": ["example drug"],
+                    "evidence_level": "REVIEW_ARTICLE",
+                }
+            ],
+        },
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: research
+    provider: Journal
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: raw
+""".strip(),
+        encoding="utf-8",
+    )
+    service = KnowledgePilotPreprocessingService(
+        repo_root=tmp_path,
+        loader=FakeUnsafeLayoutKnowledgePdfLoader(warning),
+        normalizer=KnowledgeNormalizer(),
+        splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
+    )
+
+    result = service.preprocess(
+        manifest_path=manifest_path,
+        sources_path=sources_path,
+        output_root=tmp_path / "processed",
+        dataset_version="pilot-v1",
+    )
+
+    report = result.document_reports[0]
+    assert report.automatic_status == KnowledgeAutomaticQualityStatus.PASS
+    assert report.reason_codes == []
+
+
 def test_preprocess_quarantines_unsafe_chunks_and_blocks_release(
     tmp_path: Path,
 ) -> None:
@@ -1564,7 +1782,7 @@ sources:
     service = KnowledgePilotPreprocessingService(
         repo_root=tmp_path,
         loader=FakeUnsafeLayoutKnowledgePdfLoader(
-            KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE,
+            KnowledgeExtractionWarning.READING_ORDER_UNSAFE,
         ),
         normalizer=KnowledgeNormalizer(),
         splitter=KnowledgeSplitter(token_counter=WordTokenCounter()),
@@ -1660,6 +1878,64 @@ def test_chunk_manual_approval_is_scoped_to_matching_content_hash() -> None:
         KnowledgeChunkReviewStatus.REPAIR_REQUIRED,
     ]
     assert reviews[0].reason_codes == ["READING_ORDER_UNSAFE"]
+
+
+def test_table_warning_does_not_quarantine_text_on_the_same_page() -> None:
+    metadata = KnowledgeChunkMetadata(
+        source_id="regulatory",
+        document_id="label",
+        title="LEVO-T prescribing information",
+        provider="FDA",
+        access_scope=KnowledgeAccessScope.PUBLIC,
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        dataset_version="pilot-v1",
+        section_type=KnowledgeSectionType.OVERVIEW,
+        content_kind=KnowledgeContentKind.TEXT,
+        page_start=16,
+        page_end=17,
+        chunk_index=0,
+        content_hash="a" * 64,
+    )
+    chunk = KnowledgeChunk(
+        chunk_id="1" * 64,
+        content="LEVO-T tablets are supplied as follows.",
+        embedding_text="LEVO-T tablets are supplied as follows.",
+        token_count=7,
+        metadata=metadata,
+    )
+    page = KnowledgePage(
+        content=chunk.content,
+        metadata=KnowledgeMetadata(
+            source_id="regulatory",
+            document_id="label",
+            title="LEVO-T prescribing information",
+            provider="FDA",
+            access_scope=KnowledgeAccessScope.PUBLIC,
+            document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+            dataset_version="pilot-v1",
+        ),
+        page_number=17,
+        extraction_warnings=[KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE],
+    )
+    pilot = KnowledgePilotEntry.model_validate(
+        {
+            "source_id": "regulatory",
+            "document_id": "label",
+            "repo_path": "raw/label.pdf",
+            "processing_status": "TEXT_EXTRACTABLE",
+            "selection_reason": "표 설명 본문 격리 오탐 방지",
+        }
+    )
+
+    reviews = KnowledgePilotPreprocessingService._build_chunk_reviews(
+        pilot=pilot,
+        pages=[page],
+        chunks=[chunk],
+        automatic_status=KnowledgeAutomaticQualityStatus.BLOCKED,
+    )
+
+    assert reviews[0].status == KnowledgeChunkReviewStatus.PENDING
+    assert reviews[0].reason_codes == []
 
 
 def test_preprocess_marks_regulatory_table_for_review(

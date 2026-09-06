@@ -16,6 +16,8 @@ from ai_worker.rag.splitters.knowledge_splitter import (
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeBoundingBox,
+    KnowledgeChunk,
+    KnowledgeChunkMetadata,
     KnowledgeContentKind,
     KnowledgeDocumentType,
     KnowledgeEvidenceLevel,
@@ -26,6 +28,36 @@ from ai_worker.schemas.knowledge import (
     KnowledgeStudyPopulation,
     KnowledgeTableRow,
 )
+
+
+def build_aspirin_warfarin_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+    content_kind: KnowledgeContentKind = KnowledgeContentKind.TEXT,
+) -> KnowledgeChunk:
+    metadata = KnowledgeChunkMetadata(
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-3dd5c1de206c9a88",
+        title="Aspirin and warfarin nutrient interactions",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+        section_type=KnowledgeSectionType.INTERACTION,
+        page_start=1,
+        page_end=1,
+        chunk_index=chunk_index,
+        content_hash=f"{chunk_index + 1:064x}",
+        content_kind=content_kind,
+    )
+    return KnowledgeChunk(
+        chunk_id=f"{chunk_index + 101:064x}",
+        content=content,
+        embedding_text=content,
+        token_count=len(content.split()),
+        metadata=metadata,
+    )
 
 
 def build_page(
@@ -164,6 +196,32 @@ def test_split_uses_dni_table_title_for_every_grouped_chunk() -> None:
     table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
     assert len(table_chunks) == 2
     assert all(chunk.metadata.section_type == KnowledgeSectionType.INTERACTION for chunk in table_chunks)
+
+
+def test_split_prioritizes_interaction_table_title_over_dose_column() -> None:
+    page = build_research_page_with_table(
+        table_rows=[["Pueraria lobata", "Dose dependent=Yes"]],
+        table_title="HDS-drug interaction evidence studies (Table 1)",
+    )
+    page = page.model_copy(update={"metadata": page.metadata.model_copy(update={"interaction_type": None})})
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    table_chunk = next(chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE)
+    assert table_chunk.metadata.section_type == KnowledgeSectionType.INTERACTION
+
+
+def test_split_classifies_contraindication_relationship_table_as_caution() -> None:
+    page = build_research_page_with_table(
+        table_rows=[["Renal disease", "Magnesium"]],
+        table_title=("Contraindication relationships for herbs and dietary supplements"),
+    )
+    page = page.model_copy(update={"metadata": page.metadata.model_copy(update={"interaction_type": None})})
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    table_chunk = next(chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE)
+    assert table_chunk.metadata.section_type == KnowledgeSectionType.CAUTION
 
 
 def test_split_does_not_break_an_oversized_table_row() -> None:
@@ -1376,6 +1434,143 @@ def test_split_connects_lowercase_continuation_across_text_blocks() -> None:
     content = "\n".join(chunk.content for chunk in chunks)
     assert "conventional drugs; assessment of causality" in content
     assert "conventional\n\ndrugs" not in content
+
+
+def test_repair_aspirin_warfarin_text_chunk_boundaries() -> None:
+    chunks = [
+        build_aspirin_warfarin_chunk(
+            "Abstract. Our article reviews the",
+            chunk_index=0,
+        ),
+        build_aspirin_warfarin_chunk(
+            "drug–nutrient interactions that alter micronutritional status. Some mechanisms were investigated.",
+            chunk_index=1,
+        ),
+        build_aspirin_warfarin_chunk(
+            "Niacin (B3)\nThe clinical significance thereof is unknown.\n"
+            "Pantothenic Acid (B5)\nPantethine is used as a",
+            chunk_index=2,
+        ),
+        build_aspirin_warfarin_chunk(
+            "Calciferols (D)\nVitamin D context.\nK Vitamin\n"
+            "factors II, VII, IX, and\n\nX. It is expected to change "
+            "coagulation. Lack of menaquinone-7-trans",
+            chunk_index=3,
+        ),
+        build_aspirin_warfarin_chunk(
+            "results in the inactivation of extrahepatic proteins.",
+            chunk_index=4,
+        ),
+        build_aspirin_warfarin_chunk(
+            "developing countries. DNIs and polypharmacy theoretically increase "
+            "the risks of micronutritional deficiencies, enhancing the risk of "
+            "adverse effect on chronically ill people with impaired nutritional "
+            "status. Karadima et al. proposed omics and the functionality of\n\n"
+            "Karadima et al. proposed omics and the functionality of systems.",
+            chunk_index=5,
+        ),
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+    contents = [chunk.content for chunk in repaired]
+
+    assert contents[0].endswith("drug–nutrient interactions that alter micronutritional status.")
+    assert contents[1] == "Some mechanisms were investigated."
+    assert contents[2].endswith("The clinical significance thereof is unknown.")
+    assert contents[3].startswith("Pantothenic Acid (B5)")
+    assert contents[3].endswith("had mild antiplatelet aggregation properties.")
+    assert contents[4] == "Calciferols (D)\nVitamin D context."
+    assert contents[5].startswith("K Vitamin\n")
+    assert "II, VII, IX, and X. It is expected" in contents[5]
+    assert "Lack of menaquinone-7-trans results in" in contents[5]
+    assert not contents[6].startswith("developing countries.")
+    assert contents[6].count("Karadima et al.") == 1
+    assert "functionality of systems" in contents[6]
+
+
+def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:
+    chunks = [
+        build_aspirin_warfarin_chunk(
+            "Warfarin overview: factors II, VII, IX, and X are inhibited.",
+            chunk_index=0,
+        ),
+        build_aspirin_warfarin_chunk(
+            "Calciferols (D)\nVitamin D context.\nK Vitamin\n"
+            "carboxylation of factors II, VII, IX, and\n\n"
+            "X. It is expected to decrease proteins. "
+            "Lack of menaquinone-7-trans",
+            chunk_index=1,
+        ),
+        build_aspirin_warfarin_chunk(
+            "results in the inactivation of extrahepatic proteins.",
+            chunk_index=2,
+        ),
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+
+    assert repaired[1].content == "Calciferols (D)\nVitamin D context."
+    assert repaired[2].content.startswith("K Vitamin\n")
+    assert "II, VII, IX, and X. It is expected" in repaired[2].content
+    assert "Lack of menaquinone-7-trans results in" in repaired[2].content
+
+
+def test_repair_aspirin_warfarin_scientific_table_rows() -> None:
+    table = build_aspirin_warfarin_chunk(
+        "Nutriment=ascorbic acid (C) | Effect on Nutrient Status or Function="
+        "↓ C intragastric concentration ↑ urinary excretion ↓ C leukocyte "
+        "concentration | Number=1 1 1 | Study Design=interventional— randomized, "
+        "double-blind, parallel group case report interventional | Number of "
+        "Patients=45 3 10 | Dosage=3 × 80 mg ASA for 6 days 162 mg ASA 2 times "
+        "at 3 days interval 600 mg ASA, 500 mg C | Result=↓ gastric mucosa "
+        "concentration per 10% ↑ urinary excretion ↓ C leukocyte concentration "
+        "by 114%\n"
+        "Nutriment=iron | Effect on Nutrient Status or Function=↓ serum ferritin "
+        "| Number=2 | Study Design=first study\n"
+        "Nutriment=iron | Study Design=second study\n"
+        "Nutriment=folate (B9) | Effect on Nutrient Status or Function=no "
+        "association with bleeding ↑ clearance of S-7-hydroxywarfarin "
+        "dietary-induced Folate deficiency | Number=1 1 1 | Study Design="
+        "longitudinal cohort interventional observational | Number of Patients="
+        "719 24 114 | Dosage=86% patients in INR 2.0–3.5 5 mg/day B9 "
+        "supplementation dose unavailable | Result=no association non significant "
+        "changes in dose and INR impaired folate status in as little as 6 months",
+        chunk_index=37,
+        content_kind=KnowledgeContentKind.TABLE,
+    )
+
+    [repaired] = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks([table])
+
+    assert repaired.content.count("Nutriment=ascorbic acid (C)") == 3
+    assert "Effect on Nutrient Status or Function=↑ urinary excretion" in (repaired.content)
+    assert (
+        "Nutriment=iron | Effect on Nutrient Status or Function=↓ serum ferritin | Number=2 | Study Design=second study"
+    ) in repaired.content
+    assert repaired.content.count("Nutriment=folate (B9)") == 3
+    assert ("Effect on Nutrient Status or Function=↑ clearance of S-7-hydroxywarfarin") in repaired.content
+    assert "Effect on Nutrient Status or Function=dietary-induced Folate deficiency" in (repaired.content)
+
+
+def test_repair_aspirin_warfarin_regroups_oversized_table_rows() -> None:
+    rows = [
+        "Nutriment=iron | Effect on Nutrient Status or Function=↓ serum ferritin "
+        f"| Number=1 | Result={'result ' * 350}",
+        "Nutriment=folate (B9) | Effect on Nutrient Status or Function=no "
+        f"association | Number=1 | Result={'result ' * 350}",
+        "Nutriment=K vitamin | Effect on Nutrient Status or Function=influence INR "
+        f"| Number=1 | Result={'result ' * 350}",
+    ]
+    table = build_aspirin_warfarin_chunk(
+        "\n".join(rows),
+        chunk_index=38,
+        content_kind=KnowledgeContentKind.TABLE,
+    )
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks([table])
+
+    assert len(repaired) == 2
+    assert all(chunk.token_count <= 800 for chunk in repaired)
+    assert [chunk.metadata.chunk_index for chunk in repaired] == [0, 1]
 
 
 def test_split_uses_korean_label_for_drug_food_interaction() -> None:

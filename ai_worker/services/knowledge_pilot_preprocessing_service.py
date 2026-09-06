@@ -516,6 +516,8 @@ class KnowledgePilotPreprocessingService:
             )
 
         reason_codes = list(dict.fromkeys(reason_codes))
+        approved_review_reasons = {reason.value for reason in pilot.approved_review_reason_codes}
+        reason_codes = [reason for reason in reason_codes if reason.value not in approved_review_reasons]
         search_entity_count = sum(
             bool(chunk.metadata.drug_names or chunk.metadata.ingredient_names) for chunk in chunks
         )
@@ -652,6 +654,12 @@ class KnowledgePilotPreprocessingService:
                     )
                 )
             )
+            if chunk.metadata.content_kind != KnowledgeContentKind.TABLE:
+                reasons = [
+                    reason
+                    for reason in reasons
+                    if reason != KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE.value
+                ]
             if chunk.metadata.section_type == KnowledgeSectionType.REFERENCES:
                 status = KnowledgeChunkReviewStatus.EXCLUDED_NON_CONTENT
                 reasons = ["REFERENCE_SECTION"]
@@ -765,16 +773,8 @@ class KnowledgePilotPreprocessingService:
         report: KnowledgeDocumentPreprocessingReport,
         chunks: list[KnowledgeChunk],
     ) -> None:
-        sample_indices = KnowledgePilotPreprocessingService._sample_indices(
-            chunks,
-            document_type=report.document_type,
-        )
-        sample_indices = sorted(
-            set(sample_indices).union(
-                review.chunk_index
-                for review in report.chunk_reviews
-                if review.status == KnowledgeChunkReviewStatus.REPAIR_REQUIRED
-            )
+        review_indices = KnowledgePilotPreprocessingService._review_required_indices(
+            report.chunk_reviews,
         )
         lines = [
             f"# 전처리 표본 검수: {report.document_id}",
@@ -823,9 +823,11 @@ class KnowledgePilotPreprocessingService:
             "- 검수일:",
             "- 메모:",
             "",
-            "## 결정론적 표본 청크",
+            "## 검수 필요 청크 (PENDING·REPAIR_REQUIRED)",
         ]
-        for chunk_index in sample_indices:
+        if not review_indices:
+            lines.extend(["", "검수가 필요한 청크가 없습니다."])
+        for chunk_index in review_indices:
             chunk = chunks[chunk_index]
             metadata = chunk.metadata
             chunk_review = report.chunk_reviews[chunk_index]
@@ -849,6 +851,20 @@ class KnowledgePilotPreprocessingService:
         KnowledgePilotPreprocessingService._write_text_atomic(
             path,
             "\n".join(lines).rstrip() + "\n",
+        )
+
+    @staticmethod
+    def _review_required_indices(
+        reviews: list[KnowledgeChunkReviewRecord],
+    ) -> list[int]:
+        return sorted(
+            review.chunk_index
+            for review in reviews
+            if review.status
+            in {
+                KnowledgeChunkReviewStatus.PENDING,
+                KnowledgeChunkReviewStatus.REPAIR_REQUIRED,
+            }
         )
 
     @staticmethod

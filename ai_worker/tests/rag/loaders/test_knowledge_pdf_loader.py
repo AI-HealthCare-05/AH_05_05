@@ -242,6 +242,7 @@ class FakeCoordinateExtractor:
 class FakeVerifiedLayoutParser:
     def __init__(self) -> None:
         self.calls = []
+        self.repair_calls = []
 
     def parse(self, *, page, page_number, source_id):
         self.calls.append((page, page_number, source_id))
@@ -255,6 +256,16 @@ class FakeVerifiedLayoutParser:
                 )
             ],
             warnings=[KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT],
+        )
+
+    def repair(self, *, extraction, page_number, source_id):
+        self.repair_calls.append((page_number, source_id))
+        repaired_block = extraction.blocks[0].model_copy(
+            update={"content": "검수 좌표로 복원하고 문맥을 보정한 본문"}
+        )
+        return PdfLayoutExtraction(
+            blocks=[repaired_block],
+            warnings=extraction.warnings,
         )
 
 
@@ -359,8 +370,44 @@ def test_load_prefers_verified_source_layout_over_generic_extraction(
         verified_layout_parser=verified_parser,
     ).load(pdf_path, metadata)
 
-    assert pages[0].content == "검수 좌표로 복원한 본문"
+    assert pages[0].content == "검수 좌표로 복원하고 문맥을 보정한 본문"
     assert verified_parser.calls == [(layout_document.pages[0], 1, "research_supplement_adverse_effects")]
+    assert verified_parser.repair_calls == [(1, "research_supplement_adverse_effects")]
+
+
+def test_load_omits_page_explicitly_excluded_by_verified_parser(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(knowledge_pdf_loader, "PdfReader", FakeTwoPageReader)
+    layout_document = FakeTwoPageLayoutDocument()
+
+    class ExcludingVerifiedParser:
+        def parse(self, **kwargs):
+            if kwargs["page_number"] == 1:
+                return PdfLayoutExtraction(blocks=[], warnings=[])
+            return None
+
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-excluded-page",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeCoordinateExtractor(),
+        layout_document_opener=lambda _: layout_document,
+        verified_layout_parser=ExcludingVerifiedParser(),
+    ).load(pdf_path, metadata)
+
+    assert len(pages) == 1
+    assert pages[0].page_number == 2
 
 
 def test_load_marks_layout_unsafe_when_coordinate_extraction_fails(

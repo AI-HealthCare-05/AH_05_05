@@ -33,6 +33,14 @@ class KnowledgeManualReviewStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class KnowledgeApprovedReviewReasonCode(StrEnum):
+    COMPLEX_TABLE_REQUIRES_REVIEW = "COMPLEX_TABLE_REQUIRES_REVIEW"
+    MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW = "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW"
+    ROTATED_TEXT_REQUIRES_REVIEW = "ROTATED_TEXT_REQUIRES_REVIEW"
+    TABLE_STRUCTURE_UNSAFE = "TABLE_STRUCTURE_UNSAFE"
+    READING_ORDER_UNSAFE = "READING_ORDER_UNSAFE"
+
+
 class KnowledgeSourceConfig(BaseModel):
     source_id: str = Field(
         min_length=1,
@@ -93,6 +101,7 @@ class KnowledgePilotEntry(BaseModel):
     verified_text_replacements: dict[str, str] = Field(default_factory=dict)
     verified_section_headings: list[str] = Field(default_factory=list)
     approved_chunk_content_hashes: list[str] = Field(default_factory=list)
+    approved_review_reason_codes: list[KnowledgeApprovedReviewReasonCode] = Field(default_factory=list)
 
     @field_validator("verified_section_headings")
     @classmethod
