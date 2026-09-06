@@ -51,6 +51,7 @@ class ChatEvaluator:
             query_count=query_count,
             passed_count=passed_count,
             route_accuracy=self._rate(result.route_match for result in results),
+            question_intent_accuracy=self._rate(result.intent_match for result in results),
             entity_accuracy=self._rate(result.entity_match for result in results),
             section_accuracy=self._rate(result.section_match for result in results),
             source_contract_rate=self._rate(result.source_match for result in results),
@@ -75,6 +76,7 @@ class ChatEvaluator:
         expected = case.expected
         expected_entities = [entity.canonical_name for entity in expected.normalized_entities]
         route_match = observation.route == expected.route
+        intent_match = expected.question_intent is None or observation.question_intent == expected.question_intent
         entity_match = cls._contains_all(
             observation.normalized_entities,
             expected_entities,
@@ -91,9 +93,9 @@ class ChatEvaluator:
 
         categories: list[ChatEvaluationFailureCategory] = []
         details: list[str] = []
-        if not route_match or not section_match:
+        if not route_match or not intent_match or not section_match:
             categories.append(ChatEvaluationFailureCategory.QUESTION_CLASSIFICATION)
-            details.append("질문 경로 또는 검색 섹션 분류가 예상과 다릅니다.")
+            details.append("질문 의도·경로 또는 검색 섹션 분류가 예상과 다릅니다.")
         if not entity_match:
             categories.append(ChatEvaluationFailureCategory.ENTITY_NORMALIZATION)
             details.append("필수 제품명·성분명이 정규화 결과에 없습니다.")
@@ -126,6 +128,11 @@ class ChatEvaluator:
             category=case.category,
             expected_route=expected.route,
             observed_route=observation.route,
+            expected_question_intent=expected.question_intent,
+            observed_question_intent=observation.question_intent,
+            question_confidence=observation.question_confidence,
+            interpretation_version=observation.interpretation_version,
+            interpretation_reason_codes=(observation.interpretation_reason_codes),
             expected_entities=expected_entities,
             observed_entities=observation.normalized_entities,
             expected_section_types=expected.section_types,
@@ -136,9 +143,12 @@ class ChatEvaluator:
             observed_safety_status=observation.safety_status,
             response_time_ms=observation.response_time_ms,
             langsmith_trace_id=observation.langsmith_trace_id,
+            query_plan_hash=observation.query_plan_hash,
+            execution_plan_hash=observation.execution_plan_hash,
             error_code=observation.error_code,
             answer=observation.answer,
             route_match=route_match,
+            intent_match=intent_match,
             entity_match=entity_match,
             section_match=section_match,
             source_match=source_match,
@@ -190,6 +200,7 @@ def render_chat_evaluation_markdown(
         f"- 전체 상태: **{status}**",
         f"- 통과: {report.passed_count}/{report.query_count}",
         f"- 경로 정확도: {report.route_accuracy:.1%}",
+        f"- 질문 의도 정확도: {report.question_intent_accuracy:.1%}",
         f"- 엔터티 정규화 정확도: {report.entity_accuracy:.1%}",
         f"- 검색 섹션 정확도: {report.section_accuracy:.1%}",
         f"- 출처 계약 충족률: {report.source_contract_rate:.1%}",
@@ -201,13 +212,17 @@ def render_chat_evaluation_markdown(
         "## 질문별 결과",
         "",
         (
-            "| 질문 ID | 상태 | 경로 | 정규화 엔터티 | 검색 섹션 | "
-            "사용 출처 | 안전성 | 응답 시간 | LangSmith Trace ID | 실패 분류 |"
+            "| 질문 ID | 상태 | 해석 버전 | 의도/신뢰도 | 경로 | "
+            "정규화 엔터티 | 검색 섹션 | 사용 출처 | 안전성 | 응답 시간 | "
+            "LangSmith Trace ID | 실패 분류 |"
         ),
-        "| --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- |",
+        ("| --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- |"),
     ]
     for result in report.results:
         result_status = "PASS" if result.passed else "FAIL"
+        interpretation_version = result.interpretation_version or "-"
+        intent = result.observed_question_intent.value if result.observed_question_intent is not None else "-"
+        confidence = result.question_confidence.value if result.question_confidence is not None else "-"
         route = result.observed_route.value if result.observed_route else "-"
         entities = ", ".join(result.observed_entities) or "-"
         sections = ", ".join(section.value for section in result.observed_section_types) or "-"
@@ -216,9 +231,10 @@ def render_chat_evaluation_markdown(
         trace_id = result.langsmith_trace_id or "-"
         failures = ", ".join(category.value for category in result.failure_categories) or "-"
         lines.append(
-            f"| {result.query_id} | {result_status} | {route} | {entities} | "
-            f"{sections} | {sources} | {safety} | {result.response_time_ms:.1f}ms | "
-            f"{trace_id} | {failures} |"
+            f"| {result.query_id} | {result_status} | "
+            f"{interpretation_version} | {intent}/{confidence} | {route} | "
+            f"{entities} | {sections} | {sources} | {safety} | "
+            f"{result.response_time_ms:.1f}ms | {trace_id} | {failures} |"
         )
 
     failed_results = [result for result in report.results if not result.passed]

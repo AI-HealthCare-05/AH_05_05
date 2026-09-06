@@ -3,7 +3,13 @@ from contextlib import asynccontextmanager
 from datetime import date
 
 import pytest
+from langchain_core.runnables import RunnableLambda
 
+from ai_worker.chains.medication_query_plan_chain import (
+    MedicationQueryPlanChainInput,
+    MedicationQuestionPlanResult,
+    build_medication_query_plan_chain,
+)
 from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
@@ -445,6 +451,7 @@ def build_use_case(
     grounded_claim_validator=None,
     question_resolver=None,
     supplement_ingredient_catalog=None,
+    query_plan_chain=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -456,7 +463,32 @@ def build_use_case(
         tracer=tracer,
         question_resolver=question_resolver,
         supplement_ingredient_catalog=supplement_ingredient_catalog,
+        query_plan_chain=query_plan_chain,
     )
+
+
+async def test_execute_uses_injected_query_plan_chain() -> None:
+    async def force_magnesium_plan(
+        value: MedicationQueryPlanChainInput,
+    ) -> dict:
+        planning: MedicationQuestionPlanResult = await build_medication_query_plan_chain().ainvoke(
+            value.model_copy(
+                update={"question": "마그네슘은 왜 먹나요?"},
+            )
+        )
+        return planning.model_dump()
+
+    retriever = RecordingQueryPlanRetriever()
+
+    await build_use_case(
+        retriever=retriever,
+        query_plan_chain=RunnableLambda(force_magnesium_plan),
+    ).execute(build_request("원래 질문"))
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entity_names == ["마그네슘"]
+    assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
 
 
 async def test_execute_auto_corrects_unique_typo_before_search() -> None:
@@ -562,6 +594,46 @@ async def test_execute_returns_deterministic_out_of_scope_guidance(
     assert result.route == MedicationChatRoute.OUT_OF_SCOPE
     assert result.safety_status == SafetyStatus.SAFE
     assert expected_text in result.answer
+    assert retriever.received_kwargs is None
+
+
+async def test_execute_records_interpretation_before_out_of_scope_return() -> None:
+    tracer = RecordingChatTracer()
+    result = await build_use_case(
+        tracer=tracer,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("안녕하세요"))
+
+    assert tracer.names == [
+        "patient_context.load",
+        "question.resolve",
+        "query.plan",
+    ]
+    assert result.question_interpretation is not None
+    assert result.question_interpretation.intent.value == "GREETING"
+    assert result.question_interpretation.confidence.value == "LOW"
+    query_outputs = tracer.spans[-1].outputs
+    assert query_outputs["intent"] == "GREETING"
+    assert query_outputs["needs_clarification"] is False
+
+
+async def test_execute_restricts_query_plan_chain_failure_before_search() -> None:
+    async def fail_query_plan(value):
+        raise RuntimeError("query plan failed")
+
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        answer_generator=UnexpectedMedicationGenerator(),
+        query_plan_chain=RunnableLambda(fail_query_plan),
+    ).execute(build_request("타이레놀 주의사항"))
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == ["QUERY_PLAN_FAILED"]
+    assert "질문을 안전하게 해석하지 못했습니다" in result.answer
     assert retriever.received_kwargs is None
 
 
@@ -796,6 +868,16 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     )
     assert "타이레놀정500밀리그람" not in serialized_outputs
     assert build_chunk().content not in serialized_outputs
+    query_outputs = tracer.spans[1].outputs
+    assert query_outputs["intent"] == "MEDICATION_GUIDE"
+    assert query_outputs["confidence"] == "LOW"
+    assert query_outputs["needs_clarification"] is False
+    assert query_outputs["reason_codes"] == [
+        "QUESTION_RESOLUTION_UNAVAILABLE",
+        "ENTITY_IDENTIFIED",
+    ]
+    assert query_outputs["normalized_entity_count"] == 2
+    assert query_outputs["requested_section_types"] == []
     rag_outputs = tracer.spans[3].outputs
     assert len(rag_outputs.pop("query_plan_hash")) == 64
     assert len(rag_outputs.pop("execution_plan_hash")) == 64

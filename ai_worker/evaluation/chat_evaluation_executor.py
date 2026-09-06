@@ -100,12 +100,21 @@ class ChatCoreEvaluationExecutor:
             elapsed_ms = self._elapsed_ms(started_at)
             source_kinds = list(dict.fromkeys(source.kind for source in result.sources))
             search_observation = result.search_observation
+            interpretation = result.question_interpretation
             root_span.end(
                 {
                     "status": "COMPLETED",
                     "route": result.route.value,
                     "safety_status": result.safety_status.value,
                     "source_count": len(source_kinds),
+                    "interpretation_version": (
+                        interpretation.interpretation_version if interpretation is not None else None
+                    ),
+                    "question_intent": (interpretation.intent.value if interpretation is not None else None),
+                    "question_confidence": (interpretation.confidence.value if interpretation is not None else None),
+                    "interpretation_reason_codes": (
+                        [code.value for code in interpretation.reason_codes] if interpretation is not None else []
+                    ),
                     "query_plan_hash": (search_observation.query_plan_hash if search_observation is not None else None),
                     "execution_plan_hash": (
                         search_observation.execution_plan_hash if search_observation is not None else None
@@ -116,9 +125,15 @@ class ChatCoreEvaluationExecutor:
                 query_id=case.query_id,
                 route=result.route,
                 normalized_entities=(
-                    search_observation.query_plan.entity_names if search_observation is not None else []
+                    interpretation.normalized_entity_names
+                    if interpretation is not None
+                    else (search_observation.query_plan.entity_names if search_observation is not None else [])
                 ),
-                section_types=(search_observation.query_plan.section_types if search_observation is not None else []),
+                section_types=(
+                    interpretation.requested_section_types
+                    if interpretation is not None
+                    else (search_observation.query_plan.section_types if search_observation is not None else [])
+                ),
                 source_kinds=source_kinds,
                 safety_status=result.safety_status,
                 response_time_ms=elapsed_ms,
@@ -126,6 +141,12 @@ class ChatCoreEvaluationExecutor:
                 query_plan_hash=(search_observation.query_plan_hash if search_observation is not None else None),
                 execution_plan_hash=(
                     search_observation.execution_plan_hash if search_observation is not None else None
+                ),
+                question_intent=(interpretation.intent if interpretation is not None else None),
+                question_confidence=(interpretation.confidence if interpretation is not None else None),
+                interpretation_version=(interpretation.interpretation_version if interpretation is not None else None),
+                interpretation_reason_codes=(
+                    [code.value for code in interpretation.reason_codes] if interpretation is not None else []
                 ),
                 answer=result.answer,
             )

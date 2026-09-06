@@ -15,6 +15,8 @@ from ai_worker.schemas.knowledge import (
     KnowledgeSectionType,
 )
 
+MEDICATION_QUESTION_INTERPRETATION_VERSION = "medication-question-interpretation-v1"
+
 
 class MedicationQueryEntityType(StrEnum):
     PRODUCT_NAME = "PRODUCT_NAME"
@@ -47,6 +49,31 @@ class MedicationExpressionResolutionStatus(StrEnum):
     AUTO_CORRECTED = "AUTO_CORRECTED"
     CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
     UNRESOLVED = "UNRESOLVED"
+
+
+class MedicationQuestionIntent(StrEnum):
+    MEDICATION_GUIDE = "MEDICATION_GUIDE"
+    SUPPLEMENT_GUIDE = "SUPPLEMENT_GUIDE"
+    INTERACTION = "INTERACTION"
+    GENERAL_GUIDANCE = "GENERAL_GUIDANCE"
+    CLARIFICATION = "CLARIFICATION"
+    GREETING = "GREETING"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"
+
+
+class MedicationQuestionConfidence(StrEnum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
+class MedicationQuestionReasonCode(StrEnum):
+    QUESTION_RESOLUTION_UNAVAILABLE = "QUESTION_RESOLUTION_UNAVAILABLE"
+    EXPRESSION_AUTO_CORRECTED = "EXPRESSION_AUTO_CORRECTED"
+    CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
+    ENTITY_IDENTIFIED = "ENTITY_IDENTIFIED"
+    NO_ENTITY_IDENTIFIED = "NO_ENTITY_IDENTIFIED"
+    INTERACTION_PAIR_IDENTIFIED = "INTERACTION_PAIR_IDENTIFIED"
 
 
 class MedicationExpressionCorrection(BaseModel):
@@ -158,6 +185,35 @@ class MedicationKnowledgeQueryPlan(BaseModel):
             separators=(",", ":"),
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+class MedicationQuestionInterpretation(BaseModel):
+    """자유 형식 CoT 없이 질문 해석 결과를 설명하는 통합 계약."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    interpretation_version: str = Field(
+        default=MEDICATION_QUESTION_INTERPRETATION_VERSION,
+        min_length=1,
+    )
+    original_question: str = Field(min_length=1)
+    resolved_question: str = Field(min_length=1)
+    scope: MedicationQuestionScope
+    resolution_status: MedicationExpressionResolutionStatus
+    intent: MedicationQuestionIntent
+    confidence: MedicationQuestionConfidence
+    normalized_entity_names: list[str] = Field(default_factory=list)
+    requested_section_types: list[KnowledgeSectionType] = Field(
+        default_factory=list,
+    )
+    interaction_types: list[InteractionPairType] = Field(default_factory=list)
+    needs_clarification: bool = False
+    correction_count: int = Field(default=0, ge=0)
+    candidate_count: int = Field(default=0, ge=0)
+    reason_codes: list[MedicationQuestionReasonCode] = Field(
+        default_factory=list,
+    )
+    query_plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class MedicationSearchExecutionPlan(BaseModel):

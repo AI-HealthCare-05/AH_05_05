@@ -14,7 +14,12 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSourceKind,
 )
 from ai_worker.schemas.medication_search import (
+    MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
+    MedicationQuestionConfidence,
+    MedicationQuestionIntent,
+    MedicationQuestionInterpretation,
+    MedicationQuestionScope,
     MedicationSearchExecutionObservation,
 )
 
@@ -86,6 +91,21 @@ async def test_execute_collects_query_plan_result_latency_and_trace_id() -> None
                 query_plan_hash="a" * 64,
                 execution_plan_hash="b" * 64,
             ),
+            question_interpretation=MedicationQuestionInterpretation(
+                original_question="칼슘과 철분을 같이 먹어도 되나요?",
+                resolved_question="칼슘과 철분을 같이 먹어도 되나요?",
+                scope=MedicationQuestionScope.IN_SCOPE,
+                resolution_status=MedicationExpressionResolutionStatus.UNCHANGED,
+                intent=MedicationQuestionIntent.INTERACTION,
+                confidence=MedicationQuestionConfidence.HIGH,
+                normalized_entity_names=["칼슘", "철분"],
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                reason_codes=[
+                    "ENTITY_IDENTIFIED",
+                    "INTERACTION_PAIR_IDENTIFIED",
+                ],
+                query_plan_hash="a" * 64,
+            ),
         )
     )
     executor = ChatCoreEvaluationExecutor(
@@ -115,6 +135,13 @@ async def test_execute_collects_query_plan_result_latency_and_trace_id() -> None
     assert observation.langsmith_trace_id == "trace-123"
     assert observation.query_plan_hash == "a" * 64
     assert observation.execution_plan_hash == "b" * 64
+    assert observation.question_intent == MedicationQuestionIntent.INTERACTION
+    assert observation.question_confidence == MedicationQuestionConfidence.HIGH
+    assert observation.interpretation_version == ("medication-question-interpretation-v1")
+    assert observation.interpretation_reason_codes == [
+        "ENTITY_IDENTIFIED",
+        "INTERACTION_PAIR_IDENTIFIED",
+    ]
     assert core.requests[0].user_id == 7
     assert core.requests[0].care_episode_id == 11
 

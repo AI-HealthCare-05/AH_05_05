@@ -8,6 +8,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
     MedicationChatSourceKind,
 )
+from ai_worker.schemas.medication_search import (
+    MedicationQuestionConfidence,
+    MedicationQuestionIntent,
+)
 
 
 class ChatEvaluationCategory(StrEnum):
@@ -36,6 +40,7 @@ class ChatExpectedEntity(BaseModel):
 class ChatEvaluationExpected(BaseModel):
     route: MedicationChatRoute
     intent_tags: list[str] = Field(min_length=1)
+    question_intent: MedicationQuestionIntent | None = None
     normalized_entities: list[ChatExpectedEntity] = Field(min_length=1)
     section_types: list[KnowledgeSectionType] = Field(min_length=1)
     required_source_kinds: list[MedicationChatSourceKind] = Field(default_factory=list)
@@ -116,6 +121,10 @@ class ChatEvaluationObservation(BaseModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    question_intent: MedicationQuestionIntent | None = None
+    question_confidence: MedicationQuestionConfidence | None = None
+    interpretation_version: str | None = None
+    interpretation_reason_codes: list[str] = Field(default_factory=list)
     answer: str = ""
     error_code: str | None = None
 
@@ -126,6 +135,11 @@ class ChatEvaluationCaseResult(BaseModel):
     category: ChatEvaluationCategory
     expected_route: MedicationChatRoute
     observed_route: MedicationChatRoute | None
+    expected_question_intent: MedicationQuestionIntent | None = None
+    observed_question_intent: MedicationQuestionIntent | None = None
+    question_confidence: MedicationQuestionConfidence | None = None
+    interpretation_version: str | None = None
+    interpretation_reason_codes: list[str] = Field(default_factory=list)
     expected_entities: list[str]
     observed_entities: list[str]
     expected_section_types: list[KnowledgeSectionType]
@@ -136,9 +150,12 @@ class ChatEvaluationCaseResult(BaseModel):
     observed_safety_status: SafetyStatus | None
     response_time_ms: float
     langsmith_trace_id: str | None
+    query_plan_hash: str | None = None
+    execution_plan_hash: str | None = None
     error_code: str | None
     answer: str
     route_match: bool
+    intent_match: bool = True
     entity_match: bool
     section_match: bool
     source_match: bool
@@ -156,6 +173,7 @@ class ChatEvaluationReport(BaseModel):
     query_count: int = Field(ge=1)
     passed_count: int = Field(ge=0)
     route_accuracy: float = Field(ge=0.0, le=1.0)
+    question_intent_accuracy: float = Field(default=1.0, ge=0.0, le=1.0)
     entity_accuracy: float = Field(ge=0.0, le=1.0)
     section_accuracy: float = Field(ge=0.0, le=1.0)
     source_contract_rate: float = Field(ge=0.0, le=1.0)

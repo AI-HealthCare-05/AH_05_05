@@ -2,13 +2,17 @@ import hashlib
 import re
 from typing import Any, Protocol
 
+from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import SecretStr
 
+from ai_worker.chains.medication_answer_chain import (
+    MedicationAnswerChainInput,
+    build_medication_answer_chain,
+)
 from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.llm.prompts.medication_chat_prompt import (
     MEDICATION_CHAT_PROMPT_VERSION,
-    build_medication_chat_messages,
 )
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
@@ -16,16 +20,12 @@ from ai_worker.schemas.medication_chat import (
     MedicationAnswerFallbackReason,
     MedicationAnswerGenerationObservation,
     MedicationAnswerGenerationOutcome,
+    MedicationAnswerPayload,
     MedicationAnswerRewriteStatus,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
 )
-
-
-class MedicationAnswerPayload(BaseModel):
-    answer: str = Field(min_length=1)
-    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
 
 
 class AsyncMedicationAnswerClient(Protocol):
@@ -59,20 +59,26 @@ class OpenAIMedicationAnswerGenerator:
         if not normalized_model:
             raise ValueError("LLM 모델명은 비어 있을 수 없습니다.")
         self._model_name = normalized_model
+        response_runnable: Runnable
         if client is not None:
-            self._client = client
-            return
-        chat_model = ChatOpenAI(
-            model=normalized_model,
-            temperature=0,
-            api_key=api_key,
-            timeout=timeout_seconds,
-            max_retries=max_retries,
-        )
-        self._client = chat_model.with_structured_output(
-            MedicationAnswerPayload,
-            method="json_schema",
-            strict=True,
+            response_runnable = RunnableLambda(client.ainvoke).with_config(
+                run_name="medication.answer.client",
+            )
+        else:
+            chat_model = ChatOpenAI(
+                model=normalized_model,
+                temperature=0,
+                api_key=api_key,
+                timeout=timeout_seconds,
+                max_retries=max_retries,
+            )
+            response_runnable = chat_model.with_structured_output(
+                MedicationAnswerPayload,
+                method="json_schema",
+                strict=True,
+            ).with_config(run_name="medication.answer.model")
+        self._chain = build_medication_answer_chain(
+            response_runnable=response_runnable,
         )
 
     @property
@@ -99,17 +105,26 @@ class OpenAIMedicationAnswerGenerator:
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES,
             )
-        messages = build_medication_chat_messages(
-            request=request,
-            context=context,
-            result=result,
-        )
         try:
-            response = await self._client.ainvoke(messages)
-            payload = (
-                response
-                if isinstance(response, MedicationAnswerPayload)
-                else MedicationAnswerPayload.model_validate(response)
+            payload = await self._chain.ainvoke(
+                MedicationAnswerChainInput(
+                    request=request,
+                    context=context,
+                    result=result,
+                ),
+                config={
+                    "metadata": {
+                        "model_name": self._model_name,
+                        "prompt_version": MEDICATION_CHAT_PROMPT_VERSION,
+                        "route": result.route.value,
+                        "source_count": len(result.sources),
+                        "covered_section_count": (
+                            len(result.evidence_coverage.covered_section_types)
+                            if result.evidence_coverage is not None
+                            else 0
+                        ),
+                    }
+                },
             )
         except Exception as error:
             raise ChatAnswerGenerationError(
