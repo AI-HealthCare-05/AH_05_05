@@ -29,6 +29,7 @@ class FakeJobService:
     def __init__(self) -> None:
         self.submissions: list[dict[str, object]] = []
         self.confirmations: list[tuple[int, MedicationGuideConfirmRequest]] = []
+        self.registration_edit_requests: list[bool] = []
 
     async def submit(self, user: object, idempotency_key: str, upload: object) -> OcrJobAcceptedResponse:
         self.submissions.append(
@@ -52,10 +53,16 @@ class FakeJobService:
         return OcrJobStatusResponse(ocr_job_id="42", status=OcrJobStatus.PROCESSING)
 
     async def confirm(
-        self, user: object, job_id: int, request: MedicationGuideConfirmRequest
+        self,
+        user: object,
+        job_id: int,
+        request: MedicationGuideConfirmRequest,
+        *,
+        allow_registration_edit: bool = False,
     ) -> OcrConfirmationResponse:
         assert user is TEST_USER
         self.confirmations.append((job_id, request))
+        self.registration_edit_requests.append(allow_registration_edit)
         return OcrConfirmationResponse(
             ocr_job_id="42",
             care_episode_id="99",
@@ -572,12 +579,13 @@ async def test_document_ocr_confirmation_adapts_the_public_body_to_the_job_servi
     }
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.patch("/api/v1/ocr/jobs/42", json=body)
+            response = await client.patch("/api/v1/ocr/jobs/42?registrationEdit=true", json=body)
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json() == {"recordId": 99, "hasMedication": True, "statusCode": "active"}
+    assert service.registration_edit_requests == [True]
     assert service.confirmations[0][1].dispensing_date.isoformat() == "2026-08-25"
     medication = service.confirmations[0][1].medications[0]
     assert medication.strength == "500mg"

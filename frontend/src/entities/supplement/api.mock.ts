@@ -1,3 +1,5 @@
+import { mockGetNotifySettings } from '@/entities/settings/api.mock';
+import { restoreAccountPrincipal } from '@/shared/api/client';
 import type {
   AddSupplementPayload,
   NutrientStandards,
@@ -269,16 +271,46 @@ function initialSupplements(): Supplement[] {
 }
 
 let supplementStore = initialSupplements();
+let stoppedSupplements = new Map<number, Supplement>();
+let supplementPrincipal = restoreAccountPrincipal();
+const registrationStores = new Map<string | null, {
+  active: Supplement[];
+  stopped: Map<number, Supplement>;
+}>();
+
+function ensureRegistrationAccount() {
+  const principal = restoreAccountPrincipal();
+  if (principal === supplementPrincipal) return;
+  registrationStores.set(supplementPrincipal, { active: supplementStore, stopped: stoppedSupplements });
+  const stored = registrationStores.get(principal);
+  supplementStore = stored?.active ?? initialSupplements();
+  stoppedSupplements = stored?.stopped ?? new Map();
+  supplementPrincipal = principal;
+}
+
+export function mockOwnedSupplement(supplementId: number) {
+  ensureRegistrationAccount();
+  return supplementStore.find(item => item.supplementId === supplementId)
+    ?? stoppedSupplements.get(supplementId);
+}
 
 function cloneSupplement(supplement: Supplement): Supplement {
+  const settings = mockGetNotifySettings();
   return {
     ...supplement,
+    slotTimes: {
+      morning: settings.morningMedicationTime,
+      lunch: settings.lunchMedicationTime,
+      evening: settings.eveningMedicationTime,
+      bedtime: settings.bedtimeMedicationTime,
+    },
     slots: [...supplement.slots],
     nutrients: supplement.nutrients.map((nutrient) => ({ ...nutrient })),
   };
 }
 
 export function mockSupplements(): Supplement[] {
+  ensureRegistrationAccount();
   return supplementStore.map(cloneSupplement);
 }
 
@@ -322,6 +354,7 @@ export function mockSupplementsWithThreeExceeded(): Supplement[] {
 }
 
 export function mockAddSupplement(payload: AddSupplementPayload): Supplement {
+  ensureRegistrationAccount();
   const standardProduct =
     payload.source === 'standard'
       ? SUPPLEMENT_PRODUCTS.find((productItem) => productItem.productId === payload.productId)
@@ -349,6 +382,7 @@ export function mockUpdateSupplement(
   supplementId: number,
   payload: UpdateSupplementPayload,
 ): Supplement {
+  ensureRegistrationAccount();
   const index = supplementStore.findIndex((supplement) => supplement.supplementId === supplementId);
   if (index === -1) throw new Error('영양제를 찾지 못했어요.');
   const updated: Supplement = {
@@ -367,8 +401,10 @@ export function mockUpdateSupplement(
 }
 
 export function mockStopSupplement(supplementId: number): void {
-  const exists = supplementStore.some((supplement) => supplement.supplementId === supplementId);
-  if (!exists) throw new Error('영양제를 찾지 못했어요.');
+  ensureRegistrationAccount();
+  const existing = supplementStore.find((supplement) => supplement.supplementId === supplementId);
+  if (!existing) throw new Error('영양제를 찾지 못했어요.');
+  stoppedSupplements.set(supplementId, existing);
   supplementStore = supplementStore.filter((supplement) => supplement.supplementId !== supplementId);
 }
 

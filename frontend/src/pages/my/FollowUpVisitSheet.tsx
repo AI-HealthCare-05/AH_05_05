@@ -58,7 +58,8 @@ export function FollowUpVisitSheet({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent variant="sheet">
+      <DialogContent variant="sheet" className="max-h-[90dvh] overflow-y-auto">
+        <div aria-hidden className="mx-auto h-1 w-10 rounded-pill bg-border" />
         <DialogHeader>
           <DialogTitle>{visit ? '진료일정 수정' : '진료일정 추가'}</DialogTitle>
           <DialogDescription>진료일은 필수이고 병원과 시간은 나중에 정해도 돼요.</DialogDescription>
@@ -82,7 +83,7 @@ export function FollowUpVisitSheet({
           value={hospital}
           onChange={(event) => setHospital(event.target.value)}
         />
-        <DialogFooter>
+        <DialogFooter className="pt-2">
           <Button disabled={!visitDate || saving} onClick={() => void save()}>
             {saving ? '저장 중...' : '저장'}
           </Button>

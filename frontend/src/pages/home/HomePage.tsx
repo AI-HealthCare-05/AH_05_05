@@ -16,6 +16,7 @@ import {
   getSupplementRanking,
   getSupplements,
   type SupplementRanking,
+  type Supplement,
 } from '@/entities/supplement';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
@@ -28,9 +29,9 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
-import { MedicationRecordGrid } from './MedicationRecordGrid';
 import { MedicationTimeline } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
+import { SupplementTodayCard } from './SupplementTodayCard';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
@@ -48,6 +49,8 @@ interface DoseBatchChange {
   date: string;
   slot: MealSlot;
   taken: boolean;
+  /** 선택한 처방 회차. 저장 API를 recordId마다 한 번 호출합니다. */
+  recordIds: number[];
 }
 
 export function HomePage({
@@ -67,12 +70,15 @@ export function HomePage({
   const [doseRecords, setDoseRecords] = useState<DoseRecord[] | null>(null);
   const [doseLoadError, setDoseLoadError] = useState<string | null>(null);
   const [failedDoseChange, setFailedDoseChange] = useState<DoseBatchChange | null>(null);
-  const [animatedDoseKey, setAnimatedDoseKey] = useState<string | null>(null);
   const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
+  const [registeredSupplements, setRegisteredSupplements] = useState<Supplement[]>([]);
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
     () => new Set(),
   );
   const [supplementRegistrationPending, setSupplementRegistrationPending] = useState(false);
+  const [supplementLoadError, setSupplementLoadError] = useState<string | null>(null);
+  const [supplementReloadKey, setSupplementReloadKey] = useState(0);
+  const [homeTab, setHomeTab] = useState<'medication' | 'supplement'>('medication');
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -95,6 +101,7 @@ export function HomePage({
 
   useEffect(() => {
     if (!isAuthenticated) {
+      setRegisteredSupplements([]);
       setRegisteredProductIds(new Set());
       setSupplementRegistrationPending(false);
       return;
@@ -102,9 +109,11 @@ export function HomePage({
 
     let cancelled = false;
     setSupplementRegistrationPending(true);
+    setSupplementLoadError(null);
     getSupplements()
       .then((result) => {
         if (!cancelled) {
+          setRegisteredSupplements(result.items);
           setRegisteredProductIds(
             new Set(
               result.items.flatMap((supplement) =>
@@ -115,7 +124,11 @@ export function HomePage({
         }
       })
       .catch(() => {
-        if (!cancelled) setRegisteredProductIds(new Set());
+        if (!cancelled) {
+          setRegisteredSupplements([]);
+          setRegisteredProductIds(new Set());
+          setSupplementLoadError('영양제 목록을 불러오지 못했어요.');
+        }
       })
       .finally(() => {
         if (!cancelled) setSupplementRegistrationPending(false);
@@ -124,7 +137,7 @@ export function HomePage({
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, supplementReloadKey]);
 
   useEffect(() => {
     if (!isAuthenticated || (medicationState !== undefined && medicationState !== 'active')) {
@@ -252,33 +265,70 @@ export function HomePage({
     openFeature(key);
   }
 
-  async function changeDose(change: DoseBatchChange, showUndo = true) {
-    if (!doseRecords) return;
+  async function changeDose(
+    change: DoseBatchChange,
+    showUndo = true,
+    knownChangedRecordIds?: number[],
+  ): Promise<boolean> {
+    if (!doseRecords) return false;
     const previousRecords = doseRecords;
+    const changedRecordIds = knownChangedRecordIds ??
+      change.recordIds.filter((recordId) => {
+        const wasTaken = previousRecords.some(
+          (record) =>
+            record.date === change.date &&
+            record.slot === change.slot &&
+            record.recordId === recordId &&
+            record.taken,
+        );
+        return wasTaken !== change.taken;
+      });
+    if (changedRecordIds.length === 0) return true;
+    const appliedChange = { ...change, recordIds: changedRecordIds };
     setFailedDoseChange(null);
-    setAnimatedDoseKey(change.taken ? doseKey(change.date, change.slot) : null);
-    setDoseRecords(updateDoseRecords(previousRecords, change));
-    try {
-      await doseRecordSaver(change);
+    setDoseRecords(updateDoseRecords(previousRecords, appliedChange));
+    const results = await Promise.allSettled(
+      changedRecordIds.map((recordId) =>
+        doseRecordSaver({
+          date: change.date,
+          slot: change.slot,
+          taken: change.taken,
+          recordId,
+        }),
+      ),
+    );
+    const failedRecordIds = changedRecordIds.filter(
+      (_recordId, index) => results[index]?.status === 'rejected',
+    );
+    if (failedRecordIds.length === 0) {
       if (showUndo) {
         toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
           action: {
             label: '되돌리기',
             onClick: () => {
-              void changeDose({ ...change, taken: !change.taken }, false);
+              void changeDose(
+                { ...appliedChange, taken: !change.taken },
+                false,
+                appliedChange.recordIds,
+              );
             },
           },
         });
       }
-    } catch {
-      setDoseRecords(previousRecords);
-      setAnimatedDoseKey(null);
-      setFailedDoseChange(change);
+      return true;
     }
+    const failedChange = { ...appliedChange, recordIds: failedRecordIds };
+    setDoseRecords((currentRecords) =>
+      currentRecords
+        ? restoreFailedDoseRecords(currentRecords, previousRecords, failedChange)
+        : currentRecords,
+    );
+    setFailedDoseChange(failedChange);
+    return false;
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+    <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
       {isAuthenticated ? (
         <Header
           title={
@@ -300,72 +350,100 @@ export function HomePage({
         </header>
       )}
 
-      <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
-        <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />
-
-        {visibleSupplementRanking && (
-          <SupplementRankingCard
-            ranking={visibleSupplementRanking}
-            registrationPending={isAuthenticated && supplementRegistrationPending}
-            maxItems={3}
-            onMore={isAuthenticated ? () => navigate('/supplements?tab=browse') : undefined}
-            onSelect={
-              isAuthenticated
-                ? (productId) =>
-                    navigate('/supplements', { state: { presetProductId: String(productId) } })
-                : undefined
-            }
-          />
-        )}
-
+      <main className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-gutter:stable] ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
-          medicationLoadError || doseLoadError ? (
-            <Card title="복약 정보를 불러오지 못했어요">
-              {medicationLoadError ?? doseLoadError}
-            </Card>
-          ) : resolvedMedicationState && pageDataReady ? (
-            <>
-              <LoggedInMedicationContent
-                state={resolvedMedicationState}
-                overviews={medicationOverviews ?? []}
-                doseRecords={doseRecords ?? []}
-                currentDate={currentDate}
-                onDoseChange={(recordIds, slot, taken) =>
-                  recordIds.length > 0
-                    ? void changeDose({ date: currentDate, slot, taken })
-                    : undefined
-                }
-                onUpload={() => navigate('/document-upload')}
+          <>
+            <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />
+            {homeTab === 'medication' && (medicationLoadError || doseLoadError) ? (
+              <Card title="복약 정보를 불러오지 못했어요">
+                {medicationLoadError ?? doseLoadError}
+              </Card>
+            ) : homeTab === 'supplement' || (resolvedMedicationState && pageDataReady) ? (
+              <>
+                {homeTab === 'medication' && resolvedMedicationState ? (
+                  <div
+                    id="home-panel-medication"
+                    role="tabpanel"
+                    aria-labelledby="home-tab-medication"
+                  >
+                    <LoggedInMedicationContent
+                      state={resolvedMedicationState}
+                      overviews={medicationOverviews ?? []}
+                      doseRecords={doseRecords ?? []}
+                      currentDate={currentDate}
+                      onDoseChange={(recordIds, slot, taken) => {
+                        if (recordIds.length === 0) return;
+                        return changeDose({ date: currentDate, slot, taken, recordIds });
+                      }}
+                      onMemo={() => navigate('/medications/notes/new')}
+                      onUpload={() => navigate('/document-upload')}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    id="home-panel-supplement"
+                    role="tabpanel"
+                    aria-labelledby="home-tab-supplement"
+                  >
+                    <SupplementTodayCard
+                      key={currentDate}
+                      supplements={registeredSupplements}
+                      date={currentDate}
+                      loading={supplementRegistrationPending}
+                      loadError={supplementLoadError}
+                      onRetry={() => setSupplementReloadKey(key => key + 1)}
+                      onBrowse={() => navigate('/supplements?tab=browse')}
+                    />
+                  </div>
+                )}
+                {hasMedication && doseRecords ? (
+                  <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
+                    <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">
+                      챌린지
+                    </h2>
+                    <div
+                      data-challenge-placeholder
+                      className="flex h-[132px] items-center justify-center rounded-card bg-card shadow-card"
+                    >
+                      <p className="text-caption text-tertiary-foreground">준비 중이에요</p>
+                    </div>
+                  </section>
+                ) : null}
+              </>
+            ) : (
+              <div
+                role="status"
+                aria-label="복약 정보 불러오는 중"
+                className="min-h-84 animate-pulse rounded-card bg-muted-bg"
               />
-              {hasMedication && doseRecords ? (
-                <MedicationRecordGrid
-                  overviews={medicationOverviews ?? []}
-                  records={doseRecords}
-                  now={new Date()}
-                  animatedRecordKey={animatedDoseKey}
-                  onMarkTaken={(date, slot, recordIds) =>
-                    recordIds.length > 0
-                      ? void changeDose({ date, slot, taken: true })
-                      : undefined
-                  }
-                />
-              ) : null}
-            </>
-          ) : (
-            <div
-              role="status"
-              aria-label="복약 정보 불러오는 중"
-              className="min-h-84 animate-pulse rounded-card bg-muted-bg"
-            />
-          )
-        ) : null}
-
-        {!isAuthenticated && (
-          <p className="mt-auto py-4 text-center text-sm text-disabled-foreground">
-            로그인하고, 나만의 복약관리를 시작해 보세요.
-          </p>
+            )}
+            {visibleSupplementRanking && (
+              <SupplementRankingCard
+                ranking={visibleSupplementRanking}
+                registrationPending={supplementRegistrationPending}
+                maxItems={3}
+                onMore={() => navigate('/supplements?tab=browse')}
+                onSelect={(productId) =>
+                  navigate('/supplements', { state: { presetProductId: String(productId) } })
+                }
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <GuestMedicationPrompt onLogin={() => navigate('/login')} />
+            {visibleSupplementRanking && (
+              <SupplementRankingCard
+                ranking={visibleSupplementRanking}
+                registrationPending={false}
+                maxItems={5}
+                title="인기 영양제"
+                subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
+              />
+            )}
+          </>
         )}
-
+        {!isAuthenticated && <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />}
       </main>
 
       <BottomTabbar
@@ -392,19 +470,80 @@ export function HomePage({
   );
 }
 
+function HomeSectionTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: 'medication' | 'supplement';
+  onChange: (tab: 'medication' | 'supplement') => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="오늘의 홈 탭"
+      className="grid grid-cols-2 rounded-input bg-muted-bg p-1"
+    >
+      {([
+        ['medication', '오늘의 복약'],
+        ['supplement', '오늘의 영양제'],
+      ] as const).map(([tab, label]) => {
+        const selected = activeTab === tab;
+        return (
+          <button
+            key={tab}
+            id={`home-tab-${tab}`}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            aria-controls={`home-panel-${tab}`}
+            className={`min-h-touch rounded-input text-sm font-bold ${
+              selected ? 'bg-card text-primary shadow-card' : 'text-muted-foreground'
+            }`}
+            onClick={() => onChange(tab)}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function GuestMedicationPrompt({ onLogin }: { onLogin: () => void }) {
+  return (
+    <section aria-labelledby="guest-medication-title" className="flex flex-col gap-3">
+      <div>
+        <h2 id="guest-medication-title" className="text-2xl font-bold text-foreground">
+          오늘의 복약
+        </h2>
+        <p className="mt-1 text-base text-muted-foreground">
+          로그인하면 오늘 먹을 약을 바로 확인할 수 있어요
+        </p>
+      </div>
+      <Card className="gap-3 p-5">
+        <p className="text-lg font-bold text-foreground">복약 일정을 확인해보세요</p>
+        <p>로그인하면 기록과 알림을 이어서 볼 수 있어요.</p>
+        <Button onClick={onLogin}>로그인하고 시작하기</Button>
+      </Card>
+    </section>
+  );
+}
+
 function LoggedInMedicationContent({
   state,
   overviews,
   doseRecords,
   currentDate,
   onDoseChange,
+  onMemo,
   onUpload,
 }: {
   state: MedicationHomeState;
   overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
-  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void;
+  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void | Promise<boolean>;
+  onMemo: () => void;
   onUpload: () => void;
 }) {
   if (state === 'empty') {
@@ -440,20 +579,50 @@ function LoggedInMedicationContent({
       doseRecords={doseRecords}
       currentDate={currentDate}
       onDoseChange={onDoseChange}
+      onMemo={onMemo}
     />
   );
 }
 
 function updateDoseRecords(records: DoseRecord[], change: DoseBatchChange): DoseRecord[] {
+  const changedRecordIds = new Set(change.recordIds);
   const remaining = records.filter(
-    (record) => record.date !== change.date || record.slot !== change.slot,
+    (record) =>
+      record.date !== change.date ||
+      record.slot !== change.slot ||
+      !changedRecordIds.has(record.recordId),
   );
   if (!change.taken) return remaining;
-  return [...remaining, { date: change.date, slot: change.slot, taken: true }];
+  return [
+    ...remaining,
+    ...change.recordIds.map((recordId) => ({
+      date: change.date,
+      slot: change.slot,
+      taken: true,
+      recordId,
+    })),
+  ];
 }
 
-function doseKey(date: string, slot: MealSlot): string {
-  return `${date}:${slot}`;
+function restoreFailedDoseRecords(
+  currentRecords: DoseRecord[],
+  previousRecords: DoseRecord[],
+  failedChange: DoseBatchChange,
+): DoseRecord[] {
+  const failedRecordIds = new Set(failedChange.recordIds);
+  const withoutFailedOptimisticRecords = currentRecords.filter(
+    (record) =>
+      record.date !== failedChange.date ||
+      record.slot !== failedChange.slot ||
+      !failedRecordIds.has(record.recordId),
+  );
+  const previousFailedRecords = previousRecords.filter(
+    (record) =>
+      record.date === failedChange.date &&
+      record.slot === failedChange.slot &&
+      failedRecordIds.has(record.recordId),
+  );
+  return [...withoutFailedOptimisticRecords, ...previousFailedRecords];
 }
 
 function localISODate(date: Date): string {

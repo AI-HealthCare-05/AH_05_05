@@ -18,8 +18,11 @@ import {
   deleteChatSessions,
   getChatMessages,
   listChatSessions,
+  saveChatFeedback,
   sendChat,
   type ChatMessage,
+  type ChatFeedbackPayload,
+  type ChatFeedbackResult,
   type ChatProgressHandler,
   type ChatSessionDeleteResult,
   type ChatSessionSummary,
@@ -27,12 +30,13 @@ import {
   type SendChatResult,
 } from '@/entities/chat';
 import { ChatDeleteDialog } from './ChatDeleteDialog';
+import { ChatFeedbackSheet } from './ChatFeedbackSheet';
 import { ChatSessionList } from './ChatSessionList';
 import { ChatStartGuide } from './ChatStartGuide';
 import { SourceList } from './SourceList';
 
 /**
- * REQ-CHAT-001 · 화면 17 AI 상담 — 공공 근거를 보여주는 화면.
+ * REQ-CHAT-001 · 챗봇 — 공공 근거를 보여주는 화면.
  *
  * 말풍선은 Card를 재사용하지 않고 직접 만들었습니다 — 정렬과 최대폭 규칙이 다릅니다.
  */
@@ -50,6 +54,10 @@ type ChatSessionHistoryLoader = (sessionId: number) => Promise<ChatMessage[]>;
 type ChatSessionDeleter = (
   sessionIds: readonly number[],
 ) => Promise<ChatSessionDeleteResult | void>;
+type ChatFeedbackSaver = (
+  sessionId: number,
+  payload: ChatFeedbackPayload,
+) => Promise<ChatFeedbackResult>;
 type ChatView = 'loading' | 'list' | 'room';
 
 interface ChatPageProps {
@@ -58,6 +66,7 @@ interface ChatPageProps {
   sessionListLoader?: ChatSessionListLoader;
   sessionHistoryLoader?: ChatSessionHistoryLoader;
   sessionDeleter?: ChatSessionDeleter;
+  feedbackSaver?: ChatFeedbackSaver;
 }
 
 export function ChatPage({
@@ -66,6 +75,7 @@ export function ChatPage({
   sessionListLoader = listChatSessions,
   sessionHistoryLoader = getChatMessages,
   sessionDeleter = deleteChatSessions,
+  feedbackSaver = saveChatFeedback,
 }: ChatPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -99,6 +109,7 @@ export function ChatPage({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const handledSessionRevisionRef = useRef(sessionRevision);
   const suppressNextSessionRefreshRef = useRef(false);
@@ -312,6 +323,27 @@ export function ChatPage({
     navigate(-1);
   }
 
+  function openFeedback() {
+    if (messages.length === 0 || pending || chatRequestPending) return;
+    setFeedbackOpen(true);
+  }
+
+  function finishChat() {
+    setFeedbackOpen(false);
+    startNewSession();
+    setMessages([]);
+    setConversationId(null);
+    setDraft('');
+    setHistoryError(null);
+    setSessionListError(null);
+    setNewChatRequested(false);
+    setSelectionMode(false);
+    setSelectedSessionIds(new Set());
+    setHistoryLoading(true);
+    setView('loading');
+    setSessionListReloadKey((current) => current + 1);
+  }
+
   function toggleSelectionMode() {
     setSelectionMode((current) => {
       if (current) setSelectedSessionIds(new Set());
@@ -402,10 +434,26 @@ export function ChatPage({
   const composerDisabled = chatRequestPending || pending || historyLoading || view === 'loading';
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="AI 상담" onBack={handleRoomBack} />
+    <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col bg-background">
+      <Header
+        title="챗봇"
+        onBack={handleRoomBack}
+        right={
+          messages.length > 0 && !historyLoading ? (
+            <Button
+              fullWidth={false}
+              variant="secondary"
+              aria-label="채팅 종료"
+              className="h-touch min-w-[88px] px-3 text-primary"
+              onClick={openFeedback}
+            >
+              채팅 종료
+            </Button>
+          ) : null
+        }
+      />
 
-      <main className="flex flex-1 flex-col gap-3 px-page-x py-4">
+      <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-page-x py-4">
         {historyLoading ? (
           <div
             role="status"
@@ -458,13 +506,27 @@ export function ChatPage({
                   alt=""
                   aria-hidden
                   className="mt-0.5 size-8 shrink-0"
+                  width={32}
+                  height={32}
                 />
               ) : (
                 <span aria-hidden className="size-8 shrink-0" />
               )}
               <div className="flex flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
-                <p className="whitespace-pre-wrap text-base break-words text-foreground">
+                <p
+                  aria-label="답변 본문"
+                  className="whitespace-pre-wrap text-base break-words text-foreground"
+                >
                   {message.text}
+                </p>
+                <section className="border-t border-border pt-2" aria-label="주의와 한계">
+                  <h3 className="text-sm font-bold text-foreground">주의와 한계</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    이 답변은 진단이나 처방을 대신하지 않아요.
+                  </p>
+                </section>
+                <p className="text-unit text-muted-foreground">
+                  오늘 · 근거 {message.sources.length}개
                 </p>
                 {message.sources.length > 0 ? (
                   <SourceList sources={message.sources} />
@@ -486,6 +548,8 @@ export function ChatPage({
               alt=""
               aria-hidden
               className="mt-0.5 size-8 shrink-0"
+              width={32}
+              height={32}
             />
             <p className="rounded-card bg-muted-bg px-3.5 py-2.5 text-base text-muted-foreground">
               {progressMessage}
@@ -522,6 +586,13 @@ export function ChatPage({
       </div>
 
       <BottomTabbar active="chat" onChange={handleTabChange} className="border-t border-border" />
+      <ChatFeedbackSheet
+        open={feedbackOpen}
+        sessionId={conversationId ?? activeSessionId}
+        onOpenChange={setFeedbackOpen}
+        onFinish={finishChat}
+        feedbackSaver={feedbackSaver}
+      />
     </div>
   );
 }

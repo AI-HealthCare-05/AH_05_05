@@ -12,6 +12,8 @@
 import type {
   ChatMessage,
   ChatSessionSummary,
+  ChatFeedbackPayload,
+  ChatFeedbackResult,
   SendChatPayload,
   SendChatResult,
 } from './types';
@@ -24,6 +26,8 @@ interface MockStoredSession {
   createdAt: string;
   lastMessageAt: string;
   messages: ChatMessage[];
+  isLike?: boolean | null;
+  reasonCode?: string | null;
 }
 
 interface MockChatStore {
@@ -188,4 +192,20 @@ export function mockDeleteChatSessions(
   const store = readStore(principalKey);
   store.sessions = store.sessions.filter((session) => !deleted.has(session.sessionId));
   writeStore(store, principalKey);
+}
+
+export function mockSaveChatFeedback(
+  sessionId: number,
+  payload: ChatFeedbackPayload,
+  principalKey = restoreAccountPrincipal(),
+): ChatFeedbackResult {
+  const store = readStore(principalKey);
+  const session = store.sessions.find((item) => item.sessionId === sessionId);
+  if (!session) throw new Error('대화를 찾지 못했어요.');
+
+  const reasonCode = payload.isLike === null ? null : payload.reasonCode;
+  session.isLike = payload.isLike;
+  session.reasonCode = reasonCode;
+  writeStore(store, principalKey);
+  return { sessionId, isLike: payload.isLike, reasonCode };
 }

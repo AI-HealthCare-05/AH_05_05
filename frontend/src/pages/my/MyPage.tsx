@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarDays, ChevronRight, Pill, Sprout, UserRound } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
+  getMedicationOverviews,
+  type MedicationOverview,
+} from '@/entities/medication';
+import { getSupplements } from '@/entities/supplement';
+import { listFollowUpVisits, type FollowUpVisit } from '@/entities/follow-up-visit';
+import {
   BottomTabbar,
-  Button,
-  Card,
   ErrorDialog,
   Header,
   NotifyBlockedDialog,
@@ -23,15 +27,16 @@ import {
   type NotifySettings,
   type UpdateNotifySettingsPayload,
 } from '@/entities/settings';
-import { isMealTimeOrderValid } from '@/shared/model/mealSlot';
+import { SLOT_ORDER, isMealTimeOrderValid, mealSlotLabel } from '@/shared/model/mealSlot';
 import {
   getPushPermission,
   requestPushPermission,
   type PushPermission,
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
-import { WithdrawAccountDialog } from './WithdrawAccountDialog';
 import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
+
+const SHORT_MEAL_SLOT_ORDER = SLOT_ORDER.map((slot) => mealSlotLabel(slot, 'short')).join(' < ');
 
 function medicationTimesFromSettings(settings: NotifySettings): MedicationTimes {
   return {
@@ -51,8 +56,35 @@ function mealSlotTimesFromMedicationTimes(times: MedicationTimes) {
   };
 }
 
+function todayString(): string {
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${today.getFullYear()}-${month}-${day}`;
+}
+
+function countActiveMedications(overviews: MedicationOverview[]): number {
+  return overviews
+    .filter((overview) => !overview.isFinished)
+    .reduce((total, overview) => total + overview.medications.length, 0);
+}
+
+function countUpcomingVisits(visits: FollowUpVisit[]): number {
+  const today = todayString();
+  return visits.filter((visit) => visit.visitDate >= today).length;
+}
+
+interface ManagementCounts {
+  medication: number;
+  supplement: number;
+  upcomingVisit: number;
+}
+
 interface MyPageProps {
   authenticatedOverride?: boolean;
+  medicationOverviewsLoader?: typeof getMedicationOverviews;
+  supplementsLoader?: typeof getSupplements;
+  followUpVisitsLoader?: typeof listFollowUpVisits;
   notifySettingsLoader?: () => Promise<NotifySettings>;
   notifySettingsUpdater?: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
   permissionReader?: () => PushPermission;
@@ -62,6 +94,9 @@ interface MyPageProps {
 
 export function MyPage({
   authenticatedOverride,
+  medicationOverviewsLoader = getMedicationOverviews,
+  supplementsLoader = getSupplements,
+  followUpVisitsLoader = listFollowUpVisits,
   notifySettingsLoader = getNotifySettings,
   notifySettingsUpdater = updateNotifySettings,
   permissionReader = getPushPermission,
@@ -72,6 +107,8 @@ export function MyPage({
   const { authenticated, signOut } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
   const logoutNavigationRef = useRef(false);
+  const [managementCounts, setManagementCounts] = useState<ManagementCounts | null>(null);
+  const [managementLoadError, setManagementLoadError] = useState<string | null>(null);
   const [notifySettings, setNotifySettings] = useState<NotifySettings | null>(null);
   const [notifyLoadError, setNotifyLoadError] = useState<string | null>(null);
   const [notifyActionError, setNotifyActionError] = useState<{
@@ -86,7 +123,6 @@ export function MyPage({
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [timeDraft, setTimeDraft] = useState<MedicationTimes | null>(null);
   const [timeSaveError, setTimeSaveError] = useState<string | null>(null);
-  const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const pushPermission = permissionReader();
   const pushUnsupported = pushPermission === 'unsupported';
 
@@ -118,6 +154,35 @@ export function MyPage({
       cancelled = true;
     };
   }, [isAuthenticated, notifySettingsLoader]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    setManagementCounts(null);
+    setManagementLoadError(null);
+    Promise.all([
+      medicationOverviewsLoader(),
+      supplementsLoader(),
+      followUpVisitsLoader({ startDate: todayString() }),
+    ])
+      .then(([medicationOverviews, supplements, visits]) => {
+        if (cancelled) return;
+        setManagementCounts({
+          medication: countActiveMedications(medicationOverviews),
+          supplement: supplements.items.length,
+          upcomingVisit: countUpcomingVisits(visits),
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setManagementLoadError(
+          error instanceof Error ? error.message : '관리 정보를 불러오지 못했어요.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [followUpVisitsLoader, isAuthenticated, medicationOverviewsLoader, supplementsLoader]);
 
   async function persistNotifySettings(
     payload: UpdateNotifySettingsPayload,
@@ -250,7 +315,7 @@ export function MyPage({
   async function saveMedicationTimes() {
     if (!timeDraft) return;
     if (!isMealTimeOrderValid(mealSlotTimesFromMedicationTimes(timeDraft))) {
-      setTimeSaveError('아침 < 점심 < 저녁 < 자기전 순서로 정해주세요');
+      setTimeSaveError(`${SHORT_MEAL_SLOT_ORDER} 순서로 정해주세요`);
       return;
     }
 
@@ -320,63 +385,92 @@ export function MyPage({
   function handleSignOut() {
     logoutNavigationRef.current = true;
     signOut();
-    navigate('/home', { replace: true });
+    window.location.replace('/home');
   }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="마이페이지" />
-      <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5">
+      <main className="flex flex-1 flex-col overflow-y-auto px-page-x pb-3 pt-3">
         {isAuthenticated ? (
           <>
             <button
               type="button"
-              className="flex min-h-20 items-center gap-4 rounded-card bg-card p-4 text-left shadow-card"
+              className="flex min-h-[84px] items-center gap-4 rounded-card border border-border bg-card p-3.5 text-left"
               onClick={() => navigate('/my/profile')}
             >
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-muted-foreground">
-                <UserRound aria-hidden className="size-6" />
+              <span className="flex size-14 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-sm font-bold text-muted-foreground">
+                사람
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-lg font-bold text-foreground">RxVita 사용자</p>
+                <p className="text-[17px] font-bold text-foreground">RxVita 사용자</p>
                 <p className="text-sm text-muted-foreground">기본정보</p>
               </div>
-              <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
+              <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
             </button>
 
-            <section className="flex flex-col gap-3" aria-labelledby="my-management-title">
+            <section
+              className="mt-5 flex flex-col"
+              aria-labelledby="my-management-title"
+              aria-busy={managementCounts === null && managementLoadError === null}
+            >
               <h2 id="my-management-title" className="text-xl font-bold text-foreground">
                 내 관리
               </h2>
-              <Card className="gap-0 overflow-hidden p-0">
+              {!managementCounts && !managementLoadError && (
+                <p role="status" aria-label="내 관리 불러오는 중" className="sr-only">
+                  관리 정보를 불러오는 중...
+                </p>
+              )}
+              {managementLoadError && (
+                <p role="alert" aria-label="관리 정보 불러오기 실패" className="mt-1 text-sm text-danger-strong">
+                  관리 항목 수를 확인하지 못했어요.
+                </p>
+              )}
+              <div className="mt-3 overflow-hidden bg-card">
                 <ManagementRow
-                  icon={Pill}
                   label="복용약"
-                  value="4개"
+                  value={
+                    managementCounts
+                      ? `${managementCounts.medication}개`
+                      : managementLoadError
+                        ? '확인 불가'
+                        : '확인 중'
+                  }
                   onClick={() => navigate('/medications')}
                 />
                 <ManagementRow
-                  icon={Sprout}
                   label="영양제"
-                  value="3개"
+                  value={
+                    managementCounts
+                      ? `${managementCounts.supplement}개`
+                      : managementLoadError
+                        ? '확인 불가'
+                        : '확인 중'
+                  }
                   onClick={() => navigate('/supplements')}
                   divided
                 />
                 <ManagementRow
-                  icon={CalendarDays}
                   label="진료일정"
-                  value="관리"
+                  value={
+                    managementCounts
+                      ? `예정 ${managementCounts.upcomingVisit}개`
+                      : managementLoadError
+                        ? '확인 불가'
+                        : '확인 중'
+                  }
                   onClick={() => navigate('/my/visits')}
                   divided
                 />
-              </Card>
+              </div>
             </section>
 
-            <section className="flex flex-col gap-3" aria-labelledby="notification-title">
+            <section className="mt-4 flex flex-col" aria-labelledby="notification-title">
               <h2 id="notification-title" className="text-xl font-bold text-foreground">
                 알림
               </h2>
-              <Card className="gap-0 overflow-hidden p-0">
+              <div className="mt-3 overflow-hidden rounded-card border border-border bg-card">
                 {notifyLoadError ? (
                   <div className="p-4">
                     <p className="font-bold text-foreground">알림 설정을 불러오지 못했어요</p>
@@ -421,8 +515,16 @@ export function MyPage({
                       className="flex min-h-16 w-full items-center gap-3 border-t border-border px-4 text-left"
                       onClick={openMedicationTimeSheet}
                     >
-                      <span className="flex-1 text-base font-bold text-foreground">
-                        알림 시간 설정
+                      <span className="flex min-w-0 flex-1 flex-col text-left">
+                        <span className="text-[15px] font-bold text-foreground">알림 시간 설정</span>
+                        <span className="truncate text-sm text-muted-foreground">
+                          {[
+                            notifySettings.morningMedicationTime,
+                            notifySettings.lunchMedicationTime,
+                            notifySettings.eveningMedicationTime,
+                            notifySettings.bedtimeMedicationTime,
+                          ].join(' · ')}
+                        </span>
                       </span>
                       <ChevronRight
                         aria-hidden
@@ -433,7 +535,7 @@ export function MyPage({
                 ) : (
                   <p className="p-4 text-sm text-muted-foreground">알림 설정을 불러오는 중...</p>
                 )}
-              </Card>
+              </div>
               {pushUnsupported && (
                 <p className="text-sm text-muted-foreground">
                   이 브라우저에서는 알림을 지원하지 않아요
@@ -441,25 +543,13 @@ export function MyPage({
               )}
             </section>
 
-            <section className="flex flex-col gap-3" aria-labelledby="account-title">
-              <h2 id="account-title" className="text-xl font-bold text-foreground">
-                계정
-              </h2>
-              <Card className="p-4">
-                <div className="flex flex-col gap-4">
-                  <Button variant="secondary" onClick={handleSignOut}>
-                    로그아웃
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="text-danger-strong"
-                    onClick={() => setWithdrawDialogOpen(true)}
-                  >
-                    회원 탈퇴
-                  </Button>
-                </div>
-              </Card>
-            </section>
+            <button
+              type="button"
+              className="mt-1 h-11 min-h-touch w-full rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground transition-colors hover:bg-muted-bg"
+              onClick={handleSignOut}
+            >
+              로그아웃
+            </button>
           </>
         ) : null}
       </main>
@@ -506,31 +596,16 @@ export function MyPage({
           onCancel={cancelMedicationTimeSheet}
         />
       )}
-      <WithdrawAccountDialog
-        open={withdrawDialogOpen}
-        onOpenChange={setWithdrawDialogOpen}
-        onWithdrawn={() => {
-          logoutNavigationRef.current = true;
-          signOut();
-          navigate('/', { replace: true });
-          // Toaster 가 앱 루트(main.tsx)에 있어 화면을 옮겨도 그대로 떠 있습니다.
-          // 되돌릴 수 없는 동작인데 화면만 바뀌면 눌린 건지 알 수 없고,
-          // 이동한 홈은 비로그인 상태라 원래도 휑합니다.
-          toast.success('탈퇴되었습니다. 그동안 이용해 주셔서 감사합니다.');
-        }}
-      />
     </div>
   );
 }
 
 function ManagementRow({
-  icon: Icon,
   label,
   value,
   onClick,
   divided = false,
 }: {
-  icon: typeof Pill;
   label: string;
   value: string;
   onClick: () => void;
@@ -540,14 +615,11 @@ function ManagementRow({
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-20 w-full items-center gap-3 px-4 text-left ${
+      className={`flex min-h-16 w-full items-center gap-3 px-4 text-left ${
         divided ? 'border-t border-border' : ''
       }`}
     >
-      <span className="flex size-12 items-center justify-center rounded-pill bg-primary-bg text-primary-strong">
-        <Icon aria-hidden className="size-6" />
-      </span>
-      <span className="flex-1 text-base font-bold text-foreground">{label}</span>
+      <span className="flex-1 text-[15px] font-bold text-foreground">{label}</span>
       <span className="text-sm text-muted-foreground">{value}</span>
       <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
     </button>
@@ -568,13 +640,14 @@ function NotificationRow({
   divided?: boolean;
 }) {
   return (
-    <div className={`flex min-h-20 items-center justify-between px-4 ${divided ? 'border-t border-border' : ''}`}>
+    <div className={`flex min-h-16 items-center justify-between px-4 ${divided ? 'border-t border-border' : ''}`}>
       <label htmlFor={`notification-${label}`} className="text-base font-bold text-foreground">
         {label}
       </label>
       <Switch
         id={`notification-${label}`}
         aria-label={label}
+        className="data-[state=unchecked]:bg-input"
         checked={checked}
         disabled={disabled}
         onCheckedChange={onCheckedChange}

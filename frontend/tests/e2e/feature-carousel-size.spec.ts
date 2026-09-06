@@ -19,7 +19,7 @@ async function authenticate(page: Page) {
 }
 
 test('홈 기능 배너는 compact 가로 레이아웃과 한 문장 제목을 사용한다', async ({ page }) => {
-  await page.goto('/dev/home-active');
+  await page.goto('/home');
 
   const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' });
   const firstCard = carousel.locator('article').first();
@@ -34,6 +34,7 @@ test('홈 기능 배너는 compact 가로 레이아웃과 한 문장 제목을 �
   expect(await firstCard.getByRole('heading').textContent()).toBe(
     '약봉투를 찍으면 먹을 시간을 알려드려요',
   );
+  await expect(firstCard.getByText('약 이름을 몰라도 돼요. 사진 한 장으로 등록해요.')).toBeVisible();
   expect(
     await firstCard.locator('p').evaluate((element) => getComputedStyle(element).webkitLineClamp),
   ).toBe('1');

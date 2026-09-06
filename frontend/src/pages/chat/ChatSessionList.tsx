@@ -1,4 +1,3 @@
-import { Plus } from 'lucide-react';
 import type { ChatSessionSummary } from '@/entities/chat';
 import { BottomTabbar, Button, Checkbox, Header, type TabKey } from '@/shared/ui';
 
@@ -22,6 +21,22 @@ const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
   minute: '2-digit',
 });
 
+function formatSessionDate(value: string): string {
+  const date = new Date(value);
+  const now = new Date();
+  if (
+    date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate()
+  ) {
+    return `오늘 · ${new Intl.DateTimeFormat('ko-KR', {
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date)}`;
+  }
+  return dateFormatter.format(date);
+}
+
 export function ChatSessionList({
   sessions,
   selectionMode,
@@ -37,34 +52,29 @@ export function ChatSessionList({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
-        title="AI 상담"
+        title="챗봇"
         onBack={onBack}
         right={
-          <div className="flex items-center">
-            {!selectionMode && (
-              <button
-                type="button"
-                aria-label="새 채팅"
-                onClick={onNewChat}
-                className="flex size-touch items-center justify-center text-primary"
-              >
-                <Plus aria-hidden className="size-6" />
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label={selectionMode ? '삭제 취소' : '대화 삭제'}
-              onClick={onToggleSelectionMode}
-              className="flex min-h-touch items-center justify-center px-2 text-sm font-bold text-foreground"
-            >
-              {selectionMode ? '취소' : '삭제'}
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label={selectionMode ? '삭제 취소' : '대화 삭제'}
+            onClick={onToggleSelectionMode}
+            className="flex min-h-touch items-center justify-center px-2 text-sm font-bold text-foreground"
+          >
+            {selectionMode ? '취소' : '삭제'}
+          </button>
         }
       />
 
-      <main className="flex flex-1 flex-col gap-3 px-page-x py-4">
-        <h2 className="text-xl font-bold text-foreground">최근 대화</h2>
+      <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-page-x py-4">
+        {!selectionMode && (
+          <Button aria-label="새 채팅" onClick={onNewChat} className="h-12 rounded-button">
+            + 새 상담
+          </Button>
+        )}
+        <h2 className="text-xl font-bold text-foreground">
+          {selectionMode ? '삭제할 대화를 선택하세요' : '최근 대화'}
+        </h2>
         <div className="flex flex-col overflow-hidden rounded-card border border-border bg-card shadow-card">
           {sessions.map((session) => {
             const content = (
@@ -75,8 +85,8 @@ export function ChatSessionList({
                 <span className="w-full truncate text-sm text-muted-foreground">
                   {session.lastMessagePreview}
                 </span>
-                <time className="text-xs text-muted-foreground" dateTime={session.lastMessageAt}>
-                  {dateFormatter.format(new Date(session.lastMessageAt))}
+                <time className="text-unit text-muted-foreground" dateTime={session.lastMessageAt}>
+                  {formatSessionDate(session.lastMessageAt)}
                 </time>
               </>
             );

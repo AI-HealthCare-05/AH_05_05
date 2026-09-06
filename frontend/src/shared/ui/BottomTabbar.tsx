@@ -3,7 +3,7 @@ import { cn } from '@/shared/lib/cn';
 
 /**
  * Figma: Bottom Tabbar
- * 높이 56px(size/tabbar). 5개 탭이 화면 폭을 균등 분할합니다.
+ * 높이 64px(size/tabbar). 5개 탭이 화면 폭을 균등 분할합니다.
  *
  * 아이콘은 24px 스트로크 SVG 세트(lucide-react)로 통일합니다.
  */

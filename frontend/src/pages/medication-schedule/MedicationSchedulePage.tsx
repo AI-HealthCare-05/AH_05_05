@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import {
   Button,
@@ -7,9 +7,13 @@ import {
   Header,
   Input,
   NotifyPermissionDialog,
+  RegistrationProgress,
+  Switch,
   TimePickerSheet,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
+import { formatMedicationLabel } from '@/shared/lib/medicationLabel';
+import type { OcrRegistrationDraft } from '@/entities/document';
 import {
   getMedicationSchedule,
   saveMedicationSchedule,
@@ -38,8 +42,11 @@ import {
   defaultSlotsFor,
   exceedsSlotCapacity,
   isMealTimeOrderValid,
+  mealSlotLabel,
   needsSlotConfirmation,
 } from '@/shared/model/mealSlot';
+
+const MEDICATION_SLOT_ORDER = SLOT_ORDER.map((slot) => mealSlotLabel(slot, 'label')).join(' → ');
 
 /**
  * REQ-CARE-003 · 통합 슬롯 구조 (2026-08-14 기획 결정)
@@ -56,7 +63,12 @@ interface ScheduleLocationState {
   dispensedDate?: string;
   draftStartDate?: string;
   ocrJobId?: string;
+  registrationFlow?: boolean;
+  episodeAlias?: string;
+  ocrRegistrationDraft?: OcrRegistrationDraft;
 }
+
+type FirstDoseSelection = MealSlot | 'not_taken';
 
 interface MedicationSchedulePageProps {
   scheduleOverride?: MedicationSchedule;
@@ -162,6 +174,8 @@ export function MedicationSchedulePage({
   const dispensedDate = state.dispensedDate;
   const draftStartDate = state.draftStartDate;
   const ocrJobId = state.ocrJobId ?? queryOcrJobId;
+  const registrationFlow =
+    state.registrationFlow === true || searchParams.get('flow') === 'registration';
 
   const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
   const [mealTimes, setMealTimes] = useState<MealTimes>(DEFAULT_MEAL_TIMES);
@@ -417,18 +431,22 @@ export function MedicationSchedulePage({
     );
   }
 
-  function handleBack() {
+  function handleBack(currentStartDate?: string) {
     if (recordId !== null && ocrJobId) {
+      const scheduleStartDate = currentStartDate ?? (startDateEdited ? startDate : undefined);
       const params = new URLSearchParams({
         batchId: ocrJobId,
         recordId: String(recordId),
-        mode: 'confirmed',
+        mode: registrationFlow ? 'registration-edit' : 'confirmed',
+        ...(registrationFlow ? { flow: 'registration' } : {}),
       });
       navigate(`/ocr-review?${params.toString()}`, {
         replace: true,
         state: {
           batchId: ocrJobId,
-          ...(startDateEdited ? { scheduleStartDate: startDate } : {}),
+          ...(scheduleStartDate !== undefined ? { scheduleStartDate } : {}),
+          ...(registrationFlow ? { registrationFlow: true, episodeAlias: state.episodeAlias } : {}),
+          ...(state.ocrRegistrationDraft ? { ocrRegistrationDraft: state.ocrRegistrationDraft } : {}),
         },
       });
       return;
@@ -513,12 +531,33 @@ export function MedicationSchedulePage({
   const blocker: Blocker | null =
     startPointBlocker ??
     (!orderValid
-      ? { message: '시간을 아침약 → 점심약 → 저녁약 → 취침약 순서로 맞춰주세요.', tone: 'error' }
+      ? { message: `시간을 ${MEDICATION_SLOT_ORDER} 순서로 맞춰주세요.`, tone: 'error' }
       : emptyMedIds.size > 0
         ? { message: `복용 시간이 비어 있는 약이 ${emptyMedIds.size}개 있어요.`, tone: 'error' }
         : null);
 
   const canSave = blocker === null;
+
+  if (registrationFlow) {
+    return (
+      <MedicationRegistrationWizard
+        recordId={recordId}
+        schedule={schedule}
+        scheduleSaver={scheduleSaver}
+        notifySettingsLoader={notifySettingsLoader}
+        notifySettingsUpdater={notifySettingsUpdater}
+        permissionReader={permissionReader}
+        permissionRequester={permissionRequester}
+        pushRegistrar={pushRegistrar}
+        initialSlots={slots}
+        initialMealTimes={mealTimes}
+        initialStartDate={startDate || dispensedDate || todayISO()}
+        initialStartSlot={startSlot}
+        alias={state.episodeAlias ?? ''}
+        onBack={handleBack}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -533,7 +572,7 @@ export function MedicationSchedulePage({
               <p className="mt-1 text-sm text-muted-foreground">
                 {hasAutomaticallyAssignedMeds
                   ? '봉투에 시간대가 없는 약은 복용 횟수에 맞춰 정했어요.'
-                  : '봉투에서 읽은 시간입니다. 맞는지 확인해주세요.'}
+                  : '봉투에서 읽은 시간이에요. 다르면 눌러 바꿔주세요.'}
               </p>
             </div>
             <div className="flex flex-col gap-3">
@@ -546,7 +585,7 @@ export function MedicationSchedulePage({
                   >
                     <div className="flex flex-col gap-0.5">
                       <p className="text-base font-bold text-foreground">
-                        {med.name} {med.dose}
+                        {formatMedicationLabel(med.name, med.dose)}
                       </p>
                       <p className="text-sm text-muted-foreground">{medicationMetaText(med)}</p>
                     </div>
@@ -752,9 +791,579 @@ export function MedicationSchedulePage({
       <ErrorDialog
         open={timeOrderError}
         title="시간을 적용할 수 없어요"
-        message="복약 시간은 아침약 → 점심약 → 저녁약 → 취침약 순서로 설정해주세요."
+        message={`복약 시간은 ${MEDICATION_SLOT_ORDER} 순서로 설정해주세요.`}
         retryLabel="확인"
         onRetry={() => setTimeOrderError(false)}
+      />
+    </div>
+  );
+}
+
+interface MedicationRegistrationWizardProps {
+  recordId: number | null;
+  schedule: MedicationSchedule;
+  scheduleSaver: typeof saveMedicationSchedule;
+  notifySettingsLoader: () => Promise<NotifySettings>;
+  notifySettingsUpdater: (payload: UpdateNotifySettingsPayload) => Promise<NotifySettings>;
+  permissionReader: () => PushPermission;
+  permissionRequester: () => Promise<PushPermission>;
+  pushRegistrar: () => Promise<void>;
+  initialSlots: Record<number, MealSlot[]>;
+  initialMealTimes: MealTimes;
+  initialStartDate: string;
+  initialStartSlot: MealSlot | null;
+  alias: string;
+  onBack: (startDate?: string) => void;
+}
+
+/**
+ * OCR 확인 뒤에만 사용하는 3~5단계 등록 흐름입니다.
+ * 기존 `/dev/medication-schedule`와 설정 화면은 위의 기존 계약을 그대로 사용합니다.
+ */
+function MedicationRegistrationWizard({
+  recordId,
+  schedule,
+  scheduleSaver,
+  notifySettingsLoader,
+  notifySettingsUpdater,
+  permissionReader,
+  permissionRequester,
+  pushRegistrar,
+  initialSlots,
+  initialMealTimes,
+  initialStartDate,
+  initialStartSlot,
+  alias,
+  onBack,
+}: MedicationRegistrationWizardProps) {
+  const navigate = useNavigate();
+  const [step, setStep] = useState<3 | 4 | 5>(3);
+  const [slots, setSlots] = useState<Record<number, MealSlot[]>>(initialSlots);
+  const [mealTimes, setMealTimes] = useState<MealTimes>(initialMealTimes);
+  const [startDate, setStartDate] = useState(initialStartDate);
+  const [startSlot, setStartSlot] = useState<FirstDoseSelection | null>(initialStartSlot);
+  const [notifyMedication, setNotifyMedication] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [permissionBusy, setPermissionBusy] = useState(false);
+  const [alarmSettingsError, setAlarmSettingsError] = useState<string | null>(null);
+  const [editingAlarmSlot, setEditingAlarmSlot] = useState<MealSlot | null>(null);
+  const notifyMedicationEditedRef = useRef(false);
+  const notificationBusyRef = useRef(false);
+  const notificationReadyRef = useRef(false);
+  const alarmTimesEditedRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [completed, setCompleted] = useState(false);
+
+  const scheduledMeds = schedule.medications.filter((medication) => medication.timesPerDay !== null);
+  const usedSlots = new Set<MealSlot>(scheduledMeds.flatMap((medication) => slots[medication.medicationId] ?? []));
+  const selectedAlarmSlots = notifyMedication
+    ? SLOT_ORDER.filter((slot) => usedSlots.has(slot))
+    : [];
+  const canContinueFromSlots = scheduledMeds.every(
+    (medication) => (slots[medication.medicationId] ?? []).length > 0,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    notifySettingsLoader()
+      .then((settings) => {
+        if (cancelled) return;
+        if (!notifyMedicationEditedRef.current) {
+          // 서버 설정만으로 토글을 켜지 않습니다. 브라우저 권한이 실제로 허용된
+          // 경우에만 활성 상태를 보여야, 차단·미지원 환경에서 거짓 상태가 남지 않습니다.
+          setNotifyMedication(settings.notifyMedication && permissionReader() === 'granted');
+          notificationReadyRef.current = false;
+        }
+        if (!alarmTimesEditedRef.current) {
+          setMealTimes({
+            morning: settings.morningMedicationTime,
+            lunch: settings.lunchMedicationTime,
+            evening: settings.eveningMedicationTime,
+            bedtime: settings.bedtimeMedicationTime,
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setAlarmSettingsError(
+            error instanceof Error ? error.message : '알람 설정을 불러오지 못했어요.',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notifySettingsLoader]);
+
+  function toggleSlot(medicationId: number, slot: MealSlot) {
+    setSlots((current) => {
+      const next = new Set(current[medicationId] ?? []);
+      if (next.has(slot)) next.delete(slot);
+      else next.add(slot);
+      return { ...current, [medicationId]: SLOT_ORDER.filter((value) => next.has(value)) };
+    });
+  }
+
+  function applyAlarmTime(time: string) {
+    if (!editingAlarmSlot) return;
+    const nextMealTimes = { ...mealTimes, [editingAlarmSlot]: time };
+    if (!isMealTimeOrderValid(nextMealTimes)) {
+      setSaveError(`복약 시간은 ${MEDICATION_SLOT_ORDER} 순서로 설정해주세요.`);
+      return;
+    }
+    alarmTimesEditedRef.current = true;
+    setMealTimes(nextMealTimes);
+    setEditingAlarmSlot(null);
+    setSaveError(null);
+  }
+
+  async function registerMedicationNotifications(): Promise<boolean> {
+    notificationBusyRef.current = true;
+    setPermissionBusy(true);
+    setNotificationError(null);
+    try {
+      await pushRegistrar();
+      notificationReadyRef.current = true;
+      setNotifyMedication(true);
+      return true;
+    } catch (error: unknown) {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError(
+        error instanceof Error ? error.message : '복약 알림을 등록하지 못했어요.',
+      );
+      return false;
+    } finally {
+      notificationBusyRef.current = false;
+      setPermissionBusy(false);
+    }
+  }
+
+  async function handleNotificationToggle(checked: boolean) {
+    notifyMedicationEditedRef.current = true;
+    if (!checked) {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError(null);
+      return;
+    }
+
+    const permission = permissionReader();
+    if (permission === 'default') {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError(null);
+      setPermissionDialogOpen(true);
+      return;
+    }
+    if (permission === 'denied') {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError('알림 권한이 차단되어 있어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.');
+      return;
+    }
+    if (permission === 'unsupported') {
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      setNotificationError('이 브라우저에서는 복약 알림을 사용할 수 없어요.');
+      return;
+    }
+
+    await registerMedicationNotifications();
+  }
+
+  async function handleRegistrationPermissionAccept() {
+    notificationBusyRef.current = true;
+    setPermissionBusy(true);
+    let permission: PushPermission;
+    try {
+      permission = await permissionRequester();
+    } catch (error: unknown) {
+      setPermissionDialogOpen(false);
+      notificationReadyRef.current = false;
+      setNotifyMedication(false);
+      notificationBusyRef.current = false;
+      setPermissionBusy(false);
+      setNotificationError(
+        error instanceof Error ? error.message : '알림 권한을 확인하지 못했어요.',
+      );
+      return;
+    }
+    setPermissionDialogOpen(false);
+    setPermissionBusy(false);
+
+    if (permission === 'granted') {
+      await registerMedicationNotifications();
+      return;
+    }
+
+    notificationReadyRef.current = false;
+    setNotifyMedication(false);
+    notificationBusyRef.current = false;
+    setNotificationError(
+      permission === 'denied'
+        ? '알림 권한이 차단되어 있어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.'
+        : '알림 권한을 허용해야 복약 알림을 켤 수 있어요.',
+    );
+  }
+
+  function handleRegistrationPermissionDismiss() {
+    setPermissionDialogOpen(false);
+    notificationReadyRef.current = false;
+    notificationBusyRef.current = false;
+    setNotifyMedication(false);
+    setNotificationError('알림 권한을 허용해야 복약 알림을 켤 수 있어요.');
+  }
+
+  async function completeRegistration() {
+    const scheduleStartSlot =
+      startSlot === 'not_taken'
+        ? SLOT_ORDER.find((slot) => usedSlots.has(slot)) ?? 'morning'
+        : startSlot;
+    if (
+      recordId === null ||
+      !scheduleStartSlot ||
+      !startDate ||
+      saving ||
+      permissionBusy ||
+      notificationBusyRef.current
+    ) {
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    const selectedNotifyMedication = notifyMedication;
+    try {
+      await scheduleSaver(recordId, {
+        start: { date: startDate, slot: scheduleStartSlot },
+        mealTimes,
+        medications: scheduledMeds.map((medication) => ({
+          medicationId: medication.medicationId,
+          slots: slots[medication.medicationId] ?? [],
+        })),
+      });
+      if (selectedNotifyMedication) {
+        const permission = permissionReader();
+        if (permission !== 'granted') {
+          notificationReadyRef.current = false;
+          setNotifyMedication(false);
+          setNotificationError(
+            permission === 'denied'
+              ? '알림 권한이 차단되어 있어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.'
+              : '알림 권한을 허용해야 복약 알림을 켤 수 있어요.',
+          );
+          return;
+        }
+        if (!notificationReadyRef.current) {
+          const registered = await registerMedicationNotifications();
+          if (!registered) return;
+        }
+      }
+      await notifySettingsUpdater({
+        notifyMedication: selectedNotifyMedication,
+        morningMedicationTime: mealTimes.morning,
+        lunchMedicationTime: mealTimes.lunch,
+        eveningMedicationTime: mealTimes.evening,
+        bedtimeMedicationTime: mealTimes.bedtime,
+      });
+      setCompleted(true);
+    } catch (error: unknown) {
+      if (selectedNotifyMedication) {
+        notificationReadyRef.current = false;
+        setNotifyMedication(false);
+      }
+      setSaveError(error instanceof Error ? error.message : '복약 등록을 완료하지 못했어요.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function formatCompletionStart(): string {
+    if (startSlot === 'not_taken') return '아직 복용 전';
+    const [, month, day] = startDate.split('-');
+    const slotLabel = MEAL_SLOTS.find((slot) => slot.value === startSlot)?.label ?? '';
+    return month && day ? `${Number(month)}월 ${Number(day)}일 ${slotLabel}` : slotLabel;
+  }
+
+  function handleWizardBack() {
+    if (step === 5) {
+      setStep(4);
+      return;
+    }
+    if (step === 4) {
+      setStep(3);
+      return;
+    }
+    onBack(startDate);
+  }
+
+  if (completed) {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+        <Header title="약봉투 등록" onBack={onBack} />
+        <main className="flex flex-1 flex-col items-center gap-5 px-page-x py-8 text-center">
+          <RegistrationProgress step={5} />
+          <div className="mt-10 flex size-16 items-center justify-center rounded-full bg-success-bg text-success-strong">
+            <span aria-hidden className="text-3xl">✓</span>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">약 등록을 완료했어요</h1>
+            <p className="mt-2 text-base text-muted-foreground">
+              오늘 일정부터 홈에서 확인할 수 있어요.
+            </p>
+          </div>
+          <Card className="w-full gap-2 p-4 text-left">
+            <p className="font-bold text-foreground">등록한 약 {scheduledMeds.length}개</p>
+            <p className="text-sm text-muted-foreground">첫 복용 {formatCompletionStart()}</p>
+            <p className="text-sm text-muted-foreground">
+              알림 {selectedAlarmSlots.map((slot) => mealTimes[slot]).join(' · ') || '없음'}
+            </p>
+            {alias && <p className="text-sm text-muted-foreground">별칭 {alias}</p>}
+          </Card>
+          <div className="mt-auto w-full pb-4">
+            <Button onClick={() => navigate('/home', { replace: true })}>홈에서 확인</Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+      <Header title="약봉투 등록" onBack={handleWizardBack} />
+      <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
+        <RegistrationProgress step={step} />
+
+        {step === 3 && (
+          <>
+            <section>
+              <h1 className="text-2xl font-bold text-foreground">약마다 먹는 시간을 확인해주세요</h1>
+              <p className="mt-1 text-base text-muted-foreground">
+                봉투에서 읽은 시간이에요. 다르면 눌러 바꿔주세요.
+              </p>
+            </section>
+            {/* 이전 계약에서 바로 노출하던 날짜 입력도 유지해, 새 흐름에서도 값 확인이 가능합니다. */}
+            <Input
+              label="첫 복용 날짜"
+              aria-label="복용 시작 날짜"
+              type="date"
+              value={startDate}
+              max={todayISO()}
+              onChange={(event) => setStartDate(event.target.value)}
+            />
+            <div className="flex flex-col gap-3">
+              {scheduledMeds.map((medication) => (
+                <Card key={medication.medicationId} className="gap-3 p-4">
+                  <div>
+                    <p className="font-bold text-foreground">
+                      {formatMedicationLabel(medication.name, medication.dose)}
+                    </p>
+                    {medication.timing && (
+                      <p className="mt-1 text-sm text-muted-foreground">{medication.timing}</p>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 border-t border-border pt-3">
+                    {MEAL_SLOTS.map((slot) => {
+                      const selected = (slots[medication.medicationId] ?? []).includes(slot.value);
+                      return (
+                        <button
+                          key={slot.value}
+                          type="button"
+                          aria-pressed={selected}
+                          aria-label={`${medication.name} ${slot.label}`}
+                          onClick={() => toggleSlot(medication.medicationId, slot.value)}
+                          className={cn(
+                            'min-h-touch rounded-input border text-sm',
+                            selected
+                              ? 'border-primary bg-primary font-bold text-card'
+                              : 'border-border bg-card text-muted-foreground',
+                          )}
+                        >
+                          {slot.short}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <div className="mt-auto pb-4">
+              <Button disabled={!canContinueFromSlots} onClick={() => setStep(4)}>
+                확인
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <section>
+              <h1 className="text-2xl font-bold text-foreground">처음 약을 언제 드셨나요?</h1>
+              <p className="mt-1 text-base text-muted-foreground">
+                복용 기록이 시작되는 날짜와 시간이에요.
+              </p>
+            </section>
+            <div className="flex flex-col gap-4">
+              <button
+                type="button"
+                aria-pressed={startSlot === 'not_taken'}
+                onClick={() => {
+                  setStartSlot('not_taken');
+                  setStartDate(todayISO());
+                }}
+                className={cn(
+                  'min-h-touch rounded-input border px-4 py-3 text-left',
+                  startSlot === 'not_taken'
+                    ? 'border-primary bg-primary-bg text-primary-strong'
+                    : 'border-border bg-card text-foreground',
+                )}
+              >
+                <span className="block font-bold">아직 안 먹었어요</span>
+                <span className="mt-1 block text-sm font-normal text-muted-foreground">
+                  약을 먹은 뒤 홈에서 기록할 수 있어요.
+                </span>
+              </button>
+              <Input
+                label="첫 복용 날짜"
+                aria-label="복용 시작 날짜"
+                type="date"
+                value={startDate}
+                max={todayISO()}
+                onChange={(event) => setStartDate(event.target.value)}
+              />
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-bold text-foreground">첫 복용 시간</p>
+                <div className="flex flex-wrap gap-2">
+                  {MEAL_SLOTS.map((slot) => (
+                    <button
+                      key={slot.value}
+                      type="button"
+                      aria-pressed={startSlot === slot.value}
+                      aria-label={`시작 ${slot.label}`}
+                      onClick={() => setStartSlot(slot.value)}
+                      className={cn(
+                        'min-h-touch rounded-pill border px-4 text-sm',
+                        startSlot === slot.value
+                          ? 'border-primary bg-primary-bg font-bold text-primary-strong'
+                          : 'border-border bg-card text-foreground',
+                      )}
+                    >
+                      {slot.short}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <Card title="이렇게 기록해요" tone="info" className="p-4">
+              {startSlot === 'not_taken'
+                ? '아직 복용하지 않은 상태로 일정을 시작해요.'
+                : startSlot
+                ? `${formatStartPoint(startDate, startSlot)}부터 복용한 것으로 기록해요.`
+                : '첫 복용 시간을 고르면 여기에 보여드려요.'}
+            </Card>
+            <div className="mt-auto pb-4">
+              <Button disabled={!startSlot || (startSlot !== 'not_taken' && !startDate)} onClick={() => setStep(5)}>
+                확인
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === 5 && (
+          <>
+            <section>
+              <h1 className="text-2xl font-bold text-foreground">알람 시간을 확인해주세요</h1>
+              <p className="mt-1 text-base text-muted-foreground">
+                알림을 켜고 시간 행을 눌러 원하는 시각을 설정해주세요.
+              </p>
+            </section>
+            <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
+              <div className="flex min-h-20 items-center justify-between gap-3 px-4">
+                <div>
+                  <p className="text-base font-bold text-foreground">복약 알림</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {notifyMedication ? '설정한 시간에 알려드려요.' : '알림을 보내지 않아요.'}
+                  </p>
+                </div>
+                <Switch
+                  aria-label="복약 알림"
+                  checked={notifyMedication}
+                  disabled={permissionBusy || saving}
+                  onCheckedChange={(checked) => void handleNotificationToggle(checked)}
+                />
+              </div>
+              <div className="border-t border-border">
+                {MEAL_SLOTS.map((slot, index) => {
+                  const used = usedSlots.has(slot.value);
+                  return (
+                    <button
+                      key={slot.value}
+                      type="button"
+                      aria-label={`${slot.label} 알람 시간`}
+                      className={cn(
+                        'flex min-h-16 w-full items-center gap-3 px-4 text-left',
+                        index > 0 && 'border-t border-border',
+                        !used && 'text-disabled-foreground',
+                      )}
+                      onClick={() => setEditingAlarmSlot(slot.value)}
+                    >
+                      <span className="w-16 font-bold">{slot.label}</span>
+                      <span className="tnum">{mealTimes[slot.value]}</span>
+                      <span className="ml-auto text-sm text-muted-foreground">
+                        {used ? '복용 약 있음' : '사용 안 함'}
+                      </span>
+                      <span aria-hidden className="text-muted-foreground">
+                        ›
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {alarmSettingsError && (
+              <p role="alert" className="text-sm text-danger-strong">
+                {alarmSettingsError}
+              </p>
+            )}
+            {notificationError && (
+              <p role="alert" className="text-sm text-danger-strong">
+                {notificationError}
+              </p>
+            )}
+            <Card tone="info" className="p-4">
+              저장하면 복약 일정과 알람 설정이 함께 끝나요.
+            </Card>
+            {saveError && <p role="alert" className="text-sm text-danger-strong">{saveError}</p>}
+            <div className="mt-auto pb-4">
+              <Button
+                disabled={saving || permissionBusy}
+                onClick={() => void completeRegistration()}
+              >
+                {saving ? '등록 중...' : '등록 완료'}
+              </Button>
+            </div>
+          </>
+        )}
+      </main>
+      <TimePickerSheet
+        open={editingAlarmSlot !== null}
+        description={
+          editingAlarmSlot
+            ? `${MEAL_SLOTS.find((slot) => slot.value === editingAlarmSlot)?.label ?? ''} 알람 시각`
+            : ''
+        }
+        value={editingAlarmSlot ? mealTimes[editingAlarmSlot] : '08:00'}
+        onApply={applyAlarmTime}
+        onCancel={() => setEditingAlarmSlot(null)}
+      />
+      <NotifyPermissionDialog
+        open={permissionDialogOpen}
+        mealTimes={mealTimes}
+        busy={permissionBusy}
+        onAccept={() => void handleRegistrationPermissionAccept()}
+        onDismiss={handleRegistrationPermissionDismiss}
       />
     </div>
   );

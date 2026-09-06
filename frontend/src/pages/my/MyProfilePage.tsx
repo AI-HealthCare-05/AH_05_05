@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { useSession } from '@/app/SessionContext';
 import {
   getMyProfile,
   updateMyProfile,
@@ -30,6 +32,7 @@ import {
   Input,
 } from '@/shared/ui';
 import { PasswordChangeSheet } from './PasswordChangeSheet';
+import { WithdrawAccountDialog } from './WithdrawAccountDialog';
 
 interface MyProfilePageProps {
   profileLoader?: () => Promise<AccountProfile>;
@@ -41,6 +44,7 @@ export function MyProfilePage({
   profileSaver = updateMyProfile,
 }: MyProfilePageProps) {
   const navigate = useNavigate();
+  const { signOut } = useSession();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -53,6 +57,7 @@ export function MyProfilePage({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [passwordSheetOpen, setPasswordSheetOpen] = useState(false);
+  const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const today = formatDateInputValue(new Date());
 
   useEffect(() => {
@@ -113,10 +118,20 @@ export function MyProfilePage({
     }
   }
 
+  function handleWithdrawn() {
+    navigate('/', { replace: true });
+    // 보호 라우트가 위치를 반영한 다음 세션을 정리해 로그인 redirect를 피합니다.
+    window.setTimeout(signOut, 50);
+    toast.success('탈퇴했어요. 그동안 이용해 주셔서 감사해요.');
+  }
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="기본정보 수정" onBack={() => navigate(-1)} />
-      <main className="flex flex-1 flex-col gap-5 px-page-x py-5">
+      <Header
+        title={<span aria-label="기본정보 수정">기본정보</span>}
+        onBack={() => navigate(-1)}
+      />
+      <main className="flex flex-1 flex-col overflow-y-auto px-page-x pb-3 pt-8">
         {loadError ? (
           <Card title="기본정보를 불러오지 못했어요">{loadError}</Card>
         ) : !profile ? (
@@ -127,7 +142,11 @@ export function MyProfilePage({
           />
         ) : (
           <>
-            <form className="flex flex-col gap-4" onSubmit={save}>
+            <h2 className="text-2xl font-bold text-foreground">내 정보</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              영양 성분 기준과 알림에 사용됩니다.
+            </p>
+            <form className="mt-8 flex flex-col gap-4" onSubmit={save}>
               <Input
                 label="이름"
                 autoComplete="name"
@@ -168,17 +187,30 @@ export function MyProfilePage({
                 required
               />
               <GenderRadioGroup value={gender} onChange={setGender} />
-              <Button type="submit" disabled={!changed || saving}>저장</Button>
-            </form>
-
-            <section className="flex flex-col gap-3" aria-labelledby="password-title">
-              <h2 id="password-title" className="text-xl font-bold text-foreground">
-                비밀번호
-              </h2>
-              <Button variant="secondary" onClick={() => setPasswordSheetOpen(true)}>
-                비밀번호 변경
+              <button
+                type="button"
+                className="flex min-h-control w-full items-center justify-between rounded-card border border-input bg-card px-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted-bg"
+                onClick={() => setPasswordSheetOpen(true)}
+              >
+                <span>비밀번호 변경</span>
+                <ChevronRight aria-hidden className="size-5 text-muted-foreground" />
+              </button>
+              <Button
+                type="submit"
+                aria-label="저장"
+                disabled={!changed || saving}
+                className="mt-[68px]"
+              >
+                변경사항 저장
               </Button>
-            </section>
+            </form>
+            <button
+              type="button"
+              className="mt-2 min-h-touch w-full rounded-button border border-border text-center text-sm font-medium text-danger-strong"
+              onClick={() => setWithdrawDialogOpen(true)}
+            >
+              회원 탈퇴
+            </button>
           </>
         )}
       </main>
@@ -190,6 +222,11 @@ export function MyProfilePage({
       />
 
       <PasswordChangeSheet open={passwordSheetOpen} onOpenChange={setPasswordSheetOpen} />
+      <WithdrawAccountDialog
+        open={withdrawDialogOpen}
+        onOpenChange={setWithdrawDialogOpen}
+        onWithdrawn={handleWithdrawn}
+      />
       <ErrorDialog
         open={saveError !== null}
         title="기본정보를 저장하지 못했어요"

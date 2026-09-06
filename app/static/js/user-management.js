@@ -160,7 +160,12 @@ async function openUserDetail(userId, reloadList) {
     onConfirm: async () => {
       if (!action) return;
       if (action.requiresConfirmation) {
-        await openOverlay("overlay-user-suspend-confirm.html", { onConfirm: applyStatusChange });
+        const confirmOverlay = await openOverlay("overlay-user-suspend-confirm.html", {
+          onConfirm: applyStatusChange,
+        });
+        // 상세를 거쳐 열리지만 목록이 최신순이라, 확인 창에도 대상을 다시 적는다.
+        confirmOverlay.querySelector("[data-confirm-name]").textContent = user.name;
+        confirmOverlay.querySelector("[data-confirm-email]").textContent = user.email;
         return;
       }
       await applyStatusChange();

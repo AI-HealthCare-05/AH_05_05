@@ -3,19 +3,25 @@ import { useNavigate } from 'react-router';
 
 const SPLASH_DURATION_MS = 1_200;
 const SPLASH_SEEN_KEY = 'poke:splash-seen';
+const TUTORIAL_SEEN_KEY = 'poke:tutorial-seen';
 
 export function SplashPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (window.sessionStorage.getItem(SPLASH_SEEN_KEY) === 'true') {
+    if (window.sessionStorage.getItem(TUTORIAL_SEEN_KEY) === 'true') {
       navigate('/home', { replace: true });
+      return;
+    }
+
+    if (window.sessionStorage.getItem(SPLASH_SEEN_KEY) === 'true') {
+      navigate('/tutorial', { replace: true });
       return;
     }
 
     const timer = window.setTimeout(() => {
       window.sessionStorage.setItem(SPLASH_SEEN_KEY, 'true');
-      navigate('/home', { replace: true });
+      navigate('/tutorial', { replace: true });
     }, SPLASH_DURATION_MS);
     return () => window.clearTimeout(timer);
   }, [navigate]);

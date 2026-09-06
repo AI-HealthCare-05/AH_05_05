@@ -1,3 +1,4 @@
+import { SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button } from './Button';
 import {
   Dialog,
@@ -33,7 +34,7 @@ export function NotifyPermissionDialog({
   onDismiss,
 }: NotifyPermissionDialogProps) {
   const timeSummary = mealTimes
-    ? `아침 ${mealTimes.morning} · 점심 ${mealTimes.lunch} · 저녁 ${mealTimes.evening} · 취침 ${mealTimes.bedtime}`
+    ? SLOT_ORDER.map((slot) => `${mealSlotLabel(slot, 'short')} ${mealTimes[slot]}`).join(' · ')
     : null;
 
   return (

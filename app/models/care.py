@@ -10,6 +10,7 @@ class CareEpisode(models.Model):
         "models.User", related_name="care_episodes", on_delete=fields.CASCADE
     )
     title = fields.CharField(max_length=150)
+    alias = fields.CharField(max_length=50, null=True)
     status = fields.CharEnumField(CareEpisodeStatus, default=CareEpisodeStatus.ACTIVE)
     diagnosis = fields.CharField(max_length=500, null=True)
     surgery = fields.CharField(max_length=500, null=True)

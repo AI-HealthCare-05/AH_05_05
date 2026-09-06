@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { AlertTriangle, ChevronRight, Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { formatMedicationLabel } from '@/shared/lib/medicationLabel';
 import {
   confirmOcrResult,
   getOcrDocumentImageUrl,
@@ -10,6 +11,7 @@ import {
   releaseOcrDocumentImageUrl,
   uploadDocument,
   type Confidence,
+  type OcrRegistrationDraft,
   type OcrResult,
 } from '@/entities/document';
 import type { EditableOcrMedication } from '@/entities/document/types';
@@ -21,6 +23,7 @@ import {
   ImageViewer,
   Input,
   RxVitaFeatureCarousel,
+  RegistrationProgress,
   StatusBadge,
   type StatusBadgeType,
 } from '@/shared/ui';
@@ -31,6 +34,9 @@ interface OcrReviewLocationState {
   batchId?: string;
   file?: File;
   scheduleStartDate?: string;
+  episodeAlias?: string;
+  registrationFlow?: boolean;
+  ocrRegistrationDraft?: OcrRegistrationDraft;
 }
 
 type ReadingStage = 'uploading' | 'reading' | 'organizing' | 'complete';
@@ -80,6 +86,17 @@ function ConfidenceBadge({ confidence }: { confidence?: Confidence }) {
   return <StatusBadge type={badge.type}>{badge.label}</StatusBadge>;
 }
 
+function hasMissingExtractedMedicationField(medication: EditableOcrMedication): boolean {
+  if (medication.confidence === undefined) return false;
+  return (
+    !medication.name.trim() ||
+    !medication.strength?.trim() ||
+    !medication.doseQuantity?.trim() ||
+    medication.timesPerDay === undefined ||
+    medication.days === undefined
+  );
+}
+
 export function OcrReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -88,22 +105,69 @@ export function OcrReviewPage() {
   const queryBatchId = searchParams.get('batchId')?.trim() || null;
   const confirmedRecordId = parsePositiveInteger(searchParams.get('recordId'));
   const confirmedReviewMode = searchParams.get('mode') === 'confirmed' && confirmedRecordId !== null;
+  const registrationFlow =
+    state.registrationFlow === true || searchParams.get('flow') === 'registration';
+  const registrationEditMode =
+    searchParams.get('mode') === 'registration-edit' &&
+    confirmedRecordId !== null &&
+    registrationFlow;
+  const initialBatchId = state.batchId ?? queryBatchId ?? (state.file ? null : 'b_mock_9f21');
+  const initialRegistrationDraft =
+    registrationEditMode && state.ocrRegistrationDraft?.batchId === initialBatchId
+      ? state.ocrRegistrationDraft
+      : null;
   const [batchId, setBatchId] = useState<string | null>(
-    state.batchId ?? queryBatchId ?? (state.file ? null : 'b_mock_9f21'),
+    initialBatchId,
   );
 
-  const [result, setResult] = useState<OcrResult | null>(null);
-  const [readingStage, setReadingStage] = useState<ReadingStage>(
-    state.file ? 'uploading' : 'reading',
+  const [result, setResult] = useState<OcrResult | null>(() =>
+    initialRegistrationDraft
+      ? {
+          batchId: initialRegistrationDraft.batchId,
+          ocrStatus: 'complete',
+          documentImageUrl: initialRegistrationDraft.documentImageUrl,
+          fields: initialRegistrationDraft.dispensedDateConfidence
+            ? {
+                dispensedDate: {
+                  value: initialRegistrationDraft.dispensedDate,
+                  confidence: initialRegistrationDraft.dispensedDateConfidence,
+                },
+              }
+            : {},
+          medications: initialRegistrationDraft.medications.map(
+            ({ timesPerDay, ...medication }) => ({
+              ...medication,
+              ...(timesPerDay !== null ? { timesPerDay } : {}),
+            }),
+          ),
+          lowConfidenceCount: initialRegistrationDraft.lowConfidenceCount,
+        }
+      : null,
   );
-  const [progress, setProgress] = useState(state.file ? 0 : 33);
+  const [readingStage, setReadingStage] = useState<ReadingStage>(
+    initialRegistrationDraft ? 'complete' : state.file ? 'uploading' : 'reading',
+  );
+  const [progress, setProgress] = useState(initialRegistrationDraft ? 100 : state.file ? 0 : 33);
   const [uploadAttempt, setUploadAttempt] = useState(0);
   const [pollAttempt, setPollAttempt] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
-  const [dispensedDate, setDispensedDate] = useState('');
-  const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(null);
-  const [medications, setMedications] = useState<EditableOcrMedication[]>([]);
+  const [dispensedDate, setDispensedDate] = useState(initialRegistrationDraft?.dispensedDate ?? '');
+  const [episodeAlias, setEpisodeAlias] = useState(
+    initialRegistrationDraft?.episodeAlias ?? state.episodeAlias ?? '',
+  );
+  const [dispensedDateConfidence, setDispensedDateConfidence] = useState<Confidence | null>(
+    initialRegistrationDraft?.dispensedDateConfidence ?? null,
+  );
+  const [medications, setMedications] = useState<EditableOcrMedication[]>(
+    initialRegistrationDraft?.medications ?? [],
+  );
+  const [reviewedMedicationIds, setReviewedMedicationIds] = useState<Set<string>>(
+    () => new Set(initialRegistrationDraft?.reviewedMedicationIds ?? []),
+  );
+  const [dispensedDateReviewed, setDispensedDateReviewed] = useState(
+    initialRegistrationDraft?.dispensedDateReviewed ?? false,
+  );
   const [medicationEditorTarget, setMedicationEditorTarget] =
     useState<MedicationEditorTarget | null>(null);
   const [reviewConfirmOpen, setReviewConfirmOpen] = useState(false);
@@ -127,6 +191,26 @@ export function OcrReviewPage() {
       if (batchId) releaseOcrDocumentImageUrl(batchId);
     };
   }, [batchId]);
+
+  useEffect(() => {
+    if (!batchId || !initialRegistrationDraft) return;
+    let cancelled = false;
+    void Promise.allSettled([
+      getOcrProcessedImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
+      getOcrDocumentImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
+    ]).then(([processed, original]) => {
+      if (cancelled) return;
+      const nextProcessed = processed.status === 'fulfilled' ? processed.value : null;
+      const nextOriginal = original.status === 'fulfilled' ? original.value : null;
+      setProcessedImageUrl(nextProcessed);
+      setOriginalImageUrl(nextOriginal);
+      setImageView(nextProcessed ? 'processed' : 'original');
+      setImageUnavailable(!nextProcessed && !nextOriginal);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId, initialRegistrationDraft]);
 
   useEffect(() => {
     if (!state.file || batchId) return;
@@ -163,7 +247,7 @@ export function OcrReviewPage() {
   }, [batchId, location.pathname, navigate, state.file, uploadAttempt]);
 
   useEffect(() => {
-    if (!batchId) return;
+    if (!batchId || initialRegistrationDraft) return;
     let cancelled = false;
     let pollTimer: number | undefined;
     let completionTimer: number | undefined;
@@ -195,7 +279,11 @@ export function OcrReviewPage() {
             setDispensedDate(data.fields.dispensedDate?.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
             setMedications(data.medications);
-            if (data.ocrStatus === 'ready_for_review' || confirmedReviewMode) {
+            if (
+              data.ocrStatus === 'ready_for_review' ||
+              confirmedReviewMode ||
+              registrationEditMode
+            ) {
               void Promise.allSettled([
                 getOcrProcessedImageUrl(batchId, data.documentImageUrl),
                 getOcrDocumentImageUrl(batchId, data.documentImageUrl),
@@ -216,6 +304,8 @@ export function OcrReviewPage() {
                 ...(state.scheduleStartDate !== undefined
                   ? { scheduleStartDate: state.scheduleStartDate }
                   : {}),
+                ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
+                ...(registrationFlow ? { registrationFlow: true } : {}),
               },
             });
           }, 400);
@@ -238,7 +328,17 @@ export function OcrReviewPage() {
       if (pollTimer) window.clearTimeout(pollTimer);
       if (completionTimer) window.clearTimeout(completionTimer);
     };
-  }, [batchId, confirmedReviewMode, location.pathname, location.search, navigate, pollAttempt]);
+  }, [
+    batchId,
+    confirmedReviewMode,
+    initialRegistrationDraft,
+    location.pathname,
+    location.search,
+    navigate,
+    pollAttempt,
+    registrationEditMode,
+    registrationFlow,
+  ]);
 
   useEffect(() => {
     const details = STAGE_DETAILS[readingStage];
@@ -261,11 +361,14 @@ export function OcrReviewPage() {
   }
 
   const reviewItemNames: string[] = [];
-  if (dispensedDateConfidence === 'low') {
+  if (!dispensedDate || (dispensedDateConfidence === 'low' && !dispensedDateReviewed)) {
     reviewItemNames.push('조제일');
   }
   for (const medication of medications) {
-    if (medication.confidence === 'low') {
+    if (
+      hasMissingExtractedMedicationField(medication) ||
+      (medication.confidence === 'low' && !reviewedMedicationIds.has(medication.tempId))
+    ) {
       reviewItemNames.push(medication.name || '복약 정보');
     }
   }
@@ -273,6 +376,27 @@ export function OcrReviewPage() {
   const maxDispensedDate = seoulDateISO(31);
   const dispensedDateTooLate = dispensedDate > maxDispensedDate;
   const canSave = Boolean(dispensedDate) && !dispensedDateTooLate && !saving;
+
+  function createRegistrationDraft(): OcrRegistrationDraft | undefined {
+    if (
+      !batchId ||
+      !result ||
+      (result.ocrStatus !== 'ready_for_review' && result.ocrStatus !== 'complete')
+    ) {
+      return undefined;
+    }
+    return {
+      batchId,
+      documentImageUrl: result.documentImageUrl,
+      dispensedDate,
+      dispensedDateConfidence,
+      dispensedDateReviewed,
+      episodeAlias,
+      medications,
+      reviewedMedicationIds: [...reviewedMedicationIds],
+      lowConfidenceCount: result.lowConfidenceCount,
+    };
+  }
 
   function handleSaveClick() {
     if (!canSave) return;
@@ -284,32 +408,54 @@ export function OcrReviewPage() {
   }
 
   async function save() {
-    if (!result || result.ocrStatus !== 'ready_for_review' || !batchId || !dispensedDate) return;
+    if (
+      !result ||
+      (result.ocrStatus !== 'ready_for_review' &&
+        !(registrationEditMode && result.ocrStatus === 'complete')) ||
+      !batchId ||
+      !dispensedDate
+    ) {
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
-      const { recordId, hasMedication } = await confirmOcrResult(batchId, {
-        dispensedDate,
-        medications: medications.map((medication) => ({
-          tempId: medication.tempId,
-          name: medication.name,
-          ...(medication.strength ? { strength: medication.strength } : {}),
-          ...(medication.doseQuantity ? { doseQuantity: medication.doseQuantity } : {}),
-          ...(medication.timesPerDay !== undefined
-            ? { timesPerDay: medication.timesPerDay }
-            : {}),
-          ...(medication.days !== undefined ? { days: medication.days } : {}),
-        })),
-      });
+      const { recordId, hasMedication } = await confirmOcrResult(
+        batchId,
+        {
+          dispensedDate,
+          medications: medications.map((medication) => ({
+            tempId: medication.tempId,
+            name: medication.name,
+            ...(medication.strength ? { strength: medication.strength } : {}),
+            ...(medication.doseQuantity ? { doseQuantity: medication.doseQuantity } : {}),
+            ...(medication.timesPerDay !== undefined
+              ? { timesPerDay: medication.timesPerDay }
+              : {}),
+            ...(medication.days !== undefined ? { days: medication.days } : {}),
+          })),
+          alias: episodeAlias.trim() || null,
+        },
+        { registrationEdit: registrationEditMode },
+      );
+      const ocrRegistrationDraft = createRegistrationDraft();
       releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
       if (hasMedication) {
         const params = new URLSearchParams({
           recordId: String(recordId),
           ocrJobId: batchId,
+          flow: 'registration',
         });
         navigate(`/medication-schedule?${params.toString()}`, {
-          state: { recordId, dispensedDate, ocrJobId: batchId },
+          state: {
+            recordId,
+            dispensedDate,
+            ocrJobId: batchId,
+            registrationFlow: true,
+            ...(episodeAlias.trim() ? { episodeAlias: episodeAlias.trim() } : {}),
+            ...(ocrRegistrationDraft ? { ocrRegistrationDraft } : {}),
+          },
         });
       } else {
         navigate('/home', { replace: true });
@@ -321,7 +467,30 @@ export function OcrReviewPage() {
     }
   }
 
-  if (result?.ocrStatus === 'complete' && !confirmedReviewMode) {
+  const scheduleReturnUrl =
+    (confirmedReviewMode || registrationEditMode) && batchId
+      ? `/medication-schedule?${new URLSearchParams({
+          recordId: String(confirmedRecordId),
+          ocrJobId: batchId,
+          ...(registrationFlow ? { flow: 'registration' } : {}),
+        }).toString()}`
+      : null;
+
+  if (registrationEditMode && result === null) {
+    return (
+      <PageFrame
+        onBack={() =>
+          scheduleReturnUrl ? navigate(scheduleReturnUrl, { replace: true }) : navigate(-1)
+        }
+      >
+        <p role="status" className="text-sm text-muted-foreground">
+          저장한 정보를 불러오는 중...
+        </p>
+      </PageFrame>
+    );
+  }
+
+  if (result?.ocrStatus === 'complete' && !confirmedReviewMode && !registrationEditMode) {
     return (
       <PageFrame onBack={() => navigate(-1)}>
         <Card tone="success" title="이미 등록된 약봉투예요">
@@ -379,15 +548,9 @@ export function OcrReviewPage() {
   const ocrFailed = result.ocrStatus === 'failed';
   const ocrCancelled = result.ocrStatus === 'cancelled';
   const showOcrFailure = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
-  const scheduleReturnUrl =
-    confirmedReviewMode && batchId
-      ? `/medication-schedule?${new URLSearchParams({
-          recordId: String(confirmedRecordId),
-          ocrJobId: batchId,
-        }).toString()}`
-      : null;
   const returnToSchedule = () => {
     if (!scheduleReturnUrl) return;
+    const ocrRegistrationDraft = createRegistrationDraft();
     navigate(scheduleReturnUrl, {
       replace: true,
       state: {
@@ -396,6 +559,9 @@ export function OcrReviewPage() {
         ...(state.scheduleStartDate !== undefined
           ? { draftStartDate: state.scheduleStartDate }
           : {}),
+        ...(state.episodeAlias !== undefined ? { episodeAlias: state.episodeAlias } : {}),
+        ...(registrationFlow ? { registrationFlow: true } : {}),
+        ...(ocrRegistrationDraft ? { ocrRegistrationDraft } : {}),
       },
     });
   };
@@ -407,6 +573,7 @@ export function OcrReviewPage() {
         onBack={scheduleReturnUrl ? returnToSchedule : () => navigate(-1)}
       />
       <main className="flex flex-1 flex-col gap-5 px-page-x py-5">
+        <RegistrationProgress step={2} />
         {confirmedReviewMode ? (
           <Card tone="info" title="저장한 내용을 다시 확인해보세요">
             확인을 마치면 복약 시간 설정으로 돌아갈 수 있어요.
@@ -431,6 +598,16 @@ export function OcrReviewPage() {
           </Card>
         )}
 
+        <Input
+          label="복약 별칭 (선택)"
+          aria-label="복약 별칭"
+          placeholder="예: 감기약"
+          maxLength={50}
+          value={episodeAlias}
+          onChange={(event) => setEpisodeAlias(event.target.value)}
+          disabled={confirmedReviewMode}
+        />
+
         {imageUnavailable && (
           <Card tone="info" title="원본 미리보기를 불러오지 못했어요">
             OCR 결과는 계속 확인하고 저장할 수 있어요.
@@ -440,7 +617,7 @@ export function OcrReviewPage() {
         {(processedImageUrl || originalImageUrl) && (
           <button
             type="button"
-            aria-label="전처리한 약봉투 크게 보기"
+            aria-label="약봉투 크게 보기"
             className="w-full overflow-hidden rounded-card bg-card text-left shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               setImageView(processedImageUrl ? 'processed' : 'original');
@@ -449,11 +626,11 @@ export function OcrReviewPage() {
           >
             <img
               src={processedImageUrl ?? originalImageUrl ?? ''}
-              alt="전처리한 약봉투"
+              alt="약봉투 미리보기"
               className="h-72 w-full bg-muted/40 object-contain p-2"
             />
             <span className="flex min-h-touch items-center justify-between gap-3 px-4 text-sm font-bold text-foreground">
-              전처리한 약봉투
+              약봉투
               <span className="text-muted-foreground">눌러서 확대</span>
             </span>
           </button>
@@ -464,7 +641,9 @@ export function OcrReviewPage() {
             <label htmlFor="dispensedDate" className="text-base font-bold text-foreground">
               조제일
             </label>
-            <ConfidenceBadge confidence={dispensedDateConfidence ?? undefined} />
+            <ConfidenceBadge
+              confidence={dispensedDateReviewed ? undefined : dispensedDateConfidence ?? undefined}
+            />
           </div>
           <Input
             id="dispensedDate"
@@ -472,13 +651,16 @@ export function OcrReviewPage() {
             type="date"
             max={maxDispensedDate}
             value={dispensedDate}
-            onChange={(event) => setDispensedDate(event.target.value)}
+            onChange={(event) => {
+              setDispensedDate(event.target.value);
+              setDispensedDateReviewed(true);
+            }}
             onClick={openDatePicker}
             disabled={confirmedReviewMode}
             error={dispensedDateTooLate ? '조제일은 오늘 기준 31일 뒤까지만 고를 수 있어요.' : undefined}
             hint={
               confirmedReviewMode
-                ? '저장된 조제일입니다.'
+                ? '저장된 조제일이에요.'
                 : dispensedDate
                   ? undefined
                   : '미추출 — 직접 입력해주세요.'
@@ -515,9 +697,21 @@ export function OcrReviewPage() {
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <strong className="text-lg text-foreground">
-                    {[medication.name, medication.strength].filter(Boolean).join(' ')}
+                    {formatMedicationLabel(medication.name, medication.strength)}
                   </strong>
-                  <ConfidenceBadge confidence={medication.confidence} />
+                  {hasMissingExtractedMedicationField(medication) ||
+                  (medication.confidence === 'low' &&
+                    !reviewedMedicationIds.has(medication.tempId)) ? (
+                    <StatusBadge type="review">확인 필요</StatusBadge>
+                  ) : (
+                    <ConfidenceBadge
+                      confidence={
+                        reviewedMedicationIds.has(medication.tempId)
+                          ? undefined
+                          : medication.confidence
+                      }
+                    />
+                  )}
                 </span>
                 <span className="mt-1 block text-sm text-muted-foreground">
                   {medicationSummary(medication)}
@@ -533,7 +727,7 @@ export function OcrReviewPage() {
         <p className="text-sm text-muted-foreground">
           {confirmedReviewMode
             ? '복약 시간 설정 전에 저장된 약 정보를 다시 확인할 수 있어요.'
-            : '사진에서 읽은 내용입니다. 실제 약봉투와 다르면 고쳐주세요.'}
+            : '사진에서 읽은 내용이에요. 실제 약봉투와 다르면 고쳐주세요.'}
         </p>
 
         <div className="mt-auto flex flex-col gap-2 pb-4">
@@ -566,6 +760,11 @@ export function OcrReviewPage() {
           if (!open) setMedicationEditorTarget(null);
         }}
         onSave={(savedMedication) => {
+          if (medicationEditorTarget?.mode === 'edit') {
+            setReviewedMedicationIds((current) =>
+              new Set(current).add(savedMedication.tempId),
+            );
+          }
           setMedications((current) =>
             medicationEditorTarget?.mode === 'edit'
               ? current.map((medication) =>
@@ -629,7 +828,7 @@ export function OcrReviewPage() {
               : (originalImageUrl ?? processedImageUrl ?? '')
           }
           title="약봉투 이미지 크게 보기"
-          alt={imageView === 'processed' ? '확대한 전처리 약봉투' : '확대한 약봉투 원본'}
+          alt={imageView === 'processed' ? '확대한 약봉투' : '확대한 약봉투 원본'}
           toolbar={
             <div
               role="group"
@@ -645,7 +844,7 @@ export function OcrReviewPage() {
                 }`}
                 onClick={() => setImageView('processed')}
               >
-                전처리 후
+                선명하게 보기
               </button>
               <button
                 type="button"
@@ -685,7 +884,9 @@ function ReadingScreen({
   const details = STAGE_DETAILS[stage];
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
+      <Header title="약봉투 등록" onBack={onCancel} />
       <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x pt-8 pb-4">
+        <RegistrationProgress step={1} />
         <section aria-labelledby="ocr-reading-title">
           <h1 id="ocr-reading-title" className="text-2xl font-bold text-foreground">
             약봉투를 읽고 있어요

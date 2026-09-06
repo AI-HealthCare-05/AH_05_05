@@ -24,7 +24,7 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 }
 
 async function setupProfile(page: Page) {
-  await page.route('**/api/v1/me', (route) =>
+  await page.route('**/api/v1/users/me', (route) =>
     fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',

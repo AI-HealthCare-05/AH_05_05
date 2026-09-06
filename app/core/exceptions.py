@@ -343,6 +343,12 @@ class MedicationRecordNotFoundError(AppError):
     message = "복약 기록을 찾을 수 없습니다."
 
 
+class MedicationNoteNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "MEDICATION_NOTE_NOT_FOUND"
+    message = "복약 메모를 찾을 수 없습니다."
+
+
 class InvalidMedicationOverviewDateRangeError(AppError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "INVALID_MEDICATION_OVERVIEW_DATE_RANGE"

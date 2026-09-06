@@ -10,7 +10,7 @@ interface LoginPromptSheetProps {
 const BENEFITS = [
   '약봉투를 등록하고 복약 알림 받기',
   '영양제 성분 합계와 복약 표준 가이드',
-  '내 약을 근거로 답하는 AI 상담',
+  '내 약을 근거로 답하는 챗봇',
 ] as const;
 
 export function LoginPromptSheet({ open, onOpenChange, onLogin }: LoginPromptSheetProps) {

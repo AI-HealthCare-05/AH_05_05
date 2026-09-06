@@ -47,6 +47,17 @@ export interface SendChatResult {
   sources: ChatSource[];
 }
 
+export interface ChatFeedbackPayload {
+  isLike: boolean | null;
+  reasonCode: string | null;
+}
+
+export interface ChatFeedbackResult {
+  sessionId: number;
+  isLike: boolean | null;
+  reasonCode: string | null;
+}
+
 export type ChatProgressStage =
   | 'QUESTION_CHECKING'
   | 'EVIDENCE_SEARCHING'

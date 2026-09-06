@@ -108,6 +108,44 @@ test("validateAdminInput rejects blank names and malformed emails", () => {
   });
 });
 
+test("validateAdminName applies the same rule as the user signup name", () => {
+  for (const name of ["김진형", "KimJinhyeong", "山田", "홍길"]) {
+    assert.equal(adminManagement.validateAdminName(name), null, name);
+  }
+  assert.equal(adminManagement.validateAdminName("가"), "이름을 두 글자 이상 입력해 주세요.");
+  assert.equal(adminManagement.validateAdminName("가".repeat(21)), "이름은 20자 이하로 입력해 주세요.");
+  for (const name of ["스모크2", "김 진형", "김철수!", "김철수😀"]) {
+    assert.equal(adminManagement.validateAdminName(name), "이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.", name);
+  }
+  // 앞뒤 공백은 trim 되어 통과한다. 화면이 다듬어 보내고 서버가 공백을 거부한다.
+  assert.equal(adminManagement.validateAdminName(" 홍길동 "), null);
+});
+
+test("validateAdminEdit rejects a name that breaks the rule", () => {
+  const result = validateAdminEdit({ name: "스모크2", currentPassword: "", newPassword: "", newPasswordConfirm: "" });
+  assert.equal(result.valid, false);
+  assert.equal(result.errors.name, "이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.");
+});
+
+test("admin name inputs cap at twenty characters on both overlays", async () => {
+  for (const [file, id] of [
+    ["overlay-admin-register.html", "admin-name"],
+    ["overlay-admin-edit.html", "admin-edit-name"],
+  ]) {
+    const html = await readFile(new URL(`../../static/templates/${file}`, import.meta.url), "utf8");
+    const input = html.split("\n").find((line) => line.includes(`id="${id}"`));
+    assert.match(input, /maxlength="20"/, `${file} ${id}`);
+  }
+});
+
+test("suspend confirm overlays show which account is being suspended", async () => {
+  for (const file of ["overlay-admin-status-confirm.html", "overlay-user-suspend-confirm.html"]) {
+    const html = await readFile(new URL(`../../static/templates/${file}`, import.meta.url), "utf8");
+    assert.match(html, /data-confirm-name/, file);
+    assert.match(html, /data-confirm-email/, file);
+  }
+});
+
 test("withSubmitLock ignores another submission while the first one is pending", async () => {
   assert.equal(typeof adminManagement.withSubmitLock, "function");
   const button = { disabled: false, textContent: "저장" };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { Button, Card, Header, ImageViewer } from '@/shared/ui';
+import { Button, Card, Header, ImageViewer, RegistrationProgress } from '@/shared/ui';
 
 const GUIDE_ITEMS = ['조제일', '약품명·함량', '1회 투약량·횟수·일수'] as const;
 
@@ -56,6 +56,7 @@ export function DocumentUploadPage() {
       />
 
       <main className="flex flex-1 flex-col gap-5 px-page-x py-5">
+        <RegistrationProgress step={1} />
         {file && previewUrl ? (
           <>
             <div>
@@ -106,7 +107,7 @@ export function DocumentUploadPage() {
           <>
             <div>
               <h1 className="text-2xl font-bold text-foreground">약봉투를 한 장 담아주세요</h1>
-              <p className="mt-1 text-base text-muted-foreground">약국에서 받은 봉투 앞면이면 됩니다.</p>
+              <p className="mt-1 text-base text-muted-foreground">약국에서 받은 봉투 앞면이면 돼요.</p>
             </div>
 
             <div className="flex aspect-square items-center justify-center rounded-card bg-muted-bg p-8 text-primary shadow-card">

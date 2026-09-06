@@ -115,13 +115,15 @@ export async function getOcrResult(batchId: string): Promise<OcrResult> {
 export async function confirmOcrResult(
   batchId: string,
   payload: ConfirmOcrResultPayload,
+  options: { registrationEdit?: boolean } = {},
 ): Promise<ConfirmOcrResultResponse> {
   if (USE_MOCK) {
     await mockDelay();
     return mockConfirmOcrResult(payload);
   }
+  const query = options.registrationEdit ? '?registrationEdit=true' : '';
   const confirmed = await http.patch<ConfirmOcrResultResponse>(
-    `/v1/ocr/jobs/${encodeURIComponent(batchId)}`,
+    `/v1/ocr/jobs/${encodeURIComponent(batchId)}${query}`,
     payload,
   );
   releaseOcrDocumentImageUrl(batchId);

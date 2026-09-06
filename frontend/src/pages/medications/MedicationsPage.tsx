@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, Plus } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
+import { useSession } from '@/app/SessionContext';
 import {
   cancelMedication,
   getMedicationOverviews,
@@ -11,14 +12,25 @@ import {
   type MedicationOverviewItem,
   type MedicationOverviewRange,
 } from '@/entities/medication';
+import { updateEpisodeAlias } from '@/entities/medication-alias';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
   Button,
   Card,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   ErrorDialog,
   Header,
+  Input,
 } from '@/shared/ui';
+import { MEAL_SLOTS, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
+import { cn } from '@/shared/lib/cn';
+import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
 import { MedicationBulkDeleteDialog } from './MedicationBulkDeleteDialog';
 import { MedicationEpisodeCard } from './MedicationEpisodeCard';
 import { MedicationPeriodFilterSheet } from './MedicationPeriodFilterSheet';
@@ -28,6 +40,8 @@ import { medicationPeriodLabel, medicationRangeFromSearchParams } from './medica
 interface MedicationsPageProps {
   overviewsLoader?: (range?: MedicationOverviewRange) => Promise<MedicationOverview[]>;
   medicationCanceller?: (recordId: number) => Promise<void>;
+  /** 본 경로의 회차 단위 편집/읽기 전용 화면을 켭니다. */
+  feature252?: boolean;
 }
 
 interface EditingMedication {
@@ -38,8 +52,10 @@ interface EditingMedication {
 export function MedicationsPage({
   overviewsLoader = getMedicationOverviews,
   medicationCanceller = cancelMedication,
+  feature252 = false,
 }: MedicationsPageProps) {
   const navigate = useNavigate();
+  const { principalKey } = useSession();
   const overviewRequestRef = useRef<{
     key: string;
     loader: typeof overviewsLoader;
@@ -59,6 +75,10 @@ export function MedicationsPage({
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<number>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [editing, setEditing] = useState<EditingMedication | null>(null);
+  const [episodeEditing, setEpisodeEditing] = useState<MedicationOverview | null>(null);
+  const [episodeAlias, setEpisodeAlias] = useState('');
+  const [episodeSlots, setEpisodeSlots] = useState<Record<number, MealSlot[]>>({});
+  const [episodeSaving, setEpisodeSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
@@ -67,7 +87,7 @@ export function MedicationsPage({
 
   useEffect(() => {
     let cancelled = false;
-    const requestKey = `${queryKey}:${reloadKey}`;
+    const requestKey = `${principalKey ?? 'anonymous'}:${queryKey}:${reloadKey}`;
     if (
       overviewRequestRef.current?.key !== requestKey ||
       overviewRequestRef.current.loader !== overviewsLoader
@@ -101,7 +121,7 @@ export function MedicationsPage({
     return () => {
       cancelled = true;
     };
-  }, [overviewsLoader, queryKey, range, reloadKey]);
+  }, [overviewsLoader, principalKey, queryKey, range, reloadKey]);
 
   function toggleExpanded(recordId: number) {
     setExpandedRecordIds((current) => {
@@ -119,6 +139,64 @@ export function MedicationsPage({
       else next.add(recordId);
       return next;
     });
+  }
+
+  function openEpisode(overview: MedicationOverview) {
+    setEpisodeEditing(overview);
+    setEpisodeAlias(overview.alias ?? '');
+    setEpisodeSlots(
+      Object.fromEntries(
+        overview.medications.map((medication) => [medication.medicationId, [...medication.slots]]),
+      ),
+    );
+  }
+
+  function toggleEpisodeSlot(medicationId: number, slot: MealSlot) {
+    setEpisodeSlots((current) => {
+      const next = new Set(current[medicationId] ?? []);
+      if (next.has(slot)) next.delete(slot);
+      else next.add(slot);
+      return { ...current, [medicationId]: SLOT_ORDER.filter((value) => next.has(value)) };
+    });
+  }
+
+  async function saveEpisode() {
+    if (!episodeEditing || episodeSaving) return;
+    setEpisodeSaving(true);
+    setSaveError(null);
+    try {
+      await saveMedicationSchedule(episodeEditing.recordId, {
+        start: episodeEditing.start,
+        mealTimes: episodeEditing.mealTimes,
+        medications: episodeEditing.medications
+          .filter((medication) => !medication.asNeeded)
+          .map((medication) => ({
+            medicationId: medication.medicationId,
+            slots: episodeSlots[medication.medicationId] ?? [],
+          })),
+      });
+      await updateEpisodeAlias(episodeEditing.recordId, episodeAlias);
+      setOverviews((current) =>
+        current?.map((overview) =>
+          overview.recordId === episodeEditing.recordId
+            ? {
+                ...overview,
+                alias: episodeAlias.trim() || undefined,
+                medications: overview.medications.map((medication) => ({
+                  ...medication,
+                  slots: episodeSlots[medication.medicationId] ?? medication.slots,
+                })),
+              }
+            : overview,
+        ) ?? null,
+      );
+      setEpisodeEditing(null);
+      toast.success('처방을 저장했어요.');
+    } catch (error: unknown) {
+      setSaveError(error instanceof Error ? error.message : '처방을 저장하지 못했어요.');
+    } finally {
+      setEpisodeSaving(false);
+    }
   }
 
   function leaveSelectionMode() {
@@ -208,8 +286,29 @@ export function MedicationsPage({
     setDeletePending(false);
   }
 
-  const headerTitle = selectionMode ? `${selectedRecordIds.size}개 선택` : '복약';
+  const headerTitle = selectionMode ? '삭제할 처방을 선택하세요' : '복약';
   const periodLabel = medicationPeriodLabel(range, new Date());
+  const activeOverviews = overviews?.filter((overview) => !overview.isFinished) ?? [];
+  const finishedOverviews = overviews?.filter((overview) => overview.isFinished) ?? [];
+
+  function renderEpisodeCard(overview: MedicationOverview) {
+    return (
+      <MedicationEpisodeCard
+        key={overview.recordId}
+        overview={overview}
+        expanded={expandedRecordIds.has(overview.recordId)}
+        selectionMode={selectionMode}
+        selected={selectedRecordIds.has(overview.recordId)}
+        onToggleExpanded={() => toggleExpanded(overview.recordId)}
+        onToggleSelected={() => toggleSelected(overview.recordId)}
+        onEditMedication={(medication) =>
+          setEditing({ recordId: overview.recordId, medication })
+        }
+        feature252={feature252}
+        onOpenEpisode={feature252 ? () => openEpisode(overview) : undefined}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
@@ -219,15 +318,6 @@ export function MedicationsPage({
         right={
           selectionMode ? (
             <div className="flex shrink-0 items-center gap-1">
-              {selectedRecordIds.size > 0 && (
-                <button
-                  type="button"
-                  className="min-h-touch px-2 text-sm font-bold text-danger-strong"
-                  onClick={openDeleteConfirmation}
-                >
-                  삭제하기
-                </button>
-              )}
               <button
                 type="button"
                 className="min-h-touch px-2 text-sm font-bold text-muted-foreground"
@@ -259,14 +349,36 @@ export function MedicationsPage({
       />
 
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
-        <button
-          type="button"
-          className="flex min-h-touch w-fit max-w-full items-center gap-2 rounded-pill border border-border bg-card px-4 text-sm font-bold text-foreground shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => setFilterOpen(true)}
-        >
-          <Filter aria-hidden className="size-4 shrink-0 text-primary" />
-          {periodLabel}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="flex min-h-touch w-fit max-w-full items-center gap-2 rounded-pill border border-border bg-card px-4 text-sm font-bold text-foreground shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setFilterOpen(true)}
+          >
+            <Filter aria-hidden className="size-4 shrink-0 text-primary" />
+            {periodLabel}
+          </button>
+          {feature252 && (
+            <button
+              type="button"
+              className="min-h-touch rounded-pill border border-border bg-card px-4 text-sm font-bold text-foreground"
+              onClick={() => navigate('/medications/notes')}
+            >
+              복약 메모
+            </button>
+          )}
+        </div>
+
+        {feature252 && (
+          <Button
+            fullWidth={false}
+            className="self-start"
+            onClick={() => navigate('/document-upload')}
+          >
+            <Plus aria-hidden className="mr-1 size-4" />
+            처방 추가
+          </Button>
+        )}
 
         {loadError ? (
           <Card title="복용약을 불러오지 못했어요" className="p-5">
@@ -292,6 +404,29 @@ export function MedicationsPage({
               </Button>
             </div>
           </Card>
+        ) : feature252 ? (
+          <>
+            <section className="flex flex-col gap-3" aria-labelledby="active-episode-list-title">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
+                  복용 중
+                </h2>
+                <span className="text-sm text-muted-foreground tnum">{activeOverviews.length}개</span>
+              </div>
+              {activeOverviews.map(renderEpisodeCard)}
+            </section>
+            {finishedOverviews.length > 0 && (
+              <section className="flex flex-col gap-3" aria-labelledby="finished-episode-list-title">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h2 id="finished-episode-list-title" className="text-xl font-bold text-foreground">
+                    완료된 처방
+                  </h2>
+                  <span className="text-sm text-muted-foreground tnum">{finishedOverviews.length}개</span>
+                </div>
+                {finishedOverviews.map(renderEpisodeCard)}
+              </section>
+            )}
+          </>
         ) : (
           <section className="flex flex-col gap-3" aria-labelledby="episode-list-title">
             <div className="flex items-baseline justify-between gap-3">
@@ -300,21 +435,18 @@ export function MedicationsPage({
               </h2>
               <span className="text-sm text-muted-foreground tnum">{overviews.length}개</span>
             </div>
-            {overviews.map((overview) => (
-              <MedicationEpisodeCard
-                key={overview.recordId}
-                overview={overview}
-                expanded={expandedRecordIds.has(overview.recordId)}
-                selectionMode={selectionMode}
-                selected={selectedRecordIds.has(overview.recordId)}
-                onToggleExpanded={() => toggleExpanded(overview.recordId)}
-                onToggleSelected={() => toggleSelected(overview.recordId)}
-                onEditMedication={(medication) =>
-                  setEditing({ recordId: overview.recordId, medication })
-                }
-              />
-            ))}
+            {overviews.map(renderEpisodeCard)}
           </section>
+        )}
+
+        {selectionMode && (
+          <Button
+            variant="danger"
+            disabled={selectedRecordIds.size === 0}
+            onClick={openDeleteConfirmation}
+          >
+            선택한 처방 삭제
+          </Button>
         )}
       </main>
 
@@ -343,6 +475,18 @@ export function MedicationsPage({
         }}
         onSave={saveMedicationSlots}
       />
+      <MedicationEpisodeSheet
+        overview={episodeEditing}
+        alias={episodeAlias}
+        slots={episodeSlots}
+        onAliasChange={setEpisodeAlias}
+        onToggleSlot={toggleEpisodeSlot}
+        onOpenChange={(open) => {
+          if (!open) setEpisodeEditing(null);
+        }}
+        saving={episodeSaving}
+        onSave={() => void saveEpisode()}
+      />
       <MedicationBulkDeleteDialog
         open={deleteOpen}
         count={deleteTargets.length}
@@ -363,5 +507,154 @@ export function MedicationsPage({
         onRetry={() => setSaveError(null)}
       />
     </div>
+  );
+}
+
+interface MedicationEpisodeSheetProps {
+  overview: MedicationOverview | null;
+  alias: string;
+  slots: Record<number, MealSlot[]>;
+  onAliasChange: (value: string) => void;
+  onToggleSlot: (medicationId: number, slot: MealSlot) => void;
+  onOpenChange: (open: boolean) => void;
+  saving: boolean;
+  onSave: () => void;
+}
+
+function MedicationEpisodeSheet({
+  overview,
+  alias,
+  slots,
+  onAliasChange,
+  onToggleSlot,
+  onOpenChange,
+  saving,
+  onSave,
+}: MedicationEpisodeSheetProps) {
+  const readOnly = overview?.isFinished ?? false;
+  return (
+    <Dialog open={overview !== null} onOpenChange={onOpenChange}>
+      <DialogContent variant="sheet" className="max-h-[88dvh] overflow-y-auto">
+        {readOnly ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>완료된 처방</DialogTitle>
+              <DialogDescription>완료된 처방은 내용만 확인할 수 있어요.</DialogDescription>
+            </DialogHeader>
+            {overview && (
+              <div className="flex flex-col gap-4" aria-label="완료된 처방 정보">
+                <span className="self-start rounded-pill bg-muted-bg px-3 py-1.5 text-sm font-bold text-muted-foreground">
+                  복용 완료
+                </span>
+                <div className="rounded-card border border-border bg-card p-4">
+                  <p className="text-lg font-bold text-foreground">
+                    {alias.trim() || `${formatDateLabel(overview.start.date, { includeYear: true })} 처방`}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground tnum">
+                    {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {overview.medications.map((medication) => (
+                    <div
+                      key={medication.medicationId}
+                      className="rounded-card border border-border bg-card p-4"
+                    >
+                      <p className="font-bold text-foreground">
+                        {medication.name}{' '}
+                        <span className="font-normal text-muted-foreground">{medication.dose}</span>
+                      </p>
+                      {medication.asNeeded ? (
+                        <p className="mt-2 text-sm text-muted-foreground">필요할 때만 · 알림 없음</p>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {medication.slots.length > 0
+                            ? medication.slots
+                                .map(
+                                  (slot) =>
+                                    `${mealSlotLabel(slot, 'label')} ${overview.mealTimes[slot]}`,
+                                )
+                                .join(' · ')
+                            : '복용 시간이 없어요.'}
+                        </p>
+                      )}
+                      {medication.untilComplete && (
+                        <p className="mt-2 text-sm font-bold text-warning-strong">처방 끝까지 복용</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>처방 편집</DialogTitle>
+              <DialogDescription>약마다 복용 시간을 따로 골라요.</DialogDescription>
+            </DialogHeader>
+            {overview && (
+              <div className="flex flex-col gap-4">
+                <span className="self-start rounded-pill bg-primary-bg px-3 py-1.5 text-sm font-bold text-primary-strong">
+                  복용 중
+                </span>
+                <Input
+                  label="복약 별칭"
+                  aria-label="복약 별칭"
+                  placeholder="예: 감기약"
+                  maxLength={50}
+                  value={alias}
+                  onChange={(event) => onAliasChange(event.target.value)}
+                />
+                <div className="flex flex-col gap-3">
+                  {overview.medications.map((medication) => (
+                    <div
+                      key={medication.medicationId}
+                      className="rounded-card border border-border bg-card p-3"
+                    >
+                      <p className="font-bold text-foreground">
+                        {medication.name}{' '}
+                        <span className="font-normal text-muted-foreground">{medication.dose}</span>
+                      </p>
+                      {medication.asNeeded ? (
+                        <p className="mt-2 text-sm text-muted-foreground">필요할 때만 · 알림 없음</p>
+                      ) : (
+                        <div className="mt-3 grid grid-cols-4 gap-2">
+                          {MEAL_SLOTS.map((slot) => {
+                            const selected = (slots[medication.medicationId] ?? []).includes(slot.value);
+                            return (
+                              <button
+                                key={slot.value}
+                                type="button"
+                                aria-pressed={selected}
+                                aria-label={`${medication.name} ${slot.label}`}
+                                onClick={() => onToggleSlot(medication.medicationId, slot.value)}
+                                className={cn(
+                                  'min-h-touch rounded-input border text-sm',
+                                  selected
+                                    ? 'border-primary bg-primary font-bold text-card'
+                                    : 'border-border bg-card text-muted-foreground',
+                                )}
+                              >
+                                {slot.short}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button disabled={saving} onClick={onSave}>
+                {saving ? '저장 중...' : '저장'}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

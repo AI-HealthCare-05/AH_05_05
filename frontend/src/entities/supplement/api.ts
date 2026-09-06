@@ -367,8 +367,14 @@ export async function searchSupplementProducts(
 }
 
 function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Supplement {
+  const schedule = {
+    startDate: registration.start_date,
+    endDate: registration.end_date,
+    slotTimes: Object.fromEntries(registration.slots.map(({ slot, time }) => [API_TO_SLOT[slot], time.slice(0, 5)])),
+  };
   if (registration.supplement === null) {
     return {
+      ...schedule,
       supplementId: registration.id,
       productId: null,
       name: registration.custom_name ?? '이름 없는 영양제',
@@ -384,6 +390,7 @@ function mapUserSupplement(registration: UserSupplementNutrientApiResponse): Sup
   }
   const product = mapSupplementProduct(registration.supplement);
   return {
+    ...schedule,
     supplementId: registration.id,
     productId: product.productId,
     name: product.productName,

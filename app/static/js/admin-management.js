@@ -74,9 +74,30 @@ export function filterAdmins(admins, query, role, status) {
   );
 }
 
+// 서버 validate_name(app/core/validators/user_validators.py)과 같은 규칙이다.
+// 한쪽만 고치면 화면이 통과시킨 값이 서버에서 422 로 떨어진다.
+const ADMIN_NAME_PATTERN = /^[\p{L}\p{M}]+$/u;
+
+/**
+ * 관리자 이름을 검사한다. 등록·수정 두 곳이 같은 함수를 쓴다.
+ *
+ * **제출할 때 한 번만 검사한다.** 입력 도중에 값을 되돌리는 방식(sanitize)은 쓰지 않는다.
+ * 한글 IME 는 글자마다 조합을 끝내고 곧바로 다음 조합을 시작하므로, 입력 중에 값을
+ * 바꿔치우면 조합이 깨진다.
+ */
+export function validateAdminName(value) {
+  const name = (value ?? "").normalize("NFC").trim();
+  if (!name) return "관리자 이름을 입력해주세요.";
+  if (name.length < 2) return "이름을 두 글자 이상 입력해 주세요.";
+  if (name.length > 20) return "이름은 20자 이하로 입력해 주세요.";
+  if (!ADMIN_NAME_PATTERN.test(name)) return "이름에는 숫자, 공백, 특수문자를 사용할 수 없습니다.";
+  return null;
+}
+
 export function validateAdminInput({ name, email }) {
   const errors = {};
-  if (!name.trim()) errors.name = "관리자 이름을 입력해주세요.";
+  const nameError = validateAdminName(name);
+  if (nameError) errors.name = nameError;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "올바른 이메일 주소를 입력해주세요.";
   return { valid: Object.keys(errors).length === 0, errors };
 }
@@ -201,7 +222,8 @@ const EDIT_FIELDS = ["name", "role", "currentPassword", "newPassword", "newPassw
  */
 export function validateAdminEdit({ name, currentPassword, newPassword, newPasswordConfirm }) {
   const errors = {};
-  if (!name.trim()) errors.name = "관리자 이름을 입력해주세요.";
+  const nameError = validateAdminName(name);
+  if (nameError) errors.name = nameError;
 
   if (currentPassword || newPassword || newPasswordConfirm) {
     if (!currentPassword) errors.currentPassword = "현재 비밀번호를 입력해주세요.";
@@ -592,7 +614,10 @@ function initializeAdminManagement() {
     const admin = currentItems.find((item) => item.adminId === adminId);
 
     if (button.dataset.adminAction === "suspend") {
-      await openOverlay("overlay-admin-status-confirm.html", {
+      // 목록에서 못 찾으면 확인 창에 대상을 채울 수 없다. 누구인지 모르는 채로
+      // 정지 버튼을 내주는 것보다 열지 않는 편이 맞다.
+      if (!admin) return;
+      const confirmOverlay = await openOverlay("overlay-admin-status-confirm.html", {
         onConfirm: async () => {
           try {
             await patch("/admin/accounts/status", { adminIds: [adminId], status: "SUSPENDED" });
@@ -607,6 +632,8 @@ function initializeAdminManagement() {
           }
         },
       });
+      confirmOverlay.querySelector("[data-confirm-name]").textContent = admin.name;
+      confirmOverlay.querySelector("[data-confirm-email]").textContent = admin.email;
       return;
     }
 

@@ -2,8 +2,12 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'rea
 import { AuthPage } from '@/pages/auth';
 import { ChatPage } from '@/pages/chat';
 import { DocumentUploadPage } from '@/pages/document-upload';
-import { MedicationAlarmTimesPage, MedicationSchedulePage } from '@/pages/medication-schedule';
-import { MedicationsPage } from '@/pages/medications';
+import { MedicationSchedulePage } from '@/pages/medication-schedule';
+import {
+  MedicationNoteFormPage,
+  MedicationNotesPage,
+  MedicationsPage,
+} from '@/pages/medications';
 import {
   FollowUpVisitsPage,
   MyPage,
@@ -13,6 +17,7 @@ import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
 import { PrivacyPage, TermsPage } from '@/pages/legal';
 import { SplashPage } from '@/pages/splash';
+import { TutorialPage } from '@/pages/tutorial';
 import {
   SupplementProductPage,
   SupplementsPage,
@@ -182,6 +187,7 @@ export function AppRouter() {
       <ChatSessionProvider>
         <Routes>
         <Route path="/" element={<SplashPage />} />
+        <Route path="/tutorial" element={<TutorialPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/terms" element={<TermsPage />} />
@@ -192,8 +198,10 @@ export function AppRouter() {
           <Route path="/document-upload" element={<DocumentUploadPage />} />
           <Route path="/ocr-review" element={<OcrReviewPage />} />
           <Route path="/medication-schedule" element={<MedicationSchedulePage />} />
-          <Route path="/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
-          <Route path="/medications" element={<MedicationsPage />} />
+          <Route path="/medications/notes/new" element={<MedicationNoteFormPage />} />
+          <Route path="/medications/notes/:noteId" element={<MedicationNoteFormPage />} />
+          <Route path="/medications/notes" element={<MedicationNotesPage />} />
+          <Route path="/medications" element={<MedicationsPage feature252 />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/my" element={<MyPage />} />
           <Route path="/my/profile" element={<MyProfilePage />} />
@@ -226,7 +234,6 @@ export function AppRouter() {
             />
           }
         />
-        <Route path="/dev/medication-alarm-times" element={<MedicationAlarmTimesPage />} />
         <Route
           path="/dev/medication-schedule-auto-assigned"
           element={
@@ -274,6 +281,7 @@ export function AppRouter() {
           path="/dev/my-authenticated"
           element={<MyPage authenticatedOverride />}
         />
+        <Route path="/dev/my/profile" element={<MyProfilePage />} />
         <Route path="/dev/my-profile" element={<MyProfilePage />} />
         <Route path="/dev/my-visits" element={<FollowUpVisitsPage />} />
         <Route

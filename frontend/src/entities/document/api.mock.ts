@@ -19,6 +19,7 @@ import type {
   OcrStatus,
   UploadDocumentsResult,
 } from './types';
+import { mockUpdateEpisodeAlias } from '@/entities/medication-alias/api.mock';
 
 let uploadSequence = 0;
 const uploadedBatchPollCount = new Map<string, number>();
@@ -99,9 +100,15 @@ export function mockOcrResult(batchId: string): OcrResult {
 
 /** hasMedication 은 보낸 약 개수에 따라 달라지므로 여기서 계산합니다(O06 변형 대응). */
 export function mockConfirmOcrResult(payload: ConfirmOcrResultPayload): ConfirmOcrResultResponse {
-  return {
+  const response = {
     recordId: 12,
     hasMedication: payload.medications.length > 0,
-    statusCode: 'active',
+    statusCode: 'active' as const,
+  };
+  if (Object.prototype.hasOwnProperty.call(payload, 'alias')) {
+    mockUpdateEpisodeAlias(response.recordId, payload.alias?.trim() || null);
+  }
+  return {
+    ...response,
   };
 }

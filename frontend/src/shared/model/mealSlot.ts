@@ -15,7 +15,7 @@ const MEAL_SLOT_LABELS: Record<MealSlot, { label: string; short: string }> = {
   morning: { label: '아침약', short: '아침' },
   lunch: { label: '점심약', short: '점심' },
   evening: { label: '저녁약', short: '저녁' },
-  bedtime: { label: '취침약', short: '취침' },
+  bedtime: { label: '취침약', short: '자기전' },
 };
 
 export const SLOT_ORDER: MealSlot[] = ['morning', 'lunch', 'evening', 'bedtime'];

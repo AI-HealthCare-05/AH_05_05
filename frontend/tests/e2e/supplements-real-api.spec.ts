@@ -252,14 +252,21 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
   await iron.click();
 
   const sheet = page.getByRole('dialog', { name: '튼튼 철분 캡슐' });
-  await expect(sheet.getByRole('button', { name: '별 4점' })).toHaveAttribute(
+  await sheet.getByRole('button', { name: '별점 수정' }).click();
+  const ratingSheet = page.getByRole('dialog', { name: '별점 수정' });
+  await expect(ratingSheet.getByRole('button', { name: '별 4점' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await expect(sheet.getByRole('textbox', { name: '메모' })).toHaveValue('아침 식후');
-  await sheet.getByRole('button', { name: '별 3점' }).click();
-  await sheet.getByRole('textbox', { name: '메모' }).fill('  저녁 식후  ');
-  await sheet.getByRole('button', { name: '저장' }).click();
+  await ratingSheet.getByRole('button', { name: '별 3점' }).click();
+  await ratingSheet.getByRole('button', { name: '저장' }).click();
+  await expect(ratingSheet).toBeHidden();
+  await sheet.getByRole('group', { name: '내 메모' }).getByRole('button', { name: '수정하기' }).click();
+  const recordEditor = page.getByRole('dialog', { name: '메모 편집' });
+  await expect(recordEditor.getByRole('textbox', { name: /^메모/ })).toHaveValue('아침 식후');
+  await recordEditor.getByRole('textbox', { name: /^메모/ }).fill('  저녁 식후  ');
+  await recordEditor.getByRole('button', { name: '저장' }).click();
+  await expect(recordEditor).toBeHidden();
 
   expect(patchBody).toEqual({
     dose_amount: 1,
@@ -268,6 +275,7 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
     note: '저녁 식후',
     review_body: null,
   });
+  await sheet.getByRole('button', { name: '닫기', exact: true }).click();
   await expect(iron.getByLabel('별 3점')).toBeVisible();
 });
 
@@ -678,7 +686,7 @@ test('제품명 검색을 실제 RDB 검색 API 계약으로 보낸다', async (
       limit: 20,
     });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -745,7 +753,7 @@ test('이전 검색의 지연된 다음 페이지를 새 검색 결과에 섞지
     }
     await fulfillJson(route, { items: [IRON_PRODUCT], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -812,7 +820,7 @@ test('권장 슬롯과 회당 수량을 선택해 med 사용자 영양제 API에
       limit: 20,
     });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -833,7 +841,7 @@ test('권장 슬롯과 회당 수량을 선택해 med 사용자 영양제 API에
   const morning = product.getByRole('button', { name: '아침' });
   const lunch = product.getByRole('button', { name: '점심' });
   const evening = product.getByRole('button', { name: '저녁' });
-  const bedtime = product.getByRole('button', { name: '취침' });
+  const bedtime = product.getByRole('button', { name: '자기전' });
   await expect(morning).toHaveAttribute('aria-pressed', 'true');
   await expect(lunch).toHaveAttribute('aria-pressed', 'false');
   await expect(evening).toHaveAttribute('aria-pressed', 'true');
@@ -886,7 +894,7 @@ test('RDB의 소수 및 20 초과 1회 섭취량을 그대로 선택하고 저�
     const product = name === '방울' ? DROPS_PRODUCT : HALF_SCOOP_PRODUCT;
     await fulfillJson(route, { items: [product], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -959,7 +967,7 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   await page.route('**/api/v1/med/nutr?**', async (route) => {
     await fulfillJson(route, { items: [IRON_PRODUCT], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -977,17 +985,17 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
   await product.getByRole('button', { name: /튼튼 철분 캡슐/ }).click();
   await product.getByRole('button', { name: '아침' }).click();
   await product.getByRole('button', { name: '저녁' }).click();
-  await product.getByRole('button', { name: '취침' }).click();
+  await product.getByRole('button', { name: '자기전' }).click();
   await product.getByRole('button', { name: '추가하기' }).click();
 
   const list = page.getByRole('region', { name: '먹고 있는 영양제' });
   await expect(list.getByRole('button')).toHaveCount(1);
-  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
 
   await page.reload();
   await expect(page.getByText('먹고 있는 영양제 1개')).toBeVisible();
   await expect(list.getByRole('button')).toHaveCount(1);
-  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
   expect(listRequests.length).toBeGreaterThanOrEqual(2);
   expect(listRequests.every((request) => request.searchParams.get('status') === 'ACTIVE')).toBe(true);
   expect(listRequests.every((request) => request.searchParams.get('offset') === '0')).toBe(true);
@@ -1002,7 +1010,7 @@ test('검색 실패 시 서버 detail 을 숨기고 기본 문구를 시트 안�
   await page.route('**/api/v1/med/nutr?**', async (route) => {
     await fulfillJson(route, { detail: '영양제 검색 서버가 응답하지 않았습니다.' }, 500);
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -1047,7 +1055,7 @@ test('저장 실패 시 서버 detail 을 숨기고 기본 문구를 보여주�
   await page.route('**/api/v1/med/nutr?**', async (route) => {
     await fulfillJson(route, { items: [IRON_PRODUCT], total: 1, offset: 0, limit: 20 });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',
@@ -1146,7 +1154,7 @@ test('직접 입력으로 등록하면 목록에 뜨고 성분 합계에서 제�
     .getByRole('button', { name: /실 API 직접 입력 오메가3/ });
   await expect(manualCard).toContainText('성분 정보 없음');
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
   ).toBeVisible();
 });
 
@@ -1192,9 +1200,9 @@ test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async (
     .getByRole('region', { name: '먹고 있는 영양제' })
     .getByRole('button', { name: /성분 없는 직접 입력 제품/ });
   await expect(manualCard).toContainText('성분 정보 없음');
-  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 취침');
+  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
   await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('article')).toHaveCount(0);
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
+    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
   ).toBeVisible();
 });

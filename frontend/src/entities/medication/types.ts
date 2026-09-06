@@ -78,6 +78,8 @@ export interface MedicationOverviewItem {
 
 export interface MedicationOverview {
   recordId: number;
+  /** 사용자가 등록 단계에서 붙인 별칭(서버가 아직 제공하지 않으면 생략됩니다). */
+  alias?: string;
   /** 이 복약 기록을 만든 약봉투 원본 한 장의 영속 URL. */
   documentImageUrl: string;
   start: MedicationStartPoint;
@@ -102,6 +104,7 @@ export interface DoseRecord {
   date: string;
   slot: MealSlot;
   taken: boolean;
+  recordId: number;
 }
 
 export interface SaveDoseTakenPayload {
@@ -109,6 +112,7 @@ export interface SaveDoseTakenPayload {
   date: string;
   slot: MealSlot;
   taken: boolean;
+  recordId: number;
 }
 
 export interface DoseRecordRange {

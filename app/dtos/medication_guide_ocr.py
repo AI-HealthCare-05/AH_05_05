@@ -158,12 +158,22 @@ class MedicationGuideConfirmRequest(CamelModel):
     )
 
     dispensing_date: date
+    alias: str | None = Field(default=None, max_length=50)
     medications: list[MedicationConfirmation] = Field(max_length=100)
 
     @field_validator("dispensing_date")
     @classmethod
     def validate_dispensing_date(cls, value: date) -> date:
         return _validate_confirmation_date(value)
+
+    @field_validator("alias", mode="before")
+    @classmethod
+    def normalize_alias(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
 
 class OcrConfirmationResponse(CamelModel):
@@ -222,12 +232,22 @@ class DocumentOcrConfirmRequest(CamelModel):
     )
 
     dispensed_date: date
+    alias: str | None = Field(default=None, max_length=50)
     medications: list[DocumentMedicationConfirmation] = Field(max_length=100)
 
     @field_validator("dispensed_date")
     @classmethod
     def reject_future_dispensing_date(cls, value: date) -> date:
         return _validate_confirmation_date(value)
+
+    @field_validator("alias", mode="before")
+    @classmethod
+    def normalize_alias(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
 
 class DocumentOcrConfirmResponse(CamelModel):
