@@ -45,7 +45,10 @@ from ai_worker.repositories.supplement_ingredient_catalog_repository import (
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
-from ai_worker.schemas.knowledge import KnowledgeSearchMode
+from ai_worker.schemas.knowledge import (
+    KnowledgeSearchMode,
+    KnowledgeVectorDistance,
+)
 from ai_worker.schemas.medication_chat import (
     MedicationChatProgressCallback,
     MedicationChatRequest,
@@ -99,11 +102,13 @@ def build_medication_chat_core_service(
         api_key=settings.OPENAI_API_KEY,
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
+        normalize_vectors=(settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
     )
     vector_store_kwargs = {
         "client": qdrant_client,
         "collection_name": settings.KNOWLEDGE_QDRANT_COLLECTION,
         "vector_size": settings.OPENAI_EMBEDDING_DIMENSIONS,
+        "distance": settings.KNOWLEDGE_VECTOR_DISTANCE,
     }
     if settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.DENSE:
         vector_store = QdrantKnowledgeStore(**vector_store_kwargs)

@@ -1,3 +1,4 @@
+import math
 from typing import Protocol
 
 from langchain_openai import OpenAIEmbeddings
@@ -25,6 +26,7 @@ class OpenAIEmbeddingProvider:
         client: AsyncEmbeddingClient | None = None,
         timeout_seconds: float = 30.0,
         max_retries: int = 2,
+        normalize_vectors: bool = False,
     ) -> None:
         normalized_model = model.strip()
 
@@ -36,6 +38,7 @@ class OpenAIEmbeddingProvider:
 
         self._model_name = normalized_model
         self._dimension = dimensions
+        self._normalize_vectors = normalize_vectors
 
         self._client: AsyncEmbeddingClient = (
             client
@@ -77,6 +80,8 @@ class OpenAIEmbeddingProvider:
         for vector in vectors:
             self._validate_vector(vector)
 
+        if self._normalize_vectors:
+            return [self._normalize_vector(vector) for vector in vectors]
         return vectors
 
     async def embed_query(
@@ -92,6 +97,8 @@ class OpenAIEmbeddingProvider:
 
         self._validate_vector(vector)
 
+        if self._normalize_vectors:
+            return self._normalize_vector(vector)
         return vector
 
     def _validate_vector(
@@ -100,3 +107,10 @@ class OpenAIEmbeddingProvider:
     ) -> None:
         if len(vector) != self._dimension:
             raise ValueError("임베딩 벡터 차원이 설정값과 일치하지 않습니다.")
+
+    @staticmethod
+    def _normalize_vector(vector: list[float]) -> list[float]:
+        norm = math.sqrt(math.fsum(value * value for value in vector))
+        if norm == 0:
+            raise ValueError("0 벡터는 L2 정규화할 수 없습니다.")
+        return [value / norm for value in vector]

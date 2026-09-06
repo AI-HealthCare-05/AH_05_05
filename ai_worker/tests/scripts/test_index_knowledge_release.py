@@ -12,6 +12,7 @@ from ai_worker.rag.indexers.knowledge_indexer import (
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunk,
+    KnowledgeVectorDistance,
 )
 from scripts import index_knowledge_release as module
 
@@ -151,6 +152,22 @@ def test_parse_args_requires_explicit_demo_restricted_opt_in() -> None:
     assert approved_args.allow_demo_restricted is True
     assert default_args.quality_report == Path("data/knowledge/processed/reports/preprocessing-quality.json")
     assert default_args.interaction_annotations is None
+    assert default_args.distance == KnowledgeVectorDistance.COSINE
+
+
+def test_parse_args_accepts_dot_distance() -> None:
+    args = module.parse_args(
+        [
+            "--dataset-version",
+            "knowledge-full-v3",
+            "--collection",
+            "medication_knowledge_full_v3_dot",
+            "--distance",
+            "DOT",
+        ]
+    )
+
+    assert args.distance == KnowledgeVectorDistance.DOT
 
 
 def test_parse_args_accepts_interaction_annotation_contract() -> None:

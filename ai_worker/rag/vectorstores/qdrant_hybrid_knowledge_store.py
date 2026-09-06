@@ -46,7 +46,7 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
             vectors_config={
                 self._DENSE_VECTOR_NAME: models.VectorParams(
                     size=self._vector_size,
-                    distance=models.Distance.COSINE,
+                    distance=self._qdrant_distance,
                 )
             },
             sparse_vectors_config={
@@ -253,8 +253,8 @@ class QdrantHybridKnowledgeStore(QdrantKnowledgeStore):
                 raise ValueError("dense named vector가 없습니다.")
             if dense.size != self._vector_size:
                 raise ValueError("기존 컬렉션의 dense 벡터 차원이 설정값과 일치하지 않습니다.")
-            if dense.distance != models.Distance.COSINE:
-                raise ValueError("dense named vector의 거리 방식이 COSINE이 아닙니다.")
+            if dense.distance != self._qdrant_distance:
+                raise ValueError("dense named vector의 거리 방식이 설정값과 일치하지 않습니다.")
             if not isinstance(sparse, models.SparseVectorParams):
                 raise ValueError("bm25 sparse vector가 없습니다.")
             if sparse.modifier != models.Modifier.IDF:

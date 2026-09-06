@@ -14,6 +14,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeSearchQuery,
     KnowledgeSectionType,
+    KnowledgeVectorDistance,
 )
 
 
@@ -69,6 +70,24 @@ async def test_create_release_collection_rejects_existing_collection() -> None:
 
         with pytest.raises(ValueError, match="이미 존재"):
             await store.create_release_collection()
+    finally:
+        await client.close()
+
+
+async def test_create_release_collection_supports_dot_distance() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_dot_release",
+        vector_size=3,
+        distance=KnowledgeVectorDistance.DOT,
+    )
+
+    try:
+        await store.create_release_collection()
+        collection = await client.get_collection("knowledge_dot_release")
+
+        assert collection.config.params.vectors.distance == models.Distance.DOT
     finally:
         await client.close()
 
@@ -507,3 +526,26 @@ async def test_search_validates_collection_only_once() -> None:
     assert client.exists_calls == 1
     assert client.get_calls == 1
     assert client.query_calls == 2
+
+
+async def test_rejects_collection_with_different_distance() -> None:
+    client = AsyncQdrantClient(location=":memory:")
+    await client.create_collection(
+        collection_name="knowledge_cosine_release",
+        vectors_config=models.VectorParams(
+            size=3,
+            distance=models.Distance.COSINE,
+        ),
+    )
+    store = QdrantKnowledgeStore(
+        client=client,
+        collection_name="knowledge_cosine_release",
+        vector_size=3,
+        distance=KnowledgeVectorDistance.DOT,
+    )
+
+    try:
+        with pytest.raises(ValueError, match="거리 방식"):
+            await store.count_points()
+    finally:
+        await client.close()

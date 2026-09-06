@@ -61,6 +61,11 @@ class KnowledgeSearchMode(StrEnum):
     HYBRID = "HYBRID"
 
 
+class KnowledgeVectorDistance(StrEnum):
+    COSINE = "COSINE"
+    DOT = "DOT"
+
+
 class KnowledgeSearchTier(StrEnum):
     EXACT_PAIR = "EXACT_PAIR"
     ENTITY = "ENTITY"

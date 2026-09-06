@@ -10,6 +10,7 @@ from ai_worker.rag.rerankers.knowledge_search_result_refiner import (
 from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
     KnowledgeSearchQuery,
+    KnowledgeVectorDistance,
     RetrievedKnowledgeChunk,
 )
 
@@ -23,6 +24,7 @@ class QdrantKnowledgeStore:
         client: AsyncQdrantClient,
         collection_name: str,
         vector_size: int,
+        distance: KnowledgeVectorDistance = KnowledgeVectorDistance.COSINE,
     ) -> None:
         normalized_name = collection_name.strip()
         if not normalized_name:
@@ -33,6 +35,7 @@ class QdrantKnowledgeStore:
         self._client = client
         self._collection_name = normalized_name
         self._vector_size = vector_size
+        self._distance = KnowledgeVectorDistance(distance)
         self._collection_validated = False
         self._collection_validation_lock = asyncio.Lock()
 
@@ -48,7 +51,7 @@ class QdrantKnowledgeStore:
             collection_name=self._collection_name,
             vectors_config=models.VectorParams(
                 size=self._vector_size,
-                distance=models.Distance.COSINE,
+                distance=self._qdrant_distance,
             ),
         )
         self._collection_validated = True
@@ -160,8 +163,8 @@ class QdrantKnowledgeStore:
                 raise ValueError("단일 벡터 컬렉션만 사용할 수 있습니다.")
             if vector_params.size != self._vector_size:
                 raise ValueError("기존 컬렉션의 벡터 차원이 설정값과 일치하지 않습니다.")
-            if vector_params.distance != models.Distance.COSINE:
-                raise ValueError("기존 컬렉션의 거리 방식이 COSINE이 아닙니다.")
+            if vector_params.distance != self._qdrant_distance:
+                raise ValueError("기존 컬렉션의 거리 방식이 설정값과 일치하지 않습니다.")
             # 릴리스 컬렉션은 불변으로 운영하므로 프로세스 생명주기 동안
             # 성공한 스키마 검증을 재사용해 검색별 관리 RPC를 제거한다.
             self._collection_validated = True
@@ -169,6 +172,12 @@ class QdrantKnowledgeStore:
     def _validate_vectors(self, vectors: list[list[float]]) -> None:
         if any(len(vector) != self._vector_size for vector in vectors):
             raise ValueError("임베딩 벡터 차원이 설정값과 일치하지 않습니다.")
+
+    @property
+    def _qdrant_distance(self) -> models.Distance:
+        if self._distance == KnowledgeVectorDistance.DOT:
+            return models.Distance.DOT
+        return models.Distance.COSINE
 
     @staticmethod
     def _point_id(chunk_id: str) -> str:
