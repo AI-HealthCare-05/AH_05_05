@@ -1,3 +1,17 @@
+import type { MealSlot } from '@/shared/model/mealSlot';
+
+export interface ChallengeMedicationEpisode {
+  id: string;
+  recordId: number;
+  label: string;
+  startDate: string;
+  endDate: string;
+  slots: MealSlot[];
+  target: number;
+  completed: number;
+  todayTaken: boolean;
+}
+
 export type ChallengeKind =
   | 'official'
   | 'medication'
@@ -67,6 +81,8 @@ export interface PersonalChallengeInput {
 }
 
 export interface ChallengeMockValue {
+  medicationEpisodes: ChallengeMedicationEpisode[];
+  setMedicationDose: (recordIds: number[], taken: boolean) => void;
   definitions: ChallengeDefinition[];
   participations: ChallengeParticipation[];
   badges: ChallengeBadge[];

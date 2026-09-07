@@ -1,6 +1,7 @@
 import { expect, test } from 'playwright/test';
 
 const screens = [
+  ['home-preview', '/dev/home-challenges'],
   ['my', '/dev/challenges'],
   ['browse', '/dev/challenges/browse'],
   ['official', '/dev/challenges/official/official-water-7d'],

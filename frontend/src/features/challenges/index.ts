@@ -5,6 +5,7 @@ export type {
   ChallengeDefinition,
   ChallengeFrequency,
   ChallengeKind,
+  ChallengeMedicationEpisode,
   ChallengeMockValue,
   ChallengeParticipation,
   PersonalChallengeInput,

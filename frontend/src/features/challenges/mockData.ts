@@ -1,6 +1,7 @@
 import type {
   ChallengeBadge,
   ChallengeDefinition,
+  ChallengeMedicationEpisode,
   ChallengeParticipation,
 } from './types';
 
@@ -161,6 +162,11 @@ export const initialChallengeDefinitions: ChallengeDefinition[] = [
   },
 ];
 
+export const initialMedicationEpisodes: ChallengeMedicationEpisode[] = [
+  { id: 'prescription-sep-07-cold', recordId: 28101, label: '감기약', startDate: '2026-09-11', endDate: '2026-09-13', slots: ['morning', 'lunch', 'evening'], target: 9, completed: 6, todayTaken: false },
+  { id: 'prescription-sep-07', recordId: 28102, label: '9월 7일 처방', startDate: '2026-09-07', endDate: '2026-09-13', slots: ['morning', 'evening'], target: 14, completed: 0, todayTaken: false },
+];
+
 export const initialChallengeParticipations: ChallengeParticipation[] = [
   {
     id: 'part-official-active',
@@ -179,6 +185,7 @@ export const initialChallengeParticipations: ChallengeParticipation[] = [
   },
   {
     id: 'part-medication-active',
+    targetIds: ['prescription-sep-07-cold'],
     challengeId: 'medication-routine',
     title: '복약 루틴',
     kind: 'medication',
@@ -188,8 +195,8 @@ export const initialChallengeParticipations: ChallengeParticipation[] = [
     completed: 6,
     target: 9,
     percent: 67,
-    todayCompleted: true,
-    checkInDates: ['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'],
+    todayCompleted: false,
+    checkInDates: ['2026-09-11', '2026-09-12'],
     badgeId: 'badge-pill',
   },
   {

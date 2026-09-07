@@ -26,6 +26,7 @@ import {
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
 import { ChallengeMockProvider } from '@/features/challenges';
 import { ChallengeLayout } from '@/pages/challenges/ChallengeLayout';
+import { ChallengeHomePreviewPage } from '@/pages/challenges/ChallengeHomePreviewPage';
 import { ChallengeMyPage } from '@/pages/challenges/ChallengeMyPage';
 import { ChallengeBrowsePage } from '@/pages/challenges/ChallengeBrowsePage';
 import { OfficialChallengePage } from '@/pages/challenges/OfficialChallengePage';
@@ -233,6 +234,7 @@ export function AppRouter() {
           <Route path="/my/visits" element={<FollowUpVisitsPage />} />
         </Route>
         <Route path="/dev/gallery" element={<DevGallery />} />
+        <Route path="/dev/home-challenges" element={<ChallengeHomePreviewPage />} />
         <Route path="/dev/challenges" element={<ChallengeLayout />}>
           <Route index element={<ChallengeMyPage />} />
           <Route path="browse" element={<ChallengeBrowsePage />} />

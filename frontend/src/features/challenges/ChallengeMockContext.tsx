@@ -5,6 +5,7 @@ import {
   initialChallengeBadges,
   initialChallengeDefinitions,
   initialChallengeParticipations,
+  initialMedicationEpisodes,
 } from './mockData';
 import type {
   ChallengeDefinition,
@@ -43,10 +44,37 @@ function durationFor(definition: ChallengeDefinition): number {
 }
 
 export function ChallengeMockProvider({ children }: { children: ReactNode }) {
+  const [medicationEpisodes, setMedicationEpisodes] = useState(() =>
+    initialMedicationEpisodes.map((episode) => ({ ...episode })),
+  );
   const [definitions, setDefinitions] = useState(copyDefinitions);
   const [participations, setParticipations] = useState<ChallengeParticipation[]>(copyParticipations);
   const [badges, setBadges] = useState(copyBadges);
   const sequence = useRef(1);
+
+  // Preview-only: one fixed-date dinner record per care episode. Repeated writes are idempotent.
+  function setMedicationDose(recordIds: number[], taken: boolean) {
+    setMedicationEpisodes((current) => current.map((episode) => {
+      if (!recordIds.includes(episode.recordId) || episode.todayTaken === taken) return episode;
+      return { ...episode, todayTaken: taken, completed: episode.completed + (taken ? 1 : -1) };
+    }));
+  }
+
+  const visibleParticipations = participations.map((participation) => {
+    if (participation.kind !== 'medication') return participation;
+    const selected = medicationEpisodes.filter((episode) => participation.targetIds?.includes(episode.id));
+    const target = selected.reduce((sum, episode) => sum + episode.target, 0);
+    const completed = selected.reduce((sum, episode) => sum + episode.completed, 0);
+    return {
+      ...participation,
+      target,
+      completed,
+      percent: target ? Math.round(completed / target * 100) : 0,
+      targetSummary: selected.map((episode) => episode.label).join(' · '),
+      todayCompleted: selected.length > 0 && selected.every((episode) => episode.todayTaken),
+      status: target > 0 && completed === target ? 'achieved' as const : 'active' as const,
+    };
+  });
 
   function joinChallenge(
     challengeId: string,
@@ -200,6 +228,7 @@ export function ChallengeMockProvider({ children }: { children: ReactNode }) {
   }
 
   function resetDemo() {
+    setMedicationEpisodes(initialMedicationEpisodes.map((episode) => ({ ...episode })));
     sequence.current = 1;
     setDefinitions(copyDefinitions());
     setParticipations(copyParticipations());
@@ -210,7 +239,9 @@ export function ChallengeMockProvider({ children }: { children: ReactNode }) {
     <ChallengeMockContext.Provider
       value={{
         definitions,
-        participations,
+        participations: visibleParticipations,
+        medicationEpisodes,
+        setMedicationDose,
         badges,
         demoToday: CHALLENGE_DEMO_TODAY,
         joinChallenge,

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { useChallengeMock } from '@/features/challenges';
+import { mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
 
 type TailoredKind = 'medication' | 'supplement' | 'review' | 'visit';
@@ -18,11 +19,6 @@ const supplements = [
   { id: 'probiotics', label: '유산균 · 아침' },
 ] as const;
 
-const medicationEpisodes = [
-  { id: 'prescription-sep-07-cold', label: '감기약 · 09.07 ~ 09.13', detail: '아침 · 점심 · 저녁 · 예정된 복용 9회' },
-  { id: 'prescription-sep-07', label: '9월 7일 처방 · 09.07 ~ 09.13', detail: '아침 · 저녁 · 예정된 복용 14회' },
-] as const;
-
 function isTailoredKind(value: string | undefined): value is TailoredKind {
   return value === 'medication' || value === 'supplement' || value === 'review' || value === 'visit';
 }
@@ -31,7 +27,7 @@ export function ChallengeTargetPage() {
   const { kind } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { joinChallenge, participations } = useChallengeMock();
+  const { joinChallenge, medicationEpisodes, participations } = useChallengeMock();
   const base = pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges';
   const storedSupplementTargets = participations.find(
     (participation) => participation.challengeId === definitionByKind.supplement,
@@ -51,8 +47,14 @@ export function ChallengeTargetPage() {
     [selectedSupplements],
   );
   const selectedMedicationSummary = useMemo(
-    () => medicationEpisodes.filter((item) => selectedMedications.includes(item.id)).map((item) => item.label.split(' · ')[0]),
-    [selectedMedications],
+    () => medicationEpisodes.filter((item) => selectedMedications.includes(item.id)).map((item) => item.label),
+    [medicationEpisodes, selectedMedications],
+  );
+  const selectedMedicationTotal = useMemo(
+    () => medicationEpisodes
+      .filter((episode) => selectedMedications.includes(episode.id))
+      .reduce((total, episode) => total + episode.target, 0),
+    [medicationEpisodes, selectedMedications],
   );
 
   if (!isTailoredKind(kind)) {
@@ -103,7 +105,9 @@ export function ChallengeTargetPage() {
         <>
           <Card className="gap-2 p-5 shadow-none">
             <h2 className="text-base font-bold text-foreground">참여할 처방</h2>
-            <p className="text-xs text-primary">선택한 처방 {selectedMedications.length}개 · 일정 연동</p>
+            <p className="text-xs font-bold text-primary">
+              선택한 처방 {selectedMedications.length}개 · 총 {selectedMedicationTotal}회
+            </p>
             <div className="flex flex-col gap-2">
               {medicationEpisodes.map((episode) => (
                 <label key={episode.id} className="flex min-h-touch items-start gap-2 py-1 text-sm text-foreground">
@@ -120,14 +124,21 @@ export function ChallengeTargetPage() {
                     className="mt-0.5 size-5 shrink-0 accent-primary"
                   />
                   <span>
-                    <strong className="block">{episode.label}</strong>
-                    <span className="text-xs text-muted-foreground">{episode.detail}</span>
+                    <strong className="block">
+                      {episode.label} · {episode.startDate.slice(5).replace('-', '.')} ~ {episode.endDate.slice(5).replace('-', '.')}
+                    </strong>
+                    <span className="text-xs text-muted-foreground">
+                      {episode.slots.map((slot) => mealSlotLabel(slot)).join(' · ')} · 예정된 복용 {episode.target}회
+                    </span>
                   </span>
                 </label>
               ))}
             </div>
             <p className="text-sm text-muted-foreground">
               선택 대상: {selectedMedicationSummary.length ? selectedMedicationSummary.join(' · ') : '없음'}
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              같은 처방 회차의 같은 날짜·시간대는 약이 여러 개여도 1회로 계산해요.
             </p>
           </Card>
           <InfoCard title="기록은 자동으로 반영돼요" meta="중간에 시작해도 참여 가능">

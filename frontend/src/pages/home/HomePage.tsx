@@ -461,7 +461,7 @@ export function HomePage({
   );
 }
 
-function HomeSectionTabs({
+export function HomeSectionTabs({
   activeTab,
   onChange,
 }: {

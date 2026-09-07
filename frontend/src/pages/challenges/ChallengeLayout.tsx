@@ -9,6 +9,10 @@ export function ChallengeLayout() {
   const isDev = location.pathname.startsWith('/dev/');
 
   function handleTabChange(key: TabKey) {
+    if (key === 'home') {
+      navigate(isDev ? '/dev/home-challenges' : TAB_ROUTES.home);
+      return;
+    }
     if (key === 'my') {
       navigate(isDev ? '/dev/my-authenticated' : '/my');
       return;

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router';
 
 import { useChallengeMock } from '@/features/challenges';
@@ -9,6 +10,7 @@ function challengeBase(pathname: string) {
 }
 
 export function ChallengeMyPage() {
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const location = useLocation();
   const base = challengeBase(location.pathname);
   const { badges, definitions, participations, demoToday, checkIn } = useChallengeMock();
@@ -60,15 +62,31 @@ export function ChallengeMyPage() {
 
       {history.length > 0 ? (
         <section aria-labelledby="challenge-history-title" className="flex flex-col gap-3">
-          <h2 id="challenge-history-title" className="text-base font-bold">지난 기록</h2>
-          {history.map((participation) => (
-            <ChallengeProgressCard
-              key={participation.id}
-              participation={participation}
-              href={`${base}/participations/${participation.id}`}
-              unitLabel={definitions.find((item) => item.id === participation.challengeId)?.frequency.type === 'weekly' ? '회 인증' : undefined}
-            />
-          ))}
+          <div className="flex min-h-touch items-center justify-between gap-3">
+            <h2 id="challenge-history-title" className="text-base font-bold">지난 기록</h2>
+            <button
+              type="button"
+              aria-expanded={historyExpanded}
+              aria-controls="challenge-history-list"
+              aria-label={historyExpanded ? '지난 기록 접기' : '지난 기록 펼치기'}
+              onClick={() => setHistoryExpanded((current) => !current)}
+              className="min-h-touch rounded-pill px-3 text-sm font-bold text-primary"
+            >
+              {historyExpanded ? '접기' : `${history.length}개 보기`}
+            </button>
+          </div>
+          {historyExpanded ? (
+            <div id="challenge-history-list" className="flex flex-col gap-3">
+              {history.map((participation) => (
+                <ChallengeProgressCard
+                  key={participation.id}
+                  participation={participation}
+                  href={`${base}/participations/${participation.id}`}
+                  unitLabel={definitions.find((item) => item.id === participation.challengeId)?.frequency.type === 'weekly' ? '회 인증' : undefined}
+                />
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
     </main>

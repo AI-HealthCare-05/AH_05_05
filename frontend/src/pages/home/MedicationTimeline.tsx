@@ -36,6 +36,7 @@ interface TimelineItemData {
 }
 
 interface MedicationTimelineProps {
+  referenceTime?: Date;
   overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
@@ -48,13 +49,14 @@ interface MedicationTimelineProps {
 }
 
 export function MedicationTimeline({
+  referenceTime,
   overviews,
   doseRecords,
   currentDate,
   onDoseChange,
   onMemo,
 }: MedicationTimelineProps) {
-  const now = new Date();
+  const now = referenceTime ?? new Date();
   const timeline = buildMedicationTimeline(overviews, now, currentDate, doseRecords);
   const item = selectPrimaryTimelineItem(timeline, now);
 

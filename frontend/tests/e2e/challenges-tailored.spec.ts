@@ -15,7 +15,7 @@ test('맞춤 챌린지에서 복약 참여 대상 화면으로 이동한다', as
   await page.getByRole('link', { name: /내 복약 루틴/ }).click();
   await expect(page).toHaveURL(/\/dev\/challenges\/tailored\/medication$/);
   await expect(page.getByRole('heading', { name: '내 복약 루틴' })).toBeVisible();
-  await expect(page.getByText('감기약 · 09.07 ~ 09.13')).toBeVisible();
+  await expect(page.getByText('감기약 · 09.11 ~ 09.13')).toBeVisible();
 });
 
 test('맞춤 기록이 없을 때 등록과 둘러보기 경로를 안내한다', async ({ page }) => {

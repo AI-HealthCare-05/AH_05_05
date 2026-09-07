@@ -54,6 +54,7 @@ export function DevGallery() {
           <section className="flex flex-col gap-2 rounded-card bg-card p-4 shadow-card" aria-labelledby="challenge-gallery-title">
             <h2 id="challenge-gallery-title" className="font-bold text-foreground">챌린지 화면</h2>
             <div className="flex flex-wrap gap-2">
+              <Link className="rounded-pill bg-primary-bg px-3 py-2 text-sm font-bold text-primary" to="/dev/home-challenges">홈 복약·챌린지 연동</Link>
               <Link className="rounded-pill bg-primary-bg px-3 py-2 text-sm font-bold text-primary" to="/dev/challenges">
                 챌린지 홈
               </Link>
