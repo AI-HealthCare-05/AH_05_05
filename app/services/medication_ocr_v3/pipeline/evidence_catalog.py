@@ -296,7 +296,6 @@ def _sensitive_continuation_block_ids(segments: tuple[OcrLine, ...]) -> set[str]
             if not _is_section_continuation(previous.bbox, continuation.bbox):
                 continue
             sensitive.update(continuation.block_ids)
-            previous = continuation
     return sensitive
 
 

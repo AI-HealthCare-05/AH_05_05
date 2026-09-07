@@ -11,7 +11,11 @@ from datetime import date
 from pathlib import Path
 from typing import Protocol
 
-from app.services.medication_ocr_v3.domain.grounding import EvidenceCatalog, GroundingSelection
+from app.services.medication_ocr_v3.domain.grounding import (
+    EvidenceCatalog,
+    GroundingSelection,
+    SemanticGroundingSelection,
+)
 from app.services.medication_ocr_v3.domain.models import OcrErrorCode, OcrProviderError, OcrResult
 from app.services.medication_ocr_v3.pipeline.deterministic_grounding import (
     DeterministicGroundingPlan,
@@ -21,6 +25,7 @@ from app.services.medication_ocr_v3.pipeline.deterministic_grounding import (
 )
 from app.services.medication_ocr_v3.pipeline.evidence_catalog import build_evidence_catalog
 from app.services.medication_ocr_v3.pipeline.grounding import GroundedField, GroundedResult, GroundingIssue, seoul_today
+from app.services.medication_ocr_v3.pipeline.hospital_name import HospitalNameExtraction, extract_hospital_name
 from app.services.medication_ocr_v3.pipeline.medication_rows import (
     MedicationField,
     MedicationRow,
@@ -29,9 +34,12 @@ from app.services.medication_ocr_v3.pipeline.medication_rows import (
 )
 from app.services.medication_ocr_v3.pipeline.ocr_layout import OcrLayoutResult, build_ocr_layout
 from app.services.medication_ocr_v3.pipeline.review_projection import build_project_review
+from app.services.medication_ocr_v3.pipeline.semantic_catalog import build_semantic_evidence_catalog
+from app.services.medication_ocr_v3.pipeline.semantic_grounding import materialize_semantic_review
 from app.services.medication_ocr_v3.providers.openai_grounded import (
     PROMPT_VERSION,
     GroundedStructurer,
+    LlmErrorCode,
     LlmProviderError,
 )
 
@@ -83,6 +91,8 @@ class AnalyzePipelineCancellation:
 
 @dataclass(frozen=True, slots=True)
 class AnalyzePipelineResult:
+    """Completed OCR analysis with structure time across candidate, resolve, LLM, and validate."""
+
     ocr_result: OcrResult
     layout: OcrLayoutResult
     medication_rows: MedicationRowsResult
@@ -133,7 +143,7 @@ async def analyze_processed_image(
     structurer: GroundedStructurer | None = None,
     is_cancelled: Callable[[], Awaitable[bool]] | None = None,
 ) -> AnalyzePipelineResult | AnalyzePipelineFailure | AnalyzePipelineCancellation:
-    """Run each external provider at most once and preserve safe deterministic fallback."""
+    """Run the OCR, candidate, resolve, LLM, and validate stages once each when needed."""
 
     ocr_started = time.perf_counter()
     try:
@@ -147,6 +157,7 @@ async def analyze_processed_image(
             stages=(
                 StageResult("ocr", "failed", ocr_elapsed_ms, 1, error.code.value),
                 StageResult("candidate", "skipped", 0, 0),
+                StageResult("resolve", "skipped", 0, 0),
                 StageResult("llm", "skipped", 0, 0),
                 StageResult("validate", "skipped", 0, 0),
             ),
@@ -155,8 +166,15 @@ async def analyze_processed_image(
 
     candidate_started = time.perf_counter()
     layout = build_ocr_layout(ocr_result)
+    hospital_name = extract_hospital_name(ocr_result, layout)
     medication_rows = materialize_medication_rows(layout)
-    catalog = build_evidence_catalog(ocr_result, layout, medication_rows)
+    original_catalog = build_evidence_catalog(ocr_result, layout, medication_rows)
+    semantic = getattr(structurer, "review_mode", "legacy") == "semantic"
+    catalog = (
+        build_semantic_evidence_catalog(ocr_result, layout, medication_rows, original_catalog)
+        if semantic
+        else original_catalog
+    )
     candidate_stage = StageResult("candidate", "succeeded", _elapsed_ms(candidate_started), 0)
 
     if is_cancelled is not None and await is_cancelled():
@@ -164,33 +182,46 @@ async def analyze_processed_image(
             stages=(
                 ocr_stage,
                 candidate_stage,
+                StageResult("resolve", "skipped", 0, 0, "REQUEST_CANCELLED"),
                 StageResult("llm", "skipped", 0, 0, "REQUEST_CANCELLED"),
                 StageResult("validate", "skipped", 0, 0),
             )
         )
 
+    resolve_started = time.perf_counter()
     run_today = seoul_today()
     plan = plan_deterministic_grounding(
-        catalog,
+        original_catalog,
         medication_rows,
         today=run_today,
     )
     selection = _empty_selection()
     pipeline_issue_code: str | None = None
-    grounding_required = plan.ambiguity_required
+    grounding_required = bool(catalog.rows) if semantic else plan.ambiguity_required
+    llm_skip_code: str | None = None
+    should_call_llm = False
     if not ocr_result.blocks:
-        llm_stage = StageResult("llm", "skipped", 0, 0, "NO_OCR_BLOCKS")
-    elif not plan.deterministic_row_ids:
-        llm_stage = StageResult("llm", "skipped", 0, 0, "NO_EVIDENCE_ROWS")
+        llm_skip_code = "NO_OCR_BLOCKS"
+    elif not (catalog.rows if semantic else plan.deterministic_row_ids):
+        llm_skip_code = "NO_EVIDENCE_ROWS"
     elif not grounding_required:
-        llm_stage = StageResult("llm", "skipped", 0, 0)
+        llm_skip_code = "DETERMINISTIC_SUFFICIENT"
     elif structurer is None:
         pipeline_issue_code = "LLM_UNAVAILABLE"
-        llm_stage = StageResult("llm", "skipped", 0, 0, pipeline_issue_code)
+        llm_skip_code = pipeline_issue_code
+    else:
+        should_call_llm = True
+
+    resolve_stage = StageResult("resolve", "succeeded", _elapsed_ms(resolve_started), 0)
+    if not should_call_llm:
+        llm_stage = StageResult("llm", "skipped", 0, 0, llm_skip_code)
     else:
         llm_started = time.perf_counter()
         try:
-            selection = await structurer.select(_ambiguity_catalog(catalog, plan))
+            selection = await structurer.select(catalog if semantic else _ambiguity_catalog(catalog, plan))
+            expected_model = SemanticGroundingSelection if semantic else GroundingSelection
+            if not isinstance(selection, expected_model):
+                raise LlmProviderError(LlmErrorCode.LLM_SCHEMA_INVALID, 502)
         except LlmProviderError as error:
             pipeline_issue_code = error.code.value
             llm_stage = StageResult("llm", "failed", _elapsed_ms(llm_started), 1, pipeline_issue_code)
@@ -198,20 +229,21 @@ async def analyze_processed_image(
             llm_stage = StageResult("llm", "succeeded", _elapsed_ms(llm_started), 1)
     validate_started = time.perf_counter()
     canonical = canonicalize_deterministic_selection(
-        catalog,
+        original_catalog,
         medication_rows,
-        selection,
+        selection if isinstance(selection, GroundingSelection) else _empty_selection(),
         today=run_today,
     )
     grounded = materialize_deterministic_grounding(
-        catalog,
+        original_catalog,
         medication_rows,
         canonical,
         today=run_today,
     )
-    validate_stage = StageResult("validate", "succeeded", _elapsed_ms(validate_started), 0)
-    project_review = build_project_review(medication_rows, grounded)
-    issues = _result_issues(medication_rows, pipeline_issue_code, grounded)
+    if semantic and llm_stage.status == "succeeded" and isinstance(selection, SemanticGroundingSelection):
+        medication_rows, grounded = materialize_semantic_review(catalog, medication_rows, grounded, selection)
+    project_review = build_project_review(medication_rows, grounded, hospital_name)
+    issues = _result_issues(medication_rows, pipeline_issue_code, grounded, hospital_name)
     if llm_stage.status == "succeeded" and _missing_expected_medication_output(
         medication_rows,
         project_review,
@@ -223,22 +255,30 @@ async def analyze_processed_image(
             medication_rows,
             catalog,
             grounded,
+            hospital_name,
         ),
         "groundingIssues": [issue.as_dict() for issue in grounded.issues],
-        "llm": {"ambiguityRequired": grounding_required},
+        "llm": {
+            "ambiguityRequired": plan.ambiguity_required,
+            "mode": "semantic" if semantic else "legacy",
+            "reviewRequired": grounding_required,
+        },
         "versions": _versions(structurer),
     }
+    validate_stage = StageResult("validate", "succeeded", _elapsed_ms(validate_started), 0)
     return AnalyzePipelineResult(
         ocr_result=ocr_result,
         layout=layout,
         medication_rows=medication_rows,
         ocr_elapsed_ms=ocr_stage.elapsed_ms,
-        structure_elapsed_ms=sum(stage.elapsed_ms for stage in (candidate_stage, llm_stage, validate_stage)),
+        structure_elapsed_ms=sum(
+            stage.elapsed_ms for stage in (candidate_stage, resolve_stage, llm_stage, validate_stage)
+        ),
         catalog=catalog,
         grounded=grounded,
         project_review=project_review,
         issues=issues,
-        stages=(ocr_stage, candidate_stage, llm_stage, validate_stage),
+        stages=(ocr_stage, candidate_stage, resolve_stage, llm_stage, validate_stage),
         diagnostics=diagnostics,
     )
 
@@ -267,11 +307,21 @@ def _result_issues(
     medication_rows: MedicationRowsResult,
     pipeline_issue_code: str | None,
     grounded: GroundedResult,
+    hospital_name: HospitalNameExtraction,
 ) -> tuple[dict[str, object], ...]:
     issues = [issue.as_dict() for issue in medication_rows.issues]
     if pipeline_issue_code is not None:
         issues.append(_pipeline_issue(pipeline_issue_code))
     issues.extend(issue.as_dict() for issue in grounded.issues)
+    issues.extend(
+        {
+            "code": issue.value,
+            "rowId": None,
+            "field": "hospitalName",
+            "blockIds": list(hospital_name.block_ids),
+        }
+        for issue in hospital_name.issues
+    )
     dispensed_date = grounded.dispensed_date
     if isinstance(dispensed_date.value, str) and dispensed_date.value and not _is_iso_date(dispensed_date.value):
         issues.append(
@@ -318,6 +368,7 @@ def _field_evidence(
     medication_rows: MedicationRowsResult,
     catalog: EvidenceCatalog,
     grounded: GroundedResult,
+    hospital_name: HospitalNameExtraction,
 ) -> dict[str, object]:
     public_medications = project_review.get("medications")
     if not isinstance(public_medications, list):
@@ -351,8 +402,21 @@ def _field_evidence(
             _merge_issue_codes(evidence, row_id, grounded.issues)
         medications.append(evidence)
     return {
+        "hospitalName": _hospital_name_evidence(hospital_name),
         "dispensedDate": _grounded_evidence(grounded.dispensed_date),
         "medications": medications,
+    }
+
+
+def _hospital_name_evidence(field: HospitalNameExtraction) -> dict[str, object]:
+    issues = [issue.value for issue in field.issues]
+    if field.value in (None, "") and not issues:
+        issues.append("MISSING_FIELD")
+    return {
+        "blockIds": list(field.block_ids),
+        "bbox": field.bbox.as_dict() if field.bbox is not None else None,
+        "confidence": _confidence_tier(field.confidence),
+        "issues": issues,
     }
 
 
@@ -437,13 +501,18 @@ def _confidence_tier(confidence: float | None) -> str:
 
 def _versions(structurer: GroundedStructurer | None) -> dict[str, dict[str, str]]:
     model_version = _model_version(structurer)
+    prompt_version = getattr(structurer, "prompt_version", PROMPT_VERSION)
+    schema_version = getattr(structurer, "schema_version", GROUNDING_SCHEMA_VERSION)
+    selection_model = (
+        SemanticGroundingSelection if getattr(structurer, "review_mode", "legacy") == "semantic" else GroundingSelection
+    )
     return {
         "contract": _version(CONTRACT_VERSION, f"medication-ocr-api:{CONTRACT_VERSION}"),
-        "prompt": _version(PROMPT_VERSION, _prompt_source()),
+        "prompt": _version(prompt_version, _prompt_source(prompt_version)),
         "schema": _version(
-            GROUNDING_SCHEMA_VERSION,
+            schema_version,
             json.dumps(
-                GroundingSelection.model_json_schema(by_alias=True),
+                selection_model.model_json_schema(by_alias=True),
                 ensure_ascii=False,
                 separators=(",", ":"),
                 sort_keys=True,
@@ -462,11 +531,11 @@ def _model_version(structurer: GroundedStructurer | None) -> str:
     return DEFAULT_MODEL_VERSION
 
 
-def _prompt_source() -> str:
+def _prompt_source(prompt_version: str = PROMPT_VERSION) -> str:
     try:
-        return _PROMPT_PATH.read_text(encoding="utf-8")
+        return _PROMPT_PATH.with_name(f"{prompt_version}.md").read_text(encoding="utf-8")
     except (OSError, UnicodeError):
-        return PROMPT_VERSION
+        return prompt_version
 
 
 def _version(name: str, source: str) -> dict[str, str]:

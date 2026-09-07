@@ -3,8 +3,17 @@ from .admins import Admin
 from .alarms import Alarm, AlarmEvent
 from .background_jobs import BackgroundJob
 from .care import CareAdvice, CareEpisode, FollowUpVisit
+from .challenges import (
+    Badge,
+    Challenge,
+    ChallengeProgress,
+    ChallengeVerification,
+    UserBadge,
+    UserChallenge,
+)
 from .chat import ChatMessage, ChatMessageSource, ChatSession
 from .common_codes import CommonCode, CommonCodeGroup
+from .email_verifications import EmailVerification
 from .interactions import (
     InteractionEntity,
     InteractionEntityAlias,

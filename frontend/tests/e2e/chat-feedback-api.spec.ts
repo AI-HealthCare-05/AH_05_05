@@ -23,10 +23,13 @@ interface FeedbackHarnessOptions {
   commonCodeItems?: Partial<Record<'P_REASON' | 'N_REASON', CommonCodeResponseItem[]>>;
   commonCodeFailures?: Partial<Record<'P_REASON' | 'N_REASON', number>>;
   feedbackHandler?: (route: Route, payload: FeedbackPayload, attempt: number) => Promise<void>;
+  deleteHandler?: (route: Route, attempt: number) => Promise<void>;
 }
 
 interface FeedbackHarness {
   feedbackRequests: FeedbackPayload[];
+  deleteRequests: number[];
+  requestOrder: Array<'feedback' | 'delete'>;
   commonCodeAttempts: Record<'P_REASON' | 'N_REASON', number>;
 }
 
@@ -52,6 +55,8 @@ async function installFeedbackHarness(
   options: FeedbackHarnessOptions = {},
 ): Promise<FeedbackHarness> {
   const feedbackRequests: FeedbackPayload[] = [];
+  const deleteRequests: number[] = [];
+  const requestOrder: Array<'feedback' | 'delete'> = [];
   const commonCodeAttempts = { P_REASON: 0, N_REASON: 0 } as Record<
     'P_REASON' | 'N_REASON',
     number
@@ -114,6 +119,7 @@ async function installFeedbackHarness(
     expect(route.request().method()).toBe('PUT');
     const payload = route.request().postDataJSON() as FeedbackPayload;
     feedbackRequests.push(payload);
+    requestOrder.push('feedback');
     if (options.feedbackHandler) {
       await options.feedbackHandler(route, payload, feedbackRequests.length);
       return;
@@ -130,7 +136,19 @@ async function installFeedbackHarness(
     });
   });
 
-  return { feedbackRequests, commonCodeAttempts };
+  await page.route('**/api/v1/chat/sessions/101', async (route) => {
+    expect(route.request().method()).toBe('DELETE');
+    deleteRequests.push(101);
+    requestOrder.push('delete');
+    if (options.deleteHandler) {
+      await options.deleteHandler(route, deleteRequests.length);
+      return;
+    }
+
+    await route.fulfill({ status: 204 });
+  });
+
+  return { feedbackRequests, deleteRequests, requestOrder, commonCodeAttempts };
 }
 
 async function openAnsweredChat(page: Page) {
@@ -159,7 +177,7 @@ async function openFeedbackStep(
   return feedbackSheet;
 }
 
-test('실 API 좋아요 평가는 PUT에 P02 detailCode를 전송한다', async ({ page }) => {
+test('실 API 좋아요 평가는 저장한 뒤 세션을 soft delete한다', async ({ page }, testInfo) => {
   const harness = await installFeedbackHarness(page);
   await openAnsweredChat(page);
 
@@ -169,6 +187,12 @@ test('실 API 좋아요 평가는 PUT에 P02 detailCode를 전송한다', async 
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(harness.feedbackRequests).toEqual([{ isLike: true, reasonCode: 'P02' }]);
+  expect(harness.deleteRequests).toEqual([101]);
+  expect(harness.requestOrder).toEqual(['feedback', 'delete']);
+  await page.screenshot({
+    path: testInfo.outputPath('chat-feedback-submit-delete-success.png'),
+    fullPage: true,
+  });
 });
 
 test('실 API 아쉬워요 평가는 PUT에 N03 detailCode를 전송한다', async ({ page }) => {
@@ -198,13 +222,87 @@ test('실 API 평가는 사유 없이 reasonCode null을 보낸다', async ({ pa
   expect(harness.feedbackRequests).toEqual([{ isLike: true, reasonCode: null }]);
 });
 
-test('건너뛰고 종료는 실 API PUT을 보내지 않는다', async ({ page }) => {
+test('건너뛰고 종료는 평가 없이 세션을 soft delete한다', async ({ page }) => {
   const harness = await installFeedbackHarness(page);
   await openAnsweredChat(page);
 
   await page.getByRole('button', { name: '채팅 종료' }).click();
   await page.getByRole('dialog', { name: '상담 종료' }).getByRole('button', { name: '건너뛰고 종료' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(harness.feedbackRequests).toHaveLength(0);
+  expect(harness.deleteRequests).toEqual([101]);
+  expect(harness.requestOrder).toEqual(['delete']);
+});
+
+test('건너뛰기 삭제 실패는 종료 창에 남고 재시도할 수 있다', async ({ page }, testInfo) => {
+  const harness = await installFeedbackHarness(page, {
+    deleteHandler: async (route, attempt) => {
+      if (attempt === 1) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 'CHAT_DELETE_FAILED', message: 'internal delete detail' }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 204 });
+    },
+  });
+  await openAnsweredChat(page);
+
+  const endSheet = await openEndSheet(page);
+  await endSheet.getByRole('button', { name: '건너뛰고 종료' }).click();
+  await expect(endSheet.getByRole('alert')).toHaveText(
+    '채팅을 종료하지 못했어요. 다시 시도해주세요.',
+  );
+  await expect(endSheet.getByText('internal delete detail', { exact: true })).toHaveCount(0);
+  expect(harness.feedbackRequests).toHaveLength(0);
+  expect(harness.deleteRequests).toEqual([101]);
+  expect(harness.requestOrder).toEqual(['delete']);
+  await page.screenshot({
+    path: testInfo.outputPath('chat-feedback-skip-delete-error.png'),
+    fullPage: true,
+  });
+
+  await endSheet.getByRole('button', { name: '건너뛰고 종료' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(harness.feedbackRequests).toHaveLength(0);
+  expect(harness.deleteRequests).toEqual([101, 101]);
+  expect(harness.requestOrder).toEqual(['delete', 'delete']);
+});
+
+test('세션 삭제 실패는 평가 창에 남고 재시도로 저장 후 삭제를 완료한다', async ({ page }) => {
+  const harness = await installFeedbackHarness(page, {
+    deleteHandler: async (route, attempt) => {
+      if (attempt === 1) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 'CHAT_DELETE_FAILED', message: 'internal delete detail' }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 204 });
+    },
+  });
+  await openAnsweredChat(page);
+
+  const feedbackSheet = await openFeedbackStep(page, 'positive');
+  await feedbackSheet.locator('button[aria-pressed]').nth(1).click();
+  await feedbackSheet.getByRole('button', { name: '제출하고 종료' }).click();
+  await expect(feedbackSheet.getByRole('alert')).toHaveText(
+    '채팅을 종료하지 못했어요. 다시 시도해주세요.',
+  );
+  await expect(feedbackSheet.getByText('internal delete detail', { exact: true })).toHaveCount(0);
+  expect(harness.feedbackRequests).toEqual([{ isLike: true, reasonCode: 'P02' }]);
+  expect(harness.deleteRequests).toEqual([101]);
+  expect(harness.requestOrder).toEqual(['feedback', 'delete']);
+
+  await feedbackSheet.getByRole('button', { name: '제출하고 종료' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(harness.feedbackRequests).toEqual([{ isLike: true, reasonCode: 'P02' }]);
+  expect(harness.deleteRequests).toEqual([101, 101]);
+  expect(harness.requestOrder).toEqual(['feedback', 'delete', 'delete']);
 });
 
 test('공통코드 조회 실패는 안전한 문구와 다시 시도를 제공한다', async ({ page }) => {
@@ -265,6 +363,8 @@ test('INVALID_CHAT_FEEDBACK_REASON은 원문을 숨기고 같은 PUT을 다시 �
     '평가를 저장하지 못했어요. 다시 시도해주세요.',
   );
   await expect(feedbackSheet.getByText('P02 internal validation detail', { exact: true })).toHaveCount(0);
+  expect(harness.deleteRequests).toHaveLength(0);
+  expect(harness.requestOrder).toEqual(['feedback']);
 
   await feedbackSheet.getByRole('button', { name: '제출하고 종료' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -272,6 +372,8 @@ test('INVALID_CHAT_FEEDBACK_REASON은 원문을 숨기고 같은 PUT을 다시 �
     { isLike: true, reasonCode: 'P02' },
     { isLike: true, reasonCode: 'P02' },
   ]);
+  expect(harness.deleteRequests).toEqual([101]);
+  expect(harness.requestOrder).toEqual(['feedback', 'feedback', 'delete']);
 });
 
 test('지연된 이전 저장이 닫았다가 다시 연 부정 평가를 닫지 않는다', async ({ page }) => {

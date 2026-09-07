@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from decimal import Decimal
 
@@ -5,6 +6,14 @@ from tortoise import fields, models
 from tortoise.validators import MaxValueValidator, MinValueValidator
 
 from app.models.enums import OcrJobStatus
+
+
+def decode_stage_results(value: str | bytes) -> dict[str, object] | list[object] | None:
+    result = json.loads(value)
+    # MySQL normalizes JSON key order; restore the presentation order on reads.
+    if isinstance(result, dict) and "timings" in result and "stages" in result:
+        return {"timings": result["timings"], "stages": result["stages"], **result}
+    return result
 
 
 class OcrJob(models.Model):
@@ -28,7 +37,9 @@ class OcrJob(models.Model):
     structuring_model = fields.CharField(max_length=100, null=True)
     prompt_version = fields.CharField(max_length=100, null=True)
     schema_version = fields.CharField(max_length=50)
-    stage_results: list[dict[str, object]] | None = fields.JSONField(null=True)
+    stage_results: dict[str, object] | list[dict[str, object]] | None = fields.JSONField(
+        null=True, decoder=decode_stage_results
+    )
     avg_field_confidence = fields.DecimalField(
         max_digits=5,
         decimal_places=4,

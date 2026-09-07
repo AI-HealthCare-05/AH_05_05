@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import date
 from fractions import Fraction
 
 from app.services.medication_ocr_v3.pipeline.grounding import GroundedField, GroundedMedication, GroundedResult
+from app.services.medication_ocr_v3.pipeline.hospital_name import HospitalNameExtraction
 from app.services.medication_ocr_v3.pipeline.medication_rows import (
     MedicationField,
     MedicationIssueCode,
@@ -23,16 +25,27 @@ _FIELD_VALIDATION_ISSUES = frozenset(
         MedicationIssueCode.INVALID_BLOCK_GEOMETRY,
     }
 )
+_EACH_SIDE_SPRAY_QUANTITY_PATTERN = re.compile(
+    r"^각(?:비공)?(?P<value>(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*/[1-9][0-9]*))분무$"
+)
 
 
 def build_project_review(
     result: MedicationRowsResult,
     grounded: GroundedResult | None = None,
+    hospital_name: HospitalNameExtraction | None = None,
 ) -> dict[str, object]:
     """Return one omission-based public medication result and no OCR provenance."""
 
     fields: dict[str, object] = {}
     low_confidence_count = 0
+    if hospital_name is not None and hospital_name.value and not hospital_name.issues:
+        hospital_confidence = _confidence_tier(hospital_name.confidence or 0.0)
+        fields["hospitalName"] = {
+            "value": hospital_name.value,
+            "confidence": hospital_confidence,
+        }
+        low_confidence_count += int(hospital_confidence == "low")
     if grounded is not None and _valid_grounded_date(grounded.dispensed_date):
         date_confidence = _grounded_confidence(grounded.dispensed_date)
         fields["dispensedDate"] = {
@@ -143,10 +156,19 @@ def _public_dose_quantity(field: MedicationField) -> str | None:
     if field.value in (None, "") or _has_validation_issue(field):
         return None
     printed_value, unit = dose_quantity_value_and_unit(field.source_text)
+    if _is_grounded_each_side_spray_quantity(field, printed_value):
+        return printed_value
     numeric_value = _positive_number(printed_value)
     if numeric_value is None:
         return None
     return f"{printed_value}{_canonical_unit(unit)}" if unit else printed_value
+
+
+def _is_grounded_each_side_spray_quantity(field: MedicationField, printed_value: str) -> bool:
+    match = _EACH_SIDE_SPRAY_QUANTITY_PATTERN.fullmatch(printed_value)
+    return bool(
+        match is not None and field.value == printed_value and _positive_number(match.group("value")) is not None
+    )
 
 
 def _positive_number(value: str) -> int | float | None:

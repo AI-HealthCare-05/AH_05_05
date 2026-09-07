@@ -27,6 +27,7 @@ medication_guide_ocr_router = APIRouter(tags=["medication-guide-ocr"])
 OCR_FILE_API_TIMEOUT_SECONDS = 10.0
 
 CONFIRMED_OCR_RESULT_EXAMPLE = {
+    "hospitalName": "송도센트럴이비인후과의원",
     "dispensedDate": "2026-08-25",
     "medications": [
         {
@@ -275,6 +276,8 @@ def _to_service_confirmation(request: DocumentOcrConfirmRequest) -> MedicationGu
     }
     if "alias" in request.model_fields_set:
         payload["alias"] = request.alias
+    if "hospital_name" in request.model_fields_set:
+        payload["hospital_name"] = request.hospital_name
     return MedicationGuideConfirmRequest.model_validate(payload)
 
 
@@ -285,6 +288,7 @@ def _to_public_ocr_response(status_response: OcrJobStatusResponse) -> DocumentOc
             batch_id=f"b_{status_response.ocr_job_id}",
             ocr_status="failed",
             error_code=status_response.error_code or "EXTRACTION_FAILED",
+            timings=status_response.timings,
         )
     if ocr_status not in {"ready_for_review", "complete"}:
         return DocumentOcrPendingResponse(
@@ -305,6 +309,9 @@ def _to_public_ocr_response(status_response: OcrJobStatusResponse) -> DocumentOc
             for medication in result.medications
         ],
         low_confidence_count=result.low_confidence_count,
+        preprocess_version=status_response.preprocess_version,
+        preprocess_elapsed_ms=status_response.preprocess_elapsed_ms,
+        timings=status_response.timings,
     )
 
 

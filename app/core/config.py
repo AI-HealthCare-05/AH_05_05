@@ -57,6 +57,29 @@ class Config(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    OCR_PREPROCESS_VERSION: Literal[
+        "v3.1.0",
+        "v3.1.1",
+        "v3.1.2",
+        "v3.1.3",
+        "v3.1.4",
+        "v3.1.5",
+        "v3.1.6",
+        "v3.1.7",
+        "v3.1.8",
+        "v3.2.1",
+        "v3.2.2",
+        "v3.2.3",
+        "v3.2.4",
+        "v3.2.5",
+        "v3.2.6",
+        "v3.2.7",
+        "v3.2.8",
+        "v3.3.1",
+        "v3.4.1",
+        "v3.4.2",
+        "v3.4.3",
+    ] = "v3.4.1"
     OCR_TEMP_DIR: Path = Path("media/ocr-tmp")
     OCR_QUEUE_NAME: str = "arq:ocr"
     OCR_REVIEW_TTL_MINUTES: int = Field(default=60, gt=0)
@@ -80,6 +103,11 @@ class Config(BaseSettings):
     EMAIL_MAX_RETRY_COUNT: int = Field(default=3, ge=0)
     EMAIL_RETRY_BASE_SECONDS: int = Field(default=30, gt=0)
     EMAIL_PAYLOAD_ENCRYPTION_KEY: SecretStr | None = None
+    EMAIL_VERIFICATION_SECRET: SecretStr | None = None
+    EMAIL_VERIFICATION_TTL_SECONDS: int = Field(default=180, gt=0)
+    EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: int = Field(default=600, gt=0)
+    EMAIL_VERIFICATION_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=5)
+    EMAIL_VERIFICATION_RESEND_SECONDS: int = Field(default=60, gt=0)
     SMTP_SETTINGS_ENCRYPTION_KEY: SecretStr | None = None
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587

@@ -228,6 +228,29 @@ class TestMedicationScheduleAPI(TestCase):
         assert stored_episode.medication_start_slot == MealSlot.MORNING
         assert await MedicationSlot.filter(medication=scheduled).count() == 2
 
+    async def test_save_allows_first_ocr_schedule_with_past_dispensed_date(self) -> None:
+        today = datetime.now(config.TIMEZONE).date()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "schedule-old-ocr@example.com"
+            headers = await authentication_headers(client, email, "01022000913")
+            user = await User.get(email=email)
+            episode, scheduled, _ = await create_ocr_medications(user)
+            episode.source_ocr_job_id = 99913
+            episode.medication_start_date = today - timedelta(days=30)
+            await episode.save(update_fields=["source_ocr_job_id", "medication_start_date"])
+
+            response = await client.put(
+                schedule_url(episode.id),
+                json=schedule_payload(scheduled.id),
+                headers=headers,
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        stored = await CareEpisode.get(id=episode.id)
+        assert stored.medication_start_date == today
+        assert stored.medication_start_slot == MealSlot.MORNING
+        assert await MedicationSlot.filter(medication=scheduled).count() == 2
+
     async def test_save_rejects_finished_episode_without_partial_writes(self) -> None:
         today = datetime.now(config.TIMEZONE).date()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

@@ -23,6 +23,12 @@ def load_user_contract():
     return auth_dtos, user_dtos, auth_services
 
 
+# DTO 계약만 확인하는 파일이라 토큰은 문자열 하나로 충분하다. SignUpRequest 는
+# 길이(1~2048)만 보고, 서명·인증 상태 검증은 서비스(validate_signup_token)가 한다.
+# 실제 토큰 발급 경로는 app/tests 쪽에서 확인한다(#286).
+VERIFICATION_TOKEN = "contract-test-verification-token"
+
+
 def signup_payload(**overrides):
     payload = {
         "email": "user@example.com",
@@ -32,6 +38,7 @@ def signup_payload(**overrides):
         "birth_date": "1990-01-01",
         "gender": "FEMALE",
         "is_terms_agreed": True,
+        "email_verification_token": VERIFICATION_TOKEN,
     }
     payload.update(overrides)
     return payload
@@ -50,6 +57,7 @@ def test_signup_contract_requires_profile_and_terms_fields() -> None:
         "birth_date": request.birth_date,
         "gender": request.gender,
         "is_terms_agreed": True,
+        "email_verification_token": VERIFICATION_TOKEN,
     }
 
 

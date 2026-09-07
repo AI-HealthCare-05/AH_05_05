@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>배지관리 - RxVita</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/styles.css?v=20260907-1">
+  <link rel="stylesheet" href="../css/management.css?v=20260907-5">
+  <script type="module" src="../js/navigation.js?v=20260827-2"></script>
+  <script type="module" src="../js/sidebar.js?v=20260907-3"></script>
+  <script type="module" src="../js/badge-management.js?v=20260907-4"></script>
+</head>
+<body class="management-page flex min-h-screen">
+<aside data-sidebar data-active-nav="badges" class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0" aria-label="관리자 메뉴"><span class="text-sm text-gray-500">메뉴 불러오는 중...</span></aside>
+<main class="flex-1 min-w-0">
+  <header class="bg-white h-16 px-6 flex items-center border-b"><h1 class="text-xl font-semibold">배지관리</h1></header>
+  <section class="p-6">
+    <div class="challenge-page-heading mb-5"><div><h2 class="text-lg font-semibold mb-1">챌린지 배지 관리</h2><p class="ranking-description">챌린지 완료 시 지급할 배지를 관리합니다.</p></div><button type="button" class="ui-button ui-button-primary" data-create-badge>배지 등록</button></div>
+    <form class="challenge-search-form bg-white rounded-xl border mb-6" data-badge-search-form>
+      <label><input class="ui-control" type="text" inputmode="numeric" name="badge_id" maxlength="20" placeholder="배지 ID" aria-label="배지 ID"></label>
+      <label><input class="ui-control" type="search" name="name" maxlength="100" placeholder="배지명" aria-label="배지명"></label>
+      <label><select class="ui-control" name="is_active" aria-label="사용여부"><option value="">사용여부</option><option value="true">사용</option><option value="false">미사용</option></select></label>
+      <div class="challenge-search-actions"><button type="reset" class="ui-button" data-reset-badge-search>초기화</button><button type="submit" class="ui-button ui-button-primary">조회</button></div>
+    </form>
+    <div class="management-table-wrap bg-white rounded-xl border"><table class="management-table w-full text-sm"><thead class="bg-gray-50"><tr><th>ID</th><th>배지</th><th>배지 이름</th><th>사용 여부</th><th>관리</th></tr></thead><tbody data-badge-rows></tbody></table></div>
+  </section>
+</main>
+<dialog class="common-code-dialog badge-form-dialog" data-badge-dialog>
+  <form data-badge-form>
+    <header><h2 data-form-title>배지 등록</h2><button type="button" data-close-form aria-label="닫기">×</button></header>
+    <div class="common-code-dialog-body">
+      <div class="badge-form-grid">
+        <label class="badge-form-row"><span>배지 이름</span><input class="ui-control" name="name" maxlength="100" required></label>
+        <div class="badge-form-row">
+          <span class="badge-form-label">배지 이미지</span>
+          <div class="badge-image-field">
+            <div class="badge-image-control">
+              <input class="ui-control" type="text" data-badge-image-name placeholder="선택된 파일 없음" aria-label="선택된 배지 이미지 파일명" readonly>
+              <button type="button" class="ui-button" data-select-badge-image>파일 선택</button>
+              <input type="file" name="image" accept="image/png,image/jpeg,image/webp" data-badge-image-input hidden>
+            </div>
+            <img class="badge-image-preview" data-badge-image-preview alt="배지 이미지 미리보기" hidden>
+          </div>
+        </div>
+        <label class="badge-form-row"><span>배지 설명</span><textarea class="ui-control" name="description" maxlength="500" rows="3"></textarea></label>
+        <label class="badge-form-row badge-form-checkbox"><span>사용 여부</span><span><input type="checkbox" name="is_active" checked> 사용</span></label>
+      </div>
+      <p class="ranking-description">이미지는 PNG, JPG, WebP 형식으로 2MB까지 등록할 수 있습니다.</p>
+      <p class="challenge-form-error" data-form-error role="alert"></p>
+    </div>
+    <footer><button type="button" class="ui-button" data-close-form>취소</button><button type="submit" class="ui-button ui-button-primary">저장</button></footer>
+  </form>
+</dialog>
+</body>
+</html>

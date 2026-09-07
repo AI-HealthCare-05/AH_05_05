@@ -94,9 +94,49 @@ body.dashboard-page > main { height: calc(100vh - 56px) !important; }
 .sidebar-link.is-active { background: var(--brand-primary-soft); border-color: var(--brand-primary); color: var(--brand-primary-strong); font-weight: 700; }
 .sidebar-menu-group { margin-top: 4px; }
 .sidebar-group-label { color: #374151; font-weight: 700; }
+.sidebar-group-toggle { appearance: none; background: transparent; border: 0; border-radius: 8px; cursor: pointer; font: inherit; text-align: left; transition: background .15s, color .15s; }
+.sidebar-group-toggle:hover { background: #f3f4f6; color: var(--brand-primary-strong); }
+.sidebar-group-toggle:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+.sidebar-group-chevron { flex: 0 0 auto; margin-left: auto; transition: transform .18s ease; }
+.sidebar-menu-group.is-open .sidebar-group-chevron { transform: rotate(180deg); }
 .sidebar-subnav { margin-top: 2px; padding-left: 14px; }
+.sidebar-subnav[hidden] { display: none; }
 .sidebar-sublink { position: relative; }
 .ranking-description { color: #6b7280; font-size: 14px; }
+.challenge-page-heading, .challenge-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.challenge-search-form { display: grid; grid-template-columns: minmax(170px, 1.4fr) minmax(140px, 1fr) minmax(120px, .8fr) minmax(145px, 1fr) minmax(145px, 1fr) auto; align-items: end; gap: 12px; padding: 18px 20px; }
+.challenge-search-form label, .challenge-badge-search-row label { display: grid; gap: 6px; color: #374151; font-size: 13px; font-weight: 600; }
+.challenge-search-actions { display: flex; align-items: center; gap: 8px; }
+.challenge-form { padding: 20px; }
+.challenge-form-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 14px; margin: 18px 0 10px; }
+.challenge-form-grid label:not(.challenge-checkbox) { display: grid; gap: 6px; color: #374151; font-size: 13px; font-weight: 600; }
+.challenge-form-grid textarea.ui-control { min-height: 84px; padding: 9px 10px; resize: vertical; }
+.challenge-span-2 { grid-column: span 2; }
+.challenge-form-actions { justify-content: flex-end; }
+.challenge-badge-picker { display: grid; gap: 6px; }
+.challenge-field-label { color: #374151; font-size: 13px; font-weight: 600; }
+.challenge-badge-picker-row { display: grid; grid-template-columns: 70px 150px auto auto; align-items: center; justify-content: start; gap: 8px; }
+.challenge-badge-picker-row input[readonly] { background: #f8fafc; color: #475569; }
+.challenge-badge-dialog { width: min(760px, calc(100vw - 32px)); }
+.common-code-dialog.challenge-badge-dialog footer { justify-content: center; }
+.challenge-badge-search-row { display: grid; grid-template-columns: 70px 150px auto auto; align-items: center; justify-content: start; gap: 10px; }
+.challenge-badge-results { max-height: 380px; overflow-y: auto; }
+.challenge-badge-results th:last-child, .challenge-badge-results td:last-child { text-align: center; width: 90px; }
+.ui-button-small { min-height: 30px; padding: 5px 10px; font-size: 12px; }
+.challenge-checkbox { display: flex; align-items: center; gap: 7px; min-height: 36px; color: #374151; font-size: 13px; }
+.badge-form-grid { --badge-label-column: 100px; --badge-input-column: 520px; display: grid; gap: 14px; margin: 18px 0 10px; }
+.badge-form-row { display: grid; grid-template-columns: var(--badge-label-column) minmax(0, var(--badge-input-column)); align-items: center; justify-content: start; gap: 14px; color: #374151; font-size: 13px; font-weight: 600; }
+.badge-form-label { align-self: start; padding-top: 10px; }
+.badge-form-row > .ui-control, .badge-image-field { width: 100%; min-width: 0; }
+.badge-image-field { display: grid; justify-items: start; gap: 10px; }
+.badge-image-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.badge-image-control, .badge-image-control > .ui-control { width: 100%; min-width: 0; }
+.badge-image-control .ui-button { white-space: nowrap; }
+.badge-image-preview { width: 112px; height: 112px; border: 1px solid #dbe2ea; border-radius: 12px; object-fit: contain; background: #f8fafc; }
+.badge-form-row textarea.ui-control { min-height: 84px; padding: 9px 10px; resize: vertical; }
+.badge-form-checkbox > span:last-child { display: flex; align-items: center; gap: 7px; min-height: 36px; font-weight: 400; }
+.challenge-form-error { min-height: 20px; margin: 8px 0; color: #b91c1c; font-size: 13px; }
+.badge-thumbnail { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #e5e7eb; object-fit: cover; background: #f8fafc; }
 .ranking-heading, .rank-form-heading, .rank-form-actions, .rank-search-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rank-display-form { padding: 20px; }
 .rank-form-grid { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(190px, 1fr)) auto; gap: 14px; align-items: end; margin: 18px 0; }
@@ -124,6 +164,12 @@ body.dashboard-page > main { height: calc(100vh - 56px) !important; }
 .common-code-panel tbody tr[data-group-id] { cursor: pointer; }
 .common-code-panel tbody tr.is-selected { background: var(--brand-primary-soft); box-shadow: inset 3px 0 var(--brand-primary); }
 .common-code-dialog { width: min(520px, calc(100vw - 32px)); border: 0; border-radius: 12px; padding: 0; box-shadow: 0 24px 60px rgba(15, 23, 42, .28); }
+.badge-form-dialog { width: min(720px, calc(100vw - 32px)); }
+.badge-form-dialog .badge-form-grid { margin: 0; }
+.badge-form-dialog .common-code-dialog-body .badge-form-row { gap: 14px; }
+.badge-form-dialog .common-code-dialog-body { max-height: calc(100vh - 180px); overflow-y: auto; }
+.common-code-dialog.badge-form-dialog footer { justify-content: center; }
+.modal-open { overflow: hidden; }
 .common-code-dialog::backdrop { background: rgba(15, 23, 42, .45); }
 .common-code-dialog header, .common-code-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #e5e7eb; }
 .common-code-dialog header h2 { font-size: 18px; font-weight: 700; }
@@ -137,6 +183,9 @@ body.dashboard-page > main { height: calc(100vh - 56px) !important; }
 [data-sidebar-error="true"] { color: #b91c1c; font-size: 13px; padding: 24px 16px; }
 @media (max-width: 900px) { .desktop-sidebar { width: 190px !important; } .management-toolbar { align-items: stretch !important; flex-direction: column; } }
 @media (max-width: 1100px) { .rank-form-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 1200px) { .challenge-search-form { grid-template-columns: repeat(3, minmax(150px, 1fr)); } }
+@media (max-width: 1100px) { .challenge-form-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); } }
 @media (max-width: 1280px) { .common-code-split { grid-template-columns: 1fr; } }
-@media (max-width: 760px) { .common-code-detail-search { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .common-code-detail-search, .challenge-search-form, .challenge-badge-search-row, .challenge-badge-picker-row { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .badge-form-row { grid-template-columns: 1fr; gap: 6px; } }
 @media (max-width: 700px) { .desktop-sidebar { display: none !important; } .management-page main { width: 100%; } }

@@ -5,6 +5,7 @@ from tortoise.contrib.test import TestCase
 from app.main import app
 from app.models.enums import AccountStatus
 from app.models.users import User
+from app.tests.email_verification_helpers import with_signup_token
 
 # 정책이 생기기 전에 가입한 계정을 흉내낸다. 상한(30)보다 길다.
 # 33자 그대로 둔다 — 30자 상한에서도 초과값이라 테스트 의미가 유지된다.
@@ -13,7 +14,8 @@ LIMIT_PASSWORD = "Aa1!" + "b" * 26  # 정확히 30자
 OVER_PASSWORD = LIMIT_PASSWORD + "c"  # 31자
 
 
-def signup_data(email: str, **overrides):
+async def signup_data(email: str, **overrides):
+    """토큰은 일회용이라 호출마다 새로 발급된다(#286)."""
     data = {
         "email": email,
         "password": "Password123!",
@@ -24,7 +26,7 @@ def signup_data(email: str, **overrides):
         "is_terms_agreed": True,
     }
     data.update(overrides)
-    return data
+    return await with_signup_token(data)
 
 
 class TestSignupInputLimits(TestCase):
@@ -35,7 +37,7 @@ class TestSignupInputLimits(TestCase):
         assert len(over) > 40
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/api/v1/auth/signup", json=signup_data(over))
+            response = await client.post("/api/v1/auth/signup", json=await signup_data(over))
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert response.json()["field"] == "email"
@@ -45,14 +47,14 @@ class TestSignupInputLimits(TestCase):
         assert len(exact) == 40
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/api/v1/auth/signup", json=signup_data(exact))
+            response = await client.post("/api/v1/auth/signup", json=await signup_data(exact))
 
         assert response.status_code == status.HTTP_201_CREATED
 
     async def test_rejects_name_over_the_limit(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
-                "/api/v1/auth/signup", json=signup_data("name-over@example.com", name="가" * 21)
+                "/api/v1/auth/signup", json=await signup_data("name-over@example.com", name="가" * 21)
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -61,7 +63,7 @@ class TestSignupInputLimits(TestCase):
     async def test_accepts_name_at_the_limit(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
-                "/api/v1/auth/signup", json=signup_data("name-exact@example.com", name="가" * 20)
+                "/api/v1/auth/signup", json=await signup_data("name-exact@example.com", name="가" * 20)
             )
 
         assert response.status_code == status.HTTP_201_CREATED
@@ -69,7 +71,7 @@ class TestSignupInputLimits(TestCase):
     async def test_rejects_password_over_the_limit(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
-                "/api/v1/auth/signup", json=signup_data("pw-over@example.com", password=OVER_PASSWORD)
+                "/api/v1/auth/signup", json=await signup_data("pw-over@example.com", password=OVER_PASSWORD)
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -78,7 +80,7 @@ class TestSignupInputLimits(TestCase):
     async def test_accepts_password_at_the_limit(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
-                "/api/v1/auth/signup", json=signup_data("pw-exact@example.com", password=LIMIT_PASSWORD)
+                "/api/v1/auth/signup", json=await signup_data("pw-exact@example.com", password=LIMIT_PASSWORD)
             )
 
         assert response.status_code == status.HTTP_201_CREATED
@@ -104,7 +106,7 @@ class TestLegacyLongPasswordStillWorks(TestCase):
         """
         from app.core.utils.security import hash_password
 
-        await client.post("/api/v1/auth/signup", json=signup_data(self.EMAIL))
+        await client.post("/api/v1/auth/signup", json=await signup_data(self.EMAIL))
         await User.filter(email=self.EMAIL).update(hashed_password=hash_password(LEGACY_PASSWORD))
 
     async def _token(self, client: AsyncClient) -> str:

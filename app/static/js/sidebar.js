@@ -1,4 +1,4 @@
-import { initializeNavigation } from "./navigation.js?v=20260903-1";
+import { initializeNavigation } from "./navigation.js?v=20260907-3";
 import { session } from "./api.js";
 import { openSmtpSettings } from "./smtp-settings.js";
 
@@ -10,6 +10,8 @@ const PAGE_SECTIONS = Object.freeze({
   "screen-5-task-management.html": "tasks",
   "common-code-management.html": "common-codes",
   "supplement-ranking.html": "supplement-ranking",
+  "challenge-management.html": "challenges",
+  "badge-management.html": "badges",
 });
 
 export function getActiveSection(pathname, fallbackSection) {
@@ -79,6 +81,29 @@ export function markActiveNavigation(sidebar, activeSection) {
   });
 }
 
+function setSidebarGroupExpanded(toggle, subnav, expanded) {
+  toggle.setAttribute("aria-expanded", String(expanded));
+  subnav.hidden = !expanded;
+  toggle.closest?.(".sidebar-menu-group")?.classList.toggle("is-open", expanded);
+}
+
+export function initializeSidebarGroups(sidebar) {
+  sidebar.querySelectorAll("[data-sidebar-group-toggle]").forEach((toggle) => {
+    const subnav = toggle.nextElementSibling;
+    if (!subnav) return;
+
+    const containsActivePage = Boolean(
+      subnav.querySelector?.(".sidebar-link.is-active"),
+    );
+    setSidebarGroupExpanded(toggle, subnav, containsActivePage);
+
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      setSidebarGroupExpanded(toggle, subnav, !expanded);
+    });
+  });
+}
+
 export function configureSettingsButton(
   sidebar,
   isAdmin = session.isAdminRole(),
@@ -111,6 +136,7 @@ export async function loadSidebar(root = document, fetcher = fetch) {
 
     const activeSection = getActiveSection(root.location?.pathname, placeholder.dataset.activeNav);
     markActiveNavigation(sidebar, activeSection);
+    initializeSidebarGroups(sidebar);
     initializeNavigation(sidebar);
     configureSettingsButton(sidebar);
     relocateSettingsButtonToTopbar(sidebar, root);

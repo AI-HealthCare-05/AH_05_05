@@ -5,6 +5,7 @@ from tortoise.contrib.test import TestCase
 from app.core.utils.security import verify_password
 from app.main import app
 from app.models.users import User
+from app.tests.email_verification_helpers import with_signup_token
 
 EMAIL = "password_change@example.com"
 CURRENT_PASSWORD = "Password123!"
@@ -27,7 +28,7 @@ class TestUserPasswordApi(TestCase):
         return data
 
     async def _signed_in_client(self, client: AsyncClient) -> dict[str, str]:
-        await client.post("/api/v1/auth/signup", json=self.signup_data())
+        await client.post("/api/v1/auth/signup", json=await with_signup_token(self.signup_data()))
         login = await client.post("/api/v1/auth/login", json={"email": EMAIL, "password": CURRENT_PASSWORD})
         return {"Authorization": f"Bearer {login.json()['access_token']}"}
 

@@ -68,7 +68,13 @@ class DocumentOcrField(CamelModel):
     confidence: ConfidenceTier
 
 
+class DocumentOcrTextField(CamelModel):
+    value: str = Field(min_length=1, max_length=255)
+    confidence: ConfidenceTier
+
+
 class DocumentOcrFields(CamelModel):
+    hospital_name: DocumentOcrTextField = Field(default=MISSING)
     dispensed_date: DocumentOcrField = Field(default=MISSING)
 
 
@@ -110,12 +116,21 @@ class OcrJobAcceptedResponse(CamelModel):
     status_url: str
 
 
+class OcrJobTimings(CamelModel):
+    queue_wait_ms: int = Field(ge=0, strict=True)
+    persist_ms: int = Field(ge=0, strict=True)
+    total_ms: int = Field(ge=0, strict=True)
+
+
 class OcrJobStatusResponse(CamelModel):
     ocr_job_id: str
     status: MedicationGuideOcrJobStatus
     expires_at: datetime | None = None
     result: MedicationGuideReviewResult | None = None
     error_code: str | None = None
+    preprocess_version: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    preprocess_elapsed_ms: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None)
+    timings: OcrJobTimings | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class MedicationConfirmation(CamelModel):
@@ -157,9 +172,18 @@ class MedicationGuideConfirmRequest(CamelModel):
         extra="forbid",
     )
 
+    hospital_name: str = Field(default=MISSING, min_length=1, max_length=255)
     dispensing_date: date
     alias: str | None = Field(default=None, max_length=50)
     medications: list[MedicationConfirmation] = Field(max_length=100)
+
+    @field_validator("hospital_name")
+    @classmethod
+    def normalize_hospital_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("hospital name must not be blank")
+        return normalized
 
     @field_validator("dispensing_date")
     @classmethod
@@ -202,6 +226,7 @@ class DocumentOcrFailedResponse(CamelModel):
     batch_id: str
     ocr_status: Literal["failed"] = "failed"
     error_code: str
+    timings: OcrJobTimings | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class DocumentOcrReadyResponse(CamelModel):
@@ -211,6 +236,17 @@ class DocumentOcrReadyResponse(CamelModel):
     fields: DocumentOcrFields
     medications: list[DocumentOcrMedication]
     low_confidence_count: int = Field(ge=0)
+    timings: OcrJobTimings | None = Field(default=None, exclude_if=lambda value: value is None)
+    preprocess_version: str | None = Field(
+        default=None,
+        pattern=r"^v3\.(?:1\.[0-8]|2\.[1-8]|3\.1|4\.[1-3])$",
+        exclude_if=lambda value: value is None,
+    )
+    preprocess_elapsed_ms: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
 
 
 DocumentOcrStatusResponse = Annotated[
@@ -231,9 +267,18 @@ class DocumentOcrConfirmRequest(CamelModel):
         extra="forbid",
     )
 
+    hospital_name: str = Field(default=MISSING, min_length=1, max_length=255)
     dispensed_date: date
     alias: str | None = Field(default=None, max_length=50)
     medications: list[DocumentMedicationConfirmation] = Field(max_length=100)
+
+    @field_validator("hospital_name")
+    @classmethod
+    def normalize_hospital_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("hospital name must not be blank")
+        return normalized
 
     @field_validator("dispensed_date")
     @classmethod

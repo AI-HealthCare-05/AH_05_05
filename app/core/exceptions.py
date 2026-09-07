@@ -74,6 +74,66 @@ class UserNotFoundError(AppError):
     message = "사용자를 찾을 수 없습니다."
 
 
+class BadgeNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "BADGE_NOT_FOUND"
+    message = "배지를 찾을 수 없습니다."
+
+
+class BadgeNameAlreadyExistsError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "BADGE_NAME_ALREADY_EXISTS"
+    message = "이미 등록된 배지 이름입니다."
+
+
+class ChallengeNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "CHALLENGE_NOT_FOUND"
+    message = "챌린지를 찾을 수 없습니다."
+
+
+class ChallengeNotRecruitingError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHALLENGE_NOT_RECRUITING"
+    message = "현재 참여자를 모집하는 챌린지가 아닙니다."
+
+
+class ChallengeAlreadyJoinedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHALLENGE_ALREADY_JOINED"
+    message = "이미 참여한 챌린지입니다."
+
+
+class ChallengePeriodEndedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHALLENGE_PERIOD_ENDED"
+    message = "챌린지 인증 기간이 종료되었습니다."
+
+
+class VerificationPeriodNotFoundError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "VERIFICATION_PERIOD_NOT_FOUND"
+    message = "해당 날짜는 인증 집계 대상 기간이 아닙니다."
+
+
+class VerificationEvidenceRequiredError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "VERIFICATION_EVIDENCE_REQUIRED"
+    message = "수동 인증에는 내용 또는 이미지가 필요합니다."
+
+
+class VerificationAlreadyReviewedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "VERIFICATION_ALREADY_REVIEWED"
+    message = "이미 처리된 인증입니다."
+
+
+class ChallengeVerificationNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "CHALLENGE_VERIFICATION_NOT_FOUND"
+    message = "챌린지 인증 기록을 찾을 수 없습니다."
+
+
 class SupplementRankDisplayNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "SUPPLEMENT_RANK_DISPLAY_NOT_FOUND"
@@ -161,6 +221,48 @@ class SignupEmailAlreadyExistsError(AppError):
     code = "EMAIL_ALREADY_EXISTS"
     message = "사용할 수 없는 이메일입니다."
     field = "email"
+
+
+class EmailVerificationRateLimitedError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "EMAIL_VERIFICATION_RATE_LIMITED"
+    message = "인증번호 재발송 대기시간이 지나지 않았습니다."
+    field = "email"
+
+
+class InvalidEmailVerificationCodeError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "INVALID_EMAIL_VERIFICATION_CODE"
+    message = "인증번호를 확인해주세요."
+    field = "code"
+
+
+class EmailVerificationExpiredError(AppError):
+    status_code = status.HTTP_410_GONE
+    code = "EMAIL_VERIFICATION_EXPIRED"
+    message = "인증번호 입력시간이 만료되었습니다."
+    field = "code"
+
+
+class EmailVerificationAttemptsExceededError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "EMAIL_VERIFICATION_ATTEMPTS_EXCEEDED"
+    message = "인증번호 확인 가능 횟수를 초과했습니다."
+    field = "code"
+
+
+class EmailDeliveryUnavailableError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "EMAIL_DELIVERY_UNAVAILABLE"
+    message = "인증 메일을 발송할 수 없습니다. 잠시 후 다시 시도해주세요."
+    field = "email"
+
+
+class EmailVerificationInvalidError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "EMAIL_VERIFICATION_INVALID"
+    message = "이메일 인증 정보가 유효하지 않습니다."
+    field = "email_verification_token"
 
 
 class CannotResetSuspendedError(AppError):

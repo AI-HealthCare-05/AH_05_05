@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "baseTruthSha256": "396ab74f6d783721ffdb6af52f6884eb2ec5ddf6ccd194cb33d565c53f7e4f7a",
+  "method": "Lead source-pixel inspection plus independent blind source transcription; prediction and original gold hidden from independent reviewer. Registered before a fresh paired confirmation run. Original truth file remains untouched.",
+  "replacements": [
+    {
+      "id": "sample-04",
+      "sourceSha256": "d60b21b94f417711ecbc3413e06beb80b8a75c5a2bed777ca18d1d2f1a67470b",
+      "row": 2,
+      "field": "name",
+      "old": "페나리민정",
+      "new": "페니라민정",
+      "reason": "Both source inspections read the printed glyph order as 페-니-라-민-정. Parenthetical ingredient description excluded."
+    }
+  ],
+  "limitations": "Only this consensus spelling is adjudicated. The fifth-row name has lower-confidence disagreement and is unchanged; the candidate does not recover that row. This is not a new held-out accuracy set."
+}
+

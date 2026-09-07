@@ -81,6 +81,27 @@ class BackgroundJobStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class EmailVerificationPurpose(StrEnum):
+    SIGNUP = "SIGNUP"
+
+
+class ChallengeParticipationStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class ChallengeVerificationStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class BadgeAwardStatus(StrEnum):
+    AWARDED = "AWARDED"
+    REVOKED = "REVOKED"
+
+
 class CareEpisodeStatus(StrEnum):
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"

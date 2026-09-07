@@ -4,16 +4,21 @@ import json
 import logging
 import os
 import re
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from arq import Retry
 from arq.connections import RedisSettings, create_pool
+from arq.jobs import Job
 from fastapi import UploadFile
-from tortoise.exceptions import IntegrityError
+from tortoise.exceptions import DBConnectionError, IntegrityError, OperationalError
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
@@ -37,6 +42,7 @@ from app.dtos.medication_guide_ocr import (
     OcrConfirmationResponse,
     OcrJobAcceptedResponse,
     OcrJobStatusResponse,
+    OcrJobTimings,
 )
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, OcrJobStatus
@@ -46,6 +52,22 @@ from app.models.users import User
 from app.services.ocr_image_input import ValidatedImage, validate_image
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _JobTiming:
+    started: float
+    wall_started: datetime
+    active: bool = False
+    persist_ms: float = 0.0
+
+    @contextmanager
+    def persisting(self) -> Iterator[None]:
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.persist_ms += (time.perf_counter() - started) * 1000
 
 
 class QueueClient(Protocol):
@@ -69,6 +91,7 @@ class MedicationOcrV3AnalysisContract(Protocol):
     structuring_model: str | None
     prompt_version: str | None
     schema_version: str
+    preprocess_version: str
     processed_image_bytes: bytes
     requires_recapture: bool
 
@@ -318,6 +341,10 @@ class MedicationGuideOcrJobService:
         if job is None:
             raise OcrJobNotFoundError()
         now = datetime.now(config.TIMEZONE)
+        if job.status == OcrJobStatus.PROCESSING:
+            job = await self._reconcile_worker_failure(job, now=now)
+            if job is None:
+                raise OcrJobNotFoundError()
         if job.status == OcrJobStatus.READY_FOR_REVIEW and job.expires_at is not None and job.expires_at <= now:
             if await self._delete_if_expired(job.id, now=now, user_id=user.id):
                 raise OcrJobNotFoundError()
@@ -331,6 +358,8 @@ class MedicationGuideOcrJobService:
             job.structured_result, dict
         ):
             result = MedicationGuideReviewResult.model_validate(job.structured_result)
+        manifest = self._manifest(job)
+        preprocess_version = manifest.get("preprocessVersion")
         public_status = self._public_status(job.status)
         return OcrJobStatusResponse(
             ocr_job_id=str(job.id),
@@ -340,6 +369,9 @@ class MedicationGuideOcrJobService:
             error_code=(job.error_code or "WORKER_INTERRUPTED")
             if public_status == MedicationGuideOcrJobStatus.FAILED
             else None,
+            preprocess_version=preprocess_version if isinstance(preprocess_version, str) else None,
+            preprocess_elapsed_ms=self._preprocess_elapsed_ms(job.stage_results),
+            timings=self._public_timings(manifest, job.stage_results),
         )
 
     async def process(
@@ -348,6 +380,21 @@ class MedicationGuideOcrJobService:
         analyzer: MedicationOcrV3Analyzer,
         *,
         job_try: int,
+    ) -> None:
+        timing = _JobTiming(time.perf_counter(), datetime.now(config.TIMEZONE))
+        try:
+            await self._process(job_id, analyzer, job_try=job_try, timing=timing)
+        finally:
+            if timing.active:
+                await self._record_job_timings(job_id, timing)
+
+    async def _process(
+        self,
+        job_id: int,
+        analyzer: MedicationOcrV3Analyzer,
+        *,
+        job_try: int,
+        timing: _JobTiming,
     ) -> None:
         now = datetime.now(config.TIMEZONE)
         if job_try <= 1:
@@ -361,6 +408,7 @@ class MedicationGuideOcrJobService:
         job = await OcrJob.get_or_none(id=job_id)
         if job is None or job.status != OcrJobStatus.PROCESSING:
             return
+        timing.active = True
         manifest = self._manifest(job)
         analysis: MedicationOcrV3AnalysisContract | None = None
         try:
@@ -373,9 +421,12 @@ class MedicationGuideOcrJobService:
                     "RECAPTURE_REQUIRED",
                     manifest,
                     stage_results=stage_results,
+                    timing=timing,
                 )
                 return
-            manifest = await self.storage.save_processed(manifest, analysis.processed_image_bytes)
+            manifest["preprocessVersion"] = analysis.preprocess_version
+            with timing.persisting():
+                manifest = await self.storage.save_processed(manifest, analysis.processed_image_bytes)
         except (OcrProviderTimeoutError, OcrProviderTransientError) as error:
             if job_try < 2:
                 raise Retry(defer=timedelta(seconds=config.OCR_RETRY_BASE_SECONDS)) from error
@@ -384,6 +435,7 @@ class MedicationGuideOcrJobService:
                 error.code,
                 manifest,
                 stage_results=self._failure_stage_results(error, error.code, analysis),
+                timing=timing,
             )
             return
         except OcrProviderError as error:
@@ -392,6 +444,7 @@ class MedicationGuideOcrJobService:
                 error.code,
                 manifest,
                 stage_results=self._failure_stage_results(error, error.code, analysis),
+                timing=timing,
             )
             return
         except (AppError, TypeError, ValueError) as error:
@@ -400,6 +453,7 @@ class MedicationGuideOcrJobService:
                 "VALIDATION_FAILED",
                 manifest,
                 stage_results=self._failure_stage_results(error, "VALIDATION_FAILED", analysis),
+                timing=timing,
             )
             return
         except Exception as error:
@@ -409,6 +463,7 @@ class MedicationGuideOcrJobService:
                 "EXTRACTION_FAILED",
                 manifest,
                 stage_results=self._failure_stage_results(error, "EXTRACTION_FAILED", analysis),
+                timing=timing,
             )
             return
 
@@ -416,7 +471,7 @@ class MedicationGuideOcrJobService:
         job.status = OcrJobStatus.READY_FOR_REVIEW
         job.input_manifest = manifest
         job.structured_result = review_payload
-        job.stage_results = stage_results
+        job.stage_results = {"timings": None, "stages": stage_results}
         job.avg_field_confidence = (
             (sum(confidence_values, start=Decimal("0")) / len(confidence_values)).quantize(
                 Decimal("0.0001"),
@@ -434,8 +489,9 @@ class MedicationGuideOcrJobService:
         job.expires_at = ready_at + timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
         job.updated_at = ready_at
         job.error_code = None
-        await job.save(
-            update_fields=[
+        publication = {
+            field: getattr(job, field)
+            for field in (
                 "status",
                 "input_manifest",
                 "structured_result",
@@ -450,8 +506,122 @@ class MedicationGuideOcrJobService:
                 "expires_at",
                 "updated_at",
                 "error_code",
-            ]
+            )
+        }
+        with timing.persisting():
+            await self._publish_review(job, publication, manifest)
+
+    async def _publish_review(self, job: OcrJob, publication: dict[str, Any], manifest: dict[str, object]) -> None:
+        # Keep the analysis and processed image fixed: only publication is retried.
+        for attempt in range(3):
+            try:
+                await OcrJob.filter(id=job.id, status=OcrJobStatus.PROCESSING, care_episode_id=None).update(
+                    **publication
+                )
+                # Zero rows means an earlier commit/confirmation or another terminal
+                # transition already won. Never overwrite it or delete its images.
+                return
+            except (OperationalError, DBConnectionError):
+                if attempt < 2:
+                    await asyncio.sleep(0.1 * (2**attempt))
+        # If this also fails, propagate to ARQ. Its retained unsuccessful result
+        # lets polling/cleanup reconcile PROCESSING once the database recovers.
+        await self._mark_worker_interrupted(job, manifest, now=datetime.now(config.TIMEZONE))
+
+    async def _mark_worker_interrupted(self, job: OcrJob, manifest: dict[str, object], *, now: datetime) -> None:
+        changed = await OcrJob.filter(id=job.id, status=OcrJobStatus.PROCESSING, care_episode_id=None).update(
+            status=OcrJobStatus.FAILED,
+            error_code="WORKER_INTERRUPTED",
+            started_at=job.started_at or now,
+            structured_result=None,
+            stage_results=job.stage_results
+            if isinstance(job.stage_results, dict)
+            else {
+                "timings": None,
+                "stages": job.stage_results
+                if job.stage_results is not None
+                else self._fallback_stage_results("WORKER_INTERRUPTED"),
+            },
+            ready_at=None,
+            expires_at=None,
+            completed_at=now,
+            updated_at=now,
         )
+        if changed == 1:
+            try:
+                await self.storage.delete(manifest)
+            except OSError:
+                # The failed row still owns its original image until stale cleanup.
+                logger.warning("OCR failed-job images could not be removed for job %s", job.id)
+
+    async def _worker_failed(self, job: OcrJob) -> bool:
+        pool = self.redis_pool
+        owns_pool = pool is None
+        try:
+            if pool is None:
+                pool = await create_pool(
+                    RedisSettings(
+                        host=config.REDIS_HOST, port=config.REDIS_PORT, database=config.REDIS_DB, conn_retries=0
+                    )
+                )
+            result = await Job(f"ocr:{job.id}", redis=cast(Any, pool), _queue_name=config.OCR_QUEUE_NAME).result_info()
+            return bool(
+                result is not None
+                and result.success is False
+                and result.function == "process_medication_guide_ocr"
+                and result.args == (job.id,)
+                and result.job_id == f"ocr:{job.id}"
+                and result.queue_name == config.OCR_QUEUE_NAME
+                and result.finish_time >= (job.started_at or job.created_at)
+            )
+        finally:
+            if owns_pool and pool is not None:
+                await pool.aclose()
+
+    async def _reconcile_worker_failure(self, job: OcrJob, *, now: datetime) -> OcrJob | None:
+        try:
+            failed = await asyncio.wait_for(self._worker_failed(job), timeout=2)
+        except Exception:
+            # Missing/unavailable queue evidence is not proof that a worker failed.
+            logger.warning("OCR worker result could not be checked for job %s", job.id)
+            return job
+        if not failed:
+            return job
+        await self._mark_worker_interrupted(job, self._manifest(job), now=now)
+        return await OcrJob.get_or_none(id=job.id)
+
+    async def _record_job_timings(self, job_id: int, timing: _JobTiming) -> None:
+        # Stop before observability I/O; do not recursively time its own write.
+        elapsed_ms = (time.perf_counter() - timing.started) * 1000
+        try:
+            job = await OcrJob.get_or_none(id=job_id)
+            terminal_statuses = {OcrJobStatus.READY_FOR_REVIEW, OcrJobStatus.COMPLETE, OcrJobStatus.FAILED}
+            if job is None or job.status not in terminal_statuses:
+                return
+            queue_ms = ((job.started_at or timing.wall_started) - job.created_at).total_seconds() * 1000
+            total_ms = (timing.wall_started - job.created_at).total_seconds() * 1000 + elapsed_ms
+            metrics = OcrJobTimings(
+                queue_wait_ms=max(0, round(queue_ms)),
+                persist_ms=max(0, round(timing.persist_ms)),
+                total_ms=max(0, round(total_ms)),
+            )
+            stages = job.stage_results.get("stages") if isinstance(job.stage_results, dict) else job.stage_results
+            await OcrJob.filter(id=job_id, status__in=terminal_statuses).update(
+                stage_results={"timings": metrics.model_dump(by_alias=True), "stages": stages}
+            )
+        except Exception:
+            # A timing write must never turn a completed OCR into a failed job.
+            logger.warning("OCR timing metadata could not be recorded for job %s", job_id)
+
+    @staticmethod
+    def _public_timings(manifest: dict[str, object], stage_results: object = None) -> OcrJobTimings | None:
+        value = stage_results.get("timings") if isinstance(stage_results, dict) else manifest.get("timings")
+        if not isinstance(value, dict):
+            return None
+        try:
+            return OcrJobTimings.model_validate(value)
+        except ValueError:
+            return None
 
     async def read_input_bytes(self, user: User, job_id: int) -> tuple[bytes, str]:
         """Return a verified original image only when the requesting user owns the job."""
@@ -525,7 +695,14 @@ class MedicationGuideOcrJobService:
                 using_db=connection,
                 user_id=user.id,
                 title=f"{dispensing_date.isoformat()} 조제약 복약안내",
-                alias=request.alias,
+                alias=(
+                    request.alias
+                    if "alias" in request.model_fields_set
+                    else request.hospital_name[:50]
+                    if "hospital_name" in request.model_fields_set
+                    else None
+                ),
+                hospital_name=request.hospital_name if "hospital_name" in request.model_fields_set else None,
                 status=CareEpisodeStatus.ACTIVE,
                 medication_start_date=dispensing_date,
                 medication_days=medication_days,
@@ -579,6 +756,7 @@ class MedicationGuideOcrJobService:
         await Medication.filter(care_episode_id=episode.id).using_db(connection).delete()
         dispensing_date = request.dispensing_date
         episode.title = f"{dispensing_date.isoformat()} 조제약 복약안내"
+        episode.hospital_name = request.hospital_name if "hospital_name" in request.model_fields_set else None
         if "alias" in request.model_fields_set:
             episode.alias = request.alias
         episode.medication_start_date = dispensing_date
@@ -592,6 +770,7 @@ class MedicationGuideOcrJobService:
             using_db=connection,
             update_fields=[
                 "title",
+                "hospital_name",
                 "alias",
                 "medication_start_date",
                 "medication_days",
@@ -642,6 +821,8 @@ class MedicationGuideOcrJobService:
 
     async def cleanup_expired(self, *, now: datetime | None = None) -> int:
         current = now or datetime.now(config.TIMEZONE)
+        for job in await OcrJob.filter(status=OcrJobStatus.PROCESSING, care_episode_id=None):
+            await self._reconcile_worker_failure(job, now=current)
         stale_cutoff = current - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
         candidate_ids = await (
             OcrJob.filter(care_episode_id=None)
@@ -718,6 +899,7 @@ class MedicationGuideOcrJobService:
         manifest: dict[str, object],
         *,
         stage_results: list[dict[str, object]] | None = None,
+        timing: _JobTiming | None = None,
     ) -> None:
         now = datetime.now(config.TIMEZONE)
         job.status = OcrJobStatus.FAILED
@@ -725,11 +907,12 @@ class MedicationGuideOcrJobService:
         if job.started_at is None:
             job.started_at = now
         job.structured_result = None
-        job.stage_results = stage_results
+        job.stage_results = {"timings": None, "stages": stage_results}
         job.ready_at = None
         job.expires_at = None
         job.completed_at = now
         job.updated_at = now
+        persist_started = time.perf_counter()
         await job.save(
             update_fields=[
                 "status",
@@ -744,6 +927,8 @@ class MedicationGuideOcrJobService:
             ]
         )
         await self.storage.delete(manifest)
+        if timing is not None:
+            timing.persist_ms += (time.perf_counter() - persist_started) * 1000
 
     @staticmethod
     def _manifest(job: OcrJob) -> dict[str, object]:
@@ -824,7 +1009,8 @@ class MedicationGuideOcrJobService:
 
     @staticmethod
     def _validated_stage_results(stages: list[dict[str, object]]) -> list[dict[str, object]]:
-        expected_names = ["preprocess", "ocr", "candidate", "llm", "validate"]
+        expected_names = ["preprocess", "ocr", "candidate", "resolve", "llm", "validate"]
+        legacy_names = ["preprocess", "ocr", "candidate", "llm", "validate"]
         normalized: list[dict[str, object]] = []
         for stage in stages:
             if hasattr(stage, "model_dump"):
@@ -836,8 +1022,8 @@ class MedicationGuideOcrJobService:
             if set(stage_payload) - {"name", "status", "elapsedMs", "callCount", "code"}:
                 raise ValueError("OCR stage contains unsupported fields")
             normalized.append(stage_payload)
-        if [stage.get("name") for stage in normalized] != expected_names:
-            raise ValueError("OCR stages must contain the five ordered v3 stages")
+        if [stage.get("name") for stage in normalized] not in (expected_names, legacy_names):
+            raise ValueError("OCR stages must contain the ordered v3 stages")
         if any(
             type(stage.get("status")) is not str or stage.get("status") not in {"succeeded", "failed", "skipped"}
             for stage in normalized
@@ -853,6 +1039,19 @@ class MedicationGuideOcrJobService:
         ):
             raise ValueError("OCR stage code must be a non-blank string")
         return normalized
+
+    @staticmethod
+    def _preprocess_elapsed_ms(stages: object) -> int | None:
+        if isinstance(stages, dict):
+            stages = stages.get("stages")
+        if not isinstance(stages, list):
+            return None
+        for stage in stages:
+            if not isinstance(stage, dict) or stage.get("name") != "preprocess":
+                continue
+            elapsed = stage.get("elapsedMs")
+            return elapsed if type(elapsed) is int and elapsed >= 0 else None
+        return None
 
     @classmethod
     def _failure_stage_results(
@@ -882,7 +1081,7 @@ class MedicationGuideOcrJobService:
             },
             *(
                 {"name": name, "status": "skipped", "elapsedMs": 0, "callCount": 0}
-                for name in ("ocr", "candidate", "llm", "validate")
+                for name in ("ocr", "candidate", "resolve", "llm", "validate")
             ),
         ]
 
@@ -919,16 +1118,27 @@ class MedicationGuideOcrJobService:
 
         has_previous_date = "dispensed_date" in existing.fields.model_fields_set
         date_confidence = existing.fields.dispensed_date.confidence if has_previous_date else "low"
-        low_confidence_count = int(date_confidence == "low") + sum(
-            medication.confidence == "low" for medication in medications
+        fields: dict[str, object] = {
+            "dispensedDate": {
+                "value": request.dispensing_date.isoformat(),
+                "confidence": date_confidence,
+            }
+        }
+        hospital_confidence: str | None = None
+        if "hospital_name" in request.model_fields_set:
+            has_previous_hospital = "hospital_name" in existing.fields.model_fields_set
+            hospital_confidence = existing.fields.hospital_name.confidence if has_previous_hospital else "low"
+            fields["hospitalName"] = {
+                "value": request.hospital_name,
+                "confidence": hospital_confidence,
+            }
+        low_confidence_count = (
+            int(date_confidence == "low")
+            + int(hospital_confidence == "low")
+            + sum(medication.confidence == "low" for medication in medications)
         )
         confirmed = MedicationGuideReviewResult(
-            fields={
-                "dispensedDate": {
-                    "value": request.dispensing_date.isoformat(),
-                    "confidence": date_confidence,
-                }
-            },
+            fields=fields,
             medications=medications,
             low_confidence_count=low_confidence_count,
         ).model_dump(mode="json", by_alias=True)
@@ -951,6 +1161,14 @@ class MedicationGuideOcrJobService:
             previous_date = existing.fields.dispensed_date
             comparable += 1
             matches += int(previous_date.value == request.dispensing_date)
+
+        previous_has_hospital = "hospital_name" in existing.fields.model_fields_set
+        confirmed_has_hospital = "hospital_name" in request.model_fields_set
+        if previous_has_hospital or confirmed_has_hospital:
+            comparable += 1
+            previous_hospital = existing.fields.hospital_name.value if previous_has_hospital else None
+            confirmed_hospital = request.hospital_name if confirmed_has_hospital else None
+            matches += int(previous_hospital == confirmed_hospital)
 
         existing_by_id = {medication.temp_id: medication for medication in existing.medications}
         missing = object()

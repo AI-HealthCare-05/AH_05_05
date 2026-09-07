@@ -7,7 +7,6 @@ import type {
   MedicationOverviewItem,
 } from '@/entities/medication';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
-import { medicationStrengthSuffix } from '@/shared/lib/medicationLabel';
 import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Button } from '@/shared/ui';
 
@@ -36,6 +35,7 @@ interface TimelineItemData {
 }
 
 interface MedicationTimelineProps {
+  referenceTime?: Date;
   overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
@@ -48,13 +48,14 @@ interface MedicationTimelineProps {
 }
 
 export function MedicationTimeline({
+  referenceTime,
   overviews,
   doseRecords,
   currentDate,
   onDoseChange,
   onMemo,
 }: MedicationTimelineProps) {
-  const now = new Date();
+  const now = referenceTime ?? new Date();
   const timeline = buildMedicationTimeline(overviews, now, currentDate, doseRecords);
   const item = selectPrimaryTimelineItem(timeline, now);
 
@@ -328,10 +329,6 @@ function TimelineItem({
                 >
                   <ul className="flex flex-col gap-2" aria-label={`${episodeDate} 처방 약 목록`}>
                     {visibleMedications.map((medication) => {
-                      const doseSuffix = medicationStrengthSuffix(
-                        medication.name,
-                        medication.dose,
-                      );
                       return (
                         <li
                           key={`${medication.recordId}:${medication.medicationId}`}
@@ -339,11 +336,6 @@ function TimelineItem({
                         >
                           <span className="min-w-0 break-words text-base font-bold text-foreground">
                             {medication.name}
-                            {doseSuffix && (
-                              <span className="font-normal text-muted-foreground">
-                                {' '}{doseSuffix}
-                              </span>
-                            )}
                           </span>
                         </li>
                       );
@@ -446,7 +438,8 @@ function buildMedicationTimeline(
         ),
       }))
       .filter((episode) => episode.medications.length > 0)
-      .sort((left, right) => left.startDate.localeCompare(right.startDate));
+      .sort((left, right) => left.startDate.localeCompare(right.startDate))
+      .reverse();
 
     return {
       slot,

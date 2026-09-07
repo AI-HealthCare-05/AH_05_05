@@ -9,11 +9,20 @@ SMTP_TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True)
+class InlineAttachment:
+    content_id: str
+    filename: str
+    content_type: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class EmailMessage:
     to: str
     subject: str
     text_body: str
     html_body: str
+    inline_attachments: tuple[InlineAttachment, ...] = ()
 
 
 class EmailDeliveryError(Exception):
@@ -46,6 +55,16 @@ class SmtpEmailSender:
         mime["Subject"] = message.subject
         mime.set_content(message.text_body)
         mime.add_alternative(message.html_body, subtype="html")
+        html_part = mime.get_payload()[-1]
+        for attachment in message.inline_attachments:
+            maintype, subtype = attachment.content_type.split("/", maxsplit=1)
+            html_part.add_related(
+                attachment.data,
+                maintype=maintype,
+                subtype=subtype,
+                cid=f"<{attachment.content_id}>",
+                filename=attachment.filename,
+            )
 
         try:
             with smtplib.SMTP(self.host, self.port, timeout=SMTP_TIMEOUT_SECONDS) as server:

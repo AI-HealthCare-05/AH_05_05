@@ -72,6 +72,19 @@ test.beforeEach(() => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
+test('오늘의 복약 처방은 기존 순서의 역순으로 표시한다', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await routeHome(page);
+  await page.goto('/home');
+  const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+    name: '아침약 상세',
+  });
+  await expect(detail.getByRole('heading')).toHaveText(['8월 25일 처방', '둘째 처방']);
+  await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
+  await expect(detail.getByRole('heading')).toHaveText(['8월 25일 처방', '둘째 처방', '첫 처방']);
+  await page.screenshot({ path: 'test-results/home-medication-reverse.png', fullPage: true });
+});
+
 test('같은 조제일 처방은 별칭을 접근성 이름에 포함해 서로 구분한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   const sameDateOverviews = MEDICATION_OVERVIEWS.slice(0, 2).map((overview) => ({
@@ -86,6 +99,7 @@ test('같은 조제일 처방은 별칭을 접근성 이름에 포함해 서로 
   });
   await expect(detail.getByRole('button', { name: '첫 처방 · 8월 22일 처방 선택' })).toHaveCount(1);
   await expect(detail.getByRole('button', { name: '둘째 처방 · 8월 22일 처방 선택' })).toHaveCount(1);
+  await expect(detail.getByRole('heading')).toHaveText(['둘째 처방', '첫 처방']);
   await expect(detail.getByText('8월 22일 처방', { exact: true })).toHaveCount(0);
 });
 
@@ -106,7 +120,8 @@ test('약 이름에 포함된 함량은 펼친 상세에서 반복하지 않는�
   await routeHome(page, duplicatedStrengthOverviews);
   await page.goto('/home');
 
-  const first = page.getByRole('region', { name: '오늘의 복약' }).getByRole('article').first();
+  await page.getByRole('button', { name: '다른 처방 펼치기' }).click();
+  const first = page.getByRole('region', { name: '오늘의 복약' }).getByRole('article', { name: /8월 22일 처방/ });
   await first.getByRole('button', { name: /첫 처방.*펼치기/ }).click();
   await expect(first.getByRole('listitem').first()).toHaveText('아모잘탄정 5/50mg');
 });
@@ -120,7 +135,7 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
     name: '아침약 상세',
   });
   await expect(detail.getByRole('article')).toHaveCount(2);
-  await expect(detail.getByRole('heading', { name: '8월 25일 처방', exact: true })).toHaveCount(0);
+  await expect(detail.getByRole('heading', { name: '첫 처방', exact: true })).toHaveCount(0);
   const expandOthers = detail.getByRole('button', { name: '다른 처방 펼치기' });
   await expect(expandOthers).toBeVisible();
   await expect(expandOthers).toHaveText('펼치기');
@@ -130,16 +145,16 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   const collapsedWidth = (await detail.boundingBox())!.width;
   await expandOthers.click();
   await expect(detail.getByRole('article')).toHaveCount(3);
-  await expect(detail.getByRole('heading', { name: '8월 25일 처방', exact: true })).toBeVisible();
+  await expect(detail.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
   const thirdEpisode = detail.getByRole('article').nth(2);
   await thirdEpisode
-    .getByRole('button', { name: '8월 25일 처방 펼치기', exact: true })
+    .getByRole('button', { name: '첫 처방 · 8월 22일 처방 펼치기', exact: true })
     .click();
-  await expect(thirdEpisode.getByText('8월 25일 처방', { exact: true })).toHaveCount(1);
+  await expect(thirdEpisode.getByText('첫 처방', { exact: true })).toHaveCount(1);
   await expect(
-    thirdEpisode.getByRole('list', { name: '8월 25일 처방 약 목록' }).getByText(/처방/),
+    thirdEpisode.getByRole('list', { name: '8월 22일 처방 약 목록' }).getByText(/처방/),
   ).toHaveCount(0);
-  const thirdSelector = thirdEpisode.getByRole('button', { name: '8월 25일 처방 선택' });
+  const thirdSelector = thirdEpisode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 선택' });
   await thirdSelector.click();
   await expect(thirdSelector).toHaveAttribute('aria-pressed', 'true');
   const collapseOthers = detail.getByRole('button', { name: '다른 처방 접기', exact: true });
@@ -159,9 +174,9 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
   await expect(detail.getByRole('article').nth(2)).toHaveCount(0);
   await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
   const hiddenEpisode = detail.getByRole('article').nth(2);
-  await expect(hiddenEpisode.getByRole('heading', { name: '8월 25일 처방', exact: true })).toBeVisible();
+  await expect(hiddenEpisode.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
   await expect(hiddenEpisode.getByText('복용 완료', { exact: true })).toHaveCount(0);
-  await expect(hiddenEpisode.getByRole('button', { name: '8월 25일 처방 선택' })).toHaveAttribute(
+  await expect(hiddenEpisode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 선택' })).toHaveAttribute(
     'aria-pressed',
     'false',
   );
@@ -176,6 +191,7 @@ test('처방 별칭은 화면 제목과 날짜 기반 접근성 이름에 함께
     name: '아침약 상세',
   });
   const first = detail.getByRole('article', { name: /8월 22일 처방/ });
+  await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
   await expect(first.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
   await expect(first.locator('[data-episode-row]')).toHaveAccessibleName('첫 처방 · 8월 22일 처방 선택');
   await expect(
@@ -191,7 +207,8 @@ test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 �
   const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
     name: '아침약 상세',
   });
-  const first = detail.getByRole('article').first();
+  await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
+  const first = detail.getByRole('article', { name: /8월 22일 처방/ });
   await first.getByRole('button', { name: /8월 22일 처방.*펼치기/ }).click();
   const medicationList = first.getByRole('list', { name: '8월 22일 처방 약 목록' });
   await expect(medicationList.getByRole('listitem')).toHaveCount(3);
@@ -224,6 +241,7 @@ test('처방 상세 화살표는 약 목록을 펼쳐도 같은 자리에 유지
   const first = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('article', { name: /8월 22일 처방/ });
+  await page.getByRole('button', { name: '다른 처방 펼치기' }).click();
   const expand = first.getByRole('button', { name: '첫 처방 · 8월 22일 처방 펼치기', exact: true });
   const before = await expand.boundingBox();
   expect(before).not.toBeNull();
