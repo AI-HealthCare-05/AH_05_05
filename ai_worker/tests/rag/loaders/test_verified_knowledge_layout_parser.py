@@ -587,3 +587,95 @@ def test_clean_levothyroxine_calcium_review_restores_encoded_measurement_symbols
         "Lunch followed the +240 minute specimen. "
         "The result was (F = 5.37, p < 0.007)."
     )
+
+
+def test_parse_primary_care_herb_drug_review_keeps_body_in_verified_column_order() -> None:
+    page_one = FakeLayoutPage(
+        [
+            layout_word("TYPE", 50, 36, 75, 48),
+            layout_word("Drug–herb", 222, 124, 290, 138),
+            layout_word("interactions:", 295, 124, 365, 138),
+            layout_word("a", 370, 124, 378, 138),
+            layout_word("OPEN", 50, 160, 80, 172),
+            layout_word("Primary", 222, 268, 270, 280),
+            layout_word("healthcare", 275, 268, 335, 280),
+            layout_word("body", 340, 268, 370, 280),
+            layout_word("KEYWORDS", 222, 500, 275, 512),
+            layout_word("drug–herb", 222, 512, 280, 524),
+            layout_word("interactions", 285, 512, 345, 524),
+            layout_word("Introduction", 222, 558, 300, 570),
+            layout_word("intro-body", 222, 590, 285, 602),
+            layout_word("Frontiers", 50, 800, 95, 812),
+        ]
+    )
+    page_three = FakeLayoutPage(
+        [
+            layout_word("Disclosure-end", 64, 84, 145, 96),
+            layout_word("Patient", 64, 248, 105, 260),
+            layout_word("communication", 110, 248, 190, 260),
+            layout_word("High-risk", 64, 404, 115, 416),
+            layout_word("clinical", 120, 404, 160, 416),
+            layout_word("High-risk-end", 310, 84, 390, 96),
+            layout_word("Detection", 310, 224, 365, 236),
+            layout_word("Operational", 310, 500, 375, 512),
+            layout_word("Existing", 310, 728, 360, 740),
+        ]
+    )
+    page_four = FakeLayoutPage(
+        [
+            layout_word("FIGURE", 64, 389, 105, 401),
+            layout_word("Figure-body", 100, 410, 170, 422),
+            layout_word("Existing-end", 64, 444, 140, 456),
+            layout_word("Information", 64, 524, 125, 536),
+            layout_word("Evidence", 64, 716, 115, 728),
+            layout_word("Evidence-end", 310, 444, 385, 456),
+            layout_word("Figure-sentence", 310, 504, 400, 516),
+            layout_word("Recent", 310, 548, 350, 560),
+        ]
+    )
+
+    parser = VerifiedKnowledgeLayoutParser()
+    first = parser.parse(
+        page=page_one,
+        page_number=1,
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-83a8fd3c37dd38e1",
+    )
+    third = parser.parse(
+        page=page_three,
+        page_number=3,
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-83a8fd3c37dd38e1",
+    )
+    fourth = parser.parse(
+        page=page_four,
+        page_number=4,
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-83a8fd3c37dd38e1",
+    )
+
+    assert first is not None
+    assert [block.content for block in first.blocks] == [
+        "Drug–herb interactions: a",
+        "Primary healthcare body",
+        "KEYWORDS\ndrug–herb interactions",
+        "Introduction\nintro-body",
+    ]
+    assert third is not None
+    assert [block.content for block in third.blocks] == [
+        "Disclosure-end",
+        "Patient communication",
+        "High-risk clinical",
+        "High-risk-end",
+        "Detection",
+        "Operational",
+        "Existing",
+    ]
+    assert fourth is not None
+    assert [block.content for block in fourth.blocks] == [
+        "Existing-end",
+        "Information",
+        "Evidence",
+        "Evidence-end",
+        "Recent",
+    ]

@@ -346,7 +346,7 @@
       "document_id": "research_herb_drug_interactions-83a8fd3c37dd38e1",
       "repo_path": "data/knowledge/raw/demo_restricted/research/herb_drug_interactions/research_drug_herb_interactions_primary_care_2025.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
-      "selection_reason": "대표 문서 품질 승인을 상속한 전체 코퍼스 전처리",
+      "selection_reason": "2단 본문 읽기 순서, Figure 제외, 비본문 제거 및 의미 경계 수동 대조 완료",
       "manual_review_status": "APPROVED",
       "title": "Drug–herb interactions: a challenge and clinical concern in primary healthcare",
       "source_url": "https://doi.org/10.3389/fmed.2025.1657005",

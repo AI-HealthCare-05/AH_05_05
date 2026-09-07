@@ -150,6 +150,29 @@ def build_levothyroxine_calcium_review_chunk(
     )
 
 
+def build_primary_care_herb_drug_review_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+    page_start: int = 1,
+    page_end: int = 5,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(content, chunk_index=chunk_index)
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "source_id": "research_herb_drug_interactions",
+                    "document_id": "research_herb_drug_interactions-83a8fd3c37dd38e1",
+                    "title": "Drug–herb interactions: a challenge and clinical concern in primary healthcare",
+                    "page_start": page_start,
+                    "page_end": page_end,
+                }
+            )
+        }
+    )
+
+
 def build_page(
     content: str,
     *,
@@ -1994,6 +2017,130 @@ def test_repair_levothyroxine_calcium_review_uses_verified_semantic_boundaries()
     assert all("Fig." not in chunk.content and "FIG." not in chunk.content for chunk in repaired)
     assert repaired[-1].content.endswith("separated from all of these calcium products.")
     assert not any("Acknowledgments" in chunk.content or "References" in chunk.content for chunk in repaired)
+
+
+def test_repair_primary_care_herb_drug_review_uses_verified_semantic_boundaries() -> None:
+    content = "\n".join(
+        [
+            "Drug–herb interactions: a challenge and clinical concern in primary healthcare",
+            "Primary healthcare (PHC) is the first level of care.",
+            "KEYWORDS drug–herb interactions, primary healthcare",
+            "Introduction",
+            "Introduction body from Across-sectional survey with citation (6–8).",
+            "Prevalence and patterns in primary care",
+            "Patient demography and usage patterns body.",
+            "Primary healthcare and common herbal products",
+            "Herbal products body ends reported to the California Poison Control Center.",
+            "Disclosure patterns",
+            "Disclosure body ends brought down significantly.",
+            "Patient communication barriers",
+            "Communication body ends use of the herbal supplements.",
+            "High-risk clinical scenarios in primary care",
+            "High-risk body ends and recurrence of symptoms.",
+            "Detection and assessment challenges",
+            "Detection body ends pathway of action of the phytochemicals is unknown.",
+            "Operational constraints",
+            "Operational body ends and evaluation must be made a top priority.",
+            "Existing knowledge and gaps in training",
+            "Training body ends underestimate the use of complementary medicine by their patients.",
+            "FIGURE 1 remove this figure.",
+            "Information resource challenge",
+            "Information body.",
+            "Evidence quality levels",
+            "Evidence body.",
+            "Recent advancements in drug–herb interaction management",
+            "Advancement body.",
+            "Scope and boundaries of the review",
+            "Scope body.",
+            "Future directions and recommendations",
+            "Future body.",
+            "Conclusion",
+            "Conclusion body ends avoid fatal outcomes.",
+            "References remove this.",
+        ]
+    )
+    chunks = [build_primary_care_herb_drug_review_chunk(content, chunk_index=0)]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+
+    expected_starts = [
+        "Drug–herb interactions:",
+        "Introduction",
+        "Prevalence and patterns in primary care",
+        "Primary healthcare and common herbal products",
+        "Disclosure patterns",
+        "Patient communication barriers",
+        "High-risk clinical scenarios in primary care",
+        "Detection and assessment challenges",
+        "Operational constraints",
+        "Existing knowledge and gaps in training",
+        "Information resource challenge",
+        "Evidence quality levels",
+        "Recent advancements in drug–herb interaction management",
+        "Scope and boundaries of the review",
+        "Future directions and recommendations",
+        "Conclusion",
+    ]
+    assert len(repaired) == len(expected_starts)
+    assert all(chunk.content.startswith(start) for chunk, start in zip(repaired, expected_starts, strict=True))
+    assert "KEYWORDS" in repaired[0].content
+    assert repaired[0].content.startswith(
+        "Drug–herb interactions: a challenge and clinical concern in primary healthcare\n\n"
+    )
+    assert "(6–8)" not in " ".join(chunk.content for chunk in repaired)
+    assert "Across-sectional" not in " ".join(chunk.content for chunk in repaired)
+    assert "A cross-sectional" in " ".join(chunk.content for chunk in repaired)
+    assert not any("FIGURE" in chunk.content or "References" in chunk.content for chunk in repaired)
+    assert repaired[-1].content.endswith("avoid fatal outcomes.")
+
+
+def test_split_primary_care_herb_drug_review_preserves_all_verified_pages() -> None:
+    metadata = KnowledgeMetadata(
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-83a8fd3c37dd38e1",
+        title="Drug–herb interactions: a challenge and clinical concern in primary healthcare",
+        provider="Frontiers in Medicine",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+    page_texts = [
+        "Drug–herb interactions: a challenge and clinical concern in primary healthcare\n"
+        "Primary healthcare body.\nKEYWORDS drug–herb interactions\nIntroduction\nIntro body.",
+        "Prevalence and patterns in primary care\nPrevalence body.\n"
+        "Primary healthcare and common herbal products\nProducts body.",
+        "Disclosure patterns\nDisclosure body.\nPatient communication barriers\nPatient body.\n"
+        "High-risk clinical scenarios in primary care\nRisk body.\n"
+        "Detection and assessment challenges\nDetection body.\nOperational constraints\nOperations body.\n"
+        "Existing knowledge and gaps in training\nTraining body.",
+        "Information resource challenge\nInformation body.\nEvidence quality levels\nEvidence body.\n"
+        "Recent advancements in drug–herb interaction management\nRecent body.",
+        "Scope and boundaries of the review\nScope body.\nFuture directions and recommendations\n"
+        "Future body.\nConclusion\nConclusion body ends avoid fatal outcomes.",
+    ]
+    pages = [
+        KnowledgePage(
+            content=text,
+            page_number=index,
+            metadata=metadata,
+            blocks=[
+                KnowledgePageBlock(
+                    kind=KnowledgeContentKind.TEXT,
+                    order=0,
+                    bbox=KnowledgeBoundingBox(x0=0, top=0, x1=100, bottom=100),
+                    content=text,
+                )
+            ],
+        )
+        for index, text in enumerate(page_texts, start=1)
+    ]
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split(pages)
+
+    assert len(chunks) == 16
+    assert chunks[-1].content.endswith("avoid fatal outcomes.")
+    assert any(chunk.content.startswith("Disclosure patterns") for chunk in chunks)
+    assert any(chunk.content.startswith("Conclusion") for chunk in chunks)
 
 
 def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:

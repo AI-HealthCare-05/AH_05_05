@@ -99,6 +99,7 @@ _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-2
 _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-80c3d674cbc86d03"
 _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-186668a2a92b533c"
 _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-502801c809b5ec8d"
+_PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID = "research_herb_drug_interactions-83a8fd3c37dd38e1"
 _STATINS_VITAMIN_D_REVIEW_TITLE = "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review"
 
 _DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES = (
@@ -185,6 +186,30 @@ _PARENTHETICAL_NUMERIC_CITATION_PATTERN = re.compile(r"\s*\(\s*\d+(?:\s*(?:[,;]|
 _INLINE_FIGURE_REFERENCE_PATTERN = re.compile(
     r"\s*[\[(]\s*Fig\.?\s*\d+\s*[\])]",
     flags=re.IGNORECASE,
+)
+
+_PRIMARY_CARE_HERB_DRUG_REVIEW_BOUNDARIES = (
+    "Introduction",
+    "Prevalence and patterns in primary care",
+    "Primary healthcare and common herbal products",
+    "Disclosure patterns",
+    "Patient communication barriers",
+    "High-risk clinical scenarios in primary care",
+    "Detection and assessment challenges",
+    "Operational constraints",
+    "Existing knowledge and gaps in training",
+    "Information resource challenge",
+    "Evidence quality levels",
+    "Recent advancements in drug–herb interaction management",
+    "Scope and boundaries of the review",
+    "Future directions and recommendations",
+    "Conclusion",
+)
+_PRIMARY_CARE_HERB_DRUG_REVIEW_END = "avoid fatal outcomes."
+_PRIMARY_CARE_HERB_DRUG_NUMERIC_CITATION_PATTERN = re.compile(r"\s*\(\s*\d+(?:\s*(?:,|[-–—])\s*\d+)*\s*\)")
+_PRIMARY_CARE_HERB_DRUG_FIGURE_PATTERN = re.compile(
+    r"\s*FIGURE\s+\d+.*?(?=Information resource challenge)",
+    flags=re.DOTALL | re.IGNORECASE,
 )
 
 
@@ -410,6 +435,10 @@ class KnowledgeSplitter:
             return []
 
         self._validate_single_document(pages)
+        if pages[0].metadata.document_id == _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID and any(
+            page.blocks for page in pages
+        ):
+            return self._split_primary_care_herb_drug_review_pages(pages)
         if any(page.blocks for page in pages):
             return self._repair_verified_document_chunks(
                 self._split_block_pages(
@@ -484,6 +513,40 @@ class KnowledgeSplitter:
 
         return self._repair_verified_document_chunks(chunks)
 
+    def _split_primary_care_herb_drug_review_pages(
+        self,
+        pages: list[KnowledgePage],
+    ) -> list[KnowledgeChunk]:
+        """검증한 좌표 블록을 일반 섹션 필터 전에 페이지 순서로 보존합니다."""
+        metadata = pages[0].metadata
+        page_chunks: list[KnowledgeChunk] = []
+        for page in pages:
+            content = "\n".join(
+                block.content.strip()
+                for block in sorted(page.blocks, key=lambda item: item.order)
+                if block.kind == KnowledgeContentKind.TEXT and block.content.strip()
+            ).strip()
+            if not content:
+                continue
+            section = KnowledgeSection(
+                content=content,
+                section_type=KnowledgeSectionType.INTERACTION,
+                section_title=metadata.title,
+                page_start=page.page_number,
+                page_end=page.page_number,
+                source_start=0,
+                source_end=len(content),
+            )
+            page_chunks.append(
+                self._build_chunk(
+                    content=content,
+                    section=section,
+                    chunk_index=len(page_chunks),
+                    metadata=metadata,
+                )
+            )
+        return self._repair_verified_document_chunks(page_chunks)
+
     def _repair_verified_document_chunks(
         self,
         chunks: list[KnowledgeChunk],
@@ -492,6 +555,9 @@ class KnowledgeSplitter:
             return chunks
 
         document_id = chunks[0].metadata.document_id
+        if document_id == _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID:
+            repaired = self._resegment_primary_care_herb_drug_review(chunks)
+            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
         if document_id == _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID:
             repaired = self._resegment_levothyroxine_calcium_review(chunks)
             return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
@@ -582,6 +648,59 @@ class KnowledgeSplitter:
                 )
             )
         return repaired
+
+    def _resegment_primary_care_herb_drug_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        merged = self._merge_verified_chunk_text(chunks)
+        merged = _PRIMARY_CARE_HERB_DRUG_NUMERIC_CITATION_PATTERN.sub("", merged)
+        merged = re.sub(
+            r"\bAcross[-‐–—]sectional\b",
+            "A cross-sectional",
+            merged,
+        )
+        merged = _PRIMARY_CARE_HERB_DRUG_FIGURE_PATTERN.sub(" ", merged)
+        end = merged.find(_PRIMARY_CARE_HERB_DRUG_REVIEW_END)
+        if end >= 0:
+            merged = merged[: end + len(_PRIMARY_CARE_HERB_DRUG_REVIEW_END)]
+
+        positions = sorted(
+            {position for marker in _PRIMARY_CARE_HERB_DRUG_REVIEW_BOUNDARIES if (position := merged.find(marker)) >= 0}
+        )
+        if not positions or positions[0] > 0:
+            positions.insert(0, 0)
+        positions.append(len(merged))
+
+        repaired: list[KnowledgeChunk] = []
+        for start, stop in zip(positions, positions[1:], strict=False):
+            content = merged[start:stop].strip()
+            if not content:
+                continue
+            repaired.append(
+                chunks[0].model_copy(
+                    update={
+                        "content": self._format_primary_care_herb_drug_heading(content),
+                        "metadata": self._verified_span_metadata(
+                            content=content,
+                            chunks=chunks,
+                        ),
+                    }
+                )
+            )
+        return repaired
+
+    @staticmethod
+    def _format_primary_care_herb_drug_heading(content: str) -> str:
+        title = "Drug–herb interactions: a challenge and clinical concern in primary healthcare"
+        if content.startswith(title):
+            body = content[len(title) :].strip()
+            body = re.sub(r"\s+KEYWORDS\s+", "\n\nKEYWORDS\n", body, count=1)
+            return f"{title}\n\n{body}"
+        for heading in _PRIMARY_CARE_HERB_DRUG_REVIEW_BOUNDARIES:
+            if content.startswith(heading) and len(content) > len(heading):
+                return f"{heading}\n{content[len(heading) :].strip()}"
+        return content
 
     def _resegment_levothyroxine_calcium_review(
         self,

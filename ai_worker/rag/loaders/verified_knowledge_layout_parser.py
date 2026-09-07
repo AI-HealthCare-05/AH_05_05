@@ -13,6 +13,9 @@ from ai_worker.rag.loaders.levothyroxine_calcium_review_layout_parser import (
     LevothyroxineCalciumReviewLayoutParser,
 )
 from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtraction
+from ai_worker.rag.loaders.primary_care_herb_drug_review_layout_parser import (
+    PrimaryCareHerbDrugReviewLayoutParser,
+)
 from ai_worker.rag.loaders.statins_vitamin_d_review_layout_parser import (
     StatinsVitaminDReviewLayoutParser,
 )
@@ -36,6 +39,7 @@ class VerifiedKnowledgeLayoutParser:
             DrugVitaminDReviewLayoutParser(),
             StatinsVitaminDReviewLayoutParser(),
             LevothyroxineCalciumReviewLayoutParser(),
+            PrimaryCareHerbDrugReviewLayoutParser(),
             HerbDrugReviewLayoutParser(),
             WarfarinReviewLayoutParser(),
         )
