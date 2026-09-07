@@ -1,0 +1,56 @@
+{
+  "version": "v32-llm-three-image/v1",
+  "images": [
+    {
+      "id": "real-angle",
+      "source": "../../docs/문서 예시/복약안내/test.jpg",
+      "groundTruth": {
+        "fields": {
+          "dispensedDate": "2025-10-25",
+          "hospitalName": "한도병원"
+        },
+        "medications": [
+          {"name": "펙소나딘정120밀리그램", "strength": "120mg", "doseQuantity": "1", "timesPerDay": 1, "days": 5},
+          {"name": "시네츄라시럽(15mL)", "strength": "15mL", "doseQuantity": "1", "timesPerDay": 1, "days": 5},
+          {"name": "라베뉴정10/500밀리그램", "strength": "10/500mg", "doseQuantity": "1", "timesPerDay": 2, "days": 5},
+          {"name": "소로펜정", "strength": "68.1mg", "doseQuantity": "1", "timesPerDay": 2, "days": 5},
+          {"name": "써스펜8시간이알서방정650...", "strength": "650mg", "doseQuantity": "1", "timesPerDay": 2, "days": 5},
+          {"name": "뮤코졸정", "strength": "8mg", "doseQuantity": "1", "timesPerDay": 2, "days": 5},
+          {"name": "코싹엘정", "strength": "2.5/120mg", "doseQuantity": "1", "timesPerDay": 2, "days": 5}
+        ]
+      }
+    },
+    {
+      "id": "real-folded",
+      "source": "../../docs/문서 예시/복약안내/IMG_5158.jpg",
+      "groundTruth": {
+        "fields": {},
+        "medications": [
+          {"name": "아목클정375mg", "strength": "375mg", "doseQuantity": "1정", "timesPerDay": 3, "days": 7},
+          {"name": "록스파인정", "doseQuantity": "1정", "timesPerDay": 3, "days": 7},
+          {"name": "스토엠정", "doseQuantity": "1정", "timesPerDay": 3, "days": 7},
+          {"name": "알리코프정", "doseQuantity": "1정", "timesPerDay": 3, "days": 7},
+          {"name": "에리텐캡슐", "doseQuantity": "1캡슐", "timesPerDay": 3, "days": 7},
+          {"name": "세페리손정", "doseQuantity": "1정", "timesPerDay": 2, "days": 7}
+        ]
+      }
+    },
+    {
+      "id": "synthetic-exact",
+      "source": "../../docs/문서 예시/복약안내/새 폴더/template_ocr_exact_reference_10/jpg/template_ocr_exact_02.jpg",
+      "groundTruth": {
+        "fields": {
+          "dispensedDate": "2025-04-02",
+          "hospitalName": "푸른가정의학과의원"
+        },
+        "medications": [
+          {"name": "에스오메프라졸캡슐20mg", "strength": "20mg", "doseQuantity": "1캡슐", "timesPerDay": 1, "days": 14},
+          {"name": "레바미피드정100mg", "strength": "100mg", "doseQuantity": "1정", "timesPerDay": 3, "days": 14},
+          {"name": "모사프리드정5mg", "strength": "5mg", "doseQuantity": "1정", "timesPerDay": 3, "days": 14},
+          {"name": "락토바실러스캡슐", "doseQuantity": "1캡슐", "timesPerDay": 2, "days": 14}
+        ]
+      }
+    }
+  ]
+}
+

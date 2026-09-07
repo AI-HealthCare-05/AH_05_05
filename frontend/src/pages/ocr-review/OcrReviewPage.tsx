@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { AlertTriangle, ChevronRight, Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { formatMedicationLabel } from '@/shared/lib/medicationLabel';
+import { formatMedicationDoseQuantity, formatMedicationLabel, formatMedicationStrength } from '@/shared/lib/medicationLabel';
 import {
   confirmOcrResult,
   getOcrDocumentImageUrl,
@@ -126,14 +126,24 @@ export function OcrReviewPage() {
           batchId: initialRegistrationDraft.batchId,
           ocrStatus: 'complete',
           documentImageUrl: initialRegistrationDraft.documentImageUrl,
-          fields: initialRegistrationDraft.dispensedDateConfidence
-            ? {
-                dispensedDate: {
-                  value: initialRegistrationDraft.dispensedDate,
-                  confidence: initialRegistrationDraft.dispensedDateConfidence,
-                },
-              }
-            : {},
+          fields: {
+            ...(initialRegistrationDraft.hospitalNameConfidence
+              ? {
+                  hospitalName: {
+                    value: initialRegistrationDraft.hospitalName,
+                    confidence: initialRegistrationDraft.hospitalNameConfidence,
+                  },
+                }
+              : {}),
+            ...(initialRegistrationDraft.dispensedDateConfidence
+              ? {
+                  dispensedDate: {
+                    value: initialRegistrationDraft.dispensedDate,
+                    confidence: initialRegistrationDraft.dispensedDateConfidence,
+                  },
+                }
+              : {}),
+          },
           medications: initialRegistrationDraft.medications.map(
             ({ timesPerDay, ...medication }) => ({
               ...medication,
@@ -152,6 +162,13 @@ export function OcrReviewPage() {
   const [pollAttempt, setPollAttempt] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  const [hospitalName, setHospitalName] = useState(initialRegistrationDraft?.hospitalName ?? '');
+  const [hospitalNameConfidence, setHospitalNameConfidence] = useState<Confidence | null>(
+    initialRegistrationDraft?.hospitalNameConfidence ?? null,
+  );
+  const [hospitalNameReviewed, setHospitalNameReviewed] = useState(
+    initialRegistrationDraft?.hospitalNameReviewed ?? false,
+  );
   const [dispensedDate, setDispensedDate] = useState(initialRegistrationDraft?.dispensedDate ?? '');
   const [episodeAlias, setEpisodeAlias] = useState(
     initialRegistrationDraft?.episodeAlias ?? state.episodeAlias ?? '',
@@ -276,6 +293,13 @@ export function OcrReviewPage() {
           completionTimer = window.setTimeout(() => {
             if (cancelled) return;
             setResult(data);
+            const extractedHospitalName = data.fields.hospitalName?.value ?? '';
+            setHospitalName(extractedHospitalName);
+            setHospitalNameConfidence(data.fields.hospitalName?.confidence ?? null);
+            setHospitalNameReviewed(false);
+            if (state.episodeAlias === undefined) {
+              setEpisodeAlias(extractedHospitalName.slice(0, 50));
+            }
             setDispensedDate(data.fields.dispensedDate?.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
             setMedications(data.medications);
@@ -361,6 +385,9 @@ export function OcrReviewPage() {
   }
 
   const reviewItemNames: string[] = [];
+  if (hospitalNameConfidence === 'low' && !hospitalNameReviewed) {
+    reviewItemNames.push('병원명');
+  }
   if (!dispensedDate || (dispensedDateConfidence === 'low' && !dispensedDateReviewed)) {
     reviewItemNames.push('조제일');
   }
@@ -388,6 +415,9 @@ export function OcrReviewPage() {
     return {
       batchId,
       documentImageUrl: result.documentImageUrl,
+      hospitalName,
+      hospitalNameConfidence,
+      hospitalNameReviewed,
       dispensedDate,
       dispensedDateConfidence,
       dispensedDateReviewed,
@@ -423,6 +453,7 @@ export function OcrReviewPage() {
       const { recordId, hasMedication } = await confirmOcrResult(
         batchId,
         {
+          ...(hospitalName.trim() ? { hospitalName: hospitalName.trim() } : {}),
           dispensedDate,
           medications: medications.map((medication) => ({
             tempId: medication.tempId,
@@ -453,7 +484,7 @@ export function OcrReviewPage() {
             dispensedDate,
             ocrJobId: batchId,
             registrationFlow: true,
-            ...(episodeAlias.trim() ? { episodeAlias: episodeAlias.trim() } : {}),
+            episodeAlias,
             ...(ocrRegistrationDraft ? { ocrRegistrationDraft } : {}),
           },
         });
@@ -545,6 +576,28 @@ export function OcrReviewPage() {
     );
   }
 
+  const noMedicationsExtracted =
+    result.ocrStatus === 'ready_for_review' && result.medications.length === 0;
+  if (noMedicationsExtracted && !dismissedOcrFailure) {
+    return (
+      <PageFrame title="다시 촬영해주세요" onBack={() => navigate('/document-upload', { replace: true })}>
+        <RegistrationProgress step={2} />
+        <Card tone="warning" title="약 정보를 추출하지 못했어요">
+          복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.
+          그림자와 빛 반사를 피하고, 글자가 선명한지 확인해주세요.
+        </Card>
+        <div className="mt-auto flex flex-col gap-2 pb-4">
+          <Button onClick={() => navigate('/document-upload', { replace: true })}>
+            다시 촬영하기
+          </Button>
+          <Button variant="secondary" onClick={() => setDismissedOcrFailure(true)}>
+            직접 입력하기
+          </Button>
+        </div>
+      </PageFrame>
+    );
+  }
+
   const ocrFailed = result.ocrStatus === 'failed';
   const ocrCancelled = result.ocrStatus === 'cancelled';
   const showOcrFailure = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
@@ -578,6 +631,10 @@ export function OcrReviewPage() {
           <Card tone="info" title="저장한 내용을 다시 확인해보세요">
             확인을 마치면 복약 시간 설정으로 돌아갈 수 있어요.
           </Card>
+        ) : noMedicationsExtracted ? (
+          <Card tone="info" title="약 정보를 직접 입력해주세요">
+            사진에서 약 정보를 읽지 못했어요. 직접 추가 버튼으로 약을 입력할 수 있어요.
+          </Card>
         ) : reviewItemNames.length > 0 ? (
           <Card tone="warning" className="gap-2 p-4">
             <div className="flex items-start gap-3">
@@ -594,7 +651,7 @@ export function OcrReviewPage() {
           </Card>
         ) : (
           <Card tone="info" title="내용을 잘 읽었어요">
-            저장하기 전에 조제일과 약 정보를 한 번 확인해주세요.
+            저장하기 전에 병원명, 조제일과 약 정보를 한 번 확인해주세요.
           </Card>
         )}
 
@@ -607,6 +664,30 @@ export function OcrReviewPage() {
           onChange={(event) => setEpisodeAlias(event.target.value)}
           disabled={confirmedReviewMode}
         />
+
+        <Card className="gap-3 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="hospitalName" className="text-base font-bold text-foreground">
+              병원명
+            </label>
+            <ConfidenceBadge
+              confidence={hospitalNameReviewed ? undefined : hospitalNameConfidence ?? undefined}
+            />
+          </div>
+          <Input
+            id="hospitalName"
+            aria-label="병원명"
+            type="text"
+            maxLength={255}
+            value={hospitalName}
+            placeholder="미추출"
+            onChange={(event) => {
+              setHospitalName(event.target.value);
+              setHospitalNameReviewed(true);
+            }}
+            disabled={confirmedReviewMode}
+          />
+        </Card>
 
         {imageUnavailable && (
           <Card tone="info" title="원본 미리보기를 불러오지 못했어요">
@@ -937,18 +1018,18 @@ function ReadingScreen({
   );
 }
 
-function PageFrame({ onBack, children }: { onBack: () => void; children: ReactNode }) {
+function PageFrame({ onBack, children, title = '저장 완료' }: { onBack: () => void; children: ReactNode; title?: string }) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="저장 완료" onBack={onBack} />
+      <Header title={title} onBack={onBack} />
       <main className="flex flex-1 flex-col gap-3 px-page-x py-5">{children}</main>
     </div>
   );
 }
 
 function medicationSummary(medication: EditableOcrMedication): string {
-  const strength = medication.strength || '미추출';
-  const doseQuantity = medication.doseQuantity || '미추출';
+  const strength = formatMedicationStrength(medication.strength) || '미추출';
+  const doseQuantity = formatMedicationDoseQuantity(medication.doseQuantity) || '미추출';
   const frequency =
     medication.timesPerDay === undefined
       ? '미추출'

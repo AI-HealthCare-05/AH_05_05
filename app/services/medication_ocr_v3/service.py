@@ -59,7 +59,7 @@ class MedicationOcrV3Analysis:
     """Worker-safe OCR result; recapture is an explicit typed success variant.
 
     A recapture result has ``requires_recapture=True``, an omission-based empty
-    review, and all five operational stages. No OCR or LLM provider is called.
+    review, and all six operational stages. No OCR or LLM provider is called.
     This lets the job layer persist or route the outcome without recovering
     partial provider state from an exception.
     """
@@ -71,6 +71,7 @@ class MedicationOcrV3Analysis:
     structuring_model: str
     prompt_version: str
     schema_version: str
+    preprocess_version: str
     processed_image_bytes: bytes = b""
     requires_recapture: bool = False
     recapture_reasons: tuple[str, ...] = ()
@@ -93,10 +94,12 @@ class MedicationOcrV3Service:
         provider: GeneralOcrProvider,
         structurer: GroundedStructurer | None = None,
         is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+        preprocess_version: str = "v3.4.1",
     ) -> None:
         self._provider = provider
         self._structurer = structurer
         self._is_cancelled = is_cancelled
+        self._preprocess_version = preprocess_version
 
     async def analyze(self, image: ValidatedImage) -> MedicationOcrV3Analysis:
         preprocess_started = time.perf_counter()
@@ -104,17 +107,19 @@ class MedicationOcrV3Service:
             preprocess_image,
             image.content,
             image.media_type,
+            preprocess_version=self._preprocess_version,
         )
-        preprocess_elapsed_ms = _elapsed_ms(preprocess_started)
         if processed.quality_state is QualityState.RECAPTURE_REQUIRED:
+            preprocess_elapsed_ms = _elapsed_ms(preprocess_started)
             return MedicationOcrV3Analysis(
                 project_review=_empty_project_review(),
                 stages=_recapture_stages(preprocess_elapsed_ms),
                 confidence_values=[],
                 ocr_model=OCR_MODEL_VERSION,
                 structuring_model=DETERMINISTIC_MODEL_VERSION,
-                prompt_version=PROMPT_VERSION,
+                prompt_version=getattr(self._structurer, "prompt_version", PROMPT_VERSION),
                 schema_version=PROJECT_SCHEMA_VERSION,
+                preprocess_version=self._preprocess_version,
                 requires_recapture=True,
                 recapture_reasons=processed.reasons,
             )
@@ -124,6 +129,7 @@ class MedicationOcrV3Service:
             processed,
             (),
         )
+        preprocess_elapsed_ms = _elapsed_ms(preprocess_started)
         pipeline_result = await analyze_processed_image(
             self._provider,
             provider_jpeg,
@@ -159,8 +165,9 @@ class MedicationOcrV3Service:
             confidence_values=_confidence_values(pipeline_result),
             ocr_model=OCR_MODEL_VERSION,
             structuring_model=_structuring_model(pipeline_result, self._structurer),
-            prompt_version=PROMPT_VERSION,
+            prompt_version=getattr(self._structurer, "prompt_version", PROMPT_VERSION),
             schema_version=PROJECT_SCHEMA_VERSION,
+            preprocess_version=self._preprocess_version,
             processed_image_bytes=processed.template_image.jpeg_bytes,
         )
 
@@ -189,7 +196,7 @@ def _recapture_stages(preprocess_elapsed_ms: int) -> list[dict[str, object]]:
         ),
         *(
             _stage(name=name, status="skipped", elapsed_ms=0, call_count=0)
-            for name in ("ocr", "candidate", "llm", "validate")
+            for name in ("ocr", "candidate", "resolve", "llm", "validate")
         ),
     ]
 

@@ -57,6 +57,29 @@ class Config(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    OCR_PREPROCESS_VERSION: Literal[
+        "v3.1.0",
+        "v3.1.1",
+        "v3.1.2",
+        "v3.1.3",
+        "v3.1.4",
+        "v3.1.5",
+        "v3.1.6",
+        "v3.1.7",
+        "v3.1.8",
+        "v3.2.1",
+        "v3.2.2",
+        "v3.2.3",
+        "v3.2.4",
+        "v3.2.5",
+        "v3.2.6",
+        "v3.2.7",
+        "v3.2.8",
+        "v3.3.1",
+        "v3.4.1",
+        "v3.4.2",
+        "v3.4.3",
+    ] = "v3.4.1"
     OCR_TEMP_DIR: Path = Path("media/ocr-tmp")
     OCR_QUEUE_NAME: str = "arq:ocr"
     OCR_REVIEW_TTL_MINUTES: int = Field(default=60, gt=0)

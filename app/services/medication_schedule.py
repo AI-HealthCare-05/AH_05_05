@@ -70,7 +70,12 @@ class MedicationScheduleService:
                 raise MedicationScheduleNotFoundError()
 
             medications = await Medication.filter(care_episode_id=episode.id).using_db(connection).order_by("id")
-            if medication_end_date(episode, medications) < datetime.now(config.TIMEZONE).date():
+            # OCR의 과거 조제일로 종료 판정되어도 최초 복용 시간 등록은 허용한다.
+            is_ocr_registration = episode.source_ocr_job_id is not None and episode.medication_start_slot is None
+            if (
+                not is_ocr_registration
+                and medication_end_date(episode, medications) < datetime.now(config.TIMEZONE).date()
+            ):
                 raise MedicationScheduleFinishedError()
 
             medication_ids = {medication.id for medication in medications}

@@ -199,3 +199,11 @@ chmod +x scripts/certbot.sh
   비동기 작업 취소는 협력적으로 동작하므로, 이미 실행된 외부 시스템의 변경이나 별도 스레드에서 수행 중인 동기 작업까지 되돌리지는 않습니다.
 - **DB 모델 추가**: `app/models/`에 Tortoise 모델을 정의하고 `app/core/db/databases.py`의 `TORTOISE_APP_MODELS` 리스트에 추가하세요.
 - **AI 로직 추가**: `ai_worker/tasks/`에 새로운 처리 로직을 작성하고 `ai_worker/main.py`에서 호출하도록 구성하세요.
+
+## 조제약 OCR 전처리 평가
+
+- [v3.4 적응형 전처리 구현·정확도·강건성 보고서](docs/ocr/ocr-v34-adaptive-20260907.md)
+- [기존 16장·3버전 비교](docs/ocr/ocr-16-three-versions-20260907.md)
+- [문자 줄 기울기 보정 실험](docs/ocr/ocr-v3.3-text-deskew.md)
+
+실험 버전 선택은 `OCR_PREPROCESS_VERSION` 설정으로 한다. 실제 `.env`와 실행 중인 worker는 로컬 파일 수정만으로 변경되지 않는다. 보고서의 기본값 판정과 미해결 실패를 함께 확인한다.

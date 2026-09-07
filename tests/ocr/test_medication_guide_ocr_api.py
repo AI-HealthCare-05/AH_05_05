@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from io import BytesIO
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 
@@ -14,6 +15,7 @@ from app.dtos.medication_guide_ocr import (
     OcrConfirmationResponse,
     OcrJobAcceptedResponse,
     OcrJobStatusResponse,
+    OcrJobTimings,
 )
 from app.main import app
 from app.models.enums import OcrJobStatus
@@ -96,6 +98,26 @@ TEST_USER = object()
 
 async def override_user() -> object:
     return TEST_USER
+
+
+@pytest.mark.parametrize("status", [OcrJobStatus.READY_FOR_REVIEW, OcrJobStatus.COMPLETE, OcrJobStatus.FAILED])
+async def test_public_status_keeps_terminal_job_timings(status) -> None:
+    service = PublicOcrFakeJobService(
+        OcrJobStatusResponse(
+            ocr_job_id="42",
+            status=status,
+            result=MedicationGuideReviewResult(),
+            timings=OcrJobTimings(queue_wait_ms=100, persist_ms=50, total_ms=3000),
+        )
+    )
+    install_overrides(service)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/api/v1/ocr/jobs/42")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["timings"] == {"queueWaitMs": 100, "persistMs": 50, "totalMs": 3000}
 
 
 def install_overrides(service: FakeJobService) -> None:
@@ -327,9 +349,13 @@ async def test_ocr_upload_returns_the_frontend_envelope_for_a_single_file() -> N
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
-async def test_document_ocr_returns_a_ready_result_with_confidence_tiers_and_exact_low_count() -> None:
+@pytest.mark.parametrize("version", ["v3.1.8", "v3.3.1", "v3.4.1", "v3.4.2", "v3.4.3"])
+async def test_document_ocr_returns_a_ready_result_with_confidence_tiers_and_exact_low_count(version: str) -> None:
     review = MedicationGuideReviewResult(
-        fields={"dispensedDate": {"value": "2026-08-25", "confidence": "medium"}},
+        fields={
+            "hospitalName": {"value": "송도센트럴이비인후과의원", "confidence": "high"},
+            "dispensedDate": {"value": "2026-08-25", "confidence": "medium"},
+        },
         medications=[
             MedicationReview(
                 temp_id="med-1",
@@ -355,7 +381,13 @@ async def test_document_ocr_returns_a_ready_result_with_confidence_tiers_and_exa
         low_confidence_count=1,
     )
     service = PublicOcrFakeJobService(
-        OcrJobStatusResponse(ocr_job_id="42", status=OcrJobStatus.READY_FOR_REVIEW, result=review)
+        OcrJobStatusResponse(
+            ocr_job_id="42",
+            status=OcrJobStatus.READY_FOR_REVIEW,
+            result=review,
+            preprocess_version=version,
+            preprocess_elapsed_ms=321,
+        )
     )
     install_overrides(service)
     try:
@@ -369,7 +401,10 @@ async def test_document_ocr_returns_a_ready_result_with_confidence_tiers_and_exa
         "batchId": "b_42",
         "ocrStatus": "ready_for_review",
         "documentImageUrl": "/api/v1/ocr/jobs/42/image",
-        "fields": {"dispensedDate": {"value": "2026-08-25", "confidence": "medium"}},
+        "fields": {
+            "hospitalName": {"value": "송도센트럴이비인후과의원", "confidence": "high"},
+            "dispensedDate": {"value": "2026-08-25", "confidence": "medium"},
+        },
         "medications": [
             {
                 "tempId": "med-1",
@@ -393,6 +428,8 @@ async def test_document_ocr_returns_a_ready_result_with_confidence_tiers_and_exa
             },
         ],
         "lowConfidenceCount": 1,
+        "preprocessVersion": version,
+        "preprocessElapsedMs": 321,
     }
 
 
@@ -565,6 +602,7 @@ async def test_document_ocr_confirmation_adapts_the_public_body_to_the_job_servi
     service = PublicOcrFakeJobService(OcrJobStatusResponse(ocr_job_id="42", status=OcrJobStatus.READY_FOR_REVIEW))
     install_overrides(service)
     body = {
+        "hospitalName": "송도센트럴이비인후과의원",
         "dispensedDate": "2026-08-25",
         "medications": [
             {
@@ -586,6 +624,7 @@ async def test_document_ocr_confirmation_adapts_the_public_body_to_the_job_servi
     assert response.status_code == 200
     assert response.json() == {"recordId": 99, "hasMedication": True, "statusCode": "active"}
     assert service.registration_edit_requests == [True]
+    assert service.confirmations[0][1].hospital_name == "송도센트럴이비인후과의원"
     assert service.confirmations[0][1].dispensing_date.isoformat() == "2026-08-25"
     medication = service.confirmations[0][1].medications[0]
     assert medication.strength == "500mg"

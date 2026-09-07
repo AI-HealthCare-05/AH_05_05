@@ -2,22 +2,33 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import re
 from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 import httpx2
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 from pydantic import ValidationError
 
-from app.services.medication_ocr_v3.domain.grounding import EvidenceCatalog, GroundingSelection
+from app.services.medication_ocr_v3.domain.grounding import (
+    EvidenceCatalog,
+    GroundingSelection,
+    SemanticGroundingSelection,
+)
 
-PROMPT_VERSION = "medication_grounding_v3"
+PROMPT_VERSION = "medication_grounding_v4"
 SCHEMA_VERSION = "medication_block_selection_v3"
+SEMANTIC_PROMPT_VERSION = "medication_semantic_review_v1"
+SEMANTIC_SCHEMA_VERSION = "medication_semantic_selection_v1"
+# Bound one legacy LLM attempt without cutting off ordinary multi-second responses.
+LEGACY_RESPONSE_TIMEOUT_SECONDS = 10.0
+_DISPENSING_LABEL = re.compile(r"조제\s*일(?:\s*자)?|dispensed(?:\s+date)?|dispensing\s+date", re.IGNORECASE)
 
 _OFFICIAL_BASE_URL = "https://api.openai.com/v1"
 _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / f"{PROMPT_VERSION}.md"
@@ -72,7 +83,7 @@ class _OpenAIClient(Protocol):
 
 
 class GroundedStructurer(Protocol):
-    async def select(self, catalog: EvidenceCatalog) -> GroundingSelection: ...
+    async def select(self, catalog: EvidenceCatalog) -> GroundingSelection | SemanticGroundingSelection: ...
 
     async def aclose(self) -> None: ...
 
@@ -86,11 +97,31 @@ class OpenAIGroundedStructurer:
         api_key: str,
         model: str = "gpt-5.6-terra",
         client: _OpenAIClient | None = None,
+        review_mode: Literal["legacy", "semantic"] = "legacy",
+        legacy_prompt_version: Literal["medication_grounding_v3", "medication_grounding_v4"] = PROMPT_VERSION,
     ) -> None:
+        if review_mode not in {"legacy", "semantic"}:
+            raise ValueError("Unsupported medication review mode")
+        if legacy_prompt_version not in {"medication_grounding_v3", "medication_grounding_v4"}:
+            raise ValueError("Unsupported legacy prompt version")
+        self._legacy_prompt_version = legacy_prompt_version
         self._api_key = api_key
         self._model = model
         self._client = client
         self._closed = False
+        self.review_mode = review_mode
+
+    @property
+    def prompt_version(self) -> str:
+        return SEMANTIC_PROMPT_VERSION if self.review_mode == "semantic" else self._legacy_prompt_version
+
+    @property
+    def schema_version(self) -> str:
+        return SEMANTIC_SCHEMA_VERSION if self.review_mode == "semantic" else SCHEMA_VERSION
+
+    @property
+    def selection_model(self) -> type[GroundingSelection] | type[SemanticGroundingSelection]:
+        return SemanticGroundingSelection if self.review_mode == "semantic" else GroundingSelection
 
     def __repr__(self) -> str:
         return "OpenAIGroundedStructurer()"
@@ -117,43 +148,52 @@ class OpenAIGroundedStructurer:
             except Exception:
                 raise LlmProviderError(LlmErrorCode.LLM_UPSTREAM_FAILED, 502) from None
 
-    async def select(self, catalog: EvidenceCatalog) -> GroundingSelection:
+    async def select(self, catalog: EvidenceCatalog) -> GroundingSelection | SemanticGroundingSelection:
+        deadline = (
+            asyncio.get_running_loop().time() + LEGACY_RESPONSE_TIMEOUT_SECONDS
+            if self.review_mode == "legacy"
+            else None
+        )
         if self._closed:
             raise LlmProviderError(LlmErrorCode.LLM_CONFIGURATION_REJECTED, 503)
         try:
-            prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+            prompt = _PROMPT_PATH.with_name(f"{self.prompt_version}.md").read_text(encoding="utf-8")
             model_input = json.dumps(
-                catalog.to_llm_payload(),
+                catalog.to_semantic_payload() if self.review_mode == "semantic" else catalog.to_llm_payload(),
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
         except (KeyError, OSError, TypeError, UnicodeError, ValueError):
             raise LlmProviderError(LlmErrorCode.LLM_INPUT_INVALID, 500) from None
 
-        client = await self._get_client()
         try:
-            response = await client.responses.create(
-                model=self._model,
-                instructions=prompt,
-                input=model_input,
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": SCHEMA_VERSION,
-                        "schema": GroundingSelection.model_json_schema(by_alias=True),
-                        "strict": True,
-                    }
-                },
-                store=False,
-                max_output_tokens=4_096,
-                truncation="disabled",
-            )
-        except APITimeoutError:
+            async with asyncio.timeout_at(deadline):
+                client = await self._get_client()
+                response = await client.responses.create(
+                    model=self._model,
+                    instructions=prompt,
+                    input=model_input,
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": self.schema_version,
+                            "schema": self.selection_model.model_json_schema(by_alias=True),
+                            "strict": True,
+                        }
+                    },
+                    store=False,
+                    temperature=0,
+                    max_output_tokens=16_384 if self.review_mode == "semantic" else 4_096,
+                    truncation="disabled",
+                )
+        except (APITimeoutError, TimeoutError):
             raise LlmProviderError(LlmErrorCode.LLM_TIMEOUT, 504) from None
         except APIConnectionError:
             raise LlmProviderError(LlmErrorCode.LLM_CONNECTION_FAILED, 502) from None
         except APIStatusError as error:
             raise _status_error(error.status_code) from None
+        except LlmProviderError:
+            raise
         except Exception:
             raise LlmProviderError(LlmErrorCode.LLM_UPSTREAM_FAILED, 502) from None
 
@@ -165,7 +205,20 @@ class OpenAIGroundedStructurer:
             output_text = _attribute(response, "output_text")
             if not isinstance(output_text, str) or not output_text:
                 raise LlmProviderError(LlmErrorCode.LLM_INCOMPLETE, 502)
-            return GroundingSelection.model_validate_json(output_text)
+            selection = self.selection_model.model_validate_json(output_text)
+            if (
+                self.review_mode == "legacy"
+                and self.prompt_version == "medication_grounding_v4"
+                and isinstance(selection, GroundingSelection)
+                and selection.dispensed_date_block_ids
+                and not any(
+                    block.block_id in selection.dispensed_date_block_ids and _DISPENSING_LABEL.search(block.text)
+                    for block in catalog.date_candidates
+                )
+            ):
+                # A bare date cannot justify a tie-break; the pipeline flags abstention.
+                selection = selection.model_copy(update={"dispensed_date_block_ids": []})
+            return selection
         except LlmProviderError:
             raise
         except (ValidationError, TypeError, ValueError):

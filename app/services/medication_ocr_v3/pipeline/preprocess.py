@@ -29,7 +29,9 @@ from app.services.medication_ocr_v3.domain.image import (
     Quad,
     QualityState,
 )
+from app.services.medication_ocr_v3.pipeline.adaptive import enlarge_small_print, needs_illumination_correction
 from app.services.medication_ocr_v3.pipeline.quality import build_metrics, measure_pixels, warp_quality_is_acceptable
+from app.services.medication_ocr_v3.pipeline.text_deskew import deskew_text
 
 MAX_SOURCE_BYTES = 50 * 1024 * 1024
 MAX_PIXELS = 40_000_000
@@ -60,6 +62,16 @@ _WHITE = (255, 255, 255)
 
 type UInt8Image = NDArray[np.uint8]
 type _CandidateProvenance = Literal["contour", "hough", "grabcut"]
+type _OutputTreatment = Literal[
+    "control",
+    "unsharp_mild",
+    "unsharp_medium",
+    "contrast_mild",
+    "contrast_unsharp_mild",
+    "desaturate_unsharp_mild",
+    "saturate_unsharp_mild",
+    "grayscale_unsharp",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +107,50 @@ class _DetectionColorBuffers:
     lab: UInt8Image
     hsv: UInt8Image
     lab_float: NDArray[np.float32]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreprocessProfile:
+    grabcut_iterations: int
+    grabcut_max_edge: int
+    grabcut_trigger_confidence: float
+    output_treatment: _OutputTreatment | None = None
+    text_deskew: bool = False
+    perspective_treatment_only: bool = False
+    small_print_enlargement: bool = False
+    adaptive_illumination: bool = False
+
+
+_PREPROCESS_PROFILES = {
+    "v3.1.0": _PreprocessProfile(4, 800, 0.82),
+    "v3.1.1": _PreprocessProfile(3, 800, 0.82),
+    "v3.1.2": _PreprocessProfile(2, 800, 0.82),
+    "v3.1.3": _PreprocessProfile(1, 800, 0.82),
+    "v3.1.4": _PreprocessProfile(3, 700, 0.82),
+    "v3.1.5": _PreprocessProfile(3, 600, 0.82),
+    "v3.1.6": _PreprocessProfile(3, 500, 0.82),
+    "v3.1.7": _PreprocessProfile(3, 800, 0.78),
+    "v3.1.8": _PreprocessProfile(3, 800, 0.74),
+    "v3.2.1": _PreprocessProfile(1, 800, 0.82, "control"),
+    "v3.2.2": _PreprocessProfile(1, 800, 0.82, "unsharp_mild"),
+    "v3.2.3": _PreprocessProfile(1, 800, 0.82, "unsharp_medium"),
+    "v3.2.4": _PreprocessProfile(1, 800, 0.82, "contrast_mild"),
+    "v3.2.5": _PreprocessProfile(1, 800, 0.82, "contrast_unsharp_mild"),
+    "v3.2.6": _PreprocessProfile(1, 800, 0.82, "desaturate_unsharp_mild"),
+    "v3.2.7": _PreprocessProfile(1, 800, 0.82, "saturate_unsharp_mild"),
+    "v3.2.8": _PreprocessProfile(1, 800, 0.82, "grayscale_unsharp"),
+    "v3.3.1": _PreprocessProfile(1, 800, 0.82, text_deskew=True),
+    "v3.4.1": _PreprocessProfile(1, 800, 0.82, "saturate_unsharp_mild", perspective_treatment_only=True),
+    "v3.4.2": _PreprocessProfile(1, 800, 0.82, small_print_enlargement=True),
+    "v3.4.3": _PreprocessProfile(1, 800, 0.82, adaptive_illumination=True),
+}
+
+
+def _preprocess_profile(version: str) -> _PreprocessProfile:
+    try:
+        return _PREPROCESS_PROFILES[version]
+    except KeyError as error:
+        raise ValueError(f"Unsupported OCR preprocess version: {version}") from error
 
 
 def _matrix_tuple(matrix: NDArray[np.float64]) -> Matrix3:
@@ -880,16 +936,17 @@ def _document_authority(group: list[_QuadCandidate]) -> _QuadCandidate:
 
 def _grabcut_document_candidates(
     rgb: UInt8Image,
+    profile: _PreprocessProfile,
     color_buffers: _DetectionColorBuffers | None = None,
 ) -> list[_QuadCandidate]:
     original_height, original_width = rgb.shape[:2]
-    scale = min(1.0, 800.0 / max(original_width, original_height))
+    scale = min(1.0, profile.grabcut_max_edge / max(original_width, original_height))
     if scale < 1.0:
         working = cast(
             UInt8Image,
             cv2.resize(
                 rgb,
-                (round(original_width * scale), round(original_height * scale)),
+                (max(1, round(original_width * scale)), max(1, round(original_height * scale))),
                 interpolation=cv2.INTER_AREA,
             ),
         )
@@ -915,7 +972,7 @@ def _grabcut_document_candidates(
             rectangle,
             background_model,
             foreground_model,
-            4,
+            profile.grabcut_iterations,
             cv2.GC_INIT_WITH_RECT,
         )
     except cv2.error:
@@ -1055,7 +1112,7 @@ def _three_sided_flat_crop_evidence(gray: UInt8Image) -> list[Quad]:
     return evidence
 
 
-def _detect_document(rgb: UInt8Image) -> DocumentDetection:
+def _detect_document(rgb: UInt8Image, profile: _PreprocessProfile) -> DocumentDetection:
     original_height, original_width = rgb.shape[:2]
     scale = min(1.0, 1400.0 / max(original_width, original_height))
     working: UInt8Image
@@ -1064,7 +1121,7 @@ def _detect_document(rgb: UInt8Image) -> DocumentDetection:
             UInt8Image,
             cv2.resize(
                 rgb,
-                (round(original_width * scale), round(original_height * scale)),
+                (max(1, round(original_width * scale)), max(1, round(original_height * scale))),
                 interpolation=cv2.INTER_AREA,
             ),
         )
@@ -1154,8 +1211,8 @@ def _detect_document(rgb: UInt8Image) -> DocumentDetection:
     hough = _hough_candidate(canny, working, width, height, colors)
     if hough is not None:
         candidates.append(hough)
-    if not candidates or max(candidate.confidence for candidate in candidates) < 0.82:
-        candidates.extend(_grabcut_document_candidates(working, colors))
+    if not candidates or max(candidate.confidence for candidate in candidates) < profile.grabcut_trigger_confidence:
+        candidates.extend(_grabcut_document_candidates(working, profile, colors))
 
     groups = _group_nested_candidates(candidates)
     authorities = [_document_authority(group) for group in groups]
@@ -1352,7 +1409,7 @@ def _content_envelope_crop_deskew_candidate(
             UInt8Image,
             cv2.resize(
                 rgb,
-                (round(source_width * scale), round(source_height * scale)),
+                (max(1, round(source_width * scale)), max(1, round(source_height * scale))),
                 interpolation=cv2.INTER_AREA,
             ),
         )
@@ -1862,6 +1919,55 @@ def _blend_grayscale(rgb: UInt8Image, level: int) -> UInt8Image:
     )
 
 
+def _unsharp_luminance(rgb: UInt8Image, *, amount: float) -> UInt8Image:
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+    luminance = lab[..., 0]
+    blurred = cv2.GaussianBlur(luminance, (0, 0), 1.0)
+    lab[..., 0] = cv2.addWeighted(luminance, 1.0 + amount, blurred, -amount, 0.0)
+    return cast(UInt8Image, cv2.cvtColor(lab, cv2.COLOR_LAB2RGB))
+
+
+def _mild_local_contrast(rgb: UInt8Image) -> UInt8Image:
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+    luminance = lab[..., 0]
+    enhanced = cv2.createCLAHE(clipLimit=1.4, tileGridSize=(8, 8)).apply(luminance)
+    lab[..., 0] = cv2.addWeighted(luminance, 0.70, enhanced, 0.30, 0.0)
+    return cast(UInt8Image, cv2.cvtColor(lab, cv2.COLOR_LAB2RGB))
+
+
+def _scale_saturation(rgb: UInt8Image, *, factor: float) -> UInt8Image:
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    hsv[..., 1] = np.clip(hsv[..., 1].astype(np.float32) * factor, 0, 255).astype(np.uint8)
+    return cast(UInt8Image, cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB))
+
+
+def _apply_output_treatment(
+    rgb: UInt8Image,
+    treatment: _OutputTreatment,
+) -> tuple[UInt8Image, str]:
+    if treatment == "control":
+        return rgb.copy(), "output_treatment_control"
+    if treatment == "unsharp_mild":
+        return _unsharp_luminance(rgb, amount=0.30), "output_unsharp_mild"
+    if treatment == "unsharp_medium":
+        return _unsharp_luminance(rgb, amount=0.60), "output_unsharp_medium"
+    if treatment == "contrast_mild":
+        return _mild_local_contrast(rgb), "output_contrast_mild"
+    if treatment == "contrast_unsharp_mild":
+        contrasted = _mild_local_contrast(rgb)
+        return _unsharp_luminance(contrasted, amount=0.30), "output_contrast_unsharp_mild"
+    if treatment == "desaturate_unsharp_mild":
+        desaturated = _scale_saturation(rgb, factor=0.80)
+        return _unsharp_luminance(desaturated, amount=0.30), "output_desaturate_unsharp_mild"
+    if treatment == "saturate_unsharp_mild":
+        saturated = _scale_saturation(rgb, factor=1.15)
+        return _unsharp_luminance(saturated, amount=0.30), "output_saturate_unsharp_mild"
+    grayscale = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    blurred = cv2.GaussianBlur(grayscale, (0, 0), 1.0)
+    sharpened = cv2.addWeighted(grayscale, 1.45, blurred, -0.45, 0.0)
+    return cast(UInt8Image, cv2.cvtColor(sharpened, cv2.COLOR_GRAY2RGB)), "output_grayscale_unsharp"
+
+
 def _preview(
     image_id: str,
     rgb: UInt8Image,
@@ -1934,7 +2040,9 @@ def preprocess_image(
     grayscale_level: int = 0,
     *,
     document_quad_override: Quad | None = None,
+    preprocess_version: str = "v3.4.1",
 ) -> PreprocessResult:
+    profile = _preprocess_profile(preprocess_version)
     if manual_rotation not in {0, 90, 180, 270}:
         raise ImageValidationError(
             ImageErrorCode.INVALID_ROTATION,
@@ -1984,7 +2092,7 @@ def preprocess_image(
     )
 
     if document_quad_override is None:
-        document = _stabilize_document_detection(_detect_document(rgb), width, height)
+        document = _stabilize_document_detection(_detect_document(rgb, profile), width, height)
     elif _is_valid_quad(document_quad_override, minimum_area=width * height * 0.01):
         coverage, _ = _quad_geometry(document_quad_override, width, height)
         document = DocumentDetection(
@@ -2069,11 +2177,56 @@ def preprocess_image(
         skew_degrees=skew,
         likely_document_count=document.likely_document_count,
     )
-    normalized_rgb, correction_operation = _apply_correction_preset(
-        candidate.rgb,
-        correction_preset,
-    )
+    if (
+        profile.adaptive_illumination
+        and correction_preset is CorrectionPreset.ILLUMINATION
+        and not needs_illumination_correction(candidate.rgb)
+    ):
+        normalized_rgb, correction_operation = candidate.rgb.copy(), "illumination_skipped_even_paper"
+    else:
+        normalized_rgb, correction_operation = _apply_correction_preset(candidate.rgb, correction_preset)
     normalized_rgb = _blend_grayscale(normalized_rgb, grayscale_level)
+    if profile.text_deskew:
+        normalized_rgb, deskew_matrix, deskew_operation = deskew_text(normalized_rgb, max_edge=MAX_TEMPLATE_EDGE)
+        operations.append(deskew_operation)
+        prior = candidate.oriented_to_candidate
+        candidate = replace(
+            candidate,
+            oriented_to_candidate=_transform(
+                prior.source_width,
+                prior.source_height,
+                normalized_rgb.shape[1],
+                normalized_rgb.shape[0],
+                _compose(_matrix_tuple(deskew_matrix), prior.matrix),
+            ),
+        )
+    # Unrectified scenes retain the conservative pixels: background and tiny print
+    # can become false edges under sharpening. This decision uses geometry only.
+    use_output_treatment = not profile.perspective_treatment_only or (
+        candidate.preprocessing_mode is PreprocessingMode.PERSPECTIVE
+    )
+    if profile.output_treatment is not None and use_output_treatment:
+        normalized_rgb, treatment_operation = _apply_output_treatment(
+            normalized_rgb,
+            profile.output_treatment,
+        )
+        operations.append(treatment_operation)
+    elif profile.perspective_treatment_only:
+        operations.append("adaptive_treatment_skipped_unrectified")
+    if profile.small_print_enlargement:
+        normalized_rgb, sampling_matrix, sampling_operation = enlarge_small_print(normalized_rgb)
+        operations.append(sampling_operation)
+        sampled_height, sampled_width = normalized_rgb.shape[:2]
+        candidate = replace(
+            candidate,
+            oriented_to_candidate=_transform(
+                width,
+                height,
+                sampled_width,
+                sampled_height,
+                _compose(_matrix_tuple(sampling_matrix), candidate.oriented_to_candidate.matrix),
+            ),
+        )
     border = min(8, max(3, round(min(normalized_rgb.shape[:2]) * 0.006)))
     normalized_rgb[:border, :] = 255
     normalized_rgb[-border:, :] = 255
