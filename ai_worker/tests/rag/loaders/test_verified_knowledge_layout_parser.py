@@ -306,3 +306,189 @@ def test_parse_vitamin_d_review_excludes_back_matter_from_page_fourteen() -> Non
 
     assert extraction is not None
     assert extraction.blocks == []
+
+
+def test_parse_statins_vitamin_d_review_orders_front_page_without_author_metadata() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("Review", 35, 100, 75, 112),
+            layout_word("Statins,", 35, 120, 85, 136),
+            layout_word("Vitamin", 89, 120, 140, 136),
+            layout_word("D", 144, 120, 155, 136),
+            layout_word("Authors", 35, 170, 90, 182),
+            layout_word("Abstract", 165, 320, 220, 334),
+            layout_word("Statins", 165, 345, 205, 357),
+            layout_word("are", 209, 345, 227, 357),
+            layout_word("widely", 231, 345, 270, 357),
+            layout_word("used", 274, 345, 302, 357),
+            layout_word("Academic", 35, 550, 85, 562),
+            layout_word("Editor", 89, 550, 125, 562),
+            layout_word("Keywords:", 165, 600, 225, 612),
+            layout_word("endothelial", 229, 600, 295, 612),
+            layout_word("inflammation", 299, 600, 375, 612),
+            layout_word("modulation", 379, 600, 440, 612),
+            layout_word("1.", 165, 665, 176, 679),
+            layout_word("Introduction", 180, 665, 250, 679),
+            layout_word("Statins", 165, 690, 205, 702),
+            layout_word("are", 209, 690, 227, 702),
+            layout_word("prescribed", 231, 690, 290, 702),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=1,
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-186668a2a92b533c",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == [
+        "Review\nStatins, Vitamin D",
+        "Abstract\nStatins are widely used\nKeywords: endothelial inflammation modulation",
+        "1. Introduction\nStatins are prescribed",
+    ]
+
+
+def test_parse_statins_vitamin_d_review_excludes_figure_and_table_regions() -> None:
+    parser = VerifiedKnowledgeLayoutParser()
+    page_five = FakeLayoutPage(
+        [
+            layout_word("Figure", 165, 400, 200, 412),
+            layout_word("1.", 204, 400, 215, 412),
+            layout_word("Understanding", 165, 540, 245, 552),
+            layout_word("these", 249, 540, 280, 552),
+            layout_word("interactions", 284, 540, 350, 552),
+        ]
+    )
+    page_seven = FakeLayoutPage(
+        [
+            layout_word("Narrative", 165, 100, 220, 112),
+            layout_word("before", 224, 100, 265, 112),
+            layout_word("Table", 35, 250, 70, 262),
+            layout_word("cell", 74, 250, 98, 262),
+            layout_word("3.", 165, 550, 176, 564),
+            layout_word("Changes", 180, 550, 230, 564),
+        ]
+    )
+
+    fifth = parser.parse(
+        page=page_five,
+        page_number=5,
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-186668a2a92b533c",
+    )
+    seventh = parser.parse(
+        page=page_seven,
+        page_number=7,
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-186668a2a92b533c",
+    )
+
+    assert fifth is not None
+    assert [block.content for block in fifth.blocks] == ["Understanding these interactions"]
+    assert seventh is not None
+    assert [block.content for block in seventh.blocks] == ["Narrative before", "3. Changes"]
+
+
+def test_parse_statins_vitamin_d_review_restores_first_four_column_table() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("Narrative", 170, 170, 225, 182),
+            layout_word("Mechanism/Pathway", 42, 223, 150, 234),
+            layout_word("Statin Mechanism", 173, 223, 275, 234),
+            layout_word("Vitamin D Mechanism", 303, 223, 415, 234),
+            layout_word("Representative Evidence", 434, 219, 552, 230),
+            layout_word("Anti-inflammatory/immuno-", 42, 251, 158, 262),
+            layout_word("modulation", 42, 261, 100, 272),
+            layout_word(
+                "↓ IL-6, CRP, TNF- α; suppress macrophage activation in plaques",
+                173,
+                246,
+                292,
+                272,
+            ),
+            layout_word(
+                "VDR activation; suppress pro-inflammatory genes; ↑ IL-10",
+                303,
+                246,
+                424,
+                272,
+            ),
+            layout_word(
+                "Review of clinical and experimental studies on cardiovascular inflammation [1]",
+                434,
+                242,
+                555,
+                272,
+            ),
+            layout_word("Section 3", 170, 560, 225, 572),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=7,
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-186668a2a92b533c",
+    )
+
+    assert extraction is not None
+    table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
+    assert table.headers == [
+        "Mechanism/Pathway",
+        "Statin Mechanism",
+        "Vitamin D Mechanism",
+        "Representative Evidence (Study Type/Population)",
+    ]
+    assert table.rows[0].cells == [
+        "Anti-inflammatory/immunomodulation",
+        "↓ IL-6, CRP, TNF-α; suppress macrophage activation in plaques",
+        "VDR activation; suppress pro-inflammatory genes; ↑ IL-10",
+        "Review of clinical and experimental studies on cardiovascular inflammation [1]",
+    ]
+
+
+def test_parse_statins_vitamin_d_review_restores_second_four_column_table() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("Clinical evidence", 170, 420, 250, 432),
+            layout_word("Statin(s) Studied", 42, 473, 150, 484),
+            layout_word("Study Design", 173, 473, 260, 484),
+            layout_word("Effect on Vitamin D Levels", 303, 473, 450, 484),
+            layout_word("Remarks/Limitations", 463, 473, 558, 484),
+            layout_word("Rosuvastatin", 42, 495, 120, 506),
+            layout_word("Observational study. [34]", 173, 495, 270, 506),
+            layout_word(
+                "Substantial increase (~14 to 36 ng/mL over 8 weeks)",
+                303,
+                489,
+                450,
+                506,
+            ),
+            layout_word("Possible confounding, small sample", 463, 489, 558, 506),
+            layout_word("Key Point", 170, 740, 225, 752),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=8,
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-186668a2a92b533c",
+    )
+
+    assert extraction is not None
+    table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
+    assert table.headers == [
+        "Statin(s) Studied",
+        "Study Design",
+        "Effect on Vitamin D Levels",
+        "Remarks/Limitations",
+    ]
+    assert table.rows[0].cells == [
+        "Rosuvastatin",
+        "Observational study [34]",
+        "Substantial increase (~14 to 36 ng/mL over 8 weeks)",
+        "Possible confounding, small sample",
+    ]

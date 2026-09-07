@@ -287,7 +287,7 @@
       "document_id": "research_drug_nutrient_interactions-186668a2a92b533c",
       "repo_path": "data/knowledge/raw/demo_restricted/research/drug_nutrient_interactions/research_statins_vitamin_d_review_2025.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
-      "selection_reason": "대표 문서 품질 승인을 상속한 전체 코퍼스 전처리",
+      "selection_reason": "MDPI 본문 의미 경계·2개 표 행 복원·페이지 범위 수동 대조 완료",
       "manual_review_status": "APPROVED",
       "title": "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review",
       "source_url": "https://doi.org/10.3390/biomedicines13102515",

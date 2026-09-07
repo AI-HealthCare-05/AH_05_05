@@ -106,6 +106,28 @@ def build_drug_vitamin_d_review_chunk(
     )
 
 
+def build_statins_vitamin_d_review_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+    page_start: int = 1,
+    page_end: int = 13,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(content, chunk_index=chunk_index)
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "document_id": ("research_drug_nutrient_interactions-186668a2a92b533c"),
+                    "title": "Statins, Vitamin D, and Cardiovascular Health",
+                    "page_start": page_start,
+                    "page_end": page_end,
+                }
+            )
+        }
+    )
+
+
 def build_page(
     content: str,
     *,
@@ -1768,6 +1790,131 @@ def test_repair_drug_vitamin_d_review_uses_verified_page_ranges_and_abstract_lay
     for prefix, expected in expected_ranges.items():
         chunk = next(item for normalized, item in by_start.items() if normalized.startswith(prefix))
         assert (chunk.metadata.page_start, chunk.metadata.page_end) == expected
+
+
+def test_repair_statins_vitamin_d_review_uses_verified_semantic_boundaries() -> None:
+    content = "\n".join(
+        [
+            "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review",
+            "Review",
+            "Review",
+            "Abstract",
+            "Statins are widely used lipid-lowering agents. Keywords: endothelial inflammation modulation",
+            "1. Introduction",
+            "Introduction body between statins, vitamin D, and cardiovascular outcomes.",
+            "2. Statins and Vitamin D: Mechanistic Interactions",
+            "2.1. Shared Precursors and Metabolic Pathways",
+            "Cholesterol and 25(OH)D, the main circulating form of vitamin D, body atherosclerosis and heart failure.",
+            "2.3. Molecular Mediators and Transport Proteins Involved in Statin–Vitamin D Interactions",
+            "Molecular body under investigation.",
+            "2.4. Influence on Vitamin D Synthesis and Metabolism",
+            "Metabolism body through direct clinical evidence.",
+            "Although cholesterol and vitamin D share a precursor. The net effect likely varies among different statin drugs and patient contexts.",
+            "2.5. Combined Role of Statins and Vitamin D in Cardiovascular Risk Reduction: Synergy or Redundancy?",
+            "Combined body reducing tissue factor mRNA expression.",
+            "• Endothelial Protection",
+            "Protection body with a few incorporating animal or in vitro mechanistic findings (notably references).",
+            "3. Changes in Vitamin D Levels in Statin Users: Clinical Evidence",
+            "Clinical body changes in vitamin D concentrations.",
+            "Key Point: Current evidence",
+            "Key point body with coronary artery disease.",
+            "4. Vitamin D Supplementation in Statin-Treated Patients",
+            "Supplement body supporting better cardiovascular outcomes.",
+            "Guideline Recommendations for Vitamin D Testing and Supplementation",
+            "Guideline body without specific risk factors or symptoms.",
+            "5. Vitamin D, Atherosclerosis, and Coronary Artery Disease",
+            "5.1. Vitamin D Levels and Cardiovascular Risk",
+            "Risk body but results have been inconsistent and not definitive.",
+            "5.4. Current Consensus",
+            "Consensus body especially in patients with muscular symptoms or inflammation.",
+            "5.7. Preventive Cardiovascular Strategies",
+            "Strategy body to maximizing therapeutic outcomes.",
+            "6. Summary of Key Findings and Future Therapeutic Directions",
+            "6.1. Summary of Key Findings",
+            "Summary body beyond those achievable by statins alone.",
+            "7. Limitations of the Study",
+            "Limitations body vitamin D, and cardiovascular risk.",
+            "8. Conclusions",
+            "Conclusion body vitamin D-deficient populations.",
+            "Author Contributions: remove this back matter.",
+        ]
+    )
+    chunks = [build_statins_vitamin_d_review_chunk(content, chunk_index=0)]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+    contents = [" ".join(chunk.content.split()) for chunk in repaired]
+
+    expected_starts = [
+        "Statins, Vitamin D",
+        "1. Introduction",
+        "2. Statins and Vitamin D: Mechanistic Interactions 2.1.",
+        "2.3. Molecular Mediators",
+        "2.4. Influence on Vitamin D Synthesis and Metabolism",
+        "Although cholesterol and vitamin D",
+        "2.5. Combined Role of Statins and Vitamin D",
+        "• Endothelial Protection",
+        "3. Changes in Vitamin D Levels in Statin Users",
+        "Key Point: Current evidence",
+        "4. Vitamin D Supplementation in Statin-Treated Patients",
+        "Guideline Recommendations for Vitamin D Testing and Supplementation",
+        "5. Vitamin D, Atherosclerosis, and Coronary Artery Disease 5.1.",
+        "5.4. Current Consensus",
+        "5.7. Preventive Cardiovascular Strategies",
+        "6. Summary of Key Findings and Future Therapeutic Directions 6.1.",
+        "7. Limitations of the Study",
+        "8. Conclusions",
+    ]
+    assert len(contents) == len(expected_starts)
+    assert all(content.startswith(start) for content, start in zip(contents, expected_starts, strict=True))
+    assert contents[0].endswith("endothelial inflammation modulation")
+    assert repaired[0].content.startswith(
+        "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review\n\nAbstract\n"
+    )
+    assert "\n\nKeywords:" in repaired[0].content
+    expected_page_ranges = {
+        "2. Statins and Vitamin D: Mechanistic Interactions": (2, 3),
+        "• Endothelial Protection": (6, 7),
+        "4. Vitamin D Supplementation in Statin-Treated Patients": (10, 10),
+    }
+    for prefix, expected_page_range in expected_page_ranges.items():
+        chunk = next(item for item in repaired if item.content.startswith(prefix))
+        assert (chunk.metadata.page_start, chunk.metadata.page_end) == expected_page_range
+    assert contents[-1].endswith("vitamin D-deficient populations.")
+    assert not any("Author Contributions" in content for content in contents)
+
+
+def test_repair_statins_vitamin_d_review_preserves_verified_table_chunks() -> None:
+    text = build_statins_vitamin_d_review_chunk(
+        "Review Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review "
+        "Abstract Statins are widely used lipid-lowering agents. "
+        "8. Conclusions Evidence ends in vitamin D-deficient populations.",
+        chunk_index=0,
+    )
+    table = build_statins_vitamin_d_review_chunk(
+        "Mechanism/Pathway=Anti-inflammatory/immunomodulation | "
+        "Statin Mechanism=↓ IL-6 | Vitamin D Mechanism=VDR activation | "
+        "Representative Evidence (Study Type/Population)=Clinical review [1]",
+        chunk_index=1,
+        page_start=7,
+        page_end=7,
+    )
+    table = table.model_copy(
+        update={
+            "metadata": table.metadata.model_copy(
+                update={
+                    "content_kind": KnowledgeContentKind.TABLE,
+                    "table_title": "Overlap of Statins and Vitamin D Mechanisms",
+                }
+            )
+        }
+    )
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks([text, table])
+
+    table_chunks = [chunk for chunk in repaired if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
+    assert len(table_chunks) == 1
+    assert table_chunks[0].metadata.table_title == "Overlap of Statins and Vitamin D Mechanisms"
+    assert "Clinical review [1]" in table_chunks[0].content
 
 
 def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:

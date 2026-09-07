@@ -97,6 +97,8 @@ _POPULATION_LABELS = {
 _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-3dd5c1de206c9a88"
 _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-299edbe35f581616"
 _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-80c3d674cbc86d03"
+_STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-186668a2a92b533c"
+_STATINS_VITAMIN_D_REVIEW_TITLE = "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review"
 
 _DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES = (
     "The currently available literature on drug-vitamin D interactions",
@@ -136,6 +138,34 @@ _DRUG_VITAMIN_D_VERIFIED_PAGE_RANGES = {
     "Highly active antiretroviral agents (HAART)": (10, 11),
     "Histamine H2-receptor antagonists": (11, 11),
 }
+
+_STATINS_VITAMIN_D_REVIEW_BOUNDARIES = (
+    "1. Introduction",
+    "2. Statins and Vitamin D: Mechanistic Interactions",
+    "2.3. Molecular Mediators and Transport Proteins Involved in Statin–Vitamin D Interactions",
+    "2.4. Influence on Vitamin D Synthesis and Metabolism",
+    "Although cholesterol and vitamin D",
+    "2.5. Combined Role of Statins and Vitamin D in Cardiovascular Risk Reduction",
+    "• Endothelial Protection",
+    "3. Changes in Vitamin D Levels in Statin Users: Clinical Evidence",
+    "Key Point: Current evidence",
+    "4. Vitamin D Supplementation in Statin-Treated Patients",
+    "Guideline Recommendations for Vitamin D Testing and Supplementation",
+    "5. Vitamin D, Atherosclerosis, and Coronary Artery Disease",
+    "5.4. Current Consensus",
+    "5.7. Preventive Cardiovascular Strategies",
+    "6. Summary of Key Findings and Future Therapeutic Directions",
+    "7. Limitations of the Study",
+    "8. Conclusions",
+)
+
+_STATINS_VITAMIN_D_VERIFIED_PAGE_RANGES = {
+    "2. Statins and Vitamin D: Mechanistic Interactions": (2, 3),
+    "• Endothelial Protection": (6, 7),
+    "4. Vitamin D Supplementation in Statin-Treated Patients": (10, 10),
+}
+
+_STATINS_VITAMIN_D_CONCLUSION_END = "vitamin D-deficient populations."
 
 
 _COMMON_CAUTION_HEADINGS = {
@@ -442,6 +472,14 @@ class KnowledgeSplitter:
             return chunks
 
         document_id = chunks[0].metadata.document_id
+        if document_id == _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID:
+            text_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind != KnowledgeContentKind.TABLE]
+            table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
+            repaired = [
+                *self._resegment_statins_vitamin_d_review(text_chunks),
+                *table_chunks,
+            ]
+            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
         if document_id == _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID:
             repaired = self._resegment_drug_vitamin_d_review(chunks)
             return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
@@ -466,6 +504,81 @@ class KnowledgeSplitter:
         repaired = self._regroup_verified_table_chunks(repaired)
         repaired = [chunk for chunk in repaired if chunk.content.strip()]
         return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+
+    def _resegment_statins_vitamin_d_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        merged = self._merge_verified_chunk_text(chunks)
+        abstract_start = merged.find("Abstract")
+        if abstract_start >= 0:
+            merged = f"{_STATINS_VITAMIN_D_REVIEW_TITLE} {merged[abstract_start:]}"
+        conclusion_end = merged.find(_STATINS_VITAMIN_D_CONCLUSION_END)
+        if conclusion_end >= 0:
+            merged = merged[: conclusion_end + len(_STATINS_VITAMIN_D_CONCLUSION_END)]
+
+        positions = sorted(
+            {position for marker in _STATINS_VITAMIN_D_REVIEW_BOUNDARIES if (position := merged.find(marker)) >= 0}
+        )
+        if not positions:
+            return chunks
+        if positions[0] > 0:
+            positions.insert(0, 0)
+        positions.append(len(merged))
+
+        repaired: list[KnowledgeChunk] = []
+        for start, end in zip(positions, positions[1:], strict=False):
+            content = merged[start:end].strip()
+            if not content:
+                continue
+            metadata = self._verified_span_metadata(
+                content=content,
+                chunks=chunks,
+            )
+            verified_page_range = next(
+                (
+                    page_range
+                    for prefix, page_range in _STATINS_VITAMIN_D_VERIFIED_PAGE_RANGES.items()
+                    if content.startswith(prefix)
+                ),
+                None,
+            )
+            if verified_page_range is not None:
+                metadata = metadata.model_copy(
+                    update={
+                        "page_start": verified_page_range[0],
+                        "page_end": verified_page_range[1],
+                    }
+                )
+            repaired.append(
+                chunks[0].model_copy(
+                    update={
+                        "content": self._format_statins_vitamin_d_heading(content),
+                        "metadata": metadata,
+                    }
+                )
+            )
+        return repaired
+
+    @staticmethod
+    def _format_statins_vitamin_d_heading(content: str) -> str:
+        if content.startswith(f"{_STATINS_VITAMIN_D_REVIEW_TITLE} ") and " Abstract " in content:
+            before_abstract, abstract = content.split(" Abstract ", maxsplit=1)
+            abstract = re.sub(r"\s+Keywords:\s*", "\n\nKeywords: ", abstract, count=1)
+            return f"{before_abstract.strip()}\n\nAbstract\n{abstract.strip()}"
+
+        nested_headings = (
+            "2.1. Shared Precursors and Metabolic Pathways",
+            "5.1. Vitamin D Levels and Cardiovascular Risk",
+            "6.1. Summary of Key Findings",
+        )
+        for nested in nested_headings:
+            content = content.replace(f" {nested} ", f"\n{nested}\n", 1)
+
+        for heading in _STATINS_VITAMIN_D_REVIEW_BOUNDARIES:
+            if content.startswith(heading) and len(content) > len(heading):
+                return f"{heading}\n{content[len(heading) :].strip()}"
+        return content
 
     def _resegment_drug_vitamin_d_review(
         self,

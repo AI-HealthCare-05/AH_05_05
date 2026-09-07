@@ -10,6 +10,9 @@ from ai_worker.rag.loaders.herb_drug_review_layout_parser import (
     HerbDrugReviewLayoutParser,
 )
 from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtraction
+from ai_worker.rag.loaders.statins_vitamin_d_review_layout_parser import (
+    StatinsVitaminDReviewLayoutParser,
+)
 from ai_worker.rag.loaders.warfarin_review_layout_parser import (
     WarfarinReviewLayoutParser,
 )
@@ -28,6 +31,7 @@ class VerifiedKnowledgeLayoutParser:
         self._parsers = (
             BotanicalReviewLayoutParser(),
             DrugVitaminDReviewLayoutParser(),
+            StatinsVitaminDReviewLayoutParser(),
             HerbDrugReviewLayoutParser(),
             WarfarinReviewLayoutParser(),
         )
