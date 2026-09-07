@@ -9,6 +9,23 @@ async function openSignup(page: Page) {
   await page.getByRole('button', { name: '회원가입', exact: true }).click();
 }
 
+async function mockEmailVerificationRoutes(page: Page) {
+  await page.route('**/api/v1/auth/email-verifications', async (route) => {
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ verification_id: 41, expires_in: 180, resend_available_in: 60 }),
+    });
+  });
+  await page.route('**/api/v1/auth/email-verifications/41/verify', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ verification_token: 'verification-token', expires_in: 600 }),
+    });
+  });
+}
+
 test('회원가입은 이메일·인증코드·비밀번호·프로필 순서의 네 단계로 진행한다', async ({ page }) => {
   await openSignup(page);
 
@@ -23,7 +40,7 @@ test('회원가입은 이메일·인증코드·비밀번호·프로필 순서의
 
   await expect(page.getByText('2 / 4 단계', { exact: true })).toBeVisible();
   await expect(page.getByLabel('인증코드')).toHaveAttribute('maxlength', '6');
-  await expect(page.getByLabel('남은 시간')).toHaveText(/\d{2}:\d{2}/);
+  await expect(page.getByLabel('남은 시간')).toHaveText('03:00');
   await expect(page.getByText('new-patient@example.com 으로 6자리 코드를 보냈어요.')).toBeVisible();
   await expect(page.getByLabel('이메일')).toHaveCount(0);
 
@@ -42,6 +59,34 @@ test('회원가입은 이메일·인증코드·비밀번호·프로필 순서의
   await expect(page.getByRole('heading', { name: '마지막이에요' })).toBeVisible();
   await expect(page.getByLabel('이메일')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '회원가입 완료' })).toBeDisabled();
+});
+
+test('틀린 이메일 인증번호는 입력란 아래 오류를 표시한다', async ({ page }) => {
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('wrong-code@example.com');
+  await page.getByRole('button', { name: '인증코드 받기' }).click();
+  await page.getByLabel('인증코드').fill('654321');
+  await page.getByRole('button', { name: '확인' }).click();
+
+  await expect(page.getByText('인증번호를 확인해주세요.', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 / 4 단계', { exact: true })).toBeVisible();
+});
+
+test('인증번호는 3분 뒤 입력과 확인이 잠기고 재발송이 활성화된다', async ({ page }) => {
+  await page.clock.install();
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('expired-code@example.com');
+  const requestFinished = page.getByRole('button', { name: '인증코드 받기' }).click();
+  await page.clock.fastForward(500);
+  await requestFinished;
+  await expect(page.getByLabel('남은 시간')).toHaveText('03:00');
+
+  await page.clock.runFor(180_000);
+
+  await expect(page.getByLabel('남은 시간')).toHaveText('00:00');
+  await expect(page.getByLabel('인증코드')).toBeDisabled();
+  await expect(page.getByRole('button', { name: '확인' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '다시 보내기' })).toBeEnabled();
 });
 
 test('회원가입 단계의 뒤로가기는 이전 단계로 돌아가고 이메일은 수정할 수 없다', async ({ page }) => {
@@ -115,6 +160,7 @@ test('회원가입 완료는 기존 계정 생성 뒤 로그인 API 순서를 �
   await page.route('**/api/v1/**', async (route) => {
     await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
   });
+  await mockEmailVerificationRoutes(page);
   await page.route('**/api/v1/auth/signup', async (route) => {
     requestOrder.push('signup');
     signupBody = route.request().postDataJSON();
@@ -163,6 +209,7 @@ test('회원가입 완료는 기존 계정 생성 뒤 로그인 API 순서를 �
     birth_date: '1990-01-01',
     gender: 'FEMALE',
     is_terms_agreed: true,
+    email_verification_token: 'verification-token',
   });
   expect(loginBody).toEqual({
     email: 'new-patient@example.com',
@@ -180,6 +227,7 @@ test('회원가입 생성 API 오류는 가입 폼 안에 접근 가능한 오�
       body: JSON.stringify({ code: 'SIGNUP_UNAVAILABLE', message: '가입을 완료하지 못했어요.' }),
     });
   });
+  await mockEmailVerificationRoutes(page);
 
   await openSignup(page);
   await page.getByLabel('이메일').fill('signup-error@example.com');
@@ -218,6 +266,7 @@ test('회원가입 후 로그인 API 오류는 가입 폼 안에 접근 가능�
       body: JSON.stringify({ code: 'INVALID_CREDENTIALS', message: '로그인에 실패했어요.' }),
     });
   });
+  await mockEmailVerificationRoutes(page);
 
   await openSignup(page);
   await page.getByLabel('이메일').fill('login-error@example.com');

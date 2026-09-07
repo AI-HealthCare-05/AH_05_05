@@ -44,6 +44,7 @@ export async function createAccount(payload: CreateAccountPayload): Promise<void
     gender: normalizedPayload.gender === 'male' ? 'MALE' : 'FEMALE',
     // AuthPage는 두 필수 동의가 모두 체크된 경우에만 createAccount를 호출합니다.
     is_terms_agreed: true,
+    email_verification_token: normalizedPayload.emailVerificationToken,
   });
 }
 

@@ -44,6 +44,7 @@ class SignUpRequest(BaseModel):
     birth_date: Annotated[date, AfterValidator(validate_birthday)]
     gender: Gender
     is_terms_agreed: StrictBool
+    email_verification_token: Annotated[str, StringConstraints(min_length=1, max_length=2048)]
 
     @field_validator("is_terms_agreed")
     @classmethod
@@ -61,6 +62,29 @@ class AuthErrorResponse(BaseModel):
     code: str
     message: str
     field: str | None = None
+
+
+class EmailVerificationRequest(BaseModel):
+    email: Annotated[
+        EmailStr,
+        Field(max_length=40),
+        BeforeValidator(validate_ascii_email),
+    ]
+
+
+class EmailVerificationRequestResponse(BaseModel):
+    verification_id: int
+    expires_in: int
+    resend_available_in: int
+
+
+class EmailVerificationCodeRequest(BaseModel):
+    code: Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
+
+
+class EmailVerificationVerifyResponse(BaseModel):
+    verification_token: str
+    expires_in: int
 
 
 class LoginRequest(BaseModel):

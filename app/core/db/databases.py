@@ -16,6 +16,7 @@ TORTOISE_APP_MODELS = [
     "app.models.common_codes",
     "app.models.alarms",
     "app.models.background_jobs",
+    "app.models.email_verifications",
     "app.models.medications",
     "app.models.supplement_nutrients",
     "app.models.interactions",

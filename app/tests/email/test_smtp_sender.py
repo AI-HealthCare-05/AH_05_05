@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core.email.smtp_sender import EmailDeliveryError, EmailMessage, SmtpEmailSender
+from app.core.email.smtp_sender import EmailDeliveryError, EmailMessage, InlineAttachment, SmtpEmailSender
 
 
 def sender() -> SmtpEmailSender:
@@ -39,6 +39,33 @@ def test_smtp_sender_sends_multipart_alternative_message() -> None:
     assert sent["To"] == "recipient@example.com"
     assert sent.get_body(preferencelist=("plain",)).get_content().strip() == "평문 본문"
     assert "<strong>HTML 본문</strong>" in sent.get_body(preferencelist=("html",)).get_content()
+
+
+def test_smtp_sender_embeds_cid_inline_attachment() -> None:
+    smtp = MagicMock()
+    smtp.__enter__.return_value = smtp
+    inline_message = EmailMessage(
+        to="recipient@example.com",
+        subject="인증번호",
+        text_body="평문",
+        html_body='<img src="cid:rxvita-logo">',
+        inline_attachments=(
+            InlineAttachment(
+                content_id="rxvita-logo",
+                filename="rxvita-logo.png",
+                content_type="image/png",
+                data=b"\x89PNG-test",
+            ),
+        ),
+    )
+
+    with patch("app.core.email.smtp_sender.smtplib.SMTP", return_value=smtp):
+        sender().send(inline_message)
+
+    sent = smtp.send_message.call_args.args[0]
+    image = next(part for part in sent.walk() if part.get_content_maintype() == "image")
+    assert image["Content-ID"] == "<rxvita-logo>"
+    assert image.get_filename() == "rxvita-logo.png"
 
 
 @pytest.mark.parametrize(

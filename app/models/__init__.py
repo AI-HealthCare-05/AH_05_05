@@ -5,6 +5,7 @@ from .background_jobs import BackgroundJob
 from .care import CareAdvice, CareEpisode, FollowUpVisit
 from .chat import ChatMessage, ChatMessageSource, ChatSession
 from .common_codes import CommonCode, CommonCodeGroup
+from .email_verifications import EmailVerification
 from .interactions import (
     InteractionEntity,
     InteractionEntityAlias,
