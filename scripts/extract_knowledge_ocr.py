@@ -92,6 +92,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/knowledge/processed/ocr-artifacts"),
     )
     parser.add_argument(
+        "--document-id",
+        action="append",
+        default=[],
+        help="대표 문서만 OCR할 때 지정합니다. 여러 번 지정할 수 있습니다.",
+    )
+    parser.add_argument(
         "--engine",
         choices=("tesseract", "clova", "tesseract-with-clova-fallback"),
         default="tesseract",
@@ -116,6 +122,22 @@ def _load_manifest(path: Path) -> list[KnowledgeOcrManifestEntry]:
     if not entries:
         raise ValueError("OCR 매니페스트가 비어 있습니다.")
     return entries
+
+
+def _select_entries(
+    entries: list[KnowledgeOcrManifestEntry],
+    document_ids: list[str],
+) -> list[KnowledgeOcrManifestEntry]:
+    if not document_ids:
+        return entries
+
+    requested_ids = set(document_ids)
+    entries_by_id = {entry.document_id: entry for entry in entries}
+    missing_ids = requested_ids.difference(entries_by_id)
+    if missing_ids:
+        missing = ", ".join(sorted(missing_ids))
+        raise ValueError(f"OCR 매니페스트에 없는 document_id입니다: {missing}")
+    return [entry for entry in entries if entry.document_id in requested_ids]
 
 
 async def _execute(
@@ -204,7 +226,10 @@ def _external_ocr_mode(engine: str) -> str:
 def main() -> None:
     args = parse_args()
     repo_root = args.repo_root.resolve()
-    entries = _load_manifest(repo_root / args.ocr_manifest)
+    entries = _select_entries(
+        _load_manifest(repo_root / args.ocr_manifest),
+        args.document_id,
+    )
     artifact_root = repo_root / args.artifact_root
     demo_restricted_count = sum(entry.access_scope == "DEMO_RESTRICTED" for entry in entries)
     if not args.execute:
