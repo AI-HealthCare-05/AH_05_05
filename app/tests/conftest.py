@@ -17,9 +17,16 @@ TEST_DB_LABEL = "models"
 TEST_DB_TZ = "Asia/Seoul"
 _TEST_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
 TEST_PHONE_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+TEST_EMAIL_VERIFICATION_SECRET = "test-email-verification-secret"
 
 # 테스트 DB에 저장된 전화번호도 운영과 같은 Fernet 경로를 사용한다.
 config.PHONE_ENCRYPTION_KEY = SecretStr(TEST_PHONE_ENCRYPTION_KEY)
+
+# 회원가입이 이메일 인증 토큰을 요구한다(#282). 기본값이 None 이라 세우지 않으면
+# EmailVerificationConfigurationError 가 난다. 전화번호 키와 같은 방식으로 여기서
+# 한 번 세운다 — 회원가입을 부르는 테스트가 14곳이라 각자 세우면 원복이 빠진다.
+# 토큰 발급은 app/tests/email_verification_helpers.py 를 쓴다.
+config.EMAIL_VERIFICATION_SECRET = SecretStr(TEST_EMAIL_VERIFICATION_SECRET)
 
 
 def _setup_tortoise_test_runner(test_case: SimpleTestCase) -> None:

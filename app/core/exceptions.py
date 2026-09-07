@@ -163,6 +163,48 @@ class SignupEmailAlreadyExistsError(AppError):
     field = "email"
 
 
+class EmailVerificationRateLimitedError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "EMAIL_VERIFICATION_RATE_LIMITED"
+    message = "인증번호 재발송 대기시간이 지나지 않았습니다."
+    field = "email"
+
+
+class InvalidEmailVerificationCodeError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "INVALID_EMAIL_VERIFICATION_CODE"
+    message = "인증번호를 확인해주세요."
+    field = "code"
+
+
+class EmailVerificationExpiredError(AppError):
+    status_code = status.HTTP_410_GONE
+    code = "EMAIL_VERIFICATION_EXPIRED"
+    message = "인증번호 입력시간이 만료되었습니다."
+    field = "code"
+
+
+class EmailVerificationAttemptsExceededError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "EMAIL_VERIFICATION_ATTEMPTS_EXCEEDED"
+    message = "인증번호 확인 가능 횟수를 초과했습니다."
+    field = "code"
+
+
+class EmailDeliveryUnavailableError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "EMAIL_DELIVERY_UNAVAILABLE"
+    message = "인증 메일을 발송할 수 없습니다. 잠시 후 다시 시도해주세요."
+    field = "email"
+
+
+class EmailVerificationInvalidError(AppError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "EMAIL_VERIFICATION_INVALID"
+    message = "이메일 인증 정보가 유효하지 않습니다."
+    field = "email_verification_token"
+
+
 class CannotResetSuspendedError(AppError):
     """정지를 풀지 않고 비밀번호만 재발급하면 정지가 무의미해진다."""
 

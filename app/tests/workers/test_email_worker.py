@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,7 +14,8 @@ from app.core.email.payload import EmailJobPayload, EmailPayloadCodec, EmailTemp
 from app.core.email.renderer import EmailTemplateRenderer
 from app.core.email.smtp_sender import EmailDeliveryError, SmtpEmailSender
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import BackgroundJobStatus, BackgroundJobType
+from app.models.email_verifications import EmailVerification
+from app.models.enums import BackgroundJobStatus, BackgroundJobType, EmailVerificationPurpose
 from app.services.admin_settings import SmtpRuntimeSettings, SmtpSettingsService
 from app.workers import email_worker as worker
 
@@ -87,13 +89,15 @@ class TestEmailWorker(TestCase):
         status: BackgroundJobStatus = BackgroundJobStatus.QUEUED,
         retry_count: int = 0,
         max_retry_count: int = 3,
+        reference_table: str = "admin",
+        reference_id: int = 7,
     ) -> BackgroundJob:
         return await BackgroundJob.create(
             idempotency_key=f"email-worker-{status}-{retry_count}-{max_retry_count}",
             job_type=BackgroundJobType.EMAIL,
             status=status,
-            reference_table="admin",
-            reference_id=7,
+            reference_table=reference_table,
+            reference_id=reference_id,
             retry_count=retry_count,
             max_retry_count=max_retry_count,
         )
@@ -105,6 +109,17 @@ class TestEmailWorker(TestCase):
                 recipient_email="recipient@example.com",
                 recipient_name="홍길동",
                 temporary_password=password,
+            )
+        )
+
+    def signup_payload(self, verification_id: int, expires_at: datetime) -> str:
+        return self.codec.encrypt(
+            EmailJobPayload(
+                template=EmailTemplate.SIGNUP_VERIFICATION_CODE,
+                recipient_email="recipient@example.com",
+                verification_id=verification_id,
+                verification_code="123456",
+                expires_at=expires_at,
             )
         )
 
@@ -194,6 +209,56 @@ class TestEmailWorker(TestCase):
         await worker.send_email(self.context, job.id, self.encrypted_payload())
 
         self.sender.send.assert_not_called()
+
+    async def test_expired_signup_verification_is_cancelled_without_sending(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        verification = await EmailVerification.create(
+            email="recipient@example.com",
+            purpose=EmailVerificationPurpose.SIGNUP,
+            code_digest="a" * 64,
+            expires_at=now - timedelta(seconds=1),
+        )
+        job = await self.create_job(
+            reference_table="email_verifications",
+            reference_id=verification.id,
+        )
+
+        await worker.send_email(self.context, job.id, self.signup_payload(verification.id, verification.expires_at))
+
+        await job.refresh_from_db()
+        assert job.status is BackgroundJobStatus.CANCELLED
+        assert job.error_code == "EMAIL_VERIFICATION_EXPIRED"
+        self.sender.send.assert_not_called()
+
+    async def test_missing_signup_verification_is_cancelled_without_sending(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        job = await self.create_job(reference_table="email_verifications", reference_id=9999)
+
+        await worker.send_email(self.context, job.id, self.signup_payload(9999, now + timedelta(seconds=60)))
+
+        await job.refresh_from_db()
+        assert job.status is BackgroundJobStatus.CANCELLED
+        self.sender.send.assert_not_called()
+
+    async def test_signup_retry_is_cancelled_when_delay_exceeds_expiry(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        verification = await EmailVerification.create(
+            email="recipient@example.com",
+            purpose=EmailVerificationPurpose.SIGNUP,
+            code_digest="a" * 64,
+            expires_at=now + timedelta(seconds=1),
+        )
+        job = await self.create_job(
+            reference_table="email_verifications",
+            reference_id=verification.id,
+        )
+        self.sender.send.side_effect = EmailDeliveryError("EMAIL_CONNECTION_ERROR", retryable=True)
+
+        await worker.send_email(self.context, job.id, self.signup_payload(verification.id, verification.expires_at))
+
+        await job.refresh_from_db()
+        assert job.status is BackgroundJobStatus.CANCELLED
+        assert job.error_code == "EMAIL_VERIFICATION_EXPIRED"
 
 
 @pytest.mark.asyncio

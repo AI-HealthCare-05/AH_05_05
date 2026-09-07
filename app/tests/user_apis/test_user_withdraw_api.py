@@ -7,6 +7,7 @@ from app.main import app
 from app.models.enums import AccountStatus
 from app.models.users import User
 from app.tests.conftest import TEST_PHONE_ENCRYPTION_KEY
+from app.tests.email_verification_helpers import with_signup_token
 
 EMAIL = "withdraw@example.com"
 PASSWORD = "Password123!"
@@ -30,7 +31,7 @@ class TestUserWithdrawApi(TestCase):
         return data
 
     async def _signed_in(self, client: AsyncClient) -> dict[str, str]:
-        await client.post("/api/v1/auth/signup", json=self.signup_data())
+        await client.post("/api/v1/auth/signup", json=await with_signup_token(self.signup_data()))
         login = await client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
         return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
@@ -94,7 +95,7 @@ class TestUserWithdrawApi(TestCase):
             headers = await self._signed_in(client)
             await client.request("DELETE", "/api/v1/users/me", headers=headers, json={"password": PASSWORD})
 
-            again = await client.post("/api/v1/auth/signup", json=self.signup_data())
+            again = await client.post("/api/v1/auth/signup", json=await with_signup_token(self.signup_data()))
 
         assert again.status_code == status.HTTP_409_CONFLICT
         assert again.json()["code"] == "EMAIL_ALREADY_EXISTS"

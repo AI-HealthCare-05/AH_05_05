@@ -6,6 +6,7 @@ from tortoise.contrib.test import TestCase
 from app.main import app
 from app.models.users import User
 from app.tests.conftest import TEST_PHONE_ENCRYPTION_KEY
+from app.tests.email_verification_helpers import with_signup_token
 
 
 class TestUserMeApis(TestCase):
@@ -22,7 +23,7 @@ class TestUserMeApis(TestCase):
             "is_terms_agreed": True,
         }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(signup_data))
 
             login_response = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
             access_token = login_response.json()["access_token"]
@@ -54,7 +55,7 @@ class TestUserMeApis(TestCase):
             "is_terms_agreed": True,
         }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(signup_data))
             login_response = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
             headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
 
@@ -79,7 +80,7 @@ class TestUserMeApis(TestCase):
         }
         update_data = {"name": "수정후"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(signup_data))
 
             login_response = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
             access_token = login_response.json()["access_token"]
@@ -103,7 +104,7 @@ class TestUserMeApis(TestCase):
             "is_terms_agreed": True,
         }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(signup_data))
             login_response = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
             headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
 
@@ -133,7 +134,7 @@ class TestUserMeApis(TestCase):
             "is_terms_agreed": True,
         }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(signup_data))
             login_response = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
             headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
 
@@ -162,8 +163,8 @@ class TestUserMeApis(TestCase):
         second_signup = {**first_signup, "email": "second@example.com", "phone_number": "01033334444"}
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=first_signup)
-            await client.post("/api/v1/auth/signup", json=second_signup)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(first_signup))
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(second_signup))
             login_response = await client.post(
                 "/api/v1/auth/login",
                 json={"email": first_signup["email"], "password": first_signup["password"]},

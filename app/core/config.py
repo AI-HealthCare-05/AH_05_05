@@ -80,6 +80,11 @@ class Config(BaseSettings):
     EMAIL_MAX_RETRY_COUNT: int = Field(default=3, ge=0)
     EMAIL_RETRY_BASE_SECONDS: int = Field(default=30, gt=0)
     EMAIL_PAYLOAD_ENCRYPTION_KEY: SecretStr | None = None
+    EMAIL_VERIFICATION_SECRET: SecretStr | None = None
+    EMAIL_VERIFICATION_TTL_SECONDS: int = Field(default=180, gt=0)
+    EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: int = Field(default=600, gt=0)
+    EMAIL_VERIFICATION_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=5)
+    EMAIL_VERIFICATION_RESEND_SECONDS: int = Field(default=60, gt=0)
     SMTP_SETTINGS_ENCRYPTION_KEY: SecretStr | None = None
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587

@@ -7,6 +7,7 @@ from tortoise.contrib.test import TestCase
 
 from app.core import config
 from app.main import app
+from app.tests.email_verification_helpers import with_signup_token
 
 
 @pytest.fixture(autouse=True)
@@ -35,7 +36,7 @@ class TestLoginAPI(TestCase):
         login_data = {"email": "login_test@example.com", "password": "Password123!"}
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(signup_data))
 
             # 로그인 시도
             response = await client.post("/api/v1/auth/login", json=login_data)
