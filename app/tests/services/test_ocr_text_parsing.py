@@ -22,11 +22,14 @@
 기대값은 정규식을 베끼지 않고 입력·출력 쌍으로 적었다. 코드를 옮겨 적으면 같은
 오류를 그대로 재현하기 때문이다.
 
-⚠️ 복용량 칸에서 교정을 놓치는 두 경우를 찾아 이슈로 올렸다. **수정되면 걸려야
-하므로 그 동작은 고정하지 않았고**, 정상 경로만 고정했다.
+⚠️ 복용량 칸에서 교정을 놓치는 경우를 찾아 이슈로 올렸다. **고쳐지면 걸려야 하므로
+그 동작은 고정하지 않고** 정상 경로만 고정한다.
 
-    #293  `1전씩3회,7일분` — 복용량·일정이 한 칸에 붙으면 정→전 교정이 안 된다
+    #293  `1전씩3회,7일분` — 복용량·일정이 한 칸에 붙으면 전→정 교정이 안 된다
+          → #296 에서 lookahead 를 넓혀 **해결됐다.** 이제 정상 동작으로 고정한다.
+          다만 `캡술→캡슐` 쪽은 조건이 그대로여서 `1캡술씩3회` 는 아직 놓친다.
     #294  `5 mI`        — 숫자와 단위 사이 공백이 있으면 mg/mL 교정이 안 된다
+          → 아직 열려 있다. 공백 없는 경로만 고정한다.
 
 DB·픽스처·이미지를 쓰지 않는다. 전부 문자열만 받는 순수 함수다.
 """
@@ -238,32 +241,70 @@ def test_a_strength_field_does_not_rewrite_medication_names(name: str) -> None:
         ("1전", "1정"),
         ("1점", "1정"),
         ("10전", "10정"),
+        ("1명", "1정"),
         ("1전씩", "1정씩"),
         ("2점씩", "2정씩"),
         ("1 전", "1정"),
     ],
 )
 def test_a_tablet_unit_misread_is_corrected_at_the_end_of_the_cell(raw: str, expected: str) -> None:
-    """`전`·`점` 을 `정` 으로 되돌린다. 공백을 먼저 지우므로 `1 전` 도 걸린다."""
+    """`전`·`점`·`명` 을 `정` 으로 되돌린다. 공백을 먼저 지우므로 `1 전` 도 걸린다."""
+    assert normalize_dose_unit_ocr(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("1전씩2", "1정씩2"),
+        ("1전씩3회", "1정씩3회"),
+        ("1전씩3회,7일분", "1정씩3회,7일분"),
+        ("1점씩3회,7일분", "1정씩3회,7일분"),
+        ("1명씩3회,7일분", "1정씩3회,7일분"),
+        ("2전씩2회,14일분", "2정씩2회,14일분"),
+        ("1전씩 3회", "1정씩3회"),
+    ],
+)
+def test_a_tablet_misread_is_corrected_when_a_schedule_follows_the_per_dose_marker(raw: str, expected: str) -> None:
+    """`씩` 뒤에 **숫자가** 이어질 때도 교정한다 — lookahead 가 `(?=씩(?:$|\\d)|$)` 다.
+
+    복용량과 일정이 한 칸에 붙어 나오는 형태(`1전씩3회,7일분`)를 살리려는 조건이다.
+    #293 에서 이 경우가 교정되지 않는다고 올렸고, #296 에서 넓혀 해결됐다.
+    """
     assert normalize_dose_unit_ocr(raw) == expected
 
 
 @pytest.mark.parametrize(("raw", "expected"), [("1캡술", "1캡슐"), ("1캡술씩", "1캡슐씩")])
 def test_a_capsule_unit_misread_is_corrected(raw: str, expected: str) -> None:
+    """⚠️ 캡슐 쪽 lookahead 는 `(?=(?:씩)?$)` 그대로라 `1캡술씩3회` 는 놓친다(#293).
+
+    정 쪽만 넓혀졌다. 여기서는 좁은 조건에서 되는 경우만 고정한다.
+    """
     assert normalize_dose_unit_ocr(raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["1전정", "1전씩2", "1전씩3회", "전", "전씩"])
-def test_a_tablet_misread_that_is_not_at_the_end_is_left_alone(raw: str) -> None:
-    """⭐ `(?=(?:씩)?$)` 의 목적 — 끝 또는 `씩` 바로 앞에서만 고친다.
+@pytest.mark.parametrize("raw", ["1전정", "1전씩아침", "1전씩,3회", "1전씩씩", "전", "전씩", "1명입니다"])
+def test_a_tablet_misread_outside_the_allowed_positions_is_left_alone(raw: str) -> None:
+    """⭐ 끝, 또는 `씩` + (끝|숫자) 에서만 고친다.
 
-    `전` 이 문장 가운데 있으면 단위가 아닐 가능성이 있어 건드리지 않는다. `전` 만
-    있는 경우도 앞에 숫자가 없어 대상이 아니다.
-
-    ⚠️ `1전씩3회` 처럼 복용량과 일정이 한 칸에 붙은 형태는 이 조건 때문에 교정을
-    놓친다. #293 으로 올렸다.
+    `전` 이 문장 가운데 있으면 단위가 아닐 가능성이 있어 건드리지 않는다. `씩` 뒤에
+    한글(`아침`)이나 쉼표가 오면 표를 잘못 읽었을 수 있어 그대로 둔다. `전` 만 있는
+    경우는 앞에 숫자가 없어 대상이 아니다.
     """
     assert normalize_dose_unit_ocr(raw) == raw
+
+
+def test_the_person_counter_is_the_widest_of_the_three_misread_candidates() -> None:
+    """현재 동작 — `명` 은 실제로 쓰이는 낱말인데도 교정 후보에 들어 있다.
+
+    `전`·`점` 과 달리 `명` 은 「3명」처럼 정상적인 뜻으로 쓰인다. 그래서 숫자로 끝나는
+    앞말이 붙어 있어도 `정` 으로 바뀐다.
+
+    이 함수가 복용량 칸에만 쓰이고(`medication_rows.py` 774·1619·1643) 복용량이
+    「명」으로 적히는 일은 없어서 지금은 무해하다고 본다. 다만 세 후보 중 가장 넓은
+    조건이라 여기 적어 둔다.
+    """
+    assert normalize_dose_unit_ocr("환자3명") == "환자3정"
+    assert normalize_dose_unit_ocr("3명") == "3정"
 
 
 def test_a_dose_cell_also_gets_the_measurement_corrections() -> None:
@@ -534,10 +575,13 @@ def test_an_unparseable_cell_returns_the_normalized_text_and_no_unit(raw: str) -
     [
         ("1전", ("1", "정")),
         ("1점", ("1", "정")),
+        ("1명", ("1", "정")),
         ("1캡술", ("1", "캡슐")),
         ("1 전", ("1", "정")),
         ("5mI", ("5", "mL")),
         ("5m1", ("5", "mL")),
+        ("1전씩3회,7일분", ("1", "정")),
+        ("1명씩2회,14일분", ("1", "정")),
     ],
 )
 def test_a_misread_dose_cell_is_corrected_before_parsing(raw: str, expected: tuple[str, str]) -> None:
