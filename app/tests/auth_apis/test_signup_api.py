@@ -8,15 +8,49 @@ from starlette import status
 from tortoise.contrib.test import TestCase
 from tortoise.exceptions import IntegrityError
 
+from app.core import config
+from app.core.email.verification import EmailVerificationTokenCodec
 from app.main import app
+from app.models.email_verifications import EmailVerification
+from app.models.enums import EmailVerificationPurpose
 from app.models.users import User, UserSettings
 from app.repositories.user_repository import UserRepository
 from app.tests.conftest import TEST_PHONE_ENCRYPTION_KEY
 
 
 class TestSignupAPI(TestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.verification_secret = "signup-test-secret"
+        self.original_verification_secret = config.EMAIL_VERIFICATION_SECRET
+        config.EMAIL_VERIFICATION_SECRET = self.verification_secret
+        self.token_codec = EmailVerificationTokenCodec(
+            self.verification_secret,
+            algorithm="HS256",
+            ttl_seconds=600,
+        )
+        self.verification_token = await self.issue_verification("test@example.com")
+
+    async def asyncTearDown(self) -> None:
+        config.EMAIL_VERIFICATION_SECRET = self.original_verification_secret
+        await super().asyncTearDown()
+
+    async def issue_verification(self, email: str) -> str:
+        verification = await EmailVerification.create(
+            email=email,
+            purpose=EmailVerificationPurpose.SIGNUP,
+            code_digest="a" * 64,
+            expires_at=datetime.now(config.TIMEZONE) + timedelta(minutes=1),
+            verified_at=datetime.now(config.TIMEZONE),
+        )
+        return self.token_codec.issue(
+            verification_id=verification.id,
+            email=email,
+            purpose=EmailVerificationPurpose.SIGNUP,
+        )
+
     @staticmethod
-    def signup_data(**overrides):
+    def _signup_data(**overrides):
         data = {
             "email": "test@example.com",
             "password": "Password123!",
@@ -28,6 +62,10 @@ class TestSignupAPI(TestCase):
         }
         data.update(overrides)
         return data
+
+    def signup_data(self, **overrides):
+        data = {"email_verification_token": self.verification_token, **overrides}
+        return self._signup_data(**data)
 
     async def test_signup_success(self):
         signup_data = self.signup_data()
@@ -53,6 +91,18 @@ class TestSignupAPI(TestCase):
         assert settings.lunch_medication_time == timedelta(hours=13)
         assert settings.evening_medication_time == timedelta(hours=19)
         assert settings.bedtime_medication_time == timedelta(hours=22)
+        verification = await EmailVerification.get(email=signup_data["email"])
+        assert verification.consumed_at is not None
+
+    async def test_signup_requires_email_verification_token(self):
+        signup_data = self.signup_data()
+        signup_data.pop("email_verification_token")
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/v1/auth/signup", json=signup_data)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["field"] == "email_verification_token"
 
     async def test_signup_invalid_email(self):
         signup_data = self.signup_data(email="invalid-email")
@@ -114,11 +164,15 @@ class TestSignupAPI(TestCase):
         }
 
     async def test_signup_allows_duplicate_phone_number(self):
+        other_token = await self.issue_verification("other@example.com")
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             first = await client.post("/api/v1/auth/signup", json=self.signup_data())
             second = await client.post(
                 "/api/v1/auth/signup",
-                json=self.signup_data(email="other@example.com"),
+                json=self.signup_data(
+                    email="other@example.com",
+                    email_verification_token=other_token,
+                ),
             )
 
         assert first.status_code == status.HTTP_201_CREATED
@@ -172,3 +226,5 @@ class TestSignupAPI(TestCase):
                     await client.post("/api/v1/auth/signup", json=signup_data)
 
         assert await User.filter(email=signup_data["email"]).exists() is False
+        verification = await EmailVerification.get(email=signup_data["email"])
+        assert verification.consumed_at is None

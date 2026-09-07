@@ -8,10 +8,11 @@ from tortoise import Tortoise
 
 from app.core import config
 from app.core.db.databases import TORTOISE_ORM
-from app.core.email.payload import EmailPayloadCodec, InvalidEmailPayloadError
+from app.core.email.payload import EmailPayloadCodec, EmailTemplate, InvalidEmailPayloadError
 from app.core.email.renderer import EmailTemplateRenderer
 from app.core.email.smtp_sender import EmailDeliveryError, SmtpEmailSender
 from app.models.background_jobs import BackgroundJob
+from app.models.email_verifications import EmailVerification
 from app.models.enums import BackgroundJobStatus
 from app.repositories.background_job_repository import BackgroundJobRepository
 from app.services.admin_settings import SmtpSettingsService
@@ -38,6 +39,12 @@ async def send_email(ctx: dict[str, Any], job_id: int, encrypted_payload: str) -
 
     try:
         payload = ctx["codec"].decrypt(encrypted_payload)
+        if payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE and not await _is_signup_verification_sendable(
+            payload.verification_id,
+            datetime.now(config.TIMEZONE),
+        ):
+            await _cancel_job(job, "EMAIL_VERIFICATION_EXPIRED")
+            return
         message = ctx["renderer"].render(payload)
     except (InvalidEmailPayloadError, ValueError):
         await _fail_job(job, "EMAIL_PAYLOAD_INVALID")
@@ -56,14 +63,18 @@ async def send_email(ctx: dict[str, Any], job_id: int, encrypted_payload: str) -
         await _fail_job(job, "EMAIL_CONFIG_INVALID")
         return
     except Exception:
-        await _retry_or_fail(job, EmailDeliveryError("EMAIL_CONFIG_UNAVAILABLE", retryable=True))
+        await _retry_or_fail(
+            job,
+            EmailDeliveryError("EMAIL_CONFIG_UNAVAILABLE", retryable=True),
+            expires_at=payload.expires_at,
+        )
         return
 
     try:
         await asyncio.to_thread(sender.send, message)
     except EmailDeliveryError as error:
         if error.retryable:
-            await _retry_or_fail(job, error)
+            await _retry_or_fail(job, error, expires_at=payload.expires_at)
             return
         await _fail_job(job, error.code)
         return
@@ -82,7 +93,12 @@ async def _complete_job(job: BackgroundJob) -> None:
     await job.save(update_fields=["status", "completed_at", "updated_at", "duration_ms", "error_code", "error_message"])
 
 
-async def _retry_or_fail(job: BackgroundJob, error: EmailDeliveryError) -> None:
+async def _retry_or_fail(
+    job: BackgroundJob,
+    error: EmailDeliveryError,
+    *,
+    expires_at: datetime | None = None,
+) -> None:
     retry_count = job.retry_count + 1
     if retry_count <= job.max_retry_count:
         now = datetime.now(config.TIMEZONE)
@@ -93,6 +109,9 @@ async def _retry_or_fail(job: BackgroundJob, error: EmailDeliveryError) -> None:
         job.error_message = type(error).__name__
         await job.save(update_fields=["status", "retry_count", "updated_at", "error_code", "error_message"])
         delay = config.EMAIL_RETRY_BASE_SECONDS * (2 ** (retry_count - 1))
+        if expires_at is not None and now + timedelta(seconds=delay) >= expires_at:
+            await _cancel_job(job, "EMAIL_VERIFICATION_EXPIRED")
+            return
         raise Retry(defer=timedelta(seconds=delay))
     await _fail_job(job, error.code, retry_count=retry_count)
 
@@ -110,6 +129,27 @@ async def _fail_job(job: BackgroundJob, error_code: str, *, retry_count: int | N
         job.retry_count = retry_count
         update_fields.append("retry_count")
     await job.save(update_fields=update_fields)
+
+
+async def _cancel_job(job: BackgroundJob, error_code: str) -> None:
+    now = datetime.now(config.TIMEZONE)
+    job.status = BackgroundJobStatus.CANCELLED
+    job.completed_at = now
+    job.updated_at = now
+    job.duration_ms = _duration_ms(job.started_at, now)
+    job.error_code = error_code
+    job.error_message = error_code
+    await job.save(update_fields=["status", "completed_at", "updated_at", "duration_ms", "error_code", "error_message"])
+
+
+async def _is_signup_verification_sendable(verification_id: int | None, now: datetime) -> bool:
+    if verification_id is None:
+        return False
+    return await EmailVerification.filter(
+        id=verification_id,
+        expires_at__gt=now,
+        consumed_at=None,
+    ).exists()
 
 
 def _duration_ms(started_at: datetime | None, completed_at: datetime) -> int | None:

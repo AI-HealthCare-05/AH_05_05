@@ -81,6 +81,10 @@ class BackgroundJobStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class EmailVerificationPurpose(StrEnum):
+    SIGNUP = "SIGNUP"
+
+
 class CareEpisodeStatus(StrEnum):
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"

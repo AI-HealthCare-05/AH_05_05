@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Any
 
 from pydantic import EmailStr
+from tortoise.backends.base.client import BaseDBAsyncClient
 
 from app.core import config
 from app.models.enums import AccountStatus, Gender
@@ -31,6 +32,7 @@ class UserRepository:
         gender: Gender,
         *,
         status: AccountStatus = AccountStatus.ACTIVE,
+        using_db: BaseDBAsyncClient | None = None,
     ) -> User:
         return await self._model.create(
             email=email,
@@ -40,6 +42,7 @@ class UserRepository:
             birth_date=birth_date,
             gender=gender,
             status=status,
+            using_db=using_db,
         )
 
     async def get_user_by_email(self, email: str) -> User | None:

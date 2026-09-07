@@ -77,6 +77,59 @@ class EmailJobService:
                 await pool.aclose()
         return job
 
+    async def enqueue_signup_verification(
+        self,
+        *,
+        verification_id: int,
+        recipient_email: str,
+        verification_code: str,
+        expires_at: datetime,
+    ) -> BackgroundJob:
+        job = await BackgroundJob.create(
+            idempotency_key=f"email:signup-verification:{verification_id}:{uuid4().hex}",
+            job_type=BackgroundJobType.EMAIL,
+            status=BackgroundJobStatus.QUEUED,
+            reference_table="email_verifications",
+            reference_id=verification_id,
+            retry_count=0,
+            max_retry_count=config.EMAIL_MAX_RETRY_COUNT,
+        )
+        try:
+            codec = self.codec or EmailPayloadCodec(config.EMAIL_PAYLOAD_ENCRYPTION_KEY)
+            encrypted_payload = codec.encrypt(
+                EmailJobPayload(
+                    template=EmailTemplate.SIGNUP_VERIFICATION_CODE,
+                    recipient_email=recipient_email,
+                    verification_id=verification_id,
+                    verification_code=verification_code,
+                    expires_at=expires_at,
+                )
+            )
+        except Exception as exc:
+            await self._mark_failed(job, "EMAIL_PAYLOAD_ENCRYPTION_FAILED", exc)
+            return job
+
+        pool = self.redis_pool
+        owns_pool = pool is None
+        try:
+            if pool is None:
+                pool = await create_pool(
+                    RedisSettings(host=config.REDIS_HOST, port=config.REDIS_PORT, database=config.REDIS_DB)
+                )
+            await pool.enqueue_job(
+                "send_email",
+                job.id,
+                encrypted_payload,
+                _job_id=job.idempotency_key,
+                _queue_name=config.EMAIL_QUEUE_NAME,
+            )
+        except Exception as exc:
+            await self._mark_failed(job, "EMAIL_QUEUE_UNAVAILABLE", exc)
+        finally:
+            if owns_pool and pool is not None:
+                await pool.aclose()
+        return job
+
     @staticmethod
     async def _mark_failed(job: BackgroundJob, error_code: str, error: Exception) -> None:
         now = datetime.now(config.TIMEZONE)

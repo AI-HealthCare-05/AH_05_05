@@ -16,6 +16,7 @@ from app.dtos.auth import LoginRequest, SignUpRequest
 from app.models.enums import AccountStatus
 from app.models.users import User, UserSettings
 from app.repositories.user_repository import UserRepository
+from app.services.email_verifications import EmailVerificationService
 from app.services.jwt import JwtService
 
 
@@ -23,6 +24,7 @@ class AuthService:
     def __init__(self):
         self.user_repo = UserRepository()
         self.jwt_service = JwtService()
+        self.email_verification_service = EmailVerificationService()
 
     async def signup(self, data: SignUpRequest) -> User:
         # 이메일 중복 체크
@@ -34,7 +36,12 @@ class AuthService:
         # 유저 생성. 사전 중복 조회 뒤 같은 이메일이 동시에 들어와도 DB unique
         # 위반을 프론트 계약(409)으로 돌려준다.
         try:
-            async with in_transaction():
+            async with in_transaction() as connection:
+                verification = await self.email_verification_service.validate_signup_token(
+                    data.email_verification_token,
+                    str(data.email),
+                    using_db=connection,
+                )
                 user = await self.user_repo.create_user(
                     email=data.email,
                     hashed_password=hash_password(data.password),  # 해시화된 비밀번호를 사용
@@ -43,11 +50,20 @@ class AuthService:
                     birth_date=data.birth_date,
                     gender=data.gender,
                     status=AccountStatus.ACTIVE,
+                    using_db=connection,
                 )
                 await UserSettings.create(
                     user=user,
                     is_terms_agreed=data.is_terms_agreed,
                     terms_agreed_at=datetime.now(config.TIMEZONE),
+                    using_db=connection,
+                )
+
+                verification.consumed_at = datetime.now(config.TIMEZONE)
+                verification.updated_at = verification.consumed_at
+                await verification.save(
+                    using_db=connection,
+                    update_fields=["consumed_at", "updated_at"],
                 )
 
                 return user

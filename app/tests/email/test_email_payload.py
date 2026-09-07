@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from cryptography.fernet import Fernet
 from pydantic import ValidationError
@@ -56,3 +58,31 @@ def test_email_payload_codec_rejects_corrupt_token_without_echoing_it() -> None:
         codec.decrypt(token)
 
     assert token not in str(error.value)
+
+
+def test_signup_verification_payload_round_trip_is_encrypted() -> None:
+    codec = EmailPayloadCodec(Fernet.generate_key().decode())
+    original = EmailJobPayload(
+        template=EmailTemplate.SIGNUP_VERIFICATION_CODE,
+        recipient_email="recipient@example.com",
+        verification_id=17,
+        verification_code="012345",
+        expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
+    )
+
+    token = codec.encrypt(original)
+
+    assert codec.decrypt(token) == original
+    assert "recipient@example.com" not in token
+    assert "012345" not in token
+
+
+def test_signup_verification_payload_requires_six_digit_code() -> None:
+    with pytest.raises(ValidationError):
+        EmailJobPayload(
+            template=EmailTemplate.SIGNUP_VERIFICATION_CODE,
+            recipient_email="recipient@example.com",
+            verification_id=17,
+            verification_code="12345",
+            expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
+        )
