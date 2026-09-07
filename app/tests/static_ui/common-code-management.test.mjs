@@ -89,3 +89,85 @@ test("sort order parser rejects an empty value and accepts zero or positive inte
   assert.equal(parseSortOrder("0"), 0);
   assert.equal(parseSortOrder("0012"), 12);
 });
+
+/* -------------------------------- sanitizeGroupCodeInput / sanitizeDetailCodeInput
+ *
+ * 공통코드 입력칸이 서버로 보내기 전에 값을 다듬는다. 두 함수는 현재 같은 구현이다.
+ */
+
+test("sanitizeGroupCodeInput upper-cases and keeps only code characters", async () => {
+  const { sanitizeGroupCodeInput } = await import(moduleUrl);
+
+  assert.equal(sanitizeGroupCodeInput("user_status"), "USER_STATUS");
+  assert.equal(sanitizeGroupCodeInput("Code01"), "CODE01");
+  assert.equal(sanitizeGroupCodeInput("A_1"), "A_1");
+});
+
+test("sanitizeGroupCodeInput strips whitespace, punctuation and Korean", async () => {
+  const { sanitizeGroupCodeInput } = await import(moduleUrl);
+
+  // 공백은 trim 뿐 아니라 가운데 것도 사라진다 — 정규식이 A-Z0-9_ 외를 전부 지운다.
+  assert.equal(sanitizeGroupCodeInput("  user status  "), "USERSTATUS");
+  assert.equal(sanitizeGroupCodeInput("USER-STATUS"), "USERSTATUS");
+  assert.equal(sanitizeGroupCodeInput("code!@#$%"), "CODE");
+  assert.equal(sanitizeGroupCodeInput("코드"), "");
+  assert.equal(sanitizeGroupCodeInput("코드CODE"), "CODE");
+});
+
+test("sanitizeGroupCodeInput caps the result at twenty characters", async () => {
+  const { sanitizeGroupCodeInput } = await import(moduleUrl);
+
+  assert.equal(sanitizeGroupCodeInput("A".repeat(25)), "A".repeat(20));
+  assert.equal(sanitizeGroupCodeInput("A".repeat(20)), "A".repeat(20));
+});
+
+test("sanitizeGroupCodeInput trims after removing, not before", async () => {
+  const { sanitizeGroupCodeInput } = await import(moduleUrl);
+
+  // 20자 자르기가 제거 뒤에 오므로, 버려질 문자가 자리를 차지하지 않는다.
+  assert.equal(sanitizeGroupCodeInput(`AB${"!".repeat(30)}CD`), "ABCD");
+});
+
+test("sanitizeGroupCodeInput turns nullish input into an empty string", async () => {
+  const { sanitizeGroupCodeInput } = await import(moduleUrl);
+
+  assert.equal(sanitizeGroupCodeInput(undefined), "");
+  assert.equal(sanitizeGroupCodeInput(null), "");
+  assert.equal(sanitizeGroupCodeInput(""), "");
+  assert.equal(sanitizeGroupCodeInput("   "), "");
+});
+
+test("sanitizeDetailCodeInput applies the same rule as the group code", async () => {
+  const { sanitizeDetailCodeInput } = await import(moduleUrl);
+
+  assert.equal(sanitizeDetailCodeInput("detail_01"), "DETAIL_01");
+  assert.equal(sanitizeDetailCodeInput("  detail 01  "), "DETAIL01");
+  assert.equal(sanitizeDetailCodeInput("상세"), "");
+  assert.equal(sanitizeDetailCodeInput("B".repeat(25)), "B".repeat(20));
+  assert.equal(sanitizeDetailCodeInput(undefined), "");
+});
+
+test("the two code sanitizers agree on every input", async () => {
+  const { sanitizeGroupCodeInput, sanitizeDetailCodeInput } = await import(moduleUrl);
+
+  // 두 함수는 현재 같은 구현이다. 한쪽만 고치면 이 테스트가 알려준다.
+  const inputs = [
+    "user_status",
+    "  user status  ",
+    "USER-STATUS",
+    "코드CODE",
+    "A".repeat(25),
+    "",
+    "   ",
+    undefined,
+    null,
+  ];
+
+  for (const input of inputs) {
+    assert.equal(
+      sanitizeGroupCodeInput(input),
+      sanitizeDetailCodeInput(input),
+      `입력 ${JSON.stringify(input)} 에서 갈렸다`,
+    );
+  }
+});
