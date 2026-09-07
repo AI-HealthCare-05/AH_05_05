@@ -15,6 +15,9 @@ from ai_worker.schemas.knowledge_manifest import (
     KnowledgeProcessingStatus,
     KnowledgeSourcesManifest,
 )
+from ai_worker.services.knowledge_ocr_artifact_quality_service import (
+    KnowledgeOcrArtifactQualityService,
+)
 from ai_worker.services.knowledge_pilot_preprocessing_service import (
     KnowledgeAutomaticQualityStatus,
     KnowledgeChunkReviewStatus,
@@ -46,6 +49,15 @@ class KnowledgeCorpusDocument(BaseModel):
 
 
 class KnowledgeCorpusManifestBuilder:
+    def __init__(
+        self,
+        *,
+        ocr_artifact_quality_service: KnowledgeOcrArtifactQualityService | None = None,
+    ) -> None:
+        self._ocr_artifact_quality_service = (
+            ocr_artifact_quality_service or KnowledgeOcrArtifactQualityService()
+        )
+
     def build(
         self,
         *,
@@ -86,7 +98,7 @@ class KnowledgeCorpusManifestBuilder:
                 continue
             is_artifact_backed_ocr = (
                 document.processing_status == KnowledgeProcessingStatus.OCR_REQUIRED
-                and self._has_ocr_artifact(
+                and self._has_eligible_ocr_artifact(
                     artifact_root=ocr_artifact_root,
                     document_id=document.document_id,
                 )
@@ -155,13 +167,16 @@ class KnowledgeCorpusManifestBuilder:
             pilots=selected,
         )
 
-    @staticmethod
-    def _has_ocr_artifact(
+    def _has_eligible_ocr_artifact(
+        self,
         *,
         artifact_root: Path | None,
         document_id: str,
     ) -> bool:
-        return artifact_root is not None and (Path(artifact_root) / f"{document_id}.json").is_file()
+        if artifact_root is None:
+            return False
+        artifact_path = Path(artifact_root) / f"{document_id}.json"
+        return self._ocr_artifact_quality_service.is_eligible_artifact(artifact_path)
 
     @staticmethod
     def _load_approved_source_ids(quality_report_path: Path) -> list[str]:

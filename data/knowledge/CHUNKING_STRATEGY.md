@@ -101,6 +101,8 @@ release 판정은 검색·출처 정확도와 잘못된 개체 혼합 방지를 
 
 - `OCR_REQUIRED` 문서는 일반 PDF 파이프라인에서 제외합니다.
 - OCR 후에는 최소 글자 수, 제어/대체문자 비율, 비정상적으로 긴 무공백 문자열을 검사합니다.
+- 로컬 Tesseract artifact는 글자 수 가중 평균 신뢰도 `0.85` 이상이고, 한글 음절이 `건 강 기 능`처럼 세 글자 이상 분절된 비율이 `10%` 이하일 때만 청킹 대상으로 승격합니다.
+- 위 기준을 통과하지 못한 artifact는 Qdrant 후보에 넣지 않고 `OCR 재검수/대체 OCR` 대상으로 유지합니다. CLOVA fallback은 별도 명시 승인과 실행 플래그가 있을 때만 사용합니다.
 - 품질 검사 결과가 `PASS`가 아니면 자동 인덱싱하지 않고 검토 목록에 남깁니다.
 - `QDRANT_DISABLED_UNTIL_VERIFIED` 또는 `index_eligible=false` 자료는 텍스트 추출 실험은 할 수 있지만 release 및 Qdrant 적재 대상에서는 제외합니다.
 

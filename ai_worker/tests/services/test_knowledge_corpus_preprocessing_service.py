@@ -23,6 +23,47 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
     )
 
 
+def write_ocr_artifact(
+    path: Path,
+    *,
+    document_id: str,
+    source_sha256: str,
+    text: str,
+    confidence: float,
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "knowledge-ocr-artifact-v1",
+                "document_id": document_id,
+                "source_sha256": source_sha256,
+                "renderer": {"name": "test", "version": "v1", "dpi": 300},
+                "ocr_engine": {"name": "tesseract", "version": "v1"},
+                "pages": [
+                    {
+                        "page_number": 1,
+                        "image_sha256": "b" * 64,
+                        "width": 600,
+                        "height": 800,
+                        "rotation_degrees": 0,
+                        "blocks": [
+                            {
+                                "block_id": "line-1",
+                                "text": text,
+                                "confidence": confidence,
+                                "bbox": {"x0": 1, "top": 1, "x1": 200, "bottom": 20},
+                                "line_break": True,
+                            }
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_builder_selects_approved_qdrant_text_documents(tmp_path: Path) -> None:
     documents_path = tmp_path / "documents.jsonl"
     sources_path = tmp_path / "sources.yaml"
@@ -150,7 +191,13 @@ sources:
         encoding="utf-8",
     )
     artifact_root.mkdir()
-    (artifact_root / "ocr-document.json").write_text("{}", encoding="utf-8")
+    write_ocr_artifact(
+        artifact_root / "ocr-document.json",
+        document_id="ocr-document",
+        source_sha256="a" * 64,
+        text="읽기 쉬운 정상 OCR 문장입니다.",
+        confidence=0.98,
+    )
 
     manifest = KnowledgeCorpusManifestBuilder().build(
         documents_path=documents_path,
@@ -161,6 +208,62 @@ sources:
 
     assert [entry.document_id for entry in manifest.pilots] == ["ocr-document"]
     assert manifest.pilots[0].processing_status.value == "TEXT_EXTRACTABLE"
+
+
+def test_builder_excludes_low_quality_ocr_artifact_from_bulk_chunking(
+    tmp_path: Path,
+) -> None:
+    """An artifact with fragmented Hangul must stay out of the bulk release."""
+    documents_path = tmp_path / "documents.jsonl"
+    sources_path = tmp_path / "sources.yaml"
+    quality_path = tmp_path / "quality.json"
+    artifact_root = tmp_path / "artifacts"
+    write_jsonl(
+        documents_path,
+        [
+            {
+                "source_id": "ocr-source",
+                "document_id": "fragmented-ocr-document",
+                "repo_path": "raw/ocr/document.pdf",
+                "processing_status": "OCR_REQUIRED",
+                "sha256": "a" * 64,
+            }
+        ],
+    )
+    sources_path.write_text(
+        """
+schema_version: knowledge-sources-v1
+sources:
+  - source_id: ocr-source
+    provider: OCR 출처
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: ADVERSE_CASE_REPORT
+    raw_path: raw/ocr
+""".strip(),
+        encoding="utf-8",
+    )
+    quality_path.write_text(
+        json.dumps({"ready_for_bulk_source_ids": ["ocr-source"]}),
+        encoding="utf-8",
+    )
+    artifact_root.mkdir()
+    write_ocr_artifact(
+        artifact_root / "fragmented-ocr-document.json",
+        document_id="fragmented-ocr-document",
+        source_sha256="a" * 64,
+        text="건 강 기 능 식 품 원 료 심 사 보 고 서",
+        confidence=0.98,
+    )
+
+    manifest = KnowledgeCorpusManifestBuilder().build(
+        documents_path=documents_path,
+        sources_path=sources_path,
+        pilot_quality_report_path=quality_path,
+        ocr_artifact_root=artifact_root,
+    )
+
+    assert manifest.pilots == []
 
 
 def test_builder_unions_approved_sources_from_multiple_quality_reports(
