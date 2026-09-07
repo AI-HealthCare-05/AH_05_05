@@ -25,6 +25,7 @@ class HerbDrugReviewLayoutParser:
     """검수된 지면 규칙으로 HDS–약물 상호작용 논문을 복원합니다."""
 
     _SOURCE_ID = "research_herb_drug_interactions"
+    _DOCUMENT_ID = "research_herb_drug_interactions-638f66d3f3a41ba9"
     _EXCLUDED_PAGES = frozenset(range(16, 24))
     _ROTATED_TABLE_HEADERS = {
         4: (
@@ -117,8 +118,11 @@ class HerbDrugReviewLayoutParser:
         page: Any,
         page_number: int,
         source_id: str,
+        document_id: str | None = None,
     ) -> PdfLayoutExtraction | None:
-        if source_id != self._SOURCE_ID:
+        if source_id != self._SOURCE_ID or (
+            document_id is not None and document_id != self._DOCUMENT_ID
+        ):
             return None
         if page_number in self._EXCLUDED_PAGES:
             return PdfLayoutExtraction(blocks=[], warnings=[])

@@ -439,6 +439,89 @@ def test_extract_preserves_first_row_of_headerless_continued_table() -> None:
     assert "Drug or Drug Class=Salicylates (> 2 g/day)" in continued.content
 
 
+def test_extract_inherits_headers_across_split_tables_on_same_page() -> None:
+    page = FakeLayoutPage(
+        words=[],
+        tables=[
+            FakeTable(
+                (30, 100, 500, 180),
+                [
+                    [
+                        "Herb, food or dietary supplement",
+                        "Brief description of event",
+                    ],
+                    ["Red clover", "Subarachnoid haemorrhage was reported."],
+                ],
+            ),
+            FakeTable(
+                (30, 190, 500, 240),
+                [["St John's wort", "Raised INR was reported."]],
+            ),
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+    tables = [
+        block
+        for block in extraction.blocks
+        if block.kind == KnowledgeContentKind.TABLE
+    ]
+
+    assert tables[0].headers == [
+        "Herb, food or dietary supplement",
+        "Brief description of event",
+    ]
+    assert tables[1].headers == tables[0].headers
+    assert tables[1].content == (
+        "Herb, food or dietary supplement=St John's wort | "
+        "Brief description of event=Raised INR was reported."
+    )
+    assert extraction.warnings == []
+
+
+def test_extract_accepts_parallel_lists_under_semantic_headers() -> None:
+    page = FakeLayoutPage(
+        words=[],
+        tables=[
+            FakeTable(
+                (30, 100, 500, 260),
+                [
+                    [
+                        "Substrate for CYP3A4",
+                        "Inhibits CYP3A4",
+                        "Induces CYP3A4",
+                    ],
+                    [
+                        "Acetaminophen\nCelecoxib",
+                        "Fluoxetine\nKetoconazole",
+                        "Carbamazepine\nRifampin",
+                    ],
+                ],
+            )
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+    table = next(
+        block
+        for block in extraction.blocks
+        if block.kind == KnowledgeContentKind.TABLE
+    )
+
+    assert table.headers == [
+        "Substrate for CYP3A4",
+        "Inhibits CYP3A4",
+        "Induces CYP3A4",
+    ]
+    assert table.rows[0].cells == [
+        "Acetaminophen; Celecoxib",
+        "Fluoxetine Ketoconazole",
+        "Carbamazepine Rifampin",
+    ]
+    assert "MULTI_ENTITY_ROW" not in table.validation_errors
+    assert extraction.warnings == []
+
+
 def test_extract_keeps_shared_multi_substance_row_without_duplicating_evidence() -> None:
     page = FakeLayoutPage(
         words=[
@@ -1046,6 +1129,38 @@ def test_extract_separates_academic_columns_with_narrow_gutter() -> None:
         "Right column starts\nRight second",
     ]
     assert KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in extraction.warnings
+
+
+def test_extract_separates_columns_across_center_with_fourteen_point_gutter() -> None:
+    page = FakeLayoutPage(
+        words=[
+            word("Left first line", 40, 100, 291, 112),
+            word("Right first line", 305, 100, 546, 112),
+            word("Left second line", 40, 130, 291, 142),
+            word("Right second line", 305, 130, 546, 142),
+        ],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert [block.content for block in extraction.blocks] == [
+        "Left first line\nLeft second line",
+        "Right first line\nRight second line",
+    ]
+    assert KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in extraction.warnings
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE not in extraction.warnings
+
+
+def test_extract_ignores_empty_multi_column_table_candidate() -> None:
+    page = FakeLayoutPage(
+        words=[word("Body content", 40, 100, 140, 112)],
+        tables=[FakeTable((30, 200, 500, 240), [["", ""]])],
+    )
+
+    extraction = PdfLayoutExtractor().extract(page)
+
+    assert [block.content for block in extraction.blocks] == ["Body content"]
+    assert extraction.warnings == []
 
 
 def test_extract_resolves_same_as_reference_by_named_row_without_repeating_row() -> None:

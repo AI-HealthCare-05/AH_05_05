@@ -234,6 +234,7 @@ class BotanicalReviewLayoutParser:
         page: Any,
         page_number: int,
         source_id: str,
+        document_id: str | None = None,
     ) -> PdfLayoutExtraction | None:
         if source_id != self._SOURCE_ID or page_number not in self._TEXT_REGIONS:
             return None

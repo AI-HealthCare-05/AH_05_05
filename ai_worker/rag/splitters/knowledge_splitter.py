@@ -95,6 +95,7 @@ _POPULATION_LABELS = {
 }
 
 _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-3dd5c1de206c9a88"
+_WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-299edbe35f581616"
 
 
 _COMMON_CAUTION_HEADINGS = {
@@ -191,6 +192,7 @@ _HEADINGS: dict[KnowledgeDocumentType, dict[str, KnowledgeSectionType]] = {
     },
     KnowledgeDocumentType.RESEARCH_ARTICLE: {
         "Abstract": KnowledgeSectionType.SUMMARY,
+        "Keywords": KnowledgeSectionType.SUMMARY,
         "Introduction": KnowledgeSectionType.INTRODUCTION,
         "Materials and Methods": KnowledgeSectionType.METHODS,
         "Methods": KnowledgeSectionType.METHODS,
@@ -240,18 +242,18 @@ _ATTACHED_BODY_HEADINGS_BY_SOURCE = {
 
 _ATTACHED_BODY_PROSE_CONTINUATION = re.compile(r"^(?:하면|하자면|은|는|이|가|을|를|의|도|만|에서|에는|으로)(?:\s|$)")
 _RESEARCH_NUMBERED_INTERACTION_HEADING = re.compile(
-    r"(?im)^\s*\d+(?:\.\d+)*\.?\s+"
+    r"(?im)^\s*\d+(?:\.\d+)*\.?(?:\s*\|\s*|\s+)"
     r"(?P<title>[^\n]{0,80}\b(?:DNIs?|"
     r"Drug[\s–—-]*Nutrient\s+Interactions?|"
     r"Food[\s–—-]*Drug\s+Interactions?)"
     r"(?:\s*\([^\n)]+\))?)\s*$"
 )
 _RESEARCH_NUMBERED_SUBSECTION_HEADING = re.compile(
-    r"(?im)^\s*\d+(?:\.\d+)+\.?\s+"
+    r"(?im)^\s*\d+(?:\.\d+)+\.?(?:\s*\|\s*|\s+)"
     r"(?P<title>[A-Z][^\n]{1,120}?)\s*$"
 )
 _RESEARCH_NUMBERED_TOP_LEVEL_HEADING = re.compile(
-    r"(?im)^\s*\d+\.\s+"
+    r"(?im)^\s*\d+(?:\.\s+|\s*\|\s*)"
     r"(?P<title>[A-Z][^\n]{1,120}?)\s*$"
 )
 _RESEARCH_NUTRIENT_SUBHEADING = re.compile(
@@ -396,7 +398,15 @@ class KnowledgeSplitter:
         self,
         chunks: list[KnowledgeChunk],
     ) -> list[KnowledgeChunk]:
-        if not chunks or chunks[0].metadata.document_id != _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID:
+        if not chunks:
+            return chunks
+
+        document_id = chunks[0].metadata.document_id
+        if document_id == _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID:
+            repaired = list(chunks)
+            self._repair_warfarin_review_discussion_boundary(repaired)
+            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+        if document_id != _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID:
             return chunks
 
         repaired = list(chunks)
@@ -413,6 +423,29 @@ class KnowledgeSplitter:
         repaired = self._regroup_verified_table_chunks(repaired)
         repaired = [chunk for chunk in repaired if chunk.content.strip()]
         return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+
+    @staticmethod
+    def _repair_warfarin_review_discussion_boundary(
+        chunks: list[KnowledgeChunk],
+    ) -> None:
+        boundary = "multiple active ingredients listed in the current review to avoid the risk of interaction."
+        continuation = "Concurrent use of other antiplatelet or anticoagulants"
+        for index in range(len(chunks) - 1):
+            current = chunks[index]
+            boundary_index = current.content.find(boundary)
+            if boundary_index < 0:
+                continue
+            following = chunks[index + 1]
+            continuation_index = following.content.find(continuation)
+            if continuation_index < 0:
+                continue
+            chunks[index] = current.model_copy(
+                update={"content": current.content[: boundary_index + len(boundary)].rstrip()}
+            )
+            chunks[index + 1] = following.model_copy(
+                update={"content": following.content[continuation_index:].lstrip()}
+            )
+            return
 
     @staticmethod
     def _move_aspirin_review_abstract_sentence(
@@ -947,7 +980,7 @@ class KnowledgeSplitter:
         if not section.section_title:
             return False
         body = re.sub(
-            rf"^\s*(?:\d+(?:\.\d+)*\.?\s+)?"
+            rf"^\s*(?:\d+(?:\.\d+)*\.?(?:\s*\|\s*|\s+))?"
             rf"{re.escape(section.section_title)}",
             "",
             section.content,
@@ -1236,11 +1269,20 @@ class KnowledgeSplitter:
                 match.start(),
                 match.end(),
             )
-        return not KnowledgeSplitter._is_inline_abstract_label(
+        if KnowledgeSplitter._is_inline_abstract_label(
             content,
             match.start(),
             match.end(),
-        )
+        ):
+            return False
+        if section_type == KnowledgeSectionType.RESULTS:
+            line_end = content.find("\n", match.end())
+            if line_end < 0:
+                line_end = len(content)
+            suffix = content[match.end() : line_end].lstrip()
+            if suffix.startswith("of "):
+                return False
+        return True
 
     @staticmethod
     def _is_references_section_start(
@@ -1402,7 +1444,10 @@ class KnowledgeSplitter:
     def _numbered_heading_start(content: str, heading_start: int) -> int:
         line_start = content.rfind("\n", 0, heading_start) + 1
         prefix = content[line_start:heading_start]
-        if re.fullmatch(r"\s*\d+(?:\.\d+)*[.)]?\s+", prefix):
+        if re.fullmatch(
+            r"\s*\d+(?:\.\d+)*[.)]?(?:\s*\|\s*|\s+)",
+            prefix,
+        ):
             return line_start
         return heading_start
 
@@ -1437,7 +1482,7 @@ class KnowledgeSplitter:
             at_line_start = not line_prefix.strip()
             follows_numbered_prefix = (
                 re.fullmatch(
-                    r"\s*\d+(?:\.\d+)*[.)]?\s+",
+                    r"\s*\d+(?:\.\d+)*[.)]?(?:\s*\|\s*|\s+)",
                     line_prefix,
                 )
                 is not None

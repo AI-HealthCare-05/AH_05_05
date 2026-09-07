@@ -50,7 +50,11 @@ _TABLE_HEADER_CELL_PATTERN = re.compile(
     r"(?i)\b(?:age|dose|weight|drug|class|effect|ingredient|result|"
     r"strength|color|shape|markings|hormone|ratio|potency|binding|"
     r"number|study|patients|dosage|nutriment|nutrient|evidences?|references?|ndc|"
-    r"group|cases|recommendation)\b"
+    r"group|cases|recommendation|supplement|description|event|probability|scale|"
+    r"potentiation|inhibition|substrate|inhibits?|induces?)\b"
+)
+_PARALLEL_LIST_HEADER_PATTERN = re.compile(
+    r"(?i)\b(?:substrate|inhibits?|induces?|probability|potentiation|inhibition)\b"
 )
 
 
@@ -110,7 +114,12 @@ class PdfLayoutExtractor:
                 page_width=float(page.width),
             )
         )
-        tables = [table for table in self._find_tables(page, page_text) if self._table_column_count(table) > 1]
+        tables = [
+            table
+            for table in self._find_tables(page, page_text)
+            if self._table_column_count(table) > 1
+            and self._table_has_content(table)
+        ]
         table_bboxes = [self._bbox(table.bbox) for table in tables]
         warnings: list[KnowledgeExtractionWarning] = []
         table_blocks = [
@@ -126,6 +135,7 @@ class PdfLayoutExtractor:
                 strict=True,
             )
         ]
+        table_blocks = self._inherit_table_headers_within_page(table_blocks)
 
         body_words = [
             item for item in words if not any(self._center_is_inside(item, table_bbox) for table_bbox in table_bboxes)
@@ -191,30 +201,14 @@ class PdfLayoutExtractor:
             return extraction
         blocks: list[KnowledgePageBlock] = []
         for block in extraction.blocks:
-            has_placeholder = any(header.startswith("열 ") for header in block.headers)
             if (
                 block.kind != KnowledgeContentKind.TABLE
-                or not has_placeholder
+                or not self._has_placeholder_headers(block.headers)
                 or block.column_count != len(previous_headers)
             ):
                 blocks.append(block)
                 continue
-            source_rows = [row.cells for row in block.rows]
-            serialized_rows = [self._serialize_row(previous_headers, row) for row in source_rows if any(row)]
-            content = "\n".join(
-                self._expand_row_references(
-                    serialized_rows,
-                    source_rows,
-                )
-            ).strip()
-            blocks.append(
-                block.model_copy(
-                    update={
-                        "headers": list(previous_headers),
-                        "content": content or block.content,
-                    }
-                )
-            )
+            blocks.append(self._replace_table_headers(block, previous_headers))
         return PdfLayoutExtraction(
             blocks=blocks,
             warnings=extraction.warnings,
@@ -344,6 +338,15 @@ class PdfLayoutExtractor:
         return max(
             (len(row) for row in (table.extract(x_tolerance=1) or []) if row is not None),
             default=0,
+        )
+
+    @staticmethod
+    def _table_has_content(table: Any) -> bool:
+        return any(
+            str(cell or "").strip()
+            for row in (table.extract(x_tolerance=1) or [])
+            if row is not None
+            for cell in row
         )
 
     @staticmethod
@@ -494,7 +497,11 @@ class PdfLayoutExtractor:
                 data_rows = normalized_restored[1:]
                 raw_data_rows = restored_rows[1:]
             has_shared_class_column = any(header.strip().casefold() == "class" for header in headers)
-            if not has_shared_class_column and any(
+            is_parallel_list_table = self._is_parallel_list_table(
+                headers=headers,
+                data_rows=data_rows,
+            )
+            if not has_shared_class_column and not is_parallel_list_table and any(
                 self._has_multiple_primary_entities(row[0]) for row in raw_data_rows if row
             ):
                 validation_errors.append("MULTI_ENTITY_ROW")
@@ -576,6 +583,71 @@ class PdfLayoutExtractor:
         if len(nonempty) < 2:
             return False
         return sum(bool(_TABLE_HEADER_CELL_PATTERN.search(cell)) for cell in nonempty) >= min(2, len(nonempty))
+
+    @staticmethod
+    def _is_parallel_list_table(
+        *,
+        headers: list[str],
+        data_rows: list[list[str]],
+    ) -> bool:
+        return (
+            len(data_rows) == 1
+            and len(headers) >= 2
+            and all(not header.startswith("열 ") for header in headers)
+            and bool(_PARALLEL_LIST_HEADER_PATTERN.search(" ".join(headers)))
+        )
+
+    def _inherit_table_headers_within_page(
+        self,
+        table_blocks: list[KnowledgePageBlock],
+    ) -> list[KnowledgePageBlock]:
+        inherited: list[KnowledgePageBlock] = []
+        previous_headers: list[str] | None = None
+        previous_column_count: int | None = None
+        for block in sorted(
+            table_blocks,
+            key=lambda item: (item.bbox.top, item.bbox.x0),
+        ):
+            current = block
+            if (
+                previous_headers
+                and self._has_placeholder_headers(current.headers)
+                and current.column_count == previous_column_count
+            ):
+                current = self._replace_table_headers(current, previous_headers)
+            elif not self._has_placeholder_headers(current.headers):
+                previous_headers = list(current.headers)
+                previous_column_count = current.column_count
+            inherited.append(current)
+        return inherited
+
+    @staticmethod
+    def _has_placeholder_headers(headers: list[str]) -> bool:
+        return bool(headers) and any(header.startswith("열 ") for header in headers)
+
+    def _replace_table_headers(
+        self,
+        block: KnowledgePageBlock,
+        headers: list[str],
+    ) -> KnowledgePageBlock:
+        source_rows = [row.cells for row in block.rows]
+        serialized_rows = [
+            self._serialize_row(headers, row)
+            for row in source_rows
+            if any(row)
+        ]
+        content = "\n".join(
+            self._expand_row_references(
+                serialized_rows,
+                source_rows,
+            )
+        ).strip()
+        return block.model_copy(
+            update={
+                "headers": list(headers),
+                "content": content or block.content,
+            }
+        )
 
     @staticmethod
     def _is_scientific_interaction_table(headers: list[str]) -> bool:
@@ -1067,13 +1139,27 @@ class PdfLayoutExtractor:
         # 좁은 경우가 많다. 일반 단어 간격보다 충분히 크면서 실제 단
         # 여백은 분리할 수 있도록 고정 18pt/페이지 폭 3% 중 큰 값을 쓴다.
         horizontal_gap = max(18.0, page_width * 0.03)
+        midpoint = page_width / 2
         for row in rows:
             current: list[tuple[int, dict[str, Any]]] = []
             for indexed_word in sorted(
                 row,
                 key=lambda item: item[1]["x0"],
             ):
-                if current and indexed_word[1]["x0"] - current[-1][1]["x1"] > horizontal_gap:
+                gap = (
+                    indexed_word[1]["x0"] - current[-1][1]["x1"]
+                    if current
+                    else 0.0
+                )
+                crosses_page_center = bool(
+                    current
+                    and current[-1][1]["x1"] <= midpoint
+                    and indexed_word[1]["x0"] >= midpoint
+                )
+                if current and (
+                    gap > horizontal_gap
+                    or (crosses_page_center and gap >= 8.0)
+                ):
                     split_rows.append(current)
                     current = []
                 current.append(indexed_word)

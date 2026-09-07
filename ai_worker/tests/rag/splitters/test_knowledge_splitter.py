@@ -60,6 +60,27 @@ def build_aspirin_warfarin_chunk(
     )
 
 
+def build_warfarin_review_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(
+        content,
+        chunk_index=chunk_index,
+    )
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "document_id": ("research_drug_nutrient_interactions-299edbe35f581616"),
+                    "title": "Warfarin and supplement interactions",
+                }
+            )
+        }
+    )
+
+
 def build_page(
     content: str,
     *,
@@ -1436,6 +1457,30 @@ def test_split_connects_lowercase_continuation_across_text_blocks() -> None:
     assert "conventional\n\ndrugs" not in content
 
 
+def test_split_research_recognizes_wiley_pipe_numbered_headings() -> None:
+    page = build_page(
+        "Conclusion\nSummary.\n\n"
+        "KEYWORDS\nadverse event, bleeding, warfarin\n\n"
+        "1 | INTRODUCTION\nIntroduction body.\n\n"
+        "2 | METHODS\n"
+        "2.1 | Search strategy\nSearch body.\n\n"
+        "2.2 | Study inclusion\nInclusion body.\nresults of de-challenge were assessed.\n\n"
+        "2.5 | Data synthesis\nSynthesis body.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Warfarin interaction review",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    contents = [chunk.content for chunk in chunks]
+    assert any(content == "KEYWORDS\nadverse event, bleeding, warfarin" for content in contents)
+    assert any(content.startswith("1 | INTRODUCTION") for content in contents)
+    assert any(content.startswith("2 | METHODS\n2.1 | Search strategy") for content in contents)
+    assert any(content.startswith("2.2 | Study inclusion") for content in contents)
+    assert any(content.startswith("2.5 | Data synthesis") for content in contents)
+    assert not any(content.startswith("results of de-challenge") for content in contents)
+
+
 def test_repair_aspirin_warfarin_text_chunk_boundaries() -> None:
     chunks = [
         build_aspirin_warfarin_chunk(
@@ -1486,6 +1531,27 @@ def test_repair_aspirin_warfarin_text_chunk_boundaries() -> None:
     assert not contents[6].startswith("developing countries.")
     assert contents[6].count("Karadima et al.") == 1
     assert "functionality of systems" in contents[6]
+
+
+def test_repair_warfarin_review_discussion_boundary() -> None:
+    boundary = "multiple active ingredients listed in the current review to avoid the risk of interaction."
+    continuation = "Concurrent use of other antiplatelet or anticoagulants"
+    chunks = [
+        build_warfarin_review_chunk(
+            f"Discussion before boundary. {boundary} {continuation} should be discouraged.",
+            chunk_index=12,
+        ),
+        build_warfarin_review_chunk(
+            f"duplicated overlap before. {boundary} {continuation} should be discouraged. More evidence.",
+            chunk_index=13,
+        ),
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+
+    assert repaired[0].content.endswith(boundary)
+    assert repaired[1].content.startswith(continuation)
+    assert boundary not in repaired[1].content
 
 
 def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:

@@ -10,7 +10,9 @@ from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeExtractionWarning,
     KnowledgeMetadata,
+    KnowledgePage,
     KnowledgePageBlock,
+    KnowledgeTableRow,
 )
 
 
@@ -73,6 +75,57 @@ def test_load_uses_plain_extraction_for_structured_supplement_pdf(
 
     assert pages[0].content == "개요공백이보존되지않은본문"
     assert FakeReader.page.extraction_modes[-1] is None
+
+
+def test_merge_continued_table_comment_into_previous_page_last_row() -> None:
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-continued-table",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+    bbox = KnowledgeBoundingBox(x0=10, top=10, x1=500, bottom=700)
+    headers = ["Ingredient", "Result", "Comment"]
+    previous = KnowledgePageBlock(
+        kind=KnowledgeContentKind.TABLE,
+        order=0,
+        bbox=bbox,
+        content="Ingredient=Bee pollen | Result=Increase | Comment=Elevated INR,",
+        headers=headers,
+        rows=[KnowledgeTableRow(cells=["Bee pollen", "Increase", "Elevated INR,"])],
+        column_count=3,
+        table_title="Interaction table",
+    )
+    continued = KnowledgePageBlock(
+        kind=KnowledgeContentKind.TABLE,
+        order=0,
+        bbox=bbox,
+        content=("Comment=after consumption of bee pollen\nIngredient=Bilberry | Result=Increase | Comment=Bleeding"),
+        headers=headers,
+        rows=[
+            KnowledgeTableRow(cells=["", "", "after consumption of bee pollen"]),
+            KnowledgeTableRow(cells=["Bilberry", "Increase", "Bleeding"]),
+        ],
+        column_count=3,
+        table_title="Interaction table",
+    )
+    pages = [
+        KnowledgePage(content=previous.content, metadata=metadata, page_number=1, blocks=[previous]),
+        KnowledgePage(content=continued.content, metadata=metadata, page_number=2, blocks=[continued]),
+    ]
+
+    merged = KnowledgePdfLoader()._merge_continued_table_rows(pages)
+
+    assert merged[0].blocks[0].rows[0].cells == [
+        "Bee pollen",
+        "Increase",
+        "Elevated INR, after consumption of bee pollen",
+    ]
+    assert merged[1].blocks[0].rows == [KnowledgeTableRow(cells=["Bilberry", "Increase", "Bleeding"])]
+    assert not merged[1].blocks[0].content.startswith("Comment=")
 
 
 class FakeMultiColumnPage:
@@ -244,8 +297,8 @@ class FakeVerifiedLayoutParser:
         self.calls = []
         self.repair_calls = []
 
-    def parse(self, *, page, page_number, source_id):
-        self.calls.append((page, page_number, source_id))
+    def parse(self, *, page, page_number, source_id, document_id=None):
+        self.calls.append((page, page_number, source_id, document_id))
         return PdfLayoutExtraction(
             blocks=[
                 KnowledgePageBlock(
@@ -369,7 +422,14 @@ def test_load_prefers_verified_source_layout_over_generic_extraction(
     ).load(pdf_path, metadata)
 
     assert pages[0].content == "검수 좌표로 복원하고 문맥을 보정한 본문"
-    assert verified_parser.calls == [(layout_document.pages[0], 1, "research_supplement_adverse_effects")]
+    assert verified_parser.calls == [
+        (
+            layout_document.pages[0],
+            1,
+            "research_supplement_adverse_effects",
+            "research-coordinate",
+        )
+    ]
     assert verified_parser.repair_calls == [(1, "research_supplement_adverse_effects")]
 
 

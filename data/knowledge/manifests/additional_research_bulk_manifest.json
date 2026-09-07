@@ -316,7 +316,7 @@
       "document_id": "research_drug_nutrient_interactions-299edbe35f581616",
       "repo_path": "data/knowledge/raw/demo_restricted/research/drug_nutrient_interactions/research_warfarin_food_herbal_supplement_interactions.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
-      "selection_reason": "대표 문서 품질 승인을 상속한 전체 코퍼스 전처리",
+      "selection_reason": "본문·Table 1·2·3 분리, 페이지 경계 Comment 행 복원 및 원문 수동 대조 완료",
       "manual_review_status": "APPROVED",
       "title": "Warfarin and food, herbal or dietary supplement interactions: A systematic review",
       "source_url": "https://doi.org/10.1111/bcp.14404",

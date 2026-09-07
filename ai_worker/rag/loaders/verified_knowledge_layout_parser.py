@@ -7,6 +7,9 @@ from ai_worker.rag.loaders.herb_drug_review_layout_parser import (
     HerbDrugReviewLayoutParser,
 )
 from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtraction
+from ai_worker.rag.loaders.warfarin_review_layout_parser import (
+    WarfarinReviewLayoutParser,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeContentKind,
     KnowledgeExtractionWarning,
@@ -22,6 +25,7 @@ class VerifiedKnowledgeLayoutParser:
         self._parsers = (
             BotanicalReviewLayoutParser(),
             HerbDrugReviewLayoutParser(),
+            WarfarinReviewLayoutParser(),
         )
 
     def parse(
@@ -30,12 +34,14 @@ class VerifiedKnowledgeLayoutParser:
         page: Any,
         page_number: int,
         source_id: str,
+        document_id: str | None = None,
     ) -> PdfLayoutExtraction | None:
         for parser in self._parsers:
             extraction = parser.parse(
                 page=page,
                 page_number=page_number,
                 source_id=source_id,
+                document_id=document_id,
             )
             if extraction is not None:
                 return extraction

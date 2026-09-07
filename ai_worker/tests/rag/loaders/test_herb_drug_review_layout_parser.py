@@ -526,3 +526,14 @@ def test_parse_ignores_other_sources() -> None:
     )
 
     assert extraction is None
+
+
+def test_parse_ignores_other_document_from_same_source() -> None:
+    extraction = HerbDrugReviewLayoutParser().parse(
+        page=FakeLayoutPage([]),
+        page_number=2,
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-other",
+    )
+
+    assert extraction is None
