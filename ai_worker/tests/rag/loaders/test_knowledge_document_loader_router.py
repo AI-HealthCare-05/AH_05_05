@@ -45,6 +45,7 @@ def test_routes_only_artifact_backed_document_to_ocr_loader(tmp_path: Path) -> N
         pdf_loader=Loader("PDF"),
         ocr_loader=Loader("OCR"),
         ocr_artifact_root=artifact_root,
+        ocr_document_ids={"document"},
     )
 
     pages = router.load(tmp_path / "document.pdf", _metadata())
@@ -57,6 +58,24 @@ def test_routes_document_without_artifact_to_pdf_loader(tmp_path: Path) -> None:
         pdf_loader=Loader("PDF"),
         ocr_loader=Loader("OCR"),
         ocr_artifact_root=tmp_path / "artifacts",
+    )
+
+    pages = router.load(tmp_path / "document.pdf", _metadata())
+
+    assert pages[0].content == "PDF"
+
+
+def test_routes_non_allowlisted_document_to_pdf_loader_even_when_artifact_exists(
+    tmp_path: Path,
+) -> None:
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    (artifact_root / "document.json").write_text("{}", encoding="utf-8")
+    router = KnowledgeDocumentLoaderRouter(
+        pdf_loader=Loader("PDF"),
+        ocr_loader=Loader("OCR"),
+        ocr_artifact_root=artifact_root,
+        ocr_document_ids={"selected-ocr-document"},
     )
 
     pages = router.load(tmp_path / "document.pdf", _metadata())

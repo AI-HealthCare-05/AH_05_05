@@ -196,6 +196,79 @@ def build_st_johns_wort_review_chunk(
     )
 
 
+def build_vitamin_b12_deficiency_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(content, chunk_index=chunk_index)
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "source_id": "research_supplement_interactions",
+                    "document_id": "research_supplement_interactions-87c6ca8187e6dab7",
+                    "title": "Vitamin B12 Deficiency",
+                    "page_start": 1,
+                    "page_end": 4,
+                }
+            )
+        }
+    )
+
+
+def build_botanical_supplement_adverse_effects_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+    content_kind: KnowledgeContentKind = KnowledgeContentKind.TEXT,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(
+        content,
+        chunk_index=chunk_index,
+        content_kind=content_kind,
+    )
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "source_id": "research_supplement_adverse_effects",
+                    "document_id": "research_supplement_adverse_effects-69b9c0581b9f9612",
+                    "title": "Adverse effects of plant food supplements and botanical preparations",
+                    "page_start": 1,
+                    "page_end": 12,
+                }
+            )
+        }
+    )
+
+
+def build_supplement_interactions_review_chunk(
+    content: str,
+    *,
+    document_id: str,
+    title: str,
+    chunk_index: int,
+    page_start: int = 1,
+    page_end: int = 7,
+) -> KnowledgeChunk:
+    """사람이 대조한 영양제 상호작용 문서의 복원 회귀 테스트용 청크입니다."""
+    chunk = build_aspirin_warfarin_chunk(content, chunk_index=chunk_index)
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "source_id": "research_supplement_interactions",
+                    "document_id": document_id,
+                    "title": title,
+                    "page_start": page_start,
+                    "page_end": page_end,
+                }
+            )
+        }
+    )
+
+
 def build_page(
     content: str,
     *,
@@ -439,6 +512,172 @@ def test_split_supplement_code_separates_extracted_hierarchy() -> None:
     assert "단백질 및 아미노산 이용에 필요" in chunks[1].content
     assert "일일섭취량: :" not in chunks[2].content
     assert "섭취 시 주의사항: :" not in chunks[3].content
+
+
+def test_split_supplement_ingredient_review_keeps_only_consumer_fields() -> None:
+    """The review parser must not release research or assessment details as chatbot evidence."""
+    page = build_page(
+        "그린커피빈주정추출물\n"
+        "원료 또는 원재료\n"
+        "그린커피빈주정추출물\n"
+        "기능성 내용\n"
+        "체지방 감소에 도움을 줄 수 있음\n"
+        "일일 섭취량\n"
+        "1일 500 mg\n"
+        "섭취 시 주의사항\n"
+        "카페인에 민감한 사람은 섭취에 주의할 것\n"
+        "안전성 평가 내용\n"
+        "동물시험과 독성평가의 상세 결과",
+        title="그린커피빈주정추출물",
+        source_id="food_safety_korea_supplement_ingredients",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
+    assert "그린커피빈주정추출물" in chunks[0].content
+    assert "체지방 감소에 도움을 줄 수 있음" in chunks[1].content
+    assert "1일 500 mg" in chunks[2].content
+    assert "카페인에 민감한 사람은 섭취에 주의할 것" in chunks[3].content
+    assert all("동물시험" not in chunk.content for chunk in chunks)
+
+
+def test_split_supplement_ingredient_review_extracts_inline_field_labels() -> None:
+    """Food Safety Korea reports place consumer field labels inline with table content."""
+    page = build_page(
+        "□ 인정 정보 사항 원료 또는 원재료커피원두(Coffea arabica L.)"
+        "지표성분(또는 기능성분)클로로겐산 245 mg/g"
+        "규격 카페인 20,000 이하"
+        "기능성 내용체지방 감소에 도움을 줄 수 있음"
+        "일일 섭취량그린커피빈주정추출물로서 500 mg/일"
+        "섭취 시 주의사항 1) 카페인이 함유되어 있어 불면 등을 나타낼 수 있음"
+        "□ 심사자 정보 사항 심사 부서 식품의약품안전평가원",
+        title="그린커피빈주정추출물",
+        source_id="food_safety_korea_supplement_ingredients",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
+    assert "커피원두(Coffea arabica L.)" in chunks[0].content
+    assert "클로로겐산" not in chunks[0].content
+    assert "체지방 감소에 도움을 줄 수 있음" in chunks[1].content
+    assert "500 mg/일" in chunks[2].content
+    assert "불면 등을 나타낼 수 있음" in chunks[3].content
+    assert all("심사 부서" not in chunk.content for chunk in chunks)
+
+
+def test_split_supplement_ingredient_review_recognizes_functional_ingredient_name_header() -> None:
+    """Consumer reports must treat `기능성 원료명(인정번호)` as the ingredient field."""
+    page = build_page(
+        "원료 개요\n"
+        "기능성 원료명(인정번호) · CaHMB(Calcium β-Hydroxy-β-methylbutyrate)(제2023-26호)\n"
+        "기능성 내용 · 운동수행능력 향상에 도움을 줄 수 있음\n"
+        "일일 섭취량 · CaHMB로서 3 g/일\n"
+        "섭취 시 주의사항 · 영·유아, 어린이, 임산부 및 수유부는 섭취를 피할 것\n"
+        "참고 내용 안전성 평가의 상세 결과",
+        title="CaHMB(Calcium β-Hydroxy-β-methylbutyrate)",
+        source_id="food_safety_korea_supplement_ingredients",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
+    assert "CaHMB(Calcium β-Hydroxy-β-methylbutyrate)" in chunks[0].content
+    assert "운동수행능력 향상에 도움을 줄 수 있음" in chunks[1].content
+    assert "3 g/일" in chunks[2].content
+    assert "임산부 및 수유부는 섭취를 피할 것" in chunks[3].content
+    assert all("안전성 평가" not in chunk.content for chunk in chunks)
+
+
+def test_split_supplement_ingredient_review_recovers_split_summary_labels() -> None:
+    """Consumer summary labels may wrap across lines without becoming malformed chunks."""
+    page = build_page(
+        "원료 개요\n"
+        "기능성 원료명\n"
+        "인정번호( )\n"
+        "· CaHMB(Calcium β-Hydroxy-β-methylbutyrate)(제2023-26호)\n"
+        "기능성 내용 · 운동수행능력 향상에 도움을 줄 수 있음\n"
+        "일일 섭취량 · CaHMB로서 3 g/일\n"
+        "섭취 시\n"
+        "주의사항 · 임산부 및 수유부는 섭취를 피할 것\n"
+        "참고 내용 관련 규정과 세부 심사 내용",
+        title="건강기능식품 기능성 원료 소비자 리포트 CaHMB",
+        source_id="food_safety_korea_supplement_ingredients",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
+    assert all(chunk.content.startswith("성분: CaHMB(") for chunk in chunks)
+    assert all(")(" not in chunk.content for chunk in chunks)
+    assert all("참고 내용" not in chunk.content for chunk in chunks)
+
+
+def test_split_supplement_ingredient_review_stops_before_detailed_assessment() -> None:
+    """Repeated labels in the detailed assessment must not become duplicate consumer chunks."""
+    page = build_page(
+        "원료 또는 원재료석류(Punica granatum L.)"
+        "기능성 내용피부 건강에 도움을 줄 수 있음"
+        "일일 섭취량석류농축분말로서 1 g/일"
+        "섭취 시 주의사항에스트로겐 호르몬에 민감한 사람은 섭취에 주의"
+        "□ 심사자 정보 사항 심사 부서 식품의약품안전평가원"
+        "세부 사항 일일 섭취량은 인체적용시험에서 검토함",
+        title="석류농축분말",
+        source_id="food_safety_korea_supplement_ingredients",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    ]
+    assert all("인체적용시험" not in chunk.content for chunk in chunks)
+
+
+def test_split_supplement_ingredient_review_repairs_safe_latin_name_artifacts() -> None:
+    """A broken inline parenthesis must not quarantine an otherwise valid ingredient list."""
+    page = build_page(
+        "원료 또는 원재료⦁석류(Punica granatum L.)(부위: 열매)"
+        "⦁두충(E(ucommia ulmoides Oliver)(부위: 껍질)"
+        "⦁우슬(A(chyranthes japonica Nakai)(부위: 뿌리)"
+        "기능성 내용관절 및 연골건강에 도움을 줄 수 있음"
+        "일일 섭취량석류 등 복합물로서 1,000 mg/일"
+        "섭취 시 주의사항에스트로겐 호르몬에 민감한 사람은 섭취에 주의"
+        "□ 심사자 정보 사항",
+        title="석류 등 복합물",
+        source_id="food_safety_korea_supplement_ingredients",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    ingredient = chunks[0]
+    assert "Eucommia ulmoides Oliver" in ingredient.content
+    assert "Achyranthes japonica Nakai" in ingredient.content
+    assert ")(" not in ingredient.content
 
 
 def test_parse_supplement_code_restores_standard_numbered_items() -> None:
@@ -2225,6 +2464,382 @@ def test_repair_st_johns_wort_review_uses_verified_body_and_summary_boundaries()
     assert repaired[-1].content.endswith("particularly in conjunction with conventional drugs.")
 
 
+def test_repair_vitamin_b12_deficiency_uses_verified_manual_boundaries() -> None:
+    content = "\n".join(
+        [
+            "Vitamin B12 Deficiency",
+            "Full Review: Jun 2026 By Larry E. Johnson, MD, PhD",
+            "Last updated: Jun 2026",
+            "Vitamin B12 is necessary for normal nerve function and is stored in the liver.",
+            "Symptoms can include impaired mental function, including dementia.",
+            "The immune system may destroy stomach cells that produce intrinsic factor.",
+            "In older adults, mental function does not improve after treatment.",
+            "Prevention of Vitamin B12 Deficiency",
+            "For infants of vegan mothers, starting vitamin B12 supplements immediately after birth helps prevent vitamin B12 deficiency.",
+            "Drug Information for the Topic",
+            "Copyright © 2026 remove this.",
+        ]
+    )
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(
+        [build_vitamin_b12_deficiency_chunk(content, chunk_index=0)]
+    )
+
+    assert len(repaired) == 4
+    assert repaired[0].content.endswith("stored in the liver.")
+    assert repaired[1].content.endswith("mental function, including dementia.")
+    assert repaired[2].content.endswith("cells that produce intrinsic factor.")
+    assert repaired[3].content.startswith("In older adults, mental function does not improve after treatment.")
+    assert repaired[3].content.endswith("vitamin B12 deficiency.")
+    joined = "\n".join(chunk.content for chunk in repaired)
+    assert "Full Review:" not in joined
+    assert "Last updated:" not in joined
+    assert "Drug Information" not in joined
+    assert "Copyright" not in joined
+
+
+def test_repair_botanical_supplement_adverse_effects_preserves_tables_and_removes_references() -> None:
+    text = "\n".join(
+        [
+            "Introduction. The total references were counted before adverse events were reported for several plants and Ginkgo biloba (14).",
+            "Severe hepatitis required liver transplanta-tion.",
+            "The cases included adverse effects of green tea, consumed as tea or in capsules.",
+            "Concentrated extracts were the most usual forms involved.",
+            "In vitro inhibition of cytochrome P450 (CYP) 3A4 activity was observed .",
+            "No relation with a nutrient or conventional drug was found.",
+            "The product was reported to the Food and Drug Administration (FDA).",
+            "One report described an interaction in a case of fatal breakthrough seizure.",
+            "The soybean report described transient methaemoglobinaemia.",
+            "Glycyrrhiza glabra caused hypokalaemia and metabolic alkalosis.",
+            "Green tea was responsible for liver damage via an interaction with CYP3A4.",
+            "No interaction with nutrients or conventional drugs has been described.",
+            "Conclusions The review supports cautious interpretation.",
+            "Competing Interests None declared.",
+            "REFERENCES 1. Remove this bibliography.",
+        ]
+    )
+    tables = [
+        build_botanical_supplement_adverse_effects_chunk(
+            "Plant=Ginkgo biloba | Event=bleeding",
+            chunk_index=17,
+            content_kind=KnowledgeContentKind.TABLE,
+        ),
+        build_botanical_supplement_adverse_effects_chunk(
+            "Plant=Camellia sinensis | Event=hepatitis",
+            chunk_index=18,
+            content_kind=KnowledgeContentKind.TABLE,
+        ),
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(
+        [build_botanical_supplement_adverse_effects_chunk(text, chunk_index=0), *tables]
+    )
+
+    repaired_text = [chunk for chunk in repaired if chunk.metadata.content_kind == KnowledgeContentKind.TEXT]
+    repaired_tables = [chunk for chunk in repaired if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
+    expected_endings = [
+        "and Ginkgo biloba (14).",
+        "transplantation.",
+        "of green tea, consumed as tea or in capsules.",
+        "extracts were the most usual forms involved.",
+        "cytochrome P450 (CYP) 3A4 activity was observed.",
+        "or conventional drug was found.",
+        "Food and Drug Administration (FDA).",
+        "in a case of fatal breakthrough seizure.",
+        "transient methaemoglobinaemia.",
+        "hypokalaemia and metabolic alkalosis.",
+        "responsible for liver damage via an interaction with CYP3A4.",
+        "No interaction with nutrients or conventional drugs has been described.",
+    ]
+    assert len(repaired_text) == len(expected_endings) + 1
+    assert [
+        chunk.content.endswith(ending) for chunk, ending in zip(repaired_text[:-1], expected_endings, strict=True)
+    ] == [True] * len(expected_endings)
+    assert repaired_text[-1].content.startswith("Conclusions")
+    assert repaired_text[-1].content.endswith("Competing Interests None declared.")
+    assert "REFERENCES" not in "\n".join(chunk.content for chunk in repaired_text)
+    assert [chunk.content for chunk in repaired_tables] == [chunk.content for chunk in tables]
+
+
+def test_repair_calcium_iron_review_uses_verified_body_boundaries() -> None:
+    content = "\n".join(
+        [
+            "Calcium and Iron Absorption – Mechanisms and Public Health Relevance",
+            "Article to the Special Issue Bo Lönnerdal Department of Nutrition",
+            "Abstract: Calcium may affect iron absorption.",
+            "DOI 10.1024/0300-9831/a000036 Int. J. Vitam. Nutr. Res. 80 (4 – 5) © 2010 Hans Huber Publishers, Hogrefe AG, Bern",
+            "Introduction The adverse effects of iron deficiency anemia and iron deficiency are well known.",
+            "Any approach to improve iron status of vulnerable populations should account for inhibitors.",
+            "An apparent solution to this nutritional problem would be to limit calcium in iron-containing meals.",
+            "Before attempting to revise dietary guidelines, it is reasonable to explore long-term effects on iron status.",
+            "A critical evaluation of studies showing an acute effect of calcium on iron absorption",
+            "Taken together, most studies on the effects of calcium on iron absorption show acute inhibition.",
+            "The meal composition effect should be considered when single-meal studies are performed.",
+            "The “timing” of the calcium effect on iron absorption was studied in human subjects.",
+            "The difference may be due to inter-individual variation or a matter of power of the study.",
+            "Using another approach, Tidehag et al. compared diets in ileostomy subjects.",
+            "No significant differences were found between groups consuming the different levels and forms of calcium.",
+            "Does high calcium intake affect iron status in vulnerable populations?",
+            "It is generally accepted that several groups benefit from calcium interventions.",
+            "Calcium supplementation studies have failed to find any significant negative effect on iron status.",
+            "Why is iron absorption sometimes affected by high calcium intake, while there is no effect on iron status?",
+            "The answer to this question is uncertain, but adaptation may occur.",
+            "The response is likely to occur after initial uptake of iron by the cell.",
+            "We have investigated the potential adaptation of iron absorption in Caco-2 cells.",
+            "Transport into the intestinal cell and our results suggest that this is due to cellular adaptation.",
+            "A long-term adverse effect cannot be excluded, and needs to be studied further.",
+            "Conclusions Calcium interventions should avoid creating new public health problems instead of resolving them.",
+            "References 1. Remove this bibliography.",
+        ]
+    )
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(
+        [
+            build_supplement_interactions_review_chunk(
+                content,
+                document_id="research_supplement_interactions-016c81c9a3e29ebd",
+                title="Calcium and Iron Absorption – Mechanisms and Public Health Relevance",
+                chunk_index=0,
+            )
+        ]
+    )
+
+    expected_starts = [
+        "Calcium and Iron Absorption – Mechanisms and Public Health Relevance",
+        "Introduction",
+        "A critical evaluation of studies showing an acute effect of calcium on iron absorption",
+        "The “timing” of the calcium effect on iron absorption was studied in human subjects.",
+        "Using another approach, Tidehag et al. compared diets in ileostomy subjects.",
+        "Does high calcium intake affect iron status in vulnerable populations?",
+        "Why is iron absorption sometimes affected by high calcium intake, while there is no effect on iron status?",
+        "We have investigated the potential adaptation of iron absorption in Caco-2 cells.",
+        "Conclusions",
+    ]
+    assert all(chunk.content.startswith(start) for chunk, start in zip(repaired, expected_starts, strict=True))
+    joined = "\n".join(chunk.content for chunk in repaired)
+    assert "DOI 10.1024" not in joined
+    assert "Bo Lönnerdal" not in joined
+    assert "References" not in joined
+    assert repaired[-1].content.endswith("public health problems instead of resolving them.")
+
+
+def test_repair_calcium_iron_meta_analysis_removes_preprint_and_reference_matter() -> None:
+    content = "\n".join(
+        [
+            "Effect of calcium intake on iron absorption and hematologic status",
+            "medRxiv preprint doi: https://doi.org/10.1101/2020.09.21.20198358; this version posted September 23, 2020.",
+            "All rights reserved. No reuse allowed without permission.",
+            "Ajibola Ibraheem Abioye, Taofik A Okuneye, Abdul-Majeed O Odesanya",
+            "Department of Nutrition, Harvard T.H. Chan School of Public Health",
+            "Abstract Calcium intake may affect iron absorption (1, 2).",
+            "Results The pooled estimate was reported from randomised trials.",
+            "References 1. Remove this bibliography.",
+        ]
+    )
+
+    [repaired] = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(
+        [
+            build_supplement_interactions_review_chunk(
+                content,
+                document_id="research_supplement_interactions-7983c60e9a092828",
+                title="Effect of calcium intake on iron absorption and hematologic status",
+                chunk_index=0,
+            )
+        ]
+    )
+
+    assert repaired.content.startswith("Effect of calcium intake on iron absorption and hematologic status")
+    assert "medRxiv preprint" not in repaired.content
+    assert "Ajibola Ibraheem" not in repaired.content
+    assert "Department of Nutrition" not in repaired.content
+    assert "References" not in repaired.content
+    assert "(1, 2)" not in repaired.content
+    assert repaired.content.endswith("The pooled estimate was reported from randomised trials.")
+
+
+def test_repair_older_adult_review_keeps_title_and_removes_front_matter() -> None:
+    content = "\n".join(
+        [
+            "Open Access Review Article Pharmacological Interactions Between Nutritional Supplements and Prescription Medications in Older Adults: A Comprehensive Review",
+            "Review began 08/20/2025 Review ended 09/11/2025 Copyright 2025 Changaramkumarath et al.",
+            "DOI: 10.7759/cureus.92363",
+            "Abstract Older adults often use nutritional supplements with prescription medications.",
+            "Introduction Clinical interaction considerations remain important.",
+        ]
+    )
+
+    [repaired] = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(
+        [
+            build_supplement_interactions_review_chunk(
+                content,
+                document_id="research_supplement_interactions-d2e4dfcb8919c4c3",
+                title="Pharmacological Interactions Between Nutritional Supplements and Prescription Medications in Older Adults: A Comprehensive Review",
+                chunk_index=0,
+            )
+        ]
+    )
+
+    assert repaired.content.startswith(
+        "Open Access Review Article\nPharmacological Interactions Between Nutritional Supplements and Prescription Medications in Older Adults: A Comprehensive Review"
+    )
+    assert "Review began" not in repaired.content
+    assert "Copyright" not in repaired.content
+    assert "DOI:" not in repaired.content
+    assert "Abstract Older adults" in repaired.content
+
+
+def test_repair_zinc_iron_study_removes_table_and_splits_verified_sections() -> None:
+    content = "\n".join(
+        [
+            "Supplemental Zinc Lowers Measures of Iron Status in Young Women with Low Iron Reserves",
+            "Carmen M. Donangelo, Leslie R. Woodhouse, Sarah M. King",
+            "Department of Nutritional Sciences, University of California",
+            "ABSTRACT Zinc and iron compete during intestinal absorption.",
+            "Zinc and iron interact competitively during intestinal absorption in young women with low iron reserves.",
+            "SUBJECTS AND METHODS Subjects were healthy women with low iron reserves.",
+            "The intervention was completed in zinc-supplemented and iron-supplemented groups, respectively.",
+            "1 Presented in part at Experimental Biology 2000. To whom correspondence should be addressed.",
+            "0022-3166/02 $3.00 © 2002 American Society for Nutritional Sciences. Manuscript received 8 January 2002.",
+            "Sample collection. On d 1 and 56, blood and urine samples were collected.",
+            "Differences were considered significant at P ≤ 0.05.",
+            "4 Abbreviations used: EZP, erythrocyte zinc protoprophyrin; FZA, fractional zinc absorption.",
+            "RESULTS Age, body mass index, and dietary intake were similar in the two groups of women studied.",
+            "In the iron-supplemented women, iron absorption decreased to less than half of the initial value (P ≤ 0.01).",
+            "TABLE 3 Iron and zinc absorption from a test bean meal in young women with low iron reserves with zinc or iron for 6 wk.",
+            "Zn supplemented 13.4 7.2 Fe supplemented 16.1 15.2.",
+            "DISCUSSION The women in this study initially had a marginal zinc status.",
+            "Supplemental zinc further impairs the iron status of women with low iron stores.",
+            "ACKNOWLEDGMENT The authors appreciate the cooperation of the women.",
+            "LITERATURE CITED 1. Remove this bibliography.",
+        ]
+    )
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(
+        [
+            build_supplement_interactions_review_chunk(
+                content,
+                document_id="research_supplement_interactions-ce2c45272c5bd272",
+                title="Supplemental Zinc Lowers Measures of Iron Status in Young Women with Low Iron Reserves",
+                chunk_index=0,
+            )
+        ]
+    )
+
+    joined = "\n".join(chunk.content for chunk in repaired)
+    assert "Carmen M. Donangelo" not in joined
+    assert "Presented in part" not in joined
+    assert "Manuscript received" not in joined
+    assert "Abbreviations used" not in joined
+    assert "TABLE 3" not in joined
+    assert "Zn supplemented 13.4" not in joined
+    assert "LITERATURE CITED" not in joined
+    assert any(chunk.content.startswith("Sample collection.") for chunk in repaired)
+    assert any(chunk.content.startswith("RESULTS\n") for chunk in repaired)
+    assert any(chunk.content.startswith("DISCUSSION\n") for chunk in repaired)
+    assert repaired[-1].content.endswith("impairs the iron status of women with low iron stores.")
+
+
+def test_repair_vitamin_c_copper_study_removes_figure_captions_and_page_artifacts() -> None:
+    chunks = [
+        build_supplement_interactions_review_chunk(
+            "2. Materials and Methods\n2.1. Materials\nCopper(II) Sulfate was purchased.\n"
+            "2.2. Cell Culture\nRat cells were cultured.\n2 2\n"
+            "Biomolecules 2023, 13, 143\n2 of 16 and cells were observed.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=0,
+            page_start=2,
+            page_end=2,
+        ),
+        build_supplement_interactions_review_chunk(
+            "Figure 2. Effects of AA and Cu on colon length. (A) Effects of combined administration.\n"
+            "As an organ that stores urine for a certain period until urination, the bladder could also be affected.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=1,
+            page_start=6,
+            page_end=6,
+        ),
+        build_supplement_interactions_review_chunk(
+            "Figure 6. Effects of AA and Cu on renal tubular viability.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=2,
+            page_start=10,
+            page_end=10,
+        ),
+        build_supplement_interactions_review_chunk(
+            "of combined administration on colon length. Mice were administered 100 mg/kg AA.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=3,
+            page_start=6,
+            page_end=6,
+        ),
+        build_supplement_interactions_review_chunk(
+            "the indicated concentrations of AA together with or without 1 mg/kg Cu+ via oral gavage.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=4,
+            page_start=8,
+            page_end=8,
+        ),
+        build_supplement_interactions_review_chunk(
+            "methods section. Data shown are mean ± SE (n = 4; ** p < 0.01 vs. control).",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=5,
+            page_start=10,
+            page_end=10,
+        ),
+        build_supplement_interactions_review_chunk(
+            "3.2. AA and Cu in Combination Cause Renal Injury\n"
+            "AA and Cu altered renal function.\n\n"
+            "on kidney size. Mice were administered 100 mg/kg AA and 1 mg/kg Cu.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=6,
+            page_start=7,
+            page_end=7,
+        ),
+        build_supplement_interactions_review_chunk(
+            "status and renal injury. The combined administration of AA and Cu caused oxidative stress.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=7,
+            page_start=12,
+            page_end=12,
+        ),
+        build_supplement_interactions_review_chunk(
+            "3.3. Results\nAA plus Cu+ caused H O generation in renal cells.",
+            document_id="research_supplement_interactions-7cc01e25b07044ff",
+            title="The Combined Administration of Vitamin C and Copper",
+            chunk_index=8,
+            page_start=8,
+            page_end=8,
+        ),
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+
+    joined = "\n".join(chunk.content for chunk in repaired)
+    assert "\n2 2\n" not in joined
+    assert "Biomolecules 2023" not in joined
+    assert "Figure 2." not in joined
+    assert "Figure 6." not in joined
+    assert "(A) Effects" not in joined
+    assert "of combined administration on colon length" not in joined
+    assert "the indicated concentrations of AA" not in joined
+    assert "methods section. Data shown" not in joined
+    assert "on kidney size. Mice were administered" not in joined
+    assert "status and renal injury. The combined administration" not in joined
+    assert "3.2. AA and Cu in Combination Cause Renal Injury" in joined
+    assert "AA plus Cu2+ caused H2O generation" in joined
+    assert "2.2. Cell Culture\nRat cells were cultured." in joined
+    assert "and cells were observed." in joined
+    assert "As an organ that stores urine" in joined
+
+
 def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:
     chunks = [
         build_aspirin_warfarin_chunk(
@@ -2424,6 +3039,31 @@ def test_split_recognizes_attached_drug_encyclopedia_headings() -> None:
         KnowledgeSectionType.CAUTION,
         KnowledgeSectionType.INTERACTION,
     ]
+
+
+def test_split_marks_leading_adverse_case_details_as_case_summary() -> None:
+    page = build_page(
+        (
+            "나이·성별 39세 여성\n"
+            "현재 병력 회전근개 파열\n"
+            "투여 목적 통증 완화\n"
+            "의심 약물 트라마돌 50mg\n"
+            "이상사례 변비\n"
+            "조치 사항 수산화마그네슘을 복용함"
+        ),
+        document_type=KnowledgeDocumentType.ADVERSE_CASE_REPORT,
+        title="트라마돌 복용 후 변비",
+        source_id="kpicia_adverse_case_report",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.CASE_SUMMARY,
+        KnowledgeSectionType.ADVERSE_EVENT,
+    ]
+    assert "의심 약물 트라마돌 50mg" in chunks[0].content
+    assert "이상사례 변비" in chunks[1].content
 
 
 def test_split_restores_attached_losartan_usage_and_caution_headings() -> None:

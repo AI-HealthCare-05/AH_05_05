@@ -10,10 +10,16 @@ from ai_worker.schemas.knowledge import (
 )
 from ai_worker.schemas.knowledge_manifest import (
     KnowledgeManualReviewStatus,
+    KnowledgeOcrDocumentSelectionDecision,
+    KnowledgeOcrDocumentSelectionManifest,
     KnowledgePilotEntry,
     KnowledgePilotManifest,
     KnowledgeProcessingStatus,
     KnowledgeSourcesManifest,
+)
+from ai_worker.services.knowledge_blocked_document_recovery_service import (
+    KnowledgeBlockedDocumentRecoveryResult,
+    KnowledgeBlockedDocumentRecoveryService,
 )
 from ai_worker.services.knowledge_ocr_artifact_quality_service import (
     KnowledgeOcrArtifactQualityService,
@@ -46,6 +52,8 @@ class KnowledgeCorpusDocument(BaseModel):
     ingredient_names: list[str] = Field(default_factory=list)
     evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
     study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
+    index_eligible: bool = True
+    index_exclusion_reason: str | None = None
 
 
 class KnowledgeCorpusManifestBuilder:
@@ -54,9 +62,7 @@ class KnowledgeCorpusManifestBuilder:
         *,
         ocr_artifact_quality_service: KnowledgeOcrArtifactQualityService | None = None,
     ) -> None:
-        self._ocr_artifact_quality_service = (
-            ocr_artifact_quality_service or KnowledgeOcrArtifactQualityService()
-        )
+        self._ocr_artifact_quality_service = ocr_artifact_quality_service or KnowledgeOcrArtifactQualityService()
 
     def build(
         self,
@@ -68,6 +74,7 @@ class KnowledgeCorpusManifestBuilder:
         pilot_manifest_path: Path | None = None,
         pilot_manifest_paths: list[Path] | None = None,
         ocr_artifact_root: Path | None = None,
+        ocr_document_selection_path: Path | None = None,
     ) -> KnowledgePilotManifest:
         sources = KnowledgeSourcesManifest.model_validate(
             yaml.safe_load(Path(sources_path).read_text(encoding="utf-8"))
@@ -77,20 +84,31 @@ class KnowledgeCorpusManifestBuilder:
             singular=pilot_quality_report_path,
             plural=pilot_quality_report_paths,
             label="대표 품질 보고서",
+            required=False,
+        )
+        reviewed_by_document_id = self._load_reviewed_entries(
+            pilot_manifest_path=pilot_manifest_path,
+            pilot_manifest_paths=pilot_manifest_paths,
+        )
+        selected_ocr_document_ids = self._load_selected_ocr_document_ids(
+            ocr_document_selection_path=ocr_document_selection_path,
         )
         approved_sources: set[str] = set()
         for quality_report_path in quality_report_paths:
             approved_sources.update(
                 self._load_approved_source_ids(quality_report_path),
             )
-        reviewed_by_document_id = self._load_reviewed_entries(
-            pilot_manifest_path=pilot_manifest_path,
-            pilot_manifest_paths=pilot_manifest_paths,
+        approved_sources.update(
+            entry.source_id
+            for entry in reviewed_by_document_id.values()
+            if entry.manual_review_status == KnowledgeManualReviewStatus.APPROVED
         )
         selected: list[KnowledgePilotEntry] = []
         seen_hashes: set[str] = set()
 
         for document in self._load_documents(documents_path):
+            if not document.index_eligible:
+                continue
             source = source_by_id.get(document.source_id)
             if source is None or not source.index_eligible:
                 continue
@@ -98,15 +116,13 @@ class KnowledgeCorpusManifestBuilder:
                 continue
             is_artifact_backed_ocr = (
                 document.processing_status == KnowledgeProcessingStatus.OCR_REQUIRED
+                and document.document_id in selected_ocr_document_ids
                 and self._has_eligible_ocr_artifact(
                     artifact_root=ocr_artifact_root,
                     document_id=document.document_id,
                 )
             )
-            if (
-                document.processing_status != KnowledgeProcessingStatus.TEXT_EXTRACTABLE
-                and not is_artifact_backed_ocr
-            ):
+            if document.processing_status != KnowledgeProcessingStatus.TEXT_EXTRACTABLE and not is_artifact_backed_ocr:
                 continue
             if document.repo_path.suffix.casefold() != ".pdf":
                 continue
@@ -166,6 +182,22 @@ class KnowledgeCorpusManifestBuilder:
             policy=("품질 승인 출처의 텍스트 추출 가능 PDF를 중복 제거 후 전체 전처리한다."),
             pilots=selected,
         )
+
+    @staticmethod
+    def _load_selected_ocr_document_ids(
+        *,
+        ocr_document_selection_path: Path | None,
+    ) -> set[str]:
+        if ocr_document_selection_path is None:
+            return set()
+        manifest = KnowledgeOcrDocumentSelectionManifest.model_validate(
+            yaml.safe_load(Path(ocr_document_selection_path).read_text(encoding="utf-8")),
+        )
+        return {
+            selection.document_id
+            for selection in manifest.selections
+            if selection.decision == KnowledgeOcrDocumentSelectionDecision.INCLUDE
+        }
 
     def _has_eligible_ocr_artifact(
         self,
@@ -281,10 +313,12 @@ class KnowledgeCorpusPreprocessingService:
         pilot_manifest_path: Path | None = None,
         pilot_manifest_paths: list[Path] | None = None,
         ocr_artifact_root: Path | None = None,
+        ocr_document_selection_path: Path | None = None,
         output_root: Path,
         dataset_version: str,
         baseline_quality_report_path: Path | None = None,
         recovery_reporting_service: KnowledgeRecoveryReportingService | None = None,
+        blocked_document_recovery_service: KnowledgeBlockedDocumentRecoveryService | None = None,
     ) -> KnowledgePilotPreprocessingResult:
         manifest = self._manifest_builder.build(
             documents_path=documents_path,
@@ -294,6 +328,7 @@ class KnowledgeCorpusPreprocessingService:
             pilot_manifest_path=pilot_manifest_path,
             pilot_manifest_paths=pilot_manifest_paths,
             ocr_artifact_root=ocr_artifact_root,
+            ocr_document_selection_path=ocr_document_selection_path,
         )
         report_root = Path(output_root) / "reports"
         report_root.mkdir(parents=True, exist_ok=True)
@@ -308,6 +343,14 @@ class KnowledgeCorpusPreprocessingService:
             output_root=output_root,
             dataset_version=dataset_version,
         )
+        blocked_recovery = (blocked_document_recovery_service or KnowledgeBlockedDocumentRecoveryService()).write(
+            result=result,
+            output_root=output_root,
+        )
+        result = self._apply_automatic_exclusion_reasons(
+            result=result,
+            recovery=blocked_recovery,
+        )
         release = self.finalize_release(
             result=result,
             output_root=output_root,
@@ -320,6 +363,31 @@ class KnowledgeCorpusPreprocessingService:
                 output_root=output_root,
             )
         return release
+
+    @staticmethod
+    def _apply_automatic_exclusion_reasons(
+        *,
+        result: KnowledgePilotPreprocessingResult,
+        recovery: KnowledgeBlockedDocumentRecoveryResult,
+    ) -> KnowledgePilotPreprocessingResult:
+        excluded_document_ids = recovery.automatically_excluded_document_ids
+        if not excluded_document_ids:
+            return result
+        return result.model_copy(
+            update={
+                "skipped_documents": [
+                    skipped.model_copy(
+                        update={"reason": "AUTOMATIC_EXCLUDED_UNRECOVERABLE_TEXT"},
+                    )
+                    if (
+                        skipped.document_id in excluded_document_ids
+                        and skipped.reason == "AUTOMATIC_QUALITY_BLOCKED"
+                    )
+                    else skipped
+                    for skipped in result.skipped_documents
+                ]
+            }
+        )
 
     @staticmethod
     def finalize_release(

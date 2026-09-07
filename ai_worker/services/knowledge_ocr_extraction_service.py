@@ -133,8 +133,8 @@ class KnowledgeOcrExtractionService:
         if actual != entry.source_sha256:
             raise ValueError(f"OCR 대상 원본 SHA-256이 다릅니다: {entry.document_id}")
 
-    @staticmethod
     def _load_complete_artifact_if_available(
+        self,
         *,
         artifact_path: Path,
         entry: KnowledgeOcrManifestEntry,
@@ -146,6 +146,17 @@ class KnowledgeOcrExtractionService:
             artifact_path.read_text(encoding="utf-8"),
         )
         if artifact.document_id != entry.document_id or artifact.source_sha256 != entry.source_sha256:
+            return None
+        if (
+            artifact.renderer.name != self._rasterizer.name
+            or artifact.renderer.version != self._rasterizer.version
+            or artifact.renderer.dpi != self._dpi
+        ):
+            return None
+        if (
+            artifact.ocr_engine.name != self._provider.name
+            or artifact.ocr_engine.version != self._provider.version
+        ):
             return None
         if len(artifact.pages) != page_count:
             return None

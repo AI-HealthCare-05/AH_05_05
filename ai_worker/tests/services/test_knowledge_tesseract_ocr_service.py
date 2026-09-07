@@ -69,6 +69,21 @@ def test_tesseract_provider_converts_tsv_lines_to_coordinate_blocks() -> None:
     assert runner.calls == [(b"image-bytes", "kor+eng", 3)]
 
 
+def test_tesseract_provider_keeps_literal_quote_as_ocr_text() -> None:
+    """A quote in Tesseract text must not make later TSV rows part of one word."""
+    runner = FakeTesseractRunner(
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+        "5\t1\t1\t1\t1\t1\t10\t20\t10\t10\t96.0\t\"\n"
+        "5\t1\t1\t1\t2\t1\t10\t42\t40\t10\t96.0\t다음 문장\n",
+    )
+
+    blocks = asyncio.run(
+        TesseractKnowledgeOcrProvider(runner=runner).recognize(b"image-bytes")
+    )
+
+    assert [block.text for block in blocks] == ['"', "다음 문장"]
+
+
 def test_tesseract_result_with_low_confidence_uses_fallback_provider() -> None:
     runner = FakeTesseractRunner(
         "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"

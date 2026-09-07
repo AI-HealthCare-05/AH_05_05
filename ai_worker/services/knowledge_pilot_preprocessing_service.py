@@ -407,10 +407,11 @@ class KnowledgePilotPreprocessingService:
                 chunks=chunks,
                 review_sample_path=review_path.relative_to(output_root),
             )
-            self._write_review_sample(
+            self._write_or_remove_review_sample(
                 path=review_path,
                 report=document_report,
                 chunks=chunks,
+                keep_approved_review_evidence=bool(pilot.approved_review_reason_codes),
             )
             document_reports.append(document_report)
             self._write_candidate_and_release_outputs(
@@ -839,6 +840,26 @@ class KnowledgePilotPreprocessingService:
                 and report.manual_review_status == KnowledgeManualReviewStatus.APPROVED
                 for report in source_reports
             )
+        )
+
+    @staticmethod
+    def _write_or_remove_review_sample(
+        *,
+        path: Path,
+        report: KnowledgeDocumentPreprocessingReport,
+        chunks: list[KnowledgeChunk],
+        keep_approved_review_evidence: bool,
+    ) -> None:
+        if (
+            not keep_approved_review_evidence
+            and not KnowledgePilotPreprocessingService._review_required_indices(report.chunk_reviews)
+        ):
+            path.unlink(missing_ok=True)
+            return
+        KnowledgePilotPreprocessingService._write_review_sample(
+            path=path,
+            report=report,
+            chunks=chunks,
         )
 
     @staticmethod

@@ -33,6 +33,33 @@ class KnowledgeManualReviewStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class KnowledgeOcrDocumentSelectionDecision(StrEnum):
+    INCLUDE = "INCLUDE"
+    EXCLUDE = "EXCLUDE"
+
+
+class KnowledgeOcrDocumentSelection(BaseModel):
+    document_id: str = Field(
+        min_length=1,
+        pattern=_SAFE_IDENTIFIER_PATTERN,
+    )
+    decision: KnowledgeOcrDocumentSelectionDecision
+    reason: str = Field(min_length=1)
+
+
+class KnowledgeOcrDocumentSelectionManifest(BaseModel):
+    schema_version: str = Field(min_length=1)
+    policy: str = Field(min_length=1)
+    selections: list[KnowledgeOcrDocumentSelection]
+
+    @model_validator(mode="after")
+    def require_unique_document_ids(self):
+        document_ids = [selection.document_id for selection in self.selections]
+        if len(document_ids) != len(set(document_ids)):
+            raise ValueError("document_id는 OCR 문서 선별 매니페스트에서 중복될 수 없습니다.")
+        return self
+
+
 class KnowledgeApprovedReviewReasonCode(StrEnum):
     COMPLEX_TABLE_REQUIRES_REVIEW = "COMPLEX_TABLE_REQUIRES_REVIEW"
     SHORT_FRAGMENT_RATIO = "SHORT_FRAGMENT_RATIO"

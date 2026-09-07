@@ -100,8 +100,20 @@ release 판정은 검색·출처 정확도와 잘못된 개체 혼합 방지를 
 ## 7. OCR 및 출처 보류 처리
 
 - `OCR_REQUIRED` 문서는 일반 PDF 파이프라인에서 제외합니다.
+- `data/knowledge/manifests/ocr_document_selection.yaml`은 모든 `OCR_REQUIRED`
+  문서를 `INCLUDE` 또는 `EXCLUDE`로 명시하는 allowlist 계약입니다. 새 OCR
+  문서는 이 매니페스트에 명시적으로 추가하지 않으면 청킹하지 않습니다.
+- 현재 OCR 대상인 약학정보원 개별 이상사례 19건 중 `리팜피신 병용 시 와파린의
+  항응고 효과 감소 사례`만 상호작용 질문과 직접 관련되어 `INCLUDE`로 유지합니다.
+  이 문서도 개별 사례라는 낮은 근거 수준을 유지하며, OCR artifact 품질·출처 승인
+  게이트를 통과할 때만 보조 근거로 사용할 수 있습니다.
+- 나머지 18건은 원본 PDF와 OCR artifact를 보존하지만, 희귀한 개별 이상사례를
+  일반 복약 안내의 검색 근거로 사용하지 않기 위해 `EXCLUDE`로 기록합니다.
 - OCR 후에는 최소 글자 수, 제어/대체문자 비율, 비정상적으로 긴 무공백 문자열을 검사합니다.
 - 로컬 Tesseract artifact는 글자 수 가중 평균 신뢰도 `0.85` 이상이고, 한글 음절이 `건 강 기 능`처럼 세 글자 이상 분절된 비율이 `10%` 이하일 때만 청킹 대상으로 승격합니다.
+- Tesseract TSV의 OCR 원문에 포함될 수 있는 큰따옴표는 CSV 따옴표가 아닌 일반
+  텍스트로 파싱합니다. renderer 또는 OCR 엔진 버전이 바뀌면 기존 artifact를 재사용하지
+  않고 다시 생성해, 이전 파서 오류가 새 청킹 결과에 섞이지 않게 합니다.
 - 위 기준을 통과하지 못한 artifact는 Qdrant 후보에 넣지 않고 `OCR 재검수/대체 OCR` 대상으로 유지합니다. CLOVA fallback은 별도 명시 승인과 실행 플래그가 있을 때만 사용합니다.
 - 품질 검사 결과가 `PASS`가 아니면 자동 인덱싱하지 않고 검토 목록에 남깁니다.
 - `QDRANT_DISABLED_UNTIL_VERIFIED` 또는 `index_eligible=false` 자료는 텍스트 추출 실험은 할 수 있지만 release 및 Qdrant 적재 대상에서는 제외합니다.

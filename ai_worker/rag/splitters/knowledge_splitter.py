@@ -101,6 +101,13 @@ _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-186
 _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-502801c809b5ec8d"
 _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID = "research_herb_drug_interactions-83a8fd3c37dd38e1"
 _ST_JOHNS_WORT_REVIEW_DOCUMENT_ID = "research_herb_drug_interactions-e5fcbe5d02f9650c"
+_VITAMIN_B12_DEFICIENCY_DOCUMENT_ID = "research_supplement_interactions-87c6ca8187e6dab7"
+_BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_DOCUMENT_ID = "research_supplement_adverse_effects-69b9c0581b9f9612"
+_CALCIUM_IRON_ABSORPTION_REVIEW_DOCUMENT_ID = "research_supplement_interactions-016c81c9a3e29ebd"
+_CALCIUM_IRON_META_ANALYSIS_DOCUMENT_ID = "research_supplement_interactions-7983c60e9a092828"
+_OLDER_ADULT_SUPPLEMENT_INTERACTION_REVIEW_DOCUMENT_ID = "research_supplement_interactions-d2e4dfcb8919c4c3"
+_ZINC_IRON_STATUS_STUDY_DOCUMENT_ID = "research_supplement_interactions-ce2c45272c5bd272"
+_VITAMIN_C_COPPER_STUDY_DOCUMENT_ID = "research_supplement_interactions-7cc01e25b07044ff"
 _STATINS_VITAMIN_D_REVIEW_TITLE = "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review"
 
 _DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES = (
@@ -245,6 +252,50 @@ _ST_JOHNS_WORT_VERIFIED_PAGE_RANGES = {
     "What is already known on this topic": (3, 3),
 }
 
+_VITAMIN_B12_DEFICIENCY_END_MARKERS = (
+    "stored in the liver.",
+    "mental function, including dementia.",
+    "cells that produce intrinsic factor.",
+    "not improve after treatment.",
+)
+_VITAMIN_B12_DEFICIENCY_PREVENTION_HEADING = "Prevention of Vitamin B12 Deficiency"
+_VITAMIN_B12_DEFICIENCY_PREVENTION_END = "vitamin B12 deficiency."
+
+_BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_END_MARKERS = (
+    "and Ginkgo biloba (14).",
+    "transplantation.",
+    "of green tea, consumed as tea or in capsules.",
+    "extracts were the most usual forms involved.",
+    "cytochrome P450 (CYP) 3A4 activity was observed.",
+    "or conventional drug was found.",
+    "Food and Drug Administration (FDA).",
+    "in a case of fatal breakthrough seizure.",
+    "transient methaemoglobinaemia.",
+    "hypokalaemia and metabolic alkalosis.",
+    "responsible for liver damage via an interaction with CYP3A4.",
+    "No interaction with nutrients or conventional drugs has been described.",
+)
+
+_CALCIUM_IRON_ABSORPTION_REVIEW_BOUNDARIES = (
+    "Introduction",
+    "A critical evaluation of studies showing an acute effect of calcium on iron absorption",
+    "The “timing” of the calcium effect on iron absorption",
+    "Using another approach, Tidehag",
+    "Does high calcium intake affect iron status in vulnerable populations?",
+    "Why is iron absorption sometimes affected by high calcium intake, while there is no effect on iron status?",
+    "We have investigated the potential",
+    "Conclusions",
+)
+_CALCIUM_IRON_ABSORPTION_REVIEW_END = "public health problems instead of resolving them."
+_ZINC_IRON_STATUS_STUDY_BOUNDARIES = (
+    "SUBJECTS AND METHODS",
+    "Sample collection.",
+    "RESULTS",
+    "DISCUSSION",
+)
+_ZINC_IRON_STATUS_STUDY_END = "impairs the iron status of women with low iron stores."
+_BRACKETED_NUMERIC_CITATION_PATTERN = re.compile(r"\s*\[\s*\d+(?:\s*(?:[,;]|[-–—])\s*\d+)*\s*\]")
+
 
 _COMMON_CAUTION_HEADINGS = {
     "섭취 시 주의사항": KnowledgeSectionType.CAUTION,
@@ -387,6 +438,13 @@ _ATTACHED_BODY_HEADINGS_BY_SOURCE = {
         }
     ),
 }
+_ADVERSE_CASE_SUMMARY_FIELDS = (
+    r"나이\s*[·ㆍ]\s*성별",
+    r"현재\s*병력",
+    r"투여\s*목적",
+    r"의심\s*약물",
+    r"병용\s*약물",
+)
 
 _ATTACHED_BODY_PROSE_CONTINUATION = re.compile(r"^(?:하면|하자면|은|는|이|가|을|를|의|도|만|에서|에는|으로)(?:\s|$)")
 _RESEARCH_NUMBERED_INTERACTION_HEADING = re.compile(
@@ -588,33 +646,51 @@ class KnowledgeSplitter:
             return chunks
 
         document_id = chunks[0].metadata.document_id
-        if document_id == _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID:
-            repaired = self._resegment_primary_care_herb_drug_review(chunks)
-            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
-        if document_id == _ST_JOHNS_WORT_REVIEW_DOCUMENT_ID:
-            repaired = self._resegment_st_johns_wort_review(chunks)
-            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
-        if document_id == _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID:
-            repaired = self._resegment_levothyroxine_calcium_review(chunks)
-            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
-        if document_id == _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID:
-            text_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind != KnowledgeContentKind.TABLE]
-            table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
-            repaired = [
-                *self._resegment_statins_vitamin_d_review(text_chunks),
-                *table_chunks,
-            ]
-            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
-        if document_id == _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID:
-            repaired = self._resegment_drug_vitamin_d_review(chunks)
-            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
-        if document_id == _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID:
-            repaired = list(chunks)
-            self._repair_warfarin_review_discussion_boundary(repaired)
-            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
-        if document_id != _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID:
+        document_repairer = {
+            _VITAMIN_B12_DEFICIENCY_DOCUMENT_ID: self._resegment_vitamin_b12_deficiency,
+            _BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_DOCUMENT_ID: self._resegment_botanical_supplement_adverse_effects,
+            _CALCIUM_IRON_ABSORPTION_REVIEW_DOCUMENT_ID: self._resegment_calcium_iron_absorption_review,
+            _ZINC_IRON_STATUS_STUDY_DOCUMENT_ID: self._resegment_zinc_iron_status_study,
+            _VITAMIN_C_COPPER_STUDY_DOCUMENT_ID: self._clean_vitamin_c_copper_study,
+            _CALCIUM_IRON_META_ANALYSIS_DOCUMENT_ID: self._clean_calcium_iron_meta_analysis,
+            _OLDER_ADULT_SUPPLEMENT_INTERACTION_REVIEW_DOCUMENT_ID: self._clean_older_adult_supplement_interaction_review,
+            _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID: self._resegment_primary_care_herb_drug_review,
+            _ST_JOHNS_WORT_REVIEW_DOCUMENT_ID: self._resegment_st_johns_wort_review,
+            _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID: self._resegment_levothyroxine_calcium_review,
+            _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID: self._repair_statins_vitamin_d_review,
+            _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID: self._resegment_drug_vitamin_d_review,
+            _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID: self._repair_warfarin_supplement_review,
+            _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID: self._repair_aspirin_warfarin_review,
+        }.get(document_id)
+        if document_repairer is None:
             return chunks
 
+        repaired = document_repairer(chunks)
+        return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+
+    def _repair_statins_vitamin_d_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        text_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind != KnowledgeContentKind.TABLE]
+        table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
+        return [
+            *self._resegment_statins_vitamin_d_review(text_chunks),
+            *table_chunks,
+        ]
+
+    def _repair_warfarin_supplement_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        repaired = list(chunks)
+        self._repair_warfarin_review_discussion_boundary(repaired)
+        return repaired
+
+    def _repair_aspirin_warfarin_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
         repaired = list(chunks)
         self._move_aspirin_review_abstract_sentence(repaired)
         self._split_aspirin_review_pantothenic_acid(repaired)
@@ -627,8 +703,415 @@ class KnowledgeSplitter:
             for chunk in repaired
         ]
         repaired = self._regroup_verified_table_chunks(repaired)
-        repaired = [chunk for chunk in repaired if chunk.content.strip()]
-        return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+        return [chunk for chunk in repaired if chunk.content.strip()]
+
+    def _resegment_vitamin_b12_deficiency(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        merged = self._merge_verified_chunk_text(chunks)
+        merged = re.sub(
+            r"\bFull Review:.*?\bLast updated:\s*[A-Za-z]+\s+\d{4}\s*",
+            "",
+            merged,
+            count=1,
+        ).strip()
+        segments = self._split_merged_text_at_end_markers(
+            merged,
+            _VITAMIN_B12_DEFICIENCY_END_MARKERS,
+        )
+        if len(segments) != len(_VITAMIN_B12_DEFICIENCY_END_MARKERS) + 1:
+            return chunks
+
+        prevention = segments[-1]
+        prevention_start = prevention.find(_VITAMIN_B12_DEFICIENCY_PREVENTION_HEADING)
+        if prevention_start < 0:
+            return chunks
+        prevention = prevention[prevention_start:]
+        prevention_end = prevention.find(_VITAMIN_B12_DEFICIENCY_PREVENTION_END)
+        if prevention_end < 0:
+            return chunks
+        prevention = prevention[: prevention_end + len(_VITAMIN_B12_DEFICIENCY_PREVENTION_END)]
+        segments[-1] = f"{segments[-2]} {prevention}".strip()
+        segments.pop(-2)
+
+        repaired: list[KnowledgeChunk] = []
+        for content in segments:
+            repaired.append(
+                chunks[0].model_copy(
+                    update={
+                        "content": self._format_vitamin_b12_deficiency_heading(content),
+                        "metadata": self._verified_span_metadata(
+                            content=content,
+                            chunks=chunks,
+                        ),
+                    }
+                )
+            )
+        return repaired
+
+    def _resegment_calcium_iron_absorption_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        """검수된 Calcium–Iron 종설의 제목·본문·결론 경계를 복원합니다."""
+        merged = self._merge_verified_chunk_text(chunks)
+        title = chunks[0].metadata.title
+        title_start = merged.find(title)
+        if title_start >= 0:
+            merged = merged[title_start:]
+        merged = re.sub(
+            r"\bArticle to the Special Issue\b.*?(?=\bAbstract:|\bIntroduction\b)",
+            "",
+            merged,
+            flags=re.DOTALL,
+        )
+        merged = re.sub(r"\bDOI\s+10\.1024/0300-9831/a000036\b.*?(?:Bern\b)?", "", merged)
+        merged = _PARENTHETICAL_NUMERIC_CITATION_PATTERN.sub("", merged)
+        merged = _BRACKETED_NUMERIC_CITATION_PATTERN.sub("", merged)
+        references = re.search(r"(?im)^\s*References\b", merged)
+        if references is not None:
+            merged = merged[: references.start()]
+        end = merged.find(_CALCIUM_IRON_ABSORPTION_REVIEW_END)
+        if end >= 0:
+            merged = merged[: end + len(_CALCIUM_IRON_ABSORPTION_REVIEW_END)]
+
+        positions = sorted(
+            {
+                position
+                for marker in _CALCIUM_IRON_ABSORPTION_REVIEW_BOUNDARIES
+                if (position := merged.find(marker)) >= 0
+            }
+        )
+        if not positions or positions[0] <= 0:
+            return chunks
+        positions.insert(0, 0)
+        positions.append(len(merged))
+
+        repaired: list[KnowledgeChunk] = []
+        for start, stop in zip(positions, positions[1:], strict=False):
+            content = merged[start:stop].strip()
+            if not content:
+                continue
+            repaired.append(
+                chunks[0].model_copy(
+                    update={
+                        "content": self._format_calcium_iron_absorption_heading(content, title=title),
+                        "metadata": self._verified_span_metadata(content=content, chunks=chunks),
+                    }
+                )
+            )
+        return repaired
+
+    def _clean_calcium_iron_meta_analysis(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        """메타분석에서 preprint·저자·참고문헌만 제거하고 검수된 본문은 보존합니다."""
+        cleaned: list[KnowledgeChunk] = []
+        reached_references = False
+        title = chunks[0].metadata.title
+        for index, chunk in enumerate(chunks):
+            if reached_references:
+                continue
+            content = chunk.content
+            if index == 0:
+                content = self._remove_meta_analysis_front_matter(content, title=title)
+            references = re.search(r"(?im)^\s*References\b", content)
+            if references is not None:
+                content = content[: references.start()]
+                reached_references = True
+            content = _PARENTHETICAL_NUMERIC_CITATION_PATTERN.sub("", content)
+            content = _BRACKETED_NUMERIC_CITATION_PATTERN.sub("", content)
+            content = re.sub(r"[ \t]+", " ", content)
+            content = re.sub(r" *\n *", "\n", content).strip()
+            if content:
+                cleaned.append(chunk.model_copy(update={"content": content}))
+        return cleaned
+
+    @staticmethod
+    def _remove_meta_analysis_front_matter(
+        content: str,
+        *,
+        title: str,
+    ) -> str:
+        title_start = content.find(title)
+        if title_start >= 0:
+            content = content[title_start:]
+        abstract = re.search(r"\bAbstract\b", content)
+        if abstract is None:
+            return content
+        title_prefix = content[: len(title)].strip() if content.startswith(title) else ""
+        body = content[abstract.start() :]
+        return f"{title_prefix}\n\n{body}".strip()
+
+    def _clean_older_adult_supplement_interaction_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        """고령자 종설의 첫 청크에서 출판 메타데이터를 제거합니다."""
+        cleaned = list(chunks)
+        first = cleaned[0]
+        title = first.metadata.title
+        content = first.content
+        title_start = content.find(title)
+        if title_start >= 0:
+            content = content[title_start:]
+        abstract = re.search(r"\bAbstract\b", content)
+        if abstract is not None:
+            content = f"Open Access Review Article\n{title}\n\n{content[abstract.start() :]}"
+        content = re.sub(r"\bReview began\b.*?(?=\bAbstract\b)", "", content, flags=re.DOTALL)
+        content = re.sub(r"\bDOI:\s*\S+", "", content)
+        content = re.sub(r"[ \t]+", " ", content)
+        content = re.sub(r" *\n *", "\n", content).strip()
+        cleaned[0] = first.model_copy(update={"content": content})
+        return cleaned
+
+    def _resegment_zinc_iron_status_study(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        """아연–철 연구에서 본문만 남기고 표·각주·참고문헌을 제외합니다."""
+        text_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind != KnowledgeContentKind.TABLE]
+        if not text_chunks:
+            return chunks
+        merged = self._merge_verified_chunk_text(text_chunks)
+        title = text_chunks[0].metadata.title
+        title_start = merged.find(title)
+        if title_start >= 0:
+            merged = merged[title_start:]
+        abstract = re.search(r"\bABSTRACT\b", merged)
+        if abstract is not None:
+            merged = f"{title}\n\n{merged[abstract.start() :]}"
+        merged = re.sub(
+            r"\b1\s+Presented in part at Experimental Biology 2000\..*?(?=\bSample collection\.)",
+            "",
+            merged,
+            flags=re.DOTALL,
+        )
+        merged = re.sub(
+            r"\b0022-3166/02\b.*?(?=\bSample collection\.)",
+            "",
+            merged,
+            flags=re.DOTALL,
+        )
+        merged = re.sub(r"\b4\s+Abbreviations used:.*?(?=\bRESULTS\b)", "", merged, flags=re.DOTALL)
+        merged = re.sub(r"\bTABLE\s+[123]\b.*?(?=\bDISCUSSION\b)", "", merged, flags=re.DOTALL)
+        acknowledgment = re.search(r"\bACKNOWLEDGMENT\b", merged)
+        if acknowledgment is not None:
+            merged = merged[: acknowledgment.start()]
+        end = merged.find(_ZINC_IRON_STATUS_STUDY_END)
+        if end >= 0:
+            merged = merged[: end + len(_ZINC_IRON_STATUS_STUDY_END)]
+        merged = _PARENTHETICAL_NUMERIC_CITATION_PATTERN.sub("", merged)
+        merged = _BRACKETED_NUMERIC_CITATION_PATTERN.sub("", merged)
+
+        positions = sorted(
+            {position for marker in _ZINC_IRON_STATUS_STUDY_BOUNDARIES if (position := merged.find(marker)) >= 0}
+        )
+        if not positions or positions[0] <= 0:
+            return chunks
+        positions.insert(0, 0)
+        positions.append(len(merged))
+        repaired: list[KnowledgeChunk] = []
+        for start, stop in zip(positions, positions[1:], strict=False):
+            content = merged[start:stop].strip()
+            if not content:
+                continue
+            repaired.append(
+                text_chunks[0].model_copy(
+                    update={
+                        "content": self._format_zinc_iron_study_heading(content),
+                        "metadata": self._verified_span_metadata(content=content, chunks=text_chunks),
+                    }
+                )
+            )
+        return repaired
+
+    def _clean_vitamin_c_copper_study(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        """비타민 C–구리 실험 논문의 쪽 번호·그림 캡션을 본문에서 제거합니다."""
+        body_starts = (
+            "Because the digestive system",
+            "As an organ that stores urine",
+            "Further analysis revealed",
+            "We also observed the long-term effect",
+            "3.2.",
+            "3.3.",
+            "3.4.",
+            "Discussion",
+            "Conclusions",
+        )
+        body_pattern = "|".join(re.escape(value) for value in body_starts)
+        figure_caption = re.compile(
+            rf"(?ms)^Figure\s+\d+\..*?(?=^(?:{body_pattern}))",
+        )
+        figure_continuation = re.compile(
+            r"(?is)^(?:"
+            r"of combined administration on colon length\."
+            r"|the indicated concentrations of AA together with or without 1 mg/kg Cu\+"
+            r"|of AA and Cu\+ on renal tubular cell death\."
+            r"|methods section\. Data shown"
+            r"|status and renal injury\."
+            r").*"
+        )
+        inline_figure_caption = re.compile(
+            r"(?ms)\n{2,}\s*(?:"
+            r"on kidney size\."
+            r"|AA \(1000 mg/kg\) plus Cu\+ \(1 mg/kg\)"
+            r"|in vivo\."
+            r").*$"
+        )
+        cleaned: list[KnowledgeChunk] = []
+        for chunk in chunks:
+            content = chunk.content
+            content = re.sub(
+                r"(?m)^Biomolecules\s+\d{4},\s+\d+,\s+\d+\s*\n\s*\d+\s+of\s+\d+\s*",
+                "",
+                content,
+            )
+            content = re.sub(r"(?m)^\s*2\s+2\s*$", "", content)
+            content = re.sub(r"(?m)^\s*2\s+2\s+(?=\S)", "", content)
+            content = figure_caption.sub("", content)
+            content = inline_figure_caption.sub("", content)
+            stripped_content = content.strip()
+            if re.match(r"(?s)^Figure\s+\d+\..*$", stripped_content):
+                continue
+            if figure_continuation.match(stripped_content):
+                continue
+            content = re.sub(r"(?<![A-Za-z0-9])Cu\+(?![A-Za-z0-9+])", "Cu2+", content)
+            content = re.sub(r"\bH\s+O\b", "H2O", content)
+            content = re.sub(r"\n{3,}", "\n\n", content).strip()
+            if content:
+                cleaned.append(chunk.model_copy(update={"content": content}))
+        return cleaned
+
+    @staticmethod
+    def _format_calcium_iron_absorption_heading(content: str, *, title: str) -> str:
+        if content.startswith(f"{title} Abstract:"):
+            return content.replace(f"{title} Abstract:", f"{title}\n\nAbstract:", 1)
+        if content.startswith("Introduction") and len(content) > len("Introduction"):
+            return f"Introduction\n{content[len('Introduction') :].strip()}"
+        if content.startswith("Conclusions") and len(content) > len("Conclusions"):
+            return f"Conclusions\n{content[len('Conclusions') :].strip()}"
+        return content
+
+    @staticmethod
+    def _format_zinc_iron_study_heading(content: str) -> str:
+        for heading in _ZINC_IRON_STATUS_STUDY_BOUNDARIES:
+            if content.startswith(heading) and len(content) > len(heading):
+                return f"{heading}\n{content[len(heading) :].strip()}"
+        return content
+
+    def _resegment_botanical_supplement_adverse_effects(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        text_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind != KnowledgeContentKind.TABLE]
+        table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
+        if not text_chunks:
+            return chunks
+
+        first_marker = _BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_END_MARKERS[0]
+        first_marker_chunk_index = next(
+            (index for index, chunk in enumerate(text_chunks) if first_marker in chunk.content),
+            None,
+        )
+        if first_marker_chunk_index is None:
+            return chunks
+
+        prefix = self._merge_botanical_introduction_chunks(text_chunks[:first_marker_chunk_index])
+        merged = self._merge_verified_chunk_text(text_chunks[first_marker_chunk_index:])
+        merged = re.sub(r"transplanta-\s*tion", "transplantation", merged)
+        merged = re.sub(r"predomi-\s*nant", "predominant", merged)
+        merged = re.sub(r"\bobserved\s+\.", "observed.", merged)
+        references_start = re.search(
+            r"\bREFERENCES\b(?=\s+(?:\d+[.)]|remove\b))",
+            merged,
+        )
+        if references_start is not None:
+            merged = merged[: references_start.start()].strip()
+
+        segments = self._split_merged_text_at_end_markers(
+            merged,
+            _BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_END_MARKERS,
+        )
+        if len(segments) != len(_BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_END_MARKERS) + 1:
+            return chunks
+
+        repaired = list(prefix)
+        for content in segments:
+            repaired.append(
+                text_chunks[0].model_copy(
+                    update={
+                        "content": content,
+                        "metadata": self._verified_span_metadata(
+                            content=content,
+                            chunks=text_chunks,
+                        ),
+                    }
+                )
+            )
+        return [*repaired, *table_chunks]
+
+    def _merge_botanical_introduction_chunks(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        merged: list[KnowledgeChunk] = []
+        for chunk in chunks:
+            if (
+                merged
+                and chunk.metadata.section_type == KnowledgeSectionType.INTRODUCTION
+                and merged[-1].metadata.section_type == KnowledgeSectionType.INTRODUCTION
+            ):
+                content = self._merge_verified_chunk_text([merged[-1], chunk])
+                merged[-1] = merged[-1].model_copy(
+                    update={
+                        "content": content,
+                        "metadata": self._verified_span_metadata(
+                            content=content,
+                            chunks=[merged[-1], chunk],
+                        ),
+                    }
+                )
+                continue
+            merged.append(chunk)
+        return merged
+
+    @staticmethod
+    def _split_merged_text_at_end_markers(
+        text: str,
+        end_markers: tuple[str, ...],
+    ) -> list[str]:
+        segments: list[str] = []
+        start = 0
+        for marker in end_markers:
+            marker_start = text.find(marker, start)
+            if marker_start < 0:
+                return []
+            end = marker_start + len(marker)
+            content = text[start:end].strip()
+            if not content:
+                return []
+            segments.append(content)
+            start = end
+        tail = text[start:].strip()
+        if tail:
+            segments.append(tail)
+        return segments
+
+    @staticmethod
+    def _format_vitamin_b12_deficiency_heading(content: str) -> str:
+        title = "Vitamin B12 Deficiency"
+        if content.startswith(f"{title} "):
+            return f"{title}\n\n{content[len(title) :].strip()}"
+        if content.startswith(_VITAMIN_B12_DEFICIENCY_PREVENTION_HEADING):
+            body = content[len(_VITAMIN_B12_DEFICIENCY_PREVENTION_HEADING) :].strip()
+            return f"{_VITAMIN_B12_DEFICIENCY_PREVENTION_HEADING}\n{body}"
+        return content
 
     def _resegment_statins_vitamin_d_review(
         self,
@@ -1667,6 +2150,13 @@ class KnowledgeSplitter:
             )
             if not content:
                 continue
+            if self._is_adverse_case_summary_context(
+                content,
+                document_type=metadata.document_type,
+                section_type=section_type,
+            ):
+                section_type = KnowledgeSectionType.CASE_SUMMARY
+                title = "환자 정보"
             source_start = start + len(raw_content) - len(raw_content.lstrip())
             source_end = source_start + len(content)
             page_start, page_end = self._page_range_for(
@@ -1687,6 +2177,17 @@ class KnowledgeSplitter:
             )
 
         return sections, page_ranges
+
+    @staticmethod
+    def _is_adverse_case_summary_context(
+        content: str,
+        *,
+        document_type: KnowledgeDocumentType,
+        section_type: KnowledgeSectionType,
+    ) -> bool:
+        if document_type != KnowledgeDocumentType.ADVERSE_CASE_REPORT or section_type != KnowledgeSectionType.OTHER:
+            return False
+        return sum(bool(re.search(pattern, content)) for pattern in _ADVERSE_CASE_SUMMARY_FIELDS) >= 2
 
     @staticmethod
     def _truncate_document_back_matter(

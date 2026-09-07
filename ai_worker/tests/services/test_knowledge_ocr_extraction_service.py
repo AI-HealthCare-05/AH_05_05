@@ -98,6 +98,51 @@ def test_reuses_complete_artifact_without_calling_external_ocr_again(
     assert provider.calls == 2
 
 
+def test_recreates_artifact_when_ocr_engine_version_changes(
+    tmp_path: Path,
+) -> None:
+    class NewVersionOcrProvider(FakeOcrProvider):
+        version = "v2"
+
+    source_path = tmp_path / "ocr.pdf"
+    source_path.write_bytes(b"source pdf")
+    entry = KnowledgeOcrManifestEntry(
+        document_id="ocr-document",
+        source_id="ocr-source",
+        repo_path=Path("raw/ocr.pdf"),
+        source_sha256=sha256(source_path.read_bytes()).hexdigest(),
+        origin=KnowledgeOcrManifestOrigin.CATALOG,
+    )
+    artifact_root = tmp_path / "artifacts"
+    first_provider = FakeOcrProvider()
+    asyncio.run(
+        KnowledgeOcrExtractionService(
+            rasterizer=FakeRasterizer(),
+            provider=first_provider,
+        ).extract(
+            entry=entry,
+            source_path=source_path,
+            artifact_root=artifact_root,
+        )
+    )
+    replacement_provider = NewVersionOcrProvider()
+
+    artifact = asyncio.run(
+        KnowledgeOcrExtractionService(
+            rasterizer=FakeRasterizer(),
+            provider=replacement_provider,
+        ).extract(
+            entry=entry,
+            source_path=source_path,
+            artifact_root=artifact_root,
+        )
+    )
+
+    assert artifact.ocr_engine.version == "v2"
+    assert first_provider.calls == 2
+    assert replacement_provider.calls == 2
+
+
 def test_rejects_empty_ocr_response_instead_of_writing_partial_artifact(
     tmp_path: Path,
 ) -> None:

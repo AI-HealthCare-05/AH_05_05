@@ -25,6 +25,22 @@ class FakeLayoutPage:
         return self._words
 
 
+class FakeCroppedPage(FakeLayoutPage):
+    def __init__(self, words, *, extracted_text: str):
+        super().__init__(words)
+        self._extracted_text = extracted_text
+        self._crop_bbox = None
+
+    def crop(self, bbox):
+        self._crop_bbox = bbox
+        return self
+
+    def extract_text(self, **kwargs):
+        if self._crop_bbox is not None and self._crop_bbox[1] >= 690:
+            return ""
+        return self._extracted_text
+
+
 def layout_word(
     text: str,
     x0: float,
@@ -309,6 +325,249 @@ def test_parse_vitamin_d_review_excludes_back_matter_from_page_fourteen() -> Non
 
     assert extraction is not None
     assert extraction.blocks == []
+
+
+def test_parse_calcium_iron_review_orders_columns_and_excludes_running_matter() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("Int.", 57, 42, 70, 51, size=8.7),
+            layout_word("DOI", 57, 742, 74, 751, size=8.7),
+            layout_word("Article", 358, 85, 398, 101, size=16),
+            layout_word("Calcium", 271, 120, 391, 159, size=38),
+            layout_word("and", 401, 120, 456, 159, size=38),
+            layout_word("Iron", 466, 120, 524, 159, size=38),
+            layout_word("Absorption", 76, 162, 237, 200, size=38),
+            layout_word("–", 247, 162, 266, 200, size=38),
+            layout_word("Mechanisms", 275, 162, 460, 200, size=38),
+            layout_word("and", 470, 162, 525, 200, size=38),
+            layout_word("Public", 167, 203, 257, 241, size=38),
+            layout_word("Health", 267, 203, 366, 241, size=38),
+            layout_word("Relevance", 376, 203, 525, 241, size=38),
+            layout_word("Bo", 443, 251, 459, 267, size=16),
+            layout_word("Lönnerdal", 463, 251, 524, 267, size=16),
+            layout_word("Abstract:", 71, 340, 120, 350),
+            layout_word("Calcium", 124, 340, 170, 350),
+            layout_word("may", 174, 340, 198, 350),
+            layout_word("inhibit", 202, 340, 244, 350),
+            layout_word("iron", 248, 340, 273, 350),
+            layout_word("absorption.", 277, 340, 334, 350),
+            layout_word("Introduction", 57, 600, 117, 611),
+            layout_word("The", 57, 630, 77, 640),
+            layout_word("adverse", 81, 630, 124, 640),
+            layout_word("effects", 128, 630, 166, 640),
+            layout_word("are", 170, 630, 190, 640),
+            layout_word("well", 194, 630, 218, 640),
+            layout_word("known.", 222, 630, 265, 640),
+            layout_word("Vulnerable", 312, 630, 369, 640),
+            layout_word("populations", 373, 630, 438, 640),
+            layout_word("need", 442, 630, 470, 640),
+            layout_word("support.", 474, 630, 522, 640),
+            layout_word("Address", 0, 550, 10, 600, upright=False),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=1,
+        source_id="research_supplement_interactions",
+        document_id="research_supplement_interactions-016c81c9a3e29ebd",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == [
+        "Calcium and Iron\nAbsorption – Mechanisms and\nPublic Health Relevance",
+        "Abstract: Calcium may inhibit iron absorption.",
+        "Introduction\nThe adverse effects are well known.",
+        "Vulnerable populations need support.",
+    ]
+
+
+def test_parse_zinc_iron_study_skips_author_footnotes_and_tables() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("Supplemental", 34, 106, 129, 121, size=15),
+            layout_word("Zinc", 133, 106, 163, 121, size=15),
+            layout_word("Lowers", 168, 106, 219, 121, size=15),
+            layout_word("Carmen", 70, 149, 112, 161, size=12),
+            layout_word("Donangelo", 116, 149, 195, 161, size=12),
+            layout_word("ABSTRACT", 34, 230, 90, 242, size=12),
+            layout_word("Zinc", 94, 230, 120, 242, size=12),
+            layout_word("and", 124, 230, 144, 242, size=12),
+            layout_word("iron", 148, 230, 172, 242, size=12),
+            layout_word("compete.", 176, 230, 224, 242, size=12),
+            layout_word("Zinc", 34, 450, 58, 460, size=10),
+            layout_word("and", 62, 450, 82, 460, size=10),
+            layout_word("iron", 86, 450, 110, 460, size=10),
+            layout_word("interact.", 114, 450, 168, 460, size=10),
+            layout_word("SUBJECTS", 300, 570, 354, 580, size=10),
+            layout_word("AND", 358, 570, 382, 580, size=10),
+            layout_word("METHODS", 386, 570, 442, 580, size=10),
+            layout_word("Subjects", 300, 595, 345, 605, size=10),
+            layout_word("were", 349, 595, 376, 605, size=10),
+            layout_word("enrolled.", 380, 595, 431, 605, size=10),
+            layout_word("1", 33, 635, 38, 645, size=8),
+            layout_word("Presented", 42, 635, 82, 645, size=8),
+            layout_word("TABLE", 300, 640, 340, 650, size=10),
+            layout_word("1", 344, 640, 349, 650, size=10),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=1,
+        source_id="research_supplement_interactions",
+        document_id="research_supplement_interactions-ce2c45272c5bd272",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == [
+        "Supplemental Zinc Lowers",
+        "ABSTRACT Zinc and iron compete.",
+        "Zinc and iron interact.",
+        "SUBJECTS AND METHODS\nSubjects were enrolled.",
+    ]
+
+
+def test_parse_vitamin_c_copper_study_keeps_verified_materials_and_cell_culture() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("Biomolecules", 30, 56, 94, 65, size=9),
+            layout_word("2.", 72, 448, 84, 460, size=11),
+            layout_word("Materials", 88, 448, 138, 460, size=11),
+            layout_word("and", 142, 448, 164, 460, size=11),
+            layout_word("Methods", 168, 448, 220, 460, size=11),
+            layout_word("2.1.", 72, 460, 92, 472, size=10),
+            layout_word("Materials", 96, 460, 145, 472, size=10),
+            layout_word("Copper(II)", 72, 476, 137, 488, size=10),
+            layout_word("Sulfate", 141, 476, 186, 488, size=10),
+            layout_word("was", 190, 476, 213, 488, size=10),
+            layout_word("purchased.", 217, 476, 276, 488, size=10),
+            layout_word("2.2.", 72, 600, 92, 612, size=10),
+            layout_word("Cell", 96, 600, 120, 612, size=10),
+            layout_word("Culture", 124, 600, 165, 612, size=10),
+            layout_word("Rat", 72, 612, 89, 624, size=10),
+            layout_word("cells", 93, 612, 120, 624, size=10),
+            layout_word("were", 124, 612, 152, 624, size=10),
+            layout_word("cultured.", 156, 612, 207, 624, size=10),
+            layout_word("2", 77, 630, 83, 640, size=8),
+            layout_word("of", 87, 630, 96, 640, size=8),
+            layout_word("16", 100, 630, 111, 640, size=8),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=2,
+        source_id="research_supplement_interactions",
+        document_id="research_supplement_interactions-7cc01e25b07044ff",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == [
+        "2. Materials and Methods\n2.1. Materials\nCopper(II) Sulfate was purchased.\n2.2. Cell Culture\nRat cells were cultured."
+    ]
+
+
+def test_parse_vitamin_c_copper_study_restores_spacing_and_formula_from_region_text() -> None:
+    page = FakeCroppedPage(
+        [],
+        extracted_text=(
+            "2. Materials and Methods\n"
+            "2.1. Materials\n"
+            "Copper(II) Sulfate (CuSO ; Cu2+) was purchased from FUJIFILM Wako Pure Chemical\n"
+            "4\n"
+            "Corporation (Osaka, Japan). Bovine serum albumin (BSA, Faction V) was obtained from\n"
+            "Iwai Chemical Company (Tokyo, Japan).\n"
+            "2.2. Cell Culture\n"
+            "Rat renal tubular epithelial NRK-52E cells were purchased from the American Type\n"
+            "Culture Collection (ATCC, Rockville, MD, USA). Cells were cultured in DMEM/F12 (Gibco-\n"
+            "BRL, Gaithersburg, MD, USA) containing 5% FBS in 5% CO /95% air at 37 ◦C. For experiments, cells\n"
+            "2\n"
+            "were seeded into the culture plate."
+        ),
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=2,
+        source_id="research_supplement_interactions",
+        document_id="research_supplement_interactions-7cc01e25b07044ff",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == [
+        "2. Materials and Methods\n"
+        "2.1. Materials\n"
+        "Copper(II) Sulfate (CuSO4; Cu2+) was purchased from FUJIFILM Wako Pure Chemical "
+        "Corporation (Osaka, Japan). Bovine serum albumin (BSA, Faction V) was obtained from "
+        "Iwai Chemical Company (Tokyo, Japan).\n"
+        "2.2. Cell Culture\n"
+        "Rat renal tubular epithelial NRK-52E cells were purchased from the American Type Culture "
+        "Collection (ATCC, Rockville, MD, USA). Cells were cultured in DMEM/F12 (Gibco-BRL, "
+        "Gaithersburg, MD, USA) containing 5% FBS in 5% CO2/95% air at 37 ◦C. For experiments, "
+        "cells were seeded into the culture plate."
+    ]
+
+
+def test_parse_vitamin_c_copper_study_separates_animal_experiments_from_cell_culture() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("2.2.", 72, 600, 92, 612, size=10),
+            layout_word("Cell", 96, 600, 120, 612, size=10),
+            layout_word("Culture", 124, 600, 165, 612, size=10),
+            layout_word("Cells", 72, 616, 101, 628, size=10),
+            layout_word("were", 105, 616, 133, 628, size=10),
+            layout_word("cultured.", 137, 616, 188, 628, size=10),
+            layout_word("2.3.", 72, 710, 92, 722, size=10),
+            layout_word("Animal", 96, 710, 135, 722, size=10),
+            layout_word("Experiments", 139, 710, 210, 722, size=10),
+            layout_word("Mice", 72, 726, 96, 738, size=10),
+            layout_word("were", 100, 726, 128, 738, size=10),
+            layout_word("used.", 132, 726, 166, 738, size=10),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=2,
+        source_id="research_supplement_interactions",
+        document_id="research_supplement_interactions-7cc01e25b07044ff",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == [
+        "2.2. Cell Culture\nCells were cultured.",
+        "2.3. Animal Experiments\nMice were used.",
+    ]
+
+
+def test_parse_vitamin_c_iron_trial_excludes_flowchart_and_baseline_table_pages() -> None:
+    page = FakeLayoutPage(
+        [
+            layout_word("Methods", 36, 108, 86, 120, size=12),
+            layout_word("Study", 36, 128, 72, 140, size=11),
+            layout_word("Design", 76, 128, 118, 140, size=11),
+            layout_word("Participants", 36, 144, 106, 156, size=10),
+            layout_word("were", 110, 144, 137, 156, size=10),
+            layout_word("enrolled.", 141, 144, 192, 156, size=10),
+            layout_word("Figure", 36, 480, 74, 492, size=10),
+            layout_word("1.", 78, 480, 87, 492, size=10),
+            layout_word("CONSORT", 91, 480, 144, 492, size=10),
+            layout_word("530", 36, 500, 57, 512, size=10),
+            layout_word("Patients", 61, 500, 108, 512, size=10),
+            layout_word("assessed", 112, 500, 164, 512, size=10),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page,
+        page_number=3,
+        source_id="research_supplement_interactions",
+        document_id="research_supplement_interactions-6152f916c012be79",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == ["Methods\nStudy Design\nParticipants were enrolled."]
 
 
 def test_parse_statins_vitamin_d_review_orders_front_page_without_author_metadata() -> None:

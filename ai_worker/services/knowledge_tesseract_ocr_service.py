@@ -58,7 +58,7 @@ class TesseractKnowledgeOcrProvider:
     """Tesseract TSV의 단어 좌표를 기존 OCR block 계약으로 변환합니다."""
 
     name = "tesseract-local-ocr"
-    version = "tsv-kor-eng-psm3-v1"
+    version = "tsv-kor-eng-quote-safe-v2"
 
     def __init__(
         self,
@@ -82,7 +82,11 @@ class TesseractKnowledgeOcrProvider:
     @staticmethod
     def _parse_tsv(tsv: str) -> list[KnowledgeOcrBlock]:
         words_by_line: dict[tuple[str, str, str, str], list[dict[str, str]]] = defaultdict(list)
-        for row in csv.DictReader(tsv.splitlines(), delimiter="\t"):
+        for row in csv.DictReader(
+            tsv.splitlines(),
+            delimiter="\t",
+            quoting=csv.QUOTE_NONE,
+        ):
             text = (row.get("text") or "").strip()
             confidence = TesseractKnowledgeOcrProvider._confidence(row.get("conf"))
             if row.get("level") != "5" or not text or confidence is None:

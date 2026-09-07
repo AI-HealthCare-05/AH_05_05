@@ -22,6 +22,9 @@ from ai_worker.rag.loaders.st_johns_wort_review_layout_parser import (
 from ai_worker.rag.loaders.statins_vitamin_d_review_layout_parser import (
     StatinsVitaminDReviewLayoutParser,
 )
+from ai_worker.rag.loaders.supplement_interaction_research_layout_parser import (
+    SupplementInteractionResearchLayoutParser,
+)
 from ai_worker.rag.loaders.warfarin_review_layout_parser import (
     WarfarinReviewLayoutParser,
 )
@@ -46,6 +49,7 @@ class VerifiedKnowledgeLayoutParser:
             StJohnsWortReviewLayoutParser(),
             HerbDrugReviewLayoutParser(),
             WarfarinReviewLayoutParser(),
+            SupplementInteractionResearchLayoutParser(),
         )
 
     def parse(
