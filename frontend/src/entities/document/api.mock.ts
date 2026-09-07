@@ -86,6 +86,7 @@ export function mockOcrResult(batchId: string): OcrResult {
     ocrStatus: forced?.status === 'complete' ? 'complete' : 'ready_for_review',
     documentImageUrl: '/mock/medication-envelope.svg',
     fields: {
+      hospitalName: { value: '송도센트럴이비인후과의원', confidence: 'high' },
       dispensedDate: { value: '2026-08-22', confidence: 'high' },
     },
     medications: [

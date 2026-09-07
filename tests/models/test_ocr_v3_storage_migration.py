@@ -26,13 +26,56 @@ def load_migration():
     return module
 
 
-def test_migration_captures_current_ocr_v3_model_state() -> None:
-    Tortoise.init_models(TORTOISE_APP_MODELS, "models")
-
-    current_state = decompress_dict(compress_dict(get_models_describe("models")))
+def test_migration_captures_its_ocr_v3_storage_contract() -> None:
+    # Do not rewrite migration 21 to include models introduced by later migrations.
     migration_state = decompress_dict(load_migration().MODELS_STATE)
+    job = migration_state["models.OcrJob"]
+    assert job["table"] == "ocr_jobs"
+    fields = {field["name"]: field for field in job["data_fields"]}
+    for name, sql_type in {
+        "structuring_model": "VARCHAR(100)",
+        "prompt_version": "VARCHAR(100)",
+        "stage_results": "JSON",
+        "avg_field_confidence": "DECIMAL(5,4)",
+        "confidence_field_count": "INT",
+        "user_review_match_rate": "DECIMAL(5,4)",
+    }.items():
+        assert fields[name]["nullable"] is True, name
+        assert fields[name]["db_field_types"][""] == sql_type, name
+    medication = {field["name"]: field for field in migration_state["models.Medication"]["data_fields"]}
+    assert "dose" not in medication
+    for name, max_length in (("strength", 100), ("dose_quantity", 50)):
+        assert medication[name]["nullable"] is True
+        assert medication[name]["constraints"]["max_length"] == max_length
 
-    assert migration_state == current_state
+
+def _storage_contract(model: dict) -> dict:
+    """Ignore documentation, declaration order and reverse ORM-only relations."""
+    return {
+        "table": model["table"],
+        "unique_together": sorted(map(tuple, model["unique_together"])),
+        "indexes": sorted(map(tuple, model["indexes"])),
+        "fields": {
+            field["name"]: {key: value for key, value in field.items() if key not in {"description", "docstring"}}
+            for field in [model["pk_field"], *model["data_fields"], *model["fk_fields"], *model["o2o_fields"]]
+        },
+    }
+
+
+@pytest.mark.parametrize("model_name", ["models.OcrJob", "models.Medication", "models.CareEpisode"])
+def test_latest_migration_matches_current_ocr_storage_models(model_name: str) -> None:
+    latest = max(
+        MIGRATION_PATH.parent.glob("[0-9]*_*.py"), key=lambda path: (int(path.name.split("_", 1)[0]), path.name)
+    )
+    spec = spec_from_file_location(latest.stem, latest)
+    assert spec is not None and spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    migrated = decompress_dict(module.MODELS_STATE)
+    Tortoise.init_models(TORTOISE_APP_MODELS, "models")
+    current = decompress_dict(compress_dict(get_models_describe("models")))
+
+    assert _storage_contract(migrated[model_name]) == _storage_contract(current[model_name])
 
 
 @pytest.mark.asyncio

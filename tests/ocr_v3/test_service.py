@@ -138,6 +138,7 @@ def _successful_pipeline_result(*, llm_stage: StageResult | None = None) -> Anal
         stages=(
             StageResult("ocr", "succeeded", 20, 1),
             StageResult("candidate", "succeeded", 2, 0),
+            StageResult("resolve", "succeeded", 3, 0),
             llm_stage or StageResult("llm", "skipped", 0, 0),
             StageResult("validate", "succeeded", 1, 0),
         ),
@@ -152,11 +153,12 @@ async def test_analyze_preprocesses_off_loop_and_returns_project_projection(monk
     preprocess_thread: int | None = None
     provider = object()
 
-    def fake_preprocess(content: bytes, media_type: str) -> object:
+    def fake_preprocess(content: bytes, media_type: str, *, preprocess_version: str) -> object:
         nonlocal preprocess_thread
         preprocess_thread = threading.get_ident()
         assert content == b"project-owned-image-bytes"
         assert media_type == "image/png"
+        assert preprocess_version == "v3.1.8"
         return processed_result
 
     def fake_build_provider_image(processed: object, rectangles: object) -> bytes:
@@ -186,7 +188,10 @@ async def test_analyze_preprocesses_off_loop_and_returns_project_projection(monk
         fake_analyze_pipeline,
     )
 
-    analysis = await MedicationOcrV3Service(provider=provider).analyze(_validated_image())
+    analysis = await MedicationOcrV3Service(
+        provider=provider,
+        preprocess_version="v3.1.8",
+    ).analyze(_validated_image())
 
     assert preprocess_thread is not None and preprocess_thread != event_loop_thread
     assert analysis.project_review["medications"][0]["strength"] == "10mg"
@@ -194,6 +199,7 @@ async def test_analyze_preprocesses_off_loop_and_returns_project_projection(monk
         "preprocess",
         "ocr",
         "candidate",
+        "resolve",
         "llm",
         "validate",
     ]
@@ -206,14 +212,32 @@ async def test_analyze_preprocesses_off_loop_and_returns_project_projection(monk
     assert analysis.confidence_values == [0.91]
     assert analysis.ocr_model == "clova-general-v2"
     assert analysis.structuring_model == "deterministic-v3"
-    assert analysis.prompt_version == "medication_grounding_v3"
+    assert analysis.prompt_version == "medication_grounding_v4"
     assert analysis.schema_version == "medication-guide-review/v3"
+    assert analysis.preprocess_version == "v3.1.8"
     assert analysis.requires_recapture is False
     assert analysis.processed_image_bytes == b"processed-jpeg"
 
 
 @pytest.mark.asyncio
-async def test_recapture_returns_typed_five_stage_result_without_provider_calls(monkeypatch) -> None:
+@pytest.mark.parametrize("recapture", [False, True])
+async def test_service_reports_pinned_prompt_version_instead_of_default(monkeypatch, recapture):
+    from app.services.medication_ocr_v3 import service as service_module
+
+    state = QualityState.RECAPTURE_REQUIRED if recapture else QualityState.PROCESSED
+    monkeypatch.setattr(service_module, "preprocess_image", Mock(return_value=_processed(quality_state=state)))
+    monkeypatch.setattr(service_module, "build_privacy_safe_provider_image", Mock(return_value=b"safe"))
+    monkeypatch.setattr(
+        service_module, "analyze_processed_image", AsyncMock(return_value=_successful_pipeline_result())
+    )
+    analysis = await MedicationOcrV3Service(
+        provider=object(), structurer=SimpleNamespace(prompt_version="medication_grounding_v3")
+    ).analyze(_validated_image())
+    assert analysis.prompt_version == "medication_grounding_v3"
+
+
+@pytest.mark.asyncio
+async def test_recapture_returns_typed_six_stage_result_without_provider_calls(monkeypatch) -> None:
     from app.services.medication_ocr_v3 import service as service_module
 
     monkeypatch.setattr(
@@ -236,11 +260,13 @@ async def test_recapture_returns_typed_five_stage_result_without_provider_calls(
         "preprocess",
         "ocr",
         "candidate",
+        "resolve",
         "llm",
         "validate",
     ]
     assert [stage["status"] for stage in analysis.stages] == [
         "succeeded",
+        "skipped",
         "skipped",
         "skipped",
         "skipped",
@@ -262,7 +288,7 @@ async def test_recapture_returns_typed_five_stage_result_without_provider_calls(
         (OcrErrorCode.OCR_PROTOCOL_INVALID, JobOcrProviderError),
     ],
 )
-async def test_provider_failures_preserve_five_stages_on_existing_job_error_classes(
+async def test_provider_failures_preserve_six_stages_on_existing_job_error_classes(
     monkeypatch,
     code: OcrErrorCode,
     expected_error: type[Exception],
@@ -286,6 +312,7 @@ async def test_provider_failures_preserve_five_stages_on_existing_job_error_clas
                 stages=(
                     StageResult("ocr", "failed", 10, 1, code.value),
                     StageResult("candidate", "skipped", 0, 0),
+                    StageResult("resolve", "skipped", 0, 0),
                     StageResult("llm", "skipped", 0, 0),
                     StageResult("validate", "skipped", 0, 0),
                 ),
@@ -307,9 +334,45 @@ async def test_provider_failures_preserve_five_stages_on_existing_job_error_clas
             "code": code.value,
         },
         {"name": "candidate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "resolve", "status": "skipped", "elapsedMs": 0, "callCount": 0},
         {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
         {"name": "validate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
     ]
+
+
+@pytest.mark.asyncio
+async def test_preprocess_stage_includes_privacy_safe_provider_image_time(monkeypatch) -> None:
+    from app.services.medication_ocr_v3 import service as service_module
+
+    class Clock:
+        value = 0.0
+
+        def perf_counter(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = Clock()
+
+    def fake_preprocess(*_args: object, **_kwargs: object) -> object:
+        clock.advance(0.004)
+        return _processed()
+
+    def fake_build_provider_image(*_args: object, **_kwargs: object) -> bytes:
+        clock.advance(0.007)
+        return b"privacy-safe-jpeg"
+
+    monkeypatch.setattr(service_module, "time", SimpleNamespace(perf_counter=clock.perf_counter))
+    monkeypatch.setattr(service_module, "preprocess_image", fake_preprocess)
+    monkeypatch.setattr(service_module, "build_privacy_safe_provider_image", fake_build_provider_image)
+    monkeypatch.setattr(
+        service_module, "analyze_processed_image", AsyncMock(return_value=_successful_pipeline_result())
+    )
+
+    analysis = await MedicationOcrV3Service(provider=object()).analyze(_validated_image())
+
+    assert analysis.stages[0]["elapsedMs"] == 11
 
 
 @pytest.mark.asyncio
@@ -336,7 +399,7 @@ async def test_llm_failure_remains_a_successful_deterministic_fallback(monkeypat
     ).analyze(_validated_image())
 
     assert analysis.project_review == pipeline_result.project_review
-    assert analysis.stages[3] == {
+    assert analysis.stages[4] == {
         "name": "llm",
         "status": "failed",
         "elapsedMs": 30,

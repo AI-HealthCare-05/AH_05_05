@@ -5,6 +5,10 @@ import pytest
 from app.workers import medication_guide_ocr_worker as worker
 
 
+def test_failed_worker_results_outlive_stale_job_cleanup_window():
+    assert worker.WorkerSettings.keep_result >= (worker.config.OCR_REVIEW_TTL_MINUTES + 5) * 60
+
+
 @pytest.mark.asyncio
 async def test_process_routes_arq_job_try_to_ocr_job_service():
     service = MagicMock()
@@ -55,6 +59,7 @@ async def test_startup_and_shutdown_manage_worker_owned_resources(monkeypatch):
     monkeypatch.setattr(worker.config, "CLOVA_GENERAL_OCR_SECRET", MagicMock(get_secret_value=lambda: "secret"))
     monkeypatch.setattr(worker.config, "OPENAI_API_KEY", MagicMock(get_secret_value=lambda: "openai-key"))
     monkeypatch.setattr(worker.config, "OPENAI_MODEL", "gpt-test")
+    monkeypatch.setattr(worker.config, "OCR_PREPROCESS_VERSION", "v3.1.8", raising=False)
 
     ctx: dict[str, object] = {}
     await worker.startup(ctx)
@@ -67,7 +72,11 @@ async def test_startup_and_shutdown_manage_worker_owned_resources(monkeypatch):
     assert ctx["ocr_job_service"].redis_pool is redis_pool
     clova_constructor.assert_called_once_with(endpoint="https://ocr.example/invoke", secret="secret")
     structurer_constructor.assert_called_once_with(api_key="openai-key", model="gpt-test")
-    analyzer_constructor.assert_called_once_with(provider=provider, structurer=structurer)
+    analyzer_constructor.assert_called_once_with(
+        provider=provider,
+        structurer=structurer,
+        preprocess_version="v3.1.8",
+    )
 
     await worker.shutdown(ctx)
     await worker.shutdown(ctx)
@@ -94,13 +103,18 @@ async def test_startup_omits_optional_llm_provider_without_api_key(monkeypatch):
     monkeypatch.setattr(worker.config, "CLOVA_GENERAL_OCR_INVOKE_URL", "https://ocr.example/invoke")
     monkeypatch.setattr(worker.config, "CLOVA_GENERAL_OCR_SECRET", MagicMock(get_secret_value=lambda: "secret"))
     monkeypatch.setattr(worker.config, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(worker.config, "OCR_PREPROCESS_VERSION", "v3.1.1", raising=False)
 
     ctx: dict[str, object] = {}
     await worker.startup(ctx)
 
     assert ctx["ocr_structurer"] is None
     structurer_constructor.assert_not_called()
-    analyzer_constructor.assert_called_once_with(provider=provider, structurer=None)
+    analyzer_constructor.assert_called_once_with(
+        provider=provider,
+        structurer=None,
+        preprocess_version="v3.1.1",
+    )
     await worker.shutdown(ctx)
 
 

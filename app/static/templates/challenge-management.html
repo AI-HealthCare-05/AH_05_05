@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>공식챌린지 - RxVita</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/styles.css?v=20260907-1">
+  <link rel="stylesheet" href="../css/management.css?v=20260907-5">
+  <script type="module" src="../js/navigation.js?v=20260827-2"></script>
+  <script type="module" src="../js/sidebar.js?v=20260907-3"></script>
+  <script type="module" src="../js/challenge-management.js?v=20260907-4"></script>
+</head>
+<body class="management-page flex min-h-screen">
+<aside data-sidebar data-active-nav="challenges" class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0" aria-label="관리자 메뉴">
+  <span class="text-sm text-gray-500">메뉴 불러오는 중...</span>
+</aside>
+<main class="flex-1 min-w-0">
+  <header class="bg-white h-16 px-6 flex items-center border-b"><h1 class="text-xl font-semibold">공식챌린지</h1></header>
+  <section class="p-6">
+    <div class="challenge-page-heading mb-5">
+      <div><h2 class="text-lg font-semibold mb-1">공식 챌린지 관리</h2><p class="ranking-description">모집 기간과 인증 정책, 완료 배지를 등록하고 관리합니다.</p></div>
+      <button type="button" class="ui-button ui-button-primary" data-create-challenge>챌린지 등록</button>
+    </div>
+    <form class="challenge-search-form bg-white rounded-xl border mb-6" data-challenge-search aria-label="공식 챌린지 검색">
+      <label>챌린지명<input class="ui-control" type="search" name="name" maxlength="100" placeholder="챌린지명"></label>
+      <label>유형<select class="ui-control" name="challenge_type_id"><option value="">전체</option></select></label>
+      <label>전시 여부<select class="ui-control" name="is_displayed"><option value="">전체</option><option value="true">전시</option><option value="false">미전시</option></select></label>
+      <label>모집 시작일<input class="ui-control" type="date" name="recruit_start_date"></label>
+      <label>모집 종료일<input class="ui-control" type="date" name="recruit_end_date"></label>
+      <div class="challenge-search-actions"><button type="reset" class="ui-button" data-reset-challenge-search>초기화</button><button type="submit" class="ui-button ui-button-primary">조회</button></div>
+    </form>
+    <form class="challenge-form bg-white rounded-xl border mb-6" data-challenge-form hidden>
+      <div class="challenge-page-heading"><h3 class="font-semibold" data-form-title>챌린지 등록</h3><button type="button" class="ui-link-button" data-close-form>닫기</button></div>
+      <div class="challenge-form-grid">
+        <label>챌린지명<input class="ui-control" name="name" maxlength="100" required></label>
+        <label>유형<select class="ui-control" name="challenge_type_id" required></select></label>
+        <label>챌린지 기간<select class="ui-control" name="challenge_period_id" required></select></label>
+        <label>인증 방식<select class="ui-control" name="check_type_id" required></select></label>
+        <label>인증 빈도<select class="ui-control" name="check_frequency_id" required></select></label>
+        <label>모집 시작일<input class="ui-control" type="datetime-local" name="recruit_start_at" required></label>
+        <label>모집 종료일<input class="ui-control" type="datetime-local" name="recruit_end_at" required></label>
+        <label class="challenge-span-2">챌린지 문구<input class="ui-control" name="phrase" maxlength="255" required></label>
+        <div class="challenge-badge-picker challenge-span-2">
+          <span class="challenge-field-label">지급 배지</span>
+          <div class="challenge-badge-picker-row">
+            <input class="ui-control" name="reward_badge_id" readonly placeholder="배지 ID" aria-label="배지 ID">
+            <input class="ui-control" name="reward_badge_name" readonly placeholder="배지명" aria-label="배지명">
+            <button type="button" class="ui-button" data-open-badge-search>검색</button>
+            <button type="button" class="ui-link-button" data-clear-badge>선택 해제</button>
+          </div>
+        </div>
+        <label class="challenge-span-2">설명<textarea class="ui-control" name="description" rows="3"></textarea></label>
+        <label class="challenge-checkbox"><input type="checkbox" name="is_displayed"> 사용자 화면에 전시</label>
+      </div>
+      <p class="challenge-form-error" data-form-error role="alert"></p>
+      <div class="challenge-form-actions"><button type="button" class="ui-button" data-close-form>취소</button><button type="submit" class="ui-button ui-button-primary">저장</button></div>
+    </form>
+    <div class="management-table-wrap bg-white rounded-xl border">
+      <table class="management-table w-full text-sm"><thead class="bg-gray-50"><tr><th>ID</th><th>챌린지명</th><th>모집 기간</th><th>전시</th><th>관리</th></tr></thead><tbody data-challenge-rows></tbody></table>
+    </div>
+  </section>
+</main>
+<dialog class="common-code-dialog challenge-badge-dialog" data-badge-search-dialog>
+  <form data-badge-search-form>
+    <header><h2>지급 배지 검색</h2><button type="button" data-close-badge-dialog aria-label="닫기">×</button></header>
+    <div class="common-code-dialog-body">
+      <div class="challenge-badge-search-row">
+        <input class="ui-control" type="text" inputmode="numeric" name="badge_id" maxlength="20" placeholder="배지 ID" aria-label="배지 ID">
+        <input class="ui-control" type="search" name="name" maxlength="100" placeholder="배지명" aria-label="배지명">
+        <button type="reset" class="ui-button" data-reset-badge-search>초기화</button>
+        <button type="submit" class="ui-button ui-button-primary">검색</button>
+      </div>
+      <div class="management-table-wrap challenge-badge-results">
+        <table class="management-table w-full text-sm"><thead class="bg-gray-50"><tr><th>배지 ID</th><th>배지명</th><th>선택</th></tr></thead><tbody data-badge-search-rows></tbody></table>
+      </div>
+    </div>
+    <footer><button type="button" class="ui-button" data-close-badge-dialog>닫기</button></footer>
+  </form>
+</dialog>
+</body>
+</html>

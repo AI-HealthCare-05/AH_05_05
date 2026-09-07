@@ -6,9 +6,9 @@
     <title>공통코드 관리 - RxVita</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="../css/styles.css?v=20260831-9">
-    <link rel="stylesheet" href="../css/management.css?v=20260903-1">
+    <link rel="stylesheet" href="../css/management.css?v=20260907-2">
     <script type="module" src="../js/navigation.js?v=20260903-1"></script>
-    <script type="module" src="../js/sidebar.js?v=20260903-1"></script>
+    <script type="module" src="../js/sidebar.js?v=20260907-3"></script>
     <script type="module" src="../js/common-code-management.js?v=20260903-2"></script>
 </head>
 <body class="management-page flex min-h-screen">
@@ -24,8 +24,8 @@
         <form data-group-search class="bg-white rounded-xl border p-5 mb-6 flex flex-wrap items-end gap-4" aria-label="코드 그룹 검색">
             <label class="grid gap-1 text-sm text-gray-700"><span>대분류</span><input class="ui-control common-code-input" name="category" maxlength="20" pattern="[A-Z0-9_]*" placeholder="예: CHAT"></label>
             <label class="grid gap-1 text-sm text-gray-700"><span>코드그룹</span><input class="ui-control common-code-input" name="group_code" maxlength="20" pattern="[A-Z0-9_]*" placeholder="예: P_REASON"></label>
-            <label class="grid gap-1 text-sm text-gray-700"><span>코드그룹명</span><input class="ui-control" name="group_name" maxlength="20" placeholder="코드그룹명 입력"></label>
-            <label class="grid gap-1 text-sm text-gray-700"><span>사용여부</span><select class="ui-control" name="is_active"><option value="">전체</option><option value="true">사용</option><option value="false">미사용</option></select></label>
+            <label class="grid gap-1 text-sm text-gray-700"><input class="ui-control" name="group_name" maxlength="20" placeholder="코드그룹명 입력" aria-label="코드그룹명"></label>
+            <label class="grid gap-1 text-sm text-gray-700"><select class="ui-control" name="is_active" aria-label="사용여부"><option value="">사용여부</option><option value="true">사용</option><option value="false">미사용</option></select></label>
             <button type="reset" class="ui-button">초기화</button><button type="submit" class="ui-button ui-button-primary">조회</button>
         </form>
 

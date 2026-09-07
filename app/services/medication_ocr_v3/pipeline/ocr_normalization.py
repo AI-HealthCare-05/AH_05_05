@@ -11,6 +11,12 @@ _MILLILITER_ERROR = re.compile(r"(?<=\d)[mM][lLI1ℓ](?![A-Za-z])")
 _MILLIGRAM_ERROR = re.compile(r"(?<=\d)[mM][gG9](?![A-Za-z])")
 
 
+def strip_leading_name_symbols(text: str) -> str:
+    """Ignore leading decoration only; preserve the printed name and its suffix."""
+
+    return re.sub(r"^[\W_]+", "", text)
+
+
 def normalize_measurement_unit_ocr(text: str) -> str:
     """Normalize only numeric measurement units, never medication names."""
 
@@ -35,4 +41,4 @@ def normalize_dose_unit_ocr(text: str) -> str:
 
     normalized = "".join(normalize_measurement_unit_ocr(text).split())
     normalized = re.sub(r"(?<=\d)캡술(?=(?:씩)?$)", "캡슐", normalized)
-    return re.sub(r"(?<=\d)(?:전|점)(?=(?:씩)?$)", "정", normalized)
+    return re.sub(r"(?<=\d)(?:전|점|명)(?=씩(?:$|\d)|$)", "정", normalized)

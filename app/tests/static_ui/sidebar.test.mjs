@@ -28,6 +28,68 @@ test("markActiveNavigation marks only the current section", async () => {
   assert.deepEqual(links.map((link) => link.attributes.get("aria-current")), [undefined, undefined, "page", undefined]);
 });
 
+test("sidebar menu groups toggle and expose their expanded state", async () => {
+  const { initializeSidebarGroups } = await import("../../static/js/sidebar.js");
+  let clickHandler;
+  const attributes = new Map([["aria-expanded", "false"]]);
+  const group = {
+    classList: {
+      isOpen: false,
+      toggle(_className, enabled) { this.isOpen = enabled; },
+    },
+  };
+  const subnav = {
+    hidden: true,
+    querySelector: () => null,
+  };
+  const toggle = {
+    nextElementSibling: subnav,
+    getAttribute(name) { return attributes.get(name); },
+    setAttribute(name, value) { attributes.set(name, value); },
+    addEventListener(_event, handler) { clickHandler = handler; },
+    closest: () => group,
+  };
+  const sidebar = { querySelectorAll: () => [toggle] };
+
+  initializeSidebarGroups(sidebar);
+  clickHandler();
+
+  assert.equal(attributes.get("aria-expanded"), "true");
+  assert.equal(subnav.hidden, false);
+  assert.equal(group.classList.isOpen, true);
+
+  clickHandler();
+
+  assert.equal(attributes.get("aria-expanded"), "false");
+  assert.equal(subnav.hidden, true);
+  assert.equal(group.classList.isOpen, false);
+});
+
+test("sidebar menu group containing the active page opens automatically", async () => {
+  const { initializeSidebarGroups } = await import("../../static/js/sidebar.js");
+  const attributes = new Map([["aria-expanded", "false"]]);
+  const group = {
+    classList: { toggle(_className, enabled) { this.isOpen = enabled; } },
+  };
+  const subnav = {
+    hidden: true,
+    querySelector: (selector) => selector === ".sidebar-link.is-active" ? {} : null,
+  };
+  const toggle = {
+    nextElementSibling: subnav,
+    getAttribute(name) { return attributes.get(name); },
+    setAttribute(name, value) { attributes.set(name, value); },
+    addEventListener() {},
+    closest: () => group,
+  };
+
+  initializeSidebarGroups({ querySelectorAll: () => [toggle] });
+
+  assert.equal(attributes.get("aria-expanded"), "true");
+  assert.equal(subnav.hidden, false);
+  assert.equal(group.classList.isOpen, true);
+});
+
 test("loadSidebar replaces the placeholder and initializes the active link", async () => {
   const { loadSidebar } = await import("../../static/js/sidebar.js");
   const link = {
@@ -141,7 +203,7 @@ test("shared sidebar uses the RxVita symbol with an administrator label", async 
 
   assert.match(html, /class="sidebar-brand-logo-frame"/);
   assert.match(html, /<img[^>]+class="sidebar-brand-logo"[^>]+src="\.\.\/images\/rxvita-logo-ai-chat-navy\.png"[^>]+alt="RxVita">/);
-  assert.match(html, /<span class="sidebar-brand-title">관리자<\/span>/);
+  assert.match(html, /<span class="sidebar-brand-title">알엑스비타 관리자<\/span>/);
   assert.match(html, /data-smtp-settings/);
   assert.match(managementStyles, /\.sidebar-brand-logo-frame\s*\{[^}]*overflow:\s*hidden;/s);
   assert.match(managementStyles, /\.sidebar-brand-logo\s*\{[^}]*position:\s*absolute;[^}]*width:\s*auto;/s);
@@ -218,7 +280,7 @@ test("administrator pages expose a shared fixed top area", async () => {
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260903-1"/, page);
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260907-3"/, page);
   }
 });
 

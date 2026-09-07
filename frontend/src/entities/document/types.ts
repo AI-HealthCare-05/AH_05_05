@@ -55,6 +55,9 @@ export interface EditableOcrMedication extends Omit<OcrMedication, 'timesPerDay'
 export interface OcrRegistrationDraft {
   batchId: string;
   documentImageUrl: string;
+  hospitalName: string;
+  hospitalNameConfidence: Confidence | null;
+  hospitalNameReviewed: boolean;
   dispensedDate: string;
   dispensedDateConfidence: Confidence | null;
   dispensedDateReviewed: boolean;
@@ -88,6 +91,8 @@ interface OcrResultReady {
   /** 등록한 문서 원본의 영속 URL. 미리보기와 저장 후 기록 화면이 같은 주소를 사용합니다. */
   documentImageUrl: string;
   fields: {
+    /** 병원·의원·진료과 명칭. 미추출이면 키가 없습니다. */
+    hospitalName?: OcrField<string>;
     /** 약봉투 조제일. 미추출이면 키가 없습니다. */
     dispensedDate?: OcrField<string>;
   };
@@ -105,6 +110,7 @@ interface OcrResultReady {
 export type OcrResult = OcrResultPending | OcrResultFailed | OcrResultReady;
 
 export interface ConfirmOcrResultPayload {
+  hospitalName?: string;
   dispensedDate: string;
   /** OCR 확정과 함께 저장되는 처방 별칭. 재시도 시 중복 처방을 만들지 않습니다. */
   alias?: string | null;

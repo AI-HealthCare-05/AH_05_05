@@ -11,6 +11,7 @@ class CareEpisode(models.Model):
     )
     title = fields.CharField(max_length=150)
     alias = fields.CharField(max_length=50, null=True)
+    hospital_name = fields.CharField(max_length=255, null=True)
     status = fields.CharEnumField(CareEpisodeStatus, default=CareEpisodeStatus.ACTIVE)
     diagnosis = fields.CharField(max_length=500, null=True)
     surgery = fields.CharField(max_length=500, null=True)

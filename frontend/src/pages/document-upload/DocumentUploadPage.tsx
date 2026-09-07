@@ -3,7 +3,7 @@ import { Camera, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { Button, Card, Header, ImageViewer, RegistrationProgress } from '@/shared/ui';
 
-const GUIDE_ITEMS = ['조제일', '약품명·함량', '1회 투약량·횟수·일수'] as const;
+const GUIDE_ITEMS = ['병원명', '조제일', '약품명·함량', '1회 투약량·횟수·일수'] as const;
 
 export function DocumentUploadPage() {
   const navigate = useNavigate();
@@ -106,19 +106,26 @@ export function DocumentUploadPage() {
         ) : (
           <>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">약봉투를 한 장 담아주세요</h1>
-              <p className="mt-1 text-base text-muted-foreground">약국에서 받은 봉투 앞면이면 돼요.</p>
+              <h1 className="text-2xl font-bold text-foreground">복약안내문을 한 장 담아주세요</h1>
+              <p className="mt-1 text-base text-muted-foreground">
+                테두리 네 면이 모두 보이도록, 종이를 평평하게 펴고 바로 위에서 기울임 없이 촬영해주세요.
+              </p>
             </div>
 
-            <div className="flex aspect-square items-center justify-center rounded-card bg-muted-bg p-8 text-primary shadow-card">
-              <svg aria-hidden viewBox="0 0 240 240" className="size-full" fill="none" stroke="currentColor" strokeWidth="3">
-                <path d="M20 60V34a14 14 0 0 1 14-14h26M180 20h26a14 14 0 0 1 14 14v26M220 180v26a14 14 0 0 1-14 14h-26M60 220H34a14 14 0 0 1-14-14v-26" />
-                <path d="M78 87h84v105H78zM78 87l42-26 42 26" className="text-border" />
-                <path d="M96 126h48M96 148h48M96 170h28" className="text-border" />
-              </svg>
-            </div>
+            <figure className="overflow-hidden rounded-card bg-muted-bg shadow-card">
+              <img
+                src="/images/medication-capture-guide.png"
+                alt="네 테두리가 모두 보이도록 평평하게 놓고 바로 위에서 촬영한 복약안내문 예시"
+                width={1024}
+                height={1024}
+                className="aspect-square w-full object-contain"
+              />
+              <figcaption className="px-4 pb-4 text-sm text-muted-foreground">
+                밝은 곳에서 빛 반사와 그림자를 피하고, 글자에 초점을 맞춰 선명하게 담아주세요.
+              </figcaption>
+            </figure>
 
-            <Card className="gap-3 p-4" title="이 세 가지가 보이게 담아주세요">
+            <Card className="gap-3 p-4" title="이 네 가지가 보이게 담아주세요">
               <ul className="flex flex-col gap-2">
                 {GUIDE_ITEMS.map((item) => (
                   <li key={item} className="flex items-center gap-3 text-base text-foreground">

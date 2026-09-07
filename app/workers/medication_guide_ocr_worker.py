@@ -38,7 +38,11 @@ async def startup(ctx: dict[str, Any]) -> None:
                 api_key=openai_api_key,
                 model=config.OPENAI_MODEL,
             )
-        analyzer = MedicationOcrV3Service(provider=provider, structurer=structurer)
+        analyzer = MedicationOcrV3Service(
+            provider=provider,
+            structurer=structurer,
+            preprocess_version=config.OCR_PREPROCESS_VERSION,
+        )
         storage = TemporaryOcrStorage(config.OCR_TEMP_DIR)
         ctx.update(
             {
@@ -148,3 +152,5 @@ class WorkerSettings:
     redis_settings = _redis_settings()
     cron_jobs = [cron(cleanup_expired_ocr_jobs, minute=set(range(0, 60, 5)))]
     max_tries = 2
+    # Preserve failure evidence beyond stale-job TTL and the next cleanup tick.
+    keep_result = (config.OCR_REVIEW_TTL_MINUTES + 10) * 60

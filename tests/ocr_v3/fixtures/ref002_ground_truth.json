@@ -1,0 +1,58 @@
+{
+  "fields": {
+    "dispensedDate": "2025-10-25",
+    "hospitalName": "한도병원"
+  },
+  "medications": [
+    {
+      "name": "펙소나딘정120밀리그램",
+      "strength": "120mg",
+      "doseQuantity": "1",
+      "timesPerDay": 1,
+      "days": 5
+    },
+    {
+      "name": "시네츄라시럽(15mL)",
+      "strength": "15mL",
+      "doseQuantity": "1",
+      "timesPerDay": 1,
+      "days": 5
+    },
+    {
+      "name": "라베뉴정10/500밀리그램",
+      "strength": "10/500mg",
+      "doseQuantity": "1",
+      "timesPerDay": 2,
+      "days": 5
+    },
+    {
+      "name": "소로펜정",
+      "strength": "68.1mg",
+      "doseQuantity": "1",
+      "timesPerDay": 2,
+      "days": 5
+    },
+    {
+      "name": "써스펜8시간이알서방정650...",
+      "strength": "650mg",
+      "doseQuantity": "1",
+      "timesPerDay": 2,
+      "days": 5
+    },
+    {
+      "name": "뮤코졸정",
+      "strength": "8mg",
+      "doseQuantity": "1",
+      "timesPerDay": 2,
+      "days": 5
+    },
+    {
+      "name": "코싹엘정",
+      "strength": "2.5/120mg",
+      "doseQuantity": "1",
+      "timesPerDay": 2,
+      "days": 5
+    }
+  ]
+}
+

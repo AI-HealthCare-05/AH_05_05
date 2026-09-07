@@ -36,6 +36,7 @@ const readyOcrResult = {
   ocrStatus: 'ready_for_review',
   documentImageUrl: '/server-does-not-authorize-img-tags',
   fields: {
+    hospitalName: { value: '송도센트럴이비인후과의원', confidence: 'high' },
     dispensedDate: { value: '2026-08-22', confidence: 'high' },
   },
   medications: [
@@ -397,6 +398,9 @@ test('OCR 검토의 직접 추가 버튼과 입력 제한을 간결하게 표시
 
   await page.goto('/dev/ocr-review');
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
+  await expect(page.getByLabel('병원명')).toHaveValue('송도센트럴이비인후과의원');
+  await expect(page.getByLabel('병원명')).toHaveAttribute('maxlength', '255');
+  await expect(page.getByLabel('복약 별칭')).toHaveValue('송도센트럴이비인후과의원');
   await expect(page.getByText('복용 시작일을 이 날짜로 채워둘게요.')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '빠진 약 직접 추가' })).toHaveCount(0);
 
@@ -421,7 +425,7 @@ test('OCR 검토의 직접 추가 버튼과 입력 제한을 간결하게 표시
     await name.evaluate((input) =>
       getComputedStyle(input.parentElement?.parentElement ?? input).paddingLeft,
     ),
-  ).toBe('4px');
+  ).toBe('0px');
 
   await days.fill('999');
   await expect(days).toHaveValue('');
@@ -630,6 +634,7 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
   await interceptDefaultNotifySettings(page);
   let confirmed = false;
   const ocrRequests: Array<{ method: string; url: string }> = [];
+  const patchPayloads: Array<Record<string, unknown>> = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
     if (path === '/api/v1/ocr' || path === '/api/v1/ocr/jobs/b_mock_9f21') {
@@ -639,6 +644,7 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
 
   await page.route('**/api/v1/ocr/jobs/b_mock_9f21*', async (route) => {
     if (route.request().method() === 'PATCH') {
+      patchPayloads.push(route.request().postDataJSON() as Record<string, unknown>);
       confirmed = true;
       await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
       return;
@@ -648,6 +654,7 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
       batchId: 'b_mock_9f21',
       ocrStatus: confirmed ? 'complete' : 'ready_for_review',
       fields: {
+        hospitalName: { value: '연세의원', confidence: 'low' },
         dispensedDate: { value: '2026-08-22', confidence: 'low' },
       },
       medications: readyOcrResult.medications.map((medication) => ({
@@ -670,6 +677,8 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
 
   await page.goto('/dev/ocr-review');
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await expect(page.getByLabel('복약 별칭')).toHaveValue('연세의원');
+  await page.getByLabel('복약 별칭').fill('사용자 별칭');
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })
     .getByRole('button', { name: '확인 후 저장', exact: true })
@@ -688,13 +697,18 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
   await expect(page.getByRole('heading', { name: '약봉투를 읽고 있어요' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
+  await expect(page.getByLabel('병원명')).toHaveValue('연세의원');
+  const hospitalNameHeader = page.locator('label[for="hospitalName"]').locator('..');
+  await expect(hospitalNameHeader.getByText('확인 필요', { exact: true })).toBeVisible();
   await expect(page.getByLabel('조제일')).toBeEditable();
-  await expect(page.getByLabel('복약 별칭')).toBeEditable();
+  await expect(page.getByLabel('복약 별칭')).toHaveValue('사용자 별칭');
   await expect(page.getByRole('button', { name: '직접 추가', exact: true })).toBeVisible();
   await expect(page.getByText('이미 등록된 약봉투예요')).toHaveCount(0);
   const dispensedDateHeader = page.locator('label[for="dispensedDate"]').locator('..');
   await expect(dispensedDateHeader.getByText('확인 필요', { exact: true })).toBeVisible();
   await page.getByLabel('조제일').fill('2026-08-21');
+  await page.getByLabel('병원명').fill('연세의원 수정');
+  await expect(hospitalNameHeader.getByText('확인 필요', { exact: true })).toHaveCount(0);
   await expect(dispensedDateHeader.getByText('확인 필요', { exact: true })).toHaveCount(0);
   expect(ocrRequests.filter((request) => request.method === 'GET')).toHaveLength(
     ocrGetCountBeforeBack,
@@ -713,9 +727,30 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
   await expect(page).toHaveURL(
     '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
   );
+  expect(patchPayloads).toHaveLength(2);
+  expect(patchPayloads[1]).toMatchObject({
+    hospitalName: '연세의원 수정',
+    alias: '사용자 별칭',
+  });
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await expect(page.getByLabel('병원명')).toHaveValue('연세의원 수정');
+  await expect(page.getByLabel('복약 별칭')).toHaveValue('사용자 별칭');
+  await page.getByLabel('복약 별칭').fill('');
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  const finalReviewDialog = page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' });
+  if (await finalReviewDialog.isVisible()) {
+    await finalReviewDialog.getByRole('button', { name: '확인 후 저장', exact: true }).click();
+  }
+  await expect(page).toHaveURL(
+    '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
+  );
+  expect(patchPayloads).toHaveLength(3);
+  expect(patchPayloads[2].alias).toBeNull();
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await expect(page.getByLabel('복약 별칭')).toHaveValue('');
   const patches = ocrRequests.filter((request) => request.method === 'PATCH');
-  expect(patches).toHaveLength(2);
-  expect(new URL(patches[1].url).searchParams.get('registrationEdit')).toBe('true');
+  expect(patches).toHaveLength(3);
+  expect(new URL(patches[2].url).searchParams.get('registrationEdit')).toBe('true');
   expect(ocrRequests.filter((request) => request.method === 'POST')).toHaveLength(0);
 });
 
@@ -800,6 +835,27 @@ test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-20');
 });
 
+test('등록 약명 오른쪽에 횟수를 표시하고 시간 선택 개수를 제한한다', async ({ page }, testInfo) => {
+  await authenticate(page);
+  await interceptDocumentRegistration(page);
+  await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
+    await fulfillJson(route, { start: null, mealTimes: null, medications: template04ScheduleMedications });
+  });
+  await page.goto('/medication-schedule?recordId=314&ocrJobId=b_mock_9f21&flow=registration');
+  const morning = page.getByRole('button', { name: '슈도에페드린시럽 아침약' });
+  const evening = page.getByRole('button', { name: '슈도에페드린시럽 저녁약' });
+  const confirm = page.getByRole('button', { name: '확인', exact: true });
+  await expect(page.getByText('하루 2회', { exact: true })).toHaveCount(3);
+  await expect(evening).toBeDisabled();
+  await morning.click();
+  await expect(evening).toBeEnabled();
+  await expect(confirm).toBeDisabled();
+  await evening.click();
+  await expect(morning).toBeDisabled();
+  await expect(confirm).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath('slot-limits.png'), fullPage: true });
+});
+
 test('아직 안 먹었어요는 복용 완료를 만들지 않고 오늘 첫 사용 슬롯부터 기록한다', async ({
   page,
 }) => {
@@ -837,8 +893,23 @@ function expectAuthenticated(requests: CapturedRequest[]) {
   );
 }
 
-test('갤러리 입력은 JPG/PNG 한 장만 받고 카메라 입력과 분리되어 있다', async ({ page }) => {
+test('복약안내문 촬영 안내와 입력은 JPG/PNG 한 장만 받는다', async ({ page }) => {
+  await authenticate(page);
   await page.goto('/document-upload');
+
+  await expect(page.getByRole('heading', { name: '복약안내문을 한 장 담아주세요' })).toBeVisible();
+  await expect(
+    page.getByRole('img', {
+      name: '네 테두리가 모두 보이도록 평평하게 놓고 바로 위에서 촬영한 복약안내문 예시',
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('이 네 가지가 보이게 담아주세요', { exact: true })).toBeVisible();
+  await expect(page.getByRole('list').getByRole('listitem')).toHaveText([
+    '병원명',
+    '조제일',
+    '약품명·함량',
+    '1회 투약량·횟수·일수',
+  ]);
 
   const camera = page.getByLabel('카메라로 약봉투 촬영');
   const gallery = page.getByLabel('갤러리에서 약봉투 선택');
@@ -851,6 +922,7 @@ test('갤러리 입력은 JPG/PNG 한 장만 받고 카메라 입력과 분리�
 });
 
 test('선택한 약봉투 사진을 누르면 전체 화면 원본을 열고 닫을 수 있다', async ({ page }) => {
+  await authenticate(page);
   await page.goto('/document-upload');
   await selectGalleryPng(page);
 
@@ -867,6 +939,7 @@ test('선택한 약봉투 사진을 누르면 전체 화면 원본을 열고 닫
 test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할 수 있다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await authenticate(page);
+  await interceptDefaultNotifySettings(page);
   const patches: CapturedRequest[] = [];
 
   await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
@@ -1012,13 +1085,20 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   expect(trace.patches).toHaveLength(1);
   expectAuthenticated(trace.patches);
   const patchPayload = JSON.parse(trace.patches[0].body) as {
+    hospitalName: string;
     dispensedDate: string;
     alias: string | null;
     medications: Array<Record<string, unknown>>;
   };
-  expect(Object.keys(patchPayload).sort()).toEqual(['alias', 'dispensedDate', 'medications']);
+  expect(Object.keys(patchPayload).sort()).toEqual([
+    'alias',
+    'dispensedDate',
+    'hospitalName',
+    'medications',
+  ]);
+  expect(patchPayload.hospitalName).toBe('송도센트럴이비인후과의원');
   expect(patchPayload.dispensedDate).toBe('2026-08-22');
-  expect(patchPayload.alias).toBe(null);
+  expect(patchPayload.alias).toBe('송도센트럴이비인후과의원');
   expect(patchPayload.medications).toHaveLength(4);
   expect(patchPayload.medications).toEqual(
     expect.arrayContaining([
@@ -1507,7 +1587,7 @@ test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목�
   await page.goto('/medications');
   await page.getByRole('button', { name: '삭제', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '삭제하기' }).click();
+  await page.getByRole('button', { name: '선택한 처방 삭제' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: '1개를 삭제할까요?' })).toBeVisible();
   await expect(dialog).toContainText('삭제한 처방은 약봉투를 다시 등록해야 복구할 수 있어요.');
@@ -1684,6 +1764,34 @@ test('OCR 별칭 저장이 실패해도 같은 확정을 재시도하고 중복 
     '재시도 OCR 처방',
   ]);
 });
+
+for (const headerOnly of [false, true]) {
+  test(`약이 추출되지 않으면 재촬영을 안내한다 (병원명만 추출: ${headerOnly})`, async ({ page }) => {
+    await authenticate(page);
+    await page.route('**/api/v1/ocr/jobs/501', route => fulfillJson(route, {
+      ...readyOcrResult,
+      fields: headerOnly ? readyOcrResult.fields : {},
+      medications: [],
+      lowConfidenceCount: 0,
+    }));
+    await page.route('**/api/v1/ocr/jobs/501/**', route => route.fulfill({ status: 404 }));
+    await page.goto('/ocr-review?batchId=501');
+    await expect(page.getByText('약 정보를 추출하지 못했어요', { exact: true })).toBeVisible();
+    await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
+    await expect(page.getByText('저장 완료', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('내용을 잘 읽었어요', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true })).toHaveCount(0);
+    await page.screenshot({ path: `test-results/empty-ocr-${headerOnly}.png`, fullPage: true });
+    if (headerOnly) {
+      await page.getByRole('button', { name: '직접 입력하기', exact: true }).click();
+      await expect(page.getByText('약 정보를 직접 입력해주세요', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '직접 추가' })).toBeVisible();
+    } else {
+      await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+      await expect(page).toHaveURL(/\/document-upload$/);
+    }
+  });
+}
 
 test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으로 보여준다', async ({ page }) => {
   await authenticate(page);

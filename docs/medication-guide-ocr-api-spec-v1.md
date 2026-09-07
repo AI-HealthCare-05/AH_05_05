@@ -217,6 +217,10 @@ lowConfidenceCount
   "ocrStatus": "ready_for_review",
   "documentImageUrl": "/api/v1/ocr/jobs/123/image",
   "fields": {
+    "hospitalName": {
+      "value": "송도센트럴이비인후과의원",
+      "confidence": "high"
+    },
     "dispensedDate": {
       "value": "2025-03-12",
       "confidence": "high"
@@ -244,10 +248,12 @@ lowConfidenceCount
 | `batchId` | string | `b_{ocrJobId}` 형식 |
 | `ocrStatus` | string | `ready_for_review` 또는 `complete` |
 | `documentImageUrl` | string | 인증이 필요한 원본 이미지 상대 URL |
+| `fields.hospitalName.value` | string | 병원·의원·진료과 명칭. 읽지 못하거나 후보가 충돌하면 `hospitalName` 키 자체를 생략 |
+| `fields.hospitalName.confidence` | string | `high`, `medium`, `low` |
 | `fields.dispensedDate.value` | string | `YYYY-MM-DD`. 조제일을 읽지 못하면 `dispensedDate` 키 자체를 생략 |
 | `fields.dispensedDate.confidence` | string | `high`, `medium`, `low` |
 | `medications` | array | OCR로 구조화한 약 목록 |
-| `lowConfidenceCount` | integer | 조제일 및 약 블록 중 `low`인 항목 수. `medium`은 제외 |
+| `lowConfidenceCount` | integer | 병원명, 조제일 및 약 블록 중 `low`인 항목 수. `medium`은 제외 |
 
 ### medications 항목 규칙
 
@@ -390,6 +396,7 @@ const imageUrl = URL.createObjectURL(blob);
 
 ```json
 {
+  "hospitalName": "송도센트럴이비인후과의원",
   "dispensedDate": "2025-03-12",
   "medications": [
     {
@@ -432,6 +439,8 @@ const imageUrl = URL.createObjectURL(blob);
 
 | 필드 | 타입 | 필수 | 제약 및 의미 |
 |---|---|---:|---|
+| `hospitalName` | string | X | 1~255자. OCR 미추출 또는 사용자가 비워 둔 경우 생략 |
+| `alias` | string \| null | X | 최대 50자. 최초 등록 시 생략하면 병원명 앞 50자를 기본값으로 사용. 사용자가 수정한 값 우선, 명시적 `null` 또는 빈 문자열은 별칭 비우기 |
 | `dispensedDate` | string(date) | O | `YYYY-MM-DD`, 서울 기준 오늘부터 미래 31일까지 |
 | `medications` | array | O | 0~100개. 현재 화면의 최종 약 목록 전체 |
 | `medications[].tempId` | string | O | 1~100자. 검토 행 매칭용, RDB PK로 저장하지 않음 |
@@ -444,6 +453,8 @@ const imageUrl = URL.createObjectURL(blob);
 ### 확정 요청 규칙
 
 프론트는 GET의 약 목록을 최종 수정본으로 유지하고 `confidence`를 제외해 한 번의 PATCH로 전송한다. 수정하지 않은 선택 필드는 그대로 보내고, 없는 선택 필드는 빈 문자열·`null` 대신 생략한다. 사용자가 삭제한 약은 최종 배열에서 제외하며, 추가한 약은 새 `tempId`와 직접 입력한 값을 포함한다.
+
+별칭 입력은 OCR 병원명을 기본값으로 표시하며 사용자가 수정하거나 비울 수 있다. 사용자가 편집한 별칭은 등록 단계의 뒤로가기·복원에서 유지한다. 병원명 원문은 별칭과 별도로 저장한다. `alias`의 명시적 비우기는 위 선택 필드 생략 규칙의 예외다.
 
 ### 성공 응답
 
@@ -478,8 +489,8 @@ const imageUrl = URL.createObjectURL(blob);
 | 테이블 | 저장 내용 |
 |---|---|
 | `ocr_jobs` | 작업 상태, 사용자, 멱등 키, 구조화 결과, 생성된 CareEpisode 연결 |
-| `care_episodes` | `{dispensedDate} 조제약 복약안내`, `ACTIVE`, 복용 시작일, 약 목록의 최대 `days` |
-| `medications` | 약품명, 용량, 효능, 복용 방법, 주의사항, 횟수, 일수, 조제일, OCR 작업 연결 |
+| `care_episodes` | 병원명, `{dispensedDate} 조제약 복약안내`, `ACTIVE`, 복용 시작일, 약 목록의 최대 `days` |
+| `medications` | 약품명, 함량, 1회 투약량, 횟수, 일수, 조제일, OCR 작업 연결 |
 
 약 네 개를 확정하면 아래처럼 저장한다.
 
@@ -489,8 +500,8 @@ care_episodes  1행
 medications    4행
 ```
 
-각 약의 `efficacy`, `administration`, `precautions`는 `medications`의 동일 이름 컬럼에 저장한다.
-`timesPerDay=null`인 필요 시 복용 약은 내부 `note`에 `필요 시 복용`을 기록할 수 있다.
+병원명은 `care_episodes.hospital_name`에 저장한다. `timesPerDay=null`인 필요 시 복용 약은
+내부 `note`에 `필요 시 복용`을 기록할 수 있다.
 
 ### 확정 멱등성
 
