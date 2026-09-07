@@ -33,9 +33,10 @@ async def request(
     params: dict[str, Any] | None = None,
     json: dict[str, Any] | None = None,
     cookies: dict[str, str] | None = None,
+    files: dict[str, tuple[str, bytes, str]] | None = None,
 ) -> Response:
     async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL, cookies=cookies) as client:
-        return await client.request(method, url, headers=headers, params=params, json=json)
+        return await client.request(method, url, headers=headers, params=params, json=json, files=files)
 
 
 async def create_admin(

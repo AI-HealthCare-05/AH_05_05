@@ -7,6 +7,8 @@ const TARGETS = Object.freeze({
   tasks: "screen-5-task-management.html",
   "common-codes": "common-code-management.html",
   "supplement-ranking": "supplement-ranking.html",
+  challenges: "challenge-management.html",
+  badges: "badge-management.html",
   logout: "login.html",
 });
 
