@@ -679,3 +679,120 @@ def test_parse_primary_care_herb_drug_review_keeps_body_in_verified_column_order
         "Evidence-end",
         "Recent",
     ]
+
+
+def test_parse_st_johns_wort_review_excludes_sidebar_footer_and_table() -> None:
+    page_one = FakeLayoutPage(
+        [
+            layout_word("Interaction", 57, 183, 133, 198),
+            layout_word("title", 137, 183, 170, 198),
+            layout_word("Edward", 57, 225, 90, 237),
+            layout_word("Mills", 94, 225, 120, 237),
+            layout_word("Abstract", 57, 261, 97, 272),
+            layout_word("Objective", 57, 278, 94, 287),
+            layout_word("abstract-body", 98, 278, 170, 287),
+            layout_word("Introduction", 57, 656, 118, 667),
+            layout_word("intro-start", 57, 680, 115, 690),
+            layout_word("systematic", 270, 261, 320, 270),
+            layout_word("review-end", 325, 261, 380, 270),
+            layout_word("Methods", 270, 317, 312, 328),
+            layout_word("method-body", 270, 345, 335, 355),
+            layout_word("Department", 483, 261, 535, 270),
+            layout_word("millsej@mcmaster.ca", 483, 691, 543, 700),
+            layout_word("flow-chart-note", 300, 746, 390, 754),
+            layout_word("BMJ", 57, 785, 70, 792),
+        ]
+    )
+    page_two = FakeLayoutPage(
+        [
+            layout_word("methods-end", 128, 80, 190, 90),
+            layout_word("Results", 128, 196, 162, 207),
+            layout_word("Search", 128, 213, 154, 221),
+            layout_word("results-body", 158, 213, 225, 221),
+            layout_word("Pharmacokinetic", 128, 328, 194, 336),
+            layout_word("details", 198, 328, 230, 336),
+            layout_word("pharmacokinetic-body", 128, 350, 240, 360),
+            layout_word("Study", 341, 81, 364, 90),
+            layout_word("design", 368, 81, 402, 90),
+            layout_word("study-body", 341, 100, 400, 110),
+            layout_word("Effects", 341, 192, 368, 201),
+            layout_word("effect-body", 341, 210, 405, 220),
+            layout_word("Discussion", 341, 332, 392, 342),
+            layout_word("discussion-body", 341, 350, 430, 360),
+            layout_word("Characteristics", 128, 520, 190, 528),
+            layout_word("table-row", 128, 550, 180, 558),
+            layout_word("BMJ", 300, 785, 315, 792),
+        ]
+    )
+
+    parser = VerifiedKnowledgeLayoutParser()
+    first = parser.parse(
+        page=page_one,
+        page_number=1,
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-e5fcbe5d02f9650c",
+    )
+    second = parser.parse(
+        page=page_two,
+        page_number=2,
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-e5fcbe5d02f9650c",
+    )
+
+    assert first is not None
+    assert [block.content for block in first.blocks] == [
+        "Interaction title",
+        "Abstract\nObjective abstract-body",
+        "Introduction\nintro-start",
+        "systematic review-end",
+        "Methods\nmethod-body",
+    ]
+    assert second is not None
+    assert [block.content for block in second.blocks] == [
+        "methods-end",
+        "Results\nSearch results-body\nPharmacokinetic details\npharmacokinetic-body",
+        "Study design\nstudy-body",
+        "Effects\neffect-body",
+        "Discussion\ndiscussion-body",
+    ]
+
+
+def test_parse_st_johns_wort_review_keeps_summary_box_after_discussion() -> None:
+    page_three = FakeLayoutPage(
+        [
+            layout_word("discussion-left", 57, 81, 150, 90),
+            layout_word("future", 57, 480, 95, 490),
+            layout_word("recommendations.", 100, 480, 180, 490),
+            layout_word("We", 270, 270, 282, 280),
+            layout_word("used", 286, 270, 310, 280),
+            layout_word("concomitant", 270, 450, 330, 460),
+            layout_word("use.", 334, 450, 355, 460),
+            layout_word("What", 286, 84, 308, 95),
+            layout_word("is", 312, 84, 320, 95),
+            layout_word("already", 324, 84, 360, 95),
+            layout_word("known", 364, 84, 395, 95),
+            layout_word("summary-body", 286, 105, 360, 115),
+            layout_word("What", 286, 138, 308, 149),
+            layout_word("this", 312, 138, 330, 149),
+            layout_word("study", 334, 138, 360, 149),
+            layout_word("adds", 364, 138, 390, 149),
+            layout_word("adds-body", 286, 160, 340, 170),
+            layout_word("Contributors:", 270, 475, 330, 483),
+            layout_word("forest-plot", 57, 560, 120, 570),
+            layout_word("Mean", 57, 716, 75, 724),
+        ]
+    )
+
+    extraction = VerifiedKnowledgeLayoutParser().parse(
+        page=page_three,
+        page_number=3,
+        source_id="research_herb_drug_interactions",
+        document_id="research_herb_drug_interactions-e5fcbe5d02f9650c",
+    )
+
+    assert extraction is not None
+    assert [block.content for block in extraction.blocks] == [
+        "discussion-left\nfuture recommendations.",
+        "We used\nconcomitant use.",
+        "What is already known\nsummary-body\nWhat this study adds\nadds-body",
+    ]

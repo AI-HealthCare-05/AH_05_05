@@ -417,7 +417,7 @@
       "document_id": "research_herb_drug_interactions-e5fcbe5d02f9650c",
       "repo_path": "data/knowledge/raw/demo_restricted/research/herb_drug_interactions/research_st_johns_wort_drug_interactions.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
-      "selection_reason": "대표 문서 품질 승인을 상속한 전체 코퍼스 전처리",
+      "selection_reason": "3단·2단 본문 읽기 순서와 의미 경계를 수동 대조하고 비본문·방법론 표·그림·참고문헌을 제외",
       "manual_review_status": "APPROVED",
       "title": "Interaction of St John's wort with conventional drugs: systematic review of clinical trials",
       "source_url": "https://doi.org/10.1136/bmj.329.7456.27",
@@ -439,8 +439,21 @@
       "study_population": "HUMAN",
       "verified_text_replacements": {},
       "verified_section_headings": [],
-      "approved_chunk_content_hashes": [],
-      "approved_review_reason_codes": []
+      "approved_chunk_content_hashes": [
+        "4cc93693dffdaada323c2cf35c6b03691a447c6774842eda9a4ac2d5dc8cfcb2",
+        "c2010a347386a3a6a7e1c4092e54c67cb99885db672181079c5790576e9c0db8",
+        "351c150a47d388fd7cdbf9e3375343630578413e4596620fd5ad9f122bbff9c7",
+        "e1a4912d3286021612c323e5a68617ea714608043271f7a905f44d28c62774d4",
+        "6c7da6a9372ad61911be75f4bf357dbf9e64b016da1671dfc02cc55d15e89e05",
+        "c839ad0ea0b097485d6294b8600e12d3b1be81ce182c212ecba7ec91e6833461",
+        "a1b97693d03c4f4b022ece462857bbe0810405e5cd73248bfbd8829ed262d40f",
+        "4d04ca8c0a58ff159c077c274e498274a6d157506e9825d7f0e8808da5e51703",
+        "e442974cafd378efe7f3f4c22b07a85c55e47bdfedfbe936ae811804c3bd0ee6",
+        "aadfa2e99c48a8984d18b1416e4bbf72bb7e4ae0bcb71c8af8aba70a6e7ea0d8"
+      ],
+      "approved_review_reason_codes": [
+        "SHORT_FRAGMENT_RATIO"
+      ]
     },
     {
       "source_id": "research_supplement_adverse_effects",

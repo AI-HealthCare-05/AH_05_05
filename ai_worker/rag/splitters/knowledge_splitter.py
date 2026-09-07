@@ -100,6 +100,7 @@ _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-80c3d6
 _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-186668a2a92b533c"
 _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-502801c809b5ec8d"
 _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID = "research_herb_drug_interactions-83a8fd3c37dd38e1"
+_ST_JOHNS_WORT_REVIEW_DOCUMENT_ID = "research_herb_drug_interactions-e5fcbe5d02f9650c"
 _STATINS_VITAMIN_D_REVIEW_TITLE = "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review"
 
 _DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES = (
@@ -211,6 +212,38 @@ _PRIMARY_CARE_HERB_DRUG_FIGURE_PATTERN = re.compile(
     r"\s*FIGURE\s+\d+.*?(?=Information resource challenge)",
     flags=re.DOTALL | re.IGNORECASE,
 )
+
+_ST_JOHNS_WORT_REVIEW_TITLE = (
+    "Interaction of St John’s wort with conventional drugs: systematic review of clinical trials"
+)
+_ST_JOHNS_WORT_REVIEW_BOUNDARIES = (
+    "Introduction",
+    "Methods",
+    "Results",
+    "Pharmacokinetic details",
+    "Study design",
+    "Effects of St John’s wort",
+    "Discussion",
+    "We used a somewhat arbitrary threshold (20%)",
+    "What is already known on this topic",
+)
+_ST_JOHNS_WORT_REVIEW_END = "particularly in conjunction with conventional drugs"
+_ST_JOHNS_WORT_TABLE_PATTERN = re.compile(
+    r"Characteristics of methods used in 22 reviewed studies.*?(?=Discussion)",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+_ST_JOHNS_WORT_VERIFIED_PAGE_RANGES = {
+    _ST_JOHNS_WORT_REVIEW_TITLE: (1, 1),
+    "Introduction": (1, 1),
+    "Methods": (1, 2),
+    "Results": (2, 2),
+    "Pharmacokinetic details": (2, 2),
+    "Study design": (2, 2),
+    "Effects of St John’s wort": (2, 2),
+    "Discussion": (2, 3),
+    "We used a somewhat arbitrary threshold (20%)": (3, 3),
+    "What is already known on this topic": (3, 3),
+}
 
 
 _COMMON_CAUTION_HEADINGS = {
@@ -558,6 +591,9 @@ class KnowledgeSplitter:
         if document_id == _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID:
             repaired = self._resegment_primary_care_herb_drug_review(chunks)
             return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+        if document_id == _ST_JOHNS_WORT_REVIEW_DOCUMENT_ID:
+            repaired = self._resegment_st_johns_wort_review(chunks)
+            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
         if document_id == _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID:
             repaired = self._resegment_levothyroxine_calcium_review(chunks)
             return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
@@ -689,6 +725,84 @@ class KnowledgeSplitter:
                 )
             )
         return repaired
+
+    def _resegment_st_johns_wort_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        merged = self._merge_verified_chunk_text(chunks)
+        title_start = merged.find(_ST_JOHNS_WORT_REVIEW_TITLE)
+        if title_start >= 0:
+            merged = merged[title_start:]
+        merged = _ST_JOHNS_WORT_TABLE_PATTERN.sub(" ", merged)
+        end = merged.find(_ST_JOHNS_WORT_REVIEW_END)
+        if end >= 0:
+            end_offset = end + len(_ST_JOHNS_WORT_REVIEW_END)
+            has_terminal_period = merged[end_offset : end_offset + 1] == "."
+            merged = merged[:end_offset]
+            if has_terminal_period:
+                merged += "."
+
+        positions = sorted(
+            {position for marker in _ST_JOHNS_WORT_REVIEW_BOUNDARIES if (position := merged.find(marker)) >= 0}
+        )
+        if not positions or positions[0] > 0:
+            positions.insert(0, 0)
+        positions.append(len(merged))
+
+        repaired: list[KnowledgeChunk] = []
+        for start, stop in zip(positions, positions[1:], strict=False):
+            content = merged[start:stop].strip()
+            if not content:
+                continue
+            metadata = self._verified_span_metadata(
+                content=content,
+                chunks=chunks,
+            )
+            verified_page_range = next(
+                (
+                    page_range
+                    for prefix, page_range in _ST_JOHNS_WORT_VERIFIED_PAGE_RANGES.items()
+                    if content.startswith(prefix)
+                ),
+                None,
+            )
+            if verified_page_range is not None:
+                metadata = metadata.model_copy(
+                    update={
+                        "page_start": verified_page_range[0],
+                        "page_end": verified_page_range[1],
+                    }
+                )
+            repaired.append(
+                chunks[0].model_copy(
+                    update={
+                        "content": self._format_st_johns_wort_review_heading(content),
+                        "metadata": metadata,
+                    }
+                )
+            )
+        return repaired
+
+    @staticmethod
+    def _format_st_johns_wort_review_heading(content: str) -> str:
+        if content.startswith(_ST_JOHNS_WORT_REVIEW_TITLE):
+            body = content[len(_ST_JOHNS_WORT_REVIEW_TITLE) :].strip()
+            if body.startswith("Abstract"):
+                body = f"Abstract\n{body[len('Abstract') :].strip()}"
+            return f"{_ST_JOHNS_WORT_REVIEW_TITLE}\n\n{body}"
+        for heading in _ST_JOHNS_WORT_REVIEW_BOUNDARIES:
+            if content.startswith(heading) and len(content) > len(heading):
+                body = content[len(heading) :].strip()
+                if heading == "What is already known on this topic":
+                    body = re.sub(
+                        r"\s+What this study adds\s+",
+                        "\n\nWhat this study adds\n",
+                        body,
+                        count=1,
+                    )
+                return f"{heading}\n{body}"
+        return content
 
     @staticmethod
     def _format_primary_care_herb_drug_heading(content: str) -> str:

@@ -16,6 +16,9 @@ from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtraction
 from ai_worker.rag.loaders.primary_care_herb_drug_review_layout_parser import (
     PrimaryCareHerbDrugReviewLayoutParser,
 )
+from ai_worker.rag.loaders.st_johns_wort_review_layout_parser import (
+    StJohnsWortReviewLayoutParser,
+)
 from ai_worker.rag.loaders.statins_vitamin_d_review_layout_parser import (
     StatinsVitaminDReviewLayoutParser,
 )
@@ -40,6 +43,7 @@ class VerifiedKnowledgeLayoutParser:
             StatinsVitaminDReviewLayoutParser(),
             LevothyroxineCalciumReviewLayoutParser(),
             PrimaryCareHerbDrugReviewLayoutParser(),
+            StJohnsWortReviewLayoutParser(),
             HerbDrugReviewLayoutParser(),
             WarfarinReviewLayoutParser(),
         )

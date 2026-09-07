@@ -173,6 +173,29 @@ def build_primary_care_herb_drug_review_chunk(
     )
 
 
+def build_st_johns_wort_review_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+    page_start: int = 1,
+    page_end: int = 3,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(content, chunk_index=chunk_index)
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "source_id": "research_herb_drug_interactions",
+                    "document_id": "research_herb_drug_interactions-e5fcbe5d02f9650c",
+                    "title": "Interaction of St John's wort with conventional drugs: systematic review of clinical trials",
+                    "page_start": page_start,
+                    "page_end": page_end,
+                }
+            )
+        }
+    )
+
+
 def build_page(
     content: str,
     *,
@@ -2141,6 +2164,65 @@ def test_split_primary_care_herb_drug_review_preserves_all_verified_pages() -> N
     assert chunks[-1].content.endswith("avoid fatal outcomes.")
     assert any(chunk.content.startswith("Disclosure patterns") for chunk in chunks)
     assert any(chunk.content.startswith("Conclusion") for chunk in chunks)
+
+
+def test_repair_st_johns_wort_review_uses_verified_body_and_summary_boundaries() -> None:
+    content = "\n".join(
+        [
+            "Interaction of St John’s wort with conventional drugs: systematic review of clinical trials",
+            "Abstract",
+            "Objective Abstract objective.",
+            "Conclusion Clinicians should beware of possible decreases.",
+            "Introduction",
+            "Introduction body. The purposes of this systematic review were to identify all trials, assess quality, and summarise their findings.",
+            "Methods",
+            "Data sources Methods body.",
+            "Statistical analysis We considered an interaction important. Owing to heterogeneity we did not pool results of the separate trials.",
+            "Results",
+            "Search results Search body.",
+            "Pharmacokinetic details Pharmacokinetic body.",
+            "Study design Study design body.",
+            "Effects of St John’s wort Effects body.",
+            "Characteristics of methods used in 22 reviewed studies remove table.",
+            "Discussion",
+            "Discussion body ends against bias in future recommendations.",
+            "We used a somewhat arbitrary threshold (20%) in AUC change. Clinicians and patients may use this information with an approach to their concomitant use.",
+            "What is already known on this topic",
+            "Some research has suggested decreased systemic bioavailability.",
+            "What this study adds",
+            "Clinical trials are limited. Clinicians lack information, particularly in conjunction with conventional drugs.",
+            "Mean percentage reported change forest plot caption remove this.",
+            "Contributors: remove this.",
+            "References remove this.",
+        ]
+    )
+    chunks = [build_st_johns_wort_review_chunk(content, chunk_index=0)]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+
+    expected_starts = [
+        "Interaction of St John’s wort",
+        "Introduction",
+        "Methods",
+        "Results\nSearch results",
+        "Pharmacokinetic details",
+        "Study design",
+        "Effects of St John’s wort",
+        "Discussion",
+        "We used a somewhat arbitrary threshold",
+        "What is already known on this topic",
+    ]
+    assert len(repaired) == len(expected_starts)
+    assert all(chunk.content.startswith(start) for chunk, start in zip(repaired, expected_starts, strict=True))
+    assert repaired[0].content.startswith(
+        "Interaction of St John’s wort with conventional drugs: systematic review of clinical trials\n\nAbstract\n"
+    )
+    joined = "\n".join(chunk.content for chunk in repaired)
+    assert "Characteristics of methods" not in joined
+    assert "Mean percentage reported change" not in joined
+    assert "Contributors:" not in joined
+    assert "References" not in joined
+    assert repaired[-1].content.endswith("particularly in conjunction with conventional drugs.")
 
 
 def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:

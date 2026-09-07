@@ -241,3 +241,23 @@ def test_pilot_manifest_rejects_invalid_approved_chunk_content_hash() -> None:
                 ],
             }
         )
+
+
+def test_pilot_manifest_accepts_reviewed_short_semantic_chunks() -> None:
+    manifest = KnowledgePilotManifest.model_validate(
+        {
+            "policy": "의미 경계 수동 검수",
+            "pilots": [
+                {
+                    "source_id": "research_source",
+                    "document_id": "research-document",
+                    "repo_path": "raw/document.pdf",
+                    "processing_status": "TEXT_EXTRACTABLE",
+                    "selection_reason": "짧지만 완결된 소제목 본문",
+                    "approved_review_reason_codes": ["SHORT_FRAGMENT_RATIO"],
+                }
+            ],
+        }
+    )
+
+    assert manifest.pilots[0].approved_review_reason_codes[0].value == ("SHORT_FRAGMENT_RATIO")
