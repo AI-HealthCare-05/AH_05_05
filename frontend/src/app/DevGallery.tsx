@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { UserRound } from 'lucide-react';
+import { Link } from 'react-router';
 import {
   BottomTabbar,
   Button,
@@ -49,6 +50,21 @@ export function DevGallery() {
           <p className="text-sm text-muted-foreground">
             디자인 토큰이 적용된 상태인지 확인하는 화면입니다.
           </p>
+
+          <section className="flex flex-col gap-2 rounded-card bg-card p-4 shadow-card" aria-labelledby="challenge-gallery-title">
+            <h2 id="challenge-gallery-title" className="font-bold text-foreground">챌린지 화면</h2>
+            <div className="flex flex-wrap gap-2">
+              <Link className="rounded-pill bg-primary-bg px-3 py-2 text-sm font-bold text-primary" to="/dev/challenges">
+                챌린지 홈
+              </Link>
+              <Link className="rounded-pill bg-primary-bg px-3 py-2 text-sm font-bold text-primary" to="/dev/challenges/tailored">
+                맞춤 챌린지
+              </Link>
+              <Link className="rounded-pill bg-primary-bg px-3 py-2 text-sm font-bold text-primary" to="/dev/challenges/badges">
+                내 배지
+              </Link>
+            </div>
+          </section>
 
           <Card tone="info" title="오늘의 복약" onClick={() => alert('복약 안내로 이동')}>
             08:00 · 셀레콕시브 200mg

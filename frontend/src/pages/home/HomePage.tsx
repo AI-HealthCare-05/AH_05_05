@@ -32,11 +32,13 @@ import { LoginPromptSheet } from './LoginPromptSheet';
 import { MedicationTimeline } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
 import { SupplementTodayCard } from './SupplementTodayCard';
+import { HomeChallengeSummary } from '@/pages/challenges/HomeChallengeSummary';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
 interface HomePageProps {
   authenticatedOverride?: boolean;
+  challengeEmpty?: boolean;
   medicationState?: MedicationHomeState;
   medicationOverviewsLoader?: () => Promise<MedicationOverview[]>;
   /** DevGallery의 기존 단일 fixture를 위한 전환기 호환 prop. */
@@ -55,6 +57,7 @@ interface DoseBatchChange {
 
 export function HomePage({
   authenticatedOverride,
+  challengeEmpty = false,
   medicationState,
   medicationOverviewsLoader,
   medicationOverviewLoader,
@@ -396,19 +399,7 @@ export function HomePage({
                     />
                   </div>
                 )}
-                {hasMedication && doseRecords ? (
-                  <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
-                    <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">
-                      챌린지
-                    </h2>
-                    <div
-                      data-challenge-placeholder
-                      className="flex h-[132px] items-center justify-center rounded-card bg-card shadow-card"
-                    >
-                      <p className="text-caption text-tertiary-foreground">준비 중이에요</p>
-                    </div>
-                  </section>
-                ) : null}
+                <HomeChallengeSummary empty={challengeEmpty} />
               </>
             ) : (
               <div
