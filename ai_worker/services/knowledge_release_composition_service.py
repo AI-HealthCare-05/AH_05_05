@@ -9,6 +9,7 @@ from ai_worker.rag.loaders.knowledge_chunk_loader import KnowledgeChunkLoader
 from ai_worker.schemas.knowledge import KnowledgeChunk
 from ai_worker.services.knowledge_pilot_preprocessing_service import (
     KnowledgeAutomaticQualityStatus,
+    KnowledgeChunkReviewStatus,
     KnowledgePilotPreprocessingResult,
     SkippedKnowledgeDocument,
 )
@@ -173,11 +174,17 @@ class KnowledgeReleaseCompositionService:
             actual_count = sum(chunk.metadata.document_id == document_id for chunk in chunks)
             if document_report.chunk_count != actual_count:
                 raise ValueError(f"문서별 품질 보고서와 청크 수가 일치하지 않습니다: {document_id}")
+            if not document_report.release_ready:
+                raise ValueError(f"품질 승인되지 않은 문서가 release에 포함되었습니다: {document_id}")
             if (
                 document_report.automatic_status != KnowledgeAutomaticQualityStatus.PASS
-                or not document_report.release_ready
+                and not document_report.partial_release
             ):
                 raise ValueError(f"품질 승인되지 않은 문서가 release에 포함되었습니다: {document_id}")
+            if document_report.released_chunk_count not in {0, actual_count}:
+                raise ValueError(f"릴리스 승인 청크 수가 일치하지 않습니다: {document_id}")
+            if any(review.status != KnowledgeChunkReviewStatus.APPROVED for review in document_report.chunk_reviews):
+                raise ValueError(f"승인되지 않은 청크가 release에 포함되었습니다: {document_id}")
 
     @staticmethod
     def _unique_skipped_documents(

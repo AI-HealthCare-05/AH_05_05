@@ -27,7 +27,9 @@ from ai_worker.schemas.knowledge_manifest import KnowledgePilotEntry
 from ai_worker.services.knowledge_pilot_preprocessing_service import (
     _COMPLEX_TABLE_PATTERN,
     KnowledgeAutomaticQualityStatus,
+    KnowledgeChunkReviewRecord,
     KnowledgeChunkReviewStatus,
+    KnowledgeDocumentPreprocessingReport,
     KnowledgePilotPreprocessingService,
 )
 
@@ -1876,6 +1878,247 @@ def test_chunk_manual_approval_is_scoped_to_matching_content_hash() -> None:
         KnowledgeChunkReviewStatus.REPAIR_REQUIRED,
     ]
     assert reviews[0].reason_codes == ["READING_ORDER_UNSAFE"]
+
+
+def test_approved_chunks_returns_only_explicitly_approved_chunks() -> None:
+    metadata = KnowledgeChunkMetadata(
+        source_id="research",
+        document_id="partial-release",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+        section_type=KnowledgeSectionType.RESULTS,
+        page_start=1,
+        page_end=1,
+        chunk_index=0,
+        content_hash="a" * 64,
+    )
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="1" * 64,
+            content="Approved evidence.",
+            embedding_text="Approved evidence.",
+            token_count=2,
+            metadata=metadata,
+        ),
+        KnowledgeChunk(
+            chunk_id="2" * 64,
+            content="Unsafe extraction.",
+            embedding_text="Unsafe extraction.",
+            token_count=2,
+            metadata=metadata.model_copy(
+                update={
+                    "chunk_index": 1,
+                    "content_hash": "b" * 64,
+                }
+            ),
+        ),
+    ]
+    reviews = [
+        KnowledgeChunkReviewRecord(
+            chunk_id=chunks[0].chunk_id,
+            chunk_index=0,
+            page_start=1,
+            page_end=1,
+            status=KnowledgeChunkReviewStatus.APPROVED,
+        ),
+        KnowledgeChunkReviewRecord(
+            chunk_id=chunks[1].chunk_id,
+            chunk_index=1,
+            page_start=1,
+            page_end=1,
+            status=KnowledgeChunkReviewStatus.REPAIR_REQUIRED,
+            reason_codes=["READING_ORDER_UNSAFE"],
+        ),
+    ]
+
+    approved = KnowledgePilotPreprocessingService._approved_chunks(
+        chunks=chunks,
+        reviews=reviews,
+    )
+
+    assert approved == [chunks[0]]
+
+
+def test_supplement_partial_release_approves_self_contained_safe_section() -> None:
+    shared_metadata = {
+        "source_id": "food_safety_korea_supplement_ingredients",
+        "document_id": "dietary-fiber",
+        "title": "식이섬유",
+        "provider": "식품안전나라",
+        "access_scope": KnowledgeAccessScope.PUBLIC,
+        "document_type": KnowledgeDocumentType.SUPPLEMENT_CODE,
+        "dataset_version": "pilot-v1",
+        "page_start": 1,
+        "page_end": 1,
+    }
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="1" * 64,
+            content="성분: 식이섬유\n일일섭취량: 식이섬유로서 5 g 이상",
+            embedding_text="식이섬유 일일섭취량",
+            token_count=10,
+            metadata=KnowledgeChunkMetadata(
+                **shared_metadata,
+                section_type=KnowledgeSectionType.DAILY_INTAKE,
+                chunk_index=0,
+                content_hash="a" * 64,
+            ),
+        ),
+        KnowledgeChunk(
+            chunk_id="2" * 64,
+            content="비타민 를 보충할 수 있도록 제조( ) A",
+            embedding_text="broken",
+            token_count=8,
+            metadata=KnowledgeChunkMetadata(
+                **shared_metadata,
+                section_type=KnowledgeSectionType.OTHER,
+                chunk_index=1,
+                content_hash="b" * 64,
+            ),
+        ),
+    ]
+    pilot = KnowledgePilotEntry.model_validate(
+        {
+            "source_id": "food_safety_korea_supplement_ingredients",
+            "document_id": "dietary-fiber",
+            "repo_path": "raw/dietary-fiber.pdf",
+            "processing_status": "TEXT_EXTRACTABLE",
+            "selection_reason": "원료별 부분 릴리스",
+            "manual_review_status": "APPROVED",
+        }
+    )
+
+    reviews = KnowledgePilotPreprocessingService._build_chunk_reviews(
+        pilot=pilot,
+        pages=[],
+        chunks=chunks,
+        automatic_status=KnowledgeAutomaticQualityStatus.BLOCKED,
+        reason_codes=[
+            "MISSING_REQUIRED_SUPPLEMENT_SECTION",
+            "MALFORMED_SUPPLEMENT_TEXT",
+        ],
+    )
+
+    assert [review.status for review in reviews] == [
+        KnowledgeChunkReviewStatus.APPROVED,
+        KnowledgeChunkReviewStatus.PENDING,
+    ]
+
+
+def test_partial_release_writes_only_approved_chunks(tmp_path: Path) -> None:
+    for directory in (
+        tmp_path / "quarantine" / "text",
+        tmp_path / "quarantine" / "chunks",
+        tmp_path / "release" / "text",
+        tmp_path / "release" / "chunks",
+    ):
+        directory.mkdir(parents=True)
+    metadata = KnowledgeChunkMetadata(
+        source_id="research",
+        document_id="partial-release",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+        section_type=KnowledgeSectionType.RESULTS,
+        page_start=1,
+        page_end=1,
+        chunk_index=0,
+        content_hash="a" * 64,
+    )
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="1" * 64,
+            content="Approved evidence.",
+            embedding_text="Approved evidence.",
+            token_count=2,
+            metadata=metadata,
+        ),
+        KnowledgeChunk(
+            chunk_id="2" * 64,
+            content="Unsafe extraction.",
+            embedding_text="Unsafe extraction.",
+            token_count=2,
+            metadata=metadata.model_copy(
+                update={
+                    "chunk_index": 1,
+                    "content_hash": "b" * 64,
+                }
+            ),
+        ),
+    ]
+    reviews = [
+        KnowledgeChunkReviewRecord(
+            chunk_id=chunks[0].chunk_id,
+            chunk_index=0,
+            page_start=1,
+            page_end=1,
+            status=KnowledgeChunkReviewStatus.APPROVED,
+        ),
+        KnowledgeChunkReviewRecord(
+            chunk_id=chunks[1].chunk_id,
+            chunk_index=1,
+            page_start=1,
+            page_end=1,
+            status=KnowledgeChunkReviewStatus.REPAIR_REQUIRED,
+        ),
+    ]
+    report = KnowledgeDocumentPreprocessingReport(
+        document_id="partial-release",
+        source_id="research",
+        source_document_path=Path("raw/partial.pdf"),
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        selection_reason="청크 단위 복원",
+        automatic_status=KnowledgeAutomaticQualityStatus.BLOCKED,
+        manual_review_status="APPROVED",
+        page_count=1,
+        character_count=40,
+        chunk_count=2,
+        min_chunk_tokens=2,
+        average_chunk_tokens=2,
+        max_chunk_tokens=2,
+        semantic_section_ratio=1,
+        chunk_reviews=reviews,
+        approved_chunk_count=1,
+        repair_required_chunk_count=1,
+        released_chunk_count=1,
+        partial_release=True,
+        release_ready=False,
+        review_sample_path=Path("review/partial-release.md"),
+    )
+    page = KnowledgePage(
+        content="Approved evidence. Unsafe extraction.",
+        metadata=KnowledgeMetadata(
+            source_id="research",
+            document_id="partial-release",
+            title="Interaction review",
+            provider="Journal",
+            access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+            document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+            dataset_version="pilot-v1",
+        ),
+        page_number=1,
+    )
+
+    KnowledgePilotPreprocessingService._write_candidate_and_release_outputs(
+        document_id="partial-release",
+        normalized_pages=[page],
+        chunks=chunks,
+        report=report,
+        quarantine_text_output=tmp_path / "quarantine" / "text",
+        quarantine_chunk_output=tmp_path / "quarantine" / "chunks",
+        release_text_output=tmp_path / "release" / "text",
+        release_chunk_output=tmp_path / "release" / "chunks",
+    )
+
+    release_path = tmp_path / "release" / "chunks" / "partial-release.jsonl"
+    released = [json.loads(line) for line in release_path.read_text().splitlines()]
+    assert [item["chunk_id"] for item in released] == [chunks[0].chunk_id]
+    assert not (tmp_path / "release" / "text" / "partial-release.jsonl").exists()
 
 
 def test_table_warning_does_not_quarantine_text_on_the_same_page() -> None:

@@ -178,3 +178,20 @@ release 판정은 검색·출처 정확도와 잘못된 개체 혼합 방지를 
 따라서 기존 구조를 영구히 이중 운영하려는 것이 아니라, 사용자 응답 경로를 안전하게 교체하기 전 객관적인 비교 기준과 롤백 대상을 남겨두는 과정입니다.
 
 `knowledge-pilot-v1` 검증 결과와 실험 중 수정한 검색 조건은 `EVALUATION_RESULTS.md`에 기록합니다. 이후 비교는 삭제된 과거 컬렉션이 아니라, 새 dataset/collection 버전을 불변 release로 추가해 같은 평가 질문 세트로 수행합니다.
+
+## 11. 전체 코퍼스 부분 복원 정책
+
+대표 PDF에서 사람이 원문과 대조해 승인한 규칙은 같은 `source_id`와 문서 유형의
+전체 PDF에 적용합니다. 이때 자동 품질 검사에서 문제가 발견됐다는 이유만으로 문서
+전체를 폐기하지 않습니다.
+
+- `APPROVED` 청크만 `release/chunks`에 기록하여 임베딩 후보로 사용합니다.
+- `PENDING`, `REPAIR_REQUIRED` 청크는 `quarantine/chunks`에 원래 청크와 사유를 함께 보관합니다.
+- 참고문헌·저자·머리글·꼬리글처럼 검색 가치가 없는 청크는 `EXCLUDED_NON_CONTENT`로 기록하고 인덱싱하지 않습니다.
+- 문서 전체가 `BLOCKED`여도 안전한 `APPROVED` 청크가 하나 이상 있으면 부분 릴리스합니다.
+- 승인 청크가 하나도 없는 문서만 문서 단위 제외로 집계합니다.
+- `OCR_REQUIRED` 문서는 OCR 결과가 없는 상태에서 강제로 인덱싱하지 않습니다. 대신 `reports/ocr-required.jsonl`에 출처·원본 경로·SHA-256을 기록해 OCR 처리 대기열로 남깁니다.
+
+전체 dry-run에는 기존 대표 품질 보고서와 추가 연구 대표 품질 보고서를 함께 전달합니다.
+`reports/recovery-summary.json`과 `recovery-summary.md`에서 기존 제외 문서 중 복원된 수,
+부분 승인 수, 남은 제외 사유, OCR 대기 수를 확인한 뒤에만 새 불변 Qdrant 컬렉션을 생성합니다.

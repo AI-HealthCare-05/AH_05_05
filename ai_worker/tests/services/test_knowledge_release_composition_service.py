@@ -198,6 +198,36 @@ def test_compose_rejects_duplicate_document_ids(tmp_path: Path) -> None:
         )
 
 
+def test_compose_accepts_partial_release_with_only_approved_chunks(
+    tmp_path: Path,
+) -> None:
+    release = write_release(
+        tmp_path / "partial",
+        marker="p",
+        document_id="partial-document",
+        dataset_version="release-partial",
+    )
+    raw_report = json.loads(release.quality_report_path.read_text(encoding="utf-8"))
+    document_report = raw_report["document_reports"][0]
+    document_report["automatic_status"] = "BLOCKED"
+    document_report["partial_release"] = True
+    document_report["released_chunk_count"] = 1
+    document_report["release_ready"] = True
+    release.quality_report_path.write_text(
+        json.dumps(raw_report, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    result = KnowledgeReleaseCompositionService().compose(
+        inputs=[release],
+        output_root=tmp_path / "combined",
+        dataset_version="release-combined",
+    )
+
+    assert result.processed_document_count == 1
+    assert result.document_reports[0].partial_release is True
+
+
 def test_compose_rejects_existing_output_directory(tmp_path: Path) -> None:
     release = write_release(
         tmp_path / "first",

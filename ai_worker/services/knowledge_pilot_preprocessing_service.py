@@ -105,6 +105,22 @@ _REQUIRED_SUPPLEMENT_SECTIONS = frozenset(
         KnowledgeSectionType.DAILY_INTAKE,
     }
 )
+_PARTIAL_RELEASE_SUPPLEMENT_SECTIONS = frozenset(
+    {
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    }
+)
+_PARTIAL_RELEASE_SUPPLEMENT_REASON_CODES = frozenset(
+    {
+        KnowledgeAutomaticQualityReasonCode.MISSING_REQUIRED_SUPPLEMENT_SECTION.value,
+        KnowledgeAutomaticQualityReasonCode.MISSING_SUPPLEMENT_CONTEXT.value,
+        KnowledgeAutomaticQualityReasonCode.MALFORMED_SUPPLEMENT_TEXT.value,
+        KnowledgeAutomaticQualityReasonCode.SUPPLEMENT_SECTION_CONTAMINATION.value,
+    }
+)
 _MALFORMED_SUPPLEMENT_TEXT_PATTERNS = (
     re.compile(r"\)\("),
     re.compile(r"\(\s*\)"),
@@ -213,6 +229,8 @@ class KnowledgeDocumentPreprocessingReport(BaseModel):
     pending_chunk_count: int = Field(default=0, ge=0)
     repair_required_chunk_count: int = Field(default=0, ge=0)
     excluded_non_content_chunk_count: int = Field(default=0, ge=0)
+    released_chunk_count: int = Field(default=0, ge=0)
+    partial_release: bool = False
     release_ready: bool = False
     review_sample_path: Path
 
@@ -475,15 +493,20 @@ class KnowledgePilotPreprocessingService:
                 )
             ),
         )
-        if not report.release_ready:
-            return
-        cls._write_jsonl(
-            release_text_output / f"{document_id}.jsonl",
-            (page.model_dump_json() for page in normalized_pages),
+        approved_chunks = cls._approved_chunks(
+            chunks=chunks,
+            reviews=report.chunk_reviews,
         )
+        if not approved_chunks:
+            return
+        if report.release_ready:
+            cls._write_jsonl(
+                release_text_output / f"{document_id}.jsonl",
+                (page.model_dump_json() for page in normalized_pages),
+            )
         cls._write_jsonl(
             release_chunk_output / f"{document_id}.jsonl",
-            (chunk.model_dump_json() for chunk in chunks),
+            (chunk.model_dump_json() for chunk in approved_chunks),
         )
 
     def _build_document_report(
@@ -550,8 +573,10 @@ class KnowledgePilotPreprocessingService:
             pages=normalized_pages,
             chunks=chunks,
             automatic_status=automatic_status,
+            reason_codes=reason_codes,
         )
         status_counts = Counter(review.status for review in chunk_reviews)
+        released_chunk_count = status_counts[KnowledgeChunkReviewStatus.APPROVED]
         release_ready = (
             automatic_status == KnowledgeAutomaticQualityStatus.PASS
             and pilot.manual_review_status == KnowledgeManualReviewStatus.APPROVED
@@ -615,9 +640,23 @@ class KnowledgePilotPreprocessingService:
             pending_chunk_count=status_counts[KnowledgeChunkReviewStatus.PENDING],
             repair_required_chunk_count=status_counts[KnowledgeChunkReviewStatus.REPAIR_REQUIRED],
             excluded_non_content_chunk_count=status_counts[KnowledgeChunkReviewStatus.EXCLUDED_NON_CONTENT],
+            released_chunk_count=released_chunk_count,
+            partial_release=(released_chunk_count > 0 and released_chunk_count < len(chunks)),
             release_ready=release_ready,
             review_sample_path=review_sample_path,
         )
+
+    @staticmethod
+    def _approved_chunks(
+        *,
+        chunks: list[KnowledgeChunk],
+        reviews: list[KnowledgeChunkReviewRecord],
+    ) -> list[KnowledgeChunk]:
+        return [
+            chunk
+            for review, chunk in zip(reviews, chunks, strict=True)
+            if review.status == KnowledgeChunkReviewStatus.APPROVED
+        ]
 
     @staticmethod
     def _build_chunk_reviews(
@@ -626,6 +665,7 @@ class KnowledgePilotPreprocessingService:
         pages: list[KnowledgePage],
         chunks: list[KnowledgeChunk],
         automatic_status: KnowledgeAutomaticQualityStatus,
+        reason_codes: list[KnowledgeAutomaticQualityReasonCode | str] | None = None,
     ) -> list[KnowledgeChunkReviewRecord]:
         blocking_warnings_by_page = {
             page.page_number: [
@@ -665,6 +705,12 @@ class KnowledgePilotPreprocessingService:
                 status = KnowledgeChunkReviewStatus.APPROVED
             elif reasons:
                 status = KnowledgeChunkReviewStatus.REPAIR_REQUIRED
+            elif KnowledgePilotPreprocessingService._is_partially_releasable_supplement_chunk(
+                pilot=pilot,
+                chunk=chunk,
+                document_reason_codes=reason_codes or [],
+            ):
+                status = KnowledgeChunkReviewStatus.APPROVED
             elif (
                 automatic_status == KnowledgeAutomaticQualityStatus.PASS
                 and pilot.manual_review_status == KnowledgeManualReviewStatus.APPROVED
@@ -683,6 +729,37 @@ class KnowledgePilotPreprocessingService:
                 )
             )
         return reviews
+
+    @staticmethod
+    def _is_partially_releasable_supplement_chunk(
+        *,
+        pilot: KnowledgePilotEntry,
+        chunk: KnowledgeChunk,
+        document_reason_codes: list[KnowledgeAutomaticQualityReasonCode | str],
+    ) -> bool:
+        if pilot.manual_review_status != KnowledgeManualReviewStatus.APPROVED:
+            return False
+        if chunk.metadata.document_type != KnowledgeDocumentType.SUPPLEMENT_CODE:
+            return False
+        if chunk.metadata.section_type not in _PARTIAL_RELEASE_SUPPLEMENT_SECTIONS:
+            return False
+        if chunk.token_count < 6 or not chunk.content.lstrip().startswith("성분:"):
+            return False
+        if any(pattern.search(chunk.content) for pattern in _MALFORMED_SUPPLEMENT_TEXT_PATTERNS):
+            return False
+        forbidden_headings = _SUPPLEMENT_SECTION_FORBIDDEN_HEADINGS.get(
+            chunk.metadata.section_type,
+            (),
+        )
+        if any(re.search(pattern, chunk.content, flags=re.IGNORECASE) for pattern in forbidden_headings):
+            return False
+        reason_values = {
+            reason.value if isinstance(reason, KnowledgeAutomaticQualityReasonCode) else reason
+            for reason in document_reason_codes
+        }
+        return bool(reason_values) and reason_values.issubset(
+            _PARTIAL_RELEASE_SUPPLEMENT_REASON_CODES,
+        )
 
     @staticmethod
     def _general_quality_reason_codes(

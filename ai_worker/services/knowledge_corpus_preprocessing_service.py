@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import yaml
@@ -16,9 +17,14 @@ from ai_worker.schemas.knowledge_manifest import (
 )
 from ai_worker.services.knowledge_pilot_preprocessing_service import (
     KnowledgeAutomaticQualityStatus,
+    KnowledgeChunkReviewStatus,
+    KnowledgeDocumentPreprocessingReport,
     KnowledgePilotPreprocessingResult,
     KnowledgePilotPreprocessingService,
     SkippedKnowledgeDocument,
+)
+from ai_worker.services.knowledge_recovery_reporting_service import (
+    KnowledgeRecoveryReportingService,
 )
 
 
@@ -45,19 +51,29 @@ class KnowledgeCorpusManifestBuilder:
         *,
         documents_path: Path,
         sources_path: Path,
-        pilot_quality_report_path: Path,
+        pilot_quality_report_path: Path | None = None,
+        pilot_quality_report_paths: list[Path] | None = None,
         pilot_manifest_path: Path | None = None,
+        pilot_manifest_paths: list[Path] | None = None,
+        ocr_artifact_root: Path | None = None,
     ) -> KnowledgePilotManifest:
         sources = KnowledgeSourcesManifest.model_validate(
             yaml.safe_load(Path(sources_path).read_text(encoding="utf-8"))
         )
         source_by_id = {source.source_id: source for source in sources.sources}
-        pilot_quality = KnowledgePilotPreprocessingResult.model_validate_json(
-            Path(pilot_quality_report_path).read_text(encoding="utf-8")
+        quality_report_paths = self._normalized_paths(
+            singular=pilot_quality_report_path,
+            plural=pilot_quality_report_paths,
+            label="대표 품질 보고서",
         )
-        approved_sources = set(pilot_quality.ready_for_bulk_source_ids)
+        approved_sources: set[str] = set()
+        for quality_report_path in quality_report_paths:
+            approved_sources.update(
+                self._load_approved_source_ids(quality_report_path),
+            )
         reviewed_by_document_id = self._load_reviewed_entries(
-            pilot_manifest_path,
+            pilot_manifest_path=pilot_manifest_path,
+            pilot_manifest_paths=pilot_manifest_paths,
         )
         selected: list[KnowledgePilotEntry] = []
         seen_hashes: set[str] = set()
@@ -68,7 +84,17 @@ class KnowledgeCorpusManifestBuilder:
                 continue
             if document.source_id not in approved_sources:
                 continue
-            if document.processing_status != KnowledgeProcessingStatus.TEXT_EXTRACTABLE:
+            is_artifact_backed_ocr = (
+                document.processing_status == KnowledgeProcessingStatus.OCR_REQUIRED
+                and self._has_ocr_artifact(
+                    artifact_root=ocr_artifact_root,
+                    document_id=document.document_id,
+                )
+            )
+            if (
+                document.processing_status != KnowledgeProcessingStatus.TEXT_EXTRACTABLE
+                and not is_artifact_backed_ocr
+            ):
                 continue
             if document.repo_path.suffix.casefold() != ".pdf":
                 continue
@@ -83,7 +109,11 @@ class KnowledgeCorpusManifestBuilder:
                     source_id=document.source_id,
                     document_id=document.document_id,
                     repo_path=document.repo_path,
-                    processing_status=document.processing_status,
+                    processing_status=(
+                        KnowledgeProcessingStatus.TEXT_EXTRACTABLE
+                        if is_artifact_backed_ocr
+                        else document.processing_status
+                    ),
                     selection_reason=(
                         reviewed.selection_reason
                         if reviewed is not None
@@ -126,15 +156,77 @@ class KnowledgeCorpusManifestBuilder:
         )
 
     @staticmethod
+    def _has_ocr_artifact(
+        *,
+        artifact_root: Path | None,
+        document_id: str,
+    ) -> bool:
+        return artifact_root is not None and (Path(artifact_root) / f"{document_id}.json").is_file()
+
+    @staticmethod
+    def _load_approved_source_ids(quality_report_path: Path) -> list[str]:
+        """Read the stable source approval contract from legacy quality reports.
+
+        Historical quality reports can lack fields newly added to per-document
+        reports. The manifest builder only needs the top-level approved source
+        list, so it must not deserialize unrelated document details.
+        """
+        try:
+            payload = json.loads(Path(quality_report_path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"대표 품질 보고서 JSON이 올바르지 않습니다: {quality_report_path}",
+            ) from error
+        source_ids = payload.get("ready_for_bulk_source_ids")
+        if not isinstance(source_ids, list) or not all(
+            isinstance(source_id, str) and source_id.strip() for source_id in source_ids
+        ):
+            raise ValueError(
+                f"대표 품질 보고서의 ready_for_bulk_source_ids가 올바르지 않습니다: {quality_report_path}",
+            )
+        return source_ids
+
+    @staticmethod
     def _load_reviewed_entries(
+        *,
         pilot_manifest_path: Path | None,
+        pilot_manifest_paths: list[Path] | None,
     ) -> dict[str, KnowledgePilotEntry]:
-        if pilot_manifest_path is None:
-            return {}
-        manifest = KnowledgePilotManifest.model_validate_json(
-            Path(pilot_manifest_path).read_text(encoding="utf-8"),
+        paths = KnowledgeCorpusManifestBuilder._normalized_paths(
+            singular=pilot_manifest_path,
+            plural=pilot_manifest_paths,
+            label="대표 매니페스트",
+            required=False,
         )
-        return {entry.document_id: entry for entry in manifest.pilots}
+        reviewed: dict[str, KnowledgePilotEntry] = {}
+        for path in paths:
+            manifest = KnowledgePilotManifest.model_validate_json(
+                Path(path).read_text(encoding="utf-8"),
+            )
+            for entry in manifest.pilots:
+                existing = reviewed.get(entry.document_id)
+                if existing is not None and existing != entry:
+                    raise ValueError(
+                        f"대표 매니페스트에 충돌하는 문서 검수 정의가 있습니다: {entry.document_id}",
+                    )
+                reviewed[entry.document_id] = entry
+        return reviewed
+
+    @staticmethod
+    def _normalized_paths(
+        *,
+        singular: Path | None,
+        plural: list[Path] | None,
+        label: str,
+        required: bool = True,
+    ) -> list[Path]:
+        paths = list(plural or [])
+        if singular is not None:
+            paths.append(singular)
+        unique_paths = list(dict.fromkeys(Path(path) for path in paths))
+        if required and not unique_paths:
+            raise ValueError(f"{label}가 하나 이상 필요합니다.")
+        return unique_paths
 
     @staticmethod
     def _load_documents(
@@ -169,16 +261,24 @@ class KnowledgeCorpusPreprocessingService:
         *,
         documents_path: Path,
         sources_path: Path,
-        pilot_quality_report_path: Path,
+        pilot_quality_report_path: Path | None = None,
+        pilot_quality_report_paths: list[Path] | None = None,
         pilot_manifest_path: Path | None = None,
+        pilot_manifest_paths: list[Path] | None = None,
+        ocr_artifact_root: Path | None = None,
         output_root: Path,
         dataset_version: str,
+        baseline_quality_report_path: Path | None = None,
+        recovery_reporting_service: KnowledgeRecoveryReportingService | None = None,
     ) -> KnowledgePilotPreprocessingResult:
         manifest = self._manifest_builder.build(
             documents_path=documents_path,
             sources_path=sources_path,
             pilot_quality_report_path=pilot_quality_report_path,
+            pilot_quality_report_paths=pilot_quality_report_paths,
             pilot_manifest_path=pilot_manifest_path,
+            pilot_manifest_paths=pilot_manifest_paths,
+            ocr_artifact_root=ocr_artifact_root,
         )
         report_root = Path(output_root) / "reports"
         report_root.mkdir(parents=True, exist_ok=True)
@@ -193,10 +293,18 @@ class KnowledgeCorpusPreprocessingService:
             output_root=output_root,
             dataset_version=dataset_version,
         )
-        return self.finalize_release(
+        release = self.finalize_release(
             result=result,
             output_root=output_root,
         )
+        if baseline_quality_report_path is not None:
+            (recovery_reporting_service or KnowledgeRecoveryReportingService()).write(
+                documents_path=documents_path,
+                baseline_quality_report_path=baseline_quality_report_path,
+                result=release,
+                output_root=output_root,
+            )
+        return release
 
     @staticmethod
     def finalize_release(
@@ -212,44 +320,93 @@ class KnowledgeCorpusPreprocessingService:
             encoding="utf-8",
         )
 
-        pass_reports = [
-            report
-            for report in result.document_reports
-            if report.automatic_status == KnowledgeAutomaticQualityStatus.PASS
-        ]
-        pass_ids = {report.document_id for report in pass_reports}
-        non_pass_reports = [report for report in result.document_reports if report.document_id not in pass_ids]
-        for report in non_pass_reports:
-            for directory in ("chunks", "text"):
-                (root / directory / f"{report.document_id}.jsonl").unlink(missing_ok=True)
-
+        chunks_root = root / "chunks"
+        release_chunks_root = root / "release" / "chunks"
+        chunks_root.mkdir(parents=True, exist_ok=True)
+        released_reports: list[KnowledgeDocumentPreprocessingReport] = []
+        released_ids: set[str] = set()
         chunk_count = 0
-        for report in pass_reports:
-            path = root / "chunks" / f"{report.document_id}.jsonl"
-            if not path.is_file():
-                raise ValueError(f"자동 PASS 문서의 청크 파일이 없습니다: {report.document_id}")
-            chunk_count += sum(bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines())
+
+        for report in result.document_reports:
+            target_path = chunks_root / f"{report.document_id}.jsonl"
+            partial_path = release_chunks_root / f"{report.document_id}.jsonl"
+            source_path = (
+                partial_path
+                if partial_path.is_file()
+                else target_path
+                if report.automatic_status == KnowledgeAutomaticQualityStatus.PASS and target_path.is_file()
+                else None
+            )
+            if source_path is None:
+                target_path.unlink(missing_ok=True)
+                (root / "text" / f"{report.document_id}.jsonl").unlink(missing_ok=True)
+                continue
+
+            content = source_path.read_text(encoding="utf-8")
+            released_chunk_count = sum(bool(line.strip()) for line in content.splitlines())
+            if released_chunk_count == 0:
+                target_path.unlink(missing_ok=True)
+                (root / "text" / f"{report.document_id}.jsonl").unlink(missing_ok=True)
+                continue
+            if source_path != target_path:
+                target_path.write_text(content, encoding="utf-8")
+
+            released_ids.add(report.document_id)
+            chunk_count += released_chunk_count
+            released_reports.append(
+                KnowledgeCorpusPreprocessingService._release_report(
+                    report=report,
+                    released_chunk_count=released_chunk_count,
+                )
+            )
 
         skipped = list(result.skipped_documents)
+        skipped = [item for item in skipped if item.document_id not in released_ids]
         skipped_ids = {item.document_id for item in skipped}
         skipped.extend(
             SkippedKnowledgeDocument(
                 document_id=report.document_id,
                 reason=f"AUTOMATIC_QUALITY_{report.automatic_status.value}",
             )
-            for report in non_pass_reports
+            for report in result.document_reports
+            if report.document_id not in released_ids
             if report.document_id not in skipped_ids
         )
         release = KnowledgePilotPreprocessingResult(
             dataset_version=result.dataset_version,
-            processed_document_count=len(pass_reports),
+            processed_document_count=len(released_reports),
             chunk_count=chunk_count,
             skipped_documents=skipped,
-            document_reports=pass_reports,
-            ready_for_bulk_source_ids=sorted({report.source_id for report in pass_reports}),
+            document_reports=released_reports,
+            ready_for_bulk_source_ids=sorted(
+                {report.source_id for report in released_reports},
+            ),
         )
         (report_root / "preprocessing-quality.json").write_text(
             release.model_dump_json(indent=2),
             encoding="utf-8",
         )
         return release
+
+    @staticmethod
+    def _release_report(
+        *,
+        report: KnowledgeDocumentPreprocessingReport,
+        released_chunk_count: int,
+    ) -> KnowledgeDocumentPreprocessingReport:
+        approved_reviews = [
+            review for review in report.chunk_reviews if review.status == KnowledgeChunkReviewStatus.APPROVED
+        ]
+        return report.model_copy(
+            update={
+                "chunk_count": released_chunk_count,
+                "approved_chunk_count": released_chunk_count,
+                "pending_chunk_count": 0,
+                "repair_required_chunk_count": 0,
+                "excluded_non_content_chunk_count": 0,
+                "released_chunk_count": released_chunk_count,
+                "partial_release": (report.partial_release or released_chunk_count < report.chunk_count),
+                "release_ready": True,
+                "chunk_reviews": approved_reviews,
+            }
+        )
