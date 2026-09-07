@@ -1,18 +1,32 @@
+from datetime import datetime
 from enum import StrEnum
 
 from cryptography.fernet import Fernet, InvalidToken
-from pydantic import BaseModel, EmailStr, Field, SecretStr, ValidationError
+from pydantic import BaseModel, EmailStr, Field, SecretStr, ValidationError, model_validator
 
 
 class EmailTemplate(StrEnum):
     ADMIN_TEMPORARY_PASSWORD = "ADMIN_TEMPORARY_PASSWORD"
+    SIGNUP_VERIFICATION_CODE = "SIGNUP_VERIFICATION_CODE"
 
 
 class EmailJobPayload(BaseModel):
     template: EmailTemplate
     recipient_email: EmailStr
-    recipient_name: str = Field(min_length=1, max_length=100)
-    temporary_password: str = Field(min_length=1, max_length=255)
+    recipient_name: str | None = Field(default=None, min_length=1, max_length=100)
+    temporary_password: str | None = Field(default=None, min_length=1, max_length=255)
+    verification_id: int | None = Field(default=None, gt=0)
+    verification_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    expires_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_template_fields(self) -> "EmailJobPayload":
+        if self.template is EmailTemplate.ADMIN_TEMPORARY_PASSWORD:
+            if self.recipient_name is None or self.temporary_password is None:
+                raise ValueError("관리자 임시비밀번호 이메일 필드가 누락되었습니다.")
+        elif self.verification_id is None or self.verification_code is None or self.expires_at is None:
+            raise ValueError("회원가입 이메일 인증 필드가 누락되었습니다.")
+        return self
 
 
 class EmailPayloadConfigurationError(RuntimeError):

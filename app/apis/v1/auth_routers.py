@@ -7,6 +7,10 @@ from app.core import config
 from app.core.config import Env
 from app.dtos.auth import (
     AuthErrorResponse,
+    EmailVerificationCodeRequest,
+    EmailVerificationRequest,
+    EmailVerificationRequestResponse,
+    EmailVerificationVerifyResponse,
     LoginRequest,
     LoginResponse,
     SignUpRequest,
@@ -14,9 +18,15 @@ from app.dtos.auth import (
     TokenRefreshResponse,
 )
 from app.services.auth import AuthService
+from app.services.email_verifications import EmailVerificationService
 from app.services.jwt import JwtService
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def get_email_verification_service() -> EmailVerificationService:
+    return EmailVerificationService()
+
 
 # 관리자도 리프레시 쿠키를 쓴다(admin_refresh_token, /api/v1/admin/auth).
 # 이름과 경로가 겹치면 브라우저가 둘 다 보내 서버가 어느 쪽인지 알 수 없다.
@@ -47,6 +57,40 @@ def _login_error(exc: HTTPException) -> Response:
     """
     code = _LOGIN_ERROR_CODES.get(exc.status_code, "LOGIN_FAILED")
     return Response(content={"code": code, "message": str(exc.detail)}, status_code=exc.status_code)
+
+
+@auth_router.post(
+    "/email-verifications",
+    response_model=EmailVerificationRequestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_email_verification(
+    request: EmailVerificationRequest,
+    service: Annotated[EmailVerificationService, Depends(get_email_verification_service)],
+) -> EmailVerificationRequestResponse:
+    result = await service.request(str(request.email))
+    return EmailVerificationRequestResponse(
+        verification_id=result.verification_id,
+        expires_in=result.expires_in,
+        resend_available_in=result.resend_available_in,
+    )
+
+
+@auth_router.post(
+    "/email-verifications/{verification_id}/verify",
+    response_model=EmailVerificationVerifyResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def verify_email_verification(
+    verification_id: int,
+    request: EmailVerificationCodeRequest,
+    service: Annotated[EmailVerificationService, Depends(get_email_verification_service)],
+) -> EmailVerificationVerifyResponse:
+    result = await service.verify(verification_id, request.code)
+    return EmailVerificationVerifyResponse(
+        verification_token=result.verification_token,
+        expires_in=result.expires_in,
+    )
 
 
 @auth_router.post(

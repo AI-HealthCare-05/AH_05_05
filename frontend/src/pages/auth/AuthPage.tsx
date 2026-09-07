@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { createAccount, type Gender } from '@/entities/account';
 import { login } from '@/entities/auth';
+import { requestEmailVerification, verifyEmailCode } from '@/entities/email-verification';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { ApiError } from '@/shared/api/client';
 import {
@@ -44,7 +45,11 @@ export function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login');
   const [signupStep, setSignupStep] = useState<SignupStep>(1);
   const [verificationCode, setVerificationCode] = useState('');
-  const [verificationSeconds, setVerificationSeconds] = useState(5 * 60);
+  const [verificationId, setVerificationId] = useState<number | null>(null);
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
+  const [verificationSeconds, setVerificationSeconds] = useState(0);
+  const [verificationExpiresAt, setVerificationExpiresAt] = useState<number | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const [recordTerms, setRecordTerms] = useState(false);
   const [aiTerms, setAiTerms] = useState(false);
   const [email, setEmail] = useState('');
@@ -72,18 +77,28 @@ export function AuthPage() {
   }, [emailError, mode, signupStep]);
 
   useEffect(() => {
-    if (mode !== 'signup' || signupStep !== 2) return;
-    setVerificationSeconds(5 * 60);
+    if (mode !== 'signup' || signupStep !== 2 || verificationExpiresAt === null) return;
+    const updateRemainingSeconds = () => {
+      setVerificationSeconds(
+        Math.max(0, Math.ceil((verificationExpiresAt - Date.now()) / 1_000)),
+      );
+    };
+    updateRemainingSeconds();
     const timer = window.setInterval(() => {
-      setVerificationSeconds((seconds) => Math.max(0, seconds - 1));
-    }, 1_000);
+      updateRemainingSeconds();
+    }, 250);
     return () => window.clearInterval(timer);
-  }, [mode, signupStep]);
+  }, [mode, signupStep, verificationExpiresAt]);
 
   /** 탭을 옮길 때는 가입 흐름을 새로 시작합니다. 같은 탭을 다시 누르는 경우는 보존합니다. */
   function resetAuthForm() {
     setSignupStep(1);
     setVerificationCode('');
+    setVerificationId(null);
+    setVerificationToken(null);
+    setVerificationSeconds(0);
+    setVerificationExpiresAt(null);
+    setVerificationError(null);
     setEmail('');
     setPassword('');
     setPasswordConfirm('');
@@ -110,6 +125,12 @@ export function AuthPage() {
     if (sanitized !== typed) input.value = sanitized;
     setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
     setEmail(sanitized);
+    setVerificationId(null);
+    setVerificationToken(null);
+    setVerificationCode('');
+    setVerificationSeconds(0);
+    setVerificationExpiresAt(null);
+    setVerificationError(null);
   }
 
   function applyNameInput(input: HTMLInputElement) {
@@ -125,6 +146,14 @@ export function AuthPage() {
 
   function goBack() {
     if (mode === 'signup' && signupStep > 1) {
+      if (signupStep === 2) {
+        setVerificationId(null);
+        setVerificationToken(null);
+        setVerificationCode('');
+        setVerificationSeconds(0);
+        setVerificationExpiresAt(null);
+        setVerificationError(null);
+      }
       setSignupStep((step) => (step - 1) as SignupStep);
       setLoginError(null);
       return;
@@ -165,13 +194,41 @@ export function AuthPage() {
     }
 
     if (signupStep === 1) {
-      setSignupStep(2);
+      setSaving(true);
+      setEmailError(null);
+      try {
+        const result = await requestEmailVerification(email);
+        setVerificationId(result.verificationId);
+        setVerificationToken(null);
+        setVerificationCode('');
+        setVerificationError(null);
+        setVerificationSeconds(result.expiresIn);
+        setVerificationExpiresAt(Date.now() + result.expiresIn * 1_000);
+        setSignupStep(2);
+      } catch (error) {
+        setEmailError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
     if (signupStep === 2) {
-      if (!/^\d{6}$/.test(verificationCode)) return;
-      setSignupStep(3);
+      if (!/^\d{6}$/.test(verificationCode) || verificationId === null || verificationSeconds === 0)
+        return;
+      setSaving(true);
+      setVerificationError(null);
+      try {
+        const result = await verifyEmailCode(verificationId, verificationCode);
+        setVerificationToken(result.verificationToken);
+        setSignupStep(3);
+      } catch (error) {
+        setVerificationError(
+          error instanceof ApiError ? error.message : '인증번호를 확인해주세요.',
+        );
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
@@ -185,6 +242,11 @@ export function AuthPage() {
     }
 
     if (!recordTerms || !aiTerms || !gender) return;
+    if (!verificationToken) {
+      setSignupStep(1);
+      setEmailError('이메일 인증을 다시 진행해주세요.');
+      return;
+    }
     const nextBirthDateError = validateBirthDate(birthDate);
     const nextNameError = validateName(name);
     const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
@@ -202,6 +264,7 @@ export function AuthPage() {
         phoneNumber,
         birthDate,
         gender,
+        emailVerificationToken: verificationToken,
       });
       prepareMedicationStateForNewAccount();
       // 회원가입 응답에는 액세스 토큰이 없으므로 같은 자격증명으로 로그인까지 완료합니다.
@@ -422,24 +485,58 @@ export function AuthPage() {
                     pattern="[0-9]{6}"
                     maxLength={VERIFICATION_CODE_LENGTH}
                     value={verificationCode}
+                    error={verificationError ?? undefined}
+                    disabled={verificationSeconds === 0 || saving}
                     trailingAction={
                       <span aria-label="남은 시간" className="px-2 text-caption text-primary">
                         {String(Math.floor(verificationSeconds / 60)).padStart(2, '0')}:
                         {String(verificationSeconds % 60).padStart(2, '0')}
                       </span>
                     }
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setVerificationCode(
                         event.target.value.replace(/\D/g, '').slice(0, VERIFICATION_CODE_LENGTH),
-                      )
-                    }
-                    hint="메일이 안 왔나요? 다시 보내기"
+                      );
+                      setVerificationError(null);
+                    }}
                     required
                   />
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <span>메일이 안 왔나요?</span>
+                    <button
+                      type="button"
+                      className="min-h-touch font-semibold text-primary disabled:cursor-not-allowed disabled:text-tertiary-foreground"
+                      disabled={verificationSeconds > 0 || saving}
+                      onClick={async () => {
+                        setSaving(true);
+                        try {
+                          const result = await requestEmailVerification(email);
+                          setVerificationId(result.verificationId);
+                          setVerificationToken(null);
+                          setVerificationCode('');
+                          setVerificationError(null);
+                          setVerificationSeconds(result.expiresIn);
+                          setVerificationExpiresAt(Date.now() + result.expiresIn * 1_000);
+                        } catch (error) {
+                          setVerificationError(
+                            error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR,
+                          );
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                    >
+                      다시 보내기
+                    </button>
+                  </div>
                   <Button
                     type="submit"
                     className="mt-auto"
-                    disabled={saving || verificationCode.length !== VERIFICATION_CODE_LENGTH}
+                    disabled={
+                      saving ||
+                      verificationSeconds === 0 ||
+                      verificationCode.length !== VERIFICATION_CODE_LENGTH
+                    }
                   >
                     확인
                   </Button>

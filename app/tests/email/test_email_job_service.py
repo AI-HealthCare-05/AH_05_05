@@ -1,10 +1,11 @@
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 from cryptography.fernet import Fernet
 from tortoise.contrib.test import TestCase
 
 from app.core import config
-from app.core.email.payload import EmailPayloadCodec, EmailPayloadConfigurationError
+from app.core.email.payload import EmailPayloadCodec, EmailPayloadConfigurationError, EmailTemplate
 from app.models.enums import BackgroundJobStatus, BackgroundJobType
 from app.services.email_jobs import EmailJobService
 
@@ -79,3 +80,27 @@ class TestEmailJobService(TestCase):
         assert job.error_code == "EMAIL_PAYLOAD_ENCRYPTION_FAILED"
         assert "secret-value-must-not-leak" not in (job.error_message or "")
         self.redis_pool.enqueue_job.assert_not_awaited()
+
+    async def test_signup_verification_job_references_verification_and_encrypts_code(self) -> None:
+        expires_at = datetime(2026, 9, 7, 3, 1, tzinfo=UTC)
+
+        job = await self.service.enqueue_signup_verification(
+            verification_id=27,
+            recipient_email="recipient@example.com",
+            verification_code="012345",
+            expires_at=expires_at,
+        )
+
+        assert job.job_type is BackgroundJobType.EMAIL
+        assert job.reference_table == "email_verifications"
+        assert job.reference_id == 27
+        assert job.idempotency_key.startswith("email:signup-verification:27:")
+        call = self.redis_pool.enqueue_job.await_args
+        encrypted_payload = call.args[2]
+        assert "recipient@example.com" not in encrypted_payload
+        assert "012345" not in encrypted_payload
+        payload = self.codec.decrypt(encrypted_payload)
+        assert payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE
+        assert payload.verification_id == 27
+        assert payload.verification_code == "012345"
+        assert payload.expires_at == expires_at
