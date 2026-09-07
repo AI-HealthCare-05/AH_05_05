@@ -62,8 +62,7 @@ class TestChallengeDomainAPI(TestCase):
             json={
                 "name": "30일 걷기 배지",
                 "description": "30일 걷기 완료",
-                "on_image_path": "/media/badges/walk-on.png",
-                "off_image_path": "/media/badges/walk-off.png",
+                "image_path": "/media/badges/walk.png",
                 "is_active": True,
             },
         )
@@ -117,7 +116,7 @@ class TestChallengeDomainAPI(TestCase):
         assert len(body["progress_periods"]) == 4
         assert body["status"] == "ACTIVE"
 
-    async def test_admin_uploads_on_and_off_badge_images(self) -> None:
+    async def test_admin_uploads_badge_image(self) -> None:
         buffer = BytesIO()
         Image.new("RGB", (1, 1), "teal").save(buffer, format="PNG")
         png = buffer.getvalue()
@@ -127,17 +126,13 @@ class TestChallengeDomainAPI(TestCase):
                     "POST",
                     "/api/v1/admin/badge-images",
                     headers=self.admin_headers,
-                    files={
-                        "on_image": ("on.png", png, "image/png"),
-                        "off_image": ("off.png", png, "image/png"),
-                    },
+                    files={"image": ("badge.png", png, "image/png")},
                 )
 
             assert response.status_code == 201, response.text
             body = response.json()
-            assert body["on_image_path"].startswith("media/badges/")
-            assert body["off_image_path"].startswith("media/badges/")
-            assert len(list(Path(directory).glob("*.png"))) == 2
+            assert body["image_path"].startswith("media/badges/")
+            assert len(list(Path(directory).glob("*.png"))) == 1
 
     async def test_self_verification_is_approved_and_updates_progress(self) -> None:
         from app.main import app

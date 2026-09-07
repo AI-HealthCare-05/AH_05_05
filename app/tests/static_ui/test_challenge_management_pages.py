@@ -6,7 +6,9 @@ STATIC_ROOT = Path(__file__).resolve().parents[2] / "static"
 def test_sidebar_exposes_challenge_management_links() -> None:
     sidebar = (STATIC_ROOT / "templates/partials/sidebar.html").read_text(encoding="utf-8")
 
-    assert "챌린지관리" in sidebar
+    assert "챌린지 관리" in sidebar
+    assert "공식 챌린지 관리" in sidebar
+    assert "배지 관리" in sidebar
     assert 'href="challenge-management.html"' in sidebar
     assert 'data-nav="challenges"' in sidebar
     assert 'href="badge-management.html"' in sidebar
