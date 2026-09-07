@@ -15,7 +15,7 @@ const PREVIEW_EVENING = new Date(2026, 8, 13, 19, 0);
 export function ChallengeHomePreviewPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<'medication' | 'supplement'>('medication');
-  const { medicationEpisodes, demoToday, setMedicationDose } = useChallengeMock();
+  const { medicationEpisodes, participations, demoToday, setMedicationDose } = useChallengeMock();
   const overviews: MedicationOverview[] = medicationEpisodes.map((episode, index) => {
     const days = Math.round((Date.parse(episode.endDate) - Date.parse(episode.startDate)) / 86_400_000) + 1;
     return {
@@ -58,6 +58,10 @@ export function ChallengeHomePreviewPage() {
               doseRecords={records}
               currentDate={demoToday}
               onDoseChange={(ids, slot, taken) => {
+                if (!taken && medicationEpisodes.some((episode) => ids.includes(episode.recordId) && participations.some((item) => item.episodeId === episode.id && item.status === 'achieved'))) {
+                  toast.info('달성 후 기록 취소·배지 회수 정책은 협의 중이라 이 목업에서는 취소하지 않아요.');
+                  return Promise.resolve(false);
+                }
                 if (slot === 'evening') setMedicationDose(ids, taken);
                 return Promise.resolve(true);
               }}
@@ -72,6 +76,7 @@ export function ChallengeHomePreviewPage() {
           )}
         </div>
         <HomeChallengeSummary />
+        <p className="text-caption text-muted-foreground">9월 7일 처방은 13/14회 예시예요. 챌린지 참여 후 저녁 기록으로 개별 달성과 배지 획득을 확인해보세요.</p>
         <Link to="/dev/challenges/tailored/medication" className="min-h-touch py-3 text-right text-sm font-bold text-primary">
           복약 챌린지 참여 처방 확인 ›
         </Link>

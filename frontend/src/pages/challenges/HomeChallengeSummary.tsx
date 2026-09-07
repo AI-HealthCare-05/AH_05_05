@@ -8,14 +8,16 @@ function compactDate(value: string) {
 }
 
 export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
-  const { participations } = useChallengeMock();
+  const { participations, medicationEpisodes } = useChallengeMock();
   const location = useLocation();
   const base = location.pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges';
   const allActive = empty ? [] : participations.filter((item) => item.status === 'active');
-  const linkedRoutine = allActive.filter(
-    (item) => item.kind === 'medication' || item.kind === 'supplement',
+  const medication = empty ? [] : participations.filter((item) =>
+    item.kind === 'medication' && medicationEpisodes.some((episode) => episode.id === item.episodeId),
   );
-  const active = (linkedRoutine.length > 0 ? linkedRoutine : allActive).slice(0, 2);
+  const others = allActive.filter((item) => item.kind !== 'medication');
+  const supplement = others.filter((item) => item.kind === 'supplement');
+  const active = [...medication, ...(supplement.length ? supplement : others).slice(0, medication.length ? 1 : 2)];
 
   return (
     <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
@@ -33,6 +35,12 @@ export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
         </Link>
       </div>
       <div className="flex min-h-[132px] flex-col justify-center gap-3 rounded-card bg-card px-4 py-3 shadow-card">
+        {medication.length ? (
+          <div className="space-y-1 border-b border-border pb-3">
+            <h3 className="text-sm font-bold">복약 챌린지 · 처방별 진행</h3>
+            <p className="text-xs text-muted-foreground">진행 중 {medication.filter((item) => item.status === 'active').length}개 · 달성 {medication.filter((item) => item.status === 'achieved').length}개</p>
+          </div>
+        ) : null}
         {active.length === 0 ? (
           <>
             <p className="text-sm font-bold text-foreground">참여 중인 챌린지가 없어요</p>
@@ -46,7 +54,7 @@ export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
         ) : (
           active.map((participation) => {
             const title =
-              participation.kind === 'medication' || participation.kind === 'supplement'
+              participation.kind === 'supplement'
                 ? `${participation.title} 챌린지`
                 : participation.title;
             return <Link
@@ -63,7 +71,7 @@ export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
                 <span className="tnum">
                   {compactDate(participation.startDate)} ~ {compactDate(participation.endDate)}
                 </span>
-                <span>{participation.percent}% 달성했어요</span>
+                <span>{participation.percent}% {participation.status === 'achieved' ? '달성 · 배지 획득' : '달성했어요'}</span>
               </span>
               <span className="h-2 overflow-hidden rounded-pill bg-border" aria-hidden>
                 <span

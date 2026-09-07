@@ -56,30 +56,76 @@ export function ChallengeMockProvider({ children }: { children: ReactNode }) {
   function setMedicationDose(recordIds: number[], taken: boolean) {
     setMedicationEpisodes((current) => current.map((episode) => {
       if (!recordIds.includes(episode.recordId) || episode.todayTaken === taken) return episode;
+      // Badge revocation is not an agreed policy. The demo leaves achieved records intact.
+      if (!taken && episode.completed >= episode.target && participations.some((item) => item.episodeId === episode.id)) return episode;
       return { ...episode, todayTaken: taken, completed: episode.completed + (taken ? 1 : -1) };
     }));
   }
 
   const visibleParticipations = participations.map((participation) => {
     if (participation.kind !== 'medication') return participation;
-    const selected = medicationEpisodes.filter((episode) => participation.targetIds?.includes(episode.id));
-    const target = selected.reduce((sum, episode) => sum + episode.target, 0);
-    const completed = selected.reduce((sum, episode) => sum + episode.completed, 0);
+    const episode = medicationEpisodes.find((item) => item.id === participation.episodeId);
+    if (!episode) return participation; // Completed historical participation snapshot.
+    const { target, completed } = episode;
     return {
       ...participation,
       target,
       completed,
       percent: target ? Math.round(completed / target * 100) : 0,
-      targetSummary: selected.map((episode) => episode.label).join(' · '),
-      todayCompleted: selected.length > 0 && selected.every((episode) => episode.todayTaken),
+      targetSummary: episode.label,
+      todayCompleted: episode.todayTaken,
       status: target > 0 && completed === target ? 'achieved' as const : 'active' as const,
     };
+  });
+
+  // One award per participation, not one badge definition per prescription.
+  const visibleBadges = badges.map((badge) => {
+    if (badge.id !== 'badge-pill') return badge;
+    const awards = visibleParticipations
+      .filter((item) => item.kind === 'medication' && item.badgeId === badge.id && item.status === 'achieved' && item.episodeId)
+      .map((item) => ({
+        participationId: item.id,
+        episodeId: item.episodeId!,
+        title: item.title,
+        earnedAt: item.id === 'part-medication-previous' ? item.endDate : CHALLENGE_DEMO_TODAY,
+      }))
+      .sort((a, b) => b.earnedAt.localeCompare(a.earnedAt));
+    return { ...badge, awards, earnedAt: awards[0]?.earnedAt };
   });
 
   function joinChallenge(
     challengeId: string,
     selection?: { targetIds: string[]; targetSummary: string },
   ): string {
+    if (challengeId === 'medication-routine') {
+      const selected = medicationEpisodes.filter((episode) => selection?.targetIds.includes(episode.id));
+      if (!selected.length) throw new Error('참여할 처방을 선택해주세요.');
+      const entries = selected.map((episode): ChallengeParticipation => {
+        const existing = participations.find((item) => item.challengeId === challengeId && item.episodeId === episode.id);
+        return existing ?? {
+          id: `part-medication-${episode.id}`,
+          episodeId: episode.id,
+          challengeId,
+          title: `${episode.label} 복약 챌린지`,
+          targetSummary: episode.label,
+          kind: 'medication',
+          startDate: episode.startDate,
+          endDate: episode.endDate,
+          status: 'active',
+          completed: episode.completed,
+          target: episode.target,
+          percent: Math.round(episode.completed / episode.target * 100),
+          todayCompleted: episode.todayTaken,
+          checkInDates: [],
+          badgeId: 'badge-pill',
+        };
+      });
+      setParticipations((current) => [
+        ...current,
+        ...entries.filter((entry) => !current.some((item) => item.challengeId === challengeId && item.episodeId === entry.episodeId)),
+      ]);
+      return entries[0].id;
+    }
     const existing = participations.find((item) => item.challengeId === challengeId);
     if (existing) {
       if (selection) {
@@ -242,7 +288,7 @@ export function ChallengeMockProvider({ children }: { children: ReactNode }) {
         participations: visibleParticipations,
         medicationEpisodes,
         setMedicationDose,
-        badges,
+        badges: visibleBadges,
         demoToday: CHALLENGE_DEMO_TODAY,
         joinChallenge,
         checkIn,

@@ -66,16 +66,14 @@ export function ChallengeParticipationPage() {
         ? '일'
         : '회';
   const visibleDates = datesBetween(participation.startDate, participation.endDate);
-  const selectedMedicationEpisodes = participation.kind === 'medication'
-    ? medicationEpisodes.filter((episode) => participation.targetIds?.includes(episode.id))
-    : [];
+  const medicationEpisode = medicationEpisodes.find((episode) => episode.id === participation.episodeId);
 
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
       <header className="flex items-center gap-3">
         <button type="button" aria-label="뒤로 가기" onClick={() => navigate(base)} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><ArrowLeft aria-hidden className="size-5" /></button>
         <div className="min-w-0">
-          <h1 className="truncate text-[22px] font-bold leading-7">{participation.title}</h1>
+          <h1 className="break-words text-[22px] font-bold leading-7">{participation.title}</h1>
           <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(participation.startDate)} ~ {dateLabel(participation.endDate)}</p>
         </div>
       </header>
@@ -90,43 +88,6 @@ export function ChallengeParticipationPage() {
         </section>
       ) : null}
 
-      {participation.kind === 'medication' ? (
-        <section className="flex flex-col gap-3" aria-labelledby="medication-episode-progress-title">
-          <h2 id="medication-episode-progress-title" className="text-base font-bold">처방별 진행률</h2>
-          {selectedMedicationEpisodes.map((episode) => {
-            const percent = episode.target ? Math.round((episode.completed / episode.target) * 100) : 0;
-            return (
-              <article
-                key={episode.id}
-                aria-label={`${episode.label} 진행률`}
-                className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-foreground">{episode.label}</h3>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {dateLabel(episode.startDate)} ~ {dateLabel(episode.endDate)} · {episode.slots.map((slot) => mealSlotLabel(slot)).join(' · ')}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-sm font-bold text-primary">{percent}%</span>
-                </div>
-                <div
-                  role="progressbar"
-                  aria-label={`${episode.label} 복용 진행률`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={percent}
-                  className="h-2 overflow-hidden rounded-pill bg-border"
-                >
-                  <div className="h-full rounded-pill bg-primary" style={{ width: `${percent}%` }} />
-                </div>
-                <p className="text-caption text-foreground">{episode.completed} / {episode.target}회</p>
-              </article>
-            );
-          })}
-        </section>
-      ) : null}
-
       {participation.status === 'active' && (participation.kind === 'official' || participation.kind === 'personal') ? (
         <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-label="오늘의 챌린지 진행">
           <h2 className="text-base font-bold">오늘도 한 걸음</h2>
@@ -138,7 +99,8 @@ export function ChallengeParticipationPage() {
       {participation.status === 'achieved' ? (
         <section className="flex flex-col items-center gap-2 rounded-card bg-primary-bg p-5 text-center" aria-label="챌린지 완료 결과">
           {badge ? <ChallengeBadgeArt badge={badge} className="size-16" /> : null}
-          <h2 className="text-lg font-bold">챌린지를 완주했어요</h2>
+          <h2 className="text-lg font-bold">{participation.kind === 'medication' ? '이 처방의 기록 목표를 달성했어요' : '챌린지를 완주했어요'}</h2>
+          {participation.kind === 'medication' ? <p className="text-caption text-primary">다른 처방의 진행률과 관계없이 배지 1회를 받았어요.</p> : null}
           {badge ? <Link to={`${base}/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 ›</Link> : null}
         </section>
       ) : participation.status === 'missed' ? (
@@ -169,9 +131,9 @@ export function ChallengeParticipationPage() {
           </div>
         ) : null}
         {participation.kind === 'medication' ? (
-          <p className="text-right text-xs font-bold text-primary">전체 달성률 {participation.percent}%</p>
+          <p className="text-right text-xs font-bold text-primary">이 처방 달성률 {participation.percent}%</p>
         ) : null}
-        <div className="h-2 overflow-hidden rounded-pill bg-border">
+        <div role="progressbar" aria-label="내 인증 기록 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={participation.percent} className="h-2 overflow-hidden rounded-pill bg-border">
           <div className="h-full rounded-pill bg-primary" style={{ width: `${participation.percent}%` }} />
         </div>
       </section>
@@ -179,12 +141,14 @@ export function ChallengeParticipationPage() {
       <section className="rounded-card bg-card p-5 shadow-card" aria-labelledby="today-goal-title">
         <h2 id="today-goal-title" className="text-base font-bold">오늘의 목표</h2>
         <p className="mt-1 text-sm text-muted-foreground">{definition.taskLabel}</p>
+        {medicationEpisode ? <p className="mt-2 text-caption text-muted-foreground">복용 시간 · {medicationEpisode.slots.map((slot) => mealSlotLabel(slot)).join(' · ')}</p> : null}
         {participation.targetSummary ? <p className="mt-2 rounded-input bg-muted-bg p-3 text-caption text-foreground">선택한 대상 · {participation.targetSummary}</p> : null}
       </section>
 
       <section className="rounded-card bg-card p-5 text-caption text-muted-foreground shadow-card" aria-labelledby="certification-note-title">
         <h2 id="certification-note-title" className="mb-2 text-base font-bold text-foreground">배지와 인증 안내</h2>
         <p>{participation.kind === 'medication' || participation.kind === 'supplement' ? '홈에서 남긴 복용 기록이 자동으로 반영돼요.' : '인증 내용은 내가 누른 기록을 기준으로 해요.'}</p>
+        {participation.kind === 'medication' ? <p className="mt-2">이 처방의 목표만 계산하며, 달성 시 복약 루틴 배지를 1회 받아요. 같은 날짜·시간대는 약이 여러 개여도 1회예요.</p> : null}
       </section>
 
       {participation.status === 'active' && (participation.kind === 'official' || participation.kind === 'personal') ? (

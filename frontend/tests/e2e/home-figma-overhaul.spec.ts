@@ -317,7 +317,7 @@ test('로그인 홈은 챌린지 요약 이동만 제공하고 직접 인증하�
   const challenge = page.getByRole('region', { name: '챌린지' });
   await expect(challenge).toBeVisible();
   await expect(challenge.getByText('예시 데이터', { exact: true })).toBeVisible();
-  await expect(challenge.getByRole('link', { name: /복약 루틴 챌린지/ })).toBeVisible();
+  await expect(challenge.getByRole('link', { name: /감기약 복약 챌린지/ })).toBeVisible();
   await expect(challenge.getByRole('link', { name: /영양제 루틴 챌린지/ })).toBeVisible();
   await expect(challenge.getByRole('button', { name: /했어요/ })).toHaveCount(0);
 });

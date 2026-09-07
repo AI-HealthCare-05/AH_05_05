@@ -45,7 +45,7 @@ export function ChallengeProgressCard({
           {participation.title}
         </Link>
         <span className="shrink-0 rounded-pill bg-primary-bg px-2 py-1 text-micro font-bold text-primary">
-          {kindLabel[participation.kind]}
+          {participation.status === 'achieved' ? '달성' : participation.status === 'missed' ? '종료' : kindLabel[participation.kind]}
         </span>
       </div>
       <div className="flex items-center justify-between gap-2 text-caption text-muted-foreground">
@@ -61,7 +61,7 @@ export function ChallengeProgressCard({
         className="h-2 overflow-hidden rounded-pill bg-border"
       >
         <div
-          className="h-full rounded-pill bg-primary transition-[width]"
+          className="h-full rounded-pill bg-primary transition-[width] motion-reduce:transition-none"
           style={{ width: `${Math.min(100, Math.max(0, participation.percent))}%` }}
         />
       </div>

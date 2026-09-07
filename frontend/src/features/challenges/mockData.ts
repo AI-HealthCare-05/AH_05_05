@@ -19,10 +19,9 @@ export const initialChallengeBadges: ChallengeBadge[] = [
   {
     id: 'badge-pill',
     name: '복약 루틴 배지',
-    description: '예정된 복약을 빠짐없이 기록했어요.',
+    description: '처방별 복약 챌린지의 기록 목표를 달성하면 같은 배지를 각각 1회 받아요.',
     icon: 'pill',
     imageUrl: '/images/challenges/badge-medication.png',
-    earnedAt: '2026-09-07',
   },
   {
     id: 'badge-sprout',
@@ -164,7 +163,7 @@ export const initialChallengeDefinitions: ChallengeDefinition[] = [
 
 export const initialMedicationEpisodes: ChallengeMedicationEpisode[] = [
   { id: 'prescription-sep-07-cold', recordId: 28101, label: '감기약', startDate: '2026-09-11', endDate: '2026-09-13', slots: ['morning', 'lunch', 'evening'], target: 9, completed: 6, todayTaken: false },
-  { id: 'prescription-sep-07', recordId: 28102, label: '9월 7일 처방', startDate: '2026-09-07', endDate: '2026-09-13', slots: ['morning', 'evening'], target: 14, completed: 0, todayTaken: false },
+  { id: 'prescription-sep-07', recordId: 28102, label: '9월 7일 처방', startDate: '2026-09-07', endDate: '2026-09-13', slots: ['morning', 'evening'], target: 14, completed: 13, todayTaken: false },
 ];
 
 export const initialChallengeParticipations: ChallengeParticipation[] = [
@@ -185,11 +184,11 @@ export const initialChallengeParticipations: ChallengeParticipation[] = [
   },
   {
     id: 'part-medication-active',
-    targetIds: ['prescription-sep-07-cold'],
+    episodeId: 'prescription-sep-07-cold',
     challengeId: 'medication-routine',
-    title: '복약 루틴',
+    title: '감기약 복약 챌린지',
     kind: 'medication',
-    startDate: '2026-09-07',
+    startDate: '2026-09-11',
     endDate: '2026-09-13',
     status: 'active',
     completed: 6,
@@ -197,6 +196,23 @@ export const initialChallengeParticipations: ChallengeParticipation[] = [
     percent: 67,
     todayCompleted: false,
     checkInDates: ['2026-09-11', '2026-09-12'],
+    badgeId: 'badge-pill',
+  },
+  {
+    id: 'part-medication-previous',
+    episodeId: 'prescription-aug-31',
+    challengeId: 'medication-routine',
+    title: '8월 31일 처방 복약 챌린지',
+    targetSummary: '8월 31일 처방',
+    kind: 'medication',
+    startDate: '2026-08-31',
+    endDate: '2026-09-06',
+    status: 'achieved',
+    completed: 7,
+    target: 7,
+    percent: 100,
+    todayCompleted: false,
+    checkInDates: [],
     badgeId: 'badge-pill',
   },
   {

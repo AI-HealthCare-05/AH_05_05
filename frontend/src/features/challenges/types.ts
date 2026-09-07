@@ -31,6 +31,14 @@ export interface ChallengeBadge {
   icon: 'check' | 'pill' | 'sprout';
   imageUrl?: string;
   earnedAt?: string;
+  awards?: ChallengeBadgeAward[];
+}
+
+export interface ChallengeBadgeAward {
+  participationId: string;
+  episodeId: string;
+  title: string;
+  earnedAt: string;
 }
 
 export interface ChallengeDefinition {
@@ -68,6 +76,7 @@ export interface ChallengeParticipation {
   checkInDates: string[];
   badgeId?: string;
   checklist?: ChallengeChecklistItem[];
+  episodeId?: string;
   targetIds?: string[];
   targetSummary?: string;
 }

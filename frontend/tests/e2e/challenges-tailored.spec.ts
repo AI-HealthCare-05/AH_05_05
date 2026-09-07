@@ -58,16 +58,14 @@ test('참여 후 다시 연 복약·영양제 대상 화면은 저장한 선택�
 
   await page.getByRole('link', { name: '맞춤 챌린지로 돌아가기' }).click();
   await page.getByRole('link', { name: /내 복약 루틴/ }).click();
-  await page.getByRole('checkbox', { name: /감기약/ }).uncheck();
+  await expect(page.getByRole('checkbox', { name: /감기약/ })).toBeDisabled();
   await page.getByRole('checkbox', { name: /9월 7일 처방/ }).check();
   await page.getByRole('button', { name: '이 대상으로 참여하기' }).click();
-  await expect(page.getByText('선택한 대상 · 9월 7일 처방')).toBeVisible();
-
-  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await expect(page.getByRole('article', { name: '9월 7일 처방 복약 챌린지', exact: true })).toBeVisible();
   await page.getByRole('link', { name: '둘러보기' }).click();
   await page.getByRole('link', { name: '내 기록으로 맞춤 챌린지 보기' }).click();
   await page.getByRole('link', { name: /내 복약 루틴/ }).click();
-  await expect(page.getByRole('checkbox', { name: /감기약/ })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /감기약/ })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: /9월 7일 처방/ })).toBeChecked();
 });
 

@@ -1,0 +1,82 @@
+import { expect, test } from 'playwright/test';
+
+test.setTimeout(30_000);
+
+test('처방을 추가하면 기존 참여를 유지하고 각각의 진행률과 상세를 제공한다', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dev/challenges/tailored/medication');
+  await expect(page.getByRole('checkbox', { name: /감기약/ })).toBeDisabled();
+  await page.getByRole('checkbox', { name: /9월 7일 처방/ }).check();
+  await page.getByRole('button', { name: '이 대상으로 참여하기' }).click();
+  await expect(page).toHaveURL(/\/dev\/challenges$/);
+  const cold = page.getByRole('article', { name: '감기약 복약 챌린지', exact: true });
+  const other = page.getByRole('article', { name: '9월 7일 처방 복약 챌린지', exact: true });
+  await expect(cold).toContainText('6 / 9회');
+  await expect(other).toContainText('13 / 14회');
+  await expect(cold.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '67');
+  await expect(other.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '93');
+  await page.getByRole('heading', { level: 1 }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('my-episodes.png'), fullPage: true });
+  await other.getByRole('link').click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9월 7일 처방 복약 챌린지');
+  await expect(page.getByText('13 / 14회 인증', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('날짜별 인증 기록')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /했어요|복약 기록하기/ })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('episode-detail.png'), fullPage: true });
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
+  await page.getByRole('link', { name: '둘러보기', exact: true }).click();
+  await page.getByRole('link', { name: '내 기록으로 맞춤 챌린지 보기' }).click();
+  await page.getByRole('link', { name: /내 복약 루틴/ }).click();
+  await expect(page.getByRole('checkbox', { name: /9월 7일 처방/ })).toBeDisabled();
+  await page.getByRole('button', { name: '이 대상으로 참여하기' }).click();
+  await expect(page.getByRole('article', { name: '9월 7일 처방 복약 챌린지', exact: true })).toHaveCount(1);
+});
+
+test('홈 기록은 해당 처방만 달성시키고 같은 배지를 획득 이력으로 묶는다', async ({ page }, testInfo) => {
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (['fetch', 'xhr'].includes(request.resourceType())) requests.push(request.url());
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dev/challenges/tailored/medication');
+  await page.getByRole('checkbox', { name: /9월 7일 처방/ }).check();
+  await page.getByRole('button', { name: '이 대상으로 참여하기' }).click();
+  await page.getByRole('button', { name: '홈', exact: true }).click();
+  const medication = page.getByRole('region', { name: '오늘의 복약' });
+  const summary = page.getByRole('region', { name: '챌린지' });
+  const cold = summary.getByRole('link', { name: /감기약 복약 챌린지/ });
+  const other = summary.getByRole('link', { name: /9월 7일 처방 복약 챌린지/ });
+  await expect(cold).toContainText('67%');
+  await expect(other).toContainText('93%');
+  await medication.getByRole('button', { name: /9월 7일 처방.*선택$/ }).click();
+  await medication.getByRole('button', { name: '먹었어요', exact: true }).click();
+  await expect(cold).toContainText('67%');
+  await expect(other).toContainText('100%');
+  await expect(summary).toContainText('진행 중 1개 · 달성 1개');
+  await medication.getByRole('button', { name: /9월 7일 처방.*복용 완료$/ }).click();
+  await medication.getByRole('button', { name: '복약 기록 되돌리기', exact: true }).click();
+  await expect(page.getByText('달성 후 기록 취소·배지 회수 정책은 협의 중이라 이 목업에서는 취소하지 않아요.')).toBeVisible();
+  await expect(other).toContainText('100%');
+  await page.screenshot({ path: testInfo.outputPath('home-awarded.png'), fullPage: true });
+  await other.click();
+  await expect(page.getByRole('region', { name: '챌린지 완료 결과' })).toBeVisible();
+  await page.getByRole('link', { name: /복약 루틴 배지 자세히 보기/ }).click();
+  const history = page.getByRole('list', { name: '배지 획득 이력' });
+  await expect(history.getByRole('listitem')).toHaveCount(2);
+  await expect(history).toContainText('9월 7일 처방');
+  await expect(history).toContainText('8월 31일 처방');
+  await history.getByRole('link', { name: /8월 31일 처방/ }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('8월 31일 처방 복약 챌린지');
+  await expect(page.getByText('7 / 7회 인증', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: /복약 루틴 배지 자세히 보기/ }).click();
+  await expect(history.getByRole('listitem')).toHaveCount(2);
+  await page.getByRole('heading', { level: 1 }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('badge-history.png'), fullPage: true });
+  await page.getByRole('link', { name: '내 배지로 돌아가기' }).click();
+  await expect(page.getByRole('link', { name: '복약 루틴 배지, 2회 획득', exact: true })).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath('badges-grouped.png'), fullPage: true });
+  // Re-opening the same completion must not issue another copy.
+  await page.getByRole('link', { name: '복약 루틴 배지, 2회 획득', exact: true }).click();
+  await expect(history.getByRole('listitem')).toHaveCount(2);
+  expect(requests).toEqual([]);
+});

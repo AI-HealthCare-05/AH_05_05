@@ -50,7 +50,7 @@ test('홈 챌린지는 요약과 이동만 제공하고 직접 인증 액션은 
   await page.goto('/dev/home-active');
 
   const challenge = page.getByRole('region', { name: '챌린지' });
-  await expect(challenge.getByRole('link', { name: /복약 루틴 챌린지/ })).toBeVisible();
+  await expect(challenge.getByRole('link', { name: /감기약 복약 챌린지/ })).toBeVisible();
   await expect(challenge.getByRole('link', { name: /영양제 루틴 챌린지/ })).toBeVisible();
   await expect(challenge.getByRole('button', { name: /했어요/ })).toHaveCount(0);
 });
@@ -68,7 +68,7 @@ test('복약이 없는 홈에서도 독립적인 챌린지 요약을 보여준�
   await page.goto('/dev/home-empty');
 
   const challenge = page.getByRole('region', { name: '챌린지' });
-  await expect(challenge.getByRole('link', { name: /복약 루틴 챌린지/ })).toBeVisible();
+  await expect(challenge.getByRole('link', { name: /감기약 복약 챌린지/ })).toBeVisible();
   await expect(challenge.getByRole('button', { name: /했어요/ })).toHaveCount(0);
 });
 

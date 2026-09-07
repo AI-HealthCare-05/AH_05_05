@@ -14,11 +14,12 @@ export function ChallengeBadgesPage({ badgesOverride }: ChallengeBadgesPageProps
   const base = location.pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges';
   const visibleBadges = badgesOverride ?? badges;
   const earnedCount = visibleBadges.filter((badge) => badge.earnedAt).length;
+  const awardCount = visibleBadges.reduce((sum, badge) => sum + (badge.awards?.length ?? (badge.earnedAt ? 1 : 0)), 0);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-page-x py-5">
       <h1 className="text-[22px] font-bold leading-8 text-foreground">내 배지</h1>
-      <p className="text-sm text-muted-foreground">모은 배지 {earnedCount}개</p>
+      <p className="text-sm text-muted-foreground">모은 배지 {earnedCount}종 · 총 {awardCount}회 획득</p>
 
       {visibleBadges.length === 0 ? (
         <div className="flex min-h-56 flex-col items-center justify-center gap-4 rounded-card bg-card p-5 text-center shadow-card">
@@ -35,17 +36,18 @@ export function ChallengeBadgesPage({ badgesOverride }: ChallengeBadgesPageProps
         <ul aria-label="챌린지 배지" className="grid grid-cols-2 gap-4">
           {visibleBadges.map((badge) => {
             const earned = Boolean(badge.earnedAt);
+            const label = badge.awards?.length ? `${badge.awards.length}회 획득` : earned ? '획득' : '미획득';
             return (
               <li key={badge.id}>
                 <Link
                   to={`${base}/badges/${badge.id}`}
-                  aria-label={`${badge.name}, ${earned ? '획득' : '미획득'}`}
-                  className="flex h-40 flex-col gap-2.5 rounded-card bg-card p-4 shadow-card"
+                  aria-label={`${badge.name}, ${label}`}
+                  className="flex min-h-40 flex-col gap-2.5 rounded-card bg-card p-4 shadow-card"
                 >
                   <ChallengeBadgeArt badge={badge} />
                   <span className="line-clamp-2 text-sm font-bold text-foreground">{badge.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    {earned ? '획득' : '미획득'}
+                    {label}
                   </span>
                 </Link>
               </li>

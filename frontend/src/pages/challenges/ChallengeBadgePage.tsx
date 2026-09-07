@@ -35,14 +35,30 @@ export function ChallengeBadgePage() {
         <h2 id="badge-name" className="text-base font-bold text-foreground">{badge.name}</h2>
         <p className="text-xs text-primary">{isOfficial ? '공식 챌린지 배지' : '기본 챌린지 배지'}</p>
         <p className="whitespace-pre-line text-sm text-muted-foreground">
-          {badge.earnedAt ? `${badge.earnedAt} 획득\n` : '아직 획득하지 않았어요.\n'}
-          {participation ? `${participation.completed} / ${participation.target}회 기록` : badge.description}
+          {badge.awards?.length ? `총 ${badge.awards.length}회 획득\n` : badge.earnedAt ? `${badge.earnedAt} 획득\n` : '아직 획득하지 않았어요.\n'}
+          {badge.awards ? '처방마다 달성을 따로 인정해요. 같은 배지는 하나로 모아 보여드려요.' : participation ? `${participation.completed} / ${participation.target}회 기록` : badge.description}
         </p>
       </section>
 
+      {badge.awards?.length ? (
+        <section className="rounded-card bg-card p-5 shadow-card" aria-labelledby="badge-awards-title">
+          <h2 id="badge-awards-title" className="mb-3 text-base font-bold">획득 이력</h2>
+          <ul aria-label="배지 획득 이력" className="divide-y divide-border">
+            {badge.awards.map((award) => (
+              <li key={award.participationId}>
+                <Link to={`${base}/participations/${award.participationId}`} className="flex min-h-touch flex-col gap-1 py-3">
+                  <span className="text-sm font-bold text-foreground">{award.title} ›</span>
+                  <span className="text-caption text-muted-foreground">{award.earnedAt} 획득 · 1회</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="badge-rule">
         <h2 id="badge-rule" className="text-base font-bold text-foreground">배지 지급 기준</h2>
-        <p className="text-xs text-primary">사용자 인증 기록</p>
+        <p className="text-xs text-primary">{badge.awards ? '홈 복약 기록 자동 연동 · 참여당 1회 지급' : '사용자 인증 기록'}</p>
         <p className="text-sm leading-6 text-muted-foreground">
           {badge.description}<br />
           RxVita에 남긴 기록에 따라 지급한 배지예요.<br />

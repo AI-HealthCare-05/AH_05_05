@@ -32,14 +32,14 @@ export function ChallengeTargetPage() {
   const storedSupplementTargets = participations.find(
     (participation) => participation.challengeId === definitionByKind.supplement,
   )?.targetIds;
-  const storedMedicationTargets = participations.find(
-    (participation) => participation.challengeId === definitionByKind.medication,
-  )?.targetIds;
+  const storedMedicationTargets = participations
+    .filter((participation) => participation.challengeId === definitionByKind.medication && medicationEpisodes.some((episode) => episode.id === participation.episodeId))
+    .map((participation) => participation.episodeId!);
   const [selectedSupplements, setSelectedSupplements] = useState<string[]>(() =>
     storedSupplementTargets ? [...storedSupplementTargets] : ['omega-3', 'multivitamin'],
   );
   const [selectedMedications, setSelectedMedications] = useState<string[]>(() =>
-    storedMedicationTargets ? [...storedMedicationTargets] : ['prescription-sep-07-cold'],
+    [...storedMedicationTargets],
   );
 
   const selectedSummary = useMemo(
@@ -48,12 +48,6 @@ export function ChallengeTargetPage() {
   );
   const selectedMedicationSummary = useMemo(
     () => medicationEpisodes.filter((item) => selectedMedications.includes(item.id)).map((item) => item.label),
-    [medicationEpisodes, selectedMedications],
-  );
-  const selectedMedicationTotal = useMemo(
-    () => medicationEpisodes
-      .filter((episode) => selectedMedications.includes(episode.id))
-      .reduce((total, episode) => total + episode.target, 0),
     [medicationEpisodes, selectedMedications],
   );
 
@@ -91,7 +85,7 @@ export function ChallengeTargetPage() {
         ? { targetIds: selectedSupplements, targetSummary: selectedSummary.join(' · ') }
         : undefined;
     const participationId = joinChallenge(definitionByKind[kind], selection);
-    navigate(`${base}/participations/${participationId}`);
+    navigate(kind === 'medication' && selectedMedications.length > 1 ? base : `${base}/participations/${participationId}`);
   };
 
   return (
@@ -106,7 +100,7 @@ export function ChallengeTargetPage() {
           <Card className="gap-2 p-5 shadow-none">
             <h2 className="text-base font-bold text-foreground">참여할 처방</h2>
             <p className="text-xs font-bold text-primary">
-              선택한 처방 {selectedMedications.length}개 · 총 {selectedMedicationTotal}회
+              선택한 처방 {selectedMedications.length}개 · 각각의 챌린지로 참여해요
             </p>
             <div className="flex flex-col gap-2">
               {medicationEpisodes.map((episode) => (
@@ -114,6 +108,7 @@ export function ChallengeTargetPage() {
                   <input
                     type="checkbox"
                     checked={selectedMedications.includes(episode.id)}
+                    disabled={storedMedicationTargets.includes(episode.id)}
                     onChange={(event) => {
                       setSelectedMedications((current) =>
                         event.target.checked
@@ -130,6 +125,7 @@ export function ChallengeTargetPage() {
                     <span className="text-xs text-muted-foreground">
                       {episode.slots.map((slot) => mealSlotLabel(slot)).join(' · ')} · 예정된 복용 {episode.target}회
                     </span>
+                    {storedMedicationTargets.includes(episode.id) ? <span className="block text-xs font-bold text-primary">이미 참여한 처방 · 참여 유지</span> : null}
                   </span>
                 </label>
               ))}
@@ -142,10 +138,10 @@ export function ChallengeTargetPage() {
             </p>
           </Card>
           <InfoCard title="기록은 자동으로 반영돼요" meta="중간에 시작해도 참여 가능">
-            홈·복약에서 남긴 기록이 반영돼요. 이미 지난 시간의 복용을 요구하지 않아요.
+            홈·복약에서 남긴 기록이 해당 처방에만 반영돼요. 처방별 목표를 달성할 때마다 같은 복약 배지를 1회 받아요.
           </InfoCard>
-          <InfoCard title="복용 일정이 바뀌면" meta="안전한 참여 원칙">
-            처방 중단·변경 이후 일정은 다시 확인해요. 추가 복용을 유도하지 않아요.
+          <InfoCard title="목업에서 확인할 기준" meta="예시 데이터 · 실제 정책은 협의 중">
+            이 예시는 기존 기록을 포함해 보여줘요. 중간 참여·처방 변경·달성 후 기록 취소 기준은 아직 확정되지 않았어요.
           </InfoCard>
         </>
       )}
