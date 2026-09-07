@@ -98,6 +98,7 @@ _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-3dd5
 _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-299edbe35f581616"
 _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-80c3d674cbc86d03"
 _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-186668a2a92b533c"
+_LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-502801c809b5ec8d"
 _STATINS_VITAMIN_D_REVIEW_TITLE = "Statins, Vitamin D, and Cardiovascular Health: A Comprehensive Review"
 
 _DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES = (
@@ -166,6 +167,25 @@ _STATINS_VITAMIN_D_VERIFIED_PAGE_RANGES = {
 }
 
 _STATINS_VITAMIN_D_CONCLUSION_END = "vitamin D-deficient populations."
+
+_LEVOTHYROXINE_CALCIUM_REVIEW_BOUNDARIES = (
+    "Results:",
+    "Conclusions:",
+    "Introduction",
+    "Materials and Methods Subjects",
+    "Study design",
+    "Assays",
+    "Statistics",
+    "Discussion",
+    "Our study also indicates that the effects",
+    "One possible limitation of this study",
+)
+_LEVOTHYROXINE_CALCIUM_REVIEW_END = "separated from all of these calcium products."
+_PARENTHETICAL_NUMERIC_CITATION_PATTERN = re.compile(r"\s*\(\s*\d+(?:\s*(?:[,;]|[-–—])\s*\d+)*\s*\)")
+_INLINE_FIGURE_REFERENCE_PATTERN = re.compile(
+    r"\s*[\[(]\s*Fig\.?\s*\d+\s*[\])]",
+    flags=re.IGNORECASE,
+)
 
 
 _COMMON_CAUTION_HEADINGS = {
@@ -472,6 +492,9 @@ class KnowledgeSplitter:
             return chunks
 
         document_id = chunks[0].metadata.document_id
+        if document_id == _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID:
+            repaired = self._resegment_levothyroxine_calcium_review(chunks)
+            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
         if document_id == _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID:
             text_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind != KnowledgeContentKind.TABLE]
             table_chunks = [chunk for chunk in chunks if chunk.metadata.content_kind == KnowledgeContentKind.TABLE]
@@ -559,6 +582,77 @@ class KnowledgeSplitter:
                 )
             )
         return repaired
+
+    def _resegment_levothyroxine_calcium_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        merged = self._merge_verified_chunk_text(chunks)
+        merged = _PARENTHETICAL_NUMERIC_CITATION_PATTERN.sub("", merged)
+        merged = _INLINE_FIGURE_REFERENCE_PATTERN.sub("", merged)
+        end = merged.find(_LEVOTHYROXINE_CALCIUM_REVIEW_END)
+        if end >= 0:
+            merged = merged[: end + len(_LEVOTHYROXINE_CALCIUM_REVIEW_END)]
+
+        positions = {
+            position for marker in _LEVOTHYROXINE_CALCIUM_REVIEW_BOUNDARIES if (position := merged.find(marker)) >= 0
+        }
+        statistics_start = merged.find("Statistics")
+        if statistics_start >= 0:
+            main_results = re.search(
+                r"\bResults\b(?!:)",
+                merged[statistics_start + len("Statistics") :],
+            )
+            if main_results is not None:
+                positions.add(statistics_start + len("Statistics") + main_results.start())
+        ordered_positions = sorted(positions)
+        if not ordered_positions or ordered_positions[0] > 0:
+            ordered_positions.insert(0, 0)
+        ordered_positions.append(len(merged))
+
+        repaired: list[KnowledgeChunk] = []
+        for start, stop in zip(ordered_positions, ordered_positions[1:], strict=False):
+            content = merged[start:stop].strip()
+            if not content:
+                continue
+            repaired.append(
+                chunks[0].model_copy(
+                    update={
+                        "content": self._format_levothyroxine_calcium_heading(content),
+                        "metadata": self._verified_span_metadata(
+                            content=content,
+                            chunks=chunks,
+                        ),
+                    }
+                )
+            )
+        return repaired
+
+    @staticmethod
+    def _format_levothyroxine_calcium_heading(content: str) -> str:
+        title = "Absorption of Levothyroxine When Coadministered with Various Calcium Formulations"
+        if content.startswith(title):
+            content = content.replace(f"{title} Background:", f"{title}\n\nBackground:", 1)
+            content = content.replace(" Materials and Methods:", "\n\nMaterials and Methods:", 1)
+            return content
+        if content.startswith("Materials and Methods Subjects"):
+            return content.replace("Materials and Methods Subjects", "Materials and Methods\nSubjects", 1)
+        headings = (
+            "Results:",
+            "Conclusions:",
+            "Introduction",
+            "Study design",
+            "Assays",
+            "Statistics",
+            "Results",
+            "Discussion",
+            "Our study also indicates that the effects",
+            "One possible limitation of this study",
+        )
+        for heading in headings:
+            if content.startswith(heading) and len(content) > len(heading):
+                return f"{heading}\n{content[len(heading) :].strip()}"
+        return content
 
     @staticmethod
     def _format_statins_vitamin_d_heading(content: str) -> str:

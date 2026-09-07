@@ -128,6 +128,28 @@ def build_statins_vitamin_d_review_chunk(
     )
 
 
+def build_levothyroxine_calcium_review_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+    page_start: int = 1,
+    page_end: int = 4,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(content, chunk_index=chunk_index)
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "document_id": "research_drug_nutrient_interactions-502801c809b5ec8d",
+                    "title": "Absorption of Levothyroxine When Coadministered with Various Calcium Formulations",
+                    "page_start": page_start,
+                    "page_end": page_end,
+                }
+            )
+        }
+    )
+
+
 def build_page(
     content: str,
     *,
@@ -1915,6 +1937,63 @@ def test_repair_statins_vitamin_d_review_preserves_verified_table_chunks() -> No
     assert len(table_chunks) == 1
     assert table_chunks[0].metadata.table_title == "Overlap of Statins and Vitamin D Mechanisms"
     assert "Clinical review [1]" in table_chunks[0].content
+
+
+def test_repair_levothyroxine_calcium_review_uses_verified_semantic_boundaries() -> None:
+    content = "\n".join(
+        [
+            "Absorption of Levothyroxine When Coadministered with Various Calcium Formulations",
+            "Background: Calcium carbonate interferes with absorption (1).",
+            "Materials and Methods: Eight adults received calcium acetate.",
+            "Results: Absorption was reduced by 20% (2).",
+            "Conclusions: Calcium formulations reduced absorption.",
+            "Introduction",
+            "Introduction body ends after calcium acetate.",
+            "Materials and Methods",
+            "Subjects",
+            "Subjects body ends with their participation.",
+            "Study design",
+            "Study design body.",
+            "Assays",
+            "Assay body.",
+            "Statistics",
+            "Statistics body.",
+            "Results",
+            "Results body ends with plus calcium acetate [Fig. 2].",
+            "Discussion",
+            "Discussion body ends with levothyroxine and calcium acetate.",
+            "Our study also indicates that the effects",
+            "Dose discussion ends in T4 absorption when given together with calcium.",
+            "One possible limitation of this study",
+            "Limitations and conclusion end separated from all of these calcium products.",
+            "Acknowledgments remove this.",
+            "References remove this too.",
+        ]
+    )
+    chunks = [build_levothyroxine_calcium_review_chunk(content, chunk_index=0)]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+
+    expected_starts = [
+        "Absorption of Levothyroxine",
+        "Results:",
+        "Conclusions:",
+        "Introduction",
+        "Materials and Methods\nSubjects",
+        "Study design",
+        "Assays",
+        "Statistics",
+        "Results\n",
+        "Discussion",
+        "Our study also indicates that the effects",
+        "One possible limitation of this study",
+    ]
+    assert len(repaired) == len(expected_starts)
+    assert all(chunk.content.startswith(start) for chunk, start in zip(repaired, expected_starts, strict=True))
+    assert all("(1)" not in chunk.content and "(2)" not in chunk.content for chunk in repaired)
+    assert all("Fig." not in chunk.content and "FIG." not in chunk.content for chunk in repaired)
+    assert repaired[-1].content.endswith("separated from all of these calcium products.")
+    assert not any("Acknowledgments" in chunk.content or "References" in chunk.content for chunk in repaired)
 
 
 def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:

@@ -1,3 +1,6 @@
+from ai_worker.rag.loaders.levothyroxine_calcium_review_layout_parser import (
+    LevothyroxineCalciumReviewLayoutParser,
+)
 from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtraction
 from ai_worker.rag.loaders.verified_knowledge_layout_parser import (
     VerifiedKnowledgeLayoutParser,
@@ -492,3 +495,95 @@ def test_parse_statins_vitamin_d_review_restores_second_four_column_table() -> N
         "Substantial increase (~14 to 36 ng/mL over 8 weeks)",
         "Possible confounding, small sample",
     ]
+
+
+def test_parse_levothyroxine_calcium_review_restores_columns_without_figure_or_footer() -> None:
+    page_one = FakeLayoutPage(
+        [
+            layout_word("Journal", 60, 40, 100, 52),
+            layout_word("Absorption", 105, 110, 170, 124),
+            layout_word("of", 175, 110, 188, 124),
+            layout_word("Levothyroxine", 193, 110, 275, 124),
+            layout_word("Authors", 210, 175, 260, 187),
+            layout_word("Background:", 60, 230, 125, 242),
+            layout_word("Calcium", 130, 230, 180, 242),
+            layout_word("Introduction", 60, 470, 125, 484),
+            layout_word("Intro-left", 60, 500, 120, 512),
+            layout_word("Intro-right", 315, 500, 380, 512),
+            layout_word("Materials", 315, 565, 370, 577),
+            layout_word("and", 375, 565, 395, 577),
+            layout_word("Methods", 400, 565, 450, 577),
+            layout_word("Subjects", 315, 580, 365, 592),
+            layout_word("Subject-body", 315, 610, 390, 622),
+            layout_word("Presented", 70, 720, 125, 732),
+        ]
+    )
+    page_two = FakeLayoutPage(
+        [
+            layout_word("Subject-end", 65, 70, 130, 82),
+            layout_word("Study", 65, 116, 100, 128),
+            layout_word("design", 105, 116, 145, 128),
+            layout_word("Design-body", 65, 145, 135, 157),
+            layout_word("Assays", 65, 441, 105, 453),
+            layout_word("Assay-body", 65, 470, 130, 482),
+            layout_word("Statistics", 65, 591, 120, 603),
+            layout_word("Statistics-body", 65, 620, 150, 632),
+            layout_word("Results", 315, 60, 360, 72),
+            layout_word("Result-body", 315, 90, 380, 102),
+            layout_word("Discussion", 315, 450, 380, 462),
+            layout_word("Discussion-body", 315, 480, 405, 492),
+            layout_word("FIG.", 315, 670, 345, 682),
+            layout_word("1.", 350, 670, 360, 682),
+            layout_word("Figure-body", 315, 700, 385, 712),
+        ]
+    )
+
+    parser = VerifiedKnowledgeLayoutParser()
+    first = parser.parse(
+        page=page_one,
+        page_number=1,
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-502801c809b5ec8d",
+    )
+    second = parser.parse(
+        page=page_two,
+        page_number=2,
+        source_id="research_drug_nutrient_interactions",
+        document_id="research_drug_nutrient_interactions-502801c809b5ec8d",
+    )
+
+    assert first is not None
+    assert [block.content for block in first.blocks] == [
+        "Absorption of Levothyroxine",
+        "Background: Calcium",
+        "Introduction\nIntro-left",
+        "Intro-right",
+        "Materials and Methods\nSubjects\nSubject-body",
+    ]
+    assert second is not None
+    assert [block.content for block in second.blocks] == [
+        "Subject-end",
+        "Study design\nDesign-body",
+        "Assays\nAssay-body",
+        "Statistics\nStatistics-body",
+        "Results\nResult-body",
+        "Discussion\nDiscussion-body",
+    ]
+
+
+def test_clean_levothyroxine_calcium_review_restores_encoded_measurement_symbols() -> None:
+    content = (
+        "Synthroid (cid:2) was stored at (cid:2) 20 8 C. "
+        "Samples at (cid:2) 15 minutes measured 6.49 (cid:3) 0.45 m g/dL. "
+        "Lunch followed the þ 240 minute specimen. "
+        "The result was ( F 1⁄4 5.37, p < 0.007)."
+    )
+
+    cleaned = LevothyroxineCalciumReviewLayoutParser._clean_content(content)
+
+    assert cleaned == (
+        "Synthroid was stored at −20°C. "
+        "Samples at −15 minutes measured 6.49 ± 0.45 μg/dL. "
+        "Lunch followed the +240 minute specimen. "
+        "The result was (F = 5.37, p < 0.007)."
+    )
