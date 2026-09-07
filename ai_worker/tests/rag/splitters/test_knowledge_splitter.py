@@ -81,6 +81,31 @@ def build_warfarin_review_chunk(
     )
 
 
+def build_drug_vitamin_d_review_chunk(
+    content: str,
+    *,
+    chunk_index: int,
+    page_start: int = 1,
+    page_end: int = 1,
+) -> KnowledgeChunk:
+    chunk = build_aspirin_warfarin_chunk(
+        content,
+        chunk_index=chunk_index,
+    )
+    return chunk.model_copy(
+        update={
+            "metadata": chunk.metadata.model_copy(
+                update={
+                    "document_id": ("research_drug_nutrient_interactions-80c3d674cbc86d03"),
+                    "title": "Drug-vitamin D interactions",
+                    "page_start": page_start,
+                    "page_end": page_end,
+                }
+            )
+        }
+    )
+
+
 def build_page(
     content: str,
     *,
@@ -895,6 +920,25 @@ def test_split_keeps_structured_abstract_labels_in_one_summary_section() -> None
     )
 
 
+def test_split_does_not_treat_interaction_phrase_in_keywords_as_heading() -> None:
+    page = build_page(
+        "Abstract\nDrug and vitamin D evidence was reviewed.\n"
+        "Keywords: vitamin D; drug-nutrient interactions\n"
+        "Introduction\nVitamin D is a steroid hormone precursor.",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        title="Drug-vitamin D interactions",
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert [chunk.metadata.section_type for chunk in chunks] == [
+        KnowledgeSectionType.SUMMARY,
+        KnowledgeSectionType.INTRODUCTION,
+    ]
+    assert chunks[0].content.endswith("Keywords: vitamin D; drug-nutrient interactions")
+    assert chunks[1].content.startswith("Introduction")
+
+
 def test_split_excludes_regulatory_manufacturer_block() -> None:
     page = build_page(
         "17 PATIENT COUNSELING INFORMATION\n"
@@ -1552,6 +1596,178 @@ def test_repair_warfarin_review_discussion_boundary() -> None:
     assert repaired[0].content.endswith(boundary)
     assert repaired[1].content.startswith(continuation)
     assert boundary not in repaired[1].content
+
+
+def test_repair_drug_vitamin_d_review_removes_overlap_and_keeps_verified_boundaries() -> None:
+    active_form = "The metabolically active 1,25(OH)2 D form is tightly regulated at the tissue level."
+    chunks = [
+        build_drug_vitamin_d_review_chunk(
+            f"Introduction\nIntroductory context. {active_form}",
+            chunk_index=1,
+            page_start=2,
+            page_end=3,
+        ),
+        build_drug_vitamin_d_review_chunk(
+            f"{active_form} Review purpose.",
+            chunk_index=2,
+            page_start=2,
+            page_end=3,
+        ),
+        build_drug_vitamin_d_review_chunk(
+            "Methods\nStudy selection\nSearch strategy begins and",
+            chunk_index=3,
+            page_start=3,
+            page_end=4,
+        ),
+        build_drug_vitamin_d_review_chunk(
+            "Search strategy begins and continues. A considerable number of studies with stronger "
+            "study designs were available for those drug categories.\n"
+            "Data abstraction and quality assessment\nQuality methods.",
+            chunk_index=4,
+            page_start=4,
+            page_end=5,
+        ),
+        build_drug_vitamin_d_review_chunk(
+            "Results\nResults summary, likely reflecting increasing reporting standards for publication.\n"
+            "Drugs that interfere with vitamin D absorption\nAbsorption evidence. "
+            "orlistat dose to maximize vitamin D absorption.\n"
+            "Drugs that interfere with vitamin D metabolism\nStatins\nStatin evidence.",
+            chunk_index=5,
+            page_start=5,
+            page_end=6,
+        ),
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+    contents = [chunk.content for chunk in repaired]
+
+    assert sum(content.count(active_form) for content in contents) == 1
+    assert contents[0] == "Introduction\nIntroductory context."
+    assert contents[1].startswith(active_form)
+    assert contents[2].startswith("Methods\nStudy selection")
+    assert contents[2].endswith("study designs were available for those drug categories.")
+    assert contents[3].startswith("Data abstraction and quality assessment")
+    assert contents[4].startswith("Results")
+    assert contents[4].endswith("likely reflecting increasing reporting standards for publication.")
+    assert contents[5].startswith("Drugs that interfere with vitamin D absorption")
+    assert contents[5].endswith("orlistat dose to maximize vitamin D absorption.")
+    assert contents[6].startswith("Drugs that interfere with vitamin D metabolism\nStatins")
+
+
+def test_repair_drug_vitamin_d_review_splits_drug_groups_at_verified_headings() -> None:
+    chunks = [
+        build_drug_vitamin_d_review_chunk(
+            "Drugs that interfere with vitamin D metabolism\nStatins\nStatin evidence.\n"
+            "Antimicrobials\nAntimicrobial evidence ending with conversion of 25(OH)D to 1,25(OH) D.\n"
+            "Antiepileptic drugs\nAED evidence evident among individuals with insufficient exposure to "
+            "exogenous sources of vitamin D (diet, supplements or UV exposure).\n"
+            "Corticosteroids\nSteroid evidence dietary or supplemental vitamin D intake, or UV exposure.\n"
+            "Immunosuppressive agents\nImmune evidence itself on vitamin D status.\n"
+            "Chemotherapeutic agents\nCancer evidence should be monitored regularly for patients undergoing "
+            "cancer treatment.\n"
+            "Highly active antiretroviral agents (HAART)\nHAART evidence circulating 25(OH)D "
+            "concentrations.\n"
+            "Histamine H2-receptor antagonists\nH2 evidence CYP enzymes in animal models.\n"
+            "Drug-vitamin D interactions that induce side effects\nThiazide evidence reported significant "
+            "alterations in 25(OH)D concentrations as a result of thiazide treatment.\n"
+            "Discussion\nDiscussion conclusion adequate serum 25(OH)D concentrations while optimizing "
+            "drug efficacy and minimizing drug toxicity.",
+            chunk_index=6,
+            page_start=6,
+            page_end=13,
+        )
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+    contents = [chunk.content for chunk in repaired]
+
+    expected_starts = [
+        "Drugs that interfere with vitamin D metabolism\nStatins",
+        "Antimicrobials",
+        "Antiepileptic drugs",
+        "Corticosteroids",
+        "Immunosuppressive agents",
+        "Chemotherapeutic agents",
+        "Highly active antiretroviral agents (HAART)",
+        "Histamine H2-receptor antagonists",
+        "Drug-vitamin D interactions that induce side effects",
+        "Discussion",
+    ]
+    assert len(contents) == len(expected_starts)
+    assert all(content.startswith(start) for content, start in zip(contents, expected_starts, strict=True))
+    assert contents[1].endswith("conversion of 25(OH)D to 1,25(OH) D.")
+    assert contents[2].endswith("vitamin D (diet, supplements or UV exposure).")
+    assert contents[-1].endswith("drug efficacy and minimizing drug toxicity.")
+
+
+def test_repair_drug_vitamin_d_review_splits_oversized_discussion_at_paragraph_topics() -> None:
+    chunks = [
+        build_drug_vitamin_d_review_chunk(
+            "Discussion\nInitial findings. "
+            "The currently available literature on drug-vitamin D interactions has limitations. "
+            "Because vitamin D is highly hydrophobic and has several metabolites, measurement is challenging. "
+            "Given the increasing prevalence of vitamin D supplementation, continued evaluation is warranted.",
+            chunk_index=13,
+            page_start=12,
+            page_end=13,
+        )
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+
+    assert [chunk.content.splitlines()[0] for chunk in repaired] == [
+        "Discussion",
+        "The currently available literature on drug-vitamin D interactions has limitations.",
+        "Because vitamin D is highly hydrophobic and has several metabolites, measurement is challenging.",
+        "Given the increasing prevalence of vitamin D supplementation, continued evaluation is warranted.",
+    ]
+
+
+def test_repair_drug_vitamin_d_review_uses_verified_page_ranges_and_abstract_layout() -> None:
+    chunks = [
+        build_drug_vitamin_d_review_chunk(
+            "Drug-vitamin D interactions: A systematic review of the literature Abstract Abstract body.",
+            chunk_index=0,
+            page_start=1,
+            page_end=2,
+        ),
+        build_drug_vitamin_d_review_chunk(
+            "Introduction Intro. The metabolically active 1,25(OH)2 D form continues. "
+            "Methods Study selection Methods body. Data abstraction and quality assessment Quality body. "
+            "Results Result body. Drugs that interfere with vitamin D absorption Absorption body. "
+            "Drugs that interfere with vitamin D metabolism Statins Statin body. "
+            "Antimicrobials Antimicrobial body. Antiepileptic drugs AED body. "
+            "Corticosteroids Steroid body. Immunosuppressive agents Immune body. "
+            "Chemotherapeutic agents Cancer body. Highly active antiretroviral agents (HAART) HAART body. "
+            "Histamine H2-receptor antagonists H2 body. "
+            "Drug-vitamin D interactions that induce side effects Side-effect body. Discussion Discussion body.",
+            chunk_index=1,
+            page_start=2,
+            page_end=13,
+        ),
+    ]
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(chunks)
+    by_start = {" ".join(chunk.content.split())[:80]: chunk for chunk in repaired}
+
+    assert repaired[0].content.startswith(
+        "Drug-vitamin D interactions: A systematic review of the literature\n\nAbstract\n"
+    )
+    expected_ranges = {
+        "Drug-vitamin D interactions: A systematic review of the literature Abstract": (1, 1),
+        "Introduction": (2, 2),
+        "Methods Study selection": (3, 4),
+        "Results": (5, 5),
+        "Drugs that interfere with vitamin D metabolism Statins": (6, 6),
+        "Antiepileptic drugs": (7, 8),
+        "Corticosteroids": (8, 9),
+        "Chemotherapeutic agents": (10, 10),
+        "Highly active antiretroviral agents (HAART)": (10, 11),
+        "Histamine H2-receptor antagonists": (11, 11),
+    }
+    for prefix, expected in expected_ranges.items():
+        chunk = next(item for normalized, item in by_start.items() if normalized.startswith(prefix))
+        assert (chunk.metadata.page_start, chunk.metadata.page_end) == expected
 
 
 def test_repair_aspirin_warfarin_vitamin_k_after_overview_reference() -> None:

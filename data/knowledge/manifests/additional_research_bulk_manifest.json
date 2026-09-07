@@ -172,7 +172,7 @@
       "document_id": "research_drug_nutrient_interactions-80c3d674cbc86d03",
       "repo_path": "data/knowledge/raw/demo_restricted/research/drug_nutrient_interactions/research_drug_vitamin_d_interactions.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
-      "selection_reason": "대표 문서 품질 승인을 상속한 전체 코퍼스 전처리",
+      "selection_reason": "NIH 원고 반복 요소 제거 및 참고문헌 제외 후 재검수",
       "manual_review_status": "APPROVED",
       "title": "Drug-vitamin D interactions: A systematic review of the literature",
       "source_url": "https://doi.org/10.1177/0884533612467824",

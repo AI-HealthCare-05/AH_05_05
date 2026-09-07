@@ -96,6 +96,46 @@ _POPULATION_LABELS = {
 
 _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-3dd5c1de206c9a88"
 _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-299edbe35f581616"
+_DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID = "research_drug_nutrient_interactions-80c3d674cbc86d03"
+
+_DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES = (
+    "The currently available literature on drug-vitamin D interactions",
+    "Because vitamin D is highly hydrophobic",
+    "Given the increasing prevalence of vitamin D supplementation",
+)
+
+_DRUG_VITAMIN_D_REVIEW_BOUNDARIES = (
+    "Introduction",
+    "The metabolically active 1,25(OH)2 D form",
+    "Methods Study selection",
+    "Data abstraction and quality assessment",
+    "Results",
+    "Drugs that interfere with vitamin D absorption",
+    "Drugs that interfere with vitamin D metabolism Statins",
+    "Antimicrobials",
+    "Antiepileptic drugs",
+    "Corticosteroids",
+    "Immunosuppressive agents",
+    "Chemotherapeutic agents",
+    "Highly active antiretroviral agents (HAART)",
+    "Histamine H2-receptor antagonists",
+    "Drug-vitamin D interactions that induce side effects",
+    "Discussion",
+    *_DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES,
+)
+
+_DRUG_VITAMIN_D_VERIFIED_PAGE_RANGES = {
+    "Drug-vitamin D interactions: A systematic review of the literature": (1, 1),
+    "Introduction": (2, 2),
+    "Methods Study selection": (3, 4),
+    "Results": (5, 5),
+    "Drugs that interfere with vitamin D metabolism Statins": (6, 6),
+    "Antiepileptic drugs": (7, 8),
+    "Corticosteroids": (8, 9),
+    "Chemotherapeutic agents": (10, 10),
+    "Highly active antiretroviral agents (HAART)": (10, 11),
+    "Histamine H2-receptor antagonists": (11, 11),
+}
 
 
 _COMMON_CAUTION_HEADINGS = {
@@ -402,6 +442,9 @@ class KnowledgeSplitter:
             return chunks
 
         document_id = chunks[0].metadata.document_id
+        if document_id == _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID:
+            repaired = self._resegment_drug_vitamin_d_review(chunks)
+            return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
         if document_id == _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID:
             repaired = list(chunks)
             self._repair_warfarin_review_discussion_boundary(repaired)
@@ -423,6 +466,142 @@ class KnowledgeSplitter:
         repaired = self._regroup_verified_table_chunks(repaired)
         repaired = [chunk for chunk in repaired if chunk.content.strip()]
         return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+
+    def _resegment_drug_vitamin_d_review(
+        self,
+        chunks: list[KnowledgeChunk],
+    ) -> list[KnowledgeChunk]:
+        merged = self._merge_verified_chunk_text(chunks)
+        merged = re.sub(r"Histamine H2\s+-receptor", "Histamine H2-receptor", merged)
+        positions = sorted(
+            {position for marker in _DRUG_VITAMIN_D_REVIEW_BOUNDARIES if (position := merged.find(marker)) >= 0}
+        )
+        if not positions:
+            return chunks
+        if positions[0] > 0:
+            positions.insert(0, 0)
+        positions.append(len(merged))
+
+        repaired: list[KnowledgeChunk] = []
+        for start, end in zip(positions, positions[1:], strict=False):
+            content = merged[start:end].strip()
+            if not content:
+                continue
+            metadata = self._verified_span_metadata(
+                content=content,
+                chunks=chunks,
+            )
+            verified_page_range = self._drug_vitamin_d_verified_page_range(content)
+            if verified_page_range is not None:
+                metadata = metadata.model_copy(
+                    update={
+                        "page_start": verified_page_range[0],
+                        "page_end": verified_page_range[1],
+                    }
+                )
+            repaired.append(
+                chunks[0].model_copy(
+                    update={
+                        "content": self._format_drug_vitamin_d_heading(content),
+                        "metadata": metadata,
+                    }
+                )
+            )
+        return repaired
+
+    @staticmethod
+    def _drug_vitamin_d_verified_page_range(
+        content: str,
+    ) -> tuple[int, int] | None:
+        return next(
+            (
+                page_range
+                for prefix, page_range in _DRUG_VITAMIN_D_VERIFIED_PAGE_RANGES.items()
+                if content.startswith(prefix)
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _merge_verified_chunk_text(chunks: list[KnowledgeChunk]) -> str:
+        merged_words: list[str] = []
+        for chunk in chunks:
+            words = chunk.content.split()
+            overlap = 0
+            max_overlap = min(len(merged_words), len(words), 250)
+            for size in range(max_overlap, 2, -1):
+                if merged_words[-size:] == words[:size]:
+                    overlap = size
+                    break
+            merged_words.extend(words[overlap:])
+        return " ".join(merged_words)
+
+    @staticmethod
+    def _verified_span_metadata(
+        *,
+        content: str,
+        chunks: list[KnowledgeChunk],
+    ) -> KnowledgeChunkMetadata:
+        words = content.split()
+        start_probe = " ".join(words[: min(8, len(words))])
+        end_probe = " ".join(words[-min(8, len(words)) :])
+        normalized_chunks = [
+            (
+                chunk,
+                re.sub(
+                    r"Histamine H2\s+-receptor",
+                    "Histamine H2-receptor",
+                    " ".join(chunk.content.split()),
+                ),
+            )
+            for chunk in chunks
+        ]
+        start_chunk = next(
+            (chunk for chunk, normalized in normalized_chunks if start_probe in normalized),
+            chunks[0],
+        )
+        end_chunk = next(
+            (chunk for chunk, normalized in reversed(normalized_chunks) if end_probe in normalized),
+            start_chunk,
+        )
+        return start_chunk.metadata.model_copy(
+            update={
+                "page_start": start_chunk.metadata.page_start,
+                "page_end": max(
+                    start_chunk.metadata.page_end,
+                    end_chunk.metadata.page_end,
+                ),
+            }
+        )
+
+    @staticmethod
+    def _format_drug_vitamin_d_heading(content: str) -> str:
+        title = "Drug-vitamin D interactions: A systematic review of the literature"
+        abstract_prefix = f"{title} Abstract "
+        if content.startswith(abstract_prefix):
+            return f"{title}\n\nAbstract\n{content[len(abstract_prefix) :].strip()}"
+
+        compound_headings = {
+            "Methods Study selection": "Methods\nStudy selection",
+            "Drugs that interfere with vitamin D metabolism Statins": (
+                "Drugs that interfere with vitamin D metabolism\nStatins"
+            ),
+        }
+        for flat, rendered in compound_headings.items():
+            if content.startswith(flat):
+                return f"{rendered}\n{content[len(flat) :].strip()}".strip()
+
+        heading_markers = {
+            marker
+            for marker in _DRUG_VITAMIN_D_REVIEW_BOUNDARIES
+            if marker not in compound_headings
+            and marker != "The metabolically active 1,25(OH)2 D form"
+            and marker not in _DRUG_VITAMIN_D_DISCUSSION_BOUNDARIES
+        }
+        for heading in heading_markers:
+            if content.startswith(heading) and len(content) > len(heading):
+                return f"{heading}\n{content[len(heading) :].strip()}"
+        return content
 
     @staticmethod
     def _repair_warfarin_review_discussion_boundary(
@@ -1263,6 +1442,12 @@ class KnowledgeSplitter:
     ) -> bool:
         if document_type != KnowledgeDocumentType.RESEARCH_ARTICLE:
             return True
+        line_start = content.rfind("\n", 0, match.start()) + 1
+        if re.match(
+            r"(?i)^\s*Keywords?\s*:",
+            content[line_start : match.start()],
+        ):
+            return False
         if section_type == KnowledgeSectionType.REFERENCES:
             return KnowledgeSplitter._is_references_section_start(
                 content,

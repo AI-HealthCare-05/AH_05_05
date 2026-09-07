@@ -3,6 +3,9 @@ from typing import Any
 from ai_worker.rag.loaders.botanical_review_layout_parser import (
     BotanicalReviewLayoutParser,
 )
+from ai_worker.rag.loaders.drug_vitamin_d_review_layout_parser import (
+    DrugVitaminDReviewLayoutParser,
+)
 from ai_worker.rag.loaders.herb_drug_review_layout_parser import (
     HerbDrugReviewLayoutParser,
 )
@@ -24,6 +27,7 @@ class VerifiedKnowledgeLayoutParser:
     def __init__(self) -> None:
         self._parsers = (
             BotanicalReviewLayoutParser(),
+            DrugVitaminDReviewLayoutParser(),
             HerbDrugReviewLayoutParser(),
             WarfarinReviewLayoutParser(),
         )
