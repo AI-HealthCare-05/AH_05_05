@@ -6,6 +6,7 @@
 
 OCR은 복약안내 문서에서 다음 정보만 추출한다.
 
+- 병원명
 - 조제일
 - 약품명
 - 함량
@@ -24,6 +25,10 @@ OCR은 복약안내 문서에서 다음 정보만 추출한다.
 ```json
 {
   "fields": {
+    "hospitalName": {
+      "value": "송도센트럴이비인후과의원",
+      "confidence": "high"
+    },
     "dispensedDate": {
       "value": "2026-08-25",
       "confidence": "high"
@@ -46,6 +51,7 @@ OCR은 복약안내 문서에서 다음 정보만 추출한다.
 
 | 필드 | 설명 |
 | --- | --- |
+| `hospitalName` | 병원·의원·진료과 명칭. 최대 255자 |
 | `dispensedDate` | 조제일 |
 | `tempId` | 리뷰 화면에서 사용하는 약품 임시 식별자 |
 | `name` | 약품명. OCR 원문을 유지하며 최대 100자 |
@@ -56,7 +62,7 @@ OCR은 복약안내 문서에서 다음 정보만 추출한다.
 | `confidence` | 해당 약 행에 채택한 OCR 근거 품질 |
 | `lowConfidenceCount` | 검토가 필요한 낮은 신뢰도 항목 수 |
 
-`strength`, `doseQuantity`, `timesPerDay`, `days`는 미추출 시 응답에서 생략한다.
+`hospitalName`, `strength`, `doseQuantity`, `timesPerDay`, `days`는 미추출 시 응답에서 생략한다.
 
 ### Confidence 기준
 
@@ -84,11 +90,11 @@ OCR은 복약안내 문서에서 다음 정보만 추출한다.
 | --- | --- | --- |
 | `preprocess` | 원근·조명 보정, OCR용 이미지와 전처리 미리보기 생성 | 없음 |
 | `ocr` | CLOVA General OCR로 글자와 좌표 추출 | CLOVA 1회 |
-| `candidate` | 좌표와 행·열 구조를 이용해 조제일과 약별 필드 후보 구성 | 없음 |
+| `candidate` | 좌표와 행·열 구조를 이용해 병원명, 조제일과 약별 필드 후보 구성 | 없음 |
 | `llm` | 조제일 또는 함량 후보가 충돌할 때 허용된 OCR block ID 선택 | 필요할 때 OpenAI 1회 |
 | `validate` | 날짜, 단위, 값 범위와 행 간 근거를 검증해 공개 결과 생성 | 없음 |
 
-LLM은 새로운 약품 정보를 생성하지 않는다. 충돌 후보가 있을 때만 OCR 근거를 선택하며, 충돌이 없거나 유효한 후보가 없으면 호출하지 않는다. 존재하지 않는 ID나 다른 약 행의 ID는 서버에서 거부한다.
+병원명은 문서 상단의 병원명 라벨과 병원·의원·진료과 접미사를 좌표로 판별하고, 가까운 분리 블록만 이어 붙이는 결정론 규칙으로 추출한다. 진료과 뒤에 의사 이름이 붙어 인식되면 진료과까지만 채택한다. 약국명과 효능 문구는 제외하며 후보가 충돌하면 값을 생략한다. 라벨 위치는 맞지만 OCR 오타로 접미사를 확인할 수 없는 값은 버리지 않고 `low`로 화면에 표시해 사용자가 수정할 수 있게 한다. LLM은 병원명을 생성하거나 선택하지 않는다. 조제일·함량 충돌 후보가 있을 때만 OCR 근거를 선택하며, 충돌이 없거나 유효한 후보가 없으면 호출하지 않는다. 존재하지 않는 ID나 다른 약 행의 ID는 서버에서 거부한다.
 
 각 단계는 상태, 소요 시간, 외부 호출 횟수와 오류 코드를 기록한다.
 
@@ -113,7 +119,7 @@ OCR 작업 단위와 품질 평가 데이터를 저장한다.
 - `input_manifest`: 원본·전처리 이미지 저장 정보와 무결성 확인값
 - `structured_result`: 사용자 리뷰용 OCR 결과 JSON
 - `ocr_model`, `structuring_model`, `prompt_version`, `schema_version`: 실행 버전 추적
-- `stage_results`: 단계별 상태, 소요 시간, 호출 횟수와 오류 코드
+- `stage_results`: `{"timings": ..., "stages": [...]}`. `timings`는 작업 단위 큐 대기·저장·전체 시간, `stages`는 기존 단계별 상태·`elapsedMs`·호출 횟수·오류 코드다. 애플리케이션 직렬화 순서는 timings → stages이며, MySQL JSON 원문 키 순서는 보장되지 않는다. 기존 배열형 기록과 `input_manifest.timings`는 33번 데이터 마이그레이션(원본 로컬 복사본에서는 32번)으로 이전한다.
 - `error_code`, `started_at`, `ready_at`, `completed_at`, `expires_at`: 오류 및 처리 시각
 
 품질 평가 컬럼은 다음과 같다.
@@ -124,7 +130,12 @@ OCR 작업 단위와 품질 평가 데이터를 저장한다.
 
 `avg_field_confidence`에는 약품명만 포함한다. 조제일, 함량, 1회 투약량, 하루 복용 횟수와 투약 일수의 confidence는 평균 계산에서 제외한다. 약품명 confidence가 없으면 평균은 `NULL`, 개수는 `0`으로 저장한다.
 
-`user_review_match_rate`는 조제일과 약별 `name`, `strength`, `doseQuantity`, `timesPerDay`, `days`를 비교한다. OCR에서 빠진 값을 사용자가 추가하거나 기존 값을 수정하면 불일치로 계산한다.
+`user_review_match_rate`는 병원명, 조제일과 약별 `name`, `strength`, `doseQuantity`, `timesPerDay`, `days`를 비교한다. OCR에서 빠진 값을 사용자가 추가하거나 기존 값을 수정하면 불일치로 계산한다.
+
+### `care_episodes`
+
+- `hospital_name`: 사용자가 확인한 병원명. 미추출·미입력 시 `NULL`
+- 복용 시작일, 투약 일수와 원본 OCR 작업 연결을 함께 저장한다.
 
 ### `medications`
 

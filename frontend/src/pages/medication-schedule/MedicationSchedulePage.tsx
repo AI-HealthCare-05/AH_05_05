@@ -862,7 +862,8 @@ function MedicationRegistrationWizard({
     ? SLOT_ORDER.filter((slot) => usedSlots.has(slot))
     : [];
   const canContinueFromSlots = scheduledMeds.every(
-    (medication) => (slots[medication.medicationId] ?? []).length > 0,
+    (medication) => (slots[medication.medicationId] ?? []).length ===
+      Math.min(medication.timesPerDay!, SLOT_ORDER.length),
   );
 
   useEffect(() => {
@@ -901,7 +902,11 @@ function MedicationRegistrationWizard({
     setSlots((current) => {
       const next = new Set(current[medicationId] ?? []);
       if (next.has(slot)) next.delete(slot);
-      else next.add(slot);
+      else {
+        const medication = scheduledMeds.find((med) => med.medicationId === medicationId);
+        if (!medication || next.size >= medication.timesPerDay!) return current;
+        next.add(slot);
+      }
       return { ...current, [medicationId]: SLOT_ORDER.filter((value) => next.has(value)) };
     });
   }
@@ -1157,9 +1162,14 @@ function MedicationRegistrationWizard({
               {scheduledMeds.map((medication) => (
                 <Card key={medication.medicationId} className="gap-3 p-4">
                   <div>
-                    <p className="font-bold text-foreground">
-                      {formatMedicationLabel(medication.name, medication.dose)}
-                    </p>
+                    <div className="flex w-full items-start justify-between gap-3">
+                      <p className="min-w-0 break-words font-bold text-foreground">
+                        {formatMedicationLabel(medication.name, medication.dose)}
+                      </p>
+                      <span className="shrink-0 text-sm font-bold text-primary-strong">
+                        하루 {medication.timesPerDay}회
+                      </span>
+                    </div>
                     {medication.timing && (
                       <p className="mt-1 text-sm text-muted-foreground">{medication.timing}</p>
                     )}
@@ -1173,9 +1183,10 @@ function MedicationRegistrationWizard({
                           type="button"
                           aria-pressed={selected}
                           aria-label={`${medication.name} ${slot.label}`}
+                          disabled={!selected && (slots[medication.medicationId] ?? []).length >= medication.timesPerDay!}
                           onClick={() => toggleSlot(medication.medicationId, slot.value)}
                           className={cn(
-                            'min-h-touch rounded-input border text-sm',
+                            'min-h-touch rounded-input border text-sm disabled:cursor-not-allowed disabled:opacity-40',
                             selected
                               ? 'border-primary bg-primary font-bold text-card'
                               : 'border-border bg-card text-muted-foreground',
@@ -1190,6 +1201,9 @@ function MedicationRegistrationWizard({
               ))}
             </div>
             <div className="mt-auto pb-4">
+              {!canContinueFromSlots && (
+                <p className="mb-2 text-sm text-muted-foreground">약마다 복용 횟수에 맞게 시간을 선택해주세요.</p>
+              )}
               <Button disabled={!canContinueFromSlots} onClick={() => setStep(4)}>
                 확인
               </Button>

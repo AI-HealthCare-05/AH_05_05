@@ -1,10 +1,13 @@
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import get_args
 
-from pydantic import TypeAdapter
+import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from app.core import config
+from app.core.config import Config
 from app.dtos.medication_guide_ocr import (
     DocumentOcrReadyResponse,
     DocumentOcrStatusResponse,
@@ -125,6 +128,41 @@ def test_confirm_request_accepts_the_six_field_rdb_shape_and_an_empty_medication
         raise AssertionError("dispensingDate must be confirmed before persistence")
 
 
+def test_hospital_name_is_optional_editable_text_with_a_255_character_limit() -> None:
+    review = MedicationGuideReviewResult.model_validate(
+        {
+            "fields": {
+                "hospitalName": {
+                    "value": "송도센트럴이비인후과의원",
+                    "confidence": "medium",
+                }
+            }
+        }
+    )
+    request = MedicationGuideConfirmRequest.model_validate(
+        {
+            "hospitalName": "송도센트럴이비인후과의원",
+            "dispensingDate": "2026-08-25",
+            "medications": [],
+        }
+    )
+
+    assert review.model_dump(mode="json", by_alias=True)["fields"]["hospitalName"]["value"] == (
+        "송도센트럴이비인후과의원"
+    )
+    assert request.hospital_name == "송도센트럴이비인후과의원"
+
+    for invalid in ("   ", "병" * 256):
+        try:
+            MedicationGuideConfirmRequest.model_validate(
+                {"hospitalName": invalid, "dispensingDate": "2026-08-25", "medications": []}
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("blank or oversized hospitalName must be rejected")
+
+
 def test_confirm_request_accepts_explicit_prn_but_rejects_null_ocr_optionals_and_legacy_fields() -> None:
     prn = MedicationGuideConfirmRequest.model_validate(
         {
@@ -221,6 +259,8 @@ def test_document_contract_uses_lowercase_status_and_a_discriminated_ready_resul
             }
         ],
         low_confidence_count=1,
+        preprocess_version="v3.1.8",
+        preprocess_elapsed_ms=321,
     )
 
     assert uploaded.model_dump(mode="json", by_alias=True) == {
@@ -229,6 +269,8 @@ def test_document_contract_uses_lowercase_status_and_a_discriminated_ready_resul
         "ocrStatus": "queued",
     }
     assert ready.model_dump(mode="json", by_alias=True)["fields"]["dispensedDate"]["confidence"] == "low"
+    assert ready.model_dump(mode="json", by_alias=True)["preprocessVersion"] == "v3.1.8"
+    assert ready.model_dump(mode="json", by_alias=True)["preprocessElapsedMs"] == 321
     medication = ready.model_dump(mode="json", by_alias=True)["medications"][0]
     assert medication == {
         "tempId": "med-1",
@@ -241,6 +283,37 @@ def test_document_contract_uses_lowercase_status_and_a_discriminated_ready_resul
     }
     parsed = TypeAdapter(DocumentOcrStatusResponse).validate_python(ready.model_dump(mode="json", by_alias=True))
     assert isinstance(parsed, DocumentOcrReadyResponse)
+
+
+@pytest.mark.parametrize("version", get_args(Config.model_fields["OCR_PREPROCESS_VERSION"].annotation))
+def test_document_ready_contract_accepts_every_configurable_preprocess_version(version: str) -> None:
+    ready = DocumentOcrReadyResponse(
+        batch_id="b_123",
+        ocr_status="ready_for_review",
+        document_image_url="/api/v1/ocr/jobs/123/image",
+        fields={},
+        medications=[],
+        low_confidence_count=0,
+        preprocess_version=version,
+    )
+    assert ready.model_dump(mode="json", by_alias=True)["preprocessVersion"] == version
+
+
+@pytest.mark.parametrize("version", ["v3.1.9", "v3.2.0", "v3.3.2", "v3.4.0", "v3.4.4", "v4.1.1"])
+def test_document_ready_contract_rejects_unsupported_preprocess_versions(version: str) -> None:
+    with pytest.raises(ValidationError) as exc:
+        DocumentOcrReadyResponse(
+            batch_id="b_123",
+            ocr_status="ready_for_review",
+            document_image_url="/api/v1/ocr/jobs/123/image",
+            fields={},
+            medications=[],
+            low_confidence_count=0,
+            preprocess_version=version,
+        )
+    assert [(error["loc"], error["type"]) for error in exc.value.errors()] == [
+        (("preprocess_version",), "string_pattern_mismatch")
+    ]
 
 
 def test_document_ready_contract_omits_unread_optional_fields_and_missing_date() -> None:

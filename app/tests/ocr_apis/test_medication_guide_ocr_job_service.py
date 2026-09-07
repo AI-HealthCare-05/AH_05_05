@@ -1,6 +1,7 @@
 import os
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from importlib import import_module
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -10,11 +11,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from arq import Retry
+from arq.constants import result_key_prefix
+from arq.jobs import serialize_result
 from fastapi import UploadFile
 from PIL import Image
 from starlette.datastructures import Headers
 from tortoise.contrib.test import TestCase
-from tortoise.exceptions import OperationalError
+from tortoise.exceptions import DBConnectionError, OperationalError
+from tortoise.queryset import QuerySet
 
 from app.core import config
 from app.core.exceptions import (
@@ -66,7 +70,9 @@ async def create_user(email: str) -> User:
     )
 
 
-def confirm_request(*, name: str = "수정한 약품 10mg", alias: str | None = None) -> MedicationGuideConfirmRequest:
+def confirm_request(
+    *, name: str = "수정한 약품 10mg", alias: str | None = None, hospital_name: str | None = None
+) -> MedicationGuideConfirmRequest:
     payload: dict[str, object] = {
         "dispensingDate": "2026-08-25",
         "medications": [
@@ -84,6 +90,8 @@ def confirm_request(*, name: str = "수정한 약품 10mg", alias: str | None = 
     }
     if alias is not None:
         payload["alias"] = alias
+    if hospital_name is not None:
+        payload["hospitalName"] = hospital_name
     return MedicationGuideConfirmRequest.model_validate(payload)
 
 
@@ -114,6 +122,29 @@ def test_review_projection_marks_values_outside_public_ranges_for_review() -> No
 class FakeRedis:
     def __init__(self) -> None:
         self.enqueued: list[tuple[tuple[object, ...], dict[str, object]]] = []
+        self.results: dict[str, bytes] = {}
+
+    async def get(self, key: str) -> bytes | None:
+        return self.results.get(key)
+
+    def finish(self, job_id: int, *, success: bool = False, function: str = "process_medication_guide_ocr") -> None:
+        now_ms = int(datetime.now(config.TIMEZONE).timestamp() * 1000) + 1
+        result = serialize_result(
+            function,
+            (job_id,),
+            {},
+            1,
+            now_ms,
+            success,
+            None,
+            now_ms,
+            now_ms,
+            f"ocr:{job_id}",
+            config.OCR_QUEUE_NAME,
+            f"ocr:{job_id}",
+        )
+        assert result is not None
+        self.results[f"{result_key_prefix}ocr:{job_id}"] = result
 
     async def enqueue_job(self, *args: object, **kwargs: object) -> object:
         self.enqueued.append((args, kwargs))
@@ -150,6 +181,7 @@ def fallback_failure_stages(*, code: str) -> list[dict[str, object]]:
         {"name": "preprocess", "status": "failed", "elapsedMs": 0, "callCount": 0, "code": code},
         {"name": "ocr", "status": "skipped", "elapsedMs": 0, "callCount": 0},
         {"name": "candidate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
+        {"name": "resolve", "status": "skipped", "elapsedMs": 0, "callCount": 0},
         {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
         {"name": "validate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
     ]
@@ -186,6 +218,7 @@ class FixtureAnalyzer:
             structuring_model="deterministic-v3",
             prompt_version="medication_grounding_v3",
             schema_version="medication-guide-review/v3",
+            preprocess_version="v3.1.8",
             requires_recapture=False,
             processed_image_bytes=b"processed-review-jpeg",
         )
@@ -283,6 +316,15 @@ def test_stage_validation_rejects_non_exact_scalar_types(field: str, value: obje
         MedicationGuideOcrJobService._validated_stage_results(stages)
 
 
+def test_stage_validation_accepts_resolve_without_fabricating_legacy_measurements() -> None:
+    legacy = successful_stages()
+    current = [*legacy[:3], {"name": "resolve", "status": "succeeded", "elapsedMs": 3, "callCount": 0}, *legacy[3:]]
+    assert MedicationGuideOcrJobService._validated_stage_results(current) == current
+    assert MedicationGuideOcrJobService._validated_stage_results(legacy) == legacy
+    with pytest.raises(ValueError):
+        MedicationGuideOcrJobService._validated_stage_results([*current, current[3]])
+
+
 @pytest.mark.parametrize(
     "dose_quantity",
     [
@@ -338,6 +380,412 @@ def test_ready_projection_omits_explicit_null_times_per_day() -> None:
 
 
 class TestMedicationGuideOcrJobService(TestCase):
+    async def test_worker_failure_preserves_empty_legacy_stages(self) -> None:
+        user = await create_user("ocr-empty-legacy-stages@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "empty-legacy-stages", upload())
+            job_id = int(accepted.ocr_job_id)
+            await OcrJob.filter(id=job_id).update(status=OcrJobStatus.PROCESSING, stage_results=[])
+            job = await OcrJob.get(id=job_id)
+            await service._mark_worker_interrupted(job, job.input_manifest, now=datetime.now(config.TIMEZONE))
+            failed = await OcrJob.get(id=job_id)
+            assert failed.stage_results == {"timings": None, "stages": []}
+
+    async def test_stage_envelope_migration_leaves_unknown_and_conflicting_data_untouched(self) -> None:
+        migration = import_module("app.core.db.migrations.models.33_20260907223001_stage_results_envelope")
+        user = await create_user("ocr-envelope-conflicts@example.com")
+        cases = [
+            ({"unknown": []}, {"timings": {"totalMs": 100}}),
+            ({"timings": {"totalMs": 200}, "stages": []}, {"timings": {"totalMs": 100}}),
+            ({"timings": None, "stages": [], "futureMetadata": "keep"}, {"source": "keep"}),
+            ([{"elapsedMs": 4}], ["legacy-manifest"]),
+        ]
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            ids = []
+            for index, (stages, manifest) in enumerate(cases):
+                accepted = await service.submit(user, f"envelope-conflict-{index}", upload())
+                job_id = int(accepted.ocr_job_id)
+                ids.append(job_id)
+                await OcrJob.filter(id=job_id).update(stage_results=stages, input_manifest=manifest)
+            for migrate in (migration.upgrade, migration.upgrade, migration.downgrade, migration.downgrade):
+                await OcrJob._meta.db.execute_script(await migrate(OcrJob._meta.db))
+                for job_id, (stages, manifest) in zip(ids, cases, strict=True):
+                    job = await OcrJob.get(id=job_id)
+                    assert job.stage_results == stages
+                    assert job.input_manifest == manifest
+
+    async def test_stage_envelope_migration_preserves_history_and_is_repeatable(self) -> None:
+        migration = import_module("app.core.db.migrations.models.33_20260907223001_stage_results_envelope")
+        user = await create_user("ocr-envelope-migration@example.com")
+        stages = [
+            {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
+            {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0, "code": "DETERMINISTIC_SUFFICIENT"},
+        ]
+        timings = {"queueWaitMs": 100, "persistMs": 200, "totalMs": 1500}
+        cases = [
+            (
+                stages,
+                {"source": "keep", "timings": timings},
+                {"timings": timings, "stages": stages},
+                {"source": "keep"},
+            ),
+            (stages, {"source": "keep"}, {"timings": None, "stages": stages}, {"source": "keep"}),
+            ([], {"source": "keep"}, {"timings": None, "stages": []}, {"source": "keep"}),
+            (None, {"source": "keep", "timings": timings}, {"timings": timings, "stages": None}, {"source": "keep"}),
+            (None, {"source": "keep"}, None, {"source": "keep"}),
+            (
+                {"timings": timings, "stages": stages},
+                {"source": "keep"},
+                {"timings": timings, "stages": stages},
+                {"source": "keep"},
+            ),
+        ]
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            ids = []
+            for index, (old_stages, manifest, _, _) in enumerate(cases):
+                accepted = await service.submit(user, f"envelope-migration-{index}", upload())
+                job_id = int(accepted.ocr_job_id)
+                ids.append(job_id)
+                await OcrJob.filter(id=job_id).update(stage_results=old_stages, input_manifest=manifest)
+            for _ in range(2):
+                await OcrJob._meta.db.execute_script(await migration.upgrade(OcrJob._meta.db))
+                for job_id, (_, _, expected, manifest) in zip(ids, cases, strict=True):
+                    job = await OcrJob.get(id=job_id)
+                    assert job.stage_results == expected
+                    assert job.input_manifest == manifest
+                    if expected is not None:
+                        assert list(job.stage_results) == ["timings", "stages"]
+            for _ in range(2):
+                await OcrJob._meta.db.execute_script(await migration.downgrade(OcrJob._meta.db))
+                for job_id, (_, _, expected, manifest) in zip(ids, cases, strict=True):
+                    job = await OcrJob.get(id=job_id)
+                    assert job.stage_results == (expected["stages"] if expected is not None else None)
+                    expected_manifest = dict(manifest)
+                    if expected is not None and expected["timings"] is not None:
+                        expected_manifest["timings"] = expected["timings"]
+                    assert job.input_manifest == expected_manifest
+            await OcrJob._meta.db.execute_script(await migration.upgrade(OcrJob._meta.db))
+            for job_id, (_, _, expected, manifest) in zip(ids, cases, strict=True):
+                job = await OcrJob.get(id=job_id)
+                assert job.stage_results == expected
+                assert job.input_manifest == manifest
+
+    async def test_final_publication_retries_database_only_and_preserves_analysis(self) -> None:
+        user = await create_user("ocr-publication-retry@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "publication-retry", upload())
+            db = OcrJob._meta.db
+            execute = db.execute_query
+            attempts = 0
+
+            async def fail_first_two_publications(sql, values=None):
+                nonlocal attempts
+                if sql.startswith("UPDATE") and "structured_result" in sql and "READY_FOR_REVIEW" in (values or ()):
+                    attempts += 1
+                    if attempts == 1:
+                        raise OperationalError("synthetic publication outage")
+                    if attempts == 2:
+                        raise DBConnectionError("synthetic database reconnect failure")
+                return await execute(sql, values)
+
+            analyzer = FixtureAnalyzer()
+            with (
+                patch.object(db, "execute_query", fail_first_two_publications),
+                patch.object(analyzer, "analyze", wraps=analyzer.analyze) as analyze,
+                patch.object(service.storage, "save_processed", wraps=service.storage.save_processed) as save_processed,
+            ):
+                await service.process(int(accepted.ocr_job_id), analyzer, job_try=1)
+
+            ready = await OcrJob.get(id=int(accepted.ocr_job_id))
+            assert ready.status == OcrJobStatus.READY_FOR_REVIEW
+            assert ready.structured_result["medications"][0]["strength"] == "20mg"
+            assert ready.stage_results["stages"] == successful_stages()
+            assert ready.stage_results["timings"]["persistMs"] >= 0
+            assert await service.storage.load_processed(ready.input_manifest) == (
+                b"processed-review-jpeg",
+                "image/jpeg",
+            )
+            assert attempts == 3
+            analyze.assert_awaited_once()
+            save_processed.assert_awaited_once()
+
+    async def test_publication_ack_loss_never_overwrites_a_committed_or_confirmed_result(self) -> None:
+        user = await create_user("ocr-publication-ack@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            db = OcrJob._meta.db
+            execute = db.execute_query
+            for confirm_immediately, continuing_outage in ((False, False), (True, False), (True, True)):
+                accepted = await service.submit(
+                    user, f"publication-ack-{confirm_immediately}-{continuing_outage}", upload()
+                )
+                job_id = int(accepted.ocr_job_id)
+                lost_ack = False
+
+                async def commit_then_lose_ack(
+                    sql, values=None, *, _confirm=confirm_immediately, _outage=continuing_outage, _job_id=job_id
+                ):
+                    nonlocal lost_ack
+                    if (
+                        _outage
+                        and lost_ack
+                        and sql.startswith("UPDATE")
+                        and "structured_result" in sql
+                        and "READY_FOR_REVIEW" in (values or ())
+                    ):
+                        raise OperationalError("synthetic continuing publication outage")
+                    result = await execute(sql, values)
+                    if (
+                        not lost_ack
+                        and sql.startswith("UPDATE")
+                        and "structured_result" in sql
+                        and "READY_FOR_REVIEW" in (values or ())
+                    ):
+                        lost_ack = True
+                        if _confirm:
+                            await service.confirm(user, _job_id, confirm_request(name="사용자 확정 약"))
+                        raise OperationalError("synthetic lost commit acknowledgement")
+                    return result
+
+                with patch.object(db, "execute_query", commit_then_lose_ack):
+                    await service.process(job_id, FixtureAnalyzer(), job_try=1)
+
+                saved = await OcrJob.get(id=job_id)
+                assert saved.status == (OcrJobStatus.COMPLETE if confirm_immediately else OcrJobStatus.READY_FOR_REVIEW)
+                assert saved.error_code is None
+                if confirm_immediately:
+                    assert saved.structured_result["medications"][0]["name"] == "사용자 확정 약"
+                assert Path(directory, saved.input_manifest["storageKey"]).exists()
+                assert Path(directory, saved.input_manifest["processedStorageKey"]).exists()
+
+    async def test_exhausted_publication_marks_failed_without_recalling_providers(self) -> None:
+        user = await create_user("ocr-publication-exhausted@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "publication-exhausted", upload())
+            db = OcrJob._meta.db
+            execute = db.execute_query
+
+            async def reject_ready_publication(sql, values=None):
+                if sql.startswith("UPDATE") and "structured_result" in sql and "READY_FOR_REVIEW" in (values or ()):
+                    raise OperationalError("synthetic invalid publication write")
+                return await execute(sql, values)
+
+            analyzer = FixtureAnalyzer()
+            with (
+                patch.object(db, "execute_query", reject_ready_publication),
+                patch.object(analyzer, "analyze", wraps=analyzer.analyze) as analyze,
+            ):
+                await service.process(int(accepted.ocr_job_id), analyzer, job_try=1)
+
+            failed = await OcrJob.get(id=int(accepted.ocr_job_id))
+            assert failed.status == OcrJobStatus.FAILED
+            assert failed.error_code == "WORKER_INTERRUPTED"
+            assert failed.completed_at is not None
+            assert failed.ready_at is None and failed.expires_at is None and failed.structured_result is None
+            assert failed.stage_results["stages"] == successful_stages()
+            assert list(Path(directory).iterdir()) == []
+            analyze.assert_awaited_once()
+
+    async def test_cleanup_reconciles_publication_failure_after_database_recovers(self) -> None:
+        user = await create_user("ocr-publication-recover@example.com")
+        with TemporaryDirectory() as directory:
+            redis = FakeRedis()
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=redis)
+            accepted = await service.submit(user, "publication-recover", upload())
+            job_id = int(accepted.ocr_job_id)
+            db = OcrJob._meta.db
+            execute = db.execute_query
+
+            async def reject_terminal_writes(sql, values=None):
+                if sql.startswith("UPDATE") and "structured_result" in sql:
+                    raise OperationalError("synthetic database outage")
+                return await execute(sql, values)
+
+            with patch.object(db, "execute_query", reject_terminal_writes):
+                with pytest.raises(OperationalError):
+                    await service.process(job_id, FixtureAnalyzer(), job_try=1)
+            assert (await OcrJob.get(id=job_id)).status == OcrJobStatus.PROCESSING
+            assert len(list(Path(directory).iterdir())) == 2
+
+            # ARQ records the unhandled error even when the database is unavailable.
+            redis.finish(job_id)
+            assert await service.cleanup_expired() == 0
+            failed = await OcrJob.get(id=job_id)
+            assert failed.status == OcrJobStatus.FAILED
+            assert failed.error_code == "WORKER_INTERRUPTED"
+            assert failed.completed_at is not None
+            assert (await service.get(user, job_id)).status == MedicationGuideOcrJobStatus.FAILED
+
+    async def test_reconciliation_requires_matching_unsuccessful_worker_evidence(self) -> None:
+        user = await create_user("ocr-reconcile-evidence@example.com")
+        with TemporaryDirectory() as directory:
+            redis = FakeRedis()
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=redis)
+            for evidence in ("missing", "success", "wrong-function", "wrong-job", "corrupt", "unavailable", "failed"):
+                accepted = await service.submit(user, f"reconcile-{evidence}", upload())
+                job_id = int(accepted.ocr_job_id)
+                await OcrJob.filter(id=job_id).update(
+                    status=OcrJobStatus.PROCESSING, started_at=datetime.now(config.TIMEZONE)
+                )
+                if evidence != "missing":
+                    redis.finish(
+                        job_id,
+                        success=evidence == "success",
+                        function="other_worker" if evidence == "wrong-function" else "process_medication_guide_ocr",
+                    )
+                if evidence == "wrong-job":
+                    redis.finish(job_id + 1000)
+                    redis.results[f"{result_key_prefix}ocr:{job_id}"] = redis.results[
+                        f"{result_key_prefix}ocr:{job_id + 1000}"
+                    ]
+                if evidence == "corrupt":
+                    redis.results[f"{result_key_prefix}ocr:{job_id}"] = b"invalid-result"
+                if evidence == "unavailable":
+                    with patch.object(redis, "get", AsyncMock(side_effect=ConnectionError("synthetic redis outage"))):
+                        response = await service.get(user, job_id)
+                else:
+                    response = await service.get(user, job_id)
+                expected = (
+                    MedicationGuideOcrJobStatus.FAILED
+                    if evidence == "failed"
+                    else MedicationGuideOcrJobStatus.PROCESSING
+                )
+                assert response.status == expected
+
+    async def test_immediate_confirmation_does_not_drop_timing_metadata(self) -> None:
+        user = await create_user("ocr-timing-confirm@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            original_process = service._process
+            original_update = QuerySet.update
+            for index, confirm_before_read in enumerate((True, False)):
+                accepted = await service.submit(user, f"timing-confirm-{index}", upload())
+                job_id = int(accepted.ocr_job_id)
+
+                async def process_then_confirm(*args, _before=confirm_before_read, _job_id=job_id, **kwargs):
+                    await original_process(*args, **kwargs)
+                    if _before:
+                        await OcrJob.filter(id=_job_id).update(status=OcrJobStatus.COMPLETE)
+
+                async def confirm_before_metadata_write(query, _before=confirm_before_read, _job_id=job_id, **kwargs):
+                    if not _before and set(kwargs) == {"stage_results"}:
+                        await original_update(OcrJob.filter(id=_job_id), status=OcrJobStatus.COMPLETE)
+                    return await original_update(query, **kwargs)
+
+                with (
+                    patch.object(service, "_process", side_effect=process_then_confirm),
+                    patch.object(QuerySet, "update", confirm_before_metadata_write),
+                ):
+                    await service.process(job_id, FixtureAnalyzer(), job_try=1)
+                job = await OcrJob.get(id=job_id)
+                assert job.status == OcrJobStatus.COMPLETE
+                assert job.stage_results["timings"]["totalMs"] >= 0
+
+    async def test_timing_metadata_failure_does_not_fail_a_successful_ocr_job(self) -> None:
+        user = await create_user("ocr-timing-write-failure@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "timing-write-failure-key", upload())
+            original_update = QuerySet.update
+
+            def fail_only_timing_write(query, **kwargs):
+                if set(kwargs) == {"stage_results"} and kwargs["stage_results"].get("timings") is not None:
+                    raise OperationalError("timing write unavailable")
+                return original_update(query, **kwargs)
+
+            with patch.object(QuerySet, "update", fail_only_timing_write):
+                await service.process(int(accepted.ocr_job_id), FixtureAnalyzer(), job_try=1)
+            job = await OcrJob.get(id=int(accepted.ocr_job_id))
+            assert job.status == OcrJobStatus.READY_FOR_REVIEW
+            assert job.error_code is None
+            assert job.structured_result["medications"]
+            assert "timings" not in job.input_manifest
+            assert job.stage_results["timings"] is None
+            assert job.stage_results["stages"] == successful_stages()
+
+    async def test_timing_totals_include_storage_and_database_without_summing_stages(self) -> None:
+        user = await create_user("ocr-timings@example.com")
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "timing-success-key", upload())
+            job = await OcrJob.get(id=int(accepted.ocr_job_id))
+            await OcrJob.filter(id=job.id).update(created_at=datetime.now(config.TIMEZONE) - timedelta(seconds=5))
+            clock = [100.0]
+            original_storage_save = service.storage.save_processed
+            db = OcrJob._meta.db
+            original_execute = db.execute_query
+
+            async def slow_storage(*args, **kwargs):
+                result = await original_storage_save(*args, **kwargs)
+                clock[0] += 0.2
+                return result
+
+            async def slow_database(sql, values=None):
+                result = await original_execute(sql, values)
+                if sql.startswith("UPDATE") and "structured_result" in sql and "READY_FOR_REVIEW" in (values or ()):
+                    clock[0] += 0.3
+                return result
+
+            class CurrentAnalyzer(FixtureAnalyzer):
+                async def analyze(self, image):
+                    result = await super().analyze(image)
+                    result.stages.insert(3, {"name": "resolve", "status": "succeeded", "elapsedMs": 1, "callCount": 0})
+                    return result
+
+            with (
+                patch("app.services.medication_guide_ocr_jobs.time.perf_counter", side_effect=lambda: clock[0]),
+                patch.object(service.storage, "save_processed", side_effect=slow_storage),
+                patch.object(db, "execute_query", slow_database),
+            ):
+                await service.process(job.id, CurrentAnalyzer(), job_try=1)
+            ready = await OcrJob.get(id=job.id)
+            assert list(ready.stage_results) == ["timings", "stages"]
+            assert "timings" not in ready.input_manifest
+            metrics = ready.stage_results["timings"]
+            assert metrics["persistMs"] == 500
+            assert 4900 <= metrics["queueWaitMs"] <= 5500
+            assert 5400 <= metrics["totalMs"] <= 6000
+            response = await service.get(user, job.id)
+            assert response.model_dump(mode="json", by_alias=True)["timings"] == metrics
+            assert [stage["name"] for stage in ready.stage_results["stages"]] == [
+                "preprocess",
+                "ocr",
+                "candidate",
+                "resolve",
+                "llm",
+                "validate",
+            ]
+            await service.process(job.id, CurrentAnalyzer(), job_try=1)
+            unchanged = await OcrJob.get(id=job.id)
+            assert unchanged.stage_results["timings"] == metrics
+
+    async def test_status_reads_enveloped_and_legacy_stage_timings_without_changing_records(self) -> None:
+        user = await create_user("ocr-stage-envelope@example.com")
+        metrics = {"queueWaitMs": 10, "persistMs": 20, "totalMs": 80}
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "stage-envelope-key", upload())
+            job_id = int(accepted.ocr_job_id)
+            job = await OcrJob.get(id=job_id)
+            for legacy in (True, False):
+                stages = [{"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0}]
+                payload = stages if legacy else {"timings": metrics, "stages": stages}
+                manifest = {**job.input_manifest, "timings": metrics} if legacy else job.input_manifest
+                await OcrJob.filter(id=job_id).update(
+                    status=OcrJobStatus.FAILED, stage_results=payload, input_manifest=manifest
+                )
+                response = await service.get(user, job_id)
+                assert response.preprocess_elapsed_ms == 4
+                assert response.model_dump(mode="json", by_alias=True)["timings"] == metrics
+                stored = await OcrJob.get(id=job_id)
+                assert stored.stage_results == payload
+                assert stored.input_manifest == manifest
+
     async def test_submit_creates_user_scoped_job_and_reuses_same_file(self) -> None:
         user = await create_user("ocr-submit@example.com")
         redis = FakeRedis()
@@ -418,12 +866,14 @@ class TestMedicationGuideOcrJobService(TestCase):
 
             retrying = await OcrJob.get(id=job.id)
             assert retrying.status is OcrJobStatus.PROCESSING
+            assert "timings" not in retrying.input_manifest
             assert stored_path.is_file()
 
             await service.process(job.id, analyzer, job_try=2)
 
             ready = await OcrJob.get(id=job.id)
             assert ready.status is OcrJobStatus.READY_FOR_REVIEW
+            assert ready.stage_results["timings"]["totalMs"] >= ready.stage_results["timings"]["queueWaitMs"]
             assert ready.ready_at is not None
             assert ready.expires_at == ready.ready_at + timedelta(minutes=60)
             assert ready.structured_result["medications"][0]["name"] == "에스오메프라졸캡슐"
@@ -444,7 +894,7 @@ class TestMedicationGuideOcrJobService(TestCase):
                 "doseQuantity": "2",
                 "confidence": "medium",
             }
-            assert ready.stage_results == [
+            assert ready.stage_results["stages"] == [
                 {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
                 {"name": "ocr", "status": "succeeded", "elapsedMs": 20, "callCount": 1},
                 {"name": "candidate", "status": "succeeded", "elapsedMs": 2, "callCount": 0},
@@ -457,6 +907,10 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert ready.structuring_model == "deterministic-v3"
             assert ready.prompt_version == "medication_grounding_v3"
             assert ready.schema_version == "medication-guide-review/v3"
+            assert ready.input_manifest["preprocessVersion"] == "v3.1.8"
+            status_response = await service.get(user, job.id)
+            assert status_response.preprocess_version == "v3.1.8"
+            assert status_response.preprocess_elapsed_ms == 4
             assert "targetFieldCount" not in ready.structured_result
             assert stored_path.is_file()
 
@@ -474,7 +928,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "RECAPTURE_REQUIRED"
             assert failed.structured_result is None
-            assert failed.stage_results == [
+            assert failed.stage_results["stages"] == [
                 {
                     "name": "preprocess",
                     "status": "succeeded",
@@ -546,7 +1000,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             failed = await OcrJob.get(id=job.id)
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "OCR_PROVIDER_TIMEOUT"
-            assert failed.stage_results == provider_failure_stages()
+            assert failed.stage_results["stages"] == provider_failure_stages()
             assert failed.completed_at is not None
             assert not stored_path.exists()
 
@@ -563,7 +1017,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             failed = await OcrJob.get(id=job.id)
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "OCR_PROVIDER_ERROR"
-            assert failed.stage_results == provider_failure_stages(code="OCR_PROVIDER_ERROR")
+            assert failed.stage_results["stages"] == provider_failure_stages(code="OCR_PROVIDER_ERROR")
 
     async def test_process_logs_an_unexpected_extraction_failure_before_marking_the_job_failed(self) -> None:
         user = await create_user("ocr-unexpected-failure@example.com")
@@ -581,7 +1035,8 @@ class TestMedicationGuideOcrJobService(TestCase):
             failed = await OcrJob.get(id=job.id)
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "EXTRACTION_FAILED"
-            assert failed.stage_results == fallback_failure_stages(code="EXTRACTION_FAILED")
+            assert failed.stage_results["stages"] == fallback_failure_stages(code="EXTRACTION_FAILED")
+            assert failed.stage_results["timings"]["totalMs"] >= 0
 
     async def test_process_preserves_analyzers_stages_when_ready_projection_is_invalid(self) -> None:
         user = await create_user("ocr-invalid-projection@example.com")
@@ -599,7 +1054,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "VALIDATION_FAILED"
             assert failed.structured_result is None
-            assert failed.stage_results == successful_stages()
+            assert failed.stage_results["stages"] == successful_stages()
 
     async def test_process_uses_exact_fallback_stages_when_analyzer_stages_are_invalid(self) -> None:
         user = await create_user("ocr-invalid-stages@example.com")
@@ -617,7 +1072,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "VALIDATION_FAILED"
             assert failed.structured_result is None
-            assert failed.stage_results == fallback_failure_stages(code="VALIDATION_FAILED")
+            assert failed.stage_results["stages"] == fallback_failure_stages(code="VALIDATION_FAILED")
 
     async def test_status_is_owner_scoped_and_hides_result_before_review(self) -> None:
         owner = await create_user("ocr-owner@example.com")
@@ -706,7 +1161,10 @@ class TestMedicationGuideOcrJobService(TestCase):
             idempotency_key="confirm-key-123",
             input_manifest={"contentSha256": "abc", "storageKey": "gone.png"},
             structured_result={
-                "fields": {"dispensedDate": {"value": "2026-08-25", "confidence": "high"}},
+                "fields": {
+                    "hospitalName": {"value": "송도센트럴이비인후과의원", "confidence": "high"},
+                    "dispensedDate": {"value": "2026-08-25", "confidence": "high"},
+                },
                 "medications": [
                     {
                         "tempId": "med-1",
@@ -742,11 +1200,15 @@ class TestMedicationGuideOcrJobService(TestCase):
                 storage=TemporaryOcrStorage(Path(directory)),
                 redis_pool=FakeRedis(),
             )
-            request = confirm_request(alias="OCR 등록 별칭")
+            request = confirm_request(hospital_name="송도센트럴이비인후과의원")
 
             first = await service.confirm(user, job.id, request)
+            assert (await CareEpisode.get(id=int(first.care_episode_id))).alias == "송도센트럴이비인후과의원"
             second = await service.confirm(user, job.id, request)
-            renamed = await service.confirm(user, job.id, confirm_request(alias="OCR 변경 별칭"))
+            renamed = await service.confirm(
+                user, job.id, confirm_request(alias="OCR 변경 별칭", hospital_name="송도센트럴이비인후과의원")
+            )
+            assert (await CareEpisode.get(id=int(first.care_episode_id))).alias == "OCR 변경 별칭"
             clear_alias_payload = request.model_dump(mode="json", by_alias=True)
             clear_alias_payload["alias"] = None
             cleared = await service.confirm(
@@ -763,6 +1225,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert episode.title == "2026-08-25 조제약 복약안내"
             assert episode.alias is None
             assert await CareEpisode.filter(source_ocr_job_id=job.id).count() == 1
+            assert episode.hospital_name == "송도센트럴이비인후과의원"
             assert episode.medication_start_date == date(2026, 8, 25)
             assert episode.medication_days == 5
             assert episode.source_ocr_job_id == job.id
@@ -784,6 +1247,10 @@ class TestMedicationGuideOcrJobService(TestCase):
                 "value": "2026-08-25",
                 "confidence": "high",
             }
+            assert stored_job.structured_result["fields"]["hospitalName"] == {
+                "value": "송도센트럴이비인후과의원",
+                "confidence": "high",
+            }
             assert [item["name"] for item in stored_job.structured_result["medications"]] == [
                 "수정한 약품 10mg",
                 "추가한 약품",
@@ -795,7 +1262,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert "confidence" not in stored_job.structured_result["medications"][1]
             assert "confidence" not in stored_job.structured_result["medications"][2]
             assert "timesPerDay" not in stored_job.structured_result["medications"][2]
-            assert stored_job.user_review_match_rate == Decimal("0.6667")
+            assert stored_job.user_review_match_rate == Decimal("0.7143")
             assert stored_job.stage_results == [
                 {"name": "preprocess", "status": "succeeded", "elapsedMs": 4, "callCount": 0},
                 {"name": "ocr", "status": "succeeded", "elapsedMs": 20, "callCount": 1},
@@ -816,11 +1283,15 @@ class TestMedicationGuideOcrJobService(TestCase):
             revised = await service.confirm(
                 user,
                 job.id,
-                confirm_request(name="등록 중 다시 수정한 약품"),
+                confirm_request(name="등록 중 다시 수정한 약품", hospital_name="수정한의원"),
                 allow_registration_edit=True,
             )
 
             assert revised.care_episode_id == first.care_episode_id
+            await episode.refresh_from_db()
+            assert episode.hospital_name == "수정한의원"
+            revised_job = await OcrJob.get(id=job.id)
+            assert revised_job.structured_result["fields"]["hospitalName"]["value"] == "수정한의원"
             assert await CareEpisode.filter(source_ocr_job_id=job.id).count() == 1
             assert await Medication.filter(care_episode=episode).count() == 3
             assert (

@@ -20,7 +20,10 @@ from app.services.medication_ocr_v3.pipeline.ocr_layout import (
     OcrLayoutResult,
     TableCandidate,
 )
-from app.services.medication_ocr_v3.pipeline.ocr_normalization import normalize_dose_unit_ocr
+from app.services.medication_ocr_v3.pipeline.ocr_normalization import (
+    normalize_dose_unit_ocr,
+    strip_leading_name_symbols,
+)
 
 _LOW_CONFIDENCE_THRESHOLD = 0.70
 _MAX_JSON_SAFE_INTEGER = 2**53 - 1
@@ -279,6 +282,9 @@ def materialize_medication_rows(layout: OcrLayoutResult) -> MedicationRowsResult
             bbox=_bbox_union((selected.bbox, *(row.bbox for row in summary_merged_rows))),
         )
     needs_guidance = any(cell is None or not cell.text for row in selected.rows for cell in row.cells[1:])
+    needs_guidance = needs_guidance or any(
+        row.cells[1] is not None and dose_quantity_value_and_unit(row.cells[1].text)[1] is None for row in selected.rows
+    )
     merged_rows, guidance_conflict, observed_guidance_conflict = (
         _merge_grounded_guidance_rows(selected, layout.guidance_rows)
         if needs_guidance
@@ -1151,7 +1157,14 @@ def _merge_grounded_row(
         if receipt_cell is not None and guidance_cell is not None:
             if not preserve_observed_conflicts and not _same_grounded_field(column, receipt_cell, guidance_cell):
                 return None
-            merged.append(receipt_cell)
+            add_explicit_unit = (
+                column == 1
+                and _normalized_candidate_name(receipt_name.text) == _normalized_candidate_name(guidance_name.text)
+                and _same_grounded_field(column, receipt_cell, guidance_cell)
+                and dose_quantity_value_and_unit(receipt_cell.text)[1] is None
+                and dose_quantity_value_and_unit(guidance_cell.text)[1] is not None
+            )
+            merged.append(guidance_cell if add_explicit_unit else receipt_cell)
         else:
             merged.append(receipt_cell or guidance_cell)
     return merged[0], merged[1], merged[2], merged[3]
@@ -1567,7 +1580,7 @@ def _name_field(cell: LayoutCell) -> MedicationField:
 
 def _canonical_name_value(text: str) -> str:
     normalized = " ".join(unicodedata.normalize("NFKC", text).split()).replace("_", "")
-    normalized = re.sub(r"^[·*+•]+\s*", "", normalized)
+    normalized = strip_leading_name_symbols(normalized)
     normalized = re.sub(r"^(?:[A-Z0-9]{1,3}\s+)+(?=[가-힣])", "", normalized)
     normalized = re.sub(r"^비\)\s*", "", normalized)
     normalized = re.sub(r"\s+(?=\()", "", normalized)

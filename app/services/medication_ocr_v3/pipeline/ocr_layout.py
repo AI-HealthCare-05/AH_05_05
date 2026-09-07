@@ -13,7 +13,11 @@ from itertools import combinations
 from statistics import median
 
 from app.services.medication_ocr_v3.domain.models import OcrBlock, OcrBlockIssueCode, OcrResult
-from app.services.medication_ocr_v3.pipeline.ocr_normalization import normalize_measurement_unit_ocr
+from app.services.medication_ocr_v3.pipeline.ocr_normalization import (
+    normalize_dose_unit_ocr,
+    normalize_measurement_unit_ocr,
+    strip_leading_name_symbols,
+)
 
 _HEADER_ALIASES: dict[str, frozenset[str]] = {
     "name": frozenset({"약품명", "약품명·성분", "약품명및용량", "약품명및용법", "품목명"}),
@@ -57,6 +61,7 @@ _STRUCTURAL_NUMERIC_PATTERN = re.compile(
 _GUIDANCE_DAILY_MARKER_PATTERN = re.compile(r"1일")
 _GUIDANCE_TIMES_PATTERN = re.compile(r"[1-9][0-9]*회")
 _GUIDANCE_DAYS_PATTERN = re.compile(r"[1-9][0-9]*일분")
+_PHOTO_LABELS = frozenset({"약품사진", "약품이미지", "사진", "이미지"})
 _GUIDANCE_DOSE_PATTERN = re.compile(
     r"(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]+)(?:정|캡슐|포|ml)(?:씩)?",
     re.IGNORECASE,
@@ -74,6 +79,9 @@ _FUZZY_COMBINED_GUIDANCE_SCHEDULE_PATTERN = re.compile(
     r"(?P<times>[1-9][0-9]*)(?:[,，]|[가-힣][,，]?)"
     r"(?P<days>[1-9][0-9]*)일분",
     re.IGNORECASE,
+)
+_PARTIAL_COMBINED_GUIDANCE_SCHEDULE_PATTERN = re.compile(
+    r"[0-9][^0-9]*(?P<times>[1-9][0-9]*)회[,，]?(?P<days>[1-9][0-9]*)일분",
 )
 _INLINE_TIMES_PATTERN = re.compile(r"([1-9][0-9]*)회[,，]?")
 _INLINE_RECEIPT_NUMBER_PATTERN = re.compile(r"[0-9]+(?:\.[0-9]+)?")
@@ -421,6 +429,7 @@ class _GuidanceHeader:
     name_band: tuple[float, float]
     instruction_band: tuple[float, float]
     bbox: AxisAlignedBBox
+    inferred: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,6 +475,13 @@ class _InlineGuidanceHeader:
 class _InlineReceiptMatch:
     day_cell: LayoutCell
     preferred_name_cell: LayoutCell | None
+
+
+@dataclass(frozen=True, slots=True)
+class _CombinedGuidanceSchedule:
+    dose: str | None
+    times: str
+    days: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -532,12 +548,21 @@ def build_ocr_layout(result: OcrResult) -> OcrLayoutResult:
     )
     seeds = _header_seeds(line_groups)
     candidates, candidate_issues = _table_candidates(seeds, line_groups)
-    if not candidates:
-        candidates = _combined_guidance_candidates(line_groups)
+    guidance_candidates = _combined_guidance_candidates(line_groups)
+    if guidance_candidates and (
+        not candidates
+        or max(len(candidate.rows) for candidate in guidance_candidates)
+        > max(len(candidate.rows) for candidate in candidates)
+    ):
+        candidates = guidance_candidates
     if not candidates:
         candidates = _inline_composite_candidates(line_groups)
     if not candidates:
         candidates = _headerless_correlated_receipt_candidates(line_groups)
+    if not candidates:
+        candidates = _labeled_guidance_candidates(geometry_blocks)
+    if not candidates:
+        candidates = _local_stacked_receipt_candidates(geometry_blocks)
     issues = _deduplicate_issues((*source_issues, *candidate_issues))
     return OcrLayoutResult(
         lines=lines,
@@ -545,6 +570,181 @@ def build_ocr_layout(result: OcrResult) -> OcrLayoutResult:
         issues=issues,
         guidance_rows=_guidance_layout_rows(line_groups),
         summary_rows=_three_column_summary_rows(line_groups),
+    )
+
+
+def _labeled_row_position(block: _GeometryBlock, slope: float) -> tuple[float, float]:
+    # A local baseline coordinate is only used for matching. Source/field boxes
+    # remain in processed-image coordinates for evidence and UI overlays.
+    assert block.source.bbox is not None
+    ys = tuple(point.y - slope * point.x for point in block.source.bbox)
+    return (min(ys) + max(ys)) / 2.0, max(ys) - min(ys)
+
+
+def _labeled_value_cell(
+    label: _GeometryBlock, prefix: str, blocks: tuple[_GeometryBlock, ...], slope: float
+) -> tuple[LayoutCell | None, bool]:
+    def valid(text: str) -> bool:
+        if prefix == "1회투약량":
+            return bool(_HEADERLESS_DOSE_PATTERN.fullmatch(text) or _GUIDANCE_DOSE_PATTERN.fullmatch(text))
+        return _bounded_positive_integer(text) is not None
+
+    suffix = _compact_text(label.source.text).removeprefix(prefix)
+    label_y, height = _labeled_row_position(label, slope)
+    nearby = tuple(
+        block
+        for block in blocks
+        if block.bbox.center_x > label.bbox.center_x
+        and -height <= block.bbox.x_min - label.bbox.x_max <= height * 2.5
+        and abs(_labeled_row_position(block, slope)[0] - label_y) <= height * 0.75
+        and valid(_compact_text(block.source.text))
+    )
+    if len(nearby) > 1 or (suffix and nearby):
+        return None, True
+    if suffix:
+        cell = _layout_cell([label]) if valid(suffix) else None
+        return (replace(cell, parsed_text=suffix) if cell else None), False
+    if not nearby:
+        return None, False
+    cell = _layout_cell([nearby[0]])
+    return (replace(cell, parsed_text=_compact_text(nearby[0].source.text)) if cell else None), False
+
+
+def _labeled_guidance_candidates(blocks: tuple[_GeometryBlock, ...]) -> tuple[TableCandidate, ...]:
+    """Last-resort exact labeled regimens, including diagonally photographed rows."""
+    headers = tuple(block for block in blocks if _normalized_header_text(block.source.text) == "약품명")
+    prefixes = ("1회투약량", "1일투여횟수", "총투약일수")
+    labels = tuple(
+        tuple(block for block in blocks if _compact_text(block.source.text).startswith(prefix)) for prefix in prefixes
+    )
+    if len(headers) != 1 or any(len(group) < 2 for group in labels):
+        return ()
+    slopes = []
+    for label in labels[0]:
+        assert label.source.bbox is not None
+        edges = tuple(
+            (end.x - start.x, end.y - start.y)
+            for start, end in zip(label.source.bbox, (*label.source.bbox[1:], label.source.bbox[0]), strict=True)
+        )
+        dx, dy = max(edges, key=lambda edge: abs(edge[0]))
+        if not dx or abs(dy / dx) > 0.5:
+            return ()
+        slopes.append(dy / dx)
+    slope = median(slopes)
+    if any(abs(value - slope) > 0.08 for value in slopes):
+        return ()
+    anchors = sorted(_labeled_row_position(label, slope) for label in labels[0])
+    typical_height = median(height for _, height in anchors)
+    positions = [_labeled_row_position(headers[0], slope)[0], *(y for y, _ in anchors)]
+    # Do not bridge detached panels or attach a distant, unrelated header. Use
+    # all dose anchors so a skipped invalid row does not create a false gap.
+    if typical_height <= 0 or any(
+        after - before > 10 * typical_height for before, after in zip(positions, positions[1:], strict=False)
+    ):
+        return ()
+    rows = _labeled_guidance_rows(blocks, headers[0], labels, prefixes, slope)
+    if len(rows) < 2:
+        return ()
+    return (_labeled_guidance_table(headers[0], rows),)
+
+
+def _labeled_guidance_rows(
+    blocks: tuple[_GeometryBlock, ...],
+    header: _GeometryBlock,
+    labels: tuple[tuple[_GeometryBlock, ...], ...],
+    prefixes: tuple[str, ...],
+    slope: float,
+) -> tuple[LayoutRow, ...]:
+    rows: list[LayoutRow] = []
+    used_ids: set[str] = set()
+    used_names: set[str] = set()
+    for dose_label in sorted(labels[0], key=lambda block: _labeled_row_position(block, slope)[0]):
+        row_y, height = _labeled_row_position(dose_label, slope)
+        if height <= 0 or row_y <= _labeled_row_position(header, slope)[0] + height:
+            continue
+        peers = [
+            tuple(
+                block
+                for block in group
+                if block.bbox.center_x > dose_label.bbox.center_x
+                and abs(_labeled_row_position(block, slope)[0] - row_y) <= height * 0.9
+            )
+            for group in labels[1:]
+        ]
+        if any(len(group) > 1 for group in peers):
+            return ()
+        if any(not group for group in peers):
+            continue
+        row_labels = (dose_label, peers[0][0], peers[1][0])
+        if not row_labels[0].bbox.center_x < row_labels[1].bbox.center_x < row_labels[2].bbox.center_x:
+            return ()
+        names = tuple(
+            block
+            for block in blocks
+            if block.bbox.x_max < dose_label.bbox.center_x
+            and abs(_labeled_row_position(block, slope)[0] - row_y) <= height
+            and _MEDICATION_NAME_FORM_PATTERN.search(_compact_text(block.source.text).split("(", 1)[0])
+            and not _HEADERLESS_NON_MEDICATION_VOCABULARY_PATTERN.search(block.source.text)
+        )
+        if len(names) != 1:
+            return ()
+        name = _compact_text(names[0].source.text).split("(", 1)[0]
+        if name in used_names:
+            return ()
+        numeric = tuple(
+            _labeled_value_cell(label, prefix, blocks, slope)
+            for label, prefix in zip(row_labels, prefixes, strict=True)
+        )
+        if any(ambiguous for _, ambiguous in numeric):
+            return ()
+        if any(cell is None for cell, _ in numeric):
+            continue
+        cells: LayoutCells = (_layout_cell([names[0]]), numeric[0][0], numeric[1][0], numeric[2][0])
+        ids = [block_id for cell in cells if cell is not None for block_id in cell.block_ids]
+        if len(ids) != len(set(ids)) or used_ids.intersection(ids):
+            return ()
+        used_ids.update(ids)
+        used_names.add(name)
+        rows.append(
+            LayoutRow(
+                row_id=f"labeled-row-{len(rows) + 1:04d}",
+                cells=cells,
+                bbox=_union(cell.bbox for cell in cells if cell is not None),
+            )
+        )
+    return tuple(rows)
+
+
+def _labeled_guidance_table(header: _GeometryBlock, rows: tuple[LayoutRow, ...]) -> TableCandidate:
+    columns = []
+    for index, key in enumerate(_HEADER_ORDER):
+        box = _union(cell.bbox for row in rows if (cell := row.cells[index]) is not None)
+        columns.append(
+            HeaderColumn(
+                key=key,
+                source_text=header.source.text if index == 0 else "",
+                block_ids=header.source_block_ids if index == 0 else (),
+                bbox=header.bbox if index == 0 else box,
+                band_min=box.x_min,
+                band_max=box.x_max,
+            )
+        )
+    observed = [cell for row in rows for cell in row.cells if cell is not None]
+    count = sum(cell.valid_confidence_count for cell in observed)
+    total = sum(len(cell.block_ids) for cell in observed)
+    confidence = sum((cell.confidence or 0) * cell.valid_confidence_count for cell in observed)
+    return TableCandidate(
+        candidate_id="table-labeled-guidance-0001",
+        bbox=_union(row.bbox for row in rows),
+        header_columns=(columns[0], columns[1], columns[2], columns[3]),
+        rows=rows,
+        ambiguous_column_evidence=(),
+        column_consistency=1.0,
+        confidence_coverage=count / total if total else 0,
+        mean_confidence=confidence / count if count else None,
+        observed_header_coverage=1,
+        header_inferred=True,
+        approval_block_ids=header.source_block_ids,
     )
 
 
@@ -607,12 +807,11 @@ def _cluster_lines(blocks: tuple[_GeometryBlock, ...]) -> tuple[_LineGroup, ...]
         ),
     )
     mutable_groups: list[list[_GeometryBlock]] = []
+    group_statistics: list[tuple[float, float]] = []
     for block in ordered:
         compatible: list[tuple[float, int]] = []
-        for index, group in enumerate(mutable_groups):
-            group_center = median(member.bbox.center_y for member in group)
-            group_height = median(member.bbox.height for member in group)
-            center_distance = abs(block.bbox.center_y - group_center) / median((block.bbox.height, group_height))
+        for index, (group_center, group_height) in enumerate(group_statistics):
+            center_distance = abs(block.bbox.center_y - group_center) / ((block.bbox.height + group_height) / 2.0)
             representative_band = AxisAlignedBBox(
                 0.0,
                 group_center - group_height / 2.0,
@@ -625,9 +824,15 @@ def _cluster_lines(blocks: tuple[_GeometryBlock, ...]) -> tuple[_LineGroup, ...]
                 compatible.append((center_distance, index))
         if compatible:
             _, best_index = min(compatible)
-            mutable_groups[best_index].append(block)
+            group = mutable_groups[best_index]
+            group.append(block)
+            group_statistics[best_index] = (
+                median(member.bbox.center_y for member in group),
+                median(member.bbox.height for member in group),
+            )
         else:
             mutable_groups.append([block])
+            group_statistics.append((block.bbox.center_y, block.bbox.height))
     groups = [
         _LineGroup(
             blocks=tuple(
@@ -660,6 +865,12 @@ def _normalized_header_text(text: str) -> str:
     return "".join(normalized.split()).translate(_HEADER_SEPARATOR_TRANSLATION)
 
 
+# Only fixed vocabulary is retained across requests, never provider OCR text.
+_NORMALIZED_HEADER_ALIASES = tuple(
+    (key, frozenset(_normalized_header_text(alias) for alias in aliases)) for key, aliases in _HEADER_ALIASES.items()
+)
+
+
 def _within_one_edit(first: str, second: str) -> bool:
     if abs(len(first) - len(second)) > 1:
         return False
@@ -683,22 +894,17 @@ def _within_one_edit(first: str, second: str) -> bool:
 
 def _header_match(text: str) -> _HeaderMatch | None:
     comparison = _normalized_header_text(text)
-    exact_keys = {
-        key
-        for key, aliases in _HEADER_ALIASES.items()
-        if comparison in {_normalized_header_text(alias) for alias in aliases}
-    }
+    exact_keys = {key for key, aliases in _NORMALIZED_HEADER_ALIASES if comparison in aliases}
     if len(exact_keys) == 1:
         return _HeaderMatch(next(iter(exact_keys)), False)
     if exact_keys or len(comparison) < 3:
         return None
     fuzzy_keys = {
         key
-        for key, aliases in _HEADER_ALIASES.items()
+        for key, aliases in _NORMALIZED_HEADER_ALIASES
         if any(
             len(normalized_alias) >= 3 and _within_one_edit(comparison, normalized_alias)
-            for alias in aliases
-            if (normalized_alias := _normalized_header_text(alias))
+            for normalized_alias in aliases
         )
     }
     if len(fuzzy_keys) != 1:
@@ -828,10 +1034,9 @@ def _joined_header_fragments(
 ) -> tuple[_GeometryBlock, ...]:
     aliases = tuple(
         normalized
-        for aliases in _HEADER_ALIASES.values()
-        for alias in aliases
-        if len(normalized := _normalized_header_text(alias)) >= 5
-        and all("가" <= character <= "힣" for character in normalized)
+        for _, aliases in _NORMALIZED_HEADER_ALIASES
+        for normalized in aliases
+        if len(normalized) >= 5 and all("가" <= character <= "힣" for character in normalized)
     )
     singles = tuple(
         block
@@ -954,10 +1159,13 @@ def _guidance_layout_rows(
             if header.instruction_band[0] <= block.bbox.center_x <= header.instruction_band[1]
         )
         name_blocks = [
-            block for block in line.blocks if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
+            block
+            for block in line.blocks
+            if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
+            and _compact_text(block.source.text) not in _PHOTO_LABELS
         ]
         name_cell = _layout_cell(name_blocks)
-        if name_cell is None:
+        if name_cell is None or not _looks_like_medication_name(tuple(name_blocks)):
             continue
         if not _guidance_prefix_starts_near_name(
             header,
@@ -983,36 +1191,44 @@ def _guidance_layout_rows(
 def _combined_guidance_candidates(
     line_groups: tuple[_LineGroup, ...],
 ) -> tuple[TableCandidate, ...]:
-    """Build a grounded table when one OCR block contains a full row schedule."""
+    """Build a grounded table from complete single-block or split row schedules."""
 
     headers = _guidance_headers(line_groups)
     if not headers:
         headers = _compact_schedule_headers(line_groups)
+    if not headers:
+        headers = _inferred_combined_guidance_headers(line_groups)
     if len(headers) != 1:
         return ()
     header = headers[0]
     efficacy_lane_left = _repeated_bracket_label_lane_left(line_groups, header)
-    rows: list[LayoutRow] = []
-    normalized_names: set[str] = set()
-    strict_schedule_count = 0
-    fuzzy_schedule_count = 0
-    for line in line_groups:
+    if header.inferred:
+        rows = list(_inferred_combined_guidance_rows(line_groups, header))
+        strict_schedule_count = 0
+        fuzzy_schedule_count = 0
+    else:
+        rows = list(_guidance_layout_rows(line_groups))
+        strict_schedule_count = len(rows)
+        fuzzy_schedule_count = 0
+    normalized_names: set[str] = {_compact_text(row.cells[0].text) for row in rows if row.cells[0] is not None}
+    for line in () if header.inferred else line_groups:
         if line.bbox.center_y <= header.bbox.center_y:
             continue
         schedules = tuple(
-            (block, match, strict)
+            (block, schedule, strict)
             for block in line.blocks
             if header.instruction_band[0] <= block.bbox.center_x <= header.instruction_band[1]
             and (parsed := _combined_guidance_schedule_match(_compact_text(block.source.text))) is not None
-            for match, strict in (parsed,)
+            for schedule, strict in (parsed,)
         )
         if len(schedules) != 1:
             continue
-        schedule_block, schedule_match, schedule_is_strict = schedules[0]
+        schedule_block, schedule, schedule_is_strict = schedules[0]
         name_blocks = tuple(
             block
             for block in line.blocks
             if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
+            and _compact_text(block.source.text) not in _PHOTO_LABELS
             and _contains_hangul(block.source.text)
             and _header_match(block.source.text) is None
             and _SUMMARY_ROW_MARKER_PATTERN.search(block.source.text) is None
@@ -1024,48 +1240,66 @@ def _combined_guidance_candidates(
         schedule_cell = _layout_cell([schedule_block])
         if name_cell is None or schedule_cell is None:
             continue
+        duplicate = next(
+            (
+                row
+                for row in rows
+                if row.cells[0] is not None and set(row.cells[0].block_ids).intersection(name_cell.block_ids)
+            ),
+            None,
+        )
+        if duplicate is not None:
+            # Split and joined OCR may describe the same anchored row. Do not
+            # duplicate it or discard the table when their explicit values agree.
+            if schedule_is_strict and all(
+                cell is not None
+                and value is not None
+                and normalize_dose_unit_ocr(_compact_text(cell.parsed_text or cell.text)).removesuffix(suffix).lower()
+                == value.lower()
+                for cell, value, suffix in zip(
+                    duplicate.cells[1:],
+                    (schedule.dose, schedule.times, schedule.days),
+                    ("씩", "회", "일분"),
+                    strict=True,
+                )
+            ):
+                continue
+            return ()
         normalized_name = _compact_text(name_cell.text)
         if normalized_name in normalized_names:
             return ()
         normalized_names.add(normalized_name)
         strict_schedule_count += int(schedule_is_strict)
         fuzzy_schedule_count += int(not schedule_is_strict)
-        dose_cell = replace(
-            schedule_cell,
-            parsed_text=schedule_match.group("dose"),
-        )
+        dose_cell = replace(schedule_cell, parsed_text=schedule.dose) if schedule.dose is not None else None
         times_cell = replace(
             schedule_cell,
-            parsed_text=schedule_match.group("times"),
+            parsed_text=schedule.times,
         )
         days_cell = replace(
             schedule_cell,
-            parsed_text=schedule_match.group("days"),
+            parsed_text=schedule.days,
         )
         cells: LayoutCells = (name_cell, dose_cell, times_cell, days_cell)
         rows.append(
             LayoutRow(
                 row_id=f"row-{len(rows) + 1:04d}",
                 cells=cells,
-                bbox=_union(
-                    (
-                        name_cell.bbox,
-                        dose_cell.bbox,
-                        times_cell.bbox,
-                        days_cell.bbox,
-                    )
-                ),
+                bbox=_union(cell.bbox for cell in cells if cell is not None),
             )
         )
     if len(rows) < 2 or fuzzy_schedule_count > strict_schedule_count:
         return ()
+    rows.sort(key=lambda row: (row.bbox.center_y, row.bbox.x_min))
+    rows = [replace(row, row_id=f"row-{index:04d}") for index, row in enumerate(rows, start=1)]
 
     observed_cells = [cell for row in rows for cell in row.cells if cell is not None]
     confidence_count = sum(cell.valid_confidence_count for cell in observed_cells)
     confidence_sum = sum((cell.confidence or 0.0) * cell.valid_confidence_count for cell in observed_cells)
-    first_cells = tuple(cell for cell in rows[0].cells if cell is not None)
-    if len(first_cells) != 4:
+    complete_header_row = next((row for row in rows if all(cell is not None for cell in row.cells)), None)
+    if complete_header_row is None:
         return ()
+    first_cells = tuple(cell for cell in complete_header_row.cells if cell is not None)
     header_columns = tuple(
         HeaderColumn(
             key=key,
@@ -1130,12 +1364,287 @@ def _repeated_bracket_label_lane_left(
 
 def _combined_guidance_schedule_match(
     text: str,
-) -> tuple[re.Match[str], bool] | None:
-    strict = _COMBINED_GUIDANCE_SCHEDULE_PATTERN.fullmatch(text)
+) -> tuple[_CombinedGuidanceSchedule, bool] | None:
+    normalized = normalize_dose_unit_ocr(text)
+    strict = _COMBINED_GUIDANCE_SCHEDULE_PATTERN.fullmatch(normalized)
     if strict is not None:
-        return strict, True
-    fuzzy = _FUZZY_COMBINED_GUIDANCE_SCHEDULE_PATTERN.fullmatch(text)
-    return (fuzzy, False) if fuzzy is not None else None
+        return _schedule_from_match(strict), True
+    fuzzy = _FUZZY_COMBINED_GUIDANCE_SCHEDULE_PATTERN.fullmatch(normalized)
+    if fuzzy is not None:
+        return _schedule_from_match(fuzzy), False
+    partial = _PARTIAL_COMBINED_GUIDANCE_SCHEDULE_PATTERN.fullmatch(normalized)
+    if partial is None:
+        return None
+    return (
+        _CombinedGuidanceSchedule(
+            dose=None,
+            times=partial.group("times"),
+            days=partial.group("days"),
+        ),
+        False,
+    )
+
+
+def _schedule_from_match(match: re.Match[str]) -> _CombinedGuidanceSchedule:
+    return _CombinedGuidanceSchedule(
+        dose=match.group("dose"),
+        times=match.group("times"),
+        days=match.group("days"),
+    )
+
+
+def _inferred_combined_guidance_rows(
+    line_groups: tuple[_LineGroup, ...],
+    header: _GuidanceHeader,
+) -> tuple[LayoutRow, ...]:
+    blocks = tuple(block for line in line_groups for block in line.blocks)
+    schedules = tuple(
+        (block, parsed)
+        for block in blocks
+        if block.bbox.center_y > header.bbox.center_y
+        and header.instruction_band[0] <= block.bbox.center_x <= header.instruction_band[1]
+        and (parsed := _combined_guidance_schedule_match(_compact_text(block.source.text))) is not None
+    )
+    rows: list[LayoutRow] = []
+    observed_names: set[str] = set()
+    strict_schedule_count = 0
+    fuzzy_schedule_count = 0
+    for schedule_block, (schedule, schedule_is_strict) in sorted(
+        schedules,
+        key=lambda item: (item[0].bbox.center_y, item[0].bbox.x_min, item[0].provider_order),
+    ):
+        name_candidates = tuple(
+            block
+            for block in blocks
+            if header.name_band[0] <= block.bbox.center_x <= header.name_band[1]
+            and block.bbox.x_max < schedule_block.bbox.x_min
+            and abs(block.bbox.center_y - schedule_block.bbox.center_y)
+            <= max(block.bbox.height, schedule_block.bbox.height) * 0.90
+            and _looks_like_medication_name_blocks((block,))
+        )
+        if not name_candidates:
+            continue
+        name_block = min(
+            name_candidates,
+            key=lambda block: (
+                abs(block.bbox.center_y - schedule_block.bbox.center_y),
+                -block.bbox.x_max,
+                block.provider_order,
+            ),
+        )
+        normalized_name = _compact_text(name_block.source.text)
+        if normalized_name in observed_names:
+            return ()
+        observed_names.add(normalized_name)
+        strict_schedule_count += int(schedule_is_strict)
+        fuzzy_schedule_count += int(not schedule_is_strict)
+        name_cell = _layout_cell([name_block])
+        schedule_cell = _layout_cell([schedule_block])
+        if name_cell is None or schedule_cell is None:
+            continue
+        dose_cell = replace(schedule_cell, parsed_text=schedule.dose) if schedule.dose is not None else None
+        times_cell = replace(schedule_cell, parsed_text=schedule.times)
+        days_cell = replace(schedule_cell, parsed_text=schedule.days)
+        cells: LayoutCells = (name_cell, dose_cell, times_cell, days_cell)
+        rows.append(
+            LayoutRow(
+                row_id=f"row-{len(rows) + 1:04d}",
+                cells=cells,
+                bbox=_union(cell.bbox for cell in cells if cell is not None),
+            )
+        )
+    return tuple(rows) if fuzzy_schedule_count <= strict_schedule_count else ()
+
+
+def _inferred_combined_guidance_headers(
+    line_groups: tuple[_LineGroup, ...],
+) -> tuple[_GuidanceHeader, ...]:
+    """Infer the main guide lanes when OCR merged its column headings."""
+
+    blocks = tuple(block for line in line_groups for block in line.blocks)
+    header_blocks = tuple(block for block in blocks if "복약안내" in _normalized_header_text(block.source.text))
+    if len(header_blocks) != 1:
+        return ()
+    header = header_blocks[0]
+    schedule_blocks = tuple(
+        block
+        for block in blocks
+        if block.bbox.center_y > header.bbox.center_y
+        and block.bbox.center_x > header.bbox.center_x
+        and _combined_guidance_schedule_match(_compact_text(block.source.text)) is not None
+    )
+    if len(schedule_blocks) < 3:
+        return ()
+    typical_height = median(block.bbox.height for block in schedule_blocks)
+    if (
+        max(block.bbox.center_x for block in schedule_blocks) - min(block.bbox.center_x for block in schedule_blocks)
+        > typical_height * 2.5
+    ):
+        return ()
+
+    name_blocks: list[_GeometryBlock] = []
+    for schedule in schedule_blocks:
+        candidates = tuple(
+            block
+            for block in blocks
+            if block.bbox.x_max < header.bbox.x_min
+            and abs(block.bbox.center_y - schedule.bbox.center_y) <= max(block.bbox.height, schedule.bbox.height) * 0.80
+            and _looks_like_medication_name_blocks((block,))
+        )
+        if not candidates:
+            return ()
+        name_blocks.append(max(candidates, key=lambda block: (block.bbox.x_max, block.provider_order)))
+    normalized_names = tuple(_compact_text(block.source.text) for block in name_blocks)
+    if len(set(normalized_names)) != len(normalized_names):
+        return ()
+
+    name_left = min(block.bbox.x_min for block in name_blocks) - typical_height
+    name_right = max(block.bbox.x_max for block in name_blocks) + typical_height
+    instruction_left = min(header.bbox.x_min, *(block.bbox.x_min for block in schedule_blocks))
+    instruction_right = max(block.bbox.x_max for block in schedule_blocks) + typical_height
+    if name_right >= instruction_left:
+        return ()
+    return (
+        _GuidanceHeader(
+            name_band=(name_left, name_right),
+            instruction_band=(instruction_left, instruction_right),
+            bbox=header.bbox,
+            inferred=True,
+        ),
+    )
+
+
+def _stacked_receipt_headers(
+    dose: _GeometryBlock,
+    blocks: tuple[_GeometryBlock, ...],
+) -> tuple[tuple[_GeometryBlock, _GeometryBlock], ...]:
+    lower_blocks = [dose]
+    for text in ("횟수", "일수"):
+        matches = [
+            block
+            for block in blocks
+            if _compact_text(block.source.text) == text
+            and 0 < block.bbox.center_x - lower_blocks[-1].bbox.center_x <= 3 * dose.bbox.height
+            and abs(block.bbox.center_y - dose.bbox.center_y) <= 0.5 * dose.bbox.height
+        ]
+        if len(matches) != 1:
+            return ()
+        lower_blocks.append(matches[0])
+    pairs = []
+    for lower, upper_texts in zip(lower_blocks, (("1회",), ("일투여", "1일투여"), ("총투약",)), strict=True):
+        matches = [
+            block
+            for block in blocks
+            if _compact_text(block.source.text) in upper_texts
+            and 0 < lower.bbox.center_y - block.bbox.center_y <= 1.5 * max(lower.bbox.height, block.bbox.height)
+            and min(lower.bbox.x_max, block.bbox.x_max) - max(lower.bbox.x_min, block.bbox.x_min)
+            >= 0.5 * min(lower.bbox.width, block.bbox.width)
+        ]
+        if len(matches) != 1:
+            return ()
+        pairs.append((matches[0], lower))
+    return tuple(pairs)
+
+
+def _stacked_receipt_values(
+    headers: tuple[tuple[_GeometryBlock, _GeometryBlock], ...],
+    blocks: tuple[_GeometryBlock, ...],
+) -> tuple[_GeometryBlock, ...]:
+    values = []
+    for _upper, lower in headers:
+        # Count malformed numeric-looking evidence before validating values.
+        matches = [
+            block
+            for block in blocks
+            if lower.bbox.x_min <= block.bbox.center_x <= lower.bbox.x_max
+            and 0 < block.bbox.center_y - lower.bbox.center_y <= 6 * lower.bbox.height
+            and any(character.isdigit() for character in block.source.text)
+        ]
+        if len(matches) != 1:
+            return ()
+        values.append(matches[0])
+    if any(left.bbox.x_max > right.bbox.x_min for left, right in zip(values, values[1:], strict=False)):
+        return ()
+    height = median(block.bbox.height for block in values)
+    if max(block.bbox.center_y for block in values) - min(block.bbox.center_y for block in values) > 0.5 * height:
+        return ()
+    return tuple(values) if _headerless_numeric_values(tuple(values)) is not None else ()
+
+
+def _stacked_receipt_name(
+    dose: _GeometryBlock,
+    blocks: tuple[_GeometryBlock, ...],
+) -> _GeometryBlock | None:
+    matches = [
+        block
+        for block in blocks
+        if 0 <= dose.bbox.x_min - block.bbox.x_max <= 6 * max(dose.bbox.height, block.bbox.height)
+        and abs(block.bbox.center_y - dose.bbox.center_y) <= 0.75 * max(dose.bbox.height, block.bbox.height)
+        and _WEAK_MEDICATION_PRODUCT_PATTERN.search(_inline_name_key(block.source.text)) is not None
+        and _looks_like_headerless_medication_name((block,))
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _local_stacked_receipt_candidates(blocks: tuple[_GeometryBlock, ...]) -> tuple[TableCandidate, ...]:
+    """Recover a single unambiguous receipt row from original, local geometry."""
+    candidates = []
+    for dose_header in blocks:
+        if _compact_text(dose_header.source.text) != "투약량":
+            continue
+        headers = _stacked_receipt_headers(dose_header, blocks)
+        if not headers:
+            continue
+        values = _stacked_receipt_values(headers, blocks)
+        if not values:
+            continue
+        name = _stacked_receipt_name(values[0], blocks)
+        if name is None:
+            continue
+        candidates.append(_stacked_receipt_candidate(name, values, headers))
+    return tuple(candidates) if len(candidates) == 1 else ()
+
+
+def _stacked_receipt_candidate(
+    name: _GeometryBlock,
+    values: tuple[_GeometryBlock, ...],
+    headers: tuple[tuple[_GeometryBlock, _GeometryBlock], ...],
+) -> TableCandidate:
+    cells: LayoutCells = (
+        _layout_cell([name]),
+        _layout_cell([values[0]]),
+        _layout_cell([values[1]]),
+        _layout_cell([values[2]]),
+    )
+    row = LayoutRow("row-0001", cells, _union(block.bbox for block in (name, *values)))
+    columns = [HeaderColumn("name", "", (), name.bbox, name.bbox.x_min, name.bbox.x_max)]
+    for key, pair in zip(_HEADER_ORDER[1:], headers, strict=True):
+        bbox = _union(block.bbox for block in pair)
+        columns.append(
+            HeaderColumn(
+                key,
+                " ".join(block.source.text for block in pair),
+                tuple(block.source.block_id for block in pair),
+                bbox,
+                bbox.x_min,
+                bbox.x_max,
+            )
+        )
+    observed = [cell for cell in cells if cell is not None]
+    count = sum(cell.valid_confidence_count for cell in observed)
+    confidence_sum = sum((cell.confidence or 0.0) * cell.valid_confidence_count for cell in observed)
+    return TableCandidate(
+        candidate_id="table-local-stacked-receipt-0001",
+        bbox=row.bbox,
+        header_columns=(columns[0], columns[1], columns[2], columns[3]),
+        rows=(row,),
+        ambiguous_column_evidence=(),
+        column_consistency=1.0,
+        confidence_coverage=count / 4,
+        mean_confidence=confidence_sum / count if count else None,
+        observed_header_coverage=3,
+        header_inferred=True,
+    )
 
 
 def _headerless_correlated_receipt_candidates(
@@ -2496,6 +3005,15 @@ def _guidance_headers(
             name_center = name_header.bbox.center_x
             name_right = (name_center + instruction_left) / 2.0
             name_left = name_center - (name_right - name_center)
+            photo_headers = [
+                block
+                for block in line.blocks
+                if block.bbox.center_x < name_center and _compact_text(block.source.text) in {"약품사진", "약품이미지"}
+            ]
+            if len(photo_headers) == 1:
+                # Centered titles do not mark the left edges of the printed columns.
+                name_left = min(name_left, (photo_headers[0].bbox.center_x + name_center) / 2.0)
+                instruction_left = (name_header.bbox.x_max + instruction_left) / 2.0
             headers.append(
                 _GuidanceHeader(
                     name_band=(name_left, name_right),
@@ -2606,7 +3124,10 @@ def _guidance_instruction_cells(
     if (
         first_slash < 2
         or second_slash != times_index + 1
-        or days_index != len(ordered) - 1
+        or days_index >= len(ordered)
+        # The explicit 1회 / 1일 / 일분 grammar is already fully delimited.
+        # Allow a nearby caution column, but not text touching the schedule.
+        or not _guidance_prefix_is_bounded(ordered, days_index + 1, gap_heights=1.0)
         or not _GUIDANCE_DAILY_MARKER_PATTERN.fullmatch(normalized[daily_index])
         or not _GUIDANCE_TIMES_PATTERN.fullmatch(normalized[times_index])
         or not _GUIDANCE_DAYS_PATTERN.fullmatch(normalized[days_index])
@@ -2672,6 +3193,9 @@ def _separatorless_guidance_cells(
     ordered: tuple[_GeometryBlock, ...],
     normalized: tuple[str, ...],
 ) -> tuple[LayoutCell | None, LayoutCell, LayoutCell] | None:
+    if len(ordered) >= 5 and normalized[0] == "1회" and _GUIDANCE_DOSE_PATTERN.fullmatch(normalized[1]):
+        # Explicit one-time marker precedes quantity, daily count, and duration.
+        return _separatorless_guidance_cells(ordered[1:], normalized[1:])
     if (
         len(ordered) >= 4
         and _GUIDANCE_DOSE_PATTERN.fullmatch(normalized[0])
@@ -2699,13 +3223,15 @@ def _separatorless_guidance_cells(
     return None
 
 
-def _guidance_prefix_is_bounded(ordered: tuple[_GeometryBlock, ...], prefix_length: int) -> bool:
+def _guidance_prefix_is_bounded(
+    ordered: tuple[_GeometryBlock, ...], prefix_length: int, *, gap_heights: float = 2.0
+) -> bool:
     if len(ordered) == prefix_length:
         return True
     prefix = ordered[:prefix_length]
     horizontal_gap = ordered[prefix_length].bbox.x_min - prefix[-1].bbox.x_max
     typical_height = median(block.bbox.height for block in prefix)
-    return horizontal_gap >= typical_height * 2.0
+    return horizontal_gap >= typical_height * gap_heights
 
 
 def _inline_composite_candidates(
@@ -3168,7 +3694,7 @@ def _positive_integer(text: str) -> int | None:
 
 
 def _inline_name_key(text: str) -> str:
-    normalized = _compact_text(text).replace("_", "")
+    normalized = strip_leading_name_symbols(_compact_text(text).replace("_", ""))
     return normalized.split("(", 1)[0].rstrip(".·…⋯")
 
 
@@ -3853,6 +4379,8 @@ def _name_blocks_for_row(
         candidates,
         key=lambda group: (
             not _looks_like_medication_name_blocks(group),
+            # Schedules may align with the ingredient line below a product title.
+            _MEDICATION_NAME_FORM_PATTERN.search(_compact_text(" ".join(block.source.text for block in group))) is None,
             abs(median(block.bbox.center_y for block in group) - anchor_y),
             min(block.bbox.x_min for block in group),
             tuple(block.provider_order for block in group),
