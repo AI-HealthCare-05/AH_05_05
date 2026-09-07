@@ -75,6 +75,34 @@ sources:
     document_type: RESEARCH_ARTICLE
     raw_path: data/knowledge/raw/demo_restricted/research/supplement_interactions
 
+  - source_id: fda_regulatory_drug_labels
+    provider: U.S. Food and Drug Administration
+    access_scope: PUBLIC
+    target: QDRANT
+    document_type: REGULATORY_DRUG_LABEL
+    raw_path: data/knowledge/raw/public/fda/drug_labels
+
+  - source_id: research_drug_nutrient_interactions
+    provider: 개별 학술 논문 발행처
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: data/knowledge/raw/demo_restricted/research/drug_nutrient_interactions
+
+  - source_id: research_herb_drug_interactions
+    provider: 개별 학술 논문 발행처
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: data/knowledge/raw/demo_restricted/research/herb_drug_interactions
+
+  - source_id: research_supplement_adverse_effects
+    provider: 개별 학술 논문 발행처
+    access_scope: DEMO_RESTRICTED
+    target: QDRANT
+    document_type: RESEARCH_ARTICLE
+    raw_path: data/knowledge/raw/demo_restricted/research/supplement_adverse_effects
+
   - source_id: unknown_supplement_interaction_monograph
     provider: 출처 확인 필요
     access_scope: DEMO_RESTRICTED

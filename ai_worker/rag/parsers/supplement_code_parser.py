@@ -83,6 +83,50 @@ _FIELDS = (
     ),
 )
 
+_SUPPLEMENT_INGREDIENT_REVIEW_SOURCE_ID = "food_safety_korea_supplement_ingredients"
+_CONSUMER_REVIEW_FIELDS = (
+    SupplementCodeField(
+        section_type=KnowledgeSectionType.INGREDIENT,
+        title="원료 또는 원재료",
+        hierarchy="원료 또는 원재료",
+        patterns=(
+            r"원료\s*(?:또는|및)\s*원재료",
+            r"기능성\s*원료명\s*\(\s*인정번호\s*\)",
+            r"기능성\s*원료명\s*인정번호\s*\(\s*\)",
+        ),
+    ),
+    SupplementCodeField(
+        section_type=KnowledgeSectionType.FUNCTION,
+        title="기능성 내용",
+        hierarchy="기능성 내용",
+        patterns=(r"기능성\s*내용",),
+    ),
+    SupplementCodeField(
+        section_type=KnowledgeSectionType.DAILY_INTAKE,
+        title="일일 섭취량",
+        hierarchy="일일 섭취량",
+        patterns=(r"일일\s*섭취량",),
+    ),
+    SupplementCodeField(
+        section_type=KnowledgeSectionType.CAUTION,
+        title="섭취 시 주의사항",
+        hierarchy="섭취 시 주의사항",
+        patterns=(r"섭취\s*시\s*주의사항",),
+    ),
+)
+_CONSUMER_REVIEW_STOP_HEADING = re.compile(
+    r"(?:지표성분\s*\(?(?:또는|및)?\s*(?:기능성|기능)\s*성분\)?|"
+    r"규격|안전성\s*(?:평가|자료|시험)|기능성\s*(?:평가|근거)|"
+    r"심사\s*(?:내용|결과)|독성\s*(?:평가|시험)|연구\s*결과|"
+    r"참고\s*내용|참고문헌|시험법|□\s*(?:심사자|기본|인정)\s*정보\s*사항|"
+    r"세\s*부\s*사\s*항)"
+)
+_CONSUMER_REVIEW_DETAILS_START = re.compile(r"□\s*심사자\s*정보\s*사항|세\s*부\s*사\s*항")
+_CONSUMER_REVIEW_FRAGMENTED_LATIN_GENUS = re.compile(
+    r"\b(?P<initial>[A-Z])(?P<fragments>(?:\([a-z])+)(?P<suffix>[a-z]{2,}\b)"
+)
+_CONSUMER_REVIEW_PLANT_PART = re.compile(r"\)\s*\(?\s*(?P<label>부위\s*:)")
+
 _PARENT_MARKER = re.compile(
     r"(?m)^\s*(?:제조기준\s*1\s*\)|1\s*\)\s*제조기준|"
     r"제품의\s*요건\s*3\s*\)|3\s*\)\s*제품의\s*요건)\s*$"
@@ -136,35 +180,31 @@ class SupplementCodeParser:
         pages: list[KnowledgePage],
     ) -> tuple[list[KnowledgeSection], list[tuple[int, int, int]]]:
         combined, page_ranges = self._combine_pages(pages)
-        matches = self._find_field_matches(combined)
+        is_consumer_review = pages[0].metadata.source_id == _SUPPLEMENT_INGREDIENT_REVIEW_SOURCE_ID
+        combined = self._truncate_consumer_review_details(
+            combined,
+            is_consumer_review=is_consumer_review,
+        )
+        matches = self._find_field_matches(
+            combined,
+            fields=_CONSUMER_REVIEW_FIELDS if is_consumer_review else _FIELDS,
+            allow_inline=is_consumer_review,
+        )
         if not matches:
             return [], page_ranges
 
         ingredient_name = self._ingredient_name(pages[0])
-        raw_sections: list[tuple[SupplementCodeField, str, int, int]] = []
-        for index, (start, heading_end, field) in enumerate(matches):
-            end = matches[index + 1][0] if index + 1 < len(matches) else len(combined)
-            raw_body = combined[heading_end:end]
-            source_end = end
-            for parent_match in _PARENT_MARKER.finditer(raw_body):
-                if not raw_body[parent_match.end() :].strip():
-                    source_end = heading_end + parent_match.start()
-                    break
-            body = self._normalize_extraction_artifacts(_PARENT_MARKER.sub("", raw_body).strip())
-            if field.section_type == KnowledgeSectionType.INGREDIENT:
-                body = self._restore_verified_ingredient_text(
-                    body,
-                    ingredient_name,
-                )
-                body = self._retain_named_ingredient_items(body)
-            elif field.section_type == KnowledgeSectionType.STANDARD:
-                body = self._normalize_standard_items(
-                    body,
-                    ingredient_name,
-                )
-            if body:
-                raw_sections.append((field, body, start, source_end))
-
+        raw_sections = self._extract_raw_sections(
+            combined=combined,
+            matches=matches,
+            ingredient_name=ingredient_name,
+            is_consumer_review=is_consumer_review,
+        )
+        if is_consumer_review:
+            ingredient_name = self._consumer_review_ingredient_name(
+                raw_sections,
+                fallback=ingredient_name,
+            )
         references = self._build_reference_map(raw_sections)
         sections: list[KnowledgeSection] = []
         for field, body, start, end in raw_sections:
@@ -207,11 +247,94 @@ class SupplementCodeParser:
         return sections, page_ranges
 
     @staticmethod
+    def _truncate_consumer_review_details(
+        content: str,
+        *,
+        is_consumer_review: bool,
+    ) -> str:
+        if not is_consumer_review:
+            return content
+        detail_start = _CONSUMER_REVIEW_DETAILS_START.search(content)
+        return content[: detail_start.start()].rstrip() if detail_start is not None else content
+
+    @staticmethod
+    def _consumer_review_ingredient_name(
+        raw_sections: list[tuple[SupplementCodeField, str, int, int]],
+        *,
+        fallback: str,
+    ) -> str:
+        ingredient_section = next(
+            (
+                body
+                for field, body, _start, _end in raw_sections
+                if field.section_type == KnowledgeSectionType.INGREDIENT
+            ),
+            None,
+        )
+        if ingredient_section is None:
+            return fallback
+        candidate = re.sub(r"\s+", " ", ingredient_section).lstrip("·•- ").strip()
+        return candidate or fallback
+
+    def _extract_raw_sections(
+        self,
+        *,
+        combined: str,
+        matches: list[tuple[int, int, SupplementCodeField]],
+        ingredient_name: str,
+        is_consumer_review: bool,
+    ) -> list[tuple[SupplementCodeField, str, int, int]]:
+        raw_sections: list[tuple[SupplementCodeField, str, int, int]] = []
+        for index, (start, heading_end, field) in enumerate(matches):
+            end = matches[index + 1][0] if index + 1 < len(matches) else len(combined)
+            raw_body = combined[heading_end:end]
+            source_end = end
+            if is_consumer_review:
+                stop_match = _CONSUMER_REVIEW_STOP_HEADING.search(raw_body)
+                if stop_match is not None:
+                    raw_body = raw_body[: stop_match.start()]
+                    source_end = heading_end + stop_match.start()
+            for parent_match in _PARENT_MARKER.finditer(raw_body):
+                if not raw_body[parent_match.end() :].strip():
+                    source_end = heading_end + parent_match.start()
+                    break
+            body = self._normalize_consumer_review_body(
+                self._normalize_extraction_artifacts(_PARENT_MARKER.sub("", raw_body).strip()),
+                is_consumer_review=is_consumer_review,
+            )
+            if field.section_type == KnowledgeSectionType.INGREDIENT:
+                body = self._restore_verified_ingredient_text(
+                    body,
+                    ingredient_name,
+                )
+                if not is_consumer_review:
+                    body = self._retain_named_ingredient_items(body)
+                else:
+                    body = self._repair_consumer_review_ingredient_text(body)
+            elif field.section_type == KnowledgeSectionType.STANDARD:
+                body = self._normalize_standard_items(
+                    body,
+                    ingredient_name,
+                )
+            if body:
+                raw_sections.append((field, body, start, source_end))
+        return raw_sections
+
+    @staticmethod
     def _find_field_matches(
         content: str,
+        *,
+        fields: tuple[SupplementCodeField, ...] = _FIELDS,
+        allow_inline: bool = False,
     ) -> list[tuple[int, int, SupplementCodeField]]:
+        if allow_inline:
+            return SupplementCodeParser._find_ordered_inline_field_matches(
+                content,
+                fields=fields,
+            )
+
         matches: list[tuple[int, int, SupplementCodeField]] = []
-        for field in _FIELDS:
+        for field in fields:
             field_matches = []
             for pattern in field.patterns:
                 field_matches = list(
@@ -231,6 +354,32 @@ class SupplementCodeParser:
                 continue
             selected.append(candidate)
         return selected
+
+    @staticmethod
+    def _find_ordered_inline_field_matches(
+        content: str,
+        *,
+        fields: tuple[SupplementCodeField, ...],
+    ) -> list[tuple[int, int, SupplementCodeField]]:
+        """Keep the first ordered summary labels, not later assessment-text mentions."""
+        matches: list[tuple[int, int, SupplementCodeField]] = []
+        offset = 0
+        for field in fields:
+            field_match = next(
+                (
+                    match
+                    for pattern in field.patterns
+                    if (match := re.search(pattern, content[offset:], flags=re.IGNORECASE)) is not None
+                ),
+                None,
+            )
+            if field_match is None:
+                continue
+            start = offset + field_match.start()
+            end = offset + field_match.end()
+            matches.append((start, end, field))
+            offset = end
+        return matches
 
     def _build_reference_map(
         self,
@@ -332,6 +481,31 @@ class SupplementCodeParser:
                 f"({match.group('label')}) {match.group('korean').strip()} ({match.group('english').strip()})"
             )
         return "\n".join(named_items)
+
+    @staticmethod
+    def _repair_consumer_review_ingredient_text(content: str) -> str:
+        repaired = _CONSUMER_REVIEW_FRAGMENTED_LATIN_GENUS.sub(
+            lambda match: (match.group("initial") + match.group("fragments").replace("(", "") + match.group("suffix")),
+            content,
+        )
+        return _CONSUMER_REVIEW_PLANT_PART.sub(
+            r") (\g<label>",
+            repaired,
+        )
+
+    @staticmethod
+    def _repair_consumer_review_summary_text(content: str) -> str:
+        return re.sub(r"\)\s*\(", ") (", content)
+
+    @staticmethod
+    def _normalize_consumer_review_body(
+        content: str,
+        *,
+        is_consumer_review: bool,
+    ) -> str:
+        if not is_consumer_review:
+            return content
+        return SupplementCodeParser._repair_consumer_review_summary_text(content)
 
     @classmethod
     def _normalize_standard_items(

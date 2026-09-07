@@ -1,7 +1,7 @@
 {
   "algorithm": "SHA-256 exact-content deduplication",
-  "retained_count": 1287,
-  "duplicate_count": 12,
+  "retained_count": 1299,
+  "duplicate_count": 14,
   "duplicates": [
     {
       "sha256": "2e9ef319ebedf2e6e709381de2fdae1c24b61d2dc59c2e8ba5a446565ee720ec",
@@ -62,6 +62,17 @@
       "sha256": "21de708dabedb1797de5995018e0d259b8fe79d576b91c8fa353ad1d24d3408e",
       "skipped_original_path": "RAG/VectorDB/부작용리포트/81_세레콕시브_(야간)요실금_가능성높음(한국형).pdf",
       "kept_repo_path": "data/knowledge/raw/demo_restricted/kpicia/adverse_case_report/81_세레콕시브_(야간)요실금_가능성높음(한국형) (1).pdf"
+    },
+    {
+      "sha256": "d2e4dfcb8919c4c34285d7bcd4937b7f768c2a2372057e37bf8122a25a912f62",
+      "skipped_original_path": "추추가/Pharmacological Interactions Between Nutritional Supplements and Prescription Medications in Older Adults A Comprehensive Review.pdf",
+      "kept_repo_path": "data/knowledge/raw/demo_restricted/research/supplement_interactions/Pharmacological Interactions Between Nutritional Supplements and Prescription Medications in Older Adults- A Comprehensive Review.pdf"
+    },
+    {
+      "sha256": "d989723349d0f3fa6528bf7344f50a6f2129534ddebadf84efbd220de11f8691",
+      "skipped_original_path": "추추가/Preventing Chronic Diseases_ What You Can Do Now _ Chronic Disease _ CDC 2.pdf",
+      "kept_original_path": "추추가/Preventing Chronic Diseases_ What You Can Do Now _ Chronic Disease _ CDC.pdf",
+      "selection_status": "EXCLUDED_AS_OUT_OF_SCOPE"
     }
   ]
 }

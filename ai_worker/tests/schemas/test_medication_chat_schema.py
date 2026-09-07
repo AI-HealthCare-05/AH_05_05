@@ -19,7 +19,12 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSourceKind,
 )
 from ai_worker.schemas.medication_search import (
+    MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
+    MedicationQuestionConfidence,
+    MedicationQuestionIntent,
+    MedicationQuestionInterpretation,
+    MedicationQuestionScope,
     MedicationSearchExecutionObservation,
 )
 
@@ -114,6 +119,31 @@ def test_medication_chat_result_excludes_internal_search_observation_from_api_du
 
     assert result.search_observation is not None
     assert "search_observation" not in result.model_dump(mode="json")
+
+
+def test_medication_chat_result_excludes_question_interpretation_from_api_dump() -> None:
+    interpretation = MedicationQuestionInterpretation(
+        original_question="안녕하세요",
+        resolved_question="안녕하세요",
+        scope=MedicationQuestionScope.GREETING,
+        resolution_status=MedicationExpressionResolutionStatus.UNCHANGED,
+        intent=MedicationQuestionIntent.GREETING,
+        confidence=MedicationQuestionConfidence.LOW,
+        reason_codes=["NO_ENTITY_IDENTIFIED"],
+        query_plan_hash="a" * 64,
+    )
+    result = MedicationChatResult(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        answer="안녕하세요.",
+        route=MedicationChatRoute.OUT_OF_SCOPE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="medication-chat-v1",
+        schema_version="medication-chat-result-v1",
+        question_interpretation=interpretation,
+    )
+
+    assert result.question_interpretation == interpretation
+    assert "question_interpretation" not in result.model_dump(mode="json")
 
 
 def test_generation_outcome_keeps_observation_out_of_chat_result() -> None:

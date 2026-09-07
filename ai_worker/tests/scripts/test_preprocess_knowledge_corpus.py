@@ -44,6 +44,41 @@ def test_parse_args_accepts_o200k_base(
     assert args.output == Path("data/knowledge/processed/full-v2-o200k")
 
 
+def test_parse_args_accepts_multiple_representative_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "preprocess_knowledge_corpus",
+            "--dataset-version",
+            "knowledge-full-v4",
+            "--pilot-quality-report",
+            "base-quality.json",
+            "--pilot-quality-report",
+            "additional-quality.json",
+            "--pilot-manifest",
+            "base-manifest.json",
+            "--pilot-manifest",
+            "additional-manifest.json",
+            "--baseline-quality-report",
+            "baseline.json",
+        ],
+    )
+
+    args = module.parse_args()
+
+    assert args.pilot_quality_report == [
+        Path("base-quality.json"),
+        Path("additional-quality.json"),
+    ]
+    assert args.pilot_manifest == [
+        Path("base-manifest.json"),
+        Path("additional-manifest.json"),
+    ]
+    assert args.baseline_quality_report == Path("baseline.json")
+
+
 def test_build_splitter_records_requested_tokenizer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

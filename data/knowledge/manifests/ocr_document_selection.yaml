@@ -1,0 +1,63 @@
+schema_version: knowledge-ocr-selection-v1
+policy: >-
+  OCR_REQUIRED 문서는 원본 PDF와 OCR artifact를 보존하되, 일반 복약·영양제 챗봇의
+  근거로 직접 필요한 문서만 허용한다. INCLUDE 문서도 OCR artifact 품질 게이트와
+  출처 승인 조건을 모두 통과해야 Qdrant 전처리 대상으로 포함된다.
+selections:
+  - document_id: kpicia_adverse_case_report-02e24f699eb9b475
+    decision: EXCLUDE
+    reason: 개별 플루오로퀴놀론계 항생제 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-08f18e6df0a95fd0
+    decision: EXCLUDE
+    reason: 개별 스코폴라민 패치 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-0f2c85fdde8bfd0b
+    decision: EXCLUDE
+    reason: 개별 레보설피리드 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-165fd90ed69892ba
+    decision: EXCLUDE
+    reason: 수유 중 감기약 복용의 개별 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-1969a5212d0bfa30
+    decision: EXCLUDE
+    reason: 개별 울리프리스탈 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-1ed1078fd34c37e3
+    decision: EXCLUDE
+    reason: 개별 레트로졸 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-241a659e36f3b072
+    decision: EXCLUDE
+    reason: 개별 옥시메톨론 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-408e6bddec7da059
+    decision: INCLUDE
+    reason: 리팜피신과 와파린의 병용 상호작용을 직접 다룬 사례로, 낮은 근거 수준을 표시해 보조 근거로 사용한다.
+  - document_id: kpicia_adverse_case_report-4364c36dd368e2a5
+    decision: EXCLUDE
+    reason: 개별 피메크로리무스 외용제 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-43b67c241fa4c40e
+    decision: EXCLUDE
+    reason: 개별 몬테루카스트 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-7ddcc7dfc693643a
+    decision: EXCLUDE
+    reason: 개별 이소트레티노인 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-81387ab2a74be6eb
+    decision: EXCLUDE
+    reason: 개별 페르페나진 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-89588e8e1492ad35
+    decision: EXCLUDE
+    reason: 여러 약물 복용의 개별 간질 발작 사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-8aad9e34e38a87ab
+    decision: EXCLUDE
+    reason: 개별 경구피임제 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-e29a06350b3991f1
+    decision: EXCLUDE
+    reason: 개별 제산제 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-e2bca246585620ad
+    decision: EXCLUDE
+    reason: 개별 에페리손 이상사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-e2c0d017f1dd39b5
+    decision: EXCLUDE
+    reason: 장기 복용 약물의 개별 알레르기 사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-e47ed1605b3c5133
+    decision: EXCLUDE
+    reason: 기침 시럽 성분의 개별 음주 측정 사례로 일반 안내 근거에 사용하지 않는다.
+  - document_id: kpicia_adverse_case_report-fd3a85f40a366912
+    decision: EXCLUDE
+    reason: 개별 스피로노락톤 이상사례로 일반 안내 근거에 사용하지 않는다.

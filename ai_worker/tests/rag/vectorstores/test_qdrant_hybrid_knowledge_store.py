@@ -13,6 +13,7 @@ from ai_worker.schemas.knowledge import (
     KnowledgeSearchMode,
     KnowledgeSearchQuery,
     KnowledgeSectionType,
+    KnowledgeVectorDistance,
 )
 
 
@@ -136,6 +137,21 @@ async def test_create_release_collection_uses_named_dense_and_bm25_vectors() -> 
     assert dense.size == 3
     assert dense.distance == models.Distance.COSINE
     assert sparse.modifier == models.Modifier.IDF
+
+
+async def test_create_hybrid_release_supports_dot_dense_distance() -> None:
+    client = RecordingClient()
+    store = QdrantHybridKnowledgeStore(
+        client=client,
+        collection_name="knowledge_hybrid_dot",
+        vector_size=3,
+        search_mode=KnowledgeSearchMode.HYBRID,
+        distance=KnowledgeVectorDistance.DOT,
+    )
+
+    await store.create_release_collection()
+
+    assert client.created["vectors_config"]["dense"].distance == models.Distance.DOT
 
 
 async def test_upsert_preserves_dense_vector_and_builds_multilingual_bm25_document() -> None:

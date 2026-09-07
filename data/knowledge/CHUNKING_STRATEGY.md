@@ -100,7 +100,21 @@ release 판정은 검색·출처 정확도와 잘못된 개체 혼합 방지를 
 ## 7. OCR 및 출처 보류 처리
 
 - `OCR_REQUIRED` 문서는 일반 PDF 파이프라인에서 제외합니다.
+- `data/knowledge/manifests/ocr_document_selection.yaml`은 모든 `OCR_REQUIRED`
+  문서를 `INCLUDE` 또는 `EXCLUDE`로 명시하는 allowlist 계약입니다. 새 OCR
+  문서는 이 매니페스트에 명시적으로 추가하지 않으면 청킹하지 않습니다.
+- 현재 OCR 대상인 약학정보원 개별 이상사례 19건 중 `리팜피신 병용 시 와파린의
+  항응고 효과 감소 사례`만 상호작용 질문과 직접 관련되어 `INCLUDE`로 유지합니다.
+  이 문서도 개별 사례라는 낮은 근거 수준을 유지하며, OCR artifact 품질·출처 승인
+  게이트를 통과할 때만 보조 근거로 사용할 수 있습니다.
+- 나머지 18건은 원본 PDF와 OCR artifact를 보존하지만, 희귀한 개별 이상사례를
+  일반 복약 안내의 검색 근거로 사용하지 않기 위해 `EXCLUDE`로 기록합니다.
 - OCR 후에는 최소 글자 수, 제어/대체문자 비율, 비정상적으로 긴 무공백 문자열을 검사합니다.
+- 로컬 Tesseract artifact는 글자 수 가중 평균 신뢰도 `0.85` 이상이고, 한글 음절이 `건 강 기 능`처럼 세 글자 이상 분절된 비율이 `10%` 이하일 때만 청킹 대상으로 승격합니다.
+- Tesseract TSV의 OCR 원문에 포함될 수 있는 큰따옴표는 CSV 따옴표가 아닌 일반
+  텍스트로 파싱합니다. renderer 또는 OCR 엔진 버전이 바뀌면 기존 artifact를 재사용하지
+  않고 다시 생성해, 이전 파서 오류가 새 청킹 결과에 섞이지 않게 합니다.
+- 위 기준을 통과하지 못한 artifact는 Qdrant 후보에 넣지 않고 `OCR 재검수/대체 OCR` 대상으로 유지합니다. CLOVA fallback은 별도 명시 승인과 실행 플래그가 있을 때만 사용합니다.
 - 품질 검사 결과가 `PASS`가 아니면 자동 인덱싱하지 않고 검토 목록에 남깁니다.
 - `QDRANT_DISABLED_UNTIL_VERIFIED` 또는 `index_eligible=false` 자료는 텍스트 추출 실험은 할 수 있지만 release 및 Qdrant 적재 대상에서는 제외합니다.
 
@@ -178,3 +192,20 @@ release 판정은 검색·출처 정확도와 잘못된 개체 혼합 방지를 
 따라서 기존 구조를 영구히 이중 운영하려는 것이 아니라, 사용자 응답 경로를 안전하게 교체하기 전 객관적인 비교 기준과 롤백 대상을 남겨두는 과정입니다.
 
 `knowledge-pilot-v1` 검증 결과와 실험 중 수정한 검색 조건은 `EVALUATION_RESULTS.md`에 기록합니다. 이후 비교는 삭제된 과거 컬렉션이 아니라, 새 dataset/collection 버전을 불변 release로 추가해 같은 평가 질문 세트로 수행합니다.
+
+## 11. 전체 코퍼스 부분 복원 정책
+
+대표 PDF에서 사람이 원문과 대조해 승인한 규칙은 같은 `source_id`와 문서 유형의
+전체 PDF에 적용합니다. 이때 자동 품질 검사에서 문제가 발견됐다는 이유만으로 문서
+전체를 폐기하지 않습니다.
+
+- `APPROVED` 청크만 `release/chunks`에 기록하여 임베딩 후보로 사용합니다.
+- `PENDING`, `REPAIR_REQUIRED` 청크는 `quarantine/chunks`에 원래 청크와 사유를 함께 보관합니다.
+- 참고문헌·저자·머리글·꼬리글처럼 검색 가치가 없는 청크는 `EXCLUDED_NON_CONTENT`로 기록하고 인덱싱하지 않습니다.
+- 문서 전체가 `BLOCKED`여도 안전한 `APPROVED` 청크가 하나 이상 있으면 부분 릴리스합니다.
+- 승인 청크가 하나도 없는 문서만 문서 단위 제외로 집계합니다.
+- `OCR_REQUIRED` 문서는 OCR 결과가 없는 상태에서 강제로 인덱싱하지 않습니다. 대신 `reports/ocr-required.jsonl`에 출처·원본 경로·SHA-256을 기록해 OCR 처리 대기열로 남깁니다.
+
+전체 dry-run에는 기존 대표 품질 보고서와 추가 연구 대표 품질 보고서를 함께 전달합니다.
+`reports/recovery-summary.json`과 `recovery-summary.md`에서 기존 제외 문서 중 복원된 수,
+부분 승인 수, 남은 제외 사유, OCR 대기 수를 확인한 뒤에만 새 불변 Qdrant 컬렉션을 생성합니다.

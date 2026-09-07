@@ -1,14 +1,18 @@
+import re
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeDocumentType,
+    KnowledgeEvidenceLevel,
+    KnowledgeStudyPopulation,
 )
 
 _SAFE_IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class KnowledgeSourceTarget(StrEnum):
@@ -27,6 +31,42 @@ class KnowledgeManualReviewStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+
+
+class KnowledgeOcrDocumentSelectionDecision(StrEnum):
+    INCLUDE = "INCLUDE"
+    EXCLUDE = "EXCLUDE"
+
+
+class KnowledgeOcrDocumentSelection(BaseModel):
+    document_id: str = Field(
+        min_length=1,
+        pattern=_SAFE_IDENTIFIER_PATTERN,
+    )
+    decision: KnowledgeOcrDocumentSelectionDecision
+    reason: str = Field(min_length=1)
+
+
+class KnowledgeOcrDocumentSelectionManifest(BaseModel):
+    schema_version: str = Field(min_length=1)
+    policy: str = Field(min_length=1)
+    selections: list[KnowledgeOcrDocumentSelection]
+
+    @model_validator(mode="after")
+    def require_unique_document_ids(self):
+        document_ids = [selection.document_id for selection in self.selections]
+        if len(document_ids) != len(set(document_ids)):
+            raise ValueError("document_id는 OCR 문서 선별 매니페스트에서 중복될 수 없습니다.")
+        return self
+
+
+class KnowledgeApprovedReviewReasonCode(StrEnum):
+    COMPLEX_TABLE_REQUIRES_REVIEW = "COMPLEX_TABLE_REQUIRES_REVIEW"
+    SHORT_FRAGMENT_RATIO = "SHORT_FRAGMENT_RATIO"
+    MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW = "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW"
+    ROTATED_TEXT_REQUIRES_REVIEW = "ROTATED_TEXT_REQUIRES_REVIEW"
+    TABLE_STRUCTURE_UNSAFE = "TABLE_STRUCTURE_UNSAFE"
+    READING_ORDER_UNSAFE = "READING_ORDER_UNSAFE"
 
 
 class KnowledgeSourceConfig(BaseModel):
@@ -77,6 +117,58 @@ class KnowledgePilotEntry(BaseModel):
     processing_status: KnowledgeProcessingStatus
     selection_reason: str = Field(min_length=1)
     manual_review_status: KnowledgeManualReviewStatus = KnowledgeManualReviewStatus.PENDING
+    title: str | None = None
+    source_url: str | None = None
+    doi: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publication_year: int | None = Field(default=None, ge=1900, le=2100)
+    drug_names: list[str] = Field(default_factory=list)
+    ingredient_names: list[str] = Field(default_factory=list)
+    evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
+    study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
+    verified_text_replacements: dict[str, str] = Field(default_factory=dict)
+    verified_section_headings: list[str] = Field(default_factory=list)
+    approved_chunk_content_hashes: list[str] = Field(default_factory=list)
+    approved_review_reason_codes: list[KnowledgeApprovedReviewReasonCode] = Field(default_factory=list)
+
+    @field_validator("verified_section_headings")
+    @classmethod
+    def normalize_verified_section_headings(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            heading = value.strip()
+            if not heading:
+                raise ValueError("검증된 섹션 제목은 비어 있을 수 없습니다.")
+            if heading not in normalized:
+                normalized.append(heading)
+        return normalized
+
+    @field_validator("approved_chunk_content_hashes")
+    @classmethod
+    def validate_approved_chunk_content_hashes(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            content_hash = value.strip().lower()
+            if not _SHA256_PATTERN.fullmatch(content_hash):
+                raise ValueError("수동 승인 청크 content_hash는 64자리 SHA-256이어야 합니다.")
+            if content_hash not in normalized:
+                normalized.append(content_hash)
+        return normalized
+
+    @model_validator(mode="after")
+    def require_valid_verified_text_replacements(self):
+        for source, replacement in self.verified_text_replacements.items():
+            if not source.strip() or not replacement.strip():
+                raise ValueError("검증된 텍스트 치환의 원문과 대체문은 비어 있을 수 없습니다.")
+            if source == replacement:
+                raise ValueError("검증된 텍스트 치환의 원문과 대체문은 달라야 합니다.")
+        return self
 
 
 class KnowledgePilotManifest(BaseModel):

@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
@@ -20,7 +21,9 @@ from ai_worker.rag.parsers.supplement_code_parser import (
 from ai_worker.rag.splitters.knowledge_splitter import KnowledgeSplitter
 from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
+    KnowledgeContentKind,
     KnowledgeDocumentType,
+    KnowledgeExtractionWarning,
     KnowledgeMetadata,
     KnowledgePage,
     KnowledgeSectionType,
@@ -54,6 +57,13 @@ class KnowledgeAutomaticQualityStatus(StrEnum):
     BLOCKED = "BLOCKED"
 
 
+class KnowledgeChunkReviewStatus(StrEnum):
+    APPROVED = "APPROVED"
+    PENDING = "PENDING"
+    REPAIR_REQUIRED = "REPAIR_REQUIRED"
+    EXCLUDED_NON_CONTENT = "EXCLUDED_NON_CONTENT"
+
+
 class KnowledgeAutomaticQualityReasonCode(StrEnum):
     NO_SEMANTIC_SECTIONS = "NO_SEMANTIC_SECTIONS"
     OVERSIZED_CHUNK = "OVERSIZED_CHUNK"
@@ -63,6 +73,17 @@ class KnowledgeAutomaticQualityReasonCode(StrEnum):
     SUPPLEMENT_SECTION_CONTAMINATION = "SUPPLEMENT_SECTION_CONTAMINATION"
     MALFORMED_SUPPLEMENT_TEXT = "MALFORMED_SUPPLEMENT_TEXT"
     MISSING_REQUIRED_SUPPLEMENT_SECTION = "MISSING_REQUIRED_SUPPLEMENT_SECTION"
+    COMPLEX_TABLE_REQUIRES_REVIEW = "COMPLEX_TABLE_REQUIRES_REVIEW"
+    MISSING_SEARCH_ENTITIES = "MISSING_SEARCH_ENTITIES"
+    UNKNOWN_EVIDENCE_LEVEL = "UNKNOWN_EVIDENCE_LEVEL"
+    BOILERPLATE_CONTAMINATION = "BOILERPLATE_CONTAMINATION"
+    UNRESOLVED_LINE_WRAP = "UNRESOLVED_LINE_WRAP"
+    SHORT_FRAGMENT_RATIO = "SHORT_FRAGMENT_RATIO"
+    MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW = "MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW"
+    ROTATED_TEXT_REQUIRES_REVIEW = "ROTATED_TEXT_REQUIRES_REVIEW"
+    MISSING_SOURCE_METADATA = "MISSING_SOURCE_METADATA"
+    TABLE_STRUCTURE_UNSAFE = "TABLE_STRUCTURE_UNSAFE"
+    READING_ORDER_UNSAFE = "READING_ORDER_UNSAFE"
 
 
 _BLOCKING_QUALITY_REASONS = {
@@ -73,6 +94,8 @@ _BLOCKING_QUALITY_REASONS = {
     KnowledgeAutomaticQualityReasonCode.SUPPLEMENT_SECTION_CONTAMINATION,
     KnowledgeAutomaticQualityReasonCode.MALFORMED_SUPPLEMENT_TEXT,
     KnowledgeAutomaticQualityReasonCode.MISSING_REQUIRED_SUPPLEMENT_SECTION,
+    KnowledgeAutomaticQualityReasonCode.TABLE_STRUCTURE_UNSAFE,
+    KnowledgeAutomaticQualityReasonCode.READING_ORDER_UNSAFE,
 }
 
 _REQUIRED_SUPPLEMENT_SECTIONS = frozenset(
@@ -80,6 +103,22 @@ _REQUIRED_SUPPLEMENT_SECTIONS = frozenset(
         KnowledgeSectionType.INGREDIENT,
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.DAILY_INTAKE,
+    }
+)
+_PARTIAL_RELEASE_SUPPLEMENT_SECTIONS = frozenset(
+    {
+        KnowledgeSectionType.INGREDIENT,
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    }
+)
+_PARTIAL_RELEASE_SUPPLEMENT_REASON_CODES = frozenset(
+    {
+        KnowledgeAutomaticQualityReasonCode.MISSING_REQUIRED_SUPPLEMENT_SECTION.value,
+        KnowledgeAutomaticQualityReasonCode.MISSING_SUPPLEMENT_CONTEXT.value,
+        KnowledgeAutomaticQualityReasonCode.MALFORMED_SUPPLEMENT_TEXT.value,
+        KnowledgeAutomaticQualityReasonCode.SUPPLEMENT_SECTION_CONTAMINATION.value,
     }
 )
 _MALFORMED_SUPPLEMENT_TEXT_PATTERNS = (
@@ -126,10 +165,40 @@ _SUPPLEMENT_SECTION_FORBIDDEN_HEADINGS = {
     KnowledgeSectionType.CAUTION: (r"시험\s*법",),
 }
 
+_COMPLEX_TABLE_PATTERN = re.compile(r"(?im)^\s*table\s+(?:\d+|[IVXLCDM]+)[.:\s]")
+_BOILERPLATE_PATTERN = re.compile(
+    r"(?i)(?:author contributions:|conflicts of interest:|"
+    r"manufactured and distributed by:|©\s*20\d{2}|"
+    r"https?://doi\.org/)"
+)
+_UNRESOLVED_LINE_WRAP_PATTERN = re.compile(r"\b[A-Za-z]{2,}-\n[A-Za-z]{2,}\b")
+_METADATA_QUALITY_DOCUMENT_TYPES = {
+    KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+    KnowledgeDocumentType.RESEARCH_ARTICLE,
+}
+
+
+class KnowledgeChunkReviewLocation(BaseModel):
+    chunk_index: int = Field(ge=0)
+    page_start: int = Field(ge=1)
+    page_end: int = Field(ge=1)
+
+
+class KnowledgeChunkReviewRecord(KnowledgeChunkReviewLocation):
+    chunk_id: str = Field(min_length=64, max_length=64)
+    status: KnowledgeChunkReviewStatus
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class QuarantinedKnowledgeChunk(BaseModel):
+    review: KnowledgeChunkReviewRecord
+    chunk: KnowledgeChunk
+
 
 class KnowledgeDocumentPreprocessingReport(BaseModel):
     document_id: str
     source_id: str
+    source_document_path: Path
     document_type: KnowledgeDocumentType
     selection_reason: str
     automatic_status: KnowledgeAutomaticQualityStatus
@@ -142,6 +211,27 @@ class KnowledgeDocumentPreprocessingReport(BaseModel):
     average_chunk_tokens: float = Field(ge=0)
     max_chunk_tokens: int = Field(ge=1)
     semantic_section_ratio: float = Field(ge=0, le=1)
+    search_entity_coverage: float = Field(default=0, ge=0, le=1)
+    known_evidence_ratio: float = Field(default=0, ge=0, le=1)
+    source_metadata_complete: bool = False
+    complex_table_chunk_count: int = Field(default=0, ge=0)
+    complex_table_locations: list[KnowledgeChunkReviewLocation] = Field(
+        default_factory=list,
+    )
+    layout_warning_count: int = Field(default=0, ge=0)
+    layout_warning_pages: list[int] = Field(default_factory=list)
+    rotated_text_warning_count: int = Field(default=0, ge=0)
+    rotated_text_warning_pages: list[int] = Field(default_factory=list)
+    chunk_reviews: list[KnowledgeChunkReviewRecord] = Field(
+        default_factory=list,
+    )
+    approved_chunk_count: int = Field(default=0, ge=0)
+    pending_chunk_count: int = Field(default=0, ge=0)
+    repair_required_chunk_count: int = Field(default=0, ge=0)
+    excluded_non_content_chunk_count: int = Field(default=0, ge=0)
+    released_chunk_count: int = Field(default=0, ge=0)
+    partial_release: bool = False
+    release_ready: bool = False
     review_sample_path: Path
 
 
@@ -190,10 +280,18 @@ class KnowledgePilotPreprocessingService:
         chunk_output = Path(output_root) / "chunks"
         report_output = Path(output_root) / "reports"
         review_output = Path(output_root) / "review"
+        quarantine_text_output = Path(output_root) / "quarantine" / "text"
+        quarantine_chunk_output = Path(output_root) / "quarantine" / "chunks"
+        release_text_output = Path(output_root) / "release" / "text"
+        release_chunk_output = Path(output_root) / "release" / "chunks"
         text_output.mkdir(parents=True, exist_ok=True)
         chunk_output.mkdir(parents=True, exist_ok=True)
         report_output.mkdir(parents=True, exist_ok=True)
         review_output.mkdir(parents=True, exist_ok=True)
+        quarantine_text_output.mkdir(parents=True, exist_ok=True)
+        quarantine_chunk_output.mkdir(parents=True, exist_ok=True)
+        release_text_output.mkdir(parents=True, exist_ok=True)
+        release_chunk_output.mkdir(parents=True, exist_ok=True)
         quality_report_path = report_output / "preprocessing-quality.json"
         quality_report_path.unlink(missing_ok=True)
 
@@ -203,6 +301,10 @@ class KnowledgePilotPreprocessingService:
             text_output=text_output,
             chunk_output=chunk_output,
             review_output=review_output,
+            quarantine_text_output=quarantine_text_output,
+            quarantine_chunk_output=quarantine_chunk_output,
+            release_text_output=release_text_output,
+            release_chunk_output=release_chunk_output,
         )
 
         processed_count = 0
@@ -217,6 +319,10 @@ class KnowledgePilotPreprocessingService:
                 text_output=text_output,
                 chunk_output=chunk_output,
                 review_output=review_output,
+                quarantine_text_output=quarantine_text_output,
+                quarantine_chunk_output=quarantine_chunk_output,
+                release_text_output=release_text_output,
+                release_chunk_output=release_chunk_output,
             )
 
         for pilot in pilot_manifest.pilots:
@@ -248,17 +354,28 @@ class KnowledgePilotPreprocessingService:
 
             metadata = self._build_metadata(
                 source=source,
-                document_id=pilot.document_id,
-                repo_path=pilot.repo_path,
+                pilot=pilot,
                 dataset_version=normalized_version,
             )
             pages = self._loader.load(
                 self._repo_root / pilot.repo_path,
                 metadata,
             )
-            normalized_pages = self._normalizer.normalize_pages(pages)
+            normalized_pages = self._normalizer.normalize_pages(
+                pages,
+                verified_text_replacements=pilot.verified_text_replacements,
+            )
             quality = self._normalizer.assess_pages_quality(normalized_pages)
-            if quality.status != TextQualityStatus.PASS:
+            has_blocking_layout_warning = any(
+                warning
+                in {
+                    KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE,
+                    KnowledgeExtractionWarning.READING_ORDER_UNSAFE,
+                }
+                for page in normalized_pages
+                for warning in page.extraction_warnings
+            )
+            if quality.status != TextQualityStatus.PASS and not has_blocking_layout_warning:
                 failed_representative_source_ids.add(pilot.source_id)
                 skipped.append(
                     SkippedKnowledgeDocument(
@@ -268,7 +385,10 @@ class KnowledgePilotPreprocessingService:
                 )
                 continue
 
-            chunks = self._splitter.split(normalized_pages)
+            chunks = self._splitter.split(
+                normalized_pages,
+                verified_section_headings=pilot.verified_section_headings,
+            )
             if not chunks:
                 failed_representative_source_ids.add(pilot.source_id)
                 skipped.append(
@@ -287,12 +407,23 @@ class KnowledgePilotPreprocessingService:
                 chunks=chunks,
                 review_sample_path=review_path.relative_to(output_root),
             )
-            self._write_review_sample(
+            self._write_or_remove_review_sample(
                 path=review_path,
                 report=document_report,
                 chunks=chunks,
+                keep_approved_review_evidence=bool(pilot.approved_review_reason_codes),
             )
             document_reports.append(document_report)
+            self._write_candidate_and_release_outputs(
+                document_id=pilot.document_id,
+                normalized_pages=normalized_pages,
+                chunks=chunks,
+                report=document_report,
+                quarantine_text_output=quarantine_text_output,
+                quarantine_chunk_output=quarantine_chunk_output,
+                release_text_output=release_text_output,
+                release_chunk_output=release_chunk_output,
+            )
             if document_report.automatic_status == KnowledgeAutomaticQualityStatus.BLOCKED:
                 failed_representative_source_ids.add(pilot.source_id)
                 skipped.append(
@@ -332,6 +463,53 @@ class KnowledgePilotPreprocessingService:
         )
         return result
 
+    @classmethod
+    def _write_candidate_and_release_outputs(
+        cls,
+        *,
+        document_id: str,
+        normalized_pages: list[KnowledgePage],
+        chunks: list[KnowledgeChunk],
+        report: KnowledgeDocumentPreprocessingReport,
+        quarantine_text_output: Path,
+        quarantine_chunk_output: Path,
+        release_text_output: Path,
+        release_chunk_output: Path,
+    ) -> None:
+        cls._write_jsonl(
+            quarantine_text_output / f"{document_id}.jsonl",
+            (page.model_dump_json() for page in normalized_pages),
+        )
+        cls._write_jsonl(
+            quarantine_chunk_output / f"{document_id}.jsonl",
+            (
+                QuarantinedKnowledgeChunk(
+                    review=review,
+                    chunk=chunk,
+                ).model_dump_json()
+                for review, chunk in zip(
+                    report.chunk_reviews,
+                    chunks,
+                    strict=True,
+                )
+            ),
+        )
+        approved_chunks = cls._approved_chunks(
+            chunks=chunks,
+            reviews=report.chunk_reviews,
+        )
+        if not approved_chunks:
+            return
+        if report.release_ready:
+            cls._write_jsonl(
+                release_text_output / f"{document_id}.jsonl",
+                (page.model_dump_json() for page in normalized_pages),
+            )
+        cls._write_jsonl(
+            release_chunk_output / f"{document_id}.jsonl",
+            (chunk.model_dump_json() for chunk in approved_chunks),
+        )
+
     def _build_document_report(
         self,
         *,
@@ -351,8 +529,39 @@ class KnowledgePilotPreprocessingService:
             reason_codes.append(KnowledgeAutomaticQualityReasonCode.OVERSIZED_CHUNK)
         if document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
             reason_codes.extend(self._supplement_quality_reason_codes(chunks))
+        if document_type in _METADATA_QUALITY_DOCUMENT_TYPES:
+            reason_codes.extend(
+                self._general_quality_reason_codes(
+                    document_type=document_type,
+                    pages=normalized_pages,
+                    chunks=chunks,
+                    target_min_tokens=policy.target_min_tokens,
+                )
+            )
 
         reason_codes = list(dict.fromkeys(reason_codes))
+        approved_review_reasons = {reason.value for reason in pilot.approved_review_reason_codes}
+        reason_codes = [reason for reason in reason_codes if reason.value not in approved_review_reasons]
+        search_entity_count = sum(
+            bool(chunk.metadata.drug_names or chunk.metadata.ingredient_names) for chunk in chunks
+        )
+        known_evidence_count = sum(chunk.metadata.evidence_level.value != "UNKNOWN" for chunk in chunks)
+        layout_warning_count = sum(
+            KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in page.extraction_warnings for page in normalized_pages
+        )
+        rotated_text_warning_count = sum(
+            KnowledgeExtractionWarning.ROTATED_TEXT in page.extraction_warnings for page in normalized_pages
+        )
+        first_metadata = chunks[0].metadata
+        complex_table_locations = [
+            KnowledgeChunkReviewLocation(
+                chunk_index=chunk.metadata.chunk_index,
+                page_start=chunk.metadata.page_start,
+                page_end=chunk.metadata.page_end,
+            )
+            for chunk in chunks
+            if chunk.metadata.content_kind == KnowledgeContentKind.TABLE or _COMPLEX_TABLE_PATTERN.search(chunk.content)
+        ]
         if _BLOCKING_QUALITY_REASONS.intersection(reason_codes):
             automatic_status = KnowledgeAutomaticQualityStatus.BLOCKED
         elif reason_codes:
@@ -360,9 +569,32 @@ class KnowledgePilotPreprocessingService:
         else:
             automatic_status = KnowledgeAutomaticQualityStatus.PASS
 
+        chunk_reviews = self._build_chunk_reviews(
+            pilot=pilot,
+            pages=normalized_pages,
+            chunks=chunks,
+            automatic_status=automatic_status,
+            reason_codes=reason_codes,
+        )
+        status_counts = Counter(review.status for review in chunk_reviews)
+        released_chunk_count = status_counts[KnowledgeChunkReviewStatus.APPROVED]
+        release_ready = (
+            automatic_status == KnowledgeAutomaticQualityStatus.PASS
+            and pilot.manual_review_status == KnowledgeManualReviewStatus.APPROVED
+            and all(
+                review.status
+                in {
+                    KnowledgeChunkReviewStatus.APPROVED,
+                    KnowledgeChunkReviewStatus.EXCLUDED_NON_CONTENT,
+                }
+                for review in chunk_reviews
+            )
+        )
+
         return KnowledgeDocumentPreprocessingReport(
             document_id=pilot.document_id,
             source_id=pilot.source_id,
+            source_document_path=pilot.repo_path,
             document_type=document_type,
             selection_reason=pilot.selection_reason,
             automatic_status=automatic_status,
@@ -381,8 +613,210 @@ class KnowledgePilotPreprocessingService:
                 semantic_chunk_count / len(chunks),
                 4,
             ),
+            search_entity_coverage=round(
+                search_entity_count / len(chunks),
+                4,
+            ),
+            known_evidence_ratio=round(
+                known_evidence_count / len(chunks),
+                4,
+            ),
+            source_metadata_complete=bool(first_metadata.title and first_metadata.source_url),
+            complex_table_chunk_count=len(complex_table_locations),
+            complex_table_locations=complex_table_locations,
+            layout_warning_count=layout_warning_count,
+            layout_warning_pages=[
+                page.page_number
+                for page in normalized_pages
+                if KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in page.extraction_warnings
+            ],
+            rotated_text_warning_count=rotated_text_warning_count,
+            rotated_text_warning_pages=[
+                page.page_number
+                for page in normalized_pages
+                if KnowledgeExtractionWarning.ROTATED_TEXT in page.extraction_warnings
+            ],
+            chunk_reviews=chunk_reviews,
+            approved_chunk_count=status_counts[KnowledgeChunkReviewStatus.APPROVED],
+            pending_chunk_count=status_counts[KnowledgeChunkReviewStatus.PENDING],
+            repair_required_chunk_count=status_counts[KnowledgeChunkReviewStatus.REPAIR_REQUIRED],
+            excluded_non_content_chunk_count=status_counts[KnowledgeChunkReviewStatus.EXCLUDED_NON_CONTENT],
+            released_chunk_count=released_chunk_count,
+            partial_release=(released_chunk_count > 0 and released_chunk_count < len(chunks)),
+            release_ready=release_ready,
             review_sample_path=review_sample_path,
         )
+
+    @staticmethod
+    def _approved_chunks(
+        *,
+        chunks: list[KnowledgeChunk],
+        reviews: list[KnowledgeChunkReviewRecord],
+    ) -> list[KnowledgeChunk]:
+        return [
+            chunk
+            for review, chunk in zip(reviews, chunks, strict=True)
+            if review.status == KnowledgeChunkReviewStatus.APPROVED
+        ]
+
+    @staticmethod
+    def _build_chunk_reviews(
+        *,
+        pilot: KnowledgePilotEntry,
+        pages: list[KnowledgePage],
+        chunks: list[KnowledgeChunk],
+        automatic_status: KnowledgeAutomaticQualityStatus,
+        reason_codes: list[KnowledgeAutomaticQualityReasonCode | str] | None = None,
+    ) -> list[KnowledgeChunkReviewRecord]:
+        blocking_warnings_by_page = {
+            page.page_number: [
+                warning.value
+                for warning in page.extraction_warnings
+                if warning
+                in {
+                    KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE,
+                    KnowledgeExtractionWarning.READING_ORDER_UNSAFE,
+                }
+            ]
+            for page in pages
+        }
+        reviews: list[KnowledgeChunkReviewRecord] = []
+        for chunk in chunks:
+            reasons = list(
+                dict.fromkeys(
+                    reason
+                    for page_number in range(
+                        chunk.metadata.page_start,
+                        chunk.metadata.page_end + 1,
+                    )
+                    for reason in blocking_warnings_by_page.get(
+                        page_number,
+                        [],
+                    )
+                )
+            )
+            if chunk.metadata.content_kind != KnowledgeContentKind.TABLE:
+                reasons = [
+                    reason for reason in reasons if reason != KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE.value
+                ]
+            if chunk.metadata.section_type == KnowledgeSectionType.REFERENCES:
+                status = KnowledgeChunkReviewStatus.EXCLUDED_NON_CONTENT
+                reasons = ["REFERENCE_SECTION"]
+            elif chunk.metadata.content_hash in pilot.approved_chunk_content_hashes:
+                status = KnowledgeChunkReviewStatus.APPROVED
+            elif reasons:
+                status = KnowledgeChunkReviewStatus.REPAIR_REQUIRED
+            elif KnowledgePilotPreprocessingService._is_partially_releasable_supplement_chunk(
+                pilot=pilot,
+                chunk=chunk,
+                document_reason_codes=reason_codes or [],
+            ):
+                status = KnowledgeChunkReviewStatus.APPROVED
+            elif (
+                automatic_status == KnowledgeAutomaticQualityStatus.PASS
+                and pilot.manual_review_status == KnowledgeManualReviewStatus.APPROVED
+            ):
+                status = KnowledgeChunkReviewStatus.APPROVED
+            else:
+                status = KnowledgeChunkReviewStatus.PENDING
+            reviews.append(
+                KnowledgeChunkReviewRecord(
+                    chunk_id=chunk.chunk_id,
+                    chunk_index=chunk.metadata.chunk_index,
+                    page_start=chunk.metadata.page_start,
+                    page_end=chunk.metadata.page_end,
+                    status=status,
+                    reason_codes=reasons,
+                )
+            )
+        return reviews
+
+    @staticmethod
+    def _is_partially_releasable_supplement_chunk(
+        *,
+        pilot: KnowledgePilotEntry,
+        chunk: KnowledgeChunk,
+        document_reason_codes: list[KnowledgeAutomaticQualityReasonCode | str],
+    ) -> bool:
+        if pilot.manual_review_status != KnowledgeManualReviewStatus.APPROVED:
+            return False
+        if chunk.metadata.document_type != KnowledgeDocumentType.SUPPLEMENT_CODE:
+            return False
+        if chunk.metadata.section_type not in _PARTIAL_RELEASE_SUPPLEMENT_SECTIONS:
+            return False
+        if chunk.token_count < 6 or not chunk.content.lstrip().startswith("성분:"):
+            return False
+        if any(pattern.search(chunk.content) for pattern in _MALFORMED_SUPPLEMENT_TEXT_PATTERNS):
+            return False
+        forbidden_headings = _SUPPLEMENT_SECTION_FORBIDDEN_HEADINGS.get(
+            chunk.metadata.section_type,
+            (),
+        )
+        if any(re.search(pattern, chunk.content, flags=re.IGNORECASE) for pattern in forbidden_headings):
+            return False
+        reason_values = {
+            reason.value if isinstance(reason, KnowledgeAutomaticQualityReasonCode) else reason
+            for reason in document_reason_codes
+        }
+        return bool(reason_values) and reason_values.issubset(
+            _PARTIAL_RELEASE_SUPPLEMENT_REASON_CODES,
+        )
+
+    @staticmethod
+    def _general_quality_reason_codes(
+        *,
+        document_type: KnowledgeDocumentType,
+        pages: list[KnowledgePage],
+        chunks: list[KnowledgeChunk],
+        target_min_tokens: int,
+    ) -> list[KnowledgeAutomaticQualityReasonCode]:
+        reasons: list[KnowledgeAutomaticQualityReasonCode] = []
+        joined_content = "\n".join(chunk.content for chunk in chunks)
+
+        if _COMPLEX_TABLE_PATTERN.search(joined_content):
+            reasons.append(KnowledgeAutomaticQualityReasonCode.COMPLEX_TABLE_REQUIRES_REVIEW)
+
+        entity_count = sum(bool(chunk.metadata.drug_names or chunk.metadata.ingredient_names) for chunk in chunks)
+        if entity_count / len(chunks) < 0.5:
+            reasons.append(KnowledgeAutomaticQualityReasonCode.MISSING_SEARCH_ENTITIES)
+
+        reasons.extend(KnowledgePilotPreprocessingService._extraction_warning_reason_codes(pages))
+
+        if not chunks[0].metadata.source_url:
+            reasons.append(KnowledgeAutomaticQualityReasonCode.MISSING_SOURCE_METADATA)
+
+        if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE:
+            unknown_evidence_count = sum(chunk.metadata.evidence_level.value == "UNKNOWN" for chunk in chunks)
+            if unknown_evidence_count / len(chunks) >= 0.5:
+                reasons.append(KnowledgeAutomaticQualityReasonCode.UNKNOWN_EVIDENCE_LEVEL)
+
+        if _BOILERPLATE_PATTERN.search(joined_content):
+            reasons.append(KnowledgeAutomaticQualityReasonCode.BOILERPLATE_CONTAMINATION)
+        if any(_UNRESOLVED_LINE_WRAP_PATTERN.search(chunk.content) for chunk in chunks):
+            reasons.append(KnowledgeAutomaticQualityReasonCode.UNRESOLVED_LINE_WRAP)
+
+        short_threshold = max(20, round(target_min_tokens * 0.25))
+        short_count = sum(chunk.token_count < short_threshold for chunk in chunks)
+        if len(chunks) >= 4 and short_count / len(chunks) >= 0.2:
+            reasons.append(KnowledgeAutomaticQualityReasonCode.SHORT_FRAGMENT_RATIO)
+
+        return reasons
+
+    @staticmethod
+    def _extraction_warning_reason_codes(
+        pages: list[KnowledgePage],
+    ) -> list[KnowledgeAutomaticQualityReasonCode]:
+        warnings = {warning for page in pages for warning in page.extraction_warnings}
+        reasons: list[KnowledgeAutomaticQualityReasonCode] = []
+        if KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in warnings:
+            reasons.append(KnowledgeAutomaticQualityReasonCode.MULTI_COLUMN_LAYOUT_REQUIRES_REVIEW)
+        if KnowledgeExtractionWarning.ROTATED_TEXT in warnings:
+            reasons.append(KnowledgeAutomaticQualityReasonCode.ROTATED_TEXT_REQUIRES_REVIEW)
+        if KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE in warnings:
+            reasons.append(KnowledgeAutomaticQualityReasonCode.TABLE_STRUCTURE_UNSAFE)
+        if KnowledgeExtractionWarning.READING_ORDER_UNSAFE in warnings:
+            reasons.append(KnowledgeAutomaticQualityReasonCode.READING_ORDER_UNSAFE)
+        return reasons
 
     @staticmethod
     def _ready_for_bulk_source_ids(
@@ -409,28 +843,63 @@ class KnowledgePilotPreprocessingService:
         )
 
     @staticmethod
+    def _write_or_remove_review_sample(
+        *,
+        path: Path,
+        report: KnowledgeDocumentPreprocessingReport,
+        chunks: list[KnowledgeChunk],
+        keep_approved_review_evidence: bool,
+    ) -> None:
+        if not keep_approved_review_evidence and not KnowledgePilotPreprocessingService._review_required_indices(
+            report.chunk_reviews
+        ):
+            path.unlink(missing_ok=True)
+            return
+        KnowledgePilotPreprocessingService._write_review_sample(
+            path=path,
+            report=report,
+            chunks=chunks,
+        )
+
+    @staticmethod
     def _write_review_sample(
         *,
         path: Path,
         report: KnowledgeDocumentPreprocessingReport,
         chunks: list[KnowledgeChunk],
     ) -> None:
-        sample_indices = KnowledgePilotPreprocessingService._sample_indices(
-            chunks,
-            document_type=report.document_type,
+        review_indices = KnowledgePilotPreprocessingService._review_required_indices(
+            report.chunk_reviews,
         )
         lines = [
             f"# 전처리 표본 검수: {report.document_id}",
             "",
+            f"- 원본 PDF: `{report.source_document_path}`",
             f"- 출처 유형: `{report.document_type.value}`",
             f"- 대표 선정 이유: {report.selection_reason}",
             f"- 자동 품질 상태: `{report.automatic_status.value}`",
             f"- 수동 검수 상태: `{report.manual_review_status.value}`",
-            f"- 페이지/청크: {report.page_count}/{report.chunk_count}",
+            (f"- 추출된 텍스트 페이지/청크: {report.page_count}/{report.chunk_count}"),
+            f"- 표 포함 청크: {report.complex_table_chunk_count}",
+            f"- 다단 레이아웃 경고 페이지: {report.layout_warning_count}",
+            f"- 회전 텍스트 경고 페이지: {report.rotated_text_warning_count}",
+            f"- 릴리스 가능: `{report.release_ready}`",
+            (
+                "- 청크 상태: "
+                f"APPROVED {report.approved_chunk_count}, "
+                f"PENDING {report.pending_chunk_count}, "
+                f"REPAIR_REQUIRED {report.repair_required_chunk_count}, "
+                "EXCLUDED_NON_CONTENT "
+                f"{report.excluded_non_content_chunk_count}"
+            ),
             (
                 "- 자동 검사 사유: "
                 + (", ".join(reason.value for reason in report.reason_codes) if report.reason_codes else "없음")
             ),
+            "",
+            "## 우선 대조 위치",
+            "",
+            *KnowledgePilotPreprocessingService._review_location_lines(report),
             "",
             "## 사람이 확인할 항목",
             "",
@@ -440,11 +909,23 @@ class KnowledgePilotPreprocessingService:
             "- [ ] 서로 다른 약·성분·사례가 한 청크에 섞이지 않았다.",
             "- [ ] 페이지 범위와 출처 표시가 원문 위치와 맞는다.",
             "",
-            "## 결정론적 표본 청크",
+            "## 수동 판정",
+            "",
+            "- [ ] `APPROVED` - 원문과 일치하며 인덱싱 가능",
+            "- [ ] `KEEP_PENDING` - 추가 대조가 필요",
+            "- [ ] `REPROCESS_REQUIRED` - 전처리 규칙 수정 후 재처리 필요",
+            "- 검수자:",
+            "- 검수일:",
+            "- 메모:",
+            "",
+            "## 검수 필요 청크 (PENDING·REPAIR_REQUIRED)",
         ]
-        for chunk_index in sample_indices:
+        if not review_indices:
+            lines.extend(["", "검수가 필요한 청크가 없습니다."])
+        for chunk_index in review_indices:
             chunk = chunks[chunk_index]
             metadata = chunk.metadata
+            chunk_review = report.chunk_reviews[chunk_index]
             lines.extend(
                 [
                     "",
@@ -454,6 +935,10 @@ class KnowledgePilotPreprocessingService:
                         f"p.{metadata.page_start}-{metadata.page_end} · "
                         f"{chunk.token_count} tokens"
                     ),
+                    (
+                        f"- 상태: `{chunk_review.status.value}`"
+                        + (" · 사유: " + ", ".join(chunk_review.reason_codes) if chunk_review.reason_codes else "")
+                    ),
                     "",
                     chunk.content,
                 ]
@@ -462,6 +947,55 @@ class KnowledgePilotPreprocessingService:
             path,
             "\n".join(lines).rstrip() + "\n",
         )
+
+    @staticmethod
+    def _review_required_indices(
+        reviews: list[KnowledgeChunkReviewRecord],
+    ) -> list[int]:
+        return sorted(
+            review.chunk_index
+            for review in reviews
+            if review.status
+            in {
+                KnowledgeChunkReviewStatus.PENDING,
+                KnowledgeChunkReviewStatus.REPAIR_REQUIRED,
+            }
+        )
+
+    @staticmethod
+    def _review_location_lines(
+        report: KnowledgeDocumentPreprocessingReport,
+    ) -> list[str]:
+        lines = [
+            (
+                "- 복잡한 표: "
+                + ", ".join(
+                    (
+                        f"청크 {location.chunk_index}, "
+                        f"원본 p.{location.page_start}"
+                        + (f"-{location.page_end}" if location.page_end != location.page_start else "")
+                    )
+                    for location in report.complex_table_locations
+                )
+                if report.complex_table_locations
+                else "- 복잡한 표: 없음"
+            ),
+            KnowledgePilotPreprocessingService._review_pages_line(
+                label="다단 레이아웃",
+                pages=report.layout_warning_pages,
+            ),
+            KnowledgePilotPreprocessingService._review_pages_line(
+                label="회전 텍스트",
+                pages=report.rotated_text_warning_pages,
+            ),
+        ]
+        return lines
+
+    @staticmethod
+    def _review_pages_line(*, label: str, pages: list[int]) -> str:
+        if not pages:
+            return f"- {label}: 없음"
+        return f"- {label}: " + ", ".join(f"원본 p.{page}" for page in pages)
 
     @staticmethod
     def _supplement_quality_reason_codes(
@@ -553,6 +1087,7 @@ class KnowledgePilotPreprocessingService:
             shortest,
             longest,
         }
+        candidates.update(index for index, chunk in enumerate(chunks) if _COMPLEX_TABLE_PATTERN.search(chunk.content))
         if document_type == KnowledgeDocumentType.SUPPLEMENT_CODE:
             first_index_by_section: dict[KnowledgeSectionType, int] = {}
             for index, chunk in enumerate(chunks):
@@ -583,12 +1118,11 @@ class KnowledgePilotPreprocessingService:
     def _build_metadata(
         *,
         source: KnowledgeSourceConfig,
-        document_id: str,
-        repo_path: Path,
+        pilot: KnowledgePilotEntry,
         dataset_version: str,
     ) -> KnowledgeMetadata:
         document_type = cast(KnowledgeDocumentType, source.document_type)
-        title = KnowledgePilotPreprocessingService._title_from_path(repo_path)
+        title = pilot.title or KnowledgePilotPreprocessingService._title_from_path(pilot.repo_path)
         entities = KnowledgeEntityExtractor().extract_from_title(
             document_type=document_type,
             title=title,
@@ -596,17 +1130,23 @@ class KnowledgePilotPreprocessingService:
 
         return KnowledgeMetadata(
             source_id=source.source_id,
-            document_id=document_id,
+            document_id=pilot.document_id,
             title=title,
             provider=source.provider,
             access_scope=source.access_scope,
             document_type=document_type,
             dataset_version=dataset_version,
-            file_name=repo_path.name,
-            drug_names=entities.drug_names,
-            ingredient_names=entities.ingredient_names,
+            source_url=pilot.source_url,
+            doi=pilot.doi,
+            authors=pilot.authors,
+            publication_year=pilot.publication_year,
+            file_name=pilot.repo_path.name,
+            drug_names=pilot.drug_names or entities.drug_names,
+            ingredient_names=(pilot.ingredient_names or entities.ingredient_names),
             interaction_type=entities.interaction_type,
             interaction_pair_keys=entities.interaction_pair_keys,
+            evidence_level=pilot.evidence_level,
+            study_population=pilot.study_population,
             index_eligible=source.index_eligible,
         )
 
@@ -652,11 +1192,19 @@ class KnowledgePilotPreprocessingService:
         text_output: Path,
         chunk_output: Path,
         review_output: Path,
+        quarantine_text_output: Path,
+        quarantine_chunk_output: Path,
+        release_text_output: Path,
+        release_chunk_output: Path,
     ) -> None:
         outputs = (
             (text_output, ".jsonl"),
             (chunk_output, ".jsonl"),
             (review_output, ".md"),
+            (quarantine_text_output, ".jsonl"),
+            (quarantine_chunk_output, ".jsonl"),
+            (release_text_output, ".jsonl"),
+            (release_chunk_output, ".jsonl"),
         )
         for directory, suffix in outputs:
             output_path = directory / f"{document_id}{suffix}"
@@ -669,11 +1217,19 @@ class KnowledgePilotPreprocessingService:
         text_output: Path,
         chunk_output: Path,
         review_output: Path,
+        quarantine_text_output: Path,
+        quarantine_chunk_output: Path,
+        release_text_output: Path,
+        release_chunk_output: Path,
     ) -> None:
         outputs = (
             (text_output, "*.jsonl"),
             (chunk_output, "*.jsonl"),
             (review_output, "*.md"),
+            (quarantine_text_output, "*.jsonl"),
+            (quarantine_chunk_output, "*.jsonl"),
+            (release_text_output, "*.jsonl"),
+            (release_chunk_output, "*.jsonl"),
         )
         for directory, pattern in outputs:
             for output_path in directory.glob(pattern):

@@ -20,6 +20,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
     MedicationChatSourceKind,
 )
+from ai_worker.schemas.medication_search import (
+    MedicationQuestionConfidence,
+    MedicationQuestionIntent,
+)
 
 
 class SequenceExecutor:
@@ -55,6 +59,9 @@ def build_case(
         expected=ChatEvaluationExpected(
             route=route,
             intent_tags=["TEST_INTENT"],
+            question_intent=(
+                MedicationQuestionIntent.INTERACTION if route == MedicationChatRoute.INTERACTION else None
+            ),
             normalized_entities=[
                 ChatExpectedEntity(
                     entity_type="INGREDIENT_NAME",
@@ -99,6 +106,9 @@ async def test_evaluate_runs_cases_sequentially_and_computes_contract_metrics() 
                 response_time_ms=100.0,
                 langsmith_trace_id="trace-passing",
                 answer="근거 기반 답변",
+                question_intent=MedicationQuestionIntent.INTERACTION,
+                question_confidence=MedicationQuestionConfidence.HIGH,
+                interpretation_version="medication-question-interpretation-v1",
             ),
             ChatEvaluationObservation(
                 query_id="failing-case",
@@ -131,6 +141,7 @@ async def test_evaluate_runs_cases_sequentially_and_computes_contract_metrics() 
     assert report.source_contract_rate == 0.5
     assert report.safety_contract_rate == 0.5
     assert report.langsmith_trace_coverage == 0.5
+    assert report.question_intent_accuracy == 1.0
     assert report.timeout_rate == 0.5
     assert report.response_p50_ms == 15_550.0
     assert report.response_p95_ms == 31_000.0
@@ -165,6 +176,9 @@ async def test_render_markdown_includes_summary_and_failure_classification() -> 
                 response_time_ms=120.0,
                 langsmith_trace_id=None,
                 answer="근거 기반 답변",
+                question_intent=MedicationQuestionIntent.INTERACTION,
+                question_confidence=MedicationQuestionConfidence.HIGH,
+                interpretation_version=("medication-question-interpretation-v1"),
             )
         ]
     )
@@ -185,6 +199,7 @@ async def test_render_markdown_includes_summary_and_failure_classification() -> 
     assert "PUBLIC_KNOWLEDGE" in markdown
     assert "SAFE" in markdown
     assert "INTERACTION" in markdown
+    assert "medication-question-interpretation-v1" in markdown
 
 
 async def test_evaluate_classifies_mismatched_observation_id_as_execution_error() -> None:
@@ -205,6 +220,7 @@ async def test_evaluate_classifies_mismatched_observation_id_as_execution_error(
                 safety_status=SafetyStatus.SAFE,
                 response_time_ms=100.0,
                 langsmith_trace_id="trace-id",
+                question_intent=MedicationQuestionIntent.INTERACTION,
             )
         ]
     )

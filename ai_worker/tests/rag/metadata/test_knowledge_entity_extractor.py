@@ -109,6 +109,22 @@ def test_does_not_infer_supplement_interaction_from_drug_encyclopedia_mentions()
     assert entities.interaction_pair_keys == []
 
 
+def test_extracts_regulatory_drug_label_names_and_evidence() -> None:
+    entities = KnowledgeEntityExtractor().extract_from_chunk(
+        document_type=KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
+        title="fda levothyroxine levo t prescribing information",
+        content=(
+            "LEVO-T® (levothyroxine sodium) tablets, for oral use. "
+            "These highlights do not include all the information needed."
+        ),
+        section_type=KnowledgeSectionType.SUMMARY,
+    )
+
+    assert entities.drug_names == ["LEVO-T", "levothyroxine sodium"]
+    assert entities.evidence_level == KnowledgeEvidenceLevel.REGULATORY
+    assert entities.study_population == KnowledgeStudyPopulation.NOT_APPLICABLE
+
+
 def test_classifies_randomized_animal_study_as_preclinical() -> None:
     entities = KnowledgeEntityExtractor().extract_from_chunk(
         document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,

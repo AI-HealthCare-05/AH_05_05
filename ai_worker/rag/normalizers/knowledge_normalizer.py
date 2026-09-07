@@ -6,7 +6,14 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from ai_worker.schemas.knowledge import KnowledgePage
+from ai_worker.schemas.knowledge import (
+    KnowledgeBoundingBox,
+    KnowledgeContentKind,
+    KnowledgeDocumentType,
+    KnowledgeExtractionWarning,
+    KnowledgePage,
+    KnowledgeTableRow,
+)
 
 
 class TextQualityStatus(StrEnum):
@@ -28,7 +35,10 @@ class TextQualityReport(BaseModel):
 
 
 class KnowledgeNormalizer:
-    _PAGE_NUMBER_PATTERN = re.compile(r"^(?:-\s*)?\d{1,4}(?:\s*/\s*\d{1,4})?(?:\s*-)?$")
+    _PAGE_NUMBER_PATTERN = re.compile(
+        r"^(?:-\s*)?\d{1,4}(?:(?:\s*/\s*|\s*of\s*)\d{1,4})?(?:\s*-)?$",
+        flags=re.IGNORECASE,
+    )
     _DOWNLOAD_AUDIT_PATTERN = re.compile(
         r"^https?://\S+\s+-\s+.*\bIP Address:\s*\S+$",
         flags=re.IGNORECASE,
@@ -44,34 +54,737 @@ class KnowledgeNormalizer:
     )
     _CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
     _LONG_UNSPACED_PATTERN = re.compile(r"\S{120,}")
+    _WRAPPED_LATIN_WORD_PATTERN = re.compile(
+        r"(?P<left>[A-Za-z]{2,})\s*(?P<hyphen>[-–—])\s*\n"
+        r"(?P<right>[A-Za-z]{2,})"
+    )
+    _SPLIT_LATIN_WORD_PATTERN = re.compile(r"\b(?P<left>[a-z]{2,8}) (?P<right>[a-z]{3,10})\b")
+    _CAPITALIZED_SPLIT_LATIN_WORD_PATTERN = re.compile(r"\b(?P<left>[A-Z]) (?P<right>[a-z]{2,10})\b")
+    _LATIN_WORD_PATTERN = re.compile(r"[A-Za-z]{4,}")
+    _FDA_CONTENTS_PATTERN = re.compile(
+        r"^FULL PRESCRIBING INFORMATION:\s*CONTENTS\*?",
+        flags=re.IGNORECASE,
+    )
+    _FDA_FULL_INFORMATION_PATTERN = re.compile(
+        r"(?im)^\s*FULL PRESCRIBING INFORMATION\s*$",
+    )
+    _FDA_SEE_REFERENCE_PATTERN = re.compile(
+        r"\s*(?:"
+        r"\[\s*see\b[^\]]*\]"
+        r"|\(\s*see\b(?:[^()]|\([^()]*\))*\)"
+        r")",
+        flags=re.IGNORECASE,
+    )
+    _FDA_NUMERIC_CROSS_REFERENCE_PATTERN = re.compile(
+        r"\s*\(\s*\d+(?:\.\d+)*(?:\s*[,;]\s*\d+(?:\.\d+)*)*\s*\)",
+    )
+    _ACADEMIC_PAGE_FURNITURE_PATTERNS = (
+        re.compile(
+            r"^Nutrients\s*20\d{2},?\s*\d+,?\s*(?:\d+|x\s+FOR\s+PEER\s+REVIEW)\b.*$",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(
+            r"^Therapeutics and Clinical Risk Management\s+20\d{2}:\d+\b.*$",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(r"^(?:DovePress|Dovepress(?:\s+.+)?)$", flags=re.IGNORECASE),
+        re.compile(r"^https?://doi\.org/\S+$", flags=re.IGNORECASE),
+        re.compile(
+            r"^https?://(?:www\.)?mdpi\.com/journal/\S+$",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(r"^.+\s+Dovepress$", flags=re.IGNORECASE),
+        re.compile(
+            r"^(?:\d+\s*/\s*79:4\s*/\s*(?:\d+[–-]\d+\s*/\s*)?"
+            r"Br J Clin Pharmacol|Br J Clin Pharmacol\s*/\s*79:4\s*/\s*\d+)$",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(r"^C\.\s*Di Lorenzo et al\.?$", flags=re.IGNORECASE),
+        re.compile(
+            r"^Adverse effects of plant food supplements$",
+            flags=re.IGNORECASE,
+        ),
+    )
+    _NUMERIC_CITATION_PATTERN = re.compile(r"[ \t]*\[\s*\d+(?:\s*(?:[,;]|[-–—])\s*\d+)*\s*\]")
+    _FIGURE_CAPTION_PATTERN = re.compile(
+        r"^\s*Figures?\s+\d+(?:\s*(?:,|and|&|[-–—])\s*\d+)*"
+        r"(?:\s*[.:]|\s+).*$",
+        flags=re.IGNORECASE,
+    )
+    _PARENTHETICAL_FIGURE_REFERENCE_PATTERN = re.compile(
+        r"\s*\(\s*Figures?\s+\d+"
+        r"(?:\s*(?:,|and|&|[-–—])\s*\d+)*"
+        r"(?:\s+and\s+Supplements?\s+\d+)?\s*\)",
+        flags=re.IGNORECASE,
+    )
+    _PREPOSITIONAL_FIGURE_REFERENCE_PATTERN = re.compile(
+        r"\s+in\s+Figures?\s+\d+"
+        r"(?:\s*(?:,|and|&|[-–—])\s*\d+)*"
+        r"(?=[,.;:)]|$)",
+        flags=re.IGNORECASE,
+    )
+    _EMPTY_REFERENCE_FIELD_PATTERN = re.compile(
+        r"(?:\s*\|\s*)?References=\s*(?=\||$)",
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    _PAGE_END_WORD_FRAGMENT_PATTERN = re.compile(r"(?P<left>[A-Za-z]{2,})[-–—]\s*$")
+    _PAGE_START_WORD_FRAGMENT_PATTERN = re.compile(r"^\s*(?P<right>[a-z]{2,})(?P<punctuation>[,;:]?)")
+    _DOVE_LICENSE_BLOCK_PATTERN = re.compile(
+        r"(?ims)^©\s*20\d{2}\s+.+?Dove Medical Press Limited\..*?"
+        r"^Published:\s*[^\n]+\n?"
+    )
+    _DOVE_TRAILING_LICENSE_PATTERN = re.compile(r"(?ims)^©\s*20\d{2}\s+.+?Dove Medical Pres{1,2}\s+Limited\..*$")
+    _RUNNING_AUTHOR_PATTERN = re.compile(
+        r"^[A-Z][A-Za-z'’.-]+\s+et\s+al$",
+        flags=re.IGNORECASE,
+    )
+    _FRAGMENTED_ACADEMIC_FURNITURE_PATTERNS = (
+        re.compile(
+            r"(?im)^[ \t]*Therapeutics[ \t]*\n"
+            r"[ \t]*andClinicalRiskManagement(?:[ \t]*\n)?"
+            r"[ \t]*20\d{2}:\d+[ \t]*\n?"
+        ),
+        re.compile(
+            r"(?im)^[ \t]*[A-Z][A-Za-z'’.-]+[ \t]*\n"
+            r"[ \t]*et[ \t]*\n[ \t]*al[ \t]*\n?"
+        ),
+        re.compile(
+            r"(?im)^[ \t]*[A-Z][A-Za-z'’.-]+[ \t]*\n"
+            r"[ \t]*etal[ \t]*\n?"
+        ),
+    )
+    _TABLE_CONTINUATION_CAPTION_PATTERN = re.compile(
+        r"^Table\s*(?:\d+|[IVXLCDM]+)\s*\(Continued\)\.?$",
+        flags=re.IGNORECASE,
+    )
+    _RESEARCH_ATTACHED_CITATION_PATTERN = re.compile(
+        r"\b(?P<label>stud(?:y|ies)|reports?|trials?|series|crossover|arms?)"
+        r"(?:\^)?\d+(?:\s*(?:[,;]|[-–—])\s*\d+)*",
+        flags=re.IGNORECASE,
+    )
+    _RESEARCH_CARET_CITATION_PATTERN = re.compile(r"(?<!\d)\^\d+(?:\s*(?:[,;]|[-–—])\s*\^?\d+)*")
+    _RESEARCH_EVIDENCE_HEADER_FOOTNOTE_PATTERN = re.compile(
+        r"^Evidences?[a-z]$",
+        flags=re.IGNORECASE,
+    )
+    _RESEARCH_CONTINUATION_ROW_PATTERN = re.compile(
+        r"^(?:열\s*1|Interfering Substances)=\(Continued\)\s*$",
+        flags=re.IGNORECASE,
+    )
+    _RESEARCH_TABLE_NOTE_PATTERN = re.compile(
+        r"^Notes?:\s+.+",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    _BPS_PAGE_FOOTER_PATTERN = re.compile(
+        r"(?ims)^British Journal of Clinical\s*\nPharmacology\s*\n"
+        r"DOI:\S+\s*\n©\s*20\d{2}.+?$"
+    )
+    _FDA_FOOTER_PATTERNS = (
+        re.compile(r"^Reference ID:\s*\d+$", flags=re.IGNORECASE),
+        re.compile(r"^Revised:\s*\d{1,2}/\d{4}$", flags=re.IGNORECASE),
+    )
+    _INLINE_PUBLISHER_PREFIX_PATTERNS = (
+        re.compile(
+            r"(?im)^Copyright:\s*©\s*20\d{2}\s+by\s+the\s+authors\.\s*",
+        ),
+        re.compile(
+            r"(?im)^Licensee\s+MDPI,\s*Basel,\s*Switzerland\.\s*",
+        ),
+        re.compile(
+            r"(?im)^This\s*article\s*is\s*an\s*open\s*access\s*article\s*",
+        ),
+    )
 
-    def normalize_pages(
+    def normalize_pages(  # noqa: C901
         self,
         pages: list[KnowledgePage],
+        *,
+        verified_text_replacements: dict[str, str] | None = None,
     ) -> list[KnowledgePage]:
         if not pages:
             return []
 
-        normalized_lines = [self._normalize_lines(page.content) for page in pages]
-        repeated_edges = self._find_repeated_edge_lines(normalized_lines)
+        replacements = verified_text_replacements or {}
+        document_type = pages[0].metadata.document_type
+        pages = self._drop_regulatory_front_matter(
+            pages,
+            document_type=document_type,
+        )
+        normalized_texts = [
+            self._apply_verified_text_replacements(
+                self._normalize_document_text(
+                    page.content,
+                    document_type=document_type,
+                ),
+                replacements,
+            )
+            for page in pages
+        ]
+        intact_words = {
+            word.casefold() for content in normalized_texts for word in self._LATIN_WORD_PATTERN.findall(content)
+        }
+        normalized_lines = [
+            self._apply_verified_text_replacements(
+                self._repair_split_latin_words(
+                    self._repair_wrapped_latin_words(content, intact_words),
+                    intact_words,
+                ),
+                replacements,
+            ).splitlines()
+            for content in normalized_texts
+        ]
+        repeated_edge_signatures = self._find_repeated_edge_signatures(normalized_lines)
         normalized_pages: list[KnowledgePage] = []
+        first_page_number = pages[0].page_number
+        previous_research_table_headers: list[str] | None = None
 
         for page, lines in zip(pages, normalized_lines, strict=True):
-            retained = [
-                line
-                for line in lines
-                if line not in repeated_edges
-                and not self._PAGE_NUMBER_PATTERN.fullmatch(line)
-                and not self._DOWNLOAD_AUDIT_PATTERN.fullmatch(line)
-                and not self._DOCUMENT_PRODUCTION_PATTERN.fullmatch(line)
-                and not self._PUBLISHER_BANNER_PATTERN.fullmatch(line)
-            ]
+            if lines and self._FDA_CONTENTS_PATTERN.match(lines[0]):
+                continue
+            retained = self._retain_content_lines(
+                lines,
+                repeated_edge_signatures,
+            )
             content = "\n".join(retained).strip()
+            if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE and page.page_number == first_page_number:
+                content = self._normalize_research_front_page(
+                    content,
+                    document_title=page.metadata.title,
+                )
             if not content:
                 continue
-            normalized_pages.append(page.model_copy(update={"content": content}))
+            normalized_blocks = []
+            for block in sorted(page.blocks, key=lambda item: item.order):
+                block_content = self._normalize_block_content(
+                    block.content,
+                    document_type=document_type,
+                    intact_words=intact_words,
+                    repeated_edge_signatures=repeated_edge_signatures,
+                    verified_text_replacements=replacements,
+                )
+                if not block_content:
+                    continue
+                update: dict[str, object] = {
+                    "content": block_content,
+                    "order": len(normalized_blocks),
+                }
+                if block.kind == KnowledgeContentKind.TABLE:
+                    source_headers = list(block.headers)
+                    normalized_headers = [
+                        self._apply_verified_text_replacements(
+                            self._normalize_document_text(
+                                header,
+                                document_type=document_type,
+                            ),
+                            replacements,
+                        )
+                        for header in block.headers
+                    ]
+                    normalized_headers = [
+                        (
+                            re.sub(r"[a-z]$", "", header)
+                            if self._RESEARCH_EVIDENCE_HEADER_FOOTNOTE_PATTERN.fullmatch(header)
+                            else header
+                        )
+                        for header in normalized_headers
+                    ]
+                    normalized_rows = [
+                        KnowledgeTableRow(
+                            cells=[
+                                self._apply_verified_text_replacements(
+                                    self._normalize_document_text(
+                                        cell,
+                                        document_type=document_type,
+                                    ),
+                                    replacements,
+                                )
+                                for cell in row.cells
+                            ]
+                        )
+                        for row in block.rows
+                    ]
+                    promoted_header_row: KnowledgeTableRow | None = None
+                    if (
+                        document_type == KnowledgeDocumentType.RESEARCH_ARTICLE
+                        and self._has_placeholder_headers(normalized_headers)
+                        and normalized_rows
+                        and self._looks_like_research_header_row(normalized_rows[0])
+                    ):
+                        promoted_header_row = normalized_rows.pop(0)
+                        normalized_headers = [
+                            self._normalize_research_header(cell) for cell in promoted_header_row.cells
+                        ]
+                    elif (
+                        document_type == KnowledgeDocumentType.RESEARCH_ARTICLE
+                        and self._has_placeholder_headers(normalized_headers)
+                        and previous_research_table_headers
+                        and len(previous_research_table_headers) == len(normalized_headers)
+                    ):
+                        normalized_headers = list(previous_research_table_headers)
 
-        return normalized_pages
+                    duplicate_primary_values: set[str] = set()
+                    deduplicated_rows: list[KnowledgeTableRow] = []
+                    for row in normalized_rows:
+                        nonempty = [cell for cell in row.cells if cell]
+                        if (
+                            len(nonempty) == 1
+                            and deduplicated_rows
+                            and row.cells[0].casefold() == deduplicated_rows[-1].cells[0].casefold()
+                        ):
+                            duplicate_primary_values.add(row.cells[0].casefold())
+                            continue
+                        deduplicated_rows.append(row)
+                    normalized_rows = deduplicated_rows
+                    normalized_rows = [
+                        row for row in normalized_rows if not (row.cells and row.cells[0].casefold() == "(continued)")
+                    ]
+                    update["headers"] = normalized_headers
+                    update["rows"] = normalized_rows
+                    normalized_table_content = "\n".join(
+                        line
+                        for line in block_content.splitlines()
+                        if not self._RESEARCH_CONTINUATION_ROW_PATTERN.fullmatch(line.strip())
+                    ).strip()
+                    if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE:
+                        normalized_table_content = self._normalize_research_table_content(
+                            normalized_table_content,
+                            source_headers=source_headers,
+                            normalized_headers=normalized_headers,
+                            promoted_header_row=promoted_header_row,
+                            duplicate_primary_values=(duplicate_primary_values),
+                        )
+                        previous_research_table_headers = list(normalized_headers)
+                    validation_errors = list(block.validation_errors)
+                    if self._is_structurally_complete_research_table(
+                        document_type=document_type,
+                        headers=normalized_headers,
+                        rows=normalized_rows,
+                    ):
+                        validation_errors = [
+                            error
+                            for error in validation_errors
+                            if error
+                            not in {
+                                "MULTI_ENTITY_ROW",
+                                "SOURCE_TOKEN_LOSS",
+                            }
+                        ]
+                    update["content"] = normalized_table_content
+                    update["validation_errors"] = validation_errors
+                normalized_blocks.append(block.model_copy(update=update))
+            if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE:
+                normalized_blocks = self._move_research_table_notes(normalized_blocks)
+            if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE and page.page_number == first_page_number:
+                normalized_blocks = self._replace_front_page_text_blocks(
+                    normalized_blocks,
+                    content=content,
+                )
+            extraction_warnings = list(page.extraction_warnings)
+            normalized_table_blocks = [block for block in normalized_blocks if block.kind == KnowledgeContentKind.TABLE]
+            if normalized_table_blocks and not any(block.validation_errors for block in normalized_table_blocks):
+                extraction_warnings = [
+                    warning
+                    for warning in extraction_warnings
+                    if warning != KnowledgeExtractionWarning.TABLE_STRUCTURE_UNSAFE
+                ]
+            normalized_pages.append(
+                page.model_copy(
+                    update={
+                        "content": content,
+                        "blocks": normalized_blocks,
+                        "extraction_warnings": extraction_warnings,
+                    }
+                )
+            )
+
+        return self._repair_verified_page_boundaries(
+            normalized_pages,
+            intact_words=intact_words,
+        )
+
+    @staticmethod
+    def _has_placeholder_headers(headers: list[str]) -> bool:
+        return bool(headers) and all(re.fullmatch(r"열\s+\d+", header) for header in headers)
+
+    @classmethod
+    def _looks_like_research_header_row(
+        cls,
+        row: KnowledgeTableRow,
+    ) -> bool:
+        header_terms = {
+            "interfering substances",
+            "class",
+            "evidence",
+            "evidences",
+            "evidencesa",
+            "proposed mechanisms",
+            "recommendations for clinicians",
+        }
+        matches = sum(cell.strip().casefold() in header_terms for cell in row.cells)
+        return matches >= min(2, len(row.cells))
+
+    @classmethod
+    def _normalize_research_header(cls, header: str) -> str:
+        if cls._RESEARCH_EVIDENCE_HEADER_FOOTNOTE_PATTERN.fullmatch(header):
+            return re.sub(r"[a-z]$", "", header)
+        return header
+
+    @classmethod
+    def _is_structurally_complete_research_table(
+        cls,
+        *,
+        document_type: KnowledgeDocumentType,
+        headers: list[str],
+        rows: list[KnowledgeTableRow],
+    ) -> bool:
+        return bool(
+            document_type == KnowledgeDocumentType.RESEARCH_ARTICLE
+            and headers
+            and not cls._has_placeholder_headers(headers)
+            and rows
+            and all(len(row.cells) == len(headers) and sum(bool(cell) for cell in row.cells) >= 2 for row in rows)
+        )
+
+    @classmethod
+    def _normalize_research_table_content(
+        cls,
+        content: str,
+        *,
+        source_headers: list[str],
+        normalized_headers: list[str],
+        promoted_header_row: KnowledgeTableRow | None,
+        duplicate_primary_values: set[str],
+    ) -> str:
+        retained: list[str] = []
+        for line in content.splitlines():
+            if promoted_header_row and all(
+                f"{source_headers[index]}={cell}" in line
+                for index, cell in enumerate(promoted_header_row.cells)
+                if cell
+            ):
+                continue
+            normalized_line = line
+            for index, source_header in enumerate(source_headers):
+                if index >= len(normalized_headers):
+                    break
+                normalized_line = normalized_line.replace(
+                    f"{source_header}=",
+                    f"{normalized_headers[index]}=",
+                )
+            normalized_line = re.sub(
+                r"\bEvidences?[a-z]=",
+                "Evidences=",
+                normalized_line,
+                flags=re.IGNORECASE,
+            )
+            if normalized_headers and duplicate_primary_values:
+                primary_match = re.fullmatch(
+                    rf"{re.escape(normalized_headers[0])}=(.+)",
+                    normalized_line.strip(),
+                )
+                if primary_match and primary_match.group(1).casefold() in duplicate_primary_values:
+                    continue
+            retained.append(normalized_line)
+        return "\n".join(retained).strip()
+
+    def _normalize_block_content(
+        self,
+        content: str,
+        *,
+        document_type: KnowledgeDocumentType,
+        intact_words: set[str],
+        repeated_edge_signatures: set[str],
+        verified_text_replacements: dict[str, str],
+    ) -> str:
+        normalized = self._normalize_document_text(
+            content,
+            document_type=document_type,
+        )
+        normalized = self._apply_verified_text_replacements(
+            normalized,
+            verified_text_replacements,
+        )
+        normalized = self._repair_wrapped_latin_words(
+            normalized,
+            intact_words,
+        )
+        normalized = self._repair_split_latin_words(
+            normalized,
+            intact_words,
+        )
+        normalized = self._apply_verified_text_replacements(
+            normalized,
+            verified_text_replacements,
+        )
+        retained = self._retain_content_lines(
+            normalized.splitlines(),
+            repeated_edge_signatures,
+        )
+        return "\n".join(retained).strip()
+
+    def _drop_regulatory_front_matter(
+        self,
+        pages: list[KnowledgePage],
+        *,
+        document_type: KnowledgeDocumentType,
+    ) -> list[KnowledgePage]:
+        if document_type != KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            return pages
+        for index, page in enumerate(pages):
+            normalized = self._normalize_text(page.content)
+            if self._FDA_FULL_INFORMATION_PATTERN.search(normalized):
+                return pages[index:]
+        return pages
+
+    def _normalize_document_text(
+        self,
+        content: str,
+        *,
+        document_type: KnowledgeDocumentType,
+    ) -> str:
+        normalized = self._normalize_text(content)
+        if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE:
+            normalized = self._RESEARCH_ATTACHED_CITATION_PATTERN.sub(
+                lambda match: match.group("label"),
+                normalized,
+            )
+            normalized = self._RESEARCH_CARET_CITATION_PATTERN.sub(
+                "",
+                normalized,
+            )
+            normalized = re.sub(r"[ \t]+([.,;:])", r"\1", normalized)
+            return normalized
+        if document_type != KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            return normalized
+        normalized = self._FDA_SEE_REFERENCE_PATTERN.sub("", normalized)
+        normalized = self._FDA_NUMERIC_CROSS_REFERENCE_PATTERN.sub("", normalized)
+        normalized = re.sub(r"[ \t]+([.,;:])", r"\1", normalized)
+        return normalized
+
+    @staticmethod
+    def _apply_verified_text_replacements(
+        content: str,
+        replacements: dict[str, str],
+    ) -> str:
+        for source, replacement in replacements.items():
+            content = content.replace(source, replacement)
+        return content
+
+    def _retain_content_lines(
+        self,
+        lines: list[str],
+        repeated_edge_signatures: set[str],
+    ) -> list[str]:
+        return [
+            line
+            for line in lines
+            if self._edge_signature(line) not in repeated_edge_signatures
+            and not self._PAGE_NUMBER_PATTERN.fullmatch(line)
+            and not self._DOWNLOAD_AUDIT_PATTERN.fullmatch(line)
+            and not self._DOCUMENT_PRODUCTION_PATTERN.fullmatch(line)
+            and not self._PUBLISHER_BANNER_PATTERN.fullmatch(line)
+            and not self._FIGURE_CAPTION_PATTERN.fullmatch(line)
+            and not any(pattern.fullmatch(line) for pattern in self._FDA_FOOTER_PATTERNS)
+            and not any(pattern.fullmatch(line) for pattern in self._ACADEMIC_PAGE_FURNITURE_PATTERNS)
+            and not self._is_academic_page_furniture(line)
+            and not self._TABLE_CONTINUATION_CAPTION_PATTERN.fullmatch(line)
+        ]
+
+    @classmethod
+    def _is_academic_page_furniture(cls, line: str) -> bool:
+        stripped = line.strip()
+        no_space = re.sub(r"\s+", "", stripped.casefold())
+        compact = re.sub(r"[^a-z0-9:/]", "", stripped.casefold())
+        return bool(
+            cls._RUNNING_AUTHOR_PATTERN.fullmatch(stripped)
+            or compact
+            in {
+                "dovepress",
+                "therapeuticsandclinicalriskmanagement",
+            }
+            or compact.startswith("poweredbytcpdf")
+            or compact.startswith("powerdbytcpdf")
+            or compact.startswith("therapeuticsandclinicalriskmanagement20")
+            or "doi.org/10.2147/tcrm" in no_space
+            or ("doiorg" in compact and "tcrm" in compact)
+        )
+
+    @classmethod
+    def _normalize_research_front_page(
+        cls,
+        content: str,
+        *,
+        document_title: str,
+    ) -> str:
+        botanical_review = cls._reconstruct_botanical_review_front_page(
+            content,
+            document_title=document_title,
+        )
+        if botanical_review is not None:
+            return botanical_review
+
+        title_pattern = re.compile(
+            re.escape(document_title).replace(r"\ ", r"\s+"),
+            flags=re.IGNORECASE,
+        )
+        title_match = title_pattern.search(content)
+        if not title_match:
+            return content
+
+        abstract_match = re.search(
+            r"(?im)^\s*(?:Abstract\s*$|Purpose\s*:)",
+            content[title_match.end() :],
+        )
+        if not abstract_match:
+            return content[title_match.start() :].strip()
+
+        abstract_start = title_match.end() + abstract_match.start()
+        abstract_and_body = content[abstract_start:].lstrip()
+        if re.match(r"(?i)^Purpose\s*:", abstract_and_body):
+            abstract_and_body = f"Abstract\n{abstract_and_body}"
+        return f"{document_title}\n{abstract_and_body}".strip()
+
+    @staticmethod
+    def _reconstruct_botanical_review_front_page(
+        content: str,
+        *,
+        document_title: str,
+    ) -> str | None:
+        if not re.search(
+            r"(?i)adverse effects of plant food supplements.+systematic review",
+            document_title,
+        ):
+            return None
+
+        flattened = re.sub(r"\s+", " ", content).strip()
+
+        def between(start: str, end: str | None = None) -> str | None:
+            start_match = re.search(start, flattened, flags=re.IGNORECASE)
+            if not start_match:
+                return None
+            boundary = len(flattened)
+            if end:
+                end_match = re.search(
+                    end,
+                    flattened[start_match.end() :],
+                    flags=re.IGNORECASE,
+                )
+                if not end_match:
+                    return None
+                boundary = start_match.end() + end_match.start()
+            return flattened[start_match.start() : boundary].strip()
+
+        aims = between(r"The objective of this review\b", r"PubMed/MEDLINE\b")
+        methods = between(r"PubMed/MEDLINE\b", r"Data were obtained\b")
+        results = between(r"Data were obtained\b", r"Considering the length of time examined\b")
+        conclusions = between(r"Considering the length of time examined\b")
+        aims_tail = re.search(
+            r"food supplements/botanicals and conventional drugs or nutrients\.",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        results_tail = re.search(
+            r"Camellia sinensis/green tea\s*\(\s*8\.7%\) and "
+            r"Ginkgo biloba/gingko\s*\(8\.5%\)\.",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        intro_left = re.search(
+            r"The use of food supplements\b.*?Food supplements can contain vitamins,",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        intro_right = re.search(
+            r"minerals, botanicals, amino acids, enzymes and many other ingredients"
+            r"(?:.*?energy bars)?\.",
+            flattened,
+            flags=re.IGNORECASE,
+        )
+        required = (
+            aims,
+            methods,
+            results,
+            conclusions,
+            aims_tail,
+            results_tail,
+            intro_left,
+            intro_right,
+        )
+        if not all(required):
+            return None
+
+        if aims_tail.group(0).casefold() not in aims.casefold():
+            aims = f"{aims.rstrip()} {aims_tail.group(0)}"
+        if results_tail.group(0).casefold() not in results.casefold():
+            results = f"{results.rstrip()} {results_tail.group(0)}"
+        introduction = f"{intro_left.group(0).rstrip()} {intro_right.group(0).lstrip()}"
+        return "\n".join(
+            (
+                document_title,
+                "AIMS",
+                aims,
+                "METHODS",
+                methods,
+                "RESULTS",
+                results,
+                "CONCLUSIONS",
+                conclusions,
+                "Introduction",
+                introduction,
+            )
+        )
+
+    @staticmethod
+    def _replace_front_page_text_blocks(
+        blocks: list,
+        *,
+        content: str,
+    ) -> list:
+        if not blocks or any(block.kind != KnowledgeContentKind.TEXT for block in blocks):
+            return blocks
+        bbox = KnowledgeBoundingBox(
+            x0=min(block.bbox.x0 for block in blocks),
+            top=min(block.bbox.top for block in blocks),
+            x1=max(block.bbox.x1 for block in blocks),
+            bottom=max(block.bbox.bottom for block in blocks),
+        )
+        return [
+            blocks[0].model_copy(
+                update={
+                    "content": content,
+                    "bbox": bbox,
+                    "order": 0,
+                }
+            )
+        ]
+
+    @classmethod
+    def _move_research_table_notes(cls, blocks: list) -> list:
+        table_indexes = [index for index, block in enumerate(blocks) if block.kind == KnowledgeContentKind.TABLE]
+        if not table_indexes:
+            return blocks
+
+        last_table_index = table_indexes[-1]
+        note_blocks = [
+            block
+            for block in blocks[last_table_index + 1 :]
+            if block.kind == KnowledgeContentKind.TEXT
+            and cls._RESEARCH_TABLE_NOTE_PATTERN.fullmatch(block.content.strip())
+        ]
+        if not note_blocks:
+            return blocks
+
+        notes = [block.content.strip() for block in note_blocks]
+        table = blocks[last_table_index]
+        updated_table = table.model_copy(
+            update={"table_super_headers": list(dict.fromkeys([*table.table_super_headers, *notes]))}
+        )
+        note_ids = {id(block) for block in note_blocks}
+        return [
+            updated_table if index == last_table_index else block
+            for index, block in enumerate(blocks)
+            if id(block) not in note_ids
+        ]
 
     def assess_quality(self, content: str) -> TextQualityReport:
         normalized = self._normalize_text(content)
@@ -135,19 +848,159 @@ class KnowledgeNormalizer:
 
     def _normalize_text(self, content: str) -> str:
         normalized = unicodedata.normalize("NFKC", content)
+        normalized = normalized.replace("\u00ad", "")
         normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
         normalized = self._CONTROL_PATTERN.sub("", normalized)
+        normalized = self._DOVE_LICENSE_BLOCK_PATTERN.sub("", normalized)
+        normalized = self._DOVE_TRAILING_LICENSE_PATTERN.sub("", normalized)
+        for pattern in self._FRAGMENTED_ACADEMIC_FURNITURE_PATTERNS:
+            normalized = pattern.sub("", normalized)
+        normalized = self._BPS_PAGE_FOOTER_PATTERN.sub("", normalized)
+        for pattern in self._INLINE_PUBLISHER_PREFIX_PATTERNS:
+            normalized = pattern.sub("", normalized)
+        normalized = self._NUMERIC_CITATION_PATTERN.sub("", normalized)
+        normalized = self._PARENTHETICAL_FIGURE_REFERENCE_PATTERN.sub(
+            "",
+            normalized,
+        )
+        normalized = self._PREPOSITIONAL_FIGURE_REFERENCE_PATTERN.sub(
+            "",
+            normalized,
+        )
+        normalized = self._EMPTY_REFERENCE_FIELD_PATTERN.sub("", normalized)
         normalized = re.sub(r"[ \t]+", " ", normalized)
         normalized = re.sub(r" *\n *", "\n", normalized)
         normalized = re.sub(r"\n{3,}", "\n\n", normalized)
         return normalized.strip()
 
+    @classmethod
+    def _repair_verified_page_boundaries(
+        cls,
+        pages: list[KnowledgePage],
+        *,
+        intact_words: set[str],
+    ) -> list[KnowledgePage]:
+        repaired = list(pages)
+        for index in range(len(repaired) - 1):
+            previous = repaired[index]
+            following = repaired[index + 1]
+            previous_match = cls._PAGE_END_WORD_FRAGMENT_PATTERN.search(previous.content)
+            following_match = cls._PAGE_START_WORD_FRAGMENT_PATTERN.search(following.content)
+            if not previous_match or not following_match:
+                continue
+
+            joined = previous_match.group("left") + following_match.group("right")
+            if joined.casefold() not in intact_words:
+                continue
+
+            punctuation = following_match.group("punctuation")
+            previous_content = (previous.content[: previous_match.start()] + joined + punctuation).rstrip()
+            following_content = following.content[following_match.end() :].lstrip()
+            previous_blocks = cls._repair_boundary_blocks(
+                previous.blocks,
+                at_end=True,
+                fragment_pattern=cls._PAGE_END_WORD_FRAGMENT_PATTERN,
+                replacement=joined + punctuation,
+            )
+            following_blocks = cls._repair_boundary_blocks(
+                following.blocks,
+                at_end=False,
+                fragment_pattern=cls._PAGE_START_WORD_FRAGMENT_PATTERN,
+                replacement="",
+            )
+            repaired[index] = previous.model_copy(
+                update={
+                    "content": previous_content,
+                    "blocks": previous_blocks,
+                }
+            )
+            repaired[index + 1] = following.model_copy(
+                update={
+                    "content": following_content,
+                    "blocks": following_blocks,
+                }
+            )
+        return repaired
+
     @staticmethod
-    def _find_repeated_edge_lines(pages: list[list[str]]) -> set[str]:
+    def _repair_boundary_blocks(
+        blocks: list,
+        *,
+        at_end: bool,
+        fragment_pattern: re.Pattern[str],
+        replacement: str,
+    ) -> list:
+        if not blocks:
+            return blocks
+        repaired = list(blocks)
+        indexes = range(len(repaired) - 1, -1, -1) if at_end else range(len(repaired))
+        for block_index in indexes:
+            block = repaired[block_index]
+            if block.kind != KnowledgeContentKind.TEXT:
+                continue
+            if at_end:
+                content = fragment_pattern.sub(replacement, block.content)
+            else:
+                content = fragment_pattern.sub(replacement, block.content, count=1).lstrip()
+            repaired[block_index] = block.model_copy(update={"content": content})
+            break
+        return repaired
+
+    @classmethod
+    def _find_repeated_edge_signatures(
+        cls,
+        pages: list[list[str]],
+    ) -> set[str]:
         candidates: Counter[str] = Counter()
         for lines in pages:
-            edge_lines = set(lines[:2] + lines[-2:])
-            candidates.update(line for line in edge_lines if 8 <= len(line) <= 120)
+            edge_lines = {cls._edge_signature(line) for line in lines[:2] + lines[-2:] if 8 <= len(line) <= 120}
+            candidates.update(edge_lines)
 
         minimum_count = max(2, math.ceil(len(pages) * 0.5))
-        return {line for line, count in candidates.items() if count >= minimum_count}
+        return {signature for signature, count in candidates.items() if signature and count >= minimum_count}
+
+    @staticmethod
+    def _edge_signature(line: str) -> str:
+        normalized = re.sub(r"\d+", "#", line.casefold())
+        return re.sub(r"\s+", " ", normalized).strip()
+
+    @classmethod
+    def _repair_wrapped_latin_words(
+        cls,
+        content: str,
+        intact_words: set[str],
+    ) -> str:
+        def replace(match: re.Match[str]) -> str:
+            left = match.group("left")
+            right = match.group("right")
+            joined = f"{left}{right}"
+            if joined.casefold() in intact_words:
+                return joined
+            return f"{left}{match.group('hyphen')}{right}"
+
+        return cls._WRAPPED_LATIN_WORD_PATTERN.sub(replace, content)
+
+    @classmethod
+    def _repair_split_latin_words(
+        cls,
+        content: str,
+        intact_words: set[str],
+    ) -> str:
+        def replace(match: re.Match[str]) -> str:
+            left = match.group("left")
+            right = match.group("right")
+            joined = f"{left}{right}"
+            is_capitalized_split = len(left) == 1 and left.isupper() and len(joined) >= 5
+            if (
+                (len(joined) >= 6 or is_capitalized_split)
+                and min(len(left), len(right)) <= 4
+                and joined.casefold() in intact_words
+            ):
+                return joined
+            return match.group(0)
+
+        repaired = cls._SPLIT_LATIN_WORD_PATTERN.sub(replace, content)
+        return cls._CAPITALIZED_SPLIT_LATIN_WORD_PATTERN.sub(
+            replace,
+            repaired,
+        )

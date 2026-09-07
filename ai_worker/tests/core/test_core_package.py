@@ -2,7 +2,10 @@ from ai_worker.core import (
     Config,
     setup_logger,
 )
-from ai_worker.schemas.knowledge import KnowledgeSearchMode
+from ai_worker.schemas.knowledge import (
+    KnowledgeSearchMode,
+    KnowledgeVectorDistance,
+)
 
 
 def test_core_package_uses_ai_worker_dependencies() -> None:
@@ -14,6 +17,7 @@ def test_config_defaults_to_approved_full_knowledge_release() -> None:
     settings = Config(_env_file=None)
 
     assert settings.KNOWLEDGE_QDRANT_COLLECTION == ("medication_knowledge_full_v1")
+    assert settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.COSINE
     assert settings.KNOWLEDGE_DATASET_VERSION == ("knowledge-full-v1")
     assert settings.INTERACTION_RULE_DATASET_VERSION == ("interaction-pilot-v1")
     assert settings.MEDICATION_SAFETY_RULE_DATASET_VERSION == ("medication-safety-v1")
@@ -60,6 +64,7 @@ def test_config_reads_openai_chat_integration_settings(
         "knowledge-test-v1",
     )
     monkeypatch.setenv("KNOWLEDGE_SEARCH_MODE", "HYBRID")
+    monkeypatch.setenv("KNOWLEDGE_VECTOR_DISTANCE", "DOT")
     monkeypatch.setenv(
         "INTERACTION_RULE_DATASET_VERSION",
         "interaction-test-v1",
@@ -87,6 +92,7 @@ def test_config_reads_openai_chat_integration_settings(
     assert settings.KNOWLEDGE_QDRANT_COLLECTION == "medication-knowledge-test"
     assert settings.KNOWLEDGE_DATASET_VERSION == "knowledge-test-v1"
     assert settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.HYBRID
+    assert settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT
     assert settings.INTERACTION_RULE_DATASET_VERSION == "interaction-test-v1"
     assert settings.MEDICATION_SAFETY_RULE_DATASET_VERSION == ("medication-safety-test-v1")
     assert settings.RAG_MIN_SIMILARITY_SCORE == 0.7

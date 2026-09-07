@@ -86,6 +86,39 @@ async def test_embed_query_returns_vector() -> None:
 
 
 @pytest.mark.asyncio
+async def test_normalizes_document_and_query_vectors_for_dot_distance() -> None:
+    client = FakeEmbeddingClient(
+        document_vectors=[[3.0, 4.0, 0.0]],
+        query_vector=[0.0, 3.0, 4.0],
+    )
+    provider = OpenAIEmbeddingProvider(
+        model="text-embedding-3-small",
+        dimensions=3,
+        client=client,
+        normalize_vectors=True,
+    )
+
+    documents = await provider.embed_documents(["문서"])
+    query = await provider.embed_query("질문")
+
+    assert documents == [[0.6, 0.8, 0.0]]
+    assert query == [0.0, 0.6, 0.8]
+
+
+@pytest.mark.asyncio
+async def test_rejects_zero_vector_when_normalization_is_enabled() -> None:
+    provider = OpenAIEmbeddingProvider(
+        model="text-embedding-3-small",
+        dimensions=3,
+        client=FakeEmbeddingClient(query_vector=[0.0, 0.0, 0.0]),
+        normalize_vectors=True,
+    )
+
+    with pytest.raises(ValueError, match="정규화"):
+        await provider.embed_query("질문")
+
+
+@pytest.mark.asyncio
 async def test_embed_documents_returns_empty_without_api_call() -> None:
     client = FakeEmbeddingClient()
     provider = OpenAIEmbeddingProvider(

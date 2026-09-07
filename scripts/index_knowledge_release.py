@@ -27,6 +27,7 @@ from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunk,
+    KnowledgeVectorDistance,
 )
 from ai_worker.services.knowledge_pilot_preprocessing_service import (
     KnowledgePilotPreprocessingResult,
@@ -49,6 +50,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--collection", required=True)
     parser.add_argument("--embedding-batch-size", type=int, default=64)
     parser.add_argument("--upsert-batch-size", type=int, default=64)
+    parser.add_argument(
+        "--distance",
+        type=KnowledgeVectorDistance,
+        choices=list(KnowledgeVectorDistance),
+        default=KnowledgeVectorDistance.COSINE,
+        help=("Qdrant dense 거리 방식. DOT은 문서·질의 임베딩을 L2 정규화한 뒤 사용합니다."),
+    )
     parser.add_argument(
         "--interaction-annotations",
         type=Path,
@@ -192,11 +200,13 @@ def build_indexer(
         api_key=require_api_key(settings),
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
+        normalize_vectors=(args.distance == KnowledgeVectorDistance.DOT),
     )
     vector_store = QdrantKnowledgeStore(
         client=qdrant_client,
         collection_name=args.collection,
         vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        distance=args.distance,
     )
     return KnowledgeIndexer(
         embedding_provider=embedding_provider,

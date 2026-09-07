@@ -2,12 +2,22 @@ import argparse
 import json
 from pathlib import Path
 
+import yaml
+
+from ai_worker.rag.loaders.knowledge_document_loader_router import (
+    KnowledgeDocumentLoaderRouter,
+)
+from ai_worker.rag.loaders.knowledge_ocr_artifact_loader import KnowledgeOcrArtifactLoader
 from ai_worker.rag.loaders.knowledge_pdf_loader import KnowledgePdfLoader
 from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
 )
 from ai_worker.rag.normalizers.knowledge_normalizer import KnowledgeNormalizer
 from ai_worker.rag.splitters.knowledge_splitter import KnowledgeSplitter
+from ai_worker.schemas.knowledge_manifest import (
+    KnowledgeOcrDocumentSelectionDecision,
+    KnowledgeOcrDocumentSelectionManifest,
+)
 from ai_worker.services.knowledge_corpus_preprocessing_service import (
     KnowledgeCorpusPreprocessingService,
 )
@@ -34,7 +44,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pilot-quality-report",
         type=Path,
-        default=Path("data/knowledge/processed/reports/preprocessing-quality.json"),
+        action="append",
+        default=None,
+        help="대표 문서 품질 보고서입니다. 여러 번 지정할 수 있습니다.",
+    )
+    parser.add_argument(
+        "--pilot-manifest",
+        type=Path,
+        action="append",
+        default=None,
+        help=("대표 문서에서 승인한 텍스트 복원·섹션·청크 검수 정보를 전체 Manifest에 상속합니다."),
+    )
+    parser.add_argument(
+        "--baseline-quality-report",
+        type=Path,
+        default=None,
+        help="기존 릴리스와의 복원량을 비교할 preprocessing-quality.json 경로입니다.",
     )
     parser.add_argument(
         "--output",
@@ -53,6 +78,18 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data/knowledge/manifests/interaction_annotations.yaml"),
     )
+    parser.add_argument(
+        "--ocr-artifact-root",
+        type=Path,
+        default=None,
+        help="완료된 OCR artifact가 있을 때 OCR_REQUIRED 문서를 함께 전처리합니다.",
+    )
+    parser.add_argument(
+        "--ocr-document-selection",
+        type=Path,
+        default=Path("data/knowledge/manifests/ocr_document_selection.yaml"),
+        help=("OCR_REQUIRED 문서 중 챗봇 근거로 허용할 문서를 정한 allowlist 매니페스트입니다."),
+    )
     return parser.parse_args()
 
 
@@ -67,13 +104,41 @@ def build_splitter(
     )
 
 
+def load_selected_ocr_document_ids(selection_path: Path) -> set[str]:
+    manifest = KnowledgeOcrDocumentSelectionManifest.model_validate(
+        yaml.safe_load(Path(selection_path).read_text(encoding="utf-8")),
+    )
+    return {
+        selection.document_id
+        for selection in manifest.selections
+        if selection.decision == KnowledgeOcrDocumentSelectionDecision.INCLUDE
+    }
+
+
 def main() -> None:
     args = parse_args()
     repo_root = args.repo_root.resolve()
+    pilot_quality_reports = args.pilot_quality_report or [
+        Path("data/knowledge/processed/reports/preprocessing-quality.json"),
+    ]
     interaction_annotations = KnowledgeInteractionAnnotationRegistry.from_yaml(repo_root / args.interaction_annotations)
+    pdf_loader = KnowledgePdfLoader()
+    ocr_artifact_root = repo_root / args.ocr_artifact_root if args.ocr_artifact_root is not None else None
+    ocr_document_selection_path = repo_root / args.ocr_document_selection
+    selected_ocr_document_ids = load_selected_ocr_document_ids(ocr_document_selection_path)
+    loader = (
+        KnowledgeDocumentLoaderRouter(
+            pdf_loader=pdf_loader,
+            ocr_loader=KnowledgeOcrArtifactLoader(artifact_root=ocr_artifact_root),
+            ocr_artifact_root=ocr_artifact_root,
+            ocr_document_ids=selected_ocr_document_ids,
+        )
+        if ocr_artifact_root is not None
+        else pdf_loader
+    )
     pilot_service = KnowledgePilotPreprocessingService(
         repo_root=repo_root,
-        loader=KnowledgePdfLoader(),
+        loader=loader,
         normalizer=KnowledgeNormalizer(),
         splitter=build_splitter(
             tokenizer_encoding=args.tokenizer_encoding,
@@ -85,9 +150,17 @@ def main() -> None:
     ).preprocess(
         documents_path=repo_root / args.documents,
         sources_path=repo_root / args.sources,
-        pilot_quality_report_path=repo_root / args.pilot_quality_report,
+        pilot_quality_report_paths=[repo_root / path for path in pilot_quality_reports],
+        pilot_manifest_paths=(
+            [repo_root / path for path in args.pilot_manifest] if args.pilot_manifest is not None else None
+        ),
         output_root=repo_root / args.output,
         dataset_version=args.dataset_version,
+        baseline_quality_report_path=(
+            repo_root / args.baseline_quality_report if args.baseline_quality_report is not None else None
+        ),
+        ocr_artifact_root=ocr_artifact_root,
+        ocr_document_selection_path=ocr_document_selection_path,
     )
     print(
         json.dumps(

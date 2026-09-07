@@ -2,10 +2,17 @@ from pathlib import Path
 
 from ai_worker.rag.loaders import knowledge_pdf_loader
 from ai_worker.rag.loaders.knowledge_pdf_loader import KnowledgePdfLoader
+from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtraction
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
+    KnowledgeBoundingBox,
+    KnowledgeContentKind,
     KnowledgeDocumentType,
+    KnowledgeExtractionWarning,
     KnowledgeMetadata,
+    KnowledgePage,
+    KnowledgePageBlock,
+    KnowledgeTableRow,
 )
 
 
@@ -68,3 +75,489 @@ def test_load_uses_plain_extraction_for_structured_supplement_pdf(
 
     assert pages[0].content == "개요공백이보존되지않은본문"
     assert FakeReader.page.extraction_modes[-1] is None
+
+
+def test_merge_continued_table_comment_into_previous_page_last_row() -> None:
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-continued-table",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+    bbox = KnowledgeBoundingBox(x0=10, top=10, x1=500, bottom=700)
+    headers = ["Ingredient", "Result", "Comment"]
+    previous = KnowledgePageBlock(
+        kind=KnowledgeContentKind.TABLE,
+        order=0,
+        bbox=bbox,
+        content="Ingredient=Bee pollen | Result=Increase | Comment=Elevated INR,",
+        headers=headers,
+        rows=[KnowledgeTableRow(cells=["Bee pollen", "Increase", "Elevated INR,"])],
+        column_count=3,
+        table_title="Interaction table",
+    )
+    continued = KnowledgePageBlock(
+        kind=KnowledgeContentKind.TABLE,
+        order=0,
+        bbox=bbox,
+        content=("Comment=after consumption of bee pollen\nIngredient=Bilberry | Result=Increase | Comment=Bleeding"),
+        headers=headers,
+        rows=[
+            KnowledgeTableRow(cells=["", "", "after consumption of bee pollen"]),
+            KnowledgeTableRow(cells=["Bilberry", "Increase", "Bleeding"]),
+        ],
+        column_count=3,
+        table_title="Interaction table",
+    )
+    pages = [
+        KnowledgePage(content=previous.content, metadata=metadata, page_number=1, blocks=[previous]),
+        KnowledgePage(content=continued.content, metadata=metadata, page_number=2, blocks=[continued]),
+    ]
+
+    merged = KnowledgePdfLoader()._merge_continued_table_rows(pages)
+
+    assert merged[0].blocks[0].rows[0].cells == [
+        "Bee pollen",
+        "Increase",
+        "Elevated INR, after consumption of bee pollen",
+    ]
+    assert merged[1].blocks[0].rows == [KnowledgeTableRow(cells=["Bilberry", "Increase", "Bleeding"])]
+    assert not merged[1].blocks[0].content.startswith("Comment=")
+
+
+class FakeMultiColumnPage:
+    def extract_text(
+        self,
+        *,
+        extraction_mode=None,
+        orientations=(0, 90, 180, 270),
+        **kwargs,
+    ) -> str:
+        if orientations == (90, 180, 270):
+            return ""
+        if extraction_mode == "layout":
+            return (
+                "Left column text                         Right column text\n"
+                "Left continuation                        Right continuation\n"
+                "Left result                              Right result"
+            )
+        return "Left column text\nLeft continuation\nRight column text\nRight continuation"
+
+
+class FakeMultiColumnReader:
+    metadata = {}
+
+    def __init__(self, _: Path) -> None:
+        self.pages = [FakeMultiColumnPage()]
+
+
+def test_load_marks_research_multi_column_layout_for_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(
+        knowledge_pdf_loader,
+        "PdfReader",
+        FakeMultiColumnReader,
+    )
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-1",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader().load(pdf_path, metadata)
+
+    assert pages[0].content.startswith("Left column text")
+    assert KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT in (pages[0].extraction_warnings)
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE in (pages[0].extraction_warnings)
+
+
+class FakeRotatedTextPage:
+    def extract_text(
+        self,
+        *,
+        extraction_mode=None,
+        orientations=(0, 90, 180, 270),
+        **kwargs,
+    ) -> str:
+        if orientations == (90, 180, 270):
+            return "Rotated table heading"
+        if extraction_mode == "layout":
+            return "Single column research text"
+        return "Single column research text\nRotated table heading"
+
+
+class FakeRotatedTextReader:
+    def __init__(self, _: Path) -> None:
+        self.pages = [FakeRotatedTextPage()]
+
+
+def test_load_marks_rotated_research_text_for_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(
+        knowledge_pdf_loader,
+        "PdfReader",
+        FakeRotatedTextReader,
+    )
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-rotated",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader().load(pdf_path, metadata)
+
+    assert KnowledgeExtractionWarning.ROTATED_TEXT in (pages[0].extraction_warnings)
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE in (pages[0].extraction_warnings)
+
+
+class FakeCoordinatePage:
+    pass
+
+
+class FakeBrokenCoordinatePage:
+    pass
+
+
+class FakeLayoutDocument:
+    def __init__(self) -> None:
+        self.pages = [FakeCoordinatePage()]
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.closed = True
+
+
+class FakeTwoPageLayoutDocument(FakeLayoutDocument):
+    def __init__(self) -> None:
+        super().__init__()
+        self.pages = [FakeCoordinatePage(), FakeBrokenCoordinatePage()]
+
+
+class FakeCoordinateExtractor:
+    def extract(self, page) -> PdfLayoutExtraction:
+        if isinstance(page, FakeBrokenCoordinatePage):
+            raise RuntimeError("page layout failure")
+        assert isinstance(page, FakeCoordinatePage)
+        return PdfLayoutExtraction(
+            blocks=[
+                KnowledgePageBlock(
+                    kind=KnowledgeContentKind.TEXT,
+                    order=0,
+                    bbox=KnowledgeBoundingBox(
+                        x0=10,
+                        top=10,
+                        x1=300,
+                        bottom=30,
+                    ),
+                    content="좌표 본문",
+                ),
+                KnowledgePageBlock(
+                    kind=KnowledgeContentKind.TABLE,
+                    order=1,
+                    bbox=KnowledgeBoundingBox(
+                        x0=10,
+                        top=40,
+                        x1=300,
+                        bottom=100,
+                    ),
+                    content="성분=철분 | 결과=감소",
+                    headers=["성분", "결과"],
+                    rows=[{"cells": ["철분", "감소"]}],
+                    column_count=2,
+                ),
+            ],
+            warnings=[],
+        )
+
+
+class FakeVerifiedLayoutParser:
+    def __init__(self) -> None:
+        self.calls = []
+        self.repair_calls = []
+
+    def parse(self, *, page, page_number, source_id, document_id=None):
+        self.calls.append((page, page_number, source_id, document_id))
+        return PdfLayoutExtraction(
+            blocks=[
+                KnowledgePageBlock(
+                    kind=KnowledgeContentKind.TEXT,
+                    order=0,
+                    bbox=KnowledgeBoundingBox(x0=10, top=10, x1=300, bottom=30),
+                    content="검수 좌표로 복원한 본문",
+                )
+            ],
+            warnings=[KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT],
+        )
+
+    def repair(self, *, extraction, page_number, source_id):
+        self.repair_calls.append((page_number, source_id))
+        repaired_block = extraction.blocks[0].model_copy(update={"content": "검수 좌표로 복원하고 문맥을 보정한 본문"})
+        return PdfLayoutExtraction(
+            blocks=[repaired_block],
+            warnings=extraction.warnings,
+        )
+
+
+class FakeContinuedTableExtractor:
+    def extract(self, page) -> PdfLayoutExtraction:
+        is_first = not isinstance(page, FakeBrokenCoordinatePage)
+        return PdfLayoutExtraction(
+            blocks=[
+                KnowledgePageBlock(
+                    kind=KnowledgeContentKind.TABLE,
+                    order=0,
+                    bbox=KnowledgeBoundingBox(
+                        x0=10,
+                        top=40,
+                        x1=300,
+                        bottom=100,
+                    ),
+                    content=(
+                        "Drug=Calcium | Effect=Reduced absorption"
+                        if is_first
+                        else "Drug=Iron | Effect=Reduced absorption"
+                    ),
+                    headers=["Drug", "Effect"],
+                    rows=[
+                        {
+                            "cells": [
+                                "Calcium" if is_first else "Iron",
+                                "Reduced absorption",
+                            ]
+                        }
+                    ],
+                    column_count=2,
+                    table_title=("Shared interaction table" if is_first else None),
+                )
+            ],
+            warnings=[],
+        )
+
+
+class FakeTwoPageReader:
+    def __init__(self, _: Path) -> None:
+        self.pages = [FakeMultiColumnPage(), FakeMultiColumnPage()]
+
+
+def test_load_uses_coordinate_blocks_for_research_document(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(
+        knowledge_pdf_loader,
+        "PdfReader",
+        FakeMultiColumnReader,
+    )
+    layout_document = FakeLayoutDocument()
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-coordinate",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeCoordinateExtractor(),
+        layout_document_opener=lambda _: layout_document,
+    ).load(pdf_path, metadata)
+
+    assert pages[0].content == ("좌표 본문\n\n성분=철분 | 결과=감소")
+    assert [block.kind for block in pages[0].blocks] == [
+        KnowledgeContentKind.TEXT,
+        KnowledgeContentKind.TABLE,
+    ]
+    assert layout_document.closed is True
+
+
+def test_load_prefers_verified_source_layout_over_generic_extraction(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(knowledge_pdf_loader, "PdfReader", FakeMultiColumnReader)
+    layout_document = FakeLayoutDocument()
+    verified_parser = FakeVerifiedLayoutParser()
+    metadata = KnowledgeMetadata(
+        source_id="research_supplement_adverse_effects",
+        document_id="research-coordinate",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeCoordinateExtractor(),
+        layout_document_opener=lambda _: layout_document,
+        verified_layout_parser=verified_parser,
+    ).load(pdf_path, metadata)
+
+    assert pages[0].content == "검수 좌표로 복원하고 문맥을 보정한 본문"
+    assert verified_parser.calls == [
+        (
+            layout_document.pages[0],
+            1,
+            "research_supplement_adverse_effects",
+            "research-coordinate",
+        )
+    ]
+    assert verified_parser.repair_calls == [(1, "research_supplement_adverse_effects")]
+
+
+def test_load_omits_page_explicitly_excluded_by_verified_parser(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(knowledge_pdf_loader, "PdfReader", FakeTwoPageReader)
+    layout_document = FakeTwoPageLayoutDocument()
+
+    class ExcludingVerifiedParser:
+        def parse(self, **kwargs):
+            if kwargs["page_number"] == 1:
+                return PdfLayoutExtraction(blocks=[], warnings=[])
+            return None
+
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-excluded-page",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeCoordinateExtractor(),
+        layout_document_opener=lambda _: layout_document,
+        verified_layout_parser=ExcludingVerifiedParser(),
+    ).load(pdf_path, metadata)
+
+    assert len(pages) == 1
+    assert pages[0].page_number == 2
+
+
+def test_load_marks_layout_unsafe_when_coordinate_extraction_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(
+        knowledge_pdf_loader,
+        "PdfReader",
+        FakeMultiColumnReader,
+    )
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-fallback",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_document_opener=lambda _: (_ for _ in ()).throw(RuntimeError("layout failure")),
+    ).load(pdf_path, metadata)
+
+    assert pages[0].content.startswith("Left column text")
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE in (pages[0].extraction_warnings)
+
+
+def test_load_falls_back_only_the_page_with_coordinate_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(
+        knowledge_pdf_loader,
+        "PdfReader",
+        FakeTwoPageReader,
+    )
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-page-fallback",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeCoordinateExtractor(),
+        layout_document_opener=lambda _: FakeTwoPageLayoutDocument(),
+    ).load(pdf_path, metadata)
+
+    assert pages[0].blocks
+    assert pages[1].blocks == []
+    assert KnowledgeExtractionWarning.READING_ORDER_UNSAFE in (pages[1].extraction_warnings)
+
+
+def test_load_inherits_title_for_consecutive_continued_table_pages(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "research.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+    monkeypatch.setattr(
+        knowledge_pdf_loader,
+        "PdfReader",
+        FakeTwoPageReader,
+    )
+    metadata = KnowledgeMetadata(
+        source_id="research",
+        document_id="research-table",
+        title="Interaction review",
+        provider="Journal",
+        access_scope=KnowledgeAccessScope.DEMO_RESTRICTED,
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        dataset_version="pilot-v1",
+    )
+
+    pages = KnowledgePdfLoader(
+        layout_extractor=FakeContinuedTableExtractor(),
+        layout_document_opener=lambda _: FakeTwoPageLayoutDocument(),
+    ).load(pdf_path, metadata)
+
+    table_titles = [
+        block.table_title for page in pages for block in page.blocks if block.kind == KnowledgeContentKind.TABLE
+    ]
+    assert table_titles == [
+        "Shared interaction table",
+        "Shared interaction table",
+    ]

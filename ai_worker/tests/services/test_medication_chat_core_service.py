@@ -10,7 +10,10 @@ from ai_worker.repositories.supplement_ingredient_catalog_repository import (
     CompositeSupplementIngredientCatalog,
 )
 from ai_worker.schemas.enums import SafetyStatus
-from ai_worker.schemas.knowledge import KnowledgeSearchMode
+from ai_worker.schemas.knowledge import (
+    KnowledgeSearchMode,
+    KnowledgeVectorDistance,
+)
 from ai_worker.schemas.medication_chat import (
     MedicationChatProgress,
     MedicationChatRequest,
@@ -134,3 +137,19 @@ def test_builder_uses_hybrid_store_only_for_experimental_search_modes() -> None:
     store = service._use_case._knowledge_retriever._vector_store
     assert isinstance(store, QdrantHybridKnowledgeStore)
     assert store.search_mode == KnowledgeSearchMode.HYBRID
+
+
+def test_builder_normalizes_embeddings_for_dot_collection() -> None:
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            KNOWLEDGE_QDRANT_COLLECTION="knowledge-dot-release",
+            KNOWLEDGE_VECTOR_DISTANCE=KnowledgeVectorDistance.DOT,
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+    )
+
+    retriever = service._use_case._knowledge_retriever
+    assert retriever._embedding_provider._normalize_vectors is True
+    assert retriever._vector_store._distance == KnowledgeVectorDistance.DOT

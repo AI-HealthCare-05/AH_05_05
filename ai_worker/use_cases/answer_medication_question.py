@@ -2,6 +2,12 @@ import hashlib
 import json
 import re
 
+from ai_worker.chains.medication_query_plan_chain import (
+    MedicationQueryPlanChain,
+    MedicationQueryPlanChainInput,
+    MedicationQuestionPlanResult,
+    build_medication_query_plan_chain,
+)
 from ai_worker.domain.chat_content_compactor import (
     ANSWER_COMPACTION_MARKER,
     compact_chat_content,
@@ -32,9 +38,6 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
     known_supplement_names_in,
     supplement_pair_matches_text,
 )
-from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
-    MedicationKnowledgeQueryBuilder,
-)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
@@ -49,6 +52,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatProgress,
     MedicationChatProgressCallback,
     MedicationChatProgressStage,
+    MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -60,10 +64,16 @@ from ai_worker.schemas.medication_search import (
     InteractionRuleLookupStatus,
     MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
+    MedicationQuestionInterpretation,
     MedicationQuestionResolution,
     MedicationQuestionScope,
     MedicationSearchExecutionObservation,
     MedicationSearchExecutionPlan,
+)
+from ai_worker.use_cases.medication_chat_pipeline import (
+    MedicationChatDraft,
+    MedicationEvidenceBundle,
+    PreparedMedicationQuestion,
 )
 
 MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
@@ -96,6 +106,7 @@ class AnswerMedicationQuestionUseCase:
         tracer: ChatTracer | None = None,
         question_resolver: MedicationQuestionResolver | None = None,
         supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
+        query_plan_chain: MedicationQueryPlanChain | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -106,6 +117,7 @@ class AnswerMedicationQuestionUseCase:
         self._tracer = tracer or NoOpChatTracer()
         self._question_resolver = question_resolver
         self._supplement_ingredient_catalog = supplement_ingredient_catalog
+        self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -134,37 +146,31 @@ class AnswerMedicationQuestionUseCase:
                     "context_hash": self._context_hash(context),
                 }
             )
-        request, resolution, early_result = await self._prepare_question(
+        prepared_question = await self._prepare_question(
             request=request,
             context=context,
         )
+        request = prepared_question.request
+        resolution = prepared_question.resolution
+        early_result = prepared_question.early_result
+        supplement_names = [] if early_result is not None else await self._supplement_ingredient_names()
+        planning = await self._plan_question(
+            request=request,
+            resolution=resolution,
+            supplement_names=supplement_names,
+        )
+        if planning is None:
+            return self._query_plan_failure_result(
+                request=request,
+                context=context,
+            )
+        query_plan = planning.query_plan
+        interpretation = planning.interpretation
         if early_result is not None:
-            return early_result
-        async with self._tracer.span("query.plan") as query_span:
-            supplement_names = await self._supplement_ingredient_names()
-            query_plan = MedicationKnowledgeQueryBuilder(
-                supplement_names=supplement_names,
-            ).build(
-                request.question,
+            return self._with_interpretation(
+                early_result,
+                interpretation=interpretation,
             )
-            query_outputs = {
-                "entity_count": len(query_plan.entity_names),
-                "section_count": len(query_plan.section_types),
-                "interaction_pair_present": (query_plan.interaction_pair is not None),
-                "medication_product_cue": (query_plan.has_medication_product_cue),
-                "supplement_vocabulary_count": len(supplement_names),
-                "query_plan_hash": query_plan.query_plan_hash,
-            }
-            if self._tracer.capture_content:
-                query_outputs["entity_names"] = query_plan.entity_names
-                query_outputs["entity_roles"] = [entity.entity_type.value for entity in query_plan.entities]
-                query_outputs["entity_role_candidates"] = [
-                    [candidate.value for candidate in entity.candidate_types] for entity in query_plan.entities
-                ]
-            query_outputs["interaction_pair_count"] = len(
-                query_plan.interaction_pairs,
-            )
-            query_span.end(query_outputs)
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
         )
@@ -212,6 +218,7 @@ class AnswerMedicationQuestionUseCase:
                 request=request,
                 context=context,
                 execution_plan=execution_plan,
+                interpretation=interpretation,
             )
         async with self._tracer.span(
             "rag.retrieve",
@@ -294,6 +301,7 @@ class AnswerMedicationQuestionUseCase:
                 context=context,
                 guide_lookup=guide_lookup,
                 execution_plan=execution_plan,
+                interpretation=interpretation,
             )
         answer_chunks = self._authoritative_chunks(
             guide_lookup=guide_lookup,
@@ -302,6 +310,23 @@ class AnswerMedicationQuestionUseCase:
                 has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
             ),
         )
+        evidence = MedicationEvidenceBundle(
+            query_plan=query_plan,
+            execution_plan=execution_plan,
+            rules=tuple(rules),
+            retrieval=retrieval,
+            rag_unavailable=rag_unavailable,
+            guide_lookup=guide_lookup,
+            answer_chunks=tuple(answer_chunks),
+            interaction_question=interaction_question,
+        )
+        query_plan = evidence.query_plan
+        execution_plan = evidence.execution_plan
+        rules = list(evidence.rules)
+        rag_unavailable = evidence.rag_unavailable
+        guide_lookup = evidence.guide_lookup
+        answer_chunks = list(evidence.answer_chunks)
+        interaction_question = evidence.interaction_question
         ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
         if resolution is not None and not self._has_grounded_evidence(
             request=request,
@@ -321,6 +346,7 @@ class AnswerMedicationQuestionUseCase:
                 execution_plan=execution_plan,
                 resolution=resolution,
                 rag_unavailable=rag_unavailable,
+                interpretation=interpretation,
             )
         unsupported_pairs = self._unsupported_interaction_pairs(
             query_plan=query_plan,
@@ -385,6 +411,7 @@ class AnswerMedicationQuestionUseCase:
                 prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
                 schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
                 context_hash=self._context_hash(context),
+                question_interpretation=interpretation,
                 search_observation=(
                     MedicationSearchExecutionObservation.from_execution_plan(
                         execution_plan,
@@ -399,6 +426,10 @@ class AnswerMedicationQuestionUseCase:
                     "safety_status": draft.safety_status.value,
                 }
             )
+        draft_stage = MedicationChatDraft(
+            result=draft,
+            resolution=resolution,
+        )
         await self._report_progress(
             progress_callback,
             MedicationChatProgressStage.ANSWER_GENERATING,
@@ -408,7 +439,7 @@ class AnswerMedicationQuestionUseCase:
                 outcome = await self._answer_generator.generate(
                     request=request,
                     context=context,
-                    result=draft,
+                    result=draft_stage.result,
                 )
             except ChatAnswerGenerationError as error:
                 llm_span.end(
@@ -416,8 +447,8 @@ class AnswerMedicationQuestionUseCase:
                         "rewrite_status": "FAILED",
                         "fallback_used": False,
                         "fallback_reason": error.reason_code,
-                        "route": draft.route.value,
-                        "source_count": len(draft.sources),
+                        "route": draft_stage.result.route.value,
+                        "source_count": len(draft_stage.result.sources),
                     }
                 )
                 raise
@@ -467,51 +498,128 @@ class AnswerMedicationQuestionUseCase:
             )
         return validated
 
+    async def _plan_question(
+        self,
+        *,
+        request: MedicationChatRequest,
+        resolution: MedicationQuestionResolution | None,
+        supplement_names: list[str],
+    ) -> MedicationQuestionPlanResult | None:
+        async with self._tracer.span("query.plan") as query_span:
+            try:
+                planning = MedicationQuestionPlanResult.model_validate(
+                    await self._query_plan_chain.ainvoke(
+                        MedicationQueryPlanChainInput(
+                            question=request.question,
+                            supplement_names=supplement_names,
+                            resolution=resolution,
+                        ),
+                        config={
+                            "metadata": {
+                                "scope": (
+                                    resolution.scope.value
+                                    if resolution is not None
+                                    else MedicationQuestionScope.IN_SCOPE.value
+                                ),
+                                "resolution_status": (
+                                    resolution.status.value
+                                    if resolution is not None
+                                    else MedicationExpressionResolutionStatus.UNRESOLVED.value
+                                ),
+                                "correction_count": (len(resolution.corrections) if resolution is not None else 0),
+                                "supplement_vocabulary_count": len(
+                                    supplement_names,
+                                ),
+                            }
+                        },
+                    )
+                )
+            except Exception:
+                query_span.end(
+                    {
+                        "status": "FAILED",
+                        "error_code": (MedicationChatReasonCode.QUERY_PLAN_FAILED.value),
+                    }
+                )
+                return None
+
+            query_plan = planning.query_plan
+            interpretation = planning.interpretation
+            query_outputs = {
+                "status": "COMPLETED",
+                "interpretation_version": (interpretation.interpretation_version),
+                "intent": interpretation.intent.value,
+                "scope": interpretation.scope.value,
+                "resolution_status": interpretation.resolution_status.value,
+                "confidence": interpretation.confidence.value,
+                "needs_clarification": interpretation.needs_clarification,
+                "reason_codes": [reason.value for reason in interpretation.reason_codes],
+                "normalized_entity_count": len(
+                    interpretation.normalized_entity_names,
+                ),
+                "requested_section_types": [section.value for section in interpretation.requested_section_types],
+                "entity_count": len(query_plan.entity_names),
+                "section_count": len(query_plan.section_types),
+                "interaction_pair_present": (query_plan.interaction_pair is not None),
+                "interaction_pair_count": len(query_plan.interaction_pairs),
+                "medication_product_cue": (query_plan.has_medication_product_cue),
+                "supplement_vocabulary_count": len(supplement_names),
+                "query_plan_hash": query_plan.query_plan_hash,
+            }
+            if self._tracer.capture_content:
+                query_outputs["entity_names"] = query_plan.entity_names
+                query_outputs["entity_roles"] = [entity.entity_type.value for entity in query_plan.entities]
+                query_outputs["entity_role_candidates"] = [
+                    [candidate.value for candidate in entity.candidate_types] for entity in query_plan.entities
+                ]
+            query_span.end(query_outputs)
+            return planning
+
     async def _prepare_question(
         self,
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
-    ) -> tuple[
-        MedicationChatRequest,
-        MedicationQuestionResolution | None,
-        MedicationChatResult | None,
-    ]:
+    ) -> PreparedMedicationQuestion:
         resolution = await self._resolve_question(
             request=request,
             context=context,
         )
         if resolution is None:
-            return request, None, None
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=None,
+                early_result=None,
+            )
         if resolution.scope in {
             MedicationQuestionScope.GREETING,
             MedicationQuestionScope.OUT_OF_SCOPE,
         }:
-            return (
-                request,
-                resolution,
-                self._out_of_scope_result(
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=resolution,
+                early_result=self._out_of_scope_result(
                     request=request,
                     context=context,
                     resolution=resolution,
                 ),
             )
         if resolution.status == MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED:
-            return (
-                request,
-                resolution,
-                self._expression_clarification_result(
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=resolution,
+                early_result=self._expression_clarification_result(
                     request=request,
                     context=context,
                     resolution=resolution,
                 ),
             )
-        return (
-            request.model_copy(
+        return PreparedMedicationQuestion(
+            request=request.model_copy(
                 update={"question": resolution.resolved_question},
             ),
-            resolution,
-            None,
+            resolution=resolution,
+            early_result=None,
         )
 
     @classmethod
@@ -546,9 +654,11 @@ class AnswerMedicationQuestionUseCase:
         rag_unavailable: bool,
         rule_status: InteractionRuleLookupStatus,
     ) -> list[str]:
-        reasons = ["RAG_UNAVAILABLE"] if rag_unavailable else []
+        reasons = [MedicationChatReasonCode.RAG_UNAVAILABLE.value] if rag_unavailable else []
         if rule_status == InteractionRuleLookupStatus.RULE_REPOSITORY_UNAVAILABLE:
-            reasons.append("INTERACTION_RULE_REPOSITORY_UNAVAILABLE")
+            reasons.append(
+                MedicationChatReasonCode.INTERACTION_RULE_REPOSITORY_UNAVAILABLE.value,
+            )
         return reasons
 
     @classmethod
@@ -603,6 +713,36 @@ class AnswerMedicationQuestionUseCase:
             return []
 
     @classmethod
+    def _query_plan_failure_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> MedicationChatResult:
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=("질문을 안전하게 해석하지 못했습니다. 제품명이나 성분명을 확인해 잠시 후 다시 질문해 주세요."),
+            route=MedicationChatRoute.RESTRICTED,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=[
+                MedicationChatReasonCode.QUERY_PLAN_FAILED.value,
+            ],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+        )
+
+    @staticmethod
+    def _with_interpretation(
+        result: MedicationChatResult,
+        *,
+        interpretation: MedicationQuestionInterpretation,
+    ) -> MedicationChatResult:
+        return result.model_copy(
+            update={"question_interpretation": interpretation},
+        )
+
+    @classmethod
     def _out_of_scope_result(
         cls,
         *,
@@ -642,7 +782,9 @@ class AnswerMedicationQuestionUseCase:
             ),
             route=MedicationChatRoute.CLARIFICATION,
             safety_status=SafetyStatus.RESTRICTED,
-            safety_reason_codes=["AMBIGUOUS_QUERY_EXPRESSION"],
+            safety_reason_codes=[
+                MedicationChatReasonCode.AMBIGUOUS_QUERY_EXPRESSION.value,
+            ],
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=cls._context_hash(context),
@@ -657,6 +799,7 @@ class AnswerMedicationQuestionUseCase:
         execution_plan: MedicationSearchExecutionPlan,
         resolution: MedicationQuestionResolution,
         rag_unavailable: bool,
+        interpretation: MedicationQuestionInterpretation,
     ) -> MedicationChatResult:
         answer = (
             "질문은 의약품·복약·영양제 관련 내용이지만, 현재 보유한 "
@@ -667,9 +810,13 @@ class AnswerMedicationQuestionUseCase:
         )
         if resolution.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED:
             answer = cls._correction_notice(resolution) + "\n\n" + answer
-        reason_codes = ["IN_SCOPE_NO_EVIDENCE"]
+        reason_codes = [
+            MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value,
+        ]
         if rag_unavailable:
-            reason_codes.append("RAG_UNAVAILABLE")
+            reason_codes.append(
+                MedicationChatReasonCode.RAG_UNAVAILABLE.value,
+            )
         return MedicationChatResult(
             request_id=request.request_id,
             answer=answer,
@@ -679,6 +826,7 @@ class AnswerMedicationQuestionUseCase:
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=cls._context_hash(context),
+            question_interpretation=interpretation,
             search_observation=(
                 MedicationSearchExecutionObservation.from_execution_plan(
                     execution_plan,
@@ -1011,6 +1159,7 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
         guide_lookup: MedicationGuideLookup,
         execution_plan: MedicationSearchExecutionPlan,
+        interpretation: MedicationQuestionInterpretation,
     ) -> MedicationChatResult:
         names = ", ".join(guide_lookup.candidate_names[:5])
         return MedicationChatResult(
@@ -1022,10 +1171,13 @@ class AnswerMedicationQuestionUseCase:
             ),
             route=MedicationChatRoute.CLARIFICATION,
             safety_status=SafetyStatus.RESTRICTED,
-            safety_reason_codes=["AMBIGUOUS_MEDICATION_NAME"],
+            safety_reason_codes=[
+                MedicationChatReasonCode.AMBIGUOUS_MEDICATION_NAME.value,
+            ],
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=AnswerMedicationQuestionUseCase._context_hash(context),
+            question_interpretation=interpretation,
             search_observation=(
                 MedicationSearchExecutionObservation.from_execution_plan(
                     execution_plan,
@@ -1051,6 +1203,7 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
         execution_plan: MedicationSearchExecutionPlan,
+        interpretation: MedicationQuestionInterpretation,
     ) -> MedicationChatResult:
         family = execution_plan.query_plan.ingredient_family
         if family is None:
@@ -1066,10 +1219,13 @@ class AnswerMedicationQuestionUseCase:
             ),
             route=MedicationChatRoute.CLARIFICATION,
             safety_status=SafetyStatus.RESTRICTED,
-            safety_reason_codes=["INGREDIENT_FAMILY_DETAIL_REQUIRED"],
+            safety_reason_codes=[
+                MedicationChatReasonCode.INGREDIENT_FAMILY_DETAIL_REQUIRED.value,
+            ],
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=AnswerMedicationQuestionUseCase._context_hash(context),
+            question_interpretation=interpretation,
             search_observation=(
                 MedicationSearchExecutionObservation.from_execution_plan(
                     execution_plan,

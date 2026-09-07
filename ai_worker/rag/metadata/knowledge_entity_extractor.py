@@ -62,8 +62,22 @@ class KnowledgeEntityExtractor:
         r"single-meal|double-blind|placebo)\b",
         flags=re.IGNORECASE,
     )
+    _REGULATORY_LABEL_DRUG = re.compile(
+        r"\b(?P<brand>[A-Z][A-Z0-9-]{2,})®?\s*"
+        r"\(\s*(?P<generic>[a-z][a-z0-9 -]{2,})\s*\)",
+    )
+    _RESEARCH_TABLE_ROW = re.compile(
+        r"(?im)^(?:Ingredient|Interfering Substances|열\s*1)="
+        r"(?P<entities>[^|\n]+)\s*\|\s*"
+        r"(?:Class|Result|열\s*2)=(?P<entity_class>[^|\n]+)"
+    )
+    _SUPPLEMENT_CLASS = re.compile(
+        r"\b(?:supplement|vitamin|nutrient|mineral)\b",
+        flags=re.IGNORECASE,
+    )
 
     _REGULATORY_DOCUMENT_TYPES = {
+        KnowledgeDocumentType.REGULATORY_DRUG_LABEL,
         KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
         KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
         KnowledgeDocumentType.SUPPLEMENT_CODE,
@@ -153,13 +167,26 @@ class KnowledgeEntityExtractor:
             if self._interaction_annotations is not None and document_id
             else []
         )
+        regulatory_drug_names = self._regulatory_drug_names(
+            document_type=document_type,
+            content=content,
+        )
+        table_ingredient_names = self._research_table_ingredient_names(
+            document_type=document_type,
+            content=content,
+        )
         if annotated:
             pair_types = {match.pair_type.value for match in annotated}
             interaction_type = next(iter(pair_types)) if len(pair_types) == 1 else None
             return title_entities.model_copy(
                 update={
                     "drug_names": self._unique(name for match in annotated for name in match.drug_names),
-                    "ingredient_names": self._unique(name for match in annotated for name in match.ingredient_names),
+                    "ingredient_names": self._unique(
+                        [
+                            *(name for match in annotated for name in match.ingredient_names),
+                            *table_ingredient_names,
+                        ]
+                    ),
                     "interaction_type": interaction_type,
                     "interaction_pair_keys": self._unique(
                         key for match in annotated for key in match.interaction_pair_keys
@@ -171,18 +198,56 @@ class KnowledgeEntityExtractor:
         if pair is None:
             return title_entities.model_copy(
                 update={
+                    "drug_names": self._unique([*title_entities.drug_names, *regulatory_drug_names]),
+                    "ingredient_names": self._unique(
+                        [
+                            *title_entities.ingredient_names,
+                            *table_ingredient_names,
+                        ]
+                    ),
                     "evidence_level": evidence_level,
                     "study_population": study_population,
                 }
             )
         return title_entities.model_copy(
             update={
-                "ingredient_names": list(pair.canonical_names),
+                "ingredient_names": self._unique([*pair.canonical_names, *table_ingredient_names]),
                 "interaction_type": "SUPPLEMENT_SUPPLEMENT",
                 "interaction_pair_keys": [pair.pair_key],
                 "evidence_level": evidence_level,
                 "study_population": study_population,
             }
+        )
+
+    @classmethod
+    def _research_table_ingredient_names(
+        cls,
+        *,
+        document_type: KnowledgeDocumentType,
+        content: str,
+    ) -> list[str]:
+        if document_type != KnowledgeDocumentType.RESEARCH_ARTICLE:
+            return []
+        return cls._unique(
+            entity.strip()
+            for match in cls._RESEARCH_TABLE_ROW.finditer(content)
+            if cls._SUPPLEMENT_CLASS.search(match.group("entity_class"))
+            for entity in match.group("entities").split(";")
+        )
+
+    @classmethod
+    def _regulatory_drug_names(
+        cls,
+        *,
+        document_type: KnowledgeDocumentType,
+        content: str,
+    ) -> list[str]:
+        if document_type != KnowledgeDocumentType.REGULATORY_DRUG_LABEL:
+            return []
+        return cls._unique(
+            name.strip()
+            for match in cls._REGULATORY_LABEL_DRUG.finditer(content)
+            for name in (match.group("brand"), match.group("generic"))
         )
 
     @classmethod

@@ -11,6 +11,7 @@ from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import (
+    MedicationQuestionInterpretation,
     MedicationSearchExecutionObservation,
 )
 
@@ -47,6 +48,25 @@ class MedicationAnswerFallbackReason(StrEnum):
     NO_GROUNDED_SOURCES = "NO_GROUNDED_SOURCES"
     CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
     CLIENT_ERROR = "CLIENT_ERROR"
+
+
+class MedicationChatReasonCode(StrEnum):
+    QUERY_PLAN_FAILED = "QUERY_PLAN_FAILED"
+    AMBIGUOUS_QUERY_EXPRESSION = "AMBIGUOUS_QUERY_EXPRESSION"
+    IN_SCOPE_NO_EVIDENCE = "IN_SCOPE_NO_EVIDENCE"
+    RAG_UNAVAILABLE = "RAG_UNAVAILABLE"
+    INTERACTION_RULE_REPOSITORY_UNAVAILABLE = "INTERACTION_RULE_REPOSITORY_UNAVAILABLE"
+    AMBIGUOUS_MEDICATION_NAME = "AMBIGUOUS_MEDICATION_NAME"
+    INGREDIENT_FAMILY_DETAIL_REQUIRED = "INGREDIENT_FAMILY_DETAIL_REQUIRED"
+
+
+class MedicationAnswerPayload(BaseModel):
+    """LLM 답변 정제 단계의 제한된 구조화 출력."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(min_length=1)
+    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
 
 
 class MedicationChatProgress(BaseModel):
@@ -211,6 +231,10 @@ class MedicationChatResult(BaseModel):
     prompt_version: str = Field(min_length=1)
     schema_version: str = Field(min_length=1)
     context_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    question_interpretation: MedicationQuestionInterpretation | None = Field(
+        default=None,
+        exclude=True,
+    )
     search_observation: MedicationSearchExecutionObservation | None = Field(
         default=None,
         exclude=True,
