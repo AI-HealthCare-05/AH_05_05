@@ -1,0 +1,51 @@
+import app.models as models
+import app.models.enums as enums
+from app.core.db.databases import TORTOISE_APP_MODELS
+
+
+def test_challenge_domain_models_are_registered() -> None:
+    expected_models = {
+        "Badge",
+        "Challenge",
+        "UserChallenge",
+        "ChallengeProgress",
+        "ChallengeVerification",
+        "UserBadge",
+    }
+
+    assert expected_models.issubset(set(dir(models)))
+    assert "app.models.challenges" in TORTOISE_APP_MODELS
+
+
+def test_challenge_domain_models_expose_tables_and_unique_constraints() -> None:
+    assert models.Badge._meta.db_table == "badges"
+    assert models.Challenge._meta.db_table == "challenges"
+    assert models.UserChallenge._meta.db_table == "user_challenges"
+    assert models.ChallengeProgress._meta.db_table == "challenge_progress"
+    assert models.ChallengeVerification._meta.db_table == "challenge_verifications"
+    assert models.UserBadge._meta.db_table == "user_badges"
+
+    assert models.UserChallenge._meta.unique_together == (("user", "challenge"),)
+    assert models.ChallengeProgress._meta.unique_together == (("user_challenge", "period_start", "period_end"),)
+    assert models.UserBadge._meta.unique_together == (("user_challenge", "badge"),)
+
+
+def test_challenge_domain_models_use_fixed_status_enums() -> None:
+    assert hasattr(enums, "ChallengeParticipationStatus")
+    assert hasattr(enums, "ChallengeVerificationStatus")
+    assert hasattr(enums, "BadgeAwardStatus")
+    assert models.UserChallenge._meta.fields_map["status"].enum_type is enums.ChallengeParticipationStatus
+    assert models.ChallengeVerification._meta.fields_map["status"].enum_type is enums.ChallengeVerificationStatus
+    assert models.UserBadge._meta.fields_map["status"].enum_type is enums.BadgeAwardStatus
+
+
+def test_challenge_common_code_and_history_relationships_are_restrictive() -> None:
+    challenge_fields = models.Challenge._meta.fields_map
+    verification_fields = models.ChallengeVerification._meta.fields_map
+
+    assert challenge_fields["challenge_type"].model_name == "models.CommonCode"
+    assert challenge_fields["challenge_period"].model_name == "models.CommonCode"
+    assert challenge_fields["check_type"].model_name == "models.CommonCode"
+    assert challenge_fields["check_frequency"].model_name == "models.CommonCode"
+    assert challenge_fields["reward_badge"].model_name == "models.Badge"
+    assert verification_fields["reviewed_by_admin"].null is True

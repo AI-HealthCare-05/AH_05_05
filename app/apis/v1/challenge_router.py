@@ -1,0 +1,85 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path
+
+from app.dependencies.security import get_request_user
+from app.dtos.challenges import (
+    UserBadgeListResponse,
+    UserChallengeListResponse,
+    UserChallengeResponse,
+    VerificationCreateRequest,
+    VerificationResponse,
+)
+from app.models.users import User
+from app.services.challenge_participation import ChallengeParticipationService
+
+challenge_router = APIRouter(prefix="/user", tags=["user-challenges"])
+
+
+@challenge_router.post(
+    "/challenges/{challenge_id}/join",
+    response_model=UserChallengeResponse,
+    status_code=201,
+    summary="공식 챌린지 참여",
+)
+async def join_challenge(
+    challenge_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+) -> UserChallengeResponse:
+    """현재 사용자가 모집 중인 공식 챌린지에 참여하고 진행 구간을 생성한다."""
+    return await ChallengeParticipationService().join(user, challenge_id)
+
+
+@challenge_router.get("/challenges", response_model=UserChallengeListResponse, summary="내 챌린지 목록 조회")
+async def list_my_challenges(
+    user: Annotated[User, Depends(get_request_user)],
+) -> UserChallengeListResponse:
+    items = await ChallengeParticipationService().list(user)
+    return UserChallengeListResponse(items=items, total_count=len(items))
+
+
+@challenge_router.get(
+    "/challenges/{participation_id}",
+    response_model=UserChallengeResponse,
+    summary="내 챌린지 상세 조회",
+)
+async def get_my_challenge(
+    participation_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+) -> UserChallengeResponse:
+    return await ChallengeParticipationService().get(user, participation_id)
+
+
+@challenge_router.post(
+    "/challenges/{participation_id}/verifications",
+    response_model=VerificationResponse,
+    status_code=201,
+    summary="챌린지 인증 제출",
+)
+async def submit_challenge_verification(
+    participation_id: Annotated[int, Path(ge=1)],
+    request: VerificationCreateRequest,
+    user: Annotated[User, Depends(get_request_user)],
+) -> VerificationResponse:
+    """인증일을 기준으로 현재 사용자의 진행 구간에 인증 기록을 제출한다."""
+    return await ChallengeParticipationService().submit_verification(user, participation_id, request)
+
+
+@challenge_router.post(
+    "/challenges/{participation_id}/cancel",
+    response_model=UserChallengeResponse,
+    summary="챌린지 참여 취소",
+)
+async def cancel_challenge(
+    participation_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+) -> UserChallengeResponse:
+    return await ChallengeParticipationService().cancel(user, participation_id)
+
+
+@challenge_router.get("/badges", response_model=UserBadgeListResponse, summary="내 배지 목록 조회")
+async def list_my_badges(
+    user: Annotated[User, Depends(get_request_user)],
+) -> UserBadgeListResponse:
+    items = await ChallengeParticipationService().list_badges(user)
+    return UserBadgeListResponse(items=items, total_count=len(items))
