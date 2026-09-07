@@ -153,10 +153,7 @@ class KnowledgeOcrExtractionService:
             or artifact.renderer.dpi != self._dpi
         ):
             return None
-        if (
-            artifact.ocr_engine.name != self._provider.name
-            or artifact.ocr_engine.version != self._provider.version
-        ):
+        if artifact.ocr_engine.name != self._provider.name or artifact.ocr_engine.version != self._provider.version:
             return None
         if len(artifact.pages) != page_count:
             return None

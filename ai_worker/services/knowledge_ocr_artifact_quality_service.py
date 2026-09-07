@@ -48,26 +48,15 @@ class KnowledgeOcrArtifactQualityService:
         self,
         artifact: KnowledgeOcrDocumentArtifact,
     ) -> KnowledgeOcrArtifactQualityAssessment:
-        blocks = [
-            block
-            for page in artifact.pages
-            for block in page.blocks
-        ]
+        blocks = [block for page in artifact.pages for block in page.blocks]
         character_count = sum(len(block.text) for block in blocks)
-        average_confidence = (
-            sum(block.confidence * len(block.text) for block in blocks) / character_count
-        )
+        average_confidence = sum(block.confidence * len(block.text) for block in blocks) / character_count
         text = "\n".join(block.text for block in blocks)
         hangul_character_count = len(_HANGUL_PATTERN.findall(text))
         fragmented_hangul_count = sum(
-            len(_HANGUL_PATTERN.findall(match.group()))
-            for match in _FRAGMENTED_HANGUL_PATTERN.finditer(text)
+            len(_HANGUL_PATTERN.findall(match.group())) for match in _FRAGMENTED_HANGUL_PATTERN.finditer(text)
         )
-        fragmented_hangul_ratio = (
-            fragmented_hangul_count / hangul_character_count
-            if hangul_character_count
-            else 0.0
-        )
+        fragmented_hangul_ratio = fragmented_hangul_count / hangul_character_count if hangul_character_count else 0.0
         return KnowledgeOcrArtifactQualityAssessment(
             average_confidence=average_confidence,
             fragmented_hangul_ratio=fragmented_hangul_ratio,

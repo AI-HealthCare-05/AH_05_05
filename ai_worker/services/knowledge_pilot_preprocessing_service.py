@@ -850,9 +850,8 @@ class KnowledgePilotPreprocessingService:
         chunks: list[KnowledgeChunk],
         keep_approved_review_evidence: bool,
     ) -> None:
-        if (
-            not keep_approved_review_evidence
-            and not KnowledgePilotPreprocessingService._review_required_indices(report.chunk_reviews)
+        if not keep_approved_review_evidence and not KnowledgePilotPreprocessingService._review_required_indices(
+            report.chunk_reviews
         ):
             path.unlink(missing_ok=True)
             return

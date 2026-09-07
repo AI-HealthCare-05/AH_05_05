@@ -48,10 +48,7 @@ class KnowledgeOcrArtifactLoader:
         actual_source_sha256 = sha256(source_path.read_bytes()).hexdigest()
         if artifact.source_sha256 != actual_source_sha256:
             raise ValueError(f"OCR artifact 원본 SHA-256이 다릅니다: {metadata.document_id}")
-        return [
-            self._to_knowledge_page(page=page, metadata=metadata)
-            for page in artifact.pages
-        ]
+        return [self._to_knowledge_page(page=page, metadata=metadata) for page in artifact.pages]
 
     @classmethod
     def _to_knowledge_page(
@@ -70,11 +67,7 @@ class KnowledgeOcrArtifactLoader:
             )
             for index, column_blocks in enumerate(ordered_columns)
         ]
-        warnings = (
-            [KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT]
-            if len(blocks) > 1
-            else []
-        )
+        warnings = [KnowledgeExtractionWarning.MULTI_COLUMN_LAYOUT] if len(blocks) > 1 else []
         return KnowledgePage(
             content="\n\n".join(block.content for block in blocks),
             metadata=metadata,
@@ -100,10 +93,7 @@ class KnowledgeOcrArtifactLoader:
             current_right = max(current_right or block.bbox.x1, block.bbox.x1)
         if current:
             columns.append(current)
-        return [
-            sorted(column, key=lambda block: (block.bbox.top, block.bbox.x0, block.block_id))
-            for column in columns
-        ]
+        return [sorted(column, key=lambda block: (block.bbox.top, block.bbox.x0, block.block_id)) for column in columns]
 
     @staticmethod
     def _median(values: list[float]) -> float:

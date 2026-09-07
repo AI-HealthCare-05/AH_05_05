@@ -93,9 +93,7 @@ def test_load_restores_left_to_right_column_order_from_ocr_blocks(
         artifact_root=artifact_root,
     ).load(source_path, _metadata())
 
-    assert pages[0].content == (
-        "왼쪽 첫 문장\n왼쪽 두 번째 문장\n\n오른쪽 첫 문장\n오른쪽 두 번째 문장"
-    )
+    assert pages[0].content == ("왼쪽 첫 문장\n왼쪽 두 번째 문장\n\n오른쪽 첫 문장\n오른쪽 두 번째 문장")
     assert [block.content for block in pages[0].blocks] == [
         "왼쪽 첫 문장\n왼쪽 두 번째 문장",
         "오른쪽 첫 문장\n오른쪽 두 번째 문장",

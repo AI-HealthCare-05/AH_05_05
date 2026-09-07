@@ -44,9 +44,7 @@ class SubprocessTesseractCommandRunner:
                 stderr=asyncio.subprocess.PIPE,
             )
         except FileNotFoundError as error:
-            raise RuntimeError(
-                "로컬 Tesseract가 없습니다. Tesseract와 kor 언어팩을 설치하세요."
-            ) from error
+            raise RuntimeError("로컬 Tesseract가 없습니다. Tesseract와 kor 언어팩을 설치하세요.") from error
         stdout, stderr = await process.communicate(image_bytes)
         if process.returncode != 0:
             message = stderr.decode("utf-8", errors="replace").strip()
@@ -91,26 +89,17 @@ class TesseractKnowledgeOcrProvider:
             confidence = TesseractKnowledgeOcrProvider._confidence(row.get("conf"))
             if row.get("level") != "5" or not text or confidence is None:
                 continue
-            line_key = tuple(
-                row.get(field, "")
-                for field in ("page_num", "block_num", "par_num", "line_num")
-            )
+            line_key = tuple(row.get(field, "") for field in ("page_num", "block_num", "par_num", "line_num"))
             words_by_line[line_key].append(row)
 
         blocks: list[KnowledgeOcrBlock] = []
         for line_key, words in words_by_line.items():
-            coordinates = [
-                TesseractKnowledgeOcrProvider._coordinates(word)
-                for word in words
-            ]
+            coordinates = [TesseractKnowledgeOcrProvider._coordinates(word) for word in words]
             if any(coordinate is None for coordinate in coordinates):
                 continue
             valid_coordinates = [coordinate for coordinate in coordinates if coordinate is not None]
             weights = [max(len(word["text"].strip()), 1) for word in words]
-            confidences = [
-                TesseractKnowledgeOcrProvider._confidence(word.get("conf"))
-                for word in words
-            ]
+            confidences = [TesseractKnowledgeOcrProvider._confidence(word.get("conf")) for word in words]
             blocks.append(
                 KnowledgeOcrBlock(
                     block_id="tesseract-" + "-".join(line_key),
@@ -170,9 +159,7 @@ class KnowledgeOcrFallbackPolicy:
         character_count = sum(len(block.text) for block in blocks)
         if character_count < self.min_text_characters:
             return True
-        weighted_confidence = sum(
-            block.confidence * len(block.text) for block in blocks
-        ) / character_count
+        weighted_confidence = sum(block.confidence * len(block.text) for block in blocks) / character_count
         return weighted_confidence < self.min_average_confidence
 
 

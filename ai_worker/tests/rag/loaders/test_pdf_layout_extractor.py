@@ -461,11 +461,7 @@ def test_extract_inherits_headers_across_split_tables_on_same_page() -> None:
     )
 
     extraction = PdfLayoutExtractor().extract(page)
-    tables = [
-        block
-        for block in extraction.blocks
-        if block.kind == KnowledgeContentKind.TABLE
-    ]
+    tables = [block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE]
 
     assert tables[0].headers == [
         "Herb, food or dietary supplement",
@@ -473,8 +469,7 @@ def test_extract_inherits_headers_across_split_tables_on_same_page() -> None:
     ]
     assert tables[1].headers == tables[0].headers
     assert tables[1].content == (
-        "Herb, food or dietary supplement=St John's wort | "
-        "Brief description of event=Raised INR was reported."
+        "Herb, food or dietary supplement=St John's wort | Brief description of event=Raised INR was reported."
     )
     assert extraction.warnings == []
 
@@ -502,11 +497,7 @@ def test_extract_accepts_parallel_lists_under_semantic_headers() -> None:
     )
 
     extraction = PdfLayoutExtractor().extract(page)
-    table = next(
-        block
-        for block in extraction.blocks
-        if block.kind == KnowledgeContentKind.TABLE
-    )
+    table = next(block for block in extraction.blocks if block.kind == KnowledgeContentKind.TABLE)
 
     assert table.headers == [
         "Substrate for CYP3A4",

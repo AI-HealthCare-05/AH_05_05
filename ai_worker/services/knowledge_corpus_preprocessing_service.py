@@ -379,10 +379,7 @@ class KnowledgeCorpusPreprocessingService:
                     skipped.model_copy(
                         update={"reason": "AUTOMATIC_EXCLUDED_UNRECOVERABLE_TEXT"},
                     )
-                    if (
-                        skipped.document_id in excluded_document_ids
-                        and skipped.reason == "AUTOMATIC_QUALITY_BLOCKED"
-                    )
+                    if (skipped.document_id in excluded_document_ids and skipped.reason == "AUTOMATIC_QUALITY_BLOCKED")
                     else skipped
                     for skipped in result.skipped_documents
                 ]

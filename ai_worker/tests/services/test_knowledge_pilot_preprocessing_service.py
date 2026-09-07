@@ -798,11 +798,7 @@ sources:
     )
 
     assert result.ready_for_bulk_source_ids == ["supplement_code"]
-    assert not (
-        tmp_path
-        / "processed"
-        / result.document_reports[0].review_sample_path
-    ).exists()
+    assert not (tmp_path / "processed" / result.document_reports[0].review_sample_path).exists()
 
 
 def test_preprocess_blocks_supplement_code_without_semantic_sections(

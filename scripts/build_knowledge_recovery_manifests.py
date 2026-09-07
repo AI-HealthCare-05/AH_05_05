@@ -26,24 +26,21 @@ def parse_args() -> argparse.Namespace:
         "--corpus-quality-audit",
         type=Path,
         default=Path(
-            "data/knowledge/processed/full-v4-o200k-partial-dry-run/"
-            "reports/corpus-quality-audit.json",
+            "data/knowledge/processed/full-v4-o200k-partial-dry-run/reports/corpus-quality-audit.json",
         ),
     )
     parser.add_argument(
         "--release-chunks-dir",
         type=Path,
         default=Path(
-            "data/knowledge/processed/full-v4-o200k-partial-dry-run/"
-            "release/chunks",
+            "data/knowledge/processed/full-v4-o200k-partial-dry-run/release/chunks",
         ),
     )
     parser.add_argument(
         "--ocr-queue",
         type=Path,
         default=Path(
-            "data/knowledge/processed/full-v4-o200k-partial-dry-run/"
-            "reports/ocr-required.jsonl",
+            "data/knowledge/processed/full-v4-o200k-partial-dry-run/reports/ocr-required.jsonl",
         ),
     )
     parser.add_argument(

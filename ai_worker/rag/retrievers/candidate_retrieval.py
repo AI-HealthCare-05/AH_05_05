@@ -119,9 +119,7 @@ class MedicationKnowledgeCandidateRetriever:
             )
             tier_reasons = [self._eligibility_evaluator(result, plan) for result in tier_results]
             tier_eligible = [
-                result
-                for result, reason in zip(tier_results, tier_reasons, strict=True)
-                if reason == "ELIGIBLE"
+                result for result, reason in zip(tier_results, tier_reasons, strict=True) if reason == "ELIGIBLE"
             ]
             results.extend(tier_results)
             eligibility_reasons.extend(tier_reasons)
@@ -133,8 +131,7 @@ class MedicationKnowledgeCandidateRetriever:
             if tier_eligible:
                 selected_search_tier = tier.name
             if tier_eligible and (
-                tier.name == KnowledgeSearchTier.SEMANTIC
-                or self._section_coverage_evaluator(eligible, plan)
+                tier.name == KnowledgeSearchTier.SEMANTIC or self._section_coverage_evaluator(eligible, plan)
             ):
                 break
 

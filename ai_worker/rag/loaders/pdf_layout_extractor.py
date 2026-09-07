@@ -117,8 +117,7 @@ class PdfLayoutExtractor:
         tables = [
             table
             for table in self._find_tables(page, page_text)
-            if self._table_column_count(table) > 1
-            and self._table_has_content(table)
+            if self._table_column_count(table) > 1 and self._table_has_content(table)
         ]
         table_bboxes = [self._bbox(table.bbox) for table in tables]
         warnings: list[KnowledgeExtractionWarning] = []
@@ -343,10 +342,7 @@ class PdfLayoutExtractor:
     @staticmethod
     def _table_has_content(table: Any) -> bool:
         return any(
-            str(cell or "").strip()
-            for row in (table.extract(x_tolerance=1) or [])
-            if row is not None
-            for cell in row
+            str(cell or "").strip() for row in (table.extract(x_tolerance=1) or []) if row is not None for cell in row
         )
 
     @staticmethod
@@ -501,8 +497,10 @@ class PdfLayoutExtractor:
                 headers=headers,
                 data_rows=data_rows,
             )
-            if not has_shared_class_column and not is_parallel_list_table and any(
-                self._has_multiple_primary_entities(row[0]) for row in raw_data_rows if row
+            if (
+                not has_shared_class_column
+                and not is_parallel_list_table
+                and any(self._has_multiple_primary_entities(row[0]) for row in raw_data_rows if row)
             ):
                 validation_errors.append("MULTI_ENTITY_ROW")
             body_rows = self._inherit_primary_entity(data_rows)
@@ -631,11 +629,7 @@ class PdfLayoutExtractor:
         headers: list[str],
     ) -> KnowledgePageBlock:
         source_rows = [row.cells for row in block.rows]
-        serialized_rows = [
-            self._serialize_row(headers, row)
-            for row in source_rows
-            if any(row)
-        ]
+        serialized_rows = [self._serialize_row(headers, row) for row in source_rows if any(row)]
         content = "\n".join(
             self._expand_row_references(
                 serialized_rows,
@@ -1146,20 +1140,11 @@ class PdfLayoutExtractor:
                 row,
                 key=lambda item: item[1]["x0"],
             ):
-                gap = (
-                    indexed_word[1]["x0"] - current[-1][1]["x1"]
-                    if current
-                    else 0.0
-                )
+                gap = indexed_word[1]["x0"] - current[-1][1]["x1"] if current else 0.0
                 crosses_page_center = bool(
-                    current
-                    and current[-1][1]["x1"] <= midpoint
-                    and indexed_word[1]["x0"] >= midpoint
+                    current and current[-1][1]["x1"] <= midpoint and indexed_word[1]["x0"] >= midpoint
                 )
-                if current and (
-                    gap > horizontal_gap
-                    or (crosses_page_center and gap >= 8.0)
-                ):
+                if current and (gap > horizontal_gap or (crosses_page_center and gap >= 8.0)):
                     split_rows.append(current)
                     current = []
                 current.append(indexed_word)

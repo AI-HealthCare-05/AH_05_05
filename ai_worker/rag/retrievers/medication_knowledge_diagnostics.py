@@ -117,21 +117,14 @@ class MedicationKnowledgeDiagnosticsBuilder:
                     boost_score=round(adjusted_score - raw_score, 6),
                     adjusted_score=round(adjusted_score, 6),
                     adjusted_rank=adjusted_rank,
-                    entity_matched=(
-                        not self._has_query_entities(plan)
-                        or self._entity_matched(result, plan)
-                    ),
+                    entity_matched=(not self._has_query_entities(plan) or self._entity_matched(result, plan)),
                     section_matched=(
                         not plan.section_types
                         or bool(set(plan.section_types).intersection(self._effective_section_types(result)))
                     ),
                     pair_matched=self._pair_matched(result, plan) if pair_required else None,
                     eligible=reason == "ELIGIBLE",
-                    rejection_reason=(
-                        None
-                        if reason == "ELIGIBLE"
-                        else KnowledgeCandidateRejectionReason(reason)
-                    ),
+                    rejection_reason=(None if reason == "ELIGIBLE" else KnowledgeCandidateRejectionReason(reason)),
                     selected_in_top_5=result.chunk_id in selected_ids,
                 )
             )

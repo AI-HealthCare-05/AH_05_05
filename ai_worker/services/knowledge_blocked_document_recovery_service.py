@@ -77,8 +77,7 @@ class KnowledgeBlockedDocumentRecoveryService:
                 for record in records
             ),
             manual_review_required_count=sum(
-                record.status == KnowledgeBlockedDocumentRecoveryStatus.MANUAL_REVIEW_REQUIRED
-                for record in records
+                record.status == KnowledgeBlockedDocumentRecoveryStatus.MANUAL_REVIEW_REQUIRED for record in records
             ),
         )
         reports_root = root / "reports"

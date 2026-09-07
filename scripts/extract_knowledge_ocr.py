@@ -248,9 +248,7 @@ def main() -> None:
         )
         return
     if args.engine == "tesseract-with-clova-fallback" and not args.allow_clova_fallback:
-        raise ValueError(
-            "CLOVA fallback 실행에는 --allow-clova-fallback가 필요합니다."
-        )
+        raise ValueError("CLOVA fallback 실행에는 --allow-clova-fallback가 필요합니다.")
     if args.engine != "tesseract" and demo_restricted_count and not args.allow_demo_restricted_ocr:
         raise ValueError("DEMO_RESTRICTED OCR 전송에는 --allow-demo-restricted-ocr가 필요합니다.")
     print(

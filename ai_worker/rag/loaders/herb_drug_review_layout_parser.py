@@ -120,9 +120,7 @@ class HerbDrugReviewLayoutParser:
         source_id: str,
         document_id: str | None = None,
     ) -> PdfLayoutExtraction | None:
-        if source_id != self._SOURCE_ID or (
-            document_id is not None and document_id != self._DOCUMENT_ID
-        ):
+        if source_id != self._SOURCE_ID or (document_id is not None and document_id != self._DOCUMENT_ID):
             return None
         if page_number in self._EXCLUDED_PAGES:
             return PdfLayoutExtraction(blocks=[], warnings=[])
