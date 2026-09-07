@@ -7,6 +7,7 @@ from tortoise.contrib.test import TestCase
 
 from app.core import config
 from app.main import app
+from app.tests.email_verification_helpers import with_signup_token
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +34,7 @@ class TestJWTTokenRefreshAPI(TestCase):
             "is_terms_agreed": True,
         }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data)
+            await client.post("/api/v1/auth/signup", json=await with_signup_token(signup_data))
 
             login_response = await client.post(
                 "/api/v1/auth/login", json={"email": "refresh@example.com", "password": "Password123!"}

@@ -6,6 +6,7 @@ from tortoise.contrib.test import TestCase
 from app.core.validators.user_validators import mask_name
 from app.main import app
 from app.models.users import User
+from app.tests.email_verification_helpers import with_signup_token
 
 PASSWORD = "Password123!"
 
@@ -26,7 +27,8 @@ def test_mask_name_hides_middle_with_at_most_three_stars(raw: str, expected: str
     assert mask_name(raw) == expected
 
 
-def signup_data(email: str, **overrides):
+async def signup_data(email: str, **overrides):
+    """토큰은 일회용이라 호출마다 새로 발급된다(#286)."""
     data = {
         "email": email,
         "password": PASSWORD,
@@ -37,7 +39,7 @@ def signup_data(email: str, **overrides):
         "is_terms_agreed": True,
     }
     data.update(overrides)
-    return data
+    return await with_signup_token(data)
 
 
 class TestSignupNameRules(TestCase):
@@ -49,7 +51,7 @@ class TestSignupNameRules(TestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for index, name in enumerate(allowed):
                 response = await client.post(
-                    "/api/v1/auth/signup", json=signup_data(f"ok{index}@example.com", name=name)
+                    "/api/v1/auth/signup", json=await signup_data(f"ok{index}@example.com", name=name)
                 )
 
                 assert response.status_code == status.HTTP_201_CREATED, name
@@ -66,7 +68,7 @@ class TestSignupNameRules(TestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for index, name in enumerate(rejected):
                 response = await client.post(
-                    "/api/v1/auth/signup", json=signup_data(f"no{index}@example.com", name=name)
+                    "/api/v1/auth/signup", json=await signup_data(f"no{index}@example.com", name=name)
                 )
 
                 assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, name
@@ -76,7 +78,7 @@ class TestSignupNameRules(TestCase):
         email = "space@example.com"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/api/v1/auth/signup", json=signup_data(email, name="  김진형  "))
+            response = await client.post("/api/v1/auth/signup", json=await signup_data(email, name="  김진형  "))
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert response.json()["field"] == "name"
@@ -85,7 +87,7 @@ class TestSignupNameRules(TestCase):
         email = "normalized@example.com"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/api/v1/auth/signup", json=signup_data(email, name="E\u0301lodie"))
+            response = await client.post("/api/v1/auth/signup", json=await signup_data(email, name="E\u0301lodie"))
 
         assert response.status_code == status.HTTP_201_CREATED
         assert (await User.get(email=email)).name == "Élodie"
@@ -97,7 +99,7 @@ class TestProfileUpdateNameRules(TestCase):
     EMAIL = "profile-name@example.com"
 
     async def _signed_in(self, client: AsyncClient) -> dict[str, str]:
-        await client.post("/api/v1/auth/signup", json=signup_data(self.EMAIL))
+        await client.post("/api/v1/auth/signup", json=await signup_data(self.EMAIL))
         login = await client.post("/api/v1/auth/login", json={"email": self.EMAIL, "password": PASSWORD})
         return {"Authorization": f"Bearer {login.json()['access_token']}"}
 

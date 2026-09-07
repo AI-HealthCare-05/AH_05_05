@@ -4,6 +4,7 @@ from tortoise.contrib.test import TestCase
 
 from app.main import app
 from app.models.users import User
+from app.tests.email_verification_helpers import with_signup_token
 
 EMAIL = "unknown_fields@example.com"
 PASSWORD = "Password123!"
@@ -19,15 +20,17 @@ class TestUserUpdateRejectsUnknownFields(TestCase):
     async def _signed_in(self, client: AsyncClient) -> dict[str, str]:
         await client.post(
             "/api/v1/auth/signup",
-            json={
-                "email": EMAIL,
-                "password": PASSWORD,
-                "name": "원래이름",
-                "phone_number": "01044445555",
-                "birth_date": "1990-01-01",
-                "gender": "MALE",
-                "is_terms_agreed": True,
-            },
+            json=await with_signup_token(
+                {
+                    "email": EMAIL,
+                    "password": PASSWORD,
+                    "name": "원래이름",
+                    "phone_number": "01044445555",
+                    "birth_date": "1990-01-01",
+                    "gender": "MALE",
+                    "is_terms_agreed": True,
+                }
+            ),
         )
         login = await client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
         return {"Authorization": f"Bearer {login.json()['access_token']}"}
