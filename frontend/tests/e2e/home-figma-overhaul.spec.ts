@@ -311,22 +311,15 @@ test('로그인 홈은 오늘의 복약과 오늘의 영양제 탭 아래 카드
   expect(rankingBox!.y).toBeGreaterThan(challengeBox!.y);
 });
 
-test('로그인 홈은 챌린지 자리만 비대화형 카드로 예약한다', async ({ page }) => {
+test('로그인 홈은 챌린지 요약 이동만 제공하고 직접 인증하지 않는다', async ({ page }) => {
   await page.goto('/dev/home-active');
 
   const challenge = page.getByRole('region', { name: '챌린지' });
   await expect(challenge).toBeVisible();
-  const placeholder = challenge.locator('[data-challenge-placeholder]');
-  await expect(placeholder).toHaveCount(1);
-  await expect(placeholder).toHaveCSS('height', '132px');
-  expect(
-    await placeholder.evaluate((element) => ({
-      role: element.getAttribute('role'),
-      tabIndex: element.getAttribute('tabindex'),
-      hasInteractiveSemantics: element.matches('button, a, input, [role="button"], [tabindex]') ||
-        element.querySelector('button, a, input, [role="button"], [tabindex]') !== null,
-    })),
-  ).toEqual({ role: null, tabIndex: null, hasInteractiveSemantics: false });
+  await expect(challenge.getByText('예시 데이터', { exact: true })).toBeVisible();
+  await expect(challenge.getByRole('link', { name: /복약 루틴 챌린지/ })).toBeVisible();
+  await expect(challenge.getByRole('link', { name: /영양제 루틴 챌린지/ })).toBeVisible();
+  await expect(challenge.getByRole('button', { name: /했어요/ })).toHaveCount(0);
 });
 
 test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 회차를 독립적으로 기록한다', async ({
