@@ -30,7 +30,7 @@ test('평가 사유는 공통코드 다섯 개를 표시하고 처음에는 선�
   }
 });
 
-test('선택한 평가 사유는 코드로 저장되고 사유를 해제해도 제출할 수 있다', async ({ page }) => {
+test('사유 선택을 해제해도 제출하고 대화를 종료할 수 있다', async ({ page }) => {
   await openAnsweredChat(page);
 
   await page.getByRole('button', { name: '채팅 종료' }).click();
@@ -54,7 +54,7 @@ test('선택한 평가 사유는 코드로 저장되고 사유를 해제해도 �
         }).sessions
       : [];
   });
-  expect(sessions.at(-1)).toMatchObject({ isLike: true, reasonCode: null });
+  expect(sessions).toHaveLength(0);
 });
 
 test('평가 사유는 좁은 화면에서도 세로 전체 너비로 보이고 제출 버튼은 고정된다', async ({ page }) => {

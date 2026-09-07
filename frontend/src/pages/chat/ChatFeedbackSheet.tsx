@@ -23,12 +23,14 @@ type FeedbackSaver = (
 ) => Promise<ChatFeedbackResult>;
 
 const FEEDBACK_SAVE_ERROR = '평가를 저장하지 못했어요. 다시 시도해주세요.';
+const CHAT_END_ERROR = '채팅을 종료하지 못했어요. 다시 시도해주세요.';
 
 interface ChatFeedbackSheetProps {
   open: boolean;
   sessionId?: number | null;
   onOpenChange: (open: boolean) => void;
   onFinish: () => void;
+  onEnd?: () => Promise<void>;
   reasonLoader?: CommonCodeLoader;
   feedbackSaver?: FeedbackSaver;
 }
@@ -38,6 +40,7 @@ export function ChatFeedbackSheet({
   sessionId = null,
   onOpenChange,
   onFinish,
+  onEnd,
   reasonLoader = listCommonCodes,
   feedbackSaver = saveChatFeedback,
 }: ChatFeedbackSheetProps) {
@@ -50,6 +53,7 @@ export function ChatFeedbackSheet({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveGenerationRef = useRef(0);
+  const savedFeedbackRef = useRef<string | null>(null);
 
   useEffect(() => () => {
     saveGenerationRef.current += 1;
@@ -94,6 +98,7 @@ export function ChatFeedbackSheet({
       setReasonsRetryKey(0);
       setSaving(false);
       setSaveError(null);
+      savedFeedbackRef.current = null;
     }
   }, [open]);
 
@@ -110,9 +115,25 @@ export function ChatFeedbackSheet({
     onOpenChange(false);
   }
 
-  function skip() {
-    closeSheet();
-    onFinish();
+  async function endChat(saveGeneration: number) {
+    try {
+      await onEnd?.();
+      if (saveGenerationRef.current !== saveGeneration) return;
+      closeSheet();
+      onFinish();
+    } catch {
+      if (saveGenerationRef.current === saveGeneration) setSaveError(CHAT_END_ERROR);
+    } finally {
+      if (saveGenerationRef.current === saveGeneration) setSaving(false);
+    }
+  }
+
+  async function skip() {
+    if (saving) return;
+    const saveGeneration = ++saveGenerationRef.current;
+    setSaving(true);
+    setSaveError(null);
+    await endChat(saveGeneration);
   }
 
   function chooseReason(reasonCode: string) {
@@ -132,13 +153,18 @@ export function ChatFeedbackSheet({
     setSaving(true);
     setSaveError(null);
     try {
-      await feedbackSaver(sessionId, {
+      const payload = {
         isLike: step === 'positive',
         reasonCode: selectedReason,
-      });
+      };
+      const feedbackKey = JSON.stringify([sessionId, payload]);
+      if (savedFeedbackRef.current !== feedbackKey) {
+        await feedbackSaver(sessionId, payload);
+        if (saveGenerationRef.current !== saveGeneration) return;
+        savedFeedbackRef.current = feedbackKey;
+      }
       if (saveGenerationRef.current !== saveGeneration) return;
-      closeSheet();
-      onFinish();
+      await endChat(saveGeneration);
     } catch {
       if (saveGenerationRef.current !== saveGeneration) return;
       setSaveError(FEEDBACK_SAVE_ERROR);
@@ -196,7 +222,8 @@ export function ChatFeedbackSheet({
             <p className="text-center text-unit text-muted-foreground">
               선택하면 간단한 이유를 남길 수 있어요.
             </p>
-            <Button variant="secondary" onClick={skip}>
+            {saveError !== null && <p role="alert" className="text-sm text-danger-strong">{saveError}</p>}
+            <Button variant="secondary" disabled={saving} onClick={() => void skip()}>
               건너뛰고 종료
             </Button>
           </>

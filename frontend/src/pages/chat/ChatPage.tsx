@@ -328,6 +328,15 @@ export function ChatPage({
     setFeedbackOpen(true);
   }
 
+  async function endSession() {
+    const sessionId = conversationId ?? activeSessionId;
+    if (sessionId === null) throw new Error('종료할 대화가 없습니다.');
+    const result = await sessionDeleter([sessionId]);
+    if (result && (!result.deletedSessionIds.includes(sessionId) || result.failedSessionIds.includes(sessionId))) {
+      throw new Error('대화 삭제에 실패했습니다.');
+    }
+  }
+
   function finishChat() {
     setFeedbackOpen(false);
     startNewSession();
@@ -591,6 +600,7 @@ export function ChatPage({
         sessionId={conversationId ?? activeSessionId}
         onOpenChange={setFeedbackOpen}
         onFinish={finishChat}
+        onEnd={endSession}
         feedbackSaver={feedbackSaver}
       />
     </div>
