@@ -5,11 +5,13 @@ from tortoise.contrib.test import TestCase
 from app.main import app
 from app.models.enums import AccountStatus
 from app.models.users import User
+from app.tests.email_verification_helpers import with_signup_token
 
 PASSWORD = "Password123!"
 
 
-def signup_data(email: str, **overrides):
+async def signup_data(email: str, **overrides):
+    """가입용 페이로드. 토큰은 일회용이라 호출할 때마다 새로 발급된다(#286)."""
     data = {
         "email": email,
         "password": PASSWORD,
@@ -20,7 +22,7 @@ def signup_data(email: str, **overrides):
         "is_terms_agreed": True,
     }
     data.update(overrides)
-    return data
+    return await with_signup_token(data)
 
 
 class TestLoginDoesNotRevealAccountState(TestCase):
@@ -44,7 +46,7 @@ class TestLoginDoesNotRevealAccountState(TestCase):
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for email in (suspended, withdrawn, active):
-                await client.post("/api/v1/auth/signup", json=signup_data(email))
+                await client.post("/api/v1/auth/signup", json=await signup_data(email))
             await User.filter(email=suspended).update(status=AccountStatus.SUSPENDED)
             await User.filter(email=withdrawn).update(status=AccountStatus.WITHDRAWN)
 
@@ -70,7 +72,7 @@ class TestLoginDoesNotRevealAccountState(TestCase):
         # 대기 계정도 같은 응답이어야 한다. 예전에는 423 으로 함께 갈라졌다.
         email = "pending@example.com"
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data(email))
+            await client.post("/api/v1/auth/signup", json=await signup_data(email))
             await User.filter(email=email).update(status=AccountStatus.PENDING)
 
             response = await self._login(client, email)
@@ -81,7 +83,7 @@ class TestLoginDoesNotRevealAccountState(TestCase):
     async def test_active_account_still_logs_in(self):
         email = "normal@example.com"
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post("/api/v1/auth/signup", json=signup_data(email))
+            await client.post("/api/v1/auth/signup", json=await signup_data(email))
 
             response = await self._login(client, email)
 
@@ -98,11 +100,11 @@ class TestLoginDoesNotRevealAccountState(TestCase):
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for email in (active, withdrawn):
-                await client.post("/api/v1/auth/signup", json=signup_data(email))
+                await client.post("/api/v1/auth/signup", json=await signup_data(email))
             await User.filter(email=withdrawn).update(status=AccountStatus.WITHDRAWN)
 
-            again_active = await client.post("/api/v1/auth/signup", json=signup_data(active))
-            again_withdrawn = await client.post("/api/v1/auth/signup", json=signup_data(withdrawn))
+            again_active = await client.post("/api/v1/auth/signup", json=await signup_data(active))
+            again_withdrawn = await client.post("/api/v1/auth/signup", json=await signup_data(withdrawn))
 
         for response in (again_active, again_withdrawn):
             assert response.status_code == status.HTTP_409_CONFLICT

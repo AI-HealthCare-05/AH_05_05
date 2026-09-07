@@ -12,6 +12,7 @@ from app.models.enums import AlarmType, MealSlot
 from app.models.medications import Medication
 from app.models.supplement_nutrients import UserSupplementNutrient, UserSupplementNutrientSlot
 from app.models.users import User, UserSettings
+from app.tests.email_verification_helpers import with_signup_token
 
 
 class TestNotifySettingsApis(TestCase):
@@ -19,15 +20,17 @@ class TestNotifySettingsApis(TestCase):
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         signup_response = await client.post(
             "/api/v1/auth/signup",
-            json={
-                "email": email,
-                "password": "Password123!",
-                "name": "알림테스터",
-                "phone_number": "01012345678",
-                "birth_date": "1990-01-01",
-                "gender": "FEMALE",
-                "is_terms_agreed": True,
-            },
+            json=await with_signup_token(
+                {
+                    "email": email,
+                    "password": "Password123!",
+                    "name": "알림테스터",
+                    "phone_number": "01012345678",
+                    "birth_date": "1990-01-01",
+                    "gender": "FEMALE",
+                    "is_terms_agreed": True,
+                }
+            ),
         )
         assert signup_response.status_code == status.HTTP_201_CREATED
         login_response = await client.post(
