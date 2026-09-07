@@ -15,6 +15,10 @@ from ai_worker.rag.metadata.knowledge_entity_extractor import (
 from ai_worker.rag.parsers.supplement_code_parser import (
     SupplementCodeParser,
 )
+from ai_worker.rag.splitters.repairers import (
+    CallableDocumentChunkRepairer,
+    DocumentChunkRepairRegistry,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeChunk,
     KnowledgeChunkMetadata,
@@ -645,28 +649,72 @@ class KnowledgeSplitter:
         if not chunks:
             return chunks
 
-        document_id = chunks[0].metadata.document_id
-        document_repairer = {
-            _VITAMIN_B12_DEFICIENCY_DOCUMENT_ID: self._resegment_vitamin_b12_deficiency,
-            _BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_DOCUMENT_ID: self._resegment_botanical_supplement_adverse_effects,
-            _CALCIUM_IRON_ABSORPTION_REVIEW_DOCUMENT_ID: self._resegment_calcium_iron_absorption_review,
-            _ZINC_IRON_STATUS_STUDY_DOCUMENT_ID: self._resegment_zinc_iron_status_study,
-            _VITAMIN_C_COPPER_STUDY_DOCUMENT_ID: self._clean_vitamin_c_copper_study,
-            _CALCIUM_IRON_META_ANALYSIS_DOCUMENT_ID: self._clean_calcium_iron_meta_analysis,
-            _OLDER_ADULT_SUPPLEMENT_INTERACTION_REVIEW_DOCUMENT_ID: self._clean_older_adult_supplement_interaction_review,
-            _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID: self._resegment_primary_care_herb_drug_review,
-            _ST_JOHNS_WORT_REVIEW_DOCUMENT_ID: self._resegment_st_johns_wort_review,
-            _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID: self._resegment_levothyroxine_calcium_review,
-            _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID: self._repair_statins_vitamin_d_review,
-            _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID: self._resegment_drug_vitamin_d_review,
-            _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID: self._repair_warfarin_supplement_review,
-            _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID: self._repair_aspirin_warfarin_review,
-        }.get(document_id)
-        if document_repairer is None:
+        repaired = self._verified_document_repair_registry().repair(chunks)
+        if repaired is chunks:
             return chunks
-
-        repaired = document_repairer(chunks)
         return [self._rebuild_verified_chunk(chunk, index) for index, chunk in enumerate(repaired)]
+
+    def _verified_document_repair_registry(self) -> DocumentChunkRepairRegistry:
+        return DocumentChunkRepairRegistry(
+            repairers=(
+                CallableDocumentChunkRepairer(
+                    _VITAMIN_B12_DEFICIENCY_DOCUMENT_ID,
+                    self._resegment_vitamin_b12_deficiency,
+                ),
+                CallableDocumentChunkRepairer(
+                    _BOTANICAL_SUPPLEMENT_ADVERSE_EFFECTS_DOCUMENT_ID,
+                    self._resegment_botanical_supplement_adverse_effects,
+                ),
+                CallableDocumentChunkRepairer(
+                    _CALCIUM_IRON_ABSORPTION_REVIEW_DOCUMENT_ID,
+                    self._resegment_calcium_iron_absorption_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _ZINC_IRON_STATUS_STUDY_DOCUMENT_ID,
+                    self._resegment_zinc_iron_status_study,
+                ),
+                CallableDocumentChunkRepairer(
+                    _VITAMIN_C_COPPER_STUDY_DOCUMENT_ID,
+                    self._clean_vitamin_c_copper_study,
+                ),
+                CallableDocumentChunkRepairer(
+                    _CALCIUM_IRON_META_ANALYSIS_DOCUMENT_ID,
+                    self._clean_calcium_iron_meta_analysis,
+                ),
+                CallableDocumentChunkRepairer(
+                    _OLDER_ADULT_SUPPLEMENT_INTERACTION_REVIEW_DOCUMENT_ID,
+                    self._clean_older_adult_supplement_interaction_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _PRIMARY_CARE_HERB_DRUG_REVIEW_DOCUMENT_ID,
+                    self._resegment_primary_care_herb_drug_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _ST_JOHNS_WORT_REVIEW_DOCUMENT_ID,
+                    self._resegment_st_johns_wort_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _LEVOTHYROXINE_CALCIUM_REVIEW_DOCUMENT_ID,
+                    self._resegment_levothyroxine_calcium_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _STATINS_VITAMIN_D_REVIEW_DOCUMENT_ID,
+                    self._repair_statins_vitamin_d_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _DRUG_VITAMIN_D_REVIEW_DOCUMENT_ID,
+                    self._resegment_drug_vitamin_d_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _WARFARIN_SUPPLEMENT_REVIEW_DOCUMENT_ID,
+                    self._repair_warfarin_supplement_review,
+                ),
+                CallableDocumentChunkRepairer(
+                    _ASPIRIN_WARFARIN_REVIEW_DOCUMENT_ID,
+                    self._repair_aspirin_warfarin_review,
+                ),
+            )
+        )
 
     def _repair_statins_vitamin_d_review(
         self,

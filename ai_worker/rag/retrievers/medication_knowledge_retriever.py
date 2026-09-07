@@ -1,22 +1,29 @@
-import asyncio
 import re
-from dataclasses import dataclass
-from enum import StrEnum
-from typing import Protocol
 
 from ai_worker.domain.interfaces import EmbeddingProvider
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     supplement_pair_matches_text,
 )
+from ai_worker.rag.retrievers.candidate_retrieval import (
+    MedicationKnowledgeCandidateRetriever,
+    MedicationKnowledgeSearchStore,
+)
+from ai_worker.rag.retrievers.medication_knowledge_diagnostics import (
+    MedicationKnowledgeDiagnosticsBuilder,
+)
+from ai_worker.rag.retrievers.medication_knowledge_eligibility import (
+    MedicationKnowledgeEligibilityPolicy,
+)
+from ai_worker.rag.retrievers.medication_knowledge_eligibility import (
+    MedicationKnowledgeEligibilityReason as _EligibilityReason,
+)
+from ai_worker.rag.retrievers.medication_knowledge_ranking import (
+    MedicationKnowledgeRankingPolicy,
+)
 from ai_worker.schemas.knowledge import (
-    KnowledgeCandidateDiagnostic,
-    KnowledgeCandidateRejectionReason,
     KnowledgeDocumentType,
-    KnowledgeRetrievalDiagnostics,
     KnowledgeRetrievalResult,
     KnowledgeSearchMode,
-    KnowledgeSearchQuery,
-    KnowledgeSearchTier,
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
@@ -25,37 +32,6 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryEntityType,
     MedicationSearchExecutionPlan,
 )
-
-
-@dataclass(frozen=True)
-class _SearchTier:
-    name: KnowledgeSearchTier
-    medication_names: tuple[str, ...] = ()
-    supplement_names: tuple[str, ...] = ()
-    interaction_pair_keys: tuple[str, ...] = ()
-
-
-class _EligibilityReason(StrEnum):
-    ELIGIBLE = "ELIGIBLE"
-    BELOW_SCORE = "BELOW_SCORE"
-    ENTITY_MISMATCH = "ENTITY_MISMATCH"
-    PAIR_MISMATCH = "PAIR_MISMATCH"
-
-
-@dataclass(frozen=True)
-class _CandidateObservation:
-    result: RetrievedKnowledgeChunk
-    search_tier: KnowledgeSearchTier
-    raw_rank: int
-
-
-class MedicationKnowledgeSearchStore(Protocol):
-    async def search(
-        self,
-        *,
-        query_vector: list[float],
-        search_query: KnowledgeSearchQuery,
-    ) -> list[RetrievedKnowledgeChunk]: ...
 
 
 class MedicationKnowledgeRetriever:
@@ -100,6 +76,78 @@ class MedicationKnowledgeRetriever:
         self._vector_store = vector_store
         self._dataset_version = normalized_version
         self._min_similarity_score = min_similarity_score
+        self._eligibility_policy = MedicationKnowledgeEligibilityPolicy(
+            min_similarity_score=min_similarity_score,
+            declared_pair_matches=self._declared_pair_matches,
+            requires_entity_pair_match=self._requires_entity_pair_match,
+            matches_any_interaction_pair=lambda result, plan: self._matches_any_interaction_pair(
+                result,
+                plan=plan,
+            ),
+            has_query_entities=lambda plan: bool(self._normalized_query_entities(plan)),
+            matches_query_target=lambda result, plan: self._matches_query_target(
+                result,
+                plan=plan,
+            ),
+            dense_confidence_score=self._dense_confidence_score,
+            eligibility_margin=lambda result, plan: self._eligibility_margin(
+                result,
+                plan=plan,
+            ),
+            effective_section_types=self._effective_section_types,
+            entity_match_bonus=lambda result, plan: self._entity_match_bonus(
+                result,
+                plan=plan,
+            ),
+            relevance_score=lambda result, plan, base_score: self._relevance_score(
+                result,
+                plan=plan,
+                base_score=base_score,
+            ),
+        )
+        self._ranking_policy = MedicationKnowledgeRankingPolicy(
+            rank_key=lambda result, plan: self._ranking_score(
+                result,
+                plan=plan,
+            ),
+            effective_section_types=self._effective_section_types,
+            explicit_legacy_section_types=self._explicit_legacy_section_types,
+        )
+        self._candidate_retriever = MedicationKnowledgeCandidateRetriever(
+            embedding_provider=embedding_provider,
+            vector_store=vector_store,
+            dataset_version=normalized_version,
+            eligibility_evaluator=lambda result, plan: self._eligibility_reason(
+                result,
+                plan=plan,
+            ).value,
+            section_coverage_evaluator=lambda results, plan: self._has_requested_section_coverage(
+                results,
+                plan=plan,
+            ),
+        )
+        self._diagnostics_builder = MedicationKnowledgeDiagnosticsBuilder(
+            rank_key=lambda result, plan: self._ranking_score(
+                result,
+                plan=plan,
+            ),
+            eligibility_reason=lambda result, plan: self._eligibility_reason(
+                result,
+                plan=plan,
+            ).value,
+            entity_matched=lambda result, plan: self._matches_query_target(
+                result,
+                plan=plan,
+            ),
+            effective_section_types=self._effective_section_types,
+            pair_matched=lambda result, plan: self._matches_any_interaction_pair(
+                result,
+                plan=plan,
+            ),
+            dense_score=self._dense_confidence_score,
+            has_query_entities=lambda plan: bool(self._normalized_query_entities(plan)),
+            pair_required=self._requires_entity_pair_match,
+        )
 
     async def search(
         self,
@@ -117,297 +165,32 @@ class MedicationKnowledgeRetriever:
         execution_plan: MedicationSearchExecutionPlan,
     ) -> KnowledgeRetrievalResult:
         plan = execution_plan.query_plan
-        limit = execution_plan.limit
-        candidate_limit = min(50, max(20, limit * 4))
-        queries = list(
-            dict.fromkeys(
-                [plan.expanded_query, *plan.alternate_queries],
-            )
+        candidates = await self._candidate_retriever.retrieve(
+            execution_plan=execution_plan,
         )
-        query_vectors = await asyncio.gather(
-            *(self._embedding_provider.embed_query(query) for query in queries),
+        ranked = self._ranking_policy.rank(
+            candidates.eligible,
+            plan=plan,
         )
-        results: list[RetrievedKnowledgeChunk] = []
-        candidate_observations: list[_CandidateObservation] = []
-        eligibility_reasons: list[_EligibilityReason] = []
-        eligible: list[RetrievedKnowledgeChunk] = []
-        attempted_search_tiers: list[KnowledgeSearchTier] = []
-        selected_search_tier: KnowledgeSearchTier | None = None
-        entity_filtered_count = 0
-        broad_candidate_count = 0
-
-        for tier in self._search_tiers(execution_plan):
-            attempted_search_tiers.append(tier.name)
-            tier_batches = await asyncio.gather(
-                *(
-                    self._search_once(
-                        query=query,
-                        query_vector=query_vector,
-                        tier=tier,
-                        candidate_limit=candidate_limit,
-                    )
-                    for query, query_vector in zip(
-                        queries,
-                        query_vectors,
-                        strict=True,
-                    )
-                )
-            )
-            tier_results = [result for batch in tier_batches for result in batch]
-            candidate_observations.extend(
-                _CandidateObservation(
-                    result=result,
-                    search_tier=tier.name,
-                    raw_rank=raw_rank,
-                )
-                for batch in tier_batches
-                for raw_rank, result in enumerate(batch, start=1)
-            )
-            tier_reasons = [self._eligibility_reason(result, plan=plan) for result in tier_results]
-            tier_eligible = [
-                result
-                for result, reason in zip(
-                    tier_results,
-                    tier_reasons,
-                    strict=True,
-                )
-                if reason == _EligibilityReason.ELIGIBLE
-            ]
-            results.extend(tier_results)
-            eligibility_reasons.extend(tier_reasons)
-            eligible.extend(tier_eligible)
-            if tier.name == KnowledgeSearchTier.SEMANTIC:
-                broad_candidate_count += len(tier_results)
-            else:
-                entity_filtered_count += len(tier_results)
-            if tier_eligible:
-                selected_search_tier = tier.name
-            if tier_eligible and (
-                tier.name == KnowledgeSearchTier.SEMANTIC
-                or self._has_requested_section_coverage(
-                    eligible,
-                    plan=plan,
-                )
-            ):
-                break
-
-        unique = self._deduplicate(eligible)
-        ranked = sorted(
-            unique,
-            key=lambda result: self._ranking_score(
-                result,
-                plan=plan,
-            ),
-            reverse=True,
-        )
-        selected = self._select_diverse(
+        selected = self._ranking_policy.select_diverse(
             ranked,
             plan=plan,
-            limit=limit,
+            limit=execution_plan.limit,
         )
-        diagnostics = KnowledgeRetrievalDiagnostics(
-            raw_candidate_count=len(results),
-            entity_filtered_count=entity_filtered_count,
-            broad_candidate_count=broad_candidate_count,
-            fallback_used=len(attempted_search_tiers) > 1,
-            eligible_candidate_count=len(eligible),
-            rejected_below_score_count=eligibility_reasons.count(_EligibilityReason.BELOW_SCORE),
-            rejected_entity_mismatch_count=eligibility_reasons.count(_EligibilityReason.ENTITY_MISMATCH),
-            rejected_pair_mismatch_count=eligibility_reasons.count(_EligibilityReason.PAIR_MISMATCH),
-            accepted_count=len(selected),
-            max_raw_score=max(
-                (result.similarity_score for result in results),
-                default=None,
-            ),
-            max_score=max(
-                (result.similarity_score for result in selected),
-                default=None,
-            ),
-            attempted_search_tiers=attempted_search_tiers,
-            selected_search_tier=selected_search_tier,
-            candidate_diagnostics=self._candidate_diagnostics(
-                observations=candidate_observations,
-                selected=selected,
-                plan=plan,
-            ),
+        diagnostics = self._diagnostics_builder.build(
+            results=candidates.results,
+            observations=candidates.observations,
+            eligibility_reasons=candidates.eligibility_reasons,
+            selected=selected,
+            plan=plan,
+            entity_filtered_count=candidates.entity_filtered_count,
+            broad_candidate_count=candidates.broad_candidate_count,
+            attempted_search_tiers=candidates.attempted_search_tiers,
+            selected_search_tier=candidates.selected_search_tier,
         )
         return KnowledgeRetrievalResult(
             chunks=selected,
             diagnostics=diagnostics,
-        )
-
-    def _candidate_diagnostics(
-        self,
-        *,
-        observations: list[_CandidateObservation],
-        selected: list[RetrievedKnowledgeChunk],
-        plan: MedicationKnowledgeQueryPlan,
-    ) -> list[KnowledgeCandidateDiagnostic]:
-        unique_observations: list[_CandidateObservation] = []
-        seen_hashes: set[str] = set()
-        for observation in observations:
-            content_hash = observation.result.metadata.content_hash
-            if content_hash in seen_hashes:
-                continue
-            seen_hashes.add(content_hash)
-            unique_observations.append(observation)
-
-        ranked = sorted(
-            unique_observations,
-            key=lambda observation: self._ranking_score(
-                observation.result,
-                plan=plan,
-            ),
-            reverse=True,
-        )[:20]
-        selected_ids = {result.chunk_id for result in selected}
-        pair_required = bool(plan.interaction_pair is not None or self._requires_entity_pair_match(plan))
-        diagnostics: list[KnowledgeCandidateDiagnostic] = []
-        for adjusted_rank, observation in enumerate(ranked, start=1):
-            result = observation.result
-            reason = self._eligibility_reason(
-                result,
-                plan=plan,
-            )
-            raw_score = result.similarity_score
-            adjusted_score = self._ranking_score(result, plan=plan)[0]
-            diagnostics.append(
-                KnowledgeCandidateDiagnostic(
-                    document_id=result.metadata.document_id,
-                    chunk_id=result.chunk_id,
-                    search_tier=observation.search_tier,
-                    raw_rank=observation.raw_rank,
-                    raw_similarity_score=raw_score,
-                    dense_similarity_score=self._dense_confidence_score(
-                        result,
-                    ),
-                    boost_score=round(adjusted_score - raw_score, 6),
-                    adjusted_score=round(adjusted_score, 6),
-                    adjusted_rank=adjusted_rank,
-                    entity_matched=(
-                        not self._normalized_query_entities(plan) or self._matches_query_target(result, plan=plan)
-                    ),
-                    section_matched=(
-                        not plan.section_types
-                        or bool(
-                            set(plan.section_types).intersection(
-                                self._effective_section_types(result),
-                            )
-                        )
-                    ),
-                    pair_matched=(self._matches_any_interaction_pair(result, plan=plan) if pair_required else None),
-                    eligible=reason == _EligibilityReason.ELIGIBLE,
-                    rejection_reason=(
-                        None
-                        if reason == _EligibilityReason.ELIGIBLE
-                        else KnowledgeCandidateRejectionReason(reason.value)
-                    ),
-                    selected_in_top_5=result.chunk_id in selected_ids,
-                )
-            )
-        return diagnostics
-
-    @classmethod
-    def _select_diverse(
-        cls,
-        results: list[RetrievedKnowledgeChunk],
-        *,
-        plan: MedicationKnowledgeQueryPlan,
-        limit: int,
-    ) -> list[RetrievedKnowledgeChunk]:
-        selected: list[RetrievedKnowledgeChunk] = []
-        selected_chunk_ids: set[str] = set()
-        document_counts: dict[str, int] = {}
-
-        def add(result: RetrievedKnowledgeChunk) -> bool:
-            if result.chunk_id in selected_chunk_ids:
-                return False
-            document_id = result.metadata.document_id
-            count = document_counts.get(document_id, 0)
-            if count >= cls._MAX_CHUNKS_PER_DOCUMENT:
-                return False
-            selected.append(result)
-            selected_chunk_ids.add(result.chunk_id)
-            document_counts[document_id] = count + 1
-            return True
-
-        for section_type in plan.section_types:
-            for explicit_only in (True, False):
-                section_result = next(
-                    (
-                        result
-                        for result in results
-                        if result.chunk_id not in selected_chunk_ids
-                        and section_type
-                        in (
-                            cls._explicit_legacy_section_types(result)
-                            if explicit_only
-                            else cls._effective_section_types(result)
-                        )
-                    ),
-                    None,
-                )
-                if section_result is not None and add(section_result):
-                    break
-            if len(selected) >= limit:
-                return selected
-
-        for result in results:
-            add(result)
-            if len(selected) >= limit:
-                break
-        return selected
-
-    @staticmethod
-    def _search_tiers(
-        execution_plan: MedicationSearchExecutionPlan,
-    ) -> list[_SearchTier]:
-        tiers: list[_SearchTier] = []
-        if execution_plan.interaction_pair_keys:
-            tiers.append(
-                _SearchTier(
-                    name=KnowledgeSearchTier.EXACT_PAIR,
-                    interaction_pair_keys=tuple(
-                        execution_plan.interaction_pair_keys,
-                    ),
-                )
-            )
-        if execution_plan.medication_names or execution_plan.supplement_names:
-            tiers.append(
-                _SearchTier(
-                    name=KnowledgeSearchTier.ENTITY,
-                    medication_names=tuple(
-                        execution_plan.medication_names,
-                    ),
-                    supplement_names=tuple(
-                        execution_plan.supplement_names,
-                    ),
-                )
-            )
-        tiers.append(
-            _SearchTier(name=KnowledgeSearchTier.SEMANTIC),
-        )
-        return tiers
-
-    async def _search_once(
-        self,
-        *,
-        query: str,
-        query_vector: list[float],
-        tier: _SearchTier,
-        candidate_limit: int,
-    ) -> list[RetrievedKnowledgeChunk]:
-        search_query = KnowledgeSearchQuery(
-            query=query,
-            dataset_version=self._dataset_version,
-            drug_names=list(tier.medication_names),
-            ingredient_names=list(tier.supplement_names),
-            interaction_pair_keys=list(tier.interaction_pair_keys),
-            limit=candidate_limit,
-        )
-        return await self._vector_store.search(
-            query_vector=query_vector,
-            search_query=search_query,
         )
 
     @classmethod
@@ -422,20 +205,6 @@ class MedicationKnowledgeRetriever:
             return bool(results)
         covered = {section_type for result in results for section_type in cls._effective_section_types(result)}
         return requested.issubset(covered)
-
-    @staticmethod
-    def _deduplicate(
-        results: list[RetrievedKnowledgeChunk],
-    ) -> list[RetrievedKnowledgeChunk]:
-        unique: list[RetrievedKnowledgeChunk] = []
-        seen_hashes: set[str] = set()
-        for result in results:
-            content_hash = result.metadata.content_hash
-            if content_hash in seen_hashes:
-                continue
-            seen_hashes.add(content_hash)
-            unique.append(result)
-        return unique
 
     @staticmethod
     def _ranking_score(
@@ -462,71 +231,24 @@ class MedicationKnowledgeRetriever:
         *,
         plan: MedicationKnowledgeQueryPlan,
     ) -> _EligibilityReason:
-        if plan.interaction_pair is not None and not supplement_pair_matches_text(
+        return self._eligibility_policy.evaluate(
+            result,
+            plan=plan,
+        )
+
+    @staticmethod
+    def _declared_pair_matches(
+        plan: MedicationKnowledgeQueryPlan,
+        result: RetrievedKnowledgeChunk,
+    ) -> bool:
+        if plan.interaction_pair is None:
+            return True
+        return supplement_pair_matches_text(
             plan.interaction_pair,
             result.metadata.title,
             result.content,
             *result.metadata.ingredient_names,
-        ):
-            return _EligibilityReason.PAIR_MISMATCH
-        if (
-            plan.interaction_pair is None
-            and self._requires_entity_pair_match(plan)
-            and not self._matches_any_interaction_pair(result, plan=plan)
-        ):
-            return _EligibilityReason.PAIR_MISMATCH
-        if (
-            self._normalized_query_entities(plan)
-            and not self._requires_entity_pair_match(plan)
-            and plan.interaction_pair is None
-            and not self._matches_query_target(result, plan=plan)
-        ):
-            return _EligibilityReason.ENTITY_MISMATCH
-        if result.search_mode == KnowledgeSearchMode.BM25:
-            return _EligibilityReason.ELIGIBLE
-        return self._dense_score_eligibility_reason(
-            result,
-            plan=plan,
         )
-
-    def _dense_score_eligibility_reason(
-        self,
-        result: RetrievedKnowledgeChunk,
-        *,
-        plan: MedicationKnowledgeQueryPlan,
-    ) -> _EligibilityReason:
-        confidence_score = self._dense_confidence_score(result)
-        if confidence_score is None:
-            return _EligibilityReason.BELOW_SCORE
-        if confidence_score >= self._min_similarity_score:
-            return _EligibilityReason.ELIGIBLE
-
-        eligibility_margin = self._eligibility_margin(
-            result,
-            plan=plan,
-        )
-        minimum_raw_score = max(
-            0.0,
-            self._min_similarity_score - eligibility_margin,
-        )
-        if confidence_score < minimum_raw_score:
-            return _EligibilityReason.BELOW_SCORE
-        if plan.section_types and not set(plan.section_types).intersection(
-            self._effective_section_types(result),
-        ):
-            return _EligibilityReason.BELOW_SCORE
-        if self._entity_match_bonus(result, plan=plan) <= 0.0:
-            return _EligibilityReason.ENTITY_MISMATCH
-        if (
-            self._relevance_score(
-                result,
-                plan=plan,
-                base_score=confidence_score,
-            )
-            < self._min_similarity_score
-        ):
-            return _EligibilityReason.BELOW_SCORE
-        return _EligibilityReason.ELIGIBLE
 
     @staticmethod
     def _dense_confidence_score(

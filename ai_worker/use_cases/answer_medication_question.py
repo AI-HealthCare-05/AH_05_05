@@ -70,6 +70,11 @@ from ai_worker.schemas.medication_search import (
     MedicationSearchExecutionObservation,
     MedicationSearchExecutionPlan,
 )
+from ai_worker.use_cases.medication_chat_pipeline import (
+    MedicationChatDraft,
+    MedicationEvidenceBundle,
+    PreparedMedicationQuestion,
+)
 
 MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
 MEDICATION_CHAT_SCHEMA_VERSION = "medication-chat-result-v1"
@@ -141,10 +146,13 @@ class AnswerMedicationQuestionUseCase:
                     "context_hash": self._context_hash(context),
                 }
             )
-        request, resolution, early_result = await self._prepare_question(
+        prepared_question = await self._prepare_question(
             request=request,
             context=context,
         )
+        request = prepared_question.request
+        resolution = prepared_question.resolution
+        early_result = prepared_question.early_result
         supplement_names = [] if early_result is not None else await self._supplement_ingredient_names()
         planning = await self._plan_question(
             request=request,
@@ -302,6 +310,23 @@ class AnswerMedicationQuestionUseCase:
                 has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
             ),
         )
+        evidence = MedicationEvidenceBundle(
+            query_plan=query_plan,
+            execution_plan=execution_plan,
+            rules=tuple(rules),
+            retrieval=retrieval,
+            rag_unavailable=rag_unavailable,
+            guide_lookup=guide_lookup,
+            answer_chunks=tuple(answer_chunks),
+            interaction_question=interaction_question,
+        )
+        query_plan = evidence.query_plan
+        execution_plan = evidence.execution_plan
+        rules = list(evidence.rules)
+        rag_unavailable = evidence.rag_unavailable
+        guide_lookup = evidence.guide_lookup
+        answer_chunks = list(evidence.answer_chunks)
+        interaction_question = evidence.interaction_question
         ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
         if resolution is not None and not self._has_grounded_evidence(
             request=request,
@@ -401,6 +426,10 @@ class AnswerMedicationQuestionUseCase:
                     "safety_status": draft.safety_status.value,
                 }
             )
+        draft_stage = MedicationChatDraft(
+            result=draft,
+            resolution=resolution,
+        )
         await self._report_progress(
             progress_callback,
             MedicationChatProgressStage.ANSWER_GENERATING,
@@ -410,7 +439,7 @@ class AnswerMedicationQuestionUseCase:
                 outcome = await self._answer_generator.generate(
                     request=request,
                     context=context,
-                    result=draft,
+                    result=draft_stage.result,
                 )
             except ChatAnswerGenerationError as error:
                 llm_span.end(
@@ -418,8 +447,8 @@ class AnswerMedicationQuestionUseCase:
                         "rewrite_status": "FAILED",
                         "fallback_used": False,
                         "fallback_reason": error.reason_code,
-                        "route": draft.route.value,
-                        "source_count": len(draft.sources),
+                        "route": draft_stage.result.route.value,
+                        "source_count": len(draft_stage.result.sources),
                     }
                 )
                 raise
@@ -551,46 +580,46 @@ class AnswerMedicationQuestionUseCase:
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
-    ) -> tuple[
-        MedicationChatRequest,
-        MedicationQuestionResolution | None,
-        MedicationChatResult | None,
-    ]:
+    ) -> PreparedMedicationQuestion:
         resolution = await self._resolve_question(
             request=request,
             context=context,
         )
         if resolution is None:
-            return request, None, None
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=None,
+                early_result=None,
+            )
         if resolution.scope in {
             MedicationQuestionScope.GREETING,
             MedicationQuestionScope.OUT_OF_SCOPE,
         }:
-            return (
-                request,
-                resolution,
-                self._out_of_scope_result(
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=resolution,
+                early_result=self._out_of_scope_result(
                     request=request,
                     context=context,
                     resolution=resolution,
                 ),
             )
         if resolution.status == MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED:
-            return (
-                request,
-                resolution,
-                self._expression_clarification_result(
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=resolution,
+                early_result=self._expression_clarification_result(
                     request=request,
                     context=context,
                     resolution=resolution,
                 ),
             )
-        return (
-            request.model_copy(
+        return PreparedMedicationQuestion(
+            request=request.model_copy(
                 update={"question": resolution.resolved_question},
             ),
-            resolution,
-            None,
+            resolution=resolution,
+            early_result=None,
         )
 
     @classmethod
