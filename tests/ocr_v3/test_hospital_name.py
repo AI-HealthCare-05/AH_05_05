@@ -322,4 +322,3 @@ def test_review_omits_missing_hospital_name() -> None:
     review = review_projection.build_project_review(rows, hospital_name=extracted)
 
     assert review["fields"] == {}
-

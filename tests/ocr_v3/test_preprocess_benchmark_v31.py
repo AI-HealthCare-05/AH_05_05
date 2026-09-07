@@ -157,4 +157,3 @@ def test_cli_requires_explicit_artifact_directory(
 
     assert main() == 2
     assert "OCR_V31_ARTIFACT_DIR is required." in capsys.readouterr().err
-

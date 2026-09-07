@@ -191,4 +191,3 @@ def _preceding_title(bbox: AxisAlignedBBox, titles: list[_Title]) -> _Title | No
     if len({title.row_id for title in nearest}) != 1:
         return None
     return max(nearest, key=lambda title: title.bbox.y_min)
-

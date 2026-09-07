@@ -87,4 +87,3 @@ def test_resume_source_audit_rejects_changed_original(tmp_path) -> None:
     source.write_bytes(b"changed")
     with pytest.raises(ValueError, match="source identity"):
         subject.validate_sources(entries, tmp_path)
-

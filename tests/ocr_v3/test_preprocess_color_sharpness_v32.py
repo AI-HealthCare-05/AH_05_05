@@ -102,4 +102,3 @@ def test_ready_response_accepts_v32_preprocess_version() -> None:
     )
 
     assert response.preprocess_version == "v3.2.8"
-

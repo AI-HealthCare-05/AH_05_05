@@ -334,4 +334,3 @@ def _to_medication_field(field: GroundedField) -> MedicationField:
 
 def _empty() -> GroundedField:
     return GroundedField(None, "", (), (), None, None, ())
-

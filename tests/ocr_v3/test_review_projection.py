@@ -85,4 +85,3 @@ def test_standard_tablet_quantity_remains_projected() -> None:
     medication = _project_dose_quantity("1정", "1")
 
     assert medication["doseQuantity"] == "1정"
-

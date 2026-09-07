@@ -30,4 +30,3 @@ def test_generate_only_writes_anonymous_preprocessed_artifact(tmp_path: Path) ->
     assert payload["providerJpegBytes"] == 4
     assert payload["privacy"]["sourcePersisted"] is False
     assert "private-source" not in json.dumps(payload)
-

@@ -84,4 +84,3 @@ def enlarge_small_print(rgb: UInt8Image) -> tuple[UInt8Image, NDArray[np.float64
     enlarged = cast(UInt8Image, cv2.resize(rgb, (target_width, target_height), interpolation=cv2.INTER_CUBIC))
     matrix = np.diag([target_width / width, target_height / height, 1.0])
     return enlarged, matrix, f"small_print_enlarged_{scale:.2f}x"
-

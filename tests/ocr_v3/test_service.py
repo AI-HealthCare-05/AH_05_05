@@ -366,7 +366,9 @@ async def test_preprocess_stage_includes_privacy_safe_provider_image_time(monkey
     monkeypatch.setattr(service_module, "time", SimpleNamespace(perf_counter=clock.perf_counter))
     monkeypatch.setattr(service_module, "preprocess_image", fake_preprocess)
     monkeypatch.setattr(service_module, "build_privacy_safe_provider_image", fake_build_provider_image)
-    monkeypatch.setattr(service_module, "analyze_processed_image", AsyncMock(return_value=_successful_pipeline_result()))
+    monkeypatch.setattr(
+        service_module, "analyze_processed_image", AsyncMock(return_value=_successful_pipeline_result())
+    )
 
     analysis = await MedicationOcrV3Service(provider=object()).analyze(_validated_image())
 

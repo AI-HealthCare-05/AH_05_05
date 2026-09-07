@@ -328,4 +328,3 @@ if __name__ == "__main__":
     parser.add_argument("--resume-only", action="store_true")
     args = parser.parse_args()
     asyncio.run(run(args.output, resume_only=args.resume_only))
-

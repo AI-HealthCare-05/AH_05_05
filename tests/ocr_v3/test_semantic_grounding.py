@@ -579,4 +579,3 @@ async def test_semantic_provider_failure_keeps_deterministic_result_with_explici
     assert (med["name"], med["doseQuantity"], med["timesPerDay"], med["days"]) == ("감마정", "1", 2, 5)
     assert any(issue["code"] == "LLM_TIMEOUT" for issue in result.issues)
     assert result.analysis_state == "COMPLETED_WITH_ISSUES"
-

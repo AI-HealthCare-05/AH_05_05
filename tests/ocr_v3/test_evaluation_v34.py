@@ -370,4 +370,3 @@ def test_frozen_16_by_3_results_reproduce_the_legacy_baseline() -> None:
             )
             for version, summary in by_version.items()
         } == {"v3.1.3": (239, 9, 70), "v3.2.7": (238, 8, 71), "v3.3.1": (238, 10, 71)}
-

@@ -74,7 +74,13 @@ async def test_pipeline_stage_lists_include_resolve_for_ocr_failure_and_cancella
 
     assert isinstance(cancelled_result, AnalyzePipelineCancellation)
     assert [stage.name for stage in cancelled_result.stages] == ["ocr", "candidate", "resolve", "llm", "validate"]
-    assert [stage.status for stage in cancelled_result.stages] == ["succeeded", "succeeded", "skipped", "skipped", "skipped"]
+    assert [stage.status for stage in cancelled_result.stages] == [
+        "succeeded",
+        "succeeded",
+        "skipped",
+        "skipped",
+        "skipped",
+    ]
     assert cancelled_result.stages[2].code == "REQUEST_CANCELLED"
 
 

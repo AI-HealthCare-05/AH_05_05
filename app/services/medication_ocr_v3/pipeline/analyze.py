@@ -271,7 +271,9 @@ async def analyze_processed_image(
         layout=layout,
         medication_rows=medication_rows,
         ocr_elapsed_ms=ocr_stage.elapsed_ms,
-        structure_elapsed_ms=sum(stage.elapsed_ms for stage in (candidate_stage, resolve_stage, llm_stage, validate_stage)),
+        structure_elapsed_ms=sum(
+            stage.elapsed_ms for stage in (candidate_stage, resolve_stage, llm_stage, validate_stage)
+        ),
         catalog=catalog,
         grounded=grounded,
         project_review=project_review,

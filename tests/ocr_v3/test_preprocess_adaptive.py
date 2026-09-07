@@ -197,4 +197,3 @@ def test_small_print_rejects_unstructured_speckles(count):
     output, _, operation = enlarge_small_print(rgb)
     assert output.shape == rgb.shape
     assert operation.startswith("small_print_skipped")
-

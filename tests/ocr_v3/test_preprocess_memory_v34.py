@@ -30,4 +30,3 @@ def test_cached_failed_memory_gate_cannot_turn_into_success(tmp_path, monkeypatc
     )
     with pytest.raises(AssertionError, match="memory"):
         subject.main()
-

@@ -99,4 +99,3 @@ def deskew_text(rgb: Pixels, *, max_edge: int) -> tuple[Pixels, NDArray[np.float
     )
     matrix = np.vstack((affine, [0.0, 0.0, 1.0]))
     return output, matrix, f"text_deskew_applied_{angle:.2f}_degrees"
-

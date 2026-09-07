@@ -167,4 +167,3 @@ def test_summary_keeps_live_service_and_same_ocr_replay_metrics_separate():
         ]
         == 0
     )
-

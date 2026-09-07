@@ -145,4 +145,3 @@ if __name__ == "__main__":
         asyncio.run(run(manifest))
     elif args.mode == "timings":
         timings(manifest)
-

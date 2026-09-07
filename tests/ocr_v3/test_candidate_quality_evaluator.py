@@ -131,4 +131,3 @@ def test_experiment_summary_compares_arbitrary_candidates_to_control() -> None:
     assert summary["experimentVersion"] == "test-experiment/v1"
     assert summary["comparisons"]["v3.1.2"]["exactFieldAccuracyDelta"] == -1
     assert summary["comparisons"]["v3.1.3"]["totalP50MsDeltaByImage"]["sample"] == -30
-

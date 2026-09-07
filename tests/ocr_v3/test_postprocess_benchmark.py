@@ -108,4 +108,3 @@ def test_adjudication_requires_exact_provenance_and_keeps_original_truth() -> No
             apply_adjudications(truth, manifest, tampered)
     with pytest.raises(ValueError, match="adjudication"):
         apply_adjudications(truth, manifest, {**correction, "baseTruthSha256": "stale"})
-

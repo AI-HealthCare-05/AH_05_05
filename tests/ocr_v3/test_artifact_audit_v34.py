@@ -356,4 +356,3 @@ def test_cli_writes_compact_atomic_report_and_requires_timings_by_default(tmp_pa
     assert json.loads(raw)["valid"] is True
     assert "\n" not in raw.rstrip("\n")
     assert list(tmp_path.glob(".audit.json.*.tmp")) == []
-

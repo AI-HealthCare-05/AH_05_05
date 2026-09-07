@@ -128,4 +128,3 @@ def test_slanted_dashed_rules_do_not_rotate_horizontal_text(angle, text_rows) ->
             cv2.LINE_AA,
         )
     assert estimate_text_angle(rgb)[0] == 0
-

@@ -122,4 +122,3 @@ def test_maximum_source_byte_limit_is_checked_before_decode():
     with pytest.raises(ImageValidationError) as error:
         preprocess_image(b"x" * (50 * 1024 * 1024 + 1), "image/png", preprocess_version="v3.4.1")
     assert error.value.code is ImageErrorCode.SOURCE_TOO_LARGE
-

@@ -151,4 +151,3 @@ async def test_v4_rejects_unlabeled_date_choice_without_rewriting_legacy(version
     result = await provider.select(EvidenceCatalog(blocks=dates, date_candidates=dates, rows=()))
     assert result.dispensed_date_block_ids == expected
     assert client.responses.calls == 1
-

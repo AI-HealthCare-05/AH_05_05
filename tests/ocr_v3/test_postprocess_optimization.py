@@ -198,4 +198,3 @@ def test_labeled_guidance_rejects_unproven_label_or_name_alignment(mode) -> None
         source = next(block for block in blocks if block.text == ("2" if mode == "times-conflict" else "가나정"))
         blocks.append(replace(source, block_id="block-9999", text="4" if mode == "times-conflict" else "사아정"))
     assert layout.build_ocr_layout(OcrResult(tuple(blocks))).table_candidates == ()
-

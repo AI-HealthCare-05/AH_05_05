@@ -241,4 +241,3 @@ async def test_interrupted_run_preserves_completed_unit_and_blocks_unknown_call_
         await subject.run(identity, tmp_path)
     assert first.read_bytes() == completed
     assert len(calls) == 2
-

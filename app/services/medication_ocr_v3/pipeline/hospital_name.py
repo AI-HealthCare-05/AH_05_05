@@ -288,4 +288,3 @@ def _union(bboxes: tuple[AxisAlignedBBox, ...]) -> AxisAlignedBBox:
 
 def _compact(value: str) -> str:
     return "".join(value.split())
-
