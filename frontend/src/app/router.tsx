@@ -24,6 +24,19 @@ import {
   type NutrientStandardProfile,
 } from '@/pages/supplements';
 import { mockSupplementsWithThreeExceeded } from '@/entities/supplement';
+import { ChallengeMockProvider } from '@/features/challenges';
+import { ChallengeLayout } from '@/pages/challenges/ChallengeLayout';
+import { ChallengeHomePreviewPage } from '@/pages/challenges/ChallengeHomePreviewPage';
+import { ChallengeMyPage } from '@/pages/challenges/ChallengeMyPage';
+import { ChallengeBrowsePage } from '@/pages/challenges/ChallengeBrowsePage';
+import { OfficialChallengePage } from '@/pages/challenges/OfficialChallengePage';
+import { ChallengeParticipationPage } from '@/pages/challenges/ChallengeParticipationPage';
+import { ChallengeTailoredPage } from '@/pages/challenges/ChallengeTailoredPage';
+import { ChallengeTargetPage } from '@/pages/challenges/ChallengeTargetPage';
+import { ChallengeCreatePage } from '@/pages/challenges/ChallengeCreatePage';
+import { ChallengeBadgesPage } from '@/pages/challenges/ChallengeBadgesPage';
+import { ChallengeBadgePage } from '@/pages/challenges/ChallengeBadgePage';
+import { ChallengeRecordPage } from '@/pages/challenges/ChallengeRecordPage';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import type { ChatMessage, ChatSessionSummary, SendChatResult } from '@/entities/chat';
 import {
@@ -183,7 +196,8 @@ function RequireAuthentication() {
  */
 export function AppRouter() {
   return (
-    <BrowserRouter>
+    <ChallengeMockProvider>
+      <BrowserRouter>
       <ChatSessionProvider>
         <Routes>
         <Route path="/" element={<SplashPage />} />
@@ -192,6 +206,18 @@ export function AppRouter() {
         <Route path="/login" element={<AuthPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/challenges" element={<ChallengeLayout />}>
+          <Route index element={<ChallengeMyPage />} />
+          <Route path="browse" element={<ChallengeBrowsePage />} />
+          <Route path="official/:challengeId" element={<OfficialChallengePage />} />
+          <Route path="participations/:participationId" element={<ChallengeParticipationPage />} />
+          <Route path="tailored" element={<ChallengeTailoredPage />} />
+          <Route path="tailored/:kind" element={<ChallengeTargetPage />} />
+          <Route path="create" element={<ChallengeCreatePage />} />
+          <Route path="badges" element={<ChallengeBadgesPage />} />
+          <Route path="badges/:badgeId" element={<ChallengeBadgePage />} />
+          <Route path="participations/:participationId/records/:itemId" element={<ChallengeRecordPage />} />
+        </Route>
         <Route element={<RequireAuthentication />}>
           <Route path="/supplements" element={<SupplementsPage />} />
           <Route path="/supplements/product/:productId" element={<SupplementProductPage />} />
@@ -208,6 +234,21 @@ export function AppRouter() {
           <Route path="/my/visits" element={<FollowUpVisitsPage />} />
         </Route>
         <Route path="/dev/gallery" element={<DevGallery />} />
+        <Route path="/dev/home-challenges" element={<ChallengeHomePreviewPage />} />
+        <Route path="/dev/challenges" element={<ChallengeLayout />}>
+          <Route index element={<ChallengeMyPage />} />
+          <Route path="browse" element={<ChallengeBrowsePage />} />
+          <Route path="official/:challengeId" element={<OfficialChallengePage />} />
+          <Route path="participations/:participationId" element={<ChallengeParticipationPage />} />
+          <Route path="tailored" element={<ChallengeTailoredPage />} />
+          <Route path="tailored-empty" element={<ChallengeTailoredPage empty />} />
+          <Route path="tailored/:kind" element={<ChallengeTargetPage />} />
+          <Route path="create" element={<ChallengeCreatePage />} />
+          <Route path="badges" element={<ChallengeBadgesPage />} />
+          <Route path="badges-empty" element={<ChallengeBadgesPage badgesOverride={[]} />} />
+          <Route path="badges/:badgeId" element={<ChallengeBadgePage />} />
+          <Route path="participations/:participationId/records/:itemId" element={<ChallengeRecordPage />} />
+        </Route>
         <Route path="/dev/document-upload" element={<DocumentUploadPage />} />
         <Route path="/dev/ocr-review" element={<OcrReviewPage />} />
         <Route
@@ -324,6 +365,17 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/dev/home-challenge-empty"
+          element={
+            <HomePage
+              authenticatedOverride
+              challengeEmpty
+              medicationState="active"
+              medicationOverviewLoader={loadActiveMedicationOverview}
+            />
+          }
+        />
+        <Route
           path="/dev/home-multiple-episodes"
           element={
             <HomePage
@@ -391,6 +443,7 @@ export function AppRouter() {
         />
         </Routes>
       </ChatSessionProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ChallengeMockProvider>
   );
 }

@@ -14,7 +14,7 @@ export default defineConfig({
   reporter: 'line',
   use: {
     baseURL: `http://127.0.0.1:${testPort}`,
-    channel: 'chrome',
+    channel: process.env.PLAYWRIGHT_CHANNEL ?? 'chrome',
     viewport: { width: 375, height: 812 },
   },
   webServer: {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
@@ -104,6 +104,7 @@ export function MyPage({
   pushRegistrar = registerPushNotifications,
 }: MyPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { authenticated, signOut } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
   const logoutNavigationRef = useRef(false);
@@ -461,6 +462,14 @@ export function MyPage({
                         : '확인 중'
                   }
                   onClick={() => navigate('/my/visits')}
+                  divided
+                />
+                <ManagementRow
+                  label="챌린지 기록"
+                  value=""
+                  onClick={() =>
+                    navigate(location.pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges')
+                  }
                   divided
                 />
               </div>
