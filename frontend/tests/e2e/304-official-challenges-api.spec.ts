@@ -4,6 +4,11 @@ import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
 
 test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 test.setTimeout(120_000);
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
+});
 
 const badge = {
   id: 31,
@@ -160,6 +165,7 @@ test('SELF detail joins once with no body and routes to the returned participati
     await joinGate;
     await route.fulfill({ status: 201, json: participation() });
   });
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation() }));
 
   await page.goto('/challenges/official/101');
 
@@ -1167,19 +1173,17 @@ test('home challenge summary stays available when medication loading fails', asy
   await expect(page.getByRole('region', { name: '챌린지' }).getByRole('link', { name: /매일 30분 걷기.*21.43%/ })).toBeVisible();
 });
 
-test('unfinished tailored and personal real routes show a clear coming-soon state', async ({ page }) => {
+test('unfinished personal creation route shows a clear coming-soon state', async ({ page }) => {
   await authenticate(page);
   const mutations: string[] = [];
   page.on('request', request => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) mutations.push(request.url());
   });
 
-  for (const path of ['/challenges/tailored', '/challenges/tailored/medication', '/challenges/create']) {
-    await page.goto(path);
-    await expect(page.getByRole('heading', { name: '준비 중이에요' })).toBeVisible();
-    await expect(page.getByText('#315에서 제공할 예정이에요.')).toBeVisible();
-    await expect(page.getByText('감기약', { exact: true })).toHaveCount(0);
-  }
+  await page.goto('/challenges/create');
+  await expect(page.getByRole('heading', { name: '준비 중이에요' })).toBeVisible();
+  await expect(page.getByText('#315에서 제공할 예정이에요.')).toBeVisible();
+  await expect(page.getByText('감기약', { exact: true })).toHaveCount(0);
   expect(mutations).toEqual([]);
 });
 

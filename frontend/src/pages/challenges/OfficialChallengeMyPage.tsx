@@ -13,6 +13,7 @@ import { Button } from '@/shared/ui/Button';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { ChallengePageHeading } from './ChallengePageHeading';
 import { OfficialChallengeProgressCard } from './OfficialChallengeProgressCard';
+import { CustomChallengeMySection } from './CustomChallengeMySection';
 
 interface ChallengeDashboard {
   participations: ChallengeParticipation[];
@@ -175,22 +176,26 @@ export function OfficialChallengeMyPage() {
 
   if (loadError) {
     return (
-      <main className="flex flex-col gap-4 px-page-x py-5">
+      <>
         <ChallengePageHeading />
-        <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
-          <p className="text-sm text-muted-foreground">{loadError}</p>
-          <Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button>
-        </div>
-      </main>
+        <main className="flex flex-col gap-4 px-page-x py-5">
+          <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button>
+          </div>
+        </main>
+      </>
     );
   }
 
   if (!data) {
     return (
-      <main className="flex flex-col gap-4 px-page-x py-5">
+      <>
         <ChallengePageHeading />
-        <div role="status" aria-label="내 챌린지 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" />
-      </main>
+        <main className="flex flex-col gap-4 px-page-x py-5">
+          <div role="status" aria-label="내 챌린지 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" />
+        </main>
+      </>
     );
   }
 
@@ -201,8 +206,9 @@ export function OfficialChallengeMyPage() {
   const badgeRefreshRequired = refreshRequiredIds.size > 0 || data.badgeError !== null;
 
   return (
-    <main className="flex flex-col gap-4 px-page-x py-5">
+    <>
       <ChallengePageHeading />
+      <main className="flex flex-col gap-4 px-page-x py-5">
       <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
         <Link aria-current="page" to="/challenges" className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">마이</Link>
         <Link to="/challenges/browse" className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">둘러보기</Link>
@@ -234,6 +240,8 @@ export function OfficialChallengeMyPage() {
           </div>
         )}
       </section>
+
+      <CustomChallengeMySection />
 
       <section aria-labelledby="active-challenges-title" className="flex flex-col gap-3">
         <h2 id="active-challenges-title" className="text-base font-bold">진행 중인 챌린지</h2>
@@ -268,6 +276,7 @@ export function OfficialChallengeMyPage() {
           )) : null}
         </section>
       ) : null}
-    </main>
+      </main>
+    </>
   );
 }
