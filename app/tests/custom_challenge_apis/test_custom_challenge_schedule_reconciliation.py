@@ -632,6 +632,30 @@ async def test_supplement_complete_preserves_history_without_completion_or_award
     assert await UserBadge.all().count() == 0
 
 
+async def test_supplement_complete_reconciles_legacy_future_when_already_completed() -> None:
+    user = await _user("supp-already-complete@example.com")
+    _, supplement_template = await _templates()
+    registration = await _supplement(user)
+    participation = await _join(user, supplement_template, [registration.id], "supp-already-complete")
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+    registration.status = SupplementStatus.COMPLETED
+    registration.end_date = mutation_at.date()
+    await registration.save(update_fields=["status", "end_date"])
+    assert any(_aware(row.scheduled_at) >= mutation_at for row in await _occurrences(participation))
+
+    await UserSupplementNutrientService(mutation_time_provider=lambda: mutation_at).complete(
+        user,
+        registration.id,
+    )
+
+    remaining = await _occurrences(participation)
+    assert len(remaining) == 1
+    assert all(_aware(row.scheduled_at) < mutation_at for row in remaining)
+    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.ACTIVE
+    assert await ChallengeProgress.all().count() == 0
+    assert await UserBadge.all().count() == 0
+
+
 async def test_supplement_update_rejects_foreign_registration_without_goal_writes() -> None:
     owner = await _user("supp-foreign-owner@example.com")
     other = await _user("supp-foreign-other@example.com")
@@ -694,6 +718,10 @@ async def test_notify_time_change_reconciles_all_owned_medication_and_supplement
 
 
 async def test_notify_toggle_only_update_does_not_change_occurrences() -> None:
+    class FailIfCalledReconciler(CustomChallengeScheduleReconciler):
+        async def reconcile(self, **_: object) -> None:
+            raise AssertionError("toggle-only updates must not reconcile custom challenges")
+
     user = await _user("notify-toggle@example.com")
     _, supplement_template = await _templates()
     registration = await _supplement(user)
@@ -704,6 +732,7 @@ async def test_notify_toggle_only_update_does_not_change_occurrences() -> None:
     ]
 
     await NotifySettingsService(
+        reconciler=FailIfCalledReconciler(),
         mutation_time_provider=lambda: datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
     ).update(
         user,
@@ -789,3 +818,16 @@ async def test_notify_time_change_uses_one_post_lock_boundary_for_all_source_typ
         ]
         assert future_mornings
         assert {_aware(row.scheduled_at).time() for row in future_mornings} == {time(9, 30)}
+
+
+def test_settings_routes_register_without_service_constructor_parameters() -> None:
+    from app.main import app
+
+    operations = app.openapi()["paths"]["/api/v1/me/settings"]
+    assert {"get", "patch"} <= operations.keys()
+    for method in ("get", "patch"):
+        parameter_names = {
+            parameter["name"]
+            for parameter in operations[method].get("parameters", [])
+        }
+        assert parameter_names.isdisjoint({"reconciler", "mutation_time_provider"})
