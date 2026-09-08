@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -147,6 +147,26 @@ class IntakeReportDraft(BaseModel):
     sources: list[IntakeReportSource] = Field(default_factory=list)
     deterministic_markdown: str = Field(min_length=1)
 
+    def to_result(
+        self,
+        *,
+        status: IntakeReportStatus,
+        report_markdown: str,
+    ) -> "IntakeReportResult":
+        return IntakeReportResult(
+            status=status,
+            generated_at=datetime.now(UTC),
+            data_availability=self.data_availability,
+            executive_summary=self.executive_summary,
+            current_stack=self.current_stack,
+            review_cards=self.review_cards,
+            nutrient_totals=self.nutrient_totals,
+            chart_data=self.chart_data,
+            product_guides=self.product_guides,
+            unverified_items=self.unverified_items,
+            report_markdown=report_markdown,
+        )
+
 
 class IntakeReportMarkdownPayload(BaseModel):
     """LLM이 반환하는 제한된 Markdown 보고서 출력."""
@@ -184,7 +204,7 @@ class IntakeReportResult(BaseModel):
         del user_id
         return cls(
             status=IntakeReportStatus.EMPTY,
-            generated_at=datetime.now(),
+            generated_at=datetime.now(UTC),
             data_availability=IntakeReportDataAvailability(),
             executive_summary=IntakeReportExecutiveSummary(
                 summary="현재 복용 중으로 등록된 약·영양제가 없습니다.",

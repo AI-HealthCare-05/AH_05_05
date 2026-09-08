@@ -43,6 +43,8 @@ class IntakeReportAssembler:
         current_stack = self._current_stack(context)
         unverified_items = self._missing_amount_items(context)
         unverified_items.extend(self._ambiguous_guide_items(guide_lookups))
+        if not rag_available:
+            unverified_items.append(self._rag_unavailable_item())
         interaction_cards = self._interaction_cards(approved_rules)
         missing_info_cards = self._missing_info_cards(unverified_items)
         review_cards = [*interaction_cards, *missing_info_cards]
@@ -164,6 +166,18 @@ class IntakeReportAssembler:
             for lookup in guide_lookups
             if lookup.is_ambiguous
         ]
+
+    @staticmethod
+    def _rag_unavailable_item() -> IntakeReportUnverifiedItem:
+        return IntakeReportUnverifiedItem(
+            item_type=IntakeReportUnverifiedItemType.MISSING_EVIDENCE,
+            title="추가 검색 근거 확인 필요",
+            message=(
+                "현재 보유한 추가 검색 근거를 확인하지 못했습니다. "
+                "확인하지 못한 사실이 안전하다는 뜻은 아닙니다."
+            ),
+            next_step="제품 라벨과 현재 복용 정보를 의료진 또는 약사에게 함께 확인해 주세요.",
+        )
 
     def _interaction_cards(
         self,
