@@ -1222,7 +1222,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert cleared.care_episode_id == first.care_episode_id
             episode = await CareEpisode.get(id=int(first.care_episode_id))
             assert episode.user_id == user.id
-            assert episode.title == "2026-08-25 조제약 복약안내"
+            assert episode.completed_at is None
             assert episode.alias is None
             assert await CareEpisode.filter(source_ocr_job_id=job.id).count() == 1
             assert episode.hospital_name == "송도센트럴이비인후과의원"

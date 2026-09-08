@@ -320,7 +320,9 @@ async function selectGalleryPng(page: Page) {
   });
 }
 
-test('OCR 검토는 처리 방식을 드러내지 않고 약봉투를 보여주며 확대 화면에서 원본으로 전환한다', async ({ page }) => {
+for (const width of [375, 1280]) {
+test(`OCR 이미지 미리보기 전환과 선명한 닫기·한 번 클릭 닫기 (${width})`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
   await authenticate(page);
   const requestedImages: string[] = [];
 
@@ -337,7 +339,7 @@ test('OCR 검토는 처리 방식을 드러내지 않고 약봉투를 보여주�
         path === '/api/v1/ocr/jobs/b_mock_9f21/image')
     ) {
       requestedImages.push(path);
-      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#eee8db"/><rect x="100" y="80" width="700" height="440" fill="white"/><text x="160" y="170" font-size="36">OCR preview sample</text><path d="M160 230h580M160 300h580M160 370h580M160 440h350" stroke="#b7c4c1" stroke-width="12"/></svg>' });
       return;
     }
     await route.continue();
@@ -374,7 +376,26 @@ test('OCR 검토는 처리 방식을 드러내지 않고 약봉투를 보여주�
     '/api/v1/ocr/jobs/b_mock_9f21/processed-image',
     '/api/v1/ocr/jobs/b_mock_9f21/image',
   ]);
+  const close = viewer.getByRole('button', { name: '닫기', exact: true });
+  const closeBox = await close.boundingBox();
+  expect.soft(closeBox!.width).toBeGreaterThanOrEqual(48);
+  expect.soft(closeBox!.height).toBeGreaterThanOrEqual(48);
+  await page.screenshot({ path: testInfo.outputPath(`image-viewer-${width}.png`) });
+  await viewer.getByRole('img', { name: '확대한 약봉투 원본' }).click();
+  await expect(viewer).toBeHidden();
+  await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
+  await viewer.getByRole('button', { name: '선명하게 보기' }).click();
+  await expect(viewer).toBeVisible();
+  await viewer.getByRole('img', { name: '확대한 약봉투' }).click();
+  await expect(viewer).toBeHidden();
+  await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
+  await close.click();
+  await expect(viewer).toBeHidden();
+  await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
+  await page.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
 });
+}
 
 test('OCR 검토의 직접 추가 버튼과 입력 제한을 간결하게 표시한다', async ({ page }) => {
   await authenticate(page);
@@ -627,9 +648,15 @@ test('복약 시간 저장 실패 후 같은 path와 본문으로 재시도한�
   ).toBe(true);
 });
 
-test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR 결과로 돌아간다', async ({
+for (const backMethod of ['화살표', '브라우저'] as const) {
+test(`복약 시간 설정의 ${backMethod} 뒤로가기는 로딩 없이 수정 가능한 OCR 결과로 돌아간다`, async ({
   page,
-}) => {
+}, testInfo) => {
+  await page.setViewportSize({ width: backMethod === '브라우저' ? 375 : 1280, height: 900 });
+  const goBack = async () => {
+    if (backMethod === '브라우저') await page.goBack();
+    else await page.getByRole('button', { name: '뒤로 가기' }).click();
+  };
   await authenticate(page);
   await interceptDefaultNotifySettings(page);
   let confirmed = false;
@@ -689,7 +716,7 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
   await expect(page.getByText('3 / 5', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '약마다 먹는 시간을 확인해주세요' })).toBeVisible();
   const ocrGetCountBeforeBack = ocrRequests.filter((request) => request.method === 'GET').length;
-  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await goBack();
 
   await expect(page).toHaveURL(
     '/ocr-review?batchId=b_mock_9f21&recordId=315&mode=registration-edit&flow=registration',
@@ -714,11 +741,13 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
     ocrGetCountBeforeBack,
   );
 
-  await page.getByRole('button', { name: /셀레콕시브 200mg/ }).click();
+  expect(patchPayloads).toHaveLength(1);
+  await page.screenshot({ path: testInfo.outputPath('ocr-back-editable.png'), fullPage: true });
+  await page.getByRole('button', { name: /^셀레콕시브 함량 200mg/ }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('셀레콕시브 수정');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page.getByRole('button', { name: /셀레콕시브 수정 200mg/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^셀레콕시브 수정 함량 200mg/ })).toBeVisible();
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   const reviewDialog = page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' });
   if (await reviewDialog.isVisible()) {
@@ -732,7 +761,7 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
     hospitalName: '연세의원 수정',
     alias: '사용자 별칭',
   });
-  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await goBack();
   await expect(page.getByLabel('병원명')).toHaveValue('연세의원 수정');
   await expect(page.getByLabel('복약 별칭')).toHaveValue('사용자 별칭');
   await page.getByLabel('복약 별칭').fill('');
@@ -746,13 +775,14 @@ test('복약 시간 설정의 뒤로가기는 로딩 없이 수정 가능한 OCR
   );
   expect(patchPayloads).toHaveLength(3);
   expect(patchPayloads[2].alias).toBeNull();
-  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await goBack();
   await expect(page.getByLabel('복약 별칭')).toHaveValue('');
   const patches = ocrRequests.filter((request) => request.method === 'PATCH');
   expect(patches).toHaveLength(3);
   expect(new URL(patches[2].url).searchParams.get('registrationEdit')).toBe('true');
   expect(ocrRequests.filter((request) => request.method === 'POST')).toHaveLength(0);
 });
+}
 
 test('등록 수정 URL 직접 진입은 재판독 연출 없이 완료 결과를 불러와 편집한다', async ({
   page,
@@ -786,7 +816,15 @@ test('등록 수정 URL 직접 진입은 재판독 연출 없이 완료 결과�
   await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toHaveAttribute('src', /^blob:/);
 });
 
-test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 유지된다', async ({ page }) => {
+for (const width of [375, 1280]) {
+test(`OCR 2페이지 뒤로가기는 설정 취소를 확인하고 홈으로 나간다 (${width})`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method())) {
+      mutations.push(request.method());
+    }
+  });
   await authenticate(page);
   await interceptDefaultNotifySettings(page);
   let confirmed = false;
@@ -832,10 +870,29 @@ test('사용자가 바꾼 복용 시작일은 OCR 검토 화면을 다녀와도 
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await page.getByRole('button', { name: '뒤로 가기' }).click();
 
-  await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-20');
+  const exitDialog = page.getByRole('dialog', { name: '설정을 취소하고 나갈까요?' });
+  await expect(exitDialog).toBeVisible();
+  await expect(exitDialog).toContainText('이미 저장된 약 정보는 유지돼요.');
+  await page.keyboard.press('Escape');
+  await expect(exitDialog).toBeHidden();
+  await page.getByLabel('복약 별칭').fill('나가기 취소 후 유지할 별칭');
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await exitDialog.getByRole('button', { name: '계속 설정', exact: true }).click();
+  await expect(exitDialog).toBeHidden();
+  await expect(page.getByLabel('복약 별칭')).toHaveValue('나가기 취소 후 유지할 별칭');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await expect(page.getByText('2 / 5', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await page.screenshot({ path: testInfo.outputPath('ocr-exit-confirm.png') });
+  await exitDialog.getByRole('button', { name: '나가기', exact: true }).click();
+  await expect(page).toHaveURL('/home');
+  expect(mutations).toEqual(['PATCH']);
 });
+}
 
-test('등록 약명 오른쪽에 횟수를 표시하고 시간 선택 개수를 제한한다', async ({ page }, testInfo) => {
+for (const width of [375, 1280]) {
+test(`등록 시간 초과 선택은 버튼을 비활성화하지 않고 해당 약 아래 안내한다 (${width})`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 1000 });
   await authenticate(page);
   await interceptDocumentRegistration(page);
   await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
@@ -846,15 +903,28 @@ test('등록 약명 오른쪽에 횟수를 표시하고 시간 선택 개수를 
   const evening = page.getByRole('button', { name: '슈도에페드린시럽 저녁약' });
   const confirm = page.getByRole('button', { name: '확인', exact: true });
   await expect(page.getByText('하루 2회', { exact: true })).toHaveCount(3);
-  await expect(evening).toBeDisabled();
+  const card = page.getByRole('group', { name: '슈도에페드린시럽', exact: true });
+  const warning = card.getByRole('alert');
+  await expect(evening).toBeEnabled();
+  await expect(warning).toHaveCount(0);
+  await evening.click();
+  await expect(evening).toHaveAttribute('aria-pressed', 'false');
+  await expect(morning).toHaveAttribute('aria-pressed', 'true');
+  await expect(warning).toHaveText('하루 2회만 선택할 수 있어요. 선택한 시간을 취소한 뒤 다른 시간을 선택해주세요.');
+  await expect(page.getByRole('alert')).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath('slot-limit-warning.png'), fullPage: true });
   await morning.click();
+  await expect(warning).toHaveCount(0);
   await expect(evening).toBeEnabled();
   await expect(confirm).toBeDisabled();
   await evening.click();
-  await expect(morning).toBeDisabled();
+  await expect(morning).toBeEnabled();
+  await expect(evening).toHaveAttribute('aria-pressed', 'true');
+  await expect(morning).toHaveAttribute('aria-pressed', 'false');
   await expect(confirm).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('slot-limits.png'), fullPage: true });
 });
+}
 
 test('아직 안 먹었어요는 복용 완료를 만들지 않고 오늘 첫 사용 슬롯부터 기록한다', async ({
   page,
@@ -1395,7 +1465,7 @@ test('복용 기록은 사용자 단위로 한 번만 조회하고, 선택한 �
   expect(doseGets).toHaveLength(1);
   expect(new URL(doseGets[0]).searchParams.has('recordId')).toBe(false);
   expect(dosePosts).toHaveLength(2);
-  expect(dosePosts).toEqual([
+  expect([...dosePosts].sort((left, right) => Number(left.recordId) - Number(right.recordId))).toEqual([
     { date: '2026-08-25', slot: 'morning', taken: true, recordId: 12 },
     { date: '2026-08-25', slot: 'morning', taken: true, recordId: 24 },
   ]);
@@ -1448,6 +1518,54 @@ test('처방 2개 중 1개만 기록하고 새로고침해도 그 처방만 완�
   ]);
 });
 
+test('복약 저장 중에는 선택 행과 복약 액션을 잠가 반대 작업이 겹치지 않게 한다', async ({
+  page,
+}) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: Array<Record<string, unknown>> = [];
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    dosePosts.push(request.postDataJSON() as Record<string, unknown>);
+    await saveGate;
+    await fulfillJson(route, request.postDataJSON(), 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
+  const firstSelector = firstEpisode.locator('[data-episode-row]');
+  await firstSelector.click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+
+  try {
+    await expect(firstSelector).toBeDisabled({ timeout: 1_000 });
+    await expect(morning.getByRole('button', { name: /먹었어요|복약 기록 되돌리기/ })).toBeDisabled();
+    expect(dosePosts).toHaveLength(1);
+  } finally {
+    releaseSave();
+  }
+
+  await expect(firstEpisode.getByRole('button', { name: /8월 22일 처방.*복용 완료/ })).toBeEnabled();
+  expect(dosePosts).toHaveLength(1);
+});
+
 test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page }) => {
   await authenticate(page);
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
@@ -1477,14 +1595,191 @@ test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page 
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label^="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label^="8월 24일 처방"]');
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
   await morning.getByRole('button', { name: '먹었어요' }).click();
 
   await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
   await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(firstEpisode.locator('[data-episode-row]')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await expect(firstEpisode.locator('[data-episode-selection-glyph] svg')).toHaveCount(0);
+  await expect(secondEpisode.locator('[data-episode-row]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(secondEpisode.locator('[data-episode-selection-glyph] svg')).toHaveCount(1);
   expect(savedRecordIds).toEqual([12]);
+});
+
+test('부분 실패는 실패 회차만 선택하고 팝업 재시도 성공 후 선택을 해제한다', async ({ page }) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: number[] = [];
+  let failSecondOnce = true;
+  let releaseRetry!: () => void;
+  const retryGate = new Promise<void>((resolve) => {
+    releaseRetry = resolve;
+  });
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    const payload = request.postDataJSON() as { recordId: number };
+    dosePosts.push(payload.recordId);
+    if (payload.recordId === 24 && failSecondOnce) {
+      failSecondOnce = false;
+      await fulfillJson(route, { code: 'INTERNAL_ERROR', message: '실패' }, 500);
+      return;
+    }
+    if (payload.recordId === 24) await retryGate;
+    await fulfillJson(route, payload, 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstSelector = firstEpisode.locator('[data-episode-row]');
+  const secondSelector = secondEpisode.locator('[data-episode-row]');
+  await firstSelector.click();
+  await secondSelector.click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+
+  const dialog = page.getByRole('dialog', { name: '기록하지 못했어요' });
+  await expect(dialog).toBeVisible();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await expect(firstSelector).toHaveAttribute('aria-pressed', 'false');
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(secondSelector).toHaveAttribute('aria-pressed', 'true');
+
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => dosePosts.length).toBe(3);
+  try {
+    await expect(secondSelector).toBeDisabled({ timeout: 1_000 });
+    await expect(morning.getByRole('button', { name: '복약 기록 되돌리기' })).toBeDisabled();
+  } finally {
+    releaseRetry();
+  }
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await expect(secondSelector).toHaveAttribute('aria-pressed', 'false');
+  await expect(morning.getByRole('button', { name: '복약 기록 되돌리기' })).toBeDisabled();
+  expect([...dosePosts].sort((left, right) => left - right)).toEqual([12, 24, 24]);
+});
+
+test('토스트 되돌리기 실패는 완료를 유지하고 팝업 재시도에서 false를 다시 전송한다', async ({
+  page,
+}) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: Array<{ recordId: number; taken: boolean }> = [];
+  let failUndoOnce = true;
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    const payload = request.postDataJSON() as { recordId: number; taken: boolean };
+    dosePosts.push({ recordId: payload.recordId, taken: payload.taken });
+    if (!payload.taken && failUndoOnce) {
+      failUndoOnce = false;
+      await fulfillJson(route, { code: 'INTERNAL_ERROR', message: '실패' }, 500);
+      return;
+    }
+    await fulfillJson(route, payload, 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  await firstEpisode.locator('[data-episode-row]').click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+
+  await page.getByRole('button', { name: '되돌리기', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '기록하지 못했어요' });
+  await expect(dialog).toBeVisible();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  expect(dosePosts).toEqual([
+    { recordId: 12, taken: true },
+    { recordId: 12, taken: false },
+    { recordId: 12, taken: false },
+  ]);
+});
+
+test('A와 B를 기록한 뒤 A 토스트를 되돌려도 B 완료 상태를 유지한다', async ({ page }) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: Array<{ recordId: number; taken: boolean }> = [];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    const payload = request.postDataJSON() as { recordId: number; taken: boolean };
+    dosePosts.push({ recordId: payload.recordId, taken: payload.taken });
+    await fulfillJson(route, payload, 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  await firstEpisode.locator('[data-episode-row]').click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await secondEpisode.locator('[data-episode-row]').click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+
+  const olderToast = page.locator('[data-sonner-toast][data-index="1"]');
+  await page.locator('[data-sonner-toast][data-index="0"]').hover();
+  await expect(olderToast).toBeVisible();
+  await olderToast.getByRole('button', { name: '되돌리기' }).click();
+
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  expect(dosePosts).toEqual([
+    { recordId: 12, taken: true },
+    { recordId: 24, taken: true },
+    { recordId: 12, taken: false },
+  ]);
 });
 
 test('이미 완료된 처방과 함께 기록한 batch를 되돌려도 기존 완료는 유지한다', async ({ page }) => {

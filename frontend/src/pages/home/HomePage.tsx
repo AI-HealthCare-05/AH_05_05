@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -29,7 +29,7 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
-import { MedicationTimeline } from './MedicationTimeline';
+import { MedicationTimeline, type DoseChangeResult } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
 import { SupplementTodayCard } from './SupplementTodayCard';
 import { HomeChallengeSummary } from '@/pages/challenges/HomeChallengeSummary';
@@ -71,8 +71,13 @@ export function HomePage({
   const [medicationOverviews, setMedicationOverviews] = useState<MedicationOverview[] | null>(null);
   const [medicationLoadError, setMedicationLoadError] = useState<string | null>(null);
   const [doseRecords, setDoseRecords] = useState<DoseRecord[] | null>(null);
+  const latestDoseRecordsRef = useRef<DoseRecord[] | null>(doseRecords);
+  latestDoseRecordsRef.current = doseRecords;
   const [doseLoadError, setDoseLoadError] = useState<string | null>(null);
   const [failedDoseChange, setFailedDoseChange] = useState<DoseBatchChange | null>(null);
+  const [doseSelectionResetKey, setDoseSelectionResetKey] = useState(0);
+  const [doseMutationPending, setDoseMutationPending] = useState(false);
+  const doseMutationPendingRef = useRef(false);
   const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
   const [registeredSupplements, setRegisteredSupplements] = useState<Supplement[]>([]);
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
@@ -276,9 +281,10 @@ export function HomePage({
     change: DoseBatchChange,
     showUndo = true,
     knownChangedRecordIds?: number[],
-  ): Promise<boolean> {
-    if (!doseRecords) return false;
-    const previousRecords = doseRecords;
+  ): Promise<DoseChangeResult> {
+    const previousRecords = latestDoseRecordsRef.current;
+    if (!previousRecords) return { failedRecordIds: change.recordIds };
+    if (doseMutationPendingRef.current) return { failedRecordIds: change.recordIds };
     const changedRecordIds = knownChangedRecordIds ??
       change.recordIds.filter((recordId) => {
         const wasTaken = previousRecords.some(
@@ -290,48 +296,55 @@ export function HomePage({
         );
         return wasTaken !== change.taken;
       });
-    if (changedRecordIds.length === 0) return true;
+    if (changedRecordIds.length === 0) return { failedRecordIds: [] };
     const appliedChange = { ...change, recordIds: changedRecordIds };
-    setFailedDoseChange(null);
-    setDoseRecords(updateDoseRecords(previousRecords, appliedChange));
-    const results = await Promise.allSettled(
-      changedRecordIds.map((recordId) =>
-        doseRecordSaver({
-          date: change.date,
-          slot: change.slot,
-          taken: change.taken,
-          recordId,
-        }),
-      ),
-    );
-    const failedRecordIds = changedRecordIds.filter(
-      (_recordId, index) => results[index]?.status === 'rejected',
-    );
-    if (failedRecordIds.length === 0) {
-      if (showUndo) {
-        toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
-          action: {
-            label: '되돌리기',
-            onClick: () => {
-              void changeDose(
-                { ...appliedChange, taken: !change.taken },
-                false,
-                appliedChange.recordIds,
-              );
+    doseMutationPendingRef.current = true;
+    setDoseMutationPending(true);
+    try {
+      setFailedDoseChange(null);
+      setDoseRecords(updateDoseRecords(previousRecords, appliedChange));
+      const results = await Promise.allSettled(
+        changedRecordIds.map((recordId) =>
+          doseRecordSaver({
+            date: change.date,
+            slot: change.slot,
+            taken: change.taken,
+            recordId,
+          }),
+        ),
+      );
+      const failedRecordIds = changedRecordIds.filter(
+        (_recordId, index) => results[index]?.status === 'rejected',
+      );
+      if (failedRecordIds.length === 0) {
+        if (showUndo) {
+          toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
+            action: {
+              label: '되돌리기',
+              onClick: () => {
+                void changeDose(
+                  { ...appliedChange, taken: !change.taken },
+                  false,
+                  appliedChange.recordIds,
+                );
+              },
             },
-          },
-        });
+          });
+        }
+        return { failedRecordIds: [] };
       }
-      return true;
+      const failedChange = { ...appliedChange, recordIds: failedRecordIds };
+      setDoseRecords((currentRecords) =>
+        currentRecords
+          ? restoreFailedDoseRecords(currentRecords, previousRecords, failedChange)
+          : currentRecords,
+      );
+      setFailedDoseChange(failedChange);
+      return { failedRecordIds };
+    } finally {
+      doseMutationPendingRef.current = false;
+      setDoseMutationPending(false);
     }
-    const failedChange = { ...appliedChange, recordIds: failedRecordIds };
-    setDoseRecords((currentRecords) =>
-      currentRecords
-        ? restoreFailedDoseRecords(currentRecords, previousRecords, failedChange)
-        : currentRecords,
-    );
-    setFailedDoseChange(failedChange);
-    return false;
   }
 
   return (
@@ -382,6 +395,8 @@ export function HomePage({
                         if (recordIds.length === 0) return;
                         return changeDose({ date: currentDate, slot, taken, recordIds });
                       }}
+                      doseSelectionResetKey={doseSelectionResetKey}
+                      doseMutationPending={doseMutationPending}
                       onMemo={() => navigate('/medications/notes/new')}
                       onUpload={() => navigate('/document-upload')}
                     />
@@ -458,7 +473,13 @@ export function HomePage({
         onRetry={() => {
           const change = failedDoseChange;
           setFailedDoseChange(null);
-          if (change) void changeDose(change);
+          if (change) {
+            void changeDose(change).then((result) => {
+              if (result.failedRecordIds.length === 0) {
+                setDoseSelectionResetKey((key) => key + 1);
+              }
+            });
+          }
         }}
       />
     </div>
@@ -530,6 +551,8 @@ function LoggedInMedicationContent({
   doseRecords,
   currentDate,
   onDoseChange,
+  doseSelectionResetKey,
+  doseMutationPending,
   onMemo,
   onUpload,
 }: {
@@ -537,7 +560,13 @@ function LoggedInMedicationContent({
   overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
-  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void | Promise<boolean>;
+  onDoseChange: (
+    recordIds: number[],
+    slot: MealSlot,
+    taken: boolean,
+  ) => void | boolean | DoseChangeResult | Promise<void | boolean | DoseChangeResult>;
+  doseSelectionResetKey: number;
+  doseMutationPending: boolean;
   onMemo: () => void;
   onUpload: () => void;
 }) {
@@ -574,6 +603,8 @@ function LoggedInMedicationContent({
       doseRecords={doseRecords}
       currentDate={currentDate}
       onDoseChange={onDoseChange}
+      selectionResetKey={doseSelectionResetKey}
+      mutationPending={doseMutationPending}
       onMemo={onMemo}
     />
   );

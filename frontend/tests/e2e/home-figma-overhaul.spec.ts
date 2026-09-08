@@ -257,7 +257,14 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
 
   await firstEpisode.getByRole('button', { name: /8월 22일 처방.*선택/ }).click();
   await action.click();
-  await expect(firstEpisode.getByRole('button', { name: /8월 22일 처방.*복용 완료/ })).toBeVisible();
+  const completedEpisode = firstEpisode.getByRole('button', {
+    name: /8월 22일 처방.*복용 완료/,
+  });
+  const selectionGlyph = firstEpisode.locator('[data-episode-selection-glyph]');
+  await expect(completedEpisode).toBeVisible();
+  await expect(completedEpisode).toHaveAttribute('aria-pressed', 'false');
+  await expect(selectionGlyph).toHaveClass(/border-2/);
+  await expect(selectionGlyph.locator('svg')).toHaveCount(0);
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toContainText('복용 완료');
   const badgeCheck = firstEpisode.locator('[data-episode-completed-badge] svg');
   const badgeCheckBox = await badgeCheck.boundingBox();
@@ -269,7 +276,10 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
   await expect(undo).toBeVisible();
   await expect(undo).toBeDisabled();
   await expect(undo).toHaveClass(/bg-card/);
-  await firstEpisode.getByRole('button', { name: /8월 22일 처방.*복용 완료/ }).click();
+  await completedEpisode.click();
+  await expect(completedEpisode).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectionGlyph).toHaveClass(/bg-primary/);
+  await expect(selectionGlyph.locator('svg')).toHaveCount(1);
   await expect(undo).toBeEnabled();
   await expect(undo).toHaveClass(/bg-primary/);
   await undo.click();
@@ -390,10 +400,13 @@ test('회차 복약 기록 실패와 날짜 변경은 낙관적 회차 상태를
   const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
     name: '아침약 상세',
   });
-  const episode = detail
-    .getByRole('article', { name: /8월 22일 처방/, includeHidden: true });
+  const episode = page.locator('article[aria-label*="8월 22일 처방"]').first();
+  const episodeSelector = episode.getByRole('button', { name: /8월 22일 처방.*선택/ });
+  await episodeSelector.click();
   await detail.getByRole('button', { name: '먹었어요' }).click();
   await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
+  await expect(episode.locator('[data-episode-row]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(episode.locator('[data-episode-selection-glyph] svg')).toHaveCount(1);
   await expect(
     page
       .locator('article[aria-label*="8월 22일 처방"]')
