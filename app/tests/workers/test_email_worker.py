@@ -119,6 +119,7 @@ class TestEmailWorker(TestCase):
                 recipient_email="recipient@example.com",
                 verification_id=verification_id,
                 verification_code="123456",
+                expires_in=180,
                 expires_at=expires_at,
             )
         )

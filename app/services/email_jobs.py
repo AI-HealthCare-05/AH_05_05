@@ -83,6 +83,7 @@ class EmailJobService:
         verification_id: int,
         recipient_email: str,
         verification_code: str,
+        expires_in: int,
         expires_at: datetime,
     ) -> BackgroundJob:
         job = await BackgroundJob.create(
@@ -102,6 +103,7 @@ class EmailJobService:
                     recipient_email=recipient_email,
                     verification_id=verification_id,
                     verification_code=verification_code,
+                    expires_in=expires_in,
                     expires_at=expires_at,
                 )
             )

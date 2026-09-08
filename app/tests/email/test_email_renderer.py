@@ -61,15 +61,19 @@ def test_signup_verification_template_renders_six_code_cells_and_inline_logo() -
             recipient_email="recipient@example.com",
             verification_id=17,
             verification_code="012345",
+            expires_in=60,
             expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
         )
     )
 
     assert message.subject == "RxVita 회원가입 이메일 인증번호"
     assert "인증번호: 012345" in message.text_body
-    assert "3분 동안 유효" in message.text_body
+    assert "1분 동안 유효" in message.text_body
+    assert "3분 동안 유효" not in message.text_body
     assert 'src="cid:rxvita-logo"' in message.html_body
     assert message.html_body.count('class="verification-digit"') == 6
+    assert "1분 동안 유효" in message.html_body
+    assert "3분 동안 유효" not in message.html_body
     assert [attachment.content_id for attachment in message.inline_attachments] == ["rxvita-logo"]
     assert message.inline_attachments[0].content_type == "image/png"
     assert message.inline_attachments[0].data.startswith(b"\x89PNG")

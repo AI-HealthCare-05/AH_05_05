@@ -67,6 +67,7 @@ def test_signup_verification_payload_round_trip_is_encrypted() -> None:
         recipient_email="recipient@example.com",
         verification_id=17,
         verification_code="012345",
+        expires_in=60,
         expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
     )
 
@@ -84,5 +85,17 @@ def test_signup_verification_payload_requires_six_digit_code() -> None:
             recipient_email="recipient@example.com",
             verification_id=17,
             verification_code="12345",
+            expires_in=60,
+            expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
+        )
+
+
+def test_signup_verification_payload_requires_expiry_duration() -> None:
+    with pytest.raises(ValidationError):
+        EmailJobPayload(
+            template=EmailTemplate.SIGNUP_VERIFICATION_CODE,
+            recipient_email="recipient@example.com",
+            verification_id=17,
+            verification_code="012345",
             expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
         )

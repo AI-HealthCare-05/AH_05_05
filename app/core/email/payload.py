@@ -17,6 +17,7 @@ class EmailJobPayload(BaseModel):
     temporary_password: str | None = Field(default=None, min_length=1, max_length=255)
     verification_id: int | None = Field(default=None, gt=0)
     verification_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    expires_in: int | None = Field(default=None, gt=0)
     expires_at: datetime | None = None
 
     @model_validator(mode="after")
@@ -24,7 +25,12 @@ class EmailJobPayload(BaseModel):
         if self.template is EmailTemplate.ADMIN_TEMPORARY_PASSWORD:
             if self.recipient_name is None or self.temporary_password is None:
                 raise ValueError("관리자 임시비밀번호 이메일 필드가 누락되었습니다.")
-        elif self.verification_id is None or self.verification_code is None or self.expires_at is None:
+        elif (
+            self.verification_id is None
+            or self.verification_code is None
+            or self.expires_in is None
+            or self.expires_at is None
+        ):
             raise ValueError("회원가입 이메일 인증 필드가 누락되었습니다.")
         return self
 

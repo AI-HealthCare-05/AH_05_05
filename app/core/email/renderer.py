@@ -38,11 +38,12 @@ class EmailTemplateRenderer:
         if payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE:
             template = self._environment.get_template("emails/signup_verification_code.html")
             code = payload.verification_code or ""
+            expiry = self._format_duration(payload.expires_in or 0)
             return EmailMessage(
                 to=str(payload.recipient_email),
                 subject=SIGNUP_VERIFICATION_SUBJECT,
-                text_body=self._signup_verification_plain_text(code),
-                html_body=template.render(verification_code=code),
+                text_body=self._signup_verification_plain_text(code, expiry),
+                html_body=template.render(verification_code=code, verification_expiry=expiry),
                 inline_attachments=(self._logo_attachment(),),
             )
         raise ValueError("지원하지 않는 이메일 템플릿입니다.")
@@ -66,10 +67,16 @@ class EmailTemplateRenderer:
         )
 
     @staticmethod
-    def _signup_verification_plain_text(verification_code: str) -> str:
+    def _signup_verification_plain_text(verification_code: str, verification_expiry: str) -> str:
         return (
             "RxVita 회원가입 이메일 인증번호입니다.\n\n"
             f"인증번호: {verification_code}\n\n"
-            "인증번호는 3분 동안 유효합니다.\n"
+            f"인증번호는 {verification_expiry} 동안 유효합니다.\n"
             "본인이 요청하지 않았다면 이 메일을 무시해 주세요.\n"
         )
+
+    @staticmethod
+    def _format_duration(seconds: int) -> str:
+        if seconds % 60 == 0:
+            return f"{seconds // 60}분"
+        return f"{seconds}초"
