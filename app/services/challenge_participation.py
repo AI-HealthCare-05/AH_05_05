@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from tortoise.exceptions import IntegrityError
@@ -12,7 +12,10 @@ from app.core.exceptions import (
     ChallengeNotFoundError,
     ChallengeNotRecruitingError,
     ChallengePeriodEndedError,
+    ChallengeVerificationConflictError,
     ChallengeVerificationNotFoundError,
+    InvalidChallengeConfigurationError,
+    InvalidVerificationDateError,
     VerificationAlreadyReviewedError,
     VerificationEvidenceRequiredError,
     VerificationPeriodNotFoundError,
@@ -39,6 +42,7 @@ from app.models.enums import (
 )
 from app.models.users import User
 from app.repositories.challenge_participation_repository import ChallengeParticipationRepository
+from app.services.challenge_catalog import CATALOG_RELATIONS, ChallengeCatalogService
 from app.services.challenge_periods import build_progress_periods
 
 
@@ -57,11 +61,16 @@ class ChallengeParticipationService:
         now = datetime.now(config.TIMEZONE)
         if not (challenge.recruit_start_at <= now <= challenge.recruit_end_at):
             raise ChallengeNotRecruitingError()
-        periods = build_progress_periods(
-            now,
-            challenge.challenge_period.detail_code,
-            challenge.check_frequency.detail_code,
-        )
+        try:
+            periods = build_progress_periods(
+                now,
+                challenge.challenge_period.detail_code,
+                challenge.check_frequency.detail_code,
+            )
+        except ValueError as error:
+            raise InvalidChallengeConfigurationError() from error
+        if any(period.target_count > (period.period_end - period.period_start).days + 1 for period in periods):
+            raise InvalidChallengeConfigurationError()
         duration_days = int(challenge.challenge_period.detail_code.removeprefix("D"))
         try:
             async with in_transaction() as connection:
@@ -69,7 +78,9 @@ class ChallengeParticipationService:
                     user_id=user.id,
                     challenge_id=challenge.id,
                     started_at=now,
-                    end_at=now + timedelta(days=duration_days),
+                    end_at=datetime.combine(
+                        now.date() + timedelta(days=duration_days), time.min, tzinfo=config.TIMEZONE
+                    ),
                     target_count=sum(period.target_count for period in periods),
                     using_db=connection,
                 )
@@ -99,14 +110,21 @@ class ChallengeParticipationService:
         return await self._response(participation)
 
     async def cancel(self, user: User, participation_id: int) -> UserChallengeResponse:
-        participation = await self.repository.get_owned(participation_id, user.id)
-        if participation is None:
-            raise ChallengeNotFoundError()
-        if participation.status != ChallengeParticipationStatus.ACTIVE:
-            raise ChallengePeriodEndedError()
-        participation.status = ChallengeParticipationStatus.CANCELLED
-        participation.cancelled_at = datetime.now(config.TIMEZONE)
-        await participation.save()
+        async with in_transaction() as connection:
+            participation = (
+                await UserChallenge.filter(id=participation_id, user_id=user.id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if participation is None:
+                raise ChallengeNotFoundError()
+            now = datetime.now(config.TIMEZONE)
+            if self._effective_status(participation, now) != ChallengeParticipationStatus.ACTIVE:
+                raise ChallengePeriodEndedError()
+            participation.status = ChallengeParticipationStatus.CANCELLED
+            participation.cancelled_at = now
+            await participation.save(using_db=connection)
         return await self._response(participation)
 
     async def submit_verification(
@@ -115,21 +133,54 @@ class ChallengeParticipationService:
         participation_id: int,
         data: VerificationCreateRequest,
     ) -> VerificationResponse:
+        try:
+            async with in_transaction() as connection:
+                participation = (
+                    await UserChallenge.filter(id=participation_id, user_id=user.id)
+                    .using_db(connection)
+                    .select_for_update()
+                    .first()
+                )
+                if participation is None:
+                    raise ChallengeNotFoundError()
+                return await self._submit_locked(participation, data)
+        except IntegrityError as error:
+            # Includes a global idempotency key used concurrently on another participation.
+            raise ChallengeVerificationConflictError() from error
+
+    async def _submit_locked(
+        self,
+        participation: UserChallenge,
+        data: VerificationCreateRequest,
+    ) -> VerificationResponse:
         existing = await ChallengeVerification.get_or_none(idempotency_key=data.idempotency_key)
         if existing is not None:
-            if existing.user_challenge_id != participation_id:
+            if existing.user_challenge_id != participation.id:
                 raise ChallengeVerificationNotFoundError()
-            participation = await self.repository.get_owned(participation_id, user.id)
-            if participation is None:
-                raise ChallengeVerificationNotFoundError()
+            if existing.verification_date != data.verification_date:
+                raise ChallengeVerificationConflictError()
             return self.verification_response(existing)
-
-        participation = await self.repository.get_owned(participation_id, user.id)
-        if participation is None:
-            raise ChallengeNotFoundError()
-        await participation.fetch_related("challenge__check_type")
         now = datetime.now(config.TIMEZONE)
-        if participation.status != ChallengeParticipationStatus.ACTIVE or now >= participation.end_at:
+        await participation.fetch_related("challenge__check_type")
+        if participation.challenge.check_type.detail_code == "SELF" and data.verification_date != now.date():
+            raise InvalidVerificationDateError()
+        same_day = await ChallengeVerification.get_or_none(
+            user_challenge_id=participation.id, verification_date=data.verification_date
+        )
+        if same_day is not None:
+            return self.verification_response(same_day)
+        return await self._create_verification(participation, data, now)
+
+    async def _create_verification(
+        self,
+        participation: UserChallenge,
+        data: VerificationCreateRequest,
+        now: datetime,
+    ) -> VerificationResponse:
+        if (
+            self._effective_status(participation, now) != ChallengeParticipationStatus.ACTIVE
+            or now < participation.started_at
+        ):
             raise ChallengePeriodEndedError()
         progress = await ChallengeProgress.get_or_none(
             user_challenge_id=participation.id,
@@ -138,6 +189,8 @@ class ChallengeParticipationService:
         )
         if progress is None:
             raise VerificationPeriodNotFoundError()
+        if progress.is_completed:
+            raise ChallengeVerificationConflictError()
         is_self = participation.challenge.check_type.detail_code == "SELF"
         if not is_self and not (data.content or "").strip() and not data.image_path:
             raise VerificationEvidenceRequiredError()
@@ -158,7 +211,14 @@ class ChallengeParticipationService:
         data: VerificationActionRequest,
         admin_id: int,
     ) -> VerificationResponse:
+        candidate = await ChallengeVerification.get_or_none(id=verification_id)
+        if candidate is None:
+            raise ChallengeVerificationNotFoundError()
         async with in_transaction() as connection:
+            # Serialize reviews with submit/cancel: participation must be locked first.
+            # Keep the lookup above outside this transaction so a waiting review does not
+            # retain an older REPEATABLE READ snapshot for its progress aggregation.
+            await UserChallenge.filter(id=candidate.user_challenge_id).using_db(connection).select_for_update().get()
             verification = (
                 await ChallengeVerification.filter(id=verification_id).using_db(connection).select_for_update().first()
             )
@@ -177,8 +237,8 @@ class ChallengeParticipationService:
             verification.reviewed_by_admin_id = admin_id
             verification.reviewed_at = datetime.now(config.TIMEZONE)
             await verification.save(using_db=connection)
-        if verification.status == ChallengeVerificationStatus.APPROVED:
-            await self._recalculate(verification.user_challenge_id, verification.progress_id)
+            if verification.status == ChallengeVerificationStatus.APPROVED:
+                await self._recalculate(verification.user_challenge_id, verification.progress_id)
         return self.verification_response(verification)
 
     async def list_verifications(
@@ -200,10 +260,10 @@ class ChallengeParticipationService:
 
     async def _recalculate(self, participation_id: int, progress_id: int) -> None:
         async with in_transaction() as connection:
-            progress = await ChallengeProgress.filter(id=progress_id).using_db(connection).select_for_update().get()
             participation = (
                 await UserChallenge.filter(id=participation_id).using_db(connection).select_for_update().get()
             )
+            progress = await ChallengeProgress.filter(id=progress_id).using_db(connection).select_for_update().get()
             approved_count = (
                 await ChallengeVerification.filter(
                     progress_id=progress.id,
@@ -212,7 +272,7 @@ class ChallengeParticipationService:
                 .using_db(connection)
                 .count()
             )
-            progress.completed_count = approved_count
+            progress.completed_count = min(approved_count, progress.target_count)
             progress.progress_rate = self._rate(approved_count, progress.target_count)
             progress.is_completed = approved_count >= progress.target_count
             if progress.is_completed and progress.completed_at is None:
@@ -225,7 +285,11 @@ class ChallengeParticipationService:
                 participation.completed_count,
                 participation.target_count,
             )
-            if progress_rows and all(row.is_completed for row in progress_rows):
+            if (
+                participation.status == ChallengeParticipationStatus.ACTIVE
+                and progress_rows
+                and all(row.is_completed for row in progress_rows)
+            ):
                 participation.status = ChallengeParticipationStatus.COMPLETED
                 participation.completed_at = datetime.now(config.TIMEZONE)
             await participation.save(using_db=connection)
@@ -250,14 +314,22 @@ class ChallengeParticipationService:
                         )
 
     async def _response(self, participation: UserChallenge) -> UserChallengeResponse:
-        await participation.fetch_related("challenge")
+        await participation.fetch_related(*[f"challenge__{relation}" for relation in CATALOG_RELATIONS])
         progress_rows = await ChallengeProgress.filter(user_challenge_id=participation.id).order_by("period_start")
+        now = datetime.now(config.TIMEZONE)
+        today = now.date()
+        status = self._effective_status(participation, now)
+        verifications = await ChallengeVerification.filter(user_challenge_id=participation.id).order_by(
+            "verification_date"
+        )
+        today_verification = next((row for row in verifications if row.verification_date == today), None)
+        today_progress = next((row for row in progress_rows if row.period_start <= today <= row.period_end), None)
         return UserChallengeResponse(
             id=participation.id,
             user_id=participation.user_id,
             challenge_id=participation.challenge_id,
             challenge_name=participation.challenge.name,
-            status=participation.status,
+            status=status,
             joined_at=participation.joined_at,
             started_at=participation.started_at,
             end_at=participation.end_at,
@@ -267,7 +339,27 @@ class ChallengeParticipationService:
             completed_at=participation.completed_at,
             cancelled_at=participation.cancelled_at,
             progress_periods=[ProgressResponse.model_validate(row) for row in progress_rows],
+            challenge=ChallengeCatalogService.response(participation.challenge, participation.id, now),
+            today=today,
+            today_verification=self.verification_response(today_verification) if today_verification else None,
+            can_verify=bool(
+                status == ChallengeParticipationStatus.ACTIVE
+                and now >= participation.started_at
+                and participation.challenge.check_type.detail_code == "SELF"
+                and today_verification is None
+                and today_progress is not None
+                and not today_progress.is_completed
+            ),
+            verified_dates=[
+                row.verification_date for row in verifications if row.status == ChallengeVerificationStatus.APPROVED
+            ],
         )
+
+    @staticmethod
+    def _effective_status(participation: UserChallenge, now: datetime) -> ChallengeParticipationStatus:
+        if participation.status == ChallengeParticipationStatus.ACTIVE and now >= participation.end_at:
+            return ChallengeParticipationStatus.EXPIRED
+        return participation.status
 
     @staticmethod
     def _rate(completed: int, target: int) -> Decimal:

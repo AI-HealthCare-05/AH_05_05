@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
+import { useSession } from '@/app/SessionContext';
+import { invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   getSupplementDoses, saveSupplementDose,
   type Supplement, type SupplementDoseRecord, type SupplementSlot,
 } from '@/entities/supplement';
+import { getAuthGeneration } from '@/shared/api/client';
 import { DEFAULT_MEAL_TIMES, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
 
@@ -111,10 +114,18 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
   const [failed, setFailed] = useState<SupplementDoseRecord[]>([]);
   const inFlight = useRef(false);
   const alive = useRef(true);
+  const { principalKey } = useSession();
+  const principalRef = useRef(principalKey);
+  const requestGenerationRef = useRef(0);
+  principalRef.current = principalKey;
   useEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
-  }, []);
+    requestGenerationRef.current += 1;
+    return () => {
+      alive.current = false;
+      requestGenerationRef.current += 1;
+    };
+  }, [principalKey]);
 
   const takenIds = new Set(records.filter(item => item.slot === slot && item.taken).map(item => item.supplementId));
   const remaining = supplements.filter(item => !takenIds.has(item.supplementId));
@@ -137,14 +148,26 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
     inFlight.current = true;
     setPending(true);
     setFailed([]);
+    const requestPrincipal = principalKey;
+    const authGeneration = getAuthGeneration();
+    const requestGeneration = requestGenerationRef.current;
+    const isCurrentRequest = () => (
+      alive.current
+      && principalRef.current === requestPrincipal
+      && requestGenerationRef.current === requestGeneration
+      && getAuthGeneration() === authGeneration
+    );
     const failures: SupplementDoseRecord[] = [];
+    let savedAny = false;
     await Promise.all(changes.map(async change => {
       try {
         const result = await saveSupplementDose(change);
-        if (alive.current) onSaved(result);
+        savedAny = true;
+        if (isCurrentRequest()) onSaved(result);
       } catch { failures.push(change); }
     }));
-    if (!alive.current) return;
+    if (!isCurrentRequest()) return;
+    if (savedAny) invalidateCustomChallengeProgress();
     setFailed(failures);
     setSelected(failures.map(item => item.supplementId));
     setPending(false);

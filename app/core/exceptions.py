@@ -166,6 +166,24 @@ class VerificationPeriodNotFoundError(AppError):
     message = "해당 날짜는 인증 집계 대상 기간이 아닙니다."
 
 
+class InvalidVerificationDateError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_VERIFICATION_DATE"
+    message = "오늘 날짜만 인증할 수 있습니다. 새로고침 후 다시 시도해 주세요."
+
+
+class ChallengeVerificationConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHALLENGE_VERIFICATION_CONFLICT"
+    message = "인증 상태가 변경됐습니다. 새로고침 후 확인해 주세요."
+
+
+class InvalidChallengeConfigurationError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "INVALID_CHALLENGE_CONFIGURATION"
+    message = "현재 참여할 수 없는 챌린지 설정입니다."
+
+
 class VerificationEvidenceRequiredError(AppError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "VERIFICATION_EVIDENCE_REQUIRED"

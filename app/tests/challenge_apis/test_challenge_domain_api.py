@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -266,20 +267,303 @@ class TestChallengeDomainAPI(TestCase):
         participation = joined.json()
 
         for index, progress in enumerate(participation["progress_periods"]):
-            verified = await request(
-                "POST",
-                f"/api/v1/user/challenges/{participation['id']}/verifications",
-                json={
-                    "verification_date": progress["period_start"],
-                    "idempotency_key": f"daily-verification-{index:02d}-000000000000000000000000000000",
-                },
-            )
+            # Advance the server clock; a client must not pre-certify future dates.
+            day = datetime.fromisoformat(participation["started_at"]) + timedelta(days=index)
+            with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+                clock.now.return_value = day
+                verified = await request(
+                    "POST",
+                    f"/api/v1/user/challenges/{participation['id']}/verifications",
+                    json={
+                        "verification_date": progress["period_start"],
+                        "idempotency_key": f"daily-verification-{index:02d}-000000000000000000000000000000",
+                    },
+                )
             assert verified.status_code == 201, verified.text
 
         detail = await request("GET", f"/api/v1/user/challenges/{participation['id']}")
         badges = await request("GET", "/api/v1/user/badges")
 
         assert detail.json()["status"] == "COMPLETED"
-        assert detail.json()["progress_rate"] == "100.00"
+        assert Decimal(detail.json()["progress_rate"]) == Decimal("100.00")
         assert badges.json()["total_count"] == 1
         assert badges.json()["items"][0]["badge_id"] == badge["id"]
+
+    async def _join_daily(self, check_type: str = "SELF") -> dict:
+        from app.main import app
+
+        badge = await self._create_badge()
+        challenge = await self._create_challenge(badge["id"], period="D7", frequency="DAILY", check_type=check_type)
+        app.dependency_overrides[get_request_user] = lambda: self.user
+        response = await request("POST", f"/api/v1/user/challenges/{challenge['id']}/join")
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    async def test_join_requires_user_authentication(self) -> None:
+        response = await request("POST", "/api/v1/user/challenges/1/join")
+
+        assert response.status_code == 401, response.text
+
+    async def test_my_challenge_list_requires_user_authentication(self) -> None:
+        response = await request("GET", "/api/v1/user/challenges")
+
+        assert response.status_code == 401, response.text
+
+    async def test_my_challenge_detail_requires_user_authentication(self) -> None:
+        response = await request("GET", "/api/v1/user/challenges/1")
+
+        assert response.status_code == 401, response.text
+
+    async def test_challenge_verification_requires_user_authentication(self) -> None:
+        response = await request(
+            "POST",
+            "/api/v1/user/challenges/1/verifications",
+            json={
+                "verification_date": datetime.now(config.TIMEZONE).date().isoformat(),
+                "idempotency_key": "unauthenticated-verification-304",
+            },
+        )
+
+        assert response.status_code == 401, response.text
+
+    async def test_my_badges_require_user_authentication(self) -> None:
+        response = await request("GET", "/api/v1/user/badges")
+
+        assert response.status_code == 401, response.text
+
+    async def test_catalog_requires_user_and_hides_unpublished_data(self) -> None:
+        from app.main import app
+        from app.models.challenges import Challenge
+
+        assert (await request("GET", "/api/v1/user/challenge-catalog")).status_code == 401
+        badge = await self._create_badge()
+        visible = await self._create_challenge(badge["id"], period="D7", frequency="DAILY")
+        hidden = await self._create_challenge(badge["id"])
+        await Challenge.filter(id=hidden["id"]).update(is_displayed=False)
+        app.dependency_overrides[get_request_user] = lambda: self.user
+        response = await request("GET", "/api/v1/user/challenge-catalog?limit=1")
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["total_count"] == 1
+        item = data["items"][0]
+        assert item["id"] == visible["id"]
+        assert item["duration_days"] == 7
+        assert item["frequency_code"] == "DAILY"
+        assert item["reward_badge"]["image_path"] == badge["image_path"]
+        assert item["can_join"] is True
+        assert "created_by_admin_id" not in item
+        assert (await request("GET", f"/api/v1/user/challenge-catalog/{hidden['id']}")).status_code == 404
+
+    async def test_catalog_and_owned_detail_have_separate_visibility_and_identity(self) -> None:
+        from app.main import app
+        from app.models.challenges import Challenge
+
+        participation = await self._join_daily()
+        catalog_url = f"/api/v1/user/challenge-catalog/{participation['challenge_id']}"
+        catalog = (await request("GET", catalog_url)).json()
+        assert catalog["participation_id"] == participation["id"]
+        assert catalog["can_join"] is False
+        await Challenge.filter(id=participation["challenge_id"]).update(is_displayed=False, is_deleted=True)
+        assert (await request("GET", catalog_url)).status_code == 404
+        url = f"/api/v1/user/challenges/{participation['id']}"
+        detail = await request("GET", url)
+        assert detail.status_code == 200
+        assert detail.json()["challenge"]["name"] == participation["challenge_name"]
+        other = await create_user(name="다른 참여자", email="other-challenge@example.com")
+        app.dependency_overrides[get_request_user] = lambda: other
+        assert (await request("GET", url)).status_code == 404
+        assert (await request("GET", "/api/v1/user/challenges")).json()["items"] == []
+
+    async def test_other_user_cannot_submit_verification_or_mutate_progress_or_badges(self) -> None:
+        from app.main import app
+        from app.models.challenges import ChallengeProgress, ChallengeVerification, UserBadge, UserChallenge
+
+        participation = await self._join_daily()
+        participation_id = participation["id"]
+        other = await create_user(name="다른 인증 사용자", email="other-verification@example.com")
+        app.dependency_overrides[get_request_user] = lambda: other
+
+        response = await request(
+            "POST",
+            f"/api/v1/user/challenges/{participation_id}/verifications",
+            json={
+                "verification_date": participation["today"],
+                "idempotency_key": "other-user-verification-304",
+            },
+        )
+
+        assert response.status_code == 404, response.text
+        assert await ChallengeVerification.filter(user_challenge_id=participation_id).count() == 0
+        stored = await UserChallenge.get(id=participation_id)
+        assert stored.completed_count == 0
+        assert stored.progress_rate == 0
+        assert stored.completed_at is None
+        progress_periods = await ChallengeProgress.filter(user_challenge_id=participation_id)
+        assert progress_periods
+        assert all(progress.completed_count == 0 for progress in progress_periods)
+        assert all(progress.progress_rate == 0 for progress in progress_periods)
+        assert all(progress.is_completed is False for progress in progress_periods)
+        assert all(progress.completed_at is None for progress in progress_periods)
+        assert await UserBadge.filter(user_challenge_id=participation_id).count() == 0
+
+    async def test_today_state_survives_reload_and_duplicate_keys_do_not_count_twice(self) -> None:
+        from app.models.challenges import ChallengeVerification
+
+        participation = await self._join_daily()
+        assert participation["can_verify"] is True
+        assert participation["today_verification"] is None
+        assert participation["verified_dates"] == []
+        url = f"/api/v1/user/challenges/{participation['id']}"
+        payload = {"verification_date": participation["today"], "idempotency_key": "same-day-first-request-304"}
+        first = await request("POST", url + "/verifications", json=payload)
+        assert first.status_code == 201, first.text
+        payload["idempotency_key"] = "same-day-second-request-304"
+        second = await request("POST", url + "/verifications", json=payload)
+        assert second.status_code == 201, second.text
+        assert second.json()["id"] == first.json()["id"]
+        assert await ChallengeVerification.filter(user_challenge_id=participation["id"]).count() == 1
+        reloaded = (await request("GET", url)).json()
+        assert reloaded["completed_count"] == 1
+        assert reloaded["today_verification"]["status"] == "APPROVED"
+        assert reloaded["can_verify"] is False
+        assert reloaded["verified_dates"] == [participation["today"]]
+
+    async def test_future_and_past_dates_cannot_be_certified(self) -> None:
+        from app.models.challenges import ChallengeVerification
+
+        participation = await self._join_daily()
+        today = datetime.now(config.TIMEZONE).date()
+        for offset in (-1, 1):
+            response = await request(
+                "POST",
+                f"/api/v1/user/challenges/{participation['id']}/verifications",
+                json={
+                    "verification_date": (today + timedelta(days=offset)).isoformat(),
+                    "idempotency_key": f"invalid-date-{offset}-304-request",
+                },
+            )
+            assert response.status_code == 422, response.text
+            assert response.json()["code"] == "INVALID_VERIFICATION_DATE"
+        assert await ChallengeVerification.all().count() == 0
+
+    async def test_personal_period_ends_at_midnight_after_last_calendar_day(self) -> None:
+        day = datetime(2026, 9, 8, 15, 30, tzinfo=config.TIMEZONE)
+        with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+            clock.now.return_value = day
+            participation = await self._join_daily()
+        assert datetime.fromisoformat(participation["end_at"]).astimezone(config.TIMEZONE) == datetime(
+            2026, 9, 15, tzinfo=config.TIMEZONE
+        )
+        with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 9, 15, tzinfo=config.TIMEZONE)
+            detail = (await request("GET", f"/api/v1/user/challenges/{participation['id']}")).json()
+        assert detail["status"] == "EXPIRED"
+        assert detail["can_verify"] is False
+
+    async def test_failed_recalculation_does_not_commit_verification(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from app.dtos.challenges import VerificationCreateRequest
+        from app.models.challenges import ChallengeVerification
+        from app.services.challenge_participation import ChallengeParticipationService
+
+        now = datetime.now(config.TIMEZONE)
+        with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            participation = await self._join_daily()
+            with patch.object(
+                ChallengeParticipationService,
+                "_recalculate",
+                AsyncMock(side_effect=RuntimeError("test")),
+            ):
+                with self.assertRaises(RuntimeError):
+                    await ChallengeParticipationService().submit_verification(
+                        self.user,
+                        participation["id"],
+                        VerificationCreateRequest(
+                            verification_date=now.date(),
+                            idempotency_key="rollback-verification-304",
+                        ),
+                    )
+        assert await ChallengeVerification.filter(user_challenge_id=participation["id"]).count() == 0
+
+    async def test_admin_review_cannot_complete_a_cancelled_participation(self) -> None:
+        from app.dtos.challenges import VerificationActionRequest
+        from app.main import app
+        from app.services.challenge_participation import ChallengeParticipationService
+
+        badge = await self._create_badge()
+        challenge = await self._create_challenge(badge["id"], period="D7", frequency="WEEKLY_3", check_type="MANUAL")
+        app.dependency_overrides[get_request_user] = lambda: self.user
+        participation = (await request("POST", f"/api/v1/user/challenges/{challenge['id']}/join")).json()
+        url = f"/api/v1/user/challenges/{participation['id']}"
+        pending_ids = []
+        with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+            for offset in range(3):
+                day = datetime.fromisoformat(participation["started_at"]) + timedelta(days=offset)
+                clock.now.return_value = day
+                response = await request(
+                    "POST",
+                    url + "/verifications",
+                    json={
+                        "verification_date": day.date().isoformat(),
+                        "idempotency_key": f"cancelled-manual-review-{offset}",
+                        "content": "걷기 완료",
+                    },
+                )
+                assert response.status_code == 201, response.text
+                pending_ids.append(response.json()["id"])
+            assert (await request("POST", url + "/cancel")).status_code == 200
+            for verification_id in pending_ids:
+                await ChallengeParticipationService().review_verification(
+                    verification_id,
+                    VerificationActionRequest(action="APPROVE"),
+                    self.admin.id,
+                )
+        detail = (await request("GET", url)).json()
+        assert detail["status"] == "CANCELLED"
+        assert detail["completed_at"] is None
+        assert (await request("GET", "/api/v1/user/badges")).json()["total_count"] == 0
+
+    async def test_manual_evidence_retains_previous_day_submission(self) -> None:
+        participation = await self._join_daily("MANUAL")
+        with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime.fromisoformat(participation["started_at"]) + timedelta(days=1)
+            response = await request(
+                "POST",
+                f"/api/v1/user/challenges/{participation['id']}/verifications",
+                json={
+                    "verification_date": participation["today"],
+                    "idempotency_key": "manual-previous-day-304",
+                    "content": "전날 걷기 증빙",
+                },
+            )
+        assert response.status_code == 201, response.text
+        assert response.json()["status"] == "PENDING"
+
+    async def test_failed_manual_recalculation_keeps_review_pending_and_retryable(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from app.dtos.challenges import VerificationActionRequest, VerificationCreateRequest
+        from app.models.challenges import ChallengeVerification
+        from app.services.challenge_participation import ChallengeParticipationService
+
+        participation = await self._join_daily("MANUAL")
+        service = ChallengeParticipationService()
+        verification = await service.submit_verification(
+            self.user,
+            participation["id"],
+            VerificationCreateRequest(
+                verification_date=datetime.fromisoformat(participation["started_at"]).date(),
+                idempotency_key="manual-rollback-review-304",
+                content="걷기 완료",
+            ),
+        )
+        action = VerificationActionRequest(action="APPROVE")
+        with patch.object(ChallengeParticipationService, "_recalculate", AsyncMock(side_effect=RuntimeError("test"))):
+            with self.assertRaises(RuntimeError):
+                await service.review_verification(verification.id, action, self.admin.id)
+        stored = await ChallengeVerification.get(id=verification.id)
+        assert stored.status == "PENDING"
+        await service.review_verification(verification.id, action, self.admin.id)
+        assert (await service.get(self.user, participation["id"])).completed_count == 1

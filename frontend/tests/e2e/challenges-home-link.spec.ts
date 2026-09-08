@@ -3,6 +3,19 @@ import { expect, test } from 'playwright/test';
 test.setTimeout(30_000);
 
 test('일반 경로의 홈 이동은 검토 전용 목업 홈으로 바꾸지 않는다', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'challenge-home-link-token');
+    sessionStorage.setItem('poke.account-principal', 'challenge-home-link@example.com');
+  });
+  await page.route('**/api/v1/user/challenge-catalog?*', route => route.fulfill({
+    json: { items: [], total_count: 0, offset: 0, limit: 100 },
+  }));
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({
+    json: { items: [], total_count: 0 },
+  }));
+  await page.route('**/api/v1/user/badges', route => route.fulfill({
+    json: { items: [], total_count: 0 },
+  }));
   await page.goto('/challenges');
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await expect(page).toHaveURL(/\/home$/);
