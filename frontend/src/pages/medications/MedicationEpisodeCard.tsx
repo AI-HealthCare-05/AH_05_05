@@ -62,12 +62,12 @@ export function MedicationEpisodeCard({
           onClick={selectionMode ? onToggleSelected : (onOpenEpisode ?? onToggleExpanded)}
         >
           <span className="min-w-0 flex-1">
-            <strong className="block break-words text-lg text-foreground">
+            <strong className="block [overflow-wrap:anywhere] text-lg text-foreground">
               {feature252 && overview.alias ? overview.alias : `${dateLabel} 처방`}
             </strong>
             {feature252 && (
               <>
-                <span className="mt-1 block truncate text-sm text-foreground">
+                <span className="mt-1 block [overflow-wrap:anywhere] text-sm text-foreground">
                   {medicineSummary}
                 </span>
                 <span className="mt-1 block truncate text-sm text-muted-foreground tnum">
@@ -114,9 +114,9 @@ export function MedicationEpisodeCard({
         >
           <ul className="divide-y divide-border" aria-label={`${dateLabel} 처방 약 목록`}>
             {overview.medications.map((medication) => (
-              <li key={medication.medicationId} className="flex items-start gap-3 py-4">
+              <li key={medication.medicationId} className="flex min-w-0 items-start gap-3 py-4">
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-foreground">
+                  <p className="[overflow-wrap:anywhere] font-bold text-foreground">
                     {medication.name}{' '}
                     <span className="font-normal text-muted-foreground">{medication.dose}</span>
                   </p>

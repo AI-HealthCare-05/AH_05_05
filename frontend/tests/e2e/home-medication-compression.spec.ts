@@ -199,6 +199,44 @@ test('처방 별칭은 화면 제목과 날짜 기반 접근성 이름에 함께
   ).toBeVisible();
 });
 
+test('긴 처방 별칭과 약 이름은 모바일과 데스크톱에서 화살표를 고정한 채 전체가 보인다', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const longAlias = `퇴원후집중관리처방${'PRESCRIPTION'.repeat(16)}회차`;
+  const longMedicationName = `복합성분서방정${'MEDICATION'.repeat(18)}정`;
+  const longOverview = [{
+    ...MEDICATION_OVERVIEWS[0],
+    alias: longAlias,
+    medications: [{ ...MEDICATION_OVERVIEWS[0].medications[0], name: longMedicationName }],
+  }];
+  await routeHome(page, longOverview);
+
+  for (const width of [320, 375, 430, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/home');
+    const article = page.getByRole('region', { name: '오늘의 복약' }).getByRole('article');
+    const row = article.locator('[data-episode-row]');
+    const title = row.getByRole('heading', { name: longAlias, exact: true });
+    const summary = row.getByText(longMedicationName, { exact: true });
+    const expand = article.getByRole('button', { name: new RegExp(`${longAlias}.*펼치기`) });
+
+    await expect(title).toBeVisible();
+    expect(await title.evaluate((element) => getComputedStyle(element).textOverflow)).not.toBe('ellipsis');
+    expect(await title.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    expect(await summary.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    expect((await row.boundingBox())!.height).toBeGreaterThan(56);
+    expect((await row.locator('[data-episode-selection-glyph]').boundingBox())!.width).toBe(24);
+    expect((await expand.boundingBox())!.width).toBe(44);
+
+    await expand.click();
+    const expandedName = article.getByRole('listitem').getByText(longMedicationName, { exact: true });
+    expect(await expandedName.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    expect(await article.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await row.click();
+    await expect(row).toHaveAttribute('aria-pressed', 'true');
+  }
+});
+
 test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 펼친다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await routeHome(page);

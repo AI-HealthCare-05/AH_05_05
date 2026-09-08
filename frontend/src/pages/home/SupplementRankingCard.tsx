@@ -53,7 +53,7 @@ export function SupplementRankingCard({
               {item.alreadyRegistered ? (
                 <div className="flex min-h-touch items-center gap-3 px-4 py-2">
                   <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 truncate text-base text-foreground">
+                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
                     {item.name}
                   </strong>
                   <StatusBadge type="done" className="px-2.5 py-1 text-xs">
@@ -66,7 +66,7 @@ export function SupplementRankingCard({
                   className="flex min-h-touch items-center gap-3 px-4 py-2"
                 >
                   <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 truncate text-base text-foreground">
+                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
                     {item.name}
                   </strong>
                 </div>
@@ -78,7 +78,7 @@ export function SupplementRankingCard({
                   onClick={() => onSelect(item.productId)}
                 >
                   <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 truncate text-base text-foreground">
+                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
                     {item.name}
                   </strong>
                   <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
@@ -86,7 +86,7 @@ export function SupplementRankingCard({
               ) : (
                 <div className="flex min-h-touch items-center gap-3 px-4 py-2">
                   <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 truncate text-base text-foreground">
+                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
                     {item.name}
                   </strong>
                 </div>

@@ -81,8 +81,8 @@ export function SupplementProductPage() {
           <p className="text-sm text-muted-foreground">제품 정보를 불러오는 중...</p>
         ) : (
           <>
-            <section className="flex flex-col gap-2" aria-labelledby="product-name">
-              <h2 id="product-name" className="text-2xl font-bold text-foreground">
+            <section className="flex min-w-0 flex-col gap-2" aria-labelledby="product-name">
+              <h2 id="product-name" className="[overflow-wrap:anywhere] text-2xl font-bold text-foreground">
                 {product.productName}
               </h2>
               <p className="text-sm text-muted-foreground">
