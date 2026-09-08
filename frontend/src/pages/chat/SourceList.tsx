@@ -1,3 +1,5 @@
+import { useId, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { ChatSource, SourceScope } from '@/entities/chat';
 
@@ -23,44 +25,65 @@ export interface SourceListProps {
 }
 
 export function SourceList({ sources, className }: SourceListProps) {
+  const [expanded, setExpanded] = useState(false);
+  const reactId = useId();
+  const contentId = `chat-sources-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
   if (sources.length === 0) return null;
 
   return (
-    <div className={cn('flex flex-col gap-1.5 border-t border-border pt-2', className)}>
-      <h3 className="text-sm font-bold text-foreground">근거</h3>
-      <ul className="flex flex-col gap-1.5">
-        {sources.map((source, index) => (
-          <li key={`${source.scope}-${source.title}-${index}`} className="flex flex-col gap-0.5">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span
-                className={cn(
-                  'shrink-0 rounded-pill px-2 py-0.5 text-sm',
-                  source.scope === 'personal'
-                    ? 'bg-primary-bg text-primary-strong'
-                    : 'bg-info-bg text-info',
-                )}
-              >
-                {SCOPE_LABEL[source.scope]}
-              </span>
-              <span className="text-sm text-foreground">{source.title}</span>
-            </div>
-            {source.organization && (
-              <span className="text-sm text-muted-foreground">{source.organization}</span>
-            )}
-            {source.url && (
-              // 원문을 확인할 수 있어야 근거가 의미를 갖습니다.
-              <a
-                href={source.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-h-touch items-center text-sm text-primary underline"
-              >
-                새 창에서 열기
-              </a>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <section className={cn('border-t border-border pt-1', className)}>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        aria-label={`${expanded ? '근거 접기' : '근거 보기'} ${sources.length}개`}
+        onClick={() => setExpanded((current) => !current)}
+        className="flex min-h-touch w-full items-center gap-1.5 text-left text-sm font-bold text-foreground"
+      >
+        <span>{expanded ? '근거 접기' : '근거 보기'}</span>
+        <span className="font-normal text-muted-foreground">{sources.length}개</span>
+        <ChevronDown
+          aria-hidden
+          className={cn('ml-auto size-5 shrink-0 transition-transform', expanded && 'rotate-180')}
+        />
+      </button>
+      <div id={contentId} hidden={!expanded}>
+        <h3 className="text-sm font-bold text-foreground">근거</h3>
+        <ul className="mt-1.5 flex flex-col gap-1.5">
+          {sources.map((source, index) => (
+            <li key={`${source.scope}-${source.title}-${index}`} className="flex flex-col gap-0.5">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span
+                  className={cn(
+                    'shrink-0 rounded-pill px-2 py-0.5 text-sm',
+                    source.scope === 'personal'
+                      ? 'bg-primary-bg text-primary-strong'
+                      : 'bg-info-bg text-info',
+                  )}
+                >
+                  {SCOPE_LABEL[source.scope]}
+                </span>
+                <span className="text-sm text-foreground">{source.title}</span>
+              </div>
+              {source.organization && (
+                <span className="text-sm text-muted-foreground">{source.organization}</span>
+              )}
+              {source.url && (
+                // 원문을 확인할 수 있어야 근거가 의미를 갖습니다.
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-touch items-center text-sm text-primary underline"
+                >
+                  새 창에서 열기
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }

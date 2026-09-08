@@ -65,6 +65,7 @@ test('약에 근거한 챗봇 답변은 약봉투와 공식 자료 출처를 함
   await page.getByRole('textbox', { name: '질문 입력' }).fill('리바록사반 먹을 때 조심할 점은?');
   await page.getByRole('button', { name: '보내기' }).click();
 
+  await page.getByRole('button', { name: '근거 보기 2개' }).click();
   await expect(page.getByText('약봉투 · 리바록사반 10mg')).toBeVisible();
   await expect(page.getByText('e약은요 · 리바록사반')).toBeVisible();
 });
