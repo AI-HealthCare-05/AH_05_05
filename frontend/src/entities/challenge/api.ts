@@ -21,6 +21,10 @@ export function joinOfficialChallenge(challengeId: number): Promise<ChallengePar
   return http.post<ChallengeParticipation>(`/v1/user/challenges/${challengeId}/join`);
 }
 
+export function cancelOfficialChallenge(participationId: number): Promise<ChallengeParticipation> {
+  return http.post<ChallengeParticipation>(`/v1/user/challenges/${participationId}/cancel`);
+}
+
 export function getChallengeParticipations(): Promise<ChallengeParticipationListResponse> {
   return http.get<ChallengeParticipationListResponse>('/v1/user/challenges');
 }

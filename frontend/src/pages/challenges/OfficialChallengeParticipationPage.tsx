@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 
 import { useSession } from '@/app/SessionContext';
 import {
+  cancelOfficialChallenge,
   getChallengeParticipation,
   getUserChallengeBadges,
   submitChallengeVerification,
@@ -13,6 +14,14 @@ import {
 import { ApiError } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/ui/dialog';
 import {
   challengeVerificationDates,
   inclusiveChallengeEndDate,
@@ -75,12 +84,16 @@ export function OfficialChallengeParticipationPage() {
   const principalRef = useRef(principalKey);
   const requestGenerationRef = useRef(0);
   const idempotencyKeyRef = useRef<string | null>(null);
+  const cancelRequestRef = useRef<symbol | null>(null);
   const [data, setData] = useState<ParticipationData | null>(null);
   const [notFound, setNotFound] = useState(id === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [refreshRequired, setRefreshRequired] = useState(false);
   const [pending, setPending] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
 
@@ -100,7 +113,11 @@ export function OfficialChallengeParticipationPage() {
     setActionError(null);
     setRefreshRequired(false);
     setPending(false);
+    setCancelOpen(false);
+    setCancelPending(false);
+    setCancelError(null);
     idempotencyKeyRef.current = null;
+    cancelRequestRef.current = null;
     loadParticipationData(id)
       .then(result => {
         if (active) setData(result);
@@ -152,7 +169,7 @@ export function OfficialChallengeParticipationPage() {
   const isSelfActive = participation.status === 'ACTIVE' && participation.challenge.check_type_code === 'SELF';
 
   async function checkIn() {
-    if (!isSelfActive || !participation.can_verify || pending) return;
+    if (!isSelfActive || !participation.can_verify || pending || cancelPending) return;
     const requestPrincipal = principalKey;
     const requestGeneration = requestGenerationRef.current;
     const isCurrentRequest = () => (
@@ -199,7 +216,7 @@ export function OfficialChallengeParticipationPage() {
   }
 
   async function refreshParticipation() {
-    if (id === null || pending) return;
+    if (id === null || pending || cancelPending) return;
     const requestPrincipal = principalKey;
     const requestGeneration = requestGenerationRef.current;
     const isCurrentRequest = () => (
@@ -218,6 +235,52 @@ export function OfficialChallengeParticipationPage() {
       setActionError(reason instanceof Error ? reason.message : '최신 진행 정보를 불러오지 못했어요.');
     } finally {
       if (isCurrentRequest()) setPending(false);
+    }
+  }
+
+  function openCancelDialog() {
+    if (participation.status !== 'ACTIVE' || pending || cancelPending || refreshRequired) return;
+    setCancelError(null);
+    setCancelOpen(true);
+  }
+
+  async function cancelParticipation() {
+    if (
+      participation.status !== 'ACTIVE'
+      || pending
+      || refreshRequired
+      || cancelRequestRef.current !== null
+    ) return;
+    const requestPrincipal = principalKey;
+    const requestGeneration = requestGenerationRef.current;
+    const requestToken = Symbol('cancel-participation');
+    const isCurrentRequest = () => (
+      principalRef.current === requestPrincipal
+      && requestGenerationRef.current === requestGeneration
+      && cancelRequestRef.current === requestToken
+    );
+    cancelRequestRef.current = requestToken;
+    setCancelPending(true);
+    setCancelError(null);
+    try {
+      const cancelled = await cancelOfficialChallenge(participation.id);
+      if (!isCurrentRequest()) return;
+      setData(current => current && current.participation.id === cancelled.id
+        ? { ...current, participation: cancelled }
+        : current);
+      setCancelOpen(false);
+    } catch (reason) {
+      if (!isCurrentRequest()) return;
+      if (reason instanceof ApiError && reason.status === 401) return;
+      setCancelError(reason instanceof Error ? reason.message : '챌린지 참여를 취소하지 못했어요.');
+    } finally {
+      if (cancelRequestRef.current === requestToken) {
+        cancelRequestRef.current = null;
+        if (
+          principalRef.current === requestPrincipal
+          && requestGenerationRef.current === requestGeneration
+        ) setCancelPending(false);
+      }
     }
   }
 
@@ -241,7 +304,7 @@ export function OfficialChallengeParticipationPage() {
       {refreshRequired ? (
         <section role="status" className="flex flex-col gap-2 rounded-card bg-muted-bg p-5">
           <p className="text-sm text-muted-foreground">최신 진행 정보 확인 필요</p>
-          <Button variant="secondary" disabled={pending} onClick={() => void refreshParticipation()}>다시 불러오기</Button>
+          <Button variant="secondary" disabled={pending || cancelPending} onClick={() => void refreshParticipation()}>다시 불러오기</Button>
         </section>
       ) : null}
 
@@ -282,7 +345,39 @@ export function OfficialChallengeParticipationPage() {
 
       {actionError ? <p role="alert" className="text-sm text-danger-strong">{actionError}</p> : null}
       {data.badgeError ? <p role="alert" className="text-sm text-muted-foreground">{data.badgeError}</p> : null}
-      {isSelfActive ? <Button disabled={pending || !participation.can_verify} onClick={() => void checkIn()}>{checkInLabel(participation, pending)}</Button> : null}
+      {isSelfActive ? <Button disabled={pending || cancelPending || !participation.can_verify} onClick={() => void checkIn()}>{checkInLabel(participation, pending)}</Button> : null}
+      {participation.status === 'ACTIVE' ? (
+        <Button
+          variant="secondary"
+          disabled={pending || cancelPending || refreshRequired}
+          onClick={openCancelDialog}
+        >
+          챌린지 참여 취소
+        </Button>
+      ) : null}
+
+      <Dialog
+        open={cancelOpen}
+        onOpenChange={open => {
+          if (cancelPending) return;
+          setCancelOpen(open);
+          if (!open) setCancelError(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>챌린지 참여를 취소할까요?</DialogTitle>
+            <DialogDescription>취소하면 이 챌린지에 다시 참여할 수 없어요</DialogDescription>
+          </DialogHeader>
+          {cancelError ? <p role="alert" className="text-sm text-danger-strong">{cancelError}</p> : null}
+          <DialogFooter>
+            <Button variant="secondary" disabled={cancelPending} onClick={() => setCancelOpen(false)}>돌아가기</Button>
+            <Button variant="danger" disabled={cancelPending} onClick={() => void cancelParticipation()}>
+              {cancelPending ? '취소 중...' : '참여 취소'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

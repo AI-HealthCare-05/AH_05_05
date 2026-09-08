@@ -1,4 +1,5 @@
 export {
+  cancelOfficialChallenge,
   getChallengeCatalog,
   getChallengeCatalogItem,
   getChallengeParticipation,

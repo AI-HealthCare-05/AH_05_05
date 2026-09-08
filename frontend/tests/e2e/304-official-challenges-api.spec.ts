@@ -705,6 +705,134 @@ test('participation detail uses server dates, counts, progress, and verified dat
   await expect(page.getByRole('button', { name: '했어요' })).toBeEnabled();
 });
 
+test('active participation cancellation confirms the terminal policy, posts once, and persists after reload', async ({ page }) => {
+  await authenticate(page);
+  await stubChallengeReads(page);
+  let cancelled = false;
+  let cancelCalls = 0;
+  let cancelBody: string | null = 'not-called';
+  let cancelAuthorization: string | undefined;
+  let releaseCancel!: () => void;
+  const cancelGate = new Promise<void>(resolve => {
+    releaseCancel = resolve;
+  });
+  const cancelledParticipation = participation({
+    status: 'CANCELLED',
+    cancelled_at: '2026-09-10T12:00:00+09:00',
+    can_verify: false,
+  });
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({
+    json: cancelled ? cancelledParticipation : participation(),
+  }));
+  await page.route('**/api/v1/user/challenges/501/cancel', async route => {
+    cancelCalls += 1;
+    cancelBody = route.request().postData();
+    cancelAuthorization = route.request().headers().authorization;
+    await cancelGate;
+    cancelled = true;
+    await route.fulfill({ json: cancelledParticipation });
+  });
+
+  await page.goto('/challenges/participations/501');
+  const cancelButton = page.getByRole('button', { name: '챌린지 참여 취소' });
+  await expect(cancelButton).toBeVisible({ timeout: 2_000 });
+  await cancelButton.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('취소하면 이 챌린지에 다시 참여할 수 없어요', { exact: true })).toBeVisible();
+  const confirm = dialog.getByRole('button', { name: '참여 취소', exact: true });
+  await confirm.click();
+  const cancelling = dialog.getByRole('button', { name: '취소 중...', exact: true });
+  await expect(cancelling).toBeDisabled();
+  await cancelling.evaluate((element: HTMLButtonElement) => element.click());
+  expect(cancelCalls).toBe(1);
+
+  releaseCancel();
+  await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
+  expect(cancelCalls).toBe(1);
+  expect(cancelBody).toBeNull();
+  expect(cancelAuthorization).toBe('Bearer token-for-challenge-api@example.com');
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
+  expect(cancelCalls).toBe(1);
+});
+
+test('completed and expired participation details never offer cancellation', async ({ page }) => {
+  await authenticate(page);
+  await stubChallengeReads(page);
+  let status = 'ACTIVE';
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation({
+    status,
+    completed_at: status === 'COMPLETED' ? '2026-09-21T12:00:00+09:00' : null,
+    can_verify: false,
+  }) }));
+
+  await page.goto('/challenges/participations/501');
+  await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toBeVisible({ timeout: 2_000 });
+
+  status = 'COMPLETED';
+  await page.reload();
+  await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
+
+  status = 'EXPIRED';
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
+});
+
+test('failed cancellation keeps the active participation and allows a deliberate retry', async ({ page }) => {
+  await authenticate(page);
+  await stubChallengeReads(page);
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation() }));
+  let cancelCalls = 0;
+  await page.route('**/api/v1/user/challenges/501/cancel', route => {
+    cancelCalls += 1;
+    return route.fulfill({ status: 409, json: {
+      code: 'CHALLENGE_PERIOD_ENDED',
+      message: '진행 중인 챌린지만 취소할 수 있어요.',
+    } });
+  });
+
+  await page.goto('/challenges/participations/501');
+  const cancelButton = page.getByRole('button', { name: '챌린지 참여 취소' });
+  await expect(cancelButton).toBeVisible({ timeout: 2_000 });
+  await cancelButton.click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '참여 취소', exact: true }).click();
+
+  await expect(dialog.getByRole('alert')).toContainText('진행 중인 챌린지만 취소할 수 있어요.');
+  await expect(dialog.getByRole('button', { name: '참여 취소', exact: true })).toBeEnabled();
+  expect(cancelCalls).toBe(1);
+  await dialog.getByRole('button', { name: '돌아가기', exact: true }).click();
+  await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toBeVisible();
+  await expect(page.getByText('3 / 14일 인증', { exact: true })).toBeVisible();
+});
+
+test('cancellation authorization failure expires the session without showing stale cancelled state', async ({ page }) => {
+  await authenticate(page);
+  await stubChallengeReads(page);
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation() }));
+  await page.route('**/api/v1/user/challenges/501/cancel', route => route.fulfill({
+    status: 401,
+    json: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' },
+  }));
+
+  await page.goto('/challenges/participations/501');
+  const cancelButton = page.getByRole('button', { name: '챌린지 참여 취소' });
+  await expect(cancelButton).toBeVisible({ timeout: 2_000 });
+  await cancelButton.click();
+  await page.getByRole('dialog').getByRole('button', { name: '참여 취소', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => page.evaluate(() => ({
+    token: sessionStorage.getItem('poke.access-token'),
+    principal: sessionStorage.getItem('poke.account-principal'),
+  }))).toEqual({ token: null, principal: null });
+  await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toHaveCount(0);
+});
+
 test('participation detail keeps a successful check-in when optional reads fail', async ({ page }) => {
   await authenticate(page);
   const before = participation();
