@@ -1,6 +1,9 @@
 import hashlib
 import json
+import logging
 import re
+from collections import Counter
+from dataclasses import dataclass
 
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChain,
@@ -29,10 +32,14 @@ from ai_worker.domain.interfaces import (
 from ai_worker.domain.medication_evidence_coverage import (
     MedicationEvidenceCoverageEvaluator,
 )
+from ai_worker.domain.medication_question_retrieval_policy import (
+    should_execute_source_backed_retrieval,
+)
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
 )
 from ai_worker.observability.chat_tracer import ChatTracer, NoOpChatTracer
+from ai_worker.rag.errors import GuidelineRetrievalError
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     find_supplement_interaction_pair,
     known_supplement_names_in,
@@ -62,8 +69,11 @@ from ai_worker.schemas.medication_chat import (
 )
 from ai_worker.schemas.medication_search import (
     InteractionRuleLookupStatus,
+    MedicationCatalogEntry,
     MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
     MedicationQuestionInterpretation,
     MedicationQuestionResolution,
     MedicationQuestionScope,
@@ -78,6 +88,28 @@ from ai_worker.use_cases.medication_chat_pipeline import (
 
 MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
 MEDICATION_CHAT_SCHEMA_VERSION = "medication-chat-result-v1"
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _KnowledgeRetrievalAttempt:
+    result: KnowledgeRetrievalResult
+    error: Exception | None = None
+
+    @property
+    def unavailable(self) -> bool:
+        return self.error is not None
+
+    def trace_outputs(self) -> dict[str, str]:
+        if self.error is None:
+            return {}
+        stage = self.error.stage.value if isinstance(self.error, GuidelineRetrievalError) else "UNCLASSIFIED"
+        cause = self.error.__cause__
+        return {
+            "rag_error_stage": stage,
+            "rag_error_type": type(self.error).__name__,
+            "rag_error_cause_type": type(cause).__name__ if cause is not None else type(self.error).__name__,
+        }
 
 
 class AnswerMedicationQuestionUseCase:
@@ -158,6 +190,7 @@ class AnswerMedicationQuestionUseCase:
             request=request,
             resolution=resolution,
             supplement_names=supplement_names,
+            allow_legacy_entity_inference=self._question_resolver is None,
         )
         if planning is None:
             return self._query_plan_failure_result(
@@ -166,11 +199,14 @@ class AnswerMedicationQuestionUseCase:
             )
         query_plan = planning.query_plan
         interpretation = planning.interpretation
-        if early_result is not None:
-            return self._with_interpretation(
-                early_result,
-                interpretation=interpretation,
-            )
+        if terminal_result := self._pre_retrieval_terminal_result(
+            request=request,
+            context=context,
+            resolution=resolution,
+            early_result=early_result,
+            interpretation=interpretation,
+        ):
+            return terminal_result
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
         )
@@ -224,9 +260,11 @@ class AnswerMedicationQuestionUseCase:
             "rag.retrieve",
             run_type="retriever",
         ) as rag_span:
-            retrieval, rag_unavailable = await self._retrieve_knowledge(
+            retrieval_attempt = await self._retrieve_knowledge(
                 execution_plan=execution_plan,
             )
+            retrieval = retrieval_attempt.result
+            rag_unavailable = retrieval_attempt.unavailable
             chunks = retrieval.chunks
             retrieval_outputs = retrieval.diagnostics.model_dump(
                 exclude={"candidate_diagnostics"},
@@ -241,6 +279,7 @@ class AnswerMedicationQuestionUseCase:
                     "query_plan_hash": execution_plan.query_plan_hash,
                     "execution_plan_hash": execution_plan.execution_plan_hash,
                     "rag_unavailable": rag_unavailable,
+                    **retrieval_attempt.trace_outputs(),
                     "document_types": sorted({chunk.metadata.document_type.value for chunk in chunks}),
                     "drug_encyclopedia_evidence_count": sum(
                         chunk.metadata.document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA for chunk in chunks
@@ -504,6 +543,7 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         resolution: MedicationQuestionResolution | None,
         supplement_names: list[str],
+        allow_legacy_entity_inference: bool,
     ) -> MedicationQuestionPlanResult | None:
         async with self._tracer.span("query.plan") as query_span:
             try:
@@ -513,6 +553,7 @@ class AnswerMedicationQuestionUseCase:
                             question=request.question,
                             supplement_names=supplement_names,
                             resolution=resolution,
+                            allow_legacy_entity_inference=(allow_legacy_entity_inference),
                         ),
                         config={
                             "metadata": {
@@ -530,6 +571,7 @@ class AnswerMedicationQuestionUseCase:
                                 "supplement_vocabulary_count": len(
                                     supplement_names,
                                 ),
+                                "legacy_entity_inference_used": (allow_legacy_entity_inference and resolution is None),
                             }
                         },
                     )
@@ -554,14 +596,26 @@ class AnswerMedicationQuestionUseCase:
                 "confidence": interpretation.confidence.value,
                 "needs_clarification": interpretation.needs_clarification,
                 "reason_codes": [reason.value for reason in interpretation.reason_codes],
+                "entity_resolution_available": bool(resolution is not None and resolution.entity_resolution_available),
+                "legacy_entity_inference_used": (allow_legacy_entity_inference and resolution is None),
                 "normalized_entity_count": len(
                     interpretation.normalized_entity_names,
+                ),
+                "entity_sources": sorted(
+                    {entity.source.value for entity in query_plan.entities},
+                ),
+                "entity_source_counts": dict(
+                    sorted(Counter(entity.source.value for entity in query_plan.entities).items())
+                ),
+                "entity_type_counts": dict(
+                    sorted(Counter(entity.entity_type.value for entity in query_plan.entities).items())
                 ),
                 "requested_section_types": [section.value for section in interpretation.requested_section_types],
                 "entity_count": len(query_plan.entity_names),
                 "section_count": len(query_plan.section_types),
                 "interaction_pair_present": (query_plan.interaction_pair is not None),
                 "interaction_pair_count": len(query_plan.interaction_pairs),
+                "interaction_pair_types": sorted({pair.pair_type.value for pair in query_plan.interaction_pairs}),
                 "medication_product_cue": (query_plan.has_medication_product_cue),
                 "supplement_vocabulary_count": len(supplement_names),
                 "query_plan_hash": query_plan.query_plan_hash,
@@ -569,6 +623,7 @@ class AnswerMedicationQuestionUseCase:
             if self._tracer.capture_content:
                 query_outputs["entity_names"] = query_plan.entity_names
                 query_outputs["entity_roles"] = [entity.entity_type.value for entity in query_plan.entities]
+                query_outputs["entity_sources_by_entity"] = [entity.source.value for entity in query_plan.entities]
                 query_outputs["entity_role_candidates"] = [
                     [candidate.value for candidate in entity.candidate_types] for entity in query_plan.entities
                 ]
@@ -684,9 +739,25 @@ class AnswerMedicationQuestionUseCase:
             try:
                 resolution = await self._question_resolver.resolve(
                     question=request.question,
-                    additional_names=[
-                        *(item.name for item in context.medications),
-                        *(item.name for item in context.supplements),
+                    additional_entities=[
+                        *(
+                            MedicationCatalogEntry(
+                                canonical_name=item.name,
+                                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                                kind=InteractionEntityKind.DRUG,
+                                source=MedicationQueryEntitySource.PATIENT_CONTEXT,
+                            )
+                            for item in context.medications
+                        ),
+                        *(
+                            MedicationCatalogEntry(
+                                canonical_name=item.name,
+                                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                                kind=InteractionEntityKind.SUPPLEMENT,
+                                source=MedicationQueryEntitySource.PATIENT_CONTEXT,
+                            )
+                            for item in context.supplements
+                        ),
                     ],
                 )
             except Exception:
@@ -697,6 +768,18 @@ class AnswerMedicationQuestionUseCase:
                 "status": resolution.status.value,
                 "correction_count": len(resolution.corrections),
                 "candidate_count": len(resolution.candidate_names),
+                "normalization_strategy": resolution.normalization_strategy.value,
+                "confidence_tier": resolution.confidence_tier.value,
+                "shortlisted_candidate_count": resolution.shortlisted_candidate_count,
+                "tie_count": resolution.tie_count,
+                "relation_resolution_status": (resolution.relation_resolution_status.value),
+                "catalog_source_counts": resolution.catalog_source_counts,
+                "catalog_type_counts": resolution.catalog_type_counts,
+                "entity_resolution_available": resolution.entity_resolution_available,
+                "resolved_entity_count": len(resolution.entities),
+                "resolved_entity_sources": sorted(
+                    {entity.source.value for entity in resolution.entities},
+                ),
             }
             if self._tracer.capture_content:
                 outputs["corrections"] = [correction.model_dump() for correction in resolution.corrections]
@@ -731,6 +814,29 @@ class AnswerMedicationQuestionUseCase:
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=cls._context_hash(context),
         )
+
+    @classmethod
+    def _pre_retrieval_terminal_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        resolution: MedicationQuestionResolution | None,
+        early_result: MedicationChatResult | None,
+        interpretation: MedicationQuestionInterpretation,
+    ) -> MedicationChatResult | None:
+        if early_result is not None:
+            return cls._with_interpretation(
+                early_result,
+                interpretation=interpretation,
+            )
+        if not should_execute_source_backed_retrieval(resolution):
+            return cls._unrecognized_entity_result(
+                request=request,
+                context=context,
+                interpretation=interpretation,
+            )
+        return None
 
     @staticmethod
     def _with_interpretation(
@@ -788,6 +894,34 @@ class AnswerMedicationQuestionUseCase:
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
             context_hash=cls._context_hash(context),
+        )
+
+    @classmethod
+    def _unrecognized_entity_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        interpretation: MedicationQuestionInterpretation,
+    ) -> MedicationChatResult:
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=(
+                "질문은 의약품·복약·영양제 관련일 수 있지만, 현재 보유한 "
+                "제품명·성분명·음식 목록에서 대상을 확인하지 못했습니다. "
+                "확인되지 않았다는 뜻이지 안전하다는 의미가 아닙니다. "
+                "정확한 제품명이나 성분명을 확인하거나 의료진 또는 약사와 "
+                "상담해 주세요."
+            ),
+            route=MedicationChatRoute.RESTRICTED,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=[
+                MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value,
+            ],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+            question_interpretation=interpretation,
         )
 
     @classmethod
@@ -897,14 +1031,23 @@ class AnswerMedicationQuestionUseCase:
         self,
         *,
         execution_plan: MedicationSearchExecutionPlan,
-    ) -> tuple[KnowledgeRetrievalResult, bool]:
+    ) -> _KnowledgeRetrievalAttempt:
         try:
             retrieval = await self._knowledge_retriever.search_with_diagnostics(
                 execution_plan=execution_plan,
             )
-        except Exception:
-            return self._empty_retrieval_result(), True
-        return retrieval, False
+        except Exception as error:
+            stage = error.stage.value if isinstance(error, GuidelineRetrievalError) else "UNCLASSIFIED"
+            logger.exception(
+                "약·영양제 RAG 검색에 실패했습니다: stage=%s error_type=%s",
+                stage,
+                type(error).__name__,
+            )
+            return _KnowledgeRetrievalAttempt(
+                result=self._empty_retrieval_result(),
+                error=error,
+            )
+        return _KnowledgeRetrievalAttempt(result=retrieval)
 
     @classmethod
     def _build_execution_plan(
@@ -1071,7 +1214,17 @@ class AnswerMedicationQuestionUseCase:
         if "이 약" in question and len(context.medications) == 1:
             candidates.append(context.medications[0].name)
         candidates.extend(
-            entity.canonical_name for entity in query_plan.entities if entity.kind == InteractionEntityKind.DRUG
+            entity.canonical_name
+            for entity in query_plan.entities
+            if (
+                entity.kind == InteractionEntityKind.DRUG
+                and entity.entity_type
+                in {
+                    MedicationQueryEntityType.PRODUCT_NAME,
+                    MedicationQueryEntityType.BRAND_ALIAS,
+                    MedicationQueryEntityType.INGREDIENT_NAME,
+                }
+            )
         )
         return list(dict.fromkeys(candidates))[: AnswerMedicationQuestionUseCase._MAX_PRODUCT_NAME_CANDIDATES]
 
