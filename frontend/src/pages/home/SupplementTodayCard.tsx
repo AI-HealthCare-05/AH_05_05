@@ -165,7 +165,7 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
               <li key={supplement.supplementId}>
                 <button
                   type="button"
-                  aria-label={`${supplement.name} 선택`}
+                  aria-label={`${supplement.name} ${taken ? '복용 완료' : '선택'}`}
                   aria-pressed={isSelected}
                   disabled={pending}
                   className="flex min-h-touch w-full min-w-0 items-center gap-3 rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
@@ -186,7 +186,15 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                   <span className="shrink-0 text-sm text-muted-foreground">
                     {supplement.doseAmount}{supplement.doseUnit}
                   </span>
-                  {taken && <span className="sr-only">복용 완료</span>}
+                  {taken && (
+                    <span
+                      data-supplement-completed-badge
+                      className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-primary-bg px-2 py-0.5 text-xs font-bold text-primary-strong"
+                    >
+                      복용 완료
+                      <Check aria-hidden className="size-4" />
+                    </span>
+                  )}
                 </button>
               </li>
             );
