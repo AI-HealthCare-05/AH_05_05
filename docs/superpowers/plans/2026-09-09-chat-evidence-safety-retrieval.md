@@ -183,14 +183,14 @@
 
 **Produces:** A `defer`, `limited adoption`, or `adopt` decision for registration safety, fatigue interview, one retry, and human intervention flows.
 
-- [ ] Compare each flow’s state, branching, resumability, and operator-intervention needs with the existing typed use-case pipeline.
-- [ ] Document that current one-retry retrieval and deterministic safety checks do not justify a graph runtime.
-- [ ] Specify the exact threshold for reconsidering a graph: resumable multi-stage registration review or managed human intervention with persisted state.
-- [ ] Commit the ADR without adding LangGraph dependency or code.
+- [x] Compare each flow’s state, branching, resumability, and operator-intervention needs with the existing typed use-case pipeline.
+- [x] Document that current one-retry retrieval and deterministic safety checks do not justify a graph runtime.
+- [x] Specify the exact threshold for reconsidering a graph: resumable multi-stage registration review or managed human intervention with persisted state.
+- [x] Commit the ADR without adding LangGraph dependency or code.
 
 ## Completion Checklist
 
-- [ ] Every task has focused RED → GREEN test evidence.
-- [ ] Every task has a separate experiment/decision record and commit.
-- [ ] Full AI Worker suite and Ruff checks pass after the final task.
-- [ ] No untracked OCR, Vite, `output/`, `tmp/`, or `:memory:.ses` artifact is committed.
+- [x] Every task has focused RED → GREEN test evidence.
+- [x] Every task has a separate experiment/decision record and commit.
+- [x] Full AI Worker suite and Ruff checks pass after the final task.
+- [x] No untracked OCR, Vite, `output/`, `tmp/`, or `:memory:.ses` artifact is committed.
