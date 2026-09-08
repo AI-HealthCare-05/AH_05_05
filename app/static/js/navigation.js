@@ -8,6 +8,7 @@ const TARGETS = Object.freeze({
   "common-codes": "common-code-management.html",
   "supplement-ranking": "supplement-ranking.html",
   challenges: "challenge-management.html",
+  "custom-challenge-templates": "custom-challenge-template-management.html",
   badges: "badge-management.html",
   logout: "login.html",
 });

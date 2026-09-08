@@ -19,6 +19,11 @@ from app.dtos.challenges import (
     ChallengeListResponse,
     ChallengeResponse,
     ChallengeUpdateRequest,
+    CustomChallengeTemplateAdminListQuery,
+    CustomChallengeTemplateCreateRequest,
+    CustomChallengeTemplateListResponse,
+    CustomChallengeTemplateResponse,
+    CustomChallengeTemplateUpdateRequest,
     VerificationActionRequest,
     VerificationListResponse,
     VerificationResponse,
@@ -168,6 +173,67 @@ async def update_challenge(
     actor: AdminCreateUpdate,
 ) -> ChallengeResponse:
     return await AdminChallengeService().update_challenge(challenge_id, request, actor.admin_id)
+
+
+@admin_challenge_router.post(
+    "/custom-challenge-templates",
+    response_model=CustomChallengeTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="맞춤 챌린지 템플릿 등록",
+)
+async def create_custom_challenge_template(
+    request: CustomChallengeTemplateCreateRequest,
+    actor: AdminCreateUpdate,
+) -> CustomChallengeTemplateResponse:
+    """사용자 맞춤 챌린지 생성에 사용할 관리 템플릿을 등록한다."""
+    return await AdminChallengeService().create_custom_template(request, actor.admin_id)
+
+
+@admin_challenge_router.get(
+    "/custom-challenge-templates",
+    response_model=CustomChallengeTemplateListResponse,
+    summary="맞춤 챌린지 템플릿 목록 조회",
+)
+async def list_custom_challenge_templates(
+    _: AdminRead,
+    query: Annotated[CustomChallengeTemplateAdminListQuery, Query()],
+) -> CustomChallengeTemplateListResponse:
+    items, total = await AdminChallengeService().list_custom_templates(query)
+    return CustomChallengeTemplateListResponse(
+        items=items,
+        total_count=total,
+        offset=query.offset,
+        limit=query.limit,
+    )
+
+
+@admin_challenge_router.get(
+    "/custom-challenge-templates/{template_id}",
+    response_model=CustomChallengeTemplateResponse,
+    summary="맞춤 챌린지 템플릿 상세 조회",
+)
+async def get_custom_challenge_template(
+    template_id: Annotated[int, Path(ge=1)],
+    _: AdminRead,
+) -> CustomChallengeTemplateResponse:
+    return await AdminChallengeService().get_custom_template(template_id)
+
+
+@admin_challenge_router.patch(
+    "/custom-challenge-templates/{template_id}",
+    response_model=CustomChallengeTemplateResponse,
+    summary="맞춤 챌린지 템플릿 수정",
+)
+async def update_custom_challenge_template(
+    template_id: Annotated[int, Path(ge=1)],
+    request: CustomChallengeTemplateUpdateRequest,
+    actor: AdminCreateUpdate,
+) -> CustomChallengeTemplateResponse:
+    return await AdminChallengeService().update_custom_template(
+        template_id,
+        request,
+        actor.admin_id,
+    )
 
 
 @admin_challenge_router.delete(

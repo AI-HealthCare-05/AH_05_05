@@ -1,0 +1,111 @@
+from qdrant_client import AsyncQdrantClient
+
+from ai_worker.core.config import Config
+from ai_worker.domain.errors import AIConfigurationError
+from ai_worker.llm.generators.intake_report_generator import (
+    OpenAIIntakeReportGenerator,
+)
+from ai_worker.observability.chat_tracer import (
+    ChatTracer,
+    NoOpChatTracer,
+    build_chat_tracer,
+)
+from ai_worker.providers.db_active_intake_context_provider import (
+    DbActiveIntakeContextProvider,
+)
+from ai_worker.rag.embeddings.openai_embedding_provider import (
+    OpenAIEmbeddingProvider,
+)
+from ai_worker.rag.retrievers.medication_knowledge_retriever import (
+    MedicationKnowledgeRetriever,
+)
+from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
+    QdrantHybridKnowledgeStore,
+)
+from ai_worker.rag.vectorstores.qdrant_knowledge_store import QdrantKnowledgeStore
+from ai_worker.repositories.interaction_rule_repository import (
+    DbInteractionRuleRepository,
+)
+from ai_worker.repositories.medication_product_guide_repository import (
+    DbMedicationProductGuideRepository,
+)
+from ai_worker.schemas.intake_report import IntakeReportResult
+from ai_worker.schemas.knowledge import (
+    KnowledgeSearchMode,
+    KnowledgeVectorDistance,
+)
+from ai_worker.use_cases.generate_intake_report import GenerateIntakeReportUseCase
+
+
+class IntakeReportCoreService:
+    def __init__(
+        self,
+        *,
+        use_case: GenerateIntakeReportUseCase,
+        tracer: ChatTracer | None = None,
+    ) -> None:
+        self._use_case = use_case
+        self._tracer = tracer or NoOpChatTracer()
+
+    @property
+    def tracer(self) -> ChatTracer:
+        return self._tracer
+
+    async def generate(self, *, user_id: int) -> IntakeReportResult:
+        return await self._use_case.execute(user_id=user_id)
+
+
+def build_intake_report_core_service(
+    *,
+    settings: Config,
+    qdrant_client: AsyncQdrantClient,
+    tracer: ChatTracer | None = None,
+) -> IntakeReportCoreService:
+    if settings.OPENAI_API_KEY is None or not settings.OPENAI_API_KEY.get_secret_value().strip():
+        raise AIConfigurationError("복용 정보 Report Core를 구성하려면 OPENAI_API_KEY가 필요합니다.")
+    report_tracer = tracer or build_chat_tracer(settings)
+    embedding_provider = OpenAIEmbeddingProvider(
+        model=settings.OPENAI_EMBEDDING_MODEL,
+        dimensions=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        api_key=settings.OPENAI_API_KEY,
+        timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
+        max_retries=settings.OPENAI_MAX_RETRIES,
+        normalize_vectors=(settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
+    )
+    vector_store_kwargs = {
+        "client": qdrant_client,
+        "collection_name": settings.KNOWLEDGE_QDRANT_COLLECTION,
+        "vector_size": settings.OPENAI_EMBEDDING_DIMENSIONS,
+        "distance": settings.KNOWLEDGE_VECTOR_DISTANCE,
+    }
+    if settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.DENSE:
+        vector_store = QdrantKnowledgeStore(**vector_store_kwargs)
+    else:
+        vector_store = QdrantHybridKnowledgeStore(
+            search_mode=settings.KNOWLEDGE_SEARCH_MODE,
+            **vector_store_kwargs,
+        )
+    use_case = GenerateIntakeReportUseCase(
+        context_provider=DbActiveIntakeContextProvider(),
+        guide_repository=DbMedicationProductGuideRepository(),
+        interaction_rule_repository=DbInteractionRuleRepository(
+            active_dataset_version=settings.INTERACTION_RULE_DATASET_VERSION,
+        ),
+        knowledge_retriever=MedicationKnowledgeRetriever(
+            embedding_provider=embedding_provider,
+            vector_store=vector_store,
+            dataset_version=settings.KNOWLEDGE_DATASET_VERSION,
+            min_similarity_score=settings.RAG_MIN_SIMILARITY_SCORE,
+        ),
+        generator=OpenAIIntakeReportGenerator(
+            model=settings.OPENAI_CHAT_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
+            max_retries=settings.OPENAI_MAX_RETRIES,
+        ),
+        tracer=report_tracer,
+    )
+    return IntakeReportCoreService(
+        use_case=use_case,
+        tracer=report_tracer,
+    )
