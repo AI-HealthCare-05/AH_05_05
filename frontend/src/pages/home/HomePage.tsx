@@ -262,6 +262,10 @@ export function HomePage({
   function handleTabChange(key: TabKey) {
     if (key === 'home') return;
     if (key === 'my') {
+      if (!isAuthenticated) {
+        setLoginPromptOpen(true);
+        return;
+      }
       navigate('/my');
       return;
     }
