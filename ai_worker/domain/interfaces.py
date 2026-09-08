@@ -17,6 +17,10 @@ from ai_worker.schemas.guideline import (
     GuidelineSearchQuery,
     RetrievedGuidelineChunk,
 )
+from ai_worker.schemas.intake_report import (
+    IntakeReportDraft,
+    IntakeReportGenerationOutcome,
+)
 from ai_worker.schemas.knowledge import KnowledgeRetrievalResult
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -177,6 +181,14 @@ class MedicationAnswerGenerator(Protocol):
         context: ActiveIntakeContext,
         result: MedicationChatResult,
     ) -> MedicationAnswerGenerationOutcome: ...
+
+
+class IntakeReportGenerator(Protocol):
+    async def generate(
+        self,
+        *,
+        draft: IntakeReportDraft,
+    ) -> IntakeReportGenerationOutcome: ...
 
 
 class GroundedClaimValidator(Protocol):

@@ -92,6 +92,18 @@ class ChallengeNotFoundError(AppError):
     message = "챌린지를 찾을 수 없습니다."
 
 
+class CustomChallengeTemplateNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "CUSTOM_CHALLENGE_TEMPLATE_NOT_FOUND"
+    message = "맞춤 챌린지 템플릿을 찾을 수 없습니다."
+
+
+class CustomChallengeTemplateNameAlreadyExistsError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CUSTOM_CHALLENGE_TEMPLATE_NAME_ALREADY_EXISTS"
+    message = "이미 등록된 맞춤 챌린지 템플릿명입니다."
+
+
 class ChallengeNotRecruitingError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "CHALLENGE_NOT_RECRUITING"
@@ -509,6 +521,24 @@ class ChatAnswerTimeoutError(AppError):
     status_code = status.HTTP_504_GATEWAY_TIMEOUT
     code = "API_TIMEOUT"
     message = "답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
+
+
+class IntakeReportUpstreamUnavailableError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "INTAKE_REPORT_UPSTREAM_UNAVAILABLE"
+    message = "보고서를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
+class IntakeReportTimeoutError(AppError):
+    status_code = status.HTTP_504_GATEWAY_TIMEOUT
+    code = "INTAKE_REPORT_TIMEOUT"
+    message = "보고서 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
+
+
+class IntakeReportProcessingFailedError(AppError):
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code = "INTAKE_REPORT_PROCESSING_FAILED"
+    message = "보고서 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
 
 
 class ChatProcessingFailedError(AppError):
