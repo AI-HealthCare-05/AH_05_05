@@ -511,6 +511,24 @@ class ChatAnswerTimeoutError(AppError):
     message = "답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
 
 
+class IntakeReportUpstreamUnavailableError(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "INTAKE_REPORT_UPSTREAM_UNAVAILABLE"
+    message = "보고서를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
+class IntakeReportTimeoutError(AppError):
+    status_code = status.HTTP_504_GATEWAY_TIMEOUT
+    code = "INTAKE_REPORT_TIMEOUT"
+    message = "보고서 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
+
+
+class IntakeReportProcessingFailedError(AppError):
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code = "INTAKE_REPORT_PROCESSING_FAILED"
+    message = "보고서 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+
+
 class ChatProcessingFailedError(AppError):
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     code = "CHAT_PROCESSING_FAILED"
