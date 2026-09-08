@@ -39,6 +39,7 @@ interface NoteEpisodeOption {
   id: number;
   alias: string | null;
   startDate: string | null;
+  firstDoseAt: string | null;
   status: string;
   medications: MedicationNoteMedication[];
 }
@@ -68,6 +69,20 @@ function toLocalDateTime(value: string): string {
   return value.length >= 16 ? value.slice(0, 16) : value;
 }
 
+function firstDoseAtFromOverview(overview: MedicationOverview): string | null {
+  const date = overview.start.date;
+  const time = overview.mealTimes[overview.start.slot];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  return `${date}T${time}`;
+}
+
+function doseDateTimeLabel(value: string): string {
+  const date = value.slice(0, 10);
+  const time = value.slice(11, 16);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return value;
+  return `${formatDateLabel(date, { includeYear: true })} ${time}`;
+}
+
 function initialForm(note: MedicationNote | null): NoteFormState {
   return note
     ? {
@@ -84,6 +99,7 @@ function episodeFromOverview(overview: MedicationOverview): NoteEpisodeOption {
     id: overview.recordId,
     alias: overview.alias ?? null,
     startDate: overview.start.date,
+    firstDoseAt: firstDoseAtFromOverview(overview),
     status: overview.isFinished ? 'COMPLETED' : 'ACTIVE',
     medications: overview.medications.map((medication) => ({
       id: medication.medicationId,
@@ -98,6 +114,7 @@ function episodeFromNote(note: MedicationNote): NoteEpisodeOption {
     id: note.careEpisodeId,
     alias: note.careEpisodeAlias,
     startDate: note.careEpisodeStartDate,
+    firstDoseAt: null,
     status: note.careEpisodeStatus,
     medications: note.availableMedications,
   };
@@ -221,6 +238,7 @@ export function MedicationNoteFormPage() {
       ...current,
       recordId: value,
       medicationId: next?.medications[0] ? String(next.medications[0].id) : '',
+      takenAt: next?.firstDoseAt ?? '',
     }));
   }
 
@@ -349,14 +367,32 @@ export function MedicationNoteFormPage() {
                 )}
               </label>
 
-              <Input
-                label="복용 일시"
-                aria-label="복용 일시"
-                type="datetime-local"
-                value={form.takenAt}
-                onChange={(event) => setField('takenAt', event.target.value)}
-                disabled={episodes === null || saving || deleting}
-              />
+              {editing ? (
+                <Input
+                  label="복용 일시"
+                  aria-label="복용 일시"
+                  type="datetime-local"
+                  value={form.takenAt}
+                  onChange={(event) => setField('takenAt', event.target.value)}
+                  disabled={episodes === null || saving || deleting}
+                />
+              ) : (
+                <div className="flex flex-col gap-1 text-sm font-bold text-foreground">
+                  <span>복용 일시</span>
+                  <div className="flex min-h-control items-center rounded-input border border-input bg-muted-bg px-3.5 text-[length:var(--text-control)] font-normal">
+                    {form.takenAt
+                      ? doseDateTimeLabel(form.takenAt)
+                      : selectedEpisode
+                        ? '처방의 첫 복용 일시를 확인할 수 없어요.'
+                        : '처방을 선택하면 자동으로 입력돼요.'}
+                  </div>
+                  {selectedEpisode && !form.takenAt && (
+                    <span role="alert" className="text-xs font-normal text-danger-strong">
+                      처방의 시작 날짜와 시간대를 확인한 뒤 다시 시도해주세요.
+                    </span>
+                  )}
+                </div>
+              )}
 
               <label className="flex flex-col gap-1 text-sm font-bold text-foreground">
                 복용 후 느낀 점
@@ -375,7 +411,7 @@ export function MedicationNoteFormPage() {
           </>
         )}
 
-        <div className="mt-auto flex flex-col gap-2 pb-4">
+        <div className={editing ? 'mt-auto grid grid-cols-2 gap-2 pb-4' : 'mt-auto flex flex-col gap-2 pb-4'}>
           <Button onClick={() => void save()} disabled={!canSave || saving || deleting}>
             {saving ? '저장 중...' : editing ? '수정 저장' : '저장'}
           </Button>
