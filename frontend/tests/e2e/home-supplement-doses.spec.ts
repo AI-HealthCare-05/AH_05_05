@@ -144,13 +144,19 @@ test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액
   await omega.click();
   await expect(omega).toHaveAttribute('aria-pressed', 'true');
   await morning.getByRole('button', { name: '1개 먹었어요' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(1);
   const completedOmega = morning.getByRole('button', { name: '오메가3 복용 완료' });
   const completedBadge = completedOmega.locator('[data-supplement-completed-badge]');
   const indicator = completedOmega.locator('[data-supplement-selection-indicator]');
   await expect(completedOmega).toBeVisible();
   await expect(completedBadge).toBeVisible();
-  await expect(completedBadge).toContainText('복용 완료');
+  await expect(completedBadge).toHaveAttribute('aria-hidden', 'true');
+  await expect(completedBadge).not.toContainText('복용 완료');
+  await expect(completedBadge.locator('svg')).toHaveCount(1);
+  const completedIconBox = await completedBadge.boundingBox();
+  expect(completedIconBox).not.toBeNull();
+  expect(completedIconBox!.width).toBe(completedIconBox!.height);
+  expect(completedIconBox!.width).toBeLessThanOrEqual(24);
   await expect(completedOmega).toHaveAttribute('aria-pressed', 'false');
   await expect(indicator).toHaveClass(/bg-card/);
   await expect(indicator.locator('svg')).toHaveCount(0);
@@ -203,23 +209,23 @@ test('일부 영양제만 기록하면 새로고침 뒤 유지되고 완료 항�
   await morning.getByRole('button', { name: '오메가3 선택' }).click();
   await expect(page).toHaveURL(/\/dev\/home-empty$/);
   await morning.getByRole('button', { name: '1개 먹었어요' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(1);
   if (IS_REAL_API) expect(requests).toEqual([{ supplementId: 501, date: DATE, slot: 'morning', taken: true }]);
   await page.reload();
   await page.getByRole('tab', { name: '오늘의 영양제' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(1);
   await morning.getByRole('button', { name: '오메가3 복용 완료' }).click();
   await morning.getByRole('button', { name: '1개 되돌리기' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(0);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(0);
   if (IS_REAL_API) expect(requests.at(-1)).toEqual({ supplementId: 501, date: DATE, slot: 'morning', taken: false });
 });
 
 test('전체 복용은 해당 시간대 미완료 제품만 기록하고 다른 시간대는 유지한다', async ({ page }) => {
   const { morning, requests } = await openHome(page);
   await morning.getByRole('button', { name: '다 먹었어요' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(2);
   await expect(morning.getByRole('button', { name: '다 먹었어요' })).toBeDisabled();
-  await expect(page.getByRole('group', { name: '저녁 영양제' }).getByText('복용 완료', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('group', { name: '저녁 영양제' }).locator('[data-supplement-completed-badge]')).toHaveCount(0);
   if (IS_REAL_API) expect(requests).toEqual([
     { supplementId: 501, date: DATE, slot: 'morning', taken: true },
     { supplementId: 502, date: DATE, slot: 'morning', taken: true },
@@ -232,7 +238,7 @@ test('실 API 일괄 복용 부분 실패는 성공한 제품을 다시 저장�
   await expect(morning).toContainText('07:30');
   await morning.getByRole('button', { name: '다 먹었어요' }).click();
   await expect(morning.getByRole('alert')).toBeVisible();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(1);
   const saved = morning.getByRole('button', { name: '오메가3 복용 완료' });
   const failed = morning.getByRole('button', { name: '종합비타민 선택' });
   await expect(saved).toHaveAttribute('aria-pressed', 'false');
@@ -241,7 +247,7 @@ test('실 API 일괄 복용 부분 실패는 성공한 제품을 다시 저장�
   await expect(failed.locator('[data-supplement-selection-indicator] svg')).toHaveCount(1);
   await morning.getByRole('button', { name: '다시 시도' }).click();
   await expect(morning.getByRole('alert')).toHaveCount(0);
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(2);
   expect(requests.map(item => item.supplementId)).toEqual([501, 502, 502]);
 });
 
@@ -261,12 +267,12 @@ test('목업 영양제 복용 기록은 로그인 계정별로 분리한다', as
   test.skip(IS_REAL_API, '목업 저장소 계정 격리 검증');
   const { morning } = await openHome(page);
   await morning.getByRole('button', { name: '다 먹었어요' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(2);
   await page.evaluate(() => sessionStorage.setItem('poke.account-principal', 'supplement-dose-b@example.com'));
   await page.reload();
   await page.getByRole('tab', { name: '오늘의 영양제' }).click();
   await expect(morning.getByRole('button', { name: '다 먹었어요' })).toBeEnabled();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(0);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(0);
 });
 
 test('완료와 미완료를 섞어 선택하지 않으며 선택을 비우면 전체 복용으로 돌아간다', async ({ page }) => {
@@ -284,7 +290,7 @@ test('완료와 미완료를 섞어 선택하지 않으며 선택을 비우면 �
   await multi.click();
   await expect(morning.getByRole('button', { name: '0개 먹었어요' })).toBeDisabled();
   await morning.getByRole('button', { name: '다 먹었어요' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(2);
   if (IS_REAL_API) expect(requests.map(item => item.supplementId)).toEqual([501, 502]);
 });
 
@@ -292,14 +298,14 @@ test('되돌리기 실패는 완료 상태를 유지하고 같은 false 요청�
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   const { morning, requests, failNextSave } = await openHome(page);
   await morning.getByRole('button', { name: '다 먹었어요' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(2);
   failNextSave(501);
   await morning.getByRole('button', { name: '오메가3 복용 완료' }).click();
   await morning.getByRole('button', { name: '1개 되돌리기' }).click();
   await expect(morning.getByRole('alert')).toBeVisible();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(2);
   await morning.getByRole('button', { name: '다시 시도' }).click();
-  await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(1);
+  await expect(morning.locator('[data-supplement-completed-badge]')).toHaveCount(1);
   expect(requests.slice(-2)).toEqual([
     { supplementId: 501, date: DATE, slot: 'morning', taken: false },
     { supplementId: 501, date: DATE, slot: 'morning', taken: false },

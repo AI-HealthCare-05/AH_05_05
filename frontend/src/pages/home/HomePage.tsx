@@ -447,7 +447,6 @@ export function HomePage({
                 ranking={visibleSupplementRanking}
                 registrationPending={false}
                 maxItems={5}
-                title="인기 영양제"
                 subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
               />
             )}

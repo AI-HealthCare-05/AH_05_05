@@ -169,13 +169,22 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
 
   const action = detail.getByRole('button', { name: '먹었어요' });
   await action.click();
-  await expect(detail.getByRole('article').nth(0).getByText('복용 완료')).toBeVisible();
-  await expect(detail.getByRole('article').nth(1).getByText('복용 완료')).toBeVisible();
+  const firstCompleted = detail.getByRole('article').nth(0).locator('[data-episode-completed-badge]');
+  const secondCompleted = detail.getByRole('article').nth(1).locator('[data-episode-completed-badge]');
+  await expect(firstCompleted).toBeVisible();
+  await expect(secondCompleted).toBeVisible();
+  await expect(firstCompleted).toHaveAttribute('aria-hidden', 'true');
+  await expect(firstCompleted).not.toContainText('복용 완료');
+  await expect(firstCompleted.locator('svg')).toHaveCount(1);
+  const completedIconBox = await firstCompleted.boundingBox();
+  expect(completedIconBox).not.toBeNull();
+  expect(completedIconBox!.width).toBe(completedIconBox!.height);
+  expect(completedIconBox!.width).toBeLessThanOrEqual(24);
   await expect(detail.getByRole('article').nth(2)).toHaveCount(0);
   await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
   const hiddenEpisode = detail.getByRole('article').nth(2);
   await expect(hiddenEpisode.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
-  await expect(hiddenEpisode.getByText('복용 완료', { exact: true })).toHaveCount(0);
+  await expect(hiddenEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
   await expect(hiddenEpisode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 선택' })).toHaveAttribute(
     'aria-pressed',
     'false',

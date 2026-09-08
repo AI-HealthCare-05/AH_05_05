@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, CircleCheck } from 'lucide-react';
 import {
   getSupplementDoses, saveSupplementDose,
   type Supplement, type SupplementDoseRecord, type SupplementSlot,
@@ -189,10 +189,10 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                   {taken && (
                     <span
                       data-supplement-completed-badge
-                      className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-primary-bg px-2 py-0.5 text-xs font-bold text-primary-strong"
+                      aria-hidden="true"
+                      className="inline-flex size-5 shrink-0 items-center justify-center text-primary-strong"
                     >
-                      복용 완료
-                      <Check aria-hidden className="size-4" />
+                      <CircleCheck aria-hidden className="size-5" focusable="false" />
                     </span>
                   )}
                 </button>

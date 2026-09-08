@@ -184,7 +184,7 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
   await expect(ranking).toBeVisible();
-  await expect(ranking.getByRole('heading', { name: '인기 영양제' })).toBeVisible();
+  await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
   await expect(
     ranking.getByText('개인별 복용 추천이 아닌 일반 인기 정보예요', { exact: true }),
   ).toBeVisible();

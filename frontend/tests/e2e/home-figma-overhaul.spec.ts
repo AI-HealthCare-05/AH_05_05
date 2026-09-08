@@ -265,8 +265,10 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
   await expect(completedEpisode).toHaveAttribute('aria-pressed', 'false');
   await expect(selectionGlyph).toHaveClass(/border-2/);
   await expect(selectionGlyph.locator('svg')).toHaveCount(0);
-  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toContainText('복용 완료');
-  const badgeCheck = firstEpisode.locator('[data-episode-completed-badge] svg');
+  const completedBadge = firstEpisode.locator('[data-episode-completed-badge]');
+  await expect(completedBadge).toHaveAttribute('aria-hidden', 'true');
+  await expect(completedBadge).not.toContainText('복용 완료');
+  const badgeCheck = completedBadge.locator('svg');
   const badgeCheckBox = await badgeCheck.boundingBox();
   expect(badgeCheckBox).not.toBeNull();
   expect(badgeCheckBox!.width).toBe(20);
@@ -453,7 +455,7 @@ test('게스트 홈은 세 배너 compact carousel을 유지하며 390x844에서
   await expect(heading).toBeVisible();
   await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
-  await expect(ranking.getByRole('heading', { name: '인기 영양제' })).toBeVisible();
+  await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
   await expect(ranking.getByRole('listitem')).toHaveCount(5);
 
   const rankingBox = await ranking.boundingBox();
