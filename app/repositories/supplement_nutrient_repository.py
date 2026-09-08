@@ -9,6 +9,20 @@ from app.models.supplement_nutrients import SupplementNutrient, UserSupplementNu
 from app.repositories.supplement_review_repository import SupplementReviewRepository
 
 SupplementSort = Literal["name", "registered", "rating", "reviews"]
+SupplementSortDirection = Literal["asc", "desc"]
+
+_DEFAULT_DIRECTIONS: dict[SupplementSort, SupplementSortDirection] = {
+    "name": "asc",
+    "registered": "desc",
+    "rating": "desc",
+    "reviews": "desc",
+}
+_SORT_FIELDS: dict[SupplementSort, tuple[str, ...]] = {
+    "name": ("name",),
+    "registered": ("registration_count",),
+    "rating": ("rating_average", "review_count"),
+    "reviews": ("review_count", "rating_average"),
+}
 
 
 class SupplementNutrientRepository:
@@ -20,6 +34,7 @@ class SupplementNutrientRepository:
         name: str,
         *,
         sort: SupplementSort,
+        direction: SupplementSortDirection | None = None,
         offset: int,
         limit: int,
     ) -> tuple[list[SupplementNutrient], int]:
@@ -38,13 +53,10 @@ class SupplementNutrientRepository:
                 _filter=active_registration_filter,
             ),
         )
-        orderings: dict[SupplementSort, tuple[str, ...]] = {
-            "name": ("name", "id"),
-            "registered": ("-registration_count", "id"),
-            "rating": ("-rating_average", "-review_count", "id"),
-            "reviews": ("-review_count", "-rating_average", "id"),
-        }
-        items = await annotated.order_by(*orderings[sort]).offset(offset).limit(limit)
+        resolved_direction = direction or _DEFAULT_DIRECTIONS[sort]
+        prefix = "-" if resolved_direction == "desc" else ""
+        orderings = tuple(f"{prefix}{field}" for field in _SORT_FIELDS[sort]) + ("id",)
+        items = await annotated.order_by(*orderings).offset(offset).limit(limit)
         return items, total
 
     async def get(self, supplement_nutrient_id: int) -> SupplementNutrient | None:

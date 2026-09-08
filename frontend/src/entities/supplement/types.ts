@@ -2,6 +2,7 @@ import type { MealSlot } from '@/shared/model/mealSlot';
 
 export type SupplementSlot = MealSlot;
 export type SupplementSortKey = 'name' | 'registered' | 'rating' | 'reviews';
+export type SupplementSortDirection = 'asc' | 'desc';
 
 export interface SupplementNutrientAmount {
   nutrientId: string;
@@ -114,6 +115,7 @@ export interface SupplementRanking {
 export interface SearchSupplementProductsParams {
   query: string;
   sort?: SupplementSortKey;
+  direction?: SupplementSortDirection;
   offset?: number;
   limit?: number;
 }
