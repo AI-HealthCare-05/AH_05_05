@@ -158,7 +158,7 @@ class CustomChallengeService:
                             id=source_id,
                             name=name,
                             existing_participation_id=active_target_participations.get(
-                                (template.id, challenge_type, source_id)
+                                (challenge_type, source_id)
                             ),
                         )
                         for source_id, name, _windows, _goals in sources
@@ -504,14 +504,17 @@ class CustomChallengeService:
     async def _active_target_participations(
         self,
         user_id: int,
-    ) -> dict[tuple[int, CustomChallengeType, int], int]:
-        targets = await CustomChallengeTarget.filter(
-            participation__user_id=user_id,
-            participation__status=ChallengeParticipationStatus.ACTIVE,
-        ).prefetch_related("participation")
+    ) -> dict[tuple[CustomChallengeType, int], int]:
+        targets = (
+            await CustomChallengeTarget.filter(
+                participation__user_id=user_id,
+                participation__status=ChallengeParticipationStatus.ACTIVE,
+            )
+            .prefetch_related("participation")
+            .order_by("participation__joined_at", "participation_id", "id")
+        )
         return {
             (
-                target.participation.template_id,
                 target.participation.challenge_type,
                 target.source_id_snapshot,
             ): target.participation_id

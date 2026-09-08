@@ -404,7 +404,7 @@ async def test_active_duplicate_is_rejected_after_template_mapping_replacement(
     user = await _user()
     medication_template, supplement_template = await _templates()
     episode = await _medication_episode(user)
-    await service.join(
+    existing = await service.join(
         user,
         medication_template.id,
         CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="old-template"),
@@ -418,6 +418,12 @@ async def test_active_duplicate_is_rejected_after_template_mapping_replacement(
         replacement.id: CustomChallengeType.MEDICATION,
         supplement_template.id: CustomChallengeType.SUPPLEMENT,
     }
+
+    recommendations = await service.recommendations(user)
+    medication_recommendation = next(
+        item for item in recommendations.items if item.template_id == replacement.id
+    )
+    assert medication_recommendation.targets[0].existing_participation_id == existing.id
 
     with pytest.raises(CustomChallengeAlreadyActiveError):
         await service.join(
