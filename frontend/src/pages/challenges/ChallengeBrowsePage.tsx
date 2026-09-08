@@ -2,6 +2,7 @@ import { ArrowRight, Check } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router';
 
 import { useChallengeMock } from '@/features/challenges';
+import { ChallengePageHeading } from './ChallengePageHeading';
 
 function challengeBase(pathname: string) {
   return pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges';
@@ -28,7 +29,7 @@ export function ChallengeBrowsePage() {
 
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <h1 className="text-[22px] font-bold leading-6 text-foreground">챌린지</h1>
+      <ChallengePageHeading />
       <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
         <Link to={base} className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">마이</Link>
         <Link aria-current="page" to={`${base}/browse`} className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">둘러보기</Link>

@@ -56,24 +56,12 @@ test('필수 동의는 약관 링크와 실제 수집·이용 내용을 보여�
 }) => {
   await openProfileStep(page);
 
-  const termsLink = page.getByRole('link', { name: '서비스 이용약관 보기' });
-  await expect(termsLink).toHaveAttribute('href', '/terms');
-  await expect(termsLink).toHaveAttribute('target', '_blank');
-  await expect(termsLink).toHaveAttribute('rel', /noopener/);
-  await expect(termsLink).toHaveAttribute('rel', /noreferrer/);
+  await expect(page.getByRole('button', { name: '서비스 이용약관 보기' })).toBeVisible();
   const privacyLink = page.getByRole('link', { name: '개인정보 처리 안내 보기' });
   await expect(privacyLink).toHaveAttribute('href', '/privacy');
   await expect(privacyLink).toHaveAttribute('target', '_blank');
   await expect(privacyLink).toHaveAttribute('rel', /noopener/);
   await expect(privacyLink).toHaveAttribute('rel', /noreferrer/);
-
-  const policyPagePromise = page.waitForEvent('popup');
-  await termsLink.click();
-  const policyPage = await policyPagePromise;
-  await expect(policyPage).toHaveURL(/\/terms$/);
-  await policyPage.close();
-  await expect(page.getByLabel('이름')).toHaveValue('동의확인');
-  await expect(page.getByText('4 / 4 단계', { exact: true })).toBeVisible();
 
   await page.getByText('개인정보 수집·이용 내용 보기', { exact: true }).click();
   await expect(page.getByText('이메일, 비밀번호, 이름, 전화번호, 생년월일, 성별')).toBeVisible();
@@ -96,6 +84,41 @@ test('필수 동의는 약관 링크와 실제 수집·이용 내용을 보여�
     await checkbox.check();
     await expect(submit).toBeEnabled();
   }
+});
+
+test('회원가입 약관 상세의 뒤로가기는 입력과 동의 상태를 메모리에 보존한다', async ({ page }) => {
+  await openProfileStep(page);
+  const serviceTerms = page.getByRole('checkbox', { name: /서비스 이용약관에 동의해요/ });
+  await serviceTerms.check();
+
+  await page.getByRole('button', { name: '서비스 이용약관 보기' }).click();
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('heading', { name: '이용약관' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '1. 서비스의 목적' })).toBeVisible();
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+
+  await expect(page.getByText('4 / 4 단계', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('이름')).toHaveValue('동의확인');
+  await expect(page.getByLabel('전화번호')).toHaveValue('010-1234-5678');
+  await expect(page.getByLabel('생년월일')).toHaveValue('1990-01-01');
+  await expect(page.getByRole('radio', { name: '여성' })).toBeChecked();
+  await expect(serviceTerms).toBeChecked();
+
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await expect(page.getByLabel('비밀번호', { exact: true })).toHaveValue('Password123!');
+  await expect(page.getByLabel('비밀번호 확인', { exact: true })).toHaveValue('Password123!');
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await expect(page.getByLabel('인증코드')).toHaveValue('123456');
+
+  const browserStorage = await page.evaluate(() =>
+    JSON.stringify({
+      local: Object.fromEntries(Object.entries(localStorage)),
+      session: Object.fromEntries(Object.entries(sessionStorage)),
+    }),
+  );
+  expect(browserStorage).not.toContain('Password123!');
+  expect(browserStorage).not.toContain('123456');
 });
 
 test('만 14세 미만이면 연령 확인 체크를 해제하고 가입 제한 메시지를 보여준다', async ({

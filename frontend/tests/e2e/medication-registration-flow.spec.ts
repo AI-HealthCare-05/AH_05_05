@@ -1465,7 +1465,7 @@ test('복용 기록은 사용자 단위로 한 번만 조회하고, 선택한 �
   expect(doseGets).toHaveLength(1);
   expect(new URL(doseGets[0]).searchParams.has('recordId')).toBe(false);
   expect(dosePosts).toHaveLength(2);
-  expect(dosePosts).toEqual([
+  expect([...dosePosts].sort((left, right) => Number(left.recordId) - Number(right.recordId))).toEqual([
     { date: '2026-08-25', slot: 'morning', taken: true, recordId: 12 },
     { date: '2026-08-25', slot: 'morning', taken: true, recordId: 24 },
   ]);
@@ -1518,6 +1518,54 @@ test('처방 2개 중 1개만 기록하고 새로고침해도 그 처방만 완�
   ]);
 });
 
+test('복약 저장 중에는 선택 행과 복약 액션을 잠가 반대 작업이 겹치지 않게 한다', async ({
+  page,
+}) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: Array<Record<string, unknown>> = [];
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    dosePosts.push(request.postDataJSON() as Record<string, unknown>);
+    await saveGate;
+    await fulfillJson(route, request.postDataJSON(), 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
+  const firstSelector = firstEpisode.locator('[data-episode-row]');
+  await firstSelector.click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+
+  try {
+    await expect(firstSelector).toBeDisabled({ timeout: 1_000 });
+    await expect(morning.getByRole('button', { name: /먹었어요|복약 기록 되돌리기/ })).toBeDisabled();
+    expect(dosePosts).toHaveLength(1);
+  } finally {
+    releaseSave();
+  }
+
+  await expect(firstEpisode.getByRole('button', { name: /8월 22일 처방.*복용 완료/ })).toBeEnabled();
+  expect(dosePosts).toHaveLength(1);
+});
+
 test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page }) => {
   await authenticate(page);
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
@@ -1547,14 +1595,191 @@ test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page 
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label^="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label^="8월 24일 처방"]');
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
   await morning.getByRole('button', { name: '먹었어요' }).click();
 
   await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
   await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(firstEpisode.locator('[data-episode-row]')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await expect(firstEpisode.locator('[data-episode-selection-glyph] svg')).toHaveCount(0);
+  await expect(secondEpisode.locator('[data-episode-row]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(secondEpisode.locator('[data-episode-selection-glyph] svg')).toHaveCount(1);
   expect(savedRecordIds).toEqual([12]);
+});
+
+test('부분 실패는 실패 회차만 선택하고 팝업 재시도 성공 후 선택을 해제한다', async ({ page }) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: number[] = [];
+  let failSecondOnce = true;
+  let releaseRetry!: () => void;
+  const retryGate = new Promise<void>((resolve) => {
+    releaseRetry = resolve;
+  });
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    const payload = request.postDataJSON() as { recordId: number };
+    dosePosts.push(payload.recordId);
+    if (payload.recordId === 24 && failSecondOnce) {
+      failSecondOnce = false;
+      await fulfillJson(route, { code: 'INTERNAL_ERROR', message: '실패' }, 500);
+      return;
+    }
+    if (payload.recordId === 24) await retryGate;
+    await fulfillJson(route, payload, 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstSelector = firstEpisode.locator('[data-episode-row]');
+  const secondSelector = secondEpisode.locator('[data-episode-row]');
+  await firstSelector.click();
+  await secondSelector.click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+
+  const dialog = page.getByRole('dialog', { name: '기록하지 못했어요' });
+  await expect(dialog).toBeVisible();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await expect(firstSelector).toHaveAttribute('aria-pressed', 'false');
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(secondSelector).toHaveAttribute('aria-pressed', 'true');
+
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => dosePosts.length).toBe(3);
+  try {
+    await expect(secondSelector).toBeDisabled({ timeout: 1_000 });
+    await expect(morning.getByRole('button', { name: '복약 기록 되돌리기' })).toBeDisabled();
+  } finally {
+    releaseRetry();
+  }
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await expect(secondSelector).toHaveAttribute('aria-pressed', 'false');
+  await expect(morning.getByRole('button', { name: '복약 기록 되돌리기' })).toBeDisabled();
+  expect([...dosePosts].sort((left, right) => left - right)).toEqual([12, 24, 24]);
+});
+
+test('토스트 되돌리기 실패는 완료를 유지하고 팝업 재시도에서 false를 다시 전송한다', async ({
+  page,
+}) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: Array<{ recordId: number; taken: boolean }> = [];
+  let failUndoOnce = true;
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    const payload = request.postDataJSON() as { recordId: number; taken: boolean };
+    dosePosts.push({ recordId: payload.recordId, taken: payload.taken });
+    if (!payload.taken && failUndoOnce) {
+      failUndoOnce = false;
+      await fulfillJson(route, { code: 'INTERNAL_ERROR', message: '실패' }, 500);
+      return;
+    }
+    await fulfillJson(route, payload, 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  await firstEpisode.locator('[data-episode-row]').click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+
+  await page.getByRole('button', { name: '되돌리기', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '기록하지 못했어요' });
+  await expect(dialog).toBeVisible();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+
+  await dialog.getByRole('button', { name: '다시 시도' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  expect(dosePosts).toEqual([
+    { recordId: 12, taken: true },
+    { recordId: 12, taken: false },
+    { recordId: 12, taken: false },
+  ]);
+});
+
+test('A와 B를 기록한 뒤 A 토스트를 되돌려도 B 완료 상태를 유지한다', async ({ page }) => {
+  await authenticate(page);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const dosePosts: Array<{ recordId: number; taken: boolean }> = [];
+  await page.route('**/api/v1/medications/doses*', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, [], 200);
+      return;
+    }
+    const payload = request.postDataJSON() as { recordId: number; taken: boolean };
+    dosePosts.push({ recordId: payload.recordId, taken: payload.taken });
+    await fulfillJson(route, payload, 200);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+
+  await page.goto('/dev/home-multiple-episodes');
+  const morning = page
+    .getByRole('region', { name: '오늘의 복약' })
+    .getByRole('group', { name: '아침약 상세' });
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  await firstEpisode.locator('[data-episode-row]').click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  await secondEpisode.locator('[data-episode-row]').click();
+  await morning.getByRole('button', { name: '먹었어요' }).click();
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+
+  const olderToast = page.locator('[data-sonner-toast][data-index="1"]');
+  await page.locator('[data-sonner-toast][data-index="0"]').hover();
+  await expect(olderToast).toBeVisible();
+  await olderToast.getByRole('button', { name: '되돌리기' }).click();
+
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(secondEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
+  expect(dosePosts).toEqual([
+    { recordId: 12, taken: true },
+    { recordId: 24, taken: true },
+    { recordId: 12, taken: false },
+  ]);
 });
 
 test('이미 완료된 처방과 함께 기록한 batch를 되돌려도 기존 완료는 유지한다', async ({ page }) => {
