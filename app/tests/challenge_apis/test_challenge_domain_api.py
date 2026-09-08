@@ -37,6 +37,7 @@ class TestChallengeDomainAPI(TestCase):
             "CHL_TYPE": ["WALK"],
             "CHL_PERIOD": ["D7", "D30"],
             "CHK_TYPE": ["SELF", "MANUAL"],
+            "CHK_TYPE2": ["COUNT", "PHOTO"],
             "CHK_FREQ": ["DAILY", "WEEKLY_3"],
         }
         result: dict[str, CommonCode] = {}
@@ -53,6 +54,61 @@ class TestChallengeDomainAPI(TestCase):
                     detail_name=detail_code,
                 )
         return result
+
+    async def test_admin_can_create_search_and_update_custom_challenge_template(self) -> None:
+        created = await request(
+            "POST",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            json={
+                "name": "하루 물 8잔",
+                "check_type_id": self.codes["COUNT"].id,
+                "is_active": True,
+            },
+        )
+
+        assert created.status_code == 201, created.text
+        template_id = created.json()["id"]
+
+        listed = await request(
+            "GET",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            params={"name": "물 8", "is_active": True},
+        )
+        assert listed.status_code == 200, listed.text
+        assert listed.json()["total_count"] == 1
+        assert listed.json()["items"][0]["id"] == template_id
+
+        updated = await request(
+            "PATCH",
+            f"/api/v1/admin/custom-challenge-templates/{template_id}",
+            headers=self.admin_headers,
+            json={
+                "name": "하루 물 마시기",
+                "check_type_id": self.codes["PHOTO"].id,
+                "is_active": False,
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["name"] == "하루 물 마시기"
+        assert updated.json()["check_type_id"] == self.codes["PHOTO"].id
+        assert updated.json()["is_active"] is False
+
+    async def test_custom_challenge_template_rejects_other_common_code_group(self) -> None:
+        response = await request(
+            "POST",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            json={
+                "name": "잘못된 인증 방식",
+                "check_type_id": self.codes["SELF"].id,
+                "is_active": True,
+            },
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "INVALID_COMMON_CODE"
 
     async def _create_badge(self) -> dict:
         response = await request(

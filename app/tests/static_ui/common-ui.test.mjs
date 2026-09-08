@@ -21,6 +21,10 @@ test("getNavigationTarget maps each sidebar section to its page", () => {
   assert.equal(getNavigationTarget("tasks"), "screen-5-task-management.html");
   assert.equal(getNavigationTarget("common-codes"), "common-code-management.html");
   assert.equal(getNavigationTarget("supplement-ranking"), "supplement-ranking.html");
+  assert.equal(
+    getNavigationTarget("custom-challenge-templates"),
+    "custom-challenge-template-management.html",
+  );
   assert.equal(getNavigationTarget("logout"), "login.html");
 });
 

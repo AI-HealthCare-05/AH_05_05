@@ -118,6 +118,49 @@ class Challenge(models.Model):
         )
 
 
+class CustomChallengeTemplate(models.Model):
+    id = fields.BigIntField(primary_key=True, description="맞춤 챌린지 템플릿 ID")
+    name = fields.CharField(max_length=100, unique=True, description="템플릿명")
+    is_active = fields.BooleanField(default=True, description="사용 여부")
+    check_type = fields.ForeignKeyField(
+        "models.CommonCode",
+        related_name="custom_challenge_templates",
+        on_delete=fields.RESTRICT,
+        description="인증 방식 공통코드 ID(CHL/CHK_TYPE2)",
+    )
+    created_by_admin = fields.ForeignKeyField(
+        "models.Admin",
+        related_name="created_custom_challenge_templates",
+        null=True,
+        on_delete=fields.SET_NULL,
+        description="등록 관리자 ID",
+    )
+    updated_by_admin = fields.ForeignKeyField(
+        "models.Admin",
+        related_name="updated_custom_challenge_templates",
+        null=True,
+        on_delete=fields.SET_NULL,
+        description="최종 수정 관리자 ID",
+    )
+    created_at = fields.DatetimeField(auto_now_add=True, description="등록 일시")
+    updated_at = fields.DatetimeField(auto_now=True, null=True, description="최종 수정 일시")
+
+    class Meta:
+        table = "custom_challenge_templates"
+        indexes = (
+            Index(fields=("is_active", "name"), name="idx_custom_challenge_templates_active_name"),
+            Index(fields=("check_type_id",), name="idx_custom_challenge_templates_check_type"),
+            Index(
+                fields=("created_by_admin_id",),
+                name="idx_custom_challenge_templates_created_admin",
+            ),
+            Index(
+                fields=("updated_by_admin_id",),
+                name="idx_custom_challenge_templates_updated_admin",
+            ),
+        )
+
+
 class UserChallenge(models.Model):
     id = fields.BigIntField(primary_key=True, description="사용자 챌린지 참여 ID")
     user = fields.ForeignKeyField(
