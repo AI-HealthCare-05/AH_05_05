@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -284,7 +285,7 @@ class TestChallengeDomainAPI(TestCase):
         badges = await request("GET", "/api/v1/user/badges")
 
         assert detail.json()["status"] == "COMPLETED"
-        assert detail.json()["progress_rate"] == "100.00"
+        assert Decimal(detail.json()["progress_rate"]) == Decimal("100.00")
         assert badges.json()["total_count"] == 1
         assert badges.json()["items"][0]["badge_id"] == badge["id"]
 
@@ -462,20 +463,28 @@ class TestChallengeDomainAPI(TestCase):
     async def test_failed_recalculation_does_not_commit_verification(self) -> None:
         from unittest.mock import AsyncMock
 
+        from app.dtos.challenges import VerificationCreateRequest
         from app.models.challenges import ChallengeVerification
         from app.services.challenge_participation import ChallengeParticipationService
 
-        participation = await self._join_daily()
-        today = datetime.now(config.TIMEZONE).date()
-        from app.dtos.challenges import VerificationCreateRequest
-
-        with patch.object(ChallengeParticipationService, "_recalculate", AsyncMock(side_effect=RuntimeError("test"))):
-            with self.assertRaises(RuntimeError):
-                await ChallengeParticipationService().submit_verification(
-                    self.user,
-                    participation["id"],
-                    VerificationCreateRequest(verification_date=today, idempotency_key="rollback-verification-304"),
-                )
+        now = datetime.now(config.TIMEZONE)
+        with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            participation = await self._join_daily()
+            with patch.object(
+                ChallengeParticipationService,
+                "_recalculate",
+                AsyncMock(side_effect=RuntimeError("test")),
+            ):
+                with self.assertRaises(RuntimeError):
+                    await ChallengeParticipationService().submit_verification(
+                        self.user,
+                        participation["id"],
+                        VerificationCreateRequest(
+                            verification_date=now.date(),
+                            idempotency_key="rollback-verification-304",
+                        ),
+                    )
         assert await ChallengeVerification.filter(user_challenge_id=participation["id"]).count() == 0
 
     async def test_admin_review_cannot_complete_a_cancelled_participation(self) -> None:
