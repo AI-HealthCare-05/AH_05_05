@@ -8,6 +8,7 @@ import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from statistics import median
 
 from app.services.medication_ocr_v3.domain.grounding import EvidenceBlock, EvidenceCatalog, EvidenceRow
 from app.services.medication_ocr_v3.domain.models import OcrBlock, OcrResult
@@ -45,7 +46,6 @@ _BUSINESS_NUMBER_PATTERN = re.compile(r"(?<!\d)\d{3}[-\s]?\d{2}[-\s]?\d{5}(?!\d)
 _WON_AMOUNT_PATTERN = re.compile(r"(?<!\d)\d{1,3}(?:,\d{3})*\s*원(?!\w)|(?<!\d)\d+\s*원(?!\w)")
 _DATE_LABEL_GRAMMAR = r"조제\s*일(?:\s*자)?"
 _DATE_LABEL_PATTERN = re.compile(_DATE_LABEL_GRAMMAR)
-_DATE_LABEL_ONLY_PATTERN = re.compile(r"^" + _DATE_LABEL_GRAMMAR + r"$")
 _DATE_VALUE_ONLY_PATTERN = re.compile(r"^\d{2,4}[./-]\d{1,2}[./-]\d{1,2}$")
 _DATE_LABEL_AND_VALUE_PATTERN = re.compile(r"^" + _DATE_LABEL_GRAMMAR + r"[\s:：,·-]+\d{2,4}[./-]\d{1,2}[./-]\d{1,2}$")
 _SUMMARY_DOSE_PATTERN = re.compile(
@@ -101,7 +101,9 @@ def build_evidence_catalog(
     """
 
     source_by_id, duplicate_ids = _unique_geometry_sources(ocr_result.blocks)
-    line_by_block_id, sensitive_block_ids, line_segments = _line_indexes(layout, source_by_id)
+    line_by_block_id, sensitive_block_ids, line_segments = _line_indexes(
+        layout, source_by_id, _verified_medication_block_ids(medication_rows)
+    )
     seeds, supplements = _row_seeds(layout, medication_rows)
     structural_schedule_block_ids = _structural_schedule_block_ids(layout, seeds)
     assignments: dict[str, _BlockAssignment] = defaultdict(_BlockAssignment)
@@ -154,7 +156,7 @@ def build_evidence_catalog(
         assignments,
     )
     date_ids = _date_candidate_ids(
-        line_segments,
+        line_by_block_id,
         source_by_id,
         duplicate_ids,
         sensitive_block_ids=set(),
@@ -210,9 +212,22 @@ def _bbox(block: OcrBlock) -> AxisAlignedBBox | None:
     return bbox if bbox.width > 0.0 and bbox.height > 0.0 else None
 
 
+def _verified_medication_block_ids(medication_rows: MedicationRowsResult) -> frozenset[str]:
+    ids: set[str] = set()
+    for row in medication_rows.medications:
+        fields = (row.fields.name, row.fields.dose_quantity, row.fields.times_per_day, row.fields.days)
+        if row.name == row.fields.name.value and all(
+            field.value not in (None, "") and field.block_ids and field.bbox is not None and not field.issues
+            for field in fields
+        ):
+            ids.update(block_id for field in fields for block_id in field.block_ids)
+    return frozenset(ids)
+
+
 def _line_indexes(
     layout: OcrLayoutResult,
     source_by_id: dict[str, tuple[OcrBlock, AxisAlignedBBox]],
+    medication_block_ids: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, str], set[str], tuple[OcrLine, ...]]:
     line_by_block_id: dict[str, str] = {}
     ambiguous_ids: set[str] = set()
@@ -228,7 +243,9 @@ def _line_indexes(
     sensitive_block_ids = {
         block_id for segment in segments if _is_sensitive_text(segment.text) for block_id in segment.block_ids
     }
-    sensitive_block_ids.update(_sensitive_continuation_block_ids(segments))
+    sensitive_block_ids.update(
+        _sensitive_continuation_block_ids(segments, _column_gutters(source_by_id), medication_block_ids)
+    )
     return line_by_block_id, sensitive_block_ids, segments
 
 
@@ -282,7 +299,30 @@ def _starts_new_line_segment(first: AxisAlignedBBox, second: AxisAlignedBBox) ->
     return horizontal_gap > max(first.height, second.height) * 1.5
 
 
-def _sensitive_continuation_block_ids(segments: tuple[OcrLine, ...]) -> set[str]:
+def _column_gutters(source_by_id: dict[str, tuple[OcrBlock, AxisAlignedBBox]]) -> tuple[float, ...]:
+    """Find persistent vertical whitespace separating populated text columns."""
+    boxes = sorted((box for _, box in source_by_id.values()), key=lambda box: box.x_min)
+    if not boxes:
+        return ()
+    text_height = median(box.height for box in boxes)
+    right_edge = boxes[0].x_max
+    gutters: list[float] = []
+    for box in boxes[1:]:
+        if box.x_min - right_edge > text_height * 1.5:
+            left = [item for item in boxes if item.x_max <= right_edge]
+            right = [item for item in boxes if item.x_min >= box.x_min]
+            if all(
+                len(side) >= 3 and max(item.y_max for item in side) - min(item.y_min for item in side) > text_height * 3
+                for side in (left, right)
+            ):
+                gutters.append((right_edge + box.x_min) / 2)
+        right_edge = max(right_edge, box.x_max)
+    return tuple(gutters)
+
+
+def _sensitive_continuation_block_ids(
+    segments: tuple[OcrLine, ...], gutters: tuple[float, ...] = (), medication_block_ids: frozenset[str] = frozenset()
+) -> set[str]:
     ordered = tuple(sorted(segments, key=lambda line: (line.bbox.y_min, line.bbox.x_min, line.line_id)))
     sensitive: set[str] = set()
     for index, line in enumerate(ordered):
@@ -293,6 +333,16 @@ def _sensitive_continuation_block_ids(segments: tuple[OcrLine, ...]) -> set[str]
             vertical_gap = max(continuation.bbox.y_min - previous.bbox.y_max, 0.0)
             if vertical_gap > max(previous.bbox.height, continuation.bbox.height) * 0.5:
                 break
+            # A wide label/value gap alone is not a panel boundary. Only already
+            # structured medication evidence can belong to the separate panel;
+            # unverified text and receipt amounts retain privacy filtering.
+            if set(continuation.block_ids) <= medication_block_ids and any(
+                min(previous.bbox.x_max, continuation.bbox.x_max)
+                < gutter
+                < max(previous.bbox.x_min, continuation.bbox.x_min)
+                for gutter in gutters
+            ):
+                continue
             if not _is_section_continuation(previous.bbox, continuation.bbox):
                 continue
             sensitive.update(continuation.block_ids)
@@ -778,69 +828,64 @@ def _strength_block_id_groups(
 
 
 def _date_candidate_ids(
-    line_segments: tuple[OcrLine, ...],
+    line_by_block_id: dict[str, str],
     source_by_id: dict[str, tuple[OcrBlock, AxisAlignedBBox]],
     duplicate_ids: set[str],
     sensitive_block_ids: set[str],
 ) -> tuple[str, ...]:
-    ordered_lines = tuple(sorted(line_segments, key=lambda line: (line.bbox.y_min, line.bbox.x_min, line.line_id)))
-    anchors = [line for line in ordered_lines if _DATE_LABEL_PATTERN.search(_normalized(line.text))]
-    candidate_ids: set[str] = set()
-    for line in anchors:
-        if all(block_id in sensitive_block_ids for block_id in line.block_ids):
-            continue
-        for block_id in line.block_ids:
-            source = source_by_id.get(block_id)
-            if (
-                source is not None
-                and _is_date_evidence_text(source[0].text)
-                and _eligible(
-                    block_id,
-                    source_by_id,
-                    duplicate_ids,
-                    {block_id: line.line_id},
-                    sensitive_block_ids,
+    eligible = {
+        block_id: source
+        for block_id, source in source_by_id.items()
+        if _eligible(block_id, source_by_id, duplicate_ids, line_by_block_id, sensitive_block_ids)
+    }
+    anchors = [bbox for source, bbox in eligible.values() if _DATE_LABEL_PATTERN.search(_normalized(source.text))]
+    # Providers can tokenize 조제 / 일자 separately. Join only local label
+    # fragments; unrelated fields on the global line never enlarge the anchor.
+    starts = [bbox for source, bbox in eligible.values() if _normalized(source.text) == "조제"]
+    ends = [bbox for source, bbox in eligible.values() if _normalized(source.text).rstrip(":：") in {"일", "일자"}]
+    for start in starts:
+        for end in ends:
+            height = min(start.height, end.height)
+            if 0 <= end.x_min - start.x_max <= height and abs(start.center_y - end.center_y) <= height * 0.35:
+                anchors.append(
+                    AxisAlignedBBox(start.x_min, min(start.y_min, end.y_min), end.x_max, max(start.y_max, end.y_max))
                 )
-            ):
+    date_values = [
+        (block_id, bbox) for block_id, (value, bbox) in eligible.items() if _is_explicit_date_value(value.text)
+    ]
+    candidate_ids = {
+        block_id
+        for block_id, (source, _) in eligible.items()
+        if _DATE_LABEL_AND_VALUE_PATTERN.fullmatch(_normalized(source.text))
+    }
+    for label_bbox in anchors:
+        for block_id, bbox in date_values:
+            if _is_local_date_value(label_bbox, bbox):
                 candidate_ids.add(block_id)
-        anchor_index = ordered_lines.index(line)
-        for adjacent_index in (anchor_index - 1, anchor_index + 1):
-            if adjacent_index < 0 or adjacent_index >= len(ordered_lines):
-                continue
-            adjacent = ordered_lines[adjacent_index]
-            if (
-                not all(block_id in sensitive_block_ids for block_id in adjacent.block_ids)
-                and _is_explicit_date_value(adjacent.text)
-                and _are_adjacent_date_lines(line.bbox, adjacent.bbox)
-            ):
-                for block_id in adjacent.block_ids:
-                    source = source_by_id.get(block_id)
-                    if source is not None and _is_explicit_date_value(source[0].text):
-                        candidate_ids.add(block_id)
     return tuple(sorted(candidate_ids, key=lambda block_id: _block_key(source_by_id[block_id])))
-
-
-def _is_date_evidence_text(text: str) -> bool:
-    normalized = _normalized(text)
-    return (
-        _DATE_LABEL_ONLY_PATTERN.fullmatch(normalized) is not None
-        or _is_explicit_date_value(normalized)
-        or _DATE_LABEL_AND_VALUE_PATTERN.fullmatch(normalized) is not None
-    )
 
 
 def _is_explicit_date_value(text: str) -> bool:
     return _DATE_VALUE_ONLY_PATTERN.fullmatch(_normalized(text)) is not None
 
 
-def _are_adjacent_date_lines(first: AxisAlignedBBox, second: AxisAlignedBBox) -> bool:
-    height = max(first.height, second.height)
-    horizontal_gap = max(second.x_min - first.x_max, first.x_min - second.x_max, 0.0)
-    return (
-        abs(first.height - second.height) <= height * 0.35
-        and abs(first.center_y - second.center_y) <= height * 1.25
-        and horizontal_gap <= max(first.width, second.width) * 2.0
+def _is_local_date_value(label: AxisAlignedBBox, value: AxisAlignedBBox) -> bool:
+    # A tall next-visit heading can share the global line with the label. Bind
+    # to the label's own box, never to that line's union box or an above row.
+    height = min(label.height, value.height)
+    same_row = (
+        value.x_min >= label.x_max - height * 0.25
+        and value.x_min - label.x_max <= max(label.width, height * 2.0)
+        and value.y_min >= label.y_min - height * 0.35
+        and abs(value.center_y - label.center_y) <= height * 0.6
     )
+    overlap = min(label.x_max, value.x_max) - max(label.x_min, value.x_min)
+    below_label = (
+        value.y_min >= label.y_max - height * 0.15
+        and value.y_min - label.y_max <= height * 2.0
+        and (overlap >= min(label.width, value.width) * 0.25 or 0 <= value.x_min - label.x_max <= height * 2.0)
+    )
+    return same_row or below_label
 
 
 def _evidence_blocks(

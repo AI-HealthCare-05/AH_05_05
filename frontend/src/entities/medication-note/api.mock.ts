@@ -74,7 +74,6 @@ function isMedicationNote(value: unknown): value is MedicationNote {
   return (
     typeof note.id === 'number' &&
     typeof note.careEpisodeId === 'number' &&
-    typeof note.careEpisodeTitle === 'string' &&
     (typeof note.careEpisodeAlias === 'string' || note.careEpisodeAlias === null) &&
     (typeof note.careEpisodeStartDate === 'string' || note.careEpisodeStartDate === null) &&
     typeof note.careEpisodeStatus === 'string' &&
@@ -89,7 +88,6 @@ function isMedicationNote(value: unknown): value is MedicationNote {
 }
 
 function episodeMetadata(careEpisodeId: number): {
-  title: string;
   alias: string | null;
   startDate: string | null;
   status: string;
@@ -102,7 +100,6 @@ function episodeMetadata(careEpisodeId: number): {
     dose: medication.dose || null,
   })) ?? [];
   return {
-    title: overview ? `${overview.start.date} 조제약 복약안내` : `${careEpisodeId} 처방`,
     alias: overview?.alias ?? null,
     startDate: overview?.start.date ?? null,
     status: overview?.isFinished ? 'COMPLETED' : 'ACTIVE',
@@ -123,7 +120,6 @@ function hydrateNote(note: MedicationNote): MedicationNote {
     : availableMedications.find((item) => item.id === note.medicationId) ?? null;
   return {
     ...clone(note),
-    careEpisodeTitle: hasCurrentEpisode ? metadata.title : note.careEpisodeTitle || metadata.title,
     careEpisodeAlias: hasCurrentEpisode ? metadata.alias : note.careEpisodeAlias,
     careEpisodeStartDate: hasCurrentEpisode ? metadata.startDate : note.careEpisodeStartDate,
     careEpisodeStatus: hasCurrentEpisode ? metadata.status : note.careEpisodeStatus || metadata.status,
@@ -166,7 +162,6 @@ export function mockCreateMedicationNote(payload: CreateMedicationNotePayload): 
   const note: MedicationNote = {
     id: newId(),
     careEpisodeId: payload.careEpisodeId,
-    careEpisodeTitle: metadata.title,
     careEpisodeAlias: metadata.alias,
     careEpisodeStartDate: metadata.startDate,
     careEpisodeStatus: metadata.status,

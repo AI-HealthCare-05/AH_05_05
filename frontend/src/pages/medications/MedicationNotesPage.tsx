@@ -95,7 +95,7 @@ export function MedicationNotesPage() {
     if (note.careEpisodeStartDate) {
       return `${formatDateLabel(note.careEpisodeStartDate, { includeYear: true })} 처방`;
     }
-    return note.careEpisodeTitle;
+    return `처방 #${note.careEpisodeId}`;
   }
 
   function medicineLabel(note: MedicationNote): string {
@@ -174,7 +174,7 @@ export function MedicationNotesPage() {
                   >
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                       <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
-                      <span className="rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
+                      <span className="min-w-0 max-w-full break-words rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
                         {prescriptionLabel(note)}
                       </span>
                     </div>
@@ -183,7 +183,7 @@ export function MedicationNotesPage() {
                   </button>
                   <button
                     type="button"
-                    className="min-h-touch w-full border-t border-border px-4 py-2 text-left text-sm font-bold text-primary-strong transition-colors hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className="min-h-touch w-full break-words border-t border-border px-4 py-2 text-left text-sm font-bold text-primary-strong transition-colors hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     onClick={() => setSearchParams({ episodeId: String(note.careEpisodeId) })}
                   >
                     {prescriptionLabel(note)} 메모만 보기

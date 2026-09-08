@@ -8,11 +8,9 @@ from ai_worker.domain.errors import (
 from ai_worker.schemas.patient import (
     FollowUpSchedule,
     PatientContext,
-    PatientInstruction,
     PatientMedication,
 )
 from app.models.care import (
-    CareAdvice,
     CareEpisode,
     FollowUpVisit,
 )
@@ -40,13 +38,6 @@ class DbPatientContextProvider:
             care_episode_id=care_episode_id,
         ).order_by("id")
 
-        care_advices = await CareAdvice.filter(
-            care_episode_id=care_episode_id,
-        ).order_by(
-            "display_order",
-            "id",
-        )
-
         follow_up_visits = await FollowUpVisit.filter(
             user_id=user_id,
         ).order_by(
@@ -58,9 +49,8 @@ class DbPatientContextProvider:
         return PatientContext(
             user_id=user_id,
             care_episode_id=care_episode.id,
-            diagnoses=self._build_diagnoses(care_episode.diagnosis),
-            surgery=care_episode.surgery,
-            discharge_date=care_episode.discharge_date,
+            # ERD125 no longer stores clinical fields or care advice. Keep the
+            # shared offline schema defaults empty; never infer them from OCR.
             medication_days=(care_episode.medication_days),
             medication_start_date=(care_episode.medication_start_date),
             medication_start_slot=(self._resolve_enum_value(care_episode.medication_start_slot)),
@@ -77,14 +67,6 @@ class DbPatientContextProvider:
                     prescribed_at=(medication.prescribed_at),
                 )
                 for medication in medications
-            ],
-            instructions=[
-                PatientInstruction(
-                    care_advice_id=care_advice.id,
-                    content=care_advice.text,
-                    display_order=(care_advice.display_order),
-                )
-                for care_advice in care_advices
             ],
             follow_up_schedules=[
                 FollowUpSchedule(
@@ -109,20 +91,6 @@ class DbPatientContextProvider:
             visit_time or time.min,
             tzinfo=ZoneInfo("Asia/Seoul"),
         )
-
-    @staticmethod
-    def _build_diagnoses(
-        diagnosis: str | None,
-    ) -> list[str]:
-        if diagnosis is None:
-            return []
-
-        normalized = diagnosis.strip()
-
-        if not normalized:
-            return []
-
-        return [normalized]
 
     @staticmethod
     def _resolve_enum_value(

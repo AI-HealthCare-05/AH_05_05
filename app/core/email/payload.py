@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr, Field, SecretStr, ValidationError, mod
 
 class EmailTemplate(StrEnum):
     ADMIN_TEMPORARY_PASSWORD = "ADMIN_TEMPORARY_PASSWORD"
+    USER_PASSWORD_RESET = "USER_PASSWORD_RESET"
     SIGNUP_VERIFICATION_CODE = "SIGNUP_VERIFICATION_CODE"
 
 
@@ -24,6 +25,9 @@ class EmailJobPayload(BaseModel):
         if self.template is EmailTemplate.ADMIN_TEMPORARY_PASSWORD:
             if self.recipient_name is None or self.temporary_password is None:
                 raise ValueError("관리자 임시비밀번호 이메일 필드가 누락되었습니다.")
+        elif self.template is EmailTemplate.USER_PASSWORD_RESET:
+            if self.temporary_password is None:
+                raise ValueError("사용자 비밀번호 재설정 이메일 필드가 누락되었습니다.")
         elif self.verification_id is None or self.verification_code is None or self.expires_at is None:
             raise ValueError("회원가입 이메일 인증 필드가 누락되었습니다.")
         return self

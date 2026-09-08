@@ -11,7 +11,6 @@ TORTOISE_APP_MODELS = [
     "app.models.admin_settings",
     "app.models.care",
     "app.models.ocr",
-    "app.models.recovery",
     "app.models.chat",
     "app.models.challenges",
     "app.models.common_codes",

@@ -96,4 +96,11 @@ class LoginResponse(BaseModel):
     access_token: str
 
 
+class PasswordResetRequest(EmailVerificationRequest): ...
+
+
+class PasswordResetResponse(BaseModel):
+    detail: str
+
+
 class TokenRefreshResponse(LoginResponse): ...

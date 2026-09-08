@@ -34,16 +34,16 @@ def state_field(state: dict, model_name: str, field_name: str) -> dict:
     return fields_by_name[field_name]
 
 
-def test_care_episode_exposes_an_optional_alias_without_changing_title() -> None:
+def test_care_episode_accepts_full_hospital_alias_without_obsolete_title() -> None:
     initialize_models()
 
     care_episode = import_module("app.models.care").CareEpisode
     alias = care_episode._meta.fields_map.get("alias")
 
     assert isinstance(alias, fields.CharField)
-    assert alias.max_length == 50
+    assert alias.max_length == 255
     assert alias.null is True
-    assert care_episode._meta.fields_map["title"].null is False
+    assert "title" not in care_episode._meta.fields_map
 
 
 def test_medication_note_model_uses_dosed_at_and_no_ambiguous_slot() -> None:
