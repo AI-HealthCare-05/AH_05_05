@@ -327,23 +327,13 @@ export function MedicationsPage({
               </button>
             </div>
           ) : (
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                aria-label="새 약봉투 등록"
-                className="flex size-touch items-center justify-center text-primary"
-                onClick={() => navigate('/document-upload')}
-              >
-                <Plus aria-hidden className="size-6" />
-              </button>
-              <button
-                type="button"
-                className="min-h-touch px-2 text-sm font-bold text-muted-foreground"
-                onClick={() => setSelectionMode(true)}
-              >
-                삭제
-              </button>
-            </div>
+            <button
+              type="button"
+              className="min-h-touch shrink-0 rounded-button bg-primary px-3 text-sm font-bold text-white hover:bg-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              onClick={() => navigate('/reports/new?source=medications')}
+            >
+              AI 보고서 받기
+            </button>
           )
         }
       />
@@ -369,7 +359,7 @@ export function MedicationsPage({
           )}
         </div>
 
-        {feature252 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <Button
             fullWidth={false}
             className="self-start"
@@ -378,7 +368,14 @@ export function MedicationsPage({
             <Plus aria-hidden className="mr-1 size-4" />
             처방 추가
           </Button>
-        )}
+          <button
+            type="button"
+            className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => selectionMode ? leaveSelectionMode() : setSelectionMode(true)}
+          >
+            {selectionMode ? '완료' : '삭제'}
+          </button>
+        </div>
 
         {loadError ? (
           <Card title="복용약을 불러오지 못했어요" className="p-5">
@@ -400,7 +397,7 @@ export function MedicationsPage({
             <div className="flex flex-col gap-4">
               <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
               <Button variant="secondary" onClick={() => setFilterOpen(true)}>
-                기간 넓히기
+                기간 재설정하기
               </Button>
             </div>
           </Card>
@@ -602,7 +599,7 @@ function MedicationEpisodeSheet({
                   label="복약 별칭"
                   aria-label="복약 별칭"
                   placeholder="예: 감기약"
-                  maxLength={50}
+                  maxLength={255}
                   value={alias}
                   onChange={(event) => onAliasChange(event.target.value)}
                 />

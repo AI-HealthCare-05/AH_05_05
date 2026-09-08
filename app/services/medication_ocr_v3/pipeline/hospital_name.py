@@ -71,9 +71,10 @@ def extract_hospital_name(result: OcrResult, layout: OcrLayoutResult) -> Hospita
                 key=lambda block: bbox.x_min if (bbox := _bbox(block)) is not None else math.inf,
             )
         )
-        candidate = _candidate_from_line(line_blocks)
-        if candidate is not None:
-            candidates.append(candidate)
+        for region in _horizontal_regions(line_blocks):
+            candidate = _candidate_from_line(region)
+            if candidate is not None:
+                candidates.append(candidate)
 
     # A receipt can pull the label and value into different global lines, or
     # pull a table-header line above the label. Anchor to original block bounds.
@@ -115,6 +116,23 @@ def extract_hospital_name(result: OcrResult, layout: OcrLayoutResult) -> Hospita
         selected.block_ids,
         selected.bbox,
     )
+
+
+def _horizontal_regions(blocks: tuple[OcrBlock, ...]) -> tuple[tuple[OcrBlock, ...], ...]:
+    """Do not concatenate separate receipt/header panels in a global y-line."""
+    regions: list[list[OcrBlock]] = []
+    previous: AxisAlignedBBox | None = None
+    for block in blocks:
+        bbox = _bbox(block)
+        if bbox is None:
+            continue
+        if previous is None or bbox.x_min - previous.x_max > max(
+            min(previous.width, bbox.width), min(previous.height, bbox.height) * 3.0
+        ):
+            regions.append([])
+        regions[-1].append(block)
+        previous = bbox
+    return tuple(tuple(region) for region in regions)
 
 
 def _candidate_from_label_anchor(

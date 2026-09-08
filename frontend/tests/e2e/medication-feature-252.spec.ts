@@ -141,7 +141,7 @@ test('약봉투 등록은 OCR·별칭·복용 시간·첫 복용·알람의 5단
 
 test('선택한 약봉투는 업로드 뒤 OCR 진행률과 결과 검토로 이어진다', async ({ page }) => {
   await page.goto('/dev/document-upload');
-  await expect(page.getByText('약국에서 받은 봉투 앞면이면 돼요.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '복약안내문을 한 장 담아주세요' })).toBeVisible();
   await page.getByLabel('갤러리에서 약봉투 선택').setInputFiles({
     name: 'feature-252-envelope.png',
     mimeType: 'image/png',
@@ -375,7 +375,7 @@ test('OCR 확인 필요는 저신뢰 약을 고치면 사라지고 실제 미추
 
   await expect(page.getByText('3곳만 확인해주세요')).toBeVisible();
   await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(3);
-  await page.getByRole('button', { name: /리바록사반 10mg/ }).click();
+  await page.getByRole('button', { name: /^리바록사반 확인 필요 함량 10mg/ }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('리바록사반 확인');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
@@ -458,6 +458,42 @@ test('등록 별칭과 회차 편집 별칭은 새로고침 뒤에도 메모에�
   await expect(page.getByText('회차 편집 별칭', { exact: true })).toBeVisible();
 });
 
+for (const width of [375, 1280]) {
+  test(`255자 별칭은 잘리지 않고 메모에서도 화면 폭을 지킨다 (${width})`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const alias = `${'A'.repeat(253)}병원`;
+    await page.goto('/dev/ocr-review');
+    await page.getByLabel('복약 별칭').fill(alias);
+    await expect(page.getByLabel('복약 별칭')).toHaveValue(alias);
+    await page.goto('/medications');
+    await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('복약 별칭').fill(alias);
+    await expect(dialog.getByLabel('복약 별칭')).toHaveValue(alias);
+    await dialog.getByRole('button', { name: '저장', exact: true }).click();
+    await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
+    await page.reload();
+    const savedAlias = page.getByText(alias, { exact: true });
+    await expect(savedAlias).toBeVisible();
+    expect(await savedAlias.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`alias-card-${width}.png`), fullPage: true });
+    await page.goto('/medications/notes/new');
+    await page.getByLabel('처방').selectOption('12');
+    await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
+    await page.getByLabel('복용 후 느낀 점').fill('긴 별칭을 보존하는 메모');
+    await page.getByRole('button', { name: '저장', exact: true }).click();
+    const badge = page.getByText(alias, { exact: true });
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveText(alias);
+    expect(await badge.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await badge.evaluate((element) => element.getBoundingClientRect().right <= element.closest('button')!.getBoundingClientRect().right)).toBe(true);
+    const filterButton = page.getByRole('button', { name: `${alias} 메모만 보기`, exact: true });
+    expect(await filterButton.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`alias-${width}.png`), fullPage: true });
+  });
+}
+
 test('복약 탭에서 바꾼 처방 별칭은 홈 진입과 재진입에 바로 반영된다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/medications');
@@ -532,7 +568,6 @@ test('복약 메모 목록은 더 보기로 전체 개수를 유지하며 페이
     const notes = Array.from({ length: 25 }, (_, index) => ({
       id: index + 1,
       careEpisodeId: 12,
-      careEpisodeTitle: '2026-08-22 조제약 복약안내',
       careEpisodeAlias: '감기약',
       careEpisodeStartDate: '2026-08-22',
       careEpisodeStatus: 'ACTIVE',
@@ -614,7 +649,6 @@ test('취소된 과거 처방 메모도 원래 처방을 보존한 채 수정할
         {
           id: 404,
           careEpisodeId: 999,
-          careEpisodeTitle: '2025-01-15 조제약 복약안내',
           careEpisodeAlias: '지난 겨울 처방',
           careEpisodeStartDate: '2025-01-15',
           careEpisodeStatus: 'CANCELLED',

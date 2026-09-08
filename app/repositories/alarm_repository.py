@@ -5,7 +5,6 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.care import CareEpisode, FollowUpVisit
 from app.models.enums import AlarmStatus, AlarmType
-from app.models.recovery import RecoveryGuide
 
 
 class AlarmRepository:
@@ -38,11 +37,6 @@ class AlarmRepository:
 
     async def get_owned_care_episode(self, care_episode_id: int, user_id: int) -> CareEpisode | None:
         return await CareEpisode.get_or_none(id=care_episode_id, user_id=user_id)
-
-    async def get_owned_recovery_guide(self, guide_id: int, user_id: int) -> RecoveryGuide | None:
-        return await RecoveryGuide.get_or_none(id=guide_id, care_episode__user_id=user_id).prefetch_related(
-            "care_episode"
-        )
 
     async def get_owned_follow_up_visit(self, visit_id: int, user_id: int) -> FollowUpVisit | None:
         return await FollowUpVisit.get_or_none(id=visit_id, user_id=user_id)

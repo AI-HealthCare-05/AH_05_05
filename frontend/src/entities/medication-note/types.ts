@@ -1,7 +1,6 @@
 export interface MedicationNote {
   id: number;
   careEpisodeId: number;
-  careEpisodeTitle: string;
   careEpisodeAlias: string | null;
   careEpisodeStartDate: string | null;
   careEpisodeStatus: string;

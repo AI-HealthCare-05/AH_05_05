@@ -694,11 +694,10 @@ class MedicationGuideOcrJobService:
             episode = await CareEpisode.create(
                 using_db=connection,
                 user_id=user.id,
-                title=f"{dispensing_date.isoformat()} 조제약 복약안내",
                 alias=(
                     request.alias
                     if "alias" in request.model_fields_set
-                    else request.hospital_name[:50]
+                    else request.hospital_name
                     if "hospital_name" in request.model_fields_set
                     else None
                 ),
@@ -755,10 +754,11 @@ class MedicationGuideOcrJobService:
     ) -> None:
         await Medication.filter(care_episode_id=episode.id).using_db(connection).delete()
         dispensing_date = request.dispensing_date
-        episode.title = f"{dispensing_date.isoformat()} 조제약 복약안내"
         episode.hospital_name = request.hospital_name if "hospital_name" in request.model_fields_set else None
         if "alias" in request.model_fields_set:
             episode.alias = request.alias
+        elif not episode.alias:
+            episode.alias = episode.hospital_name
         episode.medication_start_date = dispensing_date
         episode.medication_days = max(
             (item.days for item in request.medications if "days" in item.model_fields_set),
@@ -769,7 +769,6 @@ class MedicationGuideOcrJobService:
         await episode.save(
             using_db=connection,
             update_fields=[
-                "title",
                 "hospital_name",
                 "alias",
                 "medication_start_date",

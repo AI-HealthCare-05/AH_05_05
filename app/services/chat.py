@@ -106,7 +106,6 @@ class ChatSessionMessageView:
     content: str
     status: ChatMessageStatus
     reply_to_message_id: int | None
-    guide_id: int | None
     sources: list[ChatSessionSourceView]
     created_at: datetime
 
@@ -181,7 +180,6 @@ class ChatSessionService:
                     content=message.content,
                     status=message.status,
                     reply_to_message_id=message.reply_to_message_id,
-                    guide_id=message.guide_id,
                     sources=[
                         _session_source_view(source) for source in record.sources_by_message_id.get(message.id, [])
                     ],

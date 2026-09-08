@@ -137,7 +137,7 @@ test('선택 모드에서는 카드 클릭이 펼침 대신 선택이고 순차 
 
   await expect(page.getByText('2개를 삭제했어요')).toBeVisible();
   await expect(page.getByText('이 기간에 등록한 처방이 없어요')).toBeVisible();
-  await expect(page.getByRole('button', { name: '기간 넓히기' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '기간 재설정하기' })).toBeVisible();
   await expect(page.getByRole('button', { name: '약봉투 등록하기' })).toHaveCount(0);
 });
 

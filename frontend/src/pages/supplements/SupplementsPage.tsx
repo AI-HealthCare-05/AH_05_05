@@ -263,11 +263,10 @@ export function SupplementsPage({
         right={
           <button
             type="button"
-            aria-label="영양제 추가"
-            className="flex size-touch items-center justify-center text-primary"
-            onClick={openAddSheet}
+            className="min-h-touch shrink-0 rounded-button bg-primary px-3 text-sm font-bold text-white hover:bg-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={() => navigate('/reports/new?source=supplements')}
           >
-            <Plus aria-hidden className="size-6" />
+            AI 보고서 받기
           </button>
         }
       />
@@ -315,7 +314,7 @@ export function SupplementsPage({
         ) : (
           <>
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                 {supplements.length > 0 ? (
                   <h2 id="supplement-list-title" className="text-xl font-bold text-foreground">
                     먹고 있는 영양제 {supplements.length}개
@@ -326,13 +325,25 @@ export function SupplementsPage({
                   </h2>
                 )}
                 {supplements.length > 0 && (
-                  <button
-                    type="button"
-                    className="flex min-h-touch items-center justify-center px-1 text-sm font-bold text-primary-strong"
-                    onClick={toggleListEdit}
-                  >
-                    {listEditOpen ? '완료' : '편집'}
-                  </button>
+                  <div className="ml-auto flex shrink-0 items-center gap-1">
+                    {!listEditOpen && (
+                      <button
+                        type="button"
+                        aria-label="영양제 추가"
+                        className="flex size-touch items-center justify-center rounded-button text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={openAddSheet}
+                      >
+                        <Plus aria-hidden className="size-5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="flex min-h-touch min-w-touch items-center justify-center rounded-button px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={toggleListEdit}
+                    >
+                      {listEditOpen ? '완료' : '삭제'}
+                    </button>
+                  </div>
                 )}
               </div>
 

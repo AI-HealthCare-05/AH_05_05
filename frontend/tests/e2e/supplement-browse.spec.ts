@@ -1,6 +1,15 @@
 import { expect, test } from 'playwright/test';
 
 const IS_REAL_API = process.env.VITE_USE_MOCK === 'false';
+// WSL's mounted checkout can need more than the global 10s for Vite's first transform.
+test.setTimeout(30_000);
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'e2e-supplement-browse-token');
+    sessionStorage.setItem('poke.account-principal', 'supplement-browse@example.com');
+  });
+});
 
 test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 연다', async ({ page }) => {
   test.skip(IS_REAL_API, '고정된 내 영양제 목록을 확인하는 목업 전용 테스트입니다.');
@@ -12,7 +21,7 @@ test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 �
     'true',
   );
   await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
-  await expect(page.getByLabel('영양제 추가', { exact: true })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' })).toBeVisible();
 
   await page.goto('/dev/supplements?tab=browse');
 
@@ -20,7 +29,8 @@ test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 �
     'aria-pressed',
     'true',
   );
-  await expect(page.getByLabel('영양제 추가', { exact: true })).toBeVisible();
+  await page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' }).click();
+  await expect(page).toHaveURL(/\/reports\/new\?source=supplements$/);
 });
 
 test('탭을 반복해서 바꿔도 replace 이동이라 브라우저 이력이 쌓이지 않는다', async ({ page }) => {

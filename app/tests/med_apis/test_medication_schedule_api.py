@@ -19,7 +19,6 @@ async def create_ocr_medications(user: User) -> tuple[CareEpisode, Medication, M
     today = datetime.now(config.TIMEZONE).date()
     episode = await CareEpisode.create(
         user=user,
-        title=f"{today.isoformat()} 조제약 복약안내",
         medication_start_date=today,
         medication_days=7,
     )
