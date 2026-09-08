@@ -39,16 +39,24 @@ function newIdempotencyKey(): string {
 export function OfficialChallengeMyPage() {
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
+  const requestGenerationRef = useRef(0);
   const keysRef = useRef(new Map<string, string>());
   const pendingRef = useRef(false);
   const [data, setData] = useState<ChallengeDashboard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ id: number; message: string } | null>(null);
-  const [pendingId, setPendingId] = useState<number | null>(null);
+  const [pendingId, setPendingId] = useState<number | 'badges' | null>(null);
   const [refreshRequiredIds, setRefreshRequiredIds] = useState<Set<number>>(() => new Set());
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
+
+  useEffect(() => {
+    requestGenerationRef.current += 1;
+    return () => {
+      requestGenerationRef.current += 1;
+    };
+  }, [principalKey]);
 
   useEffect(() => {
     let active = true;
@@ -78,6 +86,11 @@ export function OfficialChallengeMyPage() {
       !participation.can_verify
     ) return;
     const requestPrincipal = principalKey;
+    const requestGeneration = requestGenerationRef.current;
+    const isCurrentRequest = () => (
+      principalRef.current === requestPrincipal
+      && requestGenerationRef.current === requestGeneration
+    );
     const keyId = `${requestPrincipal}:${participation.id}:${participation.today}`;
     const idempotencyKey = keysRef.current.get(keyId) ?? newIdempotencyKey();
     keysRef.current.set(keyId, idempotencyKey);
@@ -89,7 +102,7 @@ export function OfficialChallengeMyPage() {
         verification_date: participation.today,
         idempotency_key: idempotencyKey,
       });
-      if (principalRef.current !== requestPrincipal) return;
+      if (!isCurrentRequest()) return;
       keysRef.current.delete(keyId);
       setData(current => current ? {
         ...current,
@@ -106,46 +119,53 @@ export function OfficialChallengeMyPage() {
       } : current);
       try {
         const refreshed = await loadDashboard();
-        if (principalRef.current !== requestPrincipal) return;
+        if (!isCurrentRequest()) return;
         setData(refreshed);
         setRefreshRequiredIds(new Set());
       } catch {
-        if (principalRef.current !== requestPrincipal) return;
+        if (!isCurrentRequest()) return;
         setRefreshRequiredIds(current => new Set(current).add(participation.id));
       }
     } catch (reason) {
-      if (principalRef.current !== requestPrincipal) return;
+      if (!isCurrentRequest()) return;
       setActionError({
         id: participation.id,
         message: reason instanceof Error ? reason.message : '인증을 기록하지 못했어요.',
       });
     } finally {
-      if (principalRef.current === requestPrincipal) {
+      if (isCurrentRequest()) {
         pendingRef.current = false;
         setPendingId(null);
       }
     }
   }
 
-  async function refreshDashboard(participationId: number) {
+  async function refreshDashboard(target: number | 'badges') {
     if (pendingRef.current) return;
     const requestPrincipal = principalKey;
+    const requestGeneration = requestGenerationRef.current;
+    const isCurrentRequest = () => (
+      principalRef.current === requestPrincipal
+      && requestGenerationRef.current === requestGeneration
+    );
     pendingRef.current = true;
-    setPendingId(participationId);
+    setPendingId(target);
     setActionError(null);
     try {
       const refreshed = await loadDashboard();
-      if (principalRef.current !== requestPrincipal) return;
+      if (!isCurrentRequest()) return;
       setData(refreshed);
       setRefreshRequiredIds(new Set());
     } catch (reason) {
-      if (principalRef.current !== requestPrincipal) return;
-      setActionError({
-        id: participationId,
-        message: reason instanceof Error ? reason.message : '최신 진행 정보를 불러오지 못했어요.',
-      });
+      if (!isCurrentRequest()) return;
+      const message = reason instanceof Error ? reason.message : '최신 진행 정보를 불러오지 못했어요.';
+      if (target === 'badges') {
+        setData(current => current ? { ...current, badgeError: message } : current);
+      } else {
+        setActionError({ id: target, message });
+      }
     } finally {
-      if (principalRef.current === requestPrincipal) {
+      if (isCurrentRequest()) {
         pendingRef.current = false;
         setPendingId(null);
       }
@@ -177,6 +197,7 @@ export function OfficialChallengeMyPage() {
   const history = data.participations.filter(item => item.status !== 'ACTIVE');
   const awarded = data.badges?.filter(item => item.status === 'AWARDED') ?? [];
   const earnedKinds = new Set(awarded.map(item => item.badge_id));
+  const badgeRefreshRequired = refreshRequiredIds.size > 0 || data.badgeError !== null;
 
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
@@ -189,14 +210,28 @@ export function OfficialChallengeMyPage() {
       <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="badge-summary-title">
         <h2 id="badge-summary-title" className="text-base font-bold">작은 실천이 쌓이고 있어요</h2>
         <div className="flex items-center justify-between gap-3 text-caption text-primary">
-          {data.badgeError
-            ? <span role="alert" className="text-muted-foreground">{data.badgeError}</span>
-            : <span>모은 배지 {earnedKinds.size}종 · {awarded.length}회 획득</span>}
+          {badgeRefreshRequired ? (
+            <div className="flex flex-1 flex-col gap-2">
+              {data.badgeError
+                ? <span role="alert" className="text-muted-foreground">{data.badgeError}</span>
+                : <span role="status" className="text-muted-foreground">최신 배지 정보 확인 필요</span>}
+              <Button
+                variant="secondary"
+                onClick={() => void refreshDashboard('badges')}
+                disabled={pendingId !== null}
+                className="h-11 min-h-11"
+              >
+                배지 다시 불러오기
+              </Button>
+            </div>
+          ) : <span>모은 배지 {earnedKinds.size}종 · {awarded.length}회 획득</span>}
           <Link to="/challenges/badges" className="font-bold">전체 보기 ›</Link>
         </div>
-        <div className="flex gap-3" aria-label="최근 획득 배지">
-          {awarded.slice(0, 3).map(item => <img key={item.id} src={item.badge_image_path} alt={item.badge_name} className="size-9 rounded-pill object-contain" />)}
-        </div>
+        {badgeRefreshRequired ? null : (
+          <div className="flex gap-3" aria-label="최근 획득 배지">
+            {awarded.slice(0, 3).map(item => <img key={item.id} src={item.badge_image_path} alt={item.badge_name} className="size-9 rounded-pill object-contain" />)}
+          </div>
+        )}
       </section>
 
       <section aria-labelledby="active-challenges-title" className="flex flex-col gap-3">

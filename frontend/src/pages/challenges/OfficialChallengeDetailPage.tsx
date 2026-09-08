@@ -22,6 +22,12 @@ function positiveParticipationId(value: number | null): number | null {
   return Number.isSafeInteger(value) && Number(value) > 0 ? value : null;
 }
 
+function shouldReconcileJoinFailure(reason: unknown): boolean {
+  if (!(reason instanceof ApiError)) return true;
+  return reason.status >= 500
+    || (reason.status === 409 && reason.code === 'CHALLENGE_ALREADY_JOINED');
+}
+
 function shortDate(value: string) {
   const [, month, day] = value.slice(0, 10).split('-');
   return `${Number(month)}.${Number(day)}`;
@@ -118,17 +124,19 @@ export function OfficialChallengeDetailPage() {
       navigate(`/challenges/participations/${participation.id}`);
     } catch (reason) {
       if (!isCurrentRequest()) return;
-      try {
-        const recoveredItem = await getChallengeCatalogItem(item!.id);
-        if (!isCurrentRequest()) return;
-        const participationId = positiveParticipationId(recoveredItem.participation_id);
-        if (participationId !== null) {
-          navigate(`/challenges/participations/${participationId}`);
-          return;
+      if (shouldReconcileJoinFailure(reason)) {
+        try {
+          const recoveredItem = await getChallengeCatalogItem(item!.id);
+          if (!isCurrentRequest()) return;
+          const participationId = positiveParticipationId(recoveredItem.participation_id);
+          if (participationId !== null) {
+            navigate(`/challenges/participations/${participationId}`);
+            return;
+          }
+          setItem(recoveredItem);
+        } catch {
+          if (!isCurrentRequest()) return;
         }
-        setItem(recoveredItem);
-      } catch {
-        if (!isCurrentRequest()) return;
       }
       setJoinError(reason instanceof Error ? reason.message : '챌린지에 참여하지 못했어요.');
     } finally {

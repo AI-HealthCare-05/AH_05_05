@@ -210,6 +210,31 @@ test('a lost join response reconciles the committed participation from catalog d
   expect(detailReads).toBeGreaterThanOrEqual(2);
 });
 
+for (const status of [401, 403] as const) {
+  test(`join ${status} does not reconcile a definitive authorization failure`, async ({ page }) => {
+    await authenticate(page);
+    await stubChallengeReads(page);
+    let detailReads = 0;
+    await page.route('**/api/v1/user/challenge-catalog/101', route => {
+      detailReads += 1;
+      return route.fulfill({ json: dailyChallenge });
+    });
+    await page.route('**/api/v1/user/challenges/101/join', route => route.fulfill({
+      status,
+      json: { code: status === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN', message: '참여 권한이 없어요.' },
+    }));
+
+    await page.goto('/challenges/official/101');
+    await expect(page.getByRole('heading', { name: dailyChallenge.name })).toBeVisible();
+    const readsBeforeJoin = detailReads;
+    await page.getByRole('button', { name: '참여하기' }).click();
+    await page.waitForTimeout(100);
+
+    expect(detailReads).toBe(readsBeforeJoin);
+    await expect(page).not.toHaveURL(/\/challenges\/participations\//);
+  });
+}
+
 test('a delayed join cannot navigate after the same account moves to another challenge detail', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page);
@@ -449,6 +474,96 @@ test('My offers a GET-only retry when progress refresh fails after an approved c
   expect(verificationPosts).toBe(1);
 });
 
+test('a final check-in keeps badge totals uncertain until GET-only recovery is complete', async ({ page }) => {
+  await authenticate(page);
+  const verification = {
+    id: 901,
+    user_challenge_id: 501,
+    progress_id: 801,
+    verification_date: '2026-09-10',
+    content: null,
+    image_path: null,
+    status: 'APPROVED',
+    rejection_reason: null,
+    reviewed_by_admin_id: null,
+    reviewed_at: '2026-09-10T11:00:00+09:00',
+    submitted_at: '2026-09-10T11:00:00+09:00',
+  };
+  const before = participation({ completed_count: 13, progress_rate: '92.86' });
+  const after = participation({
+    status: 'COMPLETED',
+    completed_count: 14,
+    progress_rate: '100.00',
+    completed_at: '2026-09-10T11:00:00+09:00',
+    can_verify: false,
+    today_verification: verification,
+    verified_dates: ['2026-09-10'],
+  });
+  const existingBadge = {
+    id: 701,
+    user_id: 7,
+    badge_id: 99,
+    challenge_id: 109,
+    user_challenge_id: 599,
+    status: 'AWARDED',
+    badge_name: '기존 획득 배지',
+    badge_image_path: '/images/challenges/badge-review.png',
+    awarded_at: '2026-09-07T12:00:00+09:00',
+    revoked_at: null,
+    revoke_reason: null,
+  };
+  const finalBadge = {
+    ...existingBadge,
+    id: 702,
+    badge_id: badge.id,
+    challenge_id: dailyChallenge.id,
+    user_challenge_id: 501,
+    badge_name: badge.name,
+    badge_image_path: badge.image_path,
+    awarded_at: '2026-09-10T11:00:00+09:00',
+  };
+  let checked = false;
+  let challengeRefreshReads = 0;
+  let badgeRefreshReads = 0;
+  let verificationPosts = 0;
+  await page.route('**/api/v1/user/challenges', route => {
+    if (!checked) return route.fulfill({ json: { items: [before], total_count: 1 } });
+    challengeRefreshReads += 1;
+    return challengeRefreshReads === 1
+      ? route.fulfill({ status: 503, json: { code: 'TEMPORARY', message: '진행 정보를 불러오지 못했어요.' } })
+      : route.fulfill({ json: { items: [after], total_count: 1 } });
+  });
+  await page.route('**/api/v1/user/badges', route => {
+    if (!checked) return route.fulfill({ json: { items: [existingBadge], total_count: 1 } });
+    badgeRefreshReads += 1;
+    return badgeRefreshReads === 2
+      ? route.fulfill({ status: 503, json: { code: 'TEMPORARY', message: '배지 정보를 불러오지 못했어요.' } })
+      : route.fulfill({ json: { items: [existingBadge, finalBadge], total_count: 2 } });
+  });
+  await page.route('**/api/v1/user/challenges/501/verifications', route => {
+    verificationPosts += 1;
+    checked = true;
+    return route.fulfill({ status: 201, json: verification });
+  });
+
+  await page.goto('/challenges');
+  const badgeSummary = page.getByRole('heading', { name: '작은 실천이 쌓이고 있어요' }).locator('..');
+  const card = page.getByRole('article', { name: dailyChallenge.name });
+  await expect(badgeSummary.getByText('모은 배지 1종 · 1회 획득')).toBeVisible();
+  await card.getByRole('button', { name: '했어요' }).click();
+
+  await expect(badgeSummary.getByText('최신 배지 정보 확인 필요')).toBeVisible();
+  await expect(badgeSummary.getByText('모은 배지 1종 · 1회 획득')).toHaveCount(0);
+  await expect(badgeSummary.getByRole('img', { name: existingBadge.badge_name })).toHaveCount(0);
+  await card.getByRole('button', { name: '다시 불러오기' }).click();
+  await expect(badgeSummary.getByRole('alert')).toContainText('배지 정보를 불러오지 못했어요.');
+  await badgeSummary.getByRole('button', { name: '배지 다시 불러오기' }).click();
+
+  await expect(badgeSummary.getByText('모은 배지 2종 · 2회 획득')).toBeVisible();
+  await expect(badgeSummary.getByRole('img', { name: badge.name })).toBeVisible();
+  expect(verificationPosts).toBe(1);
+});
+
 test('My keeps every card refresh-required after separate approved check-ins lose their refreshes', async ({ page }) => {
   await authenticate(page);
   const first = participation();
@@ -497,6 +612,62 @@ test('My keeps every card refresh-required after separate approved check-ins los
   await expect(secondCard.getByText('최신 진행 정보 확인 필요')).toBeVisible();
   await expect(firstCard.getByText('최신 진행 정보 확인 필요')).toBeVisible();
   expect(verificationPosts).toBe(2);
+});
+
+test('a delayed My check-in does not refresh after leaving the page', async ({ page }) => {
+  await authenticate(page);
+  const before = participation();
+  let challengeReads = 0;
+  let badgeReads = 0;
+  let releaseVerification!: () => void;
+  let finishVerification!: () => void;
+  const verificationGate = new Promise<void>(resolve => {
+    releaseVerification = resolve;
+  });
+  const verificationFinished = new Promise<void>(resolve => {
+    finishVerification = resolve;
+  });
+  await page.route('**/api/v1/user/challenges', route => {
+    challengeReads += 1;
+    return route.fulfill({ json: { items: [before], total_count: 1 } });
+  });
+  await page.route('**/api/v1/user/badges', route => {
+    badgeReads += 1;
+    return route.fulfill({ json: { items: [], total_count: 0 } });
+  });
+  await page.route('**/api/v1/user/challenge-catalog?*', route => route.fulfill({
+    json: { items: [dailyChallenge], total_count: 1, offset: 0, limit: 100 },
+  }));
+  await page.route('**/api/v1/user/challenges/501/verifications', async route => {
+    await verificationGate;
+    await route.fulfill({ status: 201, json: {
+      id: 901,
+      user_challenge_id: 501,
+      progress_id: 801,
+      verification_date: '2026-09-10',
+      content: null,
+      image_path: null,
+      status: 'APPROVED',
+      rejection_reason: null,
+      reviewed_by_admin_id: null,
+      reviewed_at: '2026-09-10T11:00:00+09:00',
+      submitted_at: '2026-09-10T11:00:00+09:00',
+    } });
+    finishVerification();
+  });
+
+  await page.goto('/challenges');
+  await page.getByRole('article', { name: dailyChallenge.name }).getByRole('button', { name: '했어요' }).click();
+  await page.getByRole('link', { name: '둘러보기', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
+  const readsBeforeRelease = { challengeReads, badgeReads };
+
+  releaseVerification();
+  await verificationFinished;
+  await page.waitForTimeout(100);
+
+  expect({ challengeReads, badgeReads }).toEqual(readsBeforeRelease);
+  await expect(page).toHaveURL(/\/challenges\/browse$/);
 });
 
 test('SELF participation without a reward badge is labeled as direct verification', async ({ page }) => {
