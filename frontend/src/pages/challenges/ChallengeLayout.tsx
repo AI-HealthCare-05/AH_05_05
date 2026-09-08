@@ -22,9 +22,11 @@ export function ChallengeLayout() {
 
   return (
     <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
-      <p className="shrink-0 border-b border-border bg-muted-bg px-page-x py-1.5 text-center text-micro text-tertiary-foreground">
-        목업 미리보기 · 기준일 2026.09.13 · 새로고침 시 초기화
-      </p>
+      {isDev ? (
+        <p className="shrink-0 border-b border-border bg-muted-bg px-page-x py-1.5 text-center text-micro text-tertiary-foreground">
+          목업 미리보기 · 기준일 2026.09.13 · 새로고침 시 초기화
+        </p>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <Outlet />
       </div>

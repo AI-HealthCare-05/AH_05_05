@@ -1,6 +1,10 @@
-import { useLocation } from 'react-router';
-import { Link } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router';
+import { useSession } from '@/app/SessionContext';
+import { getChallengeParticipations, type ChallengeParticipation } from '@/entities/challenge';
 import { useChallengeMock } from '@/features/challenges';
+import { Button } from '@/shared/ui/Button';
+import { inclusiveChallengeEndDate } from './officialChallengeDates';
 
 function compactDate(value: string) {
   const [, month, day] = value.split('-');
@@ -8,6 +12,13 @@ function compactDate(value: string) {
 }
 
 export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
+  const location = useLocation();
+  return location.pathname.startsWith('/dev/')
+    ? <MockHomeChallengeSummary empty={empty} />
+    : <OfficialHomeChallengeSummary />;
+}
+
+function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
   const { participations, medicationEpisodes } = useChallengeMock();
   const location = useLocation();
   const base = location.pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges';
@@ -82,6 +93,65 @@ export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
             </Link>;
           })
         )}
+      </div>
+    </section>
+  );
+}
+
+function progressLabel(value: number | string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? String(parsed) : '0';
+}
+
+function OfficialHomeChallengeSummary() {
+  const { principalKey } = useSession();
+  const [participations, setParticipations] = useState<ChallengeParticipation[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setParticipations(null);
+    setError(null);
+    getChallengeParticipations()
+      .then(result => {
+        if (active) setParticipations(result.items);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : '챌린지를 불러오지 못했어요.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [principalKey, reloadKey]);
+
+  const active = participations?.filter(item => item.status === 'ACTIVE').slice(0, 2) ?? [];
+
+  return (
+    <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">챌린지</h2>
+        <Link to="/challenges" className="min-h-touch py-3 text-caption font-bold text-primary">전체 보기</Link>
+      </div>
+      <div className="flex min-h-[132px] flex-col justify-center gap-3 rounded-card bg-card px-4 py-3 shadow-card">
+        {participations === null && !error ? <div role="status" aria-label="챌린지 요약 불러오는 중" className="min-h-20 animate-pulse rounded-input bg-muted-bg" /> : null}
+        {error ? (
+          <div role="alert" className="flex flex-col gap-2"><p className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" className="h-11 min-h-11" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button></div>
+        ) : null}
+        {participations !== null && !error && active.length === 0 ? (
+          <><p className="text-sm font-bold text-foreground">참여 중인 챌린지가 없어요</p><Link to="/challenges/browse" className="flex min-h-touch items-center justify-center rounded-input bg-primary-bg text-sm font-bold text-primary">공식 챌린지 둘러보기 ›</Link></>
+        ) : null}
+        {active.map(item => {
+          const rate = progressLabel(item.progress_rate);
+          const endDate = inclusiveChallengeEndDate(item.end_at);
+          return (
+            <Link key={item.id} to={`/challenges/participations/${item.id}`} aria-label={`${item.challenge_name}, ${rate}% 달성, 상세 보기`} className="group flex min-h-12 flex-col gap-1">
+              <span className="flex items-center justify-between gap-2 text-xs font-bold text-foreground"><span className="truncate">{item.challenge_name}</span><span aria-hidden className="text-base text-tertiary-foreground">›</span></span>
+              <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="tnum">{compactDate(item.started_at.slice(0, 10))} ~ {compactDate(endDate)}</span><span>{rate}% 달성했어요</span></span>
+              <span className="h-2 overflow-hidden rounded-pill bg-border" aria-hidden><span className="block h-full rounded-pill bg-primary" style={{ width: `${Math.min(100, Math.max(0, Number(item.progress_rate) || 0))}%` }} /></span>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );
