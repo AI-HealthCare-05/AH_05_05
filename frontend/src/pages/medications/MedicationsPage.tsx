@@ -373,7 +373,7 @@ export function MedicationsPage({
             className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => selectionMode ? leaveSelectionMode() : setSelectionMode(true)}
           >
-            {selectionMode ? '관리 완료' : '삭제'}
+            {selectionMode ? '완료' : '삭제'}
           </button>
         </div>
 

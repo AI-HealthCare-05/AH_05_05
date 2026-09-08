@@ -60,14 +60,15 @@ test('body management remains available and report UI fits a narrow screen', asy
   await page.getByRole('button', { name: '삭제', exact: true }).click();
   await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '선택한 처방 삭제' })).toBeDisabled();
-  await page.getByRole('button', { name: '관리 완료' }).click();
+  await expect(page.getByRole('button', { name: '완료', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '완료', exact: true }).click();
   await page.getByRole('button', { name: 'AI 보고서 받기' }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('medication-report-320.png'), fullPage: true });
   await page.goto('/supplements');
   await page.getByRole('button', { name: '삭제', exact: true }).click();
-  await expect(page.getByRole('button', { name: '관리 완료' })).toBeVisible();
-  await page.getByRole('button', { name: '관리 완료' }).click();
+  await expect(page.getByRole('button', { name: '완료', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '완료', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('supplement-report-entry-320.png'), fullPage: true });
   await page.goto('/reports');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -88,7 +89,7 @@ test('supplement add opens directly while delete only opens selection', async ({
   await expect(page.getByRole('button', { name: '선택한 0개 삭제', exact: true })).toBeDisabled();
   await page.getByRole('checkbox').first().check();
   await expect(page.getByRole('button', { name: '선택한 1개 삭제', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: '관리 완료', exact: true }).click();
+  await page.getByRole('button', { name: '완료', exact: true }).click();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('supplement-add-delete-320.png'), fullPage: true });

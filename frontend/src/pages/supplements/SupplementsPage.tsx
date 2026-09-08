@@ -341,7 +341,7 @@ export function SupplementsPage({
                       className="flex min-h-touch min-w-touch items-center justify-center rounded-button px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={toggleListEdit}
                     >
-                      {listEditOpen ? '관리 완료' : '삭제'}
+                      {listEditOpen ? '완료' : '삭제'}
                     </button>
                   </div>
                 )}
