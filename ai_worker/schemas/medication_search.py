@@ -31,6 +31,9 @@ class MedicationQueryEntitySource(StrEnum):
     CATALOG = "CATALOG"
     ALIAS = "ALIAS"
     REGEX = "REGEX"
+    RDBMS = "RDBMS"
+    QDRANT = "QDRANT"
+    PATIENT_CONTEXT = "PATIENT_CONTEXT"
 
 
 class MedicationQueryResolutionStatus(StrEnum):
@@ -49,6 +52,26 @@ class MedicationExpressionResolutionStatus(StrEnum):
     AUTO_CORRECTED = "AUTO_CORRECTED"
     CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
     UNRESOLVED = "UNRESOLVED"
+
+
+class MedicationExpressionNormalizationStrategy(StrEnum):
+    """Source-backed 표현 정규화가 선택한 안전한 해석 방법."""
+
+    NONE = "NONE"
+    EXACT = "EXACT"
+    SPACING = "SPACING"
+    LETTER_PRONUNCIATION = "LETTER_PRONUNCIATION"
+    COMPATIBILITY_JAMO = "COMPATIBILITY_JAMO"
+    EDIT_DISTANCE = "EDIT_DISTANCE"
+    RELATION_CUE = "RELATION_CUE"
+
+
+class MedicationRelationResolutionStatus(StrEnum):
+    """병용·회피 관계 표현의 해석 상태."""
+
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    UNCHANGED = "UNCHANGED"
+    AUTO_CORRECTED = "AUTO_CORRECTED"
 
 
 class MedicationQuestionIntent(StrEnum):
@@ -83,19 +106,6 @@ class MedicationExpressionCorrection(BaseModel):
     replacement: str = Field(min_length=1)
 
 
-class MedicationQuestionResolution(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    original_question: str = Field(min_length=1)
-    resolved_question: str = Field(min_length=1)
-    scope: MedicationQuestionScope
-    status: MedicationExpressionResolutionStatus
-    corrections: list[MedicationExpressionCorrection] = Field(
-        default_factory=list,
-    )
-    candidate_names: list[str] = Field(default_factory=list)
-
-
 class InteractionRuleLookupStatus(StrEnum):
     MATCHED = "MATCHED"
     NO_APPROVED_RULE = "NO_APPROVED_RULE"
@@ -114,6 +124,61 @@ class MedicationQueryEntity(BaseModel):
     kind: InteractionEntityKind | None = None
     source: MedicationQueryEntitySource = MedicationQueryEntitySource.REGEX
     resolution_status: MedicationQueryResolutionStatus = MedicationQueryResolutionStatus.RESOLVED
+
+
+class MedicationCatalogEntry(BaseModel):
+    """DB·Qdrant·등록 복용정보에서 확인된 질문 해석 대상."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    canonical_name: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+    entity_type: MedicationQueryEntityType
+    kind: InteractionEntityKind | None = None
+    source: MedicationQueryEntitySource
+
+    @field_validator("canonical_name")
+    @classmethod
+    def strip_canonical_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("카탈로그 정식명은 비어 있을 수 없습니다.")
+        return normalized
+
+    @field_validator("aliases")
+    @classmethod
+    def normalize_aliases(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(alias.strip() for alias in values if alias.strip()))
+
+    @property
+    def expressions(self) -> list[str]:
+        return list(dict.fromkeys([self.canonical_name, *self.aliases]))
+
+
+class MedicationQuestionResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    original_question: str = Field(min_length=1)
+    resolved_question: str = Field(min_length=1)
+    scope: MedicationQuestionScope
+    status: MedicationExpressionResolutionStatus
+    corrections: list[MedicationExpressionCorrection] = Field(
+        default_factory=list,
+    )
+    candidate_names: list[str] = Field(default_factory=list)
+    # True이면 resolver가 실제 카탈로그를 조회했으므로 빈 entities도
+    # "인식 대상 없음"이라는 의미다. False는 하위 호환용 미해석 입력이다.
+    entity_resolution_available: bool = False
+    entities: list[MedicationQueryEntity] = Field(default_factory=list)
+    normalization_strategy: MedicationExpressionNormalizationStrategy = MedicationExpressionNormalizationStrategy.NONE
+    confidence_tier: MedicationQuestionConfidence = MedicationQuestionConfidence.LOW
+    shortlisted_candidate_count: int = Field(default=0, ge=0)
+    tie_count: int = Field(default=0, ge=0)
+    relation_resolution_status: MedicationRelationResolutionStatus = MedicationRelationResolutionStatus.NOT_APPLICABLE
+    # 질문 본문이나 제품명을 남기지 않고, 해석에 사용 가능한 어휘의 출처·유형
+    # 분포만 LangSmith 진단용으로 기록한다.
+    catalog_source_counts: dict[str, int] = Field(default_factory=dict)
+    catalog_type_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class MedicationInteractionQueryPair(BaseModel):
@@ -203,6 +268,9 @@ class MedicationQuestionInterpretation(BaseModel):
     intent: MedicationQuestionIntent
     confidence: MedicationQuestionConfidence
     normalized_entity_names: list[str] = Field(default_factory=list)
+    normalized_entities: list[MedicationQueryEntity] = Field(
+        default_factory=list,
+    )
     requested_section_types: list[KnowledgeSectionType] = Field(
         default_factory=list,
     )

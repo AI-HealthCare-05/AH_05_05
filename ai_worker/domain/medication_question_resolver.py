@@ -1,21 +1,30 @@
 import re
 import time
 import unicodedata
+from collections import Counter
 from typing import NamedTuple, Protocol
 
-from ai_worker.domain.medication_expression_vocabulary import (
-    SUPPORTED_SUPPLEMENT_NAMES,
-)
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.medication_search import (
+    MedicationCatalogEntry,
     MedicationExpressionCorrection,
+    MedicationExpressionNormalizationStrategy,
     MedicationExpressionResolutionStatus,
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+    MedicationQueryResolutionStatus,
+    MedicationQuestionConfidence,
     MedicationQuestionResolution,
     MedicationQuestionScope,
+    MedicationRelationResolutionStatus,
 )
 
 
 class MedicationExpressionCatalog(Protocol):
     async def list_expressions(self) -> list[str]: ...
+
+    async def list_entries(self) -> list[MedicationCatalogEntry]: ...
 
 
 class _QuestionToken(NamedTuple):
@@ -34,6 +43,8 @@ class _SpacingCorrection(NamedTuple):
 
 class _CatalogIndex(NamedTuple):
     catalog: dict[str, str]
+    entries_by_expression: dict[str, tuple[MedicationCatalogEntry, ...]]
+    all_entries: tuple[MedicationCatalogEntry, ...]
     candidates_by_length: dict[int, set[str]]
     candidates_by_bigram: dict[str, set[str]]
 
@@ -65,6 +76,12 @@ class RuleBasedMedicationQuestionResolver:
         r"^(?:안녕(?:하세요|하십니까)?|반가워(?:요|습니다)?|하이|hello)[.!?~ ]*$",
         flags=re.IGNORECASE,
     )
+    _RELATION_QUESTION_ENDING = re.compile(
+        r"(?P<intake>[가-힣]{2,4}도)\s+(?P<ending>[대돼])(?P<punct>[?!]?)$",
+    )
+    _CANONICAL_RELATION_INTAKE = "먹어도"
+    _CANONICAL_RELATION_ENDING = "돼"
+    _RELATION_INTAKE_MAX_JAMO_DISTANCE = 2
     _NON_ENTITY_TOKENS = {
         "같이",
         "관련",
@@ -91,6 +108,61 @@ class RuleBasedMedicationQuestionResolver:
         "처음",
         "보는",
     }
+    _SOURCE_PRIORITY = {
+        MedicationQueryEntitySource.PATIENT_CONTEXT: 0,
+        MedicationQueryEntitySource.RDBMS: 1,
+        MedicationQueryEntitySource.QDRANT: 2,
+        MedicationQueryEntitySource.CATALOG: 3,
+        MedicationQueryEntitySource.ALIAS: 4,
+        MedicationQueryEntitySource.REGEX: 5,
+    }
+    _LATIN_LETTER_PRONUNCIATIONS = {
+        "A": "에이",
+        "B": "비",
+        "C": "씨",
+        "D": "디",
+        "E": "이",
+        "F": "에프",
+        "G": "지",
+        "H": "에이치",
+        "I": "아이",
+        "J": "제이",
+        "K": "케이",
+        "L": "엘",
+        "M": "엠",
+        "N": "엔",
+        "O": "오",
+        "P": "피",
+        "Q": "큐",
+        "R": "알",
+        "S": "에스",
+        "T": "티",
+        "U": "유",
+        "V": "브이",
+        "W": "더블유",
+        "X": "엑스",
+        "Y": "와이",
+        "Z": "지",
+    }
+    _LEAD_TO_TRAILING_INDEX = {
+        0: 1,
+        1: 2,
+        2: 4,
+        3: 7,
+        5: 8,
+        6: 16,
+        7: 17,
+        9: 19,
+        10: 20,
+        11: 21,
+        12: 22,
+        13: 23,
+        14: 24,
+        15: 25,
+        16: 26,
+        17: 27,
+        18: 27,
+    }
 
     def __init__(
         self,
@@ -108,21 +180,32 @@ class RuleBasedMedicationQuestionResolver:
         *,
         question: str,
         additional_names: list[str] | None = None,
+        additional_entities: list[MedicationCatalogEntry] | None = None,
     ) -> MedicationQuestionResolution:
         normalized_question = self._normalize_question(question)
         if self._GREETING_ONLY.fullmatch(normalized_question):
-            return self._result(
-                question=normalized_question,
-                scope=MedicationQuestionScope.GREETING,
-                status=MedicationExpressionResolutionStatus.UNCHANGED,
+            return self._with_diagnostics(
+                self._result(
+                    question=normalized_question,
+                    scope=MedicationQuestionScope.GREETING,
+                    status=MedicationExpressionResolutionStatus.UNCHANGED,
+                ),
+                strategy=MedicationExpressionNormalizationStrategy.NONE,
+                confidence=MedicationQuestionConfidence.LOW,
             )
 
         catalog_index = await self._base_catalog_index()
-        additional_catalog = self._normalized_catalog(additional_names or [])
-        if additional_catalog:
+        additional_catalog_entries = [
+            *(additional_entities or []),
+            *self._legacy_entries(
+                additional_names or [],
+                source=MedicationQueryEntitySource.PATIENT_CONTEXT,
+            ),
+        ]
+        if additional_catalog_entries:
             catalog_index = self._extend_catalog_index(
                 catalog_index,
-                additional_catalog,
+                additional_catalog_entries,
             )
         catalog = catalog_index.catalog
 
@@ -133,33 +216,47 @@ class RuleBasedMedicationQuestionResolver:
             tokens=tokens,
         )
         if spacing_resolution is not None:
-            return spacing_resolution
+            return self._with_diagnostics(
+                self._with_matched_entities(
+                    spacing_resolution,
+                    catalog_index=catalog_index,
+                ),
+                catalog_index=catalog_index,
+                strategy=self._spacing_strategy(spacing_resolution.corrections),
+                confidence=MedicationQuestionConfidence.HIGH,
+                shortlisted_candidate_count=1,
+            )
 
         surfaces = self._candidate_surfaces(tokens)
 
-        if self._contains_exact_expression(
+        exact_resolution = self._exact_expression_resolution(
             question=normalized_question,
             surfaces=surfaces,
             tokens=tokens,
-            catalog=catalog,
-        ):
-            return self._result(
-                question=normalized_question,
-                scope=MedicationQuestionScope.IN_SCOPE,
-                status=MedicationExpressionResolutionStatus.UNCHANGED,
-            )
+            catalog_index=catalog_index,
+        )
+        if exact_resolution is not None:
+            return exact_resolution
 
         prefix_candidates = self._ambiguous_prefix_candidates(
             surfaces=surfaces,
             catalog=catalog,
         )
         if prefix_candidates:
-            return MedicationQuestionResolution(
-                original_question=normalized_question,
-                resolved_question=normalized_question,
-                scope=MedicationQuestionScope.IN_SCOPE,
-                status=(MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED),
-                candidate_names=prefix_candidates,
+            return self._with_diagnostics(
+                MedicationQuestionResolution(
+                    original_question=normalized_question,
+                    resolved_question=normalized_question,
+                    scope=MedicationQuestionScope.IN_SCOPE,
+                    status=(MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED),
+                    candidate_names=prefix_candidates,
+                    entity_resolution_available=True,
+                ),
+                catalog_index=catalog_index,
+                strategy=MedicationExpressionNormalizationStrategy.NONE,
+                confidence=MedicationQuestionConfidence.MEDIUM,
+                shortlisted_candidate_count=len(prefix_candidates),
+                tie_count=len(prefix_candidates),
             )
 
         ranked = self._rank_candidates(
@@ -189,17 +286,25 @@ class RuleBasedMedicationQuestionResolver:
                     replacement,
                     1,
                 )
-                return MedicationQuestionResolution(
-                    original_question=normalized_question,
-                    resolved_question=resolved_question,
-                    scope=MedicationQuestionScope.IN_SCOPE,
-                    status=(MedicationExpressionResolutionStatus.AUTO_CORRECTED),
-                    corrections=[
-                        MedicationExpressionCorrection(
-                            original=original,
-                            replacement=replacement,
-                        )
-                    ],
+                return self._with_diagnostics(
+                    self._result_with_entities(
+                        question=resolved_question,
+                        original_question=normalized_question,
+                        scope=MedicationQuestionScope.IN_SCOPE,
+                        status=(MedicationExpressionResolutionStatus.AUTO_CORRECTED),
+                        corrections=[
+                            MedicationExpressionCorrection(
+                                original=original,
+                                replacement=replacement,
+                            )
+                        ],
+                        catalog_index=catalog_index,
+                    ),
+                    catalog_index=catalog_index,
+                    strategy=MedicationExpressionNormalizationStrategy.EDIT_DISTANCE,
+                    confidence=MedicationQuestionConfidence.HIGH,
+                    shortlisted_candidate_count=len(ranked),
+                    tie_count=len({item[2] for item in tied}),
                 )
 
             clarification_candidates = sorted(
@@ -207,43 +312,87 @@ class RuleBasedMedicationQuestionResolver:
                 key=str.casefold,
             )[:5]
             if maximum_distance is not None and clarification_candidates:
-                return MedicationQuestionResolution(
-                    original_question=normalized_question,
-                    resolved_question=normalized_question,
-                    scope=MedicationQuestionScope.IN_SCOPE,
-                    status=(MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED),
-                    candidate_names=clarification_candidates,
+                return self._with_diagnostics(
+                    MedicationQuestionResolution(
+                        original_question=normalized_question,
+                        resolved_question=normalized_question,
+                        scope=MedicationQuestionScope.IN_SCOPE,
+                        status=(MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED),
+                        candidate_names=clarification_candidates,
+                        entity_resolution_available=True,
+                    ),
+                    catalog_index=catalog_index,
+                    strategy=MedicationExpressionNormalizationStrategy.EDIT_DISTANCE,
+                    confidence=MedicationQuestionConfidence.MEDIUM,
+                    shortlisted_candidate_count=len(ranked),
+                    tie_count=len(clarification_candidates),
                 )
 
         if self._is_domain_related(normalized_question):
-            return self._result(
-                question=normalized_question,
-                scope=MedicationQuestionScope.IN_SCOPE,
-                status=MedicationExpressionResolutionStatus.UNRESOLVED,
+            return self._with_diagnostics(
+                self._result(
+                    question=normalized_question,
+                    scope=MedicationQuestionScope.IN_SCOPE,
+                    status=MedicationExpressionResolutionStatus.UNRESOLVED,
+                    entity_resolution_available=True,
+                ),
+                catalog_index=catalog_index,
+                strategy=MedicationExpressionNormalizationStrategy.NONE,
+                confidence=MedicationQuestionConfidence.LOW,
             )
-        return self._result(
-            question=normalized_question,
-            scope=MedicationQuestionScope.OUT_OF_SCOPE,
-            status=MedicationExpressionResolutionStatus.UNRESOLVED,
+        return self._with_diagnostics(
+            self._result(
+                question=normalized_question,
+                scope=MedicationQuestionScope.OUT_OF_SCOPE,
+                status=MedicationExpressionResolutionStatus.UNRESOLVED,
+                entity_resolution_available=True,
+            ),
+            catalog_index=catalog_index,
+            strategy=MedicationExpressionNormalizationStrategy.NONE,
+            confidence=MedicationQuestionConfidence.LOW,
         )
 
     async def _base_catalog_index(self) -> _CatalogIndex:
         now = time.monotonic()
         if self._cached_catalog_index is not None and now < self._cache_expires_at:
             return self._cached_catalog_index
-        expressions = [
-            *(await self._catalog.list_expressions()),
-            *SUPPORTED_SUPPLEMENT_NAMES,
-        ]
-        self._cached_catalog_index = self._build_catalog_index(self._normalized_catalog(expressions))
+        list_entries = getattr(self._catalog, "list_entries", None)
+        if callable(list_entries):
+            entries = await list_entries()
+        else:
+            entries = self._legacy_entries(await self._catalog.list_expressions())
+        self._cached_catalog_index = self._build_catalog_index(entries)
         self._cache_expires_at = now + self._cache_ttl_seconds
         return self._cached_catalog_index
 
     @classmethod
     def _build_catalog_index(
         cls,
-        catalog: dict[str, str],
+        entries: list[MedicationCatalogEntry],
     ) -> _CatalogIndex:
+        entries_by_expression: dict[str, list[MedicationCatalogEntry]] = {}
+        catalog: dict[str, str] = {}
+        for entry in entries:
+            for expression in entry.expressions:
+                for normalized_expression in cls._expression_keys(expression):
+                    catalog.setdefault(normalized_expression, expression)
+                    entries_by_expression.setdefault(
+                        normalized_expression,
+                        [],
+                    ).append(entry)
+
+        normalized_entries = {
+            key: tuple(
+                sorted(
+                    values,
+                    key=lambda value: (
+                        cls._SOURCE_PRIORITY[value.source],
+                        value.canonical_name.casefold(),
+                    ),
+                )
+            )
+            for key, values in entries_by_expression.items()
+        }
         candidates_by_length: dict[int, set[str]] = {}
         candidates_by_bigram: dict[str, set[str]] = {}
         for normalized_candidate in catalog:
@@ -257,6 +406,8 @@ class RuleBasedMedicationQuestionResolver:
                 )
         return _CatalogIndex(
             catalog=catalog,
+            entries_by_expression=normalized_entries,
+            all_entries=tuple(entries),
             candidates_by_length=candidates_by_length,
             candidates_by_bigram=candidates_by_bigram,
         )
@@ -265,38 +416,10 @@ class RuleBasedMedicationQuestionResolver:
     def _extend_catalog_index(
         cls,
         base: _CatalogIndex,
-        additional_catalog: dict[str, str],
+        additional_entries: list[MedicationCatalogEntry],
     ) -> _CatalogIndex:
-        catalog = base.catalog.copy()
-        catalog.update(additional_catalog)
-        new_candidates = additional_catalog.keys() - base.catalog.keys()
-        if not new_candidates:
-            return _CatalogIndex(
-                catalog=catalog,
-                candidates_by_length=base.candidates_by_length,
-                candidates_by_bigram=base.candidates_by_bigram,
-            )
-
-        candidates_by_length = base.candidates_by_length.copy()
-        candidates_by_bigram = base.candidates_by_bigram.copy()
-        copied_lengths: set[int] = set()
-        copied_bigrams: set[str] = set()
-        for normalized_candidate in new_candidates:
-            candidate_length = len(normalized_candidate)
-            if candidate_length not in copied_lengths:
-                candidates_by_length[candidate_length] = set(candidates_by_length.get(candidate_length, ()))
-                copied_lengths.add(candidate_length)
-            candidates_by_length[candidate_length].add(normalized_candidate)
-
-            for bigram in cls._bigrams(normalized_candidate):
-                if bigram not in copied_bigrams:
-                    candidates_by_bigram[bigram] = set(candidates_by_bigram.get(bigram, ()))
-                    copied_bigrams.add(bigram)
-                candidates_by_bigram[bigram].add(normalized_candidate)
-        return _CatalogIndex(
-            catalog=catalog,
-            candidates_by_length=candidates_by_length,
-            candidates_by_bigram=candidates_by_bigram,
+        return cls._build_catalog_index(
+            [*base.all_entries, *additional_entries],
         )
 
     @staticmethod
@@ -304,23 +427,386 @@ class RuleBasedMedicationQuestionResolver:
         normalized = unicodedata.normalize("NFC", value)
         return re.sub(r"\s+", " ", normalized).strip()
 
-    @staticmethod
-    def _normalize_expression(value: str) -> str:
-        normalized = unicodedata.normalize("NFKC", value).casefold()
+    @classmethod
+    def _normalize_expression(cls, value: str) -> str:
+        normalized = cls._compose_compatibility_jamo(value).casefold()
         return re.sub(r"[\s\W_]+", "", normalized)
 
     @classmethod
-    def _normalized_catalog(cls, expressions: list[str]) -> dict[str, str]:
-        catalog: dict[str, str] = {}
-        for expression in expressions:
-            display_name = cls._normalize_question(expression)
-            normalized = cls._normalize_expression(display_name)
-            if not normalized:
+    def _expression_keys(cls, value: str) -> tuple[str, ...]:
+        composed = cls._compose_compatibility_jamo(value)
+        keys = [cls._normalize_expression(composed)]
+        pronunciation_form = re.sub(
+            r"[A-Za-z]",
+            lambda match: cls._LATIN_LETTER_PRONUNCIATIONS[match.group().upper()],
+            composed,
+        )
+        keys.append(cls._normalize_expression(pronunciation_form))
+        return tuple(key for key in dict.fromkeys(keys) if key)
+
+    @classmethod
+    def _compose_compatibility_jamo(cls, value: str) -> str:
+        """호환 자모를 완성형 음절로 조합해 catalog 비교 키에만 사용한다."""
+        # NFKC는 호환 자모를 현대 자모로 바꾸지만, 앞 음절만 부분 조합할 수
+        # 있다. NFD로 다시 풀어 한 번의 동일한 조합 규칙을 적용한다.
+        normalized = unicodedata.normalize(
+            "NFD",
+            unicodedata.normalize("NFKC", value),
+        )
+        result: list[str] = []
+        index = 0
+        while index < len(normalized):
+            lead = ord(normalized[index]) - 0x1100
+            if not (0 <= lead <= 18) or index + 1 >= len(normalized):
+                result.append(normalized[index])
+                index += 1
                 continue
-            current = catalog.get(normalized)
-            if current is None or display_name.casefold() < current.casefold():
-                catalog[normalized] = display_name
-        return catalog
+            vowel = ord(normalized[index + 1]) - 0x1161
+            if not (0 <= vowel <= 20):
+                result.append(normalized[index])
+                index += 1
+                continue
+
+            index += 2
+            trailing = 0
+            if index < len(normalized):
+                trailing_lead = ord(normalized[index]) - 0x1100
+                next_is_vowel = index + 1 < len(normalized) and 0 <= ord(normalized[index + 1]) - 0x1161 <= 20
+                if not next_is_vowel:
+                    trailing = cls._LEAD_TO_TRAILING_INDEX.get(trailing_lead, 0)
+                    if trailing:
+                        index += 1
+            result.append(chr(0xAC00 + ((lead * 21) + vowel) * 28 + trailing))
+        return unicodedata.normalize("NFC", "".join(result))
+
+    @classmethod
+    def _legacy_entries(
+        cls,
+        expressions: list[str],
+        *,
+        source: MedicationQueryEntitySource = MedicationQueryEntitySource.CATALOG,
+    ) -> list[MedicationCatalogEntry]:
+        """구형 테스트 더블을 위한 호환 계층이다.
+
+        실제 서비스에서는 `list_entries()`가 DB·Qdrant의 실제 타입을
+        제공하므로 이 경로를 사용하지 않는다.
+        """
+        return [
+            MedicationCatalogEntry(
+                canonical_name=cls._normalize_question(expression),
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=source,
+            )
+            for expression in expressions
+            if cls._normalize_question(expression)
+        ]
+
+    @classmethod
+    def _result_with_entities(
+        cls,
+        *,
+        question: str,
+        scope: MedicationQuestionScope,
+        status: MedicationExpressionResolutionStatus,
+        catalog_index: _CatalogIndex,
+        original_question: str | None = None,
+        corrections: list[MedicationExpressionCorrection] | None = None,
+    ) -> MedicationQuestionResolution:
+        return MedicationQuestionResolution(
+            original_question=original_question or question,
+            resolved_question=question,
+            scope=scope,
+            status=status,
+            corrections=corrections or [],
+            entity_resolution_available=True,
+            entities=cls._matched_entities(
+                question=question,
+                catalog_index=catalog_index,
+            ),
+        )
+
+    @classmethod
+    def _with_matched_entities(
+        cls,
+        resolution: MedicationQuestionResolution,
+        *,
+        catalog_index: _CatalogIndex,
+    ) -> MedicationQuestionResolution:
+        return resolution.model_copy(
+            update={
+                "entity_resolution_available": True,
+                "entities": cls._matched_entities(
+                    question=resolution.resolved_question,
+                    catalog_index=catalog_index,
+                ),
+            }
+        )
+
+    @classmethod
+    def _with_diagnostics(
+        cls,
+        resolution: MedicationQuestionResolution,
+        *,
+        catalog_index: _CatalogIndex | None = None,
+        strategy: MedicationExpressionNormalizationStrategy,
+        confidence: MedicationQuestionConfidence,
+        shortlisted_candidate_count: int = 0,
+        tie_count: int = 0,
+        relation_resolution_status: MedicationRelationResolutionStatus = (
+            MedicationRelationResolutionStatus.NOT_APPLICABLE
+        ),
+    ) -> MedicationQuestionResolution:
+        source_counts: Counter[str] = Counter()
+        type_counts: Counter[str] = Counter()
+        if catalog_index is not None:
+            source_counts.update(entry.source.value for entry in catalog_index.all_entries)
+            type_counts.update(entry.entity_type.value for entry in catalog_index.all_entries)
+        return resolution.model_copy(
+            update={
+                "normalization_strategy": strategy,
+                "confidence_tier": confidence,
+                "shortlisted_candidate_count": shortlisted_candidate_count,
+                "tie_count": tie_count,
+                "relation_resolution_status": relation_resolution_status,
+                "catalog_source_counts": dict(sorted(source_counts.items())),
+                "catalog_type_counts": dict(sorted(type_counts.items())),
+            }
+        )
+
+    @classmethod
+    def _relation_expression_resolution(
+        cls,
+        *,
+        question: str,
+        catalog_index: _CatalogIndex,
+    ) -> MedicationQuestionResolution | None:
+        """두 source-backed 대상 뒤의 짧은 병용 질문 오타만 보정한다."""
+
+        match = cls._RELATION_QUESTION_ENDING.search(question)
+        if match is None:
+            return None
+
+        typed_entities = [
+            entity
+            for entity in cls._matched_entities(
+                question=question,
+                catalog_index=catalog_index,
+            )
+            if entity.kind is not None
+        ]
+        if len({(entity.canonical_name, entity.kind) for entity in typed_entities}) < 2:
+            return None
+
+        intake = match.group("intake")
+        intake_distance = cls._edit_distance(
+            unicodedata.normalize("NFD", intake),
+            unicodedata.normalize("NFD", cls._CANONICAL_RELATION_INTAKE),
+            limit=cls._RELATION_INTAKE_MAX_JAMO_DISTANCE,
+        )
+        if intake_distance > cls._RELATION_INTAKE_MAX_JAMO_DISTANCE:
+            return None
+
+        ending = match.group("ending")
+        if intake == cls._CANONICAL_RELATION_INTAKE and ending == cls._CANONICAL_RELATION_ENDING:
+            return None
+
+        replacement = f"{cls._CANONICAL_RELATION_INTAKE} {cls._CANONICAL_RELATION_ENDING}{match.group('punct')}"
+        original = match.group(0)
+        resolved_question = f"{question[: match.start()]}{replacement}"
+        return cls._with_diagnostics(
+            cls._result_with_entities(
+                question=resolved_question,
+                original_question=question,
+                scope=MedicationQuestionScope.IN_SCOPE,
+                status=MedicationExpressionResolutionStatus.AUTO_CORRECTED,
+                corrections=[
+                    MedicationExpressionCorrection(
+                        original=original,
+                        replacement=replacement,
+                    )
+                ],
+                catalog_index=catalog_index,
+            ),
+            catalog_index=catalog_index,
+            strategy=MedicationExpressionNormalizationStrategy.RELATION_CUE,
+            confidence=MedicationQuestionConfidence.HIGH,
+            shortlisted_candidate_count=2,
+            relation_resolution_status=(MedicationRelationResolutionStatus.AUTO_CORRECTED),
+        )
+
+    @classmethod
+    def _exact_expression_resolution(
+        cls,
+        *,
+        question: str,
+        surfaces: list[str],
+        tokens: list[_QuestionToken],
+        catalog_index: _CatalogIndex,
+    ) -> MedicationQuestionResolution | None:
+        if not cls._contains_exact_expression(
+            question=question,
+            surfaces=surfaces,
+            tokens=tokens,
+            catalog=catalog_index.catalog,
+        ):
+            return None
+        relation_resolution = cls._relation_expression_resolution(
+            question=question,
+            catalog_index=catalog_index,
+        )
+        if relation_resolution is not None:
+            return relation_resolution
+        entities = cls._matched_entities(
+            question=question,
+            catalog_index=catalog_index,
+        )
+        return cls._with_diagnostics(
+            cls._result_with_entities(
+                question=question,
+                scope=MedicationQuestionScope.IN_SCOPE,
+                status=MedicationExpressionResolutionStatus.UNCHANGED,
+                catalog_index=catalog_index,
+            ),
+            catalog_index=catalog_index,
+            strategy=cls._exact_match_strategy(
+                question=question,
+                catalog_index=catalog_index,
+            ),
+            confidence=MedicationQuestionConfidence.HIGH,
+            shortlisted_candidate_count=len(entities),
+            relation_resolution_status=(
+                MedicationRelationResolutionStatus.UNCHANGED
+                if len(entities) >= 2
+                else MedicationRelationResolutionStatus.NOT_APPLICABLE
+            ),
+        )
+
+    @classmethod
+    def _exact_match_strategy(
+        cls,
+        *,
+        question: str,
+        catalog_index: _CatalogIndex,
+    ) -> MedicationExpressionNormalizationStrategy:
+        tokens = cls._question_tokens(question)
+        for start, end, key in cls._matching_spans(
+            question=question,
+            tokens=tokens,
+            catalog_index=catalog_index,
+        ):
+            surface = question[start:end]
+            composed_surface = cls._compose_compatibility_jamo(surface)
+            for entry in catalog_index.entries_by_expression[key]:
+                for expression in entry.expressions:
+                    if cls._normalize_expression(expression) == key:
+                        if composed_surface != unicodedata.normalize("NFC", surface):
+                            return MedicationExpressionNormalizationStrategy.COMPATIBILITY_JAMO
+                        return MedicationExpressionNormalizationStrategy.EXACT
+                    pronunciation = re.sub(
+                        r"[A-Za-z]",
+                        lambda match: cls._LATIN_LETTER_PRONUNCIATIONS[match.group().upper()],
+                        expression,
+                    )
+                    if cls._normalize_expression(pronunciation) == key:
+                        return MedicationExpressionNormalizationStrategy.LETTER_PRONUNCIATION
+        return MedicationExpressionNormalizationStrategy.EXACT
+
+    @classmethod
+    def _spacing_strategy(
+        cls,
+        corrections: list[MedicationExpressionCorrection],
+    ) -> MedicationExpressionNormalizationStrategy:
+        for correction in corrections:
+            original_key = cls._normalize_expression(correction.original)
+            replacement_key = cls._normalize_expression(correction.replacement)
+            pronunciation = re.sub(
+                r"[A-Za-z]",
+                lambda match: cls._LATIN_LETTER_PRONUNCIATIONS[match.group().upper()],
+                correction.replacement,
+            )
+            if original_key != replacement_key and cls._normalize_expression(pronunciation) == original_key:
+                return MedicationExpressionNormalizationStrategy.LETTER_PRONUNCIATION
+            if cls._compose_compatibility_jamo(correction.original) != unicodedata.normalize(
+                "NFC",
+                correction.original,
+            ):
+                return MedicationExpressionNormalizationStrategy.COMPATIBILITY_JAMO
+        return MedicationExpressionNormalizationStrategy.SPACING
+
+    @classmethod
+    def _matched_entities(
+        cls,
+        *,
+        question: str,
+        catalog_index: _CatalogIndex,
+    ) -> list[MedicationQueryEntity]:
+        tokens = cls._question_tokens(question)
+        matches = cls._matching_spans(
+            question=question,
+            tokens=tokens,
+            catalog_index=catalog_index,
+        )
+
+        selected_matches: list[tuple[int, int, str]] = []
+        occupied_until = -1
+        for start, end, key in sorted(matches, key=lambda item: (item[0], -(item[1] - item[0]), item[2])):
+            if start < occupied_until:
+                continue
+            selected_matches.append((start, end, key))
+            occupied_until = end
+
+        entities: list[MedicationQueryEntity] = []
+        seen: set[tuple[str, str]] = set()
+        for start, end, key in selected_matches:
+            candidates = catalog_index.entries_by_expression[key]
+            canonical_names = {candidate.canonical_name for candidate in candidates}
+            candidate_types = list(dict.fromkeys(candidate.entity_type for candidate in candidates))
+            selected = candidates[0]
+            dedupe_key = (selected.canonical_name.casefold(), selected.kind.value if selected.kind else "TOPIC")
+            if dedupe_key in seen:
+                continue
+            entities.append(
+                MedicationQueryEntity(
+                    surface=question[start:end],
+                    canonical_name=selected.canonical_name,
+                    entity_type=selected.entity_type,
+                    candidate_types=candidate_types,
+                    kind=selected.kind,
+                    source=selected.source,
+                    resolution_status=(
+                        MedicationQueryResolutionStatus.AMBIGUOUS
+                        if len(canonical_names) > 1 or len(candidate_types) > 1
+                        else MedicationQueryResolutionStatus.RESOLVED
+                    ),
+                )
+            )
+            seen.add(dedupe_key)
+        return entities
+
+    @classmethod
+    def _matching_spans(
+        cls,
+        *,
+        question: str,
+        tokens: list[_QuestionToken],
+        catalog_index: _CatalogIndex,
+    ) -> list[tuple[int, int, str]]:
+        candidates = [(token.start, token.end, token.surface) for token in tokens]
+        candidates.extend(
+            (
+                window[0].start,
+                window[-1].end,
+                question[window[0].start : window[-1].end],
+            )
+            for window in cls._token_windows(tokens)
+        )
+        return [
+            (start, end, key)
+            for start, end, surface in candidates
+            for key in cls._expression_keys(surface)
+            if key in catalog_index.entries_by_expression
+        ]
 
     @classmethod
     def _question_tokens(cls, question: str) -> list[_QuestionToken]:
@@ -439,7 +925,10 @@ class RuleBasedMedicationQuestionResolver:
         original = question[start:end]
         if not re.search(r"\s", original):
             return None
-        replacement = catalog.get(cls._normalize_expression(original))
+        replacement = next(
+            (catalog[key] for key in cls._expression_keys(original) if key in catalog),
+            None,
+        )
         if replacement is None or replacement == original:
             return None
         return _SpacingCorrection(
@@ -459,12 +948,15 @@ class RuleBasedMedicationQuestionResolver:
         tokens: list[_QuestionToken],
         catalog: dict[str, str],
     ) -> bool:
-        surface_keys = {cls._normalize_expression(surface) for surface in surfaces}
+        surface_keys = {key for surface in surfaces for key in cls._expression_keys(surface)}
         if surface_keys.intersection(catalog):
             return True
         window_keys = {
-            cls._normalize_expression(question[window[0].start : window[-1].end])
+            key
             for window in cls._token_windows(tokens)
+            for key in cls._expression_keys(
+                question[window[0].start : window[-1].end],
+            )
         }
         return bool(window_keys.intersection(catalog))
 
@@ -680,10 +1172,12 @@ class RuleBasedMedicationQuestionResolver:
         question: str,
         scope: MedicationQuestionScope,
         status: MedicationExpressionResolutionStatus,
+        entity_resolution_available: bool = False,
     ) -> MedicationQuestionResolution:
         return MedicationQuestionResolution(
             original_question=question,
             resolved_question=question,
             scope=scope,
             status=status,
+            entity_resolution_available=entity_resolution_available,
         )

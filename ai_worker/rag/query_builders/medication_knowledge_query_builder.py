@@ -362,26 +362,45 @@ class MedicationKnowledgeQueryBuilder:
         self,
         *,
         supplement_names: list[str] | None = None,
+        catalog_entities: list[MedicationQueryEntity] | None = None,
     ) -> None:
         self._entity_normalizer = MedicationQueryEntityNormalizer(
             supplement_names=supplement_names,
         )
+        # 실제 Chat 체인은 빈 목록도 명시적으로 넘겨 regex fallback을 막는다.
+        # `None`은 이 builder를 단독으로 호출하는 구형 평가 도구와의 호환용이다.
+        self._catalog_entities = None if catalog_entities is None else list(catalog_entities)
 
     def build(self, question: str) -> MedicationKnowledgeQueryPlan:
         normalized = question.strip()
         if not normalized:
             raise ValueError("약·영양제 검색 질문은 비어 있을 수 없습니다.")
 
-        interaction_pair = find_supplement_interaction_pair(normalized)
+        entities = (
+            self._entity_normalizer.normalize(normalized)
+            if self._catalog_entities is None
+            else self._catalog_entities.copy()
+        )
+        entity_names = [entity.canonical_name for entity in entities]
+        registered_pair = find_supplement_interaction_pair(normalized)
+        interaction_pair = (
+            registered_pair
+            if (
+                registered_pair is not None
+                and (self._catalog_entities is None or set(registered_pair.canonical_names).issubset(entity_names))
+            )
+            else None
+        )
         section_types, expansion_terms = self._intent(
             normalized,
             has_interaction_pair=interaction_pair is not None,
         )
         interaction_question = KnowledgeSectionType.INTERACTION in section_types
-        entities = self._entity_normalizer.normalize(
-            normalized,
-            interaction_question=interaction_question,
-        )
+        if interaction_question and self._catalog_entities is None:
+            entities = self._entity_normalizer.normalize(
+                normalized,
+                interaction_question=True,
+            )
         ingredient_family = next(
             (
                 family
@@ -457,7 +476,18 @@ class MedicationKnowledgeQueryBuilder:
                     ]
                 )
             ),
-            has_medication_product_cue=self._entity_normalizer.has_medication_product_cue(normalized),
+            has_medication_product_cue=(
+                self._entity_normalizer.has_medication_product_cue(normalized)
+                if self._catalog_entities is None
+                else any(
+                    entity.entity_type
+                    in {
+                        MedicationQueryEntityType.PRODUCT_NAME,
+                        MedicationQueryEntityType.BRAND_ALIAS,
+                    }
+                    for entity in entities
+                )
+            ),
         )
 
     @staticmethod

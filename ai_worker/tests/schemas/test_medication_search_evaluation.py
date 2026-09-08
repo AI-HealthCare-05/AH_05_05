@@ -90,3 +90,46 @@ def test_v2_manifest_accepts_explained_gold_document_contract() -> None:
     assert manifest.cases[0].gold_document_rationales == {
         "calcium-iron-paper": "칼슘과 철분을 직접 함께 다룬 사람 대상 연구입니다."
     }
+
+
+def test_v3_manifest_requires_typed_entities_for_active_entity_case() -> None:
+    with pytest.raises(ValidationError, match="v3 평가"):
+        MedicationSearchBaselineManifest.model_validate(
+            {
+                "schema_version": "medication-search-baseline-v3",
+                "dataset_version": "knowledge-full-v5-o200k",
+                "collection_name": "medication_knowledge_full_v5",
+                "experiment_goal": "표현 해석과 검색 안전성을 고정합니다.",
+                "activation_rule": "활성 단계 정확도가 유지될 때만 다음 릴리스를 검토합니다.",
+                "metric_rationales": METRIC_RATIONALES,
+                "cases": [
+                    {
+                        "query_id": "drug-food",
+                        "question": "펙소페나딘과 과일주스를 같이 먹어도 되나요?",
+                        "phase": "ACTIVE_PHASE",
+                        "expected_scope": "IN_SCOPE",
+                        "expected_resolution_status": "UNCHANGED",
+                        "expected_entity_names": ["펙소페나딘", "과일주스"],
+                        "expected_interaction_types": ["DRUG_FOOD"],
+                        "expected_entities": [
+                            {
+                                "canonical_name": "펙소페나딘",
+                                "entity_type": "INGREDIENT_NAME",
+                                "kind": "DRUG",
+                                "expected_sources": ["RDBMS"],
+                            },
+                            {
+                                "canonical_name": "과일주스",
+                                "entity_type": "FOOD_CATEGORY",
+                                "kind": "FOOD",
+                                "expected_sources": ["QDRANT"],
+                            },
+                        ],
+                        "evidence_kind": "QDRANT_GOLD",
+                        "evaluation_rationale": "약-음식 엔터티와 pair를 함께 검증합니다.",
+                        "expected_document_ids": ["food-guide"],
+                        "gold_document_rationales": {"food-guide": "두 대상을 직접 다루는 근거입니다."},
+                    }
+                ],
+            }
+        )

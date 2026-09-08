@@ -136,13 +136,12 @@ class KnowledgeIndexer:
 
             drug_count = len(set(metadata.drug_names))
             ingredient_count = len(set(metadata.ingredient_names))
+            food_count = len(set(metadata.food_names))
             valid_entity_counts = {
                 InteractionPairType.DRUG_DRUG: drug_count >= 2,
                 InteractionPairType.DRUG_SUPPLEMENT: drug_count >= 1 and ingredient_count >= 1,
                 InteractionPairType.SUPPLEMENT_SUPPLEMENT: ingredient_count >= 2,
-                # Knowledge metadata does not store food_names. The food entity
-                # is represented by the validated pair key and source content.
-                InteractionPairType.DRUG_FOOD: drug_count >= 1,
+                InteractionPairType.DRUG_FOOD: drug_count >= 1 and food_count >= 1,
             }
             if not valid_entity_counts[interaction_type]:
                 raise ValueError(

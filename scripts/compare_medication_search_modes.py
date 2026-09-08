@@ -18,11 +18,11 @@ from ai_worker.evaluation.medication_search_baseline_evaluator import (
 from ai_worker.evaluation.medication_search_mode_comparator import (
     MedicationSearchModeComparator,
 )
+from ai_worker.evaluation.runtime_expression_catalog import (
+    build_runtime_expression_catalog,
+)
 from ai_worker.rag.embeddings.openai_embedding_provider import (
     OpenAIEmbeddingProvider,
-)
-from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
-    MedicationKnowledgeQueryBuilder,
 )
 from ai_worker.rag.retrievers.medication_knowledge_retriever import (
     MedicationKnowledgeRetriever,
@@ -32,9 +32,6 @@ from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
 )
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
-)
-from ai_worker.repositories.medication_expression_catalog_repository import (
-    DbMedicationExpressionCatalog,
 )
 from ai_worker.schemas.knowledge import KnowledgeSearchMode
 from ai_worker.schemas.medication_search_evaluation import (
@@ -57,7 +54,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--evaluation-file", type=Path, required=True)
     parser.add_argument("--dense-collection", required=True)
+    parser.add_argument("--dense-dataset-version")
     parser.add_argument("--hybrid-collection", required=True)
+    parser.add_argument("--hybrid-dataset-version")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.output.suffix.casefold() != ".md":
@@ -154,6 +153,7 @@ async def _evaluate_mode(
     *,
     mode: KnowledgeSearchMode,
     collection_name: str,
+    dataset_version: str,
     manifest: MedicationSearchBaselineManifest,
     settings: Config,
     client: AsyncQdrantClient,
@@ -173,9 +173,13 @@ async def _evaluate_mode(
     )
     evaluator = MedicationSearchBaselineEvaluator(
         question_resolver=RuleBasedMedicationQuestionResolver(
-            catalog=DbMedicationExpressionCatalog(),
+            catalog=build_runtime_expression_catalog(
+                settings=settings,
+                qdrant_client=client,
+                collection_name=collection_name,
+                dataset_version=dataset_version,
+            ),
         ),
-        query_builder=MedicationKnowledgeQueryBuilder(),
         knowledge_retriever=MedicationKnowledgeRetriever(
             embedding_provider=embedding_provider,
             vector_store=_vector_store(
@@ -184,7 +188,7 @@ async def _evaluate_mode(
                 collection_name=collection_name,
                 vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
             ),
-            dataset_version=manifest.dataset_version,
+            dataset_version=dataset_version,
             min_similarity_score=manifest.min_similarity_score,
         ),
         embedding_model_name=embedding_provider.model_name,
@@ -192,7 +196,12 @@ async def _evaluate_mode(
         search_mode=mode,
     )
     return await evaluator.evaluate(
-        manifest.model_copy(update={"collection_name": collection_name}),
+        manifest.model_copy(
+            update={
+                "collection_name": collection_name,
+                "dataset_version": dataset_version,
+            }
+        ),
         git_commit=git_commit,
         working_tree_dirty=working_tree_dirty,
         evaluation_file_sha256=evaluation_hash,
@@ -206,6 +215,8 @@ async def run_cli(
 ) -> MedicationSearchModeComparisonReport:
     resolved_settings = settings or Config()
     manifest = load_evaluation_manifest(args.evaluation_file)
+    dense_dataset_version = args.dense_dataset_version or manifest.dataset_version
+    hybrid_dataset_version = args.hybrid_dataset_version or manifest.dataset_version
     evaluation_hash = file_sha256(args.evaluation_file)
     commit = current_git_commit()
     dirty = working_tree_is_dirty()
@@ -220,9 +231,11 @@ async def run_cli(
         reports = {}
         for mode in KnowledgeSearchMode:
             collection = args.dense_collection if mode == KnowledgeSearchMode.DENSE else args.hybrid_collection
+            dataset_version = dense_dataset_version if mode == KnowledgeSearchMode.DENSE else hybrid_dataset_version
             reports[mode] = await _evaluate_mode(
                 mode=mode,
                 collection_name=collection,
+                dataset_version=dataset_version,
                 manifest=manifest,
                 settings=resolved_settings,
                 client=client,

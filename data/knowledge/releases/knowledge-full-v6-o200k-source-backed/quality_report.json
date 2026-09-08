@@ -1,0 +1,76 @@
+{
+  "schema_version": "knowledge-release-quality-report-v1",
+  "status": "INDEXED_REQUIRES_RETRIEVAL_FIXES",
+  "dataset_version": "knowledge-full-v6-o200k-source-backed",
+  "proposed_collection": "medication_knowledge_full_v6",
+  "vector_distance": "DOT",
+  "tokenizer_encoding": "o200k_base",
+  "preprocessing_output": "data/knowledge/processed/knowledge-full-v6-o200k-source-backed-dry-run-r2",
+  "preprocessing_quality_report": "data/knowledge/processed/knowledge-full-v6-o200k-source-backed-dry-run-r2/reports/preprocessing-quality.json",
+  "release_scope": {
+    "processed_document_count": 1210,
+    "chunk_count": 8624,
+    "access_scope_counts": {
+      "PUBLIC": 1988,
+      "DEMO_RESTRICTED": 6636
+    },
+    "skipped_document_count": 52,
+    "skipped_reason_counts": {
+      "AUTOMATIC_EXCLUDED_UNRECOVERABLE_TEXT": 35,
+      "TEXT_QUALITY_OCR_REQUIRED": 10,
+      "AUTOMATIC_QUALITY_BLOCKED": 5,
+      "AUTOMATIC_QUALITY_REVIEW": 2
+    }
+  },
+  "metadata_contract": {
+    "status": "PASSED",
+    "generic_catalog_entity_policy": "PASSED",
+    "interaction_chunk_count": 26,
+    "interaction_pair_key_chunk_count": 26,
+    "drug_food_chunk_count": 1,
+    "food_alias_entry_count": 1,
+    "known_evidence_chunk_count": 5430,
+    "known_study_population_chunk_count": 5430
+  },
+  "embedding_reuse": {
+    "status": "REEMBED_ALL_REQUIRED",
+    "baseline_dataset_version": "knowledge-full-v5-o200k",
+    "reason": "로컬 v5 release 청크 원본이 없어 embedding_text 동일성 검증을 할 수 없으므로, content hash만으로 기존 벡터를 재사용하지 않는다.",
+    "reembedding_chunk_count": 8624
+  },
+  "v5_automatic_baseline": {
+    "evaluation_report": "data/knowledge/releases/knowledge-full-v6-o200k-source-backed/v5_user_expression_baseline_v3_r2.md",
+    "pass_count": 13,
+    "query_count": 21,
+    "note": "정식 제품명 평가 계약을 바로잡은 뒤 재측정한 기준선이다. 과거 프론트 실험의 historical PASS 11건과 구분하며, 검색 알고리즘 성능 향상으로 해석하지 않는다."
+  },
+  "external_indexing_approval_required": {
+    "openai_embedding_model": "text-embedding-3-small",
+    "openai_embedding_text_count": 8624,
+    "demo_restricted_chunk_count": 6636,
+    "qdrant_collection_creation": "medication_knowledge_full_v6",
+    "existing_v5_collection_modified": false
+  },
+  "indexing_result": {
+    "collection_name": "medication_knowledge_full_v6",
+    "indexed_chunk_count": 8624,
+    "verified_point_count": 8624,
+    "qdrant_distance": "DOT",
+    "existing_v5_collection_modified": false
+  },
+  "automatic_release_comparison": {
+    "evaluation_file": "data/knowledge/evaluation/user_expression_queries_v3.yaml",
+    "v5_report": "data/knowledge/releases/knowledge-full-v6-o200k-source-backed/v5-current-runtime-baseline.md",
+    "v6_report": "data/knowledge/releases/knowledge-full-v6-o200k-source-backed/v6-current-runtime-baseline.md",
+    "v5_active_pass_count": 13,
+    "v6_active_pass_count": 14,
+    "v5_recall_at_20": 0.75,
+    "v6_recall_at_20": 0.875,
+    "v5_hit_at_5": 0.625,
+    "v6_hit_at_5": 0.75,
+    "v5_source_accuracy": 0.778,
+    "v6_source_accuracy": 0.667,
+    "activation_decision": "KEEP_V5_ACTIVE",
+    "reason": "v6는 약-음식 근거 검색을 개선했지만 ACTIVE_PHASE 18문항 전체 통과와 출처 정확도 비하락 조건을 충족하지 못했다."
+  }
+}

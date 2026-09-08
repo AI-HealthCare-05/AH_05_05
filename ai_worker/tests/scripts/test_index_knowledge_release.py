@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from ai_worker.rag.indexers.knowledge_indexer import (
     KnowledgeIndexResult,
 )
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunk,
@@ -185,6 +186,38 @@ def test_parse_args_accepts_interaction_annotation_contract() -> None:
     assert args.interaction_annotations == Path("data/knowledge/manifests/interaction_annotations.yaml")
 
 
+def test_parse_args_accepts_local_validation_without_collection_creation() -> None:
+    args = module.parse_args(
+        [
+            "--dataset-version",
+            "knowledge-full-v6-source-backed",
+            "--collection",
+            "medication_knowledge_full_v6",
+            "--validate-only",
+        ]
+    )
+
+    assert args.validate_only is True
+
+
+def test_parse_args_accepts_baseline_chunk_directory_for_reuse_audit() -> None:
+    args = module.parse_args(
+        [
+            "--dataset-version",
+            "knowledge-full-v6-source-backed",
+            "--collection",
+            "medication_knowledge_full_v6",
+            "--baseline-chunks-dir",
+            "data/knowledge/processed/full-v5-o200k/release/chunks",
+            "--baseline-dataset-version",
+            "knowledge-full-v5-o200k",
+            "--validate-only",
+        ]
+    )
+
+    assert args.baseline_chunks_dir == Path("data/knowledge/processed/full-v5-o200k/release/chunks")
+
+
 def test_rejects_release_when_required_annotation_pair_is_missing(
     tmp_path: Path,
 ) -> None:
@@ -276,6 +309,99 @@ def test_rejects_demo_restricted_chunks_without_explicit_opt_in() -> None:
         [restricted_chunk],
         allow_demo_restricted=True,
     )
+
+
+def test_rejects_drug_food_chunk_without_food_typed_catalog_entry() -> None:
+    chunk = SimpleNamespace(
+        chunk_id="missing-food-entry",
+        metadata=SimpleNamespace(
+            interaction_type="DRUG_FOOD",
+            interaction_pair_keys=["a" * 64],
+            food_names=["과일주스"],
+            entity_catalog_entries=[],
+        ),
+    )
+
+    with pytest.raises(ValueError, match="FOOD typed catalog"):
+        module.ensure_source_backed_interaction_metadata([chunk])
+
+
+def test_accepts_drug_food_chunk_with_food_alias_and_pair_key() -> None:
+    chunk = SimpleNamespace(
+        chunk_id="fexofenadine-fruit-juice",
+        metadata=SimpleNamespace(
+            interaction_type="DRUG_FOOD",
+            interaction_pair_keys=["a" * 64],
+            food_names=["과일주스"],
+            entity_catalog_entries=[
+                SimpleNamespace(
+                    canonical_name="과일주스",
+                    aliases=["과일주스", "자몽주스"],
+                    kind=InteractionEntityKind.FOOD,
+                )
+            ],
+        ),
+    )
+
+    stats = module.ensure_source_backed_interaction_metadata([chunk])
+
+    assert stats.drug_food_chunk_count == 1
+    assert stats.food_alias_entry_count == 1
+
+
+def test_rejects_generic_category_name_in_typed_catalog_entry() -> None:
+    chunk = SimpleNamespace(
+        chunk_id="generic-supplement-entry",
+        metadata=SimpleNamespace(
+            interaction_type=None,
+            interaction_pair_keys=[],
+            drug_names=[],
+            ingredient_names=["영양제"],
+            food_names=[],
+            entity_catalog_entries=[
+                SimpleNamespace(
+                    canonical_name="영양제",
+                    aliases=["영양제"],
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                ),
+            ],
+        ),
+    )
+
+    with pytest.raises(ValueError, match="일반 범주명"):
+        module.ensure_source_backed_interaction_metadata([chunk])
+
+
+def test_counts_only_identical_embedding_text_as_reusable() -> None:
+    baseline = [
+        SimpleNamespace(
+            embedding_text="[문서] 타이레놀\n[원문] 효능",
+            metadata=SimpleNamespace(content_hash="a" * 64),
+        ),
+        SimpleNamespace(
+            embedding_text="[문서] 펙소페나딘\n[원문] 과일주스",
+            metadata=SimpleNamespace(content_hash="b" * 64),
+        ),
+    ]
+    candidate = [
+        SimpleNamespace(
+            embedding_text="[문서] 타이레놀\n[원문] 효능",
+            metadata=SimpleNamespace(content_hash="a" * 64),
+        ),
+        SimpleNamespace(
+            embedding_text="[문서] 펙소페나딘\n[음식] 과일주스\n[원문] 과일주스",
+            metadata=SimpleNamespace(content_hash="b" * 64),
+        ),
+    ]
+
+    stats = module.assess_embedding_reuse(
+        candidate_chunks=candidate,
+        baseline_chunks=baseline,
+    )
+
+    assert stats.content_hash_match_count == 2
+    assert stats.exact_embedding_text_reuse_count == 1
+    assert stats.reembedding_required_count == 1
 
 
 def test_rejects_chunks_from_source_without_completed_approval(

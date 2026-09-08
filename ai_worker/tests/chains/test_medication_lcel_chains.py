@@ -12,6 +12,7 @@ from ai_worker.llm.generators.medication_answer_generator import (
     MedicationAnswerPayload,
 )
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.interaction import InteractionEntityKind, InteractionPairType
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -24,6 +25,9 @@ from ai_worker.schemas.medication_search import (
     MedicationExpressionCorrection,
     MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
     MedicationQuestionConfidence,
     MedicationQuestionIntent,
     MedicationQuestionResolution,
@@ -91,6 +95,16 @@ async def test_query_plan_chain_preserves_correction_as_structured_reason() -> N
                 replacement="타이레놀",
             )
         ],
+        entity_resolution_available=True,
+        entities=[
+            MedicationQueryEntity(
+                surface="타이레놀",
+                canonical_name="타이레놀",
+                entity_type=MedicationQueryEntityType.BRAND_ALIAS,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            )
+        ],
     )
 
     planning = await chain.ainvoke(
@@ -107,6 +121,45 @@ async def test_query_plan_chain_preserves_correction_as_structured_reason() -> N
         "EXPRESSION_AUTO_CORRECTED",
         "ENTITY_IDENTIFIED",
     ]
+
+
+async def test_query_plan_chain_uses_source_backed_drug_food_entities() -> None:
+    """Resolver가 전달한 음식 별칭만으로 약-음식 검색 계획을 만든다."""
+    resolution = MedicationQuestionResolution(
+        original_question="펙소페나딘과 자몽주스를 같이 먹어도 되나요?",
+        resolved_question="펙소페나딘과 과일주스를 같이 먹어도 되나요?",
+        scope=MedicationQuestionScope.IN_SCOPE,
+        status=MedicationExpressionResolutionStatus.AUTO_CORRECTED,
+        entity_resolution_available=True,
+        entities=[
+            MedicationQueryEntity(
+                surface="펙소페나딘",
+                canonical_name="펙소페나딘",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            ),
+            MedicationQueryEntity(
+                surface="자몽주스",
+                canonical_name="과일주스",
+                entity_type=MedicationQueryEntityType.FOOD_CATEGORY,
+                kind=InteractionEntityKind.FOOD,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+        ],
+    )
+
+    planning = await build_medication_query_plan_chain().ainvoke(
+        MedicationQueryPlanChainInput(
+            question=resolution.resolved_question,
+            resolution=resolution,
+        )
+    )
+
+    assert planning.query_plan.entity_names == ["펙소페나딘", "과일주스"]
+    assert len(planning.query_plan.interaction_pairs) == 1
+    assert planning.query_plan.interaction_pairs[0].pair_type == InteractionPairType.DRUG_FOOD
+    assert planning.interpretation.intent == MedicationQuestionIntent.INTERACTION
 
 
 async def test_answer_chain_builds_messages_from_typed_input() -> None:

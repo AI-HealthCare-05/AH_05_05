@@ -11,6 +11,9 @@ from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import (
     MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
     MedicationQuestionConfidence,
     MedicationQuestionIntent,
     MedicationQuestionInterpretation,
@@ -28,6 +31,7 @@ class MedicationQueryPlanChainInput(BaseModel):
     question: str = Field(min_length=1)
     supplement_names: list[str] = Field(default_factory=list)
     resolution: MedicationQuestionResolution | None = None
+    allow_legacy_entity_inference: bool = False
 
     @field_validator("question")
     @classmethod
@@ -51,8 +55,15 @@ def _validate_query_input(
 def _build_query_plan(
     value: MedicationQueryPlanChainInput,
 ) -> "MedicationQuestionPlanResult":
+    if value.resolution is not None and value.resolution.entity_resolution_available:
+        catalog_entities: list[MedicationQueryEntity] | None = value.resolution.entities
+    elif value.allow_legacy_entity_inference:
+        catalog_entities = None
+    else:
+        catalog_entities = _supplement_catalog_entities(value)
     query_plan = MedicationKnowledgeQueryBuilder(
         supplement_names=value.supplement_names,
+        catalog_entities=catalog_entities,
     ).build(value.question)
     return MedicationQuestionPlanResult(
         interpretation=_build_interpretation(
@@ -61,6 +72,24 @@ def _build_query_plan(
         ),
         query_plan=query_plan,
     )
+
+
+def _supplement_catalog_entities(
+    value: MedicationQueryPlanChainInput,
+) -> list[MedicationQueryEntity]:
+    """Resolver를 사용할 수 없는 경우에도 동적 영양성분 카탈로그만 사용한다."""
+    normalized_question = "".join(value.question.casefold().split())
+    return [
+        MedicationQueryEntity(
+            surface=name,
+            canonical_name=name,
+            entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+            kind=InteractionEntityKind.SUPPLEMENT,
+            source=MedicationQueryEntitySource.CATALOG,
+        )
+        for name in value.supplement_names
+        if "".join(name.casefold().split()) in normalized_question
+    ]
 
 
 class MedicationQuestionPlanResult(BaseModel):
@@ -129,6 +158,7 @@ def _build_interpretation(
         intent=intent,
         confidence=confidence,
         normalized_entity_names=query_plan.entity_names,
+        normalized_entities=query_plan.entities,
         requested_section_types=query_plan.section_types,
         interaction_types=query_plan.interaction_types,
         needs_clarification=(resolution_status == MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED),
