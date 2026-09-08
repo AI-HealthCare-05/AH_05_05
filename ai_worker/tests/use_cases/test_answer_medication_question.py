@@ -48,9 +48,12 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRiskProfile,
     MedicationChatRiskScope,
     MedicationChatRoute,
+    MedicationChatSessionReference,
+    MedicationChatSessionReferenceEntity,
     MedicationGuideFact,
     MedicationGuideLookup,
 )
+from ai_worker.schemas.medication_search import MedicationQueryEntityType
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
@@ -737,6 +740,34 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "통증과 발열을 완화합니다" in result.answer
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
+
+
+async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:
+    request = build_request("그 약의 복용법도 알려줘.").model_copy(
+        update={
+            "session_reference": MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name="타이레놀정500밀리그람",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    )
+                ]
+            )
+        }
+    )
+
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(request)
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert result.question_interpretation is not None
+    assert result.question_interpretation.normalized_entity_names == ["타이레놀정500밀리그람"]
+    assert "제품 설명서와 전문가의 안내" in result.answer
 
 
 async def test_execute_uses_dynamic_supplement_names_in_query_plan() -> None:

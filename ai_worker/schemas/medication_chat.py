@@ -9,8 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import (
+    MedicationQueryEntityType,
     MedicationQuestionInterpretation,
     MedicationSearchExecutionObservation,
 )
@@ -75,6 +77,27 @@ class MedicationChatRiskDecision(BaseModel):
     @property
     def warning_required(self) -> bool:
         return self.scope == MedicationChatRiskScope.WARNING_REQUIRED
+
+
+class MedicationChatSessionReferenceEntity(BaseModel):
+    """같은 세션의 근거 섹션에서만 추출한 재질문 후보."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1)
+    entity_type: MedicationQueryEntityType
+    kind: InteractionEntityKind | None = None
+
+
+class MedicationChatSessionReference(BaseModel):
+    """다른 세션과 분리된 최근 확정 대상의 구조화 기억."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    entities: list[MedicationChatSessionReferenceEntity] = Field(
+        default_factory=list,
+        max_length=4,
+    )
 
 
 class MedicationChatProgressStage(StrEnum):
@@ -177,6 +200,9 @@ class MedicationChatRequest(BaseModel):
         max_length=CHAT_CONTENT_MAX_LENGTH,
     )
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
+    session_reference: MedicationChatSessionReference = Field(
+        default_factory=MedicationChatSessionReference,
+    )
     risk_profile: MedicationChatRiskProfile = Field(default_factory=MedicationChatRiskProfile)
 
     @field_validator("question", mode="before")

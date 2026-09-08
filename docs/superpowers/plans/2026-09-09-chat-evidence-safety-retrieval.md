@@ -79,10 +79,10 @@
 
 **Produces:** The current session's last grounded product/ingredient/interaction entities become an explicit request field; `그 약` and `그중` resolve only from that field.
 
-- [ ] Write a failing test showing `그 약의 복용법` resolves to the preceding session’s confirmed entity.
-- [ ] Write a failing cross-session test showing another session’s entity cannot resolve the reference.
-- [ ] Implement deterministic extraction from persisted same-session messages and explicit injection into the core request.
-- [ ] Record reference precision and cross-session isolation result, then commit.
+- [x] Write a failing test showing `그 약의 복용법` resolves to the preceding session’s confirmed entity.
+- [x] Write a failing cross-session test showing another session’s entity cannot resolve the reference.
+- [x] Implement deterministic extraction from persisted same-session messages and explicit injection into the core request.
+- [x] Record reference precision and cross-session isolation result, then commit.
 
 ### Task 5: Add small-to-big parent context retrieval
 

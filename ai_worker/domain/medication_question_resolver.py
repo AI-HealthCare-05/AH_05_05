@@ -110,11 +110,12 @@ class RuleBasedMedicationQuestionResolver:
     }
     _SOURCE_PRIORITY = {
         MedicationQueryEntitySource.PATIENT_CONTEXT: 0,
-        MedicationQueryEntitySource.RDBMS: 1,
-        MedicationQueryEntitySource.QDRANT: 2,
-        MedicationQueryEntitySource.CATALOG: 3,
-        MedicationQueryEntitySource.ALIAS: 4,
-        MedicationQueryEntitySource.REGEX: 5,
+        MedicationQueryEntitySource.SESSION_MEMORY: 1,
+        MedicationQueryEntitySource.RDBMS: 2,
+        MedicationQueryEntitySource.QDRANT: 3,
+        MedicationQueryEntitySource.CATALOG: 4,
+        MedicationQueryEntitySource.ALIAS: 5,
+        MedicationQueryEntitySource.REGEX: 6,
     }
     _LATIN_LETTER_PRONUNCIATIONS = {
         "A": "에이",

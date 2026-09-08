@@ -16,6 +16,9 @@ from ai_worker.domain.chat_content_compactor import (
     compact_chat_content,
 )
 from ai_worker.domain.chat_risk_policy import MedicationChatRiskPolicy
+from ai_worker.domain.chat_session_reference_memory import (
+    ChatSessionReferenceMemory,
+)
 from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.evidence_gap_guidance import (
     EvidenceGapGuidanceBuilder,
@@ -190,6 +193,7 @@ class AnswerMedicationQuestionUseCase:
                     "context_hash": self._context_hash(context),
                 }
             )
+        request = self._apply_session_reference(request)
         prepared_question = await self._prepare_question(
             request=request,
             context=context,
@@ -827,6 +831,16 @@ class AnswerMedicationQuestionUseCase:
                     additional_entities=[
                         *(
                             MedicationCatalogEntry(
+                                canonical_name=entity.name,
+                                entity_type=entity.entity_type,
+                                kind=entity.kind,
+                                source=MedicationQueryEntitySource.SESSION_MEMORY,
+                            )
+                            for entity in request.session_reference.entities
+                            if entity.kind is not None
+                        ),
+                        *(
+                            MedicationCatalogEntry(
                                 canonical_name=item.name,
                                 entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
                                 kind=InteractionEntityKind.DRUG,
@@ -871,6 +885,18 @@ class AnswerMedicationQuestionUseCase:
                 outputs["candidate_names"] = resolution.candidate_names
             resolution_span.end(outputs)
             return resolution
+
+    @staticmethod
+    def _apply_session_reference(
+        request: MedicationChatRequest,
+    ) -> MedicationChatRequest:
+        resolved_question = ChatSessionReferenceMemory().resolve_question(
+            question=request.question,
+            reference=request.session_reference,
+        )
+        if resolved_question == request.question:
+            return request
+        return request.model_copy(update={"question": resolved_question})
 
     async def _supplement_ingredient_names(self) -> list[str]:
         if self._supplement_ingredient_catalog is None:
