@@ -14,10 +14,10 @@ test.beforeEach(async ({ page }) => {
 
 for (const source of ['medications', 'supplements'] as const) {
   test(`${source}: report entry is explicit and sends no report/chat request`, async ({ page }) => {
-    const writes: string[] = [];
+    const reportRequests: string[] = [];
     page.on('request', (request) => {
-      if (request.method() !== 'GET' && /\/v1\/(chat|reports)/.test(request.url())) {
-        writes.push(request.url());
+      if (/\/v1\/(chat|reports)/.test(request.url())) {
+        reportRequests.push(`${request.method()} ${request.url()}`);
       }
     });
     await page.goto(`/${source}`);
@@ -30,7 +30,7 @@ for (const source of ['medications', 'supplements'] as const) {
     await page.getByRole('button', { name: 'AI 보고서 모아보기' }).click();
     await expect(page).toHaveURL('/reports');
     await expect(page.getByRole('heading', { name: '아직 받은 AI 보고서가 없어요' })).toBeVisible();
-    expect(writes).toEqual([]);
+    expect(reportRequests).toEqual([]);
   });
 }
 
