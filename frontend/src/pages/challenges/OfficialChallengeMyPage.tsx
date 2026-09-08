@@ -174,36 +174,11 @@ export function OfficialChallengeMyPage() {
     }
   }
 
-  if (loadError) {
-    return (
-      <>
-        <ChallengePageHeading />
-        <main className="flex flex-col gap-4 px-page-x py-5">
-          <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
-            <p className="text-sm text-muted-foreground">{loadError}</p>
-            <Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button>
-          </div>
-        </main>
-      </>
-    );
-  }
-
-  if (!data) {
-    return (
-      <>
-        <ChallengePageHeading />
-        <main className="flex flex-col gap-4 px-page-x py-5">
-          <div role="status" aria-label="내 챌린지 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" />
-        </main>
-      </>
-    );
-  }
-
-  const active = data.participations.filter(item => item.status === 'ACTIVE');
-  const history = data.participations.filter(item => item.status !== 'ACTIVE');
-  const awarded = data.badges?.filter(item => item.status === 'AWARDED') ?? [];
+  const active = data?.participations.filter(item => item.status === 'ACTIVE') ?? [];
+  const history = data?.participations.filter(item => item.status !== 'ACTIVE') ?? [];
+  const awarded = data?.badges?.filter(item => item.status === 'AWARDED') ?? [];
   const earnedKinds = new Set(awarded.map(item => item.badge_id));
-  const badgeRefreshRequired = refreshRequiredIds.size > 0 || data.badgeError !== null;
+  const badgeRefreshRequired = refreshRequiredIds.size > 0 || data?.badgeError !== null;
 
   return (
     <>
@@ -214,6 +189,18 @@ export function OfficialChallengeMyPage() {
         <Link to="/challenges/browse" className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">둘러보기</Link>
       </nav>
 
+      {loadError ? (
+        <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
+          <p className="text-sm text-muted-foreground">{loadError}</p>
+          <Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button>
+        </div>
+      ) : null}
+      {!data && !loadError ? (
+        <div role="status" aria-label="내 챌린지 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" />
+      ) : null}
+
+      {data ? (
+        <>
       <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="badge-summary-title">
         <h2 id="badge-summary-title" className="text-base font-bold">작은 실천이 쌓이고 있어요</h2>
         <div className="flex items-center justify-between gap-3 text-caption text-primary">
@@ -240,8 +227,6 @@ export function OfficialChallengeMyPage() {
           </div>
         )}
       </section>
-
-      <CustomChallengeMySection />
 
       <section aria-labelledby="active-challenges-title" className="flex flex-col gap-3">
         <h2 id="active-challenges-title" className="text-base font-bold">진행 중인 챌린지</h2>
@@ -276,6 +261,10 @@ export function OfficialChallengeMyPage() {
           )) : null}
         </section>
       ) : null}
+        </>
+      ) : null}
+
+      <CustomChallengeMySection />
       </main>
     </>
   );

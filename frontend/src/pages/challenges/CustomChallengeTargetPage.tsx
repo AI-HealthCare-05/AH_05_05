@@ -1,4 +1,3 @@
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 
@@ -10,7 +9,7 @@ import {
   type CustomChallengeRecommendation,
 } from '@/entities/custom-challenge';
 import { ApiError, getAuthGeneration } from '@/shared/api/client';
-import { Button, Card } from '@/shared/ui';
+import { Button, Card, Header } from '@/shared/ui';
 
 type SupportedKind = 'medication' | 'supplement';
 
@@ -162,16 +161,10 @@ export function CustomChallengeTargetPage() {
   }
 
   return (
-    <main className="flex min-h-full flex-col gap-4 px-page-x py-5">
-      <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges/tailored')} className="flex size-11 shrink-0 items-center justify-center rounded-pill">
-          <ArrowLeft aria-hidden className="size-5" />
-        </button>
-        <div className="min-w-0">
-          <h1 className="break-words text-[22px] font-bold leading-8">{recommendation?.challengeName ?? '맞춤 챌린지'}</h1>
-          <p className="text-sm text-muted-foreground">참여할 기록을 선택해주세요</p>
-        </div>
-      </header>
+    <>
+      <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={() => navigate('/challenges/tailored')} />
+      <main className="flex min-h-full flex-col gap-4 px-page-x py-5">
+      <p className="text-sm text-muted-foreground">참여할 기록을 선택해주세요</p>
 
       {!recommendation && !loadError ? <div role="status" aria-label="참여 대상 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" /> : null}
       {loadError ? (
@@ -236,6 +229,7 @@ export function CustomChallengeTargetPage() {
         </Button>
       ) : null}
       <Link to="/challenges/tailored" className="min-h-touch py-3 text-center text-sm font-bold text-primary">맞춤 챌린지로 돌아가기</Link>
-    </main>
+      </main>
+    </>
   );
 }

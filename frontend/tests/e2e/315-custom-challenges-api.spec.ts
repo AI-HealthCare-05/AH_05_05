@@ -321,6 +321,42 @@ test('custom list failure stays inside its section while official My remains usa
   await expect(page.getByRole('link', { name: '공식 챌린지 둘러보기' })).toBeVisible();
 });
 
+test('custom My remains available when the official dashboard fails', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({
+    status: 503,
+    json: { code: 'TEMPORARY', message: '공식 챌린지를 불러오지 못했어요.' },
+  }));
+  await page.route('**/api/v1/user/badges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [participation()], totalCount: 1 },
+  }));
+
+  await page.goto('/challenges');
+
+  await expect(page.getByRole('alert')).toContainText('공식 챌린지를 불러오지 못했어요.');
+  await expect(page.getByRole('region', { name: '맞춤 챌린지' }).getByText(medicationA.challengeName)).toBeVisible();
+});
+
+test('custom My can finish loading while the official dashboard is still pending', async ({ page }) => {
+  await authenticate(page);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/v1/user/challenges', async route => {
+    await gate;
+    await route.fulfill({ json: { items: [], total_count: 0 } });
+  });
+  await page.route('**/api/v1/user/badges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [participation()], totalCount: 1 },
+  }));
+
+  await page.goto('/challenges');
+  await expect(page.getByRole('region', { name: '맞춤 챌린지' }).getByText(medicationA.challengeName)).toBeVisible();
+  await expect(page.getByRole('status', { name: '내 챌린지 불러오는 중' })).toBeVisible();
+  release();
+});
+
 test('official My and browse keep their page heading outside the padded main', async ({ page }) => {
   await authenticate(page);
   await stubOfficialMy(page);
@@ -337,4 +373,73 @@ test('official My and browse keep their page heading outside the padded main', a
     await expect(back).toBeVisible();
     await expect(page.locator('main').getByRole('button', { name: '뒤로 가기' })).toHaveCount(0);
   }
+});
+
+test('custom screens keep their shared header outside the padded main', async ({ page }) => {
+  await authenticate(page);
+  await stubRecommendations(page, [medicationA]);
+  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({
+    json: participation(),
+  }));
+
+  for (const path of [
+    '/challenges/tailored',
+    '/challenges/tailored/medication?templateId=31',
+    '/challenges/custom-participations/701',
+  ]) {
+    await page.goto(path);
+    const back = page.getByRole('button', { name: '뒤로 가기' });
+    await expect(back).toBeVisible();
+    await expect(page.locator('main').getByRole('button', { name: '뒤로 가기' })).toHaveCount(0);
+  }
+});
+
+test('custom detail keeps past occurrences folded until the user opens them', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({
+    json: participation({
+      targetCount: 2,
+      completedCount: 1,
+      progressRate: '50.00',
+      occurrences: [
+        { id: 901, targetId: 801, scheduledDate: '2020-01-01', slot: 'MORNING', scheduledAt: '2020-01-01T08:00:00+09:00', isCompleted: true },
+        { id: 902, targetId: 801, scheduledDate: '2099-01-01', slot: 'EVENING', scheduledAt: '2099-01-01T19:00:00+09:00', isCompleted: false },
+      ],
+    }),
+  }));
+
+  await page.goto('/challenges/custom-participations/701');
+
+  await expect(page.getByText('2099.01.01 · 저녁 · 예정 · 서울의원 1차 처방')).toBeVisible();
+  await expect(page.getByText('2020.01.01 · 아침 · 완료 · 서울의원 1차 처방')).toHaveCount(0);
+  const history = page.getByRole('button', { name: '지난 기록 펼치기' });
+  await expect(history).toHaveAttribute('aria-expanded', 'false');
+  await history.click();
+  await expect(page.getByText('2020.01.01 · 아침 · 완료 · 서울의원 1차 처방')).toBeVisible();
+});
+
+test.describe('Asia/Seoul occurrence boundary', () => {
+  test.use({ timezoneId: 'America/Los_Angeles' });
+
+  test('uses the backend Seoul date even when the browser local date is a day behind', async ({ page }) => {
+    await page.clock.setFixedTime('2026-09-09T15:30:00.000Z');
+    await authenticate(page);
+    await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({
+      json: participation({
+        targetCount: 2,
+        completedCount: 1,
+        progressRate: '50.00',
+        occurrences: [
+          { id: 901, targetId: 801, scheduledDate: '2026-09-09', slot: 'MORNING', scheduledAt: '2026-09-09T08:00:00+09:00', isCompleted: true },
+          { id: 902, targetId: 801, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:00:00+09:00', isCompleted: false },
+        ],
+      }),
+    }));
+
+    await page.goto('/challenges/custom-participations/701');
+
+    await expect(page.getByText('2026.09.10 · 아침 · 예정 · 서울의원 1차 처방')).toBeVisible();
+    await expect(page.getByText('2026.09.09 · 아침 · 완료 · 서울의원 1차 처방')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '지난 기록 펼치기' })).toHaveText('1개 보기');
+  });
 });

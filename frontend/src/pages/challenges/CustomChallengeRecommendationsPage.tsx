@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 
@@ -8,7 +8,7 @@ import {
   type CustomChallengeRecommendation,
 } from '@/entities/custom-challenge';
 import { ApiError } from '@/shared/api/client';
-import { Button, Card } from '@/shared/ui';
+import { Button, Card, Header } from '@/shared/ui';
 
 function kindPath(type: CustomChallengeRecommendation['challengeType']) {
   if (type === 'MEDICATION') return 'medication';
@@ -49,16 +49,10 @@ export function CustomChallengeRecommendationsPage() {
   }, [principalKey, reloadKey]);
 
   return (
-    <main className="flex min-h-full flex-col gap-4 px-page-x py-5">
-      <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges/browse')} className="flex size-11 shrink-0 items-center justify-center rounded-pill">
-          <ArrowLeft aria-hidden className="size-5" />
-        </button>
-        <div>
-          <h1 className="text-[22px] font-bold leading-8 text-foreground">맞춤 챌린지</h1>
-          <p className="text-sm text-muted-foreground">등록한 기록에 맞는 챌린지를 확인해보세요</p>
-        </div>
-      </header>
+    <>
+      <Header title="맞춤 챌린지" onBack={() => navigate('/challenges/browse')} />
+      <main className="flex min-h-full flex-col gap-4 px-page-x py-5">
+      <p className="text-sm text-muted-foreground">등록한 기록에 맞는 챌린지를 확인해보세요</p>
 
       {items === null && !error ? (
         <div role="status" aria-label="맞춤 챌린지 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" />
@@ -104,6 +98,7 @@ export function CustomChallengeRecommendationsPage() {
       })}
 
       <Link to="/challenges" className="mt-auto min-h-touch py-3 text-center text-sm font-bold text-primary">챌린지로 돌아가기</Link>
-    </main>
+      </main>
+    </>
   );
 }
