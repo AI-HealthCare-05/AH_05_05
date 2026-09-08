@@ -154,19 +154,36 @@ const MOCK_REGISTRATION_COUNTS: Record<string, number> = {
   'sp-008': 14,
 };
 
-function compareName(left: SupplementProduct, right: SupplementProduct): number {
-  return left.productName.localeCompare(right.productName, 'ko-KR') || left.productId.localeCompare(right.productId);
+function compareProductId(left: SupplementProduct, right: SupplementProduct): number {
+  return left.productId.localeCompare(right.productId);
+}
+
+function compareNumber(left: number, right: number, direction: 'asc' | 'desc'): number {
+  return direction === 'asc' ? left - right : right - left;
+}
+
+function compareNullableNumber(
+  left: number | null,
+  right: number | null,
+  direction: 'asc' | 'desc',
+): number {
+  if (left === null) return right === null ? 0 : direction === 'asc' ? -1 : 1;
+  if (right === null) return direction === 'asc' ? 1 : -1;
+  return compareNumber(left, right, direction);
 }
 
 export function mockSearchSupplementProducts({
   query,
   sort,
+  direction,
   offset = 0,
   limit = 20,
 }: SearchSupplementProductsParams): SupplementSearchPage {
   const trimmedQuery = normalized(query);
   if (!trimmedQuery) return { items: [], total: 0, nextOffset: null };
 
+  const resolvedDirection =
+    direction ?? (sort === 'name' || sort === undefined ? 'asc' : 'desc');
   const matches = SUPPLEMENT_PRODUCTS.filter((productItem) =>
     [
       productItem.productName,
@@ -183,27 +200,32 @@ export function mockSearchSupplementProducts({
     }
     if (sort === 'registered') {
       return (
-        (MOCK_REGISTRATION_COUNTS[right.productId] ?? 0) -
-          (MOCK_REGISTRATION_COUNTS[left.productId] ?? 0) || compareName(left, right)
+        compareNumber(
+          MOCK_REGISTRATION_COUNTS[left.productId] ?? 0,
+          MOCK_REGISTRATION_COUNTS[right.productId] ?? 0,
+          resolvedDirection,
+        ) || compareProductId(left, right)
       );
     }
     if (sort === 'rating') {
-      if (left.ratingAverage === null) return right.ratingAverage === null ? compareName(left, right) : 1;
-      if (right.ratingAverage === null) return -1;
       return (
-        right.ratingAverage - left.ratingAverage ||
-        right.reviewCount - left.reviewCount ||
-        compareName(left, right)
+        compareNullableNumber(left.ratingAverage, right.ratingAverage, resolvedDirection) ||
+        compareNumber(left.reviewCount, right.reviewCount, resolvedDirection) ||
+        compareProductId(left, right)
       );
     }
     if (sort === 'reviews') {
       return (
-        right.reviewCount - left.reviewCount ||
-        (right.ratingAverage ?? -1) - (left.ratingAverage ?? -1) ||
-        compareName(left, right)
+        compareNumber(left.reviewCount, right.reviewCount, resolvedDirection) ||
+        compareNullableNumber(left.ratingAverage, right.ratingAverage, resolvedDirection) ||
+        compareProductId(left, right)
       );
     }
-    return compareName(left, right);
+    const byProductName = left.productName.localeCompare(right.productName, 'ko-KR');
+    return (
+      (resolvedDirection === 'asc' ? byProductName : -byProductName) ||
+      left.productId.localeCompare(right.productId)
+    );
   });
   const items = matches.slice(offset, offset + limit).map((productItem) => ({
     ...productItem,

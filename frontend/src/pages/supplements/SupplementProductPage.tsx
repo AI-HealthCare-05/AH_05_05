@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import {
   addSupplement,
@@ -24,6 +24,16 @@ export function SupplementProductPage() {
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const activeLocationKeyRef = useRef(location.key);
+  activeLocationKeyRef.current = location.key;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,11 +71,16 @@ export function SupplementProductPage() {
   }, [productId]);
 
   async function saveSupplement(payload: AddSupplementPayload) {
+    const saveLocationKey = location.key;
     try {
       await addSupplement(payload);
+      if (!mountedRef.current || activeLocationKeyRef.current !== saveLocationKey) return;
       setAlreadyRegistered(true);
+      navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements');
     } catch (error: unknown) {
-      setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
+      if (mountedRef.current && activeLocationKeyRef.current === saveLocationKey) {
+        setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
+      }
       throw error;
     }
   }
@@ -81,8 +96,8 @@ export function SupplementProductPage() {
           <p className="text-sm text-muted-foreground">제품 정보를 불러오는 중...</p>
         ) : (
           <>
-            <section className="flex flex-col gap-2" aria-labelledby="product-name">
-              <h2 id="product-name" className="text-2xl font-bold text-foreground">
+            <section className="flex min-w-0 flex-col gap-2" aria-labelledby="product-name">
+              <h2 id="product-name" className="[overflow-wrap:anywhere] text-2xl font-bold text-foreground">
                 {product.productName}
               </h2>
               <p className="text-sm text-muted-foreground">

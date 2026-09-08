@@ -354,6 +354,7 @@ export async function searchSupplementProducts(
     limit: String(params.limit ?? 20),
   });
   if (params.sort) query.set('sort', params.sort);
+  if (params.direction) query.set('direction', params.direction);
   const response = await http.get<SupplementNutrientListApiResponse>(
     `/v1/med/nutr?${query.toString()}`,
   );

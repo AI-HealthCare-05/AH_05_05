@@ -18,6 +18,7 @@ class EmailJobPayload(BaseModel):
     temporary_password: str | None = Field(default=None, min_length=1, max_length=255)
     verification_id: int | None = Field(default=None, gt=0)
     verification_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    expires_in: int | None = Field(default=None, gt=0)
     expires_at: datetime | None = None
 
     @model_validator(mode="after")

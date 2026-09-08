@@ -9,10 +9,12 @@ async function openHome(page: Page, options: {
   failId?: number;
   failLookup?: boolean;
   at?: string;
+  longName?: string;
+  initialRecords?: Dose[];
   slotTimeOverrides?: Partial<Record<string, string>>;
 } = {}) {
   const requests: Dose[] = [];
-  let records: Dose[] = [];
+  let records: Dose[] = options.initialRecords ?? [];
   let failId = options.failId;
   let failLookup = options.failLookup;
   await page.clock.setFixedTime(new Date(`${DATE}T${options.at ?? '12:00:00'}+09:00`));
@@ -29,7 +31,7 @@ async function openHome(page: Page, options: {
     await page.route('**/api/v1/display/med/nutr/rank', route => route.fulfill({ status: 204 }));
     await page.route('**/api/v1/med/user-suppl-nutr?**', route => route.fulfill({ json: {
       items: [
-        { id: 501, name: '오메가3', slots: ['MORNING', 'EVENING'] },
+        { id: 501, name: options.longName ?? '오메가3', slots: ['MORNING', 'EVENING'] },
         { id: 502, name: '종합비타민', slots: ['MORNING'] },
         { id: 503, name: '비타민 D', slots: ['EVENING'] },
       ].map(item => ({
@@ -159,6 +161,41 @@ test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액
   await expect(indicator).toHaveClass(/bg-primary/);
   await expect(indicator.locator('svg')).toHaveCount(1);
   await expect(morning.getByRole('button', { name: '1개 되돌리기' })).toBeEnabled();
+});
+
+test('긴 영양제 이름은 모든 화면 폭에서 완료 배지와 선택 원을 밀지 않고 전체가 보인다', async ({ page }) => {
+  test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  test.setTimeout(120_000);
+  const longName = `활력충전종합영양제${'SUPPLEMENT'.repeat(18)}캡슐`;
+  const record = { supplementId: 501, date: DATE, slot: 'morning', taken: true };
+  const { morning } = await openHome(page, { longName, initialRecords: [record] });
+
+  for (const width of [320, 375, 430, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.reload();
+    await page.getByRole('tab', { name: '오늘의 영양제' }).click();
+    const row = morning.getByRole('button', { name: `${longName} 복용 완료` });
+    const name = row.getByText(longName, { exact: true });
+    const badge = row.locator('[data-supplement-completed-badge]');
+    const glyph = row.locator('[data-supplement-selection-indicator]');
+    const [rowBox, nameBox, badgeBox, glyphBox] = await Promise.all([
+      row.boundingBox(), name.boundingBox(), badge.boundingBox(), glyph.boundingBox(),
+    ]);
+
+    expect(rowBox).not.toBeNull();
+    expect(nameBox).not.toBeNull();
+    expect(badgeBox).not.toBeNull();
+    expect(glyphBox).not.toBeNull();
+    expect(await name.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    expect(nameBox!.x + nameBox!.width).toBeLessThanOrEqual(badgeBox!.x + 1);
+    expect(glyphBox!.width).toBe(24);
+    expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(rowBox!.x + rowBox!.width + 1);
+    expect(await morning.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+
+    await row.click();
+    await expect(row).toHaveAttribute('aria-pressed', 'true');
+    await row.click();
+  }
 });
 
 test('일부 영양제만 기록하면 새로고침 뒤 유지되고 완료 항목을 선택해 되돌린다', async ({ page }) => {

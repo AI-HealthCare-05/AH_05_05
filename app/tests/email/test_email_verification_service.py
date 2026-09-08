@@ -59,6 +59,7 @@ class TestEmailVerificationService(TestCase):
                 "verification_id": verification.id,
                 "recipient_email": "user@example.com",
                 "verification_code": "123456",
+                "expires_in": 180,
                 "expires_at": self.now + timedelta(seconds=180),
             }
         ]
