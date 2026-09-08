@@ -111,7 +111,7 @@ async function routeCommon(
       limit: 100,
     });
   });
-  await page.route('**/api/v1/me', async (route) => {
+  await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
       name: '테스트 사용자',
       phoneNumber: '01012345678',

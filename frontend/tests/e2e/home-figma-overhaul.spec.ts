@@ -35,7 +35,7 @@ test('처방 상세를 펼쳐 세로 스크롤이 생겨도 복약 카드 폭과
   expect(Math.abs(afterCard!.x - beforeCard!.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(afterCard!.width - beforeCard!.width)).toBeLessThanOrEqual(1);
   expect(Math.abs(afterAction!.height - beforeAction!.height)).toBeLessThanOrEqual(1);
-  await expect(main).toHaveCSS('scrollbar-gutter', 'stable');
+  await expect(main).toHaveCSS('scrollbar-width', 'none');
   expect(await main.evaluate((element) => element.scrollWidth)).toBe(
     await main.evaluate((element) => element.clientWidth),
   );
@@ -64,7 +64,7 @@ test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 
   await expect(
     firstEpisode
       .getByRole('group', { name: /8월 22일 처방 약 상세/ })
-      .getByText('셀레콕시브 200mg', { exact: true }),
+      .getByText('셀레콕시브', { exact: true }),
   ).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: /8월 22일 처방.*선택/ }).click();
@@ -139,19 +139,19 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
   });
   const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
   const secondEpisode = morning.getByRole('article', { name: /8월 24일 처방/ });
-  await expect(page.getByText('셀레콕시브 200mg')).toHaveCount(0);
-  await expect(page.getByText('아목시실린 500mg')).toHaveCount(0);
+  await expect(page.getByText('셀레콕시브', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('아목시실린', { exact: true })).toHaveCount(0);
 
   await firstEpisode.getByRole('button', { name: /펼치기/ }).click();
   await expect(
-    firstEpisode.getByRole('group', { name: /처방 약 상세/ }).getByText('셀레콕시브 200mg', {
+    firstEpisode.getByRole('group', { name: /처방 약 상세/ }).getByText('셀레콕시브', {
       exact: true,
     }),
   ).toBeVisible();
 
   await secondEpisode.getByRole('button', { name: /펼치기/ }).click();
   await expect(
-    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린 500mg', {
+    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린', {
       exact: true,
     }),
   ).toBeVisible();
@@ -159,9 +159,9 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
   await expect(morning.getByRole('heading', { name: '지난 처방', exact: true })).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: /접기/ }).click();
-  await expect(firstEpisode.getByText('셀레콕시브 200mg', { exact: true })).toHaveCount(0);
+  await expect(firstEpisode.getByText('셀레콕시브', { exact: true })).toHaveCount(0);
   await expect(
-    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린 500mg', {
+    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린', {
       exact: true,
     }),
   ).toBeVisible();
