@@ -18,6 +18,12 @@ import type { EditableOcrMedication } from '@/entities/document/types';
 import {
   Button,
   Card,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   ErrorDialog,
   Header,
   ImageViewer,
@@ -188,6 +194,7 @@ export function OcrReviewPage() {
   const [medicationEditorTarget, setMedicationEditorTarget] =
     useState<MedicationEditorTarget | null>(null);
   const [reviewConfirmOpen, setReviewConfirmOpen] = useState(false);
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -473,6 +480,23 @@ export function OcrReviewPage() {
       releaseOcrDocumentImageUrl(batchId);
       toast.success('저장했어요.');
       if (hasMedication) {
+        // 브라우저 뒤로가기도 화살표처럼 저장한 내용을 편집할 수 있어야 합니다.
+        // 완료된 배치를 일반 검토 주소로 다시 조회하지 않도록 현재 기록을 교체합니다.
+        const reviewParams = new URLSearchParams({
+          batchId,
+          recordId: String(recordId),
+          mode: 'registration-edit',
+          flow: 'registration',
+        });
+        navigate(`/ocr-review?${reviewParams.toString()}`, {
+          replace: true,
+          state: {
+            batchId,
+            registrationFlow: true,
+            episodeAlias,
+            ...(ocrRegistrationDraft ? { ocrRegistrationDraft } : {}),
+          },
+        });
         const params = new URLSearchParams({
           recordId: String(recordId),
           ocrJobId: batchId,
@@ -623,7 +647,7 @@ export function OcrReviewPage() {
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
         title="확인해주세요"
-        onBack={scheduleReturnUrl ? returnToSchedule : () => navigate(-1)}
+        onBack={confirmedReviewMode ? returnToSchedule : () => { if (!saving) setExitConfirmOpen(true); }}
       />
       <main className="flex flex-1 flex-col gap-5 px-page-x py-5">
         <RegistrationProgress step={2} />
@@ -826,6 +850,25 @@ export function OcrReviewPage() {
           )}
         </div>
       </main>
+
+      <Dialog open={exitConfirmOpen} onOpenChange={setExitConfirmOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>설정을 취소하고 나갈까요?</DialogTitle>
+            <DialogDescription>
+              저장하지 않은 변경 사항과 진행 중인 시간 설정은 반영되지 않아요.
+              {registrationEditMode && ' 이미 저장된 약 정보는 유지돼요.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setExitConfirmOpen(false)}>계속 설정</Button>
+            <Button variant="secondary" onClick={() => {
+              if (batchId) releaseOcrDocumentImageUrl(batchId);
+              navigate('/home', { replace: true });
+            }}>나가기</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <MedicationEditDialog
         open={medicationEditorTarget !== null}

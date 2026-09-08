@@ -52,6 +52,50 @@ def _block(block_id: str, text: str, x: float, y: float, width: float, height: f
 
 
 @pytest.mark.parametrize("scale", [1, 3])
+def test_payment_filter_does_not_cross_receipt_and_guidance_column_gutter(scale):
+    from app.services.medication_ocr_v3.pipeline import evidence_catalog as catalog_module
+
+    # The receipt's amount header and fourth drug name share a baseline, but
+    # repeated text above/below them establishes two distinct side-by-side panels.
+    blocks = (
+        _block("amount", "금액", 340, 747, 62, 18),
+        _block("receipt-above", "영수증", 198, 650, 204, 20),
+        _block("receipt-below", "품목", 198, 820, 204, 20),
+        _block("guidance-above", "복약안내", 440, 650, 340, 20),
+        _block("guidance-below", "식후 복용", 440, 820, 340, 20),
+        _block("fourth-name", "파모티딘정20mg", 642, 747, 138, 24),
+        _block("same-panel-value", "9600", 340, 769, 60, 18),
+    )
+    blocks = tuple(replace(b, bbox=tuple(Point(p.x * scale, p.y * scale) for p in b.bbox)) for b in blocks)
+    layout = build_ocr_layout(OcrResult(blocks))
+    sources, _ = catalog_module._unique_geometry_sources(blocks)
+    _, sensitive, _ = catalog_module._line_indexes(layout, sources, frozenset({"fourth-name"}))
+    assert "amount" in sensitive
+    assert "same-panel-value" in sensitive
+    assert "fourth-name" not in sensitive
+
+
+def test_wide_receipt_columns_and_unproven_drug_text_remain_sensitive():
+    from app.services.medication_ocr_v3.pipeline import evidence_catalog as catalog_module
+
+    blocks = (
+        _block("amount", "금액", 198, 747, 62, 18),
+        _block("receipt-above", "항목", 198, 650, 62, 20),
+        _block("receipt-below", "품목", 198, 820, 62, 20),
+        _block("receipt-value", "9600", 340, 747, 60, 18),
+        _block("value-above", "1200", 340, 650, 60, 20),
+        _block("value-below", "4500", 340, 820, 60, 20),
+        _block("drug-like", "파모티딘정20mg", 440, 747, 138, 24),
+        _block("right-above", "내용", 440, 650, 138, 20),
+        _block("right-below", "참고", 440, 820, 138, 20),
+    )
+    sources, _ = catalog_module._unique_geometry_sources(blocks)
+    _, sensitive, _ = catalog_module._line_indexes(build_ocr_layout(OcrResult(blocks)), sources)
+    assert "receipt-value" in sensitive
+    assert "drug-like" in sensitive
+
+
+@pytest.mark.parametrize("scale", [1, 3])
 def test_dispensed_date_anchors_below_label_not_tall_next_visit_above(scale: int) -> None:
     source = OcrResult(
         (

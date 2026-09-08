@@ -8,6 +8,7 @@ import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from statistics import median
 
 from app.services.medication_ocr_v3.domain.grounding import EvidenceBlock, EvidenceCatalog, EvidenceRow
 from app.services.medication_ocr_v3.domain.models import OcrBlock, OcrResult
@@ -100,7 +101,9 @@ def build_evidence_catalog(
     """
 
     source_by_id, duplicate_ids = _unique_geometry_sources(ocr_result.blocks)
-    line_by_block_id, sensitive_block_ids, line_segments = _line_indexes(layout, source_by_id)
+    line_by_block_id, sensitive_block_ids, line_segments = _line_indexes(
+        layout, source_by_id, _verified_medication_block_ids(medication_rows)
+    )
     seeds, supplements = _row_seeds(layout, medication_rows)
     structural_schedule_block_ids = _structural_schedule_block_ids(layout, seeds)
     assignments: dict[str, _BlockAssignment] = defaultdict(_BlockAssignment)
@@ -209,9 +212,22 @@ def _bbox(block: OcrBlock) -> AxisAlignedBBox | None:
     return bbox if bbox.width > 0.0 and bbox.height > 0.0 else None
 
 
+def _verified_medication_block_ids(medication_rows: MedicationRowsResult) -> frozenset[str]:
+    ids: set[str] = set()
+    for row in medication_rows.medications:
+        fields = (row.fields.name, row.fields.dose_quantity, row.fields.times_per_day, row.fields.days)
+        if row.name == row.fields.name.value and all(
+            field.value not in (None, "") and field.block_ids and field.bbox is not None and not field.issues
+            for field in fields
+        ):
+            ids.update(block_id for field in fields for block_id in field.block_ids)
+    return frozenset(ids)
+
+
 def _line_indexes(
     layout: OcrLayoutResult,
     source_by_id: dict[str, tuple[OcrBlock, AxisAlignedBBox]],
+    medication_block_ids: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, str], set[str], tuple[OcrLine, ...]]:
     line_by_block_id: dict[str, str] = {}
     ambiguous_ids: set[str] = set()
@@ -227,7 +243,9 @@ def _line_indexes(
     sensitive_block_ids = {
         block_id for segment in segments if _is_sensitive_text(segment.text) for block_id in segment.block_ids
     }
-    sensitive_block_ids.update(_sensitive_continuation_block_ids(segments))
+    sensitive_block_ids.update(
+        _sensitive_continuation_block_ids(segments, _column_gutters(source_by_id), medication_block_ids)
+    )
     return line_by_block_id, sensitive_block_ids, segments
 
 
@@ -281,7 +299,30 @@ def _starts_new_line_segment(first: AxisAlignedBBox, second: AxisAlignedBBox) ->
     return horizontal_gap > max(first.height, second.height) * 1.5
 
 
-def _sensitive_continuation_block_ids(segments: tuple[OcrLine, ...]) -> set[str]:
+def _column_gutters(source_by_id: dict[str, tuple[OcrBlock, AxisAlignedBBox]]) -> tuple[float, ...]:
+    """Find persistent vertical whitespace separating populated text columns."""
+    boxes = sorted((box for _, box in source_by_id.values()), key=lambda box: box.x_min)
+    if not boxes:
+        return ()
+    text_height = median(box.height for box in boxes)
+    right_edge = boxes[0].x_max
+    gutters: list[float] = []
+    for box in boxes[1:]:
+        if box.x_min - right_edge > text_height * 1.5:
+            left = [item for item in boxes if item.x_max <= right_edge]
+            right = [item for item in boxes if item.x_min >= box.x_min]
+            if all(
+                len(side) >= 3 and max(item.y_max for item in side) - min(item.y_min for item in side) > text_height * 3
+                for side in (left, right)
+            ):
+                gutters.append((right_edge + box.x_min) / 2)
+        right_edge = max(right_edge, box.x_max)
+    return tuple(gutters)
+
+
+def _sensitive_continuation_block_ids(
+    segments: tuple[OcrLine, ...], gutters: tuple[float, ...] = (), medication_block_ids: frozenset[str] = frozenset()
+) -> set[str]:
     ordered = tuple(sorted(segments, key=lambda line: (line.bbox.y_min, line.bbox.x_min, line.line_id)))
     sensitive: set[str] = set()
     for index, line in enumerate(ordered):
@@ -292,6 +333,16 @@ def _sensitive_continuation_block_ids(segments: tuple[OcrLine, ...]) -> set[str]
             vertical_gap = max(continuation.bbox.y_min - previous.bbox.y_max, 0.0)
             if vertical_gap > max(previous.bbox.height, continuation.bbox.height) * 0.5:
                 break
+            # A wide label/value gap alone is not a panel boundary. Only already
+            # structured medication evidence can belong to the separate panel;
+            # unverified text and receipt amounts retain privacy filtering.
+            if set(continuation.block_ids) <= medication_block_ids and any(
+                min(previous.bbox.x_max, continuation.bbox.x_max)
+                < gutter
+                < max(previous.bbox.x_min, continuation.bbox.x_min)
+                for gutter in gutters
+            ):
+                continue
             if not _is_section_continuation(previous.bbox, continuation.bbox):
                 continue
             sensitive.update(continuation.block_ids)
