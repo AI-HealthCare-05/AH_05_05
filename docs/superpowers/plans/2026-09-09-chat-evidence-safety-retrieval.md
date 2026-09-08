@@ -170,10 +170,10 @@
 
 **Produces:** An offline reranker evaluator limited to cases whose gold document is in Top 30 but outside Top 5, with an explicit adoption decision.
 
-- [ ] Write failing tests for eligibility filtering and metric computation (`Hit@5`, `MRR`, wrong-target mixing, P95).
-- [ ] Implement a deterministic score adapter/test reranker interface; keep runtime reranking disabled.
-- [ ] Define success as non-decreasing safety metrics and source precision with an improvement in Hit@5 or MRR, under the documented P95 budget.
-- [ ] Record result; enable no runtime path unless the success rule is met; commit.
+- [x] Write failing tests for eligibility filtering and metric computation (`Hit@5`, `MRR`, wrong-target mixing, P95).
+- [x] Implement a deterministic score adapter/test reranker interface; keep runtime reranking disabled.
+- [x] Define success as non-decreasing safety metrics and source precision with an improvement in Hit@5 or MRR, under the documented P95 budget.
+- [x] Record result; enable no runtime path unless the success rule is met; commit.
 
 ### Task 11: Decide LangGraph need with an ADR
 
