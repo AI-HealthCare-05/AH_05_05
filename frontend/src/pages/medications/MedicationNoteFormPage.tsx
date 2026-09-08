@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import {
   createMedicationNote,
-  deleteMedicationNote,
   getMedicationNote,
   updateMedicationNote,
   type MedicationNote,
@@ -18,12 +17,6 @@ import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   Header,
   Input,
 } from '@/shared/ui';
@@ -124,10 +117,7 @@ export function MedicationNoteFormPage() {
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const savingRef = useRef(false);
-  const deletingRef = useRef(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -236,7 +226,7 @@ export function MedicationNoteFormPage() {
   }
 
   async function save() {
-    if (!canSave || !selectedEpisode || savingRef.current || deletingRef.current) return;
+    if (!canSave || !selectedEpisode || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     setMutationError(null);
@@ -264,23 +254,6 @@ export function MedicationNoteFormPage() {
     } finally {
       savingRef.current = false;
       setSaving(false);
-    }
-  }
-
-  async function remove() {
-    if (!noteId || savingRef.current || deletingRef.current) return;
-    deletingRef.current = true;
-    setDeleting(true);
-    setMutationError(null);
-    try {
-      await deleteMedicationNote(decodeURIComponent(noteId));
-      setDeleteOpen(false);
-      navigate('/medications/notes', { replace: true });
-    } catch (error: unknown) {
-      setMutationError(error instanceof Error ? error.message : '복약 메모를 삭제하지 못했어요.');
-    } finally {
-      deletingRef.current = false;
-      setDeleting(false);
     }
   }
 
@@ -340,7 +313,7 @@ export function MedicationNoteFormPage() {
                   aria-label="약"
                   value={form.medicationId}
                   onChange={(event) => setField('medicationId', event.target.value)}
-                  disabled={!selectedEpisode || episodes === null || saving || deleting}
+                  disabled={!selectedEpisode || episodes === null || saving}
                   className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
                 >
                   <option value="">처방 전체</option>
@@ -366,7 +339,7 @@ export function MedicationNoteFormPage() {
                 type="datetime-local"
                 value={form.takenAt}
                 onChange={(event) => setField('takenAt', event.target.value)}
-                disabled={episodes === null || saving || deleting}
+                disabled={episodes === null || saving}
               />
 
               <label className="flex flex-col gap-1 text-sm font-bold text-foreground">
@@ -377,7 +350,7 @@ export function MedicationNoteFormPage() {
                   onChange={(event) => setField('experience', event.target.value)}
                   rows={5}
                   maxLength={500}
-                  disabled={episodes === null || saving || deleting}
+                  disabled={episodes === null || saving}
                   placeholder="복용 후 느낀 점을 적어주세요."
                   className="w-full resize-y rounded-input border border-input bg-card px-3.5 py-3 text-base font-normal text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
                 />
@@ -386,19 +359,10 @@ export function MedicationNoteFormPage() {
           </>
         )}
 
-        <div className={editing ? 'mt-auto grid grid-cols-2 gap-2 pb-4' : 'mt-auto flex flex-col gap-2 pb-4'}>
-          <Button onClick={() => void save()} disabled={!canSave || saving || deleting}>
+        <div className="mt-auto flex flex-col gap-2 pb-4">
+          <Button onClick={() => void save()} disabled={!canSave || saving}>
             {saving ? '저장 중...' : editing ? '수정 저장' : '저장'}
           </Button>
-          {editing && (
-            <Button
-              variant="danger"
-              onClick={() => setDeleteOpen(true)}
-              disabled={saving || deleting}
-            >
-              {deleting ? '삭제 중...' : '삭제'}
-            </Button>
-          )}
         </div>
       </main>
       <BottomTabbar
@@ -407,22 +371,6 @@ export function MedicationNoteFormPage() {
         className="border-t border-border"
       />
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent variant="sheet">
-          <DialogHeader>
-            <DialogTitle>이 메모를 삭제할까요?</DialogTitle>
-            <DialogDescription>삭제한 복약 메모는 다시 볼 수 없어요.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={deleting}>
-              취소
-            </Button>
-            <Button variant="danger" onClick={() => void remove()} disabled={deleting || saving}>
-              {deleting ? '삭제 중...' : '삭제'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

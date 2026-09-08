@@ -169,7 +169,7 @@ test('기존 메모의 복용 일시도 계속 수정할 수 있다', async ({ p
   });
 });
 
-test('수정과 삭제 버튼은 같은 행에서 가용 폭을 반씩 쓰고 터치 높이를 유지한다', async ({ page }) => {
+test('상세 수정 화면에서는 삭제 버튼을 제거하고 수정 저장을 유지한다', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.route('**/api/v1/medications', (route) => fulfillJson(route, [OVERVIEW]));
   await page.route('**/api/v1/med/notes/404', (route) => fulfillJson(route, EXISTING_NOTE));
@@ -178,14 +178,10 @@ test('수정과 삭제 버튼은 같은 행에서 가용 폭을 반씩 쓰고 �
   const editButton = page.getByRole('button', { name: '수정 저장', exact: true });
   const deleteButton = page.getByRole('button', { name: '삭제', exact: true });
   await expect(editButton).toBeVisible();
-  await expect(deleteButton).toBeVisible();
+  await expect(deleteButton).toHaveCount(0);
 
   const editBox = await editButton.boundingBox();
-  const deleteBox = await deleteButton.boundingBox();
   expect(editBox).not.toBeNull();
-  expect(deleteBox).not.toBeNull();
-  expect(Math.abs(editBox!.y - deleteBox!.y)).toBeLessThan(1);
-  expect(Math.abs(editBox!.width - deleteBox!.width)).toBeLessThan(1);
   expect(editBox!.height).toBeGreaterThanOrEqual(44);
-  expect(deleteBox!.height).toBeGreaterThanOrEqual(44);
+  expect(editBox!.width).toBeGreaterThan(300);
 });
