@@ -189,8 +189,25 @@
 
   Do not stage the pre-existing untracked storage or goal-planner plan files.
 
-## Deferred Follow-up Interface
+## Implemented Future-Reconciliation Interface
 
-After this API slice is reviewed, a separate task may add `CustomChallengeScheduleReconciler.reconcile(*, user_id, source_kind, source_ids, changed_at, connection)`. It must reuse the same source-window normalization, preserve occurrences with `scheduled_at < changed_at`, and be invoked only inside schedule/settings/cancel/supplement mutation transactions. This plan intentionally adds no such hooks.
+`app/services/custom_challenge_schedule_reconciler.py` now exports this transaction-boundary method:
 
-The stable normalization seam exported by `app/services/custom_challenges.py` is `custom_challenge_meal_times(settings)`, `medication_goal_windows(episode)`, and `supplement_goal_windows(registration)`. The caller must prefetch medication/slot or supplement/slot relations before invoking the latter two functions. These helpers return planner inputs only and perform no writes.
+```python
+async def reconcile(
+    *,
+    user_id: int,
+    source_kind: CustomChallengeType,
+    source_ids: Collection[int] | None,
+    changed_at: datetime,
+    connection: BaseDBAsyncClient,
+) -> None: ...
+```
+
+`source_ids=None` means every active target of `source_kind` owned by `user_id`; a collection selects only matching immutable source snapshots, and an empty collection is a no-op. `source_kind` must be an actual `CustomChallengeType.MEDICATION` or `CustomChallengeType.SUPPLEMENT` enum member; raw strings and `VISIT` are rejected. The caller must already be inside the source mutation transaction, hold the user's `User` row as the common first lock, hold any directly mutated source/settings rows, and capture one timezone-aware `changed_at` after those contested locks. The reconciler then locks active participations, targets, and occurrences, preserving every row with `scheduled_at < changed_at` and diffing only future rows.
+
+The authoritative live source must still be attached through the target's nullable foreign key and its ID must equal `source_id_snapshot`. A null foreign key after source deletion produces an empty future window; reconciliation never looks up or reattaches a newly reused database ID from the snapshot alone. Missing, inactive, completed, cancelled, or cross-account sources likewise produce no future goals. Removing all remaining goals does not change participation status or create progress/badge rows.
+
+The stable normalization seam exported by `app/services/custom_challenges.py` remains `custom_challenge_meal_times(settings)`, `medication_goal_windows(episode)`, and `supplement_goal_windows(registration)`. The caller must prefetch medication/slot or supplement/slot relations before invoking the latter two functions. These helpers return planner inputs only and perform no writes.
+
+Medication schedule edits/cancellation, supplement upsert/update/completion, and global meal-time edits invoke reconciliation inside their mutation transaction. Recommendation/list/detail GETs remain read-only. Medication and supplement dose writers still perform no custom-challenge writes; their existing dose rows drive progress projection on subsequent reads. Visit completion, badges, and final-result freezing remain deferred.

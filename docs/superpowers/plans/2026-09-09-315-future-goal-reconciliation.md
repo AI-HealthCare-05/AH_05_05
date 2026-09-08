@@ -60,7 +60,7 @@ class CustomChallengeScheduleReconciler:
     ) -> None: ...
 ```
 
-`source_ids=None` means all active targets of `source_kind` owned by `user_id`; a collection means only those source snapshots after canonicalizing to a sorted unique tuple. An empty collection is a no-op. Only `MEDICATION` and `SUPPLEMENT` are accepted; `VISIT` raises `ValueError` because visit policy remains outside this slice.
+`source_ids=None` means all active targets of `source_kind` owned by `user_id`; a collection means only those source snapshots after canonicalizing to a sorted unique tuple. An empty collection is a no-op. `source_kind` must be an actual `CustomChallengeType` instance: only `MEDICATION` and `SUPPLEMENT` are accepted, while raw strings and `VISIT` raise `ValueError`. This prevents `StrEnum` value equality from passing validation and then entering the wrong identity-based loader branch.
 
 The caller must already be inside the source mutation transaction and hold that user's `User` row plus any directly mutated source/settings rows. The reconciler does not open a transaction or reacquire `User`; it continues the shared order with participation, target, and occurrence locks.
 
@@ -136,7 +136,7 @@ class CustomChallengeScheduleReconciler:
         )
 ```
 
-  Batch-load only owned ACTIVE sources from the same connection. Use `prefetch_related("medications__slots")` for care episodes and `prefetch_related("slots")` for supplement registrations. Missing, deleted, cancelled, completed, or cross-account sources map to an empty window list; never load them by snapshot ID without the user filter. Read `UserSettings` on the supplied connection and pass it through `custom_challenge_meal_times` without creating settings.
+  Batch-load only owned ACTIVE sources from the same connection. Use `prefetch_related("medications__slots")` for care episodes and `prefetch_related("slots")` for supplement registrations. A target is eligible for authoritative reload only when its nullable live foreign key is non-null and equals `source_id_snapshot`. A null foreign key after source deletion maps to an empty window list, even if that database ID is later reused; never look up or reattach a source from the immutable snapshot alone. Missing, cancelled, completed, or cross-account live sources likewise map to an empty window list. Read `UserSettings` on the supplied connection and pass it through `custom_challenge_meal_times` without creating settings.
 
 - [ ] **Step 4: Implement the per-target future diff**
 
@@ -271,6 +271,7 @@ git commit -m "feature/315[신동훈]복약 일정 변경 미래 목표 연동"
 **Files:**
 - Modify: `app/services/user_supplement_nutrients.py`
 - Modify: `app/services/settings.py`
+- Modify: `app/apis/v1/settings_router.py` (internal zero-argument dependency provider only)
 - Modify: `app/tests/custom_challenge_apis/test_custom_challenge_schedule_reconciliation.py`
 
 **Interfaces:**
@@ -316,7 +317,7 @@ await self._reconciler.reconcile(
 
 - [ ] **Step 4: Put `NotifySettingsService.update` behind the shared User lock**
 
-  Add optional reconciler/time-provider constructor arguments. At transaction entry lock `User` before `UserSettings`, preserving same-transaction settings creation. Capture `changed_at` after the settings lock. Keep existing field merge, ordering validation, consent write, and alarm/follow-up-visit alarm behavior. Only when `time_update_fields` is non-empty, invoke `reconcile` once for MEDICATION/all sources and once for SUPPLEMENT/all sources using the same `changed_at`. Toggle-only requests must not query or write custom-challenge occurrences.
+  Add optional reconciler/time-provider constructor arguments. At transaction entry lock `User` before `UserSettings`, preserving same-transaction settings creation. Capture `changed_at` after the settings lock. Keep existing field merge, ordering validation, consent write, and alarm/follow-up-visit alarm behavior. Only when `time_update_fields` is non-empty, invoke `reconcile` once for MEDICATION/all sources and once for SUPPLEMENT/all sources using the same `changed_at`. Toggle-only requests must not query or write custom-challenge occurrences. Because FastAPI previously used the service class itself as a dependency callable, route construction would expose the injectable constructor seams as request parameters; switch the settings router to a zero-argument provider function, matching the existing medication-router pattern, without changing the HTTP contract.
 
 - [ ] **Step 5: Run Task 3 and all reconciliation tests**
 
@@ -330,7 +331,7 @@ await self._reconciler.reconcile(
 - [ ] **Step 6: Commit supplement/settings hooks**
 
 ```bash
-git add app/services/user_supplement_nutrients.py app/services/settings.py app/tests/custom_challenge_apis/test_custom_challenge_schedule_reconciliation.py
+git add app/services/user_supplement_nutrients.py app/services/settings.py app/apis/v1/settings_router.py app/tests/custom_challenge_apis/test_custom_challenge_schedule_reconciliation.py
 git commit -m "feature/315[신동훈]영양제와 알림 시간 미래 목표 연동"
 ```
 
@@ -338,11 +339,12 @@ git commit -m "feature/315[신동훈]영양제와 알림 시간 미래 목표 �
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-09-08-315-custom-challenge-api.md`
+- Modify: `docs/superpowers/plans/2026-09-09-315-future-goal-reconciliation.md`
 - Verify only: all production and test files from Tasks 1-3
 
 **Interfaces:**
 - Consumes: completed mutation-time reconciler and hooks.
-- Produces: one reviewed backend schedule-reconciliation slice with no API/schema/frontend changes.
+- Produces: one reviewed backend schedule-reconciliation slice with no public HTTP contract, schema, or frontend changes; the settings router changes only its internal service dependency provider.
 
 - [ ] **Step 1: Replace the old deferred-interface note**
 
@@ -390,13 +392,13 @@ rg -n "reconcile\(" app/services
 rg -n "CustomChallengeOccurrence|CustomChallengeParticipation|UserBadge" app/services/medication_schedule.py app/services/medications.py app/services/user_supplement_nutrients.py app/services/settings.py
 ```
 
-  Confirm hooks occur only inside existing/new source mutation transactions; `save_dose` and `SupplementDoseService.save` contain no hook; recommendations/list/detail contain no mutation-time reconciliation; no route, DTO, migration, frontend, visit, badge, or admin file changed.
+  Confirm hooks occur only inside existing/new source mutation transactions; `save_dose` and `SupplementDoseService.save` contain no hook; recommendations/list/detail contain no mutation-time reconciliation; no route contract, DTO, migration, frontend, visit, badge, or admin behavior changed. The only router diff is the settings service's zero-argument dependency provider required to keep FastAPI collection compatible with the injected constructor seams.
 
 - [ ] **Step 5: Commit documentation after verification**
 
 ```bash
-git add docs/superpowers/plans/2026-09-08-315-custom-challenge-api.md
-git commit -m "docs/315[신동훈]미래 목표 재계산 계약 반영"
+git add docs/superpowers/plans/2026-09-08-315-custom-challenge-api.md docs/superpowers/plans/2026-09-09-315-future-goal-reconciliation.md
+git commit -m "feature/315[신동훈]미래 목표 재계산 계약 반영"
 ```
 
 ## Self-Review
