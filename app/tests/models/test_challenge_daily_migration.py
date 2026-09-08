@@ -12,7 +12,7 @@ from tortoise.exceptions import IntegrityError
 
 from app.core import config
 
-MIGRATION = "app.core.db.migrations.models.37_20260908090000_challenge_daily_verification"
+MIGRATION = "app.core.db.migrations.models.39_20260908151829_challenge_daily_verification"
 
 
 @pytest_asyncio.fixture(loop_scope="function")
@@ -129,9 +129,42 @@ async def test_downgrade_restores_non_unique_index_without_deleting_records_or_e
     assert any(row["Key_name"] == "idx_challenge_verifications_date" and row["Non_unique"] == 1 for row in indexes)
 
 
+async def test_upgrade_accepts_previously_applied_local_constraint_and_preserves_aerich_history(migration_db) -> None:
+    migration = import_module(MIGRATION)
+    await migration_db.execute_script(await migration.upgrade(migration_db))
+    await migration_db.execute_script("""
+        CREATE TABLE aerich (version VARCHAR(255) NOT NULL);
+        INSERT INTO aerich VALUES ('37_20260908090000_challenge_daily_verification.py');
+    """)
+    before = await migration_db.execute_query_dict("SELECT * FROM challenge_verifications ORDER BY id")
+    await migration_db.execute_script(await migration.upgrade(migration_db))
+    assert await migration_db.execute_query_dict("SELECT * FROM challenge_verifications ORDER BY id") == before
+    assert await migration_db.execute_query_dict("SELECT version FROM aerich") == [
+        {"version": "37_20260908090000_challenge_daily_verification.py"}
+    ]
+
+
+async def test_malformed_existing_unique_index_stops_without_changing_data(migration_db) -> None:
+    await migration_db.execute_script("""
+        ALTER TABLE challenge_verifications ADD UNIQUE INDEX uq_challenge_verifications_daily (id);
+    """)
+    with pytest.raises(RuntimeError, match="index"):
+        await import_module(MIGRATION).upgrade(migration_db)
+
+
+async def test_valid_unique_does_not_hide_a_malformed_legacy_index(migration_db) -> None:
+    migration = import_module(MIGRATION)
+    await migration_db.execute_script(await migration.upgrade(migration_db))
+    await migration_db.execute_script("""
+        ALTER TABLE challenge_verifications ADD INDEX idx_challenge_verifications_date (id);
+    """)
+    with pytest.raises(RuntimeError, match="index"):
+        await migration.upgrade(migration_db)
+
+
 def test_migration_state_preserves_unrelated_models_and_records_daily_uniqueness() -> None:
     previous = decompress_dict(
-        import_module("app.core.db.migrations.models.36_20260907230000_seed_challenge_defaults").MODELS_STATE
+        import_module("app.core.db.migrations.models.38_20260908132414_seed_custom_challenge_defaults").MODELS_STATE
     )
     current = decompress_dict(import_module(MIGRATION).MODELS_STATE)
 
