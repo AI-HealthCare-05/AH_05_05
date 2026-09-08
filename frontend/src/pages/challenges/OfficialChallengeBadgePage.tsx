@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { getChallengeCatalog, getUserChallengeBadges } from '@/entities/challenge';
 import { Button } from '@/shared/ui/Button';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { officialBadgeViews, type OfficialBadgeView } from './officialBadgeViews';
 
 function positiveId(value: string | undefined): number | null {
@@ -59,7 +60,7 @@ export function OfficialChallengeBadgePage() {
       <h1 className="text-[22px] font-bold leading-8 text-foreground">배지 상세</h1>
       <p className="text-sm text-muted-foreground">{badge.official ? '공식 챌린지 달성' : '챌린지 달성'}</p>
       <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="badge-name">
-        <img src={badge.imagePath} alt={badge.name} className={`size-20 rounded-pill object-contain ${earned ? '' : 'grayscale opacity-60'}`} />
+        <img src={apiAssetUrl(badge.imagePath)} alt={badge.name} className={`size-20 rounded-pill object-contain ${earned ? '' : 'grayscale opacity-60'}`} />
         <h2 id="badge-name" className="text-base font-bold text-foreground">{badge.name}</h2>
         <p className="text-xs text-primary">{badge.official ? '공식 챌린지 배지' : '챌린지 배지'}</p>
         <p className="whitespace-pre-line text-sm text-muted-foreground">{earned ? `총 ${badge.awards.length}회 획득` : '아직 획득하지 않았어요.'}{badge.description ? `\n${badge.description}` : ''}</p>

@@ -906,6 +906,52 @@ test('invalid participation ids never issue detail or verification requests', as
   expect(challengeRequests).toEqual([]);
 });
 
+test('relative badge media paths resolve from the server root on every official badge surface', async ({ page }) => {
+  await authenticate(page);
+  const mediaBadge = { ...badge, image_path: 'media/badges/walk.png' };
+  const mediaChallenge = { ...dailyChallenge, reward_badge: mediaBadge, can_join: false, participation_id: 501 };
+  const awardedBadge = {
+    id: 701,
+    user_id: 7,
+    badge_id: mediaBadge.id,
+    challenge_id: mediaChallenge.id,
+    user_challenge_id: 501,
+    status: 'AWARDED',
+    badge_name: mediaBadge.name,
+    badge_image_path: 'media/badges/walk.png',
+    awarded_at: '2026-09-07T12:00:00+09:00',
+    revoked_at: null,
+    revoke_reason: null,
+  };
+  const completed = participation({
+    status: 'COMPLETED',
+    completed_at: '2026-09-21T12:00:00+09:00',
+    can_verify: false,
+    challenge: mediaChallenge,
+  });
+  await stubChallengeReads(page, {
+    catalog: [mediaChallenge],
+    participations: [completed],
+    badges: [awardedBadge],
+  });
+  await page.route('**/api/v1/user/challenge-catalog/101', route => route.fulfill({ json: mediaChallenge }));
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: completed }));
+
+  const expectedPath = '/media/badges/walk.png';
+  const surfaces = [
+    { path: '/challenges/official/101', name: mediaBadge.name },
+    { path: '/challenges/participations/501', name: mediaBadge.name },
+    { path: '/challenges', name: mediaBadge.name },
+    { path: '/challenges/badges', name: mediaBadge.name },
+    { path: `/challenges/badges/${mediaBadge.id}`, name: mediaBadge.name },
+  ];
+
+  for (const surface of surfaces) {
+    await page.goto(surface.path);
+    await expect(page.getByRole('img', { name: surface.name }).first()).toHaveAttribute('src', expectedPath);
+  }
+});
+
 test('badge box unions catalog and server awards, grays out unearned badges, and has no filters', async ({ page }) => {
   await authenticate(page);
   const awardedBadge = {

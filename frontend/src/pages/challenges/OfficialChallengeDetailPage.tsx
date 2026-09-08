@@ -9,6 +9,7 @@ import {
 } from '@/entities/challenge';
 import { useSession } from '@/app/SessionContext';
 import { ApiError } from '@/shared/api/client';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
 import { officialFrequencyLabel } from './OfficialChallengeBrowsePage';
 
@@ -159,7 +160,7 @@ export function OfficialChallengeDetailPage() {
       <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-labelledby="official-highlight-title">
         {item.reward_badge ? (
           <span className="flex size-14 overflow-hidden rounded-pill bg-card grayscale">
-            <img src={item.reward_badge.image_path} alt={item.reward_badge.name} className="size-full object-contain" />
+            <img src={apiAssetUrl(item.reward_badge.image_path)} alt={item.reward_badge.name} className="size-full object-contain" />
           </span>
         ) : null}
         <h2 id="official-highlight-title" className="text-base font-bold">{item.reward_badge?.name ?? item.phrase}</h2>

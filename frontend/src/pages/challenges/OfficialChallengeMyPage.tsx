@@ -10,6 +10,7 @@ import {
   type UserChallengeBadge,
 } from '@/entities/challenge';
 import { Button } from '@/shared/ui/Button';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { ChallengePageHeading } from './ChallengePageHeading';
 import { OfficialChallengeProgressCard } from './OfficialChallengeProgressCard';
 
@@ -229,7 +230,7 @@ export function OfficialChallengeMyPage() {
         </div>
         {badgeRefreshRequired ? null : (
           <div className="flex gap-3" aria-label="최근 획득 배지">
-            {awarded.slice(0, 3).map(item => <img key={item.id} src={item.badge_image_path} alt={item.badge_name} className="size-9 rounded-pill object-contain" />)}
+            {awarded.slice(0, 3).map(item => <img key={item.id} src={apiAssetUrl(item.badge_image_path)} alt={item.badge_name} className="size-9 rounded-pill object-contain" />)}
           </div>
         )}
       </section>

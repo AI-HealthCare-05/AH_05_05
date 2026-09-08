@@ -11,6 +11,7 @@ import {
   type UserChallengeBadge,
 } from '@/entities/challenge';
 import { ApiError } from '@/shared/api/client';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
 import {
   challengeVerificationDates,
@@ -254,7 +255,7 @@ export function OfficialChallengeParticipationPage() {
 
       {participation.status === 'COMPLETED' ? (
         <section className="flex flex-col items-center gap-2 rounded-card bg-primary-bg p-5 text-center" aria-label="챌린지 완료 결과">
-          {badge ? <img src={badge.image_path} alt={badge.name} className={`size-16 rounded-pill object-contain ${data.badges && !badgeEarned ? 'grayscale opacity-60' : ''}`} /> : null}
+          {badge ? <img src={apiAssetUrl(badge.image_path)} alt={badge.name} className={`size-16 rounded-pill object-contain ${data.badges && !badgeEarned ? 'grayscale opacity-60' : ''}`} /> : null}
           <h2 className="text-lg font-bold">챌린지를 완주했어요</h2>
           {badge ? <Link to={`/challenges/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 ›</Link> : null}
         </section>

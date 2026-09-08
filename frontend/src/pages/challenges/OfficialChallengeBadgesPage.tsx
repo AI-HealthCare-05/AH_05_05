@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { getChallengeCatalog, getUserChallengeBadges } from '@/entities/challenge';
 import { Button } from '@/shared/ui/Button';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { officialBadgeViews, type OfficialBadgeView } from './officialBadgeViews';
 
 async function loadBadges() {
@@ -66,7 +67,7 @@ export function OfficialChallengeBadgesPage() {
             return (
               <li key={item.id}>
                 <Link to={`/challenges/badges/${item.id}`} aria-label={`${item.name}, ${label}`} className="flex min-h-40 flex-col gap-2.5 rounded-card bg-card p-4 shadow-card">
-                  <img src={item.imagePath} alt={item.name} className={`size-11 rounded-pill object-contain ${earned ? '' : 'grayscale opacity-60'}`} />
+                  <img src={apiAssetUrl(item.imagePath)} alt={item.name} className={`size-11 rounded-pill object-contain ${earned ? '' : 'grayscale opacity-60'}`} />
                   <span className="line-clamp-2 text-sm font-bold text-foreground">{item.name}</span>
                   <span className="text-xs text-muted-foreground">{label}</span>
                 </Link>
