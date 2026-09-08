@@ -41,6 +41,14 @@ documents:
     assert matches[0].pair_type == InteractionPairType.DRUG_FOOD
     assert matches[0].drug_names == ["펙소페나딘"]
     assert matches[0].ingredient_names == []
+    assert matches[0].food_names == ["과일주스"]
+    assert matches[0].entity_catalog_entries[1].canonical_name == "과일주스"
+    assert matches[0].entity_catalog_entries[1].aliases == [
+        "과일주스",
+        "자몽주스",
+        "오렌지주스",
+        "사과주스",
+    ]
     assert len(matches[0].interaction_pair_keys) == 1
     assert registry.required_pair_keys() == matches[0].interaction_pair_keys
 
@@ -75,6 +83,23 @@ documents:
     )
 
     assert matches == []
+
+
+def test_source_backed_calcium_iron_annotation_uses_only_its_review_document() -> None:
+    repo_root = Path(__file__).parents[4]
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        repo_root / "data/knowledge/manifests/interaction_annotations.yaml",
+    )
+
+    matches = registry.find_matches(
+        document_id="research_supplement_interactions-016c81c9a3e29ebd",
+        text="This review discusses calcium intake and iron absorption.",
+    )
+
+    assert len(matches) == 1
+    assert matches[0].pair_type == InteractionPairType.SUPPLEMENT_SUPPLEMENT
+    assert matches[0].ingredient_names == ["칼슘", "철분"]
+    assert matches[0].food_names == []
 
 
 def test_rejects_blank_alias_that_would_match_every_chunk(

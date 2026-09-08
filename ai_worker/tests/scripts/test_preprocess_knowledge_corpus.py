@@ -5,6 +5,21 @@ import pytest
 from scripts import preprocess_knowledge_corpus as module
 
 
+def test_resolve_pilot_manifest_paths_uses_all_verified_defaults() -> None:
+    resolved_paths = module.resolve_pilot_manifest_paths(None)
+
+    assert resolved_paths == [
+        Path("data/knowledge/manifests/pilot_manifest.json"),
+        Path("data/knowledge/manifests/additional_research_bulk_manifest.json"),
+    ]
+
+
+def test_resolve_pilot_manifest_paths_respects_explicit_paths() -> None:
+    explicit_paths = [Path("custom-pilot.json")]
+
+    assert module.resolve_pilot_manifest_paths(explicit_paths) == explicit_paths
+
+
 def test_parse_args_defaults_to_cl100k_base(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -42,6 +57,65 @@ def test_parse_args_accepts_o200k_base(
 
     assert args.tokenizer_encoding == "o200k_base"
     assert args.output == Path("data/knowledge/processed/full-v2-o200k")
+
+
+def test_parse_args_accepts_progress_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "preprocess_knowledge_corpus",
+            "--dataset-version",
+            "knowledge-full-v6",
+            "--progress-every",
+            "25",
+        ],
+    )
+
+    args = module.parse_args()
+
+    assert args.progress_every == 25
+
+
+def test_parse_args_accepts_document_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "preprocess_knowledge_corpus",
+            "--dataset-version",
+            "knowledge-full-v6",
+            "--document-start",
+            "50",
+            "--document-end",
+            "100",
+        ],
+    )
+
+    args = module.parse_args()
+
+    assert args.document_start == 50
+    assert args.document_end == 100
+
+
+def test_parse_args_accepts_summary_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "preprocess_knowledge_corpus",
+            "--dataset-version",
+            "knowledge-full-v6",
+            "--summary-only",
+        ],
+    )
+
+    args = module.parse_args()
+
+    assert args.summary_only is True
 
 
 def test_parse_args_accepts_multiple_representative_inputs(

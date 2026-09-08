@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -319,6 +320,9 @@ class KnowledgeCorpusPreprocessingService:
         baseline_quality_report_path: Path | None = None,
         recovery_reporting_service: KnowledgeRecoveryReportingService | None = None,
         blocked_document_recovery_service: KnowledgeBlockedDocumentRecoveryService | None = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+        document_start: int = 0,
+        document_end: int | None = None,
     ) -> KnowledgePilotPreprocessingResult:
         manifest = self._manifest_builder.build(
             documents_path=documents_path,
@@ -329,6 +333,11 @@ class KnowledgeCorpusPreprocessingService:
             pilot_manifest_paths=pilot_manifest_paths,
             ocr_artifact_root=ocr_artifact_root,
             ocr_document_selection_path=ocr_document_selection_path,
+        )
+        manifest = self._slice_manifest(
+            manifest=manifest,
+            document_start=document_start,
+            document_end=document_end,
         )
         report_root = Path(output_root) / "reports"
         report_root.mkdir(parents=True, exist_ok=True)
@@ -342,6 +351,7 @@ class KnowledgeCorpusPreprocessingService:
             sources_path=sources_path,
             output_root=output_root,
             dataset_version=dataset_version,
+            progress_callback=progress_callback,
         )
         blocked_recovery = (blocked_document_recovery_service or KnowledgeBlockedDocumentRecoveryService()).write(
             result=result,
@@ -363,6 +373,22 @@ class KnowledgeCorpusPreprocessingService:
                 output_root=output_root,
             )
         return release
+
+    @staticmethod
+    def _slice_manifest(
+        *,
+        manifest: KnowledgePilotManifest,
+        document_start: int,
+        document_end: int | None,
+    ) -> KnowledgePilotManifest:
+        if document_start < 0:
+            raise ValueError("document_start는 0 이상이어야 합니다.")
+        if document_end is not None and document_end <= document_start:
+            raise ValueError("document_end는 document_start보다 커야 합니다.")
+        selected = manifest.pilots[document_start:document_end]
+        if not selected and (document_start != 0 or document_end is not None):
+            raise ValueError("선택한 document 범위에 전처리할 승인 문서가 없습니다.")
+        return manifest.model_copy(update={"pilots": selected})
 
     @staticmethod
     def _apply_automatic_exclusion_reasons(

@@ -1,11 +1,14 @@
 import pytest
 from pydantic import ValidationError
 
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeBoundingBox,
     KnowledgeContentKind,
     KnowledgeDocumentType,
+    KnowledgeEntityCatalogEntry,
+    KnowledgeEntityCatalogEntryType,
     KnowledgeEvidenceLevel,
     KnowledgeMetadata,
     KnowledgePage,
@@ -49,6 +52,33 @@ def test_metadata_normalizes_duplicate_entity_names() -> None:
     assert normalized.ingredient_names == [
         "비타민 A",
         "레티닐 팔미트산염",
+    ]
+
+
+def test_metadata_preserves_food_and_typed_alias_entries() -> None:
+    metadata = KnowledgeMetadata.model_validate(
+        {
+            **build_metadata().model_dump(),
+            "food_names": [" 과일주스 ", "과일주스"],
+            "entity_catalog_entries": [
+                {
+                    "canonical_name": "과일주스",
+                    "aliases": ["과일주스", "자몽주스", "자몽주스"],
+                    "entity_type": "FOOD_CATEGORY",
+                    "kind": "FOOD",
+                }
+            ],
+        }
+    )
+
+    assert metadata.food_names == ["과일주스"]
+    assert metadata.entity_catalog_entries == [
+        KnowledgeEntityCatalogEntry(
+            canonical_name="과일주스",
+            aliases=["과일주스", "자몽주스"],
+            entity_type=KnowledgeEntityCatalogEntryType.FOOD_CATEGORY,
+            kind=InteractionEntityKind.FOOD,
+        )
     ]
 
 

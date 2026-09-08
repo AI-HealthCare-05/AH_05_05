@@ -34,3 +34,4 @@ Thumbs.db
 # Local vector database persistence
 /qdrant_storage/
 /data/qdrant_storage/
+/data/qdrant_snapshots/

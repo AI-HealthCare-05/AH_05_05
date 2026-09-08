@@ -17,11 +17,11 @@ from ai_worker.domain.medication_question_resolver import (
 from ai_worker.evaluation.medication_search_baseline_evaluator import (
     MedicationSearchBaselineEvaluator,
 )
+from ai_worker.evaluation.runtime_expression_catalog import (
+    build_runtime_expression_catalog,
+)
 from ai_worker.rag.embeddings.openai_embedding_provider import (
     OpenAIEmbeddingProvider,
-)
-from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
-    MedicationKnowledgeQueryBuilder,
 )
 from ai_worker.rag.retrievers.medication_knowledge_retriever import (
     MedicationKnowledgeRetriever,
@@ -29,9 +29,7 @@ from ai_worker.rag.retrievers.medication_knowledge_retriever import (
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
 )
-from ai_worker.repositories.medication_expression_catalog_repository import (
-    DbMedicationExpressionCatalog,
-)
+from ai_worker.schemas.knowledge import KnowledgeVectorDistance
 from ai_worker.schemas.medication_search_evaluation import (
     MedicationSearchBaselineManifest,
     MedicationSearchBaselineReport,
@@ -45,15 +43,74 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--evaluation-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--collection",
+        help=("고정 평가 질문 파일을 바꾸지 않고 비교 대상 Qdrant collection을 지정합니다."),
+    )
+    parser.add_argument(
+        "--dataset-version",
+        help=("고정 평가 질문 파일을 바꾸지 않고 비교 대상 dataset version을 지정합니다."),
+    )
     args = parser.parse_args(argv)
     if args.output.suffix.casefold() not in {".json", ".md"}:
         parser.error("--output 확장자는 .json 또는 .md여야 합니다.")
+    if args.collection is not None and not args.collection.strip():
+        parser.error("--collection은 비어 있을 수 없습니다.")
+    if args.dataset_version is not None and not args.dataset_version.strip():
+        parser.error("--dataset-version은 비어 있을 수 없습니다.")
     return args
 
 
 def load_evaluation_manifest(path: Path) -> MedicationSearchBaselineManifest:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     return MedicationSearchBaselineManifest.model_validate(raw)
+
+
+def resolve_evaluation_manifest(
+    manifest: MedicationSearchBaselineManifest,
+    *,
+    args: argparse.Namespace,
+) -> MedicationSearchBaselineManifest:
+    """동일 질문 계약으로 immutable release를 교체 평가한다."""
+
+    return manifest.model_copy(
+        update={
+            "collection_name": args.collection or manifest.collection_name,
+            "dataset_version": args.dataset_version or manifest.dataset_version,
+        },
+    )
+
+
+def build_evaluation_vector_store(
+    *,
+    settings: Config,
+    qdrant_client: AsyncQdrantClient,
+    collection_name: str,
+) -> QdrantKnowledgeStore:
+    """평가가 운영 환경과 동일한 거리 계약으로 검색하게 한다."""
+
+    return QdrantKnowledgeStore(
+        client=qdrant_client,
+        collection_name=collection_name,
+        vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        distance=settings.KNOWLEDGE_VECTOR_DISTANCE,
+    )
+
+
+def build_evaluation_expression_catalog(
+    *,
+    settings: Config,
+    qdrant_client: AsyncQdrantClient,
+    collection_name: str | None = None,
+    dataset_version: str | None = None,
+):
+    """실제 Chat Core와 같은 RDBMS·Qdrant typed catalog를 평가에도 사용한다."""
+    return build_runtime_expression_catalog(
+        settings=settings,
+        qdrant_client=qdrant_client,
+        collection_name=collection_name or settings.KNOWLEDGE_QDRANT_COLLECTION,
+        dataset_version=dataset_version or settings.KNOWLEDGE_DATASET_VERSION,
+    )
 
 
 def file_sha256(path: Path) -> str:
@@ -87,9 +144,12 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         f"- Git commit: `{report.git_commit}`",
         f"- 미커밋 변경 포함: {'예' if report.working_tree_dirty else '아니요'}",
         f"- Collection: `{report.collection_name}`",
+        f"- 기준선 관측 시점: `{report.baseline_observed_at or '기록되지 않음'}`",
+        f"- 기준선 환경: `{report.baseline_environment or '기록되지 않음'}`",
         f"- 검색 모드: `{report.search_mode.value}`",
         f"- Dataset: `{report.dataset_version}`",
         f"- Embedding: `{report.embedding_model_name}` / {report.embedding_dimension}",
+        f"- 벡터 거리 / 정규화: `{report.vector_distance}` / {'예' if report.embedding_vectors_normalized else '아니요'}",
         f"- 유사도 기준: {report.min_similarity_score}",
         f"- 후보/최종: Top-{report.candidate_top_k} / Top-{report.final_top_k}",
         f"- 평가 YAML SHA-256: `{report.evaluation_file_sha256}`",
@@ -98,6 +158,7 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         "",
         f"- 목적: {report.experiment_goal or '기록되지 않음'}",
         f"- 채택 기준: {report.activation_rule or '기록되지 않음'}",
+        f"- Trace 참조 정책: {report.trace_reference_policy or '기록되지 않음'}",
         "",
         "| 지표 | 선정 이유 |",
         "|---|---|",
@@ -107,6 +168,8 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         "",
         "| 지표 | 값 |",
         "|---|---:|",
+        f"| 활성 단계 통과 | {report.active_pass_count} / {report.active_query_count} ({report.active_pass_rate:.3f}) |",
+        f"| 후속 단계 문항 | {report.deferred_query_count} |",
         f"| 범위 판별 정확도 | {report.scope_accuracy:.3f} |",
         f"| 표현 처리 정확도 | {report.resolution_accuracy:.3f} |",
         f"| 자동 교정 정확도 | {report.correction_accuracy:.3f} |",
@@ -121,8 +184,8 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         "",
         "## 질문별 결과",
         "",
-        "| 질문 ID | 표현 유형 | 범위 | 처리 상태 | 후보 관련 순위 | Top-5 | 시간(ms) | 판정 |",
-        "|---|---|---|---|---:|---|---:|---|",
+        "| 질문 ID | 단계 | 변경 전 | 표현 유형 | 범위 | 처리 상태 | 후보 관련 순위 | Top-5 | 시간(ms) | 판정 |",
+        "|---|---|---|---|---|---|---:|---|---:|---|",
     ]
     for result in report.results:
         candidate_rank = result.candidate_first_relevant_rank or "-"
@@ -132,6 +195,8 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
             + " | ".join(
                 [
                     result.query_id,
+                    result.phase.value,
+                    result.historical_outcome.value if result.historical_outcome else "-",
                     result.expression_category.value,
                     result.observed_scope.value,
                     result.observed_resolution_status.value,
@@ -177,7 +242,10 @@ async def run_cli(
     settings: Config | None = None,
 ) -> MedicationSearchBaselineReport:
     resolved_settings = settings or Config()
-    manifest = load_evaluation_manifest(args.evaluation_file)
+    manifest = resolve_evaluation_manifest(
+        load_evaluation_manifest(args.evaluation_file),
+        args=args,
+    )
     api_key = resolved_settings.OPENAI_API_KEY
     if api_key is None or not api_key.get_secret_value().strip():
         raise AIConfigurationError("검색 기준선 평가에는 OPENAI_API_KEY가 필요합니다.")
@@ -196,17 +264,22 @@ async def run_cli(
             api_key=api_key,
             timeout_seconds=resolved_settings.OPENAI_TIMEOUT_SECONDS,
             max_retries=resolved_settings.OPENAI_MAX_RETRIES,
+            normalize_vectors=(resolved_settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
         )
-        vector_store = QdrantKnowledgeStore(
-            client=qdrant_client,
+        vector_store = build_evaluation_vector_store(
+            settings=resolved_settings,
+            qdrant_client=qdrant_client,
             collection_name=manifest.collection_name,
-            vector_size=resolved_settings.OPENAI_EMBEDDING_DIMENSIONS,
         )
         evaluator = MedicationSearchBaselineEvaluator(
             question_resolver=RuleBasedMedicationQuestionResolver(
-                catalog=DbMedicationExpressionCatalog(),
+                catalog=build_evaluation_expression_catalog(
+                    settings=resolved_settings,
+                    qdrant_client=qdrant_client,
+                    collection_name=manifest.collection_name,
+                    dataset_version=manifest.dataset_version,
+                ),
             ),
-            query_builder=MedicationKnowledgeQueryBuilder(),
             knowledge_retriever=MedicationKnowledgeRetriever(
                 embedding_provider=embedding_provider,
                 vector_store=vector_store,
@@ -215,6 +288,8 @@ async def run_cli(
             ),
             embedding_model_name=embedding_provider.model_name,
             embedding_dimension=embedding_provider.dimension,
+            vector_distance=resolved_settings.KNOWLEDGE_VECTOR_DISTANCE.value,
+            embedding_vectors_normalized=(resolved_settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
         )
         report = await evaluator.evaluate(
             manifest,

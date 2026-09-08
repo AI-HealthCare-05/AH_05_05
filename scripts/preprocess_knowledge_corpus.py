@@ -25,6 +25,20 @@ from ai_worker.services.knowledge_pilot_preprocessing_service import (
     KnowledgePilotPreprocessingService,
 )
 
+DEFAULT_PILOT_MANIFEST_PATHS = (
+    Path("data/knowledge/manifests/pilot_manifest.json"),
+    Path("data/knowledge/manifests/additional_research_bulk_manifest.json"),
+)
+
+
+def resolve_pilot_manifest_paths(
+    pilot_manifest_paths: list[Path] | None,
+) -> list[Path]:
+    """Use every verified pilot manifest unless an explicit list is requested."""
+    if pilot_manifest_paths is not None:
+        return pilot_manifest_paths
+    return list(DEFAULT_PILOT_MANIFEST_PATHS)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -90,7 +104,37 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/knowledge/manifests/ocr_document_selection.yaml"),
         help=("OCR_REQUIRED 문서 중 챗봇 근거로 허용할 문서를 정한 allowlist 매니페스트입니다."),
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=0,
+        help=("N개 문서마다 진행 상황을 출력합니다. 0이면 출력하지 않습니다."),
+    )
+    parser.add_argument(
+        "--document-start",
+        type=int,
+        default=0,
+        help=("전체 승인 Manifest에서 처리할 시작 인덱스(0부터)입니다."),
+    )
+    parser.add_argument(
+        "--document-end",
+        type=int,
+        default=None,
+        help=("전체 승인 Manifest에서 처리할 끝 인덱스(끝 제외)입니다."),
+    )
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help=("문서별 상세 보고서 대신 release 집계만 출력합니다."),
+    )
+    args = parser.parse_args()
+    if args.progress_every < 0:
+        parser.error("--progress-every는 0 이상이어야 합니다.")
+    if args.document_start < 0:
+        parser.error("--document-start는 0 이상이어야 합니다.")
+    if args.document_end is not None and args.document_end <= args.document_start:
+        parser.error("--document-end는 --document-start보다 커야 합니다.")
+    return args
 
 
 def build_splitter(
@@ -121,6 +165,7 @@ def main() -> None:
     pilot_quality_reports = args.pilot_quality_report or [
         Path("data/knowledge/processed/reports/preprocessing-quality.json"),
     ]
+    pilot_manifest_paths = resolve_pilot_manifest_paths(args.pilot_manifest)
     interaction_annotations = KnowledgeInteractionAnnotationRegistry.from_yaml(repo_root / args.interaction_annotations)
     pdf_loader = KnowledgePdfLoader()
     ocr_artifact_root = repo_root / args.ocr_artifact_root if args.ocr_artifact_root is not None else None
@@ -145,15 +190,34 @@ def main() -> None:
             interaction_annotations=interaction_annotations,
         ),
     )
+    progress_callback = None
+    if args.progress_every:
+
+        def progress_callback(
+            current: int,
+            total: int,
+            document_id: str,
+        ) -> None:
+            if current == 1 or current == total or current % args.progress_every == 0:
+                print(
+                    json.dumps(
+                        {
+                            "progress": current,
+                            "total": total,
+                            "document_id": document_id,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+
     result = KnowledgeCorpusPreprocessingService(
         pilot_service=pilot_service,
     ).preprocess(
         documents_path=repo_root / args.documents,
         sources_path=repo_root / args.sources,
         pilot_quality_report_paths=[repo_root / path for path in pilot_quality_reports],
-        pilot_manifest_paths=(
-            [repo_root / path for path in args.pilot_manifest] if args.pilot_manifest is not None else None
-        ),
+        pilot_manifest_paths=[repo_root / path for path in pilot_manifest_paths],
         output_root=repo_root / args.output,
         dataset_version=args.dataset_version,
         baseline_quality_report_path=(
@@ -161,14 +225,23 @@ def main() -> None:
         ),
         ocr_artifact_root=ocr_artifact_root,
         ocr_document_selection_path=ocr_document_selection_path,
+        progress_callback=progress_callback,
+        document_start=args.document_start,
+        document_end=args.document_end,
     )
-    print(
-        json.dumps(
-            result.model_dump(mode="json"),
-            ensure_ascii=False,
-            indent=2,
-        )
+    payload = (
+        {
+            "dataset_version": result.dataset_version,
+            "processed_document_count": result.processed_document_count,
+            "chunk_count": result.chunk_count,
+            "skipped_document_count": len(result.skipped_documents),
+            "ready_for_bulk_source_ids": result.ready_for_bulk_source_ids,
+            "quality_report_path": str(args.output / "reports" / "preprocessing-quality.json"),
+        }
+        if args.summary_only
+        else result.model_dump(mode="json")
     )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
