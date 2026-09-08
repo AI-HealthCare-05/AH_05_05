@@ -441,7 +441,7 @@ test('등록 별칭과 회차 편집 별칭은 새로고침 뒤에도 메모에�
 
   await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
   const episodeDialog = page.getByRole('dialog');
-  await episodeDialog.getByLabel('복약 별칭').fill('회차 편집 별칭');
+  await episodeDialog.getByRole('textbox', { name: '복약 별칭', exact: true }).fill('회차 편집 별칭');
   await episodeDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
   await page.reload();
@@ -467,8 +467,9 @@ for (const width of [375, 1280]) {
     await page.goto('/medications');
     await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('복약 별칭').fill(alias);
-    await expect(dialog.getByLabel('복약 별칭')).toHaveValue(alias);
+    const aliasInput = dialog.getByRole('textbox', { name: '복약 별칭', exact: true });
+    await aliasInput.fill(alias);
+    await expect(aliasInput).toHaveValue(alias);
     await dialog.getByRole('button', { name: '저장', exact: true }).click();
     await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
     await page.reload();
