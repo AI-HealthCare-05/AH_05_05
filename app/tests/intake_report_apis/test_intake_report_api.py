@@ -64,6 +64,12 @@ class FakeIntakeReportApplicationService:
         return _report()
 
 
+class PartialIntakeReportApplicationService:
+    async def generate(self, *, user) -> IntakeReportResult:
+        del user
+        return _report().model_copy(update={"status": IntakeReportStatus.PARTIAL})
+
+
 async def test_post_intake_report_returns_authenticated_camel_case_report() -> None:
     service = FakeIntakeReportApplicationService()
     app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
@@ -125,6 +131,23 @@ async def test_post_intake_report_returns_authenticated_camel_case_report() -> N
         "reportMarkdown": "# 약·영양제 생활관리 보고서\n\n등록 정보를 확인했습니다.",
     }
     assert service.received_user.id == 7
+
+
+async def test_post_intake_report_returns_partial_report_as_success() -> None:
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
+    app.dependency_overrides[get_intake_report_application_service] = lambda: (PartialIntakeReportApplicationService())
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post("/api/v1/intake-reports", json={})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["reportStatus"] == "PARTIAL"
 
 
 async def test_post_intake_report_requires_authentication() -> None:

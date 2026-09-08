@@ -45,11 +45,8 @@ class IntakeReportGroundingValidator:
             return None
         if self._DIAGNOSIS_OR_TREATMENT_PATTERN.search(normalized):
             return None
-        if (
-            self._UNSUPPORTED_SAFETY_PATTERN.search(normalized)
-            and not self._UNSUPPORTED_SAFETY_PATTERN.search(
-                draft.deterministic_markdown,
-            )
+        if self._UNSUPPORTED_SAFETY_PATTERN.search(normalized) and not self._UNSUPPORTED_SAFETY_PATTERN.search(
+            draft.deterministic_markdown,
         ):
             return None
         if not self._dosages_are_grounded(
@@ -80,12 +77,6 @@ class IntakeReportGroundingValidator:
         def normalize(token: str) -> str:
             return token.casefold().replace(" ", "")
 
-        draft_tokens = {
-            normalize(token)
-            for token in cls._DOSAGE_TOKEN_PATTERN.findall(draft_markdown)
-        }
-        generated_tokens = {
-            normalize(token)
-            for token in cls._DOSAGE_TOKEN_PATTERN.findall(generated_markdown)
-        }
+        draft_tokens = {normalize(token) for token in cls._DOSAGE_TOKEN_PATTERN.findall(draft_markdown)}
+        generated_tokens = {normalize(token) for token in cls._DOSAGE_TOKEN_PATTERN.findall(generated_markdown)}
         return generated_tokens.issubset(draft_tokens)

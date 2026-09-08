@@ -65,10 +65,7 @@ def test_assembler_prioritizes_approved_interaction_rules() -> None:
     )
 
     assert draft.review_cards[0].card_type == IntakeReportReviewCardType.INTERACTION
-    assert (
-        draft.review_cards[0].evidence_level
-        == IntakeReportEvidenceLevel.APPROVED_RULE
-    )
+    assert draft.review_cards[0].evidence_level == IntakeReportEvidenceLevel.APPROVED_RULE
     assert draft.executive_summary.interaction_check_count == 1
 
 
@@ -85,7 +82,4 @@ def test_assembler_marks_missing_amount_without_total() -> None:
     )
 
     assert draft.nutrient_totals == []
-    assert (
-        draft.unverified_items[0].item_type
-        == IntakeReportUnverifiedItemType.MISSING_AMOUNT
-    )
+    assert draft.unverified_items[0].item_type == IntakeReportUnverifiedItemType.MISSING_AMOUNT

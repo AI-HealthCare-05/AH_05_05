@@ -47,9 +47,13 @@ class DbActiveIntakeContextProvider:
             status=CareEpisodeStatus.ACTIVE,
             confirmed_at__not_isnull=True,
         ).values_list("id", flat=True)
-        medication_rows = await Medication.filter(
-            care_episode_id__in=episodes,
-        ).prefetch_related("slots").order_by("id")
+        medication_rows = (
+            await Medication.filter(
+                care_episode_id__in=episodes,
+            )
+            .prefetch_related("slots")
+            .order_by("id")
+        )
         supplement_rows = await UserSupplementNutrient.filter(
             user_id=user_id,
             status=SupplementStatus.ACTIVE,
@@ -117,9 +121,7 @@ class DbActiveIntakeContextProvider:
             note=medication.note,
             days=medication.days,
             prescribed_at=medication.prescribed_at,
-            scheduled_slots=sorted(
-                slot.slot.value for slot in medication.slots
-            ),
+            scheduled_slots=sorted(slot.slot.value for slot in medication.slots),
         )
 
     @staticmethod
@@ -135,7 +137,5 @@ class DbActiveIntakeContextProvider:
             start_date=registration.start_date,
             end_date=registration.end_date,
             note=registration.note,
-            scheduled_slots=sorted(
-                slot.slot.value for slot in registration.slots
-            ),
+            scheduled_slots=sorted(slot.slot.value for slot in registration.slots),
         )

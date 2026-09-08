@@ -137,10 +137,7 @@ class IntakeReportAssembler:
             IntakeReportUnverifiedItem(
                 item_type=IntakeReportUnverifiedItemType.MISSING_AMOUNT,
                 title=f"{supplement.name} 복용량 확인 필요",
-                message=(
-                    "등록된 복용량이 비어 있어 성분별 하루 총섭취량을 "
-                    "계산하지 않았습니다."
-                ),
+                message=("등록된 복용량이 비어 있어 성분별 하루 총섭취량을 계산하지 않았습니다."),
                 related_items=[supplement.name],
                 next_step="제품 라벨의 1회 복용량과 하루 섭취 횟수를 확인해 주세요.",
             )
@@ -156,10 +153,7 @@ class IntakeReportAssembler:
             IntakeReportUnverifiedItem(
                 item_type=IntakeReportUnverifiedItemType.AMBIGUOUS_PRODUCT,
                 title="의약품 제품명 확인 필요",
-                message=(
-                    "같은 이름으로 여러 제품이 확인되어 특정 제품 안내를 "
-                    "사실처럼 표시하지 않았습니다."
-                ),
+                message=("같은 이름으로 여러 제품이 확인되어 특정 제품 안내를 사실처럼 표시하지 않았습니다."),
                 related_items=lookup.candidate_names,
                 next_step="약봉투의 정확한 제품명과 성분명을 확인해 주세요.",
             )
@@ -173,8 +167,7 @@ class IntakeReportAssembler:
             item_type=IntakeReportUnverifiedItemType.MISSING_EVIDENCE,
             title="추가 검색 근거 확인 필요",
             message=(
-                "현재 보유한 추가 검색 근거를 확인하지 못했습니다. "
-                "확인하지 못한 사실이 안전하다는 뜻은 아닙니다."
+                "현재 보유한 추가 검색 근거를 확인하지 못했습니다. 확인하지 못한 사실이 안전하다는 뜻은 아닙니다."
             ),
             next_step="제품 라벨과 현재 복용 정보를 의료진 또는 약사에게 함께 확인해 주세요.",
         )
@@ -189,10 +182,7 @@ class IntakeReportAssembler:
                 title=f"{rule.left_name} · {rule.right_name} 확인",
                 summary=" ".join(rule.effect_texts),
                 related_items=[rule.left_name, rule.right_name],
-                check_item=(
-                    "현재 복용 중인 제품 정보와 함께 의료진 또는 약사에게 "
-                    "확인해 주세요."
-                ),
+                check_item=("현재 복용 중인 제품 정보와 함께 의료진 또는 약사에게 확인해 주세요."),
                 evidence_level=IntakeReportEvidenceLevel.APPROVED_RULE,
                 sources=self._sources_from_rule(rule),
             )
@@ -238,11 +228,7 @@ class IntakeReportAssembler:
         self,
         rules: list[InteractionRuleFact],
     ) -> list[IntakeReportSource]:
-        return [
-            source
-            for rule in rules
-            for source in self._sources_from_rule(rule)
-        ]
+        return [source for rule in rules for source in self._sources_from_rule(rule)]
 
     @staticmethod
     def _sources_from_chunks(
@@ -266,14 +252,10 @@ class IntakeReportAssembler:
             IntakeReportProductGuide(
                 product_name=lookup.guide.product_name,
                 one_line_summary=(
-                    lookup.guide.efficacy.strip()
-                    or "일반적인 역할을 현재 자료에서 확인하지 못했습니다."
+                    lookup.guide.efficacy.strip() or "일반적인 역할을 현재 자료에서 확인하지 못했습니다."
                 ),
                 general_role=lookup.guide.efficacy.strip() or None,
-                check_item=(
-                    lookup.guide.precautions.strip()
-                    or "제품별 주의사항을 현재 자료에서 확인하지 못했습니다."
-                ),
+                check_item=(lookup.guide.precautions.strip() or "제품별 주의사항을 현재 자료에서 확인하지 못했습니다."),
                 sources=[
                     IntakeReportSource(
                         title=lookup.guide.product_name,
@@ -292,14 +274,8 @@ class IntakeReportAssembler:
         current_stack: list[IntakeReportCurrentStackItem],
         review_cards: list[IntakeReportReviewCard],
     ) -> IntakeReportExecutiveSummary:
-        interaction_count = sum(
-            card.card_type == IntakeReportReviewCardType.INTERACTION
-            for card in review_cards
-        )
-        redundancy_count = sum(
-            card.card_type == IntakeReportReviewCardType.REDUNDANCY
-            for card in review_cards
-        )
+        interaction_count = sum(card.card_type == IntakeReportReviewCardType.INTERACTION for card in review_cards)
+        redundancy_count = sum(card.card_type == IntakeReportReviewCardType.REDUNDANCY for card in review_cards)
         return IntakeReportExecutiveSummary(
             reviewed_product_count=len(current_stack),
             potential_redundancy_count=redundancy_count,
@@ -319,20 +295,12 @@ class IntakeReportAssembler:
             medication_count=len(context.medications),
             supplement_count=len(context.supplements),
             interaction_card_count=sum(
-                card.card_type == IntakeReportReviewCardType.INTERACTION
-                for card in review_cards
+                card.card_type == IntakeReportReviewCardType.INTERACTION for card in review_cards
             ),
-            redundancy_card_count=sum(
-                card.card_type == IntakeReportReviewCardType.REDUNDANCY
-                for card in review_cards
-            ),
-            caution_card_count=sum(
-                card.card_type == IntakeReportReviewCardType.CAUTION
-                for card in review_cards
-            ),
+            redundancy_card_count=sum(card.card_type == IntakeReportReviewCardType.REDUNDANCY for card in review_cards),
+            caution_card_count=sum(card.card_type == IntakeReportReviewCardType.CAUTION for card in review_cards),
             missing_info_card_count=sum(
-                card.card_type == IntakeReportReviewCardType.MISSING_INFO
-                for card in review_cards
+                card.card_type == IntakeReportReviewCardType.MISSING_INFO for card in review_cards
             ),
         )
 
@@ -407,13 +375,8 @@ class IntakeReportAssembler:
                 )
                 for item in unverified_items
             )
-            sections.append(
-                "## 07. 정보가 부족하거나 근거를 확인하지 못한 항목\n\n"
-                + unverified_text
-            )
-        source_text = "\n".join(
-            f"- {source.title}" for source in sources
-        ) or "- 현재 등록된 복용 정보"
+            sections.append("## 07. 정보가 부족하거나 근거를 확인하지 못한 항목\n\n" + unverified_text)
+        source_text = "\n".join(f"- {source.title}" for source in sources) or "- 현재 등록된 복용 정보"
         sections.append(
             "## 출처와 안내 한계\n\n"
             f"{source_text}\n\n"

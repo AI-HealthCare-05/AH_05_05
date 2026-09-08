@@ -81,18 +81,10 @@ class GenerateIntakeReportUseCase:
             span.end(
                 {
                     "fallback_used": outcome.fallback_used,
-                    "fallback_reason": (
-                        outcome.fallback_reason.value
-                        if outcome.fallback_reason is not None
-                        else None
-                    ),
+                    "fallback_reason": (outcome.fallback_reason.value if outcome.fallback_reason is not None else None),
                 }
             )
-        status = (
-            IntakeReportStatus.COMPLETED
-            if rag_available
-            else IntakeReportStatus.PARTIAL
-        )
+        status = IntakeReportStatus.COMPLETED if rag_available else IntakeReportStatus.PARTIAL
         return draft.to_result(
             status=status,
             report_markdown=outcome.report_markdown,
@@ -123,20 +115,11 @@ class GenerateIntakeReportUseCase:
         context: ActiveIntakeContext,
     ) -> tuple[list, list[InteractionRuleFact]]:
         medication_names = list(
-            dict.fromkeys(
-                medication.name.strip()
-                for medication in context.medications
-                if medication.name.strip()
-            )
+            dict.fromkeys(medication.name.strip() for medication in context.medications if medication.name.strip())
         )
         try:
             async with self._tracer.span("intake_report.rdbms_evidence") as span:
-                guide_task = asyncio.gather(
-                    *(
-                        self._guide_repository.find_by_name(name)
-                        for name in medication_names
-                    )
-                )
+                guide_task = asyncio.gather(*(self._guide_repository.find_by_name(name) for name in medication_names))
                 rule_task = self._interaction_rule_repository.find_approved_rules(
                     context=context,
                 )
@@ -163,11 +146,7 @@ class GenerateIntakeReportUseCase:
         approved_rules: list[InteractionRuleFact],
     ) -> tuple[list[RetrievedKnowledgeChunk], bool]:
         supplement_names = list(
-            dict.fromkeys(
-                supplement.name.strip()
-                for supplement in context.supplements
-                if supplement.name.strip()
-            )
+            dict.fromkeys(supplement.name.strip() for supplement in context.supplements if supplement.name.strip())
         )[: self._MAX_RAG_SUPPLEMENTS]
         if not supplement_names:
             return [], True
@@ -240,9 +219,7 @@ class GenerateIntakeReportUseCase:
             patient_supplement_names=[item.name for item in context.supplements],
             approved_rule_pair_keys=[rule.pair_key for rule in approved_rules],
             approved_rule_status=(
-                InteractionRuleLookupStatus.MATCHED
-                if approved_rules
-                else InteractionRuleLookupStatus.NO_APPROVED_RULE
+                InteractionRuleLookupStatus.MATCHED if approved_rules else InteractionRuleLookupStatus.NO_APPROVED_RULE
             ),
             include_patient_context=True,
             context_hash=cls._payload_hash(context.model_dump(mode="json")),
