@@ -8,6 +8,7 @@ from .challenges import (
     Challenge,
     ChallengeProgress,
     ChallengeVerification,
+    CustomChallengeTemplate,
     UserBadge,
     UserChallenge,
 )

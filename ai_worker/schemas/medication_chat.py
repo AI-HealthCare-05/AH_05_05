@@ -148,6 +148,7 @@ class ActiveMedication(BaseModel):
     note: str | None = None
     days: int | None = Field(default=None, ge=1)
     prescribed_at: date | None = None
+    scheduled_slots: list[str] = Field(default_factory=list)
 
 
 class ActiveSupplement(BaseModel):
@@ -159,6 +160,7 @@ class ActiveSupplement(BaseModel):
     start_date: date
     end_date: date | None = None
     note: str | None = None
+    scheduled_slots: list[str] = Field(default_factory=list)
 
 
 class ActiveIntakeContext(BaseModel):
