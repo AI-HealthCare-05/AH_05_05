@@ -37,6 +37,11 @@ class IntakeReportUnverifiedItemType(StrEnum):
     MISSING_EVIDENCE = "MISSING_EVIDENCE"
 
 
+class IntakeReportFallbackReason(StrEnum):
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    CLIENT_ERROR = "CLIENT_ERROR"
+
+
 class IntakeReportDataAvailability(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -141,6 +146,22 @@ class IntakeReportDraft(BaseModel):
     unverified_items: list[IntakeReportUnverifiedItem] = Field(default_factory=list)
     sources: list[IntakeReportSource] = Field(default_factory=list)
     deterministic_markdown: str = Field(min_length=1)
+
+
+class IntakeReportMarkdownPayload(BaseModel):
+    """LLM이 반환하는 제한된 Markdown 보고서 출력."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    report_markdown: str = Field(min_length=1)
+
+
+class IntakeReportGenerationOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    report_markdown: str = Field(min_length=1)
+    fallback_used: bool
+    fallback_reason: IntakeReportFallbackReason | None = None
 
 
 class IntakeReportResult(BaseModel):
