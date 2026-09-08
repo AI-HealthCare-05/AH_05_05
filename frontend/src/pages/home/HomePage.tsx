@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
+import { invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   getDoseRecords,
   getMedicationOverviews,
@@ -18,6 +19,7 @@ import {
   type SupplementRanking,
   type Supplement,
 } from '@/entities/supplement';
+import { getAuthGeneration } from '@/shared/api/client';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
@@ -65,8 +67,11 @@ export function HomePage({
   doseRecordSaver = saveDoseTaken,
 }: HomePageProps) {
   const navigate = useNavigate();
-  const { authenticated } = useSession();
+  const { authenticated, principalKey } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
+  const principalRef = useRef(principalKey);
+  const doseProgressGenerationRef = useRef(0);
+  principalRef.current = principalKey;
   const [loginPromptOpen, setLoginPromptOpen] = useState(false);
   const [medicationOverviews, setMedicationOverviews] = useState<MedicationOverview[] | null>(null);
   const [medicationLoadError, setMedicationLoadError] = useState<string | null>(null);
@@ -89,6 +94,13 @@ export function HomePage({
   const [homeTab, setHomeTab] = useState<'medication' | 'supplement'>('medication');
   const [currentDate, setCurrentDate] = useState(() => localISODate(new Date()));
   const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    doseProgressGenerationRef.current += 1;
+    return () => {
+      doseProgressGenerationRef.current += 1;
+    };
+  }, [principalKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -285,6 +297,14 @@ export function HomePage({
     const previousRecords = latestDoseRecordsRef.current;
     if (!previousRecords) return { failedRecordIds: change.recordIds };
     if (doseMutationPendingRef.current) return { failedRecordIds: change.recordIds };
+    const requestPrincipal = principalKey;
+    const authGeneration = getAuthGeneration();
+    const requestGeneration = doseProgressGenerationRef.current;
+    const canInvalidateProgress = () => (
+      principalRef.current === requestPrincipal
+      && doseProgressGenerationRef.current === requestGeneration
+      && getAuthGeneration() === authGeneration
+    );
     const changedRecordIds = knownChangedRecordIds ??
       change.recordIds.filter((recordId) => {
         const wasTaken = previousRecords.some(
@@ -316,6 +336,9 @@ export function HomePage({
       const failedRecordIds = changedRecordIds.filter(
         (_recordId, index) => results[index]?.status === 'rejected',
       );
+      if (results.some(result => result.status === 'fulfilled') && canInvalidateProgress()) {
+        invalidateCustomChallengeProgress();
+      }
       if (failedRecordIds.length === 0) {
         if (showUndo) {
           toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
