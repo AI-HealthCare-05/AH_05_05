@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
@@ -17,10 +18,11 @@ from app.dtos.user_supplement_nutrients import (
     UserSupplementNutrientUpdateRequest,
     UserSupplementNutrientUpsertRequest,
 )
-from app.models.enums import AlarmType, Gender, MealSlot, SupplementStatus
+from app.models.enums import AlarmType, CustomChallengeType, Gender, MealSlot, SupplementStatus
 from app.models.supplement_nutrients import NutrientStandard, UserSupplementNutrient
 from app.models.users import User, UserSettings
 from app.repositories.user_supplement_nutrient_repository import UserSupplementNutrientRepository
+from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
 from app.services.nutrient_standards import resolve_age_range
 from app.services.slot_alarms import SLOT_ORDER, sync_slot_alarms
 
@@ -53,8 +55,15 @@ def normalize_mysql_time(value: time | timedelta) -> time:
 
 
 class UserSupplementNutrientService:
-    def __init__(self, repository: UserSupplementNutrientRepository | None = None):
+    def __init__(
+        self,
+        repository: UserSupplementNutrientRepository | None = None,
+        reconciler: CustomChallengeScheduleReconciler | None = None,
+        mutation_time_provider: Callable[[], datetime] | None = None,
+    ):
         self.repository = repository or UserSupplementNutrientRepository()
+        self._reconciler = reconciler or CustomChallengeScheduleReconciler()
+        self._mutation_time_provider = mutation_time_provider or (lambda: datetime.now(config.TIMEZONE))
 
     async def upsert(
         self,
@@ -107,6 +116,7 @@ class UserSupplementNutrientService:
                 connection,
             )
             settings = await self.repository.get_or_create_settings(user_id, connection)
+            changed_at = self._mutation_time_provider()
             values = data.model_dump(exclude={"slots"})
             values["status"] = SupplementStatus.ACTIVE
             if registration is None:
@@ -119,13 +129,20 @@ class UserSupplementNutrientService:
             else:
                 for field_name, value in values.items():
                     setattr(registration, field_name, value)
-                registration.updated_at = datetime.now(config.TIMEZONE)
+                registration.updated_at = changed_at
                 await registration.save(
                     using_db=connection,
                     update_fields=[*values, "updated_at"],
                 )
             await self.repository.replace_slots(registration.id, data.slots, connection)
             await self._sync_nutrient_alarms(user_id, settings, connection)
+            await self._reconciler.reconcile(
+                user_id=user_id,
+                source_kind=CustomChallengeType.SUPPLEMENT,
+                source_ids=(registration.id,),
+                changed_at=changed_at,
+                connection=connection,
+            )
             return registration.id
 
     @classmethod
@@ -207,12 +224,13 @@ class UserSupplementNutrientService:
                     detail="User supplement nutrient not found.",
                 )
             settings = await self.repository.get_or_create_settings(user.id, connection)
+            changed_at = self._mutation_time_provider()
             updates = data.model_dump(exclude_unset=True)
             slots = updates.pop("slots", None)
             merged_start_date = updates.get("start_date", registration.start_date)
             merged_end_date = updates.get("end_date", registration.end_date)
             if updates.get("status") == SupplementStatus.COMPLETED and "end_date" not in updates:
-                merged_end_date = datetime.now(config.TIMEZONE).date()
+                merged_end_date = changed_at.date()
                 updates["end_date"] = merged_end_date
             if merged_end_date is not None and merged_end_date < merged_start_date:
                 raise HTTPException(
@@ -222,7 +240,7 @@ class UserSupplementNutrientService:
             if updates:
                 for field_name, value in updates.items():
                     setattr(registration, field_name, value)
-                registration.updated_at = datetime.now(config.TIMEZONE)
+                registration.updated_at = changed_at
                 await registration.save(
                     using_db=connection,
                     update_fields=[*updates, "updated_at"],
@@ -230,6 +248,13 @@ class UserSupplementNutrientService:
             if slots is not None:
                 await self.repository.replace_slots(registration.id, slots, connection)
             await self._sync_nutrient_alarms(user.id, settings, connection)
+            await self._reconciler.reconcile(
+                user_id=user.id,
+                source_kind=CustomChallengeType.SUPPLEMENT,
+                source_ids=(registration.id,),
+                changed_at=changed_at,
+                connection=connection,
+            )
         return await self.get(user, registration_id)
 
     async def complete(self, user: User, registration_id: int) -> None:
@@ -242,16 +267,23 @@ class UserSupplementNutrientService:
                     detail="User supplement nutrient not found.",
                 )
             settings = await self.repository.get_or_create_settings(user.id, connection)
+            changed_at = self._mutation_time_provider()
             if registration.status != SupplementStatus.COMPLETED:
-                now = datetime.now(config.TIMEZONE)
                 registration.status = SupplementStatus.COMPLETED
-                registration.end_date = now.date()
-                registration.updated_at = now
+                registration.end_date = changed_at.date()
+                registration.updated_at = changed_at
                 await registration.save(
                     using_db=connection,
                     update_fields=["status", "end_date", "updated_at"],
                 )
             await self._sync_nutrient_alarms(user.id, settings, connection)
+            await self._reconciler.reconcile(
+                user_id=user.id,
+                source_kind=CustomChallengeType.SUPPLEMENT,
+                source_ids=(registration.id,),
+                changed_at=changed_at,
+                connection=connection,
+            )
 
     async def _lock_user(
         self,

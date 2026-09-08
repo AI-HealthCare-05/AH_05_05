@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import datetime, time, timedelta
 
 from fastapi import HTTPException, status
@@ -5,8 +6,9 @@ from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.dtos.settings import NotifySettingsUpdateRequest
-from app.models.enums import MealSlot
+from app.models.enums import CustomChallengeType, MealSlot
 from app.models.users import User, UserSettings
+from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
 from app.services.follow_up_visit_alarms import FollowUpVisitAlarmService
 from app.services.medication_schedule import SLOT_ORDER, MedicationScheduleService
 from app.services.user_supplement_nutrients import UserSupplementNutrientService
@@ -68,15 +70,27 @@ def _apply_medication_times(
 
 
 class NotifySettingsService:
+    def __init__(
+        self,
+        reconciler: CustomChallengeScheduleReconciler | None = None,
+        mutation_time_provider: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._reconciler = reconciler or CustomChallengeScheduleReconciler()
+        self._mutation_time_provider = mutation_time_provider or (lambda: datetime.now(config.TIMEZONE))
+
     async def get(self, user: User) -> UserSettings:
         settings, _ = await UserSettings.get_or_create(user=user)
         return settings
 
     async def update(self, user: User, data: NotifySettingsUpdateRequest) -> UserSettings:
         async with in_transaction() as connection:
+            locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
             settings = await UserSettings.filter(user_id=user.id).using_db(connection).select_for_update().first()
             if settings is None:
                 settings = await UserSettings.create(user_id=user.id, using_db=connection)
+            changed_at = self._mutation_time_provider()
 
             update_fields: list[str] = []
             supplied = data.model_dump(exclude_unset=True)
@@ -113,5 +127,19 @@ class NotifySettingsService:
                         meal_times[MealSlot.EVENING],
                         connection,
                     )
+                await self._reconciler.reconcile(
+                    user_id=user.id,
+                    source_kind=CustomChallengeType.MEDICATION,
+                    source_ids=None,
+                    changed_at=changed_at,
+                    connection=connection,
+                )
+                await self._reconciler.reconcile(
+                    user_id=user.id,
+                    source_kind=CustomChallengeType.SUPPLEMENT,
+                    source_ids=None,
+                    changed_at=changed_at,
+                    connection=connection,
+                )
 
         return settings

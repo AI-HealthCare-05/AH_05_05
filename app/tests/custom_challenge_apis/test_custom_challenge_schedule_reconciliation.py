@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from tortoise import Tortoise
 from tortoise.transactions import in_transaction
 
@@ -12,6 +13,11 @@ from app.core.db.databases import TORTOISE_APP_MODELS
 from app.core.exceptions import MedicationRecordForbiddenError, MedicationScheduleNotFoundError
 from app.dtos.custom_challenges import CustomChallengeJoinRequest
 from app.dtos.medication_schedule import SaveMedicationScheduleRequest
+from app.dtos.settings import NotifySettingsUpdateRequest
+from app.dtos.user_supplement_nutrients import (
+    UserSupplementNutrientUpdateRequest,
+    UserSupplementNutrientUpsertRequest,
+)
 from app.models.care import CareEpisode
 from app.models.challenges import ChallengeProgress, CustomChallengeTemplate, UserBadge
 from app.models.common_codes import CommonCode, CommonCodeGroup
@@ -29,12 +35,18 @@ from app.models.enums import (
     SupplementStatus,
 )
 from app.models.medications import Medication, MedicationSlot
-from app.models.supplement_nutrients import UserSupplementNutrient, UserSupplementNutrientSlot
+from app.models.supplement_nutrients import (
+    SupplementNutrient,
+    UserSupplementNutrient,
+    UserSupplementNutrientSlot,
+)
 from app.models.users import User, UserSettings
 from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
 from app.services.custom_challenges import CustomChallengeService
 from app.services.medication_schedule import MedicationScheduleService
 from app.services.medications import MedicationService
+from app.services.settings import NotifySettingsService
+from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
 JOINED_AT = datetime(2026, 9, 9, 7, 30, tzinfo=config.TIMEZONE)
 CHANGED_AT = datetime(2026, 9, 10, 12, 0, tzinfo=config.TIMEZONE)
@@ -122,6 +134,37 @@ async def _supplement(user: User, *, name: str = "재계산 영양제") -> UserS
     registration = await UserSupplementNutrient.create(
         user=user,
         custom_name=name,
+        dose_amount=Decimal("1"),
+        dose_unit="정",
+        start_date=JOINED_AT.date(),
+        status=SupplementStatus.ACTIVE,
+    )
+    await UserSupplementNutrientSlot.create(
+        user_suppl_nutrient=registration,
+        slot=MealSlot.MORNING,
+    )
+    return registration
+
+
+async def _standard_supplement(
+    user: User,
+    *,
+    name: str = "표준 재계산 영양제",
+) -> UserSupplementNutrient:
+    product = await SupplementNutrient.create(
+        food_code=f"RECON-{name}",
+        name=name,
+        basis_qty="1정",
+        energy_kcal=0,
+        protein_g=Decimal("0"),
+        carb_g=Decimal("0"),
+        serving_desc="1정",
+        serving_size="1정",
+        daily_freq="1회",
+    )
+    registration = await UserSupplementNutrient.create(
+        user=user,
+        supplement_nutrient=product,
         dose_amount=Decimal("1"),
         dose_unit="정",
         start_date=JOINED_AT.date(),
@@ -478,3 +521,179 @@ async def test_medication_cancel_removes_future_without_status_or_badge_side_eff
     assert (await CareEpisode.get(id=episode.id)).status is CareEpisodeStatus.CANCELLED
     assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.ACTIVE
     assert await UserBadge.all().count() == 0
+
+
+async def test_supplement_update_reconciles_only_selected_registration() -> None:
+    owner = await _user("supp-update-owner@example.com")
+    other = await _user("supp-update-other@example.com")
+    _, supplement_template = await _templates()
+    changed = await _supplement(owner, name="변경 영양제")
+    sibling = await _supplement(owner, name="유지 영양제")
+    foreign_registration = await _supplement(other, name="타인 영양제")
+    participation = await _join(owner, supplement_template, [changed.id, sibling.id], "supp-update")
+    foreign = await _join(other, supplement_template, [foreign_registration.id], "supp-update-other")
+    sibling_target = await CustomChallengeTarget.get(
+        participation_id=participation.id,
+        source_id_snapshot=sibling.id,
+    )
+    sibling_before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await CustomChallengeOccurrence.filter(target_id=sibling_target.id).order_by("id")
+    ]
+    foreign_before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(foreign)
+    ]
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    await UserSupplementNutrientService(mutation_time_provider=lambda: mutation_at).update(
+        owner,
+        changed.id,
+        UserSupplementNutrientUpdateRequest(slots=[MealSlot.LUNCH]),
+    )
+
+    changed_target = await CustomChallengeTarget.get(
+        participation_id=participation.id,
+        source_id_snapshot=changed.id,
+    )
+    changed_after = await CustomChallengeOccurrence.filter(target_id=changed_target.id)
+    assert any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) < mutation_at for row in changed_after)
+    assert not any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) >= mutation_at for row in changed_after)
+    assert any(row.slot is MealSlot.LUNCH and _aware(row.scheduled_at) >= mutation_at for row in changed_after)
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await CustomChallengeOccurrence.filter(target_id=sibling_target.id).order_by("id")
+    ] == sibling_before
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(foreign)
+    ] == foreign_before
+
+
+async def test_supplement_upsert_reconciles_reused_registration() -> None:
+    user = await _user("supp-upsert@example.com")
+    _, supplement_template = await _templates()
+    registration = await _standard_supplement(user)
+    participation = await _join(user, supplement_template, [registration.id], "supp-upsert")
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    response = await UserSupplementNutrientService(mutation_time_provider=lambda: mutation_at).upsert(
+        user,
+        registration.supplement_nutrient_id,
+        UserSupplementNutrientUpsertRequest(
+            dose_amount=Decimal("2"),
+            dose_unit="정",
+            start_date=JOINED_AT.date(),
+            slots=[MealSlot.EVENING],
+        ),
+    )
+
+    assert response.id == registration.id
+    rows = await _occurrences(participation)
+    assert any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) < mutation_at for row in rows)
+    assert not any(row.slot is MealSlot.MORNING and _aware(row.scheduled_at) >= mutation_at for row in rows)
+    assert any(row.slot is MealSlot.EVENING and _aware(row.scheduled_at) >= mutation_at for row in rows)
+
+
+async def test_supplement_complete_preserves_history_without_completion_or_award() -> None:
+    user = await _user("supp-complete@example.com")
+    _, supplement_template = await _templates()
+    registration = await _supplement(user)
+    participation = await _join(user, supplement_template, [registration.id], "supp-complete")
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    await UserSupplementNutrientService(mutation_time_provider=lambda: mutation_at).complete(
+        user,
+        registration.id,
+    )
+
+    rows = await _occurrences(participation)
+    assert len(rows) == 1
+    assert all(_aware(row.scheduled_at) < mutation_at for row in rows)
+    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.ACTIVE
+    assert await ChallengeProgress.all().count() == 0
+    assert await UserBadge.all().count() == 0
+
+
+async def test_supplement_update_rejects_foreign_registration_without_goal_writes() -> None:
+    owner = await _user("supp-foreign-owner@example.com")
+    other = await _user("supp-foreign-other@example.com")
+    _, supplement_template = await _templates()
+    registration = await _supplement(owner)
+    participation = await _join(owner, supplement_template, [registration.id], "supp-foreign")
+    before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(participation)
+    ]
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await UserSupplementNutrientService(mutation_time_provider=lambda: mutation_at).update(
+            other,
+            registration.id,
+            UserSupplementNutrientUpdateRequest(slots=[MealSlot.LUNCH]),
+        )
+
+    assert exc_info.value.status_code == 404
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(participation)
+    ] == before
+
+
+async def test_notify_time_change_reconciles_all_owned_medication_and_supplement_goals() -> None:
+    owner = await _user("notify-owner@example.com")
+    other = await _user("notify-other@example.com")
+    medication_template, supplement_template = await _templates()
+    episode = await _episode(owner)
+    supplement = await _supplement(owner)
+    foreign_registration = await _supplement(other)
+    medication = await _join(owner, medication_template, [episode.id], "notify-med")
+    nutrient = await _join(owner, supplement_template, [supplement.id], "notify-supp")
+    foreign = await _join(other, supplement_template, [foreign_registration.id], "notify-foreign")
+    foreign_before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(foreign)
+    ]
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    await NotifySettingsService(mutation_time_provider=lambda: mutation_at).update(
+        owner,
+        NotifySettingsUpdateRequest(morning_medication_time=time(9, 30)),
+    )
+
+    for participation in (medication, nutrient):
+        future_mornings = [
+            row
+            for row in await _occurrences(participation)
+            if row.slot is MealSlot.MORNING and _aware(row.scheduled_at) >= mutation_at
+        ]
+        assert future_mornings
+        assert {_aware(row.scheduled_at).time() for row in future_mornings} == {time(9, 30)}
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(foreign)
+    ] == foreign_before
+
+
+async def test_notify_toggle_only_update_does_not_change_occurrences() -> None:
+    user = await _user("notify-toggle@example.com")
+    _, supplement_template = await _templates()
+    registration = await _supplement(user)
+    participation = await _join(user, supplement_template, [registration.id], "notify-toggle")
+    before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(participation)
+    ]
+
+    await NotifySettingsService(
+        mutation_time_provider=lambda: datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+    ).update(
+        user,
+        NotifySettingsUpdateRequest(notify_medication=True),
+    )
+
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(participation)
+    ] == before
