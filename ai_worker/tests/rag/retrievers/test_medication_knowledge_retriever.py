@@ -1,3 +1,9 @@
+import pytest
+
+from ai_worker.rag.errors import (
+    GuidelineRetrievalError,
+    RetrievalFailureStage,
+)
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
@@ -24,6 +30,11 @@ class FakeEmbeddingProvider:
         return [0.1, 0.2, 0.3]
 
 
+class FailingEmbeddingProvider:
+    async def embed_query(self, query: str) -> list[float]:
+        raise RuntimeError("embedding unavailable")
+
+
 class FakeKnowledgeStore:
     def __init__(self, responses: list[list[RetrievedKnowledgeChunk]]) -> None:
         self.responses = list(responses)
@@ -34,6 +45,11 @@ class FakeKnowledgeStore:
         if not self.responses:
             return []
         return self.responses.pop(0)
+
+
+class FailingKnowledgeStore:
+    async def search(self, *, query_vector, search_query):
+        raise RuntimeError("qdrant unavailable")
 
 
 def build_execution_plan(
@@ -93,6 +109,42 @@ def build_chunk(
             content_hash=chunk_id,
         ),
     )
+
+
+async def test_search_preserves_embedding_failure_stage() -> None:
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FailingEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[]),
+        dataset_version="knowledge-full-v5-o200k",
+    )
+
+    with pytest.raises(GuidelineRetrievalError) as exc_info:
+        await retriever.search_with_diagnostics(
+            execution_plan=build_execution_plan(
+                "마그네슘은 왜 먹나요?",
+            ),
+        )
+
+    assert exc_info.value.stage == RetrievalFailureStage.EMBEDDING
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+async def test_search_preserves_vector_store_failure_stage() -> None:
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FailingKnowledgeStore(),
+        dataset_version="knowledge-full-v5-o200k",
+    )
+
+    with pytest.raises(GuidelineRetrievalError) as exc_info:
+        await retriever.search_with_diagnostics(
+            execution_plan=build_execution_plan(
+                "마그네슘은 왜 먹나요?",
+            ),
+        )
+
+    assert exc_info.value.stage == RetrievalFailureStage.VECTOR_STORE
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
 async def test_hybrid_rejects_high_rrf_candidate_without_dense_confidence() -> None:

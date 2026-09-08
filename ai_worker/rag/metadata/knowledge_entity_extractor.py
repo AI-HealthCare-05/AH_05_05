@@ -3,6 +3,9 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel, Field
 
+from ai_worker.rag.metadata.entity_name_policy import (
+    is_generic_knowledge_entity_category,
+)
 from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
 )
@@ -11,6 +14,7 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
 )
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
+    KnowledgeEntityCatalogEntry,
     KnowledgeEvidenceLevel,
     KnowledgeSectionType,
     KnowledgeStudyPopulation,
@@ -20,6 +24,10 @@ from ai_worker.schemas.knowledge import (
 class ExtractedKnowledgeEntities(BaseModel):
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
+    food_names: list[str] = Field(default_factory=list)
+    entity_catalog_entries: list[KnowledgeEntityCatalogEntry] = Field(
+        default_factory=list,
+    )
     interaction_type: str | None = None
     interaction_pair_keys: list[str] = Field(default_factory=list)
     evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
@@ -113,6 +121,8 @@ class KnowledgeEntityExtractor:
                 drug_names=[normalized.split(maxsplit=1)[0]],
             )
         if document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
+            if is_generic_knowledge_entity_category(normalized):
+                return ExtractedKnowledgeEntities()
             bilingual_name = self._BILINGUAL_DRUG_NAME.fullmatch(normalized)
             if bilingual_name is not None:
                 return ExtractedKnowledgeEntities(
@@ -186,6 +196,10 @@ class KnowledgeEntityExtractor:
                             *(name for match in annotated for name in match.ingredient_names),
                             *table_ingredient_names,
                         ]
+                    ),
+                    "food_names": self._unique(name for match in annotated for name in match.food_names),
+                    "entity_catalog_entries": self._unique_catalog_entries(
+                        entry for match in annotated for entry in match.entity_catalog_entries
                     ),
                     "interaction_type": interaction_type,
                     "interaction_pair_keys": self._unique(
@@ -336,6 +350,23 @@ class KnowledgeEntityExtractor:
     @staticmethod
     def _unique(values: Iterable[str]) -> list[str]:
         return list(dict.fromkeys(values))
+
+    @staticmethod
+    def _unique_catalog_entries(
+        values: Iterable[KnowledgeEntityCatalogEntry],
+    ) -> list[KnowledgeEntityCatalogEntry]:
+        unique: list[KnowledgeEntityCatalogEntry] = []
+        seen: set[tuple[str, str, str]] = set()
+        for entry in values:
+            key = (
+                entry.canonical_name,
+                entry.entity_type.value,
+                entry.kind.value,
+            )
+            if key not in seen:
+                unique.append(entry)
+                seen.add(key)
+        return unique
 
     @classmethod
     def _normalize_title(cls, title: str) -> str:

@@ -43,3 +43,16 @@ documents:
           display_name: 메트로니다졸
           aliases:
             - metronidazole
+  - document_id: research_supplement_interactions-016c81c9a3e29ebd
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        left:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases:
+            - calcium
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases:
+            - iron

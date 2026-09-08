@@ -1,3 +1,6 @@
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
 from ai_worker.rag.metadata.knowledge_entity_extractor import (
     KnowledgeEntityExtractor,
 )
@@ -41,6 +44,15 @@ def test_extracts_verified_bilingual_drug_name_aliases() -> None:
     ]
 
 
+def test_does_not_treat_generic_drug_encyclopedia_title_as_drug_name() -> None:
+    entities = KnowledgeEntityExtractor().extract_from_title(
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="영양제",
+    )
+
+    assert entities.drug_names == []
+
+
 def test_does_not_assign_all_document_words_as_supplement_names() -> None:
     entities = KnowledgeEntityExtractor().extract_from_title(
         document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
@@ -48,6 +60,44 @@ def test_does_not_assign_all_document_words_as_supplement_names() -> None:
     )
 
     assert entities.ingredient_names == []
+
+
+def test_extracts_annotated_food_and_alias_metadata(tmp_path) -> None:
+    annotation_path = tmp_path / "annotations.yaml"
+    annotation_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: mfds-guide
+    pairs:
+      - pair_type: DRUG_FOOD
+        left:
+          kind: DRUG
+          display_name: 펙소페나딘
+          aliases: [펙소페나딘, fexofenadine]
+        right:
+          kind: FOOD
+          display_name: 과일주스
+          aliases: [과일주스, 자몽주스]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    entities = KnowledgeEntityExtractor(
+        interaction_annotations=KnowledgeInteractionAnnotationRegistry.from_yaml(
+            annotation_path,
+        )
+    ).extract_from_chunk(
+        document_type=KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+        document_id="mfds-guide",
+        title="약과 음식 상호작용 안내서",
+        content="펙소페나딘은 자몽주스 대신 물과 함께 복용합니다.",
+    )
+
+    assert entities.drug_names == ["펙소페나딘"]
+    assert entities.food_names == ["과일주스"]
+    assert entities.entity_catalog_entries[1].canonical_name == "과일주스"
+    assert entities.entity_catalog_entries[1].aliases == ["과일주스", "자몽주스"]
 
 
 def test_extracts_supplement_interaction_pair_from_research_title() -> None:

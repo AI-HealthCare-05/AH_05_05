@@ -5,8 +5,12 @@ import pytest
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.medication_search import (
+    MedicationCatalogEntry,
     MedicationExpressionResolutionStatus,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
     MedicationQuestionScope,
 )
 
@@ -19,6 +23,15 @@ class StaticExpressionCatalog:
     async def list_expressions(self) -> list[str]:
         self.call_count += 1
         return self.expressions
+
+
+class StaticTypedExpressionCatalog(StaticExpressionCatalog):
+    def __init__(self, entries: list[MedicationCatalogEntry]) -> None:
+        super().__init__([entry.canonical_name for entry in entries])
+        self.entries = entries
+
+    async def list_entries(self) -> list[MedicationCatalogEntry]:
+        return self.entries
 
 
 class CountingEditDistanceResolver(RuleBasedMedicationQuestionResolver):
@@ -61,6 +74,88 @@ async def test_resolver_auto_corrects_unique_product_typo() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_preserves_catalog_entity_type_and_source() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="테스트성분",
+                    aliases=["테스트별칭"],
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                )
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(question="테스트별칭의 주의사항을 알려줘")
+
+    assert result.entity_resolution_available is True
+    assert len(result.entities) == 1
+    assert result.entities[0].canonical_name == "테스트성분"
+    assert result.entities[0].entity_type == MedicationQueryEntityType.INGREDIENT_NAME
+    assert result.entities[0].kind == InteractionEntityKind.DRUG
+    assert result.entities[0].source == MedicationQueryEntitySource.RDBMS
+
+
+@pytest.mark.asyncio
+async def test_resolver_matches_typed_food_alias_from_catalog() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="펙소페나딘",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                ),
+                MedicationCatalogEntry(
+                    canonical_name="과일주스",
+                    aliases=["자몽주스"],
+                    entity_type=MedicationQueryEntityType.FOOD_CATEGORY,
+                    kind=InteractionEntityKind.FOOD,
+                    source=MedicationQueryEntitySource.QDRANT,
+                ),
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(
+        question="펙소페나딘을 먹을 때 자몽주스를 피해야 하나요?",
+    )
+
+    assert result.status == MedicationExpressionResolutionStatus.UNCHANGED
+    assert [(entity.canonical_name, entity.kind, entity.source) for entity in result.entities] == [
+        ("펙소페나딘", InteractionEntityKind.DRUG, MedicationQueryEntitySource.RDBMS),
+        ("과일주스", InteractionEntityKind.FOOD, MedicationQueryEntitySource.QDRANT),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resolver_preserves_active_intake_entity_source() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog([]),
+    )
+
+    result = await resolver.resolve(
+        question="등록약의 복용법을 알려줘",
+        additional_entities=[
+            MedicationCatalogEntry(
+                canonical_name="등록약",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.PATIENT_CONTEXT,
+            )
+        ],
+    )
+
+    assert result.entity_resolution_available is True
+    assert result.entities[0].canonical_name == "등록약"
+    assert result.entities[0].source == MedicationQueryEntitySource.PATIENT_CONTEXT
+
+
+@pytest.mark.asyncio
 async def test_resolver_auto_corrects_bare_unique_product_typo() -> None:
     resolver = RuleBasedMedicationQuestionResolver(
         catalog=StaticExpressionCatalog(["타이레놀", "아세트아미노펜"]),
@@ -85,6 +180,60 @@ async def test_resolver_auto_corrects_trailing_keyboard_typo() -> None:
 
     assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
     assert result.resolved_question == "타이레놀 복용법 알려줘"
+
+
+@pytest.mark.asyncio
+async def test_resolver_matches_latin_letter_and_compatibility_jamo_only_from_catalog() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="비타민 D",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.RDBMS,
+                ),
+                MedicationCatalogEntry(
+                    canonical_name="타이레놀",
+                    entity_type=MedicationQueryEntityType.BRAND_ALIAS,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                ),
+            ]
+        ),
+    )
+
+    vitamin = await resolver.resolve(question="비타민 디의 주의사항을 알려줘")
+    jamo = await resolver.resolve(question="ㅌㅏㅇㅣㄹㅔㄴㅗㄹ 복용법 알려줘")
+
+    assert [entity.canonical_name for entity in vitamin.entities] == ["비타민 D"]
+    assert [entity.canonical_name for entity in jamo.entities] == ["타이레놀"]
+
+
+@pytest.mark.asyncio
+async def test_resolver_records_source_backed_normalization_diagnostics() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="비타민 D",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.QDRANT,
+                )
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(question="비타민 디의 주의사항을 알려줘")
+
+    assert result.normalization_strategy.value == "LETTER_PRONUNCIATION"
+    assert result.confidence_tier.value == "HIGH"
+    assert result.shortlisted_candidate_count == 1
+    assert result.tie_count == 0
+    assert result.relation_resolution_status.value == "NOT_APPLICABLE"
+    assert result.catalog_source_counts == {"QDRANT": 1}
+    assert result.catalog_type_counts == {"INGREDIENT_NAME": 1}
 
 
 @pytest.mark.asyncio
@@ -206,9 +355,44 @@ async def test_resolver_keeps_correct_multiword_ingredient_unchanged() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_corrects_relation_expression_after_two_catalog_entities() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="와파린",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                ),
+                MedicationCatalogEntry(
+                    canonical_name="비타민 K",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.QDRANT,
+                ),
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(
+        question="와파린이랑 비타민 K 머거도 대?",
+    )
+
+    assert result.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED
+    assert result.resolved_question == "와파린이랑 비타민 K 먹어도 돼?"
+    assert [entity.canonical_name for entity in result.entities] == [
+        "와파린",
+        "비타민 K",
+    ]
+    assert result.normalization_strategy.value == "RELATION_CUE"
+    assert result.relation_resolution_status.value == "AUTO_CORRECTED"
+
+
+@pytest.mark.asyncio
 async def test_resolver_recognizes_controlled_supplement_names_without_db_rows() -> None:
     resolver = RuleBasedMedicationQuestionResolver(
-        catalog=StaticExpressionCatalog([]),
+        catalog=StaticExpressionCatalog(["칼슘", "철분"]),
     )
 
     result = await resolver.resolve(

@@ -5,6 +5,11 @@ from tortoise import Tortoise
 from ai_worker.repositories.medication_expression_catalog_repository import (
     DbMedicationExpressionCatalog,
 )
+from ai_worker.schemas.interaction import InteractionEntityKind as SearchEntityKind
+from ai_worker.schemas.medication_search import (
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+)
 from app.core.db.databases import TORTOISE_APP_MODELS
 from app.models.enums import InteractionAliasType, InteractionEntityKind
 from app.models.interactions import (
@@ -17,6 +22,14 @@ from app.models.interactions import (
 class StaticSupplementIngredientCatalog:
     async def list_names(self) -> list[str]:
         return ["비타민 K"]
+
+
+class FailingSupplementIngredientCatalog:
+    async def list_names(self) -> list[str]:
+        raise RuntimeError("Qdrant unavailable")
+
+    async def list_entries(self) -> list[object]:
+        raise RuntimeError("Qdrant unavailable")
 
 
 @pytest_asyncio.fixture
@@ -68,6 +81,13 @@ async def test_catalog_combines_product_entity_and_alias_names(
         "해열진통제",
     ]
 
+    entries = await DbMedicationExpressionCatalog().list_entries()
+    alias_entry = next(entry for entry in entries if entry.aliases == ["해열진통제"])
+    assert alias_entry.canonical_name == "아세트아미노펜"
+    assert alias_entry.entity_type == MedicationQueryEntityType.BRAND_ALIAS
+    assert alias_entry.kind == SearchEntityKind.DRUG
+    assert alias_entry.source == MedicationQueryEntitySource.RDBMS
+
 
 @pytest.mark.asyncio
 async def test_catalog_includes_product_name_without_parenthetical_ingredient(
@@ -104,3 +124,28 @@ async def test_catalog_includes_dynamic_qdrant_ingredient_names(
     result = await catalog.list_expressions()
 
     assert "비타민 K" in result
+
+
+@pytest.mark.asyncio
+async def test_catalog_keeps_rdbms_entries_when_qdrant_catalog_fails(
+    initialized_db: None,
+) -> None:
+    await MedicationProductGuide.create(
+        item_seq="300",
+        product_name="검증약정",
+        manufacturer_name="테스트제약",
+        efficacy="효능",
+        usage_instructions="용법",
+        pre_use_warning="사전 주의",
+        precautions="주의",
+        drug_food_interactions="상호작용",
+        adverse_reactions="이상반응",
+        storage_instructions="보관",
+    )
+    catalog = DbMedicationExpressionCatalog(
+        supplement_catalog=FailingSupplementIngredientCatalog(),
+    )
+
+    entries = await catalog.list_entries()
+
+    assert any(entry.canonical_name == "검증약정" for entry in entries)

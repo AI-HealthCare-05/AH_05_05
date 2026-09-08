@@ -161,7 +161,14 @@
       "repo_path": "data/knowledge/raw/demo_restricted/research/supplement_interactions/Calcium and IronAbsorption – Mechanisms andPublic Health Relevance.pdf",
       "processing_status": "TEXT_EXTRACTABLE",
       "selection_reason": "동일 문서 유형의 대표 전처리 검증",
-      "manual_review_status": "APPROVED"
+      "manual_review_status": "APPROVED",
+      "title": "Calcium and Iron Absorption – Mechanisms and Public Health Relevance",
+      "source_url": "https://doi.org/10.1024/0300-9831/a000036",
+      "doi": "10.1024/0300-9831/a000036",
+      "publication_year": 2010,
+      "ingredient_names": ["칼슘", "철분"],
+      "evidence_level": "REVIEW_ARTICLE",
+      "study_population": "MIXED"
     },
     {
       "source_id": "unknown_supplement_interaction_monograph",

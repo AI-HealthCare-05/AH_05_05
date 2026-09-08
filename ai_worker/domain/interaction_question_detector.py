@@ -6,6 +6,11 @@ _EXPLICIT_INTERACTION_PATTERN = re.compile(
 _COADMINISTRATION_PATTERN = re.compile(
     r"(?:같이|함께)\s*(?:먹|복용|섭취)",
 )
+_RELATIONAL_INTAKE_PATTERN = re.compile(
+    r"\S*(?:과|와|이랑|랑)\s+"
+    r"(?:[가-힣A-Za-z0-9]+\s+){0,3}[가-힣A-Za-z0-9]+(?:을|를)?\s+"
+    r"먹어도\s*(?:돼|되나요)\??",
+)
 _RELATIONAL_AVOIDANCE_PATTERN = re.compile(
     r"(?:\S+(?:과|와)\s*)?(?:같이|함께)\s*"
     r"(?:피해야|피할|주의해야)\s*(?:할\s*)?"
@@ -39,6 +44,7 @@ def is_interaction_question(question: str) -> bool:
         for pattern in (
             _EXPLICIT_INTERACTION_PATTERN,
             _COADMINISTRATION_PATTERN,
+            _RELATIONAL_INTAKE_PATTERN,
             _RELATIONAL_AVOIDANCE_PATTERN,
             _INTAKE_CONTEXT_AVOIDANCE_PATTERN,
             _RELATIONAL_EFFECT_PATTERN,
