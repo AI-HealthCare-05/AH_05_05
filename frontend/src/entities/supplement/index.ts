@@ -33,6 +33,7 @@ export type {
   SupplementReview,
   SupplementReviewList,
   SupplementSearchPage,
+  SupplementSortDirection,
   SupplementSortKey,
   SupplementSlot,
   UpdateSupplementPayload,

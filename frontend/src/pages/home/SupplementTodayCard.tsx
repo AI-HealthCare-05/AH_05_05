@@ -182,7 +182,7 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                   >
                     {isSelected && <Check className="size-4" strokeWidth={3} />}
                   </span>
-                  <span className="min-w-0 flex-1 text-base font-bold text-foreground">{supplement.name}</span>
+                  <span className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base font-bold text-foreground">{supplement.name}</span>
                   <span className="shrink-0 text-sm text-muted-foreground">
                     {supplement.doseAmount}{supplement.doseUnit}
                   </span>
