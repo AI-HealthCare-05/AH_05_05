@@ -1,9 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 
 from app.dependencies.security import get_request_user
 from app.dtos.challenges import (
+    ChallengeCatalogListResponse,
+    ChallengeCatalogResponse,
     UserBadgeListResponse,
     UserChallengeListResponse,
     UserChallengeResponse,
@@ -11,9 +13,30 @@ from app.dtos.challenges import (
     VerificationResponse,
 )
 from app.models.users import User
+from app.services.challenge_catalog import ChallengeCatalogService
 from app.services.challenge_participation import ChallengeParticipationService
 
 challenge_router = APIRouter(prefix="/user", tags=["user-challenges"])
+
+
+@challenge_router.get(
+    "/challenge-catalog", response_model=ChallengeCatalogListResponse, summary="게시된 공식 챌린지 조회"
+)
+async def list_challenge_catalog(
+    user: Annotated[User, Depends(get_request_user)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> ChallengeCatalogListResponse:
+    items, total = await ChallengeCatalogService().list(user.id, offset, limit)
+    return ChallengeCatalogListResponse(items=items, total_count=total, offset=offset, limit=limit)
+
+
+@challenge_router.get("/challenge-catalog/{challenge_id}", response_model=ChallengeCatalogResponse)
+async def get_challenge_catalog(
+    challenge_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+) -> ChallengeCatalogResponse:
+    return await ChallengeCatalogService().get(user.id, challenge_id)
 
 
 @challenge_router.post(
