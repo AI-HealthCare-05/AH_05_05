@@ -1,11 +1,13 @@
 import sqlite3
-from datetime import date, datetime, time
+from collections.abc import Collection
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
 from tortoise import Tortoise
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
 from app.core import config
@@ -403,6 +405,21 @@ async def test_reconcile_null_source_fk_never_reattaches_reused_snapshot_id() ->
     assert not any(row.slot is MealSlot.EVENING for row in remaining)
 
 
+@pytest.mark.parametrize("source_kind", ["MEDICATION", CustomChallengeType.VISIT])
+async def test_reconcile_rejects_non_enum_and_unsupported_source_kinds(source_kind: object) -> None:
+    user = await _user(f"invalid-kind-{source_kind!s}@example.com")
+
+    async with in_transaction() as connection:
+        with pytest.raises(ValueError, match="only medication and supplement"):
+            await CustomChallengeScheduleReconciler().reconcile(
+                user_id=user.id,
+                source_kind=source_kind,  # type: ignore[arg-type]
+                source_ids=None,
+                changed_at=CHANGED_AT,
+                connection=connection,
+            )
+
+
 async def test_medication_schedule_save_reconciles_only_changed_episode_when_times_match() -> None:
     user = await _user("schedule-target@example.com")
     medication_template, _ = await _templates()
@@ -697,3 +714,78 @@ async def test_notify_toggle_only_update_does_not_change_occurrences() -> None:
         (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
         for row in await _occurrences(participation)
     ] == before
+
+
+async def test_notify_time_change_uses_one_post_lock_boundary_for_all_source_types() -> None:
+    class RecordingReconciler(CustomChallengeScheduleReconciler):
+        def __init__(self) -> None:
+            self.changed_ats: list[datetime] = []
+
+        async def reconcile(
+            self,
+            *,
+            user_id: int,
+            source_kind: CustomChallengeType,
+            source_ids: Collection[int] | None,
+            changed_at: datetime,
+            connection: BaseDBAsyncClient,
+        ) -> None:
+            self.changed_ats.append(changed_at)
+            await super().reconcile(
+                user_id=user_id,
+                source_kind=source_kind,
+                source_ids=source_ids,
+                changed_at=changed_at,
+                connection=connection,
+            )
+
+    user = await _user("notify-boundary@example.com")
+    medication_template, supplement_template = await _templates()
+    episode = await _episode(user)
+    registration = await _supplement(user)
+    medication = await _join(user, medication_template, [episode.id], "notify-boundary-med")
+    nutrient = await _join(user, supplement_template, [registration.id], "notify-boundary-supp")
+    changed_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+    just_before = changed_at - timedelta(microseconds=1)
+    medication_row = next(
+        row
+        for row in await _occurrences(medication)
+        if row.scheduled_date == changed_at.date() and row.slot is MealSlot.MORNING
+    )
+    supplement_row = next(
+        row
+        for row in await _occurrences(nutrient)
+        if row.scheduled_date == changed_at.date() and row.slot is MealSlot.MORNING
+    )
+    medication_row.scheduled_at = just_before
+    supplement_row.scheduled_at = changed_at
+    await medication_row.save(update_fields=["scheduled_at"])
+    await supplement_row.save(update_fields=["scheduled_at"])
+    provider_calls = 0
+
+    def mutation_time() -> datetime:
+        nonlocal provider_calls
+        provider_calls += 1
+        return changed_at
+
+    reconciler = RecordingReconciler()
+    await NotifySettingsService(
+        reconciler=reconciler,
+        mutation_time_provider=mutation_time,
+    ).update(
+        user,
+        NotifySettingsUpdateRequest(morning_medication_time=time(9, 30)),
+    )
+
+    assert provider_calls == 1
+    assert reconciler.changed_ats == [changed_at, changed_at]
+    assert _aware((await CustomChallengeOccurrence.get(id=medication_row.id)).scheduled_at) == just_before
+    assert await CustomChallengeOccurrence.filter(id=supplement_row.id).exists() is False
+    for participation in (medication, nutrient):
+        future_mornings = [
+            row
+            for row in await _occurrences(participation)
+            if row.slot is MealSlot.MORNING and _aware(row.scheduled_at) >= changed_at
+        ]
+        assert future_mornings
+        assert {_aware(row.scheduled_at).time() for row in future_mornings} == {time(9, 30)}

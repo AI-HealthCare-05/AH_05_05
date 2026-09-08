@@ -44,7 +44,7 @@ class CustomChallengeScheduleReconciler:
         changed_at: datetime,
         connection: BaseDBAsyncClient,
     ) -> None:
-        if source_kind not in {
+        if not isinstance(source_kind, CustomChallengeType) or source_kind not in {
             CustomChallengeType.MEDICATION,
             CustomChallengeType.SUPPLEMENT,
         }:
