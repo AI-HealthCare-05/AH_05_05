@@ -269,11 +269,8 @@ class ChallengeVerification(models.Model):
 
     class Meta:
         table = "challenge_verifications"
+        unique_together = (("user_challenge", "verification_date"),)
         indexes = (
-            Index(
-                fields=("user_challenge_id", "verification_date"),
-                name="idx_challenge_verifications_date",
-            ),
             Index(fields=("status", "submitted_at"), name="idx_challenge_verifications_review"),
             Index(fields=("progress_id",), name="idx_challenge_verifications_progress"),
             Index(fields=("reviewed_by_admin_id",), name="idx_challenge_verifications_admin"),

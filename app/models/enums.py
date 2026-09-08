@@ -89,6 +89,7 @@ class ChallengeParticipationStatus(StrEnum):
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
 
 
 class ChallengeVerificationStatus(StrEnum):
