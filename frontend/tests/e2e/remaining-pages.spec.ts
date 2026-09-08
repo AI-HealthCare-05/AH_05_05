@@ -152,7 +152,7 @@ test('로그인 마이페이지는 내 관리와 알림 토글, 계정을 보여
   await page.goto('/dev/my-authenticated');
 
   await expect(page.getByRole('heading', { name: '내 관리' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /복용약 4개/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /복용 중 처방 1개/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /영양제 3개/ })).toBeVisible();
   await expect(page.getByRole('switch')).toHaveCount(3);
   await expect(page.getByText('poke@example.com')).toHaveCount(0);

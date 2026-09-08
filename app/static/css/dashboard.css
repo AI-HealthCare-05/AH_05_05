@@ -1,33 +1,111 @@
-.dashboard-insight-card {
-  min-height: 80px;
+:root {
+  --dashboard-insight-height: 136px;
 }
 
-.chat-satisfaction {
+.dashboard-insight-card,
+.chat-reason-panel {
+  min-height: var(--dashboard-insight-height);
+}
+
+.chat-reason-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.chat-reason-panel {
+  background: #f7f8fa;
+  border-radius: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.chat-reason-title {
+  color: #111827;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.chat-reason-content {
   align-items: center;
   display: flex;
+  gap: 12px;
+}
+
+.chat-reason-ring {
+  align-items: center;
+  background: #e5e7eb;
+  border-radius: 50%;
+  display: flex;
+  flex: 0 0 88px;
+  height: 88px;
+  justify-content: center;
+  position: relative;
+  transition: background 180ms ease;
+  width: 88px;
+}
+
+.chat-reason-ring::after {
+  background: #fff;
+  border-radius: 50%;
+  content: "";
+  height: 54px;
+  position: absolute;
+  width: 54px;
+}
+
+.chat-reason-ring-value {
+  color: #111827;
+  font-size: 11px;
+  font-weight: 700;
+  position: relative;
+  z-index: 1;
+}
+
+.chat-reason-legend {
+  display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 2px;
-  min-width: 108px;
+  gap: 5px;
+  min-width: 0;
 }
 
-.chat-satisfaction-progress {
-  background: #dbeafe;
-  border-radius: 999px;
-  display: block;
-  height: 10px;
-  overflow: hidden;
-  width: 100px;
-}
-
-.chat-satisfaction-progress-fill {
-  background: #2563eb;
-  display: block;
-  height: 100%;
-  transition: width 180ms ease;
-}
-
-.chat-satisfaction-value {
-  color: #4b5563;
+.chat-reason-legend-item {
+  align-items: center;
+  display: grid;
   font-size: 10px;
+  gap: 5px;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+}
+
+.chat-reason-legend-dot {
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+}
+
+.chat-reason-legend-name {
+  color: #4b5563;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-reason-legend-count {
+  color: #111827;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.chat-reason-empty {
+  color: #4b5563;
+  font-size: 11px;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .chat-reason-grid {
+    grid-template-columns: 1fr;
+  }
 }

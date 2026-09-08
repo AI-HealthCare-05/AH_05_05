@@ -1,3 +1,5 @@
+from tortoise.fields.relational import OnDelete
+
 import app.models as models
 import app.models.enums as enums
 from app.core.db.databases import TORTOISE_APP_MODELS
@@ -7,6 +9,7 @@ def test_challenge_domain_models_are_registered() -> None:
     expected_models = {
         "Badge",
         "Challenge",
+        "CustomChallengeTemplate",
         "UserChallenge",
         "ChallengeProgress",
         "ChallengeVerification",
@@ -20,6 +23,7 @@ def test_challenge_domain_models_are_registered() -> None:
 def test_challenge_domain_models_expose_tables_and_unique_constraints() -> None:
     assert models.Badge._meta.db_table == "badges"
     assert models.Challenge._meta.db_table == "challenges"
+    assert models.CustomChallengeTemplate._meta.db_table == "custom_challenge_templates"
     assert models.UserChallenge._meta.db_table == "user_challenges"
     assert models.ChallengeProgress._meta.db_table == "challenge_progress"
     assert models.ChallengeVerification._meta.db_table == "challenge_verifications"
@@ -59,3 +63,15 @@ def test_challenge_common_code_and_history_relationships_are_restrictive() -> No
     assert challenge_fields["check_frequency"].model_name == "models.CommonCode"
     assert challenge_fields["reward_badge"].model_name == "models.Badge"
     assert verification_fields["reviewed_by_admin"].null is True
+
+
+def test_custom_challenge_template_exposes_management_fields() -> None:
+    fields = models.CustomChallengeTemplate._meta.fields_map
+
+    assert fields["name"].max_length == 100
+    assert fields["name"].unique is True
+    assert fields["is_active"].default is True
+    assert fields["check_type"].model_name == "models.CommonCode"
+    assert fields["check_type"].on_delete is OnDelete.RESTRICT
+    assert fields["created_by_admin"].null is True
+    assert fields["updated_by_admin"].null is True

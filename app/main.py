@@ -24,12 +24,14 @@ configure_db_query_logging(config.DB_QUERY_LOG_ENABLED)
 async def lifespan(app: FastAPI):
     """Chat Core가 재사용한 Qdrant 연결을 프로세스 종료 시 정리한다."""
     yield
-    qdrant_client = getattr(app.state, "chat_qdrant_client", None)
-    if qdrant_client is not None:
-        await qdrant_client.close()
-    chat_tracer = getattr(app.state, "chat_tracer", None)
-    if chat_tracer is not None:
-        await chat_tracer.aclose()
+    for state_key in ("chat_qdrant_client", "intake_report_qdrant_client"):
+        qdrant_client = getattr(app.state, state_key, None)
+        if qdrant_client is not None:
+            await qdrant_client.close()
+    for state_key in ("chat_tracer", "intake_report_tracer"):
+        chat_tracer = getattr(app.state, state_key, None)
+        if chat_tracer is not None:
+            await chat_tracer.aclose()
 
 
 app = FastAPI(

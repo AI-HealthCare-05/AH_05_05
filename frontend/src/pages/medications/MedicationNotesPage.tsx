@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import {
   listMedicationNotes,
   type MedicationNote,
@@ -20,38 +20,56 @@ function noteDateLabel(value: string): string {
 
 export function MedicationNotesPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { principalKey } = useSession();
   const [page, setPage] = useState<MedicationNotePage | null>(null);
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const episodeIdParam = searchParams.get('episodeId');
+  const parsedEpisodeId = episodeIdParam === null ? undefined : Number(episodeIdParam);
+  const episodeId =
+    parsedEpisodeId !== undefined && Number.isSafeInteger(parsedEpisodeId) && parsedEpisodeId > 0
+      ? parsedEpisodeId
+      : undefined;
+  const requestGenerationRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const requestGeneration = requestGenerationRef.current + 1;
+    requestGenerationRef.current = requestGeneration;
     setPage(null);
     setInitialLoadError(null);
     setLoadMoreError(null);
-    listMedicationNotes()
+    setLoadingMore(false);
+    listMedicationNotes({ episodeId })
       .then((nextPage) => {
-        if (cancelled) return;
+        if (cancelled || requestGenerationRef.current !== requestGeneration) return;
         setPage(nextPage);
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && requestGenerationRef.current === requestGeneration) {
           setInitialLoadError(error instanceof Error ? error.message : '복약 메모를 불러오지 못했어요.');
         }
       });
     return () => {
       cancelled = true;
+      if (requestGenerationRef.current === requestGeneration) {
+        requestGenerationRef.current += 1;
+      }
     };
-  }, [principalKey]);
+  }, [episodeId, principalKey, retryKey]);
 
   async function loadMore() {
     if (!page?.nextCursor || loadingMore) return;
+    const requestGeneration = requestGenerationRef.current;
+    const requestedCursor = page.nextCursor;
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const nextPage = await listMedicationNotes({ cursor: page.nextCursor });
+      const nextPage = await listMedicationNotes({ episodeId, cursor: requestedCursor });
+      if (requestGenerationRef.current !== requestGeneration) return;
       setPage((current) => {
         if (!current) return nextPage;
         const existingIds = new Set(current.items.map((note) => note.id));
@@ -62,9 +80,10 @@ export function MedicationNotesPage() {
         };
       });
     } catch (error: unknown) {
+      if (requestGenerationRef.current !== requestGeneration) return;
       setLoadMoreError(error instanceof Error ? error.message : '복약 메모를 더 불러오지 못했어요.');
     } finally {
-      setLoadingMore(false);
+      if (requestGenerationRef.current === requestGeneration) setLoadingMore(false);
     }
   }
 
@@ -100,13 +119,40 @@ export function MedicationNotesPage() {
         </Button>
 
         <section className="flex flex-col gap-3" aria-labelledby="medication-notes-title">
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 id="medication-notes-title" aria-label={notesHeading} className="text-xl font-bold text-foreground">
-              {notesHeading}
-            </h2>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 id="medication-notes-title" aria-label={notesHeading} className="text-xl font-bold text-foreground">
+                {notesHeading}
+              </h2>
+              {episodeId !== undefined && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {page?.items[0]
+                    ? `${prescriptionLabel(page.items[0])} 메모만 보고 있어요.`
+                    : '선택한 처방 메모만 보고 있어요.'}
+                </p>
+              )}
+            </div>
+            {episodeId !== undefined && (
+              <Button
+                variant="secondary"
+                fullWidth={false}
+                onClick={() => setSearchParams({})}
+              >
+                전체 메모 보기
+              </Button>
+            )}
           </div>
           {initialLoadError ? (
-            <p role="alert" className="text-sm text-danger-strong">{initialLoadError}</p>
+            <div className="flex flex-col items-start gap-3">
+              <p role="alert" className="text-sm text-danger-strong">{initialLoadError}</p>
+              <Button
+                variant="secondary"
+                fullWidth={false}
+                onClick={() => setRetryKey((current) => current + 1)}
+              >
+                다시 시도
+              </Button>
+            </div>
           ) : page === null ? (
             <div role="status" aria-label="복약 메모 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
           ) : notes.length === 0 ? (
@@ -116,22 +162,33 @@ export function MedicationNotesPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {notes.map((note) => (
-                <button
+                <article
                   key={note.id}
-                  type="button"
-                  aria-label={`${medicineLabel(note)} ${note.body}`}
-                  className="flex min-h-28 w-full flex-col gap-2 rounded-card bg-card p-4 text-left shadow-card transition-colors hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`)}
+                  className="overflow-hidden rounded-card bg-card shadow-card"
                 >
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                    <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
-                    <span className="rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
-                      {prescriptionLabel(note)}
-                    </span>
-                  </div>
-                  <p className="font-bold text-foreground">{medicineLabel(note)}</p>
-                  <p className="truncate text-sm text-muted-foreground">{note.body}</p>
-                </button>
+                  <button
+                    type="button"
+                    aria-label={`${medicineLabel(note)} ${note.body}`}
+                    className="flex min-h-28 w-full flex-col gap-2 p-4 text-left transition-colors hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`)}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                      <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
+                      <span className="rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
+                        {prescriptionLabel(note)}
+                      </span>
+                    </div>
+                    <p className="font-bold text-foreground">{medicineLabel(note)}</p>
+                    <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{note.body}</p>
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-touch w-full border-t border-border px-4 py-2 text-left text-sm font-bold text-primary-strong transition-colors hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    onClick={() => setSearchParams({ episodeId: String(note.careEpisodeId) })}
+                  >
+                    {prescriptionLabel(note)} 메모만 보기
+                  </button>
+                </article>
               ))}
               {loadMoreError && (
                 <p role="alert" className="text-sm text-danger-strong">{loadMoreError}</p>

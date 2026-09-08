@@ -71,13 +71,23 @@ class OcrDocumentStats(CamelModel):
     avg_field_confidence: float | None = None
 
 
-class ChatResponseStats(CamelModel):
-    """선택 기간에 종료된 AI 응답 건수와 채팅 세션 만족도."""
+class ChatReasonStat(CamelModel):
+    """종료된 채팅 세션의 공통코드별 평가 사유 분포."""
 
-    total: int
-    completed: int
-    failed: int
-    like_rate: float | None = None
+    code: str
+    name: str
+    count: int
+    percentage: float
+
+
+class ChatEvaluationStats(CamelModel):
+    """선택 기간에 종료된 채팅 세션의 평가 현황."""
+
+    liked: int
+    disliked: int
+    unrated: int
+    positive_reasons: list[ChatReasonStat]
+    negative_reasons: list[ChatReasonStat]
 
 
 class MemberStats(CamelModel):
@@ -109,7 +119,7 @@ class MemberStats(CamelModel):
 class DashboardSummaryResponse(CamelModel):
     """REQ-DASH-001 대시보드 요약.
 
-    회원, ALARM, OCR 및 AI 챗봇 응답 현황을 반환한다.
+    회원, ALARM, OCR 및 AI 챗봇 평가 현황을 반환한다.
     """
 
     period: DashboardPeriod
@@ -117,4 +127,4 @@ class DashboardSummaryResponse(CamelModel):
     members: MemberStats
     alarm_notifications: AlarmNotificationStats
     ocr_documents: OcrDocumentStats
-    chat_responses: ChatResponseStats
+    chat_evaluations: ChatEvaluationStats

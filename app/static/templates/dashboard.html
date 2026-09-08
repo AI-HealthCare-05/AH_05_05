@@ -8,10 +8,10 @@
     <link rel="stylesheet" href="../css/styles.css?v=20260831-9"/>
     <link rel="stylesheet" href="../css/management.css?v=20260907-2"/>
     <link rel="stylesheet" href="../css/overlays.css?v=20260831-9"/>
-    <link rel="stylesheet" href="../css/dashboard.css?v=20260902-1"/>
-    <script type="module" src="../js/dashboard.js?v=20260902-1"></script>
+    <link rel="stylesheet" href="../css/dashboard.css?v=20260908-2"/>
+    <script type="module" src="../js/dashboard.js?v=20260908-1"></script>
     <script type="module" src="../js/navigation.js?v=20260827-2"></script>
-    <script type="module" src="../js/sidebar.js?v=20260907-3"></script>
+    <script type="module" src="../js/sidebar.js?v=20260908-2"></script>
 </head>
 <body class="dashboard-page m-0 flex items-start w-full min-h-screen">
 
@@ -161,42 +161,53 @@
                     </div>
                 </div>
 
-                <!-- chatbot status card -->
+                <!-- chatbot evaluation card -->
                 <div class="card flex flex-col gap-4 items-start w-full">
-                    <p class="font-semibold text-[14px] w-full" style="color:#111827;">AI 챗봇 응답 현황</p>
+                    <p class="font-semibold text-[14px] w-full" style="color:#111827;">AI 챗봇 평가 현황</p>
                     <div class="flex gap-3 items-start w-full">
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 응답</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">좋아요</p>
                             <div class="flex items-baseline w-full">
-                                <p data-chat-total class="font-bold text-[20px]" style="color:#111827;">0</p>
+                                <p data-chat-liked class="font-bold text-[20px]" style="color:#2563eb;">0</p>
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">응답 성공</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#dc2626;">싫어요</p>
                             <div class="flex items-baseline w-full">
-                                <p data-chat-completed class="font-bold text-[20px]" style="color:#2563eb;">0</p>
+                                <p data-chat-disliked class="font-bold text-[20px]" style="color:#dc2626;">0</p>
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#dc2626;">응답 실패</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">평가없음</p>
                             <div class="flex items-baseline w-full">
-                                <p data-chat-failed class="font-bold text-[20px]" style="color:#dc2626;">0</p>
+                                <p data-chat-unrated class="font-bold text-[20px]" style="color:#111827;">0</p>
                             </div>
                         </div>
                     </div>
-                    <div class="dashboard-insight-card flex gap-4 items-center p-3 rounded-lg w-full"
-                         style="background:#f7f8fa;">
-                        <div data-chat-satisfaction class="chat-satisfaction shrink-0" role="img"
-                             aria-label="챗봇 만족도 평가 데이터 없음">
-                            <span class="chat-satisfaction-progress" aria-hidden="true">
-                                <span data-chat-satisfaction-fill class="chat-satisfaction-progress-fill"
-                                      style="width:0;"></span>
-                            </span>
-                            <span data-chat-satisfaction-value class="chat-satisfaction-value">데이터 없음</span>
-                        </div>
-                        <div class="flex flex-col gap-1 items-start flex-1 min-w-0">
-                            <p class="font-semibold text-[12px] w-full" style="color:#111827;">챗봇 만족도</p>
-                            <p class="font-normal text-[11px] w-full" style="color:#4b5563;">챗봇 사용자의 긍정 평가 비율을 나타냅니다.</p>
+                    <div class="chat-reason-grid w-full">
+                        <section class="chat-reason-panel" aria-labelledby="positive-reason-title">
+                            <p id="positive-reason-title" class="chat-reason-title">좋아요 사유</p>
+                            <div class="chat-reason-content">
+                                <div data-positive-reason-ring class="chat-reason-ring" role="img"
+                                     aria-label="좋아요 사유 데이터 없음">
+                                    <span class="chat-reason-ring-value">0건</span>
+                                </div>
+                                <div data-positive-reason-legend class="chat-reason-legend">
+                                    <p class="chat-reason-empty">데이터 없음</p>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="chat-reason-panel" aria-labelledby="negative-reason-title">
+                            <p id="negative-reason-title" class="chat-reason-title">싫어요 사유</p>
+                            <div class="chat-reason-content">
+                                <div data-negative-reason-ring class="chat-reason-ring" role="img"
+                                     aria-label="싫어요 사유 데이터 없음">
+                                    <span class="chat-reason-ring-value">0건</span>
+                                </div>
+                                <div data-negative-reason-legend class="chat-reason-legend">
+                                    <p class="chat-reason-empty">데이터 없음</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

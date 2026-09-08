@@ -9,6 +9,7 @@ import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { ApiError } from '@/shared/api/client';
 import {
   MIN_BIRTH_DATE,
+  UNDER_FOURTEEN_MESSAGE,
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
@@ -26,6 +27,8 @@ type AuthMode = 'login' | 'signup';
 type SignupStep = 1 | 2 | 3 | 4;
 
 const VERIFICATION_CODE_LENGTH = 6;
+const UNDER_FOURTEEN_SIGNUP_UNAVAILABLE_MESSAGE =
+  '만 14세 미만은 보호자 동의 절차가 아직 준비되지 않아 가입할 수 없어요.';
 
 /** 서버가 오류 본문을 못 줄 때만 씁니다. 평소에는 서버 message 를 그대로 띄웁니다. */
 const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 시도해주세요.';
@@ -50,6 +53,9 @@ export function AuthPage() {
   const [verificationSeconds, setVerificationSeconds] = useState(0);
   const [verificationExpiresAt, setVerificationExpiresAt] = useState<number | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [serviceTerms, setServiceTerms] = useState(false);
+  const [personalInformationTerms, setPersonalInformationTerms] = useState(false);
+  const [ageTerms, setAgeTerms] = useState(false);
   const [recordTerms, setRecordTerms] = useState(false);
   const [aiTerms, setAiTerms] = useState(false);
   const [email, setEmail] = useState('');
@@ -108,6 +114,9 @@ export function AuthPage() {
     setPhoneNumber('');
     setBirthDate('');
     setGender('');
+    setServiceTerms(false);
+    setPersonalInformationTerms(false);
+    setAgeTerms(false);
     setRecordTerms(false);
     setAiTerms(false);
     setEmailError(null);
@@ -241,13 +250,17 @@ export function AuthPage() {
       return;
     }
 
-    if (!recordTerms || !aiTerms || !gender) return;
+    if (!requiredConsentsAccepted || !gender) return;
     if (!verificationToken) {
       setSignupStep(1);
       setEmailError('이메일 인증을 다시 진행해주세요.');
       return;
     }
-    const nextBirthDateError = validateBirthDate(birthDate);
+    const birthDateValidation = validateBirthDate(birthDate);
+    const nextBirthDateError =
+      birthDateValidation === UNDER_FOURTEEN_MESSAGE
+        ? UNDER_FOURTEEN_SIGNUP_UNAVAILABLE_MESSAGE
+        : birthDateValidation;
     const nextNameError = validateName(name);
     const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
     setBirthDateError(nextBirthDateError);
@@ -265,6 +278,7 @@ export function AuthPage() {
         birthDate,
         gender,
         emailVerificationToken: verificationToken,
+        isTermsAgreed: requiredConsentsAccepted,
       });
       prepareMedicationStateForNewAccount();
       // 회원가입 응답에는 액세스 토큰이 없으므로 같은 자격증명으로 로그인까지 완료합니다.
@@ -290,6 +304,8 @@ export function AuthPage() {
   }
 
   const signupStepCopy = STEP_COPY[signupStep];
+  const requiredConsentsAccepted =
+    serviceTerms && personalInformationTerms && ageTerms && recordTerms && aiTerms;
 
   return (
     <div
@@ -655,6 +671,69 @@ export function AuthPage() {
                   <GenderRadioGroup value={gender} onChange={setGender} />
                   <fieldset className="mt-2 flex flex-col gap-3">
                     <legend className="mb-2 text-base font-bold text-foreground">필수 동의</legend>
+                    <div>
+                      <CheckboxField
+                        id="service-terms"
+                        checked={serviceTerms}
+                        onCheckedChange={setServiceTerms}
+                        label="서비스 이용약관에 동의해요"
+                        required
+                      />
+                      <Link
+                        to="/terms"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-11 inline-flex min-h-touch items-center text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                      >
+                        서비스 이용약관 보기
+                      </Link>
+                    </div>
+                    <div>
+                      <CheckboxField
+                        id="personal-information-terms"
+                        checked={personalInformationTerms}
+                        onCheckedChange={setPersonalInformationTerms}
+                        label="개인정보 수집 및 이용에 동의해요"
+                        required
+                      />
+                      <div className="ml-11 flex flex-wrap items-center gap-x-3">
+                        <details className="text-sm text-muted-foreground">
+                          <summary className="min-h-touch cursor-pointer py-3 font-semibold text-primary">
+                            개인정보 수집·이용 내용 보기
+                          </summary>
+                          <dl className="mb-2 flex flex-col gap-2 rounded-input bg-muted-bg p-3 leading-5">
+                            <div>
+                              <dt className="font-semibold text-foreground">수집 항목</dt>
+                              <dd>이메일, 비밀번호, 이름, 전화번호, 생년월일, 성별</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-foreground">이용 목적</dt>
+                              <dd>회원 식별, 본인 확인, 고객 상담 및 서비스 제공</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-foreground">보유 기간</dt>
+                              <dd>회원 탈퇴 시까지 또는 관련 법령에 따른 보관 기간</dd>
+                            </div>
+                          </dl>
+                        </details>
+                        <Link
+                          to="/privacy"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-touch items-center text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                        >
+                          개인정보 처리 안내 보기
+                        </Link>
+                      </div>
+                    </div>
+                    <CheckboxField
+                      id="age-terms"
+                      checked={ageTerms}
+                      onCheckedChange={setAgeTerms}
+                      label="만 14세 이상이에요"
+                      description="만 14세 미만은 보호자 동의 절차가 준비된 뒤 가입할 수 있어요."
+                      required
+                    />
                     <CheckboxField
                       id="record-terms"
                       checked={recordTerms}
@@ -678,7 +757,9 @@ export function AuthPage() {
                   <Button
                     type="submit"
                     className="mt-auto"
-                    disabled={saving || !recordTerms || !aiTerms || !gender}
+                    disabled={
+                      saving || !requiredConsentsAccepted || !gender
+                    }
                   >
                     회원가입 완료
                   </Button>
