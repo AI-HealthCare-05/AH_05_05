@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -72,7 +73,8 @@ class FakeSmtpSettingsService:
 class TestEmailWorker(TestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.codec = EmailPayloadCodec(Fernet.generate_key().decode())
+        self.payload_key = Fernet.generate_key()
+        self.codec = EmailPayloadCodec(self.payload_key.decode())
         self.sender = MagicMock(spec=SmtpEmailSender)
         self.settings_service = FakeSmtpSettingsService()
         self.sender_factory = MagicMock(return_value=self.sender)
@@ -123,6 +125,18 @@ class TestEmailWorker(TestCase):
                 expires_at=expires_at,
             )
         )
+
+    def legacy_signup_payload(self, verification_id: int, expires_at: datetime) -> str:
+        serialized = json.dumps(
+            {
+                "template": "SIGNUP_VERIFICATION_CODE",
+                "recipient_email": "recipient@example.com",
+                "verification_id": verification_id,
+                "verification_code": "123456",
+                "expires_at": expires_at.isoformat(),
+            }
+        ).encode()
+        return Fernet(self.payload_key).encrypt(serialized).decode()
 
     async def test_successful_delivery_completes_claimed_job(self) -> None:
         job = await self.create_job()
@@ -240,6 +254,32 @@ class TestEmailWorker(TestCase):
         await job.refresh_from_db()
         assert job.status is BackgroundJobStatus.CANCELLED
         self.sender.send.assert_not_called()
+
+    async def test_legacy_signup_payload_uses_absolute_expiry_without_guessing_duration(self) -> None:
+        expires_at = datetime(2099, 9, 7, 3, 1, tzinfo=config.TIMEZONE)
+        verification = await EmailVerification.create(
+            email="recipient@example.com",
+            purpose=EmailVerificationPurpose.SIGNUP,
+            code_digest="a" * 64,
+            expires_at=expires_at,
+        )
+        job = await self.create_job(
+            reference_table="email_verifications",
+            reference_id=verification.id,
+        )
+
+        await worker.send_email(
+            self.context,
+            job.id,
+            self.legacy_signup_payload(verification.id, expires_at),
+        )
+
+        await job.refresh_from_db()
+        message = self.sender.send.call_args.args[0]
+        assert job.status is BackgroundJobStatus.COMPLETED
+        assert "2099년 9월 7일 03:01 +09:00까지 유효" in message.text_body
+        assert "2099년 9월 7일 03:01 +09:00까지 유효" in message.html_body
+        assert "3분 동안 유효" not in message.text_body
 
     async def test_signup_retry_is_cancelled_when_delay_exceeds_expiry(self) -> None:
         now = datetime.now(config.TIMEZONE)
