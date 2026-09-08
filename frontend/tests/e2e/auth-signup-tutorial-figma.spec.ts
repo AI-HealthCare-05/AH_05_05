@@ -26,6 +26,18 @@ async function mockEmailVerificationRoutes(page: Page) {
   });
 }
 
+async function checkRequiredConsents(page: Page) {
+  for (const name of [
+    /서비스 이용약관에 동의해요/,
+    /개인정보 수집 및 이용에 동의해요/,
+    /만 14세 이상이에요/,
+    /진료기록 수집 및 이용에 동의해요/,
+    /AI 서비스 이용에 동의해요/,
+  ]) {
+    await page.getByRole('checkbox', { name }).check();
+  }
+}
+
 test('회원가입은 이메일·인증코드·비밀번호·프로필 순서의 네 단계로 진행한다', async ({ page }) => {
   await openSignup(page);
 
@@ -192,8 +204,7 @@ test('회원가입 완료는 기존 계정 생성 뒤 로그인 API 순서를 �
   await page.getByLabel('전화번호').fill('011-123-4567');
   await page.getByLabel('생년월일').fill('1990-01-01');
   await page.getByRole('radio', { name: '여성' }).check();
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
-  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await checkRequiredConsents(page);
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect
@@ -241,8 +252,7 @@ test('회원가입 생성 API 오류는 가입 폼 안에 접근 가능한 오�
   await page.getByLabel('전화번호').fill('010-1234-5678');
   await page.getByLabel('생년월일').fill('1990-01-01');
   await page.getByRole('radio', { name: '여성' }).check();
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
-  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await checkRequiredConsents(page);
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page.getByRole('alert')).toHaveText('가입을 완료하지 못했어요.');
@@ -280,8 +290,7 @@ test('회원가입 후 로그인 API 오류는 가입 폼 안에 접근 가능�
   await page.getByLabel('전화번호').fill('010-1234-5678');
   await page.getByLabel('생년월일').fill('1990-01-01');
   await page.getByRole('radio', { name: '남성' }).check();
-  await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
-  await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
+  await checkRequiredConsents(page);
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
   await expect(page.getByRole('alert')).toHaveText('로그인에 실패했어요.');

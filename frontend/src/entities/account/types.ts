@@ -12,6 +12,7 @@ export interface CreateAccountPayload extends Omit<AccountProfile, 'maskedName'>
   email: string;
   password: string;
   emailVerificationToken: string;
+  isTermsAgreed: boolean;
 }
 
 export type UpdateAccountProfilePayload = Omit<AccountProfile, 'maskedName'>;

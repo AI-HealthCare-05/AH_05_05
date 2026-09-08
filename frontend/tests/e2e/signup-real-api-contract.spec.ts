@@ -194,6 +194,9 @@ test('회원가입 이메일 API 검증 오류는 브라우저 검증 말풍선�
     phoneNumber: '010-1234-5678',
     birthDate: '1990-01-01',
     gender: '여성',
+    serviceTerms: true,
+    personalInformationTerms: true,
+    ageTerms: true,
     recordTerms: true,
     aiTerms: true,
   });
@@ -241,6 +244,9 @@ test('탭을 옮기면 필수 동의도 꺼진다', async ({ page }) => {
   await page.goto('/login');
   await openSignupTab(page);
   await advanceSignupToProfile(page);
+  await page.getByRole('checkbox', { name: /서비스 이용약관에 동의해요/ }).check();
+  await page.getByRole('checkbox', { name: /개인정보 수집 및 이용에 동의해요/ }).check();
+  await page.getByRole('checkbox', { name: /만 14세 이상이에요/ }).check();
   await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   await page.getByRole('checkbox', { name: /AI 서비스 이용/ }).check();
 
@@ -249,6 +255,13 @@ test('탭을 옮기면 필수 동의도 꺼진다', async ({ page }) => {
   await advanceSignupToProfile(page);
 
   // 이전 세션의 흔적으로 필수 동의가 켜져 있으면 안 된다.
+  await expect(
+    page.getByRole('checkbox', { name: /서비스 이용약관에 동의해요/ }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole('checkbox', { name: /개인정보 수집 및 이용에 동의해요/ }),
+  ).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /만 14세 이상이에요/ })).not.toBeChecked();
   await expect(page.getByRole('checkbox', { name: /진료기록 수집/ })).not.toBeChecked();
   await expect(page.getByRole('checkbox', { name: /AI 서비스 이용/ })).not.toBeChecked();
 });
