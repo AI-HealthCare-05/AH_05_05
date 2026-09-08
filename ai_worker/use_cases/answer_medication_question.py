@@ -5,6 +5,12 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
+from ai_worker.chains.conditional_question_interpretation_chain import (
+    ConditionalInterpretationReasonCode,
+    ConditionalQuestionInterpretationChain,
+    ConditionalQuestionInterpretationInput,
+    ConditionalQuestionInterpretationOutput,
+)
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChain,
     MedicationQueryPlanChainInput,
@@ -90,6 +96,7 @@ from ai_worker.schemas.medication_search import (
     MedicationKnowledgeQueryPlan,
     MedicationQueryEntitySource,
     MedicationQueryEntityType,
+    MedicationQuestionConfidence,
     MedicationQuestionInterpretation,
     MedicationQuestionResolution,
     MedicationQuestionScope,
@@ -167,6 +174,7 @@ class AnswerMedicationQuestionUseCase:
         question_resolver: MedicationQuestionResolver | None = None,
         supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
         query_plan_chain: MedicationQueryPlanChain | None = None,
+        conditional_interpretation_chain: ConditionalQuestionInterpretationChain | None = None,
         risk_policy: MedicationChatRiskPolicy | None = None,
     ) -> None:
         self._context_provider = context_provider
@@ -179,6 +187,7 @@ class AnswerMedicationQuestionUseCase:
         self._question_resolver = question_resolver
         self._supplement_ingredient_catalog = supplement_ingredient_catalog
         self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
+        self._conditional_interpretation_chain = conditional_interpretation_chain
         self._risk_policy = risk_policy or MedicationChatRiskPolicy()
         self._assembler = MedicationAnswerAssembler()
 
@@ -228,6 +237,10 @@ class AnswerMedicationQuestionUseCase:
                 request=request,
                 context=context,
             )
+        planning = await self._conditionally_interpret_question(
+            request=request,
+            planning=planning,
+        )
         query_plan = planning.query_plan
         interpretation = planning.interpretation
         if terminal_result := self._pre_retrieval_terminal_result(
@@ -745,6 +758,139 @@ class AnswerMedicationQuestionUseCase:
                 ]
             query_span.end(query_outputs)
             return planning
+
+    async def _conditionally_interpret_question(
+        self,
+        *,
+        request: MedicationChatRequest,
+        planning: MedicationQuestionPlanResult,
+    ) -> MedicationQuestionPlanResult:
+        chain = self._conditional_interpretation_chain
+        trigger_reasons = self._conditional_interpretation_reasons(
+            request=request,
+            planning=planning,
+        )
+        if chain is None or not trigger_reasons or not planning.query_plan.entities:
+            return planning
+
+        async with self._tracer.span("query.plan.conditional") as conditional_span:
+            try:
+                output = ConditionalQuestionInterpretationOutput.model_validate(
+                    await chain.ainvoke(
+                        ConditionalQuestionInterpretationInput(
+                            question=request.question,
+                            candidate_entities=planning.query_plan.entities,
+                            requested_section_types=planning.query_plan.section_types,
+                            trigger_reasons=trigger_reasons,
+                        ),
+                        config={
+                            "metadata": {
+                                "trigger_reasons": [reason.value for reason in trigger_reasons],
+                                "candidate_entity_count": len(
+                                    planning.query_plan.entities,
+                                ),
+                            }
+                        },
+                    )
+                )
+            except Exception:
+                conditional_span.end(
+                    {
+                        "status": "FAILED",
+                        "trigger_reasons": [reason.value for reason in trigger_reasons],
+                    }
+                )
+                return planning
+
+            validated = self._validated_conditional_plan(
+                planning=planning,
+                output=output,
+            )
+            accepted_entity_count = len(
+                set(validated.interpretation.normalized_entity_names).intersection(
+                    output.canonical_entity_names,
+                )
+            )
+            trace_outputs = {
+                "status": "APPLIED",
+                "interpretation_version": output.interpretation_version,
+                "trigger_reasons": [reason.value for reason in trigger_reasons],
+                "model_confidence": output.confidence.value,
+                "model_reason_codes": [reason.value for reason in output.reason_codes],
+                "proposed_entity_count": len(output.canonical_entity_names),
+                "accepted_entity_count": accepted_entity_count,
+                "discarded_entity_count": (len(output.canonical_entity_names) - accepted_entity_count),
+                "added_section_count": (
+                    len(validated.query_plan.section_types) - len(planning.query_plan.section_types)
+                ),
+            }
+            if self._tracer.capture_content:
+                trace_outputs["validated_entity_names"] = validated.interpretation.normalized_entity_names
+            conditional_span.end(trace_outputs)
+            return validated
+
+    @staticmethod
+    def _conditional_interpretation_reasons(
+        *,
+        request: MedicationChatRequest,
+        planning: MedicationQuestionPlanResult,
+    ) -> list[ConditionalInterpretationReasonCode]:
+        reasons: list[ConditionalInterpretationReasonCode] = []
+        if planning.interpretation.confidence != MedicationQuestionConfidence.HIGH:
+            reasons.append(ConditionalInterpretationReasonCode.LOW_CONFIDENCE)
+        if len(planning.query_plan.entities) > 1:
+            reasons.append(ConditionalInterpretationReasonCode.MULTI_ENTITY)
+        if request.session_reference.entities:
+            reasons.append(ConditionalInterpretationReasonCode.SESSION_REFERENCE)
+        return reasons
+
+    @staticmethod
+    def _validated_conditional_plan(
+        *,
+        planning: MedicationQuestionPlanResult,
+        output: ConditionalQuestionInterpretationOutput,
+    ) -> MedicationQuestionPlanResult:
+        query_plan = planning.query_plan
+        known_names = {"".join(entity.canonical_name.casefold().split()) for entity in query_plan.entities}
+        validated_names = [
+            name for name in output.canonical_entity_names if "".join(name.casefold().split()) in known_names
+        ]
+        supported_sections = {
+            KnowledgeSectionType.FUNCTION,
+            KnowledgeSectionType.DAILY_INTAKE,
+            KnowledgeSectionType.CAUTION,
+            KnowledgeSectionType.INTERACTION,
+        }
+        section_types = list(
+            dict.fromkeys(
+                [
+                    *query_plan.section_types,
+                    *(section for section in output.requested_section_types if section in supported_sections),
+                ]
+            )
+        )
+        validated_query_plan = query_plan.model_copy(
+            update={"section_types": section_types},
+        )
+        normalized_names = list(
+            dict.fromkeys(
+                [
+                    *planning.interpretation.normalized_entity_names,
+                    *validated_names,
+                ]
+            )
+        )
+        interpretation = planning.interpretation.model_copy(
+            update={
+                "normalized_entity_names": normalized_names,
+                "requested_section_types": section_types,
+                "query_plan_hash": validated_query_plan.query_plan_hash,
+            }
+        )
+        return MedicationQuestionPlanResult(
+            query_plan=validated_query_plan,
+            interpretation=interpretation,
+        )
 
     async def _prepare_question(
         self,

@@ -124,10 +124,10 @@
 
 **Produces:** A Pydantic structured output parser invoked only for low-confidence, multi-entity, or same-session reference questions; its result augments but cannot invent catalog entities.
 
-- [ ] Write failing tests proving high-confidence single-entity questions do not call the LLM chain.
-- [ ] Write failing tests proving model-proposed unknown entities are discarded.
-- [ ] Implement a typed request/response model and a policy gate; record only version, confidence, reason codes, and normalized output.
-- [ ] Compare rule-only vs conditional mode against the contract fixture and commit only the default-off experiment adapter if the live metric is unavailable.
+- [x] Write failing tests proving high-confidence single-entity questions do not call the LLM chain.
+- [x] Write failing tests proving model-proposed unknown entities are discarded.
+- [x] Implement a typed request/response model and a policy gate; record only version, confidence, reason codes, and normalized output.
+- [x] Compare rule-only vs conditional mode against the contract fixture and commit only the default-off experiment adapter if the live metric is unavailable. Live model comparison remains `PARTIAL`.
 
 ### Task 8: Evaluate new supplement registration safety deterministically
 

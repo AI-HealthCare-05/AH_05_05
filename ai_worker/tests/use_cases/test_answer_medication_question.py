@@ -5,6 +5,9 @@ from datetime import date
 import pytest
 from langchain_core.runnables import RunnableLambda
 
+from ai_worker.chains.conditional_question_interpretation_chain import (
+    ConditionalQuestionInterpretationOutput,
+)
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChainInput,
     MedicationQuestionPlanResult,
@@ -290,6 +293,16 @@ class SequencedKnowledgeRetriever(FakeKnowledgeRetriever):
         )
 
 
+class RecordingConditionalInterpretationChain:
+    def __init__(self, payload: ConditionalQuestionInterpretationOutput) -> None:
+        self.payload = payload
+        self.inputs = []
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        self.inputs.append(input)
+        return self.payload
+
+
 class PassthroughGenerator:
     async def generate(
         self,
@@ -497,6 +510,7 @@ def build_use_case(
     question_resolver=None,
     supplement_ingredient_catalog=None,
     query_plan_chain=None,
+    conditional_interpretation_chain=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -509,6 +523,7 @@ def build_use_case(
         question_resolver=question_resolver,
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         query_plan_chain=query_plan_chain,
+        conditional_interpretation_chain=conditional_interpretation_chain,
     )
 
 
@@ -1182,6 +1197,54 @@ async def test_execute_does_not_retry_when_initial_evidence_is_complete() -> Non
     ).execute(build_request("마그네슘은 왜 먹나요?"))
 
     assert len(retriever.execution_plans) == 1
+
+
+async def test_execute_skips_conditional_llm_for_high_confidence_single_entity() -> None:
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            canonical_entity_names=["타이레놀"],
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            confidence="HIGH",
+            reason_codes=[],
+        )
+    )
+    use_case = build_use_case(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["타이레놀"]),
+        ),
+        conditional_interpretation_chain=chain,
+    )
+
+    await use_case.execute(build_request("타이레놀의 효능을 알려줘"))
+
+    assert chain.inputs == []
+
+
+async def test_execute_discards_unknown_conditional_llm_entity_before_search() -> None:
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            canonical_entity_names=["존재하지않는성분"],
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            confidence="MEDIUM",
+            reason_codes=["LOW_CONFIDENCE"],
+        )
+    )
+    retriever = RecordingQueryPlanRetriever()
+
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+
+    assert len(chain.inputs) == 1
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entity_names == ["마그네슘"]
+    assert query_plan.section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.CAUTION,
+    ]
 
 
 async def test_execute_records_fallback_reason_without_answer_content() -> None:
