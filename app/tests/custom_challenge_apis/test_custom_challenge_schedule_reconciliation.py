@@ -2,13 +2,16 @@ import sqlite3
 from datetime import date, datetime, time
 from decimal import Decimal
 
+import pytest
 import pytest_asyncio
 from tortoise import Tortoise
 from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.core.db.databases import TORTOISE_APP_MODELS
+from app.core.exceptions import MedicationRecordForbiddenError, MedicationScheduleNotFoundError
 from app.dtos.custom_challenges import CustomChallengeJoinRequest
+from app.dtos.medication_schedule import SaveMedicationScheduleRequest
 from app.models.care import CareEpisode
 from app.models.challenges import ChallengeProgress, CustomChallengeTemplate, UserBadge
 from app.models.common_codes import CommonCode, CommonCodeGroup
@@ -30,6 +33,8 @@ from app.models.supplement_nutrients import UserSupplementNutrient, UserSuppleme
 from app.models.users import User, UserSettings
 from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
 from app.services.custom_challenges import CustomChallengeService
+from app.services.medication_schedule import MedicationScheduleService
+from app.services.medications import MedicationService
 
 JOINED_AT = datetime(2026, 9, 9, 7, 30, tzinfo=config.TIMEZONE)
 CHANGED_AT = datetime(2026, 9, 10, 12, 0, tzinfo=config.TIMEZONE)
@@ -147,6 +152,26 @@ async def _occurrences(participation: CustomChallengeParticipation) -> list[Cust
     return await CustomChallengeOccurrence.filter(
         target__participation_id=participation.id,
     ).order_by("scheduled_at", "id")
+
+
+def _schedule_request(
+    medication_id: int,
+    *,
+    slots: list[str],
+    morning: str = "08:00",
+) -> SaveMedicationScheduleRequest:
+    return SaveMedicationScheduleRequest.model_validate(
+        {
+            "start": {"date": JOINED_AT.date().isoformat(), "slot": "morning"},
+            "mealTimes": {
+                "morning": morning,
+                "lunch": "13:00",
+                "evening": "19:00",
+                "bedtime": "22:00",
+            },
+            "medications": [{"medicationId": medication_id, "slots": slots}],
+        }
+    )
 
 
 async def test_reconcile_updates_inserts_and_deletes_only_future_occurrences() -> None:
@@ -333,3 +358,123 @@ async def test_reconcile_null_source_fk_never_reattaches_reused_snapshot_id() ->
     assert len(remaining) == 2
     assert all(_aware(row.scheduled_at) < CHANGED_AT for row in remaining)
     assert not any(row.slot is MealSlot.EVENING for row in remaining)
+
+
+async def test_medication_schedule_save_reconciles_only_changed_episode_when_times_match() -> None:
+    user = await _user("schedule-target@example.com")
+    medication_template, _ = await _templates()
+    changed = await _episode(user, alias="변경 처방")
+    untouched = await _episode(user, alias="유지 처방")
+    changed_participation = await _join(user, medication_template, [changed.id], "schedule-changed")
+    untouched_participation = await _join(user, medication_template, [untouched.id], "schedule-untouched")
+    untouched_before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(untouched_participation)
+    ]
+    medication = await Medication.get(care_episode_id=changed.id)
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    await MedicationScheduleService(mutation_time_provider=lambda: mutation_at).save(
+        user,
+        changed.id,
+        _schedule_request(medication.id, slots=["morning", "lunch"]),
+    )
+
+    changed_after = await _occurrences(changed_participation)
+    assert any(
+        row.scheduled_date == mutation_at.date()
+        and row.slot is MealSlot.MORNING
+        and _aware(row.scheduled_at) < mutation_at
+        for row in changed_after
+    )
+    assert any(row.slot is MealSlot.LUNCH and _aware(row.scheduled_at) >= mutation_at for row in changed_after)
+    assert not any(row.slot is MealSlot.EVENING and _aware(row.scheduled_at) >= mutation_at for row in changed_after)
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(untouched_participation)
+    ] == untouched_before
+
+
+async def test_medication_schedule_global_time_change_reconciles_all_owned_types() -> None:
+    owner = await _user("global-time-owner@example.com")
+    other = await _user("global-time-other@example.com")
+    medication_template, supplement_template = await _templates()
+    first_episode = await _episode(owner, alias="첫 처방")
+    second_episode = await _episode(owner, alias="둘째 처방")
+    supplement = await _supplement(owner)
+    other_supplement = await _supplement(other)
+    first = await _join(owner, medication_template, [first_episode.id], "global-first")
+    second = await _join(owner, medication_template, [second_episode.id], "global-second")
+    nutrient = await _join(owner, supplement_template, [supplement.id], "global-supplement")
+    foreign = await _join(other, supplement_template, [other_supplement.id], "global-foreign")
+    foreign_before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(foreign)
+    ]
+    medication = await Medication.get(care_episode_id=first_episode.id)
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    await MedicationScheduleService(mutation_time_provider=lambda: mutation_at).save(
+        owner,
+        first_episode.id,
+        _schedule_request(medication.id, slots=["morning", "evening"], morning="09:00"),
+    )
+
+    for participation in (first, second, nutrient):
+        future_mornings = [
+            row
+            for row in await _occurrences(participation)
+            if row.slot is MealSlot.MORNING and _aware(row.scheduled_at) >= mutation_at
+        ]
+        assert future_mornings
+        assert {_aware(row.scheduled_at).time() for row in future_mornings} == {time(9, 0)}
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(foreign)
+    ] == foreign_before
+
+
+async def test_medication_schedule_and_cancel_preserve_owner_error_contracts() -> None:
+    owner = await _user("med-owner@example.com")
+    other = await _user("med-other@example.com")
+    medication_template, _ = await _templates()
+    episode = await _episode(owner)
+    participation = await _join(owner, medication_template, [episode.id], "med-owner")
+    medication = await Medication.get(care_episode_id=episode.id)
+    before = [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(participation)
+    ]
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    with pytest.raises(MedicationScheduleNotFoundError):
+        await MedicationScheduleService(mutation_time_provider=lambda: mutation_at).save(
+            other,
+            episode.id,
+            _schedule_request(medication.id, slots=["morning", "lunch"]),
+        )
+    with pytest.raises(MedicationRecordForbiddenError):
+        await MedicationService(mutation_time_provider=lambda: mutation_at).cancel(other, episode.id)
+
+    assert [
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
+        for row in await _occurrences(participation)
+    ] == before
+    assert (await CareEpisode.get(id=episode.id)).status is CareEpisodeStatus.ACTIVE
+
+
+async def test_medication_cancel_removes_future_without_status_or_badge_side_effects() -> None:
+    user = await _user("cancel-goals@example.com")
+    medication_template, _ = await _templates()
+    episode = await _episode(user)
+    participation = await _join(user, medication_template, [episode.id], "cancel-goals")
+    mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+
+    await MedicationService(mutation_time_provider=lambda: mutation_at).cancel(user, episode.id)
+
+    remaining = await _occurrences(participation)
+    assert len(remaining) == 1
+    assert all(_aware(row.scheduled_at) < mutation_at for row in remaining)
+    assert (await CareEpisode.get(id=episode.id)).status is CareEpisodeStatus.CANCELLED
+    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.ACTIVE
+    assert await UserBadge.all().count() == 0
