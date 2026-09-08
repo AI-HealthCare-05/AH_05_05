@@ -253,7 +253,7 @@ export function AddSupplementSheet({
           <div className="relative shrink-0">
             <Search
               aria-hidden
-              className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-disabled-foreground"
+              className="pointer-events-none absolute top-1/2 left-3.5 z-10 size-5 -translate-y-1/2 text-disabled-foreground"
             />
             <Input
               type="search"
