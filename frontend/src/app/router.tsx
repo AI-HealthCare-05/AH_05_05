@@ -15,6 +15,8 @@ import {
 } from '@/pages/my';
 import { OcrReviewPage } from '@/pages/ocr-review';
 import { HomePage } from '@/pages/home';
+import { AiReportsPage } from '@/pages/reports/AiReportsPage';
+import { AiReportRequestPage } from '@/pages/reports/AiReportRequestPage';
 import { PrivacyPage, TermsPage } from '@/pages/legal';
 import { SplashPage } from '@/pages/splash';
 import { TutorialPage } from '@/pages/tutorial';
@@ -232,6 +234,8 @@ export function AppRouter() {
           <Route path="/my" element={<MyPage />} />
           <Route path="/my/profile" element={<MyProfilePage />} />
           <Route path="/my/visits" element={<FollowUpVisitsPage />} />
+          <Route path="/reports" element={<AiReportsPage />} />
+          <Route path="/reports/new" element={<AiReportRequestPage />} />
         </Route>
         <Route path="/dev/gallery" element={<DevGallery />} />
         <Route path="/dev/home-challenges" element={<ChallengeHomePreviewPage />} />

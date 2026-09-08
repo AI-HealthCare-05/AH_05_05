@@ -327,23 +327,13 @@ export function MedicationsPage({
               </button>
             </div>
           ) : (
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                aria-label="새 약봉투 등록"
-                className="flex size-touch items-center justify-center text-primary"
-                onClick={() => navigate('/document-upload')}
-              >
-                <Plus aria-hidden className="size-6" />
-              </button>
-              <button
-                type="button"
-                className="min-h-touch px-2 text-sm font-bold text-muted-foreground"
-                onClick={() => setSelectionMode(true)}
-              >
-                삭제
-              </button>
-            </div>
+            <button
+              type="button"
+              className="min-h-touch shrink-0 px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => navigate('/reports/new?source=medications')}
+            >
+              AI 보고서 받기
+            </button>
           )
         }
       />
@@ -369,7 +359,7 @@ export function MedicationsPage({
           )}
         </div>
 
-        {feature252 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <Button
             fullWidth={false}
             className="self-start"
@@ -378,7 +368,14 @@ export function MedicationsPage({
             <Plus aria-hidden className="mr-1 size-4" />
             처방 추가
           </Button>
-        )}
+          <button
+            type="button"
+            className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => selectionMode ? leaveSelectionMode() : setSelectionMode(true)}
+          >
+            {selectionMode ? '관리 완료' : '처방 관리'}
+          </button>
+        </div>
 
         {loadError ? (
           <Card title="복용약을 불러오지 못했어요" className="p-5">

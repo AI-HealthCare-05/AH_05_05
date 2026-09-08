@@ -1585,7 +1585,7 @@ test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목�
   );
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '처방 관리', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
   await page.getByRole('button', { name: '선택한 처방 삭제' }).click();
   const dialog = page.getByRole('dialog');

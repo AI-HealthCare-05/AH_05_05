@@ -263,11 +263,10 @@ export function SupplementsPage({
         right={
           <button
             type="button"
-            aria-label="영양제 추가"
-            className="flex size-touch items-center justify-center text-primary"
-            onClick={openAddSheet}
+            className="min-h-touch shrink-0 px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => navigate('/reports/new?source=supplements')}
           >
-            <Plus aria-hidden className="size-6" />
+            AI 보고서 받기
           </button>
         }
       />
@@ -331,7 +330,7 @@ export function SupplementsPage({
                     className="flex min-h-touch items-center justify-center px-1 text-sm font-bold text-primary-strong"
                     onClick={toggleListEdit}
                   >
-                    {listEditOpen ? '완료' : '편집'}
+                    {listEditOpen ? '관리 완료' : '영양제 관리'}
                   </button>
                 )}
               </div>
