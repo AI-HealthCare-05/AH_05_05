@@ -179,14 +179,27 @@ test('회원가입 비밀번호와 비밀번호 확인은 각각 독립적으로
   await password.fill('Password123!');
   await passwordConfirm.fill('Password123!');
 
+  await expect(
+    page.getByRole('button', { name: '비밀번호 보기', exact: true }).locator('svg'),
+  ).toHaveClass(/lucide-eye-off/);
+  await expect(
+    page.getByRole('button', { name: '비밀번호 확인 보기' }).locator('svg'),
+  ).toHaveClass(/lucide-eye-off/);
+
   await page.getByRole('button', { name: '비밀번호 보기', exact: true }).click();
   await expect(password).toHaveAttribute('type', 'text');
   await expect(passwordConfirm).toHaveAttribute('type', 'password');
   await expect(password).toHaveValue('Password123!');
+  await expect(
+    page.getByRole('button', { name: '비밀번호 숨기기', exact: true }).locator('svg'),
+  ).toHaveClass(/lucide-eye(?!-off)/);
 
   await page.getByRole('button', { name: '비밀번호 확인 보기' }).click();
   await expect(passwordConfirm).toHaveAttribute('type', 'text');
   await expect(passwordConfirm).toHaveValue('Password123!');
+  await expect(
+    page.getByRole('button', { name: '비밀번호 확인 숨기기' }).locator('svg'),
+  ).toHaveClass(/lucide-eye(?!-off)/);
 
   await page.getByRole('button', { name: '비밀번호 숨기기', exact: true }).click();
   await page.getByRole('button', { name: '비밀번호 확인 숨기기' }).click();

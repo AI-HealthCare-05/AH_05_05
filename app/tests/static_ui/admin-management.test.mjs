@@ -465,6 +465,52 @@ test("edit overlay carries the fields the script fills in", async () => {
   }
 });
 
+test("관리자 수정 팝업의 새 비밀번호 입력은 각각 독립적으로 표시 상태를 바꾼다", () => {
+  assert.equal(typeof adminManagement.initializeAdminPasswordToggles, "function");
+
+  const inputs = {
+    newPassword: { type: "password" },
+    newPasswordConfirm: { type: "password" },
+  };
+  const makeToggle = (passwordTarget) => {
+    const icons = ["eye", "eye-off"].map((name) => ({
+      dataset: { passwordIcon: name },
+      hidden: name === "eye",
+      toggleAttribute(attribute, force) {
+        if (attribute === "hidden") this.hidden = force;
+      },
+    }));
+    return {
+      dataset: { passwordTarget },
+      attributes: new Map(),
+      icons,
+      addEventListener(_event, handler) {
+        this.click = handler;
+      },
+      setAttribute(name, value) {
+        this.attributes.set(name, value);
+      },
+      querySelectorAll() {
+        return icons;
+      },
+    };
+  };
+  const toggles = [makeToggle("newPassword"), makeToggle("newPasswordConfirm")];
+  const panel = {
+    querySelectorAll: () => toggles,
+    querySelector: (selector) => inputs[selector.match(/name='([^']+)'/)?.[1]],
+  };
+
+  adminManagement.initializeAdminPasswordToggles(panel);
+  toggles[0].click();
+
+  assert.equal(inputs.newPassword.type, "text");
+  assert.equal(inputs.newPasswordConfirm.type, "password");
+  assert.equal(toggles[0].attributes.get("aria-pressed"), "true");
+  assert.equal(toggles[0].icons[0].hidden, false);
+  assert.equal(toggles[0].icons[1].hidden, true);
+});
+
 test("edit overlay shows email in a readonly control matching the name field", async () => {
   const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
   const html = await readFile(templateUrl, "utf8");

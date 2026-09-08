@@ -28,7 +28,6 @@ async def create_episode(
 ) -> CareEpisode:
     return await CareEpisode.create(
         user=user,
-        title=f"{start_date.isoformat()} 조제약 복약안내",
         status=episode_status,
         medication_start_date=start_date,
         medication_start_slot=start_slot,

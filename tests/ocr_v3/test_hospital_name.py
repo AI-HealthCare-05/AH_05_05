@@ -37,6 +37,21 @@ def _extract(*blocks: OcrBlock):
     return extract_hospital_name(result, build_ocr_layout(result))
 
 
+@pytest.mark.parametrize("scale", [1, 3])
+def test_hospital_fallback_separates_receipt_panel_with_misaligned_label(scale: int) -> None:
+    # Separate receipt/hospital panels; the hospital label is on another OCR row.
+    extracted = _extract(
+        _block("fee", "보험자부담금(2)", 10 * scale, 100 * scale, 80 * scale, height=10 * scale),
+        _block("amount", "4,100", 100 * scale, 100 * scale, 30 * scale, height=10 * scale),
+        _block("hospital", "김귀완내과", 330 * scale, 100 * scale, 70 * scale, height=10 * scale),
+        _block("label", "병원정보", 250 * scale, 122 * scale, 70 * scale, height=10 * scale),
+        _block("header", "약품명", 10 * scale, 220 * scale, 45 * scale, height=10 * scale),
+    )
+
+    assert extracted.value == "김귀완내과"
+    assert extracted.block_ids == ("hospital",)
+
+
 def test_hospital_name_joins_adjacent_ocr_blocks_after_label() -> None:
     extracted = _extract(
         _block("block-0001", "병원정보", 10, 10, 45),

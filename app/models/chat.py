@@ -60,12 +60,6 @@ class ChatMessage(models.Model):
         null=True,
         on_delete=fields.SET_NULL,
     )
-    guide: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.RecoveryGuide",
-        related_name="chat_messages",
-        null=True,
-        on_delete=fields.SET_NULL,
-    )
     request_id = fields.CharField(max_length=100, null=True)
     sequence_no = fields.IntField()
     role = fields.CharEnumField(ChatMessageRole)
@@ -99,7 +93,6 @@ class ChatMessage(models.Model):
         table = "chat_messages"
         indexes = (
             ("reply_to_message",),
-            ("guide",),
             ("request_id",),
             ("langsmith_trace_id",),
             ("created_at",),
@@ -125,12 +118,6 @@ class ChatMessageSource(models.Model):
     )
     medication: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.Medication",
-        related_name="chat_message_sources",
-        null=True,
-        on_delete=fields.RESTRICT,
-    )
-    care_advice: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.CareAdvice",
         related_name="chat_message_sources",
         null=True,
         on_delete=fields.RESTRICT,
@@ -185,7 +172,6 @@ class ChatMessageSource(models.Model):
             ("chat_message",),
             ("care_episode",),
             ("medication",),
-            ("care_advice",),
             ("follow_up_visit",),
             ("user_suppl_nutrient",),
             ("interaction_rule",),

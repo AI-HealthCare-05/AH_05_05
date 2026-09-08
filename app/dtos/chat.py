@@ -107,7 +107,6 @@ class ChatSessionMessageResponse(CamelModel):
     content: str
     status: Literal["PENDING", "STREAMING", "COMPLETED", "FAILED"]
     reply_to_message_id: int | None = None
-    guide_id: int | None = None
     sources: list[ChatSessionSourceResponse]
     created_at: datetime
 
@@ -119,7 +118,6 @@ class ChatSessionMessageResponse(CamelModel):
             content=view.content,
             status=view.status,
             reply_to_message_id=view.reply_to_message_id,
-            guide_id=view.guide_id,
             sources=[ChatSessionSourceResponse.from_view(source) for source in view.sources],
             created_at=view.created_at,
         )

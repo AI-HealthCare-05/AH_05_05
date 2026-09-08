@@ -124,7 +124,6 @@ class MedicationNoteMedicationResponse(CamelModel):
 class MedicationNoteResponse(CamelModel):
     id: int
     care_episode_id: int
-    care_episode_title: str
     care_episode_alias: str | None = None
     care_episode_start_date: date | None = None
     care_episode_status: CareEpisodeStatus

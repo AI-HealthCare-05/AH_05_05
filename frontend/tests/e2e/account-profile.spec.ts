@@ -24,8 +24,8 @@ test('회원가입은 비밀번호 확인 다음에 이름과 전화번호를 �
 
   const passwordConfirm = page.getByLabel('비밀번호 확인', { exact: true });
   await expect(passwordConfirm).toHaveAttribute('required', '');
-  await passwordConfirm.fill('password1234');
-  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
+  await passwordConfirm.fill('Password123!');
+  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
   const passwordConfirmBox = await passwordConfirm.boundingBox();
   expect(passwordConfirmBox).not.toBeNull();
   await page.getByRole('button', { name: '다음' }).click();
@@ -71,8 +71,8 @@ test('회원가입은 생년월일 다음에 기본 선택 없는 성별을 필�
   await advanceSignupToPassword(page);
   const passwordConfirm = page.getByLabel('비밀번호 확인', { exact: true });
   await expect(passwordConfirm).toHaveAttribute('required', '');
-  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
-  await passwordConfirm.fill('password1234');
+  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
+  await passwordConfirm.fill('Password123!');
   await page.getByRole('button', { name: '다음' }).click();
 
   const birthDate = page.getByLabel('생년월일');
@@ -218,6 +218,39 @@ test('비밀번호 변경은 별도 시트에서 입력 오류를 인라인으�
   await sheet.getByRole('button', { name: '변경', exact: true }).click();
   await expect(sheet.getByText('현재 비밀번호가 맞지 않아요.')).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(1);
+});
+
+test('새 비밀번호와 확인 입력값을 각각 표시하고 다시 숨길 수 있다', async ({ page }) => {
+  await page.goto('/dev/my-profile');
+  await page.getByRole('button', { name: '비밀번호 변경' }).click();
+  const sheet = page.getByRole('dialog');
+  const newPassword = sheet.getByLabel('새 비밀번호', { exact: true });
+  const newPasswordConfirm = sheet.getByLabel('새 비밀번호 확인', { exact: true });
+
+  await expect(newPassword).toHaveAttribute('type', 'password');
+  await expect(newPasswordConfirm).toHaveAttribute('type', 'password');
+  await expect(sheet.getByRole('button', { name: '새 암호 보기' }).locator('svg')).toHaveClass(
+    /lucide-eye-off/,
+  );
+  await expect(sheet.getByRole('button', { name: '확인 암호 보기' }).locator('svg')).toHaveClass(
+    /lucide-eye-off/,
+  );
+
+  await sheet.getByRole('button', { name: '새 암호 보기' }).click();
+  await sheet.getByRole('button', { name: '확인 암호 보기' }).click();
+  await expect(newPassword).toHaveAttribute('type', 'text');
+  await expect(newPasswordConfirm).toHaveAttribute('type', 'text');
+  await expect(sheet.getByRole('button', { name: '새 암호 숨기기' }).locator('svg')).toHaveClass(
+    /lucide-eye(?!-off)/,
+  );
+  await expect(sheet.getByRole('button', { name: '확인 암호 숨기기' }).locator('svg')).toHaveClass(
+    /lucide-eye(?!-off)/,
+  );
+
+  await sheet.getByRole('button', { name: '새 암호 숨기기' }).click();
+  await sheet.getByRole('button', { name: '확인 암호 숨기기' }).click();
+  await expect(newPassword).toHaveAttribute('type', 'password');
+  await expect(newPasswordConfirm).toHaveAttribute('type', 'password');
 });
 
 test('비밀번호 변경 오류는 잘못 입력한 칸 아래에 붙는다', async ({ page }) => {

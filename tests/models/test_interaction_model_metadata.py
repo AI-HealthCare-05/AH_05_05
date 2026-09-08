@@ -18,7 +18,6 @@ def load_interaction_models():
             "app.models.users",
             "app.models.care",
             "app.models.ocr",
-            "app.models.recovery",
             "app.models.medications",
             "app.models.supplement_nutrients",
             "app.models.interactions",

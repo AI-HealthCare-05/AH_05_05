@@ -121,24 +121,16 @@ test('회원가입 약관 상세의 뒤로가기는 입력과 동의 상태를 �
   expect(browserStorage).not.toContain('123456');
 });
 
-test('만 14세 미만 생년월일은 연령 확인을 체크해도 보호자 절차 없이 가입되지 않는다', async ({
+test('만 14세 미만이면 연령 확인 체크를 해제하고 가입 제한 메시지를 보여준다', async ({
   page,
 }) => {
   await page.clock.setFixedTime(new Date('2026-09-08T12:00:00+09:00'));
-  let signupRequests = 0;
-  await page.route('**/api/v1/auth/signup', async (route) => {
-    signupRequests += 1;
-    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
-  });
   await openProfileStep(page, '2012-09-09');
-  await checkAllRequiredConsents(page);
+  const ageTerms = page.getByRole('checkbox', { name: /만 14세 이상이에요/ });
+  await ageTerms.click();
 
-  await page.getByRole('button', { name: '회원가입 완료' }).click();
-
-  await expect(
-    page.getByText('만 14세 미만은 보호자 동의 절차가 아직 준비되지 않아 가입할 수 없어요.'),
-  ).toBeVisible();
-  expect(signupRequests).toBe(0);
+  await expect(ageTerms).not.toBeChecked();
+  await expect(page.getByText('만14세 이상 가입이 가능합니다.')).toBeVisible();
 });
 
 test('동의한 서비스 이용약관 값은 기존 회원가입 API 필드로 전달된다', async ({ page }) => {

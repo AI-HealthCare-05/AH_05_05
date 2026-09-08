@@ -109,27 +109,13 @@ class CareEpisodeStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
-class RecoveryGuideStatus(StrEnum):
-    COMPLETED = "COMPLETED"
-    SUPERSEDED = "SUPERSEDED"
-
-
-class GuideSourceType(StrEnum):
-    PATIENT_SAVED_FIELD = "PATIENT_SAVED_FIELD"
-    PUBLIC_RAG_CHUNK = "PUBLIC_RAG_CHUNK"
-
-
 class PatientSourceKind(StrEnum):
     CARE_EPISODE_FIELD = "CARE_EPISODE_FIELD"
     MEDICATION = "MEDICATION"
-    CARE_ADVICE = "CARE_ADVICE"
     FOLLOW_UP_VISIT = "FOLLOW_UP_VISIT"
 
 
 class CareEpisodeSourceField(StrEnum):
-    DIAGNOSIS = "DIAGNOSIS"
-    SURGERY = "SURGERY"
-    DISCHARGE_DATE = "DISCHARGE_DATE"
     MEDICATION_DAYS = "MEDICATION_DAYS"
 
 
@@ -273,16 +259,6 @@ class SafetyComparisonOperator(StrEnum):
     GTE = "GTE"
     BETWEEN = "BETWEEN"
     PRESENT = "PRESENT"
-
-
-class CareAdviceCategory(StrEnum):
-    ACTIVITY = "ACTIVITY"
-    HYGIENE = "HYGIENE"
-    DIET = "DIET"
-    LIFESTYLE = "LIFESTYLE"
-    RESTRICTION = "RESTRICTION"
-    RED_FLAG = "RED_FLAG"
-    OTHER = "OTHER"
 
 
 class NotifySettingKey(StrEnum):

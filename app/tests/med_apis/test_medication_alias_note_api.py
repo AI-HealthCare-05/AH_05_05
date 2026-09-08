@@ -19,7 +19,6 @@ NOTES_URL = "/api/v1/med/notes"
 async def create_episode(user: User, *, title: str, alias: str | None = None) -> CareEpisode:
     return await CareEpisode.create(
         user=user,
-        title=title,
         alias=alias,
         source_ocr_job_id=1,
         medication_start_date=date(2026, 9, 3),
@@ -54,7 +53,7 @@ class TestMedicationAliasAPI(TestCase):
         assert overview.json()[0]["alias"] == "감기약"
         assert medication.id in [item["medicationId"] for item in overview.json()[0]["medications"]]
         await episode.refresh_from_db()
-        assert episode.title == "2026-09-03 조제약 복약안내"
+        assert episode.medication_start_date == date(2026, 9, 3)
 
     async def test_alias_blank_value_clears_alias_and_other_users_are_hidden(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -256,7 +255,7 @@ class TestMedicationNotesAPI(TestCase):
 
             alias_too_long = await client.patch(
                 f"{ALIAS_URL}/{episode.id}/alias",
-                json={"alias": "가" * 51},
+                json={"alias": "가" * 256},
                 headers=headers,
             )
             blank_body = await client.post(
@@ -397,7 +396,7 @@ class TestMedicationNotesAPI(TestCase):
             response = await client.get(f"{NOTES_URL}/{note.id}", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["careEpisodeTitle"] == "2025-01-02 조제약 복약안내"
+        assert "careEpisodeTitle" not in response.json()
         assert response.json()["careEpisodeAlias"] == "예전 처방"
         assert response.json()["careEpisodeStatus"] == "CANCELLED"
         assert response.json()["medicationId"] is None
