@@ -13,11 +13,12 @@ from ai_worker.providers.db_active_intake_context_provider import (
 )
 from app.core.db.databases import TORTOISE_APP_MODELS
 from app.models.care import CareEpisode
-from app.models.enums import CareEpisodeStatus, SupplementStatus
-from app.models.medications import Medication
+from app.models.enums import CareEpisodeStatus, MealSlot, SupplementStatus
+from app.models.medications import Medication, MedicationSlot
 from app.models.supplement_nutrients import (
     SupplementNutrient,
     UserSupplementNutrient,
+    UserSupplementNutrientSlot,
 )
 from app.models.users import User
 
@@ -82,6 +83,7 @@ async def test_provider_returns_only_current_user_active_intakes(
         days=30,
         prescribed_at=date(2026, 8, 1),
     )
+    await MedicationSlot.create(medication_id=10, slot=MealSlot.MORNING)
     await Medication.create(
         id=20,
         care_episode=active_episode,
@@ -136,7 +138,7 @@ async def test_provider_returns_only_current_user_active_intakes(
         serving_size="500mg",
         daily_freq="1회",
     )
-    await UserSupplementNutrient.create(
+    omega3_registration = await UserSupplementNutrient.create(
         id=50,
         user=user,
         supplement_nutrient=omega3,
@@ -144,6 +146,10 @@ async def test_provider_returns_only_current_user_active_intakes(
         dose_unit="캡슐",
         start_date=date(2026, 8, 1),
         status=SupplementStatus.ACTIVE,
+    )
+    await UserSupplementNutrientSlot.create(
+        user_suppl_nutrient=omega3_registration,
+        slot=MealSlot.BEDTIME,
     )
     await UserSupplementNutrient.create(
         id=60,
@@ -173,6 +179,8 @@ async def test_provider_returns_only_current_user_active_intakes(
 
     assert [item.name for item in context.medications] == ["아스피린"]
     assert [item.name for item in context.supplements] == ["오메가3"]
+    assert context.medications[0].scheduled_slots == [MealSlot.MORNING.value]
+    assert context.supplements[0].scheduled_slots == [MealSlot.BEDTIME.value]
     assert context.preferred_care_episode_id == active_episode.id
 
 
