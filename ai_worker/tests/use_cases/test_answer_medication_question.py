@@ -680,8 +680,10 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.route == MedicationChatRoute.RESTRICTED
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
-    assert "현재 보유한 제품명·성분명·음식 목록에서 대상을 확인하지 못했습니다" in result.answer
-    assert "안전하다는 의미가 아닙니다" in result.answer
+    assert "확인된 범위" in result.answer
+    assert "공식 확인 경로" in result.answer
+    assert "의료진·약사에게 확인할 내용" in result.answer
+    assert "안전한 조합" not in result.answer
 
 
 async def test_execute_does_not_lookup_a_product_for_unrecognized_general_request() -> None:

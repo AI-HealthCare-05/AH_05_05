@@ -64,10 +64,10 @@
 
 **Produces:** A deterministic six-part alternative guide: verified fact boundary, general guide, unknown boundary, official route, clinician checklist, disclaimer.
 
-- [ ] Write failing tests ensuring a missing drug-interaction result never says the combination is safe.
-- [ ] Implement a source-kind-aware guidance builder and wire it only into no-evidence/restricted paths.
-- [ ] Test official-route and checklist rendering without invented product facts.
-- [ ] Record success/failure examples and commit.
+- [x] Write failing tests ensuring a missing drug-interaction result never says the combination is safe.
+- [x] Implement a source-kind-aware guidance builder and wire it only into no-evidence/restricted paths.
+- [x] Test official-route and checklist rendering without invented product facts.
+- [x] Record success/failure examples and commit.
 
 ### Task 4: Resolve same-session references through structured memory
 

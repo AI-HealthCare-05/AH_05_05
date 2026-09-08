@@ -17,6 +17,10 @@ from ai_worker.domain.chat_content_compactor import (
 )
 from ai_worker.domain.chat_risk_policy import MedicationChatRiskPolicy
 from ai_worker.domain.errors import ChatAnswerGenerationError
+from ai_worker.domain.evidence_gap_guidance import (
+    EvidenceGapGuidanceBuilder,
+    EvidenceGapSubject,
+)
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
@@ -985,15 +989,13 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
         interpretation: MedicationQuestionInterpretation,
     ) -> MedicationChatResult:
+        answer = EvidenceGapGuidanceBuilder().build(
+            subject=EvidenceGapSubject.UNKNOWN,
+            entity_names=interpretation.normalized_entity_names,
+        )
         return MedicationChatResult(
             request_id=request.request_id,
-            answer=(
-                "질문은 의약품·복약·영양제 관련일 수 있지만, 현재 보유한 "
-                "제품명·성분명·음식 목록에서 대상을 확인하지 못했습니다. "
-                "확인되지 않았다는 뜻이지 안전하다는 의미가 아닙니다. "
-                "정확한 제품명이나 성분명을 확인하거나 의료진 또는 약사와 "
-                "상담해 주세요."
-            ),
+            answer=answer,
             route=MedicationChatRoute.RESTRICTED,
             safety_status=SafetyStatus.RESTRICTED,
             safety_reason_codes=[
@@ -1016,12 +1018,9 @@ class AnswerMedicationQuestionUseCase:
         rag_unavailable: bool,
         interpretation: MedicationQuestionInterpretation,
     ) -> MedicationChatResult:
-        answer = (
-            "질문은 의약품·복약·영양제 관련 내용이지만, 현재 보유한 "
-            "승인 규칙과 검색 자료에서는 답변 근거를 찾지 못했습니다. "
-            "확인되지 않았다는 뜻이지 안전하다는 의미가 아닙니다. "
-            "정확한 제품명이나 성분명을 확인하거나 의료진 또는 "
-            "약사와 상담해 주세요."
+        answer = EvidenceGapGuidanceBuilder().build(
+            subject=cls._evidence_gap_subject(execution_plan.query_plan),
+            entity_names=execution_plan.query_plan.entity_names,
         )
         if resolution.status == MedicationExpressionResolutionStatus.AUTO_CORRECTED:
             answer = cls._correction_notice(resolution) + "\n\n" + answer
@@ -1048,6 +1047,19 @@ class AnswerMedicationQuestionUseCase:
                 )
             ),
         )
+
+    @staticmethod
+    def _evidence_gap_subject(
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> EvidenceGapSubject:
+        if query_plan.interaction_pair is not None or query_plan.interaction_pairs or query_plan.interaction_types:
+            return EvidenceGapSubject.INTERACTION
+        entity_kinds = {entity.kind for entity in query_plan.entities}
+        if InteractionEntityKind.DRUG in entity_kinds:
+            return EvidenceGapSubject.MEDICATION
+        if InteractionEntityKind.SUPPLEMENT in entity_kinds:
+            return EvidenceGapSubject.SUPPLEMENT
+        return EvidenceGapSubject.UNKNOWN
 
     @classmethod
     def _has_grounded_evidence(
