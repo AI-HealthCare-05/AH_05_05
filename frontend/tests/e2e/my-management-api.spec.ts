@@ -1,9 +1,131 @@
-import { expect, test, type Page } from 'playwright/test';
+import { expect, test, type Page, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
 
 test.beforeEach(() => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+});
+
+const ACCOUNT_A_PROFILE = {
+  name: '첫 계정 이름',
+  maskedName: '첫**',
+  phoneNumber: '01011112222',
+  birthDate: '1980-01-01',
+  gender: 'FEMALE',
+};
+
+const ACCOUNT_B_PROFILE = {
+  name: '두 번째 계정 이름',
+  maskedName: '두*****',
+  phoneNumber: '01033334444',
+  birthDate: '1990-02-02',
+  gender: 'MALE',
+};
+
+function myPageFixture(pathname: string): unknown | undefined {
+  if (pathname === '/api/v1/medications') return [];
+  if (
+    pathname === '/api/v1/med/user-suppl-nutr' ||
+    pathname === '/api/v1/user/follow-up-visits'
+  ) {
+    return { items: [], total: 0, offset: 0, limit: 100 };
+  }
+  if (pathname === '/api/v1/me/settings') {
+    return {
+      notifyMedication: false,
+      notifySupplement: false,
+      notifySchedule: false,
+      notifyConsentedAt: null,
+      morningMedicationTime: '08:00',
+      lunchMedicationTime: '13:00',
+      eveningMedicationTime: '19:00',
+      bedtimeMedicationTime: '22:00',
+    };
+  }
+  return undefined;
+}
+
+test('마이페이지는 공개용 maskedName 대신 내 프로필 name을 보여준다', async ({ page }) => {
+  await page.route('**/api/v1/users/me', (route) => route.fulfill({ json: ACCOUNT_A_PROFILE }));
+
+  await page.goto('/dev/my-authenticated');
+
+  await expect(page.getByRole('button', { name: /첫 계정 이름.*기본정보/ })).toBeVisible();
+  await expect(page.getByText(ACCOUNT_A_PROFILE.maskedName, { exact: true })).toHaveCount(0);
+});
+
+test('프로필 조회 실패는 관리 수치와 분리되고 다시 시도할 수 있다', async ({ page }) => {
+  let profileAttempts = 0;
+  await page.route('**/api/v1/**', async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/api/v1/users/me') {
+      profileAttempts += 1;
+      if (profileAttempts <= 2) {
+        await route.fulfill({ status: 503, json: { message: '프로필 조회 실패' } });
+        return;
+      }
+      await route.fulfill({ json: ACCOUNT_B_PROFILE });
+      return;
+    }
+    const body = myPageFixture(pathname);
+    if (body === undefined) {
+      await route.abort();
+      return;
+    }
+    await route.fulfill({ json: body });
+  });
+
+  await page.goto('/dev/my-authenticated');
+
+  await expect(page.getByRole('alert', { name: '프로필 정보 불러오기 실패' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '복용 중 처방 0개', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '프로필 다시 시도' }).click();
+  await expect(page.getByRole('button', { name: /두 번째 계정 이름.*기본정보/ })).toBeVisible();
+});
+
+test('주체가 바뀌면 이전 이름을 지우고 늦은 이전 응답을 무시한다', async ({ page }) => {
+  const staleRequests: Route[] = [];
+  const nextPrincipalRequests: Route[] = [];
+  let principalChanged = false;
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'profile-isolation-token');
+    sessionStorage.setItem('poke.account-principal', 'account-a@example.com');
+  });
+  await page.route('**/api/v1/**', async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/api/v1/users/me') {
+      if (principalChanged) {
+        nextPrincipalRequests.push(route);
+        return;
+      }
+      if (staleRequests.length === 0) {
+        staleRequests.push(route);
+        return;
+      }
+      await route.fulfill({ json: ACCOUNT_A_PROFILE });
+      return;
+    }
+    const body = myPageFixture(pathname);
+    if (body === undefined) {
+      await route.abort();
+      return;
+    }
+    await route.fulfill({ json: body });
+  });
+
+  await page.goto('/dev/my-authenticated');
+  await expect(page.getByRole('button', { name: /첫 계정 이름.*기본정보/ })).toBeVisible();
+  principalChanged = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('poke:auth-session-expired')));
+
+  await expect.poll(() => nextPrincipalRequests.length).toBeGreaterThan(0);
+  await expect(page.getByRole('status', { name: '프로필 불러오는 중' })).toBeVisible();
+  await expect(page.getByText(ACCOUNT_A_PROFILE.name, { exact: true })).toHaveCount(0);
+  await Promise.all(nextPrincipalRequests.map((route) => route.fulfill({ json: ACCOUNT_B_PROFILE })));
+  await expect(page.getByRole('button', { name: /두 번째 계정 이름.*기본정보/ })).toBeVisible();
+  await Promise.all(staleRequests.map((route) => route.fulfill({ json: ACCOUNT_A_PROFILE })));
+  await expect(page.getByText(ACCOUNT_A_PROFILE.name, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(ACCOUNT_B_PROFILE.name, { exact: true })).toBeVisible();
 });
 
 test('설정 API 시간은 마이페이지에서 HH:MM으로 보이고 저장 PATCH는 camelCase를 유지한다', async ({
