@@ -54,7 +54,7 @@ class TestAlarmCrudAPI(TestCase):
             email = "follow-up-alarm@example.com"
             headers = await authentication_headers(client, email, "01011110004")
             user = await User.get(email=email)
-            care_episode = await CareEpisode.create(user=user, title="외래 진료 테스트")
+            care_episode = await CareEpisode.create(user=user, alias="외래 진료 테스트")
             first_visit = await FollowUpVisit.create(
                 user=user,
                 visit_date=date(2026, 8, 25),
@@ -102,7 +102,7 @@ class TestAlarmCrudAPI(TestCase):
                 status="ACTIVE",
                 name="다른 사용자",
             )
-            owner_episode = await CareEpisode.create(user=owner, title="소유자 에피소드")
+            owner_episode = await CareEpisode.create(user=owner, alias="소유자 에피소드")
             other_visit = await FollowUpVisit.create(
                 user=other,
                 visit_date=date(2026, 8, 25),
@@ -123,7 +123,7 @@ class TestAlarmCrudAPI(TestCase):
             email = "follow-up-mismatch@example.com"
             headers = await authentication_headers(client, email, "01011110006")
             user = await User.get(email=email)
-            first_episode = await CareEpisode.create(user=user, title="첫 번째 에피소드")
+            first_episode = await CareEpisode.create(user=user, alias="첫 번째 에피소드")
             visit = await FollowUpVisit.create(
                 user=user,
                 visit_date=date(2026, 8, 25),

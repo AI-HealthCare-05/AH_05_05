@@ -163,6 +163,10 @@ a {
   min-width: 42px;
 }
 
+.icon-button [data-password-icon][hidden] {
+  display: none;
+}
+
 .field-error {
   color: #dc2626;
   font-size: 11px;

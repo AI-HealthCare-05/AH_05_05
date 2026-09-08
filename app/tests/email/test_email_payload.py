@@ -86,3 +86,22 @@ def test_signup_verification_payload_requires_six_digit_code() -> None:
             verification_code="12345",
             expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
         )
+
+
+def test_user_password_reset_payload_requires_only_temporary_password() -> None:
+    payload = EmailJobPayload(
+        template=EmailTemplate.USER_PASSWORD_RESET,
+        recipient_email="recipient@example.com",
+        temporary_password="Temp1234!",
+    )
+
+    assert payload.recipient_name is None
+    assert payload.temporary_password == "Temp1234!"
+
+
+def test_user_password_reset_payload_requires_temporary_password() -> None:
+    with pytest.raises(ValidationError):
+        EmailJobPayload(
+            template=EmailTemplate.USER_PASSWORD_RESET,
+            recipient_email="recipient@example.com",
+        )
