@@ -7,7 +7,8 @@ from tortoise.functions import Count
 from app.core import config
 from app.dtos.admin_dashboard import (
     AlarmNotificationStats,
-    ChatResponseStats,
+    ChatEvaluationStats,
+    ChatReasonStat,
     DashboardPeriod,
     DashboardSummaryQuery,
     DashboardSummaryResponse,
@@ -17,13 +18,13 @@ from app.dtos.admin_dashboard import (
     SignupTrendPoint,
 )
 from app.models.background_jobs import BackgroundJob
-from app.models.chat import ChatMessage, ChatSession
+from app.models.chat import ChatSession
+from app.models.common_codes import CommonCode
 from app.models.enums import (
     AccountStatus,
     BackgroundJobStatus,
     BackgroundJobType,
-    ChatMessageRole,
-    ChatMessageStatus,
+    ChatSessionStatus,
     OcrJobStatus,
 )
 from app.models.ocr import OcrJob
@@ -65,7 +66,7 @@ def day_range(first: date, last: date) -> tuple[datetime, datetime]:
 class AdminDashboardService:
     """REQ-DASH-001 대시보드 집계.
 
-    회원, ALARM 백그라운드 작업, OCR 작업 및 AI 챗봇 응답 현황을 제공한다.
+    회원, ALARM 백그라운드 작업, OCR 작업 및 AI 챗봇 평가 현황을 제공한다.
     """
 
     async def get_summary(self, query: DashboardSummaryQuery) -> DashboardSummaryResponse:
@@ -84,43 +85,63 @@ class AdminDashboardService:
             members=await self._members(now, start, previous_start, previous_end),
             alarm_notifications=await self._alarm_notifications(start, now),
             ocr_documents=await self._ocr_documents(start, now),
-            chat_responses=await self._chat_responses(start, now),
+            chat_evaluations=await self._chat_evaluations(start, now),
         )
 
     @staticmethod
-    async def _chat_responses(start: datetime, end: datetime) -> ChatResponseStats:
-        """선택 기간에 종료된 AI 응답과 같은 기간에 생성된 세션의 긍정 평가율을 집계한다."""
-        terminal_statuses = (ChatMessageStatus.COMPLETED, ChatMessageStatus.FAILED)
+    async def _chat_evaluations(start: datetime, end: datetime) -> ChatEvaluationStats:
+        """선택 기간에 종료된 세션을 평가 여부와 공통코드 사유별로 집계한다."""
         rows: list[dict[str, Any]] = (
-            await ChatMessage.filter(
-                role=ChatMessageRole.ASSISTANT,
-                status__in=list(terminal_statuses),
-                completed_at__gte=start,
-                completed_at__lte=end,
+            await ChatSession.filter(
+                status=ChatSessionStatus.DELETED,
+                deleted_at__gte=start,
+                deleted_at__lte=end,
             )
             .annotate(total=Count("id"))
-            .group_by("status")
-            .values("status", "total")
+            .group_by("is_like", "reason_code")
+            .values("is_like", "reason_code", "total")
         )
-        counts = {status: 0 for status in terminal_statuses}
-        for row in rows:
-            counts[ChatMessageStatus(row["status"])] = row["total"]
+        liked = sum(row["total"] for row in rows if row["is_like"] is True)
+        disliked = sum(row["total"] for row in rows if row["is_like"] is False)
+        unrated = sum(row["total"] for row in rows if row["is_like"] is None)
 
-        evaluated_sessions = ChatSession.filter(
-            created_at__gte=start,
-            created_at__lte=end,
-            is_like__not_isnull=True,
-        )
-        evaluated_count = await evaluated_sessions.count()
-        liked_count = await evaluated_sessions.filter(is_like=True).count()
-        like_rate = round(liked_count / evaluated_count * 100, 1) if evaluated_count else None
+        positive_counts = {
+            row["reason_code"]: row["total"]
+            for row in rows
+            if row["is_like"] is True and row["reason_code"] is not None
+        }
+        negative_counts = {
+            row["reason_code"]: row["total"]
+            for row in rows
+            if row["is_like"] is False and row["reason_code"] is not None
+        }
+        positive_codes = await CommonCode.filter(group__group_code="P_REASON").order_by("sort_order", "detail_code")
+        negative_codes = await CommonCode.filter(group__group_code="N_REASON").order_by("sort_order", "detail_code")
 
-        return ChatResponseStats(
-            total=sum(counts.values()),
-            completed=counts[ChatMessageStatus.COMPLETED],
-            failed=counts[ChatMessageStatus.FAILED],
-            like_rate=like_rate,
+        return ChatEvaluationStats(
+            liked=liked,
+            disliked=disliked,
+            unrated=unrated,
+            positive_reasons=AdminDashboardService._reason_stats(positive_codes, positive_counts),
+            negative_reasons=AdminDashboardService._reason_stats(negative_codes, negative_counts),
         )
+
+    @staticmethod
+    def _reason_stats(codes: list[CommonCode], counts: dict[str, int]) -> list[ChatReasonStat]:
+        selected = [(code, counts.get(code.detail_code, 0)) for code in codes]
+        selected = [(code, count) for code, count in selected if count > 0]
+        total = sum(count for _, count in selected)
+        if total == 0:
+            return []
+        return [
+            ChatReasonStat(
+                code=code.detail_code,
+                name=code.detail_name,
+                count=count,
+                percentage=round(count / total * 100, 1),
+            )
+            for code, count in selected
+        ]
 
     @staticmethod
     async def _ocr_documents(start: datetime, end: datetime) -> OcrDocumentStats:

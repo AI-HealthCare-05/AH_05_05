@@ -35,6 +35,7 @@ import {
 } from '@/shared/push/permission';
 import { registerPushNotifications } from '@/shared/push/register';
 import { MedicationTimeSettingsSheet } from './MedicationTimeSettingsSheet';
+import { addCalendarYears } from '../medications/medicationPeriod';
 
 const SHORT_MEAL_SLOT_ORDER = SLOT_ORDER.map((slot) => mealSlotLabel(slot, 'short')).join(' < ');
 
@@ -63,10 +64,8 @@ function todayString(): string {
   return `${today.getFullYear()}-${month}-${day}`;
 }
 
-function countActiveMedications(overviews: MedicationOverview[]): number {
-  return overviews
-    .filter((overview) => !overview.isFinished)
-    .reduce((total, overview) => total + overview.medications.length, 0);
+function countActivePrescriptions(overviews: MedicationOverview[]): number {
+  return overviews.filter((overview) => !overview.isFinished && overview.medications.length > 0).length;
 }
 
 function countUpcomingVisits(visits: FollowUpVisit[]): number {
@@ -161,15 +160,18 @@ export function MyPage({
     let cancelled = false;
     setManagementCounts(null);
     setManagementLoadError(null);
+    // 서버는 Asia/Seoul 날짜로 최대 2년 범위를 검증합니다.
+    const medicationToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
     Promise.all([
-      medicationOverviewsLoader(),
+      // 목록의 기본 6개월 밖에서 시작한 장기 처방도 현재 복용 중이면 집계합니다.
+      medicationOverviewsLoader({ from: addCalendarYears(medicationToday, -2), to: medicationToday }),
       supplementsLoader(),
       followUpVisitsLoader({ startDate: todayString() }),
     ])
       .then(([medicationOverviews, supplements, visits]) => {
         if (cancelled) return;
         setManagementCounts({
-          medication: countActiveMedications(medicationOverviews),
+          medication: countActivePrescriptions(medicationOverviews),
           supplement: supplements.items.length,
           upcomingVisit: countUpcomingVisits(visits),
         });
@@ -430,7 +432,7 @@ export function MyPage({
               )}
               <div className="mt-3 overflow-hidden bg-card">
                 <ManagementRow
-                  label="복용약"
+                  label="복용 중 처방"
                   value={
                     managementCounts
                       ? `${managementCounts.medication}개`
@@ -473,9 +475,9 @@ export function MyPage({
                   divided
                 />
                 <ManagementRow
-                  label="AI 보고서"
+                  label="복약 메모 모아보기"
                   value=""
-                  onClick={() => navigate('/reports')}
+                  onClick={() => navigate('/medications/notes')}
                   divided
                 />
               </div>

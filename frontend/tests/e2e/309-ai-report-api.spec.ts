@@ -121,8 +121,7 @@ test('401 redirects to login and does not retain a report', async ({ page }) => 
 });
 
 test('report entry does not promise history storage', async ({ page }) => {
-  await page.goto('/reports');
+  await page.goto('/reports/new?source=medications');
   await expect(page.getByText('보고서는 저장되지 않아요.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'AI 보고서 받기', exact: true }).click();
-  await expect(page).toHaveURL(/\/reports\/new\?source=medications$/);
+  await expect(page.getByRole('button', { name: '보고서 생성하기', exact: true })).toBeEnabled();
 });

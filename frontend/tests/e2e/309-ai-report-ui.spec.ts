@@ -34,12 +34,10 @@ for (const source of ['medications', 'supplements'] as const) {
   });
 }
 
-test('My has report entry, with a working return path', async ({ page }) => {
+test('My keeps medication notes but has no report entry', async ({ page }) => {
   await page.goto('/my');
-  await page.getByRole('button', { name: 'AI 보고서', exact: true }).click();
-  await expect(page).toHaveURL('/reports');
-  await page.getByRole('button', { name: '마이페이지로 돌아가기' }).click();
-  await expect(page).toHaveURL('/my');
+  await expect(page.getByRole('button', { name: '복약 메모 모아보기', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'AI 보고서', exact: true })).toHaveCount(0);
 });
 
 test('direct report URLs remain protected for guests', async ({ browser }) => {
@@ -71,8 +69,8 @@ test('body management remains available and report UI fits a narrow screen', asy
   await page.getByRole('button', { name: '완료', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('supplement-report-entry-320.png'), fullPage: true });
   await page.goto('/reports');
+  await expect(page).toHaveURL('/medications');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('report-collection-320.png'), fullPage: true });
 });
 
 test('supplement add opens directly while delete only opens selection', async ({ page }, testInfo) => {

@@ -262,6 +262,10 @@ export function HomePage({
   function handleTabChange(key: TabKey) {
     if (key === 'home') return;
     if (key === 'my') {
+      if (!isAuthenticated) {
+        setLoginPromptOpen(true);
+        return;
+      }
       navigate('/my');
       return;
     }
@@ -353,7 +357,7 @@ export function HomePage({
         </header>
       )}
 
-      <main className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-gutter:stable] ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
+      <main tabIndex={0} aria-label="홈 콘텐츠" className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
           <>
             <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />

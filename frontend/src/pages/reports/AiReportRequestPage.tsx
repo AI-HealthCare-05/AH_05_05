@@ -12,7 +12,7 @@ export function AiReportRequestPage() {
   const [params] = useSearchParams();
   const { principalKey } = useSession();
   const source = params.get('source');
-  if (source !== 'medications' && source !== 'supplements') return <Navigate to="/reports" replace />;
+  if (source !== 'medications' && source !== 'supplements') return <Navigate to="/medications" replace />;
   return <ReportRequest key={`${principalKey}:${source}`} source={source} />;
 }
 

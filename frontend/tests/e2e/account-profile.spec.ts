@@ -98,14 +98,16 @@ test('회원가입은 생년월일 다음에 기본 선택 없는 성별을 필�
   expect(genderBox!.y).toBeLessThan(termsBox!.y);
 });
 
-test('만 14세 미만은 보호자 안내와 함께 가입을 막는다', async ({ page }) => {
+test('만 14세 미만은 미구현 보호자 동의 절차를 안내하며 가입을 막는다', async ({ page }) => {
   await openSignup(page);
   await fillSignupBase(page);
   await page.getByLabel('생년월일').fill('2012-08-26');
   await page.getByRole('radio', { name: '여성' }).check();
   await page.getByRole('button', { name: '회원가입 완료' }).click();
 
-  await expect(page.getByText('만 14세 미만은 보호자와 함께 가입해주세요.')).toBeVisible();
+  await expect(
+    page.getByText('만 14세 미만은 보호자 동의 절차가 아직 준비되지 않아 가입할 수 없어요.'),
+  ).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);
 });
 

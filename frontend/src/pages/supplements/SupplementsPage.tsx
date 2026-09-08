@@ -350,7 +350,7 @@ export function SupplementsPage({
               <section aria-label="먹고 있는 영양제" aria-labelledby="supplement-list-title">
                 {supplements.length === 0 ? (
                   <div className="flex flex-col items-center gap-3 rounded-card border border-border bg-card px-4 py-8 text-center shadow-card">
-                    <h3 className="text-lg font-bold text-foreground">등록한 영양제가 없어요</h3>
+                    <h3 className="text-lg font-bold text-foreground">영양제를 등록하고 관리하기</h3>
                     <p className="text-sm text-muted-foreground">
                       영양제를 등록하면 성분 합계와 상한을 한눈에 볼 수 있어요.
                     </p>
@@ -453,7 +453,7 @@ export function SupplementsPage({
               </section>
             </div>
 
-            {supplements.length > 0 ? (
+            {supplements.length > 0 && (
               <>
                 <section className="flex flex-col gap-3" aria-labelledby="nutrient-total-title">
                   <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
@@ -510,15 +510,6 @@ export function SupplementsPage({
                   )}
                 </div>
               </>
-            ) : (
-              <section className="flex flex-col gap-3" aria-labelledby="nutrient-total-title">
-                <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
-                  성분 합계
-                </h2>
-                <Card className="items-center justify-center px-4 py-6 text-center">
-                  등록한 영양제가 없어 더할 성분이 없어요.
-                </Card>
-              </section>
             )}
 
             {supplements.length > 0 && (
