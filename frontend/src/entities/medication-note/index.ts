@@ -10,6 +10,7 @@ export type {
   CreateMedicationNotePayload,
   MedicationNote,
   MedicationNoteEpisode,
+  MedicationNoteEpisodeStatus,
   MedicationNoteMedication,
   MedicationNoteListParams,
   MedicationNotePage,

@@ -11,6 +11,7 @@ import {
   type MedicationNotePage,
 } from '@/entities/medication-note';
 import { useSession } from '@/app/SessionContext';
+import { getAuthGeneration } from '@/shared/api/client';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
 import {
   BottomTabbar,
@@ -25,6 +26,8 @@ import {
   Header,
 } from '@/shared/ui';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+
+const INVALID_EPISODE_FILTER_VALUE = '__invalid_episode__';
 
 function noteDateLabel(value: string): string {
   const date = value.slice(0, 10);
@@ -68,6 +71,10 @@ export function MedicationNotesPage() {
     parsedEpisodeId !== undefined && Number.isSafeInteger(parsedEpisodeId) && parsedEpisodeId > 0
       ? parsedEpisodeId
       : undefined;
+  const invalidEpisodeFilter = episodeIdParam !== null && episodeId === undefined;
+  const episodeFilterValue = invalidEpisodeFilter
+    ? INVALID_EPISODE_FILTER_VALUE
+    : episodeId === undefined ? '' : String(episodeId);
   const requestGenerationRef = useRef(0);
   const optionRequestGenerationRef = useRef(0);
   const deleteGenerationRef = useRef(0);
@@ -125,6 +132,20 @@ export function MedicationNotesPage() {
     setDeletePending(false);
     setDeleteError(null);
     setDeleteTargets([]);
+    const cancelRequest = () => {
+      cancelled = true;
+      if (requestGenerationRef.current === requestGeneration) {
+        requestGenerationRef.current += 1;
+      }
+      if (deleteGenerationRef.current === deleteGeneration) {
+        deleteGenerationRef.current += 1;
+      }
+      deletePendingRef.current = false;
+    };
+    if (invalidEpisodeFilter) {
+      setPage({ items: [], total: 0, nextCursor: null });
+      return cancelRequest;
+    }
     listMedicationNotes({ episodeId })
       .then((nextPage) => {
         if (cancelled || requestGenerationRef.current !== requestGeneration) return;
@@ -135,20 +156,11 @@ export function MedicationNotesPage() {
           setInitialLoadError(error instanceof Error ? error.message : '복약 메모를 불러오지 못했어요.');
         }
       });
-    return () => {
-      cancelled = true;
-      if (requestGenerationRef.current === requestGeneration) {
-        requestGenerationRef.current += 1;
-      }
-      if (deleteGenerationRef.current === deleteGeneration) {
-        deleteGenerationRef.current += 1;
-      }
-      deletePendingRef.current = false;
-    };
-  }, [episodeId, principalKey, retryKey]);
+    return cancelRequest;
+  }, [episodeId, invalidEpisodeFilter, principalKey, retryKey]);
 
   async function loadMore() {
-    if (!page?.nextCursor || loadingMore) return;
+    if (!page?.nextCursor || loadingMore || selectionMode || deletePendingRef.current) return;
     const requestGeneration = requestGenerationRef.current;
     const requestedCursor = page.nextCursor;
     setLoadingMore(true);
@@ -214,65 +226,64 @@ export function MedicationNotesPage() {
     if (deletePendingRef.current || noteIds.length === 0) return;
     const mutationPrincipal = principalKey;
     const mutationGeneration = deleteGenerationRef.current;
+    const mutationAuthGeneration = getAuthGeneration();
+    const mutationIsCurrent = () =>
+      deleteGenerationRef.current === mutationGeneration &&
+      principalKeyRef.current === mutationPrincipal &&
+      getAuthGeneration() === mutationAuthGeneration;
     deletePendingRef.current = true;
     setDeletePending(true);
     setDeleteError(null);
     const succeeded: number[] = [];
     const failed: number[] = [];
 
-    for (const noteId of noteIds) {
-      if (
-        deleteGenerationRef.current !== mutationGeneration ||
-        principalKeyRef.current !== mutationPrincipal
-      ) return;
-      try {
-        await deleteMedicationNote(String(noteId));
-        if (
-          deleteGenerationRef.current !== mutationGeneration ||
-          principalKeyRef.current !== mutationPrincipal
-        ) return;
-        succeeded.push(noteId);
-      } catch {
-        if (
-          deleteGenerationRef.current !== mutationGeneration ||
-          principalKeyRef.current !== mutationPrincipal
-        ) return;
-        failed.push(noteId);
+    try {
+      for (const noteId of noteIds) {
+        if (!mutationIsCurrent()) return;
+        try {
+          await deleteMedicationNote(String(noteId));
+          if (!mutationIsCurrent()) return;
+          succeeded.push(noteId);
+        } catch {
+          if (!mutationIsCurrent()) return;
+          failed.push(noteId);
+        }
+      }
+
+      if (!mutationIsCurrent()) return;
+
+      if (succeeded.length > 0) {
+        const succeededIds = new Set(succeeded);
+        setPage((current) => current && ({
+          ...current,
+          items: current.items.filter((note) => !succeededIds.has(note.id)),
+          total: Math.max(0, current.total - succeeded.length),
+        }));
+        setEpisodeOptionsRetryKey((current) => current + 1);
+      }
+
+      if (failed.length === 0) {
+        setDeleteOpen(false);
+        setSelectionMode(false);
+        setSelectedNoteIds(new Set());
+        setDeleteTargets([]);
+        toast.success(`${succeeded.length}개를 삭제했어요`);
+      } else if (succeeded.length > 0) {
+        setDeleteOpen(false);
+        setSelectedNoteIds(new Set(failed));
+        setDeleteTargets(failed);
+        toast.warning(`${succeeded.length}개를 삭제했어요. ${failed.length}개는 실패했어요`);
+      } else {
+        setSelectedNoteIds(new Set(failed));
+        setDeleteTargets(failed);
+        setDeleteError('선택한 복약 메모를 삭제하지 못했어요. 다시 시도해주세요.');
+      }
+    } finally {
+      if (deleteGenerationRef.current === mutationGeneration) {
+        deletePendingRef.current = false;
+        setDeletePending(false);
       }
     }
-
-    if (
-      deleteGenerationRef.current !== mutationGeneration ||
-      principalKeyRef.current !== mutationPrincipal
-    ) return;
-
-    if (succeeded.length > 0) {
-      const succeededIds = new Set(succeeded);
-      setPage((current) => current && ({
-        ...current,
-        items: current.items.filter((note) => !succeededIds.has(note.id)),
-        total: Math.max(0, current.total - succeeded.length),
-      }));
-    }
-
-    if (failed.length === 0) {
-      setDeleteOpen(false);
-      setSelectionMode(false);
-      setSelectedNoteIds(new Set());
-      setDeleteTargets([]);
-      toast.success(`${succeeded.length}개를 삭제했어요`);
-    } else if (succeeded.length > 0) {
-      setDeleteOpen(false);
-      setSelectedNoteIds(new Set(failed));
-      setDeleteTargets(failed);
-      toast.warning(`${succeeded.length}개를 삭제했어요. ${failed.length}개는 실패했어요`);
-    } else {
-      setSelectedNoteIds(new Set(failed));
-      setDeleteTargets(failed);
-      setDeleteError('선택한 복약 메모를 삭제하지 못했어요. 다시 시도해주세요.');
-    }
-    deletePendingRef.current = false;
-    setDeletePending(false);
   }
 
   function prescriptionLabel(note: MedicationNote): string {
@@ -312,8 +323,8 @@ export function MedicationNotesPage() {
           <button
             type="button"
             className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:text-disabled-foreground"
-            onClick={() => selectionMode ? leaveSelectionMode() : setSelectionMode(true)}
-            disabled={deletePending}
+            onClick={() => selectionMode ? leaveSelectionMode() : !loadingMore && setSelectionMode(true)}
+            disabled={deletePending || loadingMore}
           >
             {selectionMode ? '완료' : '삭제'}
           </button>
@@ -324,17 +335,25 @@ export function MedicationNotesPage() {
             처방
             <select
               aria-label="처방별 메모 필터"
-              value={episodeId === undefined ? '' : String(episodeId)}
+              value={episodeFilterValue}
               onChange={(event) => setEpisodeFilter(event.target.value)}
-              disabled={episodeOptions === null || selectionMode || deletePending}
+              disabled={(episodeOptions === null && !invalidEpisodeFilter) || selectionMode || deletePending}
               className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
             >
-              {episodeOptions === null ? (
-                <option value={episodeId === undefined ? '' : String(episodeId)}>
+              {episodeOptions === null ? invalidEpisodeFilter ? (
+                <>
+                  <option value={INVALID_EPISODE_FILTER_VALUE} disabled>올바르지 않은 처방 필터</option>
+                  <option value="">전체</option>
+                </>
+              ) : (
+                <option value={episodeFilterValue}>
                   {episodeOptionsError ? '처방 목록 확인 필요' : '처방 목록 불러오는 중'}
                 </option>
               ) : (
                 <>
+                  {invalidEpisodeFilter && (
+                    <option value={INVALID_EPISODE_FILTER_VALUE} disabled>올바르지 않은 처방 필터</option>
+                  )}
                   <option value="">전체</option>
                   {episodeOptions.map((episode, index) => {
                     const baseLabel = optionBaseLabels[index];
@@ -385,6 +404,12 @@ export function MedicationNotesPage() {
             </div>
           ) : page === null ? (
             <div role="status" aria-label="복약 메모 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
+          ) : invalidEpisodeFilter ? (
+            <Card className="p-5">
+              <p role="alert" className="text-sm text-danger-strong">
+                올바르지 않은 처방 필터예요. 전체 또는 다른 처방을 선택해주세요.
+              </p>
+            </Card>
           ) : notes.length === 0 ? (
             <Card className="p-5">
               <p>복용 후 느낀 점을 남겨두면 다음 진료 때 도움이 돼요.</p>
@@ -443,7 +468,7 @@ export function MedicationNotesPage() {
                 <Button
                   variant="secondary"
                   onClick={() => void loadMore()}
-                  disabled={loadingMore}
+                  disabled={loadingMore || selectionMode || deletePending}
                   aria-busy={loadingMore}
                 >
                   {loadingMore ? '불러오는 중...' : '더 보기'}

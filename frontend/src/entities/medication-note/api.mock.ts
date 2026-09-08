@@ -4,6 +4,7 @@ import type {
   CreateMedicationNotePayload,
   MedicationNote,
   MedicationNoteEpisode,
+  MedicationNoteEpisodeStatus,
   MedicationNoteMedication,
   MedicationNoteListParams,
   MedicationNotePage,
@@ -77,7 +78,9 @@ function isMedicationNote(value: unknown): value is MedicationNote {
     typeof note.careEpisodeId === 'number' &&
     (typeof note.careEpisodeAlias === 'string' || note.careEpisodeAlias === null) &&
     (typeof note.careEpisodeStartDate === 'string' || note.careEpisodeStartDate === null) &&
-    typeof note.careEpisodeStatus === 'string' &&
+    (note.careEpisodeStatus === 'ACTIVE' ||
+      note.careEpisodeStatus === 'COMPLETED' ||
+      note.careEpisodeStatus === 'CANCELLED') &&
     Array.isArray(note.availableMedications) &&
     (typeof note.medicationId === 'number' || note.medicationId === null) &&
     (typeof note.medication === 'object' || note.medication === null) &&
@@ -91,7 +94,7 @@ function isMedicationNote(value: unknown): value is MedicationNote {
 function episodeMetadata(careEpisodeId: number): {
   alias: string | null;
   startDate: string | null;
-  status: string;
+  status: MedicationNoteEpisodeStatus;
   medications: MedicationNoteMedication[];
 } {
   const overview = mockMedicationOverviews().find((item) => item.recordId === careEpisodeId);
