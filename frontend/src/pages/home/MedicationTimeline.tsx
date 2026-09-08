@@ -43,8 +43,12 @@ interface MedicationTimelineProps {
     recordIds: number[],
     slot: MealSlot,
     taken: boolean,
-  ) => void | Promise<boolean>;
+  ) => void | boolean | DoseChangeResult | Promise<void | boolean | DoseChangeResult>;
   onMemo: () => void;
+}
+
+export interface DoseChangeResult {
+  failedRecordIds: number[];
 }
 
 export function MedicationTimeline({
@@ -217,15 +221,31 @@ function TimelineItem({
       return new Set([...currentEpisodes, ...actionRecordIds]);
     });
     setSelectedEpisodes(new Set());
-    let saved = true;
+    let failedRecordIds: number[] = [];
     try {
-      saved = (await onDoseChange(actionRecordIds, item.slot, !actionCompleted)) !== false;
+      const result = await onDoseChange(actionRecordIds, item.slot, !actionCompleted);
+      if (result === false) failedRecordIds = actionRecordIds;
+      else if (result && typeof result === 'object') failedRecordIds = result.failedRecordIds;
     } catch {
-      saved = false;
+      failedRecordIds = actionRecordIds;
     }
-    if (saved === false) {
-      setCompletedEpisodes(previousCompletedEpisodes);
-      setSelectedEpisodes(previousSelectedEpisodes);
+    if (failedRecordIds.length > 0) {
+      const failedRecordIdSet = new Set(failedRecordIds);
+      const savedRecordIds = actionRecordIds.filter((recordId) => !failedRecordIdSet.has(recordId));
+      setCompletedEpisodes(() => {
+        if (actionCompleted) {
+          return new Set(
+            [...previousCompletedEpisodes].filter(
+              (recordId) => !savedRecordIds.includes(recordId),
+            ),
+          );
+        }
+        return new Set([...previousCompletedEpisodes, ...savedRecordIds]);
+      });
+      setSelectedEpisodes(
+        new Set([...previousSelectedEpisodes].filter((recordId) => failedRecordIdSet.has(recordId))),
+      );
+      if (savedRecordIds.length > 0) setDoseActionSettled(true);
       return;
     }
     setDoseActionSettled(true);
@@ -271,12 +291,12 @@ function TimelineItem({
                   data-episode-selection-glyph
                   aria-hidden
                   className={`flex size-6 shrink-0 items-center justify-center rounded-pill ${
-                    selectedEpisodes.has(episode.recordId) || episodeCompleted
+                    selectedEpisodes.has(episode.recordId)
                       ? 'bg-primary text-card'
                       : 'border-2 border-primary text-transparent'
                   }`}
                 >
-                  <Check className="size-4" />
+                  {selectedEpisodes.has(episode.recordId) && <Check className="size-4" />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-2">

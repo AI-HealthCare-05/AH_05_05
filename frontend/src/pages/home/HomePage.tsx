@@ -29,7 +29,7 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
-import { MedicationTimeline } from './MedicationTimeline';
+import { MedicationTimeline, type DoseChangeResult } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
 import { SupplementTodayCard } from './SupplementTodayCard';
 import { HomeChallengeSummary } from '@/pages/challenges/HomeChallengeSummary';
@@ -276,8 +276,8 @@ export function HomePage({
     change: DoseBatchChange,
     showUndo = true,
     knownChangedRecordIds?: number[],
-  ): Promise<boolean> {
-    if (!doseRecords) return false;
+  ): Promise<DoseChangeResult> {
+    if (!doseRecords) return { failedRecordIds: change.recordIds };
     const previousRecords = doseRecords;
     const changedRecordIds = knownChangedRecordIds ??
       change.recordIds.filter((recordId) => {
@@ -290,7 +290,7 @@ export function HomePage({
         );
         return wasTaken !== change.taken;
       });
-    if (changedRecordIds.length === 0) return true;
+    if (changedRecordIds.length === 0) return { failedRecordIds: [] };
     const appliedChange = { ...change, recordIds: changedRecordIds };
     setFailedDoseChange(null);
     setDoseRecords(updateDoseRecords(previousRecords, appliedChange));
@@ -322,7 +322,7 @@ export function HomePage({
           },
         });
       }
-      return true;
+      return { failedRecordIds: [] };
     }
     const failedChange = { ...appliedChange, recordIds: failedRecordIds };
     setDoseRecords((currentRecords) =>
@@ -331,7 +331,7 @@ export function HomePage({
         : currentRecords,
     );
     setFailedDoseChange(failedChange);
-    return false;
+    return { failedRecordIds };
   }
 
   return (
@@ -537,7 +537,11 @@ function LoggedInMedicationContent({
   overviews: MedicationOverview[];
   doseRecords: DoseRecord[];
   currentDate: string;
-  onDoseChange: (recordIds: number[], slot: MealSlot, taken: boolean) => void | Promise<boolean>;
+  onDoseChange: (
+    recordIds: number[],
+    slot: MealSlot,
+    taken: boolean,
+  ) => void | boolean | DoseChangeResult | Promise<void | boolean | DoseChangeResult>;
   onMemo: () => void;
   onUpload: () => void;
 }) {
