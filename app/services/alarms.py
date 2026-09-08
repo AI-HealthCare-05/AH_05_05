@@ -57,7 +57,6 @@ class AlarmService:
         await self._validate_references(
             user,
             data.care_episode_id,
-            data.source_guide_id,
             data.follow_up_visit_id,
         )
 
@@ -85,22 +84,12 @@ class AlarmService:
         self,
         user: User,
         care_episode_id: int | None,
-        source_guide_id: int | None,
         follow_up_visit_id: int | None,
     ) -> None:
         if care_episode_id is not None:
             care_episode = await self.repository.get_owned_care_episode(care_episode_id, user.id)
             if care_episode is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Care episode not found.")
-
-        if source_guide_id is not None:
-            guide = await self.repository.get_owned_recovery_guide(source_guide_id, user.id)
-            if guide is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recovery guide not found.")
-            if care_episode_id is not None and guide.care_episode_id != care_episode_id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT, detail="Recovery guide does not match care episode."
-                )
 
         if follow_up_visit_id is not None:
             visit = await self.repository.get_owned_follow_up_visit(follow_up_visit_id, user.id)
@@ -114,9 +103,8 @@ class AlarmService:
 
         changes = data.model_dump(exclude_unset=True)
         care_episode_id = changes.get("care_episode_id", alarm.care_episode_id)
-        source_guide_id = changes.get("source_guide_id", alarm.source_guide_id)
         follow_up_visit_id = changes.get("follow_up_visit_id", alarm.follow_up_visit_id)
-        await self._validate_references(user, care_episode_id, source_guide_id, follow_up_visit_id)
+        await self._validate_references(user, care_episode_id, follow_up_visit_id)
 
         alarm_type = changes.get("alarm_type", alarm.alarm_type)
         meal_slot = changes.get("meal_slot", alarm.meal_slot)

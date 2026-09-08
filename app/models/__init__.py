@@ -2,7 +2,7 @@ from .admin_settings import AdminSetting
 from .admins import Admin
 from .alarms import Alarm, AlarmEvent
 from .background_jobs import BackgroundJob
-from .care import CareAdvice, CareEpisode, FollowUpVisit
+from .care import CareEpisode, FollowUpVisit
 from .challenges import (
     Badge,
     Challenge,
@@ -28,7 +28,6 @@ from .interactions import (
 )
 from .medications import Medication, MedicationDose, MedicationNote, MedicationSlot
 from .ocr import OcrJob, OcrJobStatus
-from .recovery import RecoveryGuide, RecoveryGuideSource
 from .supplement_nutrients import (
     DisplaySupplementNutrientRank,
     NutrientStandard,

@@ -839,6 +839,7 @@ function MedicationRegistrationWizard({
   const navigate = useNavigate();
   const [step, setStep] = useState<3 | 4 | 5>(3);
   const [slots, setSlots] = useState<Record<number, MealSlot[]>>(initialSlots);
+  const [slotLimitErrors, setSlotLimitErrors] = useState<Record<number, boolean>>({});
   const [mealTimes, setMealTimes] = useState<MealTimes>(initialMealTimes);
   const [startDate, setStartDate] = useState(initialStartDate);
   const [startSlot, setStartSlot] = useState<FirstDoseSelection | null>(initialStartSlot);
@@ -899,14 +900,18 @@ function MedicationRegistrationWizard({
   }, [notifySettingsLoader]);
 
   function toggleSlot(medicationId: number, slot: MealSlot) {
+    const medication = scheduledMeds.find((med) => med.medicationId === medicationId);
+    if (!medication) return;
+    const selected = slots[medicationId] ?? [];
+    if (!selected.includes(slot) && selected.length >= medication.timesPerDay!) {
+      setSlotLimitErrors((current) => ({ ...current, [medicationId]: true }));
+      return;
+    }
+    setSlotLimitErrors((current) => ({ ...current, [medicationId]: false }));
     setSlots((current) => {
       const next = new Set(current[medicationId] ?? []);
       if (next.has(slot)) next.delete(slot);
-      else {
-        const medication = scheduledMeds.find((med) => med.medicationId === medicationId);
-        if (!medication || next.size >= medication.timesPerDay!) return current;
-        next.add(slot);
-      }
+      else next.add(slot);
       return { ...current, [medicationId]: SLOT_ORDER.filter((value) => next.has(value)) };
     });
   }
@@ -1161,6 +1166,7 @@ function MedicationRegistrationWizard({
             <div className="flex flex-col gap-3">
               {scheduledMeds.map((medication) => (
                 <Card key={medication.medicationId} className="gap-3 p-4">
+                  <div role="group" aria-label={medication.name}>
                   <div>
                     <div className="flex w-full items-start justify-between gap-3">
                       <p className="min-w-0 break-words font-bold text-foreground">
@@ -1183,10 +1189,10 @@ function MedicationRegistrationWizard({
                           type="button"
                           aria-pressed={selected}
                           aria-label={`${medication.name} ${slot.label}`}
-                          disabled={!selected && (slots[medication.medicationId] ?? []).length >= medication.timesPerDay!}
+                          aria-describedby={slotLimitErrors[medication.medicationId] ? `slot-limit-${medication.medicationId}` : undefined}
                           onClick={() => toggleSlot(medication.medicationId, slot.value)}
                           className={cn(
-                            'min-h-touch rounded-input border text-sm disabled:cursor-not-allowed disabled:opacity-40',
+                            'min-h-touch rounded-input border text-sm',
                             selected
                               ? 'border-primary bg-primary font-bold text-card'
                               : 'border-border bg-card text-muted-foreground',
@@ -1196,6 +1202,12 @@ function MedicationRegistrationWizard({
                         </button>
                       );
                     })}
+                  </div>
+                  {slotLimitErrors[medication.medicationId] && (
+                    <p id={`slot-limit-${medication.medicationId}`} role="alert" className="mt-3 text-sm text-danger-strong">
+                      하루 {medication.timesPerDay}회만 선택할 수 있어요. 선택한 시간을 취소한 뒤 다른 시간을 선택해주세요.
+                    </p>
+                  )}
                   </div>
                 </Card>
               ))}
