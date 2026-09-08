@@ -7,6 +7,8 @@ from app.core.exceptions import (
     BadgeNameAlreadyExistsError,
     BadgeNotFoundError,
     ChallengeNotFoundError,
+    CustomChallengeTemplateNameAlreadyExistsError,
+    CustomChallengeTemplateNotFoundError,
     InvalidCommonCodeError,
 )
 from app.dtos.challenges import (
@@ -18,11 +20,16 @@ from app.dtos.challenges import (
     ChallengeCreateRequest,
     ChallengeResponse,
     ChallengeUpdateRequest,
+    CustomChallengeTemplateAdminListQuery,
+    CustomChallengeTemplateCreateRequest,
+    CustomChallengeTemplateResponse,
+    CustomChallengeTemplateUpdateRequest,
 )
-from app.models.challenges import Badge, Challenge
+from app.models.challenges import Badge, Challenge, CustomChallengeTemplate
 from app.models.common_codes import CommonCode
 from app.repositories.badge_repository import BadgeRepository
 from app.repositories.challenge_repository import ChallengeRepository
+from app.repositories.custom_challenge_template_repository import CustomChallengeTemplateRepository
 
 _COMMON_CODE_GROUPS = {
     "challenge_type_id": "CHL_TYPE",
@@ -36,6 +43,7 @@ class AdminChallengeService:
     def __init__(self) -> None:
         self.badges = BadgeRepository()
         self.challenges = ChallengeRepository()
+        self.custom_templates = CustomChallengeTemplateRepository()
 
     async def create_badge(self, data: BadgeCreateRequest, admin_id: int) -> BadgeResponse:
         try:
@@ -126,6 +134,59 @@ class AdminChallengeService:
         challenge.updated_by_admin_id = admin_id
         await challenge.save()
 
+    async def create_custom_template(
+        self,
+        data: CustomChallengeTemplateCreateRequest,
+        admin_id: int,
+    ) -> CustomChallengeTemplateResponse:
+        await self._validate_common_code(data.check_type_id, "CHK_TYPE2")
+        values = data.model_dump()
+        values["name"] = values["name"].strip()
+        try:
+            template = await CustomChallengeTemplate.create(
+                **values,
+                created_by_admin_id=admin_id,
+            )
+        except IntegrityError as error:
+            raise CustomChallengeTemplateNameAlreadyExistsError() from error
+        return self.custom_template_response(template)
+
+    async def list_custom_templates(
+        self,
+        query: CustomChallengeTemplateAdminListQuery,
+    ) -> tuple[list[CustomChallengeTemplateResponse], int]:
+        items, total = await self.custom_templates.list(**query.model_dump())
+        return [self.custom_template_response(item) for item in items], total
+
+    async def get_custom_template(self, template_id: int) -> CustomChallengeTemplateResponse:
+        template = await self.custom_templates.get(template_id)
+        if template is None:
+            raise CustomChallengeTemplateNotFoundError()
+        return self.custom_template_response(template)
+
+    async def update_custom_template(
+        self,
+        template_id: int,
+        data: CustomChallengeTemplateUpdateRequest,
+        admin_id: int,
+    ) -> CustomChallengeTemplateResponse:
+        template = await self.custom_templates.get(template_id)
+        if template is None:
+            raise CustomChallengeTemplateNotFoundError()
+        values = data.model_dump(exclude_unset=True)
+        if "check_type_id" in values:
+            await self._validate_common_code(values["check_type_id"], "CHK_TYPE2")
+        if "name" in values:
+            values["name"] = values["name"].strip()
+        for key, value in values.items():
+            setattr(template, key, value)
+        template.updated_by_admin_id = admin_id
+        try:
+            await template.save()
+        except IntegrityError as error:
+            raise CustomChallengeTemplateNameAlreadyExistsError() from error
+        return self.custom_template_response(template)
+
     async def _validate_challenge_relations(self, values: dict) -> None:
         for field_name, group_code in _COMMON_CODE_GROUPS.items():
             code_id = values.get(field_name)
@@ -144,9 +205,26 @@ class AdminChallengeService:
             raise BadgeNotFoundError()
 
     @staticmethod
+    async def _validate_common_code(code_id: int, group_code: str) -> None:
+        code = await CommonCode.get_or_none(id=code_id, is_active=True).prefetch_related("group")
+        if (
+            code is None
+            or not code.group.is_active
+            or code.group.category != "CHL"
+            or code.group.group_code != group_code
+        ):
+            raise InvalidCommonCodeError(f"{group_code} 공통코드를 확인해 주세요.")
+
+    @staticmethod
     def badge_response(badge: Badge) -> BadgeResponse:
         return BadgeResponse.model_validate(badge)
 
     @staticmethod
     def challenge_response(challenge: Challenge) -> ChallengeResponse:
         return ChallengeResponse.model_validate(challenge)
+
+    @staticmethod
+    def custom_template_response(
+        template: CustomChallengeTemplate,
+    ) -> CustomChallengeTemplateResponse:
+        return CustomChallengeTemplateResponse.model_validate(template)
