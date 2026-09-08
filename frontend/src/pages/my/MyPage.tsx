@@ -474,6 +474,12 @@ export function MyPage({
                   }
                   divided
                 />
+                <ManagementRow
+                  label="복약 메모 모아보기"
+                  value=""
+                  onClick={() => navigate('/medications/notes')}
+                  divided
+                />
               </div>
             </section>
 
