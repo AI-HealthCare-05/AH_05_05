@@ -39,6 +39,16 @@ def test_challenge_domain_models_use_fixed_status_enums() -> None:
     assert models.UserBadge._meta.fields_map["status"].enum_type is enums.BadgeAwardStatus
 
 
+def test_expired_participation_status_can_be_loaded_from_storage() -> None:
+    participation = models.UserChallenge(status="EXPIRED")
+
+    assert participation.status.value == "EXPIRED"
+
+
+def test_generated_challenge_schema_enforces_one_verification_per_day() -> None:
+    assert models.ChallengeVerification._meta.unique_together == (("user_challenge", "verification_date"),)
+
+
 def test_challenge_common_code_and_history_relationships_are_restrictive() -> None:
     challenge_fields = models.Challenge._meta.fields_map
     verification_fields = models.ChallengeVerification._meta.fields_map
