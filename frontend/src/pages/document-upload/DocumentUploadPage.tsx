@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { Button, Card, Header, ImageViewer, RegistrationProgress } from '@/shared/ui';
+import { GuidedCamera } from './GuidedCamera';
 
 const GUIDE_ITEMS = ['병원명', '조제일', '약품명·함량', '1회 투약량·횟수·일수'] as const;
 
@@ -12,6 +13,16 @@ export function DocumentUploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const closeCamera = useCallback(() => setCameraOpen(false), []);
+
+  function openCamera() {
+    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function') {
+      setCameraOpen(true);
+    } else {
+      cameraInputRef.current?.click();
+    }
+  }
 
   useEffect(() => {
     if (!file) {
@@ -37,6 +48,12 @@ export function DocumentUploadPage() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="약봉투 등록" onBack={() => navigate(-1)} />
+      {cameraOpen && <GuidedCamera
+        onClose={closeCamera}
+        onCapture={(captured) => { setFile(captured); closeCamera(); }}
+        onNativeCamera={() => { closeCamera(); cameraInputRef.current?.click(); }}
+        onGallery={() => { closeCamera(); galleryInputRef.current?.click(); }}
+      />}
       <input
         ref={cameraInputRef}
         className="sr-only"
@@ -98,6 +115,7 @@ export function DocumentUploadPage() {
             </p>
             <div className="mt-auto flex flex-col gap-2 pb-4">
               <Button onClick={handleUpload}>등록하기</Button>
+              <Button variant="secondary" onClick={openCamera}>다시 촬영하기</Button>
               <p className="text-center text-sm text-muted-foreground">
                 사진을 올린 뒤 바로 읽기 시작해요.
               </p>
@@ -137,7 +155,7 @@ export function DocumentUploadPage() {
             </Card>
 
             <div className="mt-auto flex flex-col gap-2 pb-4">
-              <Button onClick={() => cameraInputRef.current?.click()}>
+              <Button onClick={openCamera}>
                 <Camera aria-hidden className="mr-2 size-5" />
                 촬영하기
               </Button>
