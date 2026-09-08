@@ -1548,13 +1548,23 @@ test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page 
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label^="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label^="8월 24일 처방"]');
+  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
   await morning.getByRole('button', { name: '먹었어요' }).click();
 
   await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
   await expect(secondEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(firstEpisode.locator('[data-episode-row]')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await expect(firstEpisode.locator('[data-episode-selection-glyph] svg')).toHaveCount(0);
+  await expect(secondEpisode.locator('[data-episode-row]')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await expect(secondEpisode.locator('[data-episode-selection-glyph] svg')).toHaveCount(0);
   expect(savedRecordIds).toEqual([12]);
 });
 

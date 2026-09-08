@@ -175,12 +175,12 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                     data-supplement-selection-indicator
                     aria-hidden
                     className={`flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                      taken || isSelected
+                      isSelected
                         ? 'border-primary bg-primary text-card'
                         : 'border-border bg-card text-transparent'
                     }`}
                   >
-                    {(taken || isSelected) && <Check className="size-4" strokeWidth={3} />}
+                    {isSelected && <Check className="size-4" strokeWidth={3} />}
                   </span>
                   <span className="min-w-0 flex-1 text-base font-bold text-foreground">{supplement.name}</span>
                   <span className="shrink-0 text-sm text-muted-foreground">
