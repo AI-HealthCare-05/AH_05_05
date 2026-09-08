@@ -6,6 +6,7 @@ import { createAccount, type Gender } from '@/entities/account';
 import { login, requestPasswordReset } from '@/entities/auth';
 import { requestEmailVerification, verifyEmailCode } from '@/entities/email-verification';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
+import { TermsPage } from '@/pages/legal';
 import { ApiError } from '@/shared/api/client';
 import {
   MIN_BIRTH_DATE,
@@ -93,6 +94,7 @@ export function AuthPage() {
   const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null);
   const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showSignupTerms, setShowSignupTerms] = useState(false);
   const today = formatDateInputValue(new Date());
 
   useEffect(() => {
@@ -146,6 +148,7 @@ export function AuthPage() {
     setNameError(null);
     setPhoneNumberError(null);
     setLoginError(null);
+    setShowSignupTerms(false);
     setPasswordResetDialogOpen(false);
     setPasswordResetSending(false);
     setPasswordResetMessage(null);
@@ -387,6 +390,10 @@ export function AuthPage() {
   const signupStepCopy = STEP_COPY[signupStep];
   const requiredConsentsAccepted =
     serviceTerms && personalInformationTerms && ageTerms && recordTerms && aiTerms;
+
+  if (showSignupTerms) {
+    return <TermsPage onBack={() => setShowSignupTerms(false)} />;
+  }
 
   return (
     <div
@@ -821,14 +828,13 @@ export function AuthPage() {
                         label="서비스 이용약관에 동의해요"
                         required
                       />
-                      <Link
-                        to="/terms"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
                         className="ml-11 inline-flex min-h-touch items-center text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                        onClick={() => setShowSignupTerms(true)}
                       >
                         서비스 이용약관 보기
-                      </Link>
+                      </button>
                     </div>
                     <div>
                       <CheckboxField
