@@ -240,9 +240,11 @@ function VisitCard({ visit, onClick }: { visit: FollowUpVisit; onClick: () => vo
       <span className="mt-2 text-[15px] font-medium text-foreground">
         {visit.hospital ?? '병원 미정'} · {visit.visitTime ?? '시간 미정'}
       </span>
-      <span className="mt-4 border-t border-border pt-3 text-[13px] text-muted-foreground">
-        {visit.hospital ? `병원 ${visit.hospital}` : '병원과 시간을 정해보세요.'}
-      </span>
+      {visit.hospital && (
+        <span className="mt-4 border-t border-border pt-3 text-[13px] text-muted-foreground">
+          병원 {visit.hospital}
+        </span>
+      )}
     </button>
   );
 }
