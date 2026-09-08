@@ -104,6 +104,44 @@ class CustomChallengeTemplateNameAlreadyExistsError(AppError):
     message = "이미 등록된 맞춤 챌린지 템플릿명입니다."
 
 
+class CustomChallengeTemplateUnavailableError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "CUSTOM_CHALLENGE_TEMPLATE_UNAVAILABLE"
+    message = "사용할 수 있는 맞춤 챌린지 템플릿이 아닙니다."
+
+
+class CustomChallengeTypeUnsupportedError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "CUSTOM_CHALLENGE_TYPE_UNSUPPORTED"
+    message = "아직 지원하지 않는 맞춤 챌린지 유형입니다."
+
+
+class CustomChallengeInvalidTargetsError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "CUSTOM_CHALLENGE_INVALID_TARGETS"
+    message = "선택한 맞춤 챌린지 대상을 사용할 수 없습니다."
+    field = "targetIds"
+
+
+class CustomChallengeIdempotencyConflictError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CUSTOM_CHALLENGE_IDEMPOTENCY_CONFLICT"
+    message = "같은 요청 키로 다른 맞춤 챌린지 참여를 요청할 수 없습니다."
+    field = "idempotencyKey"
+
+
+class CustomChallengeAlreadyActiveError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CUSTOM_CHALLENGE_ALREADY_ACTIVE"
+    message = "선택한 대상으로 이미 진행 중인 맞춤 챌린지가 있습니다."
+
+
+class CustomChallengeParticipationNotFoundError(AppError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "CUSTOM_CHALLENGE_PARTICIPATION_NOT_FOUND"
+    message = "맞춤 챌린지 참여 정보를 찾을 수 없습니다."
+
+
 class ChallengeNotRecruitingError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "CHALLENGE_NOT_RECRUITING"

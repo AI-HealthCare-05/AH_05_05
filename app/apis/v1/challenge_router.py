@@ -10,10 +10,65 @@ from app.dtos.challenges import (
     VerificationCreateRequest,
     VerificationResponse,
 )
+from app.dtos.custom_challenges import (
+    CustomChallengeJoinRequest,
+    CustomChallengeParticipationListResponse,
+    CustomChallengeParticipationResponse,
+    CustomChallengeRecommendationListResponse,
+)
 from app.models.users import User
 from app.services.challenge_participation import ChallengeParticipationService
+from app.services.custom_challenges import CustomChallengeService
 
 challenge_router = APIRouter(prefix="/user", tags=["user-challenges"])
+
+
+@challenge_router.get(
+    "/custom-challenge-recommendations",
+    response_model=CustomChallengeRecommendationListResponse,
+    summary="맞춤 챌린지 추천 조회",
+)
+async def list_custom_challenge_recommendations(
+    user: Annotated[User, Depends(get_request_user)],
+) -> CustomChallengeRecommendationListResponse:
+    return await CustomChallengeService().recommendations(user)
+
+
+@challenge_router.post(
+    "/custom-challenge-recommendations/{template_id}/participations",
+    response_model=CustomChallengeParticipationResponse,
+    status_code=201,
+    summary="맞춤 챌린지 참여",
+)
+async def join_custom_challenge(
+    template_id: Annotated[int, Path(ge=1)],
+    request: CustomChallengeJoinRequest,
+    user: Annotated[User, Depends(get_request_user)],
+) -> CustomChallengeParticipationResponse:
+    return await CustomChallengeService().join(user, template_id, request)
+
+
+@challenge_router.get(
+    "/custom-challenge-participations",
+    response_model=CustomChallengeParticipationListResponse,
+    summary="내 맞춤 챌린지 목록 조회",
+)
+async def list_custom_challenge_participations(
+    user: Annotated[User, Depends(get_request_user)],
+) -> CustomChallengeParticipationListResponse:
+    return await CustomChallengeService().list(user)
+
+
+@challenge_router.get(
+    "/custom-challenge-participations/{participation_id}",
+    response_model=CustomChallengeParticipationResponse,
+    summary="내 맞춤 챌린지 상세 조회",
+)
+async def get_custom_challenge_participation(
+    participation_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+) -> CustomChallengeParticipationResponse:
+    return await CustomChallengeService().get(user, participation_id)
 
 
 @challenge_router.post(

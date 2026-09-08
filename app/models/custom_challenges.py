@@ -1,15 +1,7 @@
-from enum import Enum
-
 from tortoise import fields, models
 from tortoise.indexes import Index
 
-from app.models.enums import ChallengeParticipationStatus, MealSlot
-
-
-class CustomChallengeType(str, Enum):  # noqa: UP042
-    MEDICATION = "MEDICATION"
-    SUPPLEMENT = "SUPPLEMENT"
-    VISIT = "VISIT"
+from app.models.enums import ChallengeParticipationStatus, CustomChallengeType, MealSlot
 
 
 class CustomChallengeParticipation(models.Model):

@@ -92,6 +92,12 @@ class ChallengeParticipationStatus(StrEnum):
     EXPIRED = "EXPIRED"
 
 
+class CustomChallengeType(StrEnum):
+    MEDICATION = "MEDICATION"
+    SUPPLEMENT = "SUPPLEMENT"
+    VISIT = "VISIT"
+
+
 class ChallengeVerificationStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
