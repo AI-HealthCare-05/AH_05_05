@@ -7,7 +7,6 @@ from tortoise import Tortoise
 from app.core.db.databases import TORTOISE_APP_MODELS
 
 MIGRATION = "app.core.db.migrations.models.40_20260908160000_custom_challenge_participations"
-PREVIOUS_MIGRATION = "app.core.db.migrations.models.39_20260908151829_challenge_daily_verification"
 NEW_MODELS = {
     "models.CustomChallengeParticipation",
     "models.CustomChallengeTarget",
@@ -120,18 +119,27 @@ async def test_migration_excludes_superseded_draft_fields_and_downgrades_child_f
     ]
 
 
-def test_models_state_adds_only_new_models_and_matches_initialized_live_metadata() -> None:
-    previous = decompress_dict(import_module(PREVIOUS_MIGRATION).MODELS_STATE)
+async def test_models_state_matches_all_fully_initialized_live_metadata() -> None:
     current = decompress_dict(import_module(MIGRATION).MODELS_STATE)
 
-    assert current.keys() == previous.keys() | NEW_MODELS
-    for model_name in previous:
-        assert current[model_name] == previous[model_name], model_name
+    await Tortoise.init(
+        db_url="sqlite://:memory:",
+        modules={"models": TORTOISE_APP_MODELS},
+        timezone="Asia/Seoul",
+        use_tz=False,
+    )
+    try:
+        live = decompress_dict(compress_dict(get_models_describe("models")))
+    finally:
+        await Tortoise.close_connections()
 
-    Tortoise.init_models(TORTOISE_APP_MODELS, "models")
-    live = decompress_dict(compress_dict(get_models_describe("models")))
-    for model_name in NEW_MODELS:
-        assert current[model_name] == live[model_name], model_name
+    assert len(current) == 54
+    assert current == live
+    assert {
+        "models.CareAdvice",
+        "models.RecoveryGuide",
+        "models.RecoveryGuideSource",
+    }.isdisjoint(current)
 
     expected_columns = {
         "models.CustomChallengeParticipation": {
