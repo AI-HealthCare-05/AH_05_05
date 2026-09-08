@@ -298,6 +298,38 @@ class TestChallengeDomainAPI(TestCase):
         assert response.status_code == 201, response.text
         return response.json()
 
+    async def test_join_requires_user_authentication(self) -> None:
+        response = await request("POST", "/api/v1/user/challenges/1/join")
+
+        assert response.status_code == 401, response.text
+
+    async def test_my_challenge_list_requires_user_authentication(self) -> None:
+        response = await request("GET", "/api/v1/user/challenges")
+
+        assert response.status_code == 401, response.text
+
+    async def test_my_challenge_detail_requires_user_authentication(self) -> None:
+        response = await request("GET", "/api/v1/user/challenges/1")
+
+        assert response.status_code == 401, response.text
+
+    async def test_challenge_verification_requires_user_authentication(self) -> None:
+        response = await request(
+            "POST",
+            "/api/v1/user/challenges/1/verifications",
+            json={
+                "verification_date": datetime.now(config.TIMEZONE).date().isoformat(),
+                "idempotency_key": "unauthenticated-verification-304",
+            },
+        )
+
+        assert response.status_code == 401, response.text
+
+    async def test_my_badges_require_user_authentication(self) -> None:
+        response = await request("GET", "/api/v1/user/badges")
+
+        assert response.status_code == 401, response.text
+
     async def test_catalog_requires_user_and_hides_unpublished_data(self) -> None:
         from app.main import app
         from app.models.challenges import Challenge
@@ -340,6 +372,38 @@ class TestChallengeDomainAPI(TestCase):
         app.dependency_overrides[get_request_user] = lambda: other
         assert (await request("GET", url)).status_code == 404
         assert (await request("GET", "/api/v1/user/challenges")).json()["items"] == []
+
+    async def test_other_user_cannot_submit_verification_or_mutate_progress_or_badges(self) -> None:
+        from app.main import app
+        from app.models.challenges import ChallengeProgress, ChallengeVerification, UserBadge, UserChallenge
+
+        participation = await self._join_daily()
+        participation_id = participation["id"]
+        other = await create_user(name="다른 인증 사용자", email="other-verification@example.com")
+        app.dependency_overrides[get_request_user] = lambda: other
+
+        response = await request(
+            "POST",
+            f"/api/v1/user/challenges/{participation_id}/verifications",
+            json={
+                "verification_date": participation["today"],
+                "idempotency_key": "other-user-verification-304",
+            },
+        )
+
+        assert response.status_code == 404, response.text
+        assert await ChallengeVerification.filter(user_challenge_id=participation_id).count() == 0
+        stored = await UserChallenge.get(id=participation_id)
+        assert stored.completed_count == 0
+        assert stored.progress_rate == 0
+        assert stored.completed_at is None
+        progress_periods = await ChallengeProgress.filter(user_challenge_id=participation_id)
+        assert progress_periods
+        assert all(progress.completed_count == 0 for progress in progress_periods)
+        assert all(progress.progress_rate == 0 for progress in progress_periods)
+        assert all(progress.is_completed is False for progress in progress_periods)
+        assert all(progress.completed_at is None for progress in progress_periods)
+        assert await UserBadge.filter(user_challenge_id=participation_id).count() == 0
 
     async def test_today_state_survives_reload_and_duplicate_keys_do_not_count_twice(self) -> None:
         from app.models.challenges import ChallengeVerification
