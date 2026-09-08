@@ -16,6 +16,7 @@ async function openAnsweredChat(page: Page) {
 }
 
 test('챗봇 근거는 개수와 함께 접어 두고 키보드로 내용을 펼치고 접는다', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await openAnsweredChat(page);
 
   await expect(page.getByRole('heading', { name: '챗봇' })).toBeVisible();
@@ -32,7 +33,9 @@ test('챗봇 근거는 개수와 함께 접어 두고 키보드로 내용을 펼
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   const controls = await toggle.getAttribute('aria-controls');
   expect(controls).toBeTruthy();
-  await expect(toggle.locator('svg')).toBeVisible();
+  const chevron = toggle.locator('svg');
+  await expect(chevron).toBeVisible();
+  await expect(chevron).toHaveCSS('transition-duration', '0s');
   const bounds = await toggle.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.height).toBeGreaterThanOrEqual(44);

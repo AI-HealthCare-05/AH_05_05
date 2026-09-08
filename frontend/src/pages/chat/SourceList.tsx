@@ -45,7 +45,10 @@ export function SourceList({ sources, className }: SourceListProps) {
         <span className="font-normal text-muted-foreground">{sources.length}개</span>
         <ChevronDown
           aria-hidden
-          className={cn('ml-auto size-5 shrink-0 transition-transform', expanded && 'rotate-180')}
+          className={cn(
+            'ml-auto size-5 shrink-0 transition-transform motion-reduce:transition-none motion-reduce:duration-0',
+            expanded && 'rotate-180',
+          )}
         />
       </button>
       <div id={contentId} hidden={!expanded}>

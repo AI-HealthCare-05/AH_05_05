@@ -461,7 +461,7 @@ export function MyPage({
               <button
                 type="button"
                 aria-label="프로필 다시 시도"
-                className="mt-2 h-10 self-end rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground"
+                className="mt-2 min-h-touch self-end rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground"
                 onClick={() => setProfileReloadKey((current) => current + 1)}
               >
                 다시 시도

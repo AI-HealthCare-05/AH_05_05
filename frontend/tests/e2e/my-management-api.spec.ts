@@ -79,7 +79,11 @@ test('프로필 조회 실패는 관리 수치와 분리되고 다시 시도할 
 
   await expect(page.getByRole('alert', { name: '프로필 정보 불러오기 실패' })).toBeVisible();
   await expect(page.getByRole('button', { name: '복용 중 처방 0개', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '프로필 다시 시도' }).click();
+  const retry = page.getByRole('button', { name: '프로필 다시 시도' });
+  const retryBounds = await retry.boundingBox();
+  expect(retryBounds).not.toBeNull();
+  expect(retryBounds!.height).toBeGreaterThanOrEqual(44);
+  await retry.click();
   await expect(page.getByRole('button', { name: /두 번째 계정 이름.*기본정보/ })).toBeVisible();
 });
 
