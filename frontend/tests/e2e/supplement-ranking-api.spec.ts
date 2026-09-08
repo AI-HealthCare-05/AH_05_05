@@ -68,7 +68,11 @@ async function loadProduct(page: Page, productId: string): Promise<unknown> {
 
 async function searchProducts(
   page: Page,
-  params: { query: string; sort: 'name' | 'registered' | 'rating' | 'reviews' },
+  params: {
+    query: string;
+    sort: 'name' | 'registered' | 'rating' | 'reviews';
+    direction?: 'asc' | 'desc';
+  },
 ): Promise<unknown> {
   return page.evaluate(async (searchParams) => {
     const supplementApi = await import('/src/entities/supplement/api.ts');
@@ -180,11 +184,14 @@ test('제품 ID로 상세 API를 조회해 추가 시트용 제품으로 매핑�
     recommendedSlots: ['morning'],
   });
 });
-test('실 검색 API에 sort를 전달하고 Decimal 평점을 숫자로 매핑한다', async ({ page }) => {
+test('실 검색 API에 sort와 direction을 전달하고 Decimal 평점을 숫자로 매핑한다', async ({ page }) => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   let requestedSort = '';
+  let requestedDirection = '';
   await page.route('**/api/v1/med/nutr?*', async (route) => {
-    requestedSort = new URL(route.request().url()).searchParams.get('sort') ?? '';
+    const searchParams = new URL(route.request().url()).searchParams;
+    requestedSort = searchParams.get('sort') ?? '';
+    requestedDirection = searchParams.get('direction') ?? '';
     await fulfillJson(route, {
       items: [{ ...PRODUCT_RESPONSE, rating_average: '4.2', review_count: 12 }],
       total: 1,
@@ -194,9 +201,14 @@ test('실 검색 API에 sort를 전달하고 Decimal 평점을 숫자로 매핑�
   });
   await page.goto('/dev/gallery');
 
-  const result = await searchProducts(page, { query: '종합비타민', sort: 'rating' });
+  const result = await searchProducts(page, {
+    query: '종합비타민',
+    sort: 'rating',
+    direction: 'asc',
+  });
 
   expect(requestedSort).toBe('rating');
+  expect(requestedDirection).toBe('asc');
   expect(result).toMatchObject({
     items: [{ productId: '2048', ratingAverage: 4.2, reviewCount: 12 }],
   });
@@ -214,4 +226,51 @@ test('목업 검색도 평점순에서 미평가 제품을 뒤로 보낸다', as
       { productId: 'sp-002', ratingAverage: null, reviewCount: 0 },
     ],
   });
+});
+
+test('목업 검색도 네 정렬 기준의 오름차순과 내림차순을 적용한다', async ({ page }) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+  await page.goto('/dev/gallery');
+
+  const cases = [
+    { sort: 'name', direction: 'asc', expectedIds: ['sp-002', 'sp-001'] },
+    { sort: 'name', direction: 'desc', expectedIds: ['sp-001', 'sp-002'] },
+    { sort: 'registered', direction: 'asc', expectedIds: ['sp-002', 'sp-001'] },
+    { sort: 'registered', direction: 'desc', expectedIds: ['sp-001', 'sp-002'] },
+    { sort: 'rating', direction: 'asc', expectedIds: ['sp-002', 'sp-001'] },
+    { sort: 'rating', direction: 'desc', expectedIds: ['sp-001', 'sp-002'] },
+    { sort: 'reviews', direction: 'asc', expectedIds: ['sp-002', 'sp-001'] },
+    { sort: 'reviews', direction: 'desc', expectedIds: ['sp-001', 'sp-002'] },
+  ] as const;
+
+  for (const testCase of cases) {
+    const result = (await searchProducts(page, {
+      query: '센트룸',
+      sort: testCase.sort,
+      direction: testCase.direction,
+    })) as { items: Array<{ productId: string }> };
+    expect(result.items.map((item) => item.productId)).toEqual(testCase.expectedIds);
+  }
+});
+
+test('목업 집계 정렬도 동률이면 서버처럼 제품 ID 오름차순을 사용한다', async ({ page }) => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+  await page.goto('/dev/gallery');
+
+  const cases = [
+    { sort: 'registered', expectedFirstIds: ['sp-004', 'sp-005', 'sp-006', 'sp-007', 'sp-009'] },
+    { sort: 'rating', expectedFirstIds: ['sp-002', 'sp-004', 'sp-005', 'sp-006', 'sp-007'] },
+    { sort: 'reviews', expectedFirstIds: ['sp-002', 'sp-004', 'sp-005', 'sp-006', 'sp-007'] },
+  ] as const;
+
+  for (const testCase of cases) {
+    const result = (await searchProducts(page, {
+      query: '종합비타민',
+      sort: testCase.sort,
+      direction: 'asc',
+    })) as { items: Array<{ productId: string }> };
+    expect(result.items.slice(0, 5).map((item) => item.productId)).toEqual(
+      testCase.expectedFirstIds,
+    );
+  }
 });
