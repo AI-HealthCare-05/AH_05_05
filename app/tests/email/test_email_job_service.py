@@ -88,6 +88,7 @@ class TestEmailJobService(TestCase):
             verification_id=27,
             recipient_email="recipient@example.com",
             verification_code="012345",
+            expires_in=60,
             expires_at=expires_at,
         )
 
@@ -103,6 +104,7 @@ class TestEmailJobService(TestCase):
         assert payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE
         assert payload.verification_id == 27
         assert payload.verification_code == "012345"
+        assert payload.expires_in == 60
         assert payload.expires_at == expires_at
 
     async def test_user_password_reset_job_references_user_and_encrypts_password(self) -> None:

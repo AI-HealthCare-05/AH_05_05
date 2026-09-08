@@ -418,7 +418,6 @@ export function HomePage({
                     />
                   </div>
                 )}
-                <HomeChallengeSummary empty={challengeEmpty} />
               </>
             ) : (
               <div
@@ -427,6 +426,7 @@ export function HomePage({
                 className="min-h-84 animate-pulse rounded-card bg-muted-bg"
               />
             )}
+            <HomeChallengeSummary empty={challengeEmpty} />
             {visibleSupplementRanking && (
               <SupplementRankingCard
                 ranking={visibleSupplementRanking}

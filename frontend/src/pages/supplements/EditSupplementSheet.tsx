@@ -71,9 +71,6 @@ export function EditSupplementSheet({
       await onSave(supplement.supplementId, {
         doseAmount,
         slots,
-        score,
-        note: note.trim() || null,
-        reviewBody: reviewBody.trim() || null,
       });
       onOpenChange(false);
     } catch {
@@ -105,8 +102,6 @@ export function EditSupplementSheet({
         doseAmount: supplement.doseAmount,
         slots: supplement.slots,
         score: ratingDraft,
-        note: note.trim() || null,
-        reviewBody: reviewBody.trim() || null,
       });
       setScore(ratingDraft);
       setRatingEditOpen(false);
@@ -121,14 +116,14 @@ export function EditSupplementSheet({
     if (!supplement) return;
     const nextNote = target === 'note' ? value : note;
     const nextReview = target === 'review' ? value : reviewBody;
-    await onSave(supplement.supplementId, {
+    const payload: UpdateSupplementPayload = {
       // Record editing must not silently save unsubmitted dose/slot edits underneath it.
       doseAmount: supplement.doseAmount,
       slots: supplement.slots,
-      score,
-      note: nextNote || null,
-      reviewBody: nextReview || null,
-    });
+    };
+    if (target === 'note') payload.note = nextNote || null;
+    else payload.reviewBody = nextReview || null;
+    await onSave(supplement.supplementId, payload);
     setNote(nextNote);
     setReviewBody(nextReview);
     setRecordEditTarget(null);
@@ -158,8 +153,8 @@ export function EditSupplementSheet({
                 className="rounded-card border border-border bg-card p-4 shadow-card"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="truncate text-xl font-bold text-foreground">{supplement.name}</h2>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="[overflow-wrap:anywhere] text-xl font-bold text-foreground">{supplement.name}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {formatDose(supplement.doseAmount, supplement.doseUnit)} ·{' '}
                       {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
@@ -291,7 +286,7 @@ export function EditSupplementSheet({
           className="gap-5 pb-6"
         >
           <DialogTitle className="text-2xl">별점 수정</DialogTitle>
-          <DialogDescription id="supplement-rating-description">
+          <DialogDescription id="supplement-rating-description" className="[overflow-wrap:anywhere]">
             {supplement?.name ?? '영양제'}는 어떠셨나요?
           </DialogDescription>
           <div role="group" aria-label="별점 선택" className="flex items-center justify-between">
@@ -330,13 +325,13 @@ export function EditSupplementSheet({
           className="gap-4 p-6"
         >
           <DialogHeader>
-            <DialogTitle>{supplement?.name ?? '영양제'} 복용을 중단할까요?</DialogTitle>
+            <DialogTitle className="[overflow-wrap:anywhere]">{supplement?.name ?? '영양제'} 복용을 중단할까요?</DialogTitle>
             <DialogDescription id="supplement-stop-description">
               성분 합계에서 제외됩니다. 다시 추가할 수 있어요.
             </DialogDescription>
           </DialogHeader>
           {supplement && (
-            <p className="rounded-control bg-danger-bg px-3 py-3 text-center text-sm font-bold text-danger-strong">
+            <p className="[overflow-wrap:anywhere] rounded-control bg-danger-bg px-3 py-3 text-center text-sm font-bold text-danger-strong">
               {supplement.name} · {formatDose(doseAmount, supplement.doseUnit)} ·{' '}
               {slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
             </p>
@@ -371,9 +366,11 @@ function SupplementRecordEditor({ target, value, maskedName, onSave, onClose }: 
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const label = target === 'note' ? '메모' : '후기';
+  const maxLength = 100;
+  const overLimit = draft.length > maxLength;
 
   async function save() {
-    if (saving) return;
+    if (saving || overLimit) return;
     setSaving(true);
     try {
       await onSave(draft.trim());
@@ -397,13 +394,19 @@ function SupplementRecordEditor({ target, value, maskedName, onSave, onClose }: 
             </span>
           </label>
           <textarea
-            id={fieldId} value={draft} maxLength={500} rows={3} disabled={saving}
+            id={fieldId} value={draft} maxLength={maxLength} rows={3} disabled={saving}
             placeholder={target === 'note' ? '복용하면서 기억할 점' : '먹어본 경험을 남겨주세요'}
             className="w-full resize-none rounded-input border border-input bg-card px-3.5 py-3 text-base text-foreground placeholder:text-disabled-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             onChange={event => setDraft(event.target.value)}
           />
+          <div className="flex items-start justify-between gap-3 text-xs">
+            <span role={overLimit ? 'alert' : undefined} className={overLimit ? 'text-danger-strong' : 'text-muted-foreground'}>
+              {overLimit ? '100자 이내로 줄여주세요.' : '최대 100자까지 입력할 수 있어요.'}
+            </span>
+            <span className="shrink-0 text-muted-foreground tnum">{draft.length} / {maxLength}</span>
+          </div>
         </div>
-        <Button disabled={saving} onClick={() => void save()}>{saving ? '저장 중...' : '저장'}</Button>
+        <Button disabled={saving || overLimit} onClick={() => void save()}>{saving ? '저장 중...' : '저장'}</Button>
       </DialogContent>
     </Dialog>
   );

@@ -539,12 +539,12 @@ function MedicationEpisodeSheet({
               <DialogDescription>완료된 처방은 내용만 확인할 수 있어요.</DialogDescription>
             </DialogHeader>
             {overview && (
-              <div className="flex flex-col gap-4" aria-label="완료된 처방 정보">
+              <div className="flex min-w-0 flex-col gap-4" aria-label="완료된 처방 정보">
                 <span className="self-start rounded-pill bg-muted-bg px-3 py-1.5 text-sm font-bold text-muted-foreground">
                   복용 완료
                 </span>
                 <div className="rounded-card border border-border bg-card p-4">
-                  <p className="text-lg font-bold text-foreground">
+                  <p className="[overflow-wrap:anywhere] text-lg font-bold text-foreground">
                     {alias.trim() || `${formatDateLabel(overview.start.date, { includeYear: true })} 처방`}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground tnum">
@@ -557,7 +557,7 @@ function MedicationEpisodeSheet({
                       key={medication.medicationId}
                       className="rounded-card border border-border bg-card p-4"
                     >
-                      <p className="font-bold text-foreground">
+                      <p className="[overflow-wrap:anywhere] font-bold text-foreground">
                         {medication.name}{' '}
                         <span className="font-normal text-muted-foreground">{medication.dose}</span>
                       </p>
@@ -591,7 +591,7 @@ function MedicationEpisodeSheet({
               <DialogDescription>약마다 복용 시간을 따로 골라요.</DialogDescription>
             </DialogHeader>
             {overview && (
-              <div className="flex flex-col gap-4">
+              <div className="flex min-w-0 flex-col gap-4">
                 <span className="self-start rounded-pill bg-primary-bg px-3 py-1.5 text-sm font-bold text-primary-strong">
                   복용 중
                 </span>
@@ -603,13 +603,21 @@ function MedicationEpisodeSheet({
                   value={alias}
                   onChange={(event) => onAliasChange(event.target.value)}
                 />
+                {alias && (
+                  <p
+                    aria-label="복약 별칭 전체"
+                    className="[overflow-wrap:anywhere] rounded-control bg-muted-bg px-3 py-2 text-sm text-foreground"
+                  >
+                    {alias}
+                  </p>
+                )}
                 <div className="flex flex-col gap-3">
                   {overview.medications.map((medication) => (
                     <div
                       key={medication.medicationId}
                       className="rounded-card border border-border bg-card p-3"
                     >
-                      <p className="font-bold text-foreground">
+                      <p className="[overflow-wrap:anywhere] font-bold text-foreground">
                         {medication.name}{' '}
                         <span className="font-normal text-muted-foreground">{medication.dose}</span>
                       </p>

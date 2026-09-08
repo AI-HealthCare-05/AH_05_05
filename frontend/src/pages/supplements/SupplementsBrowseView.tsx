@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
 import {
   getSupplementRanking,
   searchSupplementProducts,
   type SupplementProduct,
   type SupplementSearchPage,
+  type SupplementSortDirection,
   type SupplementSortKey,
 } from '@/entities/supplement';
 import { SupplementRankingCard } from '@/pages/home/SupplementRankingCard';
@@ -16,6 +17,26 @@ const SORT_OPTIONS: { key: SupplementSortKey; label: string }[] = [
   { key: 'rating', label: '평점순' },
   { key: 'reviews', label: '후기순' },
 ];
+
+const DEFAULT_SORT_DIRECTIONS: Record<SupplementSortKey, SupplementSortDirection> = {
+  name: 'asc',
+  registered: 'desc',
+  rating: 'desc',
+  reviews: 'desc',
+};
+
+const DIRECTION_OPTIONS: { key: SupplementSortDirection; label: string }[] = [
+  { key: 'asc', label: '오름차순' },
+  { key: 'desc', label: '내림차순' },
+];
+
+function searchRequestKey(
+  query: string,
+  sort: SupplementSortKey,
+  direction: SupplementSortDirection,
+): string {
+  return JSON.stringify([query.trim(), sort, direction]);
+}
 
 interface SupplementsBrowseViewProps {
   registeredProductIds: ReadonlySet<string>;
@@ -32,10 +53,21 @@ export function SupplementsBrowseView({
   const [rankingError, setRankingError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SupplementSortKey>('name');
+  const [direction, setDirection] = useState<SupplementSortDirection>('asc');
   const [results, setResults] = useState<SupplementSearchPage | null>(null);
+  const [resultsSearchKey, setResultsSearchKey] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const searchGenerationRef = useRef(0);
+  const currentSearchKey = searchRequestKey(query, sort, direction);
+  const currentSearchKeyRef = useRef(currentSearchKey);
+
+  function invalidateSearchRequests(nextSearchKey: string) {
+    currentSearchKeyRef.current = nextSearchKey;
+    searchGenerationRef.current += 1;
+    setLoadingMore(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -54,9 +86,13 @@ export function SupplementsBrowseView({
   }, []);
 
   useEffect(() => {
+    currentSearchKeyRef.current = currentSearchKey;
+    const generation = ++searchGenerationRef.current;
     const trimmedQuery = query.trim();
+    setLoadingMore(false);
     if (!trimmedQuery) {
       setResults(null);
+      setResultsSearchKey(null);
       setSearchError(null);
       setSearching(false);
       return;
@@ -66,20 +102,38 @@ export function SupplementsBrowseView({
     setSearching(true);
     setSearchError(null);
     const timer = window.setTimeout(() => {
-      searchSupplementProducts({ query: trimmedQuery, sort, offset: 0, limit: 20 })
+      searchSupplementProducts({ query: trimmedQuery, sort, direction, offset: 0, limit: 20 })
         .then((page) => {
-          if (!cancelled) setResults(page);
+          if (
+            !cancelled &&
+            searchGenerationRef.current === generation &&
+            currentSearchKeyRef.current === currentSearchKey
+          ) {
+            setResults(page);
+            setResultsSearchKey(currentSearchKey);
+          }
         })
         .catch((error: unknown) => {
-          if (!cancelled) {
+          if (
+            !cancelled &&
+            searchGenerationRef.current === generation &&
+            currentSearchKeyRef.current === currentSearchKey
+          ) {
             setResults(null);
+            setResultsSearchKey(null);
             setSearchError(
               error instanceof Error ? error.message : '검색 결과를 불러오지 못했어요.',
             );
           }
         })
         .finally(() => {
-          if (!cancelled) setSearching(false);
+          if (
+            !cancelled &&
+            searchGenerationRef.current === generation &&
+            currentSearchKeyRef.current === currentSearchKey
+          ) {
+            setSearching(false);
+          }
         });
     }, 250);
 
@@ -87,7 +141,7 @@ export function SupplementsBrowseView({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, sort]);
+  }, [currentSearchKey, direction, query, sort]);
 
   const visibleRanking = ranking
     ? {
@@ -102,25 +156,59 @@ export function SupplementsBrowseView({
   async function loadMore() {
     const nextOffset = results?.nextOffset;
     const trimmedQuery = query.trim();
-    if (nextOffset === null || nextOffset === undefined || !trimmedQuery || loadingMore) return;
+    if (
+      nextOffset === null ||
+      nextOffset === undefined ||
+      !trimmedQuery ||
+      loadingMore ||
+      searching ||
+      resultsSearchKey !== currentSearchKey
+    ) {
+      return;
+    }
+    const generation = searchGenerationRef.current;
+    const requestSearchKey = currentSearchKey;
     setLoadingMore(true);
     setSearchError(null);
     try {
       const next = await searchSupplementProducts({
         query: trimmedQuery,
         sort,
+        direction,
         offset: nextOffset,
         limit: 20,
       });
-      setResults((current) =>
-        current
+      if (
+        searchGenerationRef.current !== generation ||
+        currentSearchKeyRef.current !== requestSearchKey
+      ) {
+        return;
+      }
+      setResults((current) => {
+        if (
+          searchGenerationRef.current !== generation ||
+          currentSearchKeyRef.current !== requestSearchKey
+        ) {
+          return current;
+        }
+        return current
           ? { ...next, items: [...current.items, ...next.items], total: next.total }
-          : next,
-      );
+          : next;
+      });
     } catch (error: unknown) {
-      setSearchError(error instanceof Error ? error.message : '검색 결과를 더 불러오지 못했어요.');
+      if (
+        searchGenerationRef.current === generation &&
+        currentSearchKeyRef.current === requestSearchKey
+      ) {
+        setSearchError(error instanceof Error ? error.message : '검색 결과를 더 불러오지 못했어요.');
+      }
     } finally {
-      setLoadingMore(false);
+      if (
+        searchGenerationRef.current === generation &&
+        currentSearchKeyRef.current === requestSearchKey
+      ) {
+        setLoadingMore(false);
+      }
     }
   }
 
@@ -137,31 +225,64 @@ export function SupplementsBrowseView({
           value={query}
           placeholder="제품명 또는 성분 검색"
           className="h-12 w-full rounded-input border border-border bg-card pl-11 pr-4 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            const nextQuery = event.target.value;
+            invalidateSearchRequests(searchRequestKey(nextQuery, sort, direction));
+            setQuery(nextQuery);
+          }}
         />
       </label>
 
-      <div className="grid grid-cols-4 gap-2" role="group" aria-label="검색 결과 정렬">
-        {SORT_OPTIONS.map((option) => {
-          const selected = sort === option.key;
-          return (
-            <button
-              key={option.key}
-              type="button"
-              aria-pressed={selected}
-              className={`min-h-touch rounded-pill px-2 text-sm font-bold ${
-                selected ? 'bg-primary text-card' : 'bg-muted-bg text-muted-foreground'
-              }`}
-              onClick={() => {
-                setSort(option.key);
-                setResults(null);
-              }}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
+      {results && results.items.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-4 gap-2" role="group" aria-label="검색 결과 정렬">
+            {SORT_OPTIONS.map((option) => {
+              const selected = sort === option.key;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  aria-pressed={selected}
+                  className={`min-h-touch rounded-pill px-2 text-sm font-bold ${
+                    selected ? 'bg-primary text-card' : 'bg-muted-bg text-muted-foreground'
+                  }`}
+                  onClick={() => {
+                    if (selected) return;
+                    const nextDirection = DEFAULT_SORT_DIRECTIONS[option.key];
+                    invalidateSearchRequests(searchRequestKey(query, option.key, nextDirection));
+                    setSort(option.key);
+                    setDirection(nextDirection);
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="정렬 방향">
+            {DIRECTION_OPTIONS.map((option) => {
+              const selected = direction === option.key;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  aria-pressed={selected}
+                  className={`min-h-touch rounded-pill px-3 text-sm font-bold ${
+                    selected ? 'bg-primary text-card' : 'bg-muted-bg text-muted-foreground'
+                  }`}
+                  onClick={() => {
+                    if (selected) return;
+                    invalidateSearchRequests(searchRequestKey(query, sort, option.key));
+                    setDirection(option.key);
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {query.trim() ? (
         <SearchResults
@@ -169,6 +290,9 @@ export function SupplementsBrowseView({
           registeredProductIds={registeredProductIds}
           searching={searching}
           loadingMore={loadingMore}
+          loadMoreDisabled={
+            loadingMore || searching || resultsSearchKey !== currentSearchKey
+          }
           error={searchError}
           onSelectProduct={onSelectProduct}
           onLoadMore={loadMore}
@@ -193,6 +317,7 @@ function SearchResults({
   registeredProductIds,
   searching,
   loadingMore,
+  loadMoreDisabled,
   error,
   onSelectProduct,
   onLoadMore,
@@ -201,6 +326,7 @@ function SearchResults({
   registeredProductIds: ReadonlySet<string>;
   searching: boolean;
   loadingMore: boolean;
+  loadMoreDisabled: boolean;
   error: string | null;
   onSelectProduct: (productId: string) => void;
   onLoadMore: () => void;
@@ -232,7 +358,7 @@ function SearchResults({
       </Card>
       {error && <p className="text-sm text-danger-strong">{error}</p>}
       {results.nextOffset !== null && (
-        <Button variant="secondary" disabled={loadingMore} onClick={onLoadMore}>
+        <Button variant="secondary" disabled={loadMoreDisabled} onClick={onLoadMore}>
           {loadingMore ? '불러오는 중...' : '더 보기'}
         </Button>
       )}
@@ -257,7 +383,7 @@ function SearchResultItem({
         onClick={onSelect}
       >
         <span className="min-w-0 flex-1">
-          <strong className="block truncate text-base text-foreground">{product.productName}</strong>
+          <strong className="block [overflow-wrap:anywhere] text-base text-foreground">{product.productName}</strong>
           {product.ratingAverage !== null && product.reviewCount > 0 && (
             <span className="mt-1 block text-sm font-bold text-warning-strong">
               ★{product.ratingAverage.toFixed(1)} · {product.reviewCount}

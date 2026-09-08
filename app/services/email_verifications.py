@@ -38,6 +38,7 @@ class SignupVerificationEmailEnqueuer(Protocol):
         verification_id: int,
         recipient_email: str,
         verification_code: str,
+        expires_in: int,
         expires_at: datetime,
     ) -> BackgroundJob: ...
 
@@ -129,6 +130,7 @@ class EmailVerificationService:
             verification_id=verification.id,
             recipient_email=normalized_email,
             verification_code=code,
+            expires_in=config.EMAIL_VERIFICATION_TTL_SECONDS,
             expires_at=expires_at,
         )
         if job.status is BackgroundJobStatus.FAILED:

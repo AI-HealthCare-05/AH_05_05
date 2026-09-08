@@ -38,6 +38,13 @@ import { ChallengeCreatePage } from '@/pages/challenges/ChallengeCreatePage';
 import { ChallengeBadgesPage } from '@/pages/challenges/ChallengeBadgesPage';
 import { ChallengeBadgePage } from '@/pages/challenges/ChallengeBadgePage';
 import { ChallengeRecordPage } from '@/pages/challenges/ChallengeRecordPage';
+import { OfficialChallengeBrowsePage } from '@/pages/challenges/OfficialChallengeBrowsePage';
+import { OfficialChallengeDetailPage } from '@/pages/challenges/OfficialChallengeDetailPage';
+import { OfficialChallengeMyPage } from '@/pages/challenges/OfficialChallengeMyPage';
+import { OfficialChallengeParticipationPage } from '@/pages/challenges/OfficialChallengeParticipationPage';
+import { OfficialChallengeBadgesPage } from '@/pages/challenges/OfficialChallengeBadgesPage';
+import { OfficialChallengeBadgePage } from '@/pages/challenges/OfficialChallengeBadgePage';
+import { OfficialChallengeComingSoonPage } from '@/pages/challenges/OfficialChallengeComingSoonPage';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import type { ChatMessage, ChatSessionSummary, SendChatResult } from '@/entities/chat';
 import {
@@ -207,19 +214,19 @@ export function AppRouter() {
         <Route path="/login" element={<AuthPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/challenges" element={<ChallengeLayout />}>
-          <Route index element={<ChallengeMyPage />} />
-          <Route path="browse" element={<ChallengeBrowsePage />} />
-          <Route path="official/:challengeId" element={<OfficialChallengePage />} />
-          <Route path="participations/:participationId" element={<ChallengeParticipationPage />} />
-          <Route path="tailored" element={<ChallengeTailoredPage />} />
-          <Route path="tailored/:kind" element={<ChallengeTargetPage />} />
-          <Route path="create" element={<ChallengeCreatePage />} />
-          <Route path="badges" element={<ChallengeBadgesPage />} />
-          <Route path="badges/:badgeId" element={<ChallengeBadgePage />} />
-          <Route path="participations/:participationId/records/:itemId" element={<ChallengeRecordPage />} />
-        </Route>
         <Route element={<RequireAuthentication />}>
+          <Route path="/challenges" element={<ChallengeLayout />}>
+            <Route index element={<OfficialChallengeMyPage />} />
+            <Route path="browse" element={<OfficialChallengeBrowsePage />} />
+            <Route path="official/:challengeId" element={<OfficialChallengeDetailPage />} />
+            <Route path="participations/:participationId" element={<OfficialChallengeParticipationPage />} />
+            <Route path="tailored" element={<OfficialChallengeComingSoonPage feature="tailored" />} />
+            <Route path="tailored/:kind" element={<OfficialChallengeComingSoonPage feature="tailored" />} />
+            <Route path="create" element={<OfficialChallengeComingSoonPage feature="personal" />} />
+            <Route path="badges" element={<OfficialChallengeBadgesPage />} />
+            <Route path="badges/:badgeId" element={<OfficialChallengeBadgePage />} />
+            <Route path="participations/:participationId/records/:itemId" element={<OfficialChallengeComingSoonPage feature="tailored" />} />
+          </Route>
           <Route path="/supplements" element={<SupplementsPage />} />
           <Route path="/supplements/product/:productId" element={<SupplementProductPage />} />
           <Route path="/document-upload" element={<DocumentUploadPage />} />
