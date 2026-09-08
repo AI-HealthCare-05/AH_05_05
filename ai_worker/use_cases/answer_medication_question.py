@@ -53,13 +53,18 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
     known_supplement_names_in,
     supplement_pair_matches_text,
 )
+from ai_worker.rag.query_builders.coverage_gap_query_expander import (
+    CoverageGapQueryExpander,
+)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
+    KnowledgeCoverageRetryObservation,
     KnowledgeDocumentType,
     KnowledgeRetrievalDiagnostics,
     KnowledgeRetrievalResult,
     KnowledgeSectionType,
+    RetrievedKnowledgeChunk,
 )
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -75,6 +80,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
     MedicationChatSource,
     MedicationChatSourceKind,
+    MedicationEvidenceCoverage,
     MedicationGuideLookup,
 )
 from ai_worker.schemas.medication_search import (
@@ -120,6 +126,15 @@ class _KnowledgeRetrievalAttempt:
             "rag_error_type": type(self.error).__name__,
             "rag_error_cause_type": type(cause).__name__ if cause is not None else type(self.error).__name__,
         }
+
+
+@dataclass(frozen=True)
+class _CoverageRetryOutcome:
+    retrieval: KnowledgeRetrievalResult
+    chunks: list[RetrievedKnowledgeChunk]
+    answer_chunks: list[RetrievedKnowledgeChunk]
+    rag_unavailable: bool
+    evidence_coverage: MedicationEvidenceCoverage
 
 
 class AnswerMedicationQuestionUseCase:
@@ -369,6 +384,24 @@ class AnswerMedicationQuestionUseCase:
                 has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
             ),
         )
+        coverage_retry = await self._retry_for_missing_coverage(
+            retrieval=retrieval,
+            query_plan=query_plan,
+            execution_plan=execution_plan,
+            guide_lookup=guide_lookup,
+            rules=rules,
+            chunks=chunks,
+            answer_chunks=answer_chunks,
+            prefer_supplement=(
+                has_supplement_evidence and not query_plan.has_medication_product_cue and not interaction_question
+            ),
+            rag_unavailable=rag_unavailable,
+        )
+        retrieval = coverage_retry.retrieval
+        chunks = coverage_retry.chunks
+        answer_chunks = coverage_retry.answer_chunks
+        rag_unavailable = coverage_retry.rag_unavailable
+        evidence_coverage = coverage_retry.evidence_coverage
         evidence = MedicationEvidenceBundle(
             query_plan=query_plan,
             execution_plan=execution_plan,
@@ -424,12 +457,6 @@ class AnswerMedicationQuestionUseCase:
             rule_status=execution_plan.approved_rule_status,
         )
         safety_status = SafetyStatus.RESTRICTED if safety_reason_codes else SafetyStatus.SAFE
-        evidence_coverage = MedicationEvidenceCoverageEvaluator().evaluate(
-            query_plan=query_plan,
-            guide_lookup=guide_lookup,
-            rules=rules,
-            chunks=answer_chunks,
-        )
         async with self._tracer.span(
             "answer.evidence_coverage",
         ) as coverage_span:
@@ -1167,6 +1194,121 @@ class AnswerMedicationQuestionUseCase:
                 error=error,
             )
         return _KnowledgeRetrievalAttempt(result=retrieval)
+
+    async def _retry_for_missing_coverage(
+        self,
+        *,
+        retrieval: KnowledgeRetrievalResult,
+        query_plan: MedicationKnowledgeQueryPlan,
+        execution_plan: MedicationSearchExecutionPlan,
+        guide_lookup: MedicationGuideLookup,
+        rules: list[InteractionRuleFact],
+        chunks: list[RetrievedKnowledgeChunk],
+        answer_chunks: list[RetrievedKnowledgeChunk],
+        prefer_supplement: bool,
+        rag_unavailable: bool,
+    ) -> _CoverageRetryOutcome:
+        evaluator = MedicationEvidenceCoverageEvaluator()
+        before = evaluator.evaluate(
+            query_plan=query_plan,
+            guide_lookup=guide_lookup,
+            rules=rules,
+            chunks=answer_chunks,
+        )
+        retry = CoverageGapQueryExpander().build(
+            query_plan=query_plan,
+            missing_section_types=before.missing_section_types,
+        )
+        if retry is None:
+            return _CoverageRetryOutcome(
+                retrieval=retrieval,
+                chunks=chunks,
+                answer_chunks=answer_chunks,
+                rag_unavailable=rag_unavailable,
+                evidence_coverage=before,
+            )
+        if rag_unavailable:
+            observation = KnowledgeCoverageRetryObservation(
+                attempted=False,
+                query_count=1,
+                missing_before=before.missing_section_types,
+                missing_after=before.missing_section_types,
+            )
+            return _CoverageRetryOutcome(
+                retrieval=retrieval.model_copy(update={"coverage_retry": observation}),
+                chunks=chunks,
+                answer_chunks=answer_chunks,
+                rag_unavailable=True,
+                evidence_coverage=before,
+            )
+
+        retry_execution_plan = execution_plan.model_copy(
+            update={"query_plan": retry.query_plan},
+        )
+        async with self._tracer.span(
+            "rag.coverage_retry",
+            run_type="retriever",
+        ) as retry_span:
+            retry_attempt = await self._retrieve_knowledge(
+                execution_plan=retry_execution_plan,
+            )
+            combined_chunks = self._unique_chunks(
+                [*chunks, *retry_attempt.result.chunks],
+            )
+            combined_answer_chunks = self._authoritative_chunks(
+                guide_lookup=guide_lookup,
+                chunks=combined_chunks,
+                prefer_supplement=prefer_supplement,
+            )
+            after = evaluator.evaluate(
+                query_plan=query_plan,
+                guide_lookup=guide_lookup,
+                rules=rules,
+                chunks=combined_answer_chunks,
+            )
+            retry_unavailable = rag_unavailable or retry_attempt.unavailable
+            observation = KnowledgeCoverageRetryObservation(
+                attempted=True,
+                query_count=2,
+                missing_before=before.missing_section_types,
+                missing_after=after.missing_section_types,
+            )
+            retry_span.end(
+                {
+                    "attempted": observation.attempted,
+                    "query_count": observation.query_count,
+                    "missing_before": [section.value for section in observation.missing_before],
+                    "missing_after": [section.value for section in observation.missing_after],
+                    "rag_unavailable": retry_unavailable,
+                }
+            )
+
+        return _CoverageRetryOutcome(
+            retrieval=retrieval.model_copy(
+                update={
+                    "chunks": combined_chunks,
+                    "coverage_retry": observation,
+                }
+            ),
+            chunks=combined_chunks,
+            answer_chunks=combined_answer_chunks,
+            rag_unavailable=retry_unavailable,
+            evidence_coverage=after,
+        )
+
+    @staticmethod
+    def _unique_chunks(
+        chunks: list[RetrievedKnowledgeChunk],
+    ) -> list[RetrievedKnowledgeChunk]:
+        unique: list[RetrievedKnowledgeChunk] = []
+        seen_hashes: set[str] = set()
+        for chunk in chunks:
+            content_hash = chunk.metadata.content_hash
+            if content_hash in seen_hashes:
+                continue
+            seen_hashes.add(content_hash)
+            unique.append(chunk)
+        return unique
 
     @classmethod
     def _build_execution_plan(

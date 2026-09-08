@@ -429,9 +429,21 @@ class KnowledgeRetrievalDiagnostics(BaseModel):
     )
 
 
+class KnowledgeCoverageRetryObservation(BaseModel):
+    """근거 커버리지 부족으로 수행한 최대 한 번의 재검색 관측값."""
+
+    attempted: bool = False
+    query_count: int = Field(default=1, ge=1, le=2)
+    missing_before: list[KnowledgeSectionType] = Field(default_factory=list)
+    missing_after: list[KnowledgeSectionType] = Field(default_factory=list)
+
+
 class KnowledgeRetrievalResult(BaseModel):
     chunks: list[RetrievedKnowledgeChunk] = Field(default_factory=list)
     diagnostics: KnowledgeRetrievalDiagnostics
+    coverage_retry: KnowledgeCoverageRetryObservation = Field(
+        default_factory=KnowledgeCoverageRetryObservation,
+    )
 
 
 def normalize_interaction_pair_keys(values: list[str]) -> list[str]:

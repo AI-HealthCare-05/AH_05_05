@@ -254,6 +254,42 @@ class RecordingQueryPlanRetriever(FakeKnowledgeRetriever):
         )
 
 
+class SequencedKnowledgeRetriever(FakeKnowledgeRetriever):
+    def __init__(self, responses: list[list[RetrievedKnowledgeChunk]]) -> None:
+        super().__init__()
+        self.responses = list(responses)
+        self.execution_plans = []
+
+    async def search_with_diagnostics(
+        self,
+        *,
+        execution_plan,
+    ) -> KnowledgeRetrievalResult:
+        self.execution_plans.append(execution_plan)
+        chunks = self.responses.pop(0)
+        return KnowledgeRetrievalResult(
+            chunks=chunks,
+            diagnostics=KnowledgeRetrievalDiagnostics(
+                raw_candidate_count=len(chunks),
+                entity_filtered_count=0,
+                broad_candidate_count=len(chunks),
+                eligible_candidate_count=len(chunks),
+                rejected_below_score_count=0,
+                rejected_entity_mismatch_count=0,
+                rejected_pair_mismatch_count=0,
+                accepted_count=len(chunks),
+                max_raw_score=max(
+                    (chunk.similarity_score for chunk in chunks),
+                    default=None,
+                ),
+                max_score=max(
+                    (chunk.similarity_score for chunk in chunks),
+                    default=None,
+                ),
+            ),
+        )
+
+
 class PassthroughGenerator:
     async def generate(
         self,
@@ -1074,6 +1110,78 @@ async def test_execute_records_requested_covered_and_missing_answer_sections() -
         "missing_section_types": ["DAILY_INTAKE"],
         "verified_interaction_pair_count": 0,
     }
+
+
+async def test_execute_retries_once_for_missing_evidence_section() -> None:
+    function_chunk = build_chunk().model_copy(
+        update={
+            "content": "마그네슘은 정상적인 근육 기능에 필요합니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_id": "magnesium-function",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    caution_chunk = function_chunk.model_copy(
+        update={
+            "chunk_id": "c" * 64,
+            "content": "섭취 전 개인 상태와 다른 복용 제품을 확인합니다.",
+            "metadata": function_chunk.metadata.model_copy(
+                update={
+                    "section_type": KnowledgeSectionType.CAUTION,
+                    "chunk_index": 1,
+                    "content_hash": "d" * 64,
+                }
+            ),
+        }
+    )
+    retriever = SequencedKnowledgeRetriever([[function_chunk], [caution_chunk]])
+    tracer = RecordingChatTracer()
+
+    result = await build_use_case(
+        retriever=retriever,
+        tracer=tracer,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+    ).execute(build_request("마그네슘의 효능과 주의사항을 알려줘"))
+
+    assert len(retriever.execution_plans) == 2
+    assert retriever.execution_plans[1].query_plan.expanded_query == "마그네슘 주의사항 이상반응"
+    assert result.evidence_coverage is not None
+    assert result.evidence_coverage.missing_section_types == []
+    retry_outputs = next(span.outputs for span in tracer.spans if span.name == "rag.coverage_retry")
+    assert retry_outputs == {
+        "attempted": True,
+        "query_count": 2,
+        "missing_before": ["CAUTION"],
+        "missing_after": [],
+        "rag_unavailable": False,
+    }
+
+
+async def test_execute_does_not_retry_when_initial_evidence_is_complete() -> None:
+    chunk = build_chunk().model_copy(
+        update={
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    retriever = SequencedKnowledgeRetriever([[chunk]])
+
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+
+    assert len(retriever.execution_plans) == 1
 
 
 async def test_execute_records_fallback_reason_without_answer_content() -> None:

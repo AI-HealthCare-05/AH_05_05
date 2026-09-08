@@ -109,10 +109,10 @@
 
 **Produces:** One deterministic query expansion/sub-query retrieval only when requested evidence sections are missing; repeated retries are impossible.
 
-- [ ] Write failing tests for a missing `CAUTION` section that causes one retry and for complete coverage that causes none.
-- [ ] Implement the expansion from typed entities and missing sections; merge only additional authoritative chunks.
-- [ ] Trace retry cause, query count, and coverage before/after without persisting question contents by default.
-- [ ] Record latency and coverage change, then commit.
+- [x] Write failing tests for a missing `CAUTION` section that causes one retry and for complete coverage that causes none.
+- [x] Implement the expansion from typed entities and missing sections; merge only additional authoritative chunks.
+- [x] Trace retry cause, query count, and coverage before/after without persisting question contents by default.
+- [x] Record latency and coverage change, then commit. Live P50/P95 comparison remains `PARTIAL` until the fixed evaluation set is rerun.
 
 ### Task 7: Use conditional structured LLM interpretation
 
