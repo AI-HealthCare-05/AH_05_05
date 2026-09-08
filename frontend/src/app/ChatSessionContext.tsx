@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useSession } from './SessionContext';
 
 interface ChatSessionValue {
@@ -14,18 +14,21 @@ interface ChatSessionValue {
 
 const ChatSessionContext = createContext<ChatSessionValue | null>(null);
 
-/** 현재 앱 실행에서 열어둔 채팅방만 기억하고, 메시지는 entities/chat에서 다시 읽습니다. */
 export function ChatSessionProvider({ children }: { children: ReactNode }) {
   const { principalKey } = useSession();
+
+  return (
+    <PrincipalChatSessionProvider key={principalKey ?? 'guest'}>
+      {children}
+    </PrincipalChatSessionProvider>
+  );
+}
+
+/** 현재 계정이 앱 실행 중 열어둔 채팅방만 기억하고, 메시지는 entities/chat에서 다시 읽습니다. */
+function PrincipalChatSessionProvider({ children }: { children: ReactNode }) {
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [sessionRevision, setSessionRevision] = useState(0);
   const [pendingRequestIds, setPendingRequestIds] = useState<Set<string>>(() => new Set());
-
-  useEffect(() => {
-    // 로그아웃하거나 다른 계정으로 바뀌면 앱 메모리의 대화 선택·전송 상태를 넘기지 않습니다.
-    setActiveSessionId(null);
-    setPendingRequestIds(new Set());
-  }, [principalKey]);
 
   const value = useMemo(
     () => ({
