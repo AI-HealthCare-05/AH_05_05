@@ -167,6 +167,27 @@
     line-height: var(--text-base--line-height);
   }
 
+  /* 페이지, 중첩 스크롤 영역, body로 포털되는 대화상자의 스크롤 동작은 유지하고 막대만 숨깁니다. */
+  html,
+  body,
+  #root,
+  #root *,
+  [data-slot="dialog-content"],
+  [data-slot="dialog-content"] * {
+    scrollbar-width: none;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  #root::-webkit-scrollbar,
+  #root *::-webkit-scrollbar,
+  [data-slot="dialog-content"]::-webkit-scrollbar,
+  [data-slot="dialog-content"] *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   /* 의료 정보 앱이므로 확대/축소를 막지 않습니다(접근성). */
   * {
     -webkit-tap-highlight-color: transparent;
