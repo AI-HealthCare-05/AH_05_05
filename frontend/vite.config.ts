@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      allowedHosts: ['bracket-constitution-stations-identifier.trycloudflare.com'],
       proxy: {
         // 경로를 그대로 넘깁니다. 백엔드 라우트가 /api/v1/... 이라 접두사를 떼면 404 가 됩니다.
         '/api': {

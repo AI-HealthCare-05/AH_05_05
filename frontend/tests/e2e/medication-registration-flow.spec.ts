@@ -1047,6 +1047,42 @@ test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할
   );
 });
 
+test('HTTP 모바일에서 randomUUID 없이 촬영 사진을 업로드하고 OCR 결과를 표시한다', async ({ page }, testInfo) => {
+  test.slow();
+  await authenticate(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined });
+  });
+  const trace = await interceptDocumentRegistration(page);
+  await page.goto('/document-upload');
+  await page.getByLabel('카메라로 약봉투 촬영').setInputFiles({
+    name: 'camera-photo.png',
+    mimeType: 'image/png',
+    buffer: ONE_PIXEL_PNG,
+  });
+  await page.getByRole('button', { name: '등록하기' }).click();
+  await expect.poll(() => trace.uploads.length).toBeGreaterThan(0);
+  await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible({ timeout: 10_000 });
+  expect(trace.uploads[0].body).toContain('filename="camera-photo.png"');
+  expect(trace.uploads[0].headers['idempotency-key']).toBeTruthy();
+  expect(trace.polls).toHaveLength(3);
+  await page.screenshot({ path: testInfo.outputPath('mobile-ocr-result.png'), fullPage: true });
+
+  // 재시도는 같은 키를 유지하고 별도 촬영 파일은 새 키를 받아야 합니다.
+  await page.evaluate(async () => {
+    const modulePath = '/src/entities/document/api.ts';
+    const { uploadDocument } = await import(modulePath);
+    const file = new File(['retry'], 'retry.png', { type: 'image/png' });
+    await uploadDocument(file);
+    await uploadDocument(file);
+    await uploadDocument(new File(['retry'], 'retry.png', { type: 'image/png' }));
+  });
+  const keys = trace.uploads.slice(-3).map((request) => request.headers['idempotency-key']);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[0]).toBe(keys[1]);
+  expect(keys[2]).not.toBe(keys[0]);
+});
+
 test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한다', async ({ page }) => {
   test.slow();
   await authenticate(page);
@@ -1096,15 +1132,15 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('1일 횟수 미추출');
   await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('투약일수 미추출');
 
-  await page.getByRole('button', { name: /리바록사반 10mg/ }).click();
+  await page.getByRole('button', { name: /^리바록사반 .*함량 10mg/ }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('리바록사반 수정');
   await editDialog.getByLabel('함량').fill('15mg');
   await editDialog.getByLabel('1회 투약량').fill('0.5정');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page.getByRole('button', { name: /리바록사반 수정 15mg/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^리바록사반 수정 .*함량 15mg/ })).toBeVisible();
 
-  await page.getByRole('button', { name: /아세트아미노펜 650mg/ }).click();
+  await page.getByRole('button', { name: /^아세트아미노펜 .*함량 650mg/ }).click();
   const prnDialog = page.getByRole('dialog');
   await prnDialog.getByRole('combobox').click();
   await page.getByRole('option', { name: '필요 시', exact: true }).click();
@@ -1123,11 +1159,11 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await addDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByRole('heading', { name: '약 5개' })).toBeVisible();
 
-  await page.getByRole('button', { name: /셀레콕시브 200mg/ }).click();
+  await page.getByRole('button', { name: /^셀레콕시브 함량 200mg/ }).click();
   const deleteDialog = page.getByRole('dialog');
   await deleteDialog.getByRole('button', { name: '이 약 삭제' }).click();
   await deleteDialog.getByRole('button', { name: '삭제', exact: true }).click();
-  await expect(page.getByRole('button', { name: /셀레콕시브 200mg/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^셀레콕시브 함량 200mg/ })).toHaveCount(0);
 
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
