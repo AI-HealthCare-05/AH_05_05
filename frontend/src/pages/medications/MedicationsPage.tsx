@@ -397,7 +397,7 @@ export function MedicationsPage({
             <div className="flex flex-col gap-4">
               <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
               <Button variant="secondary" onClick={() => setFilterOpen(true)}>
-                기간 넓히기
+                기간 재설정하기
               </Button>
             </div>
           </Card>
