@@ -1,6 +1,6 @@
 import re
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol, cast
@@ -266,6 +266,7 @@ class KnowledgePilotPreprocessingService:
         sources_path: Path,
         output_root: Path,
         dataset_version: str,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> KnowledgePilotPreprocessingResult:
         normalized_version = dataset_version.strip()
         if not normalized_version:
@@ -325,7 +326,13 @@ class KnowledgePilotPreprocessingService:
                 release_chunk_output=release_chunk_output,
             )
 
-        for pilot in pilot_manifest.pilots:
+        for current, pilot in enumerate(pilot_manifest.pilots, start=1):
+            self._report_progress(
+                progress_callback=progress_callback,
+                current=current,
+                total=len(pilot_manifest.pilots),
+                document_id=pilot.document_id,
+            )
             skip_reason = self._skip_reason(pilot.processing_status)
             if skip_reason:
                 skipped.append(
@@ -462,6 +469,17 @@ class KnowledgePilotPreprocessingService:
             result.model_dump_json(indent=2),
         )
         return result
+
+    @staticmethod
+    def _report_progress(
+        *,
+        progress_callback: Callable[[int, int, str], None] | None,
+        current: int,
+        total: int,
+        document_id: str,
+    ) -> None:
+        if progress_callback is not None:
+            progress_callback(current, total, document_id)
 
     @classmethod
     def _write_candidate_and_release_outputs(

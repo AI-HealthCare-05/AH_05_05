@@ -85,6 +85,23 @@ documents:
     assert matches == []
 
 
+def test_source_backed_calcium_iron_annotation_uses_only_its_review_document() -> None:
+    repo_root = Path(__file__).parents[4]
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        repo_root / "data/knowledge/manifests/interaction_annotations.yaml",
+    )
+
+    matches = registry.find_matches(
+        document_id="research_supplement_interactions-016c81c9a3e29ebd",
+        text="This review discusses calcium intake and iron absorption.",
+    )
+
+    assert len(matches) == 1
+    assert matches[0].pair_type == InteractionPairType.SUPPLEMENT_SUPPLEMENT
+    assert matches[0].ingredient_names == ["칼슘", "철분"]
+    assert matches[0].food_names == []
+
+
 def test_rejects_blank_alias_that_would_match_every_chunk(
     tmp_path: Path,
 ) -> None:

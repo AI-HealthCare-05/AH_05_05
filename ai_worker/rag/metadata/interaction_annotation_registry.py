@@ -183,14 +183,9 @@ class KnowledgeInteractionAnnotationRegistry:
                         entity.display_name for entity in entities if entity.kind == InteractionEntityKind.SUPPLEMENT
                     ],
                     food_names=[
-                        entity.display_name
-                        for entity in entities
-                        if entity.kind == InteractionEntityKind.FOOD
+                        entity.display_name for entity in entities if entity.kind == InteractionEntityKind.FOOD
                     ],
-                    entity_catalog_entries=[
-                        self._catalog_entry(entity)
-                        for entity in entities
-                    ],
+                    entity_catalog_entries=[self._catalog_entry(entity) for entity in entities],
                     interaction_pair_keys=[build_interaction_pair_key(left, right)],
                 )
             )

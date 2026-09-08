@@ -4,14 +4,20 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Protocol
 
+from ai_worker.chains.medication_query_plan_chain import (
+    MedicationQueryPlanChain,
+    MedicationQueryPlanChainInput,
+    MedicationQuestionPlanResult,
+    build_medication_query_plan_chain,
+)
 from ai_worker.domain.medication_evidence_coverage import (
     MedicationEvidenceCoverageEvaluator,
 )
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
-from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
-    MedicationKnowledgeQueryBuilder,
+from ai_worker.domain.medication_question_retrieval_policy import (
+    should_execute_source_backed_retrieval,
 )
 from ai_worker.schemas.interaction import InteractionPairType
 from ai_worker.schemas.knowledge import (
@@ -26,7 +32,6 @@ from ai_worker.schemas.medication_search import (
     MedicationExpressionResolutionStatus,
     MedicationKnowledgeQueryPlan,
     MedicationQuestionResolution,
-    MedicationQuestionScope,
     MedicationSearchExecutionPlan,
 )
 from ai_worker.schemas.medication_search_evaluation import (
@@ -77,8 +82,8 @@ class MedicationSearchBaselineEvaluator:
         self,
         *,
         question_resolver: RuleBasedMedicationQuestionResolver,
-        query_builder: MedicationKnowledgeQueryBuilder,
         knowledge_retriever: DiagnosticKnowledgeRetriever,
+        query_plan_chain: MedicationQueryPlanChain | None = None,
         timer: Callable[[], float] = perf_counter,
         embedding_model_name: str | None = None,
         embedding_dimension: int | None = None,
@@ -87,7 +92,7 @@ class MedicationSearchBaselineEvaluator:
         embedding_vectors_normalized: bool = False,
     ) -> None:
         self._question_resolver = question_resolver
-        self._query_builder = query_builder
+        self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
         self._knowledge_retriever = knowledge_retriever
         self._timer = timer
         self._embedding_model_name = embedding_model_name
@@ -136,11 +141,7 @@ class MedicationSearchBaselineEvaluator:
         )
         retrieval_selected_total = sum(len(result.selected_chunk_ids) for result in retrieval_results)
         latencies = sorted(result.search_latency_ms for result in retrieval_results)
-        active_results = [
-            result
-            for result in results
-            if result.phase == MedicationEvaluationPhase.ACTIVE_PHASE
-        ]
+        active_results = [result for result in results if result.phase == MedicationEvaluationPhase.ACTIVE_PHASE]
 
         return MedicationSearchBaselineReport(
             experiment_goal=manifest.experiment_goal,
@@ -269,7 +270,15 @@ class MedicationSearchBaselineEvaluator:
                 search_latency_ms=0.0,
             )
 
-        query_plan = self._query_builder.build(resolution.resolved_question)
+        plan_result = await self._query_plan_chain.ainvoke(
+            MedicationQueryPlanChainInput(
+                question=resolution.resolved_question,
+                resolution=resolution,
+            ),
+        )
+        if isinstance(plan_result, dict):
+            plan_result = MedicationQuestionPlanResult.model_validate(plan_result)
+        query_plan = plan_result.query_plan
         started_at = self._timer()
         retrieval = await self._knowledge_retriever.search_with_diagnostics(
             execution_plan=MedicationSearchExecutionPlan(
@@ -291,11 +300,7 @@ class MedicationSearchBaselineEvaluator:
     def _should_execute_retrieval(
         resolution: MedicationQuestionResolution,
     ) -> bool:
-        return (
-            resolution.scope == MedicationQuestionScope.IN_SCOPE
-            and resolution.status
-            != MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED
-        )
+        return should_execute_source_backed_retrieval(resolution)
 
     def _collect_retrieval_observation(
         self,
@@ -306,18 +311,12 @@ class MedicationSearchBaselineEvaluator:
     ) -> _RetrievalObservation:
         retrieval = case_retrieval.retrieval
         query_plan = case_retrieval.query_plan
-        candidate_diagnostics = (
-            retrieval.diagnostics.candidate_diagnostics if retrieval is not None else []
-        )
-        selected_diagnostics = [
-            diagnostic
-            for diagnostic in candidate_diagnostics
-            if diagnostic.selected_in_top_5
-        ]
+        candidate_diagnostics = retrieval.diagnostics.candidate_diagnostics if retrieval is not None else []
+        selected_diagnostics = [diagnostic for diagnostic in candidate_diagnostics if diagnostic.selected_in_top_5]
         selected_chunks = retrieval.chunks if retrieval is not None else []
-        selected_document_ids = [
-            chunk.metadata.document_id for chunk in selected_chunks
-        ] or [diagnostic.document_id for diagnostic in selected_diagnostics]
+        selected_document_ids = [chunk.metadata.document_id for chunk in selected_chunks] or [
+            diagnostic.document_id for diagnostic in selected_diagnostics
+        ]
         selected_chunk_ids = [chunk.chunk_id for chunk in selected_chunks] or [
             diagnostic.chunk_id for diagnostic in selected_diagnostics
         ]
@@ -355,17 +354,9 @@ class MedicationSearchBaselineEvaluator:
             relevant_selected_positions=relevant_selected_positions,
             observed_entity_names=observed_entities,
             observed_typed_entities=observed_typed_entities,
-            observed_interaction_types=(
-                query_plan.interaction_types if query_plan is not None else []
-            ),
-            observed_section_types=(
-                query_plan.section_types if query_plan is not None else []
-            ),
-            guide_lookup_eligible=(
-                query_plan.has_medication_product_cue
-                if query_plan is not None
-                else False
-            ),
+            observed_interaction_types=(query_plan.interaction_types if query_plan is not None else []),
+            observed_section_types=(query_plan.section_types if query_plan is not None else []),
+            guide_lookup_eligible=(query_plan.has_medication_product_cue if query_plan is not None else False),
         )
 
     def _case_failure_reasons(
@@ -386,8 +377,7 @@ class MedicationSearchBaselineEvaluator:
                 ),
                 (
                     case.expected_resolved_question is not None
-                    and resolution.resolved_question
-                    != case.expected_resolved_question,
+                    and resolution.resolved_question != case.expected_resolved_question,
                     "RESOLVED_QUESTION_MISMATCH",
                 ),
                 (
@@ -416,13 +406,11 @@ class MedicationSearchBaselineEvaluator:
                     "SECTION_MISMATCH",
                 ),
                 (
-                    bool(case.expected_document_ids)
-                    and not observation.relevant_candidates,
+                    bool(case.expected_document_ids) and not observation.relevant_candidates,
                     "EXPECTED_DOCUMENT_NOT_IN_TOP_20",
                 ),
                 (
-                    bool(case.expected_document_ids)
-                    and not observation.relevant_selected_positions,
+                    bool(case.expected_document_ids) and not observation.relevant_selected_positions,
                     "EXPECTED_DOCUMENT_NOT_IN_TOP_5",
                 ),
                 (
@@ -455,9 +443,7 @@ class MedicationSearchBaselineEvaluator:
         retrieval = case_retrieval.retrieval
         expected_documents = set(case.expected_document_ids)
         first_selected_rank = (
-            observation.relevant_selected_positions[0]
-            if observation.relevant_selected_positions
-            else None
+            observation.relevant_selected_positions[0] if observation.relevant_selected_positions else None
         )
         evidence_coverage_rate = self._evidence_coverage_rate(
             case=case,
@@ -487,25 +473,14 @@ class MedicationSearchBaselineEvaluator:
             ),
             candidate_count=len(observation.candidate_diagnostics),
             candidate_first_relevant_rank=(
-                min(
-                    diagnostic.adjusted_rank
-                    for diagnostic in observation.relevant_candidates
-                )
+                min(diagnostic.adjusted_rank for diagnostic in observation.relevant_candidates)
                 if observation.relevant_candidates
                 else None
             ),
             selected_document_ids=observation.selected_document_ids,
             selected_chunk_ids=observation.selected_chunk_ids,
-            hit_at_5=(
-                bool(observation.relevant_selected_positions)
-                if expected_documents
-                else None
-            ),
-            recall_at_20=(
-                bool(observation.relevant_candidates)
-                if expected_documents
-                else None
-            ),
+            hit_at_5=(bool(observation.relevant_selected_positions) if expected_documents else None),
+            recall_at_20=(bool(observation.relevant_candidates) if expected_documents else None),
             reciprocal_rank=(
                 1.0 / first_selected_rank
                 if expected_documents and first_selected_rank is not None

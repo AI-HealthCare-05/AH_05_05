@@ -3,6 +3,9 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel, Field
 
+from ai_worker.rag.metadata.entity_name_policy import (
+    is_generic_knowledge_entity_category,
+)
 from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
 )
@@ -118,6 +121,8 @@ class KnowledgeEntityExtractor:
                 drug_names=[normalized.split(maxsplit=1)[0]],
             )
         if document_type == KnowledgeDocumentType.DRUG_ENCYCLOPEDIA:
+            if is_generic_knowledge_entity_category(normalized):
+                return ExtractedKnowledgeEntities()
             bilingual_name = self._BILINGUAL_DRUG_NAME.fullmatch(normalized)
             if bilingual_name is not None:
                 return ExtractedKnowledgeEntities(
@@ -192,13 +197,9 @@ class KnowledgeEntityExtractor:
                             *table_ingredient_names,
                         ]
                     ),
-                    "food_names": self._unique(
-                        name for match in annotated for name in match.food_names
-                    ),
+                    "food_names": self._unique(name for match in annotated for name in match.food_names),
                     "entity_catalog_entries": self._unique_catalog_entries(
-                        entry
-                        for match in annotated
-                        for entry in match.entity_catalog_entries
+                        entry for match in annotated for entry in match.entity_catalog_entries
                     ),
                     "interaction_type": interaction_type,
                     "interaction_pair_keys": self._unique(

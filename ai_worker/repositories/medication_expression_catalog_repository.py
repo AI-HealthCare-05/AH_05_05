@@ -1,12 +1,16 @@
 import asyncio
 import re
 import time
-from itertools import chain
 
 from ai_worker.domain.interfaces import SupplementIngredientCatalog
+from ai_worker.schemas.interaction import InteractionEntityKind as SearchEntityKind
+from ai_worker.schemas.medication_search import (
+    MedicationCatalogEntry,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+)
 from app.models.interactions import (
     InteractionEntity,
-    InteractionEntityAlias,
     MedicationProductGuide,
 )
 from app.models.supplement_nutrients import SupplementNutrient
@@ -29,6 +33,7 @@ class DbMedicationExpressionCatalog:
     ) -> None:
         self._cache_ttl_seconds = cache_ttl_seconds
         self._supplement_catalog = supplement_catalog
+        self._cached_entries: list[MedicationCatalogEntry] | None = None
         self._cached_expressions: list[str] | None = None
         self._cache_expires_at = 0.0
 
@@ -37,50 +42,132 @@ class DbMedicationExpressionCatalog:
         if self._cached_expressions is not None and now < self._cache_expires_at:
             return self._cached_expressions.copy()
 
-        product_names, entity_names, aliases, supplement_names, additional_names = await asyncio.gather(
-            MedicationProductGuide.all().values_list(
-                "product_name",
-                flat=True,
-            ),
-            InteractionEntity.all().values_list(
-                "canonical_name",
-                flat=True,
-            ),
-            InteractionEntityAlias.all().values_list(
-                "alias",
-                flat=True,
-            ),
+        entries = await self.list_entries()
+        self._cached_expressions = sorted(
+            {expression for entry in entries for expression in entry.expressions},
+            key=str.casefold,
+        )
+        return self._cached_expressions.copy()
+
+    async def list_entries(self) -> list[MedicationCatalogEntry]:
+        now = time.monotonic()
+        if self._cached_entries is not None and now < self._cache_expires_at:
+            return self._cached_entries.copy()
+
+        results = await asyncio.gather(
+            MedicationProductGuide.all().values_list("product_name", flat=True),
+            InteractionEntity.all().prefetch_related("aliases"),
             SupplementNutrient.all().values_list(
                 "name",
                 flat=True,
             ),
-            self._list_additional_names(),
+            self._list_additional_entries(),
+            return_exceptions=True,
         )
-        product_expressions = [
-            expression for product_name in product_names for expression in self._product_expressions(str(product_name))
-        ]
-        expressions = sorted(
-            {
-                str(value).strip()
-                for value in chain(
-                    product_expressions,
-                    entity_names,
-                    aliases,
-                    supplement_names,
-                    additional_names,
+        if all(isinstance(result, BaseException) for result in results):
+            raise RuntimeError("질문 해석 카탈로그 공급원을 모두 조회하지 못했습니다.")
+        product_names = self._list_or_empty(results[0])
+        interaction_entities = self._list_or_empty(results[1])
+        supplement_names = self._list_or_empty(results[2])
+        additional_entries = self._list_or_empty(results[3])
+        entries: list[MedicationCatalogEntry] = []
+        entries.extend(
+            MedicationCatalogEntry(
+                canonical_name=str(product_name).strip(),
+                aliases=self._product_expressions(str(product_name))[1:],
+                entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                kind=SearchEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            )
+            for product_name in product_names
+            if str(product_name).strip()
+        )
+        for entity in interaction_entities:
+            kind = SearchEntityKind(str(entity.entity_kind))
+            entity_type = (
+                MedicationQueryEntityType.FOOD_CATEGORY
+                if kind == SearchEntityKind.FOOD
+                else MedicationQueryEntityType.INGREDIENT_NAME
+            )
+            entries.append(
+                MedicationCatalogEntry(
+                    canonical_name=entity.canonical_name,
+                    entity_type=entity_type,
+                    kind=kind,
+                    source=MedicationQueryEntitySource.RDBMS,
                 )
-                if str(value).strip()
-            },
-            key=str.casefold,
+            )
+            for alias in entity.aliases:
+                entries.append(
+                    MedicationCatalogEntry(
+                        canonical_name=entity.canonical_name,
+                        aliases=[alias.alias],
+                        entity_type=(
+                            MedicationQueryEntityType.BRAND_ALIAS
+                            if alias.alias_type.value == "PRODUCT_NAME"
+                            else entity_type
+                        ),
+                        kind=kind,
+                        source=MedicationQueryEntitySource.RDBMS,
+                    )
+                )
+        entries.extend(
+            MedicationCatalogEntry(
+                canonical_name=str(name).strip(),
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=SearchEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.RDBMS,
+            )
+            for name in supplement_names
+            if str(name).strip()
         )
-        self._cached_expressions = expressions
+        entries.extend(additional_entries)
+        self._cached_entries = self._deduplicate_entries(entries)
         self._cache_expires_at = now + self._cache_ttl_seconds
-        return expressions.copy()
+        return self._cached_entries.copy()
 
-    async def _list_additional_names(self) -> list[str]:
+    @staticmethod
+    def _list_or_empty(value: object) -> list[object]:
+        return value if isinstance(value, list) else []
+
+    async def _list_additional_entries(self) -> list[MedicationCatalogEntry]:
         if self._supplement_catalog is None:
             return []
-        return await self._supplement_catalog.list_names()
+        list_entries = getattr(self._supplement_catalog, "list_entries", None)
+        if callable(list_entries):
+            return await list_entries()
+        return [
+            MedicationCatalogEntry(
+                canonical_name=name,
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=SearchEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.CATALOG,
+            )
+            for name in await self._supplement_catalog.list_names()
+        ]
+
+    @staticmethod
+    def _deduplicate_entries(
+        entries: list[MedicationCatalogEntry],
+    ) -> list[MedicationCatalogEntry]:
+        deduplicated: dict[tuple[object, ...], MedicationCatalogEntry] = {}
+        for entry in entries:
+            key = (
+                entry.canonical_name.casefold(),
+                tuple(alias.casefold() for alias in entry.aliases),
+                entry.entity_type,
+                entry.kind,
+                entry.source,
+            )
+            deduplicated.setdefault(key, entry)
+        return sorted(
+            deduplicated.values(),
+            key=lambda entry: (
+                entry.canonical_name.casefold(),
+                entry.entity_type.value,
+                entry.source.value,
+            ),
+        )
 
     @classmethod
     def _product_expressions(cls, product_name: str) -> list[str]:

@@ -4,9 +4,7 @@ from ai_worker.domain.medication_question_resolver import (
 from ai_worker.evaluation.medication_search_baseline_evaluator import (
     MedicationSearchBaselineEvaluator,
 )
-from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
-    MedicationKnowledgeQueryBuilder,
-)
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeCandidateDiagnostic,
@@ -18,7 +16,13 @@ from ai_worker.schemas.knowledge import (
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
+from ai_worker.schemas.medication_search import (
+    MedicationCatalogEntry,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+)
 from ai_worker.schemas.medication_search_evaluation import (
+    MedicationExpectedEntity,
     MedicationSearchBaselineCase,
     MedicationSearchBaselineManifest,
 )
@@ -27,6 +31,18 @@ from ai_worker.schemas.medication_search_evaluation import (
 class StaticCatalog:
     async def list_expressions(self) -> list[str]:
         return ["타이레놀", "아세트아미노펜", "마그네슘"]
+
+
+class TypedStaticCatalog:
+    async def list_entries(self) -> list[MedicationCatalogEntry]:
+        return [
+            MedicationCatalogEntry(
+                canonical_name="타이레놀",
+                entity_type=MedicationQueryEntityType.BRAND_ALIAS,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            )
+        ]
 
 
 class FakeRetriever:
@@ -61,6 +77,11 @@ class FakeRetriever:
                 candidate_diagnostics=[diagnostic],
             ),
         )
+
+
+class FailOnSearchRetriever:
+    async def search_with_diagnostics(self, *, execution_plan):
+        raise AssertionError("source-backed 엔터티가 없으면 RAG를 실행하면 안 됩니다.")
 
 
 class PartialCoverageRetriever:
@@ -126,7 +147,6 @@ async def test_evaluate_measures_expression_and_candidate_baseline() -> None:
         question_resolver=RuleBasedMedicationQuestionResolver(
             catalog=StaticCatalog(),
         ),
-        query_builder=MedicationKnowledgeQueryBuilder(),
         knowledge_retriever=FakeRetriever(),
         timer=iter([0.0, 0.01, 1.0, 1.002]).__next__,
     )
@@ -179,12 +199,58 @@ async def test_evaluate_measures_expression_and_candidate_baseline() -> None:
     assert report.results[1].retrieval_executed is False
 
 
+async def test_evaluate_passes_resolver_typed_entities_to_query_plan() -> None:
+    evaluator = MedicationSearchBaselineEvaluator(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=TypedStaticCatalog(),
+        ),
+        knowledge_retriever=FakeRetriever(),
+    )
+    manifest = MedicationSearchBaselineManifest(
+        dataset_version="knowledge-full-v2-interaction-metadata",
+        collection_name="medication_knowledge_full_v2",
+        cases=[
+            MedicationSearchBaselineCase(
+                query_id="typed-brand",
+                question="타이레놀의 효능을 알려줘",
+                expected_scope="IN_SCOPE",
+                expected_resolution_status="UNCHANGED",
+                expected_entity_names=["타이레놀"],
+                expected_entities=[
+                    MedicationExpectedEntity(
+                        canonical_name="타이레놀",
+                        entity_type=MedicationQueryEntityType.BRAND_ALIAS,
+                        kind=InteractionEntityKind.DRUG,
+                        expected_sources=[MedicationQueryEntitySource.RDBMS],
+                    )
+                ],
+            )
+        ],
+    )
+
+    report = await evaluator.evaluate(
+        manifest,
+        git_commit="abc1234",
+        working_tree_dirty=False,
+        evaluation_file_sha256="f" * 64,
+    )
+
+    assert report.results[0].observed_entities == [
+        MedicationExpectedEntity(
+            canonical_name="타이레놀",
+            entity_type=MedicationQueryEntityType.BRAND_ALIAS,
+            kind=InteractionEntityKind.DRUG,
+            expected_sources=[MedicationQueryEntitySource.RDBMS],
+        )
+    ]
+    assert report.results[0].passed is True
+
+
 async def test_evaluate_measures_requested_answer_evidence_coverage() -> None:
     evaluator = MedicationSearchBaselineEvaluator(
         question_resolver=RuleBasedMedicationQuestionResolver(
             catalog=StaticCatalog(),
         ),
-        query_builder=MedicationKnowledgeQueryBuilder(),
         knowledge_retriever=PartialCoverageRetriever(),
     )
     manifest = MedicationSearchBaselineManifest(
@@ -222,7 +288,6 @@ async def test_evaluate_fails_when_no_evidence_case_returns_documents() -> None:
         question_resolver=RuleBasedMedicationQuestionResolver(
             catalog=StaticCatalog(),
         ),
-        query_builder=MedicationKnowledgeQueryBuilder(),
         knowledge_retriever=PartialCoverageRetriever(),
     )
     manifest = MedicationSearchBaselineManifest(
@@ -231,9 +296,9 @@ async def test_evaluate_fails_when_no_evidence_case_returns_documents() -> None:
         cases=[
             MedicationSearchBaselineCase(
                 query_id="no-evidence",
-                question="처음 보는 영양제의 주의사항을 알려줘",
+                question="마그네슘의 주의사항을 알려줘",
                 expected_scope="IN_SCOPE",
-                expected_resolution_status="UNRESOLVED",
+                expected_resolution_status="UNCHANGED",
                 expect_no_evidence=True,
             )
         ],
@@ -250,12 +315,45 @@ async def test_evaluate_fails_when_no_evidence_case_returns_documents() -> None:
     assert "UNEXPECTED_EVIDENCE_RETRIEVED" in (report.results[0].failure_reasons)
 
 
+async def test_evaluate_skips_rag_for_in_scope_question_without_source_backed_entity() -> None:
+    evaluator = MedicationSearchBaselineEvaluator(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticCatalog(),
+        ),
+        knowledge_retriever=FailOnSearchRetriever(),
+    )
+    manifest = MedicationSearchBaselineManifest(
+        dataset_version="knowledge-full-v2-interaction-metadata",
+        collection_name="medication_knowledge_full_v2",
+        cases=[
+            MedicationSearchBaselineCase(
+                query_id="no-entity-no-rag",
+                question="처음 보는 영양제의 주의사항을 알려줘",
+                expected_scope="IN_SCOPE",
+                expected_resolution_status="UNRESOLVED",
+                expect_no_entity=True,
+                expect_no_evidence=True,
+                expect_no_rag=True,
+            )
+        ],
+    )
+
+    report = await evaluator.evaluate(
+        manifest,
+        git_commit="abc1234",
+        working_tree_dirty=False,
+        evaluation_file_sha256="f" * 64,
+    )
+
+    assert report.results[0].retrieval_executed is False
+    assert report.results[0].passed is True
+
+
 async def test_evaluate_preserves_gold_document_and_experiment_rationales() -> None:
     evaluator = MedicationSearchBaselineEvaluator(
         question_resolver=RuleBasedMedicationQuestionResolver(
             catalog=StaticCatalog(),
         ),
-        query_builder=MedicationKnowledgeQueryBuilder(),
         knowledge_retriever=FakeRetriever(),
     )
     manifest = MedicationSearchBaselineManifest.model_validate(
@@ -313,7 +411,6 @@ async def test_evaluate_excludes_deferred_case_from_active_phase_pass_rate() -> 
         question_resolver=RuleBasedMedicationQuestionResolver(
             catalog=StaticCatalog(),
         ),
-        query_builder=MedicationKnowledgeQueryBuilder(),
         knowledge_retriever=FakeRetriever(),
     )
     manifest = MedicationSearchBaselineManifest.model_validate(
@@ -335,19 +432,19 @@ async def test_evaluate_excludes_deferred_case_from_active_phase_pass_rate() -> 
                 "duplicate_retrieval_rate": "중복 근거",
                 "search_p95_ms": "지연 감시",
             },
-                "cases": [
-                    {
-                        "query_id": "active-out-of-scope",
-                        "question": "오늘 배고파요",
-                        "phase": "ACTIVE_PHASE",
-                        "historical_outcome": "PASS",
-                        "expected_scope": "OUT_OF_SCOPE",
-                        "expected_resolution_status": "UNRESOLVED",
-                        "expect_no_entity": True,
-                        "expect_no_guide_lookup": True,
-                        "expect_no_rag": True,
-                        "evidence_kind": "NOT_APPLICABLE",
-                        "evaluation_rationale": "활성 범위 집계가 비도메인 질문도 정확히 반영하는지 확인합니다.",
+            "cases": [
+                {
+                    "query_id": "active-out-of-scope",
+                    "question": "오늘 배고파요",
+                    "phase": "ACTIVE_PHASE",
+                    "historical_outcome": "PASS",
+                    "expected_scope": "OUT_OF_SCOPE",
+                    "expected_resolution_status": "UNRESOLVED",
+                    "expect_no_entity": True,
+                    "expect_no_guide_lookup": True,
+                    "expect_no_rag": True,
+                    "evidence_kind": "NOT_APPLICABLE",
+                    "evaluation_rationale": "활성 범위 집계가 비도메인 질문도 정확히 반영하는지 확인합니다.",
                 },
                 {
                     "query_id": "deferred-memory",

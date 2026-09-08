@@ -162,9 +162,9 @@ class MedicationSearchBaselineCase(BaseModel):
             raise ValueError("expect_no_evidence와 expected_document_ids는 함께 지정할 수 없습니다.")
         if self.expect_no_entity and (self.expected_entity_names or self.expected_entities):
             raise ValueError("expect_no_entity에는 기대 엔터티를 지정할 수 없습니다.")
-        if self.expected_entities and {
-            entity.canonical_name for entity in self.expected_entities
-        } != set(self.expected_entity_names):
+        if self.expected_entities and {entity.canonical_name for entity in self.expected_entities} != set(
+            self.expected_entity_names
+        ):
             raise ValueError("expected_entities와 expected_entity_names는 같은 정식명을 가져야 합니다.")
         return self
 

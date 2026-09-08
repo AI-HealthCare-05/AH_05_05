@@ -44,6 +44,15 @@ def test_extracts_verified_bilingual_drug_name_aliases() -> None:
     ]
 
 
+def test_does_not_treat_generic_drug_encyclopedia_title_as_drug_name() -> None:
+    entities = KnowledgeEntityExtractor().extract_from_title(
+        document_type=KnowledgeDocumentType.DRUG_ENCYCLOPEDIA,
+        title="영양제",
+    )
+
+    assert entities.drug_names == []
+
+
 def test_does_not_assign_all_document_words_as_supplement_names() -> None:
     entities = KnowledgeEntityExtractor().extract_from_title(
         document_type=KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,

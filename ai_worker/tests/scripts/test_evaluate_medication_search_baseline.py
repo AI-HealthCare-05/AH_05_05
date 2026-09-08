@@ -58,6 +58,24 @@ def test_v3_manifest_is_fixed_to_21_cases_and_tracks_historical_outcomes() -> No
     assert sum(case.historical_outcome == "PASS" for case in manifest.cases) == 11
     assert sum(case.historical_outcome == "PARTIAL" for case in manifest.cases) == 4
     assert sum(case.historical_outcome == "FAIL" for case in manifest.cases) == 6
+    assert "13건" in manifest.activation_rule
+
+
+def test_v3_manifest_expects_authoritative_products_for_user_facing_aliases() -> None:
+    manifest = load_evaluation_manifest(
+        Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
+    )
+    cases = {case.query_id: case for case in manifest.cases}
+
+    assert cases["exact-product-magnesium"].expected_entities[0].canonical_name == ("마그오캡슐500mg(산화마그네슘)")
+    for query_id in (
+        "typo-brand-tylenol",
+        "keyboard-tail-tylenol",
+        "common-name-tylenol",
+    ):
+        entity = cases[query_id].expected_entities[0]
+        assert entity.canonical_name == "타이레놀산500밀리그램(아세트아미노펜)"
+        assert entity.entity_type == "PRODUCT_NAME"
 
 
 def test_evaluation_vector_store_uses_runtime_dot_distance() -> None:
@@ -74,3 +92,45 @@ def test_evaluation_vector_store_uses_runtime_dot_distance() -> None:
     )
 
     assert vector_store._distance == KnowledgeVectorDistance.DOT
+
+
+def test_evaluation_expression_catalog_uses_runtime_qdrant_release() -> None:
+    settings = Config(
+        _env_file=None,
+        KNOWLEDGE_QDRANT_COLLECTION="medication_knowledge_full_v5",
+        KNOWLEDGE_DATASET_VERSION="knowledge-full-v5-o200k",
+    )
+
+    catalog = module.build_evaluation_expression_catalog(
+        settings=settings,
+        qdrant_client=object(),
+    )
+
+    supplement_catalog = catalog._supplement_catalog
+    assert supplement_catalog is not None
+    qdrant_source = supplement_catalog._sources[1]
+    assert qdrant_source._collection_name == "medication_knowledge_full_v5"
+    assert qdrant_source._dataset_version == "knowledge-full-v5-o200k"
+
+
+def test_cli_can_override_release_without_changing_frozen_evaluation_file() -> None:
+    args = module.parse_args(
+        [
+            "--evaluation-file",
+            "data/knowledge/evaluation/user_expression_queries_v3.yaml",
+            "--output",
+            "output/v6-baseline.md",
+            "--collection",
+            "medication_knowledge_full_v6",
+            "--dataset-version",
+            "knowledge-full-v6-o200k-source-backed",
+        ],
+    )
+    original = load_evaluation_manifest(args.evaluation_file)
+
+    resolved = module.resolve_evaluation_manifest(original, args=args)
+
+    assert original.collection_name == "medication_knowledge_full_v5"
+    assert original.dataset_version == "knowledge-full-v5-o200k"
+    assert resolved.collection_name == "medication_knowledge_full_v6"
+    assert resolved.dataset_version == "knowledge-full-v6-o200k-source-backed"

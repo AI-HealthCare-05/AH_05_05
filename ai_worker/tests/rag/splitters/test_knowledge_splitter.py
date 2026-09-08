@@ -2657,6 +2657,37 @@ def test_repair_calcium_iron_meta_analysis_removes_preprint_and_reference_matter
     assert repaired.content.endswith("The pooled estimate was reported from randomised trials.")
 
 
+def test_repair_calcium_iron_absorption_review_splits_verified_oversized_section() -> None:
+    repeated_sentences = " ".join(
+        f"Study sentence {index} supports interpreting calcium and iron absorption together." for index in range(180)
+    )
+    content = "\n".join(
+        [
+            "Calcium and Iron Absorption – Mechanisms and Public Health Relevance",
+            "Abstract: Calcium may inhibit iron absorption.",
+            "Introduction",
+            repeated_sentences,
+            "Conclusions Calcium interventions should avoid creating new public health problems instead of resolving them.",
+        ]
+    )
+
+    repaired = KnowledgeSplitter(token_counter=WordTokenCounter())._repair_verified_document_chunks(
+        [
+            build_supplement_interactions_review_chunk(
+                content,
+                document_id="research_supplement_interactions-016c81c9a3e29ebd",
+                title="Calcium and Iron Absorption – Mechanisms and Public Health Relevance",
+                chunk_index=0,
+            )
+        ]
+    )
+
+    assert len(repaired) > 3
+    assert all(chunk.token_count <= 800 for chunk in repaired)
+    assert any(chunk.content.startswith("Introduction") for chunk in repaired)
+    assert repaired[-1].content.startswith("Conclusions")
+
+
 def test_repair_older_adult_review_keeps_title_and_removes_front_matter() -> None:
     content = "\n".join(
         [

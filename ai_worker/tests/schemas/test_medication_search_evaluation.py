@@ -128,9 +128,7 @@ def test_v3_manifest_requires_typed_entities_for_active_entity_case() -> None:
                         "evidence_kind": "QDRANT_GOLD",
                         "evaluation_rationale": "약-음식 엔터티와 pair를 함께 검증합니다.",
                         "expected_document_ids": ["food-guide"],
-                        "gold_document_rationales": {
-                            "food-guide": "두 대상을 직접 다루는 근거입니다."
-                        },
+                        "gold_document_rationales": {"food-guide": "두 대상을 직접 다루는 근거입니다."},
                     }
                 ],
             }

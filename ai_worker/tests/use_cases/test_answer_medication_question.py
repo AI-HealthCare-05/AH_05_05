@@ -14,6 +14,10 @@ from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
+from ai_worker.rag.errors import (
+    GuidelineRetrievalError,
+    RetrievalFailureStage,
+)
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
@@ -619,6 +623,30 @@ async def test_execute_records_interpretation_before_out_of_scope_return() -> No
     assert query_outputs["needs_clarification"] is False
 
 
+async def test_execute_records_question_resolution_diagnostics_without_content() -> None:
+    tracer = RecordingChatTracer()
+    result = await build_use_case(
+        tracer=tracer,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["비타민 D"]),
+        ),
+    ).execute(build_request("비타민 디의 주의사항을 알려줘"))
+
+    resolution_outputs = next(span.outputs for span in tracer.spans if span.name == "question.resolve")
+    query_plan_outputs = next(span.outputs for span in tracer.spans if span.name == "query.plan")
+
+    assert result.question_interpretation is not None
+    assert resolution_outputs["normalization_strategy"] == "LETTER_PRONUNCIATION"
+    assert resolution_outputs["confidence_tier"] == "HIGH"
+    assert resolution_outputs["shortlisted_candidate_count"] == 1
+    assert resolution_outputs["tie_count"] == 0
+    assert resolution_outputs["relation_resolution_status"] == "NOT_APPLICABLE"
+    assert resolution_outputs["catalog_source_counts"] == {"CATALOG": 1}
+    assert resolution_outputs["catalog_type_counts"] == {"INGREDIENT_NAME": 1}
+    assert "question" not in resolution_outputs
+    assert query_plan_outputs["legacy_entity_inference_used"] is False
+
+
 async def test_execute_restricts_query_plan_chain_failure_before_search() -> None:
     async def fail_query_plan(value):
         raise RuntimeError("query plan failed")
@@ -650,8 +678,48 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.route == MedicationChatRoute.RESTRICTED
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
-    assert "현재 보유한 승인 규칙과 검색 자료에서는" in result.answer
+    assert "현재 보유한 제품명·성분명·음식 목록에서 대상을 확인하지 못했습니다" in result.answer
     assert "안전하다는 의미가 아닙니다" in result.answer
+
+
+async def test_execute_does_not_lookup_a_product_for_unrecognized_general_request() -> None:
+    guide_repository = RecordingGuideRepository()
+    use_case = AnswerMedicationQuestionUseCase(
+        context_provider=FakeContextProvider(ActiveIntakeContext(user_id=1)),
+        guide_repository=guide_repository,
+        interaction_rule_repository=FakeRuleRepository([]),
+        knowledge_retriever=FakeKnowledgeRetriever(),
+        answer_generator=UnexpectedMedicationGenerator(),
+        grounded_claim_validator=PassthroughValidator(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    )
+
+    result = await use_case.execute(
+        build_request("피곤할 때 가장 좋은 영양제 하나 추천해줘"),
+    )
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
+    assert guide_repository.requested_names == []
+
+
+async def test_execute_skips_rag_when_source_backed_resolution_has_no_entities() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        answer_generator=UnexpectedMedicationGenerator(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request("피곤할 때 가장 좋은 영양제 하나 추천해줘"),
+    )
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
+    assert retriever.received_kwargs is None
 
 
 async def test_general_drug_question_runs_without_episode() -> None:
@@ -915,6 +983,32 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert len(llm_outputs["generated_answer_hash"]) == 64
 
 
+async def test_execute_records_retrieval_failure_stage_without_error_message() -> None:
+    tracer = RecordingChatTracer()
+    retrieval_error = GuidelineRetrievalError(
+        stage=RetrievalFailureStage.VECTOR_STORE,
+        message="약·영양제 Knowledge 벡터 검색에 실패했습니다.",
+    )
+    retrieval_error.__cause__ = RuntimeError(
+        "private upstream error detail",
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(error=retrieval_error),
+        tracer=tracer,
+    ).execute(
+        build_request("마그네슘은 왜 먹나요?"),
+    )
+
+    rag_outputs = next(span.outputs for span in tracer.spans if span.name == "rag.retrieve")
+    assert rag_outputs["rag_unavailable"] is True
+    assert rag_outputs["rag_error_stage"] == "VECTOR_STORE"
+    assert rag_outputs["rag_error_type"] == "GuidelineRetrievalError"
+    assert rag_outputs["rag_error_cause_type"] == "RuntimeError"
+    assert "private upstream error detail" not in repr(rag_outputs)
+    assert "RAG_UNAVAILABLE" in result.safety_reason_codes
+
+
 async def test_execute_records_requested_covered_and_missing_answer_sections() -> None:
     tracer = RecordingChatTracer()
     await build_use_case(
@@ -1041,6 +1135,10 @@ async def test_execute_records_selected_and_candidate_entity_roles() -> None:
     query_outputs = tracer.spans[1].outputs
     assert query_outputs["entity_names"] == ["타이레놀"]
     assert query_outputs["entity_roles"] == ["BRAND_ALIAS"]
+    assert query_outputs["entity_source_counts"] == {"ALIAS": 1}
+    assert query_outputs["entity_type_counts"] == {"BRAND_ALIAS": 1}
+    assert query_outputs["interaction_pair_types"] == []
+    assert query_outputs["legacy_entity_inference_used"] is True
     assert query_outputs["entity_role_candidates"] == [
         ["PRODUCT_NAME", "BRAND_ALIAS", "INGREDIENT_NAME"],
     ]

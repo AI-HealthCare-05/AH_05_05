@@ -14,6 +14,10 @@ from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeSectionType,
 )
+from ai_worker.schemas.medication_search import (
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+)
 
 
 def test_build_expands_supplement_function_question() -> None:
@@ -26,6 +30,34 @@ def test_build_expands_supplement_function_question() -> None:
     assert "기능성" in plan.expanded_query
     assert plan.section_types == [KnowledgeSectionType.FUNCTION]
     assert plan.has_medication_product_cue is False
+
+
+def test_build_does_not_treat_unregistered_general_words_as_drug_entities() -> None:
+    plan = MedicationKnowledgeQueryBuilder(catalog_entities=[]).build(
+        "피곤할 때 가장 좋은 영양제 하나 추천해줘",
+    )
+
+    assert plan.entity_names == []
+    assert plan.entities == []
+
+
+def test_build_uses_explicit_catalog_entities_without_regex_fallback() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="테스트별칭",
+                canonical_name="테스트성분",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            )
+        ]
+    ).build("피곤할 때 테스트별칭의 주의사항을 알려줘")
+
+    assert plan.entity_names == ["테스트성분"]
+    assert [entity.source for entity in plan.entities] == [
+        MedicationQueryEntitySource.RDBMS,
+    ]
 
 
 def test_build_uses_dynamic_supplement_names_for_document_routing() -> None:
