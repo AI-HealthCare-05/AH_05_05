@@ -414,6 +414,9 @@ class KnowledgeRetrievalDiagnostics(BaseModel):
     rejected_entity_mismatch_count: int = Field(ge=0)
     rejected_pair_mismatch_count: int = Field(ge=0)
     accepted_count: int = Field(ge=0)
+    parent_context_child_count: int = Field(default=0, ge=0)
+    parent_context_attached_count: int = Field(default=0, ge=0)
+    parent_context_rejected_mismatch_count: int = Field(default=0, ge=0)
     max_raw_score: float | None = Field(default=None, ge=-1.0, le=1.0)
     max_score: float | None = Field(default=None, ge=-1.0, le=1.0)
     attempted_search_tiers: list[KnowledgeSearchTier] = Field(

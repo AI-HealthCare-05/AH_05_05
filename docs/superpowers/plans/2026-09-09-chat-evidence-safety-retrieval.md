@@ -94,10 +94,10 @@
 
 **Produces:** Child chunks are selected for recall, then their matching parent section is attached only when document, section, and entity contracts agree.
 
-- [ ] Write failing tests for child-to-parent expansion and for rejecting a parent from another document/entity.
-- [ ] Implement a pure parent-context resolver over retrieved chunks/metadata; do not change collection data or issue external embeddings.
-- [ ] Add retrieval diagnostics for child count, parent count, and rejected parent mismatches.
-- [ ] Compare fixture recall/context contamination against child-only behavior, record it, and commit.
+- [x] Write failing tests for child-to-parent expansion and for rejecting a parent from another document/entity.
+- [x] Implement a pure parent-context resolver over retrieved chunks/metadata; do not change collection data or issue external embeddings.
+- [x] Add retrieval diagnostics for child count, parent count, and rejected parent mismatches.
+- [x] Compare fixture recall/context contamination against child-only behavior, record it, and commit. Live-collection comparison remains `PARTIAL` until the fixed evaluation set is rerun.
 
 ### Task 6: Retry retrieval once only for evidence coverage gaps
 
