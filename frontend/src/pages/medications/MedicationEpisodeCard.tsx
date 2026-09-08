@@ -42,7 +42,7 @@ export function MedicationEpisodeCard({
     .join(' · ');
 
   return (
-    <article className="overflow-hidden rounded-card bg-card shadow-card">
+    <article className="rounded-card bg-card shadow-card">
       <div className="flex min-w-0 items-stretch">
         {selectionMode && (
           <label className="flex min-h-touch shrink-0 cursor-pointer items-center pl-4">
@@ -62,6 +62,22 @@ export function MedicationEpisodeCard({
           onClick={selectionMode ? onToggleSelected : (onOpenEpisode ?? onToggleExpanded)}
         >
           <span className="min-w-0 flex-1">
+            <span className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+              <span
+                className={`shrink-0 rounded-pill px-2.5 py-1 text-xs font-bold ${
+                  overview.isFinished
+                    ? 'bg-muted-bg text-muted-foreground'
+                    : 'bg-primary-bg text-primary-strong'
+                }`}
+              >
+                {statusLabel}
+              </span>
+              {!overview.isFinished && (
+                <span className="text-xs font-bold text-primary-strong tnum">
+                  {feature252 ? `${Math.max(0, overview.daysRemaining)}일 남음` : dDay}
+                </span>
+              )}
+            </span>
             <strong className="block [overflow-wrap:anywhere] text-lg text-foreground">
               {feature252 && overview.alias ? overview.alias : `${dateLabel} 처방`}
             </strong>
@@ -70,31 +86,15 @@ export function MedicationEpisodeCard({
                 <span className="mt-1 block [overflow-wrap:anywhere] text-sm text-foreground">
                   {medicineSummary}
                 </span>
-                <span className="mt-1 block truncate text-sm text-muted-foreground tnum">
+                <span className="mt-1 block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
                   {timeSummary || '필요 시 복용'}
                 </span>
               </>
             )}
-            <span className="mt-1 block text-sm text-muted-foreground tnum">
+            <span className="mt-1 block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
               {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })} · 약{' '}
               {overview.medications.length}개
             </span>
-          </span>
-          <span className="flex shrink-0 flex-col items-end gap-1">
-            <span
-              className={`rounded-pill px-3 py-1.5 text-sm font-bold ${
-                overview.isFinished
-                  ? 'bg-muted-bg text-muted-foreground'
-                  : 'bg-primary-bg text-primary-strong'
-              }`}
-            >
-              {statusLabel}
-            </span>
-            {!overview.isFinished && (
-              <span className="text-xs font-bold text-primary-strong tnum">
-                {feature252 ? `${Math.max(0, overview.daysRemaining)}일 남음` : dDay}
-              </span>
-            )}
           </span>
           <ChevronDown
             aria-hidden
