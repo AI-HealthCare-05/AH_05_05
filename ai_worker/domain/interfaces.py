@@ -1,6 +1,10 @@
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from ai_worker.schemas.medication_chat import (
+        SupplementRegistrationSafetyInput,
+        SupplementRegistrationSafetyResult,
+    )
     from ai_worker.schemas.medication_search import (
         MedicationCatalogEntry,
         MedicationQuestionResolution,
@@ -156,6 +160,13 @@ class MedicationQuestionResolver(Protocol):
 
 class SupplementIngredientCatalog(Protocol):
     async def list_names(self) -> list[str]: ...
+
+
+class SupplementRegistrationSafetyChecker(Protocol):
+    def evaluate(
+        self,
+        value: "SupplementRegistrationSafetyInput",
+    ) -> "SupplementRegistrationSafetyResult": ...
 
 
 class InteractionRuleRepository(Protocol):

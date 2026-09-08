@@ -139,10 +139,10 @@
 
 **Produces:** Deterministic duplicate ingredient, computable-total, approved-rule, and risk decisions; missing amount/unit/ingredient yields `UNKNOWN`.
 
-- [ ] Write failing cases for duplicate ingredients, an approved interaction rule, and incomplete unit/amount data.
-- [ ] Implement a pure evaluator that exposes decision factors and leaves natural-language explanation to the existing answer generator.
-- [ ] Ensure no LLM output can change the decision state in tests.
-- [ ] Record rule coverage and commit.
+- [x] Write failing cases for duplicate ingredients, an approved interaction rule, and incomplete unit/amount data.
+- [x] Implement a pure evaluator that exposes decision factors and leaves natural-language explanation to the existing answer generator.
+- [x] Ensure no LLM output can change the decision state in tests.
+- [x] Record rule coverage and commit.
 
 ### Task 9: Build fatigue conversational triage policy
 

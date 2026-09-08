@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable
 from datetime import date
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -46,6 +47,12 @@ class MedicationChatRiskScope(StrEnum):
     EVIDENCE_WITH_GENERAL_GUIDANCE = "EVIDENCE_WITH_GENERAL_GUIDANCE"
     GENERAL_GUIDANCE_ONLY = "GENERAL_GUIDANCE_ONLY"
     WARNING_REQUIRED = "WARNING_REQUIRED"
+
+
+class SupplementRegistrationSafetyStatus(StrEnum):
+    SAFE = "SAFE"
+    RESTRICTED = "RESTRICTED"
+    UNKNOWN = "UNKNOWN"
 
 
 class MedicationChatRiskProfile(BaseModel):
@@ -245,6 +252,60 @@ class ActiveIntakeContext(BaseModel):
     preferred_care_episode_id: int | None = Field(default=None, ge=1)
     medications: list[ActiveMedication] = Field(default_factory=list)
     supplements: list[ActiveSupplement] = Field(default_factory=list)
+
+
+class SupplementRegistrationIngredient(BaseModel):
+    """등록 전 영양제의 성분·함량. 빈 값은 검증 불가 상태로 보존한다."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1)
+    amount: Decimal | None = Field(default=None, ge=0)
+    unit: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("unit")
+    @classmethod
+    def normalize_unit(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class SupplementRegistrationTotalAmount(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1)
+    amount: Decimal = Field(ge=0)
+    unit: str = Field(min_length=1)
+
+
+class SupplementRegistrationSafetyInput(BaseModel):
+    """등록 화면/API가 결정론적 사전 점검에 제공할 최소 입력 계약."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    proposed_ingredients: list[SupplementRegistrationIngredient] = Field(min_length=1)
+    existing_ingredients: list[SupplementRegistrationIngredient] = Field(default_factory=list)
+    approved_rules: list["InteractionRuleFact"] = Field(default_factory=list)
+    risk_profile: MedicationChatRiskProfile = Field(default_factory=MedicationChatRiskProfile)
+
+
+class SupplementRegistrationSafetyResult(BaseModel):
+    """LLM 설명 이전에 확정되는 등록 안전성 판단 결과."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: SupplementRegistrationSafetyStatus
+    duplicate_ingredient_names: list[str] = Field(default_factory=list)
+    total_amounts: list[SupplementRegistrationTotalAmount] = Field(default_factory=list)
+    matched_rule_ids: list[int] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
 
 
 class MedicationGuideFact(BaseModel):
