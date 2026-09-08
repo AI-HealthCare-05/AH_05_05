@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '@/shared/ui';
-
-export const TUTORIAL_SEEN_KEY = 'poke:tutorial-seen';
+import { completeTutorial, hasCompletedTutorial } from '@/shared/lib/tutorial';
 
 const TUTORIAL_STEPS = [
   {
@@ -36,13 +35,13 @@ export function TutorialPage() {
   const [step, setStep] = useState(0);
 
   useEffect(() => {
-    if (window.sessionStorage.getItem(TUTORIAL_SEEN_KEY) === 'true') {
+    if (hasCompletedTutorial()) {
       navigate('/home', { replace: true });
     }
   }, [navigate]);
 
   function finish() {
-    window.sessionStorage.setItem(TUTORIAL_SEEN_KEY, 'true');
+    completeTutorial();
     navigate('/home', { replace: true });
   }
 
