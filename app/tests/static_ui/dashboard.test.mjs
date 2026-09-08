@@ -6,9 +6,9 @@ import {
   accountTotal,
   alarmTrendLabel,
   buildAlarmTrendItems,
+  buildReasonRing,
   buildTrendItems,
   changeBadge,
-  formatChatSatisfaction,
   periodValue,
   selectPeriod,
   shareOfTotal,
@@ -85,10 +85,10 @@ test("buildAlarmTrendItems formats successful deliveries as dated counts", () =>
   ]);
 });
 
-test("dashboard renders alarm delivery data before AI chatbot status", async () => {
+test("dashboard renders alarm delivery data before AI chatbot evaluations", async () => {
   const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
   const notificationIndex = html.indexOf("알림 발송 현황");
-  const chatbotIndex = html.indexOf("AI 챗봇 응답 현황");
+  const chatbotIndex = html.indexOf("AI 챗봇 평가 현황");
   const notificationCard = html.slice(notificationIndex, chatbotIndex);
 
   assert.ok(notificationIndex >= 0);
@@ -108,8 +108,8 @@ test("dashboard removes system status and swaps OCR with AI chatbot cards", asyn
 
   assert.equal(html.includes("시스템 코어 및 마이크로서비스"), false);
   assert.match(firstColumn, /OCR 문서 처리/);
-  assert.doesNotMatch(firstColumn, /AI 챗봇 응답 현황/);
-  assert.match(secondColumn, /AI 챗봇 응답 현황/);
+  assert.doesNotMatch(firstColumn, /AI 챗봇 평가 현황/);
+  assert.match(secondColumn, /AI 챗봇 평가 현황/);
   assert.doesNotMatch(secondColumn, /OCR 문서 처리/);
 });
 
@@ -136,56 +136,69 @@ test("OCR field confidence is formatted as one decimal percent or no-data text",
   assert.equal(dashboard.formatOcrConfidence(null), "데이터 없음");
 });
 
-test("chat satisfaction formats a positive feedback percentage", () => {
-  assert.deepEqual(formatChatSatisfaction(66.7), {
-    text: "66.7%",
-    fillPercent: 66.7,
-    ariaLabel: "챗봇 긍정 평가 비율 66.7%",
+test("reason ring converts counts into colored donut segments", () => {
+  assert.deepEqual(
+    buildReasonRing(
+      [
+        { code: "P01", name: "정확함", count: 2, percentage: 66.7 },
+        { code: "P02", name: "도움이 됨", count: 1, percentage: 33.3 },
+      ],
+      ["#0f766e", "#5eead4"],
+    ),
+    {
+      total: 3,
+      background: "conic-gradient(#0f766e 0% 66.7%, #5eead4 66.7% 100%)",
+      items: [
+        { code: "P01", name: "정확함", count: 2, percentage: 66.7, color: "#0f766e" },
+        { code: "P02", name: "도움이 됨", count: 1, percentage: 33.3, color: "#5eead4" },
+      ],
+    },
+  );
+});
+
+test("reason ring returns an empty visualization without selected reasons", () => {
+  assert.deepEqual(buildReasonRing([], ["#0f766e"]), {
+    total: 0,
+    background: "#e5e7eb",
+    items: [],
   });
 });
 
-test("chat satisfaction leaves progress empty when no feedback exists", () => {
-  assert.deepEqual(formatChatSatisfaction(null), {
-    text: "데이터 없음",
-    fillPercent: 0,
-    ariaLabel: "챗봇 만족도 평가 데이터 없음",
-  });
-});
-
-test("chatbot card exposes API slots and an accessible percentage visualization", async () => {
+test("chatbot evaluation card exposes counts and two reason rings", async () => {
   const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
-  const chatbotIndex = html.indexOf("AI 챗봇 응답 현황");
+  const chatbotIndex = html.indexOf("AI 챗봇 평가 현황");
   const chatbotCard = html.slice(chatbotIndex);
 
-  assert.match(chatbotCard, /data-chat-total/);
-  assert.match(chatbotCard, /data-chat-completed/);
-  assert.match(chatbotCard, /data-chat-failed/);
-  assert.match(chatbotCard, /data-chat-satisfaction[^>]+role="img"/);
-  assert.match(chatbotCard, /data-chat-satisfaction-fill/);
-  assert.match(chatbotCard, /data-chat-satisfaction-value/);
-  assert.match(chatbotCard, /챗봇 만족도/);
-  assert.match(chatbotCard, /챗봇 사용자의 긍정 평가 비율을 나타냅니다\./);
-  assert.doesNotMatch(chatbotCard, /자동 해결률|4,821|4,210|611/);
+  assert.match(chatbotCard, /data-chat-liked/);
+  assert.match(chatbotCard, /data-chat-disliked/);
+  assert.match(chatbotCard, /data-chat-unrated/);
+  assert.match(chatbotCard, /data-positive-reason-ring/);
+  assert.match(chatbotCard, /data-positive-reason-legend/);
+  assert.match(chatbotCard, /data-negative-reason-ring/);
+  assert.match(chatbotCard, /data-negative-reason-legend/);
+  assert.match(chatbotCard, /좋아요 사유/);
+  assert.match(chatbotCard, /싫어요 사유/);
+  assert.doesNotMatch(chatbotCard, /전체 응답|응답 성공|응답 실패|챗봇 만족도/);
 });
 
-test("dashboard loads chat satisfaction progress styles", async () => {
+test("dashboard loads two-column reason ring styles", async () => {
   const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
   const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
 
   assert.match(html, /styles\.css\?v=20260831-9/);
-  assert.match(html, /dashboard\.css\?v=20260902-1/);
-  assert.match(styles, /\.chat-satisfaction-progress-fill\s*\{[^}]*background:/s);
+  assert.match(html, /dashboard\.css\?v=20260908-2/);
+  assert.match(styles, /\.chat-reason-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
+  assert.match(styles, /\.chat-reason-ring\s*\{[^}]*border-radius:\s*50%;/s);
 });
 
-test("OCR accuracy and chatbot satisfaction use the same insight area height", async () => {
-  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+test("OCR accuracy and chatbot reason panels share the same minimum height", async () => {
   const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
-  const ocrArea = html.slice(html.indexOf("data-ocr-accuracy") - 500, html.indexOf("data-ocr-accuracy"));
-  const chatArea = html.slice(html.indexOf("data-chat-satisfaction") - 500, html.indexOf("data-chat-satisfaction"));
 
-  assert.match(ocrArea, /dashboard-insight-card/);
-  assert.match(chatArea, /dashboard-insight-card/);
-  assert.match(styles, /\.dashboard-insight-card\s*\{[^}]*min-height:\s*80px;/s);
+  assert.match(styles, /--dashboard-insight-height:\s*136px;/);
+  assert.match(
+    styles,
+    /\.dashboard-insight-card,\s*\.chat-reason-panel\s*\{[^}]*min-height:\s*var\(--dashboard-insight-height\);/s,
+  );
 });
 
 test("OCR accuracy uses the shared RxVita accent tokens", async () => {
@@ -213,6 +226,6 @@ test("dashboard uses blue for successful states and red for negative states", as
     assert.match(html, new RegExp(`data-${slot}[^>]+style="color:#dc2626;"`));
   }
 
-  assert.match(html, /style="color:#2563eb;">응답 성공<\/p>/);
-  assert.match(html, /style="color:#dc2626;">응답 실패<\/p>/);
+  assert.match(html, /style="color:#2563eb;">좋아요<\/p>/);
+  assert.match(html, /style="color:#dc2626;">싫어요<\/p>/);
 });

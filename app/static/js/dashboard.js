@@ -41,22 +41,27 @@ export function formatOcrConfidence(value) {
   return `${(confidence * 100).toFixed(1)}%`;
 }
 
-export function formatChatSatisfaction(value) {
-  const rate = Number(value);
-  if (value === null || value === undefined || !Number.isFinite(rate) || rate < 0 || rate > 100) {
-    return {
-      text: "데이터 없음",
-      fillPercent: 0,
-      ariaLabel: "챗봇 만족도 평가 데이터 없음",
-    };
-  }
+const POSITIVE_REASON_COLORS = ["#0f766e", "#14b8a6", "#5eead4", "#99f6e4", "#ccfbf1"];
+const NEGATIVE_REASON_COLORS = ["#b91c1c", "#ef4444", "#f87171", "#fca5a5", "#fecaca"];
 
-  const rounded = Math.round(rate * 10) / 10;
-  return {
-    text: `${rounded.toFixed(1)}%`,
-    fillPercent: rounded,
-    ariaLabel: `챗봇 긍정 평가 비율 ${rounded.toFixed(1)}%`,
-  };
+/** API의 사유별 건수를 CSS conic-gradient와 범례 데이터로 변환한다. */
+export function buildReasonRing(reasons, colors) {
+  const validReasons = reasons.filter((reason) => Number(reason.count) > 0);
+  const total = validReasons.reduce((sum, reason) => sum + Number(reason.count), 0);
+  if (total === 0) return { total: 0, background: "#e5e7eb", items: [] };
+
+  let start = 0;
+  const segments = [];
+  const items = validReasons.map((reason, index) => {
+    const percentage = Number(reason.percentage);
+    const end = index === validReasons.length - 1 ? 100 : Math.round((start + percentage) * 10) / 10;
+    const color = colors[index % colors.length];
+    segments.push(`${color} ${start}% ${end}%`);
+    start = end;
+    return { ...reason, count: Number(reason.count), percentage, color };
+  });
+
+  return { total, background: `conic-gradient(${segments.join(", ")})`, items };
 }
 
 // 카드 안에서 이미 쓰고 있는 색이다. 새 색을 만들지 않는다.
@@ -130,6 +135,47 @@ function setBadge(element, { text, color }) {
   element.style.color = color;
 }
 
+function renderReasonRing(ring, legend, reasons, colors, label) {
+  if (!ring || !legend) return;
+  const chart = buildReasonRing(reasons, colors);
+  ring.style.background = chart.background;
+  ring.setAttribute(
+    "aria-label",
+    chart.total ? `${label} 총 ${chart.total}건` : `${label} 데이터 없음`,
+  );
+  ring.querySelector(".chat-reason-ring-value").textContent = `${chart.total}건`;
+  legend.replaceChildren();
+
+  if (chart.items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "chat-reason-empty";
+    empty.textContent = "데이터 없음";
+    legend.append(empty);
+    return;
+  }
+
+  chart.items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "chat-reason-legend-item";
+
+    const dot = document.createElement("span");
+    dot.className = "chat-reason-legend-dot";
+    dot.style.background = item.color;
+
+    const name = document.createElement("span");
+    name.className = "chat-reason-legend-name";
+    name.textContent = item.name;
+    name.title = `${item.code} · ${item.name}`;
+
+    const count = document.createElement("span");
+    count.className = "chat-reason-legend-count";
+    count.textContent = `${item.count}건 (${item.percentage.toFixed(1)}%)`;
+
+    row.append(dot, name, count);
+    legend.append(row);
+  });
+}
+
 /** 14일 가입 추이. 날짜가 표시된 전체 열에서 도움말을 열 수 있게 동적으로 구성한다. */
 function renderTrend(
   container,
@@ -197,12 +243,13 @@ function initializeDashboard() {
     ocrCompleted: document.querySelector("[data-ocr-completed]"),
     ocrFailed: document.querySelector("[data-ocr-failed]"),
     ocrAccuracy: document.querySelector("[data-ocr-accuracy]"),
-    chatTotal: document.querySelector("[data-chat-total]"),
-    chatCompleted: document.querySelector("[data-chat-completed]"),
-    chatFailed: document.querySelector("[data-chat-failed]"),
-    chatSatisfaction: document.querySelector("[data-chat-satisfaction]"),
-    chatSatisfactionFill: document.querySelector("[data-chat-satisfaction-fill]"),
-    chatSatisfactionValue: document.querySelector("[data-chat-satisfaction-value]"),
+    chatLiked: document.querySelector("[data-chat-liked]"),
+    chatDisliked: document.querySelector("[data-chat-disliked]"),
+    chatUnrated: document.querySelector("[data-chat-unrated]"),
+    positiveReasonRing: document.querySelector("[data-positive-reason-ring]"),
+    positiveReasonLegend: document.querySelector("[data-positive-reason-legend]"),
+    negativeReasonRing: document.querySelector("[data-negative-reason-ring]"),
+    negativeReasonLegend: document.querySelector("[data-negative-reason-legend]"),
   };
   const trend = document.querySelector("[data-member-trend]");
   const alarmTrend = document.querySelector("[data-alarm-trend]");
@@ -232,9 +279,9 @@ function initializeDashboard() {
       slots.ocrQueued,
       slots.ocrCompleted,
       slots.ocrFailed,
-      slots.chatTotal,
-      slots.chatCompleted,
-      slots.chatFailed,
+      slots.chatLiked,
+      slots.chatDisliked,
+      slots.chatUnrated,
     ].forEach((slot) => {
       if (slot) slot.textContent = PLACEHOLDER;
     });
@@ -245,10 +292,20 @@ function initializeDashboard() {
     if (trend) renderTrend(trend, []);
     if (alarmTrend) renderTrend(alarmTrend, []);
     if (slots.ocrAccuracy) slots.ocrAccuracy.textContent = "데이터 없음";
-    const satisfaction = formatChatSatisfaction(null);
-    if (slots.chatSatisfaction) slots.chatSatisfaction.setAttribute("aria-label", satisfaction.ariaLabel);
-    if (slots.chatSatisfactionFill) slots.chatSatisfactionFill.style.width = `${satisfaction.fillPercent}%`;
-    if (slots.chatSatisfactionValue) slots.chatSatisfactionValue.textContent = satisfaction.text;
+    renderReasonRing(
+      slots.positiveReasonRing,
+      slots.positiveReasonLegend,
+      [],
+      POSITIVE_REASON_COLORS,
+      "좋아요 사유",
+    );
+    renderReasonRing(
+      slots.negativeReasonRing,
+      slots.negativeReasonLegend,
+      [],
+      NEGATIVE_REASON_COLORS,
+      "싫어요 사유",
+    );
   };
 
   const render = (body) => {
@@ -293,14 +350,24 @@ function initializeDashboard() {
     if (slots.ocrAccuracy) {
       slots.ocrAccuracy.textContent = formatOcrConfidence(ocrDocuments.avgFieldConfidence);
     }
-    const chatResponses = body.chatResponses;
-    if (slots.chatTotal) slots.chatTotal.textContent = formatCount(chatResponses.total);
-    if (slots.chatCompleted) slots.chatCompleted.textContent = formatCount(chatResponses.completed);
-    if (slots.chatFailed) slots.chatFailed.textContent = formatCount(chatResponses.failed);
-    const satisfaction = formatChatSatisfaction(chatResponses.likeRate);
-    if (slots.chatSatisfaction) slots.chatSatisfaction.setAttribute("aria-label", satisfaction.ariaLabel);
-    if (slots.chatSatisfactionFill) slots.chatSatisfactionFill.style.width = `${satisfaction.fillPercent}%`;
-    if (slots.chatSatisfactionValue) slots.chatSatisfactionValue.textContent = satisfaction.text;
+    const chatEvaluations = body.chatEvaluations;
+    if (slots.chatLiked) slots.chatLiked.textContent = formatCount(chatEvaluations.liked);
+    if (slots.chatDisliked) slots.chatDisliked.textContent = formatCount(chatEvaluations.disliked);
+    if (slots.chatUnrated) slots.chatUnrated.textContent = formatCount(chatEvaluations.unrated);
+    renderReasonRing(
+      slots.positiveReasonRing,
+      slots.positiveReasonLegend,
+      chatEvaluations.positiveReasons,
+      POSITIVE_REASON_COLORS,
+      "좋아요 사유",
+    );
+    renderReasonRing(
+      slots.negativeReasonRing,
+      slots.negativeReasonLegend,
+      chatEvaluations.negativeReasons,
+      NEGATIVE_REASON_COLORS,
+      "싫어요 사유",
+    );
     setState(members.total === 0 ? "집계된 회원이 없습니다" : "");
   };
 

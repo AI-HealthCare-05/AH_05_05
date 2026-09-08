@@ -9,14 +9,14 @@ from tortoise.contrib.test import TestCase
 from app.core import config
 from app.core.jwt.tokens import AccessToken
 from app.models.background_jobs import BackgroundJob
-from app.models.chat import ChatMessage, ChatSession
+from app.models.chat import ChatSession
+from app.models.common_codes import CommonCode, CommonCodeGroup
 from app.models.enums import (
     AccountStatus,
     AdminRole,
     BackgroundJobStatus,
     BackgroundJobType,
-    ChatMessageRole,
-    ChatMessageStatus,
+    ChatSessionStatus,
     OcrJobStatus,
 )
 from app.models.ocr import OcrJob
@@ -394,7 +394,7 @@ class TestDashboardContract(DashboardTestBase):
             "members",
             "alarmNotifications",
             "ocrDocuments",
-            "chatResponses",
+            "chatEvaluations",
         }
 
     async def test_member_block_fields(self) -> None:
@@ -571,74 +571,76 @@ class TestDashboardOcrDocuments(DashboardTestBase):
         assert documents["avgFieldConfidence"] == 0.75
 
 
-class TestDashboardChatResponses(DashboardTestBase):
-    async def create_session(self, *, is_like: bool | None = None, created_at: datetime | None = None) -> ChatSession:
+class TestDashboardChatEvaluations(DashboardTestBase):
+    async def create_session(
+        self,
+        *,
+        status: ChatSessionStatus = ChatSessionStatus.DELETED,
+        is_like: bool | None = None,
+        reason_code: str | None = None,
+        deleted_at: datetime | None = None,
+    ) -> ChatSession:
         user = await create_user(name="챗봇 회원", email=unique_email("chat"))
-        session = await ChatSession.create(user=user, is_like=is_like)
-        if created_at is not None:
-            await ChatSession.filter(id=session.id).update(created_at=created_at)
-            session.created_at = created_at
-        return session
+        return await ChatSession.create(
+            user=user,
+            status=status,
+            is_like=is_like,
+            reason_code=reason_code,
+            deleted_at=deleted_at,
+        )
 
     @staticmethod
-    async def create_message(
-        session: ChatSession,
-        *,
-        role: ChatMessageRole = ChatMessageRole.ASSISTANT,
-        message_status: ChatMessageStatus,
-        completed_at: datetime | None,
-    ) -> ChatMessage:
-        return await ChatMessage.create(
-            chat_session=session,
-            sequence_no=1,
-            role=role,
-            content="테스트 메시지",
-            status=message_status,
-            completed_at=completed_at,
+    async def create_reason_group(group_code: str, reasons: tuple[tuple[str, str], ...]) -> None:
+        group = await CommonCodeGroup.create(
+            category="CHAT",
+            group_code=group_code,
+            group_name=group_code,
         )
+        for sort_order, (code, name) in enumerate(reasons):
+            await CommonCode.create(
+                group=group,
+                detail_code=code,
+                detail_name=name,
+                sort_order=sort_order,
+            )
 
-    async def test_counts_only_terminal_assistant_responses_in_selected_period(self) -> None:
-        await self.create_message(
-            await self.create_session(),
-            message_status=ChatMessageStatus.COMPLETED,
-            completed_at=at(0),
-        )
-        await self.create_message(
-            await self.create_session(),
-            message_status=ChatMessageStatus.FAILED,
-            completed_at=at(2),
-        )
-        await self.create_message(
-            await self.create_session(),
-            message_status=ChatMessageStatus.PENDING,
-            completed_at=None,
-        )
-        await self.create_message(
-            await self.create_session(),
-            role=ChatMessageRole.USER,
-            message_status=ChatMessageStatus.COMPLETED,
-            completed_at=at(0),
-        )
-        await self.create_message(
-            await self.create_session(),
-            message_status=ChatMessageStatus.COMPLETED,
-            completed_at=at(8),
-        )
+    async def test_counts_only_sessions_ended_in_selected_period(self) -> None:
+        await self.create_session(is_like=True, deleted_at=at(0))
+        await self.create_session(is_like=False, deleted_at=at(1))
+        await self.create_session(is_like=None, deleted_at=at(2))
+        await self.create_session(status=ChatSessionStatus.ACTIVE, is_like=True, deleted_at=None)
+        await self.create_session(is_like=False, deleted_at=at(8))
 
-        responses = (await self.fetch("LAST_7_DAYS"))["chatResponses"]
+        evaluations = (await self.fetch("LAST_7_DAYS"))["chatEvaluations"]
 
-        assert responses == {"total": 2, "completed": 1, "failed": 1, "likeRate": None}
+        assert evaluations["liked"] == 1
+        assert evaluations["disliked"] == 1
+        assert evaluations["unrated"] == 1
 
-    async def test_like_rate_uses_only_evaluated_sessions_created_in_selected_period(self) -> None:
-        await self.create_session(is_like=True, created_at=at(0))
-        await self.create_session(is_like=True, created_at=at(1))
-        await self.create_session(is_like=False, created_at=at(2))
-        await self.create_session(is_like=None, created_at=at(0))
-        await self.create_session(is_like=False, created_at=at(8))
+    async def test_groups_selected_reasons_by_positive_and_negative_common_codes(self) -> None:
+        await self.create_reason_group("P_REASON", (("P01", "정확함"), ("P02", "도움이 됨")))
+        await self.create_reason_group("N_REASON", (("N01", "부정확함"), ("N02", "너무 김")))
+        await self.create_session(is_like=True, reason_code="P01", deleted_at=at(0))
+        await self.create_session(is_like=True, reason_code="P01", deleted_at=at(1))
+        await self.create_session(is_like=True, reason_code="P02", deleted_at=at(2))
+        await self.create_session(is_like=True, reason_code=None, deleted_at=at(0))
+        await self.create_session(is_like=False, reason_code="N02", deleted_at=at(0))
+        await self.create_session(is_like=False, reason_code=None, deleted_at=at(1))
 
-        responses = (await self.fetch("LAST_7_DAYS"))["chatResponses"]
+        evaluations = (await self.fetch("LAST_7_DAYS"))["chatEvaluations"]
 
-        assert responses["likeRate"] == 66.7
+        assert evaluations == {
+            "liked": 4,
+            "disliked": 2,
+            "unrated": 0,
+            "positiveReasons": [
+                {"code": "P01", "name": "정확함", "count": 2, "percentage": 66.7},
+                {"code": "P02", "name": "도움이 됨", "count": 1, "percentage": 33.3},
+            ],
+            "negativeReasons": [
+                {"code": "N02", "name": "너무 김", "count": 1, "percentage": 100.0},
+            ],
+        }
 
 
 class TestDashboardPermissions(DashboardTestBase):
