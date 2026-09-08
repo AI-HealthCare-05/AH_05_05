@@ -15,6 +15,7 @@ from ai_worker.domain.chat_content_compactor import (
     ANSWER_COMPACTION_MARKER,
     compact_chat_content,
 )
+from ai_worker.domain.chat_risk_policy import MedicationChatRiskPolicy
 from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
@@ -56,12 +57,14 @@ from ai_worker.schemas.knowledge import (
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
+    MedicationChatAnswerDomain,
     MedicationChatProgress,
     MedicationChatProgressCallback,
     MedicationChatProgressStage,
     MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRiskDecision,
     MedicationChatRoute,
     MedicationChatSource,
     MedicationChatSourceKind,
@@ -125,6 +128,9 @@ class AnswerMedicationQuestionUseCase:
         r"현재\s*(?:복용|먹)|지금\s*(?:복용|먹)|복약\s*정보|"
         r"(?:약|영양제|복용)\s*목록|전체\s*상호작용",
     )
+    _PERSONALIZED_GUIDANCE_CUE_PATTERN = re.compile(
+        r"추천|권장|하루|일일|섭취량|용량|복용|먹어|먹을|같이\s*먹|함께\s*먹",
+    )
 
     def __init__(
         self,
@@ -139,6 +145,7 @@ class AnswerMedicationQuestionUseCase:
         question_resolver: MedicationQuestionResolver | None = None,
         supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
         query_plan_chain: MedicationQueryPlanChain | None = None,
+        risk_policy: MedicationChatRiskPolicy | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -150,6 +157,7 @@ class AnswerMedicationQuestionUseCase:
         self._question_resolver = question_resolver
         self._supplement_ingredient_catalog = supplement_ingredient_catalog
         self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
+        self._risk_policy = risk_policy or MedicationChatRiskPolicy()
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -207,6 +215,10 @@ class AnswerMedicationQuestionUseCase:
             interpretation=interpretation,
         ):
             return terminal_result
+        risk_decision = await self._evaluate_risk_policy(
+            request=request,
+            query_plan=query_plan,
+        )
         interaction_question = query_plan.interaction_pair is not None or self._is_interaction_question(
             request.question
         )
@@ -458,6 +470,10 @@ class AnswerMedicationQuestionUseCase:
                 ),
                 evidence_coverage=evidence_coverage,
             )
+            draft = self._apply_risk_policy(
+                draft,
+                decision=risk_decision,
+            )
             draft_span.end(
                 {
                     "route": draft.route.value,
@@ -503,6 +519,10 @@ class AnswerMedicationQuestionUseCase:
                     )
                 }
             )
+            generated = self._apply_risk_policy(
+                generated,
+                decision=risk_decision,
+            )
             llm_span.end(
                 {
                     "rewrite_status": outcome.observation.status.value,
@@ -536,6 +556,67 @@ class AnswerMedicationQuestionUseCase:
                 }
             )
         return validated
+
+    async def _evaluate_risk_policy(
+        self,
+        *,
+        request: MedicationChatRequest,
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> MedicationChatRiskDecision:
+        domain = self._answer_domain(query_plan)
+        asks_for_personalized_guidance = bool(
+            self._PERSONALIZED_GUIDANCE_CUE_PATTERN.search(request.question),
+        )
+        async with self._tracer.span("risk.policy") as risk_span:
+            decision = self._risk_policy.evaluate(
+                profile=request.risk_profile,
+                domain=domain,
+                asks_for_personalized_guidance=asks_for_personalized_guidance,
+            )
+            risk_span.end(
+                {
+                    "domain": decision.domain.value,
+                    "scope": decision.scope.value,
+                    "reason_codes": decision.reason_codes,
+                    "personalized_guidance_requested": asks_for_personalized_guidance,
+                }
+            )
+        return decision
+
+    @staticmethod
+    def _answer_domain(
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> MedicationChatAnswerDomain:
+        entity_kinds = {entity.kind for entity in query_plan.entities}
+        if InteractionEntityKind.DRUG in entity_kinds:
+            return MedicationChatAnswerDomain.MEDICATION
+        if InteractionEntityKind.SUPPLEMENT in entity_kinds:
+            return MedicationChatAnswerDomain.SUPPLEMENT
+        return MedicationChatAnswerDomain.LIFESTYLE
+
+    @staticmethod
+    def _apply_risk_policy(
+        result: MedicationChatResult,
+        *,
+        decision: MedicationChatRiskDecision,
+    ) -> MedicationChatResult:
+        if not decision.warning_required:
+            return result.model_copy(update={"risk_decision": decision})
+        warning = (
+            "개인 위험정보(임신·수유·연령·신장/간질환·수술 예정·항응고제 복용)를 "
+            "모두 확인하지 못했습니다. 일반 정보로만 참고하고, 복용 전 의료진 또는 "
+            "약사와 확인하세요."
+        )
+        answer = result.answer if warning in result.answer else f"{result.answer.rstrip()}\n\n{warning}"
+        reason_codes = list(dict.fromkeys([*result.safety_reason_codes, *decision.reason_codes]))
+        return result.model_copy(
+            update={
+                "answer": answer,
+                "safety_status": SafetyStatus.RESTRICTED,
+                "safety_reason_codes": reason_codes,
+                "risk_decision": decision,
+            }
+        )
 
     async def _plan_question(
         self,

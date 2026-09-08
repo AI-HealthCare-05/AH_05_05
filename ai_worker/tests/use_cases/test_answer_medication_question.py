@@ -45,6 +45,8 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatProgressStage,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRiskProfile,
+    MedicationChatRiskScope,
     MedicationChatRoute,
     MedicationGuideFact,
     MedicationGuideLookup,
@@ -923,6 +925,7 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert tracer.names == [
         "patient_context.load",
         "query.plan",
+        "risk.policy",
         "interaction_rules.search",
         "rag.retrieve",
         "medication_guide.lookup",
@@ -946,7 +949,13 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     ]
     assert query_outputs["normalized_entity_count"] == 2
     assert query_outputs["requested_section_types"] == []
-    rag_outputs = tracer.spans[3].outputs
+    assert tracer.spans[2].outputs == {
+        "domain": "MEDICATION",
+        "scope": "EVIDENCE_ONLY",
+        "reason_codes": [],
+        "personalized_guidance_requested": False,
+    }
+    rag_outputs = tracer.spans[4].outputs
     assert len(rag_outputs.pop("query_plan_hash")) == 64
     assert len(rag_outputs.pop("execution_plan_hash")) == 64
     assert rag_outputs == {
@@ -1109,11 +1118,11 @@ async def test_execute_records_losartan_search_diagnostics_in_content_mode() -> 
     )
 
     assert tracer.spans[1].outputs["entity_names"] == ["로사르탄"]
-    assert tracer.spans[3].outputs["document_types"] == [
+    assert tracer.spans[4].outputs["document_types"] == [
         "DRUG_ENCYCLOPEDIA",
     ]
-    assert tracer.spans[3].outputs["drug_encyclopedia_evidence_count"] == 1
-    assert tracer.spans[3].outputs["candidate_diagnostics"][0]["document_id"] == chunk.metadata.document_id
+    assert tracer.spans[4].outputs["drug_encyclopedia_evidence_count"] == 1
+    assert tracer.spans[4].outputs["candidate_diagnostics"][0]["document_id"] == chunk.metadata.document_id
 
 
 async def test_execute_records_selected_and_candidate_entity_roles() -> None:
@@ -1533,6 +1542,37 @@ async def test_multi_entity_answer_separates_supported_and_unverified_pairs() ->
             maxsplit=1,
         )[1]
     )
+
+
+async def test_unknown_vulnerable_risk_adds_warning_before_final_safety_validation() -> None:
+    validator = RecordingValidator()
+    supplement_chunk = build_chunk().model_copy(
+        update={
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_CODE,
+                    "ingredient_names": ["오메가3"],
+                    "section_type": KnowledgeSectionType.DAILY_INTAKE,
+                }
+            ),
+        }
+    )
+    request = build_request("오메가3를 하루에 얼마나 먹어야 하나요?").model_copy(
+        update={"risk_profile": MedicationChatRiskProfile()}
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
+        grounded_claim_validator=validator,
+    ).execute(request)
+
+    assert result.risk_decision is not None
+    assert result.risk_decision.scope == MedicationChatRiskScope.WARNING_REQUIRED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "PREGNANCY_STATUS_UNKNOWN" in result.safety_reason_codes
+    assert validator.received is not None
+    assert validator.received.risk_decision == result.risk_decision
+    assert "임신·수유" in validator.received.answer
 
 
 def test_product_name_candidates_are_bounded_for_long_questions() -> None:

@@ -49,10 +49,10 @@
 
 **Produces:** A `YES/NO/UNKNOWN` risk context and deterministic answer-scope decisions for drug, supplement, and lifestyle questions.
 
-- [ ] Write failing tests for pregnancy/surgery/anticoagulant flags, including missing data becoming `UNKNOWN`.
-- [ ] Implement a pure policy evaluator that blocks personal dose/recommendation framing whenever a relevant flag is `YES` or `UNKNOWN`.
-- [ ] Add a trace-safe policy summary to the draft and test that the safety validator receives the restricted draft.
-- [ ] Record policy coverage and commit.
+- [x] Write failing tests for pregnancy/surgery/anticoagulant flags, including missing data becoming `UNKNOWN`.
+- [x] Implement a pure policy evaluator that blocks personal dose/recommendation framing whenever a relevant flag is `YES` or `UNKNOWN`.
+- [x] Add a trace-safe policy summary to the draft and test that the safety validator receives the restricted draft.
+- [x] Record policy coverage and commit.
 
 ### Task 3: Provide safe alternative guidance when evidence is insufficient
 

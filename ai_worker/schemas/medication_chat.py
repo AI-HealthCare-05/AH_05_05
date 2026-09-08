@@ -27,6 +27,56 @@ class MedicationChatRoute(StrEnum):
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
+class MedicationChatRiskFlag(StrEnum):
+    YES = "YES"
+    NO = "NO"
+    UNKNOWN = "UNKNOWN"
+
+
+class MedicationChatAnswerDomain(StrEnum):
+    MEDICATION = "MEDICATION"
+    SUPPLEMENT = "SUPPLEMENT"
+    LIFESTYLE = "LIFESTYLE"
+
+
+class MedicationChatRiskScope(StrEnum):
+    EVIDENCE_ONLY = "EVIDENCE_ONLY"
+    EVIDENCE_WITH_GENERAL_GUIDANCE = "EVIDENCE_WITH_GENERAL_GUIDANCE"
+    GENERAL_GUIDANCE_ONLY = "GENERAL_GUIDANCE_ONLY"
+    WARNING_REQUIRED = "WARNING_REQUIRED"
+
+
+class MedicationChatRiskProfile(BaseModel):
+    """사용자 입력에서 온 취약군·고위험 상태. 입력되지 않은 값은 UNKNOWN이다."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    pregnancy: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+    breastfeeding: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+    minor: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+    older_adult: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+    kidney_disease: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+    liver_disease: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+    scheduled_surgery: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+    anticoagulant_use: MedicationChatRiskFlag = MedicationChatRiskFlag.UNKNOWN
+
+    @classmethod
+    def all_no(cls) -> "MedicationChatRiskProfile":
+        return cls(**{field: MedicationChatRiskFlag.NO for field in cls.model_fields})
+
+
+class MedicationChatRiskDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    domain: MedicationChatAnswerDomain
+    scope: MedicationChatRiskScope
+    reason_codes: list[str] = Field(default_factory=list)
+
+    @property
+    def warning_required(self) -> bool:
+        return self.scope == MedicationChatRiskScope.WARNING_REQUIRED
+
+
 class MedicationChatProgressStage(StrEnum):
     QUESTION_CHECKING = "QUESTION_CHECKING"
     EVIDENCE_SEARCHING = "EVIDENCE_SEARCHING"
@@ -127,6 +177,7 @@ class MedicationChatRequest(BaseModel):
         max_length=CHAT_CONTENT_MAX_LENGTH,
     )
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
+    risk_profile: MedicationChatRiskProfile = Field(default_factory=MedicationChatRiskProfile)
 
     @field_validator("question", mode="before")
     @classmethod
@@ -242,6 +293,10 @@ class MedicationChatResult(BaseModel):
         exclude=True,
     )
     evidence_coverage: MedicationEvidenceCoverage | None = Field(
+        default=None,
+        exclude=True,
+    )
+    risk_decision: MedicationChatRiskDecision | None = Field(
         default=None,
         exclude=True,
     )
