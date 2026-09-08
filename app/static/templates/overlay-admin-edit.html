@@ -38,12 +38,38 @@
       </div>
       <div class="overlay-field">
         <label for="admin-edit-new-password">새 비밀번호</label>
-        <input id="admin-edit-new-password" name="newPassword" type="password" class="ui-control" maxlength="30" autocomplete="new-password">
+        <div class="overlay-password-control">
+          <input id="admin-edit-new-password" name="newPassword" type="password" class="ui-control" maxlength="30" autocomplete="new-password">
+          <button class="icon-button overlay-password-toggle" type="button" data-admin-password-toggle data-password-target="newPassword" aria-label="새 비밀번호 표시" aria-pressed="false">
+            <svg data-password-icon="eye" hidden width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <svg data-password-icon="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="m3 3 18 18"></path>
+            </svg>
+          </button>
+        </div>
         <span class="overlay-error" data-error-for="newPassword"></span>
       </div>
       <div class="overlay-field">
         <label for="admin-edit-new-password-confirm">새 비밀번호 확인</label>
-        <input id="admin-edit-new-password-confirm" name="newPasswordConfirm" type="password" class="ui-control" maxlength="30" autocomplete="new-password">
+        <div class="overlay-password-control">
+          <input id="admin-edit-new-password-confirm" name="newPasswordConfirm" type="password" class="ui-control" maxlength="30" autocomplete="new-password">
+          <button class="icon-button overlay-password-toggle" type="button" data-admin-password-toggle data-password-target="newPasswordConfirm" aria-label="새 비밀번호 확인 표시" aria-pressed="false">
+            <svg data-password-icon="eye" hidden width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <svg data-password-icon="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="m3 3 18 18"></path>
+            </svg>
+          </button>
+        </div>
         <span class="overlay-error" data-error-for="newPasswordConfirm"></span>
       </div>
     </div>

@@ -15,6 +15,7 @@ from app.services.medication_ocr_v3.pipeline.evidence_catalog import (
     _normalized,
     _strength_block_id_groups,
     _unique_geometry_sources,
+    _verified_medication_block_ids,
 )
 from app.services.medication_ocr_v3.pipeline.medication_rows import MedicationRowsResult, _is_plausible_product_name
 from app.services.medication_ocr_v3.pipeline.ocr_layout import AxisAlignedBBox, OcrLayoutResult
@@ -42,7 +43,7 @@ def build_semantic_evidence_catalog(
     The original catalog is immutable and remains the legacy/no-LLM comparison.
     """
     sources, duplicate_ids = _unique_geometry_sources(ocr_result.blocks)
-    line_ids, sensitive_ids, segments = _line_indexes(layout, sources)
+    line_ids, sensitive_ids, segments = _line_indexes(layout, sources, _verified_medication_block_ids(medication_rows))
 
     def eligible(block_id: str) -> bool:
         return _eligible(block_id, sources, duplicate_ids, line_ids, sensitive_ids)

@@ -16,6 +16,8 @@ from app.dtos.auth import LoginRequest, SignUpRequest
 from app.models.enums import AccountStatus
 from app.models.users import User, UserSettings
 from app.repositories.user_repository import UserRepository
+from app.services.admin_credentials import generate_temporary_password
+from app.services.email_jobs import EmailJobService
 from app.services.email_verifications import EmailVerificationService
 from app.services.jwt import JwtService
 
@@ -105,6 +107,18 @@ class AuthService:
 
     async def login(self, user: User) -> dict[str, AccessToken | RefreshToken]:
         return self.jwt_service.issue_jwt_pair(user)
+
+    async def request_password_reset(self, email: str) -> None:
+        user = await self.user_repo.get_user_by_email(email)
+        if user is None or user.status != AccountStatus.ACTIVE:
+            return
+
+        temporary_password = generate_temporary_password()
+        await EmailJobService().enqueue_user_password_reset(
+            user_id=user.id,
+            recipient_email=user.email,
+            temporary_password=temporary_password,
+        )
 
     async def check_email_exists(self, email: str | EmailStr) -> None:
         if await self.user_repo.exists_by_email(email):

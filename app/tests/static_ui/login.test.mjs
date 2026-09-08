@@ -191,6 +191,51 @@ test("password help tells the user to contact an administrator", () => {
   assert.equal(PASSWORD_HELP_MESSAGE, "관리자에게 문의하세요.");
 });
 
+test("관리자 로그인 비밀번호 표시 상태는 입력 타입과 눈 아이콘을 함께 바꾼다", async () => {
+  const loginModule = await import("../../static/js/login.js");
+  assert.equal(typeof loginModule.passwordVisibilityState, "function");
+  assert.deepEqual(loginModule.passwordVisibilityState(false), {
+    inputType: "password",
+    icon: "eye-off",
+    ariaLabel: "비밀번호 표시",
+  });
+  assert.deepEqual(loginModule.passwordVisibilityState(true), {
+    inputType: "text",
+    icon: "eye",
+    ariaLabel: "비밀번호 숨기기",
+  });
+});
+
+test("관리자 로그인 비밀번호 토글은 선택하지 않은 SVG 아이콘을 실제로 숨긴다", async () => {
+  const loginModule = await import("../../static/js/login.js");
+  assert.equal(typeof loginModule.applyPasswordVisibility, "function");
+
+  const input = { type: "password" };
+  const attributes = new Map();
+  const icons = ["eye", "eye-off"].map((name) => ({
+    dataset: { passwordIcon: name },
+    hidden: false,
+    toggleAttribute(attribute, force) {
+      if (attribute === "hidden") this.hidden = force;
+    },
+  }));
+  const toggle = {
+    setAttribute(name, value) {
+      attributes.set(name, value);
+    },
+    querySelectorAll() {
+      return icons;
+    },
+  };
+
+  loginModule.applyPasswordVisibility(input, toggle, true);
+
+  assert.equal(input.type, "text");
+  assert.equal(attributes.get("aria-pressed"), "true");
+  assert.equal(icons[0].hidden, false);
+  assert.equal(icons[1].hidden, true);
+});
+
 test("login script reads isFirstLogin, not the removed mustChangePassword", async () => {
   // 백엔드가 필드를 개명했다. 옛 이름을 읽으면 undefined 라 에러 없이 조용히 프롬프트가
   // 안 뜬다. 그 회귀를 여기서 잡는다.

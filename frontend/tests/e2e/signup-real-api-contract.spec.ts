@@ -277,8 +277,8 @@ test('회원가입 입력창 상한은 화면 기준이다', async ({ page }) =>
     'maxlength',
     '30',
   );
-  await page.getByLabel('비밀번호', { exact: true }).fill('password1234');
-  await page.getByLabel('비밀번호 확인', { exact: true }).fill('password1234');
+  await page.getByLabel('비밀번호', { exact: true }).fill('Password123!');
+  await page.getByLabel('비밀번호 확인', { exact: true }).fill('Password123!');
   await page.getByRole('button', { name: '다음' }).click();
   await expect(page.getByLabel('이름')).toHaveAttribute('maxlength', '20');
   await expect(page.getByLabel('전화번호')).toHaveAttribute('maxlength', '13');

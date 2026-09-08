@@ -16,7 +16,6 @@ def _validate_aware_datetime(value: datetime) -> None:
 
 class AlarmCreateRequest(BaseModel):
     care_episode_id: Annotated[int | None, Field(gt=0)] = None
-    source_guide_id: Annotated[int | None, Field(gt=0)] = None
     follow_up_visit_id: Annotated[int | None, Field(gt=0)] = None
     alarm_type: AlarmType = AlarmType.MEDICATION
     meal_slot: MealSlot | None = None
@@ -41,7 +40,6 @@ class AlarmUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     care_episode_id: Annotated[int | None, Field(gt=0)] = None
-    source_guide_id: Annotated[int | None, Field(gt=0)] = None
     follow_up_visit_id: Annotated[int | None, Field(gt=0)] = None
     alarm_type: AlarmType | None = None
     meal_slot: MealSlot | None = None
@@ -71,7 +69,6 @@ class AlarmResponse(BaseSerializerModel):
     id: int
     user_id: int
     care_episode_id: int | None
-    source_guide_id: int | None
     follow_up_visit_id: int | None
     alarm_type: AlarmType
     meal_slot: MealSlot | None

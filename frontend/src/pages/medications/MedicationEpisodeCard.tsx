@@ -62,7 +62,7 @@ export function MedicationEpisodeCard({
           onClick={selectionMode ? onToggleSelected : (onOpenEpisode ?? onToggleExpanded)}
         >
           <span className="min-w-0 flex-1">
-            <strong className="block text-lg text-foreground">
+            <strong className="block break-words text-lg text-foreground">
               {feature252 && overview.alias ? overview.alias : `${dateLabel} 처방`}
             </strong>
             {feature252 && (

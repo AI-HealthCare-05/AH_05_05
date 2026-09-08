@@ -36,12 +36,6 @@ class Alarm(models.Model):
         null=True,
         on_delete=fields.CASCADE,
     )
-    source_guide: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
-        "models.RecoveryGuide",
-        related_name="alarms",
-        null=True,
-        on_delete=fields.SET_NULL,
-    )
     follow_up_visit: fields.ForeignKeyNullableRelation[models.Model] = fields.ForeignKeyField(
         "models.FollowUpVisit",
         related_name="alarms",

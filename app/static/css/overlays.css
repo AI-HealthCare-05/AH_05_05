@@ -5,6 +5,9 @@
 .overlay-form { display: grid; gap: 16px; }
 .overlay-field { display: grid; gap: 6px; }
 .overlay-field label { font-size: 12px; font-weight: 600; color: #4b5563; }
+.overlay-password-control { position: relative; }
+.overlay-password-control .ui-control { width: 100%; padding-right: 42px; }
+.overlay-password-toggle { position: absolute; top: 0; right: 0; min-width: 40px; min-height: 36px; }
 .overlay-error { min-height: 14px; font-size: 11px; color: #dc2626; }
 .overlay-actions { display: flex; gap: 12px; margin-top: 20px; }
 .overlay-actions > * { flex: 1; }
