@@ -212,6 +212,7 @@ test('a lost join response reconciles the committed participation from catalog d
   await page.getByRole('button', { name: '참여하기' }).click();
 
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
+  await expect(page.getByRole('heading', { name: dailyChallenge.name })).toBeVisible();
   expect(joinCalls).toBe(1);
   expect(detailReads).toBeGreaterThanOrEqual(2);
 });
@@ -1070,6 +1071,10 @@ test('relative badge media paths resolve from the server root on every official 
   });
   await page.route('**/api/v1/user/challenge-catalog/101', route => route.fulfill({ json: mediaChallenge }));
   await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: completed }));
+  await page.route('**/media/badges/walk.png', route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+  }));
 
   const expectedPath = '/media/badges/walk.png';
   const surfaces = [

@@ -122,6 +122,10 @@ test('recommendations expose empty, forbidden, and retryable states without mock
 test('medication joins one target per POST and retries only failures with stable keys', async ({ page }) => {
   await authenticate(page);
   await stubRecommendations(page, [medicationA]);
+  await stubOfficialMy(page);
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
   const requests: Array<{ templateId: string; targetIds: number[]; idempotencyKey: string }> = [];
   let failedOnce = false;
   await page.route('**/api/v1/user/custom-challenge-recommendations/*/participations', route => {
@@ -177,20 +181,24 @@ test('a medication 401 stops later sequential POSTs immediately', async ({ page 
 test('supplement sends one canonical set and keeps its key when retrying', async ({ page }) => {
   await authenticate(page);
   await stubRecommendations(page, [supplement]);
+  const joinedParticipation = participation({
+    id: 801,
+    templateId: 41,
+    challengeType: 'SUPPLEMENT',
+    challengeName: supplement.challengeName,
+    targets: [201, 203].map((sourceId, index) => ({ id: 810 + index, sourceId, name: `영양제 ${sourceId}` })),
+  });
   const requests: Array<{ targetIds: number[]; idempotencyKey: string }> = [];
   await page.route('**/api/v1/user/custom-challenge-recommendations/41/participations', route => {
     const body = route.request().postDataJSON() as { targetIds: number[]; idempotencyKey: string };
     requests.push(body);
     return requests.length === 1
       ? route.fulfill({ status: 503, json: { code: 'TEMPORARY', message: '다시 시도해주세요.' } })
-      : route.fulfill({ status: 201, json: participation({
-        id: 801,
-        templateId: 41,
-        challengeType: 'SUPPLEMENT',
-        challengeName: supplement.challengeName,
-        targets: body.targetIds.map((sourceId, index) => ({ id: 810 + index, sourceId, name: `영양제 ${sourceId}` })),
-      }) });
+      : route.fulfill({ status: 201, json: joinedParticipation });
   });
+  await page.route('**/api/v1/user/custom-challenge-participations/801', route => route.fulfill({
+    json: joinedParticipation,
+  }));
 
   await page.goto('/challenges/tailored/supplement?templateId=41');
   await page.getByLabel('비타민D 선택').check();
@@ -241,6 +249,11 @@ test('route re-entry refetches custom progress and Home actions never POST a cus
     const item = participation({ completedCount });
     return route.fulfill({ json: { items: [item], totalCount: 1 } });
   });
+  await page.route('**/api/v1/display/med/nutr/rank', route => route.fulfill({ status: 204 }));
+  await page.route('**/api/v1/med/user-suppl-nutr?*', route => route.fulfill({ json: {
+    items: [], total: 0, offset: 0, limit: 100, nutrient_standard: null,
+  } }));
+  await page.route('**/api/v1/medications', route => route.fulfill({ json: [] }));
   page.on('request', request => {
     if (request.method() === 'POST' && request.url().includes('/custom-challenge')) customPosts += 1;
   });
@@ -258,6 +271,9 @@ test('route re-entry refetches custom progress and Home actions never POST a cus
 
 test('a delayed recommendation response cannot replace another account route', async ({ page }) => {
   await authenticate(page);
+  await page.route('**/api/v1/user/challenge-catalog?*', route => route.fulfill({
+    json: { items: [], total_count: 0, offset: 0, limit: 100 },
+  }));
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/v1/user/custom-challenge-recommendations', async route => {
@@ -274,6 +290,7 @@ test('a delayed recommendation response cannot replace another account route', a
   release();
 
   await expect(page).toHaveURL(/\/challenges\/browse$/);
+  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
   await expect(page.getByText(medicationA.challengeName)).toHaveCount(0);
 });
 

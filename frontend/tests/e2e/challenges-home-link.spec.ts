@@ -16,6 +16,9 @@ test('일반 경로의 홈 이동은 검토 전용 목업 홈으로 바꾸지 �
   await page.route('**/api/v1/user/badges', route => route.fulfill({
     json: { items: [], total_count: 0 },
   }));
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
   await page.goto('/challenges');
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await expect(page).toHaveURL(/\/home$/);
