@@ -473,7 +473,7 @@ export function MyPage({
                   divided
                 />
                 <ManagementRow
-                  label="AI 보고서 모아보기"
+                  label="AI 보고서"
                   value=""
                   onClick={() => navigate('/reports')}
                   divided

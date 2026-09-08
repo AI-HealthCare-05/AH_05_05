@@ -3,9 +3,10 @@ import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
 
 test.beforeEach(() => test.skip(IS_REAL_API, MOCK_ONLY_REASON));
 // WSL's mounted checkout can need more than the global 10s for Vite's first transform.
-test.setTimeout(30_000);
+test.setTimeout(120_000);
 
 test.beforeEach(async ({ page }) => {
+  await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'e2e-report-token');
     sessionStorage.setItem('poke.account-principal', 'report-preview@example.com');
@@ -16,7 +17,7 @@ for (const source of ['medications', 'supplements'] as const) {
   test(`${source}: report entry is explicit and sends no report/chat request`, async ({ page }) => {
     const reportRequests: string[] = [];
     page.on('request', (request) => {
-      if (/\/v1\/(chat|reports)/.test(request.url())) {
+      if (/\/v1\/(chat|reports|intake-reports)/.test(request.url())) {
         reportRequests.push(`${request.method()} ${request.url()}`);
       }
     });
@@ -24,19 +25,18 @@ for (const source of ['medications', 'supplements'] as const) {
     await expect(page.getByRole('button', { name: source === 'medications' ? '처방 관리' : '영양제 관리' })).toBeVisible();
     await page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' }).click();
     await expect(page).toHaveURL(new RegExp(`/reports/new\\?source=${source}$`));
-    await expect(page.getByRole('heading', { name: '보고서 기능을 준비하고 있어요' })).toBeVisible();
-    await expect(page.getByText('아직 보고서를 생성하거나 건강정보를 전송하지 않아요.')).toBeVisible();
-    await expect(page.getByRole('button', { name: '보고서 생성 준비 중' })).toBeDisabled();
-    await page.getByRole('button', { name: 'AI 보고서 모아보기' }).click();
-    await expect(page).toHaveURL('/reports');
-    await expect(page.getByRole('heading', { name: '아직 받은 AI 보고서가 없어요' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '현재 복용 정보를 함께 살펴봐요' })).toBeVisible();
+    await expect(page.getByText('보고서는 저장되지 않아요.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '보고서 생성하기', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: source === 'medications' ? '복약으로 돌아가기' : '영양제로 돌아가기' }).click();
+    await expect(page).toHaveURL(`/${source}`);
     expect(reportRequests).toEqual([]);
   });
 }
 
-test('My has report collection entry, with a working return path', async ({ page }) => {
+test('My has report entry, with a working return path', async ({ page }) => {
   await page.goto('/my');
-  await page.getByRole('button', { name: 'AI 보고서 모아보기' }).click();
+  await page.getByRole('button', { name: 'AI 보고서', exact: true }).click();
   await expect(page).toHaveURL('/reports');
   await page.getByRole('button', { name: '마이페이지로 돌아가기' }).click();
   await expect(page).toHaveURL('/my');
