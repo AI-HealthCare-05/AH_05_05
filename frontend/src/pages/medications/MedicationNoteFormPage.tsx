@@ -37,7 +37,6 @@ interface NoteFormState {
 
 interface NoteEpisodeOption {
   id: number;
-  title: string;
   alias: string | null;
   startDate: string | null;
   status: string;
@@ -58,7 +57,7 @@ function prescriptionLabel(episode: NoteEpisodeOption): string {
   if (episode.startDate) {
     return `${formatDateLabel(episode.startDate, { includeYear: true })} 처방`;
   }
-  return episode.title;
+  return `처방 #${episode.id}`;
 }
 
 function medicineLabel(medication: MedicationNoteMedication): string {
@@ -83,7 +82,6 @@ function initialForm(note: MedicationNote | null): NoteFormState {
 function episodeFromOverview(overview: MedicationOverview): NoteEpisodeOption {
   return {
     id: overview.recordId,
-    title: `${overview.start.date} 조제약 복약안내`,
     alias: overview.alias ?? null,
     startDate: overview.start.date,
     status: overview.isFinished ? 'COMPLETED' : 'ACTIVE',
@@ -98,7 +96,6 @@ function episodeFromOverview(overview: MedicationOverview): NoteEpisodeOption {
 function episodeFromNote(note: MedicationNote): NoteEpisodeOption {
   return {
     id: note.careEpisodeId,
-    title: note.careEpisodeTitle,
     alias: note.careEpisodeAlias,
     startDate: note.careEpisodeStartDate,
     status: note.careEpisodeStatus,

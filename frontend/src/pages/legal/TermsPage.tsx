@@ -1,10 +1,15 @@
 import { LegalDocumentPage, LegalList, LegalSection } from './LegalDocumentPage';
 
-export function TermsPage() {
+interface TermsPageProps {
+  onBack?: () => void;
+}
+
+export function TermsPage({ onBack }: TermsPageProps = {}) {
   return (
     <LegalDocumentPage
       title="이용약관"
       description="본 약관은 알엑스비타(이하 ‘운영자’)가 제공하는 RxVita 서비스의 이용 조건과 운영자 및 이용자의 권리·의무를 정합니다."
+      onBack={onBack}
     >
       <LegalSection title="1. 서비스의 목적">
         <p>

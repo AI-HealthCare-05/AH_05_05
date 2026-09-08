@@ -146,7 +146,7 @@ test('홈에서는 토큰이 만료되어도 로그인 화면으로 이동하지
   await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
 });
 
-test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있다', async ({ page }) => {
+test('회원가입은 기존 진료기록·AI 필수 동의도 각각 선택해야 완료할 수 있다', async ({ page }) => {
   await openSignup(page);
   await advanceSignupToProfile(page);
   await fillSignupProfile(page, {
@@ -154,6 +154,9 @@ test('회원가입은 두 필수 동의를 각각 선택해야 완료할 수 있
     phoneNumber: '01012345678',
     birthDate: '1990-01-01',
     gender: '여성',
+    serviceTerms: true,
+    personalInformationTerms: true,
+    ageTerms: true,
   });
 
   const submit = page.getByRole('button', { name: '회원가입 완료' });
@@ -176,14 +179,27 @@ test('회원가입 비밀번호와 비밀번호 확인은 각각 독립적으로
   await password.fill('Password123!');
   await passwordConfirm.fill('Password123!');
 
+  await expect(
+    page.getByRole('button', { name: '비밀번호 보기', exact: true }).locator('svg'),
+  ).toHaveClass(/lucide-eye-off/);
+  await expect(
+    page.getByRole('button', { name: '비밀번호 확인 보기' }).locator('svg'),
+  ).toHaveClass(/lucide-eye-off/);
+
   await page.getByRole('button', { name: '비밀번호 보기', exact: true }).click();
   await expect(password).toHaveAttribute('type', 'text');
   await expect(passwordConfirm).toHaveAttribute('type', 'password');
   await expect(password).toHaveValue('Password123!');
+  await expect(
+    page.getByRole('button', { name: '비밀번호 숨기기', exact: true }).locator('svg'),
+  ).toHaveClass(/lucide-eye(?!-off)/);
 
   await page.getByRole('button', { name: '비밀번호 확인 보기' }).click();
   await expect(passwordConfirm).toHaveAttribute('type', 'text');
   await expect(passwordConfirm).toHaveValue('Password123!');
+  await expect(
+    page.getByRole('button', { name: '비밀번호 확인 숨기기' }).locator('svg'),
+  ).toHaveClass(/lucide-eye(?!-off)/);
 
   await page.getByRole('button', { name: '비밀번호 숨기기', exact: true }).click();
   await page.getByRole('button', { name: '비밀번호 확인 숨기기' }).click();

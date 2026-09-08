@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router';
 import { useChallengeMock } from '@/features/challenges';
 import { ChallengeBadgeArt } from './ChallengeBadgeArt';
 import { ChallengeProgressCard } from './ChallengeProgressCard';
+import { ChallengePageHeading } from './ChallengePageHeading';
 
 function challengeBase(pathname: string) {
   return pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges';
@@ -22,7 +23,7 @@ export function ChallengeMyPage() {
 
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <h1 className="text-[22px] font-bold leading-6 text-foreground">챌린지</h1>
+      <ChallengePageHeading />
       <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
         <Link aria-current="page" to={base} className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">
           마이

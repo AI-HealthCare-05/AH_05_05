@@ -13,6 +13,9 @@ export interface SignupProfile {
   phoneNumber?: string;
   birthDate?: string;
   gender?: SignupGender;
+  serviceTerms?: boolean;
+  personalInformationTerms?: boolean;
+  ageTerms?: boolean;
   recordTerms?: boolean;
   aiTerms?: boolean;
 }
@@ -21,7 +24,7 @@ export interface SignupValues extends SignupCredentials, SignupProfile {}
 
 const DEFAULT_CREDENTIALS: Required<SignupCredentials> = {
   email: 'new-patient@example.com',
-  password: 'password1234',
+  password: 'Password123!',
   verificationCode: '123456',
 };
 
@@ -66,6 +69,15 @@ export async function fillSignupProfile(page: Page, values: SignupProfile = {}):
   if (values.phoneNumber !== undefined) await page.getByLabel('전화번호').fill(values.phoneNumber);
   if (values.birthDate !== undefined) await page.getByLabel('생년월일').fill(values.birthDate);
   if (values.gender !== undefined) await page.getByRole('radio', { name: values.gender }).check();
+  if (values.serviceTerms) {
+    await page.getByRole('checkbox', { name: /서비스 이용약관에 동의해요/ }).check();
+  }
+  if (values.personalInformationTerms) {
+    await page.getByRole('checkbox', { name: /개인정보 수집 및 이용에 동의해요/ }).check();
+  }
+  if (values.ageTerms) {
+    await page.getByRole('checkbox', { name: /만 14세 이상이에요/ }).check();
+  }
   if (values.recordTerms) {
     await page.getByRole('checkbox', { name: /진료기록 수집/ }).check();
   }
@@ -83,6 +95,9 @@ export async function fillSignupBase(
   await fillSignupProfile(page, {
     name: overrides.name ?? DEFAULT_BASE_PROFILE.name,
     phoneNumber: overrides.phoneNumber ?? DEFAULT_BASE_PROFILE.phoneNumber,
+    serviceTerms: overrides.serviceTerms ?? true,
+    personalInformationTerms: overrides.personalInformationTerms ?? true,
+    ageTerms: overrides.ageTerms ?? true,
     recordTerms: overrides.recordTerms ?? true,
     aiTerms: overrides.aiTerms ?? true,
     birthDate: overrides.birthDate,

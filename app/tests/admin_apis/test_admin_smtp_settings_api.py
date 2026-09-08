@@ -7,6 +7,7 @@ from tortoise.contrib.test import TestCase
 from app.core.smtp_settings_encryption import decrypt_smtp_password
 from app.models.admin_settings import AdminSetting
 from app.models.enums import AdminRole
+from app.services.admin_settings import SmtpRuntimeSettings, SmtpSettingsService
 from app.tests.admin_apis.conftest import auth_header, create_admin, request
 
 SMTP_SETTINGS_URL = "/api/v1/admin/settings/smtp"
@@ -60,6 +61,45 @@ class TestAdminSmtpSettingsAPI(TestCase):
         assert response.json()["smtpPasswordConfigured"] is True
         assert "gmail-app-password" not in response.text
         assert "smtpPassword" not in response.json()
+
+    async def test_get_without_saved_settings_returns_env_defaults(self) -> None:
+        with (
+            patch("app.services.admin_settings.config.SMTP_HOST", "smtp.env.example.com"),
+            patch("app.services.admin_settings.config.SMTP_PORT", 2525),
+            patch("app.services.admin_settings.config.SMTP_USER", "env-user@example.com"),
+            patch("app.services.admin_settings.config.SMTP_PASSWORD", "env-password"),
+            patch("app.services.admin_settings.config.SMTP_FROM_EMAIL", "env-from@example.com"),
+        ):
+            response = await request("GET", SMTP_SETTINGS_URL, headers=self.headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "smtpHost": "smtp.env.example.com",
+            "smtpPort": 2525,
+            "smtpUser": "env-user@example.com",
+            "smtpFromEmail": "env-from@example.com",
+            "smtpPasswordConfigured": True,
+        }
+        assert not await AdminSetting.exists()
+
+    async def test_email_runtime_without_saved_settings_uses_env_defaults(self) -> None:
+        with (
+            patch("app.services.admin_settings.config.SMTP_HOST", "smtp.env.example.com"),
+            patch("app.services.admin_settings.config.SMTP_PORT", 2525),
+            patch("app.services.admin_settings.config.SMTP_USER", "env-user@example.com"),
+            patch("app.services.admin_settings.config.SMTP_PASSWORD", "env-password"),
+            patch("app.services.admin_settings.config.SMTP_FROM_EMAIL", "env-from@example.com"),
+        ):
+            settings = await SmtpSettingsService().get_runtime_settings()
+
+        assert settings == SmtpRuntimeSettings(
+            host="smtp.env.example.com",
+            port=2525,
+            username="env-user@example.com",
+            password="env-password",
+            from_email="env-from@example.com",
+        )
+        assert not await AdminSetting.exists()
 
     async def test_blank_password_keeps_existing_encrypted_password(self) -> None:
         await request("PUT", SMTP_SETTINGS_URL, headers=self.headers, json=SMTP_PAYLOAD)

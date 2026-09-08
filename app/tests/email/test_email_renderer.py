@@ -73,3 +73,46 @@ def test_signup_verification_template_renders_six_code_cells_and_inline_logo() -
     assert [attachment.content_id for attachment in message.inline_attachments] == ["rxvita-logo"]
     assert message.inline_attachments[0].content_type == "image/png"
     assert message.inline_attachments[0].data.startswith(b"\x89PNG")
+
+
+def test_user_password_reset_template_uses_approved_copy_and_new_logo() -> None:
+    message = EmailTemplateRenderer().render(
+        EmailJobPayload(
+            template=EmailTemplate.USER_PASSWORD_RESET,
+            recipient_email="recipient@example.com",
+            temporary_password="Temp1234!",
+        )
+    )
+
+    assert message.subject == "RxVita 비밀번호 재설정"
+    assert "비밀번호 재설정" in message.html_body
+    assert "Temp1234!" in message.html_body
+    assert "로그인 후 비밀번호를 변경해 주세요." in message.html_body
+    assert "관리자 임시비밀번호" not in message.html_body
+    assert "님 안녕하세요" not in message.html_body
+    assert "시스템 로그인 후" not in message.html_body
+    assert message.inline_attachments[0].filename == "rxvita-logo-480.png"
+
+
+def test_all_email_templates_attach_rxvita_logo_480() -> None:
+    renderer = EmailTemplateRenderer()
+    payloads = (
+        EmailJobPayload(
+            template=EmailTemplate.ADMIN_TEMPORARY_PASSWORD,
+            recipient_email="admin@example.com",
+            recipient_name="관리자",
+            temporary_password="Temp1234!",
+        ),
+        EmailJobPayload(
+            template=EmailTemplate.SIGNUP_VERIFICATION_CODE,
+            recipient_email="user@example.com",
+            verification_id=1,
+            verification_code="123456",
+            expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
+        ),
+    )
+
+    for payload in payloads:
+        attachment = renderer.render(payload).inline_attachments[0]
+        assert attachment.filename == "rxvita-logo-480.png"
+        assert attachment.data.startswith(b"\x89PNG")

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>관리자 로그인 - RxVita</title>
-  <link rel="stylesheet" href="../css/styles.css?v=20260831-9">
+  <link rel="stylesheet" href="../css/styles.css?v=20260908-1">
   <!-- 비밀번호 변경 오버레이가 쓰는 스타일. management.css 는 .ui-control·.ui-button 과 토스트를,
        overlays.css 는 패널·배경·입력칸 오류 표시를 담당한다. 로그인 화면은 자체 클래스만 써서
        (login-card, text-input …) 두 파일을 넣어도 기존 화면에 영향이 없다. -->
@@ -35,9 +35,14 @@
           <div class="input-wrap">
             <input id="password" class="text-input" name="password" type="password" autocomplete="current-password" placeholder="비밀번호 입력" aria-describedby="password-error">
             <button class="icon-button" type="button" data-password-toggle aria-label="비밀번호 표시" aria-pressed="false">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg data-password-icon="eye" hidden width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg data-password-icon="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="m3 3 18 18"></path>
               </svg>
             </button>
           </div>

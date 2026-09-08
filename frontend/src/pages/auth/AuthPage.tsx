@@ -1,31 +1,48 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { createAccount, type Gender } from '@/entities/account';
-import { login } from '@/entities/auth';
+import { login, requestPasswordReset } from '@/entities/auth';
 import { requestEmailVerification, verifyEmailCode } from '@/entities/email-verification';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
+import { TermsPage } from '@/pages/legal';
 import { ApiError } from '@/shared/api/client';
 import {
   MIN_BIRTH_DATE,
+  UNDER_FOURTEEN_MESSAGE,
   formatDateInputValue,
   validateBirthDate,
 } from '@/shared/lib/birthDate';
 import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
 import { NAME_MAX_LENGTH, sanitizeNameInput, validateName } from '@/shared/lib/name';
-import { PASSWORD_MAX_LENGTH } from '@/shared/lib/password';
+import { PASSWORD_MAX_LENGTH, validatePassword } from '@/shared/lib/password';
 import {
   PHONE_NUMBER_MAX_LENGTH,
   formatPhoneNumberInput,
   validatePhoneNumber,
 } from '@/shared/lib/phoneNumber';
-import { Button, CheckboxField, GenderRadioGroup, Header, Input } from '@/shared/ui';
+import {
+  Button,
+  CheckboxField,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  GenderRadioGroup,
+  Header,
+  Input,
+} from '@/shared/ui';
 
 type AuthMode = 'login' | 'signup';
 type SignupStep = 1 | 2 | 3 | 4;
 
 const VERIFICATION_CODE_LENGTH = 6;
+const UNDER_FOURTEEN_SIGNUP_UNAVAILABLE_MESSAGE =
+  '만 14세 미만은 보호자 동의 절차가 아직 준비되지 않아 가입할 수 없어요.';
+const AGE_TERMS_UNAVAILABLE_MESSAGE = '만14세 이상 가입이 가능합니다.';
 
 /** 서버가 오류 본문을 못 줄 때만 씁니다. 평소에는 서버 message 를 그대로 띄웁니다. */
 const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 시도해주세요.';
@@ -50,6 +67,9 @@ export function AuthPage() {
   const [verificationSeconds, setVerificationSeconds] = useState(0);
   const [verificationExpiresAt, setVerificationExpiresAt] = useState<number | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [serviceTerms, setServiceTerms] = useState(false);
+  const [personalInformationTerms, setPersonalInformationTerms] = useState(false);
+  const [ageTerms, setAgeTerms] = useState(false);
   const [recordTerms, setRecordTerms] = useState(false);
   const [aiTerms, setAiTerms] = useState(false);
   const [email, setEmail] = useState('');
@@ -63,11 +83,18 @@ export function AuthPage() {
   const [gender, setGender] = useState<Gender | ''>('');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [birthDateError, setBirthDateError] = useState<string | null>(null);
+  const [ageTermsError, setAgeTermsError] = useState<string | null>(null);
   const [passwordConfirmError, setPasswordConfirmError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [passwordResetDialogOpen, setPasswordResetDialogOpen] = useState(false);
+  const [passwordResetSending, setPasswordResetSending] = useState(false);
+  const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null);
+  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showSignupTerms, setShowSignupTerms] = useState(false);
   const today = formatDateInputValue(new Date());
 
   useEffect(() => {
@@ -108,14 +135,24 @@ export function AuthPage() {
     setPhoneNumber('');
     setBirthDate('');
     setGender('');
+    setServiceTerms(false);
+    setPersonalInformationTerms(false);
+    setAgeTerms(false);
     setRecordTerms(false);
     setAiTerms(false);
     setEmailError(null);
     setBirthDateError(null);
+    setAgeTermsError(null);
     setPasswordConfirmError(null);
+    setPasswordError(null);
     setNameError(null);
     setPhoneNumberError(null);
     setLoginError(null);
+    setShowSignupTerms(false);
+    setPasswordResetDialogOpen(false);
+    setPasswordResetSending(false);
+    setPasswordResetMessage(null);
+    setPasswordResetError(null);
     emailInputRef.current?.setCustomValidity('');
   }
 
@@ -125,6 +162,8 @@ export function AuthPage() {
     if (sanitized !== typed) input.value = sanitized;
     setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
     setEmail(sanitized);
+    setPasswordResetMessage(null);
+    setPasswordResetError(null);
     setVerificationId(null);
     setVerificationToken(null);
     setVerificationCode('');
@@ -144,6 +183,31 @@ export function AuthPage() {
     );
   }
 
+  function applyAgeTerms(checked: boolean) {
+    if (!checked) {
+      setAgeTerms(false);
+      setAgeTermsError(null);
+      return;
+    }
+
+    const validation = validateBirthDate(birthDate);
+    if (validation) {
+      setAgeTerms(false);
+      if (validation === UNDER_FOURTEEN_MESSAGE) {
+        setBirthDateError(null);
+        setAgeTermsError(AGE_TERMS_UNAVAILABLE_MESSAGE);
+      } else {
+        setBirthDateError(validation);
+        setAgeTermsError(null);
+      }
+      return;
+    }
+
+    setBirthDateError(null);
+    setAgeTermsError(null);
+    setAgeTerms(true);
+  }
+
   function goBack() {
     if (mode === 'signup' && signupStep > 1) {
       if (signupStep === 2) {
@@ -159,6 +223,33 @@ export function AuthPage() {
       return;
     }
     navigate(-1);
+  }
+
+  function openPasswordResetDialog() {
+    if (!email.trim()) {
+      setEmailError('이메일을 입력해주세요');
+      emailInputRef.current?.focus();
+      return;
+    }
+    setEmailError(null);
+    setPasswordResetMessage(null);
+    setPasswordResetError(null);
+    setPasswordResetDialogOpen(true);
+  }
+
+  async function confirmPasswordReset() {
+    if (passwordResetSending) return;
+    setPasswordResetSending(true);
+    setPasswordResetError(null);
+    try {
+      await requestPasswordReset(email.trim());
+      setPasswordResetDialogOpen(false);
+      setPasswordResetMessage('입력한 이메일로 임시비밀번호 발송을 요청했습니다.');
+    } catch {
+      setPasswordResetError('임시비밀번호를 발송하지 못했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setPasswordResetSending(false);
+    }
   }
 
   async function complete(event: FormEvent<HTMLFormElement>) {
@@ -233,21 +324,27 @@ export function AuthPage() {
     }
 
     if (signupStep === 3) {
+      const nextPasswordError = validatePassword(password);
       const nextPasswordConfirmError =
         password === passwordConfirm ? null : '비밀번호가 일치하지 않아요.';
+      setPasswordError(nextPasswordError);
       setPasswordConfirmError(nextPasswordConfirmError);
-      if (nextPasswordConfirmError) return;
+      if (nextPasswordError || nextPasswordConfirmError) return;
       setSignupStep(4);
       return;
     }
 
-    if (!recordTerms || !aiTerms || !gender) return;
+    if (!requiredConsentsAccepted || !gender) return;
     if (!verificationToken) {
       setSignupStep(1);
       setEmailError('이메일 인증을 다시 진행해주세요.');
       return;
     }
-    const nextBirthDateError = validateBirthDate(birthDate);
+    const birthDateValidation = validateBirthDate(birthDate);
+    const nextBirthDateError =
+      birthDateValidation === UNDER_FOURTEEN_MESSAGE
+        ? UNDER_FOURTEEN_SIGNUP_UNAVAILABLE_MESSAGE
+        : birthDateValidation;
     const nextNameError = validateName(name);
     const nextPhoneNumberError = validatePhoneNumber(phoneNumber);
     setBirthDateError(nextBirthDateError);
@@ -265,6 +362,7 @@ export function AuthPage() {
         birthDate,
         gender,
         emailVerificationToken: verificationToken,
+        isTermsAgreed: requiredConsentsAccepted,
       });
       prepareMedicationStateForNewAccount();
       // 회원가입 응답에는 액세스 토큰이 없으므로 같은 자격증명으로 로그인까지 완료합니다.
@@ -290,6 +388,12 @@ export function AuthPage() {
   }
 
   const signupStepCopy = STEP_COPY[signupStep];
+  const requiredConsentsAccepted =
+    serviceTerms && personalInformationTerms && ageTerms && recordTerms && aiTerms;
+
+  if (showSignupTerms) {
+    return <TermsPage onBack={() => setShowSignupTerms(false)} />;
+  }
 
   return (
     <div
@@ -392,13 +496,58 @@ export function AuthPage() {
                 required
               />
               <p className="text-caption text-muted-foreground">입력한 정보는 안전하게 보호해요.</p>
-              <p className="mt-auto text-center text-caption text-muted-foreground">
-                비밀번호를 잊으셨나요? 재설정
-              </p>
+              <div className="mt-auto text-center text-caption text-muted-foreground">
+                <span>비밀번호를 잊으셨나요? </span>
+                <button
+                  type="button"
+                  className="font-bold text-foreground underline-offset-2 hover:underline"
+                  onClick={openPasswordResetDialog}
+                >
+                  재설정
+                </button>
+                {passwordResetMessage && (
+                  <p className="mt-2 text-primary" role="status">
+                    {passwordResetMessage}
+                  </p>
+                )}
+              </div>
               <Button type="submit" className="text-base" disabled={saving}>
                 로그인
               </Button>
             </form>
+
+            <Dialog open={passwordResetDialogOpen} onOpenChange={setPasswordResetDialogOpen}>
+              <DialogContent showCloseButton={false}>
+                <DialogHeader>
+                  <DialogTitle>비밀번호 재설정</DialogTitle>
+                  <DialogDescription>
+                    입력한 이메일로 임시비밀번호가 발송됩니다. 재설정 하시겠습니까?
+                  </DialogDescription>
+                </DialogHeader>
+                {passwordResetError && (
+                  <p className="text-sm text-danger-strong" role="alert">
+                    {passwordResetError}
+                  </p>
+                )}
+                <DialogFooter className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={passwordResetSending}
+                    onClick={() => setPasswordResetDialogOpen(false)}
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={passwordResetSending}
+                    onClick={confirmPasswordReset}
+                  >
+                    {passwordResetSending ? '발송 중...' : '확인'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </>
         ) : (
           <>
@@ -499,6 +648,16 @@ export function AuthPage() {
                       );
                       setVerificationError(null);
                     }}
+                    onPaste={(event: ClipboardEvent<HTMLInputElement>) => {
+                      event.preventDefault();
+                      setVerificationCode(
+                        event.clipboardData
+                          .getData('text')
+                          .replace(/\D/g, '')
+                          .slice(0, VERIFICATION_CODE_LENGTH),
+                      );
+                      setVerificationError(null);
+                    }}
                     required
                   />
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -551,7 +710,11 @@ export function AuthPage() {
                     autoComplete="new-password"
                     maxLength={PASSWORD_MAX_LENGTH}
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    error={passwordError ?? undefined}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      setPasswordError(null);
+                    }}
                     trailingAction={
                       <button
                         type="button"
@@ -560,9 +723,9 @@ export function AuthPage() {
                         onClick={() => setShowPassword((visible) => !visible)}
                       >
                         {showPassword ? (
-                          <EyeOff className="size-5" aria-hidden="true" />
-                        ) : (
                           <Eye className="size-5" aria-hidden="true" />
+                        ) : (
+                          <EyeOff className="size-5" aria-hidden="true" />
                         )}
                       </button>
                     }
@@ -589,9 +752,9 @@ export function AuthPage() {
                         onClick={() => setShowPasswordConfirm((visible) => !visible)}
                       >
                         {showPasswordConfirm ? (
-                          <EyeOff className="size-5" aria-hidden="true" />
-                        ) : (
                           <Eye className="size-5" aria-hidden="true" />
+                        ) : (
+                          <EyeOff className="size-5" aria-hidden="true" />
                         )}
                       </button>
                     }
@@ -649,12 +812,83 @@ export function AuthPage() {
                     onChange={(event) => {
                       setBirthDate(event.target.value);
                       setBirthDateError(null);
+                      setAgeTerms(false);
+                      setAgeTermsError(null);
                     }}
                     required
                   />
                   <GenderRadioGroup value={gender} onChange={setGender} />
                   <fieldset className="mt-2 flex flex-col gap-3">
                     <legend className="mb-2 text-base font-bold text-foreground">필수 동의</legend>
+                    <div>
+                      <CheckboxField
+                        id="service-terms"
+                        checked={serviceTerms}
+                        onCheckedChange={setServiceTerms}
+                        label="서비스 이용약관에 동의해요"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="ml-11 inline-flex min-h-touch items-center text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                        onClick={() => setShowSignupTerms(true)}
+                      >
+                        서비스 이용약관 보기
+                      </button>
+                    </div>
+                    <div>
+                      <CheckboxField
+                        id="personal-information-terms"
+                        checked={personalInformationTerms}
+                        onCheckedChange={setPersonalInformationTerms}
+                        label="개인정보 수집 및 이용에 동의해요"
+                        required
+                      />
+                      <div className="ml-11 flex flex-wrap items-center gap-x-3">
+                        <details className="text-sm text-muted-foreground">
+                          <summary className="min-h-touch cursor-pointer py-3 font-semibold text-primary">
+                            개인정보 수집·이용 내용 보기
+                          </summary>
+                          <dl className="mb-2 flex flex-col gap-2 rounded-input bg-muted-bg p-3 leading-5">
+                            <div>
+                              <dt className="font-semibold text-foreground">수집 항목</dt>
+                              <dd>이메일, 비밀번호, 이름, 전화번호, 생년월일, 성별</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-foreground">이용 목적</dt>
+                              <dd>회원 식별, 본인 확인, 고객 상담 및 서비스 제공</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-foreground">보유 기간</dt>
+                              <dd>회원 탈퇴 시까지 또는 관련 법령에 따른 보관 기간</dd>
+                            </div>
+                          </dl>
+                        </details>
+                        <Link
+                          to="/privacy"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-touch items-center text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                        >
+                          개인정보 처리 안내 보기
+                        </Link>
+                      </div>
+                    </div>
+                    <div>
+                      <CheckboxField
+                        id="age-terms"
+                        checked={ageTerms}
+                        onCheckedChange={applyAgeTerms}
+                        label="만 14세 이상이에요"
+                        description="만 14세 미만은 보호자 동의 절차가 준비된 뒤 가입할 수 있어요."
+                        required
+                      />
+                      {ageTermsError && (
+                        <p role="alert" className="ml-9 text-sm text-danger-strong">
+                          {ageTermsError}
+                        </p>
+                      )}
+                    </div>
                     <CheckboxField
                       id="record-terms"
                       checked={recordTerms}
@@ -678,7 +912,9 @@ export function AuthPage() {
                   <Button
                     type="submit"
                     className="mt-auto"
-                    disabled={saving || !recordTerms || !aiTerms || !gender}
+                    disabled={
+                      saving || !requiredConsentsAccepted || !gender
+                    }
                   >
                     회원가입 완료
                   </Button>

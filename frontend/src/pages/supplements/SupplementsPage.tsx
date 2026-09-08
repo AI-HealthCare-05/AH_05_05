@@ -263,11 +263,10 @@ export function SupplementsPage({
         right={
           <button
             type="button"
-            aria-label="영양제 추가"
-            className="flex size-touch items-center justify-center text-primary"
-            onClick={openAddSheet}
+            className="min-h-touch shrink-0 rounded-button bg-primary px-3 text-sm font-bold text-white hover:bg-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={() => navigate('/reports/new?source=supplements')}
           >
-            <Plus aria-hidden className="size-6" />
+            AI 보고서 받기
           </button>
         }
       />
@@ -315,7 +314,7 @@ export function SupplementsPage({
         ) : (
           <>
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                 {supplements.length > 0 ? (
                   <h2 id="supplement-list-title" className="text-xl font-bold text-foreground">
                     먹고 있는 영양제 {supplements.length}개
@@ -326,20 +325,32 @@ export function SupplementsPage({
                   </h2>
                 )}
                 {supplements.length > 0 && (
-                  <button
-                    type="button"
-                    className="flex min-h-touch items-center justify-center px-1 text-sm font-bold text-primary-strong"
-                    onClick={toggleListEdit}
-                  >
-                    {listEditOpen ? '완료' : '편집'}
-                  </button>
+                  <div className="ml-auto flex shrink-0 items-center gap-1">
+                    {!listEditOpen && (
+                      <button
+                        type="button"
+                        aria-label="영양제 추가"
+                        className="flex size-touch items-center justify-center rounded-button text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={openAddSheet}
+                      >
+                        <Plus aria-hidden className="size-5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="flex min-h-touch min-w-touch items-center justify-center rounded-button px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={toggleListEdit}
+                    >
+                      {listEditOpen ? '완료' : '삭제'}
+                    </button>
+                  </div>
                 )}
               </div>
 
               <section aria-label="먹고 있는 영양제" aria-labelledby="supplement-list-title">
                 {supplements.length === 0 ? (
                   <div className="flex flex-col items-center gap-3 rounded-card border border-border bg-card px-4 py-8 text-center shadow-card">
-                    <h3 className="text-lg font-bold text-foreground">등록한 영양제가 없어요</h3>
+                    <h3 className="text-lg font-bold text-foreground">영양제를 등록하고 관리하기</h3>
                     <p className="text-sm text-muted-foreground">
                       영양제를 등록하면 성분 합계와 상한을 한눈에 볼 수 있어요.
                     </p>
@@ -442,7 +453,7 @@ export function SupplementsPage({
               </section>
             </div>
 
-            {supplements.length > 0 ? (
+            {supplements.length > 0 && (
               <>
                 <section className="flex flex-col gap-3" aria-labelledby="nutrient-total-title">
                   <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
@@ -499,15 +510,6 @@ export function SupplementsPage({
                   )}
                 </div>
               </>
-            ) : (
-              <section className="flex flex-col gap-3" aria-labelledby="nutrient-total-title">
-                <h2 id="nutrient-total-title" className="text-xl font-bold text-foreground">
-                  성분 합계
-                </h2>
-                <Card className="items-center justify-center px-4 py-6 text-center">
-                  등록한 영양제가 없어 더할 성분이 없어요.
-                </Card>
-              </section>
             )}
 
             {supplements.length > 0 && (

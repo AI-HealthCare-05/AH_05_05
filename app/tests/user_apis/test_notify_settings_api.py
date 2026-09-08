@@ -115,7 +115,7 @@ class TestNotifySettingsApis(TestCase):
         today = datetime.now(config.TIMEZONE).date()
         episode = await CareEpisode.create(
             user=user,
-            title="복약 시간 변경 테스트",
+            alias="복약 시간 변경 테스트",
             medication_start_date=today,
             medication_days=7,
         )
