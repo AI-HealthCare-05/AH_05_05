@@ -56,7 +56,18 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('새 메모는 선택한 처방의 첫 복용 일시를 자동 저장하고 날짜 입력을 노출하지 않는다', async ({ page }) => {
+test('새 메모는 선택한 처방의 첫 복용 일시를 수정 가능한 기본값으로 보여준다', async ({ page }) => {
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [OVERVIEW]));
+
+  await page.goto('/medications/notes/new');
+  const doseDateTime = page.getByLabel('복용 일시');
+  await expect(doseDateTime).toBeEditable();
+  await expect(doseDateTime).toHaveValue('');
+  await page.getByLabel('처방').selectOption('24');
+  await expect(doseDateTime).toHaveValue('2026-08-24T19:40');
+});
+
+test('새 메모에서 수정한 복용 일시를 생성 요청에 보낸다', async ({ page }) => {
   let createPayload: unknown;
   await page.route('**/api/v1/medications', (route) => fulfillJson(route, [OVERVIEW]));
   await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, async (route) => {
@@ -73,21 +84,22 @@ test('새 메모는 선택한 처방의 첫 복용 일시를 자동 저장하고
   });
 
   await page.goto('/medications/notes/new');
-  await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
   await page.getByLabel('처방').selectOption('24');
-  await expect(page.getByText('2026년 8월 24일 19:40', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-24T19:40');
+  await page.getByLabel('복용 일시').fill('2026-08-26T21:10');
   await page.getByLabel('복용 후 느낀 점').fill('자동 일시 메모');
   await page.getByRole('button', { name: '저장', exact: true }).click();
 
   await expect.poll(() => createPayload).toEqual({
     careEpisodeId: 24,
     medicationId: 501,
-    dosedAt: '2026-08-24T19:40',
+    dosedAt: '2026-08-26T21:10',
     body: '자동 일시 메모',
   });
 });
 
-test('처방 시작 시간대를 확인할 수 없으면 임의의 일시 없이 저장을 막는다', async ({ page }) => {
+test('처방 시작 시간대를 확인할 수 없으면 빈 입력에 사용자가 직접 입력해 저장한다', async ({ page }) => {
+  let createPayload: unknown;
   await page.route('**/api/v1/medications', (route) => fulfillJson(route, [{
     ...OVERVIEW,
     mealTimes: {
@@ -96,12 +108,65 @@ test('처방 시작 시간대를 확인할 수 없으면 임의의 일시 없이
       bedtime: '22:30',
     },
   }]));
+  await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === 'POST') {
+      createPayload = route.request().postDataJSON();
+      await fulfillJson(route, {
+        ...EXISTING_NOTE,
+        dosedAt: '2026-08-26T07:25:00',
+        body: '직접 입력한 메모',
+      });
+      return;
+    }
+    await fulfillJson(route, { items: [], total: 0, nextCursor: null });
+  });
 
   await page.goto('/medications/notes/new');
   await page.getByLabel('처방').selectOption('24');
+  const doseDateTime = page.getByLabel('복용 일시');
+  await expect(doseDateTime).toHaveValue('');
+  await doseDateTime.fill('2026-08-26T07:25');
+  await page.getByLabel('복용 후 느낀 점').fill('직접 입력한 메모');
+  await page.getByRole('button', { name: '저장', exact: true }).click();
 
-  await expect(page.getByRole('alert')).toContainText('처방의 시작 날짜와 시간대');
-  await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
+  await expect.poll(() => createPayload).toEqual({
+    careEpisodeId: 24,
+    medicationId: 501,
+    dosedAt: '2026-08-26T07:25',
+    body: '직접 입력한 메모',
+  });
+});
+
+test('기존 메모의 복용 일시도 계속 수정할 수 있다', async ({ page }) => {
+  let updatePayload: unknown;
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [OVERVIEW]));
+  await page.route('**/api/v1/med/notes/404', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      updatePayload = route.request().postDataJSON();
+      await fulfillJson(route, {
+        ...EXISTING_NOTE,
+        dosedAt: '2026-08-26T10:30:00',
+        body: '일시도 수정한 메모',
+      });
+      return;
+    }
+    await fulfillJson(route, EXISTING_NOTE);
+  });
+  await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) =>
+    fulfillJson(route, { items: [], total: 0, nextCursor: null }),
+  );
+
+  await page.goto('/medications/notes/404');
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-25T09:15');
+  await page.getByLabel('복용 일시').fill('2026-08-26T10:30');
+  await page.getByLabel('복용 후 느낀 점').fill('일시도 수정한 메모');
+  await page.getByRole('button', { name: '수정 저장', exact: true }).click();
+
+  await expect.poll(() => updatePayload).toEqual({
+    medicationId: 501,
+    dosedAt: '2026-08-26T10:30',
+    body: '일시도 수정한 메모',
+  });
 });
 
 test('수정과 삭제 버튼은 같은 행에서 가용 폭을 반씩 쓰고 터치 높이를 유지한다', async ({ page }) => {
