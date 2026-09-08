@@ -39,6 +39,7 @@ interface NoteEpisodeOption {
   id: number;
   alias: string | null;
   startDate: string | null;
+  firstDoseAt: string | null;
   status: string;
   medications: MedicationNoteMedication[];
 }
@@ -68,6 +69,13 @@ function toLocalDateTime(value: string): string {
   return value.length >= 16 ? value.slice(0, 16) : value;
 }
 
+function firstDoseAtFromOverview(overview: MedicationOverview): string | null {
+  const date = overview.start.date;
+  const time = overview.mealTimes[overview.start.slot];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  return `${date}T${time}`;
+}
+
 function initialForm(note: MedicationNote | null): NoteFormState {
   return note
     ? {
@@ -84,6 +92,7 @@ function episodeFromOverview(overview: MedicationOverview): NoteEpisodeOption {
     id: overview.recordId,
     alias: overview.alias ?? null,
     startDate: overview.start.date,
+    firstDoseAt: firstDoseAtFromOverview(overview),
     status: overview.isFinished ? 'COMPLETED' : 'ACTIVE',
     medications: overview.medications.map((medication) => ({
       id: medication.medicationId,
@@ -98,6 +107,7 @@ function episodeFromNote(note: MedicationNote): NoteEpisodeOption {
     id: note.careEpisodeId,
     alias: note.careEpisodeAlias,
     startDate: note.careEpisodeStartDate,
+    firstDoseAt: null,
     status: note.careEpisodeStatus,
     medications: note.availableMedications,
   };
@@ -221,6 +231,7 @@ export function MedicationNoteFormPage() {
       ...current,
       recordId: value,
       medicationId: next?.medications[0] ? String(next.medications[0].id) : '',
+      takenAt: next?.firstDoseAt ?? '',
     }));
   }
 
@@ -375,7 +386,7 @@ export function MedicationNoteFormPage() {
           </>
         )}
 
-        <div className="mt-auto flex flex-col gap-2 pb-4">
+        <div className={editing ? 'mt-auto grid grid-cols-2 gap-2 pb-4' : 'mt-auto flex flex-col gap-2 pb-4'}>
           <Button onClick={() => void save()} disabled={!canSave || saving || deleting}>
             {saving ? '저장 중...' : editing ? '수정 저장' : '저장'}
           </Button>
