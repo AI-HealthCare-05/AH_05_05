@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import builtins
-import weakref
 from collections.abc import Callable
 from datetime import datetime, time, timedelta
 from decimal import Decimal
@@ -67,11 +65,6 @@ SLOT_TIME_FIELDS = {
     MealSlot.BEDTIME: "bedtime_medication_time",
 }
 PERCENT_QUANTUM = Decimal("0.01")
-
-# The shared User row lock is the cross-process serialization boundary. This weak,
-# process-local guard additionally compensates for SQLite's no-op SELECT FOR UPDATE in tests.
-_join_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
-
 
 def custom_challenge_meal_times(settings: UserSettings | None) -> dict[MealSlot, time]:
     """Return planner meal times without creating or mutating user settings."""
@@ -184,24 +177,22 @@ class CustomChallengeService:
         request: CustomChallengeJoinRequest,
     ) -> CustomChallengeParticipationResponse:
         target_ids = tuple(request.target_ids)
-        lock = _join_locks.setdefault(user.id, asyncio.Lock())
-        async with lock:
-            try:
-                participation_id = await self._join_transaction(
-                    user_id=user.id,
-                    template_id=template_id,
-                    target_ids=target_ids,
-                    idempotency_key=request.idempotency_key,
-                )
-            except IntegrityError:
-                existing = await CustomChallengeParticipation.get_or_none(
-                    user_id=user.id,
-                    idempotency_key=request.idempotency_key,
-                )
-                if existing is None:
-                    raise
-                await self._assert_idempotent_request(existing, template_id, target_ids)
-                participation_id = existing.id
+        try:
+            participation_id = await self._join_transaction(
+                user_id=user.id,
+                template_id=template_id,
+                target_ids=target_ids,
+                idempotency_key=request.idempotency_key,
+            )
+        except IntegrityError:
+            existing = await CustomChallengeParticipation.get_or_none(
+                user_id=user.id,
+                idempotency_key=request.idempotency_key,
+            )
+            if existing is None:
+                raise
+            await self._assert_idempotent_request(existing, template_id, target_ids)
+            participation_id = existing.id
         return await self.get(user, participation_id)
 
     async def list(self, user: User) -> CustomChallengeParticipationListResponse:
@@ -261,7 +252,6 @@ class CustomChallengeService:
 
             await self._assert_no_active_duplicate(
                 user_id=user_id,
-                template_id=template_id,
                 challenge_type=challenge_type,
                 target_ids=target_ids,
                 connection=connection,
@@ -469,14 +459,18 @@ class CustomChallengeService:
         if connection is not None:
             query = query.using_db(connection)
         existing_target_ids = tuple(await query.values_list("source_id_snapshot", flat=True))
-        if existing.template_id != template_id or existing_target_ids != target_ids:
+        expected_type = config.CUSTOM_CHALLENGE_TEMPLATE_TYPES.get(template_id)
+        if (
+            existing.template_id != template_id
+            or existing.challenge_type != expected_type
+            or existing_target_ids != target_ids
+        ):
             raise CustomChallengeIdempotencyConflictError()
 
     async def _assert_no_active_duplicate(
         self,
         *,
         user_id: int,
-        template_id: int,
         challenge_type: CustomChallengeType,
         target_ids: tuple[int, ...],
         connection: BaseDBAsyncClient,
@@ -484,7 +478,6 @@ class CustomChallengeService:
         participations = (
             await CustomChallengeParticipation.filter(
                 user_id=user_id,
-                template_id=template_id,
                 challenge_type=challenge_type,
                 status=ChallengeParticipationStatus.ACTIVE,
             )

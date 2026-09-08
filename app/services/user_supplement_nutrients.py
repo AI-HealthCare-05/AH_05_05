@@ -78,6 +78,7 @@ class UserSupplementNutrientService:
         data: ManualSupplementNutrientCreateRequest,
     ) -> UserSupplementNutrientResponse:
         async with in_transaction() as connection:
+            await self._lock_user(user.id, connection)
             settings = await self.repository.get_or_create_settings(user.id, connection)
             values = data.model_dump(exclude={"slots"})
             registration = await UserSupplementNutrient.create(
@@ -99,12 +100,13 @@ class UserSupplementNutrientService:
         data: UserSupplementNutrientUpsertRequest,
     ) -> int:
         async with in_transaction() as connection:
-            settings = await self.repository.get_or_create_settings(user_id, connection)
+            await self._lock_user(user_id, connection)
             registration = await self.repository.get_by_user_product_for_update(
                 user_id,
                 supplement_nutrient_id,
                 connection,
             )
+            settings = await self.repository.get_or_create_settings(user_id, connection)
             values = data.model_dump(exclude={"slots"})
             values["status"] = SupplementStatus.ACTIVE
             if registration is None:
@@ -197,6 +199,7 @@ class UserSupplementNutrientService:
         data: UserSupplementNutrientUpdateRequest,
     ) -> UserSupplementNutrientResponse:
         async with in_transaction() as connection:
+            await self._lock_user(user.id, connection)
             registration = await self.repository.get_owned_for_update(registration_id, user.id, connection)
             if registration is None:
                 raise HTTPException(
@@ -231,6 +234,7 @@ class UserSupplementNutrientService:
 
     async def complete(self, user: User, registration_id: int) -> None:
         async with in_transaction() as connection:
+            await self._lock_user(user.id, connection)
             registration = await self.repository.get_owned_for_update(registration_id, user.id, connection)
             if registration is None:
                 raise HTTPException(
@@ -248,6 +252,17 @@ class UserSupplementNutrientService:
                     update_fields=["status", "end_date", "updated_at"],
                 )
             await self._sync_nutrient_alarms(user.id, settings, connection)
+
+    async def _lock_user(
+        self,
+        user_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        if await self.repository.get_user_for_update(user_id, connection) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
 
     @staticmethod
     async def _resolve_nutrient_standard(user: User) -> UserNutrientStandardResponse | None:

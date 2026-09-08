@@ -19,7 +19,9 @@ class CustomChallengeJoinRequest(CamelModel):
     def canonicalize_target_ids(cls, value: list[int]) -> list[int]:
         if any(target_id <= 0 for target_id in value):
             raise ValueError("target IDs must be positive")
-        return sorted(set(value))
+        if len(value) != len(set(value)):
+            raise ValueError("target IDs must be unique")
+        return sorted(value)
 
     @field_validator("idempotency_key")
     @classmethod

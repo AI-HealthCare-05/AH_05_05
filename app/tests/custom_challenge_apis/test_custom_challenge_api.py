@@ -1,4 +1,3 @@
-import asyncio
 import sqlite3
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -8,6 +7,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 from tortoise import Tortoise
+from tortoise.backends.base.client import BaseDBAsyncClient
 
 from app.core import config
 from app.core.config import Config
@@ -21,6 +21,11 @@ from app.core.exceptions import (
 )
 from app.dependencies.security import get_request_user
 from app.dtos.custom_challenges import CustomChallengeJoinRequest
+from app.dtos.user_supplement_nutrients import (
+    ManualSupplementNutrientCreateRequest,
+    UserSupplementNutrientUpdateRequest,
+    UserSupplementNutrientUpsertRequest,
+)
 from app.main import app
 from app.models.care import CareEpisode
 from app.models.challenges import CustomChallengeTemplate
@@ -45,7 +50,9 @@ from app.models.supplement_nutrients import (
     UserSupplementNutrientSlot,
 )
 from app.models.users import User, UserSettings
+from app.repositories.user_supplement_nutrient_repository import UserSupplementNutrientRepository
 from app.services.custom_challenges import CustomChallengeService
+from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
 NOW = datetime(2026, 9, 8, 7, 30, tzinfo=config.TIMEZONE)
 TEST_DATE = NOW.date()
@@ -202,12 +209,13 @@ def test_config_template_mapping_rejects_invalid_entries(mapping: dict[int, Cust
 
 
 def test_join_request_is_canonical_and_strict() -> None:
-    request = CustomChallengeJoinRequest(targetIds=[3, 1, 3], idempotencyKey=" request-1 ")
+    request = CustomChallengeJoinRequest(targetIds=[3, 1], idempotencyKey=" request-1 ")
     assert request.target_ids == [1, 3]
     assert request.idempotency_key == "request-1"
 
     for body in (
         {"targetIds": [], "idempotencyKey": "request-1"},
+        {"targetIds": [3, 1, 3], "idempotencyKey": "request-1"},
         {"targetIds": [1], "idempotencyKey": ""},
         {"targetIds": [1], "idempotencyKey": "request-1", "userId": 7},
     ):
@@ -362,32 +370,6 @@ async def test_join_rejects_cardinality_ownership_idempotency_and_duplicate_acti
         )
 
 
-async def test_concurrent_duplicate_active_join_leaves_one_participation(
-    service: CustomChallengeService,
-) -> None:
-    user = await _user()
-    medication_template, _ = await _templates()
-    episode = await _medication_episode(user)
-
-    results = await asyncio.gather(
-        service.join(
-            user,
-            medication_template.id,
-            CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="race-1"),
-        ),
-        service.join(
-            user,
-            medication_template.id,
-            CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="race-2"),
-        ),
-        return_exceptions=True,
-    )
-
-    assert sum(not isinstance(result, Exception) for result in results) == 1
-    assert sum(isinstance(result, CustomChallengeAlreadyActiveError) for result in results) == 1
-    assert await CustomChallengeParticipation.filter(user_id=user.id).count() == 1
-
-
 async def test_supplement_duplicate_active_check_uses_exact_canonical_target_set(
     service: CustomChallengeService,
 ) -> None:
@@ -414,6 +396,137 @@ async def test_supplement_duplicate_active_check_uses_exact_canonical_target_set
             supplement_template.id,
             CustomChallengeJoinRequest(target_ids=[second.id, first.id], idempotency_key="set-3"),
         )
+
+
+async def test_active_duplicate_is_rejected_after_template_mapping_replacement(
+    service: CustomChallengeService,
+) -> None:
+    user = await _user()
+    medication_template, supplement_template = await _templates()
+    episode = await _medication_episode(user)
+    await service.join(
+        user,
+        medication_template.id,
+        CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="old-template"),
+    )
+    replacement = await CustomChallengeTemplate.create(
+        name="새 7일 복약",
+        check_type_id=medication_template.check_type_id,
+        is_active=True,
+    )
+    config.CUSTOM_CHALLENGE_TEMPLATE_TYPES = {
+        replacement.id: CustomChallengeType.MEDICATION,
+        supplement_template.id: CustomChallengeType.SUPPLEMENT,
+    }
+
+    with pytest.raises(CustomChallengeAlreadyActiveError):
+        await service.join(
+            user,
+            replacement.id,
+            CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="new-template"),
+        )
+
+    assert await CustomChallengeParticipation.filter(user_id=user.id).count() == 1
+
+
+async def test_idempotent_retry_rejects_stored_type_mismatch(
+    service: CustomChallengeService,
+) -> None:
+    user = await _user()
+    medication_template, _ = await _templates()
+    episode = await _medication_episode(user)
+    request = CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="stored-type")
+    participation = await service.join(user, medication_template.id, request)
+    await CustomChallengeParticipation.filter(id=participation.id).update(
+        challenge_type=CustomChallengeType.SUPPLEMENT
+    )
+
+    with pytest.raises(CustomChallengeIdempotencyConflictError):
+        await service.join(user, medication_template.id, request)
+
+
+class _LockOrderRepository(UserSupplementNutrientRepository):
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    async def get_user_for_update(
+        self,
+        user_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> User | None:
+        self.events.append("user")
+        return await super().get_user_for_update(user_id, connection)
+
+    async def get_owned_for_update(
+        self,
+        registration_id: int,
+        user_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> UserSupplementNutrient | None:
+        self.events.append("source")
+        return await super().get_owned_for_update(registration_id, user_id, connection)
+
+    async def get_by_user_product_for_update(
+        self,
+        user_id: int,
+        product_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> UserSupplementNutrient | None:
+        self.events.append("source")
+        return await super().get_by_user_product_for_update(user_id, product_id, connection)
+
+    async def get_or_create_settings(
+        self,
+        user_id: int,
+        connection: BaseDBAsyncClient | None = None,
+    ) -> UserSettings:
+        if connection is not None:
+            self.events.append("settings")
+        return await super().get_or_create_settings(user_id, connection)
+
+
+async def test_supplement_mutations_share_user_source_settings_lock_order() -> None:
+    user = await _user()
+    repository = _LockOrderRepository()
+    service = UserSupplementNutrientService(repository)
+
+    created = await service.create_manual(
+        user,
+        ManualSupplementNutrientCreateRequest(
+            custom_name="수동 영양제",
+            dose_amount=Decimal("1"),
+            dose_unit="정",
+            start_date=TEST_DATE,
+            slots=[MealSlot.MORNING],
+        ),
+    )
+    assert repository.events == ["user", "settings"]
+
+    standard = await _supplement(user, name="표준 영양제", manual=False)
+    repository.events.clear()
+    await service.upsert(
+        user,
+        standard.supplement_nutrient_id,
+        UserSupplementNutrientUpsertRequest(
+            dose_amount=Decimal("2"),
+            dose_unit="정",
+            start_date=TEST_DATE,
+            slots=[MealSlot.EVENING],
+        ),
+    )
+    assert repository.events == ["user", "source", "settings"]
+
+    repository.events.clear()
+    await service.update(
+        user,
+        created.id,
+        UserSupplementNutrientUpdateRequest(slots=[MealSlot.LUNCH]),
+    )
+    assert repository.events == ["user", "source", "settings"]
+
+    repository.events.clear()
+    await service.complete(user, created.id)
+    assert repository.events == ["user", "source", "settings"]
 
 
 async def test_progress_matches_only_original_scheduled_doses_and_gets_do_not_write(

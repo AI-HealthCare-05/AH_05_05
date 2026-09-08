@@ -32,7 +32,7 @@
 - Create `app/services/custom_challenges.py`: implement eligibility, join, idempotency, active-duplicate protection, and dose-derived response projection.
 - Modify `app/core/exceptions.py`: add stable `AppError` subclasses for unsupported/inactive templates, invalid targets, idempotency conflict, duplicate active participation, and missing owned participation.
 - Modify `app/apis/v1/challenge_router.py`: add four authenticated routes beneath the existing `/user` router.
-- Create `app/tests/custom_challenge_apis/test_custom_challenge_api.py`: own the isolated SQLite API and concurrency contract tests.
+- Create `app/tests/custom_challenge_apis/test_custom_challenge_api.py`: own the isolated SQLite API, transaction, and lock-order contract tests. SQLite does not prove MySQL concurrency behavior.
 - Do not modify `app/services/custom_challenge_goal_planner.py`, `app/models/custom_challenges.py` fields, migration 40, or their existing tests except the enum import-only adjustment above.
 
 ### Task 1: Configuration and API contracts
@@ -102,9 +102,9 @@
 
   Read `UserSettings` without `get_or_create`, falling back to the existing 08:00/13:00/19:00/22:00 defaults. For medication, require owned ACTIVE episodes with start date/start slot and scheduled non-PRN medication slots; do not add the AI-report-only `confirmed_at`/`confirmation_hash` constraint because valid manually scheduled episodes need not carry it. Union duplicate medication windows by episode/date/slot through the planner. For supplements, use registration IDs, include standard and manual ACTIVE registrations, and preserve registration identity for same-slot goals. Return only active mapped medication/supplement templates and eligible targets; never infer type from template name or check type.
 
-- [ ] **Step 4: Write failing join/idempotency/concurrency tests**
+- [ ] **Step 4: Write failing join/idempotency/lock-order tests**
 
-  Assert medication cardinality is exactly one, supplement IDs are non-empty and unique, every source is owned/ACTIVE/eligible, zero-goal joins roll back, same key plus same logical request returns the original participation, same key plus any different template/type/target set returns an idempotency conflict, a different key cannot create a duplicate active medication target or exact supplement target set, and two concurrent different-key joins leave exactly one active participation.
+  Assert medication cardinality is exactly one, supplement IDs are non-empty and unique, duplicate request IDs fail validation, every source is owned/ACTIVE/eligible, zero-goal joins roll back, same key plus same logical request returns the original participation, same key plus any different template/type/target set returns an idempotency conflict, and a different key cannot create a duplicate active medication target or exact supplement target set even after a server template mapping replacement. Add a supplement mutation regression proving every source-touching path enters the shared `User -> source -> settings` order; a new-source path enters `User -> settings -> insert` because no source row exists yet.
 
 - [ ] **Step 5: Verify join tests fail for missing behavior**
 
@@ -112,11 +112,11 @@
 
 - [ ] **Step 6: Implement transactional join**
 
-  Canonicalize target IDs before entering the transaction. Recheck idempotency inside the transaction; follow the existing medication mutation order by locking `User`, requested source rows in ascending ID order, then locking/creating `UserSettings`, and finally locking participation rows. Revalidate eligibility and check active duplicates using a locking read. Create one participation, one target per source, and planner-produced occurrences atomically. Compare existing participation template/type/canonical source IDs before returning an idempotent retry. Translate the `(user,idempotency_key)` race after rollback by reloading and comparing the committed request. The SQLite concurrency test verifies service behavior with SQLite's no-op row locks plus the process-local guard; cross-process MySQL serialization still depends on the shared `User`/source row lock order and must not be claimed as proven by SQLite.
+  Canonicalize target IDs before entering the transaction and reject duplicates instead of silently deduplicating them. Recheck idempotency inside the transaction; follow the established medication mutation order by locking `User`, requested source rows in ascending ID order, then locking/creating `UserSettings`, and finally locking participation rows. Align existing supplement mutation paths to the same per-user serialization order before they touch source/settings rows. Revalidate eligibility and check active duplicates using a locking read. Compare active rows by challenge type plus canonical target set rather than by template ID, because template mappings are replaceable server configuration. Create one participation, one target per source, and planner-produced occurrences atomically. Compare existing participation template, stored challenge type, and canonical source IDs before returning an idempotent retry. Translate the `(user,idempotency_key)` race after rollback by reloading and comparing the committed request. Do not add a process-local mutex: SQLite's no-op row locks can verify deterministic service behavior and lock-call order, but only the database constraints and shared production lock order provide cross-process MySQL serialization; this SQLite suite does not claim to prove MySQL concurrency.
 
 - [ ] **Step 7: Re-run focused tests and verify GREEN**
 
-  Run the focused SQLite command and require that all recommendation, rollback, idempotency, ownership, and concurrent-join cases pass.
+  Run the focused SQLite command and require that all recommendation, rollback, idempotency, ownership, duplicate-active, and lock-order cases pass.
 
 ### Task 3: Read-only progress projection and authenticated routes
 
