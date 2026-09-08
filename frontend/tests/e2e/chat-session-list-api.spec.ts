@@ -64,7 +64,6 @@ test('실 API 대화 목록에서 세션을 선택해 저장된 메시지를 연
               content: '아침 약은 언제 먹나요?',
               status: 'COMPLETED',
               replyToMessageId: null,
-              guideId: null,
               sources: [],
               createdAt: '2026-09-02T08:55:00+09:00',
             },
@@ -74,7 +73,6 @@ test('실 API 대화 목록에서 세션을 선택해 저장된 메시지를 연
               content: '식후에 드시는 편이 좋아요.',
               status: 'COMPLETED',
               replyToMessageId: 1001,
-              guideId: null,
               sources: [
                 {
                   sourceType: 'PUBLIC_DATA',
@@ -93,7 +91,6 @@ test('실 API 대화 목록에서 세션을 선택해 저장된 메시지를 연
               content: '화면에 표시하면 안 되는 처리 중 답변',
               status: 'PENDING',
               replyToMessageId: 1001,
-              guideId: null,
               sources: [],
               createdAt: '2026-09-02T09:01:00+09:00',
             },

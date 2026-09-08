@@ -174,7 +174,7 @@ class MedicationGuideConfirmRequest(CamelModel):
 
     hospital_name: str = Field(default=MISSING, min_length=1, max_length=255)
     dispensing_date: date
-    alias: str | None = Field(default=None, max_length=50)
+    alias: str | None = Field(default=None, max_length=255)
     medications: list[MedicationConfirmation] = Field(max_length=100)
 
     @field_validator("hospital_name")
@@ -269,7 +269,7 @@ class DocumentOcrConfirmRequest(CamelModel):
 
     hospital_name: str = Field(default=MISSING, min_length=1, max_length=255)
     dispensed_date: date
-    alias: str | None = Field(default=None, max_length=50)
+    alias: str | None = Field(default=None, max_length=255)
     medications: list[DocumentMedicationConfirmation] = Field(max_length=100)
 
     @field_validator("hospital_name")

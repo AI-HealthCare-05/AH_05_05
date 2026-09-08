@@ -13,6 +13,8 @@ from app.dtos.auth import (
     EmailVerificationVerifyResponse,
     LoginRequest,
     LoginResponse,
+    PasswordResetRequest,
+    PasswordResetResponse,
     SignUpRequest,
     SignUpResponse,
     TokenRefreshResponse,
@@ -181,6 +183,23 @@ async def login(
             max_age=config.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
         )
     return resp
+
+
+@auth_router.post(
+    "/password-reset",
+    response_model=PasswordResetResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_password_reset(
+    request: PasswordResetRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> PasswordResetResponse:
+    """등록된 활성 사용자라면 임시비밀번호 이메일 작업을 생성한다.
+
+    이메일 가입 여부가 노출되지 않도록 계정 존재 여부와 관계없이 같은 응답을 반환한다.
+    """
+    await auth_service.request_password_reset(str(request.email))
+    return PasswordResetResponse(detail="입력한 이메일이 등록되어 있으면 임시비밀번호를 발송합니다.")
 
 
 @auth_router.get(

@@ -24,7 +24,7 @@ export interface SignupValues extends SignupCredentials, SignupProfile {}
 
 const DEFAULT_CREDENTIALS: Required<SignupCredentials> = {
   email: 'new-patient@example.com',
-  password: 'password1234',
+  password: 'Password123!',
   verificationCode: '123456',
 };
 

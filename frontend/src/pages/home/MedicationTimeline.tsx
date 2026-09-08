@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import type {
   DoseRecord,
@@ -43,8 +43,14 @@ interface MedicationTimelineProps {
     recordIds: number[],
     slot: MealSlot,
     taken: boolean,
-  ) => void | Promise<boolean>;
+  ) => void | boolean | DoseChangeResult | Promise<void | boolean | DoseChangeResult>;
   onMemo: () => void;
+  selectionResetKey?: number;
+  mutationPending?: boolean;
+}
+
+export interface DoseChangeResult {
+  failedRecordIds: number[];
 }
 
 export function MedicationTimeline({
@@ -54,6 +60,8 @@ export function MedicationTimeline({
   currentDate,
   onDoseChange,
   onMemo,
+  selectionResetKey = 0,
+  mutationPending = false,
 }: MedicationTimelineProps) {
   const now = referenceTime ?? new Date();
   const timeline = buildMedicationTimeline(overviews, now, currentDate, doseRecords);
@@ -81,6 +89,8 @@ export function MedicationTimeline({
             currentDate={currentDate}
             onDoseChange={onDoseChange}
             onMemo={onMemo}
+            selectionResetKey={selectionResetKey}
+            mutationPending={mutationPending}
           />
         </div>
       ) : (
@@ -97,11 +107,15 @@ function TimelineItem({
   currentDate,
   onDoseChange,
   onMemo,
+  selectionResetKey,
+  mutationPending,
 }: {
   item: TimelineItemData;
   currentDate: string;
   onDoseChange: MedicationTimelineProps['onDoseChange'];
   onMemo: MedicationTimelineProps['onMemo'];
+  selectionResetKey: number;
+  mutationPending: boolean;
 }) {
   const [expandedEpisodes, setExpandedEpisodes] = useState<Set<number>>(() => new Set());
   const [expandedMedicationEpisodes, setExpandedMedicationEpisodes] = useState<Set<number>>(
@@ -110,6 +124,9 @@ function TimelineItem({
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(() => new Set());
   const [doseActionSettled, setDoseActionSettled] = useState(false);
+  const [doseActionPending, setDoseActionPending] = useState(false);
+  const doseActionPendingRef = useRef(false);
+  const doseControlsPending = doseActionPending || mutationPending;
   const current = item.status === 'current';
   const [completedEpisodes, setCompletedEpisodes] = useState<Set<number>>(() =>
     new Set(item.completedEpisodeRecordIds),
@@ -150,6 +167,10 @@ function TimelineItem({
     setCompletedEpisodes(new Set(item.completedEpisodeRecordIds));
   }, [completionFingerprint]);
 
+  useEffect(() => {
+    setSelectedEpisodes(new Set());
+  }, [selectionResetKey]);
+
   function toggleEpisode(recordId: number) {
     setExpandedEpisodes((currentEpisodes) => {
       const next = new Set(currentEpisodes);
@@ -160,6 +181,7 @@ function TimelineItem({
   }
 
   function toggleSelectedEpisode(recordId: number) {
+    if (doseActionPendingRef.current || mutationPending) return;
     setSelectedEpisodes((currentEpisodes) => {
       const next = new Set(currentEpisodes);
       if (next.has(recordId)) next.delete(recordId);
@@ -205,30 +227,50 @@ function TimelineItem({
     !hasSelection && (doseActionSettled || allVisibleEpisodesCompleted);
 
   async function handleDoseAction() {
-    if (doseActionDisabled) return;
-    const previousCompletedEpisodes = completedEpisodes;
-    const previousSelectedEpisodes = selectedEpisodes;
-    setCompletedEpisodes((currentEpisodes) => {
-      if (actionCompleted) {
-        return new Set(
-          [...currentEpisodes].filter((recordId) => !actionRecordIds.includes(recordId)),
-        );
-      }
-      return new Set([...currentEpisodes, ...actionRecordIds]);
-    });
-    setSelectedEpisodes(new Set());
-    let saved = true;
+    if (doseActionDisabled || doseActionPendingRef.current || mutationPending) return;
+    doseActionPendingRef.current = true;
+    setDoseActionPending(true);
     try {
-      saved = (await onDoseChange(actionRecordIds, item.slot, !actionCompleted)) !== false;
-    } catch {
-      saved = false;
+      const previousCompletedEpisodes = completedEpisodes;
+      setCompletedEpisodes((currentEpisodes) => {
+        if (actionCompleted) {
+          return new Set(
+            [...currentEpisodes].filter((recordId) => !actionRecordIds.includes(recordId)),
+          );
+        }
+        return new Set([...currentEpisodes, ...actionRecordIds]);
+      });
+      setSelectedEpisodes(new Set());
+      let failedRecordIds: number[] = [];
+      try {
+        const result = await onDoseChange(actionRecordIds, item.slot, !actionCompleted);
+        if (result === false) failedRecordIds = actionRecordIds;
+        else if (result && typeof result === 'object') failedRecordIds = result.failedRecordIds;
+      } catch {
+        failedRecordIds = actionRecordIds;
+      }
+      if (failedRecordIds.length > 0) {
+        const failedRecordIdSet = new Set(failedRecordIds);
+        const savedRecordIds = actionRecordIds.filter((recordId) => !failedRecordIdSet.has(recordId));
+        setCompletedEpisodes(() => {
+          if (actionCompleted) {
+            return new Set(
+              [...previousCompletedEpisodes].filter(
+                (recordId) => !savedRecordIds.includes(recordId),
+              ),
+            );
+          }
+          return new Set([...previousCompletedEpisodes, ...savedRecordIds]);
+        });
+        setSelectedEpisodes(new Set(failedRecordIds));
+        if (savedRecordIds.length > 0) setDoseActionSettled(true);
+        return;
+      }
+      setDoseActionSettled(true);
+    } finally {
+      doseActionPendingRef.current = false;
+      setDoseActionPending(false);
     }
-    if (saved === false) {
-      setCompletedEpisodes(previousCompletedEpisodes);
-      setSelectedEpisodes(previousSelectedEpisodes);
-      return;
-    }
-    setDoseActionSettled(true);
   }
 
   return (
@@ -262,6 +304,7 @@ function TimelineItem({
                   data-episode-row
                   aria-pressed={selectedEpisodes.has(episode.recordId)}
                   aria-label={`${episodeAccessibleName} ${episodeCompleted ? '복용 완료' : '선택'}`}
+                  disabled={doseControlsPending}
                   className={`flex h-14 min-h-14 w-full min-w-0 items-center gap-3 border-b border-border px-3 py-1 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                     selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
                   }`}
@@ -271,12 +314,12 @@ function TimelineItem({
                   data-episode-selection-glyph
                   aria-hidden
                   className={`flex size-6 shrink-0 items-center justify-center rounded-pill ${
-                    selectedEpisodes.has(episode.recordId) || episodeCompleted
+                    selectedEpisodes.has(episode.recordId)
                       ? 'bg-primary text-card'
                       : 'border-2 border-primary text-transparent'
                   }`}
                 >
-                  <Check className="size-4" />
+                  {selectedEpisodes.has(episode.recordId) && <Check className="size-4" />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-2">
@@ -393,7 +436,7 @@ function TimelineItem({
               ? 'primary'
               : 'secondary'
           }
-          disabled={doseActionDisabled}
+          disabled={doseActionDisabled || doseControlsPending}
           className="min-h-touch flex-1 px-3"
           onClick={handleDoseAction}
         >

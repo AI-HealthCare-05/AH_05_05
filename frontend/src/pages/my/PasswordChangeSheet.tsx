@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { changePassword, type ChangePasswordPayload } from '@/entities/account';
 import { ApiError } from '@/shared/api/client';
@@ -51,6 +52,8 @@ export function PasswordChangeSheet({
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showNewPasswordConfirm, setShowNewPasswordConfirm] = useState(false);
   const [currentPasswordError, setCurrentPasswordError] = useState<string | null>(null);
   const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -69,6 +72,8 @@ export function PasswordChangeSheet({
     setCurrentPassword('');
     setNewPassword('');
     setNewPasswordConfirm('');
+    setShowNewPassword(false);
+    setShowNewPasswordConfirm(false);
     clearErrors();
     setSaving(false);
   }, [open]);
@@ -128,7 +133,7 @@ export function PasswordChangeSheet({
           />
           <Input
             label="새 비밀번호"
-            type="password"
+            type={showNewPassword ? 'text' : 'password'}
             autoComplete="new-password"
             value={newPassword}
             maxLength={PASSWORD_MAX_LENGTH}
@@ -137,11 +142,25 @@ export function PasswordChangeSheet({
               setNewPassword(event.target.value);
               setNewPasswordError(null);
             }}
+            trailingAction={
+              <button
+                type="button"
+                aria-label={showNewPassword ? '새 암호 숨기기' : '새 암호 보기'}
+                className="flex size-touch items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
+                onClick={() => setShowNewPassword((visible) => !visible)}
+              >
+                {showNewPassword ? (
+                  <Eye className="size-5" aria-hidden="true" />
+                ) : (
+                  <EyeOff className="size-5" aria-hidden="true" />
+                )}
+              </button>
+            }
             required
           />
           <Input
             label="새 비밀번호 확인"
-            type="password"
+            type={showNewPasswordConfirm ? 'text' : 'password'}
             autoComplete="new-password"
             value={newPasswordConfirm}
             maxLength={PASSWORD_MAX_LENGTH}
@@ -150,6 +169,20 @@ export function PasswordChangeSheet({
               setNewPasswordConfirm(event.target.value);
               setConfirmError(null);
             }}
+            trailingAction={
+              <button
+                type="button"
+                aria-label={showNewPasswordConfirm ? '확인 암호 숨기기' : '확인 암호 보기'}
+                className="flex size-touch items-center justify-center rounded-full text-muted-foreground hover:bg-muted-bg hover:text-foreground"
+                onClick={() => setShowNewPasswordConfirm((visible) => !visible)}
+              >
+              {showNewPasswordConfirm ? (
+                <Eye className="size-5" aria-hidden="true" />
+              ) : (
+                <EyeOff className="size-5" aria-hidden="true" />
+              )}
+              </button>
+            }
             required
           />
           {/* 특정 칸의 문제가 아닌 오류(네트워크·5xx)는 버튼 위에 띄웁니다. */}

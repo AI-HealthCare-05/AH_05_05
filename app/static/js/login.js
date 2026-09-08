@@ -7,6 +7,22 @@ const PASSWORD_FIELDS = ["currentPassword", "newPassword", "newPasswordConfirm"]
 
 export const PASSWORD_HELP_MESSAGE = "관리자에게 문의하세요.";
 
+export function passwordVisibilityState(isVisible) {
+  return isVisible
+    ? { inputType: "text", icon: "eye", ariaLabel: "비밀번호 숨기기" }
+    : { inputType: "password", icon: "eye-off", ariaLabel: "비밀번호 표시" };
+}
+
+export function applyPasswordVisibility(passwordInput, passwordToggle, isVisible) {
+  const state = passwordVisibilityState(isVisible);
+  passwordInput.type = state.inputType;
+  passwordToggle.setAttribute("aria-pressed", String(isVisible));
+  passwordToggle.setAttribute("aria-label", state.ariaLabel);
+  passwordToggle.querySelectorAll("[data-password-icon]").forEach((icon) => {
+    icon.toggleAttribute("hidden", icon.dataset.passwordIcon !== state.icon);
+  });
+}
+
 /**
  * 실패 코드를 입력칸에 매핑한다.
  *
@@ -206,10 +222,7 @@ function initializeLoginForm() {
   window.localStorage.removeItem(REMEMBERED_LOGIN_ID_KEY);
 
   passwordToggle?.addEventListener("click", () => {
-    const isVisible = passwordInput.type === "text";
-    passwordInput.type = isVisible ? "password" : "text";
-    passwordToggle.setAttribute("aria-pressed", String(!isVisible));
-    passwordToggle.setAttribute("aria-label", isVisible ? "비밀번호 표시" : "비밀번호 숨기기");
+    applyPasswordVisibility(passwordInput, passwordToggle, passwordInput.type !== "text");
   });
 
   // 자가 재설정은 만들지 않았다. 최고관리자가 「재설정」으로 임시 비밀번호를 재발송하는

@@ -14,9 +14,11 @@ from app.core import config
 from app.core.email.payload import EmailJobPayload, EmailPayloadCodec, EmailTemplate
 from app.core.email.renderer import EmailTemplateRenderer
 from app.core.email.smtp_sender import EmailDeliveryError, SmtpEmailSender
+from app.core.utils.security import hash_password, verify_password
 from app.models.background_jobs import BackgroundJob
 from app.models.email_verifications import EmailVerification
-from app.models.enums import BackgroundJobStatus, BackgroundJobType, EmailVerificationPurpose
+from app.models.enums import AccountStatus, BackgroundJobStatus, BackgroundJobType, EmailVerificationPurpose
+from app.models.users import User
 from app.services.admin_settings import SmtpRuntimeSettings, SmtpSettingsService
 from app.workers import email_worker as worker
 
@@ -138,6 +140,15 @@ class TestEmailWorker(TestCase):
         ).encode()
         return Fernet(self.payload_key).encrypt(serialized).decode()
 
+    def user_password_reset_payload(self, password: str = "Reset1234!") -> str:
+        return self.codec.encrypt(
+            EmailJobPayload(
+                template=EmailTemplate.USER_PASSWORD_RESET,
+                recipient_email="recipient@example.com",
+                temporary_password=password,
+            )
+        )
+
     async def test_successful_delivery_completes_claimed_job(self) -> None:
         job = await self.create_job()
 
@@ -158,6 +169,54 @@ class TestEmailWorker(TestCase):
             password="db-password",
             from_address="from@example.com",
         )
+
+    async def test_user_password_changes_only_after_successful_delivery(self) -> None:
+        user = await User.create(
+            email="recipient@example.com",
+            hashed_password=hash_password("Original123!"),
+            name="재설정 사용자",
+            status=AccountStatus.ACTIVE,
+        )
+        job = await self.create_job(reference_table="user", reference_id=user.id)
+
+        await worker.send_email(self.context, job.id, self.user_password_reset_payload())
+
+        await user.refresh_from_db()
+        await job.refresh_from_db()
+        assert verify_password("Reset1234!", user.hashed_password)
+        assert job.status is BackgroundJobStatus.COMPLETED
+
+    async def test_user_password_is_unchanged_when_delivery_fails(self) -> None:
+        original_password = "Original123!"
+        user = await User.create(
+            email="recipient@example.com",
+            hashed_password=hash_password(original_password),
+            name="재설정 사용자",
+            status=AccountStatus.ACTIVE,
+        )
+        job = await self.create_job(reference_table="user", reference_id=user.id)
+        self.sender.send.side_effect = EmailDeliveryError("EMAIL_AUTH_FAILED", retryable=False)
+
+        await worker.send_email(self.context, job.id, self.user_password_reset_payload())
+
+        await user.refresh_from_db()
+        assert verify_password(original_password, user.hashed_password)
+
+    async def test_user_password_reset_is_cancelled_for_inactive_user(self) -> None:
+        user = await User.create(
+            email="recipient@example.com",
+            hashed_password=hash_password("Original123!"),
+            name="정지 사용자",
+            status=AccountStatus.SUSPENDED,
+        )
+        job = await self.create_job(reference_table="user", reference_id=user.id)
+
+        await worker.send_email(self.context, job.id, self.user_password_reset_payload())
+
+        await job.refresh_from_db()
+        assert job.status is BackgroundJobStatus.CANCELLED
+        assert job.error_code == "EMAIL_PASSWORD_RESET_TARGET_INVALID"
+        self.sender.send.assert_not_called()
 
     async def test_retryable_failure_waits_and_raises_arq_retry(self) -> None:
         job = await self.create_job(max_retry_count=3)

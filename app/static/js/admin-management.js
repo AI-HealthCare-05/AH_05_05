@@ -286,6 +286,26 @@ export function populateAdminEditFields(panel, admin) {
   panel.querySelector("[name='role']").value = roleLabel(admin.role);
 }
 
+export function initializeAdminPasswordToggles(panel) {
+  panel.querySelectorAll("[data-admin-password-toggle]").forEach((toggle) => {
+    const input = panel.querySelector(`[name='${toggle.dataset.passwordTarget}']`);
+    if (!input) return;
+
+    toggle.addEventListener("click", () => {
+      const isVisible = input.type !== "text";
+      input.type = isVisible ? "text" : "password";
+      toggle.setAttribute("aria-pressed", String(isVisible));
+      toggle.setAttribute(
+        "aria-label",
+        `${toggle.dataset.passwordTarget === "newPassword" ? "새 비밀번호" : "새 비밀번호 확인"} ${isVisible ? "숨기기" : "표시"}`,
+      );
+      toggle.querySelectorAll("[data-password-icon]").forEach((icon) => {
+        icon.toggleAttribute("hidden", icon.dataset.passwordIcon !== (isVisible ? "eye" : "eye-off"));
+      });
+    });
+  });
+}
+
 /**
  * 임시 비밀번호를 재발송한다. 목록의 「재설정」과 수정 오버레이의 「재설정」이 함께 쓴다.
  *
@@ -390,6 +410,7 @@ async function openEditOverlay(admin, { currentAdminId, currentRole }, reloadLis
 
   // 권한 때문에 불가한 블록은 DOM 에서 지운다. hidden 은 CSS 에 짓밟힌다(위 주석 참고).
   applyEditOverlayVisibility(overlay, visibility);
+  initializeAdminPasswordToggles(overlay);
 
   overlay.querySelector("[data-admin-edit-reset]")?.addEventListener("click", async () => {
     // 확인 오버레이가 열리면서 이 패널이 닫힌다. 입력하던 내용은 버려지므로,
