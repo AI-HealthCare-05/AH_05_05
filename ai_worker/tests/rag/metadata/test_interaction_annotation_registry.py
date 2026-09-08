@@ -41,6 +41,14 @@ documents:
     assert matches[0].pair_type == InteractionPairType.DRUG_FOOD
     assert matches[0].drug_names == ["펙소페나딘"]
     assert matches[0].ingredient_names == []
+    assert matches[0].food_names == ["과일주스"]
+    assert matches[0].entity_catalog_entries[1].canonical_name == "과일주스"
+    assert matches[0].entity_catalog_entries[1].aliases == [
+        "과일주스",
+        "자몽주스",
+        "오렌지주스",
+        "사과주스",
+    ]
     assert len(matches[0].interaction_pair_keys) == 1
     assert registry.required_pair_keys() == matches[0].interaction_pair_keys
 

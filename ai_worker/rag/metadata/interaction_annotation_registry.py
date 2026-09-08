@@ -14,6 +14,10 @@ from ai_worker.schemas.interaction import (
     interaction_pair_type_for_kinds,
     normalize_interaction_name,
 )
+from ai_worker.schemas.knowledge import (
+    KnowledgeEntityCatalogEntry,
+    KnowledgeEntityCatalogEntryType,
+)
 
 
 class KnowledgeInteractionAnnotationEntity(BaseModel):
@@ -95,6 +99,10 @@ class MatchedKnowledgeInteraction(BaseModel):
     pair_type: InteractionPairType
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
+    food_names: list[str] = Field(default_factory=list)
+    entity_catalog_entries: list[KnowledgeEntityCatalogEntry] = Field(
+        default_factory=list,
+    )
     interaction_pair_keys: list[str] = Field(default_factory=list)
 
 
@@ -174,10 +182,34 @@ class KnowledgeInteractionAnnotationRegistry:
                     ingredient_names=[
                         entity.display_name for entity in entities if entity.kind == InteractionEntityKind.SUPPLEMENT
                     ],
+                    food_names=[
+                        entity.display_name
+                        for entity in entities
+                        if entity.kind == InteractionEntityKind.FOOD
+                    ],
+                    entity_catalog_entries=[
+                        self._catalog_entry(entity)
+                        for entity in entities
+                    ],
                     interaction_pair_keys=[build_interaction_pair_key(left, right)],
                 )
             )
         return matches
+
+    @staticmethod
+    def _catalog_entry(
+        entity: KnowledgeInteractionAnnotationEntity,
+    ) -> KnowledgeEntityCatalogEntry:
+        return KnowledgeEntityCatalogEntry(
+            canonical_name=entity.display_name,
+            aliases=list(dict.fromkeys([entity.display_name, *entity.aliases])),
+            entity_type=(
+                KnowledgeEntityCatalogEntryType.FOOD_CATEGORY
+                if entity.kind == InteractionEntityKind.FOOD
+                else KnowledgeEntityCatalogEntryType.INGREDIENT_NAME
+            ),
+            kind=entity.kind,
+        )
 
     @classmethod
     def _matches_entity(

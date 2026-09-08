@@ -2937,6 +2937,7 @@ def test_split_uses_korean_label_for_drug_food_interaction() -> None:
                 update={
                     "drug_names": ["펙소페나딘"],
                     "ingredient_names": [],
+                    "food_names": ["과일주스"],
                     "interaction_type": "DRUG_FOOD",
                     "interaction_pair_keys": ["f" * 64],
                 }
@@ -2947,6 +2948,8 @@ def test_split_uses_korean_label_for_drug_food_interaction() -> None:
     chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
 
     assert "[상호작용] 약-음식" in chunk.embedding_text
+    assert chunk.metadata.food_names == ["과일주스"]
+    assert "[음식] 과일주스" in chunk.embedding_text
 
 
 def test_split_applies_curated_interaction_annotation_end_to_end(

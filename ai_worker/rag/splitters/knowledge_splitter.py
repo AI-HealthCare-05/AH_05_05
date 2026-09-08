@@ -2870,6 +2870,11 @@ class KnowledgeSplitter:
             {
                 "drug_names": entities.drug_names or metadata.drug_names,
                 "ingredient_names": entities.ingredient_names or metadata.ingredient_names,
+                "food_names": entities.food_names or metadata.food_names,
+                "entity_catalog_entries": (
+                    entities.entity_catalog_entries
+                    or metadata.entity_catalog_entries
+                ),
                 "interaction_type": entities.interaction_type or metadata.interaction_type,
                 "interaction_pair_keys": (entities.interaction_pair_keys or metadata.interaction_pair_keys),
                 "evidence_level": (
@@ -2921,6 +2926,8 @@ class KnowledgeSplitter:
             prefixes.append(f"[약] {', '.join(metadata.drug_names)}")
         if metadata.ingredient_names:
             prefixes.append(f"[성분] {', '.join(metadata.ingredient_names)}")
+        if metadata.food_names:
+            prefixes.append(f"[음식] {', '.join(metadata.food_names)}")
         if metadata.interaction_type:
             label = _INTERACTION_LABELS.get(
                 metadata.interaction_type,
