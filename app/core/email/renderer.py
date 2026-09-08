@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -39,11 +40,12 @@ class EmailTemplateRenderer:
         if payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE:
             template = self._environment.get_template("emails/signup_verification_code.html")
             code = payload.verification_code or ""
+            expiry = self._format_expiry(payload.expires_in, payload.expires_at)
             return EmailMessage(
                 to=str(payload.recipient_email),
                 subject=SIGNUP_VERIFICATION_SUBJECT,
-                text_body=self._signup_verification_plain_text(code),
-                html_body=template.render(verification_code=code),
+                text_body=self._signup_verification_plain_text(code, expiry),
+                html_body=template.render(verification_code=code, verification_expiry=expiry),
                 inline_attachments=(self._logo_attachment(),),
             )
         if payload.template is EmailTemplate.USER_PASSWORD_RESET:
@@ -77,12 +79,31 @@ class EmailTemplateRenderer:
         )
 
     @staticmethod
-    def _signup_verification_plain_text(verification_code: str) -> str:
+    def _signup_verification_plain_text(verification_code: str, verification_expiry: str) -> str:
         return (
             "RxVita 회원가입 이메일 인증번호입니다.\n\n"
             f"인증번호: {verification_code}\n\n"
-            "인증번호는 3분 동안 유효합니다.\n"
+            f"인증번호는 {verification_expiry} 유효합니다.\n"
             "본인이 요청하지 않았다면 이 메일을 무시해 주세요.\n"
+        )
+
+    @staticmethod
+    def _format_duration(seconds: int) -> str:
+        if seconds % 60 == 0:
+            return f"{seconds // 60}분"
+        return f"{seconds}초"
+
+    @classmethod
+    def _format_expiry(cls, expires_in: int | None, expires_at: datetime | None) -> str:
+        if expires_in is not None:
+            return f"{cls._format_duration(expires_in)} 동안"
+        if expires_at is None:
+            raise ValueError("회원가입 이메일 인증 만료시각이 누락되었습니다.")
+        timezone_name = expires_at.tzname()
+        timezone_suffix = f" {timezone_name}" if timezone_name else ""
+        return (
+            f"{expires_at.year}년 {expires_at.month}월 {expires_at.day}일 "
+            f"{expires_at.hour:02d}:{expires_at.minute:02d}{timezone_suffix}까지"
         )
 
     @staticmethod
