@@ -119,7 +119,7 @@ test('처방 기록은 조회 결과 전체를 처음부터 표시한다', async
 
 test('선택 모드에서는 카드 클릭이 펼침 대신 선택이고 순차 삭제한다', async ({ page }) => {
   await page.goto('/dev/medications');
-  await page.getByRole('button', { name: '처방 관리', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '선택한 처방 삭제' })).toBeDisabled();
   await expect(page.getByRole('checkbox')).toHaveCount(2);
@@ -146,7 +146,7 @@ test('375px에서 펼침·선택·필터 상태에 가로 스크롤이 없다', 
   await page.goto('/dev/medications');
   await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
   await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
-  await page.getByRole('button', { name: '처방 관리', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
 });

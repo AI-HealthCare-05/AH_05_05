@@ -329,7 +329,7 @@ export function MedicationsPage({
           ) : (
             <button
               type="button"
-              className="min-h-touch shrink-0 px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-touch shrink-0 rounded-button bg-primary px-3 text-sm font-bold text-white hover:bg-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               onClick={() => navigate('/reports/new?source=medications')}
             >
               AI 보고서 받기
@@ -373,7 +373,7 @@ export function MedicationsPage({
             className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => selectionMode ? leaveSelectionMode() : setSelectionMode(true)}
           >
-            {selectionMode ? '관리 완료' : '처방 관리'}
+            {selectionMode ? '관리 완료' : '삭제'}
           </button>
         </div>
 

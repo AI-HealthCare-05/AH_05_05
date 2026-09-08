@@ -22,7 +22,7 @@ for (const source of ['medications', 'supplements'] as const) {
       }
     });
     await page.goto(`/${source}`);
-    await expect(page.getByRole('button', { name: source === 'medications' ? '처방 관리' : '영양제 관리' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '삭제', exact: true })).toBeVisible();
     await page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' }).click();
     await expect(page).toHaveURL(new RegExp(`/reports/new\\?source=${source}$`));
     await expect(page.getByRole('heading', { name: '현재 복용 정보를 함께 살펴봐요' })).toBeVisible();
@@ -56,7 +56,8 @@ test('direct report URLs remain protected for guests', async ({ browser }) => {
 test('body management remains available and report UI fits a narrow screen', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 320, height: 740 });
   await page.goto('/medications');
-  await page.getByRole('button', { name: '처방 관리' }).click();
+  await expect(page.getByRole('button', { name: '삭제', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '선택한 처방 삭제' })).toBeDisabled();
   await page.getByRole('button', { name: '관리 완료' }).click();
@@ -64,11 +65,31 @@ test('body management remains available and report UI fits a narrow screen', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('medication-report-320.png'), fullPage: true });
   await page.goto('/supplements');
-  await page.getByRole('button', { name: '영양제 관리' }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await expect(page.getByRole('button', { name: '관리 완료' })).toBeVisible();
   await page.getByRole('button', { name: '관리 완료' }).click();
   await page.screenshot({ path: testInfo.outputPath('supplement-report-entry-320.png'), fullPage: true });
   await page.goto('/reports');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('report-collection-320.png'), fullPage: true });
+});
+
+test('supplement add opens directly while delete only opens selection', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.goto('/supplements');
+  const listHeader = page.getByRole('heading', { name: /먹고 있는 영양제/ }).locator('..');
+  await expect(listHeader.getByRole('button', { name: '영양제 추가', exact: true })).toBeVisible();
+  await listHeader.getByRole('button', { name: '영양제 추가', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '영양제 추가', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await expect(page.getByRole('checkbox').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '선택한 0개 삭제', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox').first().check();
+  await expect(page.getByRole('button', { name: '선택한 1개 삭제', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '관리 완료', exact: true }).click();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('supplement-add-delete-320.png'), fullPage: true });
 });

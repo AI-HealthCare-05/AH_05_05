@@ -56,6 +56,8 @@ for (const source of ['medications', 'supplements']) {
     expect(requests).toHaveLength(0);
     await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
     await expect(page.getByRole('heading', { name: '생활관리 안내' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '이메일로 받기', exact: true })).toBeDisabled();
+    await expect(page.getByText('이메일 발송 기능은 준비 중이에요.', { exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: '현재 복용 목록' })).toContainText('테스트 처방약');
     await expect(page.getByRole('table', { name: '일일 성분 합계' })).toContainText('100 mg');
     await expect(page.getByRole('figure', { name: '확인 항목 수' })).toContainText('정보 부족');
