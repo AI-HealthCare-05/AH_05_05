@@ -142,6 +142,13 @@ class MedicationNoteListResponse(CamelModel):
     next_cursor: str | None = None
 
 
+class MedicationNoteEpisodeResponse(CamelModel):
+    care_episode_id: int
+    alias: str | None = None
+    start_date: date | None = None
+    status: CareEpisodeStatus
+
+
 # 이름을 명시적으로 풀어 쓴 코드와 짧은 코드가 모두 읽기 쉽도록 호환 별칭을 둔다.
 MedicationNoteCreateRequest = CreateMedicationNoteRequest
 MedicationNoteUpdateRequest = UpdateMedicationNoteRequest

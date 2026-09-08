@@ -18,6 +18,7 @@ from app.dtos.medications import (
     CreateMedicationNoteRequest,
     MedicationDoseResponse,
     MedicationMealTimes,
+    MedicationNoteEpisodeResponse,
     MedicationNoteListResponse,
     MedicationNoteMedicationResponse,
     MedicationNoteResponse,
@@ -207,6 +208,26 @@ class MedicationService:
             cursor=cursor,
         )
         return page.items
+
+    async def list_note_episodes(self, user: User) -> list[MedicationNoteEpisodeResponse]:
+        rows = await (
+            CareEpisode.filter(
+                user_id=user.id,
+                medication_notes__user_id=user.id,
+            )
+            .distinct()
+            .order_by("-medication_start_date", "-id")
+            .values("id", "alias", "medication_start_date", "status")
+        )
+        return [
+            MedicationNoteEpisodeResponse(
+                care_episode_id=row["id"],
+                alias=row["alias"],
+                start_date=row["medication_start_date"],
+                status=row["status"],
+            )
+            for row in rows
+        ]
 
     async def get_note(self, user: User, note_id: int) -> MedicationNoteResponse:
         note = await self._get_owned_note(user, note_id)
