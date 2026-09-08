@@ -4,18 +4,28 @@ import {
   mockCreateMedicationNote,
   mockDeleteMedicationNote,
   mockGetMedicationNote,
+  mockListMedicationNoteEpisodes,
   mockListMedicationNotes,
   mockUpdateMedicationNote,
 } from './api.mock';
 import type {
   CreateMedicationNotePayload,
   MedicationNote,
+  MedicationNoteEpisode,
   MedicationNoteListParams,
   MedicationNotePage,
   UpdateMedicationNotePayload,
 } from './types';
 
 type MedicationNoteListResponse = MedicationNotePage;
+
+export async function listMedicationNoteEpisodes(): Promise<MedicationNoteEpisode[]> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return mockListMedicationNoteEpisodes();
+  }
+  return http.get<MedicationNoteEpisode[]>('/v1/med/notes/episodes');
+}
 
 function notePath(noteId: number | string): string {
   return `/v1/med/notes/${encodeURIComponent(String(noteId))}`;

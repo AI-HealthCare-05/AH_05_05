@@ -4,8 +4,10 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   deleteMedicationNote,
+  listMedicationNoteEpisodes,
   listMedicationNotes,
   type MedicationNote,
+  type MedicationNoteEpisode,
   type MedicationNotePage,
 } from '@/entities/medication-note';
 import { useSession } from '@/app/SessionContext';
@@ -31,6 +33,17 @@ function noteDateLabel(value: string): string {
   return `${formatDateLabel(date)} ${time}`;
 }
 
+function filterEpisodeBaseLabel(episode: MedicationNoteEpisode): string {
+  if (episode.alias && episode.startDate) {
+    return `${episode.alias} · ${formatDateLabel(episode.startDate, { includeYear: true })}`;
+  }
+  if (episode.alias) return episode.alias;
+  if (episode.startDate) {
+    return `${formatDateLabel(episode.startDate, { includeYear: true })} 처방`;
+  }
+  return `처방 #${episode.careEpisodeId}`;
+}
+
 export function MedicationNotesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,6 +53,9 @@ export function MedicationNotesPage() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const [episodeOptions, setEpisodeOptions] = useState<MedicationNoteEpisode[] | null>(null);
+  const [episodeOptionsError, setEpisodeOptionsError] = useState<string | null>(null);
+  const [episodeOptionsRetryKey, setEpisodeOptionsRetryKey] = useState(0);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -53,10 +69,44 @@ export function MedicationNotesPage() {
       ? parsedEpisodeId
       : undefined;
   const requestGenerationRef = useRef(0);
+  const optionRequestGenerationRef = useRef(0);
   const deleteGenerationRef = useRef(0);
   const deletePendingRef = useRef(false);
   const principalKeyRef = useRef(principalKey);
   principalKeyRef.current = principalKey;
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestPrincipal = principalKey;
+    const requestGeneration = optionRequestGenerationRef.current + 1;
+    optionRequestGenerationRef.current = requestGeneration;
+    setEpisodeOptions(null);
+    setEpisodeOptionsError(null);
+    listMedicationNoteEpisodes()
+      .then((options) => {
+        if (
+          cancelled ||
+          optionRequestGenerationRef.current !== requestGeneration ||
+          principalKeyRef.current !== requestPrincipal
+        ) return;
+        setEpisodeOptions(options);
+      })
+      .catch(() => {
+        if (
+          !cancelled &&
+          optionRequestGenerationRef.current === requestGeneration &&
+          principalKeyRef.current === requestPrincipal
+        ) {
+          setEpisodeOptionsError('필터용 처방 목록을 불러오지 못했어요.');
+        }
+      });
+    return () => {
+      cancelled = true;
+      if (optionRequestGenerationRef.current === requestGeneration) {
+        optionRequestGenerationRef.current += 1;
+      }
+    };
+  }, [episodeOptionsRetryKey, principalKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +175,14 @@ export function MedicationNotesPage() {
 
   const notes = page?.items ?? [];
   const notesHeading = page ? `복약 메모 ${page.total}개` : '복약 메모 목록';
+  const optionBaseLabels = episodeOptions?.map(filterEpisodeBaseLabel) ?? [];
+  const optionLabelCounts = new Map<string, number>();
+  for (const label of optionBaseLabels) {
+    optionLabelCounts.set(label, (optionLabelCounts.get(label) ?? 0) + 1);
+  }
+  const selectedEpisodeIsMissing = episodeId !== undefined &&
+    episodeOptions !== null &&
+    !episodeOptions.some((episode) => episode.careEpisodeId === episodeId);
 
   function leaveSelectionMode() {
     if (deletePendingRef.current) return;
@@ -225,6 +283,11 @@ export function MedicationNotesPage() {
     return `처방 #${note.careEpisodeId}`;
   }
 
+  function setEpisodeFilter(value: string) {
+    if (value === '') setSearchParams({});
+    else setSearchParams({ episodeId: value });
+  }
+
   function medicineLabel(note: MedicationNote): string {
     if (note.medicationId === null) return '처방 전체';
     return note.medication
@@ -256,30 +319,59 @@ export function MedicationNotesPage() {
           </button>
         </div>
 
-        <section className="flex flex-col gap-3" aria-labelledby="medication-notes-title">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 id="medication-notes-title" aria-label={notesHeading} className="text-xl font-bold text-foreground">
-                {notesHeading}
-              </h2>
-              {episodeId !== undefined && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {page?.items[0]
-                    ? `${prescriptionLabel(page.items[0])} 메모만 보고 있어요.`
-                    : '선택한 처방 메모만 보고 있어요.'}
-                </p>
+        <div className="flex flex-col gap-2">
+          <label className="flex flex-col gap-1 text-sm font-bold text-foreground">
+            처방
+            <select
+              aria-label="처방별 메모 필터"
+              value={episodeId === undefined ? '' : String(episodeId)}
+              onChange={(event) => setEpisodeFilter(event.target.value)}
+              disabled={episodeOptions === null || selectionMode || deletePending}
+              className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
+            >
+              {episodeOptions === null ? (
+                <option value={episodeId === undefined ? '' : String(episodeId)}>
+                  {episodeOptionsError ? '처방 목록 확인 필요' : '처방 목록 불러오는 중'}
+                </option>
+              ) : (
+                <>
+                  <option value="">전체</option>
+                  {episodeOptions.map((episode, index) => {
+                    const baseLabel = optionBaseLabels[index];
+                    const label = optionLabelCounts.get(baseLabel) === 1
+                      ? baseLabel
+                      : `${baseLabel} · #${episode.careEpisodeId}`;
+                    return (
+                      <option key={episode.careEpisodeId} value={episode.careEpisodeId}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                  {selectedEpisodeIsMissing && (
+                    <option value={episodeId}>처방 #{episodeId}</option>
+                  )}
+                </>
               )}
-            </div>
-            {episodeId !== undefined && (
+            </select>
+          </label>
+          {episodeOptionsError && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p role="alert" className="text-sm text-danger-strong">{episodeOptionsError}</p>
               <Button
                 variant="secondary"
                 fullWidth={false}
-                onClick={() => setSearchParams({})}
+                onClick={() => setEpisodeOptionsRetryKey((current) => current + 1)}
               >
-                전체 메모 보기
+                처방 목록 다시 시도
               </Button>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
+
+        <section className="flex flex-col gap-3" aria-labelledby="medication-notes-title">
+          <h2 id="medication-notes-title" aria-label={notesHeading} className="text-xl font-bold text-foreground">
+            {notesHeading}
+          </h2>
           {initialLoadError ? (
             <div className="flex flex-col items-start gap-3">
               <p role="alert" className="text-sm text-danger-strong">{initialLoadError}</p>
@@ -326,30 +418,21 @@ export function MedicationNotesPage() {
                       </span>
                     </label>
                   ) : (
-                    <>
-                      <button
-                        type="button"
-                        aria-label={`${medicineLabel(note)} ${note.body}`}
-                        className="flex min-h-28 w-full flex-col gap-2 p-4 text-left transition-colors hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                        onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`)}
-                      >
-                        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                          <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
-                          <span className="min-w-0 max-w-full break-words rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
-                            {prescriptionLabel(note)}
-                          </span>
-                        </div>
-                        <p className="font-bold text-foreground">{medicineLabel(note)}</p>
-                        <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{note.body}</p>
-                      </button>
-                      <button
-                        type="button"
-                        className="min-h-touch w-full break-words border-t border-border px-4 py-2 text-left text-sm font-bold text-primary-strong transition-colors hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                        onClick={() => setSearchParams({ episodeId: String(note.careEpisodeId) })}
-                      >
-                        {prescriptionLabel(note)} 메모만 보기
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      aria-label={`${medicineLabel(note)} ${note.body}`}
+                      className="flex min-h-28 w-full flex-col gap-2 p-4 text-left transition-colors hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`)}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                        <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
+                        <span className="min-w-0 max-w-full break-words rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
+                          {prescriptionLabel(note)}
+                        </span>
+                      </div>
+                      <p className="font-bold text-foreground">{medicineLabel(note)}</p>
+                      <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{note.body}</p>
+                    </button>
                   )}
                 </article>
               ))}

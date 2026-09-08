@@ -26,6 +26,13 @@ export interface MedicationNotePage {
   nextCursor: string | null;
 }
 
+export interface MedicationNoteEpisode {
+  careEpisodeId: number;
+  alias: string | null;
+  startDate: string | null;
+  status: string;
+}
+
 export interface MedicationNoteListParams {
   episodeId?: number;
   limit?: number;

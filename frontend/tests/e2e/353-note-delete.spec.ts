@@ -38,6 +38,10 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 }
 
 async function mockNoteList(page: Page) {
+  await page.route('**/api/v1/med/notes/episodes', (route) => fulfillJson(route, [
+    { careEpisodeId: 42, alias: '저녁 처방', startDate: '2026-08-03', status: 'COMPLETED' },
+    { careEpisodeId: 41, alias: '아침 처방', startDate: '2026-08-01', status: 'ACTIVE' },
+  ]));
   await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) => {
     if (route.request().method() === 'GET') {
       return fulfillJson(route, { items: NOTES, total: NOTES.length, nextCursor: null });
@@ -76,7 +80,7 @@ test('목록 삭제는 선택과 확인을 거쳐 차례로 요청하고 성공�
   await expect(page.getByRole('button', { name: '아침 처방 메모만 보기' })).toHaveCount(0);
   await page.getByRole('button', { name: '완료', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: '메모 선택: 901' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '아침 처방 메모만 보기' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '아침 처방 메모만 보기' })).toHaveCount(0);
   await selectNotes(page, [901, 902]);
   await expect(page).toHaveURL(/\/medications\/notes$/);
   await page.getByRole('button', { name: '선택한 2개 삭제' }).click();

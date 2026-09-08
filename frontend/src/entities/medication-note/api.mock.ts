@@ -3,6 +3,7 @@ import { mockMedicationOverviews } from '@/entities/medication/api.mock';
 import type {
   CreateMedicationNotePayload,
   MedicationNote,
+  MedicationNoteEpisode,
   MedicationNoteMedication,
   MedicationNoteListParams,
   MedicationNotePage,
@@ -144,6 +145,24 @@ export function mockListMedicationNotes({ episodeId, limit = 20, cursor }: Medic
     total: filtered.length,
     nextCursor,
   };
+}
+
+export function mockListMedicationNoteEpisodes(): MedicationNoteEpisode[] {
+  const byEpisodeId = new Map<number, MedicationNoteEpisode>();
+  for (const note of readNotes().map(hydrateNote)) {
+    if (byEpisodeId.has(note.careEpisodeId)) continue;
+    byEpisodeId.set(note.careEpisodeId, {
+      careEpisodeId: note.careEpisodeId,
+      alias: note.careEpisodeAlias,
+      startDate: note.careEpisodeStartDate,
+      status: note.careEpisodeStatus,
+    });
+  }
+  return [...byEpisodeId.values()].sort(
+    (a, b) =>
+      (b.startDate ?? '').localeCompare(a.startDate ?? '') ||
+      b.careEpisodeId - a.careEpisodeId,
+  );
 }
 
 export function mockGetMedicationNote(noteId: number | string): MedicationNote | null {
