@@ -2,7 +2,8 @@ import { expect, test } from 'playwright/test';
 import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
 
 test.beforeEach(() => test.skip(IS_REAL_API, MOCK_ONLY_REASON));
-test.setTimeout(20_000);
+// Includes Vite cold start on the WSL-mounted checkout and three stop flows.
+test.setTimeout(60_000);
 
 test('마지막 영양제를 중단하면 등록 안내만 보여주고 성분 합계는 완전히 숨긴다', async ({ page }) => {
   await page.goto('/dev/supplements');
@@ -22,7 +23,7 @@ test('마지막 영양제를 중단하면 등록 안내만 보여주고 성분 �
   await expect(page.getByRole('heading', { name: '성분 합계', exact: true })).toHaveCount(0);
   await expect(page.getByRole('region', { name: '성분 합계' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: '영양제 추가', exact: true }).click();
+  await supplementList.getByRole('button', { name: '영양제 추가', exact: true }).click();
   await expect(page.getByRole('searchbox', { name: '영양제 제품 검색' })).toBeVisible();
 });
 
