@@ -371,7 +371,7 @@ export function AddSupplementSheet({
                             onClick={() => selectProduct(product)}
                           >
                             <span className="min-w-0 flex-1">
-                              <strong className="block text-base font-bold text-foreground">
+                              <strong className="block [overflow-wrap:anywhere] text-base font-bold text-foreground">
                                 {product.productName}
                               </strong>
                               <span className="mt-1 block text-sm text-muted-foreground">

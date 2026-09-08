@@ -44,8 +44,8 @@ export function MedicationSlotSheet({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent variant="sheet" aria-describedby="medication-slot-description">
-        <div className="pr-10">
-          <DialogTitle className="text-xl">{medication?.name ?? '약'} 복용 시간</DialogTitle>
+        <div className="min-w-0 pr-10">
+          <DialogTitle className="[overflow-wrap:anywhere] text-xl">{medication?.name ?? '약'} 복용 시간</DialogTitle>
           <DialogDescription id="medication-slot-description" className="mt-1">
             이 약을 먹는 시간대를 골라주세요.
           </DialogDescription>

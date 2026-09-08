@@ -213,6 +213,89 @@ test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 �
   expect(overviewRequests).toBe(1);
 });
 
+test('긴 처방 별칭과 약 이름은 목록·선택·편집·완료 시트에서 전체가 보인다', async ({ page }) => {
+  test.setTimeout(120_000);
+  const longAlias = `장기복약관리${'PRESCRIPTION'.repeat(16)}처방`;
+  const finishedAlias = `완료복약관리${'FINISHED'.repeat(20)}처방`;
+  const longMedication = `복합서방제${'MEDICATION'.repeat(18)}정`;
+  const active = {
+    ...overview(12, false, 3),
+    alias: longAlias,
+    medications: [{ ...overview(12, false, 3).medications[0], name: longMedication }],
+  };
+  const finished = {
+    ...overview(24, true, 0),
+    alias: finishedAlias,
+    medications: [{ ...overview(24, true, 0).medications[0], name: longMedication }],
+  };
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [active, finished]));
+
+  async function expectContained(locator: ReturnType<typeof page.locator>, container: ReturnType<typeof page.locator>) {
+    await expect(locator).toBeVisible();
+    const result = await locator.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        scrollFits: element.scrollWidth <= element.clientWidth + 1,
+        heightFits: element.scrollHeight <= element.clientHeight + 1,
+        textOverflow: getComputedStyle(element).textOverflow,
+        left: rect.left,
+        right: rect.right,
+      };
+    });
+    const boundary = await container.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, scrollFits: element.scrollWidth <= element.clientWidth + 1 };
+    });
+    expect(result.textOverflow).not.toBe('ellipsis');
+    expect(result.scrollFits).toBe(true);
+    expect(result.heightFits).toBe(true);
+    expect(result.left).toBeGreaterThanOrEqual(boundary.left - 1);
+    expect(result.right).toBeLessThanOrEqual(boundary.right + 1);
+    expect(boundary.scrollFits).toBe(true);
+  }
+
+  for (const width of [320, 375, 430, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/medications');
+    const activeCard = page.getByRole('button', { name: /2026년 8월 22일 처방/ });
+    const activeName = activeCard.getByText(longAlias, { exact: true });
+    const summary = activeCard.getByText(new RegExp(longMedication));
+    await expectContained(activeName, activeCard);
+    await expectContained(summary, activeCard);
+
+    await page.getByRole('button', { name: '삭제', exact: true }).click();
+    await expect(page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ })).toBeVisible();
+    await expectContained(activeName, activeCard);
+    await page.getByRole('button', { name: '완료', exact: true }).click();
+
+    await activeCard.click();
+    const editSheet = page.getByRole('dialog', { name: '처방 편집' });
+    const aliasPreview = editSheet.getByLabel('복약 별칭 전체');
+    await expect(aliasPreview).toHaveText(longAlias);
+    await expectContained(aliasPreview, editSheet);
+    const editMedication = editSheet.locator('p').filter({ hasText: longMedication }).first();
+    await expectContained(editMedication, editSheet);
+    await editSheet.getByRole('button', { name: `${longMedication} 아침약` }).click();
+    await expect(editSheet.getByRole('button', { name: `${longMedication} 아침약` })).toHaveAttribute('aria-pressed', 'false');
+    await editSheet.getByRole('button', { name: '닫기' }).click();
+
+    await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
+    const finishedSheet = page.getByRole('dialog', { name: '완료된 처방' });
+    await expectContained(finishedSheet.getByText(finishedAlias, { exact: true }), finishedSheet);
+    await expectContained(finishedSheet.locator('p').filter({ hasText: longMedication }).first(), finishedSheet);
+    await finishedSheet.getByRole('button', { name: '닫기' }).click();
+  }
+
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('/dev/medications');
+  const expandableCard = page.getByRole('button', { name: /2026년 8월 22일 처방/ });
+  await expandableCard.click();
+  await page.getByRole('button', { name: new RegExp(`${longMedication}.*복용 시간 수정`) }).click();
+  const slotSheet = page.getByRole('dialog', { name: new RegExp(`${longMedication} 복용 시간`) });
+  await expectContained(slotSheet.getByRole('heading'), slotSheet);
+  await expect(slotSheet.getByRole('button', { name: `${longMedication} 아침약` })).toBeVisible();
+});
+
 test('선택 삭제는 순차 실행하고 부분 실패 항목만 선택 상태로 남긴다', async ({ page }) => {
   const deleteOrder: number[] = [];
   let firstCompleted = false;
