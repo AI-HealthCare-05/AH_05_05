@@ -40,11 +40,12 @@ export function OfficialChallengeMyPage() {
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
   const keysRef = useRef(new Map<string, string>());
+  const pendingRef = useRef(false);
   const [data, setData] = useState<ChallengeDashboard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ id: number; message: string } | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
-  const [refreshRequiredId, setRefreshRequiredId] = useState<number | null>(null);
+  const [refreshRequiredIds, setRefreshRequiredIds] = useState<Set<number>>(() => new Set());
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
@@ -55,7 +56,8 @@ export function OfficialChallengeMyPage() {
     setLoadError(null);
     setActionError(null);
     setPendingId(null);
-    setRefreshRequiredId(null);
+    setRefreshRequiredIds(new Set());
+    pendingRef.current = false;
     keysRef.current.clear();
     loadDashboard()
       .then(result => {
@@ -71,7 +73,7 @@ export function OfficialChallengeMyPage() {
 
   async function checkIn(participation: ChallengeParticipation) {
     if (
-      pendingId !== null ||
+      pendingRef.current ||
       participation.challenge.check_type_code !== 'SELF' ||
       !participation.can_verify
     ) return;
@@ -79,6 +81,7 @@ export function OfficialChallengeMyPage() {
     const keyId = `${requestPrincipal}:${participation.id}:${participation.today}`;
     const idempotencyKey = keysRef.current.get(keyId) ?? newIdempotencyKey();
     keysRef.current.set(keyId, idempotencyKey);
+    pendingRef.current = true;
     setPendingId(participation.id);
     setActionError(null);
     try {
@@ -105,10 +108,10 @@ export function OfficialChallengeMyPage() {
         const refreshed = await loadDashboard();
         if (principalRef.current !== requestPrincipal) return;
         setData(refreshed);
-        setRefreshRequiredId(null);
+        setRefreshRequiredIds(new Set());
       } catch {
         if (principalRef.current !== requestPrincipal) return;
-        setRefreshRequiredId(participation.id);
+        setRefreshRequiredIds(current => new Set(current).add(participation.id));
       }
     } catch (reason) {
       if (principalRef.current !== requestPrincipal) return;
@@ -117,20 +120,24 @@ export function OfficialChallengeMyPage() {
         message: reason instanceof Error ? reason.message : '인증을 기록하지 못했어요.',
       });
     } finally {
-      if (principalRef.current === requestPrincipal) setPendingId(null);
+      if (principalRef.current === requestPrincipal) {
+        pendingRef.current = false;
+        setPendingId(null);
+      }
     }
   }
 
   async function refreshDashboard(participationId: number) {
-    if (pendingId !== null) return;
+    if (pendingRef.current) return;
     const requestPrincipal = principalKey;
+    pendingRef.current = true;
     setPendingId(participationId);
     setActionError(null);
     try {
       const refreshed = await loadDashboard();
       if (principalRef.current !== requestPrincipal) return;
       setData(refreshed);
-      setRefreshRequiredId(null);
+      setRefreshRequiredIds(new Set());
     } catch (reason) {
       if (principalRef.current !== requestPrincipal) return;
       setActionError({
@@ -138,7 +145,10 @@ export function OfficialChallengeMyPage() {
         message: reason instanceof Error ? reason.message : '최신 진행 정보를 불러오지 못했어요.',
       });
     } finally {
-      if (principalRef.current === requestPrincipal) setPendingId(null);
+      if (principalRef.current === requestPrincipal) {
+        pendingRef.current = false;
+        setPendingId(null);
+      }
     }
   }
 
@@ -202,7 +212,7 @@ export function OfficialChallengeMyPage() {
             participation={item}
             pending={pendingId === item.id}
             error={actionError?.id === item.id ? actionError.message : undefined}
-            refreshRequired={refreshRequiredId === item.id}
+            refreshRequired={refreshRequiredIds.has(item.id)}
             onCheckIn={() => void checkIn(item)}
             onRefresh={() => void refreshDashboard(item.id)}
           />

@@ -200,6 +200,7 @@ test('a lost join response reconciles the committed participation from catalog d
       json: { code: 'RESPONSE_LOST', message: '참여 응답을 받지 못했어요.' },
     });
   });
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation() }));
 
   await page.goto('/challenges/official/101');
   await page.getByRole('button', { name: '참여하기' }).click();
@@ -446,6 +447,56 @@ test('My offers a GET-only retry when progress refresh fails after an approved c
   await expect(card.getByText('4 / 14일 인증')).toBeVisible();
   await expect(card.getByText('최신 진행 정보 확인 필요')).toHaveCount(0);
   expect(verificationPosts).toBe(1);
+});
+
+test('My keeps every card refresh-required after separate approved check-ins lose their refreshes', async ({ page }) => {
+  await authenticate(page);
+  const first = participation();
+  const second = participation({
+    id: 502,
+    challenge_id: weeklyChallenge.id,
+    challenge_name: weeklyChallenge.name,
+    challenge: { ...weeklyChallenge, can_join: false, participation_id: 502 },
+  });
+  let verificationPosts = 0;
+  await page.route('**/api/v1/user/challenges', route => {
+    if (verificationPosts === 0) {
+      return route.fulfill({ json: { items: [first, second], total_count: 2 } });
+    }
+    return route.fulfill({ status: 503, json: { code: 'TEMPORARY', message: '진행 정보를 불러오지 못했어요.' } });
+  });
+  await page.route('**/api/v1/user/badges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
+  await page.route('**/api/v1/user/challenges/*/verifications', route => {
+    verificationPosts += 1;
+    const participationId = Number(new URL(route.request().url()).pathname.split('/').at(-2));
+    return route.fulfill({
+      status: 201,
+      json: {
+        id: 900 + participationId,
+        user_challenge_id: participationId,
+        progress_id: 800 + participationId,
+        verification_date: '2026-09-10',
+        content: null,
+        image_path: null,
+        status: 'APPROVED',
+        rejection_reason: null,
+        reviewed_by_admin_id: null,
+        reviewed_at: '2026-09-10T11:00:00+09:00',
+        submitted_at: '2026-09-10T11:00:00+09:00',
+      },
+    });
+  });
+
+  await page.goto('/challenges');
+  const firstCard = page.getByRole('article', { name: dailyChallenge.name });
+  const secondCard = page.getByRole('article', { name: weeklyChallenge.name });
+
+  await firstCard.getByRole('button', { name: '했어요' }).click();
+  await expect(firstCard.getByText('최신 진행 정보 확인 필요')).toBeVisible();
+  await secondCard.getByRole('button', { name: '했어요' }).click();
+  await expect(secondCard.getByText('최신 진행 정보 확인 필요')).toBeVisible();
+  await expect(firstCard.getByText('최신 진행 정보 확인 필요')).toBeVisible();
+  expect(verificationPosts).toBe(2);
 });
 
 test('SELF participation without a reward badge is labeled as direct verification', async ({ page }) => {
