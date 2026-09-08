@@ -657,6 +657,37 @@ async def test_execute_returns_deterministic_out_of_scope_guidance(
     assert retriever.received_kwargs is None
 
 
+async def test_execute_routes_fatigue_to_question_first_guidance_before_retrieval_or_llm() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    tracer = RecordingChatTracer()
+
+    result = await build_use_case(
+        retriever=retriever,
+        tracer=tracer,
+        answer_generator=UnexpectedMedicationGenerator(),
+    ).execute(build_request("요즘 피곤해요"))
+
+    assert result.route == MedicationChatRoute.GENERAL_GUIDANCE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.safety_reason_codes == ["FATIGUE_FOLLOW_UP_REQUIRED"]
+    assert retriever.received_kwargs is None
+    assert tracer.names == [
+        "patient_context.load",
+        "fatigue.triage",
+        "query.plan",
+    ]
+
+
+async def test_execute_routes_fatigue_red_flag_to_restricted_urgent_assistance() -> None:
+    result = await build_use_case(
+        answer_generator=UnexpectedMedicationGenerator(),
+    ).execute(build_request("피곤하고 숨이 차서 실신할 것 같아요"))
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == ["FATIGUE_URGENT_ASSISTANCE"]
+
+
 async def test_execute_records_interpretation_before_out_of_scope_return() -> None:
     tracer = RecordingChatTracer()
     result = await build_use_case(
@@ -740,7 +771,7 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert "안전한 조합" not in result.answer
 
 
-async def test_execute_does_not_lookup_a_product_for_unrecognized_general_request() -> None:
+async def test_execute_routes_fatigue_product_request_to_follow_up_without_product_lookup() -> None:
     guide_repository = RecordingGuideRepository()
     use_case = AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(ActiveIntakeContext(user_id=1)),
@@ -758,12 +789,12 @@ async def test_execute_does_not_lookup_a_product_for_unrecognized_general_reques
         build_request("피곤할 때 가장 좋은 영양제 하나 추천해줘"),
     )
 
-    assert result.route == MedicationChatRoute.RESTRICTED
-    assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
+    assert result.route == MedicationChatRoute.GENERAL_GUIDANCE
+    assert result.safety_reason_codes == ["FATIGUE_FOLLOW_UP_REQUIRED"]
     assert guide_repository.requested_names == []
 
 
-async def test_execute_skips_rag_when_source_backed_resolution_has_no_entities() -> None:
+async def test_execute_skips_rag_for_fatigue_product_request() -> None:
     retriever = RecordingQueryPlanRetriever()
     result = await build_use_case(
         retriever=retriever,
@@ -775,8 +806,8 @@ async def test_execute_skips_rag_when_source_backed_resolution_has_no_entities()
         build_request("피곤할 때 가장 좋은 영양제 하나 추천해줘"),
     )
 
-    assert result.route == MedicationChatRoute.RESTRICTED
-    assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
+    assert result.route == MedicationChatRoute.GENERAL_GUIDANCE
+    assert result.safety_reason_codes == ["FATIGUE_FOLLOW_UP_REQUIRED"]
     assert retriever.received_kwargs is None
 
 

@@ -154,10 +154,10 @@
 
 **Produces:** A question-first route for fatigue queries that asks about emergency signs, current medication/supplements, and lifestyle context without diagnosing or recommending a product.
 
-- [ ] Write failing tests for `요즘 피곤해` and a red-flag fatigue statement.
-- [ ] Implement a deterministic question set and emergency assistance copy boundary.
-- [ ] Verify that the response contains no diagnosis, dose, or product recommendation.
-- [ ] Record behavior and commit.
+- [x] Write failing tests for `요즘 피곤해` and a red-flag fatigue statement.
+- [x] Implement a deterministic question set and emergency assistance copy boundary.
+- [x] Verify that the response contains no diagnosis, dose, or product recommendation.
+- [x] Record behavior and commit.
 
 ### Task 10: Add default-off reranker A/B evaluation
 

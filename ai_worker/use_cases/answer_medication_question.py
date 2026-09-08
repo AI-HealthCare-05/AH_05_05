@@ -30,6 +30,10 @@ from ai_worker.domain.evidence_gap_guidance import (
     EvidenceGapGuidanceBuilder,
     EvidenceGapSubject,
 )
+from ai_worker.domain.fatigue_conversation_policy import (
+    FatigueConversationDisposition,
+    FatigueConversationPolicy,
+)
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
@@ -759,6 +763,40 @@ class AnswerMedicationQuestionUseCase:
             query_span.end(query_outputs)
             return planning
 
+    async def _fatigue_triage_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> MedicationChatResult | None:
+        decision = FatigueConversationPolicy().evaluate(request.question)
+        if decision is None:
+            return None
+        async with self._tracer.span("fatigue.triage") as triage_span:
+            urgent = decision.disposition == FatigueConversationDisposition.URGENT
+            triage_span.end(
+                {
+                    "disposition": decision.disposition.value,
+                    "urgent": urgent,
+                }
+            )
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=decision.answer,
+            route=(MedicationChatRoute.RESTRICTED if urgent else MedicationChatRoute.GENERAL_GUIDANCE),
+            safety_status=(SafetyStatus.RESTRICTED if urgent else SafetyStatus.SAFE),
+            safety_reason_codes=[
+                (
+                    MedicationChatReasonCode.FATIGUE_URGENT_ASSISTANCE.value
+                    if urgent
+                    else MedicationChatReasonCode.FATIGUE_FOLLOW_UP_REQUIRED.value
+                )
+            ],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=self._context_hash(context),
+        )
+
     async def _conditionally_interpret_question(
         self,
         *,
@@ -898,6 +936,15 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
     ) -> PreparedMedicationQuestion:
+        if fatigue_result := await self._fatigue_triage_result(
+            request=request,
+            context=context,
+        ):
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=None,
+                early_result=fatigue_result,
+            )
         resolution = await self._resolve_question(
             request=request,
             context=context,
