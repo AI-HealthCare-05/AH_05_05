@@ -397,7 +397,7 @@ export function HomePage({
                       }}
                       doseSelectionResetKey={doseSelectionResetKey}
                       doseMutationPending={doseMutationPending}
-                      onMemo={() => navigate('/medications/notes/new')}
+                      onMemo={() => navigate('/medications/notes/new', { state: { entry: 'home' } })}
                       onUpload={() => navigate('/document-upload')}
                     />
                   </div>

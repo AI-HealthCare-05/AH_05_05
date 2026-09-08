@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import {
   createMedicationNote,
@@ -108,9 +108,12 @@ function episodeFromNote(note: MedicationNote): NoteEpisodeOption {
 
 export function MedicationNoteFormPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { noteId } = useParams<{ noteId?: string }>();
   const { principalKey } = useSession();
   const editing = noteId !== undefined;
+  const enteredFromHome = !editing &&
+    (location.state as { entry?: unknown } | null)?.entry === 'home';
   const [note, setNote] = useState<MedicationNote | null>(null);
   const [episodes, setEpisodes] = useState<NoteEpisodeOption[] | null>(null);
   const [form, setForm] = useState<NoteFormState>(() => initialForm(null));
@@ -261,7 +264,10 @@ export function MedicationNoteFormPage() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title={title} onBack={() => navigate('/medications/notes')} />
+      <Header
+        title={title}
+        onBack={() => navigate(enteredFromHome ? '/home' : '/medications/notes')}
+      />
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
         {initialLoadError ? (
           <p role="alert" className="text-sm text-danger-strong">
