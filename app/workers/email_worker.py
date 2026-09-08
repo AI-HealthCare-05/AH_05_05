@@ -8,12 +8,14 @@ from tortoise import Tortoise
 
 from app.core import config
 from app.core.db.databases import TORTOISE_ORM
-from app.core.email.payload import EmailPayloadCodec, EmailTemplate, InvalidEmailPayloadError
+from app.core.email.payload import EmailJobPayload, EmailPayloadCodec, EmailTemplate, InvalidEmailPayloadError
 from app.core.email.renderer import EmailTemplateRenderer
 from app.core.email.smtp_sender import EmailDeliveryError, SmtpEmailSender
+from app.core.utils.security import hash_password
 from app.models.background_jobs import BackgroundJob
 from app.models.email_verifications import EmailVerification
-from app.models.enums import BackgroundJobStatus
+from app.models.enums import AccountStatus, BackgroundJobStatus
+from app.models.users import User
 from app.repositories.background_job_repository import BackgroundJobRepository
 from app.services.admin_settings import SmtpSettingsService
 
@@ -39,11 +41,9 @@ async def send_email(ctx: dict[str, Any], job_id: int, encrypted_payload: str) -
 
     try:
         payload = ctx["codec"].decrypt(encrypted_payload)
-        if payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE and not await _is_signup_verification_sendable(
-            payload.verification_id,
-            datetime.now(config.TIMEZONE),
-        ):
-            await _cancel_job(job, "EMAIL_VERIFICATION_EXPIRED")
+        cancellation_code = await _sendability_cancellation_code(payload, job)
+        if cancellation_code is not None:
+            await _cancel_job(job, cancellation_code)
             return
         message = ctx["renderer"].render(payload)
     except (InvalidEmailPayloadError, ValueError):
@@ -77,6 +77,10 @@ async def send_email(ctx: dict[str, Any], job_id: int, encrypted_payload: str) -
             await _retry_or_fail(job, error, expires_at=payload.expires_at)
             return
         await _fail_job(job, error.code)
+        return
+
+    if not await _apply_post_delivery_effect(payload, job):
+        await _fail_job(job, "EMAIL_PASSWORD_UPDATE_FAILED")
         return
 
     await _complete_job(job)
@@ -150,6 +154,37 @@ async def _is_signup_verification_sendable(verification_id: int | None, now: dat
         expires_at__gt=now,
         consumed_at=None,
     ).exists()
+
+
+async def _is_user_password_reset_sendable(job: BackgroundJob, recipient_email: str) -> bool:
+    if job.reference_table != "user" or job.reference_id is None:
+        return False
+    return await User.filter(
+        id=job.reference_id,
+        email=recipient_email,
+        status=AccountStatus.ACTIVE,
+    ).exists()
+
+
+async def _sendability_cancellation_code(payload: EmailJobPayload, job: BackgroundJob) -> str | None:
+    if payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE:
+        if not await _is_signup_verification_sendable(payload.verification_id, datetime.now(config.TIMEZONE)):
+            return "EMAIL_VERIFICATION_EXPIRED"
+    elif payload.template is EmailTemplate.USER_PASSWORD_RESET:
+        if not await _is_user_password_reset_sendable(job, str(payload.recipient_email)):
+            return "EMAIL_PASSWORD_RESET_TARGET_INVALID"
+    return None
+
+
+async def _apply_post_delivery_effect(payload: EmailJobPayload, job: BackgroundJob) -> bool:
+    if payload.template is not EmailTemplate.USER_PASSWORD_RESET:
+        return True
+    updated = await User.filter(
+        id=job.reference_id,
+        email=str(payload.recipient_email),
+        status=AccountStatus.ACTIVE,
+    ).update(hashed_password=hash_password(payload.temporary_password or ""))
+    return updated == 1
 
 
 def _duration_ms(started_at: datetime | None, completed_at: datetime) -> int | None:

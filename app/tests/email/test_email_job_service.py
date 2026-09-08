@@ -104,3 +104,20 @@ class TestEmailJobService(TestCase):
         assert payload.verification_id == 27
         assert payload.verification_code == "012345"
         assert payload.expires_at == expires_at
+
+    async def test_user_password_reset_job_references_user_and_encrypts_password(self) -> None:
+        job = await self.service.enqueue_user_password_reset(
+            user_id=31,
+            recipient_email="recipient@example.com",
+            temporary_password="Temp1234!",
+        )
+
+        assert job.job_type is BackgroundJobType.EMAIL
+        assert job.reference_table == "user"
+        assert job.reference_id == 31
+        assert job.idempotency_key.startswith("email:user-password-reset:31:")
+        encrypted_payload = self.redis_pool.enqueue_job.await_args.args[2]
+        assert "Temp1234!" not in encrypted_payload
+        payload = self.codec.decrypt(encrypted_payload)
+        assert payload.template is EmailTemplate.USER_PASSWORD_RESET
+        assert payload.temporary_password == "Temp1234!"
