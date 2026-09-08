@@ -3,12 +3,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ai_worker.schemas.knowledge import (
-    KnowledgeSearchMode,
-    KnowledgeSectionType,
-)
+from ai_worker.schemas.interaction import InteractionEntityKind, InteractionPairType
+from ai_worker.schemas.knowledge import KnowledgeSearchMode, KnowledgeSectionType
 from ai_worker.schemas.medication_search import (
     MedicationExpressionResolutionStatus,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
     MedicationQuestionScope,
 )
 
@@ -50,6 +50,50 @@ class MedicationEvaluationEvidenceKind(StrEnum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+class MedicationEvaluationPhase(StrEnum):
+    """이번 변경의 차단 기준에 포함되는 질문 범위를 구분한다."""
+
+    ACTIVE_PHASE = "ACTIVE_PHASE"
+    DEFERRED_MEMORY = "DEFERRED_MEMORY"
+    DEFERRED_CONTEXT = "DEFERRED_CONTEXT"
+    DEFERRED_SAFETY = "DEFERRED_SAFETY"
+
+
+class MedicationHistoricalOutcome(StrEnum):
+    """코드 변경 전 프론트·LangSmith 관측의 판정값이다."""
+
+    PASS = "PASS"
+    PARTIAL = "PARTIAL"
+    FAIL = "FAIL"
+
+
+class MedicationExpectedEntity(BaseModel):
+    """고정 평가에서 기대하는 정식명·타입·kind·출처 계약."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    canonical_name: str = Field(min_length=1)
+    entity_type: MedicationQueryEntityType
+    kind: InteractionEntityKind
+    expected_sources: list[MedicationQueryEntitySource] = Field(min_length=1)
+
+    @field_validator("canonical_name")
+    @classmethod
+    def normalize_canonical_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("기대 엔터티 정식명은 비어 있을 수 없습니다.")
+        return normalized
+
+    @field_validator("expected_sources")
+    @classmethod
+    def normalize_sources(
+        cls,
+        values: list[MedicationQueryEntitySource],
+    ) -> list[MedicationQueryEntitySource]:
+        return list(dict.fromkeys(values))
+
+
 class MedicationSearchBaselineCase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -58,14 +102,21 @@ class MedicationSearchBaselineCase(BaseModel):
     question: str = Field(min_length=1)
     expected_scope: MedicationQuestionScope
     expected_resolution_status: MedicationExpressionResolutionStatus
+    phase: MedicationEvaluationPhase = MedicationEvaluationPhase.ACTIVE_PHASE
     expected_resolved_question: str | None = None
     expected_entity_names: list[str] = Field(default_factory=list)
+    expected_entities: list[MedicationExpectedEntity] = Field(default_factory=list)
+    expected_interaction_types: list[InteractionPairType] = Field(default_factory=list)
     expected_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     expected_document_ids: list[str] = Field(default_factory=list)
     forbidden_document_ids: list[str] = Field(default_factory=list)
     expect_no_evidence: bool = False
+    expect_no_entity: bool = False
+    expect_no_guide_lookup: bool = False
+    expect_no_rag: bool = False
     evidence_kind: MedicationEvaluationEvidenceKind | None = None
     evaluation_rationale: str | None = None
+    historical_outcome: MedicationHistoricalOutcome | None = None
     gold_document_rationales: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("query_id", "question")
@@ -109,6 +160,12 @@ class MedicationSearchBaselineCase(BaseModel):
     def require_consistent_evidence_expectation(self):
         if self.expect_no_evidence and self.expected_document_ids:
             raise ValueError("expect_no_evidence와 expected_document_ids는 함께 지정할 수 없습니다.")
+        if self.expect_no_entity and (self.expected_entity_names or self.expected_entities):
+            raise ValueError("expect_no_entity에는 기대 엔터티를 지정할 수 없습니다.")
+        if self.expected_entities and {entity.canonical_name for entity in self.expected_entities} != set(
+            self.expected_entity_names
+        ):
+            raise ValueError("expected_entities와 expected_entity_names는 같은 정식명을 가져야 합니다.")
         return self
 
 
@@ -124,10 +181,19 @@ class MedicationSearchBaselineManifest(BaseModel):
     candidate_top_k: Literal[20] = 20
     experiment_goal: str | None = None
     activation_rule: str | None = None
+    baseline_observed_at: str | None = None
+    baseline_environment: str | None = None
+    trace_reference_policy: str | None = None
     metric_rationales: dict[str, str] = Field(default_factory=dict)
     cases: list[MedicationSearchBaselineCase] = Field(min_length=1)
 
-    @field_validator("experiment_goal", "activation_rule")
+    @field_validator(
+        "experiment_goal",
+        "activation_rule",
+        "baseline_observed_at",
+        "baseline_environment",
+        "trace_reference_policy",
+    )
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -154,8 +220,13 @@ class MedicationSearchBaselineManifest(BaseModel):
         query_ids = [case.query_id for case in self.cases]
         if len(query_ids) != len(set(query_ids)):
             raise ValueError("평가 query_id는 중복될 수 없습니다.")
-        if self.schema_version == "medication-search-baseline-v2":
+        if self.schema_version in {
+            "medication-search-baseline-v2",
+            "medication-search-baseline-v3",
+        }:
             self._validate_v2_contract()
+        if self.schema_version == "medication-search-baseline-v3":
+            self._validate_v3_contract()
         return self
 
     def _validate_v2_contract(self) -> None:
@@ -177,10 +248,31 @@ class MedicationSearchBaselineManifest(BaseModel):
             elif expected_documents or explained_documents:
                 raise ValueError(f"{case.query_id}: QDRANT_GOLD가 아닌 항목에는 정답 문서 ID를 지정할 수 없습니다.")
 
+    def _validate_v3_contract(self) -> None:
+        if not self.baseline_observed_at or not self.baseline_environment:
+            raise ValueError("v3 평가에는 기준선 관측 시점과 환경이 필요합니다.")
+        for case in self.cases:
+            if case.historical_outcome is None:
+                raise ValueError(f"{case.query_id}: v3 평가에는 변경 전 판정이 필요합니다.")
+            if case.expected_entity_names and not case.expected_entities:
+                raise ValueError(
+                    f"{case.query_id}: v3 평가의 활성 엔터티에는 type·kind·source 계약이 필요합니다.",
+                )
+            if case.expected_interaction_types and len(case.expected_entities) < 2:
+                raise ValueError(
+                    f"{case.query_id}: v3 평가의 상호작용 pair에는 두 개 이상의 typed entity가 필요합니다.",
+                )
+            if case.expect_no_rag and case.expected_document_ids:
+                raise ValueError(
+                    f"{case.query_id}: expect_no_rag에는 정답 문서 ID를 지정할 수 없습니다.",
+                )
+
 
 class MedicationSearchBaselineCaseResult(BaseModel):
     query_id: str
     expression_category: MedicationExpressionCategory
+    phase: MedicationEvaluationPhase = MedicationEvaluationPhase.ACTIVE_PHASE
+    historical_outcome: MedicationHistoricalOutcome | None = None
     evidence_kind: MedicationEvaluationEvidenceKind | None = None
     evaluation_rationale: str | None = None
     expected_document_ids: list[str] = Field(default_factory=list)
@@ -189,8 +281,11 @@ class MedicationSearchBaselineCaseResult(BaseModel):
     observed_resolution_status: MedicationExpressionResolutionStatus
     observed_resolved_question: str
     observed_entity_names: list[str] = Field(default_factory=list)
+    observed_entities: list[MedicationExpectedEntity] = Field(default_factory=list)
+    observed_interaction_types: list[InteractionPairType] = Field(default_factory=list)
     observed_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     retrieval_executed: bool
+    guide_lookup_eligible: bool = False
     attempted_search_tiers: list[str] = Field(default_factory=list)
     candidate_count: int = Field(ge=0)
     candidate_first_relevant_rank: int | None = Field(default=None, ge=1)
@@ -217,9 +312,14 @@ class MedicationSearchBaselineReport(BaseModel):
     search_mode: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
     experiment_goal: str | None = None
     activation_rule: str | None = None
+    baseline_observed_at: str | None = None
+    baseline_environment: str | None = None
+    trace_reference_policy: str | None = None
     metric_rationales: dict[str, str] = Field(default_factory=dict)
     embedding_model_name: str | None = None
     embedding_dimension: int | None = Field(default=None, ge=1)
+    vector_distance: str = "COSINE"
+    embedding_vectors_normalized: bool = False
     min_similarity_score: float = Field(ge=0.0, le=1.0)
     final_top_k: int = Field(ge=1)
     candidate_top_k: int = Field(ge=1)
@@ -227,6 +327,10 @@ class MedicationSearchBaselineReport(BaseModel):
     working_tree_dirty: bool
     evaluation_file_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     query_count: int = Field(ge=1)
+    active_query_count: int = Field(ge=0)
+    active_pass_count: int = Field(ge=0)
+    active_pass_rate: float = Field(ge=0.0, le=1.0)
+    deferred_query_count: int = Field(ge=0)
     resolution_accuracy: float = Field(ge=0.0, le=1.0)
     scope_accuracy: float = Field(ge=0.0, le=1.0)
     correction_accuracy: float = Field(ge=0.0, le=1.0)

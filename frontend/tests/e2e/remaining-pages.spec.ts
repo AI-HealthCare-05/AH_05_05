@@ -310,6 +310,16 @@ test('최초 복약 시간 설정에서도 순서가 겹치는 시각은 적용�
   await expect(page.getByRole('button', { name: /점심약 13:00/ })).toBeVisible();
 });
 
+test('기존 복약 시간 선택은 30분 단위 옵션을 유지한다', async ({ page }) => {
+  await page.goto('/dev/medication-schedule');
+  await page.getByRole('button', { name: /점심약 13:00/ }).click();
+
+  const sheet = page.getByRole('dialog', { name: '시간 선택' });
+  await sheet.getByLabel('분').click();
+  await expect(page.getByRole('option', { name: /^(00|30)분$/ })).toHaveCount(2);
+  await expect(page.getByRole('option', { name: '10분', exact: true })).toHaveCount(0);
+});
+
 test('복약 시간 설정은 약별 시간, 시작일, 알림 시각, 저장 순서로 보여준다', async ({ page }) => {
   await page.goto('/dev/medication-schedule');
 

@@ -305,7 +305,7 @@ function TimelineItem({
                   aria-pressed={selectedEpisodes.has(episode.recordId)}
                   aria-label={`${episodeAccessibleName} ${episodeCompleted ? '복용 완료' : '선택'}`}
                   disabled={doseControlsPending}
-                  className={`flex h-14 min-h-14 w-full min-w-0 items-center gap-3 border-b border-border px-3 py-1 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                  className={`flex min-h-14 w-full min-w-0 items-center gap-3 border-b border-border px-3 py-2 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                     selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
                   }`}
                   onClick={() => toggleSelectedEpisode(episode.recordId)}
@@ -322,8 +322,8 @@ function TimelineItem({
                   {selectedEpisodes.has(episode.recordId) && <Check className="size-4" />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <h3 className="truncate text-base font-bold text-foreground">{episodeTitle}</h3>
+                  <span className="flex min-w-0 items-start gap-2">
+                    <h3 className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base font-bold text-foreground">{episodeTitle}</h3>
                     {episodeCompleted && (
                       <span
                         data-episode-completed-badge
@@ -334,7 +334,7 @@ function TimelineItem({
                       </span>
                     )}
                   </span>
-                  <span className="block truncate text-sm text-muted-foreground">
+                  <span className="block [overflow-wrap:anywhere] text-sm text-muted-foreground">
                     {summary?.name ?? '복약'}
                     {episode.medications.length > 1
                       ? ` 외 ${episode.medications.length - 1}개`
@@ -377,7 +377,7 @@ function TimelineItem({
                           key={`${medication.recordId}:${medication.medicationId}`}
                           className="flex min-w-0 items-start"
                         >
-                          <span className="min-w-0 break-words text-base font-bold text-foreground">
+                          <span className="min-w-0 [overflow-wrap:anywhere] text-base font-bold text-foreground">
                             {medication.name}
                           </span>
                         </li>

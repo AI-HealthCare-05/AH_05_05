@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from ai_worker.schemas.medication_search import (
+        MedicationCatalogEntry,
         MedicationQuestionResolution,
         MedicationSearchExecutionPlan,
     )
@@ -149,6 +150,7 @@ class MedicationQuestionResolver(Protocol):
         *,
         question: str,
         additional_names: list[str] | None = None,
+        additional_entities: list["MedicationCatalogEntry"] | None = None,
     ) -> "MedicationQuestionResolution": ...
 
 

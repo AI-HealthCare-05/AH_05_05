@@ -1,0 +1,18 @@
+{
+  "schema_version": "knowledge-release-manifest-v1",
+  "dataset_version": "knowledge-full-v7-o200k-source-backed",
+  "collection_name": "medication_knowledge_full_v7",
+  "vector_distance": "DOT",
+  "tokenizer_encoding": "o200k_base",
+  "indexed_chunk_count": 8635,
+  "verified_point_count": 8635,
+  "source_quality_report": "data/knowledge/processed/knowledge-full-v7-o200k-source-backed-dry-run-r3/reports/preprocessing-quality.json",
+  "release_quality_report": "data/knowledge/releases/knowledge-full-v7-o200k-source-backed/quality_report.json",
+  "immutable": true,
+  "active": true,
+  "activation_decision": "ACTIVATED_AFTER_V5_V7_RETRIEVAL_AB_COMPARISON",
+  "rollback": {
+    "knowledge_qdrant_collection": "medication_knowledge_full_v5",
+    "knowledge_dataset_version": "knowledge-full-v5-o200k"
+  }
+}

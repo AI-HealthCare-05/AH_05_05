@@ -841,14 +841,20 @@ class KnowledgeSplitter:
             content = merged[start:stop].strip()
             if not content:
                 continue
-            repaired.append(
-                chunks[0].model_copy(
-                    update={
-                        "content": self._format_calcium_iron_absorption_heading(content, title=title),
-                        "metadata": self._verified_span_metadata(content=content, chunks=chunks),
-                    }
+            formatted_content = self._format_calcium_iron_absorption_heading(content, title=title)
+            for bounded_content, _, _ in self._split_section_content(
+                formatted_content,
+                self.policy_for(KnowledgeDocumentType.RESEARCH_ARTICLE),
+                document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+            ):
+                repaired.append(
+                    chunks[0].model_copy(
+                        update={
+                            "content": bounded_content,
+                            "metadata": self._verified_span_metadata(content=bounded_content, chunks=chunks),
+                        }
+                    )
                 )
-            )
         return repaired
 
     def _clean_calcium_iron_meta_analysis(
@@ -2870,6 +2876,8 @@ class KnowledgeSplitter:
             {
                 "drug_names": entities.drug_names or metadata.drug_names,
                 "ingredient_names": entities.ingredient_names or metadata.ingredient_names,
+                "food_names": entities.food_names or metadata.food_names,
+                "entity_catalog_entries": (entities.entity_catalog_entries or metadata.entity_catalog_entries),
                 "interaction_type": entities.interaction_type or metadata.interaction_type,
                 "interaction_pair_keys": (entities.interaction_pair_keys or metadata.interaction_pair_keys),
                 "evidence_level": (
@@ -2921,6 +2929,8 @@ class KnowledgeSplitter:
             prefixes.append(f"[약] {', '.join(metadata.drug_names)}")
         if metadata.ingredient_names:
             prefixes.append(f"[성분] {', '.join(metadata.ingredient_names)}")
+        if metadata.food_names:
+            prefixes.append(f"[음식] {', '.join(metadata.food_names)}")
         if metadata.interaction_type:
             label = _INTERACTION_LABELS.get(
                 metadata.interaction_type,

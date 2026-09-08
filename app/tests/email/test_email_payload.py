@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -67,6 +68,7 @@ def test_signup_verification_payload_round_trip_is_encrypted() -> None:
         recipient_email="recipient@example.com",
         verification_id=17,
         verification_code="012345",
+        expires_in=60,
         expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
     )
 
@@ -84,8 +86,29 @@ def test_signup_verification_payload_requires_six_digit_code() -> None:
             recipient_email="recipient@example.com",
             verification_id=17,
             verification_code="12345",
+            expires_in=60,
             expires_at=datetime(2026, 9, 7, 3, 1, tzinfo=UTC),
         )
+
+
+def test_signup_verification_payload_decodes_legacy_job_without_expiry_duration() -> None:
+    key = Fernet.generate_key()
+    codec = EmailPayloadCodec(key.decode())
+    legacy_payload = json.dumps(
+        {
+            "template": "SIGNUP_VERIFICATION_CODE",
+            "recipient_email": "recipient@example.com",
+            "verification_id": 17,
+            "verification_code": "012345",
+            "expires_at": "2099-09-07T03:01:00+00:00",
+        }
+    ).encode()
+    token = Fernet(key).encrypt(legacy_payload).decode()
+
+    decoded = codec.decrypt(token)
+
+    assert decoded.expires_in is None
+    assert decoded.expires_at == datetime(2099, 9, 7, 3, 1, tzinfo=UTC)
 
 
 def test_user_password_reset_payload_requires_only_temporary_password() -> None:

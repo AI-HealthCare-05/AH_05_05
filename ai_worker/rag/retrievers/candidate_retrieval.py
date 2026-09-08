@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ai_worker.domain.interfaces import EmbeddingProvider
+from ai_worker.rag.errors import (
+    GuidelineRetrievalError,
+    RetrievalFailureStage,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchQuery,
     KnowledgeSearchTier,
@@ -81,9 +85,15 @@ class MedicationKnowledgeCandidateRetriever:
         plan = execution_plan.query_plan
         candidate_limit = min(50, max(20, execution_plan.limit * 4))
         queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
-        query_vectors = await asyncio.gather(
-            *(self._embedding_provider.embed_query(query) for query in queries),
-        )
+        try:
+            query_vectors = await asyncio.gather(
+                *(self._embedding_provider.embed_query(query) for query in queries),
+            )
+        except Exception as error:
+            raise GuidelineRetrievalError(
+                stage=RetrievalFailureStage.EMBEDDING,
+                message="약·영양제 검색을 위한 질문 임베딩 생성에 실패했습니다.",
+            ) from error
 
         results: list[RetrievedKnowledgeChunk] = []
         observations: list[MedicationKnowledgeCandidateObservation] = []
@@ -96,17 +106,27 @@ class MedicationKnowledgeCandidateRetriever:
 
         for tier in self.search_tiers(execution_plan):
             attempted_search_tiers.append(tier.name)
-            tier_batches = await asyncio.gather(
-                *(
-                    self._search_once(
-                        query=query,
-                        query_vector=query_vector,
-                        tier=tier,
-                        candidate_limit=candidate_limit,
+            try:
+                tier_batches = await asyncio.gather(
+                    *(
+                        self._search_once(
+                            query=query,
+                            query_vector=query_vector,
+                            tier=tier,
+                            candidate_limit=candidate_limit,
+                        )
+                        for query, query_vector in zip(
+                            queries,
+                            query_vectors,
+                            strict=True,
+                        )
                     )
-                    for query, query_vector in zip(queries, query_vectors, strict=True)
-                ),
-            )
+                )
+            except Exception as error:
+                raise GuidelineRetrievalError(
+                    stage=RetrievalFailureStage.VECTOR_STORE,
+                    message="약·영양제 Knowledge 벡터 검색에 실패했습니다.",
+                ) from error
             tier_results = [result for batch in tier_batches for result in batch]
             observations.extend(
                 MedicationKnowledgeCandidateObservation(

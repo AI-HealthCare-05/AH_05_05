@@ -1,0 +1,106 @@
+{
+  "schema_version": "knowledge-release-quality-report-v1",
+  "status": "ACTIVE_AFTER_AUTOMATED_RETRIEVAL_AB_COMPARISON",
+  "dataset_version": "knowledge-full-v7-o200k-source-backed",
+  "proposed_collection": "medication_knowledge_full_v7",
+  "vector_distance": "DOT",
+  "tokenizer_encoding": "o200k_base",
+  "preprocessing_output": "data/knowledge/processed/knowledge-full-v7-o200k-source-backed-dry-run-r3",
+  "preprocessing_quality_report": "data/knowledge/processed/knowledge-full-v7-o200k-source-backed-dry-run-r3/reports/preprocessing-quality.json",
+  "release_scope": {
+    "processed_document_count": 1211,
+    "chunk_count": 8635,
+    "access_scope_counts": {
+      "PUBLIC": 1988,
+      "DEMO_RESTRICTED": 6647
+    },
+    "skipped_document_count": 51,
+    "skipped_reason_counts": {
+      "AUTOMATIC_EXCLUDED_UNRECOVERABLE_TEXT": 35,
+      "TEXT_QUALITY_OCR_REQUIRED": 10,
+      "AUTOMATIC_QUALITY_BLOCKED": 4,
+      "AUTOMATIC_QUALITY_REVIEW": 2
+    }
+  },
+  "v6_preservation_check": {
+    "baseline_dataset_version": "knowledge-full-v6-o200k-source-backed",
+    "baseline_document_count": 1210,
+    "baseline_chunk_count": 8624,
+    "missing_baseline_document_count": 0,
+    "changed_baseline_chunk_count": 0,
+    "added_document_id": "research_supplement_interactions-016c81c9a3e29ebd",
+    "added_chunk_count": 11,
+    "result": "PASSED"
+  },
+  "metadata_contract": {
+    "status": "PASSED",
+    "interaction_chunk_count": 37,
+    "interaction_pair_key_chunk_count": 37,
+    "drug_food_chunk_count": 1,
+    "food_alias_entry_count": 1,
+    "known_evidence_chunk_count": 5441,
+    "known_study_population_chunk_count": 5441,
+    "calcium_iron_document": {
+      "document_id": "research_supplement_interactions-016c81c9a3e29ebd",
+      "title": "Calcium and Iron Absorption – Mechanisms and Public Health Relevance",
+      "doi": "10.1024/0300-9831/a000036",
+      "ingredient_names": ["칼슘", "철분"],
+      "interaction_type": "SUPPLEMENT_SUPPLEMENT",
+      "evidence_level": "REVIEW_ARTICLE",
+      "approved_chunk_count": 11
+    }
+  },
+  "embedding_reuse": {
+    "status": "REEMBED_ALL_REQUIRED",
+    "baseline_dataset_version": "knowledge-full-v5-o200k",
+    "reason": "새 v7 payload의 embedding_text와 v5 원본 청크의 동일성을 검증할 수 없으므로 기존 벡터를 재사용하지 않는다.",
+    "reembedding_chunk_count": 8635
+  },
+  "external_indexing_approval_required": {
+    "openai_embedding_model": "text-embedding-3-small",
+    "openai_embedding_text_count": 8635,
+    "demo_restricted_chunk_count": 6647,
+    "qdrant_collection_creation": "medication_knowledge_full_v7",
+    "existing_v5_collection_modified": false
+  },
+  "indexing_result": {
+    "collection_name": "medication_knowledge_full_v7",
+    "indexed_chunk_count": 8635,
+    "verified_point_count": 8635,
+    "qdrant_distance": "DOT",
+    "existing_v5_collection_modified": false
+  },
+  "retrieval_ab_comparison": {
+    "evaluation_file": "data/knowledge/evaluation/user_expression_queries_v3.yaml",
+    "baseline_collection": "medication_knowledge_full_v5",
+    "baseline_dataset_version": "knowledge-full-v5-o200k",
+    "candidate_collection": "medication_knowledge_full_v7",
+    "candidate_dataset_version": "knowledge-full-v7-o200k-source-backed",
+    "active_query_count": 18,
+    "baseline_active_pass_count": 16,
+    "candidate_active_pass_count": 18,
+    "baseline_recall_at_20": 0.75,
+    "candidate_recall_at_20": 1.0,
+    "baseline_hit_at_5": 0.75,
+    "candidate_hit_at_5": 1.0,
+    "baseline_mrr": 0.75,
+    "candidate_mrr": 1.0,
+    "baseline_source_accuracy": 0.8,
+    "candidate_source_accuracy": 0.866667,
+    "baseline_evidence_coverage_rate": 0.875,
+    "candidate_evidence_coverage_rate": 1.0,
+    "baseline_wrong_target_mixing_count": 0,
+    "candidate_wrong_target_mixing_count": 0,
+    "baseline_fallback_rate": 0.4,
+    "candidate_fallback_rate": 0.333333,
+    "decision": "ACTIVATE_V7",
+    "reason": "활성 18문항 모두 통과했고, Recall@20·Hit@5·MRR·출처 정확도·근거 커버리지가 v5보다 개선됐으며 잘못된 대상 혼입은 0건으로 유지됐다."
+  },
+  "activation_guard": {
+    "active_collection": "medication_knowledge_full_v7",
+    "active_dataset_version": "knowledge-full-v7-o200k-source-backed",
+    "candidate_indexed": true,
+    "activation_decision": "ACTIVATED_AFTER_V5_V7_RETRIEVAL_AB_COMPARISON",
+    "reason": "v7은 8,635개 청크로 적재됐으며, 동일 21문항 평가에서 활성 18문항 전체 통과 및 정확도 지표 개선을 확인해 로컬 활성 컬렉션으로 전환했다."
+  }
+}

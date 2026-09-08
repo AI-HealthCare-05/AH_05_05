@@ -3,6 +3,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ai_worker.schemas.interaction import InteractionEntityKind
+
 
 class KnowledgeAccessScope(StrEnum):
     PUBLIC = "PUBLIC"
@@ -98,6 +100,38 @@ class KnowledgeStudyPopulation(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class KnowledgeEntityCatalogEntryType(StrEnum):
+    """Qdrant payload에서 Resolver로 전달할 엔터티 표현 유형."""
+
+    PRODUCT_NAME = "PRODUCT_NAME"
+    BRAND_ALIAS = "BRAND_ALIAS"
+    INGREDIENT_NAME = "INGREDIENT_NAME"
+    INGREDIENT_FAMILY = "INGREDIENT_FAMILY"
+    FOOD_CATEGORY = "FOOD_CATEGORY"
+
+
+class KnowledgeEntityCatalogEntry(BaseModel):
+    """문서에서 검수된 정식명과 별칭을 함께 보존하는 payload 항목."""
+
+    canonical_name: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+    entity_type: KnowledgeEntityCatalogEntryType
+    kind: InteractionEntityKind
+
+    @field_validator("canonical_name")
+    @classmethod
+    def normalize_canonical_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("엔터티 정식명은 비어 있을 수 없습니다.")
+        return normalized
+
+    @field_validator("aliases")
+    @classmethod
+    def normalize_aliases(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+
 class KnowledgeMetadata(BaseModel):
     source_id: str = Field(min_length=1)
     document_id: str = Field(min_length=1)
@@ -114,6 +148,10 @@ class KnowledgeMetadata(BaseModel):
     entity_type: str | None = None
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
+    food_names: list[str] = Field(default_factory=list)
+    entity_catalog_entries: list[KnowledgeEntityCatalogEntry] = Field(
+        default_factory=list,
+    )
     interaction_type: str | None = None
     interaction_pair_keys: list[str] = Field(default_factory=list)
     evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
@@ -124,6 +162,7 @@ class KnowledgeMetadata(BaseModel):
     @field_validator(
         "drug_names",
         "ingredient_names",
+        "food_names",
         "authors",
         "special_populations",
     )
@@ -140,6 +179,21 @@ class KnowledgeMetadata(BaseModel):
             seen.add(item)
 
         return normalized
+
+    @field_validator("entity_catalog_entries")
+    @classmethod
+    def normalize_entity_catalog_entries(
+        cls,
+        values: list[KnowledgeEntityCatalogEntry],
+    ) -> list[KnowledgeEntityCatalogEntry]:
+        unique: list[KnowledgeEntityCatalogEntry] = []
+        seen: set[tuple[str, KnowledgeEntityCatalogEntryType, InteractionEntityKind]] = set()
+        for value in values:
+            key = (value.canonical_name, value.entity_type, value.kind)
+            if key not in seen:
+                unique.append(value)
+                seen.add(key)
+        return unique
 
     @field_validator("interaction_pair_keys")
     @classmethod

@@ -1,6 +1,8 @@
 import argparse
 import asyncio
+import hashlib
 import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -14,9 +16,13 @@ from ai_worker.rag.embeddings.openai_embedding_provider import (
 from ai_worker.rag.indexers.knowledge_indexer import (
     KnowledgeIndexer,
     KnowledgeIndexResult,
+    KnowledgeMetadataQualityReport,
 )
 from ai_worker.rag.loaders.knowledge_chunk_loader import (
     KnowledgeChunkLoader,
+)
+from ai_worker.rag.metadata.entity_name_policy import (
+    is_generic_knowledge_entity_category,
 )
 from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
@@ -24,6 +30,7 @@ from ai_worker.rag.metadata.interaction_annotation_registry import (
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
     QdrantKnowledgeStore,
 )
+from ai_worker.schemas.interaction import InteractionEntityKind, InteractionPairType
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunk,
@@ -68,6 +75,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help=("DEMO_RESTRICTED 청크를 외부 OpenAI 임베딩 API로 전송하는 것을 명시적으로 허용합니다."),
     )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help=("Qdrant 생성·OpenAI 임베딩 전송 없이 release metadata 계약만 검증합니다."),
+    )
+    parser.add_argument(
+        "--baseline-chunks-dir",
+        type=Path,
+        default=None,
+        help=("기존 release 청크와 content·embedding text 재사용 가능성을 비교할 경로입니다."),
+    )
+    parser.add_argument(
+        "--baseline-dataset-version",
+        default=None,
+        help=("--baseline-chunks-dir의 dataset_version입니다."),
+    )
     args = parser.parse_args(argv)
     if args.embedding_batch_size <= 0:
         parser.error("--embedding-batch-size는 1 이상이어야 합니다.")
@@ -77,7 +100,48 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--dataset-version은 비어 있을 수 없습니다.")
     if not args.collection.strip():
         parser.error("--collection은 비어 있을 수 없습니다.")
+    if args.baseline_chunks_dir is not None and not (
+        args.baseline_dataset_version and args.baseline_dataset_version.strip()
+    ):
+        parser.error("--baseline-chunks-dir에는 --baseline-dataset-version이 필요합니다.")
     return args
+
+
+@dataclass(frozen=True)
+class KnowledgeSourceBackedMetadataStats:
+    """새 release가 질문 해석용 typed metadata를 빠짐없이 포함하는지 요약한다."""
+
+    interaction_chunk_count: int
+    drug_food_chunk_count: int
+    food_alias_entry_count: int
+
+
+@dataclass(frozen=True)
+class KnowledgeReleasePreflightResult:
+    """외부 전송 전 확인 가능한 release 승인 자료."""
+
+    dataset_version: str
+    collection_name: str
+    chunk_count: int
+    document_count: int
+    demo_restricted_chunk_count: int
+    metadata_quality: KnowledgeMetadataQualityReport
+    source_backed_metadata: KnowledgeSourceBackedMetadataStats
+    embedding_reuse: "KnowledgeEmbeddingReuseStats | None" = None
+
+
+@dataclass(frozen=True)
+class KnowledgeEmbeddingReuseStats:
+    """기존 벡터를 안전하게 재사용할 수 있는지를 embedding text 기준으로 판정한다."""
+
+    baseline_chunk_count: int
+    candidate_chunk_count: int
+    content_hash_match_count: int
+    exact_embedding_text_reuse_count: int
+    reembedding_required_count: int
+
+
+type KnowledgeReleaseCommandResult = KnowledgeIndexResult | KnowledgeReleasePreflightResult
 
 
 def create_qdrant_client(settings: Config) -> AsyncQdrantClient:
@@ -98,6 +162,30 @@ def load_release_chunks(args: argparse.Namespace) -> list[KnowledgeChunk]:
     return KnowledgeChunkLoader().load(
         args.chunks_dir,
         expected_dataset_version=args.dataset_version,
+    )
+
+
+def assess_embedding_reuse(
+    *,
+    candidate_chunks: list[KnowledgeChunk],
+    baseline_chunks: list[KnowledgeChunk],
+) -> KnowledgeEmbeddingReuseStats:
+    """본문 hash가 같아도 임베딩 입력이 바뀌면 재임베딩하도록 보수적으로 계산한다."""
+    baseline_content_hashes = {chunk.metadata.content_hash for chunk in baseline_chunks}
+    baseline_embedding_hashes = {
+        hashlib.sha256(chunk.embedding_text.encode("utf-8")).hexdigest() for chunk in baseline_chunks
+    }
+    content_hash_match_count = sum(chunk.metadata.content_hash in baseline_content_hashes for chunk in candidate_chunks)
+    exact_embedding_text_reuse_count = sum(
+        hashlib.sha256(chunk.embedding_text.encode("utf-8")).hexdigest() in baseline_embedding_hashes
+        for chunk in candidate_chunks
+    )
+    return KnowledgeEmbeddingReuseStats(
+        baseline_chunk_count=len(baseline_chunks),
+        candidate_chunk_count=len(candidate_chunks),
+        content_hash_match_count=content_hash_match_count,
+        exact_embedding_text_reuse_count=exact_embedding_text_reuse_count,
+        reembedding_required_count=(len(candidate_chunks) - exact_embedding_text_reuse_count),
     )
 
 
@@ -188,6 +276,86 @@ def ensure_interaction_annotations_applied(
         raise ValueError("검수된 상호작용 주석이 전처리 청크에 모두 적용되지 않았습니다: " + details)
 
 
+def ensure_source_backed_interaction_metadata(
+    chunks: list[KnowledgeChunk],
+) -> KnowledgeSourceBackedMetadataStats:
+    """DRUG_FOOD 청크에 음식 정식명·별칭·pair key가 함께 있는지 차단한다."""
+    interaction_chunk_count = 0
+    drug_food_chunk_count = 0
+    food_alias_entry_count = 0
+
+    for chunk in chunks:
+        metadata = chunk.metadata
+        _ensure_no_generic_catalog_entities(chunk)
+        if metadata.interaction_type is not None:
+            interaction_chunk_count += 1
+        if metadata.interaction_type != InteractionPairType.DRUG_FOOD.value:
+            continue
+
+        drug_food_chunk_count += 1
+        if not metadata.food_names:
+            raise ValueError(
+                f"DRUG_FOOD 청크에는 food_names가 필요합니다: chunk_id={chunk.chunk_id}",
+            )
+        if not metadata.interaction_pair_keys:
+            raise ValueError(
+                f"DRUG_FOOD 청크에는 interaction_pair_keys가 필요합니다: chunk_id={chunk.chunk_id}",
+            )
+
+        food_entries = [entry for entry in metadata.entity_catalog_entries if entry.kind == InteractionEntityKind.FOOD]
+        if not food_entries:
+            raise ValueError(
+                f"DRUG_FOOD 청크에는 FOOD typed catalog entry가 필요합니다: chunk_id={chunk.chunk_id}",
+            )
+        catalog_food_names = {entry.canonical_name for entry in food_entries}
+        missing_food_names = sorted(set(metadata.food_names) - catalog_food_names)
+        if missing_food_names:
+            raise ValueError(
+                "DRUG_FOOD food_names가 FOOD typed catalog entry와 일치하지 않습니다: "
+                f"chunk_id={chunk.chunk_id}, missing={','.join(missing_food_names)}",
+            )
+        invalid_aliases = [entry.canonical_name for entry in food_entries if entry.canonical_name not in entry.aliases]
+        if invalid_aliases:
+            raise ValueError(
+                "FOOD typed catalog entry의 aliases에는 정식명이 포함되어야 합니다: "
+                f"chunk_id={chunk.chunk_id}, names={','.join(invalid_aliases)}",
+            )
+        food_alias_entry_count += len(food_entries)
+
+    return KnowledgeSourceBackedMetadataStats(
+        interaction_chunk_count=interaction_chunk_count,
+        drug_food_chunk_count=drug_food_chunk_count,
+        food_alias_entry_count=food_alias_entry_count,
+    )
+
+
+def _ensure_no_generic_catalog_entities(chunk: KnowledgeChunk) -> None:
+    """식별 불가능한 범주명이 typed catalog에 유입되는 것을 사전에 막는다."""
+    metadata = chunk.metadata
+    observed_names = [
+        *getattr(metadata, "drug_names", []),
+        *getattr(metadata, "ingredient_names", []),
+        *getattr(metadata, "food_names", []),
+    ]
+    for entry in getattr(metadata, "entity_catalog_entries", []):
+        observed_names.extend(
+            [
+                entry.canonical_name,
+                *entry.aliases,
+            ],
+        )
+
+    generic_names = sorted(
+        {name for name in observed_names if is_generic_knowledge_entity_category(name)},
+    )
+    if generic_names:
+        raise ValueError(
+            "정식 제품·성분·음식명을 식별할 수 없는 일반 범주명은 "
+            "catalog metadata에 포함할 수 없습니다: "
+            f"chunk_id={chunk.chunk_id}, names={','.join(generic_names)}",
+        )
+
+
 def build_indexer(
     *,
     settings: Config,
@@ -220,24 +388,51 @@ async def run_cli(
     *,
     args: argparse.Namespace,
     settings: Config | None = None,
-) -> KnowledgeIndexResult:
+) -> KnowledgeReleaseCommandResult:
     resolved_settings = settings or Config()
-    qdrant_client = create_qdrant_client(resolved_settings)
-    try:
-        chunks = load_release_chunks(args)
-        ensure_preprocessing_approved(
-            chunks,
-            quality_report_path=args.quality_report,
-            expected_dataset_version=args.dataset_version,
-        )
-        ensure_interaction_annotations_applied(
-            chunks,
-            annotation_path=getattr(
-                args,
-                "interaction_annotations",
-                None,
+    chunks = load_release_chunks(args)
+    ensure_preprocessing_approved(
+        chunks,
+        quality_report_path=args.quality_report,
+        expected_dataset_version=args.dataset_version,
+    )
+    ensure_interaction_annotations_applied(
+        chunks,
+        annotation_path=getattr(
+            args,
+            "interaction_annotations",
+            None,
+        ),
+    )
+    source_backed_metadata = ensure_source_backed_interaction_metadata(chunks)
+    baseline_chunks_dir = getattr(args, "baseline_chunks_dir", None)
+    embedding_reuse = (
+        assess_embedding_reuse(
+            candidate_chunks=chunks,
+            baseline_chunks=KnowledgeChunkLoader().load(
+                baseline_chunks_dir,
+                expected_dataset_version=args.baseline_dataset_version,
             ),
         )
+        if baseline_chunks_dir is not None
+        else None
+    )
+    if getattr(args, "validate_only", False):
+        return KnowledgeReleasePreflightResult(
+            dataset_version=args.dataset_version,
+            collection_name=args.collection,
+            chunk_count=len(chunks),
+            document_count=len({chunk.metadata.document_id for chunk in chunks}),
+            demo_restricted_chunk_count=sum(
+                chunk.metadata.access_scope == KnowledgeAccessScope.DEMO_RESTRICTED for chunk in chunks
+            ),
+            metadata_quality=KnowledgeIndexer.assess_metadata_quality(chunks),
+            source_backed_metadata=source_backed_metadata,
+            embedding_reuse=embedding_reuse,
+        )
+
+    qdrant_client = create_qdrant_client(resolved_settings)
+    try:
         ensure_external_embedding_allowed(
             chunks,
             allow_demo_restricted=args.allow_demo_restricted,
@@ -254,6 +449,18 @@ async def run_cli(
 
 def main() -> None:
     result = asyncio.run(run_cli(args=parse_args()))
+    if isinstance(result, KnowledgeReleasePreflightResult):
+        print(
+            json.dumps(
+                {
+                    "status": "VALIDATED",
+                    **asdict(result),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
     metadata_quality = result.metadata_quality
     print(
         json.dumps(
