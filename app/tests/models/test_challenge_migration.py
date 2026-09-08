@@ -53,6 +53,27 @@ def test_challenge_common_code_seed_migration_contains_required_codes() -> None:
         assert detail_code in source
 
 
+def test_custom_challenge_default_seed_migration_contains_required_defaults() -> None:
+    migrations = list(MIGRATION_ROOT.glob("38_*_seed_custom_challenge_defaults.py"))
+    assert len(migrations) == 1
+    source = migrations[0].read_text(encoding="utf-8")
+
+    for token in (
+        "CHK_TYPE2",
+        "AUTO",
+        "복약 챌린지",
+        "영양제 챌린지",
+        "다음 진료 챌린지",
+        "물마시기 배지",
+        "스트레칭 배지",
+        "걷기 배지",
+        "media/badges/walking-badge.png",
+        "_migration_38_custom_challenge_default_seed",
+        "MODELS_STATE",
+    ):
+        assert token in source
+
+
 async def test_challenge_metadata_migration_uses_mysql_safe_noop() -> None:
     migration = importlib.import_module(
         "app.core.db.migrations.models.34_20260907193837_sync_challenge_common_code_metadata"

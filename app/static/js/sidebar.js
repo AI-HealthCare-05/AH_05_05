@@ -1,4 +1,4 @@
-import { initializeNavigation } from "./navigation.js?v=20260907-3";
+import { initializeNavigation } from "./navigation.js?v=20260908-1";
 import { session } from "./api.js";
 import { openSmtpSettings } from "./smtp-settings.js";
 
@@ -11,6 +11,7 @@ const PAGE_SECTIONS = Object.freeze({
   "common-code-management.html": "common-codes",
   "supplement-ranking.html": "supplement-ranking",
   "challenge-management.html": "challenges",
+  "custom-challenge-template-management.html": "custom-challenge-templates",
   "badge-management.html": "badges",
 });
 
