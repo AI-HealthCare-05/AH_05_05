@@ -1,15 +1,15 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
+import { hasCompletedTutorial } from '@/shared/lib/tutorial';
 
 const SPLASH_DURATION_MS = 1_200;
 const SPLASH_SEEN_KEY = 'poke:splash-seen';
-const TUTORIAL_SEEN_KEY = 'poke:tutorial-seen';
 
 export function SplashPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (window.sessionStorage.getItem(TUTORIAL_SEEN_KEY) === 'true') {
+    if (hasCompletedTutorial()) {
       navigate('/home', { replace: true });
       return;
     }
