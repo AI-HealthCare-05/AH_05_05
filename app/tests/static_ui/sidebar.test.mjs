@@ -280,7 +280,7 @@ test("administrator pages expose a shared fixed top area", async () => {
 
   for (const page of pages) {
     const html = await readFile(new URL(`../../static/templates/${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260907-3"/, page);
+    assert.match(html, /src="\.\.\/js\/sidebar\.js\?v=20260908-2"/, page);
   }
 });
 

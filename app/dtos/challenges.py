@@ -137,6 +137,45 @@ class ChallengeAdminListQuery(SnakeModel):
         return self
 
 
+class CustomChallengeTemplateCreateRequest(SnakeModel):
+    name: str = Field(min_length=1, max_length=100)
+    check_type_id: int = Field(ge=1)
+    is_active: bool = True
+
+
+class CustomChallengeTemplateUpdateRequest(SnakeModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    check_type_id: int | None = Field(default=None, ge=1)
+    is_active: bool | None = None
+
+
+class CustomChallengeTemplateResponse(SnakeModel):
+    id: int
+    name: str
+    check_type_id: int
+    is_active: bool
+    created_by_admin_id: int | None
+    updated_by_admin_id: int | None
+    created_at: datetime
+    updated_at: datetime | None
+
+
+class CustomChallengeTemplateListResponse(SnakeModel):
+    items: list[CustomChallengeTemplateResponse]
+    total_count: int
+    offset: int
+    limit: int
+
+
+class CustomChallengeTemplateAdminListQuery(SnakeModel):
+    template_id: int | None = Field(default=None, ge=1)
+    name: str | None = Field(default=None, max_length=100)
+    check_type_id: int | None = Field(default=None, ge=1)
+    is_active: bool | None = None
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
 class ProgressResponse(SnakeModel):
     id: int
     period_start: date
