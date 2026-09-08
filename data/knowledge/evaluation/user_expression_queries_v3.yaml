@@ -1,0 +1,432 @@
+schema_version: medication-search-baseline-v3
+dataset_version: knowledge-full-v5-o200k
+collection_name: medication_knowledge_full_v5
+frontend_preset: false
+min_similarity_score: 0.65
+final_top_k: 5
+candidate_top_k: 20
+baseline_observed_at: '2026-09-08'
+baseline_environment: >-
+  feature/325 개발 환경, Dense/DOT, medication_knowledge_full_v5. 질문 원문은
+  프론트에서 실행했고 원본 Trace ID는 개인정보·운영 데이터 분리를 위해 Git에 저장하지 않는다.
+trace_reference_policy: >-
+  LangSmith 비교는 질문 SHA-256과 실행 시점의 ChatMessage.langsmith_trace_id로만 수행한다.
+  이 fixture에는 실제 사용자·세션·Trace ID를 기록하지 않는다.
+experiment_goal: >-
+  source-backed typed entity와 FOOD 메타데이터 도입 전후를 같은 21문항으로 비교하여,
+  정확한 대상·pair·근거가 유지되는지 검증한다.
+activation_rule: >-
+  ACTIVE_PHASE의 모든 문항이 통과하고 잘못된 대상 혼입이 0건이며, 기존 PASS 11건보다
+  전체 PASS가 감소하지 않을 때만 새 불변 Qdrant 릴리스를 활성화 후보로 검토한다.
+metric_rationales:
+  recall_at_20: 관련 근거가 재정렬 전 후보 20건 안에 포함되는지 확인한다.
+  hit_at_5: 최종 답변에 전달되는 상위 5건에 정답 근거가 있는지 확인한다.
+  mrr: 첫 정답 근거가 사용자 답변에 사용하기 좋은 순위에 있는지 확인한다.
+  source_accuracy: 선택된 근거가 질문 대상과 직접 연결되는지 확인한다.
+  evidence_coverage_rate: 질문이 요구한 효능·복용법·주의사항·상호작용 근거의 범위를 확인한다.
+  wrong_target_mixing_count: 이름이나 주제가 비슷한 다른 약·성분·음식의 혼입을 안전 오류로 측정한다.
+  duplicate_retrieval_rate: 같은 청크가 반복되어 근거 다양성을 잃는지 확인한다.
+  search_p95_ms: 정확도 조건을 통과한 뒤 상위 지연 구간을 운영 경고로 기록한다.
+cases:
+  - query_id: exact-product-magnesium
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: EXACT_PRODUCT
+    question: 마그오캡슐500mg의 효능과 복용법을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [마그오캡슐500mg]
+    expected_entities:
+      - canonical_name: 마그오캡슐500mg
+        entity_type: PRODUCT_NAME
+        kind: DRUG
+        expected_sources: [RDBMS]
+    expected_section_types: [FUNCTION, DAILY_INTAKE]
+    evidence_kind: RDBMS_GUIDE
+    evaluation_rationale: 정확한 제품명은 구조화된 제품 가이드가 우선되는지 확인한다.
+
+  - query_id: typo-brand-tylenol
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: PRODUCT_TYPO
+    question: 타이래놀의 효능과 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 타이레놀의 효능과 주의사항을 알려줘.
+    expected_entity_names: [타이레놀]
+    expected_entities:
+      - canonical_name: 타이레놀
+        entity_type: BRAND_ALIAS
+        kind: DRUG
+        expected_sources: [RDBMS]
+    expected_section_types: [FUNCTION, CAUTION]
+    evidence_kind: RDBMS_GUIDE
+    evaluation_rationale: 제품명 오타를 source-backed 별칭으로 교정하는지 확인한다.
+
+  - query_id: typo-ingredient-acetaminophen
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: INGREDIENT_TYPO
+    question: 아세트아미노팬 부작용을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 아세트아미노펜 부작용을 알려줘.
+    expected_entity_names: [아세트아미노펜]
+    expected_entities:
+      - canonical_name: 아세트아미노펜
+        entity_type: INGREDIENT_NAME
+        kind: DRUG
+        expected_sources: [RDBMS]
+    expected_section_types: [CAUTION]
+    expected_document_ids: [kpicia_drug_encyclopedia-33898a903b6cbca7]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 성분명 오타 뒤 해당 성분의 주의 근거를 찾는지 확인한다.
+    gold_document_rationales:
+      kpicia_drug_encyclopedia-33898a903b6cbca7: 아세트아미노펜의 부작용과 주의사항을 직접 설명한다.
+
+  - query_id: keyboard-tail-tylenol
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: KEYBOARD_TYPO
+    question: 타이레놀ㄹ 복용법 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 타이레놀 복용법 알려줘.
+    expected_entity_names: [타이레놀]
+    expected_entities:
+      - canonical_name: 타이레놀
+        entity_type: BRAND_ALIAS
+        kind: DRUG
+        expected_sources: [RDBMS]
+    expected_section_types: [DAILY_INTAKE]
+    evidence_kind: RDBMS_GUIDE
+    evaluation_rationale: 끝 자판 오타를 제거해 제품 복용법 경로로 연결하는지 확인한다.
+
+  - query_id: spacing-magnesium
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: SPACING_VARIATION
+    question: 마그 네슘은 왜 먹나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 마그네슘은 왜 먹나요?
+    expected_entity_names: [마그네슘]
+    expected_entities:
+      - canonical_name: 마그네슘
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [RDBMS, QDRANT]
+    expected_section_types: [FUNCTION]
+    expected_document_ids: [food_safety_korea_supplement_ingredients-d4b61ec6752184e6]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 띄어쓰기 변형에도 공인 기능성 근거가 검색되는지 확인한다.
+    gold_document_rationales:
+      food_safety_korea_supplement_ingredients-d4b61ec6752184e6: 마그네슘의 공인 기능성 내용을 성분 단위로 제공한다.
+
+  - query_id: common-name-tylenol
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: COMMON_NAME
+    question: 타이레놀의 효능과 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [타이레놀]
+    expected_entities:
+      - canonical_name: 타이레놀
+        entity_type: BRAND_ALIAS
+        kind: DRUG
+        expected_sources: [RDBMS]
+    expected_section_types: [FUNCTION, CAUTION]
+    evidence_kind: RDBMS_GUIDE
+    evaluation_rationale: 사용자가 통칭으로 질문해도 제품 가이드로 연결되는지 확인한다.
+
+  - query_id: ambiguous-near-product
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: AMBIGUOUS
+    question: 마그 복용법 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: CLARIFICATION_REQUIRED
+    expect_no_guide_lookup: true
+    expect_no_rag: true
+    evidence_kind: NOT_APPLICABLE
+    evaluation_rationale: 짧고 여러 후보가 가능한 표현은 임의 제품 선택 없이 재질문해야 한다.
+
+  - query_id: short-unsafe-correction
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: SHORT_EXPRESSION
+    question: 찰 영양제는 왜 먹나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNRESOLVED
+    expect_no_entity: true
+    expect_no_guide_lookup: true
+    expect_no_rag: true
+    expect_no_evidence: true
+    evidence_kind: NO_EVIDENCE
+    evaluation_rationale: 낮은 신뢰도의 짧은 표현을 특정 성분으로 오교정하지 않아야 한다.
+
+  - query_id: out-of-scope-hungry
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: OUT_OF_SCOPE
+    question: 오늘 너무 배고파요.
+    expected_scope: OUT_OF_SCOPE
+    expected_resolution_status: UNRESOLVED
+    expect_no_entity: true
+    expect_no_guide_lookup: true
+    expect_no_rag: true
+    evidence_kind: NOT_APPLICABLE
+    evaluation_rationale: 복약·영양제 범위 밖의 일상 질문은 RAG를 호출하지 않아야 한다.
+
+  - query_id: in-scope-no-evidence
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: IN_SCOPE_NO_EVIDENCE
+    question: 처음 보는 약의 복용 시 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNRESOLVED
+    expect_no_entity: true
+    expect_no_guide_lookup: true
+    expect_no_rag: true
+    expect_no_evidence: true
+    evidence_kind: NO_EVIDENCE
+    evaluation_rationale: 대상이 특정되지 않은 의료 질문은 무관한 제품 근거를 사용하지 않아야 한다.
+
+  - query_id: supplement-guide-magnesium
+    phase: ACTIVE_PHASE
+    historical_outcome: PASS
+    expression_category: COMMON_NAME
+    question: 마그네슘은 왜 먹나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [마그네슘]
+    expected_entities:
+      - canonical_name: 마그네슘
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [RDBMS, QDRANT]
+    expected_section_types: [FUNCTION]
+    expected_document_ids: [food_safety_korea_supplement_ingredients-d4b61ec6752184e6]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 성분의 기능성 질문에 해당 성분 근거를 우선 검색하는지 확인한다.
+    gold_document_rationales:
+      food_safety_korea_supplement_ingredients-d4b61ec6752184e6: 마그네슘의 기능성 근거를 직접 제공한다.
+
+  - query_id: drug-drug-warfarin-metronidazole
+    phase: ACTIVE_PHASE
+    historical_outcome: PARTIAL
+    expression_category: DRUG_DRUG
+    question: 와파린과 메트로니다졸을 같이 복용해도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [와파린, 메트로니다졸]
+    expected_entities:
+      - canonical_name: 와파린
+        entity_type: INGREDIENT_NAME
+        kind: DRUG
+        expected_sources: [RDBMS]
+      - canonical_name: 메트로니다졸
+        entity_type: INGREDIENT_NAME
+        kind: DRUG
+        expected_sources: [RDBMS]
+    expected_interaction_types: [DRUG_DRUG]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [kpicia_pharm_review-e8127943c02a5a76]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 두 의약품을 함께 인식하여 약-약 상호작용 근거를 찾는지 확인한다.
+    gold_document_rationales:
+      kpicia_pharm_review-e8127943c02a5a76: 와파린과 메트로니다졸 병용을 직접 다룬다.
+
+  - query_id: drug-supplement-warfarin-vitamin-k
+    phase: ACTIVE_PHASE
+    historical_outcome: PARTIAL
+    expression_category: DRUG_SUPPLEMENT
+    question: 와파린과 비타민 K 영양제를 같이 먹어도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [와파린, 비타민 K]
+    expected_entities:
+      - canonical_name: 와파린
+        entity_type: INGREDIENT_NAME
+        kind: DRUG
+        expected_sources: [RDBMS]
+      - canonical_name: 비타민 K
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [RDBMS, QDRANT]
+    expected_interaction_types: [DRUG_SUPPLEMENT]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [kpicia_pharm_review-c4ea8e68b35b65b3]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 약과 영양성분을 함께 인식해 약-영양제 근거를 찾는지 확인한다.
+    gold_document_rationales:
+      kpicia_pharm_review-c4ea8e68b35b65b3: 와파린과 비타민 K 섭취 관계를 직접 다룬다.
+
+  - query_id: supplement-supplement-calcium-iron
+    phase: ACTIVE_PHASE
+    historical_outcome: PARTIAL
+    expression_category: SUPPLEMENT_SUPPLEMENT
+    question: 칼슘과 철분을 같이 먹어도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [칼슘, 철분]
+    expected_entities:
+      - canonical_name: 칼슘
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [RDBMS, QDRANT]
+      - canonical_name: 철분
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [RDBMS, QDRANT]
+    expected_interaction_types: [SUPPLEMENT_SUPPLEMENT]
+    expected_section_types: [INTERACTION]
+    expected_document_ids:
+      - research_supplement_interactions-016c81c9a3e29ebd
+      - research_supplement_interactions-7983c60e9a092828
+    forbidden_document_ids: [research_supplement_interactions-ce2c45272c5bd272]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 칼슘·철분의 연구가 검색되고 아연·철분 연구가 섞이지 않는지 확인한다.
+    gold_document_rationales:
+      research_supplement_interactions-016c81c9a3e29ebd: 칼슘과 철분 흡수 기전 연구다.
+      research_supplement_interactions-7983c60e9a092828: 칼슘 섭취와 철분 흡수를 직접 평가한다.
+
+  - query_id: drug-food-fexofenadine-fruit-juice
+    phase: ACTIVE_PHASE
+    historical_outcome: PARTIAL
+    expression_category: DRUG_FOOD
+    question: 펙소페나딘을 먹을 때 과일주스를 피해야 하나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [펙소페나딘, 과일주스]
+    expected_entities:
+      - canonical_name: 펙소페나딘
+        entity_type: INGREDIENT_NAME
+        kind: DRUG
+        expected_sources: [RDBMS, QDRANT]
+      - canonical_name: 과일주스
+        entity_type: FOOD_CATEGORY
+        kind: FOOD
+        expected_sources: [RDBMS, QDRANT]
+    expected_interaction_types: [DRUG_FOOD]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [mfds_drug_food_interaction_guide-53bfb2433f48a8b0]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 약과 음식 범주를 함께 인식해 약-음식 근거를 찾는지 확인한다.
+    gold_document_rationales:
+      mfds_drug_food_interaction_guide-53bfb2433f48a8b0: 펙소페나딘과 과일주스의 병용 주의사항을 안내한다.
+
+  - query_id: drug-food-tylenol-alcohol
+    phase: ACTIVE_PHASE
+    historical_outcome: FAIL
+    expression_category: DRUG_FOOD
+    question: 타이레놀과 술을 같이 먹어도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [타이레놀, 술]
+    expected_entities:
+      - canonical_name: 타이레놀
+        entity_type: BRAND_ALIAS
+        kind: DRUG
+        expected_sources: [RDBMS]
+      - canonical_name: 술
+        entity_type: FOOD_CATEGORY
+        kind: FOOD
+        expected_sources: [RDBMS, QDRANT]
+    expected_interaction_types: [DRUG_FOOD]
+    expected_section_types: [INTERACTION]
+    evidence_kind: NO_EVIDENCE
+    evaluation_rationale: 음식 별칭이 실제 카탈로그에 있을 때만 약-음식 pair를 생성하는지 확인한다.
+
+  - query_id: alphabet-pronunciation-vitamin-d
+    phase: ACTIVE_PHASE
+    historical_outcome: FAIL
+    expression_category: COMMON_NAME
+    question: 비타민 디는 왜 먹나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 비타민 D는 왜 먹나요?
+    expected_entity_names: [비타민 D]
+    expected_entities:
+      - canonical_name: 비타민 D
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [RDBMS, QDRANT]
+    expected_section_types: [FUNCTION]
+    evidence_kind: NO_EVIDENCE
+    evaluation_rationale: 일반 알파벳 한글 발음은 실제 단일 카탈로그 항목일 때만 교정해야 한다.
+
+  - query_id: colloquial-relation-warfarin-vitamin-k
+    phase: ACTIVE_PHASE
+    historical_outcome: FAIL
+    expression_category: DRUG_SUPPLEMENT
+    question: 와파린이랑 비타민 K 머거도 대?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: AUTO_CORRECTED
+    expected_resolved_question: 와파린이랑 비타민 K 먹어도 돼?
+    expected_entity_names: [와파린, 비타민 K]
+    expected_entities:
+      - canonical_name: 와파린
+        entity_type: INGREDIENT_NAME
+        kind: DRUG
+        expected_sources: [RDBMS]
+      - canonical_name: 비타민 K
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [RDBMS, QDRANT]
+    expected_interaction_types: [DRUG_SUPPLEMENT]
+    expected_section_types: [INTERACTION]
+    expected_document_ids: [kpicia_pharm_review-c4ea8e68b35b65b3]
+    evidence_kind: QDRANT_GOLD
+    evaluation_rationale: 관계 표현 보정은 두 source-backed 엔터티가 확인된 뒤에만 pair를 생성해야 한다.
+    gold_document_rationales:
+      kpicia_pharm_review-c4ea8e68b35b65b3: 와파린과 비타민 K의 관계를 직접 설명한다.
+
+  - query_id: deferred-memory-pronoun
+    phase: DEFERRED_MEMORY
+    historical_outcome: FAIL
+    expression_category: COMMON_NAME
+    question: 그 약의 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNRESOLVED
+    expect_no_entity: true
+    expect_no_guide_lookup: true
+    expect_no_rag: true
+    evidence_kind: NOT_APPLICABLE
+    evaluation_rationale: 이전 채팅 대명사 해소는 후속 memory 범위이므로 이번 변경의 차단 기준에서 제외한다.
+
+  - query_id: deferred-context-registered-medication
+    phase: DEFERRED_CONTEXT
+    historical_outcome: FAIL
+    expression_category: COMMON_NAME
+    question: 등록한 약의 주의사항을 알려줘.
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNRESOLVED
+    expect_no_entity: true
+    expect_no_guide_lookup: true
+    expect_no_rag: true
+    evidence_kind: NOT_APPLICABLE
+    evaluation_rationale: 활성 복용 목록 전체 전개는 patient-context 확장 단계에서 검증한다.
+
+  - query_id: deferred-safety-calcium-iron
+    phase: DEFERRED_SAFETY
+    historical_outcome: FAIL
+    expression_category: SUPPLEMENT_SUPPLEMENT
+    question: 등록한 칼슘과 철분을 같이 먹어도 되나요?
+    expected_scope: IN_SCOPE
+    expected_resolution_status: UNCHANGED
+    expected_entity_names: [칼슘, 철분]
+    expected_entities:
+      - canonical_name: 칼슘
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [PATIENT_CONTEXT]
+      - canonical_name: 철분
+        entity_type: INGREDIENT_NAME
+        kind: SUPPLEMENT
+        expected_sources: [PATIENT_CONTEXT]
+    expected_interaction_types: [SUPPLEMENT_SUPPLEMENT]
+    expected_section_types: [INTERACTION]
+    evidence_kind: NOT_APPLICABLE
+    evaluation_rationale: 환자 등록정보와 안전성 validator의 결합은 후속 safety 정밀화에서 처리한다.

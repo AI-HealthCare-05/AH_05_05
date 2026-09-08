@@ -32,6 +32,7 @@ from ai_worker.rag.vectorstores.qdrant_knowledge_store import (
 from ai_worker.repositories.medication_expression_catalog_repository import (
     DbMedicationExpressionCatalog,
 )
+from ai_worker.schemas.knowledge import KnowledgeVectorDistance
 from ai_worker.schemas.medication_search_evaluation import (
     MedicationSearchBaselineManifest,
     MedicationSearchBaselineReport,
@@ -54,6 +55,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def load_evaluation_manifest(path: Path) -> MedicationSearchBaselineManifest:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     return MedicationSearchBaselineManifest.model_validate(raw)
+
+
+def build_evaluation_vector_store(
+    *,
+    settings: Config,
+    qdrant_client: AsyncQdrantClient,
+    collection_name: str,
+) -> QdrantKnowledgeStore:
+    """평가가 운영 환경과 동일한 거리 계약으로 검색하게 한다."""
+
+    return QdrantKnowledgeStore(
+        client=qdrant_client,
+        collection_name=collection_name,
+        vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        distance=settings.KNOWLEDGE_VECTOR_DISTANCE,
+    )
 
 
 def file_sha256(path: Path) -> str:
@@ -87,9 +104,12 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         f"- Git commit: `{report.git_commit}`",
         f"- 미커밋 변경 포함: {'예' if report.working_tree_dirty else '아니요'}",
         f"- Collection: `{report.collection_name}`",
+        f"- 기준선 관측 시점: `{report.baseline_observed_at or '기록되지 않음'}`",
+        f"- 기준선 환경: `{report.baseline_environment or '기록되지 않음'}`",
         f"- 검색 모드: `{report.search_mode.value}`",
         f"- Dataset: `{report.dataset_version}`",
         f"- Embedding: `{report.embedding_model_name}` / {report.embedding_dimension}",
+        f"- 벡터 거리 / 정규화: `{report.vector_distance}` / {'예' if report.embedding_vectors_normalized else '아니요'}",
         f"- 유사도 기준: {report.min_similarity_score}",
         f"- 후보/최종: Top-{report.candidate_top_k} / Top-{report.final_top_k}",
         f"- 평가 YAML SHA-256: `{report.evaluation_file_sha256}`",
@@ -98,6 +118,7 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         "",
         f"- 목적: {report.experiment_goal or '기록되지 않음'}",
         f"- 채택 기준: {report.activation_rule or '기록되지 않음'}",
+        f"- Trace 참조 정책: {report.trace_reference_policy or '기록되지 않음'}",
         "",
         "| 지표 | 선정 이유 |",
         "|---|---|",
@@ -107,6 +128,8 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         "",
         "| 지표 | 값 |",
         "|---|---:|",
+        f"| 활성 단계 통과 | {report.active_pass_count} / {report.active_query_count} ({report.active_pass_rate:.3f}) |",
+        f"| 후속 단계 문항 | {report.deferred_query_count} |",
         f"| 범위 판별 정확도 | {report.scope_accuracy:.3f} |",
         f"| 표현 처리 정확도 | {report.resolution_accuracy:.3f} |",
         f"| 자동 교정 정확도 | {report.correction_accuracy:.3f} |",
@@ -121,8 +144,8 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
         "",
         "## 질문별 결과",
         "",
-        "| 질문 ID | 표현 유형 | 범위 | 처리 상태 | 후보 관련 순위 | Top-5 | 시간(ms) | 판정 |",
-        "|---|---|---|---|---:|---|---:|---|",
+        "| 질문 ID | 단계 | 변경 전 | 표현 유형 | 범위 | 처리 상태 | 후보 관련 순위 | Top-5 | 시간(ms) | 판정 |",
+        "|---|---|---|---|---|---|---:|---|---:|---|",
     ]
     for result in report.results:
         candidate_rank = result.candidate_first_relevant_rank or "-"
@@ -132,6 +155,8 @@ def render_markdown(report: MedicationSearchBaselineReport) -> str:
             + " | ".join(
                 [
                     result.query_id,
+                    result.phase.value,
+                    result.historical_outcome.value if result.historical_outcome else "-",
                     result.expression_category.value,
                     result.observed_scope.value,
                     result.observed_resolution_status.value,
@@ -196,11 +221,15 @@ async def run_cli(
             api_key=api_key,
             timeout_seconds=resolved_settings.OPENAI_TIMEOUT_SECONDS,
             max_retries=resolved_settings.OPENAI_MAX_RETRIES,
+            normalize_vectors=(
+                resolved_settings.KNOWLEDGE_VECTOR_DISTANCE
+                == KnowledgeVectorDistance.DOT
+            ),
         )
-        vector_store = QdrantKnowledgeStore(
-            client=qdrant_client,
+        vector_store = build_evaluation_vector_store(
+            settings=resolved_settings,
+            qdrant_client=qdrant_client,
             collection_name=manifest.collection_name,
-            vector_size=resolved_settings.OPENAI_EMBEDDING_DIMENSIONS,
         )
         evaluator = MedicationSearchBaselineEvaluator(
             question_resolver=RuleBasedMedicationQuestionResolver(
@@ -215,6 +244,11 @@ async def run_cli(
             ),
             embedding_model_name=embedding_provider.model_name,
             embedding_dimension=embedding_provider.dimension,
+            vector_distance=resolved_settings.KNOWLEDGE_VECTOR_DISTANCE.value,
+            embedding_vectors_normalized=(
+                resolved_settings.KNOWLEDGE_VECTOR_DISTANCE
+                == KnowledgeVectorDistance.DOT
+            ),
         )
         report = await evaluator.evaluate(
             manifest,

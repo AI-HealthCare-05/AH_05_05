@@ -306,3 +306,74 @@ async def test_evaluate_preserves_gold_document_and_experiment_rationales() -> N
     assert report.results[0].gold_document_rationales == {
         "acetaminophen-guide": "교정된 성분을 직접 설명하는 문서입니다."
     }
+
+
+async def test_evaluate_excludes_deferred_case_from_active_phase_pass_rate() -> None:
+    evaluator = MedicationSearchBaselineEvaluator(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticCatalog(),
+        ),
+        query_builder=MedicationKnowledgeQueryBuilder(),
+        knowledge_retriever=FakeRetriever(),
+    )
+    manifest = MedicationSearchBaselineManifest.model_validate(
+        {
+            "schema_version": "medication-search-baseline-v3",
+            "dataset_version": "knowledge-full-v5-o200k",
+            "collection_name": "medication_knowledge_full_v5",
+            "baseline_observed_at": "2026-09-08",
+            "baseline_environment": "unit-test",
+            "experiment_goal": "활성 단계와 후속 단계를 구분해 회귀를 측정합니다.",
+            "activation_rule": "활성 단계만 다음 구현의 차단 기준으로 사용합니다.",
+            "metric_rationales": {
+                "recall_at_20": "후보 포함 여부",
+                "hit_at_5": "최종 근거 포함 여부",
+                "mrr": "첫 정답 순위",
+                "source_accuracy": "출처 정확성",
+                "evidence_coverage_rate": "근거 범위",
+                "wrong_target_mixing_count": "다른 대상 혼입",
+                "duplicate_retrieval_rate": "중복 근거",
+                "search_p95_ms": "지연 감시",
+            },
+                "cases": [
+                    {
+                        "query_id": "active-out-of-scope",
+                        "question": "오늘 배고파요",
+                        "phase": "ACTIVE_PHASE",
+                        "historical_outcome": "PASS",
+                        "expected_scope": "OUT_OF_SCOPE",
+                        "expected_resolution_status": "UNRESOLVED",
+                        "expect_no_entity": True,
+                        "expect_no_guide_lookup": True,
+                        "expect_no_rag": True,
+                        "evidence_kind": "NOT_APPLICABLE",
+                        "evaluation_rationale": "활성 범위 집계가 비도메인 질문도 정확히 반영하는지 확인합니다.",
+                },
+                {
+                    "query_id": "deferred-memory",
+                    "question": "그 약의 주의사항을 알려줘",
+                    "phase": "DEFERRED_MEMORY",
+                    "historical_outcome": "FAIL",
+                    "expected_scope": "IN_SCOPE",
+                    "expected_resolution_status": "UNCHANGED",
+                    "evidence_kind": "NOT_APPLICABLE",
+                    "evaluation_rationale": "세션 대명사 해소는 이번 단계의 범위 밖입니다.",
+                },
+            ],
+        }
+    )
+
+    report = await evaluator.evaluate(
+        manifest,
+        git_commit="abc1234",
+        working_tree_dirty=False,
+        evaluation_file_sha256="f" * 64,
+    )
+
+    assert report.active_query_count == 1
+    assert report.active_pass_count == 1
+    assert report.active_pass_rate == 1.0
+    assert report.deferred_query_count == 1
+    assert report.baseline_observed_at == "2026-09-08"
+    assert report.baseline_environment == "unit-test"
+    assert report.passed is True

@@ -1,8 +1,10 @@
 from pathlib import Path
 
-from scripts.evaluate_medication_search_baseline import (
-    load_evaluation_manifest,
-)
+from ai_worker.core.config import Config
+from ai_worker.schemas.knowledge import KnowledgeVectorDistance
+from scripts import evaluate_medication_search_baseline as module
+
+load_evaluation_manifest = module.load_evaluation_manifest
 
 
 def test_user_expression_manifest_is_frozen_and_covers_failure_classes() -> None:
@@ -41,3 +43,34 @@ def test_user_expression_manifest_is_frozen_and_covers_failure_classes() -> None
         "SUPPLEMENT_SUPPLEMENT",
         "DRUG_FOOD",
     }.issubset(categories)
+
+
+def test_v3_manifest_is_fixed_to_21_cases_and_tracks_historical_outcomes() -> None:
+    manifest = load_evaluation_manifest(
+        Path("data/knowledge/evaluation/user_expression_queries_v3.yaml"),
+    )
+
+    assert manifest.schema_version == "medication-search-baseline-v3"
+    assert len(manifest.cases) == 21
+    assert sum(case.phase == "ACTIVE_PHASE" for case in manifest.cases) > 0
+    assert all(case.evaluation_rationale for case in manifest.cases)
+    assert all(case.historical_outcome is not None for case in manifest.cases)
+    assert sum(case.historical_outcome == "PASS" for case in manifest.cases) == 11
+    assert sum(case.historical_outcome == "PARTIAL" for case in manifest.cases) == 4
+    assert sum(case.historical_outcome == "FAIL" for case in manifest.cases) == 6
+
+
+def test_evaluation_vector_store_uses_runtime_dot_distance() -> None:
+    settings = Config(
+        _env_file=None,
+        KNOWLEDGE_VECTOR_DISTANCE=KnowledgeVectorDistance.DOT,
+        OPENAI_EMBEDDING_DIMENSIONS=1536,
+    )
+
+    vector_store = module.build_evaluation_vector_store(
+        settings=settings,
+        qdrant_client=object(),
+        collection_name="medication_knowledge_full_v5",
+    )
+
+    assert vector_store._distance == KnowledgeVectorDistance.DOT
