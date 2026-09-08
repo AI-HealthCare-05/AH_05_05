@@ -138,7 +138,7 @@ class MedicationService:
     ) -> CareEpisodeAliasResponse:
         """본인 처방의 표시 별칭만 변경한다.
 
-        별칭은 OCR이 만든 ``title``과 별개의 사용자 표시 값이다. 소유자가 아닌 처방은
+        별칭은 병원명 원문과 별개의 사용자 표시 값이다. 소유자가 아닌 처방은
         존재 여부를 숨기기 위해 기존 취소 API와 달리 404로 처리한다.
         """
         episode = await self._get_owned_episode(record_id, user)
@@ -275,7 +275,6 @@ class MedicationService:
         return MedicationNoteResponse(
             id=note.id,
             care_episode_id=cast(int, note.care_episode_id),  # type: ignore[attr-defined]
-            care_episode_title=episode.title,
             care_episode_alias=episode.alias,
             care_episode_start_date=episode.medication_start_date,
             care_episode_status=episode.status,

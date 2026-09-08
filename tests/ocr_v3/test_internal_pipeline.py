@@ -51,6 +51,62 @@ def _block(block_id: str, text: str, x: float, y: float, width: float, height: f
     )
 
 
+@pytest.mark.parametrize("scale", [1, 3])
+def test_dispensed_date_anchors_below_label_not_tall_next_visit_above(scale: int) -> None:
+    source = OcrResult(
+        (
+            _block("next-visit", "2018-02-26", 594 * scale, 55 * scale, 100 * scale, 50 * scale),
+            _block("label", "조제일자", 565 * scale, 80 * scale, 70 * scale, 20 * scale),
+            _block("dispensed", "2018-02-19", 594 * scale, 118 * scale, 100 * scale, 20 * scale),
+        )
+    )
+    layout = build_ocr_layout(source)
+    rows = materialize_medication_rows(layout)
+    catalog = build_evidence_catalog(source, layout, rows)
+    plan = plan_deterministic_grounding(catalog, rows, today=date(2018, 2, 26))
+
+    assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
+    assert plan.selection.dispensed_date_block_ids == ["dispensed"]
+    assert parse_dispensed_date(catalog.date_candidates[0].text, today=date(2018, 2, 26)) == "2018-02-19"
+
+
+@pytest.mark.parametrize("x,y", [(190, 100), (120, 126), (190, 126)])
+def test_dispensed_date_keeps_right_or_below_value_with_other_panel_date(x: int, y: int) -> None:
+    source = OcrResult(
+        (
+            _block("receipt-date", "2018-02-26", 600, 100, 100, 20),
+            _block("label", "조제일자", 100, 100, 70, 20),
+            _block("dispensed", "2018-02-19", x, y, 100, 20),
+        )
+    )
+    layout = build_ocr_layout(source)
+    rows = materialize_medication_rows(layout)
+    catalog = build_evidence_catalog(source, layout, rows)
+    assert [block.block_id for block in catalog.date_candidates] == ["dispensed"]
+
+
+@pytest.mark.parametrize(
+    "suffix,x,y,expected",
+    [
+        ("일자", 136, 100, ["dispensed"]),
+        ("일", 136, 100, ["dispensed"]),
+        ("일자", 600, 100, []),
+        ("일자", 136, 150, []),
+    ],
+)
+def test_dispensed_date_accepts_only_adjacent_split_label(suffix: str, x: int, y: int, expected: list[str]) -> None:
+    source = OcrResult(
+        (
+            _block("label-start", "조제", 100, 100, 35, 20),
+            _block("label-end", suffix, x, y, 35, 20),
+            _block("dispensed", "2018-02-19", 190, 100, 100, 20),
+        )
+    )
+    layout = build_ocr_layout(source)
+    catalog = build_evidence_catalog(source, layout, materialize_medication_rows(layout))
+    assert [block.block_id for block in catalog.date_candidates] == expected
+
+
 @pytest.mark.asyncio
 async def test_pipeline_stage_lists_include_resolve_for_ocr_failure_and_cancellation() -> None:
     class FailingProvider:

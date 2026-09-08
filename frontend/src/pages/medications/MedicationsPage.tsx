@@ -602,7 +602,7 @@ function MedicationEpisodeSheet({
                   label="복약 별칭"
                   aria-label="복약 별칭"
                   placeholder="예: 감기약"
-                  maxLength={50}
+                  maxLength={255}
                   value={alias}
                   onChange={(event) => onAliasChange(event.target.value)}
                 />

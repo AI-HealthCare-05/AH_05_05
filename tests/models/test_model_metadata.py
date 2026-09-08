@@ -33,12 +33,11 @@ def load_care_ocr_models():
     return care, ocr
 
 
-def load_recovery_chat_models():
+def load_chat_models():
     try:
-        recovery = import_module("app.models.recovery")
         chat = import_module("app.models.chat")
     except ModuleNotFoundError as exc:
-        pytest.fail(f"recovery/chat model module is missing: {exc.name}")
+        pytest.fail(f"chat model module is missing: {exc.name}")
 
     Tortoise.init_models(
         (
@@ -46,7 +45,6 @@ def load_recovery_chat_models():
             "app.models.admins",
             "app.models.care",
             "app.models.ocr",
-            "app.models.recovery",
             "app.models.chat",
             "app.models.medications",
             "app.models.interactions",
@@ -54,7 +52,7 @@ def load_recovery_chat_models():
         ),
         "models",
     )
-    return recovery, chat
+    return chat
 
 
 def load_alarm_job_models():
@@ -70,7 +68,6 @@ def load_alarm_job_models():
             "app.models.admins",
             "app.models.care",
             "app.models.ocr",
-            "app.models.recovery",
             "app.models.chat",
             "app.models.medications",
             "app.models.alarms",
@@ -163,9 +160,6 @@ def test_care_models_preserve_ownership_and_confirmation_fields() -> None:
     assert care.CareEpisode._meta.db_table == "care_episodes"
     assert care.CareEpisode._meta.fields_map["user"].model_name == "models.User"
     assert {
-        "diagnosis",
-        "surgery",
-        "discharge_date",
         "medication_days",
         "source_ocr_job_id",
         "confirmation_hash",
@@ -173,27 +167,11 @@ def test_care_models_preserve_ownership_and_confirmation_fields() -> None:
         "medication_start_date",
         "medication_start_slot",
     } <= care.CareEpisode._meta.db_fields
-    assert care.CareAdvice._meta.unique_together == (("care_episode", "display_order"),)
-    assert "source_extracted_field" not in care.CareAdvice._meta.fields_map
     assert "source_extracted_field" not in care.FollowUpVisit._meta.fields_map
 
 
 def test_care_v4_metadata() -> None:
     care, _ = load_care_ocr_models()
-    enums = import_module("app.models.enums")
-
-    assert {item.value for item in enums.CareAdviceCategory} == {
-        "ACTIVITY",
-        "HYGIENE",
-        "DIET",
-        "LIFESTYLE",
-        "RESTRICTION",
-        "RED_FLAG",
-        "OTHER",
-    }
-    assert care.CareAdvice._meta.fields_map["category"].null is False
-    assert care.CareAdvice._meta.fields_map["category"].enum_type is enums.CareAdviceCategory
-    assert ("care_episode", "category") in care.CareAdvice._meta.indexes
     assert care.FollowUpVisit._meta.fields_map["visit_date"].null is False
     assert care.FollowUpVisit._meta.fields_map["visit_time"].null is True
     assert "source_ocr_job" not in care.FollowUpVisit._meta.fields_map
@@ -249,49 +227,21 @@ def test_ocr_job_uses_temporary_structured_result_contract() -> None:
     assert not hasattr(ocr, "OcrExtractedField")
 
 
-def test_recovery_models_preserve_citations_and_patient_sources() -> None:
-    recovery, _ = load_recovery_chat_models()
-
-    guide_fields = recovery.RecoveryGuide._meta.fields_map
-    assert guide_fields["care_episode"].model_name == "models.CareEpisode"
-    for field_name in (
-        "guide_content",
-        "model_name",
-        "prompt_version",
-        "schema_version",
-        "safety_reason_codes",
-        "completed_at",
-    ):
-        assert guide_fields[field_name].null is False
-    assert "safety_reason_code" not in guide_fields
-
-    assert recovery.RecoveryGuideSource._meta.unique_together == (("recovery_guide", "citation_order"),)
-    assert "extracted_field" not in recovery.RecoveryGuideSource._meta.fields_map
-    assert recovery.RecoveryGuideSource._meta.fields_map["medication"].on_delete == fields.RESTRICT
-    assert recovery.RecoveryGuideSource._meta.fields_map["care_advice"].null is True
-    assert recovery.RecoveryGuideSource._meta.fields_map["follow_up_visit"].null is True
-    assert recovery.RecoveryGuideSource._meta.fields_map["source_page_number"].null is True
-    assert len(recovery.RecoveryGuideSource._meta.fields_map["source_page_number"].validators) == 1
-    assert recovery.RecoveryGuideSource._meta.fields_map["source_license"].max_length == 255
-
-
 def test_chat_models_preserve_sequence_reply_and_source_constraints() -> None:
-    _, chat = load_recovery_chat_models()
+    chat = load_chat_models()
 
     assert chat.ChatMessage._meta.unique_together == (("chat_session", "sequence_no"),)
     assert chat.ChatMessage._meta.fields_map["reply_to_message"].model_name == "models.ChatMessage"
-    assert chat.ChatMessage._meta.fields_map["guide"].on_delete == fields.SET_NULL
     assert chat.ChatMessageSource._meta.unique_together == (("chat_message", "citation_order"),)
     assert "extracted_field" not in chat.ChatMessageSource._meta.fields_map
     assert chat.ChatMessageSource._meta.fields_map["medication"].on_delete == fields.RESTRICT
-    assert chat.ChatMessageSource._meta.fields_map["care_advice"].null is True
     assert chat.ChatMessageSource._meta.fields_map["source_page_number"].null is True
     assert len(chat.ChatMessageSource._meta.fields_map["source_page_number"].validators) == 1
     assert chat.ChatMessageSource._meta.fields_map["source_license"].max_length == 255
 
 
 def test_chat_and_source_retention_v4_metadata() -> None:
-    recovery, chat = load_recovery_chat_models()
+    chat = load_chat_models()
 
     score = chat.ChatSession._meta.fields_map["score"]
     assert isinstance(score, fields.IntField)
@@ -309,9 +259,8 @@ def test_chat_and_source_retention_v4_metadata() -> None:
     assert chat.ChatSession._meta.fields_map["care_episode"].null is True
     assert chat.ChatSession._meta.fields_map["care_episode"].model_name == "models.CareEpisode"
     assert chat.ChatSession._meta.fields_map["care_episode"].on_delete == fields.CASCADE
-    for model in (chat.ChatMessageSource, recovery.RecoveryGuideSource):
-        for name in ("medication", "care_advice", "follow_up_visit"):
-            assert model._meta.fields_map[name].on_delete == fields.RESTRICT
+    for name in ("medication", "follow_up_visit"):
+        assert chat.ChatMessageSource._meta.fields_map[name].on_delete == fields.RESTRICT
 
 
 def test_alarm_models_preserve_subscription_and_optional_source_relations() -> None:
@@ -319,7 +268,6 @@ def test_alarm_models_preserve_subscription_and_optional_source_relations() -> N
 
     assert alarms.PushSubscription._meta.fields_map["endpoint"].unique is True
     assert alarms.Alarm._meta.fields_map["user"].model_name == "models.User"
-    assert alarms.Alarm._meta.fields_map["source_guide"].on_delete == fields.SET_NULL
     follow_up_visit = alarms.Alarm._meta.fields_map["follow_up_visit"]
     assert follow_up_visit.model_name == "models.FollowUpVisit"
     assert follow_up_visit.null is True
@@ -377,7 +325,7 @@ def test_medication_ocr_v3_storage_metadata() -> None:
     assert "dose_unit" not in medication_fields
 
 
-def test_all_19_domain_tables_are_registered() -> None:
+def test_current_domain_tables_are_registered() -> None:
     from app.core.db.databases import TORTOISE_APP_MODELS
 
     expected_tables = {
@@ -387,8 +335,6 @@ def test_all_19_domain_tables_are_registered() -> None:
         "admin",
         "care_episodes",
         "ocr_jobs",
-        "recovery_guides",
-        "recovery_guide_sources",
         "chat_sessions",
         "chat_messages",
         "chat_message_sources",
@@ -398,7 +344,6 @@ def test_all_19_domain_tables_are_registered() -> None:
         "background_jobs",
         "medications",
         "medication_slots",
-        "care_advices",
         "follow_up_visits",
     }
 

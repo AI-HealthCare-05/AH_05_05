@@ -298,7 +298,7 @@ export function OcrReviewPage() {
             setHospitalNameConfidence(data.fields.hospitalName?.confidence ?? null);
             setHospitalNameReviewed(false);
             if (state.episodeAlias === undefined) {
-              setEpisodeAlias(extractedHospitalName.slice(0, 50));
+              setEpisodeAlias(extractedHospitalName);
             }
             setDispensedDate(data.fields.dispensedDate?.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
@@ -659,7 +659,7 @@ export function OcrReviewPage() {
           label="복약 별칭 (선택)"
           aria-label="복약 별칭"
           placeholder="예: 감기약"
-          maxLength={50}
+          maxLength={255}
           value={episodeAlias}
           onChange={(event) => setEpisodeAlias(event.target.value)}
           disabled={confirmedReviewMode}
