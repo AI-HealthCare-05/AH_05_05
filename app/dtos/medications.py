@@ -56,7 +56,7 @@ class MedicationDoseResponse(CamelModel):
 
 
 class UpdateCareEpisodeAliasRequest(CamelModel):
-    alias: str | None = Field(max_length=255)
+    alias: str | None = Field(max_length=50)
 
     @field_validator("alias", mode="before")
     @classmethod
