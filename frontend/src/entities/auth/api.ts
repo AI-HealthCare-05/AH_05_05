@@ -31,6 +31,15 @@ export async function login(payload: LoginPayload): Promise<LoginResult> {
   return { accessToken: body.access_token };
 }
 
+/** 입력한 이메일 계정의 임시비밀번호 발송을 요청합니다. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay();
+    return;
+  }
+  await http.post('/v1/auth/password-reset', { email });
+}
+
 /** 로그아웃. 서버에 상태가 없으므로 메모리의 토큰만 비웁니다. */
 export function logout(): void {
   setAccessToken(null);

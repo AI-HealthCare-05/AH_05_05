@@ -73,6 +73,23 @@ test('회원가입은 이메일·인증코드·비밀번호·프로필 순서의
   await expect(page.getByRole('button', { name: '회원가입 완료' })).toBeDisabled();
 });
 
+test('공백이 섞인 이메일 인증번호를 붙여넣어도 숫자 6자리를 모두 입력한다', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('paste-code@example.com');
+  await page.getByRole('button', { name: '인증코드 받기' }).click();
+
+  await page.evaluate(() => navigator.clipboard.writeText('3 8 8 5 3 3'));
+  const verificationCode = page.getByLabel('인증코드');
+  await verificationCode.focus();
+  await page.keyboard.press('ControlOrMeta+V');
+
+  await expect(verificationCode).toHaveValue('388533');
+});
+
 test('틀린 이메일 인증번호는 입력란 아래 오류를 표시한다', async ({ page }) => {
   await openSignup(page);
   await page.getByLabel('이메일').fill('wrong-code@example.com');
@@ -132,6 +149,32 @@ test('비밀번호 표시 버튼은 레이아웃을 밀지 않고 44px 이상 �
     expect(box!.width).toBeGreaterThanOrEqual(44);
     expect(box!.height).toBeGreaterThanOrEqual(44);
   }
+});
+
+test('회원가입 비밀번호 형식이 올바르지 않으면 오류를 표시하고 비밀번호 단계에 머문다', async ({
+  page,
+}) => {
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('password-policy@example.com');
+  await page.getByRole('button', { name: '인증코드 받기' }).click();
+  await page.getByLabel('인증코드').fill('123456');
+  await page.getByRole('button', { name: '확인' }).click();
+  const password = page.getByLabel('비밀번호', { exact: true });
+  const passwordConfirm = page.getByLabel('비밀번호 확인', { exact: true });
+
+  await password.fill('1234');
+  await passwordConfirm.fill('1234');
+  await page.getByRole('button', { name: '다음' }).click();
+  await expect(page.getByText('비밀번호는 8자 이상이어야 합니다.')).toBeVisible();
+  await expect(page.getByText('3 / 4 단계', { exact: true })).toBeVisible();
+
+  await password.fill('abcdefgh');
+  await passwordConfirm.fill('abcdefgh');
+  await page.getByRole('button', { name: '다음' }).click();
+  await expect(
+    page.getByText('비밀번호에 대문자, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다.'),
+  ).toBeVisible();
+  await expect(page.getByText('3 / 4 단계', { exact: true })).toBeVisible();
 });
 
 test('튜토리얼은 한 브라우저 세션에서 한 번만 보이고 건너뛰기는 홈으로 간다', async ({ page }) => {

@@ -45,7 +45,7 @@ export function ImageViewer({
             alt={alt}
             className="max-h-full w-auto max-w-full object-contain"
             style={{ touchAction: 'auto' }}
-            onDoubleClick={() => onOpenChange(false)}
+            onClick={() => onOpenChange(false)}
           />
         </div>
       </DialogContent>
