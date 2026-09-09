@@ -119,9 +119,9 @@ async def test_migration_excludes_superseded_draft_fields_and_downgrades_child_f
     ]
 
 
-def test_migration_41_preserves_custom_models_and_matches_registered_metadata() -> None:
+def test_merge_migration_42_preserves_custom_models_and_matches_registered_metadata() -> None:
     current = decompress_dict(
-        import_module("app.core.db.migrations.models.41_20260909120000_challenge_rejoin_attempts").MODELS_STATE
+        import_module("app.core.db.migrations.models.42_20260909180000_merge_challenge_schema_heads").MODELS_STATE
     )
 
     Tortoise.init_models(TORTOISE_APP_MODELS, "models")

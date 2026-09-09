@@ -22,7 +22,7 @@ async def _check_applied_snapshot(db: BaseDBAsyncClient) -> None:
         return
     content = applied[0]["content"]
     previous = loads(content) if isinstance(content, str) else content
-    if previous not in (_previous_state, _ocr_state, _state):
+    if previous not in (_previous_state, _ocr_state, _parallel_state, _state):
         raise RuntimeError(
             "Challenge rejoin migration stopped: integrate the previously applied model snapshot "
             "before upgrading. Expected immutable custom/OCR migration 40 or the reconciled migration 41 snapshot; "
@@ -88,10 +88,11 @@ async def downgrade(db: BaseDBAsyncClient) -> str:
 _previous_state = decompress_dict(
     import_module("app.core.db.migrations.models.40_20260908160000_custom_challenge_participations").MODELS_STATE
 )
-# The parallel OCR migration follows custom 40 but records its older branch snapshot.
-# Accept that exact immutable state; keep the reconciled custom models in our output.
 _ocr_state = decompress_dict(
     import_module("app.core.db.migrations.models.40_20260909143654_allow_ocr_recapture_error_code").MODELS_STATE
+)
+_parallel_state = decompress_dict(
+    import_module("app.core.db.migrations.models.41_20260909000001_add_custom_challenge_and_badge_types").MODELS_STATE
 )
 _state = deepcopy(_previous_state)
 _state["models.UserChallenge"]["unique_together"] = []

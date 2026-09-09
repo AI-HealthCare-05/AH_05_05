@@ -19,6 +19,7 @@ class BadgeCreateRequest(SnakeModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     image_path: str = Field(min_length=1, max_length=500)
+    type: int | None = Field(default=None, ge=1)
     is_active: bool = True
 
 
@@ -26,6 +27,7 @@ class BadgeUpdateRequest(SnakeModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     image_path: str | None = Field(default=None, min_length=1, max_length=500)
+    type: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
 
 
@@ -34,7 +36,9 @@ class BadgeResponse(SnakeModel):
     name: str
     description: str | None
     image_path: str
+    type: int | None = Field(validation_alias="type_id")
     is_active: bool
+    is_deletable: bool = True
     created_by_admin_id: int | None
     updated_by_admin_id: int | None
     created_at: datetime
@@ -93,6 +97,7 @@ class ChallengeResponse(SnakeModel):
     reward_badge_id: int | None
     is_displayed: bool
     is_deleted: bool
+    is_deletable: bool = True
     created_by_admin_id: int | None
     updated_by_admin_id: int | None
     created_at: datetime
@@ -109,6 +114,7 @@ class BadgeListResponse(SnakeModel):
 class BadgeAdminListQuery(SnakeModel):
     badge_id: int | None = Field(default=None, ge=1)
     name: str | None = Field(default=None, max_length=100)
+    type: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=100)
@@ -140,12 +146,16 @@ class ChallengeAdminListQuery(SnakeModel):
 class CustomChallengeTemplateCreateRequest(SnakeModel):
     name: str = Field(min_length=1, max_length=100)
     check_type_id: int = Field(ge=1)
+    challenge_type: int | None = Field(default=None, ge=1)
+    reward_badge_id: int | None = Field(default=None, ge=1)
     is_active: bool = True
 
 
 class CustomChallengeTemplateUpdateRequest(SnakeModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     check_type_id: int | None = Field(default=None, ge=1)
+    challenge_type: int | None = Field(default=None, ge=1)
+    reward_badge_id: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
 
 
@@ -153,6 +163,8 @@ class CustomChallengeTemplateResponse(SnakeModel):
     id: int
     name: str
     check_type_id: int
+    challenge_type: int | None = Field(validation_alias="challenge_type_id")
+    reward_badge_id: int | None
     is_active: bool
     created_by_admin_id: int | None
     updated_by_admin_id: int | None
@@ -170,7 +182,9 @@ class CustomChallengeTemplateListResponse(SnakeModel):
 class CustomChallengeTemplateAdminListQuery(SnakeModel):
     template_id: int | None = Field(default=None, ge=1)
     name: str | None = Field(default=None, max_length=100)
+    challenge_type: int | None = Field(default=None, ge=1)
     check_type_id: int | None = Field(default=None, ge=1)
+    reward_badge_id: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=100)

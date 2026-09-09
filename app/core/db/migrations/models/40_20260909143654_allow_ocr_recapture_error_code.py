@@ -5,10 +5,20 @@ from tortoise import BaseDBAsyncClient
 RUN_IN_TRANSACTION = True
 
 
+async def _has_error_code_check(db: BaseDBAsyncClient) -> bool:
+    rows = await db.execute_query_dict(
+        "SELECT 1 FROM information_schema.TABLE_CONSTRAINTS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ocr_jobs' "
+        "AND CONSTRAINT_NAME = 'chk_ocr_error_code' AND CONSTRAINT_TYPE = 'CHECK';"
+    )
+    return bool(rows)
+
+
 async def upgrade(db: BaseDBAsyncClient) -> str:
-    return """
+    drop_check = "DROP CHECK `chk_ocr_error_code`," if db is None or await _has_error_code_check(db) else ""
+    return f"""
         ALTER TABLE `ocr_jobs`
-            DROP CHECK `chk_ocr_error_code`,
+            {drop_check}
             ADD CONSTRAINT `chk_ocr_error_code` CHECK (
                 (`status` = 'FAILED' AND `error_code` IS NOT NULL AND `error_code` IN (
                     'OCR_PROVIDER_ERROR', 'OCR_PROVIDER_TIMEOUT', 'EXTRACTION_FAILED',
@@ -24,9 +34,10 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
-    return """
+    drop_check = "DROP CHECK `chk_ocr_error_code`," if db is None or await _has_error_code_check(db) else ""
+    return f"""
         ALTER TABLE `ocr_jobs`
-            DROP CHECK `chk_ocr_error_code`,
+            {drop_check}
             ADD CONSTRAINT `chk_ocr_error_code` CHECK (
                 (`status` = 'FAILED' AND `error_code` IS NOT NULL AND `error_code` IN (
                     'OCR_PROVIDER_ERROR', 'OCR_PROVIDER_TIMEOUT', 'EXTRACTION_FAILED',

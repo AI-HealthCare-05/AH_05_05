@@ -1,10 +1,18 @@
 import { ApiError, escapeHtml, get, patch, post, requireLogin, tableState } from "./api.js";
 
-const COLUMN_COUNT = 5;
+const COLUMN_COUNT = 6;
+export const CUSTOM_TEMPLATE_CHECK_TYPE_PATH = "/common-codes/CHL/CST_CHK_TYPE";
+export const CUSTOM_TEMPLATE_CHALLENGE_TYPE_PATH = "/common-codes/CHL/CST_CHL_TYPE";
+export const CUSTOM_TEMPLATE_BADGE_TYPE_PATH = "/common-codes/CHL/BDG_TYPE";
+
+export function customBadgeTypeId(items) {
+  return items.find((item) => item.detail_code === "CUSTOM")?.id ?? null;
+}
 
 export function resetCustomTemplateFilters(form) {
   form.elements.template_id.value = "";
   form.elements.name.value = "";
+  form.elements.challenge_type.value = "";
   form.elements.check_type_id.value = "";
   form.elements.is_active.value = "";
 }
@@ -20,22 +28,49 @@ function initializeCustomChallengeTemplateManagement() {
   const formTitle = form.querySelector("[data-form-title]");
   let editingId = null;
   let checkTypes = [];
+  let challengeTypes = [];
+  let badges = [];
 
   const optionMarkup = (selected = "") => checkTypes
     .map((item) => `<option value="${item.id}" ${String(item.id) === String(selected) ? "selected" : ""}>${escapeHtml(item.detail_name)}</option>`)
     .join("");
 
   const loadLookups = async () => {
-    if (!checkTypes.length) {
-      const response = await get("/common-codes/CHL/CHK_TYPE2");
-      checkTypes = response.items;
+    if (!checkTypes.length || !challengeTypes.length) {
+      const [checkTypeResponse, challengeTypeResponse, badgeTypeResponse] = await Promise.all([
+        get(CUSTOM_TEMPLATE_CHECK_TYPE_PATH),
+        get(CUSTOM_TEMPLATE_CHALLENGE_TYPE_PATH),
+        get(CUSTOM_TEMPLATE_BADGE_TYPE_PATH),
+      ]);
+      const badgeTypeId = customBadgeTypeId(badgeTypeResponse.items);
+      if (!badgeTypeId) throw new Error("CUSTOM 배지 유형을 찾을 수 없습니다.");
+      const badgeResponse = await get("/admin/badges", {
+        type: badgeTypeId,
+        is_active: true,
+        offset: 0,
+        limit: 100,
+      });
+      checkTypes = checkTypeResponse.items;
+      challengeTypes = challengeTypeResponse.items;
+      badges = badgeResponse.items;
     }
     const selectedSearch = searchForm.elements.check_type_id.value;
     searchForm.elements.check_type_id.innerHTML = `<option value="">인증방식</option>${optionMarkup(selectedSearch)}`;
+    const selectedChallengeType = searchForm.elements.challenge_type.value;
+    const challengeTypeOptions = challengeTypes
+      .map((item) => `<option value="${item.id}">${escapeHtml(item.detail_name)}</option>`)
+      .join("");
+    searchForm.elements.challenge_type.innerHTML = `<option value="">챌린지유형</option>${challengeTypeOptions}`;
+    searchForm.elements.challenge_type.value = selectedChallengeType;
     form.elements.check_type_id.innerHTML = `<option value="">선택</option>${optionMarkup()}`;
+    form.elements.challenge_type.innerHTML = `<option value="">선택</option>${challengeTypeOptions}`;
+    form.elements.reward_badge_id.innerHTML = `<option value="">선택 안 함</option>${badges
+      .map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`)
+      .join("")}`;
   };
 
   const checkTypeName = (id) => checkTypes.find((item) => String(item.id) === String(id))?.detail_name ?? "-";
+  const challengeTypeName = (id) => challengeTypes.find((item) => String(item.id) === String(id))?.detail_name ?? "-";
 
   const load = async () => {
     tableState.loading(tbody, COLUMN_COUNT, "맞춤 챌린지 템플릿을 불러오는 중…");
@@ -45,6 +80,7 @@ function initializeCustomChallengeTemplateManagement() {
       const response = await get("/admin/custom-challenge-templates", {
         template_id: search.get("template_id")?.trim() || undefined,
         name: search.get("name")?.trim() || undefined,
+        challenge_type: search.get("challenge_type") || undefined,
         check_type_id: search.get("check_type_id") || undefined,
         is_active: search.get("is_active") || undefined,
         offset: 0,
@@ -54,6 +90,7 @@ function initializeCustomChallengeTemplateManagement() {
       tbody.innerHTML = response.items.map((item) => `<tr>
         <td>${item.id}</td>
         <td><strong>${escapeHtml(item.name)}</strong></td>
+        <td>${escapeHtml(challengeTypeName(item.challenge_type))}</td>
         <td>${escapeHtml(checkTypeName(item.check_type_id))}</td>
         <td><span class="status-badge ${item.is_active ? "status-active" : "status-stopped"}">${item.is_active ? "사용" : "미사용"}</span></td>
         <td><button type="button" class="ui-link-button" data-edit-custom-template="${item.id}">수정</button></td>
@@ -94,6 +131,8 @@ function initializeCustomChallengeTemplateManagement() {
       editingId = item.id;
       form.elements.name.value = item.name;
       form.elements.check_type_id.value = item.check_type_id;
+      form.elements.challenge_type.value = item.challenge_type ?? "";
+      form.elements.reward_badge_id.value = item.reward_badge_id ?? "";
       form.elements.is_active.checked = item.is_active;
       formTitle.textContent = "맞춤 챌린지 템플릿 수정";
       error.textContent = "";
@@ -112,6 +151,8 @@ function initializeCustomChallengeTemplateManagement() {
       const payload = {
         name: form.elements.name.value.trim(),
         check_type_id: Number(form.elements.check_type_id.value),
+        challenge_type: Number(form.elements.challenge_type.value) || null,
+        reward_badge_id: Number(form.elements.reward_badge_id.value) || null,
         is_active: form.elements.is_active.checked,
       };
       if (editingId) await patch(`/admin/custom-challenge-templates/${editingId}`, payload);

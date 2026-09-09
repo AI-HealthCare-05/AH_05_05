@@ -4,8 +4,10 @@ from tortoise.exceptions import IntegrityError
 
 from app.core import config
 from app.core.exceptions import (
+    BadgeInUseError,
     BadgeNameAlreadyExistsError,
     BadgeNotFoundError,
+    ChallengeInUseError,
     ChallengeNotFoundError,
     CustomChallengeTemplateNameAlreadyExistsError,
     CustomChallengeTemplateNotFoundError,
@@ -25,7 +27,7 @@ from app.dtos.challenges import (
     CustomChallengeTemplateResponse,
     CustomChallengeTemplateUpdateRequest,
 )
-from app.models.challenges import Badge, Challenge, CustomChallengeTemplate
+from app.models.challenges import Badge, Challenge, CustomChallengeTemplate, UserBadge, UserChallenge
 from app.models.common_codes import CommonCode
 from app.repositories.badge_repository import BadgeRepository
 from app.repositories.challenge_repository import ChallengeRepository
@@ -46,15 +48,21 @@ class AdminChallengeService:
         self.custom_templates = CustomChallengeTemplateRepository()
 
     async def create_badge(self, data: BadgeCreateRequest, admin_id: int) -> BadgeResponse:
+        values = data.model_dump()
+        badge_type = values.pop("type")
+        if badge_type is not None:
+            await self._validate_common_code(badge_type, "BDG_TYPE")
+        values["type_id"] = badge_type
         try:
-            badge = await Badge.create(**data.model_dump(), created_by_admin_id=admin_id)
+            badge = await Badge.create(**values, created_by_admin_id=admin_id)
         except IntegrityError as error:
             raise BadgeNameAlreadyExistsError() from error
         return self.badge_response(badge)
 
     async def list_badges(self, query: BadgeAdminListQuery) -> tuple[list[BadgeResponse], int]:
         items, total = await self.badges.list(**query.model_dump())
-        return [self.badge_response(item) for item in items], total
+        used_badge_ids = await self._used_badge_ids([item.id for item in items])
+        return [self.badge_response(item, is_deletable=item.id not in used_badge_ids) for item in items], total
 
     async def get_badge(self, badge_id: int) -> BadgeResponse:
         badge = await self.badges.get(badge_id)
@@ -72,6 +80,11 @@ class AdminChallengeService:
         if badge is None:
             raise BadgeNotFoundError()
         values = data.model_dump(exclude_unset=True)
+        if "type" in values:
+            badge_type = values.pop("type")
+            if badge_type is not None:
+                await self._validate_common_code(badge_type, "BDG_TYPE")
+            values["type_id"] = badge_type
         for key, value in values.items():
             setattr(badge, key, value)
         badge.updated_by_admin_id = admin_id
@@ -80,6 +93,34 @@ class AdminChallengeService:
         except IntegrityError as error:
             raise BadgeNameAlreadyExistsError() from error
         return self.badge_response(badge)
+
+    async def delete_badge(self, badge_id: int) -> None:
+        badge = await self.badges.get(badge_id)
+        if badge is None:
+            raise BadgeNotFoundError()
+        if badge_id in await self._used_badge_ids([badge_id]):
+            raise BadgeInUseError()
+        try:
+            await badge.delete()
+        except IntegrityError as error:
+            raise BadgeInUseError() from error
+
+    @staticmethod
+    async def _used_badge_ids(badge_ids: list[int]) -> set[int]:
+        if not badge_ids:
+            return set()
+        challenge_ids = await Challenge.filter(reward_badge_id__in=badge_ids).values_list(
+            "reward_badge_id",
+            flat=True,
+        )
+        template_ids = await CustomChallengeTemplate.filter(
+            reward_badge_id__in=badge_ids,
+        ).values_list("reward_badge_id", flat=True)
+        awarded_ids = await UserBadge.filter(badge_id__in=badge_ids).values_list(
+            "badge_id",
+            flat=True,
+        )
+        return set(challenge_ids) | set(template_ids) | set(awarded_ids)
 
     async def create_challenge(
         self,
@@ -95,7 +136,14 @@ class AdminChallengeService:
         query: ChallengeAdminListQuery,
     ) -> tuple[list[ChallengeResponse], int]:
         items, total = await self.challenges.list(**query.model_dump())
-        return [self.challenge_response(item) for item in items], total
+        challenge_ids = [item.id for item in items]
+        joined_ids = set(
+            await UserChallenge.filter(challenge_id__in=challenge_ids).values_list(
+                "challenge_id",
+                flat=True,
+            )
+        )
+        return [self.challenge_response(item, is_deletable=item.id not in joined_ids) for item in items], total
 
     async def get_challenge(self, challenge_id: int) -> ChallengeResponse:
         challenge = await self.challenges.get(challenge_id)
@@ -128,6 +176,8 @@ class AdminChallengeService:
         challenge = await self.challenges.get(challenge_id)
         if challenge is None:
             raise ChallengeNotFoundError()
+        if await UserChallenge.filter(challenge_id=challenge_id).exists():
+            raise ChallengeInUseError()
         challenge.is_deleted = True
         challenge.is_displayed = False
         challenge.deleted_at = datetime.now(config.TIMEZONE)
@@ -139,8 +189,15 @@ class AdminChallengeService:
         data: CustomChallengeTemplateCreateRequest,
         admin_id: int,
     ) -> CustomChallengeTemplateResponse:
-        await self._validate_common_code(data.check_type_id, "CHK_TYPE2")
+        await self._validate_common_code(data.check_type_id, "CST_CHK_TYPE")
         values = data.model_dump()
+        challenge_type = values.pop("challenge_type")
+        if challenge_type is not None:
+            await self._validate_common_code(challenge_type, "CST_CHL_TYPE")
+        values["challenge_type_id"] = challenge_type
+        reward_badge_id = values.get("reward_badge_id")
+        if reward_badge_id is not None and not await Badge.filter(id=reward_badge_id, is_active=True).exists():
+            raise BadgeNotFoundError()
         values["name"] = values["name"].strip()
         try:
             template = await CustomChallengeTemplate.create(
@@ -175,7 +232,16 @@ class AdminChallengeService:
             raise CustomChallengeTemplateNotFoundError()
         values = data.model_dump(exclude_unset=True)
         if "check_type_id" in values:
-            await self._validate_common_code(values["check_type_id"], "CHK_TYPE2")
+            await self._validate_common_code(values["check_type_id"], "CST_CHK_TYPE")
+        if "challenge_type" in values:
+            challenge_type = values.pop("challenge_type")
+            if challenge_type is not None:
+                await self._validate_common_code(challenge_type, "CST_CHL_TYPE")
+            values["challenge_type_id"] = challenge_type
+        if "reward_badge_id" in values:
+            reward_badge_id = values["reward_badge_id"]
+            if reward_badge_id is not None and not await Badge.filter(id=reward_badge_id, is_active=True).exists():
+                raise BadgeNotFoundError()
         if "name" in values:
             values["name"] = values["name"].strip()
         for key, value in values.items():
@@ -216,12 +282,18 @@ class AdminChallengeService:
             raise InvalidCommonCodeError(f"{group_code} 공통코드를 확인해 주세요.")
 
     @staticmethod
-    def badge_response(badge: Badge) -> BadgeResponse:
-        return BadgeResponse.model_validate(badge)
+    def badge_response(badge: Badge, *, is_deletable: bool = True) -> BadgeResponse:
+        response = BadgeResponse.model_validate(badge)
+        return response.model_copy(update={"is_deletable": is_deletable})
 
     @staticmethod
-    def challenge_response(challenge: Challenge) -> ChallengeResponse:
-        return ChallengeResponse.model_validate(challenge)
+    def challenge_response(
+        challenge: Challenge,
+        *,
+        is_deletable: bool = True,
+    ) -> ChallengeResponse:
+        response = ChallengeResponse.model_validate(challenge)
+        return response.model_copy(update={"is_deletable": is_deletable})
 
     @staticmethod
     def custom_template_response(

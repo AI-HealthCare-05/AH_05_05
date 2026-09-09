@@ -111,13 +111,10 @@ async def update_badge(
     return await AdminChallengeService().update_badge(badge_id, request, actor.admin_id)
 
 
-@admin_challenge_router.delete("/badges/{badge_id}", status_code=204, summary="배지 비활성화")
-async def deactivate_badge(badge_id: Annotated[int, Path(ge=1)], actor: AdminWrite) -> Response:
-    await AdminChallengeService().update_badge(
-        badge_id,
-        BadgeUpdateRequest(is_active=False),
-        actor.admin_id,
-    )
+@admin_challenge_router.delete("/badges/{badge_id}", status_code=204, summary="배지 삭제")
+async def delete_badge(badge_id: Annotated[int, Path(ge=1)], _: AdminCreateUpdate) -> Response:
+    """챌린지·템플릿·지급 이력에서 사용하지 않는 배지를 삭제한다."""
+    await AdminChallengeService().delete_badge(badge_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

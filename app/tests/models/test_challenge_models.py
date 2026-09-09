@@ -65,12 +65,21 @@ def test_challenge_common_code_and_history_relationships_are_restrictive() -> No
 
 
 def test_custom_challenge_template_exposes_management_fields() -> None:
+    badge_fields = models.Badge._meta.fields_map
     fields = models.CustomChallengeTemplate._meta.fields_map
 
+    assert badge_fields["type"].model_name == "models.CommonCode"
+    assert badge_fields["type"].null is True
+    assert badge_fields["type_id"].source_field == "type"
     assert fields["name"].max_length == 100
     assert fields["name"].unique is True
     assert fields["is_active"].default is True
     assert fields["check_type"].model_name == "models.CommonCode"
     assert fields["check_type"].on_delete is OnDelete.RESTRICT
+    assert fields["challenge_type"].model_name == "models.CommonCode"
+    assert fields["challenge_type"].null is True
+    assert fields["challenge_type_id"].source_field == "challenge_type"
+    assert fields["reward_badge"].model_name == "models.Badge"
+    assert fields["reward_badge"].null is True
     assert fields["created_by_admin"].null is True
     assert fields["updated_by_admin"].null is True

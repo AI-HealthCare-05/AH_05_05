@@ -10,6 +10,7 @@ from tortoise.contrib.test import TestCase
 
 from app.core import config
 from app.dependencies.security import get_request_user
+from app.models.challenges import Challenge, UserBadge, UserChallenge
 from app.models.common_codes import CommonCode, CommonCodeGroup
 from app.models.enums import AdminRole
 from app.tests.admin_apis.conftest import auth_header, create_admin, create_user, request
@@ -38,7 +39,9 @@ class TestChallengeDomainAPI(TestCase):
             "CHL_TYPE": ["WALK"],
             "CHL_PERIOD": ["D7", "D30"],
             "CHK_TYPE": ["SELF", "MANUAL"],
-            "CHK_TYPE2": ["COUNT", "PHOTO"],
+            "CST_CHK_TYPE": ["COUNT", "PHOTO"],
+            "CST_CHL_TYPE": ["CUSTOM", "HABIT"],
+            "BDG_TYPE": ["ACHIEVEMENT", "MILESTONE"],
             "CHK_FREQ": ["DAILY", "WEEKLY_3"],
         }
         result: dict[str, CommonCode] = {}
@@ -57,6 +60,7 @@ class TestChallengeDomainAPI(TestCase):
         return result
 
     async def test_admin_can_create_search_and_update_custom_challenge_template(self) -> None:
+        badge = await self._create_badge()
         created = await request(
             "POST",
             "/api/v1/admin/custom-challenge-templates",
@@ -64,11 +68,15 @@ class TestChallengeDomainAPI(TestCase):
             json={
                 "name": "하루 물 8잔",
                 "check_type_id": self.codes["COUNT"].id,
+                "challenge_type": self.codes["CUSTOM"].id,
+                "reward_badge_id": badge["id"],
                 "is_active": True,
             },
         )
 
         assert created.status_code == 201, created.text
+        assert created.json()["challenge_type"] == self.codes["CUSTOM"].id
+        assert created.json()["reward_badge_id"] == badge["id"]
         template_id = created.json()["id"]
 
         listed = await request(
@@ -111,6 +119,62 @@ class TestChallengeDomainAPI(TestCase):
         assert response.status_code == 422
         assert response.json()["code"] == "INVALID_COMMON_CODE"
 
+    async def test_admin_filters_custom_templates_by_reward_badge(self) -> None:
+        badge = await self._create_badge()
+        for name, reward_badge_id in (("배지 지정", badge["id"]), ("배지 미지정", None)):
+            created = await request(
+                "POST",
+                "/api/v1/admin/custom-challenge-templates",
+                headers=self.admin_headers,
+                json={
+                    "name": name,
+                    "check_type_id": self.codes["COUNT"].id,
+                    "reward_badge_id": reward_badge_id,
+                    "is_active": True,
+                },
+            )
+            assert created.status_code == 201, created.text
+
+        response = await request(
+            "GET",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            params={"reward_badge_id": badge["id"]},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["total_count"] == 1
+        assert response.json()["items"][0]["name"] == "배지 지정"
+
+    async def test_admin_filters_custom_templates_by_challenge_type(self) -> None:
+        for name, challenge_type in (
+            ("맞춤형 템플릿", self.codes["CUSTOM"].id),
+            ("습관형 템플릿", self.codes["HABIT"].id),
+        ):
+            created = await request(
+                "POST",
+                "/api/v1/admin/custom-challenge-templates",
+                headers=self.admin_headers,
+                json={
+                    "name": name,
+                    "check_type_id": self.codes["COUNT"].id,
+                    "challenge_type": challenge_type,
+                    "is_active": True,
+                },
+            )
+            assert created.status_code == 201, created.text
+
+        response = await request(
+            "GET",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            params={"challenge_type": self.codes["HABIT"].id},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["total_count"] == 1
+        assert response.json()["items"][0]["name"] == "습관형 템플릿"
+
     async def _create_badge(self) -> dict:
         response = await request(
             "POST",
@@ -120,11 +184,160 @@ class TestChallengeDomainAPI(TestCase):
                 "name": "30일 걷기 배지",
                 "description": "30일 걷기 완료",
                 "image_path": "/media/badges/walk.png",
+                "type": self.codes["ACHIEVEMENT"].id,
                 "is_active": True,
             },
         )
         assert response.status_code == 201, response.text
+        assert response.json()["type"] == self.codes["ACHIEVEMENT"].id
         return response.json()
+
+    async def test_admin_filters_badges_by_badge_type(self) -> None:
+        achievement = await self._create_badge()
+        milestone = await request(
+            "POST",
+            "/api/v1/admin/badges",
+            headers=self.admin_headers,
+            json={
+                "name": "누적 달성 배지",
+                "description": "누적 목표 달성",
+                "image_path": "/media/badges/milestone.png",
+                "type": self.codes["MILESTONE"].id,
+                "is_active": True,
+            },
+        )
+        assert milestone.status_code == 201, milestone.text
+
+        response = await request(
+            "GET",
+            "/api/v1/admin/badges",
+            headers=self.admin_headers,
+            params={"type": self.codes["ACHIEVEMENT"].id},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["total_count"] == 1
+        assert response.json()["items"][0]["id"] == achievement["id"]
+
+    async def test_badge_list_marks_challenge_badge_as_not_deletable(self) -> None:
+        used_badge = await self._create_badge()
+        unused_badge = await request(
+            "POST",
+            "/api/v1/admin/badges",
+            headers=self.admin_headers,
+            json={
+                "name": "미사용 배지",
+                "image_path": "/media/badges/unused.png",
+                "type": self.codes["MILESTONE"].id,
+                "is_active": True,
+            },
+        )
+        assert unused_badge.status_code == 201, unused_badge.text
+        await self._create_challenge(used_badge["id"])
+
+        response = await request(
+            "GET",
+            "/api/v1/admin/badges",
+            headers=self.admin_headers,
+        )
+
+        assert response.status_code == 200, response.text
+        deletable_by_id = {item["id"]: item["is_deletable"] for item in response.json()["items"]}
+        assert deletable_by_id == {
+            used_badge["id"]: False,
+            unused_badge.json()["id"]: True,
+        }
+
+    async def test_staff_can_delete_an_unused_badge(self) -> None:
+        badge = await self._create_badge()
+        staff = await create_admin(
+            name="챌린지 스태프",
+            email="challenge-staff@example.com",
+            role=AdminRole.STAFF,
+        )
+
+        deleted = await request(
+            "DELETE",
+            f"/api/v1/admin/badges/{badge['id']}",
+            headers=auth_header(staff.id),
+        )
+        detail = await request(
+            "GET",
+            f"/api/v1/admin/badges/{badge['id']}",
+            headers=self.admin_headers,
+        )
+
+        assert deleted.status_code == 204, deleted.text
+        assert detail.status_code == 404
+
+    async def test_admin_cannot_delete_badge_used_by_challenge(self) -> None:
+        badge = await self._create_badge()
+        await self._create_challenge(badge["id"])
+
+        response = await request(
+            "DELETE",
+            f"/api/v1/admin/badges/{badge['id']}",
+            headers=self.admin_headers,
+        )
+
+        assert response.status_code == 409, response.text
+        assert response.json() == {
+            "code": "BADGE_IN_USE",
+            "message": "사용 중인 배지는 삭제할 수 없습니다.",
+        }
+
+    async def test_admin_cannot_delete_badge_used_by_custom_template(self) -> None:
+        badge = await self._create_badge()
+        created = await request(
+            "POST",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            json={
+                "name": "배지 참조 템플릿",
+                "check_type_id": self.codes["COUNT"].id,
+                "challenge_type": self.codes["CUSTOM"].id,
+                "reward_badge_id": badge["id"],
+                "is_active": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+
+        response = await request(
+            "DELETE",
+            f"/api/v1/admin/badges/{badge['id']}",
+            headers=self.admin_headers,
+        )
+
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "BADGE_IN_USE"
+
+    async def test_admin_cannot_delete_badge_already_awarded_to_user(self) -> None:
+        from app.main import app
+
+        badge = await self._create_badge()
+        challenge = await self._create_challenge(badge["id"])
+        app.dependency_overrides[get_request_user] = lambda: self.user
+        joined = await request("POST", f"/api/v1/user/challenges/{challenge['id']}/join")
+        assert joined.status_code == 201, joined.text
+        participation = await UserChallenge.get(id=joined.json()["id"])
+        await UserBadge.create(
+            user=self.user,
+            badge_id=badge["id"],
+            challenge_id=challenge["id"],
+            user_challenge=participation,
+            badge_name=badge["name"],
+            badge_image_path=badge["image_path"],
+        )
+        await Challenge.filter(id=challenge["id"]).update(reward_badge_id=None)
+
+        response = await request(
+            "DELETE",
+            f"/api/v1/admin/badges/{badge['id']}",
+            headers=self.admin_headers,
+        )
+
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "BADGE_IN_USE"
 
     async def _create_challenge(
         self,
@@ -132,8 +345,9 @@ class TestChallengeDomainAPI(TestCase):
         check_type: str = "SELF",
         period: str = "D30",
         frequency: str = "WEEKLY_3",
+        reference_time: datetime | None = None,
     ) -> dict:
-        now = datetime.now(config.TIMEZONE)
+        now = reference_time or datetime.now(config.TIMEZONE)
         response = await request(
             "POST",
             "/api/v1/admin/challenges",
@@ -172,6 +386,34 @@ class TestChallengeDomainAPI(TestCase):
         assert body["target_count"] == 12
         assert len(body["progress_periods"]) == 4
         assert body["status"] == "ACTIVE"
+
+    async def test_joined_challenge_is_not_deletable(self) -> None:
+        from app.main import app
+
+        badge = await self._create_badge()
+        challenge = await self._create_challenge(badge["id"])
+        app.dependency_overrides[get_request_user] = lambda: self.user
+        joined = await request("POST", f"/api/v1/user/challenges/{challenge['id']}/join")
+        assert joined.status_code == 201, joined.text
+
+        listed = await request(
+            "GET",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+        )
+        deleted = await request(
+            "DELETE",
+            f"/api/v1/admin/challenges/{challenge['id']}",
+            headers=self.admin_headers,
+        )
+
+        assert listed.status_code == 200, listed.text
+        assert listed.json()["items"][0]["is_deletable"] is False
+        assert deleted.status_code == 409, deleted.text
+        assert deleted.json() == {
+            "code": "CHALLENGE_IN_USE",
+            "message": "참여자가 있는 챌린지는 삭제할 수 없습니다.",
+        }
 
     async def test_admin_uploads_badge_image(self) -> None:
         buffer = BytesIO()
@@ -289,11 +531,21 @@ class TestChallengeDomainAPI(TestCase):
         assert badges.json()["total_count"] == 1
         assert badges.json()["items"][0]["badge_id"] == badge["id"]
 
-    async def _join_daily(self, check_type: str = "SELF") -> dict:
+    async def _join_daily(
+        self,
+        check_type: str = "SELF",
+        reference_time: datetime | None = None,
+    ) -> dict:
         from app.main import app
 
         badge = await self._create_badge()
-        challenge = await self._create_challenge(badge["id"], period="D7", frequency="DAILY", check_type=check_type)
+        challenge = await self._create_challenge(
+            badge["id"],
+            period="D7",
+            frequency="DAILY",
+            check_type=check_type,
+            reference_time=reference_time,
+        )
         app.dependency_overrides[get_request_user] = lambda: self.user
         response = await request("POST", f"/api/v1/user/challenges/{challenge['id']}/join")
         assert response.status_code == 201, response.text
@@ -455,7 +707,7 @@ class TestChallengeDomainAPI(TestCase):
         ):
             fixture_clock.now.return_value = day
             clock.now.return_value = day
-            participation = await self._join_daily()
+            participation = await self._join_daily(reference_time=day)
         assert datetime.fromisoformat(participation["end_at"]).astimezone(config.TIMEZONE) == datetime(
             2026, 9, 15, tzinfo=config.TIMEZONE
         )

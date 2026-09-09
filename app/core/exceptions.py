@@ -86,10 +86,22 @@ class BadgeNameAlreadyExistsError(AppError):
     message = "이미 등록된 배지 이름입니다."
 
 
+class BadgeInUseError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "BADGE_IN_USE"
+    message = "사용 중인 배지는 삭제할 수 없습니다."
+
+
 class ChallengeNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "CHALLENGE_NOT_FOUND"
     message = "챌린지를 찾을 수 없습니다."
+
+
+class ChallengeInUseError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHALLENGE_IN_USE"
+    message = "참여자가 있는 챌린지는 삭제할 수 없습니다."
 
 
 class CustomChallengeTemplateNotFoundError(AppError):
