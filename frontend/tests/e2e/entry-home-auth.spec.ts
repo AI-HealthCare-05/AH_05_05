@@ -9,8 +9,10 @@ import {
   openSignup,
 } from './helpers/signup';
 
-test.beforeEach(() => {
+test.beforeEach(async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+  // Ordinary home now reads official challenges even while auth/medication use mock fixtures.
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
 });
 
 test.setTimeout(20_000);

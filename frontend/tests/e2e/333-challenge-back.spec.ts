@@ -3,6 +3,10 @@ import { expect, test } from 'playwright/test';
 test.setTimeout(120_000);
 test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
+  // Ordinary challenge routes use the official API; keep this synthetic session authenticated.
+  for (const resource of ['challenges', 'badges']) {
+    await page.route(`**/api/v1/user/${resource}`, route => route.fulfill({ json: { items: [], total_count: 0 } }));
+  }
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'back-navigation-test');
     sessionStorage.setItem('poke.account-principal', 'back@example.com');

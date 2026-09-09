@@ -193,11 +193,11 @@ class UserChallenge(models.Model):
 
     class Meta:
         table = "user_challenges"
-        unique_together = (("user", "challenge"),)
         indexes = (
             Index(fields=("user_id", "status", "joined_at"), name="idx_user_challenges_user_status"),
             Index(fields=("challenge_id", "status"), name="idx_user_challenges_challenge_status"),
             Index(fields=("end_at",), name="idx_user_challenges_end_at"),
+            Index(fields=("user_id", "challenge_id"), name="idx_user_challenges_user_challenge"),
         )
 
 
