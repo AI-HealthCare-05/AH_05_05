@@ -5,39 +5,142 @@ from tortoise import BaseDBAsyncClient
 RUN_IN_TRANSACTION = True
 
 
-async def upgrade(db: BaseDBAsyncClient) -> str:
-    return """
-        ALTER TABLE `badges`
-            ADD COLUMN `type` BIGINT NULL COMMENT '배지 유형 공통코드 ID(CHL/BDG_TYPE)',
-            ADD INDEX `idx_badges_type` (`type`),
-            ADD CONSTRAINT `fk_badges_type_common_code`
-                FOREIGN KEY (`type`) REFERENCES `common_codes` (`id`) ON DELETE RESTRICT;
-
-        ALTER TABLE `custom_challenge_templates`
-            ADD COLUMN `challenge_type` BIGINT NULL COMMENT '맞춤 챌린지 유형 공통코드 ID(CHL/CST_CHL_TYPE)',
-            ADD COLUMN `reward_badge_id` BIGINT NULL COMMENT '맞춤 챌린지 완료 시 지급할 배지 ID',
-            ADD INDEX `idx_custom_challenge_templates_challenge_type` (`challenge_type`),
-            ADD INDEX `idx_custom_challenge_templates_reward_badge` (`reward_badge_id`),
-            ADD CONSTRAINT `fk_custom_templates_challenge_type`
-                FOREIGN KEY (`challenge_type`) REFERENCES `common_codes` (`id`) ON DELETE RESTRICT,
-            ADD CONSTRAINT `fk_custom_templates_reward_badge`
-                FOREIGN KEY (`reward_badge_id`) REFERENCES `badges` (`id`) ON DELETE RESTRICT;"""
+async def _schema_names(
+    db: BaseDBAsyncClient,
+    table: str,
+    schema_table: str,
+    name_column: str,
+) -> set[str]:
+    rows = await db.execute_query_dict(
+        f"SELECT `{name_column}` AS `name` FROM information_schema.`{schema_table}` "
+        f"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{table}';"
+    )
+    return {str(row["name"]) for row in rows}
 
 
-async def downgrade(db: BaseDBAsyncClient) -> str:
-    return """
-        ALTER TABLE `custom_challenge_templates`
-            DROP FOREIGN KEY `fk_custom_templates_reward_badge`,
-            DROP FOREIGN KEY `fk_custom_templates_challenge_type`,
-            DROP INDEX `idx_custom_challenge_templates_reward_badge`,
-            DROP INDEX `idx_custom_challenge_templates_challenge_type`,
-            DROP COLUMN `reward_badge_id`,
-            DROP COLUMN `challenge_type`;
+def _alter(table: str, changes: list[str]) -> str:
+    return f"ALTER TABLE `{table}` " + ", ".join(changes) + ";" if changes else ""
 
-        ALTER TABLE `badges`
-            DROP FOREIGN KEY `fk_badges_type_common_code`,
-            DROP INDEX `idx_badges_type`,
-            DROP COLUMN `type`;"""
+
+async def upgrade(db: BaseDBAsyncClient) -> str:  # noqa: C901 - idempotent DDL needs per-object checks
+    if db is None:
+        badge_columns = badge_indexes = badge_constraints = set()
+        template_columns = template_indexes = template_constraints = set()
+    else:
+        badge_columns = await _schema_names(db, "badges", "COLUMNS", "COLUMN_NAME")
+        badge_indexes = await _schema_names(db, "badges", "STATISTICS", "INDEX_NAME")
+        badge_constraints = await _schema_names(db, "badges", "TABLE_CONSTRAINTS", "CONSTRAINT_NAME")
+        template_columns = await _schema_names(db, "custom_challenge_templates", "COLUMNS", "COLUMN_NAME")
+        template_indexes = await _schema_names(db, "custom_challenge_templates", "STATISTICS", "INDEX_NAME")
+        template_constraints = await _schema_names(
+            db,
+            "custom_challenge_templates",
+            "TABLE_CONSTRAINTS",
+            "CONSTRAINT_NAME",
+        )
+
+    badge_changes = []
+    if "type" not in badge_columns:
+        badge_changes.append("ADD COLUMN `type` BIGINT NULL COMMENT '배지 유형 공통코드 ID(CHL/BDG_TYPE)'")
+    if "idx_badges_type" not in badge_indexes:
+        badge_changes.append("ADD INDEX `idx_badges_type` (`type`)")
+    if "fk_badges_type_common_code" not in badge_constraints:
+        badge_changes.append(
+            "ADD CONSTRAINT `fk_badges_type_common_code` "
+            "FOREIGN KEY (`type`) REFERENCES `common_codes` (`id`) ON DELETE RESTRICT"
+        )
+
+    template_changes = []
+    if "challenge_type" not in template_columns:
+        template_changes.append(
+            "ADD COLUMN `challenge_type` BIGINT NULL COMMENT '맞춤 챌린지 유형 공통코드 ID(CHL/CST_CHL_TYPE)'"
+        )
+    if "reward_badge_id" not in template_columns:
+        template_changes.append("ADD COLUMN `reward_badge_id` BIGINT NULL COMMENT '맞춤 챌린지 완료 시 지급할 배지 ID'")
+    if "idx_custom_challenge_templates_challenge_type" not in template_indexes:
+        template_changes.append("ADD INDEX `idx_custom_challenge_templates_challenge_type` (`challenge_type`)")
+    if "idx_custom_challenge_templates_reward_badge" not in template_indexes:
+        template_changes.append("ADD INDEX `idx_custom_challenge_templates_reward_badge` (`reward_badge_id`)")
+    if "fk_custom_templates_challenge_type" not in template_constraints:
+        template_changes.append(
+            "ADD CONSTRAINT `fk_custom_templates_challenge_type` "
+            "FOREIGN KEY (`challenge_type`) REFERENCES `common_codes` (`id`) ON DELETE RESTRICT"
+        )
+    if "fk_custom_templates_reward_badge" not in template_constraints:
+        template_changes.append(
+            "ADD CONSTRAINT `fk_custom_templates_reward_badge` "
+            "FOREIGN KEY (`reward_badge_id`) REFERENCES `badges` (`id`) ON DELETE RESTRICT"
+        )
+
+    statements = [
+        statement
+        for statement in (
+            _alter("badges", badge_changes),
+            _alter("custom_challenge_templates", template_changes),
+        )
+        if statement
+    ]
+    return "\n".join(statements) or "SELECT 1;"
+
+
+async def downgrade(db: BaseDBAsyncClient) -> str:  # noqa: C901 - idempotent DDL needs per-object checks
+    if db is None:
+        badge_columns = {"type"}
+        badge_indexes = {"idx_badges_type"}
+        badge_constraints = {"fk_badges_type_common_code"}
+        template_columns = {"challenge_type", "reward_badge_id"}
+        template_indexes = {
+            "idx_custom_challenge_templates_challenge_type",
+            "idx_custom_challenge_templates_reward_badge",
+        }
+        template_constraints = {
+            "fk_custom_templates_challenge_type",
+            "fk_custom_templates_reward_badge",
+        }
+    else:
+        badge_columns = await _schema_names(db, "badges", "COLUMNS", "COLUMN_NAME")
+        badge_indexes = await _schema_names(db, "badges", "STATISTICS", "INDEX_NAME")
+        badge_constraints = await _schema_names(db, "badges", "TABLE_CONSTRAINTS", "CONSTRAINT_NAME")
+        template_columns = await _schema_names(db, "custom_challenge_templates", "COLUMNS", "COLUMN_NAME")
+        template_indexes = await _schema_names(db, "custom_challenge_templates", "STATISTICS", "INDEX_NAME")
+        template_constraints = await _schema_names(
+            db,
+            "custom_challenge_templates",
+            "TABLE_CONSTRAINTS",
+            "CONSTRAINT_NAME",
+        )
+
+    template_changes = []
+    if "fk_custom_templates_reward_badge" in template_constraints:
+        template_changes.append("DROP FOREIGN KEY `fk_custom_templates_reward_badge`")
+    if "fk_custom_templates_challenge_type" in template_constraints:
+        template_changes.append("DROP FOREIGN KEY `fk_custom_templates_challenge_type`")
+    if "idx_custom_challenge_templates_reward_badge" in template_indexes:
+        template_changes.append("DROP INDEX `idx_custom_challenge_templates_reward_badge`")
+    if "idx_custom_challenge_templates_challenge_type" in template_indexes:
+        template_changes.append("DROP INDEX `idx_custom_challenge_templates_challenge_type`")
+    if "reward_badge_id" in template_columns:
+        template_changes.append("DROP COLUMN `reward_badge_id`")
+    if "challenge_type" in template_columns:
+        template_changes.append("DROP COLUMN `challenge_type`")
+
+    badge_changes = []
+    if "fk_badges_type_common_code" in badge_constraints:
+        badge_changes.append("DROP FOREIGN KEY `fk_badges_type_common_code`")
+    if "idx_badges_type" in badge_indexes:
+        badge_changes.append("DROP INDEX `idx_badges_type`")
+    if "type" in badge_columns:
+        badge_changes.append("DROP COLUMN `type`")
+
+    statements = [
+        statement
+        for statement in (
+            _alter("custom_challenge_templates", template_changes),
+            _alter("badges", badge_changes),
+        )
+        if statement
+    ]
+    return "\n".join(statements) or "SELECT 1;"
 
 
 MODELS_STATE = (

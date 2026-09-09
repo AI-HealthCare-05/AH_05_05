@@ -345,8 +345,9 @@ class TestChallengeDomainAPI(TestCase):
         check_type: str = "SELF",
         period: str = "D30",
         frequency: str = "WEEKLY_3",
+        reference_time: datetime | None = None,
     ) -> dict:
-        now = datetime.now(config.TIMEZONE)
+        now = reference_time or datetime.now(config.TIMEZONE)
         response = await request(
             "POST",
             "/api/v1/admin/challenges",
@@ -530,11 +531,21 @@ class TestChallengeDomainAPI(TestCase):
         assert badges.json()["total_count"] == 1
         assert badges.json()["items"][0]["badge_id"] == badge["id"]
 
-    async def _join_daily(self, check_type: str = "SELF") -> dict:
+    async def _join_daily(
+        self,
+        check_type: str = "SELF",
+        reference_time: datetime | None = None,
+    ) -> dict:
         from app.main import app
 
         badge = await self._create_badge()
-        challenge = await self._create_challenge(badge["id"], period="D7", frequency="DAILY", check_type=check_type)
+        challenge = await self._create_challenge(
+            badge["id"],
+            period="D7",
+            frequency="DAILY",
+            check_type=check_type,
+            reference_time=reference_time,
+        )
         app.dependency_overrides[get_request_user] = lambda: self.user
         response = await request("POST", f"/api/v1/user/challenges/{challenge['id']}/join")
         assert response.status_code == 201, response.text
@@ -691,7 +702,7 @@ class TestChallengeDomainAPI(TestCase):
         day = datetime(2026, 9, 8, 15, 30, tzinfo=config.TIMEZONE)
         with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
             clock.now.return_value = day
-            participation = await self._join_daily()
+            participation = await self._join_daily(reference_time=day)
         assert datetime.fromisoformat(participation["end_at"]).astimezone(config.TIMEZONE) == datetime(
             2026, 9, 15, tzinfo=config.TIMEZONE
         )

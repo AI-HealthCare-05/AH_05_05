@@ -22,7 +22,7 @@ async def _check_applied_snapshot(db: BaseDBAsyncClient) -> None:
         return
     content = applied[0]["content"]
     previous = loads(content) if isinstance(content, str) else content
-    if previous not in (_previous_state, _state):
+    if previous not in (_previous_state, _parallel_state, _state):
         raise RuntimeError(
             "Challenge rejoin migration stopped: integrate the previously applied model snapshot "
             "before upgrading. Expected immutable migration 40 or the reconciled migration 41 snapshot; "
@@ -87,6 +87,9 @@ async def downgrade(db: BaseDBAsyncClient) -> str:
 # Derive from the immutable preceding snapshot, never from runtime application models.
 _previous_state = decompress_dict(
     import_module("app.core.db.migrations.models.40_20260908160000_custom_challenge_participations").MODELS_STATE
+)
+_parallel_state = decompress_dict(
+    import_module("app.core.db.migrations.models.41_20260909000001_add_custom_challenge_and_badge_types").MODELS_STATE
 )
 _state = deepcopy(_previous_state)
 _state["models.UserChallenge"]["unique_together"] = []

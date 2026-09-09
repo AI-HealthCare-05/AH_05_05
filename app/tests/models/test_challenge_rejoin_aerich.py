@@ -22,7 +22,11 @@ from app.core.db.databases import TORTOISE_ORM
 ROOT = Path(__file__).resolve().parents[3]
 VERSION_39 = "39_20260908151829_challenge_daily_verification.py"
 VERSION_40 = "40_20260908160000_custom_challenge_participations.py"
+VERSION_40_RENAME = "40_20260909000000_rename_custom_challenge_check_type_group.py"
+VERSION_40_OCR = "40_20260909143654_allow_ocr_recapture_error_code.py"
+VERSION_41_TYPES = "41_20260909000001_add_custom_challenge_and_badge_types.py"
 VERSION_41 = "41_20260909120000_challenge_rejoin_attempts.py"
+VERSION_42 = "42_20260909180000_merge_challenge_schema_heads.py"
 CUSTOM_TABLES = ("custom_challenge_participations", "custom_challenge_targets", "custom_challenge_occurrences")
 
 
@@ -144,7 +148,7 @@ async def _run_chain(start_version: int) -> None:
         db = Tortoise.get_connection("default")
         previous_39 = import_module("app.core.db.migrations.models." + VERSION_39[:-3])
         previous_40 = import_module("app.core.db.migrations.models." + VERSION_40[:-3])
-        current_41 = import_module("app.core.db.migrations.models." + VERSION_41[:-3])
+        current_42 = import_module("app.core.db.migrations.models." + VERSION_42[:-3])
         # Establish a fresh pre-custom schema from the registered parent models, then exercise actual migrations.
         # All tables are still empty here; this disposable database is the only deletion target.
         await db.execute_script(await previous_40.downgrade(db))
@@ -175,18 +179,72 @@ async def _run_chain(start_version: int) -> None:
             if start_version == 40
             else {}
         )
-        expected = [VERSION_41] if start_version == 40 else [VERSION_40, VERSION_41]
+        expected = [
+            *([] if start_version == 40 else [VERSION_40]),
+            VERSION_40_RENAME,
+            VERSION_40_OCR,
+            VERSION_41_TYPES,
+            VERSION_41,
+            VERSION_42,
+        ]
         assert await command.heads() == expected
         assert await command.upgrade(fake=False) == expected
         assert await command.heads() == []
         assert await command.upgrade(fake=False) == []
-        assert await current_41.upgrade(db) == "SELECT 1;"
         after = await Aerich.all().order_by("id").values()
         assert after[: len(history_before)] == history_before
         assert [row["version"] for row in after[len(history_before) :]] == expected
-        final_state = decompress_dict(current_41.MODELS_STATE)
+        final_state = decompress_dict(current_42.MODELS_STATE)
         assert after[-1]["content"] == final_state
-        assert after[-1]["content"] == decompress_dict(compress_dict(get_models_describe("models")))
+        runtime_state = decompress_dict(compress_dict(get_models_describe("models")))
+        differing_models = {
+            model: (final_state.get(model), runtime_state.get(model))
+            for model in final_state.keys() | runtime_state.keys()
+            if final_state.get(model) != runtime_state.get(model)
+        }
+        assert after[-1]["content"] == runtime_state, differing_models
+
+        reference_counts = {
+            "groups": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM common_code_groups "
+                "WHERE category = 'CHL' AND group_code IN ('BDG_TYPE', 'CST_CHL_TYPE');"
+            ),
+            "codes": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM common_codes AS code "
+                "JOIN common_code_groups AS code_group ON code_group.id = code.group_id "
+                "WHERE code_group.category = 'CHL' "
+                "AND code_group.group_code IN ('BDG_TYPE', 'CST_CHL_TYPE');"
+            ),
+            "badges": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM badges "
+                "WHERE name IN ('물마시기 배지', '스트레칭 배지', '걷기 배지', '복약', '영양제', '진료준비');"
+            ),
+            "templates": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM custom_challenge_templates "
+                "WHERE name IN ('복약 챌린지', '영양제 챌린지', '다음 진료 챌린지');"
+            ),
+        }
+        await db.execute_script(await current_42.upgrade(db))
+        assert reference_counts == {
+            "groups": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM common_code_groups "
+                "WHERE category = 'CHL' AND group_code IN ('BDG_TYPE', 'CST_CHL_TYPE');"
+            ),
+            "codes": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM common_codes AS code "
+                "JOIN common_code_groups AS code_group ON code_group.id = code.group_id "
+                "WHERE code_group.category = 'CHL' "
+                "AND code_group.group_code IN ('BDG_TYPE', 'CST_CHL_TYPE');"
+            ),
+            "badges": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM badges "
+                "WHERE name IN ('물마시기 배지', '스트레칭 배지', '걷기 배지', '복약', '영양제', '진료준비');"
+            ),
+            "templates": await db.execute_query_dict(
+                "SELECT COUNT(*) AS count FROM custom_challenge_templates "
+                "WHERE name IN ('복약 챌린지', '영양제 챌린지', '다음 진료 챌린지');"
+            ),
+        }
         for table in CUSTOM_TABLES:
             rows = await db.execute_query_dict(f"SELECT * FROM `{table}` ORDER BY id")
             if start_version == 40:
@@ -199,9 +257,15 @@ async def _run_chain(start_version: int) -> None:
         assert new.id != old.id and new.completed_count == 0 and new.verified_dates == []
         assert await ChallengeVerification.filter(id=verification.id, user_challenge_id=old.id).exists()
         assert (await service.get(user, old.id)).status == "CANCELLED"
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_42]
         with pytest.raises(RuntimeError, match="duplicate"):
             await command.downgrade(version=-1, delete=False, fake=False)
-        assert await Aerich.all().order_by("id").values() == after
+        assert await command.heads() == [VERSION_42]
+        assert await command.upgrade(fake=False) == [VERSION_42]
+        restored = await Aerich.all().order_by("id").values()
+        assert restored[:-1] == after[:-1]
+        assert restored[-1]["version"] == VERSION_42
+        assert restored[-1]["content"] == final_state
         assert await UserChallenge.filter(user_id=user.id, challenge_id=challenge.id).count() == 2
         print(
             f"ACTUAL_AERICH_{start_version}_TO_41_OK: history, schema, rows, runtime snapshot, rejoin and rollback guard"
