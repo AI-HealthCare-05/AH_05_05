@@ -10,6 +10,7 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
 from ai_worker.rag.retrievers.medication_knowledge_retriever import (
     MedicationKnowledgeRetriever,
 )
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunkMetadata,
@@ -18,7 +19,12 @@ from ai_worker.schemas.knowledge import (
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
-from ai_worker.schemas.medication_search import MedicationSearchExecutionPlan
+from ai_worker.schemas.medication_search import (
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+    MedicationSearchExecutionPlan,
+)
 
 
 class FakeEmbeddingProvider:
@@ -145,6 +151,66 @@ async def test_search_preserves_vector_store_failure_stage() -> None:
 
     assert exc_info.value.stage == RetrievalFailureStage.VECTOR_STORE
     assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+async def test_search_keeps_each_requested_section_from_one_official_document() -> None:
+    base_execution = build_execution_plan("마그네슘은 왜 먹나요?")
+    query_plan = base_execution.query_plan.model_copy(
+        update={
+            "entity_names": ["오메가3"],
+            "entities": [
+                MedicationQueryEntity(
+                    surface="오메가3",
+                    canonical_name="오메가3",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.QDRANT,
+                )
+            ],
+            "section_types": [
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.DAILY_INTAKE,
+                KnowledgeSectionType.CAUTION,
+            ],
+        }
+    )
+    execution = base_execution.model_copy(update={"query_plan": query_plan})
+    candidates = [
+        build_chunk(
+            score=0.82,
+            chunk_id="1" * 64,
+            ingredient_names=["오메가3"],
+            section_type=KnowledgeSectionType.FUNCTION,
+            document_id="mfds-omega3",
+        ),
+        build_chunk(
+            score=0.81,
+            chunk_id="2" * 64,
+            ingredient_names=["오메가3"],
+            section_type=KnowledgeSectionType.DAILY_INTAKE,
+            document_id="mfds-omega3",
+        ),
+        build_chunk(
+            score=0.80,
+            chunk_id="3" * 64,
+            ingredient_names=["오메가3"],
+            section_type=KnowledgeSectionType.CAUTION,
+            document_id="mfds-omega3",
+        ),
+    ]
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[candidates]),
+        dataset_version="knowledge-full-v10",
+    )
+
+    result = await retriever.search_with_diagnostics(execution_plan=execution)
+
+    assert {chunk.metadata.section_type for chunk in result.chunks} == {
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    }
 
 
 async def test_hybrid_rejects_high_rrf_candidate_without_dense_confidence() -> None:

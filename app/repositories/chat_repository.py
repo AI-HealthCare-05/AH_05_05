@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
@@ -6,12 +6,16 @@ from tortoise.functions import Max, Min
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.medication_chat import (
     MedicationChatResult,
     MedicationChatRoute,
+    MedicationChatSessionReference,
+    MedicationChatSessionReferenceEntity,
     MedicationChatSource,
     MedicationChatSourceKind,
 )
+from ai_worker.schemas.medication_search import MedicationQueryEntityType
 from app.models.care import CareEpisode
 from app.models.chat import ChatMessage, ChatMessageSource, ChatSession
 from app.models.enums import (
@@ -23,6 +27,7 @@ from app.models.enums import (
     ChatSourceType,
     PatientSourceKind,
 )
+from app.models.interactions import MedicationProductGuide
 from app.models.users import User
 
 
@@ -90,6 +95,9 @@ class AcceptedChatRequest:
     assistant_message: ChatMessage | None
     history: list[ChatMessage]
     reused_assistant_message: ChatMessage | None = None
+    session_reference: MedicationChatSessionReference = field(
+        default_factory=MedicationChatSessionReference,
+    )
 
 
 class ChatRepository:
@@ -348,6 +356,10 @@ class ChatRepository:
                 .limit(10)
             )
             history.reverse()
+            session_reference = await self._session_reference_from_history(
+                history=history,
+                connection=connection,
+            )
             last_message = (
                 await ChatMessage.filter(
                     chat_session_id=session.id,
@@ -392,7 +404,73 @@ class ChatRepository:
                 user_message=user_message,
                 assistant_message=assistant_message,
                 history=history,
+                session_reference=session_reference,
             )
+
+    @staticmethod
+    async def _session_reference_from_history(
+        *,
+        history: list[ChatMessage],
+        connection,
+    ) -> MedicationChatSessionReference:
+        assistant_message_ids = [
+            message.id
+            for message in history
+            if message.role == ChatMessageRole.ASSISTANT
+        ]
+        if not assistant_message_ids:
+            return MedicationChatSessionReference()
+
+        sources = await (
+            ChatMessageSource.filter(
+                chat_message_id__in=assistant_message_ids,
+                source_type=ChatSourceType.PUBLIC_RAG_CHUNK,
+                public_dataset_key="MEDICATION_PRODUCT_GUIDE",
+            )
+            .using_db(connection)
+            .order_by("chat_message_id", "citation_order")
+        )
+        guide_ids = {
+            int(source.source_record_key)
+            for source in sources
+            if source.source_record_key is not None and source.source_record_key.isdecimal()
+        }
+        if not guide_ids:
+            return MedicationChatSessionReference()
+
+        product_name_by_guide_id = {
+            guide_id: product_name
+            for guide_id, product_name in await (
+                MedicationProductGuide.filter(id__in=guide_ids)
+                .using_db(connection)
+                .values_list("id", "product_name")
+            )
+        }
+        product_names_by_message_id: dict[int, list[str]] = {}
+        for source in sources:
+            if source.source_record_key is None or not source.source_record_key.isdecimal():
+                continue
+            product_name = product_name_by_guide_id.get(int(source.source_record_key))
+            if product_name is None:
+                continue
+            product_names_by_message_id.setdefault(source.chat_message_id, []).append(product_name)
+
+        for message in reversed(history):
+            if message.role != ChatMessageRole.ASSISTANT:
+                continue
+            names = list(dict.fromkeys(product_names_by_message_id.get(message.id, [])))
+            if len(names) != 1:
+                continue
+            return MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name=names[0],
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    ),
+                ],
+            )
+        return MedicationChatSessionReference()
 
     @staticmethod
     def _validate_existing_request(

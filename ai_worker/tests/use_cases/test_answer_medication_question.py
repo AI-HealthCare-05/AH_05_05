@@ -61,7 +61,11 @@ from ai_worker.schemas.medication_chat import (
     MedicationGuideFact,
     MedicationGuideLookup,
 )
-from ai_worker.schemas.medication_search import MedicationQueryEntityType
+from ai_worker.schemas.medication_search import (
+    MedicationCatalogEntry,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+)
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
@@ -157,6 +161,15 @@ class StaticExpressionCatalog:
 
     async def list_expressions(self) -> list[str]:
         return self.expressions
+
+
+class StaticTypedExpressionCatalog(StaticExpressionCatalog):
+    def __init__(self, entries: list[MedicationCatalogEntry]) -> None:
+        super().__init__([entry.canonical_name for entry in entries])
+        self.entries = entries
+
+    async def list_entries(self) -> list[MedicationCatalogEntry]:
+        return self.entries
 
 
 class StaticSupplementIngredientCatalog:
@@ -325,6 +338,25 @@ class PassthroughGenerator:
                 draft_answer_hash=answer_hash,
                 generated_answer_hash=answer_hash,
             ),
+        )
+
+
+class ContextRecordingGenerator(PassthroughGenerator):
+    def __init__(self) -> None:
+        self.context: ActiveIntakeContext | None = None
+
+    async def generate(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> MedicationAnswerGenerationOutcome:
+        self.context = context
+        return await super().generate(
+            request=request,
+            context=context,
+            result=result,
         )
 
 
@@ -586,9 +618,45 @@ async def test_execute_asks_for_dose_details_before_personal_dose_increase() -> 
     assert result.safety_reason_codes == [
         MedicationChatReasonCode.PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED.value,
     ]
-    assert "현재 1회 복용량" in result.answer
+    assert "- 현재 등록된 1회 용량: 등록 정보가 없어 확인할 수 없음" in result.answer
+    assert "- 현재 등록된 복용 횟수: 등록 정보가 없어 확인할 수 없음" in result.answer
+    assert "- 오늘 실제 누적 복용량: 확인할 수 없음" in result.answer
+    assert "- 마지막 실제 복용 시각: 확인할 수 없음" in result.answer
+    assert "- 다른 함께 복용한 제품: 확인 필요" in result.answer
     assert "제품 설명서와 전문가의 안내를 따릅니다" not in result.answer
     assert result.sources == []
+
+
+async def test_execute_shows_matching_registered_dose_but_not_unattributable_intake_history() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="타이레놀정500밀리그람",
+                dose="1정",
+                times_per_day=3,
+            )
+        ],
+    )
+
+    result = await build_use_case(
+        context=context,
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["타이레놀정500밀리그람"]),
+        ),
+    ).execute(
+        build_request("두통이 심한데 타이레놀정500밀리그람을 평소보다 두 배 먹어도 될까?"),
+    )
+
+    assert result.route == MedicationChatRoute.CLARIFICATION
+    assert "- 현재 등록된 1회 용량: 1정" in result.answer
+    assert "- 현재 등록된 복용 횟수: 하루 3회" in result.answer
+    assert "- 오늘 실제 누적 복용량: 확인할 수 없음" in result.answer
+    assert "- 마지막 실제 복용 시각: 확인할 수 없음" in result.answer
+    assert "- 다른 함께 복용한 제품: 확인 필요" in result.answer
 
 
 async def test_execute_escalates_possible_overdose_without_product_guide() -> None:
@@ -926,6 +994,7 @@ async def test_general_drug_question_runs_without_episode() -> None:
 
     assert result.route == MedicationChatRoute.MEDICATION_GUIDE
     assert "통증과 발열을 완화합니다" in result.answer
+    assert result.answer.startswith("일반 제품 안내\n")
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
 
@@ -955,7 +1024,35 @@ async def test_execute_resolves_single_drug_reference_from_explicit_session_memo
     assert result.route == MedicationChatRoute.MEDICATION_GUIDE
     assert result.question_interpretation is not None
     assert result.question_interpretation.normalized_entity_names == ["타이레놀정500밀리그람"]
+    assert result.answer.startswith("타이레놀정500밀리그람의 복용법\n")
     assert "제품 설명서와 전문가의 안내" in result.answer
+
+
+async def test_execute_preserves_reference_product_heading_after_answer_rewrite() -> None:
+    request = build_request("그 약의 복용법도 알려줘.").model_copy(
+        update={
+            "session_reference": MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name="타이레놀정500밀리그람",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    )
+                ]
+            )
+        }
+    )
+
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        answer_generator=LongAnswerGenerator("복용법은 제품 설명서를 따르세요."),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(request)
+
+    assert result.answer.startswith("타이레놀정500밀리그람의 복용법\n")
+    assert "복용법은 제품 설명서를 따르세요." in result.answer
 
 
 async def test_execute_uses_dynamic_supplement_names_in_query_plan() -> None:
@@ -975,6 +1072,77 @@ async def test_execute_uses_dynamic_supplement_names_in_query_plan() -> None:
         KnowledgeDocumentType.SUPPLEMENT_CODE,
         KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
     ]
+
+
+async def test_execute_routes_general_ingredient_to_supplement_guide_when_drug_metadata_collides() -> None:
+    supplement_chunk = build_chunk().model_copy(
+        update={
+            "content": "오메가3는 일반적인 영양제 안내와 주의사항을 확인합니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_CODE,
+                    "ingredient_names": ["오메가3"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="오메가-3",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.QDRANT,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="오메가3",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                ]
+            ),
+        ),
+    ).execute(
+        build_request("오메가3의 효능, 일일 섭취량, 주의사항을 알려줘."),
+    )
+
+    assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert result.question_interpretation is not None
+    assert result.question_interpretation.normalized_entity_names == ["오메가3"]
+
+
+async def test_execute_requests_product_or_purpose_when_product_and_supplement_collide() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="테스트오션",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.RDBMS,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="테스트오션",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                ]
+            ),
+        ),
+    ).execute(build_request("테스트오션의 효능을 알려줘."))
+
+    assert result.route == MedicationChatRoute.CLARIFICATION
+    assert "제품명 또는 복용 목적(의약품/영양제)을 알려주세요" in result.answer
+    assert retriever.received_kwargs is None
 
 
 async def test_execute_forwards_question_query_plan_without_patient_or_rule_signals() -> None:
@@ -1781,6 +1949,57 @@ async def test_supplement_evidence_prevents_partial_drug_name_clarification() ->
     assert "공공자료 추가 설명" in result.answer
 
 
+async def test_general_supplement_question_hides_unrelated_active_intakes_from_answer_and_sources() -> None:
+    supplement_chunk = build_chunk().model_copy(
+        update={
+            "content": "마그네슘은 에너지 이용과 신경·근육 기능 유지에 필요합니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=10,
+                care_episode_id=100,
+                name="타이레놀정500밀리그람",
+            )
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=20,
+                supplement_nutrient_id=30,
+                name="오메가3",
+                dose_amount="1",
+                dose_unit="캡슐",
+                start_date=date(2026, 9, 1),
+            )
+        ],
+    )
+
+    generator = ContextRecordingGenerator()
+    result = await build_use_case(
+        context=context,
+        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
+        answer_generator=generator,
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+
+    assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert "사용자 확정 복약정보" not in result.answer
+    assert "타이레놀정500밀리그람" not in result.answer
+    assert "오메가3" not in result.answer
+    assert all(source.kind.value not in {"PATIENT_MEDICATION", "PATIENT_SUPPLEMENT"} for source in result.sources)
+    assert generator.context is not None
+    assert generator.context.medications == []
+    assert generator.context.supplements == []
+
+
 async def test_vitamin_b_family_function_answer_includes_member_choices() -> None:
     supplement_chunk = build_chunk().model_copy(
         update={
@@ -1796,6 +2015,11 @@ async def test_vitamin_b_family_function_answer_includes_member_choices() -> Non
     )
     result = await build_use_case(
         retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(
+                ["비타민 B1", "비타민 B2", "비타민 B12"],
+            ),
+        ),
     ).execute(build_request("비타민 B는 왜 먹나요?"))
 
     assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE

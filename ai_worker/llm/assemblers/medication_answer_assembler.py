@@ -37,6 +37,7 @@ class MedicationAnswerAssembler:
         rules: list[InteractionRuleFact],
         chunks: list[RetrievedKnowledgeChunk],
         interaction_question: bool,
+        referenced_product_heading: str | None = None,
         family_reference: bool = False,
         ingredient_family_reference: bool = False,
         ingredient_family: SupplementIngredientFamily | None = None,
@@ -127,7 +128,7 @@ class MedicationAnswerAssembler:
                         covered=covered,
                     )
                 )
-                section_title = "일반 제품 안내"
+                section_title = referenced_product_heading or "일반 제품 안내"
             sections.append(section_title + "\n" + "\n".join(guide_lines))
         if chunks:
             public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]

@@ -62,13 +62,19 @@ class MedicationKnowledgeRankingPolicy:
         selected: list[RetrievedKnowledgeChunk] = []
         selected_chunk_ids: set[str] = set()
         document_counts: dict[str, int] = {}
+        # 하나의 공인 문서가 요청한 각 섹션을 각각 담을 수 있다. 이 경우
+        # 문서 다양성 제한보다 섹션 커버리지를 우선해야 답변 항목이 누락되지 않는다.
+        max_chunks_per_document = max(
+            self._MAX_CHUNKS_PER_DOCUMENT,
+            min(len(set(plan.section_types)), limit),
+        )
 
         def add(result: RetrievedKnowledgeChunk) -> bool:
             if result.chunk_id in selected_chunk_ids:
                 return False
             document_id = result.metadata.document_id
             count = document_counts.get(document_id, 0)
-            if count >= self._MAX_CHUNKS_PER_DOCUMENT:
+            if count >= max_chunks_per_document:
                 return False
             selected.append(result)
             selected_chunk_ids.add(result.chunk_id)

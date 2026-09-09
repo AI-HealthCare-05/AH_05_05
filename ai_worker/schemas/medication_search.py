@@ -118,6 +118,9 @@ class MedicationQueryEntity(BaseModel):
 
     surface: str = Field(min_length=1)
     canonical_name: str = Field(min_length=1)
+    # 검수된 카탈로그에서 확인된 검색용 동의어다. 답변 대상·필터는
+    # canonical_name으로 고정하고, 벡터 질의 표현에만 함께 사용한다.
+    search_aliases: list[str] = Field(default_factory=list)
     entity_type: MedicationQueryEntityType
     candidate_types: list[MedicationQueryEntityType] = Field(
         default_factory=list,
@@ -125,6 +128,11 @@ class MedicationQueryEntity(BaseModel):
     kind: InteractionEntityKind | None = None
     source: MedicationQueryEntitySource = MedicationQueryEntitySource.REGEX
     resolution_status: MedicationQueryResolutionStatus = MedicationQueryResolutionStatus.RESOLVED
+
+    @field_validator("search_aliases")
+    @classmethod
+    def normalize_search_aliases(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
 
 
 class MedicationCatalogEntry(BaseModel):
