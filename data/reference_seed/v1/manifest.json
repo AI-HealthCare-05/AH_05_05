@@ -1,0 +1,215 @@
+{
+  "batch_size": 500,
+  "schema_head": "42_20260909180000_merge_challenge_schema_heads.py",
+  "tables": [
+    {
+      "excluded_rows": 0,
+      "file": "medication_product_guides.jsonl.gz",
+      "key_fields": [
+        "item_seq"
+      ],
+      "name": "medication_product_guides",
+      "row_count": 4748,
+      "sha256": "5e69ec981dcf6a9072e077d488c0fe7bc35f71e7e2ed3d9a05e95415a00057d1"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "supplement_nutrients.jsonl.gz",
+      "key_fields": [
+        "food_code"
+      ],
+      "name": "supplement_nutrients",
+      "row_count": 5556,
+      "sha256": "3d6d9a94d03be1ce03193a822590d430a0d029a4c7c873d3d777da93ad0e88ca"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "nutrient_standard.jsonl.gz",
+      "key_fields": [
+        "grp",
+        "age"
+      ],
+      "name": "nutrient_standard",
+      "row_count": 24,
+      "sha256": "4b3d1e95142132d4e7a597b573fade968ce2fa02ad8145e568a682613bc3cbf2"
+    },
+    {
+      "excluded_rows": 1,
+      "file": "common_code_groups.jsonl.gz",
+      "key_fields": [
+        "group_code"
+      ],
+      "name": "common_code_groups",
+      "row_count": 9,
+      "sha256": "010235d88c96b765cf6139ce12b6990014172ee517584d17681fa091f2111bc6"
+    },
+    {
+      "excluded_rows": 8,
+      "file": "common_codes.jsonl.gz",
+      "key_fields": [
+        "group_id",
+        "detail_code"
+      ],
+      "name": "common_codes",
+      "row_count": 25,
+      "sha256": "2a296aab9f89a5d1d45da84d0c932937c23253384e8104585d08a24768d95a98"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "admin_settings.jsonl.gz",
+      "key_fields": [
+        "setting_key"
+      ],
+      "name": "admin_settings",
+      "row_count": 1,
+      "sha256": "8b89fdccfc1d52c63e355b0a0e9fefa61d1852bf60fe1c96abe284ddf3fa2586"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "interaction_entities.jsonl.gz",
+      "key_fields": [
+        "entity_kind",
+        "normalized_name"
+      ],
+      "name": "interaction_entities",
+      "row_count": 2860,
+      "sha256": "aaa44e03456dddbcb387383f9d43ece5d15cd47d71ed9e7faace47d5d6b968b7"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "interaction_entity_aliases.jsonl.gz",
+      "key_fields": [
+        "interaction_entity_id",
+        "normalized_alias"
+      ],
+      "name": "interaction_entity_aliases",
+      "row_count": 0,
+      "sha256": "471bca732c742e1b5e345b262c55c05c700029e1bd52440c7c5a9aefc5d3d518"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "interaction_entity_identifiers.jsonl.gz",
+      "key_fields": [
+        "source_id",
+        "source_code"
+      ],
+      "name": "interaction_entity_identifiers",
+      "row_count": 3371,
+      "sha256": "f97be087bf62e354277e821f1a33b5186a38035d4f7bb309074315a3a60d5102"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "supplement_interaction_entities.jsonl.gz",
+      "key_fields": [
+        "supplement_nutrient_id",
+        "interaction_entity_id"
+      ],
+      "name": "supplement_interaction_entities",
+      "row_count": 0,
+      "sha256": "471bca732c742e1b5e345b262c55c05c700029e1bd52440c7c5a9aefc5d3d518"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "interaction_rules.jsonl.gz",
+      "key_fields": [
+        "pair_key",
+        "rule_dataset_version"
+      ],
+      "name": "interaction_rules",
+      "row_count": 1211,
+      "sha256": "efe5af354b8e7a9477aeb15bb8ee44bdff2143afe154078a0b99407a2b35c74b"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "interaction_rule_sources.jsonl.gz",
+      "key_fields": [
+        "interaction_rule_id",
+        "source_id",
+        "document_id",
+        "record_id"
+      ],
+      "name": "interaction_rule_sources",
+      "row_count": 1726,
+      "sha256": "ad1cc4e49565fb1a34153036bdebae1926a670276378397add4781087ae5aeaf"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "interaction_rule_evidence_chunks.jsonl.gz",
+      "key_fields": [
+        "interaction_rule_source_id",
+        "dataset_version",
+        "vector_chunk_id"
+      ],
+      "name": "interaction_rule_evidence_chunks",
+      "row_count": 0,
+      "sha256": "471bca732c742e1b5e345b262c55c05c700029e1bd52440c7c5a9aefc5d3d518"
+    },
+    {
+      "excluded_rows": 5235,
+      "file": "medication_safety_rules.jsonl.gz",
+      "key_fields": [
+        "rule_key",
+        "rule_dataset_version"
+      ],
+      "name": "medication_safety_rules",
+      "row_count": 5190,
+      "sha256": "19f1f7ee00c6eacb1f9e50368fbf8fb27d953d32aa99e47aacc71807443aa4d8"
+    },
+    {
+      "excluded_rows": 12051,
+      "file": "medication_safety_rule_conditions.jsonl.gz",
+      "key_fields": [
+        "medication_safety_rule_id",
+        "condition_group_no",
+        "condition_order"
+      ],
+      "name": "medication_safety_rule_conditions",
+      "row_count": 11925,
+      "sha256": "bdc3aec69f47f763a6f7749d318dd54dd61cec279e85bdaf245c5f3e1ac5dd62"
+    },
+    {
+      "excluded_rows": 5956,
+      "file": "medication_safety_rule_sources.jsonl.gz",
+      "key_fields": [
+        "medication_safety_rule_id",
+        "source_id",
+        "document_id",
+        "record_id"
+      ],
+      "name": "medication_safety_rule_sources",
+      "row_count": 5910,
+      "sha256": "481ddb068283baa842c7a78cb89db02f2e789296277a5f13ce20c27f61be0503"
+    },
+    {
+      "excluded_rows": 0,
+      "file": "badges.jsonl.gz",
+      "key_fields": [
+        "name"
+      ],
+      "name": "badges",
+      "row_count": 6,
+      "sha256": "9a2cd26e5df5acc9c8d7d7fc9c93037a850028f6ec552c2085b16edb81e04542"
+    },
+    {
+      "excluded_rows": 1,
+      "file": "custom_challenge_templates.jsonl.gz",
+      "key_fields": [
+        "name"
+      ],
+      "name": "custom_challenge_templates",
+      "row_count": 3,
+      "sha256": "d11042286001597d0ff86c762a45310aebc41bdaa7b130327e7ddb63e7761d5f"
+    },
+    {
+      "excluded_rows": 1,
+      "file": "challenges.jsonl.gz",
+      "key_fields": [
+        "id"
+      ],
+      "name": "challenges",
+      "row_count": 2,
+      "sha256": "cac7ae5115f9e57bf9f5dfaba5142c9adb8120cf7653c36f08c2cc7eb533bf81"
+    }
+  ],
+  "version": "v1"
+}
