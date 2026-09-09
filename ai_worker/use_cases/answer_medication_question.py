@@ -71,8 +71,17 @@ from ai_worker.rag.metadata.supplement_interaction_registry import (
 from ai_worker.rag.query_builders.coverage_gap_query_expander import (
     CoverageGapQueryExpander,
 )
+from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
+    MedicationKnowledgeQueryBuilder,
+)
 from ai_worker.schemas.enums import SafetyStatus
-from ai_worker.schemas.interaction import InteractionEntityKind, InteractionPairType
+from ai_worker.schemas.interaction import (
+    InteractionEntity,
+    InteractionEntityKind,
+    InteractionPairType,
+    build_interaction_pair_key,
+    interaction_pair_type_for_kinds,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeCoverageRetryObservation,
     KnowledgeDocumentType,
@@ -104,11 +113,15 @@ from ai_worker.schemas.medication_search import (
     InteractionRuleLookupStatus,
     MedicationCatalogEntry,
     MedicationExpressionResolutionStatus,
+    MedicationInteractionQueryPair,
     MedicationKnowledgeQueryPlan,
+    MedicationQueryEntity,
     MedicationQueryEntitySource,
     MedicationQueryEntityType,
     MedicationQuestionConfidence,
+    MedicationQuestionIntent,
     MedicationQuestionInterpretation,
+    MedicationQuestionReasonCode,
     MedicationQuestionResolution,
     MedicationQuestionScope,
     MedicationSearchExecutionObservation,
@@ -167,6 +180,9 @@ class AnswerMedicationQuestionUseCase:
         r"등록한|등록된|복용\s*중|먹고\s*있는|내\s*(?:약|영양제)|"
         r"현재\s*(?:복용|먹)|지금\s*(?:복용|먹)|복약\s*정보|"
         r"(?:약|영양제|복용)\s*목록|전체\s*상호작용",
+    )
+    _ACTIVE_INTAKE_INTERACTION_CUE_PATTERN = re.compile(
+        r"상호작용|병용|같이|함께|조심|주의|영향|피해야|중복",
     )
     _PERSONALIZED_GUIDANCE_CUE_PATTERN = re.compile(
         r"(?:나|저|내)\s*(?:게|는|의)?\s*(?:추천|권장)|"
@@ -255,6 +271,11 @@ class AnswerMedicationQuestionUseCase:
             )
         planning = await self._conditionally_interpret_question(
             request=request,
+            planning=planning,
+        )
+        planning = self._with_active_intake_query_plan(
+            request=request,
+            context=context,
             planning=planning,
         )
         query_plan = planning.query_plan
@@ -449,26 +470,20 @@ class AnswerMedicationQuestionUseCase:
         answer_chunks = list(evidence.answer_chunks)
         interaction_question = evidence.interaction_question
         ingredient_family_reference = guide_lookup.guide is None and self._has_drug_encyclopedia_evidence(answer_chunks)
-        if resolution is not None and not self._has_grounded_evidence(
+        if terminal_result := await self._evidence_gap_terminal_result(
             request=request,
             context=context,
-            query_plan=query_plan,
+            execution_plan=execution_plan,
+            resolution=resolution,
+            rag_unavailable=rag_unavailable,
+            interpretation=interpretation,
             guide_lookup=guide_lookup,
             rules=rules,
-            chunks=answer_chunks,
+            answer_chunks=answer_chunks,
+            evidence_coverage=evidence_coverage,
+            progress_callback=progress_callback,
         ):
-            await self._report_progress(
-                progress_callback,
-                MedicationChatProgressStage.SAFETY_CHECKING,
-            )
-            return self._no_evidence_result(
-                request=request,
-                context=context,
-                execution_plan=execution_plan,
-                resolution=resolution,
-                rag_unavailable=rag_unavailable,
-                interpretation=interpretation,
-            )
+            return terminal_result
         unsupported_pairs = self._unsupported_interaction_pairs(
             query_plan=query_plan,
             rules=rules,
@@ -1388,6 +1403,220 @@ class AnswerMedicationQuestionUseCase:
         return bool((context.medications or context.supplements) and cls._PATIENT_CONTEXT_CUE_PATTERN.search(question))
 
     @classmethod
+    def _with_active_intake_query_plan(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        planning: MedicationQuestionPlanResult,
+    ) -> MedicationQuestionPlanResult:
+        """등록 복약정보를 명시했지만 질문 본문에 대상이 없을 때만 검색 대상을 보완한다."""
+        if not cls._can_answer_from_active_context(
+            question=request.question,
+            context=context,
+        ) or cls._query_plan_matches_active_context(
+            query_plan=planning.query_plan,
+            context=context,
+        ):
+            return planning
+
+        entities = cls._active_intake_query_entities(context)
+        if not entities:
+            return planning
+
+        is_interaction = cls._is_active_intake_interaction_question(
+            question=request.question,
+            context=context,
+        )
+        planning_question = (
+            f"{request.question} 상호작용" if is_interaction else request.question
+        )
+        query_plan = MedicationKnowledgeQueryBuilder(
+            catalog_entities=entities,
+        ).build(planning_question)
+        if is_interaction:
+            interaction_pairs = cls._active_intake_interaction_pairs(entities)
+            query_plan = query_plan.model_copy(
+                update={
+                    "interaction_pairs": interaction_pairs,
+                    "interaction_types": list(
+                        dict.fromkeys(
+                            pair.pair_type for pair in interaction_pairs
+                        )
+                    ),
+                    "interaction_pair_keys": list(
+                        dict.fromkeys(
+                            pair.pair_key for pair in interaction_pairs
+                        )
+                    ),
+                }
+            )
+        query_plan = query_plan.model_copy(
+            update={"original_query": request.question},
+        )
+        reason_codes = [
+            reason_code
+            for reason_code in planning.interpretation.reason_codes
+            if reason_code
+            != MedicationQuestionReasonCode.NO_ENTITY_IDENTIFIED
+        ]
+        reason_codes.append(MedicationQuestionReasonCode.ENTITY_IDENTIFIED)
+        if query_plan.interaction_pairs:
+            reason_codes.append(
+                MedicationQuestionReasonCode.INTERACTION_PAIR_IDENTIFIED,
+            )
+        interpretation = planning.interpretation.model_copy(
+            update={
+                "resolved_question": request.question,
+                "intent": cls._query_plan_intent(query_plan),
+                "confidence": MedicationQuestionConfidence.HIGH,
+                "normalized_entity_names": query_plan.entity_names,
+                "normalized_entities": query_plan.entities,
+                "requested_section_types": query_plan.section_types,
+                "interaction_types": query_plan.interaction_types,
+                "needs_clarification": False,
+                "candidate_count": len(query_plan.entities),
+                "reason_codes": list(dict.fromkeys(reason_codes)),
+                "query_plan_hash": query_plan.query_plan_hash,
+            }
+        )
+        return MedicationQuestionPlanResult(
+            query_plan=query_plan,
+            interpretation=interpretation,
+        )
+
+    @classmethod
+    def _query_plan_matches_active_context(
+        cls,
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        context: ActiveIntakeContext,
+    ) -> bool:
+        active_names = {
+            cls._normalize_entity_name(item.name)
+            for item in [*context.medications, *context.supplements]
+        }
+        return bool(
+            active_names.intersection(
+                cls._normalize_entity_name(name)
+                for name in query_plan.entity_names
+            )
+        )
+
+    @staticmethod
+    def _active_intake_query_entities(
+        context: ActiveIntakeContext,
+    ) -> list[MedicationQueryEntity]:
+        entities: list[MedicationQueryEntity] = []
+        seen: set[tuple[InteractionEntityKind, str]] = set()
+        for item, kind, entity_type in [
+            *(
+                (
+                    medication,
+                    InteractionEntityKind.DRUG,
+                    MedicationQueryEntityType.PRODUCT_NAME,
+                )
+                for medication in context.medications
+            ),
+            *(
+                (
+                    supplement,
+                    InteractionEntityKind.SUPPLEMENT,
+                    MedicationQueryEntityType.INGREDIENT_NAME,
+                )
+                for supplement in context.supplements
+            ),
+        ]:
+            canonical_name = item.name.strip()
+            normalized_name = "".join(canonical_name.casefold().split())
+            key = (kind, normalized_name)
+            if not canonical_name or key in seen:
+                continue
+            seen.add(key)
+            entities.append(
+                MedicationQueryEntity(
+                    surface=canonical_name,
+                    canonical_name=canonical_name,
+                    entity_type=entity_type,
+                    candidate_types=[entity_type],
+                    kind=kind,
+                    source=MedicationQueryEntitySource.PATIENT_CONTEXT,
+                )
+            )
+        return entities
+
+    @classmethod
+    def _active_intake_interaction_pairs(
+        cls,
+        entities: list[MedicationQueryEntity],
+    ) -> list[MedicationInteractionQueryPair]:
+        pairs: list[MedicationInteractionQueryPair] = []
+        for left_index, left_entity in enumerate(entities):
+            for right_entity in entities[left_index + 1 :]:
+                if left_entity.kind is None or right_entity.kind is None:
+                    continue
+                pair_type = interaction_pair_type_for_kinds(
+                    left_entity.kind,
+                    right_entity.kind,
+                )
+                if pair_type is None:
+                    continue
+                pairs.append(
+                    MedicationInteractionQueryPair(
+                        left_name=left_entity.canonical_name,
+                        right_name=right_entity.canonical_name,
+                        pair_type=pair_type,
+                        pair_key=build_interaction_pair_key(
+                            InteractionEntity(
+                                kind=left_entity.kind,
+                                display_name=left_entity.canonical_name,
+                            ),
+                            InteractionEntity(
+                                kind=right_entity.kind,
+                                display_name=right_entity.canonical_name,
+                            ),
+                        ),
+                    )
+                )
+        return pairs
+
+    @staticmethod
+    def _query_plan_intent(
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> MedicationQuestionIntent:
+        if KnowledgeSectionType.INTERACTION in query_plan.section_types:
+            return MedicationQuestionIntent.INTERACTION
+        if any(
+            entity.kind == InteractionEntityKind.DRUG
+            for entity in query_plan.entities
+        ):
+            return MedicationQuestionIntent.MEDICATION_GUIDE
+        if any(
+            entity.kind == InteractionEntityKind.SUPPLEMENT
+            for entity in query_plan.entities
+        ):
+            return MedicationQuestionIntent.SUPPLEMENT_GUIDE
+        return MedicationQuestionIntent.GENERAL_GUIDANCE
+
+    @classmethod
+    def _is_active_intake_interaction_question(
+        cls,
+        *,
+        question: str,
+        context: ActiveIntakeContext,
+    ) -> bool:
+        return bool(
+            cls._can_answer_from_active_context(
+                question=question,
+                context=context,
+            )
+            and (
+                is_interaction_question(question)
+                or cls._ACTIVE_INTAKE_INTERACTION_CUE_PATTERN.search(question)
+            )
+        )
+
+    @classmethod
     def _should_include_patient_context(
         cls,
         *,
@@ -1539,6 +1768,124 @@ class AnswerMedicationQuestionUseCase:
                     execution_plan,
                 )
             ),
+        )
+
+    @classmethod
+    def _active_intake_no_evidence_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        execution_plan: MedicationSearchExecutionPlan,
+        rag_unavailable: bool,
+        interpretation: MedicationQuestionInterpretation,
+        evidence_coverage: MedicationEvidenceCoverage,
+    ) -> MedicationChatResult:
+        answer = EvidenceGapGuidanceBuilder().build_active_intake(
+            medication_names=[item.name for item in context.medications],
+            supplement_names=[item.name for item in context.supplements],
+        )
+        reason_codes = [
+            MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value,
+        ]
+        if rag_unavailable:
+            reason_codes.append(
+                MedicationChatReasonCode.RAG_UNAVAILABLE.value,
+            )
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=answer,
+            route=MedicationChatRoute.ACTIVE_INTAKE,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=reason_codes,
+            sources=cls._build_sources(
+                context=context,
+                guide_lookup=MedicationGuideLookup(),
+                rules=[],
+                chunks=[],
+            ),
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+            question_interpretation=interpretation,
+            search_observation=(
+                MedicationSearchExecutionObservation.from_execution_plan(
+                    execution_plan,
+                )
+            ),
+            evidence_coverage=evidence_coverage,
+        )
+
+    async def _evidence_gap_terminal_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        execution_plan: MedicationSearchExecutionPlan,
+        resolution: MedicationQuestionResolution | None,
+        rag_unavailable: bool,
+        interpretation: MedicationQuestionInterpretation,
+        guide_lookup: MedicationGuideLookup,
+        rules: list[InteractionRuleFact],
+        answer_chunks: list[RetrievedKnowledgeChunk],
+        evidence_coverage: MedicationEvidenceCoverage,
+        progress_callback: MedicationChatProgressCallback | None,
+    ) -> MedicationChatResult | None:
+        if self._is_active_intake_interaction_question(
+            question=request.question,
+            context=context,
+        ) and not self._has_active_intake_interaction_evidence(
+            query_plan=execution_plan.query_plan,
+            rules=rules,
+            evidence_coverage=evidence_coverage,
+        ):
+            await self._report_progress(
+                progress_callback,
+                MedicationChatProgressStage.SAFETY_CHECKING,
+            )
+            return self._active_intake_no_evidence_result(
+                request=request,
+                context=context,
+                execution_plan=execution_plan,
+                rag_unavailable=rag_unavailable,
+                interpretation=interpretation,
+                evidence_coverage=evidence_coverage,
+            )
+        if resolution is None or self._has_grounded_evidence(
+            request=request,
+            context=context,
+            query_plan=execution_plan.query_plan,
+            guide_lookup=guide_lookup,
+            rules=rules,
+            chunks=answer_chunks,
+        ):
+            return None
+        await self._report_progress(
+            progress_callback,
+            MedicationChatProgressStage.SAFETY_CHECKING,
+        )
+        return self._no_evidence_result(
+            request=request,
+            context=context,
+            execution_plan=execution_plan,
+            resolution=resolution,
+            rag_unavailable=rag_unavailable,
+            interpretation=interpretation,
+        )
+
+    @staticmethod
+    def _has_active_intake_interaction_evidence(
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        rules: list[InteractionRuleFact],
+        evidence_coverage: MedicationEvidenceCoverage,
+    ) -> bool:
+        requested_pair_keys = set(query_plan.interaction_pair_keys)
+        return bool(
+            requested_pair_keys.intersection(
+                rule.pair_key for rule in rules
+            )
+            or evidence_coverage.verified_interaction_pair_keys
         )
 
     @staticmethod
@@ -1822,8 +2169,9 @@ class AnswerMedicationQuestionUseCase:
             )
         )
 
-    @staticmethod
+    @classmethod
     def _resolve_route(
+        cls,
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
@@ -1831,22 +2179,27 @@ class AnswerMedicationQuestionUseCase:
         interaction_question: bool,
         chunks: list,
     ) -> MedicationChatRoute:
+        if cls._can_answer_from_active_context(
+            question=request.question,
+            context=context,
+        ):
+            return MedicationChatRoute.ACTIVE_INTAKE
         if interaction_question:
             return MedicationChatRoute.INTERACTION
         if request.care_episode_id is not None and context.medications:
             return MedicationChatRoute.ACTIVE_INTAKE
         if guide_lookup.guide is not None:
             return MedicationChatRoute.MEDICATION_GUIDE
-        if AnswerMedicationQuestionUseCase._has_supplement_evidence(
+        if cls._has_supplement_evidence(
             request.question,
             chunks=chunks,
         ):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
-        if AnswerMedicationQuestionUseCase._has_drug_encyclopedia_evidence(
+        if cls._has_drug_encyclopedia_evidence(
             chunks,
         ):
             return MedicationChatRoute.MEDICATION_GUIDE
-        if AnswerMedicationQuestionUseCase._is_supplement_question(request.question):
+        if cls._is_supplement_question(request.question):
             return MedicationChatRoute.SUPPLEMENT_GUIDE
         return MedicationChatRoute.GENERAL_GUIDANCE
 

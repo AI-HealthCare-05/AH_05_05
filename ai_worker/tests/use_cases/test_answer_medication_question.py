@@ -28,7 +28,12 @@ from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
 from ai_worker.schemas.enums import SafetyStatus
-from ai_worker.schemas.interaction import InteractionEntityKind, InteractionPairType
+from ai_worker.schemas.interaction import (
+    InteractionEntity,
+    InteractionEntityKind,
+    InteractionPairType,
+    build_interaction_pair_key,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeCandidateDiagnostic,
@@ -701,7 +706,16 @@ async def test_active_intake_summary_executes_without_explicit_entity_in_questio
     )
     rule = InteractionRuleFact(
         interaction_rule_id=1,
-        pair_key="warfarin-vitamin-k",
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(
+                kind=InteractionEntityKind.DRUG,
+                display_name="와파린",
+            ),
+            InteractionEntity(
+                kind=InteractionEntityKind.SUPPLEMENT,
+                display_name="비타민 K",
+            ),
+        ),
         pair_type="DRUG_SUPPLEMENT",
         left_name="와파린",
         right_name="비타민 K",
@@ -719,13 +733,58 @@ async def test_active_intake_summary_executes_without_explicit_entity_in_questio
         build_request("내가 현재 복용 중인 약과 영양제를 정리하고 가장 먼저 확인할 상호작용을 알려줘."),
     )
 
-    assert result.route == MedicationChatRoute.INTERACTION
+    assert result.route == MedicationChatRoute.ACTIVE_INTAKE
     assert result.safety_reason_codes == []
     assert "복약정보" in result.answer
     assert "영양제 정보" in result.answer
     assert "와파린" in result.answer
     assert "비타민 K" in result.answer
     assert "확인된 상호작용" in result.answer
+
+
+async def test_active_intake_question_without_external_evidence_uses_registered_targets_and_guidance() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="와파린",
+            )
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 K",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 9),
+            )
+        ],
+    )
+    retriever = RecordingQueryPlanRetriever()
+
+    result = await build_use_case(
+        context=context,
+        retriever=retriever,
+        answer_generator=UnexpectedMedicationGenerator(),
+    ).execute(
+        build_request("혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"),
+    )
+
+    assert retriever.received_kwargs is not None
+    execution_plan = retriever.received_kwargs["execution_plan"]
+    assert execution_plan.query_plan.entity_names == ["와파린", "비타민 K"]
+    assert execution_plan.medication_names == ["와파린"]
+    assert execution_plan.supplement_names == ["비타민 K"]
+    assert result.route == MedicationChatRoute.ACTIVE_INTAKE
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert "복약정보\n- 와파린" in result.answer
+    assert "영양제 정보\n- 비타민 K" in result.answer
+    assert "직접 근거를 확인하지 못했습니다" in result.answer
+    assert "의료진·약사에게 확인할 내용" in result.answer
+    assert "오메가3" not in result.answer
 
 
 async def test_execute_auto_corrects_unique_typo_before_search() -> None:
