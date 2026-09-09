@@ -72,7 +72,7 @@ from ai_worker.rag.query_builders.coverage_gap_query_expander import (
     CoverageGapQueryExpander,
 )
 from ai_worker.schemas.enums import SafetyStatus
-from ai_worker.schemas.interaction import InteractionEntityKind
+from ai_worker.schemas.interaction import InteractionEntityKind, InteractionPairType
 from ai_worker.schemas.knowledge import (
     KnowledgeCoverageRetryObservation,
     KnowledgeDocumentType,
@@ -1601,7 +1601,9 @@ class AnswerMedicationQuestionUseCase:
         query_plan: MedicationKnowledgeQueryPlan,
         interaction_question: bool,
     ) -> MedicationGuideLookup:
-        if interaction_question:
+        if interaction_question and not self._should_lookup_official_guide_for_interaction(
+            query_plan=query_plan,
+        ):
             return MedicationGuideLookup()
         for candidate in self._product_name_candidates(
             request.question,
@@ -1612,6 +1614,16 @@ class AnswerMedicationQuestionUseCase:
             if lookup.guide is not None or lookup.is_ambiguous:
                 return lookup
         return MedicationGuideLookup()
+
+    @staticmethod
+    def _should_lookup_official_guide_for_interaction(
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        return (
+            query_plan.has_medication_product_cue
+            and InteractionPairType.DRUG_FOOD in query_plan.interaction_types
+        )
 
     async def _retrieve_knowledge(
         self,

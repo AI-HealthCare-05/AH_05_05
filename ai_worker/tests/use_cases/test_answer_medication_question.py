@@ -28,7 +28,7 @@ from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
 from ai_worker.schemas.enums import SafetyStatus
-from ai_worker.schemas.interaction import InteractionEntityKind
+from ai_worker.schemas.interaction import InteractionEntityKind, InteractionPairType
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeCandidateDiagnostic,
@@ -58,6 +58,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
     MedicationChatSessionReference,
     MedicationChatSessionReferenceEntity,
+    MedicationChatSourceKind,
     MedicationGuideFact,
     MedicationGuideLookup,
 )
@@ -142,12 +143,13 @@ class ExactNameGuideRepository:
 
 
 class RecordingGuideRepository:
-    def __init__(self) -> None:
+    def __init__(self, lookup: MedicationGuideLookup | None = None) -> None:
         self.requested_names: list[str] = []
+        self.lookup = lookup or MedicationGuideLookup()
 
     async def find_by_name(self, product_name: str) -> MedicationGuideLookup:
         self.requested_names.append(product_name)
-        return MedicationGuideLookup()
+        return self.lookup
 
 
 class UnexpectedGuideRepository:
@@ -2123,6 +2125,82 @@ async def test_supplement_pair_question_skips_medication_product_lookup() -> Non
     assert result.route == MedicationChatRoute.INTERACTION
     assert "검색된 상호작용 연구 근거" in result.answer
     assert "제품명을 확인" not in result.answer
+
+
+async def test_product_name_drug_food_question_uses_official_guide_with_supplementary_rag_evidence() -> None:
+    async def product_drug_food_plan(value: MedicationQueryPlanChainInput) -> dict:
+        planning = MedicationQuestionPlanResult.model_validate(
+            await build_medication_query_plan_chain().ainvoke(value),
+        )
+        query_plan = planning.query_plan.model_copy(
+            update={
+                "has_medication_product_cue": True,
+                "interaction_types": [InteractionPairType.DRUG_FOOD],
+            },
+        )
+        return planning.model_copy(update={"query_plan": query_plan}).model_dump()
+
+    interaction_chunk = build_chunk().model_copy(
+        update={
+            "content": "아세트아미노펜 복용 중 알코올 섭취는 주의가 필요합니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.DRUG_FOOD_INTERACTION_GUIDE,
+                    "drug_names": ["아세트아미노펜"],
+                    "food_names": ["알코올"],
+                    "interaction_type": InteractionPairType.DRUG_FOOD.value,
+                    "section_type": KnowledgeSectionType.INTERACTION,
+                }
+            ),
+        }
+    )
+    guide_repository = RecordingGuideRepository(
+        MedicationGuideLookup(guide=build_guide()),
+    )
+    question_resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="타이레놀정500밀리그람",
+                    aliases=["타이레놀"],
+                    entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                ),
+                MedicationCatalogEntry(
+                    canonical_name="아세트아미노펜",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                    source=MedicationQueryEntitySource.RDBMS,
+                ),
+                MedicationCatalogEntry(
+                    canonical_name="알코올",
+                    aliases=["술"],
+                    entity_type=MedicationQueryEntityType.FOOD_CATEGORY,
+                    kind=InteractionEntityKind.FOOD,
+                    source=MedicationQueryEntitySource.QDRANT,
+                ),
+            ]
+        ),
+    )
+    result = await AnswerMedicationQuestionUseCase(
+        context_provider=FakeContextProvider(ActiveIntakeContext(user_id=1)),
+        guide_repository=guide_repository,
+        interaction_rule_repository=FakeRuleRepository([]),
+        knowledge_retriever=FakeKnowledgeRetriever(chunks=[interaction_chunk]),
+        answer_generator=PassthroughGenerator(),
+        grounded_claim_validator=PassthroughValidator(),
+        question_resolver=question_resolver,
+        query_plan_chain=RunnableLambda(product_drug_food_plan),
+    ).execute(
+        build_request("타이레놀과 술을 같이 먹어도 돼?"),
+    )
+
+    assert guide_repository.requested_names == ["타이레놀정500밀리그람"]
+    assert {source.kind for source in result.sources} == {
+        MedicationChatSourceKind.MEDICATION_GUIDE,
+        MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
+    }
 
 
 async def test_multi_entity_answer_separates_supported_and_unverified_pairs() -> None:
