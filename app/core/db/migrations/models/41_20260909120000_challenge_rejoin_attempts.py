@@ -25,7 +25,7 @@ async def _check_applied_snapshot(db: BaseDBAsyncClient) -> None:
     if previous not in (_previous_state, _parallel_state, _state):
         raise RuntimeError(
             "Challenge rejoin migration stopped: integrate the previously applied model snapshot "
-            "before upgrading. Expected immutable migration 40 or the reconciled migration 41 snapshot; "
+            "before upgrading. Expected immutable custom/OCR migration 40 or the reconciled migration 41 snapshot; "
             "model fields, relations and indexes must also match. No schema or history was changed."
         )
 

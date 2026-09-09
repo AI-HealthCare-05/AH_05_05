@@ -155,6 +155,11 @@ class BackgroundJobService:
         original = await self.get(job_id)
         if original.status != BackgroundJobStatus.FAILED:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only failed jobs can be retried.")
+        if original.error_code == "PUSH_DELIVERY_UNKNOWN":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="발송 결과가 불명확하여 재발송할 수 없습니다. 중복 알림 여부를 먼저 확인해주세요.",
+            )
         if original.job_type != BackgroundJobType.ALARM or original.reference_table != "alarm_events":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job retry handler is not available.")
         event = await AlarmEvent.get_or_none(id=original.reference_id)

@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from arq import Retry
 from tortoise.contrib.test import TestCase
+from tortoise.exceptions import DBConnectionError, OperationalError
 
 from app.core import config
 from app.models.alarms import AlarmEvent, PushSubscription
@@ -23,6 +24,7 @@ from app.services.alarms import AlarmService
 from app.services.background_jobs import BackgroundJobService
 from app.services.web_push import PushResult, PushResultKind, WebPushService
 from app.tests.alarm_apis.helpers import create_user, medication_alarm_request
+from app.workers import alarm_worker
 from app.workers.alarm_worker import poll_due_alarms, recover_background_jobs, send_alarm_push
 
 
@@ -36,6 +38,7 @@ class TestAlarmWorker(TestCase):
         await self.alarm.save(update_fields=["next_trigger_at", "last_triggered_at"])
         self.redis_pool = AsyncMock()
         self.redis_pool.enqueue_job.return_value = object()
+        self.redis_pool.exists.return_value = False
         self.job_service = BackgroundJobService(redis_pool=self.redis_pool)
         self.push_service = MagicMock(spec=WebPushService)
         self.push_service.send = AsyncMock()
@@ -380,3 +383,122 @@ class TestAlarmWorker(TestCase):
         await recover_background_jobs(self.context())
 
         self.redis_pool.enqueue_job.assert_awaited_once()
+
+    async def test_completion_deadlock_retries_database_without_resending_push(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        self.push_service.build_payload.return_value = {"title": "알림"}
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+        original_save = PushSubscription.save
+        attempts = 0
+
+        async def flaky_save(instance, *args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OperationalError(1213, "Deadlock found")
+            return await original_save(instance, *args, **kwargs)
+
+        with patch.object(PushSubscription, "save", autospec=True, side_effect=flaky_save):
+            await send_alarm_push(
+                self.context(), job.id, self.alarm.id, subscription.id, self.alarm.next_trigger_at.isoformat()
+            )
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert attempts == 2
+        self.push_service.send.assert_awaited_once()
+        assert await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.SENT).count() == 1
+
+    async def test_recovery_closes_stalled_processing_without_resending(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        started = datetime.now(config.TIMEZONE) - timedelta(minutes=10)
+        events_before = await AlarmEvent.filter(alarm=self.alarm).count()
+        await BackgroundJob.filter(id=job.id).update(status=BackgroundJobStatus.PROCESSING, started_at=started)
+        await recover_background_jobs(self.context())
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.FAILED
+        assert job.error_code == "PUSH_DELIVERY_UNKNOWN"
+        assert job.completed_at is not None
+        assert job.started_at == started
+        self.push_service.send.assert_not_awaited()
+        self.redis_pool.enqueue_job.assert_not_awaited()
+        assert await AlarmEvent.filter(alarm=self.alarm).count() == events_before
+
+    async def test_completion_recovers_lost_commit_ack_without_duplicate_event(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        self.push_service.build_payload.return_value = {"title": "알림"}
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+        persist = alarm_worker._persist_push_completion
+        attempts = 0
+
+        async def lost_ack(*args):
+            nonlocal attempts
+            attempts += 1
+            await persist(*args)
+            if attempts == 1:
+                raise DBConnectionError("commit acknowledgement lost")
+
+        with patch.object(alarm_worker, "_persist_push_completion", side_effect=lost_ack):
+            await send_alarm_push(
+                self.context(), job.id, self.alarm.id, subscription.id, self.alarm.next_trigger_at.isoformat()
+            )
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.SENT).count() == 1
+        self.push_service.send.assert_awaited_once()
+
+    async def test_exhausted_completion_retries_are_recovered_without_resending(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        self.push_service.build_payload.return_value = {"title": "알림"}
+        self.push_service.send.return_value = PushResult(PushResultKind.SUCCESS, 201)
+        with patch.object(PushSubscription, "save", side_effect=OperationalError(1213, "Deadlock")) as save:
+            with pytest.raises(OperationalError):
+                await send_alarm_push(
+                    self.context(), job.id, self.alarm.id, subscription.id, self.alarm.next_trigger_at.isoformat()
+                )
+            assert save.await_count == 3
+        await BackgroundJob.filter(id=job.id).update(started_at=datetime.now(config.TIMEZONE) - timedelta(minutes=10))
+        await recover_background_jobs(self.context())
+        await recover_background_jobs(self.context())
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.FAILED
+        assert job.error_code == "PUSH_DELIVERY_UNKNOWN"
+        assert not await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.SENT).exists()
+        self.push_service.send.assert_awaited_once()
+        self.redis_pool.enqueue_job.assert_not_awaited()
+
+    async def test_recovery_preserves_recent_and_actively_locked_processing(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        await BackgroundJob.filter(id=job.id).update(
+            status=BackgroundJobStatus.PROCESSING, started_at=datetime.now(config.TIMEZONE)
+        )
+        await recover_background_jobs(self.context())
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.PROCESSING
+        await BackgroundJob.filter(id=job.id).update(started_at=datetime.now(config.TIMEZONE) - timedelta(minutes=10))
+        self.redis_pool.exists.return_value = True
+        await recover_background_jobs(self.context())
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.PROCESSING
+        self.redis_pool.enqueue_job.assert_not_awaited()
+
+    async def test_recovery_does_not_overwrite_completion_during_lock_check(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        await BackgroundJob.filter(id=job.id).update(
+            status=BackgroundJobStatus.PROCESSING, started_at=datetime.now(config.TIMEZONE) - timedelta(minutes=10)
+        )
+
+        async def complete_while_checking(_key):
+            await BackgroundJob.filter(id=job.id).update(status=BackgroundJobStatus.COMPLETED)
+            return False
+
+        self.redis_pool.exists.side_effect = complete_while_checking
+        await recover_background_jobs(self.context())
+        await job.refresh_from_db()
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert job.error_code is None

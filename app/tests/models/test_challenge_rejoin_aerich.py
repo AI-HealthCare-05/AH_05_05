@@ -124,6 +124,13 @@ async def _seed_custom_history(user, check_type):
     await CustomChallengeOccurrence.create(target=target, scheduled_date=now.date(), slot="MORNING", scheduled_at=now)
 
 
+async def _add_historical_ocr_error_code_check(db, migration) -> None:
+    """Restore the named pre-recapture CHECK omitted by Tortoise's generated schema."""
+    downgrade_sql = await migration.downgrade(db)
+    check_definition = downgrade_sql[downgrade_sql.index("ADD CONSTRAINT") :]
+    await db.execute_script("ALTER TABLE `ocr_jobs` " + check_definition)
+
+
 async def _run_chain(start_version: int) -> None:
     from app.models.challenges import ChallengeVerification, UserChallenge
     from app.services.challenge_participation import ChallengeParticipationService
@@ -152,6 +159,7 @@ async def _run_chain(start_version: int) -> None:
         # Establish a fresh pre-custom schema from the registered parent models, then exercise actual migrations.
         # All tables are still empty here; this disposable database is the only deletion target.
         await db.execute_script(await previous_40.downgrade(db))
+        await _add_historical_ocr_error_code_check(db, current_40_ocr)
         await db.execute_script("""
             ALTER TABLE user_challenges
                 ADD UNIQUE INDEX uq_user_challenges_user_challenge (user_id, challenge_id),
@@ -164,7 +172,7 @@ async def _run_chain(start_version: int) -> None:
         await Aerich.create(version=VERSION_39, app="models", content=decompress_dict(previous_39.MODELS_STATE))
         if start_version == 40:
             # Set up the already-applied-40 case through Aerich itself, including its ledger content.
-            await command._upgrade(db, VERSION_40)
+            await command._upgrade(db, VERSION_40_CUSTOM)
         user, challenge, old, verification, check_type = await _seed_official_attempt()
         if start_version == 40:
             await _seed_custom_history(user, check_type)
