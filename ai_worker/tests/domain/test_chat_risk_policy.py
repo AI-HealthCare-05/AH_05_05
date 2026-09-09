@@ -40,6 +40,19 @@ def test_medication_facts_remain_evidence_only_even_without_vulnerable_risk() ->
     assert decision.reason_codes == []
 
 
+def test_confirmed_pregnancy_requires_warning_for_general_supplement_guidance() -> None:
+    decision = MedicationChatRiskPolicy().evaluate(
+        profile=MedicationChatRiskProfile(
+            pregnancy=MedicationChatRiskFlag.YES,
+        ),
+        domain=MedicationChatAnswerDomain.SUPPLEMENT,
+        asks_for_personalized_guidance=False,
+    )
+
+    assert decision.scope == MedicationChatRiskScope.WARNING_REQUIRED
+    assert decision.reason_codes == ["PREGNANCY_STATUS_YES"]
+
+
 def test_confirmed_scheduled_surgery_requires_warning_for_supplement_guidance() -> None:
     decision = MedicationChatRiskPolicy().evaluate(
         profile=MedicationChatRiskProfile(

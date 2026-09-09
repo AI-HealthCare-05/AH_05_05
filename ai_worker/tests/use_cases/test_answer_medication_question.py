@@ -1782,7 +1782,7 @@ async def test_multi_entity_answer_separates_supported_and_unverified_pairs() ->
     )
 
 
-async def test_unknown_vulnerable_risk_adds_warning_before_final_safety_validation() -> None:
+async def test_unknown_risk_does_not_restrict_general_omega3_intake_guidance() -> None:
     validator = RecordingValidator()
     supplement_chunk = build_chunk().model_copy(
         update={
@@ -1805,12 +1805,12 @@ async def test_unknown_vulnerable_risk_adds_warning_before_final_safety_validati
     ).execute(request)
 
     assert result.risk_decision is not None
-    assert result.risk_decision.scope == MedicationChatRiskScope.WARNING_REQUIRED
-    assert result.safety_status == SafetyStatus.RESTRICTED
-    assert "PREGNANCY_STATUS_UNKNOWN" in result.safety_reason_codes
+    assert result.risk_decision.scope == MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert "PREGNANCY_STATUS_UNKNOWN" not in result.safety_reason_codes
     assert validator.received is not None
     assert validator.received.risk_decision == result.risk_decision
-    assert "임신·수유" in validator.received.answer
+    assert "임신·수유" not in validator.received.answer
 
 
 def test_product_name_candidates_are_bounded_for_long_questions() -> None:

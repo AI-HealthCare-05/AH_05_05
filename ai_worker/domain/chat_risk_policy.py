@@ -29,10 +29,20 @@ class MedicationChatRiskPolicy:
         asks_for_personalized_guidance: bool,
     ) -> MedicationChatRiskDecision:
         default_scope = self._default_scope(domain)
-        if not asks_for_personalized_guidance or domain == MedicationChatAnswerDomain.LIFESTYLE:
+        if domain == MedicationChatAnswerDomain.LIFESTYLE:
             return MedicationChatRiskDecision(domain=domain, scope=default_scope)
 
-        risk_reason = self._first_vulnerable_risk_reason(profile)
+        risk_reason = self._first_vulnerable_risk_reason(
+            profile,
+            include_unknown=False,
+        )
+        if risk_reason is None:
+            if not asks_for_personalized_guidance:
+                return MedicationChatRiskDecision(domain=domain, scope=default_scope)
+            risk_reason = self._first_vulnerable_risk_reason(
+                profile,
+                include_unknown=True,
+            )
         if risk_reason is None:
             return MedicationChatRiskDecision(domain=domain, scope=default_scope)
         return MedicationChatRiskDecision(
@@ -52,11 +62,13 @@ class MedicationChatRiskPolicy:
     def _first_vulnerable_risk_reason(
         self,
         profile: MedicationChatRiskProfile,
+        *,
+        include_unknown: bool,
     ) -> str | None:
         for field_name, reason_prefix in self._RISK_FLAGS:
             value = getattr(profile, field_name)
             if value == MedicationChatRiskFlag.YES:
                 return f"{reason_prefix}_YES"
-            if value == MedicationChatRiskFlag.UNKNOWN:
+            if include_unknown and value == MedicationChatRiskFlag.UNKNOWN:
                 return f"{reason_prefix}_UNKNOWN"
         return None
