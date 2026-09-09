@@ -181,6 +181,28 @@ export function AuthPage() {
     setVerificationError(null);
   }
 
+  /**
+   * 비밀번호 칸의 한글을 지웁니다. **조합이 끝난 뒤에만 부릅니다.**
+   *
+   * `applyEmailInput` 과 같은 형태다 — 정리한 값이 다르면 DOM 의 value 까지 직접 맞춘다.
+   * 그러지 않으면 컨트롤드 value 와 DOM 이 어긋나 커서가 튄다.
+   */
+  function applyPasswordInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizePasswordInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    setPassword(sanitized);
+    setPasswordError(null);
+  }
+
+  function applyPasswordConfirmInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizePasswordInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    setPasswordConfirm(sanitized);
+    setPasswordConfirmError(null);
+  }
+
   function applyNameInput(input: HTMLInputElement) {
     const typed = input.value;
     const normalized = typed.normalize('NFC');
@@ -725,12 +747,16 @@ export function AuthPage() {
                     value={password}
                     error={passwordError ?? undefined}
                     onChange={(event) => {
-                      // 한글은 조합 중에도 바로 지웁니다. 이메일 칸(위쪽)은 조합 중 값을
-                      // 그대로 두고 compositionend 에 정리하지만, 비밀번호는 한글이 애초에
-                      // 필요 없으므로 조합 중에 사라지는 것이 의도한 동작입니다.
-                      setPassword(sanitizePasswordInput(event.target.value));
-                      setPasswordError(null);
+                      // 조합 중에는 값을 건드리지 않습니다. 컨트롤드 input 의 value 를
+                      // 조합 중에 바꾸면 IME 가 조합 범위를 잃고 **앞서 입력해 둔 값까지
+                      // 지워버립니다**(#374 실측). 정리는 compositionEnd 에서 합니다.
+                      if ((event.nativeEvent as InputEvent).isComposing) {
+                        setPassword(event.currentTarget.value);
+                        return;
+                      }
+                      applyPasswordInput(event.currentTarget);
                     }}
+                    onCompositionEnd={(event) => applyPasswordInput(event.currentTarget)}
                     trailingAction={
                       <button
                         type="button"
@@ -755,9 +781,13 @@ export function AuthPage() {
                     value={passwordConfirm}
                     error={passwordConfirmError ?? undefined}
                     onChange={(event) => {
-                      setPasswordConfirm(sanitizePasswordInput(event.target.value));
-                      setPasswordConfirmError(null);
+                      if ((event.nativeEvent as InputEvent).isComposing) {
+                        setPasswordConfirm(event.currentTarget.value);
+                        return;
+                      }
+                      applyPasswordConfirmInput(event.currentTarget);
                     }}
+                    onCompositionEnd={(event) => applyPasswordConfirmInput(event.currentTarget)}
                     trailingAction={
                       <button
                         type="button"
