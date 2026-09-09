@@ -123,7 +123,7 @@ test('진행 중 말풍선과 도착한 답변은 아바타를 유지하며 옆�
 test('마이페이지와 로그인 홈의 영양제 랭킹에서 RxVita 서비스명을 보여준다', async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.goto('/dev/my-authenticated');
-  await expect(page.getByText('RxVita 사용자', { exact: true })).toBeVisible();
+  await expect(page.getByText('RxVita사용자', { exact: true })).toBeVisible();
 
   await page.goto('/dev/home-empty');
   await expect(page.getByText('RxVita가 골랐어요', { exact: true })).toBeVisible();

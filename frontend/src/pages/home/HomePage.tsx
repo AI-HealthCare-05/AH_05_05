@@ -397,7 +397,7 @@ export function HomePage({
                       }}
                       doseSelectionResetKey={doseSelectionResetKey}
                       doseMutationPending={doseMutationPending}
-                      onMemo={() => navigate('/medications/notes/new')}
+                      onMemo={() => navigate('/medications/notes/new', { state: { entry: 'home' } })}
                       onUpload={() => navigate('/document-upload')}
                     />
                   </div>
@@ -434,7 +434,7 @@ export function HomePage({
                 maxItems={3}
                 onMore={() => navigate('/supplements?tab=browse')}
                 onSelect={(productId) =>
-                  navigate('/supplements', { state: { presetProductId: String(productId) } })
+                  navigate(`/supplements/product/${encodeURIComponent(productId)}`)
                 }
               />
             )}
@@ -447,7 +447,7 @@ export function HomePage({
                 ranking={visibleSupplementRanking}
                 registrationPending={false}
                 maxItems={5}
-                title="인기 영양제"
+                onSelect={() => setLoginPromptOpen(true)}
                 subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
               />
             )}

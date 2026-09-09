@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { getMyProfile, type AccountProfile } from '@/entities/account';
 import {
   getMedicationOverviews,
   type MedicationOverview,
@@ -81,6 +82,7 @@ interface ManagementCounts {
 
 interface MyPageProps {
   authenticatedOverride?: boolean;
+  profileLoader?: () => Promise<AccountProfile>;
   medicationOverviewsLoader?: typeof getMedicationOverviews;
   supplementsLoader?: typeof getSupplements;
   followUpVisitsLoader?: typeof listFollowUpVisits;
@@ -93,6 +95,7 @@ interface MyPageProps {
 
 export function MyPage({
   authenticatedOverride,
+  profileLoader = getMyProfile,
   medicationOverviewsLoader = getMedicationOverviews,
   supplementsLoader = getSupplements,
   followUpVisitsLoader = listFollowUpVisits,
@@ -104,9 +107,12 @@ export function MyPage({
 }: MyPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { authenticated, signOut } = useSession();
+  const { authenticated, principalKey, signOut } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
   const logoutNavigationRef = useRef(false);
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [profileLoadError, setProfileLoadError] = useState(false);
+  const [profileReloadKey, setProfileReloadKey] = useState(0);
   const [managementCounts, setManagementCounts] = useState<ManagementCounts | null>(null);
   const [managementLoadError, setManagementLoadError] = useState<string | null>(null);
   const [notifySettings, setNotifySettings] = useState<NotifySettings | null>(null);
@@ -135,6 +141,24 @@ export function MyPage({
       navigate('/login', { replace: true });
     }
   }, [authenticated, authenticatedOverride, navigate]);
+
+  useEffect(() => {
+    setProfile(null);
+    setProfileLoadError(false);
+    if (!isAuthenticated) return;
+
+    let cancelled = false;
+    profileLoader()
+      .then((loadedProfile) => {
+        if (!cancelled) setProfile(loadedProfile);
+      })
+      .catch(() => {
+        if (!cancelled) setProfileLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, principalKey, profileLoader, profileReloadKey]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -401,16 +425,48 @@ export function MyPage({
               type="button"
               className="flex min-h-[84px] items-center gap-4 rounded-card border border-border bg-card p-3.5 text-left"
               onClick={() => navigate('/my/profile')}
+              aria-busy={profile === null && !profileLoadError}
             >
-              <span className="flex size-14 shrink-0 items-center justify-center rounded-pill bg-muted-bg text-sm font-bold text-muted-foreground">
-                사람
-              </span>
+              <img
+                src="/images/default-profile.png"
+                alt=""
+                aria-hidden="true"
+                className="size-14 shrink-0 rounded-pill object-cover object-center"
+              />
               <div className="min-w-0 flex-1">
-                <p className="text-[17px] font-bold text-foreground">RxVita 사용자</p>
+                {profile ? (
+                  <p className="truncate text-[17px] font-bold text-foreground">{profile.name}</p>
+                ) : profileLoadError ? (
+                  <p
+                    role="alert"
+                    aria-label="프로필 정보 불러오기 실패"
+                    className="text-sm font-bold text-muted-foreground"
+                  >
+                    이름을 확인할 수 없어요
+                  </p>
+                ) : (
+                  <p
+                    role="status"
+                    aria-label="프로필 불러오는 중"
+                    className="text-sm font-bold text-muted-foreground"
+                  >
+                    프로필을 불러오는 중...
+                  </p>
+                )}
                 <p className="text-sm text-muted-foreground">기본정보</p>
               </div>
               <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
             </button>
+            {profileLoadError && (
+              <button
+                type="button"
+                aria-label="프로필 다시 시도"
+                className="mt-2 min-h-touch self-end rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground"
+                onClick={() => setProfileReloadKey((current) => current + 1)}
+              >
+                다시 시도
+              </button>
+            )}
 
             <section
               className="mt-5 flex flex-col"

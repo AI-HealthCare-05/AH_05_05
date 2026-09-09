@@ -50,30 +50,10 @@ export function SupplementRankingCard({
               key={item.productId}
               className="min-h-touch border-t border-border first:border-t-0"
             >
-              {item.alreadyRegistered ? (
-                <div className="flex min-h-touch items-center gap-3 px-4 py-2">
-                  <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
-                    {item.name}
-                  </strong>
-                  <StatusBadge type="done" className="px-2.5 py-1 text-xs">
-                    등록됨
-                  </StatusBadge>
-                </div>
-              ) : registrationPending ? (
-                <div
-                  aria-busy="true"
-                  className="flex min-h-touch items-center gap-3 px-4 py-2"
-                >
-                  <RankNumber rank={item.rank} />
-                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
-                    {item.name}
-                  </strong>
-                </div>
-              ) : onSelect ? (
+              {onSelect ? (
                 <button
                   type="button"
-                  aria-label={`${item.rank}위 ${item.name} 영양제 추가`}
+                  aria-label={`${item.rank}위 ${item.name} 제품 정보`}
                   className="flex min-h-touch w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-muted-bg"
                   onClick={() => onSelect(item.productId)}
                 >
@@ -81,6 +61,9 @@ export function SupplementRankingCard({
                   <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">
                     {item.name}
                   </strong>
+                  {!registrationPending && item.alreadyRegistered && (
+                    <StatusBadge type="done" className="px-2.5 py-1 text-xs">등록됨</StatusBadge>
+                  )}
                   <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
                 </button>
               ) : (

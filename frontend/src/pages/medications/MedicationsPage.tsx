@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, Plus } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import {
@@ -55,6 +55,9 @@ export function MedicationsPage({
   feature252 = false,
 }: MedicationsPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const enteredFromDirectNote =
+    (location.state as { entry?: unknown } | null)?.entry === 'direct-note-exit';
   const { principalKey } = useSession();
   const overviewRequestRef = useRef<{
     key: string;
@@ -314,7 +317,7 @@ export function MedicationsPage({
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
         title={headerTitle}
-        onBack={() => navigate(-1)}
+        onBack={() => enteredFromDirectNote ? navigate('/home', { replace: true }) : navigate(-1)}
         right={
           selectionMode ? (
             <div className="flex shrink-0 items-center gap-1">
@@ -352,7 +355,7 @@ export function MedicationsPage({
             <button
               type="button"
               className="min-h-touch rounded-pill border border-border bg-card px-4 text-sm font-bold text-foreground"
-              onClick={() => navigate('/medications/notes')}
+              onClick={() => navigate('/medications/notes', { state: { entry: 'medications' } })}
             >
               복약 메모
             </button>
