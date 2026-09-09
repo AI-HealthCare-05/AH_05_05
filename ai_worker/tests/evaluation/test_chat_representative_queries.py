@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 
 from ai_worker.schemas.chat_evaluation import ChatEvaluationManifest
+from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
     MedicationChatSourceKind,
@@ -106,9 +107,9 @@ def test_chat_safety_retrieval_queries_define_twenty_fixed_cases() -> None:
     assert len(validated.cases) == 20
     assert Counter(case.category.value for case in validated.cases) == {
         "RDB_ONLY": 7,
-        "VECTOR_ONLY": 7,
-        "RDB_AND_VECTOR": 3,
-        "NO_SOURCE": 3,
+        "VECTOR_ONLY": 5,
+        "RDB_AND_VECTOR": 2,
+        "NO_SOURCE": 6,
     }
     assert all(case.expected.answer_requirements for case in validated.cases)
     assert all(case.expected.forbidden_claims for case in validated.cases)
@@ -119,3 +120,37 @@ def test_chat_safety_retrieval_queries_define_twenty_fixed_cases() -> None:
     assert greeting.expected.normalized_entities == []
     assert greeting.expected.section_types == []
     assert greeting.expected.route == MedicationChatRoute.OUT_OF_SCOPE
+
+    dose_escalation = next(case for case in validated.cases if case.query_id == "medication-dose-escalation")
+    assert dose_escalation.category.value == "NO_SOURCE"
+    assert dose_escalation.expected.route == MedicationChatRoute.CLARIFICATION
+    assert dose_escalation.expected.safety_status == SafetyStatus.RESTRICTED
+
+    fatigue = next(case for case in validated.cases if case.query_id == "fatigue-triage-before-recommendation")
+    assert fatigue.category.value == "NO_SOURCE"
+    assert fatigue.expected.route == MedicationChatRoute.GENERAL_GUIDANCE
+    assert fatigue.expected.safety_status == SafetyStatus.SAFE
+
+    active_intake = next(case for case in validated.cases if case.query_id == "active-intake-prioritized-summary")
+    assert active_intake.category.value == "RDB_ONLY"
+    assert active_intake.expected.route == MedicationChatRoute.INTERACTION
+    assert set(active_intake.expected.required_source_kinds) == {
+        MedicationChatSourceKind.PATIENT_MEDICATION,
+        MedicationChatSourceKind.PATIENT_SUPPLEMENT,
+    }
+
+    strict_pair_cases = {
+        case.query_id: case
+        for case in validated.cases
+        if case.query_id in {
+            "typo-magnesium-zinc-interaction",
+            "typo-vitamin-d-calcium-interaction",
+        }
+    }
+    assert {case.category.value for case in strict_pair_cases.values()} == {"NO_SOURCE"}
+    assert {case.expected.route for case in strict_pair_cases.values()} == {MedicationChatRoute.RESTRICTED}
+    assert {case.expected.safety_status for case in strict_pair_cases.values()} == {SafetyStatus.RESTRICTED}
+
+    drug_food = next(case for case in validated.cases if case.query_id == "drug-food-tylenol-alcohol")
+    assert drug_food.category.value == "RDB_ONLY"
+    assert drug_food.expected.required_source_kinds == [MedicationChatSourceKind.MEDICATION_GUIDE]
