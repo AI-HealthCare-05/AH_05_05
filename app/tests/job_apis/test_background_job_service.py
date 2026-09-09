@@ -79,6 +79,28 @@ class TestBackgroundJobService(TestCase):
 
         assert error.value.status_code == status.HTTP_409_CONFLICT
 
+    async def test_unknown_delivery_cannot_be_retried_even_with_an_event_reference(self):
+        event = await AlarmEvent.create(
+            alarm=self.alarm,
+            event_type=AlarmEventType.SENT,
+            push_subscription=self.subscription,
+        )
+        failed = await BackgroundJob.create(
+            idempotency_key="unknown-alarm-delivery",
+            job_type=BackgroundJobType.ALARM,
+            status=BackgroundJobStatus.FAILED,
+            user=self.user,
+            reference_table="alarm_events",
+            reference_id=event.id,
+            error_code="PUSH_DELIVERY_UNKNOWN",
+            max_retry_count=3,
+        )
+        with pytest.raises(HTTPException) as error:
+            await self.service.retry_failed(failed.id)
+        assert error.value.status_code == status.HTTP_409_CONFLICT
+        assert await BackgroundJob.filter(parent_job_id=failed.id).count() == 0
+        self.redis_pool.enqueue_job.assert_not_awaited()
+
     async def test_email_job_cannot_be_manually_retried(self):
         failed = await BackgroundJob.create(
             idempotency_key="failed-email-job",

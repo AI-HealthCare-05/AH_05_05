@@ -125,13 +125,15 @@ async def test_upgrade_accepts_generated_unique_name_and_preserves_foreign_key_s
         await migration_db.execute_query("DELETE FROM users WHERE id=1")
 
 
-async def test_newer_applied_model_snapshot_stops_upgrade_before_any_schema_change(migration_db):
+@pytest.mark.parametrize(
+    "previous_migration",
+    ["40_20260908160000_custom_challenge_participations", "40_20260909143654_allow_ocr_recapture_error_code"],
+)
+async def test_newer_applied_model_snapshot_stops_upgrade_before_any_schema_change(migration_db, previous_migration):
     await migration_db.execute_script("""
         CREATE TABLE aerich (id INT PRIMARY KEY, version VARCHAR(255), app VARCHAR(100), content JSON);
     """)
-    state = decompress_dict(
-        import_module("app.core.db.migrations.models.40_20260908160000_custom_challenge_participations").MODELS_STATE
-    )
+    state = decompress_dict(import_module("app.core.db.migrations.models." + previous_migration).MODELS_STATE)
     state["models.FutureChallengeModel"] = {"table": "future_challenge_models"}
     await migration_db.execute_query(
         "INSERT INTO aerich VALUES (40, %s, 'models', %s)",
@@ -146,13 +148,15 @@ async def test_newer_applied_model_snapshot_stops_upgrade_before_any_schema_chan
     assert (await migration_db.execute_query_dict("SELECT COUNT(*) AS count FROM user_challenges"))[0]["count"] == 1
 
 
-async def test_previous_applied_snapshot_allows_upgrade_and_keeps_aerich_history(migration_db):
+@pytest.mark.parametrize(
+    "previous_migration",
+    ["40_20260908160000_custom_challenge_participations", "40_20260909143654_allow_ocr_recapture_error_code"],
+)
+async def test_previous_applied_snapshot_allows_upgrade_and_keeps_aerich_history(migration_db, previous_migration):
     await migration_db.execute_script("""
         CREATE TABLE aerich (id INT PRIMARY KEY, version VARCHAR(255), app VARCHAR(100), content JSON);
     """)
-    state = decompress_dict(
-        import_module("app.core.db.migrations.models.40_20260908160000_custom_challenge_participations").MODELS_STATE
-    )
+    state = decompress_dict(import_module("app.core.db.migrations.models." + previous_migration).MODELS_STATE)
     await migration_db.execute_query("INSERT INTO aerich VALUES (40, '40_custom.py', 'models', %s)", [dumps(state)])
     before = await migration_db.execute_query_dict("SELECT * FROM aerich")
     await migration_db.execute_script(await import_module(MIGRATION).upgrade(migration_db))
