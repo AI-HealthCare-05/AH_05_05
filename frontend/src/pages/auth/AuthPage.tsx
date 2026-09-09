@@ -16,7 +16,11 @@ import {
 } from '@/shared/lib/birthDate';
 import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
 import { NAME_MAX_LENGTH, sanitizeNameInput, validateName } from '@/shared/lib/name';
-import { PASSWORD_MAX_LENGTH, validatePassword } from '@/shared/lib/password';
+import {
+  PASSWORD_MAX_LENGTH,
+  sanitizePasswordInput,
+  validatePassword,
+} from '@/shared/lib/password';
 import {
   PHONE_NUMBER_MAX_LENGTH,
   formatPhoneNumberInput,
@@ -50,7 +54,10 @@ const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 �
 const STEP_COPY: Record<SignupStep, { title: string; description?: string }> = {
   1: { title: '이메일을 알려주세요', description: '인증 메일을 보내드릴 주소예요.' },
   2: { title: '메일함을 확인해주세요' },
-  3: { title: '비밀번호를 정해주세요', description: '로그인할 때 쓸 비밀번호예요.' },
+  3: {
+    title: '비밀번호를 정해주세요',
+    description: '로그인할 때 쓸 비밀번호예요. 한글은 쓸 수 없어요.',
+  },
   4: { title: '마지막이에요' },
 };
 
@@ -718,7 +725,10 @@ export function AuthPage() {
                     value={password}
                     error={passwordError ?? undefined}
                     onChange={(event) => {
-                      setPassword(event.target.value);
+                      // 한글은 조합 중에도 바로 지웁니다. 이메일 칸(위쪽)은 조합 중 값을
+                      // 그대로 두고 compositionend 에 정리하지만, 비밀번호는 한글이 애초에
+                      // 필요 없으므로 조합 중에 사라지는 것이 의도한 동작입니다.
+                      setPassword(sanitizePasswordInput(event.target.value));
                       setPasswordError(null);
                     }}
                     trailingAction={
@@ -745,7 +755,7 @@ export function AuthPage() {
                     value={passwordConfirm}
                     error={passwordConfirmError ?? undefined}
                     onChange={(event) => {
-                      setPasswordConfirm(event.target.value);
+                      setPasswordConfirm(sanitizePasswordInput(event.target.value));
                       setPasswordConfirmError(null);
                     }}
                     trailingAction={
