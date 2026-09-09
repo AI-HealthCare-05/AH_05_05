@@ -1,3 +1,4 @@
+import hashlib
 import re
 
 from ai_worker.llm.assemblers.medication_answer_assembler import (
@@ -6,6 +7,7 @@ from ai_worker.llm.assemblers.medication_answer_assembler import (
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    GroundedClaimValidationDiagnostic,
     MedicationChatResult,
 )
 
@@ -31,6 +33,49 @@ class RuleBasedGroundedClaimValidator:
         r"(?:이|가|을|를)?\s*"
         r"(?:필요합니다|시작하세요|받으세요)"
     )
+    _MEDICATION_CHANGE_ACTIONS = (
+        (re.compile(r"중단|끊|건너뛰"), "STOP"),
+        (re.compile(r"시작"), "START"),
+        (re.compile(r"증량|늘리"), "INCREASE"),
+        (re.compile(r"감량|줄이"), "DECREASE"),
+        (re.compile(r"변경"), "CHANGE"),
+    )
+    _MEDICATION_CHANGE_TARGETS = (
+        (re.compile(r"복용량|용량"), "DOSAGE"),
+        (re.compile(r"횟수"), "FREQUENCY"),
+        (re.compile(r"처방"), "PRESCRIPTION"),
+        (re.compile(r"약"), "MEDICATION"),
+        (re.compile(r"복용"), "ADMINISTRATION"),
+    )
+
+    def diagnose(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> GroundedClaimValidationDiagnostic:
+        del context
+        normalized_answer = self._normalize_spacing(result.answer)
+        if match := self._MEDICATION_CHANGE_PATTERN.search(normalized_answer):
+            return self._match_diagnostic(
+                rule_code="MEDICATION_CHANGE_INSTRUCTION",
+                match_text=match.group(),
+                action=self._match_category(match.group(), self._MEDICATION_CHANGE_ACTIONS),
+                target=self._match_category(match.group(), self._MEDICATION_CHANGE_TARGETS),
+            )
+        if match := self._DIAGNOSIS_PATTERN.search(normalized_answer):
+            return self._match_diagnostic(
+                rule_code="DIAGNOSTIC_ASSERTION",
+                match_text=match.group(),
+            )
+        if match := self._TREATMENT_PATTERN.search(normalized_answer):
+            return self._match_diagnostic(
+                rule_code="TREATMENT_DECISION",
+                match_text=match.group(),
+            )
+        return GroundedClaimValidationDiagnostic(
+            disclaimer_added=not self._has_disclaimer(normalized_answer),
+        )
 
     async def validate(
         self,
@@ -38,24 +83,13 @@ class RuleBasedGroundedClaimValidator:
         context: ActiveIntakeContext,
         result: MedicationChatResult,
     ) -> MedicationChatResult:
-        del context
-        normalized_answer = self._normalize_spacing(result.answer)
-        if self._MEDICATION_CHANGE_PATTERN.search(normalized_answer):
+        diagnostic = self.diagnose(context=context, result=result)
+        if diagnostic.rule_code is not None:
             return self._blocked_result(
                 result,
-                reason_code="MEDICATION_CHANGE_INSTRUCTION",
+                reason_code=diagnostic.rule_code,
             )
-        if self._DIAGNOSIS_PATTERN.search(normalized_answer):
-            return self._blocked_result(
-                result,
-                reason_code="DIAGNOSTIC_ASSERTION",
-            )
-        if self._TREATMENT_PATTERN.search(normalized_answer):
-            return self._blocked_result(
-                result,
-                reason_code="TREATMENT_DECISION",
-            )
-        if not self._has_disclaimer(normalized_answer):
+        if diagnostic.disclaimer_added:
             return result.model_copy(
                 update={
                     "answer": f"{result.answer.rstrip()}\n\n{MEDICAL_DISCLAIMER}",
@@ -85,6 +119,33 @@ class RuleBasedGroundedClaimValidator:
     @staticmethod
     def _has_disclaimer(answer: str) -> bool:
         return "대체" in answer and any(keyword in answer for keyword in ("의료진", "의사", "진료", "약사"))
+
+    @staticmethod
+    def _match_category(
+        value: str,
+        categories: tuple[tuple[re.Pattern[str], str], ...],
+    ) -> str | None:
+        return next(
+            (category for pattern, category in categories if pattern.search(value)),
+            None,
+        )
+
+    @staticmethod
+    def _match_diagnostic(
+        *,
+        rule_code: str,
+        match_text: str,
+        action: str | None = None,
+        target: str | None = None,
+    ) -> GroundedClaimValidationDiagnostic:
+        return GroundedClaimValidationDiagnostic(
+            rule_code=rule_code,
+            matched_action=action,
+            matched_target=target,
+            matched_fragment_hash=hashlib.sha256(
+                match_text.encode("utf-8"),
+            ).hexdigest(),
+        )
 
     @staticmethod
     def _normalize_spacing(value: str) -> str:

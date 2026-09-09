@@ -24,6 +24,9 @@ from ai_worker.rag.errors import (
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
 )
+from ai_worker.safety.grounded_claim_validator import (
+    RuleBasedGroundedClaimValidator,
+)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
@@ -325,6 +328,15 @@ class PassthroughGenerator:
 
 
 class PassthroughValidator:
+    def diagnose(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ):
+        del context, result
+        return None
+
     async def validate(
         self,
         *,
@@ -407,6 +419,15 @@ class UnexpectedMedicationGenerator:
 class RecordingValidator:
     def __init__(self) -> None:
         self.received: MedicationChatResult | None = None
+
+    def diagnose(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ):
+        del context, result
+        return None
 
     async def validate(
         self,
@@ -1158,6 +1179,31 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert llm_outputs["fallback_reason"] is None
     assert len(llm_outputs["draft_answer_hash"]) == 64
     assert len(llm_outputs["generated_answer_hash"]) == 64
+
+
+async def test_execute_records_hashed_safety_match_without_raw_content() -> None:
+    tracer = RecordingChatTracer()
+    unsafe_answer = "오늘부터 약 복용을 중단하세요. 이 안내는 의료진의 진료를 대체하지 않습니다."
+
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        retriever=FakeKnowledgeRetriever(chunks=[build_chunk()]),
+        tracer=tracer,
+        answer_generator=LongAnswerGenerator(unsafe_answer),
+        grounded_claim_validator=RuleBasedGroundedClaimValidator(),
+    ).execute(
+        build_request("타이레놀정500밀리그람은 어떤 약인가요?"),
+    )
+
+    safety_outputs = next(
+        span.outputs for span in tracer.spans if span.name == "safety.validate"
+    )
+    assert result.safety_status == SafetyStatus.BLOCKED
+    assert safety_outputs.get("matched_rule_code") == "MEDICATION_CHANGE_INSTRUCTION"
+    assert safety_outputs.get("matched_action") == "STOP"
+    assert safety_outputs.get("matched_target") == "MEDICATION"
+    assert len(safety_outputs["matched_fragment_hash"]) == 64
+    assert "중단하세요" not in repr(safety_outputs)
 
 
 async def test_execute_records_retrieval_failure_stage_without_error_message() -> None:

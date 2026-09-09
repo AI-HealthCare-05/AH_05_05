@@ -597,19 +597,37 @@ class AnswerMedicationQuestionUseCase:
             progress_callback,
             MedicationChatProgressStage.SAFETY_CHECKING,
         )
+        return await self._validate_generated_answer(
+            context=context,
+            generated=generated,
+            execution_plan=execution_plan,
+        )
+
+    async def _validate_generated_answer(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        generated: MedicationChatResult,
+        execution_plan: MedicationSearchExecutionPlan,
+    ) -> MedicationChatResult:
         async with self._tracer.span("safety.validate") as safety_span:
+            diagnostic = self._grounded_claim_validator.diagnose(
+                context=context,
+                result=generated,
+            )
             validated = await self._grounded_claim_validator.validate(
                 context=context,
                 result=generated,
             )
-            safety_span.end(
-                {
-                    "status": validated.safety_status.value,
-                    "reason_codes": validated.safety_reason_codes,
-                    "query_plan_hash": execution_plan.query_plan_hash,
-                    "execution_plan_hash": (execution_plan.execution_plan_hash),
-                }
-            )
+            safety_outputs: dict[str, object] = {
+                "status": validated.safety_status.value,
+                "reason_codes": validated.safety_reason_codes,
+                "query_plan_hash": execution_plan.query_plan_hash,
+                "execution_plan_hash": (execution_plan.execution_plan_hash),
+            }
+            if diagnostic is not None:
+                safety_outputs.update(diagnostic.trace_outputs())
+            safety_span.end(safety_outputs)
         return validated
 
     async def _evaluate_risk_policy(

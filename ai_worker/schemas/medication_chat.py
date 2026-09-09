@@ -391,6 +391,36 @@ class MedicationChatResult(BaseModel):
     )
 
 
+class GroundedClaimValidationDiagnostic(BaseModel):
+    """안전성 검증의 Trace 전용 비식별 관측값."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    rule_code: str | None = None
+    matched_action: str | None = None
+    matched_target: str | None = None
+    matched_fragment_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    disclaimer_added: bool = False
+
+    def trace_outputs(self) -> dict[str, str | bool]:
+        outputs: dict[str, str | bool] = {}
+        for field_name in (
+            "rule_code",
+            "matched_action",
+            "matched_target",
+            "matched_fragment_hash",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                outputs[f"matched_{field_name}" if field_name == "rule_code" else field_name] = value
+        if self.disclaimer_added:
+            outputs["disclaimer_added"] = True
+        return outputs
+
+
 class MedicationAnswerGenerationObservation(BaseModel):
     status: MedicationAnswerRewriteStatus
     fallback_used: bool

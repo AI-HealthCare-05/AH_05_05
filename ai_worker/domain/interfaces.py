@@ -29,6 +29,7 @@ from ai_worker.schemas.intake_report import (
 from ai_worker.schemas.knowledge import KnowledgeRetrievalResult
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    GroundedClaimValidationDiagnostic,
     InteractionRuleFact,
     MedicationAnswerGenerationOutcome,
     MedicationChatRequest,
@@ -205,6 +206,13 @@ class IntakeReportGenerator(Protocol):
 
 
 class GroundedClaimValidator(Protocol):
+    def diagnose(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> GroundedClaimValidationDiagnostic | None: ...
+
     async def validate(
         self,
         *,

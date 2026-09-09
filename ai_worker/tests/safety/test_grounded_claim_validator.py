@@ -36,6 +36,24 @@ async def test_validator_replaces_medication_change_instruction() -> None:
     assert "MEDICATION_CHANGE_INSTRUCTION" in result.safety_reason_codes
 
 
+async def test_validator_exposes_hashed_medication_change_diagnostics() -> None:
+    validator = RuleBasedGroundedClaimValidator()
+    original_answer = "오늘부터 약 복용을 중단하세요. 이 안내는 의료진의 진료를 대체하지 않습니다."
+
+    diagnose = getattr(validator, "diagnose", None)
+
+    assert callable(diagnose)
+    diagnostic = diagnose(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(original_answer),
+    )
+    assert diagnostic.rule_code == "MEDICATION_CHANGE_INSTRUCTION"
+    assert diagnostic.matched_action == "STOP"
+    assert diagnostic.matched_target == "MEDICATION"
+    assert len(diagnostic.matched_fragment_hash) == 64
+    assert "중단하세요" not in diagnostic.model_dump_json()
+
+
 async def test_validator_adds_disclaimer_without_restricting_safe_answer() -> None:
     result = await RuleBasedGroundedClaimValidator().validate(
         context=ActiveIntakeContext(user_id=1),
