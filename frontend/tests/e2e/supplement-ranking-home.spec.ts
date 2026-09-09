@@ -121,7 +121,7 @@ async function routeCommon(
   });
 }
 
-test('등록 목록을 확인하는 동안 랭킹 행을 추가 버튼으로 노출하지 않는다', async ({ page }) => {
+test('등록 여부를 확인하는 중에도 랭킹 제품 정보는 열 수 있다', async ({ page }) => {
   await authenticate(page);
   let releaseSupplements = () => {};
   const supplementGate = new Promise<void>((resolve) => {
@@ -132,11 +132,11 @@ test('등록 목록을 확인하는 동안 랭킹 행을 추가 버튼으로 노
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
   await expect(ranking.getByText('튼튼 철분 캡슐', { exact: true })).toBeVisible();
-  await expect(ranking.getByRole('button', { name: /1위 튼튼 철분 캡슐/ })).toHaveCount(0);
+  await expect(ranking.getByRole('button', { name: '1위 튼튼 철분 캡슐 제품 정보', exact: true })).toBeEnabled();
 
   releaseSupplements();
   await expect(ranking.getByText('등록됨', { exact: true })).toBeVisible();
-  await expect(ranking.getByRole('button', { name: /1위 튼튼 철분 캡슐/ })).toHaveCount(0);
+  await expect(ranking.getByRole('button', { name: '1위 튼튼 철분 캡슐 제품 정보', exact: true })).toBeEnabled();
 });
 
 test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제품 ID로 판정한다', async ({ page }) => {
@@ -190,7 +190,7 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
   ).toBeVisible();
   await expect(ranking.getByRole('button', { name: '전체 보기 ›' })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /영양제 추가/ })).toHaveCount(0);
-  await expect(ranking.locator('svg')).toHaveCount(0);
+  await expect(ranking.getByRole('button', { name: /제품 정보$/ })).toHaveCount(5);
   await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
   await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
@@ -235,7 +235,8 @@ test('랭킹 404와 빈 items는 카드만 숨기고 오늘의 복약은 유지�
   await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 
-test('미등록 랭킹 행은 검색 없이 상세 API로 제품을 채운 추가 시트를 연다', async ({ page }) => {
+test('미등록 랭킹 행은 제품 성분과 후기를 열고 뒤로 가면 홈으로 돌아온다', async ({ page }) => {
+  test.setTimeout(20_000);
   await authenticate(page);
   await routeCommon(page);
   let detailPath = '';
@@ -248,6 +249,9 @@ test('미등록 랭킹 행은 검색 없이 상세 API로 제품을 채운 추�
     searchRequestCount += 1;
     await fulfillJson(route, { items: [], total: 0, offset: 0, limit: 20 });
   });
+  await page.route('**/api/v1/med/nutr/702/reviews?**', route => fulfillJson(route, {
+    items: [], total: 0, offset: 0, limit: 10, rating_average: null, rating_count: 0, review_count: 0,
+  }));
   await page.goto('/dev/home-empty');
 
   await page
@@ -255,10 +259,47 @@ test('미등록 랭킹 행은 검색 없이 상세 API로 제품을 채운 추�
     .getByRole('button', { name: /2위 종합비타민/ })
     .click();
 
-  const sheet = page.getByRole('dialog', { name: '영양제 추가' });
-  await expect(sheet).toBeVisible();
-  await expect(sheet.getByText('종합비타민', { exact: true })).toBeVisible();
-  await expect(sheet.getByText('2 정', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/supplements\/product\/702$/);
+  await expect(page.getByRole('heading', { name: '제품 정보', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '종합비타민', exact: true })).toBeVisible();
+  await expect(page.getByLabel('제품 성분')).toContainText('비타민 D');
+  await expect(page.getByText('아직 후기가 없어요', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '영양제 추가' })).toHaveCount(0);
   expect(detailPath).toBe('/api/v1/med/nutr/702');
   expect(searchRequestCount).toBe(0);
+  await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
+  await expect(page).toHaveURL(/\/dev\/home-empty$/);
+});
+
+test('비로그인 랭킹 제품 선택은 보호 API를 조회하지 않고 로그인 안내를 열며 닫으면 홈이다', async ({ page }) => {
+  test.setTimeout(20_000);
+  let protectedReads = 0;
+  await page.route('**/api/v1/med/**', route => {
+    protectedReads += 1;
+    return fulfillJson(route, { message: '로그인 필요' }, 401);
+  });
+  await page.route('**/api/v1/display/med/nutr/rank', route => fulfillJson(route, RANKING_RESPONSE));
+  await page.goto('/home');
+  await page.getByRole('button', { name: '2위 종합비타민 제품 정보', exact: true }).click();
+  const prompt = page.getByRole('dialog');
+  await expect(prompt.getByRole('button', { name: '로그인 · 회원가입', exact: true })).toBeVisible();
+  await prompt.getByRole('button', { name: '다음에 할게요', exact: true }).click();
+  await expect(page).toHaveURL(/\/home$/);
+  expect(protectedReads).toBe(0);
+});
+
+test('등록된 랭킹 제품 정보는 추가 화면을 거치지 않고 조회한다', async ({ page }) => {
+  test.setTimeout(20_000);
+  await authenticate(page);
+  await routeCommon(page);
+  await page.route('**/api/v1/med/nutr/701', route => fulfillJson(route, REGISTERED_PRODUCT));
+  await page.route('**/api/v1/med/nutr/701/reviews?**', route => fulfillJson(route, {
+    items: [], total: 0, offset: 0, limit: 10, rating_average: null, rating_count: 0, review_count: 0,
+  }));
+  await page.goto('/dev/home-empty');
+  await page.getByRole('button', { name: '1위 튼튼 철분 캡슐 제품 정보', exact: true }).click();
+  await expect(page).toHaveURL(/\/supplements\/product\/701$/);
+  await expect(page.getByRole('heading', { name: '튼튼 철분 캡슐', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '내 영양제에서 보기', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '영양제 추가' })).toHaveCount(0);
 });

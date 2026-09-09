@@ -267,12 +267,11 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
   await expect(selectionGlyph.locator('svg')).toHaveCount(0);
   const completedBadge = firstEpisode.locator('[data-episode-completed-badge]');
   await expect(completedBadge).toHaveAttribute('aria-hidden', 'true');
-  await expect(completedBadge).not.toContainText('복용 완료');
-  const badgeCheck = completedBadge.locator('svg');
-  const badgeCheckBox = await badgeCheck.boundingBox();
-  expect(badgeCheckBox).not.toBeNull();
-  expect(badgeCheckBox!.width).toBe(20);
-  expect(badgeCheckBox!.height).toBe(20);
+  await expect(completedBadge).toHaveText('복용 완료');
+  const badgeBox = (await completedBadge.boundingBox())!;
+  const titleBox = (await firstEpisode.getByRole('heading').boundingBox())!;
+  expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(titleBox.y);
+  expect(Math.abs(badgeBox.x - titleBox.x)).toBeLessThanOrEqual(1);
 
   const undo = detail.getByRole('button', { name: '복약 기록 되돌리기' });
   await expect(undo).toBeVisible();
@@ -351,8 +350,8 @@ test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 �
   await expect(first.getByRole('button', { name: /8월 22일 처방 복용 완료/ })).toBeVisible();
   await expect(page.getByRole('button', { name: '되돌리기', exact: true })).toBeVisible();
   const inactiveAction = detail.getByRole('button', { name: '먹었어요' });
-  await expect(inactiveAction).toBeDisabled();
-  await expect(inactiveAction).toHaveClass(/bg-card/);
+  await expect(inactiveAction).toBeEnabled();
+  await expect(inactiveAction).toHaveClass(/bg-primary/);
 
   const secondSelector = second.getByRole('button', { name: /8월 24일 처방.*선택/ });
   await expect(secondSelector).toBeVisible();

@@ -108,7 +108,8 @@ test('영양제 회차는 API 시간순으로 고르고 누락 시간은 기본 
   await expect(morning).toBeVisible();
 });
 
-test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액션을 제공한다', async ({ page }) => {
+test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액션을 제공한다', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const { morning } = await openHome(page);
 
   await expect(morning.getByText('개별 선택', { exact: true })).toHaveCount(0);
@@ -151,22 +152,23 @@ test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액
   await expect(completedOmega).toBeVisible();
   await expect(completedBadge).toBeVisible();
   await expect(completedBadge).toHaveAttribute('aria-hidden', 'true');
-  await expect(completedBadge).not.toContainText('복용 완료');
-  await expect(completedBadge.locator('svg')).toHaveCount(1);
-  const completedIconBox = await completedBadge.boundingBox();
-  expect(completedIconBox).not.toBeNull();
-  expect(completedIconBox!.width).toBe(completedIconBox!.height);
-  expect(completedIconBox!.width).toBeLessThanOrEqual(24);
+  await expect(completedBadge).toHaveText('복용 완료');
+  const badgeBox = (await completedBadge.boundingBox())!;
+  const nameBox = (await completedOmega.getByText('오메가3', { exact: true }).boundingBox())!;
+  expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(nameBox.y);
+  expect(Math.abs(badgeBox.x - nameBox.x)).toBeLessThanOrEqual(1);
   await expect(completedOmega).toHaveAttribute('aria-pressed', 'false');
   await expect(indicator).toHaveClass(/bg-card/);
   await expect(indicator.locator('svg')).toHaveCount(0);
   await expect(morning.getByRole('button', { name: '0개 먹었어요' })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('353-home-supplement-completion-390.png'), fullPage: true });
 
   await completedOmega.click();
   await expect(completedOmega).toHaveAttribute('aria-pressed', 'true');
   await expect(indicator).toHaveClass(/bg-primary/);
   await expect(indicator.locator('svg')).toHaveCount(1);
   await expect(morning.getByRole('button', { name: '1개 되돌리기' })).toBeEnabled();
+  await expect(completedBadge).toHaveText('복용 완료');
 });
 
 test('긴 영양제 이름은 모든 화면 폭에서 완료 배지와 선택 원을 밀지 않고 전체가 보인다', async ({ page }) => {
@@ -176,7 +178,7 @@ test('긴 영양제 이름은 모든 화면 폭에서 완료 배지와 선택 �
   const record = { supplementId: 501, date: DATE, slot: 'morning', taken: true };
   const { morning } = await openHome(page, { longName, initialRecords: [record] });
 
-  for (const width of [320, 375, 430, 1280]) {
+  for (const width of [320, 390, 430, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await page.reload();
     await page.getByRole('tab', { name: '오늘의 영양제' }).click();
@@ -193,7 +195,8 @@ test('긴 영양제 이름은 모든 화면 폭에서 완료 배지와 선택 �
     expect(badgeBox).not.toBeNull();
     expect(glyphBox).not.toBeNull();
     expect(await name.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
-    expect(nameBox!.x + nameBox!.width).toBeLessThanOrEqual(badgeBox!.x + 1);
+    expect(badgeBox!.y + badgeBox!.height).toBeLessThanOrEqual(nameBox!.y);
+    expect(Math.abs(badgeBox!.x - nameBox!.x)).toBeLessThanOrEqual(1);
     expect(glyphBox!.width).toBe(24);
     expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(rowBox!.x + rowBox!.width + 1);
     expect(await morning.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
