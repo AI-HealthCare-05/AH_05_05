@@ -57,6 +57,13 @@ class RuleBasedGroundedClaimValidator:
         del context
         normalized_answer = self._normalize_spacing(result.answer)
         if match := self._MEDICATION_CHANGE_PATTERN.search(normalized_answer):
+            if self._matches_official_warning(
+                match_text=match.group(),
+                official_warning_texts=result.official_warning_texts,
+            ):
+                return GroundedClaimValidationDiagnostic(
+                    official_warning_allowed=True,
+                )
             return self._match_diagnostic(
                 rule_code="MEDICATION_CHANGE_INSTRUCTION",
                 match_text=match.group(),
@@ -150,3 +157,20 @@ class RuleBasedGroundedClaimValidator:
     @staticmethod
     def _normalize_spacing(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
+
+    @classmethod
+    def _matches_official_warning(
+        cls,
+        *,
+        match_text: str,
+        official_warning_texts: list[str],
+    ) -> bool:
+        normalized_match = cls._comparison_key(match_text)
+        return bool(normalized_match) and any(
+            normalized_match in cls._comparison_key(warning)
+            for warning in official_warning_texts
+        )
+
+    @staticmethod
+    def _comparison_key(value: str) -> str:
+        return re.sub(r"\s+", "", value).casefold()

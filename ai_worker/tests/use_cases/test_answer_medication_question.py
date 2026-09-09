@@ -1206,6 +1206,31 @@ async def test_execute_records_hashed_safety_match_without_raw_content() -> None
     assert "중단하세요" not in repr(safety_outputs)
 
 
+async def test_execute_allows_conditioned_official_product_warning() -> None:
+    warning = "이 약 복용 후 피부 발진 또는 과민반응의 징후가 나타나는 경우 즉시 복용을 중단하십시오."
+    guide = build_guide().model_copy(
+        update={"pre_use_warning": warning},
+    )
+    tracer = RecordingChatTracer()
+
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=guide),
+        retriever=FakeKnowledgeRetriever(chunks=[build_chunk()]),
+        tracer=tracer,
+        grounded_claim_validator=RuleBasedGroundedClaimValidator(),
+    ).execute(
+        build_request("타이레놀의 효능과 주의사항을 알려줘."),
+    )
+
+    safety_outputs = next(
+        span.outputs for span in tracer.spans if span.name == "safety.validate"
+    )
+    assert result.safety_status == SafetyStatus.SAFE
+    assert warning in result.answer
+    assert safety_outputs["official_warning_allowed"] is True
+    assert "MEDICATION_CHANGE_INSTRUCTION" not in safety_outputs["reason_codes"]
+
+
 async def test_execute_records_retrieval_failure_stage_without_error_message() -> None:
     tracer = RecordingChatTracer()
     retrieval_error = GuidelineRetrievalError(

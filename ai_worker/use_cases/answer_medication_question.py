@@ -91,6 +91,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSource,
     MedicationChatSourceKind,
     MedicationEvidenceCoverage,
+    MedicationGuideFact,
     MedicationGuideLookup,
 )
 from ai_worker.schemas.medication_search import (
@@ -524,6 +525,9 @@ class AnswerMedicationQuestionUseCase:
                     )
                 ),
                 evidence_coverage=evidence_coverage,
+                official_warning_texts=self._official_warning_texts(
+                    guide_lookup.guide,
+                ),
             )
             draft = self._apply_risk_policy(
                 draft,
@@ -629,6 +633,22 @@ class AnswerMedicationQuestionUseCase:
                 safety_outputs.update(diagnostic.trace_outputs())
             safety_span.end(safety_outputs)
         return validated
+
+    @staticmethod
+    def _official_warning_texts(
+        guide: MedicationGuideFact | None,
+    ) -> list[str]:
+        if guide is None:
+            return []
+        return [
+            warning
+            for warning in (
+                guide.pre_use_warning,
+                guide.precautions,
+                guide.adverse_reactions,
+            )
+            if MedicationAnswerAssembler._has_guide_value(warning)
+        ]
 
     async def _evaluate_risk_policy(
         self,
