@@ -329,7 +329,9 @@ async def _run(args: argparse.Namespace) -> SeedManifest:
     await Tortoise.init(config=TORTOISE_ORM)
     try:
         async with in_transaction() as db:
-            await db.execute_script("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; SET TRANSACTION READ ONLY;")
+            isolation = await db.execute_query_dict("SELECT @@transaction_isolation AS isolation_level")
+            if isolation[0]["isolation_level"].upper() != "REPEATABLE-READ":
+                raise RuntimeError("기준정보 export는 REPEATABLE-READ 트랜잭션에서만 실행할 수 있습니다.")
             return await export_reference_seed(
                 db,
                 args.output,
