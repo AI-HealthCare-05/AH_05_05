@@ -31,6 +31,11 @@ def build_medication_chat_messages(
         "draft_answer": result.answer,
         "source_titles": [source.title for source in result.sources],
         "route": result.route.value,
+        "requested_section_types": (
+            [section.value for section in result.evidence_coverage.requested_section_types]
+            if result.evidence_coverage is not None
+            else []
+        ),
         "covered_section_types": (
             [section.value for section in result.evidence_coverage.covered_section_types]
             if result.evidence_coverage is not None
