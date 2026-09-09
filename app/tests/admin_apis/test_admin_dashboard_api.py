@@ -1,4 +1,5 @@
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 from itertools import count as counter
 from typing import Any
 
@@ -484,6 +485,7 @@ class TestDashboardOcrDocuments(DashboardTestBase):
         user: User,
         *,
         structured_result: dict[str, object] | None = None,
+        avg_field_confidence: Decimal | None = None,
         created_at: datetime | None = None,
     ) -> OcrJob:
         job = await OcrJob.create(
@@ -492,6 +494,7 @@ class TestDashboardOcrDocuments(DashboardTestBase):
             idempotency_key=f"dashboard-ocr-{next(_sequence)}",
             input_manifest={},
             structured_result=structured_result,
+            avg_field_confidence=avg_field_confidence,
             ocr_model="clova-template",
             structuring_model="rule-based",
             prompt_version="v1",
@@ -548,31 +551,48 @@ class TestDashboardOcrDocuments(DashboardTestBase):
         await self.create_ocr_job(
             OcrJobStatus.COMPLETE,
             user,
-            structured_result={"ocrFields": [{"confidence": 1.0}, {"confidence": 0.8}]},
+            avg_field_confidence=Decimal("0.9"),
             created_at=at(0),
         )
         await self.create_ocr_job(
             OcrJobStatus.COMPLETE,
             user,
-            structured_result={"ocrFields": [{"confidence": 0.6}]},
+            avg_field_confidence=Decimal("0.6"),
             created_at=at(3),
         )
         await self.create_ocr_job(
             OcrJobStatus.COMPLETE,
             user,
-            structured_result={"ocrFields": []},
+            structured_result={"ocrFields": [{"confidence": 0.1}]},
             created_at=at(1),
         )
         await self.create_ocr_job(
             OcrJobStatus.COMPLETE,
             user,
-            structured_result={"ocrFields": [{"confidence": 0.0}]},
+            avg_field_confidence=Decimal("0.0"),
             created_at=at(8),
         )
 
-        documents = (await self.fetch("LAST_7_DAYS"))["ocrDocuments"]
+        for period, expected in (("TODAY", 0.9), ("LAST_7_DAYS", 0.75), ("LAST_30_DAYS", 0.5)):
+            documents = (await self.fetch(period))["ocrDocuments"]
+            assert documents["avgFieldConfidence"] == expected
 
-        assert documents["avgFieldConfidence"] == 0.75
+    async def test_field_confidence_excludes_unfinished_failed_and_cancelled_jobs(self) -> None:
+        user = await create_user(name="OCR 회원", email=unique_email("ocr-confidence-status"))
+        for job_status in OcrJobStatus:
+            await self.create_ocr_job(
+                job_status,
+                user,
+                avg_field_confidence=Decimal("0.8") if job_status == OcrJobStatus.COMPLETE else Decimal("0.1"),
+            )
+        assert (await self.fetch())["ocrDocuments"]["avgFieldConfidence"] == 0.8
+
+    async def test_field_confidence_preserves_zero_and_excludes_missing_values(self) -> None:
+        user = await create_user(name="OCR 회원", email=unique_email("ocr-confidence-null"))
+        await self.create_ocr_job(OcrJobStatus.COMPLETE, user)
+        assert (await self.fetch())["ocrDocuments"]["avgFieldConfidence"] is None
+        await self.create_ocr_job(OcrJobStatus.COMPLETE, user, avg_field_confidence=Decimal("0"))
+        assert (await self.fetch())["ocrDocuments"]["avgFieldConfidence"] == 0.0
 
 
 class TestDashboardChatEvaluations(DashboardTestBase):

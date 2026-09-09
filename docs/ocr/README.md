@@ -60,7 +60,7 @@ OCR을 실행하려면 `fastapi`만 아니라 다음 네 서비스가 모두 필
 - Docker Desktop 실행
 - 프로젝트 저장소 내려받기
 - 프론트까지 실행할 경우 Node.js와 pnpm 설치
-- 팀에서 공유받은 CLOVA Template OCR Invoke URL, Secret, Template ID 준비
+- 팀에서 공유받은 CLOVA General OCR Invoke URL, Secret 준비
 
 모든 Docker 명령은 저장소 루트, 즉 `docker-compose.yml`이 있는 위치에서 실행한다.
 
@@ -96,17 +96,13 @@ APP_VERSION=dev
 ### CLOVA OCR 필수값
 
 ```dotenv
-CLOVA_TEMPLATE_OCR_INVOKE_URL=<CLOVA Template OCR Invoke URL>
-CLOVA_TEMPLATE_OCR_SECRET=<CLOVA OCR Secret>
-CLOVA_TEMPLATE_ID=<활성화된 조제약 템플릿 ID>
+CLOVA_GENERAL_OCR_INVOKE_URL=<CLOVA General OCR Invoke URL>
+CLOVA_GENERAL_OCR_SECRET=<CLOVA OCR Secret>
 ```
 
 선택값은 기본값을 그대로 사용해도 된다.
 
 ```dotenv
-CLOVA_CONNECT_TIMEOUT_SECONDS=5
-CLOVA_READ_TIMEOUT_SECONDS=60
-OCR_REVIEW_CONFIDENCE_THRESHOLD=0.90
 OCR_REVIEW_TTL_MINUTES=60
 OCR_RETRY_BASE_SECONDS=5
 ```
@@ -114,8 +110,7 @@ OCR_RETRY_BASE_SECONDS=5
 주의:
 
 - Secret을 Git에 커밋하거나 채팅·문서에 실제 값으로 적지 않는다.
-- `CLOVA_TEMPLATE_ID`는 숫자만 입력한다.
-- Invoke URL, Secret, Template ID 중 하나라도 맞지 않으면 worker가 시작하지 못하거나 OCR이 실패한다.
+- Invoke URL, Secret 중 하나라도 맞지 않으면 worker가 시작하지 못하거나 OCR이 실패한다.
 - OCR 처리 시간에 별도 화면 제한은 없지만, CLOVA 응답 읽기 제한은 기본 60초다.
 
 ## 2. Docker 기본 서비스와 FastAPI 실행
@@ -417,7 +412,7 @@ docker compose exec redis redis-cli ping
 docker compose logs --tail=200 ocr-worker
 ```
 
-`.env`의 Invoke URL, Secret, Template ID와 DB 설정을 확인한 뒤 컨테이너를 다시 만든다.
+`.env`의 Invoke URL, Secret 및 DB 설정을 확인한 뒤 컨테이너를 다시 만든다.
 
 ```powershell
 docker compose up -d --force-recreate fastapi ocr-worker
@@ -445,10 +440,9 @@ docker compose logs --tail=200 fastapi
 
 ### `PROVIDER_CONFIG_MISSING` 또는 CLOVA 관련 실패
 
-- `CLOVA_TEMPLATE_OCR_INVOKE_URL` 확인
-- `CLOVA_TEMPLATE_OCR_SECRET` 확인
-- `CLOVA_TEMPLATE_ID`가 활성 템플릿 ID인지 확인
-- CLOVA 콘솔에서 템플릿이 배포·활성 상태인지 확인
+- `CLOVA_GENERAL_OCR_INVOKE_URL` 확인
+- `CLOVA_GENERAL_OCR_SECRET` 확인
+- CLOVA 콘솔에서 General OCR 도메인의 Invoke URL과 Secret이 현재 worker 설정과 일치하는지 확인
 
 ### 이미지 업로드가 422 또는 413
 

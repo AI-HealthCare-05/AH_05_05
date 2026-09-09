@@ -145,18 +145,15 @@ class AdminDashboardService:
 
     @staticmethod
     async def _ocr_documents(start: datetime, end: datetime) -> OcrDocumentStats:
-        """OCR 상태 건수와 선택 기간의 작업별 필드 confidence 평균을 집계한다."""
+        """업로드 기간별 상태 건수와 성공 작업에 저장된 confidence의 평균을 집계한다."""
         period_jobs = OcrJob.filter(created_at__gte=start, created_at__lte=end)
         rows: list[dict[str, Any]] = (
             await period_jobs.annotate(total=Count("id")).group_by("status").values("status", "total")
         )
         counts = {OcrJobStatus(row["status"]): row["total"] for row in rows}
-        payloads = await period_jobs.values_list("structured_result", flat=True)
-        job_confidences = [
-            average
-            for payload in payloads
-            if (average := AdminDashboardService._field_confidence_average(payload)) is not None
-        ]
+        job_confidences = await period_jobs.filter(
+            status=OcrJobStatus.COMPLETE, avg_field_confidence__isnull=False
+        ).values_list("avg_field_confidence", flat=True)
 
         return OcrDocumentStats(
             total=sum(counts.values()),
@@ -169,26 +166,6 @@ class AdminDashboardService:
             failed=counts.get(OcrJobStatus.FAILED, 0),
             avg_field_confidence=(round(sum(job_confidences) / len(job_confidences), 6) if job_confidences else None),
         )
-
-    @staticmethod
-    def _field_confidence_average(payload: object) -> float | None:
-        if not isinstance(payload, dict):
-            return None
-        fields = payload.get("ocrFields")
-        if not isinstance(fields, list):
-            return None
-
-        confidences: list[float] = []
-        for field in fields:
-            if not isinstance(field, dict):
-                continue
-            value = field.get("confidence")
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                continue
-            confidence = float(value)
-            if 0.0 <= confidence <= 1.0:
-                confidences.append(confidence)
-        return sum(confidences) / len(confidences) if confidences else None
 
     @staticmethod
     async def _alarm_notifications(start: datetime, end: datetime) -> AlarmNotificationStats:
