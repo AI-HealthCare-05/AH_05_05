@@ -441,7 +441,7 @@ test('등록 별칭과 회차 편집 별칭은 새로고침 뒤에도 메모에�
 
   await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
   const episodeDialog = page.getByRole('dialog');
-  await episodeDialog.getByLabel('복약 별칭').fill('회차 편집 별칭');
+  await episodeDialog.getByRole('textbox', { name: '복약 별칭', exact: true }).fill('회차 편집 별칭');
   await episodeDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
   await page.reload();
@@ -452,7 +452,6 @@ test('등록 별칭과 회차 편집 별칭은 새로고침 뒤에도 메모에�
   await page.getByLabel('처방').selectOption('12');
   await expect(page.getByLabel('약').locator('option[value="301"]')).toContainText('셀레콕시브 200mg');
   await page.getByLabel('약').selectOption('301');
-  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
   await page.getByLabel('복용 후 느낀 점').fill('별칭을 포함한 메모');
   await page.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByText('회차 편집 별칭', { exact: true })).toBeVisible();
@@ -468,8 +467,9 @@ for (const width of [375, 1280]) {
     await page.goto('/medications');
     await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('복약 별칭').fill(alias);
-    await expect(dialog.getByLabel('복약 별칭')).toHaveValue(alias);
+    const aliasInput = dialog.getByRole('textbox', { name: '복약 별칭', exact: true });
+    await aliasInput.fill(alias);
+    await expect(aliasInput).toHaveValue(alias);
     await dialog.getByRole('button', { name: '저장', exact: true }).click();
     await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
     await page.reload();
@@ -479,7 +479,6 @@ for (const width of [375, 1280]) {
     await page.screenshot({ path: testInfo.outputPath(`alias-card-${width}.png`), fullPage: true });
     await page.goto('/medications/notes/new');
     await page.getByLabel('처방').selectOption('12');
-    await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
     await page.getByLabel('복용 후 느낀 점').fill('긴 별칭을 보존하는 메모');
     await page.getByRole('button', { name: '저장', exact: true }).click();
     const badge = page.getByText(alias, { exact: true });
@@ -515,7 +514,6 @@ test('복약 메모는 SessionContext principal별로 격리된다', async ({ pa
   await page.goto('/medications/notes/new');
   await page.getByLabel('처방').selectOption('12');
   await page.getByLabel('약').selectOption('301');
-  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
   await page.getByLabel('복용 후 느낀 점').fill('계정 A의 메모');
   await page.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByText('계정 A의 메모')).toBeVisible();
@@ -542,7 +540,6 @@ test('복약 메모는 작성·수정·삭제할 수 있다', async ({ page }) =
   await expect(page).toHaveURL('/medications/notes/new');
   await page.getByLabel('처방').selectOption('12');
   await page.getByLabel('약').selectOption('301');
-  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
   await page.getByLabel('복용 후 느낀 점').fill('속이 편해졌어요.');
   await page.getByRole('button', { name: '저장', exact: true }).click();
 
@@ -599,7 +596,6 @@ test('복약 메모 저장 실패는 입력을 보존하고 재시도할 수 있
 
   await page.goto('/medications/notes/new');
   await page.getByLabel('처방').selectOption('12');
-  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
   await page.getByLabel('복용 후 느낀 점').fill('재시도 메모');
   await page.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('잠시 후 다시 시도해주세요.');
@@ -614,7 +610,6 @@ test('복약 메모 저장·삭제 중 중복 클릭을 하나의 요청으로 �
   await page.goto('/medications/notes/new');
   await page.getByLabel('처방').selectOption('12');
   await page.getByLabel('약').selectOption('301');
-  await page.getByLabel('복용 일시').fill('2026-09-03T15:20');
   await page.getByLabel('복용 후 느낀 점').fill('중복 저장 방지 메모');
 
   const saveButton = page.getByRole('button', { name: /저장/ }).filter({ hasText: '저장' });
