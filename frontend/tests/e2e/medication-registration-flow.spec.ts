@@ -1025,7 +1025,7 @@ test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할
       lowConfidenceCount: 0,
     });
   });
-  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/image', async (route) => {
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21/*image', async (route) => {
     await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
   });
   await page.route('**/api/v1/med/medication/schedule/**', async (route) => {
@@ -2109,16 +2109,19 @@ for (const headerOnly of [false, true]) {
     await page.goto('/ocr-review?batchId=501');
     await expect(page.getByText('약 정보를 추출하지 못했어요', { exact: true })).toBeVisible();
     await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
+    const failureDialog = page.getByRole('dialog', { name: '문서를 읽지 못했어요' });
+    await expect(failureDialog).toBeVisible();
+    await expect(page.getByLabel('복약 별칭')).toHaveCount(0);
     await expect(page.getByText('저장 완료', { exact: true })).toHaveCount(0);
     await expect(page.getByText('내용을 잘 읽었어요', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true })).toHaveCount(0);
     await page.screenshot({ path: `test-results/empty-ocr-${headerOnly}.png`, fullPage: true });
     if (headerOnly) {
-      await page.getByRole('button', { name: '직접 입력하기', exact: true }).click();
+      await failureDialog.getByRole('button', { name: '그대로 직접 입력', exact: true }).click();
       await expect(page.getByText('약 정보를 직접 입력해주세요', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: '직접 추가' })).toBeVisible();
     } else {
-      await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+      await failureDialog.getByRole('button', { name: '다시 촬영', exact: true }).click();
       await expect(page).toHaveURL(/\/document-upload$/);
     }
   });
@@ -2126,10 +2129,20 @@ for (const headerOnly of [false, true]) {
 
 test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으로 보여준다', async ({ page }) => {
   await authenticate(page);
+  await interceptDefaultNotifySettings(page);
   let failed = false;
+  const patches: CapturedRequest[] = [];
+  await page.route('**/api/v1/med/medication/schedule/**', route => fulfillJson(route, {
+    start: null, mealTimes: null, medications: [],
+  }));
   await page.route('**/api/v1/ocr/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+    if (request.method() === 'PATCH' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      patches.push(capture(route));
+      await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
+      return;
+    }
     if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
       await fulfillJson(
         route,
@@ -2156,4 +2169,27 @@ test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으�
   await expect(failureDialog.getByRole('heading', { name: '문서를 읽지 못했어요' })).toBeVisible();
   await expect(failureDialog.getByRole('button', { name: '다시 촬영' })).toBeVisible();
   await expect(failureDialog.getByRole('button', { name: '그대로 직접 입력' })).toBeVisible();
+  await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
+  await expect(page.getByText('약 정보를 추출하지 못했어요', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('복약 별칭')).toHaveCount(0);
+  await expect(page.getByText('나머지는 잘 읽혔습니다.', { exact: false })).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/failed-ocr-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({ path: 'test-results/failed-ocr-desktop.png', fullPage: true });
+  await failureDialog.getByRole('button', { name: '그대로 직접 입력' }).click();
+  await expect(failureDialog).toHaveCount(0);
+  await expect(page.getByText('약 정보를 직접 입력해주세요', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '직접 추가' })).toBeVisible();
+  await page.getByLabel('조제일', { exact: true }).fill('2026-08-22');
+  await page.getByRole('button', { name: '직접 추가', exact: true }).click();
+  const medicationDialog = page.getByRole('dialog', { name: '약 추가' });
+  await medicationDialog.getByLabel('약품명').fill('직접입력약');
+  await medicationDialog.getByRole('button', { name: '저장', exact: true }).click();
+  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  await expect(page).toHaveURL('/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration');
+  expect(patches).toHaveLength(1);
+  expect(JSON.parse(patches[0].body).medications[0].name).toBe('직접입력약');
+  await page.goBack();
+  await expect(page.getByRole('button', { name: /직접입력약/ })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '문서를 읽지 못했어요' })).toHaveCount(0);
 });
