@@ -240,7 +240,11 @@ class RuleBasedMedicationQuestionResolver:
             return exact_resolution
 
         prefix_candidates = self._ambiguous_prefix_candidates(
-            surfaces=surfaces,
+            surfaces=self._prefix_candidate_surfaces(
+                question=normalized_question,
+                tokens=tokens,
+                token_surfaces=surfaces,
+            ),
             catalog=catalog,
         )
         if prefix_candidates:
@@ -834,6 +838,26 @@ class RuleBasedMedicationQuestionResolver:
         tokens: list[_QuestionToken],
     ) -> list[str]:
         return list(dict.fromkeys(token.surface for token in tokens if token.surface not in cls._NON_ENTITY_TOKENS))
+
+    @classmethod
+    def _prefix_candidate_surfaces(
+        cls,
+        *,
+        question: str,
+        tokens: list[_QuestionToken],
+        token_surfaces: list[str],
+    ) -> list[str]:
+        """공유 접두어 판정에서는 가장 구체적인 연속 표현을 먼저 검사한다."""
+        phrases = [
+            question[window[0].start : window[-1].end]
+            for window in cls._token_windows(tokens)
+            if all(token.surface not in cls._NON_ENTITY_TOKENS for token in window)
+        ]
+        longest_first = sorted(
+            dict.fromkeys(phrases),
+            key=lambda value: (-len(cls._normalize_expression(value)), value.casefold()),
+        )
+        return list(dict.fromkeys([*longest_first, *token_surfaces]))
 
     @classmethod
     def _spacing_corrections(
