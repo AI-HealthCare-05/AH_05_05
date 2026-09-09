@@ -1,5 +1,6 @@
 """#304: preserve cancelled attempts and allow a fresh participation on rejoin."""
 
+from copy import deepcopy
 from importlib import import_module
 from json import loads
 
@@ -21,12 +22,11 @@ async def _check_applied_snapshot(db: BaseDBAsyncClient) -> None:
         return
     content = applied[0]["content"]
     previous = loads(content) if isinstance(content, str) else content
-    missing_models = set(previous) - set(_state)
-    if missing_models:
+    if previous not in (_previous_state, _state):
         raise RuntimeError(
             "Challenge rejoin migration stopped: integrate the previously applied model snapshot "
-            "(including #315 migration 40) into migration 41 before upgrading. "
-            "This migration would omit models: " + ", ".join(sorted(missing_models))
+            "before upgrading. Expected immutable migration 40 or the reconciled migration 41 snapshot; "
+            "model fields, relations and indexes must also match. No schema or history was changed."
         )
 
 
@@ -85,9 +85,10 @@ async def downgrade(db: BaseDBAsyncClient) -> str:
 
 
 # Derive from the immutable preceding snapshot, never from runtime application models.
-_state = decompress_dict(
-    import_module("app.core.db.migrations.models.39_20260908151829_challenge_daily_verification").MODELS_STATE
+_previous_state = decompress_dict(
+    import_module("app.core.db.migrations.models.40_20260908160000_custom_challenge_participations").MODELS_STATE
 )
+_state = deepcopy(_previous_state)
 _state["models.UserChallenge"]["unique_together"] = []
 _state["models.UserChallenge"]["indexes"].append(
     {
