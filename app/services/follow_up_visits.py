@@ -86,6 +86,12 @@ class FollowUpVisitService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Follow-up visit not found.",
                 )
+            hospital = updates.get("hospital", visit.hospital)
+            if hospital is None or not hospital.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="hospital is required to update a follow-up visit.",
+                )
             original_visit_date = visit.visit_date
             if updates:
                 for field_name, value in updates.items():
