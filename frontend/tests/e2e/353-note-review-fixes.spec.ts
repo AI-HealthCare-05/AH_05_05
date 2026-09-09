@@ -114,7 +114,7 @@ test('선택한 처방의 마지막 메모 삭제 후 옵션을 재조회하고 
   await expect.poll(() => postDeleteOptionRequests).toBe(1);
   const selector = page.getByLabel('처방별 메모 필터');
   await expect(selector).toHaveValue('41');
-  await expect(selector.locator('option')).toHaveText(['전체', '처방 #41']);
+  await expect(selector.locator('option')).toHaveText(['전체', '선택한 처방']);
   await expect(page.getByRole('heading', { name: '복약 메모 0개' })).toBeVisible();
 });
 

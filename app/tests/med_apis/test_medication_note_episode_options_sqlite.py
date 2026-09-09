@@ -14,7 +14,7 @@ from app.core.exception_handlers import register_exception_handlers
 from app.dependencies.security import get_request_user
 from app.models.care import CareEpisode
 from app.models.enums import AccountStatus, CareEpisodeStatus
-from app.models.medications import MedicationNote
+from app.models.medications import Medication, MedicationNote
 from app.models.users import User
 
 OPTIONS_URL = "/api/v1/med/notes/episodes"
@@ -134,6 +134,10 @@ async def test_note_episode_options_return_distinct_owned_historical_summaries(
     await create_note(other, other_episode, "다른 사용자 메모")
     await create_note(other, foreign_note_only, "소유자가 다른 메모")
     await create_note(owner, other_episode, "소유자가 다른 처방의 비정상 메모")
+    await Medication.create(care_episode=recent, name="먼저 등록한 약")
+    await Medication.create(care_episode=recent, name="가나다 약")
+    await Medication.create(care_episode=older, name="완료 처방 약")
+    await Medication.create(care_episode=other_episode, name="다른 사용자 약")
 
     async with AsyncClient(
         transport=ASGITransport(app=api_for(owner)),
@@ -148,18 +152,24 @@ async def test_note_episode_options_return_distinct_owned_historical_summaries(
             "alias": "같은 별칭",
             "startDate": "2026-09-01",
             "status": "ACTIVE",
+            "representativeMedicationName": "먼저 등록한 약",
+            "medicationCount": 2,
         },
         {
             "careEpisodeId": older.id,
             "alias": "같은 별칭",
             "startDate": "2024-01-02",
             "status": "COMPLETED",
+            "representativeMedicationName": "완료 처방 약",
+            "medicationCount": 1,
         },
         {
             "careEpisodeId": cancelled.id,
             "alias": None,
             "startDate": None,
             "status": "CANCELLED",
+            "representativeMedicationName": None,
+            "medicationCount": 0,
         },
     ]
     assert no_notes.id not in {item["careEpisodeId"] for item in response.json()}

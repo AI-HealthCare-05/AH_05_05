@@ -4,6 +4,7 @@ import { useSession } from '@/app/SessionContext';
 import {
   createMedicationNote,
   getMedicationNote,
+  listMedicationNotes,
   updateMedicationNote,
   type MedicationNote,
   type MedicationNoteMedication,
@@ -14,6 +15,7 @@ import {
 } from '@/entities/medication';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { clearSavedNoteFilter, rememberSavedNoteFilter } from './medicationNoteReturnFilter';
 import {
   BottomTabbar,
   Button,
@@ -51,7 +53,7 @@ function prescriptionLabel(episode: NoteEpisodeOption): string {
   if (episode.startDate) {
     return `${formatDateLabel(episode.startDate, { includeYear: true })} 처방`;
   }
-  return `처방 #${episode.id}`;
+  return '처방';
 }
 
 function medicineLabel(medication: MedicationNoteMedication): string {
@@ -112,8 +114,15 @@ export function MedicationNoteFormPage() {
   const { noteId } = useParams<{ noteId?: string }>();
   const { principalKey } = useSession();
   const editing = noteId !== undefined;
-  const entry = location.state as { entry?: unknown; fromMedications?: unknown } | null;
+  const entry = location.state as {
+    entry?: unknown; fromMedications?: unknown; listKey?: unknown;
+    initialEpisodeId?: unknown; referenceNoteId?: unknown;
+  } | null;
   const enteredFromNotes = entry?.entry === 'notes';
+  const initialEpisodeId = enteredFromNotes && typeof entry?.initialEpisodeId === 'number'
+    ? entry.initialEpisodeId : undefined;
+  const referenceNoteId = enteredFromNotes && typeof entry?.referenceNoteId === 'number'
+    ? entry.referenceNoteId : undefined;
   const enteredFromHome = !editing &&
     entry?.entry === 'home';
   const [note, setNote] = useState<MedicationNote | null>(null);
@@ -126,6 +135,7 @@ export function MedicationNoteFormPage() {
   const saveGenerationRef = useRef(0);
 
   useEffect(() => {
+    clearSavedNoteFilter();
     savingRef.current = false;
     setSaving(false);
     return () => {
@@ -143,7 +153,7 @@ export function MedicationNoteFormPage() {
       : Promise.resolve(null);
     const overviewRequest = getMedicationOverviews();
     Promise.allSettled([noteRequest, overviewRequest])
-      .then(([noteResult, overviewResult]) => {
+      .then(async ([noteResult, overviewResult]) => {
         if (cancelled) return;
         if (noteResult.status === 'rejected') {
           setInitialLoadError(
@@ -158,7 +168,23 @@ export function MedicationNoteFormPage() {
           setInitialLoadError('복약 메모를 찾지 못했어요.');
           return;
         }
-        if (overviewResult.status === 'rejected' && !loadedNote) {
+        const activeEpisodes = overviewResult.status === 'fulfilled'
+          ? overviewResult.value
+              .filter((overview) => overview.medications.length > 0)
+              .map(episodeFromOverview)
+          : [];
+        if (!loadedNote && initialEpisodeId !== undefined &&
+          !activeEpisodes.some((episode) => episode.id === initialEpisodeId)) {
+          const referenceNote = referenceNoteId === undefined
+            ? (await listMedicationNotes({ episodeId: initialEpisodeId, limit: 1 })).items[0]
+            : await getMedicationNote(referenceNoteId);
+          if (cancelled) return;
+          if (!referenceNote || referenceNote.careEpisodeId !== initialEpisodeId) {
+            throw new Error('선택한 처방을 확인하지 못했어요. 목록에서 다시 선택해주세요.');
+          }
+          activeEpisodes.unshift(episodeFromNote(referenceNote));
+        }
+        if (overviewResult.status === 'rejected' && !loadedNote && activeEpisodes.length === 0) {
           setInitialLoadError(
             overviewResult.reason instanceof Error
               ? overviewResult.reason.message
@@ -166,11 +192,6 @@ export function MedicationNoteFormPage() {
           );
           return;
         }
-        const activeEpisodes = overviewResult.status === 'fulfilled'
-          ? overviewResult.value
-              .filter((overview) => overview.medications.length > 0)
-              .map(episodeFromOverview)
-          : [];
         const originalEpisode = loadedNote ? episodeFromNote(loadedNote) : null;
         const nextEpisodes = originalEpisode
           ? [
@@ -180,7 +201,15 @@ export function MedicationNoteFormPage() {
           : activeEpisodes;
         setNote(loadedNote);
         setEpisodes(nextEpisodes);
-        const nextForm = initialForm(loadedNote);
+        const nextForm = { ...initialForm(loadedNote) };
+        if (!loadedNote && initialEpisodeId !== undefined) {
+          const initialEpisode = nextEpisodes.find((episode) => episode.id === initialEpisodeId);
+          if (initialEpisode) {
+            nextForm.recordId = String(initialEpisode.id);
+            nextForm.medicationId = initialEpisode.medications[0] ? String(initialEpisode.medications[0].id) : '';
+            nextForm.takenAt = initialEpisode.firstDoseAt ?? '';
+          }
+        }
         if (
           loadedNote &&
           loadedNote.medicationId !== null &&
@@ -198,7 +227,7 @@ export function MedicationNoteFormPage() {
     return () => {
       cancelled = true;
     };
-  }, [noteId, principalKey]);
+  }, [initialEpisodeId, noteId, principalKey, referenceNoteId]);
 
   const selectedEpisode = useMemo(
     () => episodes?.find((episode) => String(episode.id) === form.recordId) ?? null,
@@ -246,6 +275,7 @@ export function MedicationNoteFormPage() {
     setSaving(true);
     setMutationError(null);
     try {
+      let createdEpisodeId: number | null = null;
       if (editing && noteId) {
         await updateMedicationNote(decodeURIComponent(noteId), {
           medicationId:
@@ -256,16 +286,24 @@ export function MedicationNoteFormPage() {
           body: form.experience.trim(),
         });
       } else {
-        await createMedicationNote({
+        const createdNote = await createMedicationNote({
           careEpisodeId: Number(form.recordId),
           ...(form.medicationId !== '' ? { medicationId: Number(form.medicationId) } : {}),
           dosedAt: form.takenAt,
           body: form.experience.trim(),
         });
+        createdEpisodeId = createdNote.careEpisodeId;
       }
       if (saveGenerationRef.current !== saveGeneration) return;
-      if (enteredFromNotes) navigate(-1);
-      else navigate('/medications/notes', { replace: true });
+      if (enteredFromNotes) {
+        if (createdEpisodeId !== null && typeof entry?.listKey === 'string' && principalKey !== null) {
+          rememberSavedNoteFilter({ listKey: entry.listKey, principalKey, episodeId: createdEpisodeId });
+        }
+        navigate(-1);
+      } else {
+        const suffix = createdEpisodeId === null ? '' : `?episodeId=${createdEpisodeId}`;
+        navigate(`/medications/notes${suffix}`, { replace: true });
+      }
     } catch (error: unknown) {
       if (saveGenerationRef.current !== saveGeneration) return;
       setMutationError(error instanceof Error ? error.message : '복약 메모를 저장하지 못했어요.');
@@ -284,6 +322,7 @@ export function MedicationNoteFormPage() {
       <Header
         title={title}
         onBack={() => {
+          clearSavedNoteFilter();
           saveGenerationRef.current += 1;
           if (enteredFromNotes) navigate(-1);
           else navigate(enteredFromHome ? '/home' : '/medications/notes', { replace: true });
@@ -395,6 +434,7 @@ export function MedicationNoteFormPage() {
       <BottomTabbar
         active="medication"
         onChange={(key) => {
+          clearSavedNoteFilter();
           saveGenerationRef.current += 1;
           if (key !== 'medication') navigate(TAB_ROUTES[key]);
           else if (enteredFromNotes && entry?.fromMedications === true) navigate(-2);

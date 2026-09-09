@@ -25,8 +25,8 @@ const NOTE_42 = {
 };
 
 const EPISODES = [
-  { careEpisodeId: 42, alias: '감기약', startDate: '2026-09-01', status: 'ACTIVE' },
-  { careEpisodeId: 41, alias: '감기약', startDate: '2026-09-01', status: 'ACTIVE' },
+  { careEpisodeId: 42, alias: '감기약', startDate: '2026-09-01', status: 'ACTIVE', representativeMedicationName: '타이레놀', medicationCount: 3 },
+  { careEpisodeId: 41, alias: '감기약', startDate: '2026-09-01', status: 'ACTIVE', representativeMedicationName: '아목시실린', medicationCount: 1 },
   { careEpisodeId: 43, alias: '감기약', startDate: '2025-12-31', status: 'COMPLETED' },
   { careEpisodeId: 44, alias: null, startDate: '2024-01-02', status: 'CANCELLED' },
   { careEpisodeId: 45, alias: '오래된 처방', startDate: null, status: 'COMPLETED' },
@@ -68,8 +68,8 @@ test('요약 API의 모든 처방을 선택기에 보이고 URL 필터 변경 �
   await expect(selector).toBeEnabled();
   await expect(selector.locator('option')).toHaveText([
     '전체',
-    '감기약 · 2026년 9월 1일 · #42',
-    '감기약 · 2026년 9월 1일 · #41',
+    '감기약 · 2026년 9월 1일 · 타이레놀 외 2개',
+    '감기약 · 2026년 9월 1일 · 아목시실린',
     '감기약 · 2025년 12월 31일',
     '2024년 1월 2일 처방',
     '오래된 처방',

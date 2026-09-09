@@ -486,8 +486,9 @@ for (const width of [375, 1280]) {
     await expect(badge).toHaveText(alias);
     expect(await badge.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await badge.evaluate((element) => element.getBoundingClientRect().right <= element.closest('button')!.getBoundingClientRect().right)).toBe(true);
-    const filterButton = page.getByRole('button', { name: `${alias} 메모만 보기`, exact: true });
-    expect(await filterButton.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const filterSelector = page.getByLabel('처방별 메모 필터');
+    await expect(filterSelector.locator('option:checked')).toContainText(alias);
+    expect(await filterSelector.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`alias-${width}.png`), fullPage: true });
   });
@@ -543,7 +544,7 @@ test('복약 메모는 작성·수정·삭제할 수 있다', async ({ page }) =
   await page.getByLabel('복용 후 느낀 점').fill('속이 편해졌어요.');
   await page.getByRole('button', { name: '저장', exact: true }).click();
 
-  await expect(page).toHaveURL('/medications/notes');
+  await expect(page).toHaveURL('/medications/notes?episodeId=12');
   await expect(page.getByText('속이 편해졌어요.')).toBeVisible();
   await page.getByRole('button', { name: /속이 편해졌어요/ }).click();
   await expect(page).toHaveURL(/\/medications\/notes\/[^/]+/);
@@ -551,12 +552,12 @@ test('복약 메모는 작성·수정·삭제할 수 있다', async ({ page }) =
   await page.getByRole('button', { name: '수정 저장' }).click();
   await expect(page.getByText('수정한 메모예요.')).toBeVisible();
 
-  await page.getByRole('button', { name: /수정한 메모예요/ }).click();
-  await expect(page).toHaveURL(/\/medications\/notes\/[^/]+/);
-  await page.getByRole('button', { name: '삭제' }).click();
-  await expect(page.getByRole('dialog')).toContainText('삭제한 복약 메모는 다시 볼 수 없어요.');
-  await page.getByRole('dialog').getByRole('button', { name: '삭제', exact: true }).click();
-  await expect(page).toHaveURL('/medications/notes');
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('checkbox', { name: /메모 선택:/ }).check();
+  await page.getByRole('button', { name: '선택한 1개 삭제' }).click();
+  await expect(page.getByRole('dialog')).toContainText('1개의 메모가 삭제되며 다시 볼 수 없어요.');
+  await page.getByRole('dialog').getByRole('button', { name: '삭제하기', exact: true }).click();
+  await expect(page).toHaveURL('/medications/notes?episodeId=12');
   await expect(page.getByText('수정한 메모예요.')).toHaveCount(0);
 });
 
@@ -602,7 +603,7 @@ test('복약 메모 저장 실패는 입력을 보존하고 재시도할 수 있
   await expect(page.getByLabel('복용 후 느낀 점')).toHaveValue('재시도 메모');
   await expect(page.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page).toHaveURL('/medications/notes');
+  await expect(page).toHaveURL('/medications/notes?episodeId=12');
   await expect(page.getByText('재시도 메모', { exact: true })).toBeVisible();
 });
 
@@ -618,20 +619,21 @@ test('복약 메모 저장·삭제 중 중복 클릭을 하나의 요청으로 �
   await saveButton.evaluate((button) => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
-  await expect(page).toHaveURL('/medications/notes');
+  await expect(page).toHaveURL('/medications/notes?episodeId=12');
   await expect(page.getByRole('heading', { name: '복약 메모 1개', exact: true })).toBeVisible();
   await expect(page.getByText('중복 저장 방지 메모', { exact: true })).toHaveCount(1);
 
-  await page.getByRole('button', { name: /중복 저장 방지 메모/ }).click();
   const deleteButton = page.getByRole('button', { name: '삭제', exact: true });
   await deleteButton.click();
+  await page.getByRole('checkbox', { name: /메모 선택:/ }).check();
+  await page.getByRole('button', { name: '선택한 1개 삭제' }).click();
   const confirmDeleteButton = page.getByRole('dialog').getByRole('button', { name: /^삭제/ });
   await confirmDeleteButton.click();
   await expect(confirmDeleteButton).toBeDisabled();
   await confirmDeleteButton.evaluate((button) => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
-  await expect(page).toHaveURL('/medications/notes');
+  await expect(page).toHaveURL('/medications/notes?episodeId=12');
   await expect(page.locator('#medication-notes-title')).toBeVisible();
   await expect(page.getByText('중복 저장 방지 메모', { exact: true })).toHaveCount(0);
 });

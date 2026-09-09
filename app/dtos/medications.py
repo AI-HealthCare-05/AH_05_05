@@ -147,6 +147,8 @@ class MedicationNoteEpisodeResponse(CamelModel):
     alias: str | None = None
     start_date: date | None = None
     status: CareEpisodeStatus
+    representative_medication_name: str | None = None
+    medication_count: int = Field(default=0, ge=0)
 
 
 # 이름을 명시적으로 풀어 쓴 코드와 짧은 코드가 모두 읽기 쉽도록 호환 별칭을 둔다.

@@ -219,12 +219,29 @@ class MedicationService:
             .order_by("-medication_start_date", "-id")
             .values("id", "alias", "medication_start_date", "status")
         )
+        episode_ids = [row["id"] for row in rows]
+        medication_rows = (
+            await Medication.filter(care_episode_id__in=episode_ids)
+            .order_by("care_episode_id", "id")
+            .values("care_episode_id", "name")
+            if episode_ids
+            else []
+        )
+        representative_medication_names: dict[int, str] = {}
+        medication_counts: dict[int, int] = {}
+        for medication_row in medication_rows:
+            episode_id = medication_row["care_episode_id"]
+            representative_medication_names.setdefault(episode_id, medication_row["name"])
+            medication_counts[episode_id] = medication_counts.get(episode_id, 0) + 1
+
         return [
             MedicationNoteEpisodeResponse(
                 care_episode_id=row["id"],
                 alias=row["alias"],
                 start_date=row["medication_start_date"],
                 status=row["status"],
+                representative_medication_name=representative_medication_names.get(row["id"]),
+                medication_count=medication_counts.get(row["id"], 0),
             )
             for row in rows
         ]

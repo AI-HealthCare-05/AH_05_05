@@ -26,6 +26,7 @@ import {
   Header,
 } from '@/shared/ui';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { consumeSavedNoteFilter } from './medicationNoteReturnFilter';
 
 const INVALID_EPISODE_FILTER_VALUE = '__invalid_episode__';
 
@@ -44,7 +45,7 @@ function filterEpisodeBaseLabel(episode: MedicationNoteEpisode): string {
   if (episode.startDate) {
     return `${formatDateLabel(episode.startDate, { includeYear: true })} 처방`;
   }
-  return `처방 #${episode.careEpisodeId}`;
+  return '처방';
 }
 
 export function MedicationNotesPage() {
@@ -52,7 +53,6 @@ export function MedicationNotesPage() {
   const location = useLocation();
   const enteredFromMedications =
     (location.state as { entry?: unknown } | null)?.entry === 'medications';
-  const formEntry = { entry: 'notes', fromMedications: enteredFromMedications };
   const [searchParams, setSearchParams] = useSearchParams();
   const { principalKey } = useSession();
   const [page, setPage] = useState<MedicationNotePage | null>(null);
@@ -76,6 +76,18 @@ export function MedicationNotesPage() {
       ? parsedEpisodeId
       : undefined;
   const invalidEpisodeFilter = episodeIdParam !== null && episodeId === undefined;
+  const formEntry = {
+    entry: 'notes', fromMedications: enteredFromMedications,
+    listKey: location.key, initialEpisodeId: episodeId,
+    referenceNoteId: episodeId === undefined ? undefined
+      : page?.items.find((note) => note.careEpisodeId === episodeId)?.id,
+  };
+  useEffect(() => {
+    const savedEpisodeId = consumeSavedNoteFilter(location.key, principalKey);
+    if (savedEpisodeId !== null) {
+      setSearchParams({ episodeId: String(savedEpisodeId) }, { replace: true, state: location.state });
+    }
+  }, [location.key, location.state, principalKey, setSearchParams]);
   const episodeFilterValue = invalidEpisodeFilter
     ? INVALID_EPISODE_FILTER_VALUE
     : episodeId === undefined ? '' : String(episodeId);
@@ -196,6 +208,25 @@ export function MedicationNotesPage() {
   for (const label of optionBaseLabels) {
     optionLabelCounts.set(label, (optionLabelCounts.get(label) ?? 0) + 1);
   }
+  const optionMedicationLabels = (episodeOptions ?? []).map((episode, index) => {
+    const baseLabel = optionBaseLabels[index];
+    const medicationName = episode.representativeMedicationName?.trim();
+    if (optionLabelCounts.get(baseLabel) === 1 || !medicationName) return baseLabel;
+    const remaining = Number.isSafeInteger(episode.medicationCount) && (episode.medicationCount ?? 0) > 1
+      ? ` 외 ${episode.medicationCount! - 1}개` : '';
+    return `${baseLabel} · ${medicationName}${remaining}`;
+  });
+  const fullLabelCounts = new Map<string, number>();
+  for (const label of optionMedicationLabels) {
+    fullLabelCounts.set(label, (fullLabelCounts.get(label) ?? 0) + 1);
+  }
+  const labelOrdinals = new Map<string, number>();
+  const optionLabels = optionMedicationLabels.map((label) => {
+    if (fullLabelCounts.get(label) === 1) return label;
+    const ordinal = (labelOrdinals.get(label) ?? 0) + 1;
+    labelOrdinals.set(label, ordinal);
+    return `${label} · 처방 ${ordinal}`;
+  });
   const selectedEpisodeIsMissing = episodeId !== undefined &&
     episodeOptions !== null &&
     !episodeOptions.some((episode) => episode.careEpisodeId === episodeId);
@@ -295,7 +326,7 @@ export function MedicationNotesPage() {
     if (note.careEpisodeStartDate) {
       return `${formatDateLabel(note.careEpisodeStartDate, { includeYear: true })} 처방`;
     }
-    return `처방 #${note.careEpisodeId}`;
+    return '처방';
   }
 
   function setEpisodeFilter(value: string) {
@@ -367,18 +398,14 @@ export function MedicationNotesPage() {
                   )}
                   <option value="">전체</option>
                   {episodeOptions.map((episode, index) => {
-                    const baseLabel = optionBaseLabels[index];
-                    const label = optionLabelCounts.get(baseLabel) === 1
-                      ? baseLabel
-                      : `${baseLabel} · #${episode.careEpisodeId}`;
                     return (
                       <option key={episode.careEpisodeId} value={episode.careEpisodeId}>
-                        {label}
+                        {optionLabels[index]}
                       </option>
                     );
                   })}
                   {selectedEpisodeIsMissing && (
-                    <option value={episodeId}>처방 #{episodeId}</option>
+                    <option value={episodeId}>선택한 처방</option>
                   )}
                 </>
               )}

@@ -154,11 +154,14 @@ export function mockListMedicationNoteEpisodes(): MedicationNoteEpisode[] {
   const byEpisodeId = new Map<number, MedicationNoteEpisode>();
   for (const note of readNotes().map(hydrateNote)) {
     if (byEpisodeId.has(note.careEpisodeId)) continue;
+    const representative = [...note.availableMedications].sort((a, b) => a.id - b.id)[0];
     byEpisodeId.set(note.careEpisodeId, {
       careEpisodeId: note.careEpisodeId,
       alias: note.careEpisodeAlias,
       startDate: note.careEpisodeStartDate,
       status: note.careEpisodeStatus,
+      representativeMedicationName: representative?.name ?? null,
+      medicationCount: note.availableMedications.length,
     });
   }
   return [...byEpisodeId.values()].sort(

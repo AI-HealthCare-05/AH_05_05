@@ -33,6 +33,8 @@ export interface MedicationNoteEpisode {
   alias: string | null;
   startDate: string | null;
   status: MedicationNoteEpisodeStatus;
+  representativeMedicationName?: string | null;
+  medicationCount?: number;
 }
 
 export interface MedicationNoteListParams {
