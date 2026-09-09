@@ -49,22 +49,21 @@ export function AddSupplementSheet({
   const [manualMode, setManualMode] = useState(false);
   const [manualName, setManualName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [presetMode, setPresetMode] = useState(false);
   const searchGenerationRef = useRef(0);
+  const isPresetProductMode = presetProductId !== null;
 
   useEffect(() => {
-    if (!open || manualMode || presetMode) return;
+    if (!open || manualMode || isPresetProductMode) return;
     setDebouncedQuery('');
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return;
     const timer = window.setTimeout(() => setDebouncedQuery(trimmedQuery), 300);
     return () => window.clearTimeout(timer);
-  }, [manualMode, open, presetMode, query]);
+  }, [isPresetProductMode, manualMode, open, query]);
 
   useEffect(() => {
     if (!open || !presetProductId) return;
     const generation = ++searchGenerationRef.current;
-    setPresetMode(true);
     setManualMode(false);
     setQuery('');
     setDebouncedQuery('');
@@ -98,7 +97,7 @@ export function AddSupplementSheet({
   }, [open, presetProductId]);
 
   useEffect(() => {
-    if (presetMode || (presetProductId && !query.trim())) return;
+    if (isPresetProductMode) return;
     const generation = ++searchGenerationRef.current;
     setLoadingMore(false);
     if (!open || !debouncedQuery || manualMode) {
@@ -132,7 +131,7 @@ export function AddSupplementSheet({
     return () => {
       if (generation === searchGenerationRef.current) searchGenerationRef.current += 1;
     };
-  }, [debouncedQuery, manualMode, open, presetMode, presetProductId, query]);
+  }, [debouncedQuery, isPresetProductMode, manualMode, open, query]);
 
   const selectedProduct =
     results.find((product) => product.productId === selectedProductId) ?? null;
@@ -151,7 +150,6 @@ export function AddSupplementSheet({
     setManualMode(false);
     setManualName('');
     setSaving(false);
-    setPresetMode(false);
   }
 
   function changeOpen(nextOpen: boolean) {
@@ -161,6 +159,10 @@ export function AddSupplementSheet({
 
   function selectProduct(product: SupplementProduct) {
     setManualMode(false);
+    if (!isPresetProductMode && selectedProductId === product.productId) {
+      setSelectedProductId(null);
+      return;
+    }
     setSelectedProductId(product.productId);
     setDoseAmount(product.recommendedDoseAmount ?? DEFAULT_DOSE_AMOUNT);
     setSlots(product.recommendedSlots);
@@ -249,7 +251,7 @@ export function AddSupplementSheet({
           </DialogDescription>
         </div>
 
-        {!manualMode && (
+        {!manualMode && !isPresetProductMode && (
           <div className="relative shrink-0">
             <Search
               aria-hidden
@@ -262,7 +264,6 @@ export function AddSupplementSheet({
               onChange={(event) => {
                 searchGenerationRef.current += 1;
                 setLoadingMore(false);
-                setPresetMode(false);
                 setQuery(event.target.value);
                 setSelectedProductId(null);
                 setManualMode(false);
@@ -275,7 +276,7 @@ export function AddSupplementSheet({
 
         {manualMode ? (
           <section
-            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-2"
+            className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-0.5 pb-2"
             aria-labelledby="manual-supplement-title"
           >
             <div>
