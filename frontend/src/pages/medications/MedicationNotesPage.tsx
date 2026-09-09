@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   deleteMedicationNote,
@@ -49,6 +49,10 @@ function filterEpisodeBaseLabel(episode: MedicationNoteEpisode): string {
 
 export function MedicationNotesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const enteredFromMedications =
+    (location.state as { entry?: unknown } | null)?.entry === 'medications';
+  const formEntry = { entry: 'notes', fromMedications: enteredFromMedications };
   const [searchParams, setSearchParams] = useSearchParams();
   const { principalKey } = useSession();
   const [page, setPage] = useState<MedicationNotePage | null>(null);
@@ -295,8 +299,15 @@ export function MedicationNotesPage() {
   }
 
   function setEpisodeFilter(value: string) {
-    if (value === '') setSearchParams({});
-    else setSearchParams({ episodeId: value });
+    setSearchParams(value === '' ? {} : { episodeId: value }, {
+      replace: true,
+      state: location.state,
+    });
+  }
+
+  function returnToMedications() {
+    if (enteredFromMedications) navigate(-1);
+    else navigate('/medications', { replace: true, state: { entry: 'direct-note-exit' } });
   }
 
   function medicineLabel(note: MedicationNote): string {
@@ -308,13 +319,13 @@ export function MedicationNotesPage() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="복약 메모" onBack={() => navigate('/medications')} />
+      <Header title="복약 메모" onBack={returnToMedications} />
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
         <div className="flex items-center justify-between gap-2">
           <Button
             className="self-start"
             fullWidth={false}
-            onClick={() => navigate('/medications/notes/new')}
+            onClick={() => navigate('/medications/notes/new', { state: formEntry })}
             disabled={selectionMode}
           >
             <Plus aria-hidden className="mr-1 size-4" />
@@ -447,7 +458,7 @@ export function MedicationNotesPage() {
                       type="button"
                       aria-label={`${medicineLabel(note)} ${note.body}`}
                       className="flex min-h-28 w-full flex-col gap-2 p-4 text-left transition-colors hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                      onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`)}
+                      onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`, { state: formEntry })}
                     >
                       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                         <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
@@ -489,7 +500,7 @@ export function MedicationNotesPage() {
       </main>
       <BottomTabbar
         active="medication"
-        onChange={(key) => navigate(TAB_ROUTES[key])}
+        onChange={(key) => key === 'medication' ? returnToMedications() : navigate(TAB_ROUTES[key])}
         className="border-t border-border"
       />
       <Dialog

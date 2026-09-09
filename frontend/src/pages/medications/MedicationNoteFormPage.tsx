@@ -112,8 +112,10 @@ export function MedicationNoteFormPage() {
   const { noteId } = useParams<{ noteId?: string }>();
   const { principalKey } = useSession();
   const editing = noteId !== undefined;
+  const entry = location.state as { entry?: unknown; fromMedications?: unknown } | null;
+  const enteredFromNotes = entry?.entry === 'notes';
   const enteredFromHome = !editing &&
-    (location.state as { entry?: unknown } | null)?.entry === 'home';
+    entry?.entry === 'home';
   const [note, setNote] = useState<MedicationNote | null>(null);
   const [episodes, setEpisodes] = useState<NoteEpisodeOption[] | null>(null);
   const [form, setForm] = useState<NoteFormState>(() => initialForm(null));
@@ -121,6 +123,15 @@ export function MedicationNoteFormPage() {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const saveGenerationRef = useRef(0);
+
+  useEffect(() => {
+    savingRef.current = false;
+    setSaving(false);
+    return () => {
+      saveGenerationRef.current += 1;
+    };
+  }, [location.key, principalKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -230,6 +241,7 @@ export function MedicationNoteFormPage() {
 
   async function save() {
     if (!canSave || !selectedEpisode || savingRef.current) return;
+    const saveGeneration = ++saveGenerationRef.current;
     savingRef.current = true;
     setSaving(true);
     setMutationError(null);
@@ -251,12 +263,17 @@ export function MedicationNoteFormPage() {
           body: form.experience.trim(),
         });
       }
-      navigate('/medications/notes', { replace: true });
+      if (saveGenerationRef.current !== saveGeneration) return;
+      if (enteredFromNotes) navigate(-1);
+      else navigate('/medications/notes', { replace: true });
     } catch (error: unknown) {
+      if (saveGenerationRef.current !== saveGeneration) return;
       setMutationError(error instanceof Error ? error.message : '복약 메모를 저장하지 못했어요.');
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      if (saveGenerationRef.current === saveGeneration) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   }
 
@@ -266,7 +283,11 @@ export function MedicationNoteFormPage() {
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
         title={title}
-        onBack={() => navigate(enteredFromHome ? '/home' : '/medications/notes')}
+        onBack={() => {
+          saveGenerationRef.current += 1;
+          if (enteredFromNotes) navigate(-1);
+          else navigate(enteredFromHome ? '/home' : '/medications/notes', { replace: true });
+        }}
       />
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
         {initialLoadError ? (
@@ -373,7 +394,12 @@ export function MedicationNoteFormPage() {
       </main>
       <BottomTabbar
         active="medication"
-        onChange={(key) => navigate(TAB_ROUTES[key])}
+        onChange={(key) => {
+          saveGenerationRef.current += 1;
+          if (key !== 'medication') navigate(TAB_ROUTES[key]);
+          else if (enteredFromNotes && entry?.fromMedications === true) navigate(-2);
+          else navigate('/medications', { replace: true, state: { entry: 'direct-note-exit' } });
+        }}
         className="border-t border-border"
       />
 
