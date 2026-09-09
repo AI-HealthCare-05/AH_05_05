@@ -21,7 +21,7 @@ from app.core.db.databases import TORTOISE_ORM
 
 ROOT = Path(__file__).resolve().parents[3]
 VERSION_39 = "39_20260908151829_challenge_daily_verification.py"
-VERSION_40 = "40_20260908160000_custom_challenge_participations.py"
+VERSION_40_CUSTOM = "40_20260908160000_custom_challenge_participations.py"
 VERSION_40_RENAME = "40_20260909000000_rename_custom_challenge_check_type_group.py"
 VERSION_40_OCR = "40_20260909143654_allow_ocr_recapture_error_code.py"
 VERSION_41_TYPES = "41_20260909000001_add_custom_challenge_and_badge_types.py"
@@ -154,7 +154,8 @@ async def _run_chain(start_version: int) -> None:
         await Tortoise.generate_schemas()
         db = Tortoise.get_connection("default")
         previous_39 = import_module("app.core.db.migrations.models." + VERSION_39[:-3])
-        previous_40 = import_module("app.core.db.migrations.models." + VERSION_40[:-3])
+        previous_40 = import_module("app.core.db.migrations.models." + VERSION_40_CUSTOM[:-3])
+        current_40_ocr = import_module("app.core.db.migrations.models." + VERSION_40_OCR[:-3])
         current_42 = import_module("app.core.db.migrations.models." + VERSION_42[:-3])
         # Establish a fresh pre-custom schema from the registered parent models, then exercise actual migrations.
         # All tables are still empty here; this disposable database is the only deletion target.
@@ -188,7 +189,7 @@ async def _run_chain(start_version: int) -> None:
             else {}
         )
         expected = [
-            *([] if start_version == 40 else [VERSION_40]),
+            *([] if start_version == 40 else [VERSION_40_CUSTOM]),
             VERSION_40_RENAME,
             VERSION_40_OCR,
             VERSION_41_TYPES,
