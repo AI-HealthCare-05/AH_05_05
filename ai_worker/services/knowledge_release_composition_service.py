@@ -176,9 +176,18 @@ class KnowledgeReleaseCompositionService:
                 raise ValueError(f"문서별 품질 보고서와 청크 수가 일치하지 않습니다: {document_id}")
             if not document_report.release_ready:
                 raise ValueError(f"품질 승인되지 않은 문서가 release에 포함되었습니다: {document_id}")
+            has_manual_release_override = (
+                document_report.manual_review_status.value == "APPROVED"
+                and document_report.released_chunk_count == actual_count
+                and all(
+                    review.status == "APPROVED"
+                    for review in document_report.chunk_reviews
+                )
+            )
             if (
                 document_report.automatic_status != KnowledgeAutomaticQualityStatus.PASS
                 and not document_report.partial_release
+                and not has_manual_release_override
             ):
                 raise ValueError(f"품질 승인되지 않은 문서가 release에 포함되었습니다: {document_id}")
             if document_report.released_chunk_count not in {0, actual_count}:

@@ -228,6 +228,36 @@ def test_compose_accepts_partial_release_with_only_approved_chunks(
     assert result.document_reports[0].partial_release is True
 
 
+def test_compose_accepts_manually_approved_blocked_document_when_all_released_chunks_are_approved(
+    tmp_path: Path,
+) -> None:
+    release = write_release(
+        tmp_path / "manual-override",
+        marker="m",
+        document_id="manually-approved-document",
+        dataset_version="release-manual-override",
+    )
+    raw_report = json.loads(release.quality_report_path.read_text(encoding="utf-8"))
+    document_report = raw_report["document_reports"][0]
+    document_report["automatic_status"] = "BLOCKED"
+    document_report["partial_release"] = False
+    document_report["released_chunk_count"] = 1
+    document_report["release_ready"] = True
+    release.quality_report_path.write_text(
+        json.dumps(raw_report, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    result = KnowledgeReleaseCompositionService().compose(
+        inputs=[release],
+        output_root=tmp_path / "combined",
+        dataset_version="release-combined",
+    )
+
+    assert result.processed_document_count == 1
+    assert result.document_reports[0].release_ready is True
+
+
 def test_compose_rejects_existing_output_directory(tmp_path: Path) -> None:
     release = write_release(
         tmp_path / "first",
