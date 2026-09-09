@@ -719,7 +719,8 @@ async def test_active_intake_summary_executes_without_explicit_entity_in_questio
 
     assert result.route == MedicationChatRoute.INTERACTION
     assert result.safety_reason_codes == []
-    assert "사용자 확정 복약정보" in result.answer
+    assert "복약정보" in result.answer
+    assert "영양제 정보" in result.answer
     assert "와파린" in result.answer
     assert "비타민 K" in result.answer
     assert "확인된 상호작용" in result.answer
@@ -1770,7 +1771,7 @@ async def test_confirmed_medication_precedes_general_guide_and_rag() -> None:
         )
     )
 
-    assert result.answer.index("사용자 확정 복약정보") < result.answer.index("일반 제품 안내")
+    assert result.answer.index("복약정보") < result.answer.index("일반 제품 안내")
     assert result.answer.index("일반 제품 안내") < result.answer.index("공공자료 추가 설명")
 
 
@@ -1815,7 +1816,7 @@ async def test_qdrant_failure_falls_back_to_rdbms_facts() -> None:
         build_request("타이레놀정500밀리그람 주의사항을 알려줘", care_episode_id=100),
     )
 
-    assert "사용자 확정 복약정보" in result.answer
+    assert "복약정보" in result.answer
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert "RAG_UNAVAILABLE" in result.safety_reason_codes
 

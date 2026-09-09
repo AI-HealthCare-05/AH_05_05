@@ -45,9 +45,7 @@ class MedicationAnswerAssembler:
         evidence_coverage: MedicationEvidenceCoverage | None = None,
     ) -> str:
         sections: list[str] = []
-        patient_lines = self._patient_lines(context)
-        if patient_lines:
-            sections.append("사용자 확정 복약정보\n" + "\n".join(patient_lines))
+        sections.extend(self._patient_intake_sections(context))
         if rules:
             interaction_lines = [
                 f"- {rule.left_name} ↔ {rule.right_name}: " + " ".join(rule.effect_texts) for rule in rules
@@ -237,8 +235,8 @@ class MedicationAnswerAssembler:
         )
 
     @staticmethod
-    def _patient_lines(context: ActiveIntakeContext) -> list[str]:
-        lines = []
+    def _patient_intake_sections(context: ActiveIntakeContext) -> list[str]:
+        medication_lines = []
         for medication in context.medications:
             details = [medication.name]
             if medication.dose:
@@ -247,7 +245,15 @@ class MedicationAnswerAssembler:
                 details.append(f"1일 {medication.times_per_day}회")
             if medication.days:
                 details.append(f"{medication.days}일")
-            lines.append("- " + " · ".join(details))
+            medication_lines.append("- " + " · ".join(details))
+
+        sections = []
+        if medication_lines:
+            sections.append("복약정보\n" + "\n".join(medication_lines))
+
+        supplement_lines = []
         for supplement in context.supplements:
-            lines.append(f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}")
-        return lines
+            supplement_lines.append(f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}")
+        if supplement_lines:
+            sections.append("영양제 정보\n" + "\n".join(supplement_lines))
+        return sections

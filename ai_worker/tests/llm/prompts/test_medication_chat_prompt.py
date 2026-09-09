@@ -80,6 +80,11 @@ def test_system_prompt_requires_compact_plain_text_product_answer() -> None:
     assert "질문과 직접 관련된 핵심 항목" in SYSTEM_PROMPT
 
 
+def test_system_prompt_formats_long_single_section_as_asterisk_bullets() -> None:
+    assert "서로 다른 사실·조건·경고가 둘 이상" in SYSTEM_PROMPT
+    assert "`* ` 기호" in SYSTEM_PROMPT
+
+
 def test_prompt_limits_product_output_to_requested_sections() -> None:
     request = MedicationChatRequest(
         request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
