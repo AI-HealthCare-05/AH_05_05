@@ -17,6 +17,9 @@ from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
+from ai_worker.llm.assemblers.medication_answer_assembler import (
+    MEDICAL_DISCLAIMER,
+)
 from ai_worker.rag.errors import (
     GuidelineRetrievalError,
     RetrievalFailureStage,
@@ -1231,6 +1234,26 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert result.answer.startswith("일반 제품 안내\n")
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
+
+
+async def test_execute_keeps_tylenol_efficacy_and_caution_when_answer_has_canonical_disclaimer() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        answer_generator=LongAnswerGenerator(
+            "효능\n- 통증과 발열을 완화합니다.\n\n"
+            "주의사항\n- 정해진 용법을 지킵니다.\n\n"
+            f"{MEDICAL_DISCLAIMER}"
+        ),
+        grounded_claim_validator=RuleBasedGroundedClaimValidator(),
+    ).execute(
+        build_request("타이레놀은 어디에 좋고 먹을 때 뭘 조심해야 해?"),
+    )
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert "통증과 발열을 완화합니다" in result.answer
+    assert "정해진 용법을 지킵니다" in result.answer
+    assert result.answer.endswith(MEDICAL_DISCLAIMER)
 
 
 async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:
