@@ -426,7 +426,9 @@ Create a disposable MySQL database, apply the full Aerich chain through migratio
 
 - [ ] **Step 2: Verify active-only content and FK integrity**
 
-Run SQL assertions for inactive flags, non-approved rules, orphan rows, manifest counts, and `smtp_password_enc IS NULL` on newly inserted settings. Confirm existing encrypted SMTP passwords survive an upsert.
+Run SQL assertions for inactive flags, non-approved rules, orphan rows, and manifest counts. Confirm a missing
+`admin_settings` row remains absent so `.env` fallback is used, and an existing encrypted SMTP password survives
+an upsert.
 
 - [ ] **Step 3: Run the focused regression suite**
 

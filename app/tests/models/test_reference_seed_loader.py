@@ -9,6 +9,7 @@ import pytest
 
 from app.core.db.reference_seed import (
     ReferenceSeedError,
+    _write_rows,
     apply_reference_seed,
     decode_seed_value,
     encode_seed_value,
@@ -244,3 +245,27 @@ async def test_apply_accepts_empty_seed_table(tmp_path: Path) -> None:
     result = await apply_reference_seed(NoFetchDb(), seed_dir)
 
     assert result.tables["interaction_entities"].unchanged == 0
+
+
+@pytest.mark.asyncio
+async def test_mysql_upsert_uses_row_alias_instead_of_deprecated_values_function() -> None:
+    class CaptureDb:
+        def __init__(self) -> None:
+            self.query = ""
+
+        async def execute_many(self, query: str, values: list[list[object]]) -> None:
+            self.query = query
+
+    db = CaptureDb()
+
+    await _write_rows(
+        db,  # type: ignore[arg-type]
+        "badges",
+        [{"name": "걷기", "description": "설명"}],
+        ("name",),
+        ("description",),
+        True,
+    )
+
+    assert " AS new ON DUPLICATE KEY UPDATE " in db.query
+    assert "VALUES(`description`)" not in db.query

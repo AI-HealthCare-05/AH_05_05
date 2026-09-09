@@ -418,12 +418,12 @@ async def _write_rows(
     placeholders = ", ".join("%s" for _ in columns)
     column_sql = ", ".join(f"`{column}`" for column in columns)
     if update_fields:
-        update_sql = ", ".join(f"`{field}` = VALUES(`{field}`)" for field in update_fields)
+        update_sql = ", ".join(f"`{field}` = new.`{field}`" for field in update_fields)
     else:
         update_sql = f"`{key_fields[0]}` = `{key_fields[0]}`"
     values = [[row.get(column) for column in columns] for row in rows]
     await db.execute_many(
-        f"INSERT INTO `{table}` ({column_sql}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_sql}",
+        f"INSERT INTO `{table}` ({column_sql}) VALUES ({placeholders}) AS new ON DUPLICATE KEY UPDATE {update_sql}",
         values,
     )
 

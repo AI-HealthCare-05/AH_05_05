@@ -71,7 +71,8 @@
 
 ## 보안 및 감사 컬럼
 
-- `admin_settings.smtp_password_enc`는 내보내지 않고 신규 행에는 `NULL`을 저장한다.
+- `admin_settings.smtp_password_enc`는 내보내지 않는다. 대상 DB에 설정 행이 없으면 불완전한 행을
+  만들지 않고 삽입을 건너뛰어 기존 `.env` fallback을 사용한다.
 - 기존 `admin_settings` 행을 갱신할 때도 `smtp_password_enc`는 변경하지 않는다.
 - SMTP 비밀번호가 없으면 기존 서비스 규칙대로 `.env`의 `SMTP_PASSWORD`를 사용한다.
 - 관리자 테이블은 시드 범위가 아니므로 `created_by_admin_id`, `updated_by_admin_id`는 모두 `NULL`로 정규화한다.
@@ -159,7 +160,8 @@ DB의 UNIQUE 제약만으로 `NULL` 포함 복합키 중복을 완전히 막을 
 
 - 신규 행은 생성하고 동일 식별키 행은 기준 필드를 갱신한다.
 - 시드에 없는 기존 행은 삭제하지 않는다.
-- `smtp_password_enc`와 대상 DB에서 생성된 PK는 갱신하지 않는다.
+- `smtp_password_enc`와 대상 DB에서 생성된 PK는 갱신하지 않는다. `admin_settings`는 기존 행만
+  일반 SMTP 필드를 갱신한다.
 - 동일 버전을 직접 두 번 실행하면 두 번째 실행의 전체 행 수는 동일해야 한다.
 - Aerich 자체는 적용 완료 마이그레이션을 다시 실행하지 않으므로, 기준정보 변경은 반드시 다음 버전의 시드와 마이그레이션으로 배포한다.
 
