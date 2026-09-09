@@ -40,6 +40,7 @@ from ai_worker.schemas.knowledge import (
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
+    ActiveSupplement,
     InteractionRuleFact,
     MedicationAnswerFallbackReason,
     MedicationAnswerGenerationObservation,
@@ -549,6 +550,55 @@ async def test_execute_uses_injected_query_plan_chain() -> None:
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
     assert query_plan.entity_names == ["마그네슘"]
     assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
+
+
+async def test_active_intake_summary_executes_without_explicit_entity_in_question() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="와파린",
+            )
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 K",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 9),
+            )
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key="warfarin-vitamin-k",
+        pair_type="DRUG_SUPPLEMENT",
+        left_name="와파린",
+        right_name="비타민 K",
+        risk_level="HIGH",
+        effect_texts=["비타민 K 섭취 변화는 와파린 효과에 영향을 줄 수 있습니다."],
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request("내가 현재 복용 중인 약과 영양제를 정리하고 가장 먼저 확인할 상호작용을 알려줘."),
+    )
+
+    assert result.route == MedicationChatRoute.INTERACTION
+    assert result.safety_reason_codes == []
+    assert "사용자 확정 복약정보" in result.answer
+    assert "와파린" in result.answer
+    assert "비타민 K" in result.answer
+    assert "확인된 상호작용" in result.answer
 
 
 async def test_execute_auto_corrects_unique_typo_before_search() -> None:

@@ -1164,6 +1164,11 @@ class AnswerMedicationQuestionUseCase:
                 early_result,
                 interpretation=interpretation,
             )
+        if cls._can_answer_from_active_context(
+            question=request.question,
+            context=context,
+        ):
+            return None
         if not should_execute_source_backed_retrieval(resolution):
             return cls._unrecognized_entity_result(
                 request=request,
@@ -1171,6 +1176,18 @@ class AnswerMedicationQuestionUseCase:
                 interpretation=interpretation,
             )
         return None
+
+    @classmethod
+    def _can_answer_from_active_context(
+        cls,
+        *,
+        question: str,
+        context: ActiveIntakeContext,
+    ) -> bool:
+        return bool(
+            (context.medications or context.supplements)
+            and cls._PATIENT_CONTEXT_CUE_PATTERN.search(question)
+        )
 
     @staticmethod
     def _with_interpretation(
