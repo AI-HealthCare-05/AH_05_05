@@ -11,6 +11,19 @@ function compactDate(value: string) {
   return `${Number(month)}.${Number(day)}`;
 }
 
+function ChallengeRowTitle({ title, official }: { title: string; official: boolean }) {
+  return (
+    <span className="flex items-start gap-2 text-xs font-bold text-foreground">
+      <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
+      <span aria-hidden className="shrink-0 text-tertiary-foreground">|</span>
+      <span className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-micro text-primary">
+        {official ? '공식' : '맞춤'}
+      </span>
+      <span aria-hidden className="ml-auto shrink-0 text-base leading-none text-tertiary-foreground">›</span>
+    </span>
+  );
+}
+
 export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
   const location = useLocation();
   return location.pathname.startsWith('/dev/')
@@ -26,9 +39,9 @@ function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
   const medication = empty ? [] : participations.filter((item) =>
     item.kind === 'medication' && medicationEpisodes.some((episode) => episode.id === item.episodeId),
   );
-  const others = allActive.filter((item) => item.kind !== 'medication');
-  const supplement = others.filter((item) => item.kind === 'supplement');
-  const active = [...medication, ...(supplement.length ? supplement : others).slice(0, medication.length ? 1 : 2)];
+  const active = allActive.filter((item) =>
+    item.kind !== 'medication' || medicationEpisodes.some((episode) => episode.id === item.episodeId),
+  );
 
   return (
     <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
@@ -45,7 +58,7 @@ function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
           전체 보기
         </Link>
       </div>
-      <div className="flex min-h-[132px] flex-col justify-center gap-3 rounded-card bg-card px-4 py-3 shadow-card">
+      <div className="flex flex-col gap-3 rounded-card bg-card px-4 py-3 shadow-card">
         {medication.length ? (
           <div className="space-y-1 border-b border-border pb-3">
             <h3 className="text-sm font-bold">복약 챌린지 · 처방별 진행</h3>
@@ -74,10 +87,7 @@ function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
               aria-label={`${title}, ${participation.percent}% 달성, 상세 보기`}
               className="group flex min-h-12 flex-col gap-1"
             >
-              <span className="flex items-center justify-between gap-2 text-xs font-bold text-foreground">
-                <span className="truncate">{title}</span>
-                <span aria-hidden className="text-base text-tertiary-foreground">›</span>
-              </span>
+              <ChallengeRowTitle title={title} official={participation.kind === 'official'} />
               <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span className="tnum">
                   {compactDate(participation.startDate)} ~ {compactDate(participation.endDate)}
@@ -125,7 +135,7 @@ function OfficialHomeChallengeSummary() {
     };
   }, [principalKey, reloadKey]);
 
-  const active = participations?.filter(item => item.status === 'ACTIVE').slice(0, 2) ?? [];
+  const active = participations?.filter(item => item.status === 'ACTIVE') ?? [];
 
   return (
     <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
@@ -133,7 +143,7 @@ function OfficialHomeChallengeSummary() {
         <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">챌린지</h2>
         <Link to="/challenges" className="min-h-touch py-3 text-caption font-bold text-primary">전체 보기</Link>
       </div>
-      <div className="flex min-h-[132px] flex-col justify-center gap-3 rounded-card bg-card px-4 py-3 shadow-card">
+      <div className="flex flex-col gap-3 rounded-card bg-card px-4 py-3 shadow-card">
         {participations === null && !error ? <div role="status" aria-label="챌린지 요약 불러오는 중" className="min-h-20 animate-pulse rounded-input bg-muted-bg" /> : null}
         {error ? (
           <div role="alert" className="flex flex-col gap-2"><p className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" className="h-11 min-h-11" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button></div>
@@ -146,7 +156,7 @@ function OfficialHomeChallengeSummary() {
           const endDate = inclusiveChallengeEndDate(item.end_at);
           return (
             <Link key={item.id} to={`/challenges/participations/${item.id}`} aria-label={`${item.challenge_name}, ${rate}% 달성, 상세 보기`} className="group flex min-h-12 flex-col gap-1">
-              <span className="flex items-center justify-between gap-2 text-xs font-bold text-foreground"><span className="truncate">{item.challenge_name}</span><span aria-hidden className="text-base text-tertiary-foreground">›</span></span>
+              <ChallengeRowTitle title={item.challenge_name} official />
               <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="tnum">{compactDate(item.started_at.slice(0, 10))} ~ {compactDate(endDate)}</span><span>{rate}% 달성했어요</span></span>
               <span className="h-2 overflow-hidden rounded-pill bg-border" aria-hidden><span className="block h-full rounded-pill bg-primary" style={{ width: `${Math.min(100, Math.max(0, Number(item.progress_rate) || 0))}%` }} /></span>
             </Link>

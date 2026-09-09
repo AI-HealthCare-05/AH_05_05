@@ -1341,6 +1341,71 @@ test('authenticated home renders a server-backed challenge summary with navigati
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
 });
 
+for (const width of [320, 430]) {
+  test(`home challenge density shows every active row and grows naturally at ${width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await authenticate(page);
+    const mutations: string[] = [];
+    page.on('request', request => {
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) mutations.push(request.url());
+    });
+    await page.route('**/api/v1/**', route => route.fulfill({ status: 404, json: {} }));
+    await page.route('**/api/v1/medications', route => route.fulfill({ json: [] }));
+    let items = [participation()];
+    await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items, total_count: items.length } }));
+    await page.goto('/home');
+    const summary = page.getByRole('region', { name: '챌린지', exact: true });
+    const rows = summary.getByRole('link', { name: /상세 보기$/ });
+    await expect(rows).toHaveCount(1);
+    const card = rows.first().locator('..');
+    const singleHeight = (await card.boundingBox())!.height;
+    // One short row should not reserve the previous two-row minimum height.
+    expect.soft(singleHeight).toBeLessThan(110);
+    const shortTitleRight = await rows.first().getByText('매일 30분 걷기', { exact: true }).evaluate(el => {
+      const textRange = document.createRange();
+      textRange.selectNodeContents(el);
+      return textRange.getBoundingClientRect().right;
+    });
+    const separatorBounds = (await rows.first().getByText('|', { exact: true }).boundingBox())!;
+    expect(separatorBounds.x - shortTitleRight).toBeLessThanOrEqual(16);
+    await summary.screenshot({ path: testInfo.outputPath(`home-challenge-one-${width}.png`) });
+    items = [participation(), participation({ id: 502, challenge_name: '물 마시기' }),
+      participation({ id: 503, challenge_name: '가벼운 스트레칭' }),
+      participation({ id: 504, challenge_name: '취소한 도전', status: 'CANCELLED' }),
+      participation({ id: 505, challenge_name: '완료한 도전', status: 'COMPLETED' }),
+      participation({ id: 506, challenge_name: '만료한 도전', status: 'EXPIRED' })];
+    await page.reload();
+    await expect(rows).toHaveCount(3);
+    await expect(summary.getByText(/취소한 도전|완료한 도전|만료한 도전/)).toHaveCount(0);
+    await expect(rows.nth(2)).toHaveAttribute('href', '/challenges/participations/503');
+    expect((await card.boundingBox())!.height).toBeGreaterThan(singleHeight + 80);
+    await summary.screenshot({ path: testInfo.outputPath(`home-challenge-three-${width}.png`) });
+    expect(mutations).toEqual([]);
+  });
+
+  test(`home challenge type stays visible beside a wrapping title at ${width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await authenticate(page);
+    await page.route('**/api/v1/**', route => route.fulfill({ status: 404, json: {} }));
+    await page.route('**/api/v1/medications', route => route.fulfill({ json: [] }));
+    const title = '매일건강한습관으로몸과마음을돌보는아주긴공식챌린지이름'.repeat(3);
+    await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: {
+      items: [participation({ challenge_name: title })], total_count: 1,
+    } }));
+    await page.goto('/home');
+    const summary = page.getByRole('region', { name: '챌린지', exact: true });
+    const row = summary.getByRole('link', { name: /상세 보기$/ });
+    await expect(row.getByText('공식', { exact: true })).toBeVisible();
+    const name = row.getByText(title, { exact: true });
+    expect(await name.evaluate(el => el.clientHeight >= parseFloat(getComputedStyle(el).lineHeight) * 2)).toBe(true);
+    expect(await row.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    const bounds = (await row.boundingBox())!;
+    const badgeBounds = (await row.getByText('공식', { exact: true }).boundingBox())!;
+    expect(badgeBounds.x + badgeBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+    await summary.screenshot({ path: testInfo.outputPath(`home-challenge-long-${width}.png`) });
+  });
+}
+
 test('home challenge summary stays available when medication loading fails', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/**', route => route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: '없음' } }));
