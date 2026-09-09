@@ -16,7 +16,11 @@ import {
 } from '@/shared/lib/birthDate';
 import { EMAIL_INPUT_PATTERN, EMAIL_MAX_LENGTH, sanitizeEmailInput } from '@/shared/lib/email';
 import { NAME_MAX_LENGTH, sanitizeNameInput, validateName } from '@/shared/lib/name';
-import { PASSWORD_MAX_LENGTH, validatePassword } from '@/shared/lib/password';
+import {
+  PASSWORD_MAX_LENGTH,
+  sanitizePasswordInput,
+  validatePassword,
+} from '@/shared/lib/password';
 import {
   PHONE_NUMBER_MAX_LENGTH,
   formatPhoneNumberInput,
@@ -50,7 +54,10 @@ const LOGIN_FALLBACK_ERROR = '로그인하지 못했어요. 잠시 후 다시 �
 const STEP_COPY: Record<SignupStep, { title: string; description?: string }> = {
   1: { title: '이메일을 알려주세요', description: '인증 메일을 보내드릴 주소예요.' },
   2: { title: '메일함을 확인해주세요' },
-  3: { title: '비밀번호를 정해주세요', description: '로그인할 때 쓸 비밀번호예요.' },
+  3: {
+    title: '비밀번호를 정해주세요',
+    description: '로그인할 때 쓸 비밀번호예요. 한글은 쓸 수 없어요.',
+  },
   4: { title: '마지막이에요' },
 };
 
@@ -172,6 +179,28 @@ export function AuthPage() {
     setVerificationSeconds(0);
     setVerificationExpiresAt(null);
     setVerificationError(null);
+  }
+
+  /**
+   * 비밀번호 칸의 한글을 지웁니다. **조합이 끝난 뒤에만 부릅니다.**
+   *
+   * `applyEmailInput` 과 같은 형태다 — 정리한 값이 다르면 DOM 의 value 까지 직접 맞춘다.
+   * 그러지 않으면 컨트롤드 value 와 DOM 이 어긋나 커서가 튄다.
+   */
+  function applyPasswordInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizePasswordInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    setPassword(sanitized);
+    setPasswordError(null);
+  }
+
+  function applyPasswordConfirmInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizePasswordInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    setPasswordConfirm(sanitized);
+    setPasswordConfirmError(null);
   }
 
   function applyNameInput(input: HTMLInputElement) {
@@ -718,9 +747,16 @@ export function AuthPage() {
                     value={password}
                     error={passwordError ?? undefined}
                     onChange={(event) => {
-                      setPassword(event.target.value);
-                      setPasswordError(null);
+                      // 조합 중에는 값을 건드리지 않습니다. 컨트롤드 input 의 value 를
+                      // 조합 중에 바꾸면 IME 가 조합 범위를 잃고 **앞서 입력해 둔 값까지
+                      // 지워버립니다**(#374 실측). 정리는 compositionEnd 에서 합니다.
+                      if ((event.nativeEvent as InputEvent).isComposing) {
+                        setPassword(event.currentTarget.value);
+                        return;
+                      }
+                      applyPasswordInput(event.currentTarget);
                     }}
+                    onCompositionEnd={(event) => applyPasswordInput(event.currentTarget)}
                     trailingAction={
                       <button
                         type="button"
@@ -745,9 +781,13 @@ export function AuthPage() {
                     value={passwordConfirm}
                     error={passwordConfirmError ?? undefined}
                     onChange={(event) => {
-                      setPasswordConfirm(event.target.value);
-                      setPasswordConfirmError(null);
+                      if ((event.nativeEvent as InputEvent).isComposing) {
+                        setPasswordConfirm(event.currentTarget.value);
+                        return;
+                      }
+                      applyPasswordConfirmInput(event.currentTarget);
                     }}
+                    onCompositionEnd={(event) => applyPasswordConfirmInput(event.currentTarget)}
                     trailingAction={
                       <button
                         type="button"
