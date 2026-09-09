@@ -10,7 +10,7 @@ export interface FollowUpVisit {
 export interface FollowUpVisitInput {
   visitDate: string;
   visitTime: string | null;
-  hospital: string | null;
+  hospital: string;
 }
 
 export interface FollowUpVisitListParams {

@@ -1,12 +1,15 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
 
 from arq import Retry
 from arq.connections import RedisSettings
+from arq.constants import in_progress_key_prefix
 from arq.cron import cron
 from tortoise import Tortoise
 from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.exceptions import DBConnectionError, OperationalError
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
@@ -37,6 +40,9 @@ _NOTIFICATION_SETTING_BY_ALARM_TYPE = {
     AlarmType.FOLLOW_UP_VISIT: "is_notify_schedule",
     AlarmType.GUIDE_CHECK: "is_notify_guide",
 }
+
+_ALARM_JOB_TIMEOUT_SECONDS = 300
+_PROCESSING_RECOVERY_GRACE_SECONDS = 60
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -296,8 +302,32 @@ async def _complete_push(
     payload: dict[str, object],
     _result: PushResult,
 ) -> None:
+    # The provider has already accepted this push: retry persistence, never delivery.
+    for attempt in range(3):
+        try:
+            await _persist_push_completion(job, subscription, alarm, payload)
+            return
+        except (OperationalError, DBConnectionError):
+            if attempt == 2:
+                raise
+            await asyncio.sleep(0.1 * (2**attempt))
+
+
+async def _persist_push_completion(
+    job: BackgroundJob,
+    subscription: PushSubscription,
+    alarm: Alarm,
+    payload: dict[str, object],
+) -> None:
     now = datetime.now(config.TIMEZONE)
     async with in_transaction() as connection:
+        job = await BackgroundJob.filter(id=job.id).using_db(connection).select_for_update().first()
+        if job is None or job.status != BackgroundJobStatus.PROCESSING:
+            return
+        # Lock the shared subscription before inserting the event's foreign key;
+        # concurrent sends must not upgrade shared FK locks to exclusive locks.
+        subscription.last_used_at = now
+        await subscription.save(using_db=connection, update_fields=["last_used_at"])
         event = await AlarmEvent.create(
             using_db=connection,
             alarm_id=alarm.id,
@@ -306,8 +336,6 @@ async def _complete_push(
             event_at=now,
             payload=payload,
         )
-        subscription.last_used_at = now
-        await subscription.save(using_db=connection, update_fields=["last_used_at"])
         job.status = BackgroundJobStatus.COMPLETED
         job.completed_at = now
         job.updated_at = now
@@ -410,6 +438,7 @@ def _duration_ms(started_at: datetime | None, completed_at: datetime) -> int | N
 
 async def recover_background_jobs(ctx: dict[str, Any]) -> None:
     now = datetime.now(config.TIMEZONE)
+    await _recover_stalled_alarm_jobs(ctx, now)
     queued_before = now - timedelta(seconds=max(30, config.ALARM_POLL_SECONDS * 2))
     candidates = (
         await BackgroundJob.filter(
@@ -435,6 +464,29 @@ async def recover_background_jobs(ctx: dict[str, Any]) -> None:
             alarm_id=alarm_id,
             subscription_id=subscription_id,
             trigger_at=trigger_at,
+        )
+
+
+async def _recover_stalled_alarm_jobs(ctx: dict[str, Any], now: datetime) -> None:
+    cutoff = now - timedelta(seconds=_ALARM_JOB_TIMEOUT_SECONDS + _PROCESSING_RECOVERY_GRACE_SECONDS)
+    jobs = await (
+        BackgroundJob.filter(status=BackgroundJobStatus.PROCESSING, job_type=BackgroundJobType.ALARM)
+        .filter(Q(started_at__lte=cutoff) | Q(started_at=None, requested_at__lte=cutoff))
+        .order_by("requested_at", "id")
+        .limit(100)
+    )
+    for job in jobs:
+        if await ctx["redis"].exists(in_progress_key_prefix + job.idempotency_key):
+            continue
+        # An interrupted worker may have sent the notification before DB commit.
+        # Do not infer delivery success or enqueue another notification.
+        await BackgroundJob.filter(id=job.id, status=BackgroundJobStatus.PROCESSING, started_at=job.started_at).update(
+            status=BackgroundJobStatus.FAILED,
+            completed_at=now,
+            updated_at=now,
+            duration_ms=_duration_ms(job.started_at, now),
+            error_code="PUSH_DELIVERY_UNKNOWN",
+            error_message="작업이 중단되어 발송 결과를 확인할 수 없습니다. 중복 알림을 방지하기 위해 자동 재발송하지 않았습니다.",
         )
 
 
@@ -473,6 +525,7 @@ _poll_step = max(1, min(60, config.ALARM_POLL_SECONDS))
 
 class WorkerSettings:
     functions = [send_alarm_push]
+    job_timeout = _ALARM_JOB_TIMEOUT_SECONDS
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings(host=config.REDIS_HOST, port=config.REDIS_PORT, database=config.REDIS_DB)

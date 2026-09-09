@@ -3,6 +3,8 @@ import { mockMedicationOverviews } from '@/entities/medication/api.mock';
 import type {
   CreateMedicationNotePayload,
   MedicationNote,
+  MedicationNoteEpisode,
+  MedicationNoteEpisodeStatus,
   MedicationNoteMedication,
   MedicationNoteListParams,
   MedicationNotePage,
@@ -76,7 +78,9 @@ function isMedicationNote(value: unknown): value is MedicationNote {
     typeof note.careEpisodeId === 'number' &&
     (typeof note.careEpisodeAlias === 'string' || note.careEpisodeAlias === null) &&
     (typeof note.careEpisodeStartDate === 'string' || note.careEpisodeStartDate === null) &&
-    typeof note.careEpisodeStatus === 'string' &&
+    (note.careEpisodeStatus === 'ACTIVE' ||
+      note.careEpisodeStatus === 'COMPLETED' ||
+      note.careEpisodeStatus === 'CANCELLED') &&
     Array.isArray(note.availableMedications) &&
     (typeof note.medicationId === 'number' || note.medicationId === null) &&
     (typeof note.medication === 'object' || note.medication === null) &&
@@ -90,7 +94,7 @@ function isMedicationNote(value: unknown): value is MedicationNote {
 function episodeMetadata(careEpisodeId: number): {
   alias: string | null;
   startDate: string | null;
-  status: string;
+  status: MedicationNoteEpisodeStatus;
   medications: MedicationNoteMedication[];
 } {
   const overview = mockMedicationOverviews().find((item) => item.recordId === careEpisodeId);
@@ -144,6 +148,27 @@ export function mockListMedicationNotes({ episodeId, limit = 20, cursor }: Medic
     total: filtered.length,
     nextCursor,
   };
+}
+
+export function mockListMedicationNoteEpisodes(): MedicationNoteEpisode[] {
+  const byEpisodeId = new Map<number, MedicationNoteEpisode>();
+  for (const note of readNotes().map(hydrateNote)) {
+    if (byEpisodeId.has(note.careEpisodeId)) continue;
+    const representative = [...note.availableMedications].sort((a, b) => a.id - b.id)[0];
+    byEpisodeId.set(note.careEpisodeId, {
+      careEpisodeId: note.careEpisodeId,
+      alias: note.careEpisodeAlias,
+      startDate: note.careEpisodeStartDate,
+      status: note.careEpisodeStatus,
+      representativeMedicationName: representative?.name ?? null,
+      medicationCount: note.availableMedications.length,
+    });
+  }
+  return [...byEpisodeId.values()].sort(
+    (a, b) =>
+      (b.startDate ?? '').localeCompare(a.startDate ?? '') ||
+      b.careEpisodeId - a.careEpisodeId,
+  );
 }
 
 export function mockGetMedicationNote(noteId: number | string): MedicationNote | null {

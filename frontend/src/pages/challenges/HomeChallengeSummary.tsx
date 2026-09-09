@@ -17,6 +17,18 @@ function compactDate(value: string) {
   return `${Number(month)}.${Number(day)}`;
 }
 
+function ChallengeRowTitle({ title, official }: { title: string; official: boolean }) {
+  return (
+    <span className="flex items-start gap-2 text-xs font-bold text-foreground">
+      <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
+      <span className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-micro text-primary">
+        {official ? '공식' : '맞춤'}
+      </span>
+      <span aria-hidden className="ml-auto shrink-0 text-base leading-none text-tertiary-foreground">›</span>
+    </span>
+  );
+}
+
 export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
   const location = useLocation();
   return location.pathname.startsWith('/dev/')
@@ -32,9 +44,9 @@ function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
   const medication = empty ? [] : participations.filter((item) =>
     item.kind === 'medication' && medicationEpisodes.some((episode) => episode.id === item.episodeId),
   );
-  const others = allActive.filter((item) => item.kind !== 'medication');
-  const supplement = others.filter((item) => item.kind === 'supplement');
-  const active = [...medication, ...(supplement.length ? supplement : others).slice(0, medication.length ? 1 : 2)];
+  const active = allActive.filter((item) =>
+    item.kind !== 'medication' || medicationEpisodes.some((episode) => episode.id === item.episodeId),
+  );
 
   return (
     <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
@@ -51,7 +63,7 @@ function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
           전체 보기
         </Link>
       </div>
-      <div className="flex min-h-[132px] flex-col justify-center gap-3 rounded-card bg-card px-4 py-3 shadow-card">
+      <div className="flex flex-col gap-3 rounded-card bg-card px-4 py-3 shadow-card">
         {medication.length ? (
           <div className="space-y-1 border-b border-border pb-3">
             <h3 className="text-sm font-bold">복약 챌린지 · 처방별 진행</h3>
@@ -80,10 +92,7 @@ function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
               aria-label={`${title}, ${participation.percent}% 달성, 상세 보기`}
               className="group flex min-h-12 flex-col gap-1"
             >
-              <span className="flex items-center justify-between gap-2 text-xs font-bold text-foreground">
-                <span className="truncate">{title}</span>
-                <span aria-hidden className="text-base text-tertiary-foreground">›</span>
-              </span>
+              <ChallengeRowTitle title={title} official={participation.kind === 'official'} />
               <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span className="tnum">
                   {compactDate(participation.startDate)} ~ {compactDate(participation.endDate)}
@@ -271,12 +280,7 @@ function OfficialHomeChallengeSummary() {
                       aria-label={`${item.challenge_name}, ${rate}% 진행, 상세 보기`}
                       className="group flex min-h-12 min-w-0 flex-col gap-1"
                     >
-                      <span className="flex min-w-0 items-start justify-between gap-2 text-xs font-bold text-foreground">
-                        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-                          {item.challenge_name}
-                        </span>
-                        <span aria-hidden className="shrink-0 text-base text-tertiary-foreground">›</span>
-                      </span>
+                      <ChallengeRowTitle title={item.challenge_name} official />
                       <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span className="tnum">
                           {compactDate(item.started_at.slice(0, 10))} ~ {compactDate(endDate)}
@@ -334,12 +338,7 @@ function OfficialHomeChallengeSummary() {
                       aria-label={`${item.challengeName}, ${progressText}, 상세 보기`}
                       className="group flex min-h-12 min-w-0 flex-col gap-1"
                     >
-                      <span className="flex min-w-0 items-start justify-between gap-2 text-xs font-bold text-foreground">
-                        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-                          {item.challengeName}
-                        </span>
-                        <span aria-hidden className="shrink-0 text-base text-tertiary-foreground">›</span>
-                      </span>
+                      <ChallengeRowTitle title={item.challengeName} official={false} />
                       <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span>{item.completedCount} / {item.targetCount}회</span>
                         <span>{progressText}</span>

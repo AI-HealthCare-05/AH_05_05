@@ -568,6 +568,9 @@ async def test_search_with_diagnostics_counts_fallback_and_rejection_reasons() -
         "rejected_entity_mismatch_count": 1,
         "rejected_pair_mismatch_count": 0,
         "accepted_count": 1,
+        "parent_context_child_count": 1,
+        "parent_context_attached_count": 0,
+        "parent_context_rejected_mismatch_count": 0,
         "max_raw_score": 0.8,
         "max_score": 0.8,
         "attempted_search_tiers": ["ENTITY", "SEMANTIC"],
@@ -698,6 +701,56 @@ async def test_candidate_diagnostics_are_deduplicated_and_limited_to_twenty() ->
     assert len(result.diagnostics.candidate_diagnostics) == 20
     assert [diagnostic.adjusted_rank for diagnostic in result.diagnostics.candidate_diagnostics] == list(range(1, 21))
     assert sum(diagnostic.selected_in_top_5 for diagnostic in result.diagnostics.candidate_diagnostics) == 2
+
+
+async def test_search_attaches_only_adjacent_eligible_parent_context() -> None:
+    child = build_chunk(
+        0.82,
+        chunk_id="1" * 64,
+        ingredient_names=["마그네슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        content="마그네슘은 정상적인 근육 기능에 필요합니다.",
+    ).model_copy(
+        update={
+            "metadata": build_chunk(
+                chunk_id="1" * 64,
+                ingredient_names=["마그네슘"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ).metadata.model_copy(update={"chunk_index": 4, "section_title": "기능성"})
+        }
+    )
+    sibling = build_chunk(
+        0.81,
+        chunk_id="2" * 64,
+        ingredient_names=["마그네슘"],
+        section_type=KnowledgeSectionType.FUNCTION,
+        content="에너지 이용에도 필요합니다.",
+    ).model_copy(
+        update={
+            "metadata": build_chunk(
+                chunk_id="2" * 64,
+                ingredient_names=["마그네슘"],
+                section_type=KnowledgeSectionType.FUNCTION,
+            ).metadata.model_copy(update={"chunk_index": 5, "section_title": "기능성"})
+        }
+    )
+    store = FakeKnowledgeStore(responses=[[child, sibling]])
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=store,
+        dataset_version="knowledge-full-v6",
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=build_execution_plan(
+            "마그네슘은 왜 먹나요?",
+            supplement_names=["마그네슘"],
+        ),
+    )
+
+    assert result.diagnostics.parent_context_child_count == 2
+    assert result.diagnostics.parent_context_attached_count == 1
+    assert result.chunks[0].content == ("마그네슘은 정상적인 근육 기능에 필요합니다.\n\n에너지 이용에도 필요합니다.")
 
 
 async def test_search_requests_twenty_candidates_for_final_five() -> None:

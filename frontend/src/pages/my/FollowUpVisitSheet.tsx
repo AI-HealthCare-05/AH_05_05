@@ -63,7 +63,7 @@ export function FollowUpVisitSheet({
     visitTime && !isTenMinuteTime(visitTime)
       ? '진료 시간은 10분 단위로 선택해주세요.'
       : undefined;
-  const canSave = Boolean(visitDate) && !dateError && !timeError;
+  const canSave = Boolean(visitDate) && Boolean(hospital.trim()) && !dateError && !timeError;
 
   useEffect(() => {
     if (!open) return;
@@ -83,6 +83,7 @@ export function FollowUpVisitSheet({
   }, [dateError, focusVisitDateAfterValidation]);
 
   async function save() {
+    const trimmedHospital = hospital.trim();
     const currentMinimumVisitDate = tomorrowString();
     if (currentMinimumVisitDate !== minimumVisitDate) {
       setMinimumVisitDate(currentMinimumVisitDate);
@@ -93,13 +94,13 @@ export function FollowUpVisitSheet({
       setFocusVisitDateAfterValidation(true);
       return;
     }
-    if (invalidTime || saving) return;
+    if (!trimmedHospital || invalidTime || saving) return;
     setSaving(true);
     try {
       await onSave({
         visitDate,
         visitTime: visitTime || null,
-        hospital: hospital.trim() || null,
+        hospital: trimmedHospital,
       });
       onOpenChange(false);
     } catch {
@@ -115,7 +116,7 @@ export function FollowUpVisitSheet({
         <div aria-hidden className="mx-auto h-1 w-10 rounded-pill bg-border" />
         <DialogHeader>
           <DialogTitle>{visit ? '진료일정 수정' : '진료일정 추가'}</DialogTitle>
-          <DialogDescription>진료일은 필수이고 병원과 시간은 나중에 정해도 돼요.</DialogDescription>
+          <DialogDescription>진료일과 병원명은 필수예요. 시간은 나중에 정해도 돼요.</DialogDescription>
         </DialogHeader>
         <Input
           label="진료일"
@@ -158,9 +159,11 @@ export function FollowUpVisitSheet({
           )}
         </div>
         <Input
-          label="병원"
+          label="병원명 (필수)"
+          required
           maxLength={255}
-          placeholder="병원 이름 (선택)"
+          placeholder="병원명 또는 진료과"
+          hint="예: ○○이비인후과 또는 내과"
           value={hospital}
           onChange={(event) => setHospital(event.target.value)}
         />

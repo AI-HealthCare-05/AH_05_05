@@ -6,10 +6,10 @@
   <title>맞춤 챌린지 템플릿 관리 - RxVita</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/styles.css?v=20260907-1">
-  <link rel="stylesheet" href="../css/management.css?v=20260908-1">
+  <link rel="stylesheet" href="../css/management.css?v=20260909-4">
   <script type="module" src="../js/navigation.js?v=20260827-2"></script>
   <script type="module" src="../js/sidebar.js?v=20260908-2"></script>
-  <script type="module" src="../js/custom-challenge-template-management.js?v=20260908-2"></script>
+  <script type="module" src="../js/custom-challenge-template-management.js?v=20260909-4"></script>
 </head>
 <body class="management-page flex min-h-screen">
 <aside data-sidebar data-active-nav="custom-challenge-templates" class="desktop-sidebar sidebar-shell bg-white flex flex-col h-screen items-start justify-between px-4 py-6 w-[240px] shrink-0" aria-label="관리자 메뉴"><span class="text-sm text-gray-500">메뉴 불러오는 중...</span></aside>
@@ -20,16 +20,17 @@
       <div><h2 class="text-lg font-semibold mb-1">맞춤 챌린지 템플릿</h2><p class="ranking-description">사용자가 맞춤 챌린지를 만들 때 사용할 템플릿을 관리합니다.</p></div>
       <button type="button" class="ui-button ui-button-primary" data-create-custom-template>템플릿 등록</button>
     </div>
-    <form class="challenge-search-form bg-white rounded-xl border mb-6" data-custom-template-search>
+    <form class="challenge-search-form custom-template-search-form bg-white rounded-xl border mb-6" data-custom-template-search>
       <label><input class="ui-control" type="text" inputmode="numeric" name="template_id" maxlength="20" placeholder="템플릿 ID" aria-label="템플릿 ID"></label>
       <label><input class="ui-control" type="search" name="name" maxlength="100" placeholder="템플릿명" aria-label="템플릿명"></label>
+      <label><select class="ui-control" name="challenge_type" aria-label="챌린지유형"><option value="">챌린지유형</option></select></label>
       <label><select class="ui-control" name="check_type_id" aria-label="인증방식"><option value="">인증방식</option></select></label>
       <label><select class="ui-control" name="is_active" aria-label="사용여부"><option value="">사용여부</option><option value="true">사용</option><option value="false">미사용</option></select></label>
       <div class="challenge-search-actions"><button type="reset" class="ui-button">초기화</button><button type="submit" class="ui-button ui-button-primary">조회</button></div>
     </form>
     <div class="management-table-wrap bg-white rounded-xl border">
       <table class="management-table w-full text-sm">
-        <thead class="bg-gray-50"><tr><th>ID</th><th>템플릿명</th><th>인증방식</th><th>사용여부</th><th>관리</th></tr></thead>
+        <thead class="bg-gray-50"><tr><th>ID</th><th>템플릿명</th><th>챌린지 유형</th><th>인증방식</th><th>사용여부</th><th>관리</th></tr></thead>
         <tbody data-custom-template-rows></tbody>
       </table>
     </div>
@@ -41,7 +42,9 @@
     <div class="common-code-dialog-body">
       <div class="badge-form-grid">
         <label class="badge-form-row"><span>템플릿명</span><input class="ui-control" name="name" maxlength="100" required></label>
+        <label class="badge-form-row"><span>챌린지 유형</span><select class="ui-control" name="challenge_type"><option value="">선택</option></select></label>
         <label class="badge-form-row"><span>인증방식</span><select class="ui-control" name="check_type_id" required></select></label>
+        <label class="badge-form-row"><span>지급배지</span><select class="ui-control" name="reward_badge_id"><option value="">선택 안 함</option></select></label>
         <label class="badge-form-row badge-form-checkbox"><span>사용여부</span><span><input type="checkbox" name="is_active" checked> 사용</span></label>
       </div>
       <p class="challenge-form-error" data-form-error role="alert"></p>

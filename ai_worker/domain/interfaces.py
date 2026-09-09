@@ -1,6 +1,10 @@
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from ai_worker.schemas.medication_chat import (
+        SupplementRegistrationSafetyInput,
+        SupplementRegistrationSafetyResult,
+    )
     from ai_worker.schemas.medication_search import (
         MedicationCatalogEntry,
         MedicationQuestionResolution,
@@ -25,6 +29,7 @@ from ai_worker.schemas.intake_report import (
 from ai_worker.schemas.knowledge import KnowledgeRetrievalResult
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    GroundedClaimValidationDiagnostic,
     InteractionRuleFact,
     MedicationAnswerGenerationOutcome,
     MedicationChatRequest,
@@ -158,6 +163,13 @@ class SupplementIngredientCatalog(Protocol):
     async def list_names(self) -> list[str]: ...
 
 
+class SupplementRegistrationSafetyChecker(Protocol):
+    def evaluate(
+        self,
+        value: "SupplementRegistrationSafetyInput",
+    ) -> "SupplementRegistrationSafetyResult": ...
+
+
 class InteractionRuleRepository(Protocol):
     async def find_approved_rules(
         self,
@@ -194,6 +206,13 @@ class IntakeReportGenerator(Protocol):
 
 
 class GroundedClaimValidator(Protocol):
+    def diagnose(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ) -> GroundedClaimValidationDiagnostic | None: ...
+
     async def validate(
         self,
         *,

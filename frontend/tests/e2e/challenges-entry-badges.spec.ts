@@ -64,6 +64,22 @@ test('홈 챌린지 빈 상태는 최신 맞춤 진입 문구를 제공한다', 
   await expect(page).toHaveURL(/\/dev\/challenges\/tailored$/);
 });
 
+test('홈 챌린지는 모든 활성 유형을 공식과 맞춤으로 구분하고 지난 기록은 제외한다', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('/dev/home-active');
+  const summary = page.getByRole('region', { name: '챌린지', exact: true });
+  await expect(summary.getByRole('link', { name: /상세 보기$/ })).toHaveCount(6);
+  for (const title of ['매일 30분 걷기', '첫 도전 마무리']) {
+    await expect(summary.getByRole('link', { name: new RegExp(title) }).getByText('공식', { exact: true })).toBeVisible();
+  }
+  for (const title of ['감기약 복약 챌린지', '영양제 루틴 챌린지', '이번 주 기록 돌아보기', '다음 진료 준비하기']) {
+    await expect(summary.getByRole('link', { name: new RegExp(title) }).getByText('맞춤', { exact: true })).toBeVisible();
+  }
+  await expect(summary.getByRole('link', { name: /8월 31일|저녁 산책|아침 스트레칭/ })).toHaveCount(0);
+  expect(await summary.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await summary.screenshot({ path: testInfo.outputPath('home-challenge-mixed-320.png') });
+});
+
 test('복약이 없는 홈에서도 독립적인 챌린지 요약을 보여준다', async ({ page }) => {
   await page.goto('/dev/home-empty');
 

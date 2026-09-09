@@ -3,7 +3,7 @@ export interface MedicationNote {
   careEpisodeId: number;
   careEpisodeAlias: string | null;
   careEpisodeStartDate: string | null;
-  careEpisodeStatus: string;
+  careEpisodeStatus: MedicationNoteEpisodeStatus;
   availableMedications: MedicationNoteMedication[];
   medicationId: number | null;
   medication: MedicationNoteMedication | null;
@@ -24,6 +24,17 @@ export interface MedicationNotePage {
   items: MedicationNote[];
   total: number;
   nextCursor: string | null;
+}
+
+export type MedicationNoteEpisodeStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+
+export interface MedicationNoteEpisode {
+  careEpisodeId: number;
+  alias: string | null;
+  startDate: string | null;
+  status: MedicationNoteEpisodeStatus;
+  representativeMedicationName?: string | null;
+  medicationCount?: number;
 }
 
 export interface MedicationNoteListParams {

@@ -98,7 +98,7 @@ test('생년월일이나 성별이 없으면 기준을 숨기고 기본정보 �
 
 test('영양제 추가는 검색만 제공하고 과다 결과를 식별할 정보를 보여준다', async ({ page }) => {
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '영양제 추가' }).click();
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
 
   const sheet = page.getByRole('dialog');
   const search = sheet.getByRole('searchbox', { name: '영양제 제품 검색' });
@@ -124,7 +124,7 @@ test('영양제 추가는 검색만 제공하고 과다 결과를 식별할 정�
 
 test('검색 결과는 20개씩 불러와 끝까지 내리면 다음 결과를 이어 보여준다', async ({ page }) => {
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '영양제 추가' }).click();
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('종합비타민');
 
@@ -138,7 +138,7 @@ test('검색 결과는 20개씩 불러와 끝까지 내리면 다음 결과를 �
 
 test('제품을 고르면 하나의 행만 펼쳐지고 1회 섭취량과 추천 슬롯을 확인한다', async ({ page }) => {
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '영양제 추가' }).click();
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
   const sheet = page.getByRole('dialog');
   const search = sheet.getByRole('searchbox', { name: '영양제 제품 검색' });
   await search.fill('종합비타민');
@@ -165,7 +165,7 @@ test('제품을 고르면 하나의 행만 펼쳐지고 1회 섭취량과 추천
 
 test('복용 슬롯은 1회 섭취량과 독립적으로 선택하고 최소 하나를 강제한다', async ({ page }) => {
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '영양제 추가' }).click();
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('센트룸 실버 우먼');
   const product = sheet.getByRole('listitem').filter({ hasText: '센트룸 실버 우먼' });
@@ -184,7 +184,7 @@ test('복용 슬롯은 1회 섭취량과 독립적으로 선택하고 최소 하
 
 test('표준 섭취량이 없으면 1정으로 시작하고 프리필 안내를 표시하지 않는다', async ({ page }) => {
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '영양제 추가' }).click();
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('얼라이브 원스데일리 포 우먼');
   const product = sheet.getByRole('listitem').filter({ hasText: '얼라이브 원스데일리 포 우먼' });
@@ -201,7 +201,7 @@ test('표준 섭취량이 없으면 1정으로 시작하고 프리필 안내를 
 
 test('표준 제품을 추가하면 회당 수량과 슬롯 수를 합계에 곱하고 목록 맨 위에 놓는다', async ({ page }) => {
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '영양제 추가' }).click();
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('고려은단');
   const product = sheet.getByRole('listitem').filter({ hasText: '고려은단 멀티비타민 올인원' });
@@ -221,7 +221,7 @@ test('표준 제품을 추가하면 회당 수량과 슬롯 수를 합계에 곱
 
 test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 제외를 알린다', async ({ page }) => {
   await page.goto('/dev/supplements');
-  await page.getByRole('button', { name: '영양제 추가' }).click();
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('없는제품-12345');
 

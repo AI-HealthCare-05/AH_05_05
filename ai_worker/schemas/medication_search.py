@@ -34,6 +34,7 @@ class MedicationQueryEntitySource(StrEnum):
     RDBMS = "RDBMS"
     QDRANT = "QDRANT"
     PATIENT_CONTEXT = "PATIENT_CONTEXT"
+    SESSION_MEMORY = "SESSION_MEMORY"
 
 
 class MedicationQueryResolutionStatus(StrEnum):

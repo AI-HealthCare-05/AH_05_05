@@ -16,6 +16,14 @@ class Badge(models.Model):
     name = fields.CharField(max_length=100, unique=True, description="배지 이름")
     description = fields.CharField(max_length=500, null=True, description="배지 설명")
     image_path = fields.CharField(max_length=500, description="배지 이미지 상대 경로")
+    type = fields.ForeignKeyField(
+        "models.CommonCode",
+        related_name="typed_badges",
+        null=True,
+        on_delete=fields.RESTRICT,
+        source_field="type",
+        description="배지 유형 공통코드 ID(CHL/BDG_TYPE)",
+    )
     is_active = fields.BooleanField(default=True, description="배지 사용 여부")
     created_by_admin = fields.ForeignKeyField(
         "models.Admin",
@@ -38,6 +46,7 @@ class Badge(models.Model):
         table = "badges"
         indexes = (
             Index(fields=("is_active",), name="idx_badges_active"),
+            Index(fields=("type",), name="idx_badges_type"),
             Index(fields=("created_by_admin_id",), name="idx_badges_created_admin"),
             Index(fields=("updated_by_admin_id",), name="idx_badges_updated_admin"),
         )
@@ -126,7 +135,22 @@ class CustomChallengeTemplate(models.Model):
         "models.CommonCode",
         related_name="custom_challenge_templates",
         on_delete=fields.RESTRICT,
-        description="인증 방식 공통코드 ID(CHL/CHK_TYPE2)",
+        description="인증 방식 공통코드 ID(CHL/CST_CHK_TYPE)",
+    )
+    challenge_type = fields.ForeignKeyField(
+        "models.CommonCode",
+        related_name="typed_custom_challenge_templates",
+        null=True,
+        on_delete=fields.RESTRICT,
+        source_field="challenge_type",
+        description="맞춤 챌린지 유형 공통코드 ID(CHL/CST_CHL_TYPE)",
+    )
+    reward_badge = fields.ForeignKeyField(
+        "models.Badge",
+        related_name="reward_custom_challenge_templates",
+        null=True,
+        on_delete=fields.RESTRICT,
+        description="맞춤 챌린지 완료 시 지급할 배지 ID",
     )
     created_by_admin = fields.ForeignKeyField(
         "models.Admin",
@@ -150,6 +174,8 @@ class CustomChallengeTemplate(models.Model):
         indexes = (
             Index(fields=("is_active", "name"), name="idx_custom_challenge_templates_active_name"),
             Index(fields=("check_type_id",), name="idx_custom_challenge_templates_check_type"),
+            Index(fields=("challenge_type",), name="idx_custom_challenge_templates_challenge_type"),
+            Index(fields=("reward_badge_id",), name="idx_custom_challenge_templates_reward_badge"),
             Index(
                 fields=("created_by_admin_id",),
                 name="idx_custom_challenge_templates_created_admin",
@@ -193,11 +219,11 @@ class UserChallenge(models.Model):
 
     class Meta:
         table = "user_challenges"
-        unique_together = (("user", "challenge"),)
         indexes = (
             Index(fields=("user_id", "status", "joined_at"), name="idx_user_challenges_user_status"),
             Index(fields=("challenge_id", "status"), name="idx_user_challenges_challenge_status"),
             Index(fields=("end_at",), name="idx_user_challenges_end_at"),
+            Index(fields=("user_id", "challenge_id"), name="idx_user_challenges_user_challenge"),
         )
 
 

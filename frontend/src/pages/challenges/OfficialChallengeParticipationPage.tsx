@@ -7,6 +7,7 @@ import {
   cancelOfficialChallenge,
   getChallengeParticipation,
   getUserChallengeBadges,
+  joinOfficialChallenge,
   submitChallengeVerification,
   type ChallengeParticipation,
   type UserChallengeBadge,
@@ -27,6 +28,7 @@ import {
   inclusiveChallengeEndDate,
   trailingNonVerificationDays,
 } from './officialChallengeDates';
+import { OfficialChallengeRejoinDialog } from './OfficialChallengeRejoinDialog';
 
 function positiveId(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/.test(value)) return null;
@@ -85,6 +87,7 @@ export function OfficialChallengeParticipationPage() {
   const requestGenerationRef = useRef(0);
   const idempotencyKeyRef = useRef<string | null>(null);
   const cancelRequestRef = useRef<symbol | null>(null);
+  const rejoinRequestRef = useRef<symbol | null>(null);
   const [data, setData] = useState<ParticipationData | null>(null);
   const [notFound, setNotFound] = useState(id === null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -94,6 +97,8 @@ export function OfficialChallengeParticipationPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [rejoinOpen, setRejoinOpen] = useState(false);
+  const [rejoinPending, setRejoinPending] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
 
@@ -116,8 +121,11 @@ export function OfficialChallengeParticipationPage() {
     setCancelOpen(false);
     setCancelPending(false);
     setCancelError(null);
+    setRejoinOpen(false);
+    setRejoinPending(false);
     idempotencyKeyRef.current = null;
     cancelRequestRef.current = null;
+    rejoinRequestRef.current = null;
     loadParticipationData(id)
       .then(result => {
         if (active) setData(result);
@@ -167,6 +175,56 @@ export function OfficialChallengeParticipationPage() {
     ? data.badges.some(item => item.badge_id === badge.id && item.status === 'AWARDED')
     : false;
   const isSelfActive = participation.status === 'ACTIVE' && participation.challenge.check_type_code === 'SELF';
+  const latestId = participation.challenge.participation_id;
+  const hasNewerAttempt = latestId !== null && latestId !== participation.id;
+  const recruitmentClosed = participation.today > participation.challenge.recruit_end_at.slice(0, 10)
+    || Date.now() >= new Date(participation.challenge.recruit_end_at).getTime();
+  const canRejoin = participation.status === 'CANCELLED'
+    && participation.challenge.check_type_code === 'SELF'
+    && participation.challenge.can_join;
+
+  async function rejoin() {
+    if (!canRejoin || rejoinRequestRef.current !== null) return;
+    const requestPrincipal = principalKey;
+    const requestGeneration = requestGenerationRef.current;
+    const requestToken = Symbol('rejoin-challenge');
+    rejoinRequestRef.current = requestToken;
+    const isCurrentRequest = () => (
+      principalRef.current === requestPrincipal
+      && requestGenerationRef.current === requestGeneration
+      && rejoinRequestRef.current === requestToken
+    );
+    setRejoinPending(true);
+    setActionError(null);
+    try {
+      const joined = await joinOfficialChallenge(participation.challenge_id);
+      if (!isCurrentRequest()) return;
+      navigate(`/challenges/participations/${joined.id}`, { replace: true });
+    } catch (reason) {
+      if (!isCurrentRequest()) return;
+      if (!(reason instanceof ApiError) || reason.status === 409 || reason.status >= 500) {
+        try {
+          const refreshed = await loadParticipationData(participation.id);
+          if (!isCurrentRequest()) return;
+          setData(refreshed);
+          const challenge = refreshed.participation.challenge;
+          if (!challenge.can_join && challenge.participation_id && challenge.participation_id !== participation.id) {
+            navigate(`/challenges/participations/${challenge.participation_id}`, { replace: true });
+            return;
+          }
+        } catch {
+          if (!isCurrentRequest()) return;
+        }
+      }
+      setRejoinOpen(false);
+      setActionError(reason instanceof Error ? reason.message : '챌린지에 다시 참여하지 못했어요.');
+    } finally {
+      if (isCurrentRequest()) {
+        rejoinRequestRef.current = null;
+        setRejoinPending(false);
+      }
+    }
+  }
 
   async function checkIn() {
     if (!isSelfActive || !participation.can_verify || pending || cancelPending) return;
@@ -356,6 +414,16 @@ export function OfficialChallengeParticipationPage() {
         </Button>
       ) : null}
 
+      {participation.status === 'CANCELLED' ? canRejoin ? (
+        <Button disabled={rejoinPending} onClick={() => setRejoinOpen(true)}>다시 참여하기</Button>
+      ) : hasNewerAttempt ? (
+        <Button onClick={() => navigate(`/challenges/participations/${latestId}`, { replace: true })}>진행 보기</Button>
+      ) : (
+        <p className="text-center text-sm text-muted-foreground">{recruitmentClosed ? '모집이 마감됐어요' : '지금은 다시 참여할 수 없어요'}</p>
+      ) : null}
+
+      <OfficialChallengeRejoinDialog open={rejoinOpen} pending={rejoinPending} onOpenChange={setRejoinOpen} onConfirm={() => void rejoin()} />
+
       <Dialog
         open={cancelOpen}
         onOpenChange={open => {
@@ -367,7 +435,11 @@ export function OfficialChallengeParticipationPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>챌린지 참여를 취소할까요?</DialogTitle>
-            <DialogDescription>취소하면 이 챌린지에 다시 참여할 수 없어요</DialogDescription>
+            <DialogDescription className="space-y-2 break-keep">
+              <span className="block">참여를 취소해도 이전 기록은 보관돼요.</span>
+              <span className="block">모집 기간 안에는 다시 참여할 수 있어요.</span>
+              <span className="block">다시 참여하면 새 수행 기간과 진행률 0%로 시작해요.</span>
+            </DialogDescription>
           </DialogHeader>
           {cancelError ? <p role="alert" className="text-sm text-danger-strong">{cancelError}</p> : null}
           <DialogFooter>

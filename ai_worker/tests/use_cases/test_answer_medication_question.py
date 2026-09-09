@@ -5,6 +5,9 @@ from datetime import date
 import pytest
 from langchain_core.runnables import RunnableLambda
 
+from ai_worker.chains.conditional_question_interpretation_chain import (
+    ConditionalQuestionInterpretationOutput,
+)
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChainInput,
     MedicationQuestionPlanResult,
@@ -20,6 +23,9 @@ from ai_worker.rag.errors import (
 )
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
+)
+from ai_worker.safety.grounded_claim_validator import (
+    RuleBasedGroundedClaimValidator,
 )
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.interaction import InteractionEntityKind
@@ -37,18 +43,25 @@ from ai_worker.schemas.knowledge import (
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
+    ActiveSupplement,
     InteractionRuleFact,
     MedicationAnswerFallbackReason,
     MedicationAnswerGenerationObservation,
     MedicationAnswerGenerationOutcome,
     MedicationAnswerRewriteStatus,
     MedicationChatProgressStage,
+    MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRiskProfile,
+    MedicationChatRiskScope,
     MedicationChatRoute,
+    MedicationChatSessionReference,
+    MedicationChatSessionReferenceEntity,
     MedicationGuideFact,
     MedicationGuideLookup,
 )
+from ai_worker.schemas.medication_search import MedicationQueryEntityType
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
@@ -249,6 +262,52 @@ class RecordingQueryPlanRetriever(FakeKnowledgeRetriever):
         )
 
 
+class SequencedKnowledgeRetriever(FakeKnowledgeRetriever):
+    def __init__(self, responses: list[list[RetrievedKnowledgeChunk]]) -> None:
+        super().__init__()
+        self.responses = list(responses)
+        self.execution_plans = []
+
+    async def search_with_diagnostics(
+        self,
+        *,
+        execution_plan,
+    ) -> KnowledgeRetrievalResult:
+        self.execution_plans.append(execution_plan)
+        chunks = self.responses.pop(0)
+        return KnowledgeRetrievalResult(
+            chunks=chunks,
+            diagnostics=KnowledgeRetrievalDiagnostics(
+                raw_candidate_count=len(chunks),
+                entity_filtered_count=0,
+                broad_candidate_count=len(chunks),
+                eligible_candidate_count=len(chunks),
+                rejected_below_score_count=0,
+                rejected_entity_mismatch_count=0,
+                rejected_pair_mismatch_count=0,
+                accepted_count=len(chunks),
+                max_raw_score=max(
+                    (chunk.similarity_score for chunk in chunks),
+                    default=None,
+                ),
+                max_score=max(
+                    (chunk.similarity_score for chunk in chunks),
+                    default=None,
+                ),
+            ),
+        )
+
+
+class RecordingConditionalInterpretationChain:
+    def __init__(self, payload: ConditionalQuestionInterpretationOutput) -> None:
+        self.payload = payload
+        self.inputs = []
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        self.inputs.append(input)
+        return self.payload
+
+
 class PassthroughGenerator:
     async def generate(
         self,
@@ -270,6 +329,15 @@ class PassthroughGenerator:
 
 
 class PassthroughValidator:
+    def diagnose(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ):
+        del context, result
+        return None
+
     async def validate(
         self,
         *,
@@ -352,6 +420,15 @@ class UnexpectedMedicationGenerator:
 class RecordingValidator:
     def __init__(self) -> None:
         self.received: MedicationChatResult | None = None
+
+    def diagnose(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        result: MedicationChatResult,
+    ):
+        del context, result
+        return None
 
     async def validate(
         self,
@@ -456,6 +533,7 @@ def build_use_case(
     question_resolver=None,
     supplement_ingredient_catalog=None,
     query_plan_chain=None,
+    conditional_interpretation_chain=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -468,6 +546,7 @@ def build_use_case(
         question_resolver=question_resolver,
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         query_plan_chain=query_plan_chain,
+        conditional_interpretation_chain=conditional_interpretation_chain,
     )
 
 
@@ -493,6 +572,89 @@ async def test_execute_uses_injected_query_plan_chain() -> None:
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
     assert query_plan.entity_names == ["마그네슘"]
     assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
+
+
+async def test_execute_asks_for_dose_details_before_personal_dose_increase() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+    ).execute(
+        build_request("두통이 심한데 타이레놀을 평소보다 두 배 먹어도 될까?"),
+    )
+
+    assert result.route == MedicationChatRoute.CLARIFICATION
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == [
+        MedicationChatReasonCode.PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED.value,
+    ]
+    assert "현재 1회 복용량" in result.answer
+    assert "제품 설명서와 전문가의 안내를 따릅니다" not in result.answer
+    assert result.sources == []
+
+
+async def test_execute_escalates_possible_overdose_without_product_guide() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+    ).execute(
+        build_request("실수로 타이레놀을 평소보다 두 배 먹었어."),
+    )
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == [
+        MedicationChatReasonCode.POSSIBLE_OVERDOSE.value,
+    ]
+    assert "추가 복용은 보류" in result.answer
+    assert "제품 설명서와 전문가의 안내를 따릅니다" not in result.answer
+    assert result.sources == []
+
+
+async def test_active_intake_summary_executes_without_explicit_entity_in_question() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="와파린",
+            )
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 K",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 9),
+            )
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key="warfarin-vitamin-k",
+        pair_type="DRUG_SUPPLEMENT",
+        left_name="와파린",
+        right_name="비타민 K",
+        risk_level="HIGH",
+        effect_texts=["비타민 K 섭취 변화는 와파린 효과에 영향을 줄 수 있습니다."],
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(
+        build_request("내가 현재 복용 중인 약과 영양제를 정리하고 가장 먼저 확인할 상호작용을 알려줘."),
+    )
+
+    assert result.route == MedicationChatRoute.INTERACTION
+    assert result.safety_reason_codes == []
+    assert "사용자 확정 복약정보" in result.answer
+    assert "와파린" in result.answer
+    assert "비타민 K" in result.answer
+    assert "확인된 상호작용" in result.answer
 
 
 async def test_execute_auto_corrects_unique_typo_before_search() -> None:
@@ -601,6 +763,37 @@ async def test_execute_returns_deterministic_out_of_scope_guidance(
     assert retriever.received_kwargs is None
 
 
+async def test_execute_routes_fatigue_to_question_first_guidance_before_retrieval_or_llm() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    tracer = RecordingChatTracer()
+
+    result = await build_use_case(
+        retriever=retriever,
+        tracer=tracer,
+        answer_generator=UnexpectedMedicationGenerator(),
+    ).execute(build_request("요즘 피곤해요"))
+
+    assert result.route == MedicationChatRoute.GENERAL_GUIDANCE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.safety_reason_codes == ["FATIGUE_FOLLOW_UP_REQUIRED"]
+    assert retriever.received_kwargs is None
+    assert tracer.names == [
+        "patient_context.load",
+        "fatigue.triage",
+        "query.plan",
+    ]
+
+
+async def test_execute_routes_fatigue_red_flag_to_restricted_urgent_assistance() -> None:
+    result = await build_use_case(
+        answer_generator=UnexpectedMedicationGenerator(),
+    ).execute(build_request("피곤하고 숨이 차서 실신할 것 같아요"))
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == ["FATIGUE_URGENT_ASSISTANCE"]
+
+
 async def test_execute_records_interpretation_before_out_of_scope_return() -> None:
     tracer = RecordingChatTracer()
     result = await build_use_case(
@@ -678,11 +871,13 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.route == MedicationChatRoute.RESTRICTED
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
-    assert "현재 보유한 제품명·성분명·음식 목록에서 대상을 확인하지 못했습니다" in result.answer
-    assert "안전하다는 의미가 아닙니다" in result.answer
+    assert "확인된 범위" in result.answer
+    assert "공식 확인 경로" in result.answer
+    assert "의료진·약사에게 확인할 내용" in result.answer
+    assert "안전한 조합" not in result.answer
 
 
-async def test_execute_does_not_lookup_a_product_for_unrecognized_general_request() -> None:
+async def test_execute_routes_fatigue_product_request_to_follow_up_without_product_lookup() -> None:
     guide_repository = RecordingGuideRepository()
     use_case = AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(ActiveIntakeContext(user_id=1)),
@@ -700,12 +895,12 @@ async def test_execute_does_not_lookup_a_product_for_unrecognized_general_reques
         build_request("피곤할 때 가장 좋은 영양제 하나 추천해줘"),
     )
 
-    assert result.route == MedicationChatRoute.RESTRICTED
-    assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
+    assert result.route == MedicationChatRoute.GENERAL_GUIDANCE
+    assert result.safety_reason_codes == ["FATIGUE_FOLLOW_UP_REQUIRED"]
     assert guide_repository.requested_names == []
 
 
-async def test_execute_skips_rag_when_source_backed_resolution_has_no_entities() -> None:
+async def test_execute_skips_rag_for_fatigue_product_request() -> None:
     retriever = RecordingQueryPlanRetriever()
     result = await build_use_case(
         retriever=retriever,
@@ -717,8 +912,8 @@ async def test_execute_skips_rag_when_source_backed_resolution_has_no_entities()
         build_request("피곤할 때 가장 좋은 영양제 하나 추천해줘"),
     )
 
-    assert result.route == MedicationChatRoute.RESTRICTED
-    assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
+    assert result.route == MedicationChatRoute.GENERAL_GUIDANCE
+    assert result.safety_reason_codes == ["FATIGUE_FOLLOW_UP_REQUIRED"]
     assert retriever.received_kwargs is None
 
 
@@ -733,6 +928,34 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "통증과 발열을 완화합니다" in result.answer
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
+
+
+async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:
+    request = build_request("그 약의 복용법도 알려줘.").model_copy(
+        update={
+            "session_reference": MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name="타이레놀정500밀리그람",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    )
+                ]
+            )
+        }
+    )
+
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(request)
+
+    assert result.route == MedicationChatRoute.MEDICATION_GUIDE
+    assert result.question_interpretation is not None
+    assert result.question_interpretation.normalized_entity_names == ["타이레놀정500밀리그람"]
+    assert "제품 설명서와 전문가의 안내" in result.answer
 
 
 async def test_execute_uses_dynamic_supplement_names_in_query_plan() -> None:
@@ -923,6 +1146,7 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert tracer.names == [
         "patient_context.load",
         "query.plan",
+        "risk.policy",
         "interaction_rules.search",
         "rag.retrieve",
         "medication_guide.lookup",
@@ -946,7 +1170,13 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     ]
     assert query_outputs["normalized_entity_count"] == 2
     assert query_outputs["requested_section_types"] == []
-    rag_outputs = tracer.spans[3].outputs
+    assert tracer.spans[2].outputs == {
+        "domain": "MEDICATION",
+        "scope": "EVIDENCE_ONLY",
+        "reason_codes": [],
+        "personalized_guidance_requested": False,
+    }
+    rag_outputs = tracer.spans[4].outputs
     assert len(rag_outputs.pop("query_plan_hash")) == 64
     assert len(rag_outputs.pop("execution_plan_hash")) == 64
     assert rag_outputs == {
@@ -959,6 +1189,9 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
         "rejected_entity_mismatch_count": 0,
         "rejected_pair_mismatch_count": 0,
         "accepted_count": 1,
+        "parent_context_child_count": 0,
+        "parent_context_attached_count": 0,
+        "parent_context_rejected_mismatch_count": 0,
         "rag_unavailable": False,
         "document_types": ["DRUG_ENCYCLOPEDIA"],
         "drug_encyclopedia_evidence_count": 1,
@@ -979,8 +1212,56 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert llm_outputs["rewrite_status"] == "REWRITTEN"
     assert llm_outputs["fallback_used"] is False
     assert llm_outputs["fallback_reason"] is None
+    assert llm_outputs["declared_section_types"] == []
+    assert llm_outputs["covered_section_types"] == []
     assert len(llm_outputs["draft_answer_hash"]) == 64
     assert len(llm_outputs["generated_answer_hash"]) == 64
+
+
+async def test_execute_records_hashed_safety_match_without_raw_content() -> None:
+    tracer = RecordingChatTracer()
+    unsafe_answer = "오늘부터 약 복용을 중단하세요. 이 안내는 의료진의 진료를 대체하지 않습니다."
+
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        retriever=FakeKnowledgeRetriever(chunks=[build_chunk()]),
+        tracer=tracer,
+        answer_generator=LongAnswerGenerator(unsafe_answer),
+        grounded_claim_validator=RuleBasedGroundedClaimValidator(),
+    ).execute(
+        build_request("타이레놀정500밀리그람은 어떤 약인가요?"),
+    )
+
+    safety_outputs = next(span.outputs for span in tracer.spans if span.name == "safety.validate")
+    assert result.safety_status == SafetyStatus.BLOCKED
+    assert safety_outputs.get("matched_rule_code") == "MEDICATION_CHANGE_INSTRUCTION"
+    assert safety_outputs.get("matched_action") == "STOP"
+    assert safety_outputs.get("matched_target") == "MEDICATION"
+    assert len(safety_outputs["matched_fragment_hash"]) == 64
+    assert "중단하세요" not in repr(safety_outputs)
+
+
+async def test_execute_allows_conditioned_official_product_warning() -> None:
+    warning = "이 약 복용 후 피부 발진 또는 과민반응의 징후가 나타나는 경우 즉시 복용을 중단하십시오."
+    guide = build_guide().model_copy(
+        update={"pre_use_warning": warning},
+    )
+    tracer = RecordingChatTracer()
+
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=guide),
+        retriever=FakeKnowledgeRetriever(chunks=[build_chunk()]),
+        tracer=tracer,
+        grounded_claim_validator=RuleBasedGroundedClaimValidator(),
+    ).execute(
+        build_request("타이레놀의 효능과 주의사항을 알려줘."),
+    )
+
+    safety_outputs = next(span.outputs for span in tracer.spans if span.name == "safety.validate")
+    assert result.safety_status == SafetyStatus.SAFE
+    assert warning in result.answer
+    assert safety_outputs["official_warning_allowed"] is True
+    assert "MEDICATION_CHANGE_INSTRUCTION" not in safety_outputs["reason_codes"]
 
 
 async def test_execute_records_retrieval_failure_stage_without_error_message() -> None:
@@ -1029,6 +1310,126 @@ async def test_execute_records_requested_covered_and_missing_answer_sections() -
         "missing_section_types": ["DAILY_INTAKE"],
         "verified_interaction_pair_count": 0,
     }
+
+
+async def test_execute_retries_once_for_missing_evidence_section() -> None:
+    function_chunk = build_chunk().model_copy(
+        update={
+            "content": "마그네슘은 정상적인 근육 기능에 필요합니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_id": "magnesium-function",
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    caution_chunk = function_chunk.model_copy(
+        update={
+            "chunk_id": "c" * 64,
+            "content": "섭취 전 개인 상태와 다른 복용 제품을 확인합니다.",
+            "metadata": function_chunk.metadata.model_copy(
+                update={
+                    "section_type": KnowledgeSectionType.CAUTION,
+                    "chunk_index": 1,
+                    "content_hash": "d" * 64,
+                }
+            ),
+        }
+    )
+    retriever = SequencedKnowledgeRetriever([[function_chunk], [caution_chunk]])
+    tracer = RecordingChatTracer()
+
+    result = await build_use_case(
+        retriever=retriever,
+        tracer=tracer,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+    ).execute(build_request("마그네슘의 효능과 주의사항을 알려줘"))
+
+    assert len(retriever.execution_plans) == 2
+    assert retriever.execution_plans[1].query_plan.expanded_query == "마그네슘 주의사항 이상반응"
+    assert result.evidence_coverage is not None
+    assert result.evidence_coverage.missing_section_types == []
+    retry_outputs = next(span.outputs for span in tracer.spans if span.name == "rag.coverage_retry")
+    assert retry_outputs == {
+        "attempted": True,
+        "query_count": 2,
+        "missing_before": ["CAUTION"],
+        "missing_after": [],
+        "rag_unavailable": False,
+    }
+
+
+async def test_execute_does_not_retry_when_initial_evidence_is_complete() -> None:
+    chunk = build_chunk().model_copy(
+        update={
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            ),
+        }
+    )
+    retriever = SequencedKnowledgeRetriever([[chunk]])
+
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+
+    assert len(retriever.execution_plans) == 1
+
+
+async def test_execute_skips_conditional_llm_for_high_confidence_single_entity() -> None:
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            canonical_entity_names=["타이레놀"],
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            confidence="HIGH",
+            reason_codes=[],
+        )
+    )
+    use_case = build_use_case(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["타이레놀"]),
+        ),
+        conditional_interpretation_chain=chain,
+    )
+
+    await use_case.execute(build_request("타이레놀의 효능을 알려줘"))
+
+    assert chain.inputs == []
+
+
+async def test_execute_discards_unknown_conditional_llm_entity_before_search() -> None:
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            canonical_entity_names=["존재하지않는성분"],
+            requested_section_types=[KnowledgeSectionType.CAUTION],
+            confidence="MEDIUM",
+            reason_codes=["LOW_CONFIDENCE"],
+        )
+    )
+    retriever = RecordingQueryPlanRetriever()
+
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+
+    assert len(chain.inputs) == 1
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entity_names == ["마그네슘"]
+    assert query_plan.section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.CAUTION,
+    ]
 
 
 async def test_execute_records_fallback_reason_without_answer_content() -> None:
@@ -1109,11 +1510,11 @@ async def test_execute_records_losartan_search_diagnostics_in_content_mode() -> 
     )
 
     assert tracer.spans[1].outputs["entity_names"] == ["로사르탄"]
-    assert tracer.spans[3].outputs["document_types"] == [
+    assert tracer.spans[4].outputs["document_types"] == [
         "DRUG_ENCYCLOPEDIA",
     ]
-    assert tracer.spans[3].outputs["drug_encyclopedia_evidence_count"] == 1
-    assert tracer.spans[3].outputs["candidate_diagnostics"][0]["document_id"] == chunk.metadata.document_id
+    assert tracer.spans[4].outputs["drug_encyclopedia_evidence_count"] == 1
+    assert tracer.spans[4].outputs["candidate_diagnostics"][0]["document_id"] == chunk.metadata.document_id
 
 
 async def test_execute_records_selected_and_candidate_entity_roles() -> None:
@@ -1533,6 +1934,37 @@ async def test_multi_entity_answer_separates_supported_and_unverified_pairs() ->
             maxsplit=1,
         )[1]
     )
+
+
+async def test_unknown_risk_does_not_restrict_general_omega3_intake_guidance() -> None:
+    validator = RecordingValidator()
+    supplement_chunk = build_chunk().model_copy(
+        update={
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_CODE,
+                    "ingredient_names": ["오메가3"],
+                    "section_type": KnowledgeSectionType.DAILY_INTAKE,
+                }
+            ),
+        }
+    )
+    request = build_request("오메가3를 하루에 얼마나 먹어야 하나요?").model_copy(
+        update={"risk_profile": MedicationChatRiskProfile()}
+    )
+
+    result = await build_use_case(
+        retriever=FakeKnowledgeRetriever(chunks=[supplement_chunk]),
+        grounded_claim_validator=validator,
+    ).execute(request)
+
+    assert result.risk_decision is not None
+    assert result.risk_decision.scope == MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert "PREGNANCY_STATUS_UNKNOWN" not in result.safety_reason_codes
+    assert validator.received is not None
+    assert validator.received.risk_decision == result.risk_decision
+    assert "임신·수유" not in validator.received.answer
 
 
 def test_product_name_candidates_are_bounded_for_long_questions() -> None:

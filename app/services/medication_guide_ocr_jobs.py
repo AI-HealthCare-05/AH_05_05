@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -36,7 +35,6 @@ from app.core.exceptions import (
 from app.dtos.medication_guide_ocr import (
     MedicationGuideConfirmRequest,
     MedicationGuideOcrJobStatus,
-    MedicationGuideResult,
     MedicationGuideReviewResult,
     MedicationReview,
     OcrConfirmationResponse,
@@ -98,77 +96,6 @@ class MedicationOcrV3AnalysisContract(Protocol):
 
 class MedicationOcrV3Analyzer(Protocol):
     async def analyze(self, image: ValidatedImage) -> MedicationOcrV3AnalysisContract: ...
-
-
-def build_review_result(result: MedicationGuideResult) -> MedicationGuideReviewResult:
-    medications: list[MedicationReview] = []
-    low_confidence_count = int(result.dispensing_date is None)
-    for medication in result.medications:
-        times_per_day = medication.times_per_day
-        days = medication.days
-        needs_review = medication.needs_review
-        if times_per_day is not None and times_per_day > 6:
-            times_per_day = None
-            needs_review = True
-        if days is not None and days > 365:
-            days = None
-            needs_review = True
-        confidence = "low" if needs_review else _confidence_tier(medication.confidence)
-        low_confidence_count += int(confidence == "low")
-        medication_payload: dict[str, object] = {
-            "tempId": medication.row_id,
-            "name": medication.name,
-            "confidence": confidence,
-        }
-        if medication.strength:
-            medication_payload["strength"] = medication.strength
-        dose_quantity = _parse_dose_quantity(medication.dose_quantity, medication.dose_unit)
-        if dose_quantity is not None:
-            medication_payload["doseQuantity"] = dose_quantity
-        if times_per_day is not None:
-            medication_payload["timesPerDay"] = times_per_day
-        if days is not None:
-            medication_payload["days"] = days
-        medications.append(MedicationReview.model_validate(medication_payload))
-
-    fields: dict[str, object] = {}
-    if result.dispensing_date is not None:
-        date_confidence = next(
-            (field.confidence for field in result.ocr_fields if field.name in {"dispensing_date", "dispensed_date"}),
-            0.0,
-        )
-        date_confidence_tier = _confidence_tier(date_confidence)
-        low_confidence_count += int(date_confidence_tier == "low")
-        fields["dispensedDate"] = {
-            "value": result.dispensing_date.isoformat(),
-            "confidence": date_confidence_tier,
-        }
-    return MedicationGuideReviewResult(
-        fields=fields,
-        medications=medications,
-        low_confidence_count=low_confidence_count,
-    )
-
-
-def _confidence_tier(confidence: float) -> str:
-    if confidence >= 0.90:
-        return "high"
-    if confidence >= 0.70:
-        return "medium"
-    return "low"
-
-
-def _parse_dose_quantity(quantity: str | None, unit: str | None) -> str | None:
-    if not quantity:
-        return None
-    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(.*?)\s*", quantity)
-    if match is None:
-        return None
-    value = float(match.group(1))
-    if value <= 0:
-        return None
-    parsed_unit = (unit or match.group(2)).strip()
-    return f"{match.group(1)}{parsed_unit}"
 
 
 class TemporaryOcrStorage:
@@ -308,8 +235,8 @@ class MedicationGuideOcrJobService:
                     status=OcrJobStatus.QUEUED,
                     idempotency_key=key,
                     input_manifest=manifest,
-                    ocr_model="clova-template",
-                    schema_version="medication-guide-review/v1",
+                    ocr_model="clova-general-v2",
+                    schema_version="medication-guide-review/v3",
                 )
             except IntegrityError:
                 existing = await OcrJob.get_or_none(user_id=user.id, idempotency_key=key)
@@ -346,12 +273,13 @@ class MedicationGuideOcrJobService:
             if job is None:
                 raise OcrJobNotFoundError()
         if job.status == OcrJobStatus.READY_FOR_REVIEW and job.expires_at is not None and job.expires_at <= now:
-            if await self._delete_if_expired(job.id, now=now, user_id=user.id):
-                raise OcrJobNotFoundError()
+            await self._purge_images_if_expired(job.id, now=now, user_id=user.id)
             # confirm() may have won the row lock while this request was checking expiry.
-            # In that case return the committed COMPLETE state instead of deleting it.
+            # Keep the history but never reopen an expired review for editing.
             job = await OcrJob.get_or_none(id=job_id, user_id=user.id)
             if job is None:
+                raise OcrJobNotFoundError()
+            if job.status == OcrJobStatus.READY_FOR_REVIEW and job.expires_at is not None and job.expires_at <= now:
                 raise OcrJobNotFoundError()
         result = None
         if job.status in {OcrJobStatus.READY_FOR_REVIEW, OcrJobStatus.COMPLETE} and isinstance(
@@ -681,10 +609,7 @@ class MedicationGuideOcrJobService:
                     episode.updated_at = now
                     await episode.save(using_db=connection, update_fields=["alias", "updated_at"])
                 return self._confirmed(job, episode)
-            if job.status != OcrJobStatus.READY_FOR_REVIEW:
-                raise OcrJobStateConflictError()
-            if job.expires_at is None or job.expires_at <= now:
-                raise OcrJobNotFoundError()
+            self._ensure_confirmable(job, now)
 
             dispensing_date = request.dispensing_date
             medication_days = max(
@@ -729,6 +654,7 @@ class MedicationGuideOcrJobService:
             job.expires_at = None
             job.completed_at = now
             job.updated_at = now
+            job.error_code = None
             await job.save(
                 using_db=connection,
                 update_fields=[
@@ -739,9 +665,23 @@ class MedicationGuideOcrJobService:
                     "expires_at",
                     "completed_at",
                     "updated_at",
+                    "error_code",
                 ],
             )
         return self._confirmed(job, episode)
+
+    @staticmethod
+    def _ensure_confirmable(job: OcrJob, now: datetime) -> None:
+        if job.status == OcrJobStatus.READY_FOR_REVIEW:
+            if job.expires_at is None or job.expires_at <= now:
+                raise OcrJobNotFoundError()
+            return
+        if job.status == OcrJobStatus.FAILED:
+            stale_cutoff = now - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
+            if job.completed_at is None or job.completed_at <= stale_cutoff:
+                raise OcrJobNotFoundError()
+            return
+        raise OcrJobStateConflictError()
 
     async def _replace_registration_medications(
         self,
@@ -819,6 +759,7 @@ class MedicationGuideOcrJobService:
         )
 
     async def cleanup_expired(self, *, now: datetime | None = None) -> int:
+        """Purge expired temporary images, retaining OCR jobs as operational history."""
         current = now or datetime.now(config.TIMEZONE)
         for job in await OcrJob.filter(status=OcrJobStatus.PROCESSING, care_episode_id=None):
             await self._reconcile_worker_failure(job, now=current)
@@ -834,22 +775,23 @@ class MedicationGuideOcrJobService:
             )
             .values_list("id", flat=True)
         )
-        deleted = 0
+        purged = 0
         for job_id in candidate_ids:
-            deleted += int(await self._delete_if_expired(job_id, now=current))
+            purged += int(await self._purge_images_if_expired(job_id, now=current))
         manifests = await OcrJob.all().values_list("input_manifest", flat=True)
         active_storage_keys = {
             storage_key
             for manifest in manifests
             if isinstance(manifest, dict)
+            if not manifest.get("imagesPurgedAt")
             for field in ("storageKey", "processedStorageKey")
             if isinstance((storage_key := manifest.get(field)), str)
         }
         await self.storage.delete_orphans(active_storage_keys, older_than=stale_cutoff)
-        return deleted
+        return purged
 
-    async def _delete_if_expired(self, job_id: int, *, now: datetime, user_id: int | None = None) -> bool:
-        """Delete one still-unconfirmed stale job while serializing against confirm()."""
+    async def _purge_images_if_expired(self, job_id: int, *, now: datetime, user_id: int | None = None) -> bool:
+        """Retain history and serialize temporary-image expiry against confirm()."""
         stale_cutoff = now - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
         async with in_transaction() as connection:
             query = OcrJob.filter(id=job_id, care_episode_id=None)
@@ -858,8 +800,22 @@ class MedicationGuideOcrJobService:
             job = await query.using_db(connection).select_for_update().first()
             if job is None or not self._is_expired(job, now=now, stale_cutoff=stale_cutoff):
                 return False
-            await self.storage.delete(self._manifest(job))
-            await job.delete(using_db=connection)
+            manifest = dict(self._manifest(job))
+            if manifest.get("imagesPurgedAt"):
+                return False
+            await self.storage.delete(manifest)
+            manifest["imagesPurgedAt"] = now.isoformat()
+            update_fields = ["input_manifest"]
+            if job.status in {OcrJobStatus.QUEUED, OcrJobStatus.PROCESSING}:
+                manifest["expiredFromStatus"] = job.status.value
+                job.status = OcrJobStatus.FAILED
+                job.error_code = "WORKER_INTERRUPTED"
+                job.started_at = job.started_at or now
+                job.completed_at = now
+                job.updated_at = now
+                update_fields.extend(["status", "error_code", "started_at", "completed_at", "updated_at"])
+            job.input_manifest = manifest
+            await job.save(using_db=connection, update_fields=update_fields)
         return True
 
     @staticmethod
@@ -978,6 +934,8 @@ class MedicationGuideOcrJobService:
         if analysis.requires_recapture:
             return stage_results, None, []
         review_payload = cls._project_review_payload(analysis.project_review)
+        if not review_payload["medications"]:
+            return stage_results, None, []
         confidence_values = [Decimal(str(value)) for value in analysis.confidence_values]
         if any(value < 0 or value > 1 for value in confidence_values):
             raise ValueError("OCR confidence values must be between 0 and 1")

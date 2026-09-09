@@ -14,6 +14,83 @@ from app.tests.alarm_apis.helpers import authentication_headers
 
 
 class TestFollowUpVisitCrudAPI(TestCase):
+    async def test_create_requires_nonblank_hospital_and_accepts_short_name(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = await authentication_headers(client, "hospital-required@example.com", "01011110110")
+            for payload in ({}, {"hospital": None}, {"hospital": ""}, {"hospital": " \t "}):
+                rejected = await client.post(
+                    "/api/v1/user/follow-up-visits",
+                    headers=headers,
+                    json={"visit_date": "2026-09-10", **payload},
+                )
+                assert rejected.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+            assert not await FollowUpVisit.all().exists()
+
+            created = await client.post(
+                "/api/v1/user/follow-up-visits",
+                headers=headers,
+                json={"visit_date": "2026-09-10", "hospital": "  내과  "},
+            )
+
+        assert created.status_code == status.HTTP_201_CREATED
+        assert created.json()["hospital"] == "내과"
+        assert created.json()["visit_time"] is None
+        assert (await FollowUpVisit.get(id=created.json()["id"])).hospital == "내과"
+
+    async def test_patch_rejects_invalid_hospital_and_preserves_omitted_hospital(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "hospital-patch@example.com"
+            headers = await authentication_headers(client, email, "01011110111")
+            user = await User.get(email=email)
+            visit = await FollowUpVisit.create(
+                user=user, visit_date=date(2026, 9, 10), visit_time=time(13, 30), hospital="○○이비인후과"
+            )
+            for hospital in (None, "", " \t "):
+                rejected = await client.patch(
+                    f"/api/v1/user/follow-up-visits/{visit.id}", headers=headers, json={"hospital": hospital}
+                )
+                assert rejected.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+                await visit.refresh_from_db()
+                assert visit.hospital == "○○이비인후과"
+            patched = await client.patch(
+                f"/api/v1/user/follow-up-visits/{visit.id}", headers=headers, json={"visit_time": None}
+            )
+
+        assert patched.status_code == status.HTTP_200_OK
+        assert patched.json()["hospital"] == "○○이비인후과"
+        assert patched.json()["visit_time"] is None
+
+    async def test_legacy_hospital_is_readable_deletable_and_required_on_update(self) -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            email = "hospital-legacy@example.com"
+            headers = await authentication_headers(client, email, "01011110112")
+            user = await User.get(email=email)
+            for hospital in (None, "", " \t "):
+                visit = await FollowUpVisit.create(user=user, visit_date=date(2026, 9, 10), hospital=hospital)
+                url = f"/api/v1/user/follow-up-visits/{visit.id}"
+                detail = await client.get(url, headers=headers)
+                listed = await client.get("/api/v1/user/follow-up-visits", headers=headers)
+                assert detail.status_code == status.HTTP_200_OK
+                assert detail.json()["hospital"] == hospital
+                assert listed.json()["items"][0]["hospital"] == hospital
+                for patch in ({}, {"visit_time": "13:30:00"}, {"visit_date": "2026-09-12"}):
+                    rejected = await client.patch(url, headers=headers, json=patch)
+                    assert rejected.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+                await visit.refresh_from_db()
+                assert visit.hospital == hospital
+                assert visit.visit_time is None
+                assert visit.visit_date == date(2026, 9, 10)
+
+                repaired = await client.patch(url, headers=headers, json={"hospital": "  내과  "})
+                assert repaired.status_code == status.HTTP_200_OK
+                assert repaired.json()["hospital"] == "내과"
+                await client.delete(url, headers=headers)
+
+                legacy = await FollowUpVisit.create(user=user, visit_date=date(2026, 9, 10), hospital=hospital)
+                deleted = await client.delete(f"/api/v1/user/follow-up-visits/{legacy.id}", headers=headers)
+                assert deleted.status_code == status.HTTP_204_NO_CONTENT
+                assert not await FollowUpVisit.filter(id=legacy.id).exists()
+
     async def test_create_list_get_update_and_delete_owned_visit(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "follow-up-crud@example.com"
@@ -98,12 +175,15 @@ class TestFollowUpVisitCrudAPI(TestCase):
             created = await client.post(
                 "/api/v1/user/follow-up-visits",
                 headers=headers,
-                json={"visit_date": datetime.now(config.TIMEZONE).date().isoformat()},
+                json={"visit_date": datetime.now(config.TIMEZONE).date().isoformat(), "hospital": "내과"},
             )
             past_created = await client.post(
                 "/api/v1/user/follow-up-visits",
                 headers=headers,
-                json={"visit_date": (datetime.now(config.TIMEZONE).date() - timedelta(days=1)).isoformat()},
+                json={
+                    "visit_date": (datetime.now(config.TIMEZONE).date() - timedelta(days=1)).isoformat(),
+                    "hospital": "내과",
+                },
             )
 
         assert created.status_code == status.HTTP_201_CREATED
@@ -119,7 +199,7 @@ class TestFollowUpVisitCrudAPI(TestCase):
             created = await client.post(
                 "/api/v1/user/follow-up-visits",
                 headers=headers,
-                json={"visit_date": (today + timedelta(days=3)).isoformat()},
+                json={"visit_date": (today + timedelta(days=3)).isoformat(), "hospital": "내과"},
             )
             visit_id = created.json()["id"]
             alarm = await Alarm.get(user=user, follow_up_visit_id=visit_id)
@@ -246,7 +326,7 @@ class TestFollowUpVisitCrudAPI(TestCase):
             response = await client.post(
                 "/api/v1/user/follow-up-visits",
                 headers=headers,
-                json={"visit_date": "2026-09-10", "department": "내과"},
+                json={"visit_date": "2026-09-10", "hospital": "내과", "department": "내과"},
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

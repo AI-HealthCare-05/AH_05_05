@@ -35,7 +35,7 @@ test('처방 상세를 펼쳐 세로 스크롤이 생겨도 복약 카드 폭과
   expect(Math.abs(afterCard!.x - beforeCard!.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(afterCard!.width - beforeCard!.width)).toBeLessThanOrEqual(1);
   expect(Math.abs(afterAction!.height - beforeAction!.height)).toBeLessThanOrEqual(1);
-  await expect(main).toHaveCSS('scrollbar-gutter', 'stable');
+  await expect(main).toHaveCSS('scrollbar-width', 'none');
   expect(await main.evaluate((element) => element.scrollWidth)).toBe(
     await main.evaluate((element) => element.clientWidth),
   );
@@ -64,7 +64,7 @@ test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 
   await expect(
     firstEpisode
       .getByRole('group', { name: /8월 22일 처방 약 상세/ })
-      .getByText('셀레콕시브 200mg', { exact: true }),
+      .getByText('셀레콕시브', { exact: true }),
   ).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: /8월 22일 처방.*선택/ }).click();
@@ -139,19 +139,19 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
   });
   const firstEpisode = morning.getByRole('article', { name: /8월 22일 처방/ });
   const secondEpisode = morning.getByRole('article', { name: /8월 24일 처방/ });
-  await expect(page.getByText('셀레콕시브 200mg')).toHaveCount(0);
-  await expect(page.getByText('아목시실린 500mg')).toHaveCount(0);
+  await expect(page.getByText('셀레콕시브', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('아목시실린', { exact: true })).toHaveCount(0);
 
   await firstEpisode.getByRole('button', { name: /펼치기/ }).click();
   await expect(
-    firstEpisode.getByRole('group', { name: /처방 약 상세/ }).getByText('셀레콕시브 200mg', {
+    firstEpisode.getByRole('group', { name: /처방 약 상세/ }).getByText('셀레콕시브', {
       exact: true,
     }),
   ).toBeVisible();
 
   await secondEpisode.getByRole('button', { name: /펼치기/ }).click();
   await expect(
-    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린 500mg', {
+    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린', {
       exact: true,
     }),
   ).toBeVisible();
@@ -159,9 +159,9 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
   await expect(morning.getByRole('heading', { name: '지난 처방', exact: true })).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: /접기/ }).click();
-  await expect(firstEpisode.getByText('셀레콕시브 200mg', { exact: true })).toHaveCount(0);
+  await expect(firstEpisode.getByText('셀레콕시브', { exact: true })).toHaveCount(0);
   await expect(
-    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린 500mg', {
+    secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린', {
       exact: true,
     }),
   ).toBeVisible();
@@ -265,12 +265,13 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
   await expect(completedEpisode).toHaveAttribute('aria-pressed', 'false');
   await expect(selectionGlyph).toHaveClass(/border-2/);
   await expect(selectionGlyph.locator('svg')).toHaveCount(0);
-  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toContainText('복용 완료');
-  const badgeCheck = firstEpisode.locator('[data-episode-completed-badge] svg');
-  const badgeCheckBox = await badgeCheck.boundingBox();
-  expect(badgeCheckBox).not.toBeNull();
-  expect(badgeCheckBox!.width).toBe(20);
-  expect(badgeCheckBox!.height).toBe(20);
+  const completedBadge = firstEpisode.locator('[data-episode-completed-badge]');
+  await expect(completedBadge).toHaveAttribute('aria-hidden', 'true');
+  await expect(completedBadge).toHaveText('복용 완료');
+  const badgeBox = (await completedBadge.boundingBox())!;
+  const titleBox = (await firstEpisode.getByRole('heading').boundingBox())!;
+  expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(titleBox.y);
+  expect(Math.abs(badgeBox.x - titleBox.x)).toBeLessThanOrEqual(1);
 
   const undo = detail.getByRole('button', { name: '복약 기록 되돌리기' });
   await expect(undo).toBeVisible();
@@ -349,8 +350,8 @@ test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 �
   await expect(first.getByRole('button', { name: /8월 22일 처방 복용 완료/ })).toBeVisible();
   await expect(page.getByRole('button', { name: '되돌리기', exact: true })).toBeVisible();
   const inactiveAction = detail.getByRole('button', { name: '먹었어요' });
-  await expect(inactiveAction).toBeDisabled();
-  await expect(inactiveAction).toHaveClass(/bg-card/);
+  await expect(inactiveAction).toBeEnabled();
+  await expect(inactiveAction).toHaveClass(/bg-primary/);
 
   const secondSelector = second.getByRole('button', { name: /8월 24일 처방.*선택/ });
   await expect(secondSelector).toBeVisible();
@@ -453,7 +454,7 @@ test('게스트 홈은 세 배너 compact carousel을 유지하며 390x844에서
   await expect(heading).toBeVisible();
   await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
-  await expect(ranking.getByRole('heading', { name: '인기 영양제' })).toBeVisible();
+  await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
   await expect(ranking.getByRole('listitem')).toHaveCount(5);
 
   const rankingBox = await ranking.boundingBox();

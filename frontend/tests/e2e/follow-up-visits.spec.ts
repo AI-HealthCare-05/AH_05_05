@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-09-08T03:00:00Z'));
 });
 
-test('진료일정은 선택 입력의 빈 상태와 지난 일정 토글을 보여준다', async ({ page }) => {
+test('진료일정은 기존 미정 상태와 지난 일정 토글을 보여준다', async ({ page }) => {
   await page.goto('/dev/my-visits');
 
   await expect(page.getByRole('heading', { name: '진료일정' })).toBeVisible();
@@ -42,6 +42,7 @@ test('한국 시간 기준 오늘은 진료일로 저장할 수 없고 내일부
   await expect(save).toBeDisabled();
 
   await date.fill('2026-09-10');
+  await sheet.getByLabel('병원').fill('내과');
   await expect(sheet.getByText('진료일은 내일부터 선택해주세요.')).toHaveCount(0);
   await expect(save).toBeEnabled();
 });
@@ -85,30 +86,55 @@ test('진료 시간은 네이티브 입력 대신 10분 단위 옵션으로 선�
   ).toBeVisible();
 });
 
-test('병원과 시간을 비운 새 진료일정을 등록한다', async ({ page }) => {
+test('빈 병원명과 공백은 저장할 수 없고 진료과만 입력하면 시간 없이 등록한다', async ({ page }) => {
   await page.goto('/dev/my-visits');
   await page.getByRole('button', { name: '진료일정 추가' }).click();
 
   const sheet = page.getByRole('dialog', { name: '진료일정 추가' });
   await sheet.getByLabel('진료일').fill('2026-09-20');
+  const hospital = sheet.getByLabel('병원');
+  await expect(hospital).toHaveAttribute('required', '');
+  const save = sheet.getByRole('button', { name: '저장' });
+  await expect(save).toBeDisabled();
+  await hospital.fill(' \u3000 ');
+  await expect(save).toBeDisabled();
+  await hospital.fill('  내과  ');
+  await expect(save).toBeEnabled();
   await sheet.getByRole('button', { name: '저장' }).click();
 
-  const created = page.getByRole('button', { name: /9월 20일.*병원 미정.*시간 미정/ });
+  const created = page.getByRole('button', { name: /9월 20일.*내과.*시간 미정/ });
   await expect(created).toBeVisible();
+  await created.click();
+  await expect(page.getByRole('dialog', { name: '진료일정 수정' }).getByLabel('병원')).toHaveValue('내과');
 });
 
-test('진료일정 수정에서 병원과 시간을 null로 지울 수 있다', async ({ page }) => {
+test('진료일정 수정에서 병원명은 지울 수 없고 시간만 지울 수 있다', async ({ page }) => {
   await page.goto('/dev/my-visits');
   await page.getByRole('button', { name: /9월 16일.*늘봄병원.*10:30/ }).click();
 
   const sheet = page.getByRole('dialog', { name: '진료일정 수정' });
   await sheet.getByLabel('병원').fill('');
   await sheet.getByRole('button', { name: '시간 지우기' }).click();
+  await expect(sheet.getByRole('button', { name: '저장' })).toBeDisabled();
+  await sheet.getByLabel('병원').fill('   ');
+  await expect(sheet.getByRole('button', { name: '저장' })).toBeDisabled();
+  await sheet.getByLabel('병원').fill('  ○○이비인후과  ');
   await sheet.getByRole('button', { name: '저장' }).click();
 
   await expect(
-    page.getByRole('button', { name: /9월 16일.*병원 미정.*시간 미정/ }),
+    page.getByRole('button', { name: /9월 16일.*○○이비인후과.*시간 미정/ }),
   ).toBeVisible();
+});
+
+test('병원이 없는 기존 일정은 병원명을 입력해야 수정할 수 있다', async ({ page }) => {
+  await page.goto('/dev/my-visits');
+  await page.getByRole('button', { name: /9월 18일.*병원 미정.*14:30/ }).click();
+  const sheet = page.getByRole('dialog', { name: '진료일정 수정' });
+  await expect(sheet.getByLabel('병원')).toHaveValue('');
+  await expect(sheet.getByRole('button', { name: '저장' })).toBeDisabled();
+  await sheet.getByLabel('병원').fill('내과');
+  await sheet.getByRole('button', { name: '저장' }).click();
+  await expect(page.getByRole('button', { name: /9월 18일.*내과.*14:30/ })).toBeVisible();
 });
 
 test('진료일정을 삭제하기 전에 연결된 알림 삭제를 안내한다', async ({ page }) => {
@@ -122,3 +148,24 @@ test('진료일정을 삭제하기 전에 연결된 알림 삭제를 안내한�
   await dialog.getByRole('button', { name: '삭제하기' }).click();
   await expect(target).toHaveCount(0);
 });
+
+for (const width of [320, 375]) {
+  test(`${width}px 진료일정 시트에서 병원 입력 안내와 예시가 잘리지 않는다`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 812 });
+    await page.goto('/dev/my-visits');
+    await page.getByRole('button', { name: '진료일정 추가' }).click();
+    const sheet = page.getByRole('dialog', { name: '진료일정 추가' });
+    const hospital = sheet.getByLabel('병원');
+    const placeholderFits = await hospital.evaluate((input: HTMLInputElement) => {
+      const style = getComputedStyle(input);
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.font = style.font;
+      const availableWidth = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      return context.measureText(input.placeholder).width <= availableWidth;
+    });
+    expect(placeholderFits).toBe(true);
+    await expect(hospital).toHaveAccessibleDescription(/이비인후과.*내과/);
+    expect(await sheet.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: testInfo.outputPath(`follow-up-visit-${width}.png`) });
+  });
+}

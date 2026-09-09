@@ -12,6 +12,7 @@ import { ApiError } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
 import { officialFrequencyLabel } from './OfficialChallengeBrowsePage';
+import { OfficialChallengeRejoinDialog } from './OfficialChallengeRejoinDialog';
 
 function positiveId(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/.test(value)) return null;
@@ -26,7 +27,7 @@ function positiveParticipationId(value: number | null): number | null {
 function shouldReconcileJoinFailure(reason: unknown): boolean {
   if (!(reason instanceof ApiError)) return true;
   return reason.status >= 500
-    || (reason.status === 409 && reason.code === 'CHALLENGE_ALREADY_JOINED');
+    || reason.status === 409;
 }
 
 function shortDate(value: string) {
@@ -48,11 +49,13 @@ export function OfficialChallengeDetailPage() {
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
   const requestGenerationRef = useRef(0);
+  const joinRequestRef = useRef<symbol | null>(null);
   const [item, setItem] = useState<ChallengeCatalogItem | null>(null);
   const [notFound, setNotFound] = useState(id === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [rejoinOpen, setRejoinOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
 
@@ -69,6 +72,10 @@ export function OfficialChallengeDetailPage() {
     setItem(null);
     setNotFound(false);
     setLoadError(null);
+    setJoinError(null);
+    setPending(false);
+    setRejoinOpen(false);
+    joinRequestRef.current = null;
     getChallengeCatalogItem(id)
       .then(result => {
         if (active) setItem(result);
@@ -110,19 +117,22 @@ export function OfficialChallengeDetailPage() {
   const canJoin = selfCheck && item.can_join;
 
   async function join() {
-    if (!canJoin || pending) return;
+    if (!canJoin || joinRequestRef.current !== null) return;
     const requestPrincipal = principalKey;
     const requestGeneration = requestGenerationRef.current;
+    const requestToken = Symbol('join-challenge');
+    joinRequestRef.current = requestToken;
     const isCurrentRequest = () => (
       principalRef.current === requestPrincipal
       && requestGenerationRef.current === requestGeneration
+      && joinRequestRef.current === requestToken
     );
     setPending(true);
     setJoinError(null);
     try {
       const participation = await joinOfficialChallenge(item!.id);
       if (!isCurrentRequest()) return;
-      navigate(`/challenges/participations/${participation.id}`);
+      navigate(`/challenges/participations/${participation.id}`, { replace: Boolean(item!.participation_id) });
     } catch (reason) {
       if (!isCurrentRequest()) return;
       if (shouldReconcileJoinFailure(reason)) {
@@ -130,8 +140,8 @@ export function OfficialChallengeDetailPage() {
           const recoveredItem = await getChallengeCatalogItem(item!.id);
           if (!isCurrentRequest()) return;
           const participationId = positiveParticipationId(recoveredItem.participation_id);
-          if (participationId !== null) {
-            navigate(`/challenges/participations/${participationId}`);
+          if (participationId !== null && !recoveredItem.can_join && participationId !== item!.participation_id) {
+            navigate(`/challenges/participations/${participationId}`, { replace: Boolean(item!.participation_id) });
             return;
           }
           setItem(recoveredItem);
@@ -139,9 +149,13 @@ export function OfficialChallengeDetailPage() {
           if (!isCurrentRequest()) return;
         }
       }
+      setRejoinOpen(false);
       setJoinError(reason instanceof Error ? reason.message : '챌린지에 참여하지 못했어요.');
     } finally {
-      if (isCurrentRequest()) setPending(false);
+      if (isCurrentRequest()) {
+        joinRequestRef.current = null;
+        setPending(false);
+      }
     }
   }
 
@@ -190,20 +204,19 @@ export function OfficialChallengeDetailPage() {
       {joinError ? <p role="alert" className="text-sm text-danger-strong">{joinError}</p> : null}
       <Button
         disabled={pending || (!item.participation_id && !canJoin)}
-        onClick={() => item.participation_id
-          ? navigate(`/challenges/participations/${item.participation_id}`)
-          : void join()}
+        onClick={() => canJoin
+          ? item.participation_id ? setRejoinOpen(true) : void join()
+          : item.participation_id && navigate(`/challenges/participations/${item.participation_id}`)}
       >
-        {item.participation_id
-          ? '진행 보기'
-          : !selfCheck
-            ? '현재 앱에서는 참여할 수 없어요'
-            : pending
-              ? '참여 중'
-              : item.can_join
-                ? '참여하기'
-                : '지금은 참여할 수 없어요'}
+        {canJoin
+          ? pending ? '참여 중' : item.participation_id ? '다시 참여하기' : '참여하기'
+          : item.participation_id
+            ? '진행 보기'
+            : !selfCheck
+              ? '현재 앱에서는 참여할 수 없어요'
+              : '지금은 참여할 수 없어요'}
       </Button>
+      <OfficialChallengeRejoinDialog open={rejoinOpen} pending={pending} onOpenChange={setRejoinOpen} onConfirm={() => void join()} />
     </main>
   );
 }

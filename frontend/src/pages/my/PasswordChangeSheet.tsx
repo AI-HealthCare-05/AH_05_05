@@ -3,7 +3,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { changePassword, type ChangePasswordPayload } from '@/entities/account';
 import { ApiError } from '@/shared/api/client';
-import { PASSWORD_MAX_LENGTH } from '@/shared/lib/password';
+import { PASSWORD_MAX_LENGTH, sanitizePasswordInput } from '@/shared/lib/password';
 import {
   Button,
   Dialog,
@@ -78,6 +78,29 @@ export function PasswordChangeSheet({
     setSaving(false);
   }, [open]);
 
+  /**
+   * 새 비밀번호 칸의 한글을 지웁니다. **조합이 끝난 뒤에만 부릅니다.**
+   *
+   * 조합 중에 컨트롤드 value 를 바꾸면 IME 가 조합 범위를 잃고 앞서 입력한 값까지
+   * 지워버립니다(#374 실측). 그래서 정리를 compositionEnd 로 미룹니다.
+   * 「현재 비밀번호」에는 걸지 않습니다 — 대조용으로 받는 값입니다.
+   */
+  function applyNewPasswordInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizePasswordInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    setNewPassword(sanitized);
+    setNewPasswordError(null);
+  }
+
+  function applyNewPasswordConfirmInput(input: HTMLInputElement) {
+    const typed = input.value;
+    const sanitized = sanitizePasswordInput(typed);
+    if (sanitized !== typed) input.value = sanitized;
+    setNewPasswordConfirm(sanitized);
+    setConfirmError(null);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearErrors();
@@ -113,7 +136,7 @@ export function PasswordChangeSheet({
         <div className="flex flex-col gap-1 pt-2">
           <DialogTitle className="text-xl">비밀번호 변경</DialogTitle>
           <DialogDescription id="password-change-description">
-            현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿉니다.
+            현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿉니다. 새 비밀번호에 한글은 쓸 수 없습니다.
           </DialogDescription>
         </div>
         <form className="flex flex-col gap-3" onSubmit={submit}>
@@ -139,9 +162,13 @@ export function PasswordChangeSheet({
             maxLength={PASSWORD_MAX_LENGTH}
             error={newPasswordError ?? undefined}
             onChange={(event) => {
-              setNewPassword(event.target.value);
-              setNewPasswordError(null);
+              if ((event.nativeEvent as InputEvent).isComposing) {
+                setNewPassword(event.currentTarget.value);
+                return;
+              }
+              applyNewPasswordInput(event.currentTarget);
             }}
+            onCompositionEnd={(event) => applyNewPasswordInput(event.currentTarget)}
             trailingAction={
               <button
                 type="button"
@@ -166,9 +193,13 @@ export function PasswordChangeSheet({
             maxLength={PASSWORD_MAX_LENGTH}
             error={confirmError ?? undefined}
             onChange={(event) => {
-              setNewPasswordConfirm(event.target.value);
-              setConfirmError(null);
+              if ((event.nativeEvent as InputEvent).isComposing) {
+                setNewPasswordConfirm(event.currentTarget.value);
+                return;
+              }
+              applyNewPasswordConfirmInput(event.currentTarget);
             }}
+            onCompositionEnd={(event) => applyNewPasswordConfirmInput(event.currentTarget)}
             trailingAction={
               <button
                 type="button"
