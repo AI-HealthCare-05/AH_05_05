@@ -51,29 +51,45 @@ class ChallengeParticipationService:
         self.repository = ChallengeParticipationRepository()
 
     async def join(self, user: User, challenge_id: int) -> UserChallengeResponse:
-        challenge = await Challenge.get_or_none(
-            id=challenge_id,
-            is_deleted=False,
-            is_displayed=True,
-        ).prefetch_related("challenge_period", "check_frequency")
-        if challenge is None:
-            raise ChallengeNotFoundError()
-        now = datetime.now(config.TIMEZONE)
-        if not (challenge.recruit_start_at <= now <= challenge.recruit_end_at):
-            raise ChallengeNotRecruitingError()
-        try:
-            periods = build_progress_periods(
-                now,
-                challenge.challenge_period.detail_code,
-                challenge.check_frequency.detail_code,
-            )
-        except ValueError as error:
-            raise InvalidChallengeConfigurationError() from error
-        if any(period.target_count > (period.period_end - period.period_start).days + 1 for period in periods):
-            raise InvalidChallengeConfigurationError()
-        duration_days = int(challenge.challenge_period.detail_code.removeprefix("D"))
         try:
             async with in_transaction() as connection:
+                # A stable row also serializes first joins, when no attempt exists yet.
+                await User.filter(id=user.id).using_db(connection).select_for_update().get()
+                challenge = (
+                    await Challenge.get_or_none(
+                        id=challenge_id,
+                        is_deleted=False,
+                        is_displayed=True,
+                    )
+                    .using_db(connection)
+                    .prefetch_related("challenge_period", "check_frequency")
+                )
+                if challenge is None:
+                    raise ChallengeNotFoundError()
+                latest = (
+                    await UserChallenge.filter(user_id=user.id, challenge_id=challenge_id)
+                    .using_db(connection)
+                    .select_for_update()
+                    .order_by("-id")
+                    .first()
+                )
+                # Check after all lock waits so a queued join cannot use an expired window.
+                now = datetime.now(config.TIMEZONE)
+                if not (challenge.recruit_start_at <= now <= challenge.recruit_end_at):
+                    raise ChallengeNotRecruitingError()
+                if latest is not None and latest.status != ChallengeParticipationStatus.CANCELLED:
+                    raise ChallengeAlreadyJoinedError()
+                try:
+                    periods = build_progress_periods(
+                        now,
+                        challenge.challenge_period.detail_code,
+                        challenge.check_frequency.detail_code,
+                    )
+                except ValueError as error:
+                    raise InvalidChallengeConfigurationError() from error
+                if any(period.target_count > (period.period_end - period.period_start).days + 1 for period in periods):
+                    raise InvalidChallengeConfigurationError()
+                duration_days = int(challenge.challenge_period.detail_code.removeprefix("D"))
                 participation = await UserChallenge.create(
                     user_id=user.id,
                     challenge_id=challenge.id,
@@ -324,6 +340,11 @@ class ChallengeParticipationService:
         )
         today_verification = next((row for row in verifications if row.verification_date == today), None)
         today_progress = next((row for row in progress_rows if row.period_start <= today <= row.period_end), None)
+        latest = (
+            await UserChallenge.filter(user_id=participation.user_id, challenge_id=participation.challenge_id)
+            .order_by("-id")
+            .first()
+        )
         return UserChallengeResponse(
             id=participation.id,
             user_id=participation.user_id,
@@ -339,7 +360,7 @@ class ChallengeParticipationService:
             completed_at=participation.completed_at,
             cancelled_at=participation.cancelled_at,
             progress_periods=[ProgressResponse.model_validate(row) for row in progress_rows],
-            challenge=ChallengeCatalogService.response(participation.challenge, participation.id, now),
+            challenge=ChallengeCatalogService.response(participation.challenge, latest, now),
             today=today,
             today_verification=self.verification_response(today_verification) if today_verification else None,
             can_verify=bool(

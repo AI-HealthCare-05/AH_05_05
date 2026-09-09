@@ -5,7 +5,7 @@ from unittest.mock import patch
 from tortoise.contrib.test import TruncationTestCase
 
 from app.core import config
-from app.core.exceptions import ChallengePeriodEndedError
+from app.core.exceptions import ChallengeAlreadyJoinedError, ChallengePeriodEndedError
 from app.dtos.challenges import VerificationActionRequest, VerificationCreateRequest
 from app.models.challenges import Badge, Challenge, ChallengeProgress, ChallengeVerification, UserBadge, UserChallenge
 from app.models.common_codes import CommonCode, CommonCodeGroup
@@ -49,12 +49,44 @@ class TestChallengeConcurrency(TruncationTestCase):
     async def asyncTearDown(self) -> None:
         # The generic truncation helper deletes User first; challenge FKs intentionally RESTRICT it.
         await UserBadge.filter(user_id=self.user.id).delete()
-        await ChallengeVerification.filter(user_challenge_id=self.participation.id).delete()
-        await ChallengeProgress.filter(user_challenge_id=self.participation.id).delete()
+        ids = await UserChallenge.filter(user_id=self.user.id).values_list("id", flat=True)
+        await ChallengeVerification.filter(user_challenge_id__in=ids).delete()
+        await ChallengeProgress.filter(user_challenge_id__in=ids).delete()
         await UserChallenge.filter(user_id=self.user.id).delete()
         await self.challenge.delete()
         await self.badge.delete()
         await super().asyncTearDown()
+
+    async def test_concurrent_rejoins_create_exactly_one_new_attempt(self) -> None:
+        await self.service.cancel(self.user, self.participation.id)
+        results = await asyncio.gather(
+            *[self.service.join(self.user, self.challenge.id) for _ in range(5)], return_exceptions=True
+        )
+        successes = [result for result in results if not isinstance(result, Exception)]
+        failures = [result for result in results if isinstance(result, Exception)]
+        assert len(successes) == 1, results
+        assert len(failures) == 4
+        assert all(isinstance(error, ChallengeAlreadyJoinedError) for error in failures), failures
+        assert successes[0].id != self.participation.id
+        assert successes[0].completed_count == 0
+        assert await UserChallenge.filter(user_id=self.user.id, challenge_id=self.challenge.id).count() == 2
+        assert (await self.service.get(self.user, self.participation.id)).status == "CANCELLED"
+
+    async def test_concurrent_initial_joins_create_exactly_one_attempt(self) -> None:
+        other = await create_user(name="First join", email="concurrent-first@example.com")
+        results = await asyncio.gather(
+            *[self.service.join(other, self.challenge.id) for _ in range(5)], return_exceptions=True
+        )
+        try:
+            assert sum(not isinstance(result, Exception) for result in results) == 1, results
+            assert all(
+                isinstance(result, ChallengeAlreadyJoinedError) for result in results if isinstance(result, Exception)
+            ), results
+            assert await UserChallenge.filter(user_id=other.id, challenge_id=self.challenge.id).count() == 1
+        finally:
+            ids = await UserChallenge.filter(user_id=other.id).values_list("id", flat=True)
+            await ChallengeProgress.filter(user_challenge_id__in=ids).delete()
+            await UserChallenge.filter(user_id=other.id).delete()
 
     async def test_concurrent_final_checkins_award_one_badge_and_count_once(self) -> None:
         with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
