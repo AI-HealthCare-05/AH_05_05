@@ -56,14 +56,9 @@ class RuleBasedGroundedClaimValidator:
                 reason_code="TREATMENT_DECISION",
             )
         if not self._has_disclaimer(normalized_answer):
-            reason_codes = list(result.safety_reason_codes)
-            if "MISSING_MEDICAL_DISCLAIMER" not in reason_codes:
-                reason_codes.append("MISSING_MEDICAL_DISCLAIMER")
             return result.model_copy(
                 update={
                     "answer": f"{result.answer.rstrip()}\n\n{MEDICAL_DISCLAIMER}",
-                    "safety_status": SafetyStatus.RESTRICTED,
-                    "safety_reason_codes": reason_codes,
                 }
             )
         return result

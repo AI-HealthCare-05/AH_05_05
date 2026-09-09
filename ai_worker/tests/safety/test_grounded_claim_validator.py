@@ -1,5 +1,8 @@
 import pytest
 
+from ai_worker.llm.assemblers.medication_answer_assembler import (
+    MEDICAL_DISCLAIMER,
+)
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
@@ -33,14 +36,15 @@ async def test_validator_replaces_medication_change_instruction() -> None:
     assert "MEDICATION_CHANGE_INSTRUCTION" in result.safety_reason_codes
 
 
-async def test_validator_restricts_answer_without_disclaimer() -> None:
+async def test_validator_adds_disclaimer_without_restricting_safe_answer() -> None:
     result = await RuleBasedGroundedClaimValidator().validate(
         context=ActiveIntakeContext(user_id=1),
         result=build_result("제품 설명서의 주의사항을 확인하세요."),
     )
 
-    assert result.safety_status == SafetyStatus.RESTRICTED
-    assert "MISSING_MEDICAL_DISCLAIMER" in result.safety_reason_codes
+    assert result.safety_status == SafetyStatus.SAFE
+    assert "MISSING_MEDICAL_DISCLAIMER" not in result.safety_reason_codes
+    assert result.answer.endswith(MEDICAL_DISCLAIMER)
 
 
 async def test_validator_preserves_existing_restricted_status() -> None:
