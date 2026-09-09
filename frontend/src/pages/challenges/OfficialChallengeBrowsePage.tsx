@@ -79,7 +79,7 @@ export function OfficialChallengeBrowsePage() {
             key={item.id}
             type="button"
             aria-label={`${item.name} 자세히 보기`}
-            onClick={() => navigate(item.participation_id
+            onClick={() => navigate(!item.can_join && item.participation_id
               ? `/challenges/participations/${item.participation_id}`
               : `/challenges/official/${item.id}`)}
             className="flex w-full flex-col gap-2 rounded-card bg-card p-5 text-left shadow-card"
@@ -88,7 +88,7 @@ export function OfficialChallengeBrowsePage() {
             <span className="text-sm text-primary">{item.phrase}</span>
             <span className="text-caption text-muted-foreground">{officialFrequencyLabel(item)}</span>
             <span className="text-caption text-muted-foreground">공식 · 모집 {shortDate(item.recruit_start_at)} ~ {shortDate(item.recruit_end_at)}</span>
-            <span className="text-caption font-bold text-primary">{item.participation_id ? '참여 중 ›' : '자세히 보기 ›'}</span>
+            <span className="text-caption font-bold text-primary">{item.can_join && item.participation_id ? '다시 참여하기 ›' : item.participation_id ? '참여 기록 보기 ›' : '자세히 보기 ›'}</span>
           </button>
         ))}
       </section>

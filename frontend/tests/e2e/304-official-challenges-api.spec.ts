@@ -88,6 +88,181 @@ function participation(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function cancelledAttempt(canJoin = true, latestId = 501) {
+  return participation({
+    status: 'CANCELLED', cancelled_at: '2026-09-10T12:00:00+09:00', can_verify: false,
+    challenge: { ...dailyChallenge, can_join: canJoin, participation_id: latestId },
+  });
+}
+
+function restartedAttempt() {
+  return participation({
+    id: 502, completed_count: 0, progress_rate: '0.00', verified_dates: [],
+    joined_at: '2026-09-10T13:00:00+09:00', started_at: '2026-09-10T00:00:00+09:00',
+    end_at: '2026-09-24T00:00:00+09:00',
+    progress_periods: [{ id: 802, period_start: '2026-09-10', period_end: '2026-09-23',
+      target_count: 14, completed_count: 0, progress_rate: '0.00', is_completed: false, completed_at: null }],
+    challenge: { ...dailyChallenge, can_join: false, participation_id: 502 },
+  });
+}
+
+for (const entry of ['participation', 'catalog'] as const) {
+  test(`rejoin from ${entry} confirms reset and shows a new attempt with zero progress`, async ({ page }) => {
+    test.setTimeout(30_000);
+    await authenticate(page);
+    await page.route('**/api/v1/**', route => route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: '없음' } }));
+    await stubChallengeReads(page, { catalog: [cancelledAttempt().challenge] });
+    let joined = false;
+    let joinCalls = 0;
+    await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: {
+      items: joined ? [restartedAttempt(), cancelledAttempt(false, 502)] : [cancelledAttempt()],
+      total_count: joined ? 2 : 1,
+    } }));
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/v1/user/challenge-catalog/101', route => route.fulfill({ json: cancelledAttempt().challenge }));
+    await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: cancelledAttempt(!joined, joined ? 502 : 501) }));
+    await page.route('**/api/v1/user/challenges/502', route => route.fulfill({ json: restartedAttempt() }));
+    await page.route('**/api/v1/user/challenges/101/join', async route => {
+      joinCalls += 1;
+      expect(route.request().postData()).toBeNull();
+      await gate;
+      joined = true;
+      await route.fulfill({ status: 201, json: restartedAttempt() });
+    });
+    await page.goto(entry === 'participation' ? '/challenges/participations/501' : '/challenges/browse');
+    if (entry === 'catalog') {
+      await page.getByRole('button', { name: /매일 30분 걷기.*자세히 보기/ }).click();
+      await expect(page).toHaveURL(/\/challenges\/official\/101$/);
+    }
+    await page.getByRole('button', { name: '다시 참여하기', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('0%');
+    await expect(dialog).toContainText('수행 기간');
+    expect(joinCalls).toBe(0);
+    await dialog.getByRole('button', { name: '다시 참여하기', exact: true }).click();
+    const submitting = dialog.getByRole('button', { name: '참여 중', exact: true });
+    await expect(submitting).toBeDisabled();
+    await submitting.evaluate((element: HTMLButtonElement) => element.click());
+    expect(joinCalls).toBe(1);
+    release();
+    await expect(page).toHaveURL(/\/challenges\/participations\/502$/);
+    await expect(page.getByRole('progressbar', { name: '내 인증 기록 진행률' })).toHaveAttribute('aria-valuenow', '0');
+    await expect(page.getByText('내 수행 기간 · 2026.9.10 ~ 2026.9.23')).toBeVisible();
+    await expect(page.getByLabel('2026-09-10 미인증', { exact: true })).toBeVisible();
+    await page.goto('/challenges/participations/501');
+    await expect(page.getByRole('progressbar', { name: '내 인증 기록 진행률' })).toHaveAttribute('aria-valuenow', '21.43');
+    await expect(page.getByRole('button', { name: '다시 참여하기', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: '진행 보기', exact: true }).click();
+    await expect(page).toHaveURL(/\/challenges\/participations\/502$/);
+    expect(joinCalls).toBe(1);
+    await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
+    const active = page.getByRole('region', { name: '진행 중인 챌린지', exact: true });
+    await expect(active.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    await expect(active.getByRole('link', { name: /매일 30분 걷기 자세히 보기/ })).toHaveAttribute('href', '/challenges/participations/502');
+    await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
+    const history = page.getByRole('region', { name: '지난 기록', exact: true });
+    await expect(history.getByRole('link', { name: /매일 30분 걷기 자세히 보기/ })).toHaveAttribute('href', '/challenges/participations/501');
+    await page.getByRole('button', { name: '홈', exact: true }).click();
+    await expect(page.getByRole('link', { name: '매일 30분 걷기, 0% 달성, 상세 보기', exact: true })).toHaveAttribute('href', '/challenges/participations/502');
+  });
+}
+
+test('rejoin from an older history starts another attempt when the latest attempt was also cancelled', async ({ page }) => {
+  test.setTimeout(20_000);
+  await authenticate(page);
+  await stubChallengeReads(page);
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: cancelledAttempt(true, 502) }));
+  const thirdAttempt = { ...restartedAttempt(), id: 503, challenge: { ...restartedAttempt().challenge, participation_id: 503 } };
+  await page.route('**/api/v1/user/challenges/503', route => route.fulfill({ json: thirdAttempt }));
+  await page.route('**/api/v1/user/challenges/101/join', route => route.fulfill({ status: 201, json: thirdAttempt }));
+  await page.goto('/challenges/participations/501');
+  await page.getByRole('button', { name: '다시 참여하기', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '다시 참여하기', exact: true }).click();
+  await expect(page).toHaveURL(/\/challenges\/participations\/503$/);
+  await expect(page.getByRole('progressbar', { name: '내 인증 기록 진행률' })).toHaveAttribute('aria-valuenow', '0');
+});
+
+for (const deadline of ['2026-09-09T00:00:00+09:00', '2026-09-10T12:00:00+09:00']) {
+  test(`rejoin is unavailable for a cancelled attempt after recruitment closes at ${deadline}`, async ({ page }) => {
+    test.setTimeout(20_000);
+    await page.clock.setFixedTime(new Date('2026-09-10T13:00:00+09:00'));
+    await authenticate(page);
+    await stubChallengeReads(page);
+    await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: {
+      ...cancelledAttempt(false), challenge: { ...cancelledAttempt(false).challenge, recruit_end_at: deadline },
+    } }));
+    await page.goto('/challenges/participations/501');
+    await expect(page.getByText('모집이 마감됐어요', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '다시 참여하기', exact: true })).toHaveCount(0);
+  });
+}
+
+for (const outcome of ['closed', 'already-joined', 'response-lost'] as const) {
+  test(`rejoin reconciles ${outcome} after the cancelled page was opened`, async ({ page }) => {
+    test.setTimeout(20_000);
+    await authenticate(page);
+    await stubChallengeReads(page);
+    let submitted = false;
+    await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: cancelledAttempt(!submitted, submitted && outcome !== 'closed' ? 502 : 501) }));
+    await page.route('**/api/v1/user/challenges/502', route => route.fulfill({ json: restartedAttempt() }));
+    await page.route('**/api/v1/user/challenges/101/join', route => {
+      submitted = true;
+      return route.fulfill({ status: outcome === 'response-lost' ? 503 : 409, json: {
+        code: outcome === 'closed' ? 'CHALLENGE_RECRUITMENT_CLOSED' : 'CHALLENGE_ALREADY_JOINED',
+        message: outcome === 'closed' ? '모집이 마감됐어요' : '이미 참여 중이에요',
+      } });
+    });
+    await page.goto('/challenges/participations/501');
+    await page.getByRole('button', { name: '다시 참여하기', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '다시 참여하기', exact: true }).click();
+    if (outcome === 'closed') {
+      await expect(page.getByRole('alert')).toContainText('모집이 마감');
+      await expect(page.getByRole('button', { name: '다시 참여하기', exact: true })).toHaveCount(0);
+      await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
+    } else {
+      await expect(page).toHaveURL(/\/challenges\/participations\/502$/);
+    }
+  });
+}
+
+for (const outcome of ['leave', 'unauthorized'] as const) {
+  test(`rejoin ignores stale completion on ${outcome}`, async ({ page }) => {
+    test.setTimeout(20_000);
+    await authenticate(page);
+    await stubChallengeReads(page);
+    let reads = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/v1/user/challenges/501', route => {
+      reads += 1;
+      return route.fulfill({ json: cancelledAttempt() });
+    });
+    await page.route('**/api/v1/user/challenges/101/join', async route => {
+      await gate;
+      await route.fulfill(outcome === 'leave' ? { status: 201, json: restartedAttempt() } :
+        { status: 401, json: { code: 'UNAUTHORIZED', message: '로그인이 필요해요' } });
+    });
+    await page.goto('/challenges/participations/501');
+    await page.getByRole('button', { name: '다시 참여하기', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '다시 참여하기', exact: true }).click();
+    await expect(page.getByRole('button', { name: '참여 중', exact: true })).toBeDisabled();
+    const readsBefore = reads;
+    if (outcome === 'leave') {
+      await page.evaluate(() => {
+        window.history.pushState({}, '', '/challenges/browse');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      });
+      await expect(page.getByRole('heading', { name: '공식 챌린지', exact: true })).toBeVisible();
+    }
+    release();
+    if (outcome === 'unauthorized') await expect(page).toHaveURL(/\/login$/);
+    else await page.waitForTimeout(100);
+    await expect(page).not.toHaveURL(/\/challenges\/participations\/502$/);
+    expect(reads).toBe(readsBefore);
+  });
+}
+
 async function authenticate(page: Page, principal = 'challenge-api@example.com') {
   await page.addInitScript(({ principal }) => {
     sessionStorage.setItem('poke.access-token', `token-for-${principal}`);
@@ -705,7 +880,7 @@ test('participation detail uses server dates, counts, progress, and verified dat
   await expect(page.getByRole('button', { name: '했어요' })).toBeEnabled();
 });
 
-test('active participation cancellation confirms the terminal policy, posts once, and persists after reload', async ({ page }) => {
+test('active participation cancellation confirms retained history, posts once, and persists after reload', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page);
   let cancelled = false;
@@ -738,7 +913,8 @@ test('active participation cancellation confirms the terminal policy, posts once
   await expect(cancelButton).toBeVisible({ timeout: 2_000 });
   await cancelButton.click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByText('취소하면 이 챌린지에 다시 참여할 수 없어요', { exact: true })).toBeVisible();
+  await expect(dialog).toContainText('기록은 보관');
+  await expect(dialog).toContainText('모집 기간');
   const confirm = dialog.getByRole('button', { name: '참여 취소', exact: true });
   await confirm.click();
   const cancelling = dialog.getByRole('button', { name: '취소 중...', exact: true });
@@ -775,11 +951,13 @@ test('completed and expired participation details never offer cancellation', asy
   status = 'COMPLETED';
   await page.reload();
   await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '다시 참여하기', exact: true })).toHaveCount(0);
 
   status = 'EXPIRED';
   await page.reload();
   await expect(page.getByRole('heading', { name: '이번 도전은 여기까지예요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '챌린지 참여 취소' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '다시 참여하기', exact: true })).toHaveCount(0);
 });
 
 test('failed cancellation keeps the active participation and allows a deliberate retry', async ({ page }) => {
