@@ -46,7 +46,9 @@ function revokeAllAuthenticatedImageUrls(): void {
 function idempotencyKeyFor(file: File): string {
   const existing = idempotencyKeys.get(file);
   if (existing) return existing;
-  const key = `ocr-${crypto.randomUUID()}`;
+  // 휴대폰의 HTTP LAN 접속에서는 randomUUID가 없지만 getRandomValues는 지원됩니다.
+  const random = crypto.getRandomValues(new Uint8Array(16));
+  const key = `ocr-${Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
   idempotencyKeys.set(file, key);
   return key;
 }

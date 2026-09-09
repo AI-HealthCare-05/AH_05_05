@@ -56,6 +56,7 @@ class ChatEvaluator:
             section_accuracy=self._rate(result.section_match for result in results),
             source_contract_rate=self._rate(result.source_match for result in results),
             safety_contract_rate=self._rate(result.safety_match for result in results),
+            answer_policy_contract_rate=self._rate(result.answer_policy_match for result in results),
             langsmith_trace_coverage=self._rate(result.trace_match for result in results),
             timeout_rate=(sum(result.error_code == "API_TIMEOUT" for result in results) / query_count),
             response_p50_ms=self._percentile(latencies, 0.50),
@@ -88,36 +89,31 @@ class ChatEvaluator:
             observation.source_kinds,
         )
         safety_match = observation.safety_status == expected.safety_status
+        answer_policy_match, answer_policy_details = cls._answer_policy_match(
+            answer=observation.answer,
+            required_markers=expected.required_answer_markers,
+            forbidden_markers=expected.forbidden_answer_markers,
+        )
         latency_match = observation.response_time_ms <= max_case_latency_ms and observation.error_code != "API_TIMEOUT"
         trace_match = not expected.require_langsmith_trace or bool(observation.langsmith_trace_id)
 
-        categories: list[ChatEvaluationFailureCategory] = []
-        details: list[str] = []
-        if not route_match or not intent_match or not section_match:
-            categories.append(ChatEvaluationFailureCategory.QUESTION_CLASSIFICATION)
-            details.append("질문 의도·경로 또는 검색 섹션 분류가 예상과 다릅니다.")
-        if not entity_match:
-            categories.append(ChatEvaluationFailureCategory.ENTITY_NORMALIZATION)
-            details.append("필수 제품명·성분명이 정규화 결과에 없습니다.")
-        if not source_match:
-            categories.append(ChatEvaluationFailureCategory.SOURCE_RETRIEVAL)
-            details.append("필수 RDBMS·Qdrant 출처 계약을 충족하지 못했습니다.")
-        if not safety_match:
-            categories.append(ChatEvaluationFailureCategory.SAFETY_VALIDATION)
-            details.append("안전성 상태가 예상과 다릅니다.")
+        categories, details = cls._contract_failures(
+            route_match=route_match,
+            intent_match=intent_match,
+            section_match=section_match,
+            entity_match=entity_match,
+            source_match=source_match,
+            safety_match=safety_match,
+            answer_policy_match=answer_policy_match,
+            answer_policy_details=answer_policy_details,
+        )
         if not latency_match:
             categories.append(ChatEvaluationFailureCategory.PERFORMANCE)
             details.append("응답 시간이 기준을 초과했거나 타임아웃되었습니다.")
         if not trace_match:
             categories.append(ChatEvaluationFailureCategory.OBSERVABILITY)
             details.append("LangSmith Trace ID가 생성되지 않았습니다.")
-        execution_details: list[str] = []
-        if observation.query_id != case.query_id:
-            execution_details.append(
-                f"실행 결과의 질문 ID가 일치하지 않습니다: expected={case.query_id}, observed={observation.query_id}"
-            )
-        if observation.error_code and observation.error_code != "API_TIMEOUT":
-            execution_details.append(f"실행 오류가 발생했습니다: {observation.error_code}")
+        execution_details = cls._execution_failure_details(case=case, observation=observation)
         if execution_details:
             categories.append(ChatEvaluationFailureCategory.EXECUTION_ERROR)
             details.extend(execution_details)
@@ -153,12 +149,91 @@ class ChatEvaluator:
             section_match=section_match,
             source_match=source_match,
             safety_match=safety_match,
+            answer_policy_match=answer_policy_match,
             latency_match=latency_match,
             trace_match=trace_match,
             failure_categories=categories,
             failure_details=details,
             passed=not categories,
         )
+
+    @staticmethod
+    def _contract_failures(
+        *,
+        route_match: bool,
+        intent_match: bool,
+        section_match: bool,
+        entity_match: bool,
+        source_match: bool,
+        safety_match: bool,
+        answer_policy_match: bool,
+        answer_policy_details: list[str],
+    ) -> tuple[list[ChatEvaluationFailureCategory], list[str]]:
+        checks = (
+            (
+                route_match and intent_match and section_match,
+                ChatEvaluationFailureCategory.QUESTION_CLASSIFICATION,
+                ["질문 의도·경로 또는 검색 섹션 분류가 예상과 다릅니다."],
+            ),
+            (
+                entity_match,
+                ChatEvaluationFailureCategory.ENTITY_NORMALIZATION,
+                ["필수 제품명·성분명이 정규화 결과에 없습니다."],
+            ),
+            (
+                source_match,
+                ChatEvaluationFailureCategory.SOURCE_RETRIEVAL,
+                ["필수 RDBMS·Qdrant 출처 계약을 충족하지 못했습니다."],
+            ),
+            (
+                safety_match,
+                ChatEvaluationFailureCategory.SAFETY_VALIDATION,
+                ["안전성 상태가 예상과 다릅니다."],
+            ),
+            (
+                answer_policy_match,
+                ChatEvaluationFailureCategory.ANSWER_POLICY,
+                answer_policy_details,
+            ),
+        )
+        categories = [category for matched, category, _ in checks if not matched]
+        details = [detail for matched, _, check_details in checks if not matched for detail in check_details]
+        return categories, details
+
+    @staticmethod
+    def _execution_failure_details(
+        *,
+        case: ChatEvaluationCase,
+        observation: ChatEvaluationObservation,
+    ) -> list[str]:
+        details = (
+            []
+            if observation.query_id == case.query_id
+            else [f"실행 결과의 질문 ID가 일치하지 않습니다: expected={case.query_id}, observed={observation.query_id}"]
+        )
+        if observation.error_code and observation.error_code != "API_TIMEOUT":
+            details.append(f"실행 오류가 발생했습니다: {observation.error_code}")
+        return details
+
+    @classmethod
+    def _answer_policy_match(
+        cls,
+        *,
+        answer: str,
+        required_markers: list[str],
+        forbidden_markers: list[str],
+    ) -> tuple[bool, list[str]]:
+        normalized_answer = cls._answer_key(answer)
+        missing_markers = [marker for marker in required_markers if cls._answer_key(marker) not in normalized_answer]
+        found_forbidden_markers = [
+            marker for marker in forbidden_markers if cls._answer_key(marker) in normalized_answer
+        ]
+        details: list[str] = []
+        if missing_markers:
+            details.append(f"필수 답변 표현이 없습니다: {', '.join(missing_markers)}")
+        if found_forbidden_markers:
+            details.append(f"금지된 답변 표현이 포함되었습니다: {', '.join(found_forbidden_markers)}")
+        return not details, details
 
     @staticmethod
     def _contains_all(
@@ -170,6 +245,11 @@ class ChatEvaluator:
 
     @staticmethod
     def _entity_key(value: str) -> str:
+        normalized = unicodedata.normalize("NFKC", value).casefold()
+        return re.sub(r"\s+", "", normalized)
+
+    @staticmethod
+    def _answer_key(value: str) -> str:
         normalized = unicodedata.normalize("NFKC", value).casefold()
         return re.sub(r"\s+", "", normalized)
 
@@ -205,6 +285,7 @@ def render_chat_evaluation_markdown(
         f"- 검색 섹션 정확도: {report.section_accuracy:.1%}",
         f"- 출처 계약 충족률: {report.source_contract_rate:.1%}",
         f"- 안전성 계약 충족률: {report.safety_contract_rate:.1%}",
+        f"- 답변 정책 계약 충족률: {report.answer_policy_contract_rate:.1%}",
         f"- LangSmith Trace ID 생성률: {report.langsmith_trace_coverage:.1%}",
         f"- 타임아웃 비율: {report.timeout_rate:.1%}",
         f"- 응답 시간 P50/P95: {report.response_p50_ms:.1f}ms / {report.response_p95_ms:.1f}ms",

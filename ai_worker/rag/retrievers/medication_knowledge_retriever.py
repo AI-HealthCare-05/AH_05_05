@@ -20,6 +20,7 @@ from ai_worker.rag.retrievers.medication_knowledge_eligibility import (
 from ai_worker.rag.retrievers.medication_knowledge_ranking import (
     MedicationKnowledgeRankingPolicy,
 )
+from ai_worker.rag.retrievers.parent_context_resolver import ParentContextResolver
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeRetrievalResult,
@@ -113,6 +114,7 @@ class MedicationKnowledgeRetriever:
             effective_section_types=self._effective_section_types,
             explicit_legacy_section_types=self._explicit_legacy_section_types,
         )
+        self._parent_context_resolver = ParentContextResolver()
         self._candidate_retriever = MedicationKnowledgeCandidateRetriever(
             embedding_provider=embedding_provider,
             vector_store=vector_store,
@@ -177,19 +179,27 @@ class MedicationKnowledgeRetriever:
             plan=plan,
             limit=execution_plan.limit,
         )
+        parent_context = self._parent_context_resolver.resolve(
+            children=selected,
+            candidates=candidates.eligible,
+            query_plan=plan,
+        )
         diagnostics = self._diagnostics_builder.build(
             results=candidates.results,
             observations=candidates.observations,
             eligibility_reasons=candidates.eligibility_reasons,
-            selected=selected,
+            selected=parent_context.chunks,
             plan=plan,
             entity_filtered_count=candidates.entity_filtered_count,
             broad_candidate_count=candidates.broad_candidate_count,
             attempted_search_tiers=candidates.attempted_search_tiers,
             selected_search_tier=candidates.selected_search_tier,
+            parent_context_child_count=parent_context.child_count,
+            parent_context_attached_count=parent_context.attached_parent_count,
+            parent_context_rejected_mismatch_count=(parent_context.rejected_parent_mismatch_count),
         )
         return KnowledgeRetrievalResult(
-            chunks=selected,
+            chunks=parent_context.chunks,
             diagnostics=diagnostics,
         )
 

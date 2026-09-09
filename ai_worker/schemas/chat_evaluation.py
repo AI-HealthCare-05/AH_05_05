@@ -26,6 +26,7 @@ class ChatEvaluationFailureCategory(StrEnum):
     ENTITY_NORMALIZATION = "ENTITY_NORMALIZATION"
     SOURCE_RETRIEVAL = "SOURCE_RETRIEVAL"
     SAFETY_VALIDATION = "SAFETY_VALIDATION"
+    ANSWER_POLICY = "ANSWER_POLICY"
     PERFORMANCE = "PERFORMANCE"
     OBSERVABILITY = "OBSERVABILITY"
     EXECUTION_ERROR = "EXECUTION_ERROR"
@@ -41,13 +42,15 @@ class ChatEvaluationExpected(BaseModel):
     route: MedicationChatRoute
     intent_tags: list[str] = Field(min_length=1)
     question_intent: MedicationQuestionIntent | None = None
-    normalized_entities: list[ChatExpectedEntity] = Field(min_length=1)
-    section_types: list[KnowledgeSectionType] = Field(min_length=1)
+    normalized_entities: list[ChatExpectedEntity] = Field(default_factory=list)
+    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     required_source_kinds: list[MedicationChatSourceKind] = Field(default_factory=list)
     safety_status: SafetyStatus = SafetyStatus.SAFE
     require_langsmith_trace: bool = True
     answer_requirements: list[str] = Field(min_length=1)
     forbidden_claims: list[str] = Field(min_length=1)
+    required_answer_markers: list[str] = Field(default_factory=list)
+    forbidden_answer_markers: list[str] = Field(default_factory=list)
 
 
 class ChatEvaluationCase(BaseModel):
@@ -83,25 +86,41 @@ class ChatEvaluationManifest(BaseModel):
         if len(query_ids) != len(set(query_ids)):
             raise ValueError("평가 query_id는 중복될 수 없습니다.")
         for case in self.cases:
-            source_kinds = set(case.expected.required_source_kinds)
-            has_vector = MedicationChatSourceKind.PUBLIC_KNOWLEDGE in source_kinds
-            has_rdb = bool(source_kinds - {MedicationChatSourceKind.PUBLIC_KNOWLEDGE})
-            if not source_kinds:
-                expected_category = ChatEvaluationCategory.NO_SOURCE
-            elif has_vector and has_rdb:
-                expected_category = ChatEvaluationCategory.RDB_AND_VECTOR
-            elif has_vector:
-                expected_category = ChatEvaluationCategory.VECTOR_ONLY
-            else:
-                expected_category = ChatEvaluationCategory.RDB_ONLY
-            if case.category != expected_category:
-                raise ValueError("category와 required_source_kinds의 데이터 경로가 일치해야 합니다.")
-            if (
-                case.category == ChatEvaluationCategory.NO_SOURCE
-                and case.expected.route != MedicationChatRoute.CLARIFICATION
-            ):
-                raise ValueError("NO_SOURCE 평가는 CLARIFICATION 경로에만 사용할 수 있습니다.")
+            self._validate_case(case)
         return self
+
+    @classmethod
+    def _validate_case(cls, case: ChatEvaluationCase) -> None:
+        source_kinds = set(case.expected.required_source_kinds)
+        if case.category != cls._source_category(source_kinds):
+            raise ValueError("category와 required_source_kinds의 데이터 경로가 일치해야 합니다.")
+        if case.category == ChatEvaluationCategory.NO_SOURCE:
+            cls._validate_no_source_case(case)
+        elif not case.expected.normalized_entities or not case.expected.section_types:
+            raise ValueError("근거 기반 평가는 엔터티와 검색 섹션을 하나 이상 지정해야 합니다.")
+
+    @staticmethod
+    def _source_category(
+        source_kinds: set[MedicationChatSourceKind],
+    ) -> ChatEvaluationCategory:
+        if not source_kinds:
+            return ChatEvaluationCategory.NO_SOURCE
+        if MedicationChatSourceKind.PUBLIC_KNOWLEDGE not in source_kinds:
+            return ChatEvaluationCategory.RDB_ONLY
+        if len(source_kinds) == 1:
+            return ChatEvaluationCategory.VECTOR_ONLY
+        return ChatEvaluationCategory.RDB_AND_VECTOR
+
+    @staticmethod
+    def _validate_no_source_case(case: ChatEvaluationCase) -> None:
+        allowed_routes = {
+            MedicationChatRoute.CLARIFICATION,
+            MedicationChatRoute.RESTRICTED,
+            MedicationChatRoute.OUT_OF_SCOPE,
+            MedicationChatRoute.GENERAL_GUIDANCE,
+        }
+        if case.expected.route not in allowed_routes:
+            raise ValueError("NO_SOURCE 평가는 근거 없는 안내 경로에만 사용할 수 있습니다.")
 
 
 class ChatEvaluationObservation(BaseModel):
@@ -160,6 +179,7 @@ class ChatEvaluationCaseResult(BaseModel):
     section_match: bool
     source_match: bool
     safety_match: bool
+    answer_policy_match: bool
     latency_match: bool
     trace_match: bool
     failure_categories: list[ChatEvaluationFailureCategory]
@@ -178,6 +198,7 @@ class ChatEvaluationReport(BaseModel):
     section_accuracy: float = Field(ge=0.0, le=1.0)
     source_contract_rate: float = Field(ge=0.0, le=1.0)
     safety_contract_rate: float = Field(ge=0.0, le=1.0)
+    answer_policy_contract_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     langsmith_trace_coverage: float = Field(ge=0.0, le=1.0)
     timeout_rate: float = Field(ge=0.0, le=1.0)
     response_p50_ms: float = Field(ge=0.0)

@@ -56,6 +56,9 @@ class MedicationKnowledgeDiagnosticsBuilder:
         broad_candidate_count: int,
         attempted_search_tiers: list,
         selected_search_tier,
+        parent_context_child_count: int = 0,
+        parent_context_attached_count: int = 0,
+        parent_context_rejected_mismatch_count: int = 0,
     ) -> KnowledgeRetrievalDiagnostics:
         return KnowledgeRetrievalDiagnostics(
             raw_candidate_count=len(results),
@@ -67,6 +70,9 @@ class MedicationKnowledgeDiagnosticsBuilder:
             rejected_entity_mismatch_count=eligibility_reasons.count("ENTITY_MISMATCH"),
             rejected_pair_mismatch_count=eligibility_reasons.count("PAIR_MISMATCH"),
             accepted_count=len(selected),
+            parent_context_child_count=parent_context_child_count,
+            parent_context_attached_count=parent_context_attached_count,
+            parent_context_rejected_mismatch_count=parent_context_rejected_mismatch_count,
             max_raw_score=max((result.similarity_score for result in results), default=None),
             max_score=max((result.similarity_score for result in selected), default=None),
             attempted_search_tiers=attempted_search_tiers,
