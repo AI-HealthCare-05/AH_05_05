@@ -85,6 +85,25 @@ def test_build_detects_daily_intake_intent() -> None:
     assert "일일섭취량" in plan.expanded_query
 
 
+def test_build_detects_maximum_tablet_count_as_daily_intake_intent() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "타이레놀 최대 몇 정까지 먹어도 되나요?",
+    )
+
+    assert plan.section_types == [KnowledgeSectionType.DAILY_INTAKE]
+
+
+def test_build_treats_where_good_as_function_intent() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "타이레놀은 어디에 좋고 먹을 때 뭘 조심해야 해?",
+    )
+
+    assert plan.section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.CAUTION,
+    ]
+
+
 def test_build_preserves_vitamin_b_as_ingredient_family() -> None:
     plan = MedicationKnowledgeQueryBuilder().build(
         "비타민 B는 왜 먹나요?",

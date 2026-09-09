@@ -6,11 +6,13 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
     build_medication_chat_messages,
 )
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
+    MedicationEvidenceCoverage,
 )
 
 
@@ -76,6 +78,113 @@ def test_system_prompt_requires_compact_plain_text_product_answer() -> None:
     assert "Markdown 기호" in SYSTEM_PROMPT
     assert "빈 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관련된 핵심 항목" in SYSTEM_PROMPT
+
+
+def test_prompt_limits_product_output_to_requested_sections() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="타이레놀은 어디에 좋고 먹을 때 뭘 조심해야 해?",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="효능과 주의사항이 포함된 공식 제품 안내입니다.",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+            ],
+            covered_section_types=[
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+            ],
+        ),
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["requested_section_types"] == ["FUNCTION", "CAUTION"]
+    assert "DAILY_INTAKE가 요청된 경우에만" in SYSTEM_PROMPT
+
+
+def test_build_messages_redacts_unrequested_dosage_from_draft() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="타이레놀은 어디에 좋고 먹을 때 뭘 조심해야 해?",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="주의사항: 일일최대용량(4|000mg)을 초과하여 복용하지 마십시오.",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+            ],
+            covered_section_types=[
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+            ],
+        ),
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert "4|000mg" not in payload["draft_answer"]
+    assert "[용량 정보 생략]" in payload["draft_answer"]
+
+
+def test_build_messages_keeps_requested_dosage_in_draft() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="마그오캡슐500mg의 복용법을 알려줘",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="사용법: 1일 1~2캡슐을 나누어 복용합니다.",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.DAILY_INTAKE],
+            covered_section_types=[KnowledgeSectionType.DAILY_INTAKE],
+        ),
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["draft_answer"] == "사용법: 1일 1~2캡슐을 나누어 복용합니다."
 
 
 def test_system_prompt_limits_interaction_answer_to_matching_evidence() -> None:

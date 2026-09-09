@@ -36,6 +36,12 @@ def test_config_defaults_to_dense_knowledge_search() -> None:
     assert settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.DENSE
 
 
+def test_config_disables_conditional_question_interpretation_by_default() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED is False
+
+
 def test_config_reads_openai_chat_integration_settings(
     monkeypatch,
 ) -> None:

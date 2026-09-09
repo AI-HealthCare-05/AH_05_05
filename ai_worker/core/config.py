@@ -28,6 +28,7 @@ class Config(BaseSettings):
     OPENAI_EMBEDDING_DIMENSIONS: int = Field(default=1536, gt=0)
     OPENAI_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     OPENAI_MAX_RETRIES: int = Field(default=2, ge=0)
+    CONDITIONAL_QUESTION_INTERPRETATION_ENABLED: bool = False
 
     LANGSMITH_TRACING: bool = False
     LANGSMITH_API_KEY: SecretStr | None = None

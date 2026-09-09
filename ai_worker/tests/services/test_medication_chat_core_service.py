@@ -104,6 +104,7 @@ def test_builder_reuses_injected_chat_tracer() -> None:
     )
 
     assert service.tracer is tracer
+    assert service._use_case._conditional_interpretation_chain is None
 
 
 def test_builder_shares_dynamic_supplement_catalog_with_resolver_and_use_case() -> None:

@@ -184,6 +184,58 @@ async def test_accept_request_returns_last_ten_completed_messages_in_order() -> 
 
 
 @pytest.mark.asyncio
+async def test_accept_request_history_excludes_messages_from_another_session() -> None:
+    user = await create_user()
+    repository = ChatRepository()
+    first_session = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="10000000-0000-4000-8000-000000000001",
+        content="첫 세션 질문",
+    )
+    await repository.complete_request(
+        assistant_message_id=first_session.assistant_message.id,
+        result=build_core_result().model_copy(
+            update={
+                "request_id": "10000000-0000-4000-8000-000000000001",
+                "answer": "일반 제품 안내\n- 제품: 세션A약 (테스트제약)",
+            }
+        ),
+        duration_ms=10,
+    )
+    other_session = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="20000000-0000-4000-8000-000000000002",
+        content="다른 세션 질문",
+    )
+    await repository.complete_request(
+        assistant_message_id=other_session.assistant_message.id,
+        result=build_core_result().model_copy(
+            update={
+                "request_id": "20000000-0000-4000-8000-000000000002",
+                "answer": "일반 제품 안내\n- 제품: 세션B약 (테스트제약)",
+            }
+        ),
+        duration_ms=10,
+    )
+
+    next_request = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=first_session.session.id,
+        request_id="30000000-0000-4000-8000-000000000003",
+        content="그 약의 복용법도 알려줘",
+    )
+
+    history_contents = [message.content for message in next_request.history]
+    assert "일반 제품 안내\n- 제품: 세션A약 (테스트제약)" in history_contents
+    assert "일반 제품 안내\n- 제품: 세션B약 (테스트제약)" not in history_contents
+
+
+@pytest.mark.asyncio
 async def test_duplicate_completed_request_reuses_saved_message() -> None:
     user = await create_user()
     repository = ChatRepository()
