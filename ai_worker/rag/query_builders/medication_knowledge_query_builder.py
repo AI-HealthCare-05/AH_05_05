@@ -436,6 +436,7 @@ class MedicationKnowledgeQueryBuilder:
         )
         entity_names = [entity.canonical_name for entity in entities]
         searchable_entity_names = self._searchable_entity_names(entities)
+        medication_product_lookup_names = self._medication_product_lookup_names(entities)
         interaction_pairs = self._interaction_pairs(entities) if interaction_question else []
         alternate_queries: list[str] = []
         if interaction_pair is not None:
@@ -492,17 +493,11 @@ class MedicationKnowledgeQueryBuilder:
                     ]
                 )
             ),
+            medication_product_lookup_names=medication_product_lookup_names,
             has_medication_product_cue=(
                 self._entity_normalizer.has_medication_product_cue(normalized)
                 if self._catalog_entities is None
-                else any(
-                    entity.entity_type
-                    in {
-                        MedicationQueryEntityType.PRODUCT_NAME,
-                        MedicationQueryEntityType.BRAND_ALIAS,
-                    }
-                    for entity in entities
-                )
+                else bool(medication_product_lookup_names)
             ),
         )
 
@@ -519,6 +514,31 @@ class MedicationKnowledgeQueryBuilder:
                 if expression.strip()
             )
         )
+
+    @staticmethod
+    def _medication_product_lookup_names(
+        entities: list[MedicationQueryEntity],
+    ) -> list[str]:
+        """Keep typed product provenance even when an interaction uses its ingredient."""
+
+        candidates = [
+            entity.product_lookup_name
+            for entity in entities
+            if entity.product_lookup_name is not None
+        ]
+        candidates.extend(
+            entity.canonical_name
+            for entity in entities
+            if (
+                entity.kind == InteractionEntityKind.DRUG
+                and entity.entity_type
+                in {
+                    MedicationQueryEntityType.PRODUCT_NAME,
+                    MedicationQueryEntityType.BRAND_ALIAS,
+                }
+            )
+        )
+        return list(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     @staticmethod
     def _document_types(

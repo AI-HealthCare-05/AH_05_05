@@ -257,6 +257,7 @@ async def test_resolver_uses_verified_product_ingredient_for_interaction_questio
         ("타이레놀", "아세트아미노펜", InteractionEntityKind.DRUG),
         ("술", "알코올", InteractionEntityKind.FOOD),
     ]
+    assert result.entities[0].product_lookup_name == "타이레놀산500밀리그램(아세트아미노펜)"
 
 
 @pytest.mark.asyncio

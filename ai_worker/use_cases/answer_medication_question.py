@@ -2017,11 +2017,15 @@ class AnswerMedicationQuestionUseCase:
             query_plan=query_plan,
         ):
             return MedicationGuideLookup()
-        for candidate in self._product_name_candidates(
-            request.question,
-            context=context,
-            query_plan=query_plan,
-        ):
+        candidates = [
+            *query_plan.medication_product_lookup_names,
+            *self._product_name_candidates(
+                request.question,
+                context=context,
+                query_plan=query_plan,
+            ),
+        ]
+        for candidate in self._stable_casefold_unique(candidates):
             lookup = await self._guide_repository.find_by_name(candidate)
             if lookup.guide is not None or lookup.is_ambiguous:
                 return lookup
@@ -2033,9 +2037,21 @@ class AnswerMedicationQuestionUseCase:
         query_plan: MedicationKnowledgeQueryPlan,
     ) -> bool:
         return (
-            query_plan.has_medication_product_cue
+            bool(query_plan.medication_product_lookup_names)
             and InteractionPairType.DRUG_FOOD in query_plan.interaction_types
         )
+
+    @staticmethod
+    def _stable_casefold_unique(candidates: list[str]) -> list[str]:
+        unique: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            normalized = candidate.strip()
+            key = normalized.casefold()
+            if normalized and key not in seen:
+                unique.append(normalized)
+                seen.add(key)
+        return unique
 
     async def _retrieve_knowledge(
         self,

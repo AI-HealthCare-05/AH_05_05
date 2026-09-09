@@ -930,6 +930,14 @@ class RuleBasedMedicationQuestionResolver:
                             [*selected.expressions, *effective_candidate.expressions],
                         )
                     ),
+                    product_lookup_name=(
+                        selected.canonical_name
+                        if (
+                            selected.entity_type in cls._PRODUCT_ENTITY_TYPES
+                            and selected.kind == InteractionEntityKind.DRUG
+                        )
+                        else None
+                    ),
                     entity_type=effective_candidate.entity_type,
                     candidate_types=candidate_types,
                     kind=effective_candidate.kind,

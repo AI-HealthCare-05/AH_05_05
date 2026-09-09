@@ -2382,18 +2382,6 @@ async def test_supplement_pair_question_skips_medication_product_lookup() -> Non
 
 
 async def test_product_name_drug_food_question_uses_official_guide_with_supplementary_rag_evidence() -> None:
-    async def product_drug_food_plan(value: MedicationQueryPlanChainInput) -> dict:
-        planning = MedicationQuestionPlanResult.model_validate(
-            await build_medication_query_plan_chain().ainvoke(value),
-        )
-        query_plan = planning.query_plan.model_copy(
-            update={
-                "has_medication_product_cue": True,
-                "interaction_types": [InteractionPairType.DRUG_FOOD],
-            },
-        )
-        return planning.model_copy(update={"query_plan": query_plan}).model_dump()
-
     interaction_chunk = build_chunk().model_copy(
         update={
             "content": "아세트아미노펜 복용 중 알코올 섭취는 주의가 필요합니다.",
@@ -2415,7 +2403,7 @@ async def test_product_name_drug_food_question_uses_official_guide_with_suppleme
         catalog=StaticTypedExpressionCatalog(
             [
                 MedicationCatalogEntry(
-                    canonical_name="타이레놀정500밀리그람",
+                    canonical_name="타이레놀정500밀리그람(아세트아미노펜)",
                     aliases=["타이레놀"],
                     entity_type=MedicationQueryEntityType.PRODUCT_NAME,
                     kind=InteractionEntityKind.DRUG,
@@ -2445,12 +2433,11 @@ async def test_product_name_drug_food_question_uses_official_guide_with_suppleme
         answer_generator=PassthroughGenerator(),
         grounded_claim_validator=PassthroughValidator(),
         question_resolver=question_resolver,
-        query_plan_chain=RunnableLambda(product_drug_food_plan),
     ).execute(
         build_request("타이레놀과 술을 같이 먹어도 돼?"),
     )
 
-    assert guide_repository.requested_names == ["타이레놀정500밀리그람"]
+    assert guide_repository.requested_names == ["타이레놀정500밀리그람(아세트아미노펜)"]
     assert {source.kind for source in result.sources} == {
         MedicationChatSourceKind.MEDICATION_GUIDE,
         MedicationChatSourceKind.PUBLIC_KNOWLEDGE,

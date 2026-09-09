@@ -121,6 +121,9 @@ class MedicationQueryEntity(BaseModel):
     # 검수된 카탈로그에서 확인된 검색용 동의어다. 답변 대상·필터는
     # canonical_name으로 고정하고, 벡터 질의 표현에만 함께 사용한다.
     search_aliases: list[str] = Field(default_factory=list)
+    # 상호작용 검색을 위해 성분으로 정규화하더라도, e약은요 제품 가이드를
+    # 조회할 수 있도록 원래 검수된 제품명을 보존한다.
+    product_lookup_name: str | None = None
     entity_type: MedicationQueryEntityType
     candidate_types: list[MedicationQueryEntityType] = Field(
         default_factory=list,
@@ -133,6 +136,13 @@ class MedicationQueryEntity(BaseModel):
     @classmethod
     def normalize_search_aliases(cls, values: list[str]) -> list[str]:
         return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @field_validator("product_lookup_name")
+    @classmethod
+    def normalize_product_lookup_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class MedicationCatalogEntry(BaseModel):
@@ -248,7 +258,21 @@ class MedicationKnowledgeQueryPlan(BaseModel):
     )
     interaction_types: list[InteractionPairType] = Field(default_factory=list)
     interaction_pair_keys: list[str] = Field(default_factory=list)
+    medication_product_lookup_names: list[str] = Field(default_factory=list)
     has_medication_product_cue: bool = False
+
+    @field_validator("medication_product_lookup_names")
+    @classmethod
+    def normalize_medication_product_lookup_names(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            candidate = value.strip()
+            key = candidate.casefold()
+            if candidate and key not in seen:
+                normalized.append(candidate)
+                seen.add(key)
+        return normalized
 
     @property
     def query_plan_hash(self) -> str:
