@@ -5,7 +5,12 @@ import pytest
 from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
 )
-from ai_worker.schemas.interaction import InteractionPairType
+from ai_worker.schemas.interaction import (
+    InteractionEntity,
+    InteractionEntityKind,
+    InteractionPairType,
+    build_interaction_pair_key,
+)
 
 
 def test_loads_document_scoped_pair_and_matches_both_entities(
@@ -132,6 +137,17 @@ def test_does_not_add_magnesium_zinc_pair_without_a_reviewed_source_annotation()
         document_id="mfds_supplement_code-0d785fd735e66685",
         text="마그네슘과 아연을 함께 언급한 일반 성분 안내입니다.",
     ) == []
+    magnesium_zinc_pair_key = build_interaction_pair_key(
+        InteractionEntity(
+            kind=InteractionEntityKind.SUPPLEMENT,
+            display_name="마그네슘",
+        ),
+        InteractionEntity(
+            kind=InteractionEntityKind.SUPPLEMENT,
+            display_name="아연",
+        ),
+    )
+    assert magnesium_zinc_pair_key not in registry.required_pair_keys()
 
 
 def test_source_backed_acetaminophen_alcohol_annotation_exposes_food_aliases() -> None:
