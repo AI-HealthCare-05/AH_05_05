@@ -5,9 +5,7 @@ from tortoise import Tortoise
 
 from app.core.db.databases import TORTOISE_APP_MODELS
 
-MIGRATION = import_module(
-    "app.core.db.migrations.models.40_20260909143654_allow_ocr_recapture_error_code"
-)
+MIGRATION = import_module("app.core.db.migrations.models.40_20260909143654_allow_ocr_recapture_error_code")
 
 
 def test_migration_snapshot_matches_current_models() -> None:
