@@ -435,7 +435,11 @@ export function OfficialChallengeParticipationPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>챌린지 참여를 취소할까요?</DialogTitle>
-            <DialogDescription>참여를 취소해도 이전 기록은 보관돼요. 모집 기간 안에는 다시 참여할 수 있고, 새 수행 기간과 진행률 0%로 시작해요.</DialogDescription>
+            <DialogDescription className="space-y-2 break-keep">
+              <span className="block">참여를 취소해도 이전 기록은 보관돼요.</span>
+              <span className="block">모집 기간 안에는 다시 참여할 수 있어요.</span>
+              <span className="block">다시 참여하면 새 수행 기간과 진행률 0%로 시작해요.</span>
+            </DialogDescription>
           </DialogHeader>
           {cancelError ? <p role="alert" className="text-sm text-danger-strong">{cancelError}</p> : null}
           <DialogFooter>

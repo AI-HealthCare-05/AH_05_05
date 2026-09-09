@@ -915,6 +915,21 @@ test('active participation cancellation confirms retained history, posts once, a
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('기록은 보관');
   await expect(dialog).toContainText('모집 기간');
+  // Each policy starts on its own line, even when there is room to run it inline.
+  const policies = dialog.locator('[data-slot="dialog-description"] > span');
+  await expect(policies).toHaveCount(3);
+  for (const width of [320, 430]) {
+    await page.setViewportSize({ width, height: 800 });
+    const boxes = await policies.evaluateAll(elements => elements.map(element => {
+      const { top, bottom, left, right } = element.getBoundingClientRect();
+      return { top, bottom, left, right };
+    }));
+    for (let index = 0; index < boxes.length; index += 1) {
+      expect(boxes[index].left).toBeGreaterThanOrEqual(0);
+      expect(boxes[index].right).toBeLessThanOrEqual(width);
+      if (index > 0) expect(boxes[index].top).toBeGreaterThan(boxes[index - 1].bottom);
+    }
+  }
   const confirm = dialog.getByRole('button', { name: '참여 취소', exact: true });
   await confirm.click();
   const cancelling = dialog.getByRole('button', { name: '취소 중...', exact: true });
