@@ -1366,8 +1366,8 @@ for (const width of [320, 430]) {
       textRange.selectNodeContents(el);
       return textRange.getBoundingClientRect().right;
     });
-    const separatorBounds = (await rows.first().getByText('|', { exact: true }).boundingBox())!;
-    expect(separatorBounds.x - shortTitleRight).toBeLessThanOrEqual(16);
+    const typeBadgeBounds = (await rows.first().getByText('공식', { exact: true }).boundingBox())!;
+    expect(typeBadgeBounds.x - shortTitleRight).toBeLessThanOrEqual(16);
     await summary.screenshot({ path: testInfo.outputPath(`home-challenge-one-${width}.png`) });
     items = [participation(), participation({ id: 502, challenge_name: '물 마시기' }),
       participation({ id: 503, challenge_name: '가벼운 스트레칭' }),

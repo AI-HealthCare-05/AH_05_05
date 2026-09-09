@@ -15,7 +15,6 @@ function ChallengeRowTitle({ title, official }: { title: string; official: boole
   return (
     <span className="flex items-start gap-2 text-xs font-bold text-foreground">
       <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
-      <span aria-hidden className="shrink-0 text-tertiary-foreground">|</span>
       <span className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-micro text-primary">
         {official ? '공식' : '맞춤'}
       </span>
