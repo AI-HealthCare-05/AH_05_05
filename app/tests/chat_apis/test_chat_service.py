@@ -178,6 +178,33 @@ async def test_send_passes_server_loaded_history_to_core() -> None:
     assert response.sources[0].scope == "official"
 
 
+async def test_send_injects_reference_from_current_session_history_only() -> None:
+    history = [
+        SimpleNamespace(
+            role=ChatMessageRole.ASSISTANT,
+            content="일반 제품 안내\n- 제품: 타이레놀정500밀리그람 (테스트제약)\n- 효능: 통증 완화",
+        )
+    ]
+    repository = FakeRepository(history=history)
+    core = FakeCore(result=build_result())
+    service = ChatApplicationService(
+        repository=repository,
+        core_service=core,
+    )
+
+    await service.send(
+        user=SimpleNamespace(id=1),
+        command=SendChatCommand(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            record_id=None,
+            conversation_id=42,
+            message="그 약의 복용법도 알려줘.",
+        ),
+    )
+
+    assert [entity.name for entity in core.requests[0].session_reference.entities] == ["타이레놀정500밀리그람"]
+
+
 async def test_chat_source_name_falls_back_to_custom_name() -> None:
     user = await User.create(
         email="manual-source@example.com",
