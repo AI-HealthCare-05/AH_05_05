@@ -1,15 +1,20 @@
 import { LegalDocumentPage, LegalList, LegalSection } from './LegalDocumentPage';
 
+interface PrivacyPageProps {
+  onBack?: () => void;
+}
+
 /**
  * 개인정보 보호법 제30조와 개인정보보호위원회 작성지침을 바탕으로 한 서비스 안내 초안.
  * 실제 배포 전 수탁자, 국외 이전, 법정 보유기간과 파기 절차가 운영 환경과 일치하는지
  * 개인정보 보호 담당자 및 법률 전문가의 검토를 거쳐야 합니다.
  */
-export function PrivacyPage() {
+export function PrivacyPage({ onBack }: PrivacyPageProps = {}) {
   return (
     <LegalDocumentPage
       title="개인정보 처리 안내"
       description="RxVita는 서비스 제공에 필요한 범위에서 개인정보를 처리하고 안전하게 보호하기 위해 노력합니다."
+      onBack={onBack}
     >
       <LegalSection title="1. 개인정보 보호책임자">
         <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1">

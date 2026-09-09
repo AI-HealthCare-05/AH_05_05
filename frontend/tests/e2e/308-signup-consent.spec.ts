@@ -57,11 +57,7 @@ test('필수 동의는 약관 링크와 실제 수집·이용 내용을 보여�
   await openProfileStep(page);
 
   await expect(page.getByRole('button', { name: '서비스 이용약관 보기' })).toBeVisible();
-  const privacyLink = page.getByRole('link', { name: '개인정보 처리 안내 보기' });
-  await expect(privacyLink).toHaveAttribute('href', '/privacy');
-  await expect(privacyLink).toHaveAttribute('target', '_blank');
-  await expect(privacyLink).toHaveAttribute('rel', /noopener/);
-  await expect(privacyLink).toHaveAttribute('rel', /noreferrer/);
+  await expect(page.getByRole('button', { name: '개인정보 처리 안내 보기' })).toBeVisible();
 
   await page.getByText('개인정보 수집·이용 내용 보기', { exact: true }).click();
   await expect(page.getByText('이메일, 비밀번호, 이름, 전화번호, 생년월일, 성별')).toBeVisible();
