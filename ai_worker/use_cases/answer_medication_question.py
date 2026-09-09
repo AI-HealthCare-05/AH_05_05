@@ -47,6 +47,11 @@ from ai_worker.domain.interfaces import (
     MedicationQuestionResolver,
     SupplementIngredientCatalog,
 )
+from ai_worker.domain.medication_dose_question_policy import (
+    MedicationDoseQuestionDecision,
+    MedicationDoseQuestionKind,
+    MedicationDoseQuestionPolicy,
+)
 from ai_worker.domain.medication_evidence_coverage import (
     MedicationEvidenceCoverageEvaluator,
 )
@@ -184,6 +189,7 @@ class AnswerMedicationQuestionUseCase:
         query_plan_chain: MedicationQueryPlanChain | None = None,
         conditional_interpretation_chain: ConditionalQuestionInterpretationChain | None = None,
         risk_policy: MedicationChatRiskPolicy | None = None,
+        dose_question_policy: MedicationDoseQuestionPolicy | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -197,6 +203,7 @@ class AnswerMedicationQuestionUseCase:
         self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
         self._conditional_interpretation_chain = conditional_interpretation_chain
         self._risk_policy = risk_policy or MedicationChatRiskPolicy()
+        self._dose_question_policy = dose_question_policy or MedicationDoseQuestionPolicy()
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -251,7 +258,7 @@ class AnswerMedicationQuestionUseCase:
         )
         query_plan = planning.query_plan
         interpretation = planning.interpretation
-        if terminal_result := self._pre_retrieval_terminal_result(
+        if terminal_result := await self._pre_retrieval_terminal_result(
             request=request,
             context=context,
             resolution=resolution,
@@ -1079,6 +1086,56 @@ class AnswerMedicationQuestionUseCase:
         return reasons
 
     @classmethod
+    def _dose_question_terminal_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        interpretation: MedicationQuestionInterpretation,
+        decision: MedicationDoseQuestionDecision,
+    ) -> MedicationChatResult:
+        if decision.kind == MedicationDoseQuestionKind.PERSONAL_CHANGE:
+            return MedicationChatResult(
+                request_id=request.request_id,
+                answer=(
+                    "현재 1회 복용량, 오늘 누적 복용량, 마지막 복용 시각과 다른 "
+                    "복용 제품을 알 수 없어 평소보다 복용량을 늘려도 되는지는 "
+                    "안내할 수 없습니다.\n\n"
+                    "제품 포장 또는 의약품안전나라의 허가사항에서 1회 용량과 "
+                    "1일 최대량을 확인하고, 해당 정보를 약사 또는 의료진에게 "
+                    "확인해 주세요."
+                ),
+                route=MedicationChatRoute.CLARIFICATION,
+                safety_status=SafetyStatus.RESTRICTED,
+                safety_reason_codes=[
+                    MedicationChatReasonCode.PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED.value,
+                ],
+                prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+                schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+                context_hash=cls._context_hash(context),
+                question_interpretation=interpretation,
+            )
+        if decision.kind == MedicationDoseQuestionKind.POSSIBLE_OVERDOSE:
+            return MedicationChatResult(
+                request_id=request.request_id,
+                answer=(
+                    "실수로 평소보다 많은 양을 복용했을 가능성이 있으면 추가 복용은 "
+                    "보류하고, 복용한 제품명·양·시각과 함께 복용한 약을 확인해 "
+                    "즉시 약사 또는 의료기관과 상담하세요."
+                ),
+                route=MedicationChatRoute.RESTRICTED,
+                safety_status=SafetyStatus.RESTRICTED,
+                safety_reason_codes=[
+                    MedicationChatReasonCode.POSSIBLE_OVERDOSE.value,
+                ],
+                prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+                schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+                context_hash=cls._context_hash(context),
+                question_interpretation=interpretation,
+            )
+        raise ValueError("종료 응답이 필요한 용량 질문 유형이 아닙니다.")
+
+    @classmethod
     def _apply_correction_notice(
         cls,
         result: MedicationChatResult,
@@ -1199,9 +1256,8 @@ class AnswerMedicationQuestionUseCase:
             context_hash=cls._context_hash(context),
         )
 
-    @classmethod
-    def _pre_retrieval_terminal_result(
-        cls,
+    async def _pre_retrieval_terminal_result(
+        self,
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
@@ -1210,22 +1266,32 @@ class AnswerMedicationQuestionUseCase:
         interpretation: MedicationQuestionInterpretation,
     ) -> MedicationChatResult | None:
         if early_result is not None:
-            return cls._with_interpretation(
+            return self._with_interpretation(
                 early_result,
                 interpretation=interpretation,
             )
-        if cls._can_answer_from_active_context(
+        if self._can_answer_from_active_context(
             question=request.question,
             context=context,
         ):
             return None
         if not should_execute_source_backed_retrieval(resolution):
-            return cls._unrecognized_entity_result(
+            return self._unrecognized_entity_result(
                 request=request,
                 context=context,
                 interpretation=interpretation,
             )
-        return None
+        dose_decision = self._dose_question_policy.classify(request.question)
+        if not dose_decision.requires_terminal_response:
+            return None
+        async with self._tracer.span("dose.question") as dose_span:
+            dose_span.end({"kind": dose_decision.kind.value})
+        return self._dose_question_terminal_result(
+            request=request,
+            context=context,
+            interpretation=interpretation,
+            decision=dose_decision,
+        )
 
     @classmethod
     def _can_answer_from_active_context(

@@ -50,6 +50,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationAnswerGenerationOutcome,
     MedicationAnswerRewriteStatus,
     MedicationChatProgressStage,
+    MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRiskProfile,
@@ -571,6 +572,40 @@ async def test_execute_uses_injected_query_plan_chain() -> None:
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
     assert query_plan.entity_names == ["마그네슘"]
     assert query_plan.section_types == [KnowledgeSectionType.FUNCTION]
+
+
+async def test_execute_asks_for_dose_details_before_personal_dose_increase() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+    ).execute(
+        build_request("두통이 심한데 타이레놀을 평소보다 두 배 먹어도 될까?"),
+    )
+
+    assert result.route == MedicationChatRoute.CLARIFICATION
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == [
+        MedicationChatReasonCode.PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED.value,
+    ]
+    assert "현재 1회 복용량" in result.answer
+    assert "제품 설명서와 전문가의 안내를 따릅니다" not in result.answer
+    assert result.sources == []
+
+
+async def test_execute_escalates_possible_overdose_without_product_guide() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+    ).execute(
+        build_request("실수로 타이레놀을 평소보다 두 배 먹었어."),
+    )
+
+    assert result.route == MedicationChatRoute.RESTRICTED
+    assert result.safety_status == SafetyStatus.RESTRICTED
+    assert result.safety_reason_codes == [
+        MedicationChatReasonCode.POSSIBLE_OVERDOSE.value,
+    ]
+    assert "추가 복용은 보류" in result.answer
+    assert "제품 설명서와 전문가의 안내를 따릅니다" not in result.answer
+    assert result.sources == []
 
 
 async def test_active_intake_summary_executes_without_explicit_entity_in_question() -> None:

@@ -36,6 +36,11 @@ from ai_worker.schemas.medication_search import (
 )
 
 _FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)")
+_DAILY_INTAKE_INTENT_PATTERN = re.compile(
+    r"(?:하루|1일).{0,12}?(?:최대|몇\s*(?:정|캡슐|포|회|mg|밀리그램))|"
+    r"최대.{0,12}?(?:용량|복용량|몇\s*(?:정|캡슐|포|회|mg|밀리그램))",
+    flags=re.IGNORECASE,
+)
 
 
 class MedicationQueryEntityNormalizer:
@@ -623,7 +628,7 @@ class MedicationKnowledgeQueryBuilder:
                 "복용하",
                 "어떻게 먹",
             )
-        ):
+        ) or _DAILY_INTAKE_INTENT_PATTERN.search(question):
             section_types.append(KnowledgeSectionType.DAILY_INTAKE)
             expansion_terms.extend(["일일섭취량", "섭취 기준"])
         if any(keyword in question for keyword in ("주의", "부작용", "조심", "위험")):
