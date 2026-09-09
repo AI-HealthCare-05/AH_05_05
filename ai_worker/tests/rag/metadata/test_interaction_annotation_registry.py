@@ -102,6 +102,38 @@ def test_source_backed_calcium_iron_annotation_uses_only_its_review_document() -
     assert matches[0].food_names == []
 
 
+def test_source_backed_vitamin_d_calcium_annotation_requires_both_official_source_entities() -> None:
+    repo_root = Path(__file__).parents[4]
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        repo_root / "data/knowledge/manifests/interaction_annotations.yaml",
+    )
+
+    matches = registry.find_matches(
+        document_id="mfds_supplement_code-72e61399c742b0e5",
+        text="비타민 D는 칼슘과 인이 흡수되고 이용되는데 필요합니다.",
+    )
+
+    assert len(matches) == 1
+    assert matches[0].pair_type == InteractionPairType.SUPPLEMENT_SUPPLEMENT
+    assert matches[0].ingredient_names == ["비타민 D", "칼슘"]
+    assert registry.find_matches(
+        document_id="mfds_supplement_code-72e61399c742b0e5",
+        text="비타민 D의 일일섭취량은 3~10 μg입니다.",
+    ) == []
+
+
+def test_does_not_add_magnesium_zinc_pair_without_a_reviewed_source_annotation() -> None:
+    repo_root = Path(__file__).parents[4]
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        repo_root / "data/knowledge/manifests/interaction_annotations.yaml",
+    )
+
+    assert registry.find_matches(
+        document_id="mfds_supplement_code-0d785fd735e66685",
+        text="마그네슘과 아연을 함께 언급한 일반 성분 안내입니다.",
+    ) == []
+
+
 def test_source_backed_acetaminophen_alcohol_annotation_exposes_food_aliases() -> None:
     repo_root = Path(__file__).parents[4]
     registry = KnowledgeInteractionAnnotationRegistry.from_yaml(

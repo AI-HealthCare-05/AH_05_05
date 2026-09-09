@@ -51,6 +51,7 @@ class Config(BaseSettings):
     KNOWLEDGE_SEARCH_MODE: KnowledgeSearchMode = KnowledgeSearchMode.DENSE
     KNOWLEDGE_VECTOR_DISTANCE: KnowledgeVectorDistance = KnowledgeVectorDistance.COSINE
     INTERACTION_RULE_DATASET_VERSION: str = "interaction-pilot-v1"
+    THERAPEUTIC_CLASS_DATASET_VERSION: str = "therapeutic-class-v1"
     MEDICATION_SAFETY_RULE_DATASET_VERSION: str = "medication-safety-v1"
     QDRANT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     RAG_MIN_SIMILARITY_SCORE: float = Field(

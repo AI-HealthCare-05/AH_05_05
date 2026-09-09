@@ -66,6 +66,8 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSourceKind,
     MedicationGuideFact,
     MedicationGuideLookup,
+    TherapeuticClassSelection,
+    TherapeuticClassSelectionStatus,
 )
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
@@ -208,6 +210,22 @@ class FailingRuleRepository:
         query_entity_names: list[str] | None = None,
     ) -> list[InteractionRuleFact]:
         raise RuntimeError("interaction rule DB unavailable")
+
+
+class StaticTherapeuticClassRepository:
+    def __init__(self, selection: TherapeuticClassSelection) -> None:
+        self.selection = selection
+        self.questions: list[str] = []
+
+    async def select_active_medications(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        question: str,
+    ) -> TherapeuticClassSelection:
+        del context
+        self.questions.append(question)
+        return self.selection
 
 
 class FakeKnowledgeRetriever:
@@ -573,6 +591,7 @@ def build_use_case(
     supplement_ingredient_catalog=None,
     query_plan_chain=None,
     conditional_interpretation_chain=None,
+    therapeutic_class_repository=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -586,6 +605,7 @@ def build_use_case(
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         query_plan_chain=query_plan_chain,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        therapeutic_class_repository=therapeutic_class_repository,
     )
 
 
@@ -785,6 +805,158 @@ async def test_active_intake_question_without_external_evidence_uses_registered_
     assert "직접 근거를 확인하지 못했습니다" in result.answer
     assert "의료진·약사에게 확인할 내용" in result.answer
     assert "오메가3" not in result.answer
+
+
+async def test_active_intake_therapeutic_class_question_uses_only_classified_registered_medication() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="와파린",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=10,
+                name="타이레놀정500밀리그람",
+            ),
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 K",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 9),
+            )
+        ],
+    )
+    retriever = RecordingQueryPlanRetriever()
+    tracer = RecordingChatTracer()
+    therapeutic_class_repository = StaticTherapeuticClassRepository(
+        TherapeuticClassSelection(
+            status=TherapeuticClassSelectionStatus.MATCHED,
+            class_codes=["ANTICOAGULANT"],
+            medication_ids=[1],
+        )
+    )
+
+    result = await build_use_case(
+        context=context,
+        retriever=retriever,
+        tracer=tracer,
+        answer_generator=UnexpectedMedicationGenerator(),
+        therapeutic_class_repository=therapeutic_class_repository,
+    ).execute(
+        build_request("혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"),
+    )
+
+    assert therapeutic_class_repository.questions == ["혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"]
+    assert retriever.received_kwargs is not None
+    execution_plan = retriever.received_kwargs["execution_plan"]
+    assert execution_plan.query_plan.entity_names == ["와파린", "비타민 K"]
+    assert execution_plan.medication_names == ["와파린"]
+    assert "타이레놀정500밀리그람" not in execution_plan.query_plan.entity_names
+    assert "복약정보\n- 와파린" in result.answer
+    assert "타이레놀정500밀리그람" not in result.answer
+    class_span = next(span for span in tracer.spans if span.name == "therapeutic_class.resolve")
+    assert class_span.outputs == {
+        "status": "MATCHED",
+        "matched_class_count": 1,
+        "matched_medication_count": 1,
+    }
+
+
+async def test_active_intake_therapeutic_class_question_uses_approved_rule_and_exact_pair_evidence() -> None:
+    pair_key = build_interaction_pair_key(
+        InteractionEntity(
+            kind=InteractionEntityKind.DRUG,
+            display_name="와파린",
+        ),
+        InteractionEntity(
+            kind=InteractionEntityKind.SUPPLEMENT,
+            display_name="비타민 K",
+        ),
+    )
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="와파린",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=10,
+                name="타이레놀정500밀리그람",
+            ),
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 K",
+                dose_amount="1",
+                dose_unit="정",
+                start_date=date(2026, 9, 9),
+            )
+        ],
+    )
+    evidence_chunk = build_chunk().model_copy(
+        update={
+            "content": "와파린의 항응고 효과는 비타민 K 섭취 변화의 영향을 받을 수 있습니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "document_id": "warfarin-vitamin-k-review",
+                    "document_type": KnowledgeDocumentType.PHARM_REVIEW,
+                    "section_type": KnowledgeSectionType.INTERACTION,
+                    "drug_names": ["와파린"],
+                    "ingredient_names": ["비타민 K"],
+                    "interaction_type": "DRUG_SUPPLEMENT",
+                    "interaction_pair_keys": [pair_key],
+                }
+            ),
+        }
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=pair_key,
+        pair_type="DRUG_SUPPLEMENT",
+        left_name="와파린",
+        right_name="비타민 K",
+        risk_level="HIGH_CAUTION",
+        effect_texts=["비타민 K 섭취 변화는 와파린 효과에 영향을 줄 수 있습니다."],
+        source_titles=["승인 규칙"],
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        retriever=FakeKnowledgeRetriever(chunks=[evidence_chunk]),
+        therapeutic_class_repository=StaticTherapeuticClassRepository(
+            TherapeuticClassSelection(
+                status=TherapeuticClassSelectionStatus.MATCHED,
+                class_codes=["ANTICOAGULANT"],
+                medication_ids=[1],
+            )
+        ),
+    ).execute(
+        build_request("혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"),
+    )
+
+    assert result.route == MedicationChatRoute.ACTIVE_INTAKE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.evidence_coverage.verified_interaction_pair_keys == [pair_key]
+    assert {source.kind for source in result.sources} == {
+        MedicationChatSourceKind.PATIENT_MEDICATION,
+        MedicationChatSourceKind.PATIENT_SUPPLEMENT,
+        MedicationChatSourceKind.INTERACTION_RULE,
+        MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
+    }
+    assert "타이레놀정500밀리그람" not in result.answer
 
 
 async def test_execute_auto_corrects_unique_typo_before_search() -> None:

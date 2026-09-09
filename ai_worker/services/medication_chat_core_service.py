@@ -45,6 +45,9 @@ from ai_worker.repositories.supplement_ingredient_catalog_repository import (
     DbSupplementIngredientCatalog,
     QdrantSupplementIngredientCatalog,
 )
+from ai_worker.repositories.therapeutic_class_repository import (
+    DbTherapeuticClassRepository,
+)
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
@@ -168,6 +171,9 @@ def build_medication_chat_core_service(
         ),
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        therapeutic_class_repository=DbTherapeuticClassRepository(
+            active_dataset_version=settings.THERAPEUTIC_CLASS_DATASET_VERSION,
+        ),
     )
     return MedicationChatCoreService(
         use_case=use_case,

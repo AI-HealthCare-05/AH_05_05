@@ -71,3 +71,17 @@ documents:
           display_name: 철분
           aliases:
             - iron
+  - document_id: mfds_supplement_code-72e61399c742b0e5
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        left:
+          kind: SUPPLEMENT
+          display_name: 비타민 D
+          aliases:
+            - 비타민D
+            - vitamin D
+        right:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases:
+            - calcium

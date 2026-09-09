@@ -46,6 +46,7 @@ from ai_worker.domain.interfaces import (
     MedicationKnowledgeRetriever,
     MedicationQuestionResolver,
     SupplementIngredientCatalog,
+    TherapeuticClassRepository,
 )
 from ai_worker.domain.medication_dose_question_policy import (
     MedicationDoseQuestionDecision,
@@ -108,6 +109,8 @@ from ai_worker.schemas.medication_chat import (
     MedicationEvidenceCoverage,
     MedicationGuideFact,
     MedicationGuideLookup,
+    TherapeuticClassSelection,
+    TherapeuticClassSelectionStatus,
 )
 from ai_worker.schemas.medication_search import (
     InteractionRuleLookupStatus,
@@ -207,6 +210,7 @@ class AnswerMedicationQuestionUseCase:
         conditional_interpretation_chain: ConditionalQuestionInterpretationChain | None = None,
         risk_policy: MedicationChatRiskPolicy | None = None,
         dose_question_policy: MedicationDoseQuestionPolicy | None = None,
+        therapeutic_class_repository: TherapeuticClassRepository | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -221,6 +225,7 @@ class AnswerMedicationQuestionUseCase:
         self._conditional_interpretation_chain = conditional_interpretation_chain
         self._risk_policy = risk_policy or MedicationChatRiskPolicy()
         self._dose_question_policy = dose_question_policy or MedicationDoseQuestionPolicy()
+        self._therapeutic_class_repository = therapeutic_class_repository
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -272,6 +277,14 @@ class AnswerMedicationQuestionUseCase:
         planning = await self._conditionally_interpret_question(
             request=request,
             planning=planning,
+        )
+        therapeutic_class_selection = await self._select_therapeutic_class(
+            request=request,
+            context=context,
+        )
+        context = self._context_for_therapeutic_class_selection(
+            context=context,
+            selection=therapeutic_class_selection,
         )
         planning = self._with_active_intake_query_plan(
             request=request,
@@ -1401,6 +1414,58 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
     ) -> bool:
         return bool((context.medications or context.supplements) and cls._PATIENT_CONTEXT_CUE_PATTERN.search(question))
+
+    async def _select_therapeutic_class(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> TherapeuticClassSelection:
+        if (
+            self._therapeutic_class_repository is None
+            or not self._is_active_intake_interaction_question(
+                question=request.question,
+                context=context,
+            )
+        ):
+            return TherapeuticClassSelection(
+                status=TherapeuticClassSelectionStatus.NOT_REQUESTED,
+            )
+        async with self._tracer.span(
+            "therapeutic_class.resolve",
+            run_type="tool",
+        ) as therapeutic_class_span:
+            selection = await self._therapeutic_class_repository.select_active_medications(
+                context=context,
+                question=request.question,
+            )
+            therapeutic_class_span.end(
+                {
+                    "status": selection.status.value,
+                    "matched_class_count": len(selection.class_codes),
+                    "matched_medication_count": len(selection.medication_ids),
+                }
+            )
+        return selection
+
+    @staticmethod
+    def _context_for_therapeutic_class_selection(
+        *,
+        context: ActiveIntakeContext,
+        selection: TherapeuticClassSelection,
+    ) -> ActiveIntakeContext:
+        if not selection.requested:
+            return context
+        selected_ids = set(selection.medication_ids)
+        return context.model_copy(
+            update={
+                "medications": [
+                    medication
+                    for medication in context.medications
+                    if medication.medication_id in selected_ids
+                ]
+            }
+        )
 
     @classmethod
     def _with_active_intake_query_plan(
