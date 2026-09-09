@@ -681,10 +681,7 @@ class MedicationGuideOcrJobService:
                     episode.updated_at = now
                     await episode.save(using_db=connection, update_fields=["alias", "updated_at"])
                 return self._confirmed(job, episode)
-            if job.status != OcrJobStatus.READY_FOR_REVIEW:
-                raise OcrJobStateConflictError()
-            if job.expires_at is None or job.expires_at <= now:
-                raise OcrJobNotFoundError()
+            self._ensure_confirmable(job, now)
 
             dispensing_date = request.dispensing_date
             medication_days = max(
@@ -729,6 +726,7 @@ class MedicationGuideOcrJobService:
             job.expires_at = None
             job.completed_at = now
             job.updated_at = now
+            job.error_code = None
             await job.save(
                 using_db=connection,
                 update_fields=[
@@ -739,9 +737,23 @@ class MedicationGuideOcrJobService:
                     "expires_at",
                     "completed_at",
                     "updated_at",
+                    "error_code",
                 ],
             )
         return self._confirmed(job, episode)
+
+    @staticmethod
+    def _ensure_confirmable(job: OcrJob, now: datetime) -> None:
+        if job.status == OcrJobStatus.READY_FOR_REVIEW:
+            if job.expires_at is None or job.expires_at <= now:
+                raise OcrJobNotFoundError()
+            return
+        if job.status == OcrJobStatus.FAILED:
+            stale_cutoff = now - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
+            if job.completed_at is None or job.completed_at <= stale_cutoff:
+                raise OcrJobNotFoundError()
+            return
+        raise OcrJobStateConflictError()
 
     async def _replace_registration_medications(
         self,
@@ -978,6 +990,8 @@ class MedicationGuideOcrJobService:
         if analysis.requires_recapture:
             return stage_results, None, []
         review_payload = cls._project_review_payload(analysis.project_review)
+        if not review_payload["medications"]:
+            return stage_results, None, []
         confidence_values = [Decimal(str(value)) for value in analysis.confidence_values]
         if any(value < 0 or value > 1 for value in confidence_values):
             raise ValueError("OCR confidence values must be between 0 and 1")
