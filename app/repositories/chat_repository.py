@@ -28,6 +28,8 @@ from app.models.enums import (
     PatientSourceKind,
 )
 from app.models.interactions import MedicationProductGuide
+from app.models.medications import Medication
+from app.models.supplement_nutrients import UserSupplementNutrient
 from app.models.users import User
 
 
@@ -424,21 +426,83 @@ class ChatRepository:
         sources = await (
             ChatMessageSource.filter(
                 chat_message_id__in=assistant_message_ids,
-                source_type=ChatSourceType.PUBLIC_RAG_CHUNK,
-                public_dataset_key="MEDICATION_PRODUCT_GUIDE",
+                source_type__in=[
+                    ChatSourceType.PUBLIC_RAG_CHUNK,
+                    ChatSourceType.PATIENT_SAVED_FIELD,
+                    ChatSourceType.USER_SUPPLEMENT,
+                ],
             )
             .using_db(connection)
             .order_by("chat_message_id", "citation_order")
         )
+        entities_by_message_id = await ChatRepository._session_reference_entities_by_message_id(
+            sources=sources,
+            connection=connection,
+        )
+
+        for message in reversed(history):
+            if message.role != ChatMessageRole.ASSISTANT:
+                continue
+            entities = entities_by_message_id.get(message.id, [])
+            if not entities:
+                continue
+            deduplicated_entities = list(
+                dict.fromkeys(
+                    entities,
+                ),
+            )
+            return MedicationChatSessionReference(entities=deduplicated_entities[:4])
+        return MedicationChatSessionReference()
+
+    @staticmethod
+    async def _session_reference_entities_by_message_id(
+        *,
+        sources: list[ChatMessageSource],
+        connection,
+    ) -> dict[int, list[MedicationChatSessionReferenceEntity]]:
+        product_name_by_guide_id = await ChatRepository._product_name_by_guide_id(
+            sources=sources,
+            connection=connection,
+        )
+        medication_name_by_id = await ChatRepository._medication_name_by_id(
+            sources=sources,
+            connection=connection,
+        )
+        supplement_name_by_id = await ChatRepository._supplement_name_by_id(
+            sources=sources,
+            connection=connection,
+        )
+        entities_by_message_id: dict[int, list[MedicationChatSessionReferenceEntity]] = {}
+        for source in sources:
+            entity = ChatRepository._session_reference_entity_from_source(
+                source=source,
+                product_name_by_guide_id=product_name_by_guide_id,
+                medication_name_by_id=medication_name_by_id,
+                supplement_name_by_id=supplement_name_by_id,
+            )
+            if entity is not None:
+                entities_by_message_id.setdefault(source.chat_message_id, []).append(entity)
+        return entities_by_message_id
+
+    @staticmethod
+    async def _product_name_by_guide_id(
+        *,
+        sources: list[ChatMessageSource],
+        connection,
+    ) -> dict[int, str]:
         guide_ids = {
             int(source.source_record_key)
             for source in sources
-            if source.source_record_key is not None and source.source_record_key.isdecimal()
+            if (
+                source.source_type == ChatSourceType.PUBLIC_RAG_CHUNK
+                and source.public_dataset_key == "MEDICATION_PRODUCT_GUIDE"
+                and source.source_record_key is not None
+                and source.source_record_key.isdecimal()
+            )
         }
         if not guide_ids:
-            return MedicationChatSessionReference()
-
-        product_name_by_guide_id = {
+            return {}
+        return {
             guide_id: product_name
             for guide_id, product_name in await (
                 MedicationProductGuide.filter(id__in=guide_ids)
@@ -446,31 +510,102 @@ class ChatRepository:
                 .values_list("id", "product_name")
             )
         }
-        product_names_by_message_id: dict[int, list[str]] = {}
-        for source in sources:
-            if source.source_record_key is None or not source.source_record_key.isdecimal():
-                continue
-            product_name = product_name_by_guide_id.get(int(source.source_record_key))
-            if product_name is None:
-                continue
-            product_names_by_message_id.setdefault(source.chat_message_id, []).append(product_name)
 
-        for message in reversed(history):
-            if message.role != ChatMessageRole.ASSISTANT:
-                continue
-            names = list(dict.fromkeys(product_names_by_message_id.get(message.id, [])))
-            if len(names) != 1:
-                continue
-            return MedicationChatSessionReference(
-                entities=[
-                    MedicationChatSessionReferenceEntity(
-                        name=names[0],
-                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
-                        kind=InteractionEntityKind.DRUG,
-                    ),
-                ],
+    @staticmethod
+    async def _medication_name_by_id(
+        *,
+        sources: list[ChatMessageSource],
+        connection,
+    ) -> dict[int, str]:
+        medication_ids = {
+            source.medication_id
+            for source in sources
+            if (
+                source.source_type == ChatSourceType.PATIENT_SAVED_FIELD
+                and source.patient_source_kind == PatientSourceKind.MEDICATION
+                and source.medication_id is not None
             )
-        return MedicationChatSessionReference()
+        }
+        if not medication_ids:
+            return {}
+        return {
+            medication_id: name
+            for medication_id, name in await (
+                Medication.filter(id__in=medication_ids)
+                .using_db(connection)
+                .values_list("id", "name")
+            )
+        }
+
+    @staticmethod
+    async def _supplement_name_by_id(
+        *,
+        sources: list[ChatMessageSource],
+        connection,
+    ) -> dict[int, str]:
+        supplement_ids = {
+            source.user_suppl_nutrient_id
+            for source in sources
+            if source.source_type == ChatSourceType.USER_SUPPLEMENT and source.user_suppl_nutrient_id is not None
+        }
+        if not supplement_ids:
+            return {}
+        registrations = await (
+            UserSupplementNutrient.filter(id__in=supplement_ids)
+            .using_db(connection)
+            .prefetch_related("supplement_nutrient")
+        )
+        names: dict[int, str] = {}
+        for registration in registrations:
+            name = registration.custom_name
+            if name is None and registration.supplement_nutrient is not None:
+                name = registration.supplement_nutrient.name
+            if name:
+                names[registration.id] = name
+        return names
+
+    @staticmethod
+    def _session_reference_entity_from_source(
+        *,
+        source: ChatMessageSource,
+        product_name_by_guide_id: dict[int, str],
+        medication_name_by_id: dict[int, str],
+        supplement_name_by_id: dict[int, str],
+    ) -> MedicationChatSessionReferenceEntity | None:
+        if (
+            source.source_type == ChatSourceType.PUBLIC_RAG_CHUNK
+            and source.public_dataset_key == "MEDICATION_PRODUCT_GUIDE"
+            and source.source_record_key is not None
+            and source.source_record_key.isdecimal()
+        ):
+            product_name = product_name_by_guide_id.get(int(source.source_record_key))
+            if product_name is not None:
+                return MedicationChatSessionReferenceEntity(
+                    name=product_name,
+                    entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                )
+        if (
+            source.source_type == ChatSourceType.PATIENT_SAVED_FIELD
+            and source.patient_source_kind == PatientSourceKind.MEDICATION
+            and source.medication_id is not None
+        ):
+            medication_name = medication_name_by_id.get(source.medication_id)
+            if medication_name is not None:
+                return MedicationChatSessionReferenceEntity(
+                    name=medication_name,
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                )
+        if source.source_type == ChatSourceType.USER_SUPPLEMENT and source.user_suppl_nutrient_id is not None:
+            supplement_name = supplement_name_by_id.get(source.user_suppl_nutrient_id)
+            if supplement_name is not None:
+                return MedicationChatSessionReferenceEntity(
+                    name=supplement_name,
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                )
+        return None
 
     @staticmethod
     def _validate_existing_request(

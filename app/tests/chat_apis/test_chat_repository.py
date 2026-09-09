@@ -9,6 +9,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatSourceKind,
 )
 from ai_worker.schemas.medication_search import MedicationQueryEntityType
+from app.models.care import CareEpisode
 from app.models.chat import ChatMessage, ChatMessageSource, ChatSession
 from app.models.enums import (
     ChatMessageRole,
@@ -16,6 +17,8 @@ from app.models.enums import (
     ChatSafetyStatus,
 )
 from app.models.interactions import MedicationProductGuide
+from app.models.medications import Medication
+from app.models.supplement_nutrients import UserSupplementNutrient
 from app.models.users import User
 from app.repositories.chat_repository import (
     ChatRepository,
@@ -243,6 +246,107 @@ async def test_accept_request_recovers_drug_reference_from_prior_guide_source() 
     assert next_request.session_reference.entities[0].name == "타이레놀산500밀리그램(아세트아미노펜)"
     assert next_request.session_reference.entities[0].entity_type == MedicationQueryEntityType.PRODUCT_NAME
     assert next_request.session_reference.entities[0].kind == InteractionEntityKind.DRUG
+
+
+@pytest.mark.asyncio
+async def test_accept_request_recovers_typed_registered_intake_references_from_latest_session_answer() -> None:
+    user = await create_user()
+    episode = await CareEpisode.create(user=user)
+    medication = await Medication.create(care_episode=episode, name="와파린")
+    supplement = await UserSupplementNutrient.create(
+        user=user,
+        supplement_nutrient_id=None,
+        custom_name="비타민 K",
+        dose_amount="1.000",
+        dose_unit="정",
+        start_date="2026-09-09",
+    )
+    repository = ChatRepository()
+    first = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="31000000-0000-4000-8000-000000000001",
+        content="현재 복용 중인 약과 영양제를 정리해줘.",
+    )
+    await repository.complete_request(
+        assistant_message_id=first.assistant_message.id,
+        result=build_core_result().model_copy(
+            update={
+                "request_id": "31000000-0000-4000-8000-000000000001",
+                "answer": "복약정보\n- 와파린\n\n영양제 정보\n- 비타민 K",
+                "sources": [
+                    MedicationChatSource(
+                        kind=MedicationChatSourceKind.PATIENT_MEDICATION,
+                        title="사용자 복용 약 · 와파린",
+                        medication_id=medication.id,
+                        care_episode_id=episode.id,
+                    ),
+                    MedicationChatSource(
+                        kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
+                        title="사용자 복용 영양제 · 비타민 K",
+                        user_supplement_id=supplement.id,
+                    ),
+                ],
+            },
+        ),
+        duration_ms=10,
+    )
+
+    next_request = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=first.session.id,
+        request_id="31000000-0000-4000-8000-000000000002",
+        content="그중 혈액 응고와 관련된 약은 무엇을 조심해야 해?",
+    )
+
+    assert [(entity.name, entity.entity_type, entity.kind) for entity in next_request.session_reference.entities] == [
+        ("와파린", MedicationQueryEntityType.INGREDIENT_NAME, InteractionEntityKind.DRUG),
+        ("비타민 K", MedicationQueryEntityType.INGREDIENT_NAME, InteractionEntityKind.SUPPLEMENT),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_accept_request_does_not_recover_registered_intake_reference_from_another_session() -> None:
+    user = await create_user()
+    episode = await CareEpisode.create(user=user)
+    medication = await Medication.create(care_episode=episode, name="와파린")
+    repository = ChatRepository()
+    first = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="32000000-0000-4000-8000-000000000001",
+        content="현재 복용 중인 약을 정리해줘.",
+    )
+    await repository.complete_request(
+        assistant_message_id=first.assistant_message.id,
+        result=build_core_result().model_copy(
+            update={
+                "request_id": "32000000-0000-4000-8000-000000000001",
+                "sources": [
+                    MedicationChatSource(
+                        kind=MedicationChatSourceKind.PATIENT_MEDICATION,
+                        title="사용자 복용 약 · 와파린",
+                        medication_id=medication.id,
+                        care_episode_id=episode.id,
+                    ),
+                ],
+            },
+        ),
+        duration_ms=10,
+    )
+
+    new_session_request = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="32000000-0000-4000-8000-000000000002",
+        content="그 약의 복용법을 알려줘.",
+    )
+
+    assert new_session_request.session_reference.entities == []
 
 
 @pytest.mark.asyncio
