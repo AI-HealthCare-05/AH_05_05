@@ -140,3 +140,10 @@ Each implementation unit follows red-green-refactor:
 3. Registered-intake session-reference projection.
 4. Product-name drug-food official-guide priority.
 
+## Implementation verification
+
+- Direct interaction evidence remains strict. The magnesium–zinc and vitamin D–calcium typo cases now deliberately use `NO_SOURCE` with `RESTRICTED`; broad Qdrant candidates cannot become a direct interaction claim.
+- A latest same-session assistant answer can contribute its persisted `PATIENT_MEDICATION` and `PATIENT_SUPPLEMENT` sources as typed `DRUG` and `SUPPLEMENT` reference entities. A new session receives no prior-session reference.
+- A product-name drug–food question queries the official medication guide using the resolved product name before answer assembly. RAG evidence remains a separate supplementary `PUBLIC_KNOWLEDGE` source.
+- The 20-case evaluation contract now records personal dose escalation as `CLARIFICATION` plus `RESTRICTED`, fatigue triage as `GENERAL_GUIDANCE` plus `SAFE`, and active-intake summarization as `INTERACTION` with patient-source requirements.
+- Automated verification: 109 targeted AI Worker tests, 13 chat repository tests, Ruff, and `git diff --check` passed on 2026-09-09.
