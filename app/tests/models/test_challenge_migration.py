@@ -1,6 +1,8 @@
 import importlib
 from pathlib import Path
 
+from app.models.challenges import CustomChallengeTemplate
+
 MIGRATION_ROOT = Path(__file__).resolve().parents[2] / "core/db/migrations/models"
 
 
@@ -81,3 +83,36 @@ async def test_challenge_metadata_migration_uses_mysql_safe_noop() -> None:
 
     assert "SELECT 1;" in await migration.upgrade(None)
     assert "SELECT 1;" in await migration.downgrade(None)
+
+
+async def test_custom_challenge_check_type_group_rename_migration_is_reversible() -> None:
+    migrations = list(MIGRATION_ROOT.glob("40_*_rename_custom_challenge_check_type_group.py"))
+    assert len(migrations) == 1
+    migration = importlib.import_module(f"app.core.db.migrations.models.{migrations[0].stem}")
+
+    upgrade_sql = await migration.upgrade(None)
+    downgrade_sql = await migration.downgrade(None)
+
+    assert "`group_code` = 'CST_CHK_TYPE'" in upgrade_sql
+    assert "`group_code` = 'CHK_TYPE2'" in downgrade_sql
+
+
+def test_custom_challenge_template_references_the_custom_check_type_group() -> None:
+    description = CustomChallengeTemplate._meta.fields_map["check_type"].description
+
+    assert description == "인증 방식 공통코드 ID(CHL/CST_CHK_TYPE)"
+
+
+async def test_custom_challenge_and_badge_type_migration_adds_reversible_foreign_keys() -> None:
+    migrations = list(MIGRATION_ROOT.glob("41_*_add_custom_challenge_and_badge_types.py"))
+    assert len(migrations) == 1
+    migration = importlib.import_module(f"app.core.db.migrations.models.{migrations[0].stem}")
+
+    upgrade_sql = await migration.upgrade(None)
+    downgrade_sql = await migration.downgrade(None)
+
+    for column in ("`challenge_type`", "`reward_badge_id`", "`type`"):
+        assert column in upgrade_sql
+        assert column in downgrade_sql
+    assert "REFERENCES `common_codes` (`id`)" in upgrade_sql
+    assert "REFERENCES `badges` (`id`)" in upgrade_sql
