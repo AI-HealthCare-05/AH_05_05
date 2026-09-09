@@ -28,12 +28,8 @@ from app.core.exceptions import (
     OcrQueueUnavailableError,
 )
 from app.dtos.medication_guide_ocr import (
-    Medication as ExtractedMedication,
-)
-from app.dtos.medication_guide_ocr import (
     MedicationGuideConfirmRequest,
     MedicationGuideOcrJobStatus,
-    MedicationGuideResult,
 )
 from app.models.care import CareEpisode
 from app.models.enums import AccountStatus, MealSlot, OcrJobStatus
@@ -43,7 +39,6 @@ from app.models.users import User
 from app.services.medication_guide_ocr_jobs import (
     MedicationGuideOcrJobService,
     TemporaryOcrStorage,
-    build_review_result,
 )
 
 
@@ -93,30 +88,6 @@ def confirm_request(
     if hospital_name is not None:
         payload["hospitalName"] = hospital_name
     return MedicationGuideConfirmRequest.model_validate(payload)
-
-
-def test_review_projection_marks_values_outside_public_ranges_for_review() -> None:
-    extracted = MedicationGuideResult(
-        medications=[
-            ExtractedMedication(
-                row_id="med-1",
-                name="범위 초과 약품",
-                times_per_day=7,
-                days=400,
-                confidence=0.99,
-                needs_review=False,
-                source_field_names=[],
-            )
-        ]
-    )
-
-    review = build_review_result(extracted)
-    payload = review.model_dump(mode="json", by_alias=True)
-
-    assert "timesPerDay" not in payload["medications"][0]
-    assert "days" not in payload["medications"][0]
-    assert payload["medications"][0]["confidence"] == "low"
-    assert payload["lowConfidenceCount"] == 2
 
 
 class FakeRedis:
@@ -813,6 +784,8 @@ class TestMedicationGuideOcrJobService(TestCase):
             job = await OcrJob.get(id=int(first.ocr_job_id))
             assert job.user_id == user.id
             assert job.care_episode_id is None
+            assert job.ocr_model == "clova-general-v2"
+            assert job.schema_version == "medication-guide-review/v3"
             assert job.structuring_model is None
             assert job.prompt_version is None
             assert job.input_manifest["contentSha256"]

@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -36,7 +35,6 @@ from app.core.exceptions import (
 from app.dtos.medication_guide_ocr import (
     MedicationGuideConfirmRequest,
     MedicationGuideOcrJobStatus,
-    MedicationGuideResult,
     MedicationGuideReviewResult,
     MedicationReview,
     OcrConfirmationResponse,
@@ -98,77 +96,6 @@ class MedicationOcrV3AnalysisContract(Protocol):
 
 class MedicationOcrV3Analyzer(Protocol):
     async def analyze(self, image: ValidatedImage) -> MedicationOcrV3AnalysisContract: ...
-
-
-def build_review_result(result: MedicationGuideResult) -> MedicationGuideReviewResult:
-    medications: list[MedicationReview] = []
-    low_confidence_count = int(result.dispensing_date is None)
-    for medication in result.medications:
-        times_per_day = medication.times_per_day
-        days = medication.days
-        needs_review = medication.needs_review
-        if times_per_day is not None and times_per_day > 6:
-            times_per_day = None
-            needs_review = True
-        if days is not None and days > 365:
-            days = None
-            needs_review = True
-        confidence = "low" if needs_review else _confidence_tier(medication.confidence)
-        low_confidence_count += int(confidence == "low")
-        medication_payload: dict[str, object] = {
-            "tempId": medication.row_id,
-            "name": medication.name,
-            "confidence": confidence,
-        }
-        if medication.strength:
-            medication_payload["strength"] = medication.strength
-        dose_quantity = _parse_dose_quantity(medication.dose_quantity, medication.dose_unit)
-        if dose_quantity is not None:
-            medication_payload["doseQuantity"] = dose_quantity
-        if times_per_day is not None:
-            medication_payload["timesPerDay"] = times_per_day
-        if days is not None:
-            medication_payload["days"] = days
-        medications.append(MedicationReview.model_validate(medication_payload))
-
-    fields: dict[str, object] = {}
-    if result.dispensing_date is not None:
-        date_confidence = next(
-            (field.confidence for field in result.ocr_fields if field.name in {"dispensing_date", "dispensed_date"}),
-            0.0,
-        )
-        date_confidence_tier = _confidence_tier(date_confidence)
-        low_confidence_count += int(date_confidence_tier == "low")
-        fields["dispensedDate"] = {
-            "value": result.dispensing_date.isoformat(),
-            "confidence": date_confidence_tier,
-        }
-    return MedicationGuideReviewResult(
-        fields=fields,
-        medications=medications,
-        low_confidence_count=low_confidence_count,
-    )
-
-
-def _confidence_tier(confidence: float) -> str:
-    if confidence >= 0.90:
-        return "high"
-    if confidence >= 0.70:
-        return "medium"
-    return "low"
-
-
-def _parse_dose_quantity(quantity: str | None, unit: str | None) -> str | None:
-    if not quantity:
-        return None
-    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(.*?)\s*", quantity)
-    if match is None:
-        return None
-    value = float(match.group(1))
-    if value <= 0:
-        return None
-    parsed_unit = (unit or match.group(2)).strip()
-    return f"{match.group(1)}{parsed_unit}"
 
 
 class TemporaryOcrStorage:
@@ -308,8 +235,8 @@ class MedicationGuideOcrJobService:
                     status=OcrJobStatus.QUEUED,
                     idempotency_key=key,
                     input_manifest=manifest,
-                    ocr_model="clova-template",
-                    schema_version="medication-guide-review/v1",
+                    ocr_model="clova-general-v2",
+                    schema_version="medication-guide-review/v3",
                 )
             except IntegrityError:
                 existing = await OcrJob.get_or_none(user_id=user.id, idempotency_key=key)
