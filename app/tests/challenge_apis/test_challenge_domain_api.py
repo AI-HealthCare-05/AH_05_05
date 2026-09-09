@@ -448,7 +448,12 @@ class TestChallengeDomainAPI(TestCase):
 
     async def test_personal_period_ends_at_midnight_after_last_calendar_day(self) -> None:
         day = datetime(2026, 9, 8, 15, 30, tzinfo=config.TIMEZONE)
-        with patch("app.services.challenge_participation.datetime", wraps=datetime) as clock:
+        # Recruitment fixtures and participation must use the same calendar day.
+        with (
+            patch(f"{__name__}.datetime", wraps=datetime) as fixture_clock,
+            patch("app.services.challenge_participation.datetime", wraps=datetime) as clock,
+        ):
+            fixture_clock.now.return_value = day
             clock.now.return_value = day
             participation = await self._join_daily()
         assert datetime.fromisoformat(participation["end_at"]).astimezone(config.TIMEZONE) == datetime(

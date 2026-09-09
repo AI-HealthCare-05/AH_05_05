@@ -1171,7 +1171,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             with pytest.raises(OcrJobNotFoundError):
                 await service.get(other, int(accepted.ocr_job_id))
 
-    async def test_status_deletes_an_expired_review_job(self) -> None:
+    async def test_status_preserves_expired_review_history_and_purges_images(self) -> None:
         user = await create_user("ocr-expired-status@example.com")
         now = datetime.now(config.TIMEZONE)
         job = await OcrJob.create(
@@ -1209,7 +1209,16 @@ class TestMedicationGuideOcrJobService(TestCase):
 
             assert not original_path.exists()
             assert not processed_path.exists()
-        assert not await OcrJob.filter(id=job.id).exists()
+        retained = await OcrJob.get(id=job.id)
+        assert retained.status is OcrJobStatus.READY_FOR_REVIEW
+        assert retained.structured_result == job.structured_result
+        assert retained.created_at == job.created_at
+        assert retained.input_manifest["contentSha256"] == "abc"
+        with pytest.raises(OcrJobNotFoundError):
+            await service.get(user, job.id)
+        with pytest.raises(OcrJobNotFoundError):
+            await service.confirm(user, job.id, confirm_request())
+        assert not await CareEpisode.filter(user=user).exists()
 
     async def test_status_preserves_a_cancelled_document_job(self) -> None:
         user = await create_user("ocr-legacy-cancelled@example.com")
@@ -1554,7 +1563,7 @@ class TestMedicationGuideOcrJobService(TestCase):
         assert not await CareEpisode.filter(user=user).exists()
         assert not await Medication.all().exists()
 
-    async def test_cleanup_deletes_only_expired_unconfirmed_jobs(self) -> None:
+    async def test_cleanup_retains_expired_unconfirmed_history(self) -> None:
         user = await create_user("ocr-cleanup@example.com")
         now = datetime.now(config.TIMEZONE)
         common: dict[str, Any] = {
@@ -1605,11 +1614,14 @@ class TestMedicationGuideOcrJobService(TestCase):
             )
 
             deleted = await service.cleanup_expired(now=now)
+            assert await service.cleanup_expired(now=now) == 0
 
             assert complete_path.exists()
 
         assert deleted == 1
-        assert not await OcrJob.filter(id=expired.id).exists()
+        retained = await OcrJob.get(id=expired.id)
+        assert retained.structured_result == expired.structured_result
+        assert retained.status is OcrJobStatus.READY_FOR_REVIEW
         assert await OcrJob.filter(id=active.id).exists()
         assert await OcrJob.filter(id=complete.id).exists()
         assert not original_path.exists()
@@ -1662,4 +1674,69 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert not stale_path.exists()
             assert not orphan_path.exists()
         assert await OcrJob.filter(id=recent_processing.id).exists()
-        assert not await OcrJob.filter(id=stale_processing.id).exists()
+        retained = await OcrJob.get(id=stale_processing.id)
+        assert retained.status is OcrJobStatus.FAILED
+        assert retained.error_code == "WORKER_INTERRUPTED"
+        assert retained.started_at == stale_processing.started_at
+
+    async def test_cleanup_preserves_stale_job_history_and_failure_evidence(self) -> None:
+        for status in (OcrJobStatus.QUEUED, OcrJobStatus.FAILED, OcrJobStatus.CANCELLED):
+            with self.subTest(status=status):
+                await self._assert_stale_history_retained(status)
+
+    async def _assert_stale_history_retained(self, status: OcrJobStatus) -> None:
+        user = await create_user(f"ocr-history-{status.value.lower()}@example.com")
+        now = datetime.now(config.TIMEZONE)
+        old = now - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES + 1)
+        error_code = {OcrJobStatus.FAILED: "RECAPTURE_REQUIRED", OcrJobStatus.CANCELLED: "USER_CANCELLED"}.get(status)
+        evidence = {"timings": None, "stages": successful_stages()}
+        job = await OcrJob.create(
+            user=user,
+            status=status,
+            idempotency_key=f"history-{status.value}",
+            input_manifest={"contentSha256": "abc", "storageKey": "history.png"},
+            ocr_model="clova-template",
+            schema_version="medication-guide-review/v1",
+            error_code=error_code,
+            stage_results=evidence,
+            started_at=old if status != OcrJobStatus.QUEUED else None,
+            completed_at=old if status != OcrJobStatus.QUEUED else None,
+        )
+        await OcrJob.filter(id=job.id).update(created_at=old)
+        with TemporaryDirectory() as directory:
+            path = Path(directory, "history.png")
+            path.write_bytes(b"temporary image")
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            assert await service.cleanup_expired(now=now) == 1
+            assert not path.exists()
+            assert await service.cleanup_expired(now=now + timedelta(days=7)) == 0
+            retained = await OcrJob.get(id=job.id)
+            assert retained.created_at == old
+            assert retained.stage_results == evidence
+            assert retained.status == (OcrJobStatus.FAILED if status == OcrJobStatus.QUEUED else status)
+            assert retained.error_code == ("WORKER_INTERRUPTED" if status == OcrJobStatus.QUEUED else error_code)
+            if status != OcrJobStatus.QUEUED:
+                assert retained.completed_at == old
+            response = await service.get(user, job.id)
+            assert response.status.value == retained.status.value
+
+    async def test_retained_failed_history_preserves_upload_idempotency(self) -> None:
+        user = await create_user("ocr-retained-idempotency@example.com")
+        now = datetime.now(config.TIMEZONE)
+        with TemporaryDirectory() as directory:
+            service = MedicationGuideOcrJobService(storage=TemporaryOcrStorage(Path(directory)), redis_pool=FakeRedis())
+            accepted = await service.submit(user, "retained-upload", upload())
+            job_id = int(accepted.ocr_job_id)
+            await service.process(job_id, RecaptureAnalyzer(), job_try=1)
+            await OcrJob.filter(id=job_id).update(
+                completed_at=now - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES + 1)
+            )
+            assert await service.cleanup_expired(now=now) == 1
+            with patch.object(service, "_enqueue", new_callable=AsyncMock) as enqueue:
+                reused = await service.submit(user, "retained-upload", upload())
+                assert reused.ocr_job_id == accepted.ocr_job_id
+                assert reused.status is MedicationGuideOcrJobStatus.FAILED
+                enqueue.assert_not_awaited()
+                with pytest.raises(OcrIdempotencyConflictError):
+                    await service.submit(user, "retained-upload", upload(png_bytes("black")))
+            assert await OcrJob.filter(user=user).count() == 1

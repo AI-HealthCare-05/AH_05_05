@@ -346,12 +346,13 @@ class MedicationGuideOcrJobService:
             if job is None:
                 raise OcrJobNotFoundError()
         if job.status == OcrJobStatus.READY_FOR_REVIEW and job.expires_at is not None and job.expires_at <= now:
-            if await self._delete_if_expired(job.id, now=now, user_id=user.id):
-                raise OcrJobNotFoundError()
+            await self._purge_images_if_expired(job.id, now=now, user_id=user.id)
             # confirm() may have won the row lock while this request was checking expiry.
-            # In that case return the committed COMPLETE state instead of deleting it.
+            # Keep the history but never reopen an expired review for editing.
             job = await OcrJob.get_or_none(id=job_id, user_id=user.id)
             if job is None:
+                raise OcrJobNotFoundError()
+            if job.status == OcrJobStatus.READY_FOR_REVIEW and job.expires_at is not None and job.expires_at <= now:
                 raise OcrJobNotFoundError()
         result = None
         if job.status in {OcrJobStatus.READY_FOR_REVIEW, OcrJobStatus.COMPLETE} and isinstance(
@@ -831,6 +832,7 @@ class MedicationGuideOcrJobService:
         )
 
     async def cleanup_expired(self, *, now: datetime | None = None) -> int:
+        """Purge expired temporary images, retaining OCR jobs as operational history."""
         current = now or datetime.now(config.TIMEZONE)
         for job in await OcrJob.filter(status=OcrJobStatus.PROCESSING, care_episode_id=None):
             await self._reconcile_worker_failure(job, now=current)
@@ -846,22 +848,23 @@ class MedicationGuideOcrJobService:
             )
             .values_list("id", flat=True)
         )
-        deleted = 0
+        purged = 0
         for job_id in candidate_ids:
-            deleted += int(await self._delete_if_expired(job_id, now=current))
+            purged += int(await self._purge_images_if_expired(job_id, now=current))
         manifests = await OcrJob.all().values_list("input_manifest", flat=True)
         active_storage_keys = {
             storage_key
             for manifest in manifests
             if isinstance(manifest, dict)
+            if not manifest.get("imagesPurgedAt")
             for field in ("storageKey", "processedStorageKey")
             if isinstance((storage_key := manifest.get(field)), str)
         }
         await self.storage.delete_orphans(active_storage_keys, older_than=stale_cutoff)
-        return deleted
+        return purged
 
-    async def _delete_if_expired(self, job_id: int, *, now: datetime, user_id: int | None = None) -> bool:
-        """Delete one still-unconfirmed stale job while serializing against confirm()."""
+    async def _purge_images_if_expired(self, job_id: int, *, now: datetime, user_id: int | None = None) -> bool:
+        """Retain history and serialize temporary-image expiry against confirm()."""
         stale_cutoff = now - timedelta(minutes=config.OCR_REVIEW_TTL_MINUTES)
         async with in_transaction() as connection:
             query = OcrJob.filter(id=job_id, care_episode_id=None)
@@ -870,8 +873,22 @@ class MedicationGuideOcrJobService:
             job = await query.using_db(connection).select_for_update().first()
             if job is None or not self._is_expired(job, now=now, stale_cutoff=stale_cutoff):
                 return False
-            await self.storage.delete(self._manifest(job))
-            await job.delete(using_db=connection)
+            manifest = dict(self._manifest(job))
+            if manifest.get("imagesPurgedAt"):
+                return False
+            await self.storage.delete(manifest)
+            manifest["imagesPurgedAt"] = now.isoformat()
+            update_fields = ["input_manifest"]
+            if job.status in {OcrJobStatus.QUEUED, OcrJobStatus.PROCESSING}:
+                manifest["expiredFromStatus"] = job.status.value
+                job.status = OcrJobStatus.FAILED
+                job.error_code = "WORKER_INTERRUPTED"
+                job.started_at = job.started_at or now
+                job.completed_at = now
+                job.updated_at = now
+                update_fields.extend(["status", "error_code", "started_at", "completed_at", "updated_at"])
+            job.input_manifest = manifest
+            await job.save(using_db=connection, update_fields=update_fields)
         return True
 
     @staticmethod
