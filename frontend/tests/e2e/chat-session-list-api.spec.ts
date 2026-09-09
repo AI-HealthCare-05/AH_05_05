@@ -116,6 +116,11 @@ test('실 API 대화 목록에서 세션을 선택해 저장된 메시지를 연
 
   await expect(page.getByText('아침 약은 언제 먹나요?', { exact: true })).toBeVisible();
   await expect(page.getByText('식후에 드시는 편이 좋아요.', { exact: true })).toBeVisible();
+  await expect(page.getByText('의약품안전나라', { exact: true })).toBeHidden();
+  const sourcesToggle = page.getByRole('button', { name: '근거 보기 1개', exact: true });
+  await expect(sourcesToggle).toHaveAttribute('aria-expanded', 'false');
+  await sourcesToggle.click();
+  await expect(page.getByRole('button', { name: '근거 접기 1개', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByText('의약품안전나라', { exact: true })).toBeVisible();
   await expect(page.getByText('화면에 표시하면 안 되는 처리 중 답변')).toHaveCount(0);
 });
