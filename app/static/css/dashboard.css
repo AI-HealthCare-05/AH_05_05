@@ -1,10 +1,18 @@
 :root {
   --dashboard-insight-height: 136px;
+  --dashboard-ring-size: 88px;
 }
 
 .dashboard-insight-card,
 .chat-reason-panel {
   min-height: var(--dashboard-insight-height);
+}
+
+.ocr-accuracy-ring {
+  box-sizing: border-box;
+  flex: 0 0 var(--dashboard-ring-size);
+  width: var(--dashboard-ring-size);
+  height: var(--dashboard-ring-size);
 }
 
 .chat-reason-grid {
@@ -38,12 +46,12 @@
   background: #e5e7eb;
   border-radius: 50%;
   display: flex;
-  flex: 0 0 88px;
-  height: 88px;
+  flex: 0 0 var(--dashboard-ring-size);
+  height: var(--dashboard-ring-size);
   justify-content: center;
   position: relative;
   transition: background 180ms ease;
-  width: 88px;
+  width: var(--dashboard-ring-size);
 }
 
 .chat-reason-ring::after {
