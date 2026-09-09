@@ -502,7 +502,7 @@ class TestDashboardOcrDocuments(DashboardTestBase):
             job.created_at = created_at
         return job
 
-    async def test_total_includes_every_status_and_cards_count_selected_statuses(self) -> None:
+    async def test_pending_card_includes_queued_processing_and_review_but_not_terminal_statuses(self) -> None:
         user = await create_user(name="OCR 회원", email=unique_email("ocr"))
         statuses = [
             OcrJobStatus.QUEUED,
@@ -520,7 +520,7 @@ class TestDashboardOcrDocuments(DashboardTestBase):
 
         assert documents == {
             "total": 7,
-            "queued": 1,
+            "queued": 3,
             "completed": 2,
             "failed": 1,
             "avgFieldConfidence": None,
@@ -529,13 +529,17 @@ class TestDashboardOcrDocuments(DashboardTestBase):
     async def test_counts_include_only_jobs_created_in_selected_period(self) -> None:
         user = await create_user(name="OCR 회원", email=unique_email("ocr-period"))
         await self.create_ocr_job(OcrJobStatus.QUEUED, user, created_at=at(0))
+        await self.create_ocr_job(OcrJobStatus.PROCESSING, user, created_at=at(1))
+        await self.create_ocr_job(OcrJobStatus.READY_FOR_REVIEW, user, created_at=at(6))
+        await self.create_ocr_job(OcrJobStatus.PROCESSING, user, created_at=at(7))
+        await self.create_ocr_job(OcrJobStatus.READY_FOR_REVIEW, user, created_at=at(7))
         await self.create_ocr_job(OcrJobStatus.COMPLETE, user, created_at=at(6))
         await self.create_ocr_job(OcrJobStatus.FAILED, user, created_at=at(7))
 
         documents = (await self.fetch("LAST_7_DAYS"))["ocrDocuments"]
 
-        assert documents["total"] == 2
-        assert documents["queued"] == 1
+        assert documents["total"] == 4
+        assert documents["queued"] == 3
         assert documents["completed"] == 1
         assert documents["failed"] == 0
 

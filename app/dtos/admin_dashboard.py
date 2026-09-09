@@ -62,7 +62,7 @@ class AlarmNotificationStats(CamelModel):
 
 
 class OcrDocumentStats(CamelModel):
-    """OCR 작업의 전체 건수와 대시보드에 노출하는 주요 상태별 건수."""
+    """OCR 작업 집계. queued는 대기열·처리 중·사용자 확인 대기의 합계다."""
 
     total: int
     queued: int

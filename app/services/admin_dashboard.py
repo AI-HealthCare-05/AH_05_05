@@ -160,7 +160,11 @@ class AdminDashboardService:
 
         return OcrDocumentStats(
             total=sum(counts.values()),
-            queued=counts.get(OcrJobStatus.QUEUED, 0),
+            # The dashboard's pending card includes OCR execution and user review.
+            queued=sum(
+                counts.get(status, 0)
+                for status in (OcrJobStatus.QUEUED, OcrJobStatus.PROCESSING, OcrJobStatus.READY_FOR_REVIEW)
+            ),
             completed=counts.get(OcrJobStatus.COMPLETE, 0),
             failed=counts.get(OcrJobStatus.FAILED, 0),
             avg_field_confidence=(round(sum(job_confidences) / len(job_confidences), 6) if job_confidences else None),
