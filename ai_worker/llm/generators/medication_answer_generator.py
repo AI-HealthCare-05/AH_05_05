@@ -25,6 +25,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
+    MedicationChatSourceKind,
 )
 
 
@@ -36,6 +37,13 @@ class AsyncMedicationAnswerClient(Protocol):
 
 
 class OpenAIMedicationAnswerGenerator:
+    _LLM_REWRITE_SOURCE_KINDS = frozenset(
+        {
+            MedicationChatSourceKind.MEDICATION_GUIDE,
+            MedicationChatSourceKind.INTERACTION_RULE,
+            MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
+        }
+    )
     _DOSAGE_TOKEN_PATTERN = re.compile(
         r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|정|캡슐|포|회|일|시간|%)",
         re.IGNORECASE,
@@ -104,6 +112,12 @@ class OpenAIMedicationAnswerGenerator:
                 result,
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES,
+            )
+        if not self._has_external_rewrite_evidence(result):
+            return self._skipped_outcome(
+                result,
+                draft_hash=draft_hash,
+                reason=MedicationAnswerFallbackReason.PATIENT_CONTEXT_ONLY,
             )
         try:
             payload = await self._chain.ainvoke(
@@ -205,6 +219,15 @@ class OpenAIMedicationAnswerGenerator:
     @staticmethod
     def _answer_hash(answer: str) -> str:
         return hashlib.sha256(answer.strip().encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _has_external_rewrite_evidence(cls, result: MedicationChatResult) -> bool:
+        """등록 정보는 답변 대상을 식별할 뿐, 의학적 주장의 근거가 되지 않는다."""
+
+        return any(
+            source.kind in cls._LLM_REWRITE_SOURCE_KINDS
+            for source in result.sources
+        )
 
     @staticmethod
     def _skipped_outcome(

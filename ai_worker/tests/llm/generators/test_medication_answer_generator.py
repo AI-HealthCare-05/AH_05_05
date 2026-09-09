@@ -103,6 +103,50 @@ async def test_generator_skips_llm_when_no_grounded_sources() -> None:
     assert outcome.observation.generated_answer_hash is None
 
 
+async def test_generator_skips_llm_when_only_registered_intake_sources_exist() -> None:
+    client = FakeAnswerClient(error=AssertionError("호출하면 안 됩니다."))
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.INTERACTION,
+            "answer": (
+                "복약정보\n- 와파린\n\n"
+                "영양제 정보\n- 비타민 K · 1정\n\n"
+                "확인된 상호작용\n"
+                "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다."
+            ),
+            "sources": [
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PATIENT_MEDICATION,
+                    title="사용자 확정 복약정보 · 와파린",
+                    medication_id=1,
+                    care_episode_id=1,
+                ),
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
+                    title="사용자 복용 영양제 · 비타민 K",
+                    user_supplement_id=1,
+                ),
+            ],
+        }
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.result == initial
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.SKIPPED
+    assert outcome.observation.fallback_reason is not None
+    assert outcome.observation.fallback_reason.value == "PATIENT_CONTEXT_ONLY"
+    assert outcome.observation.generated_answer_hash is None
+
+
 async def test_generator_wraps_client_failure() -> None:
     generator = OpenAIMedicationAnswerGenerator(
         model="gpt-4o-mini",
