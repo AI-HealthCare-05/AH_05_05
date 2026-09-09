@@ -595,6 +595,18 @@ class AnswerMedicationQuestionUseCase:
                     "generated_answer_hash": outcome.observation.generated_answer_hash,
                     "route": generated.route.value,
                     "source_count": len(generated.sources),
+                    "declared_section_types": [
+                        section.value
+                        for section in outcome.observation.declared_section_types
+                    ],
+                    "covered_section_types": (
+                        [
+                            section.value
+                            for section in generated.evidence_coverage.covered_section_types
+                        ]
+                        if generated.evidence_coverage is not None
+                        else []
+                    ),
                 }
             )
         await self._report_progress(

@@ -432,6 +432,7 @@ class MedicationAnswerGenerationObservation(BaseModel):
     status: MedicationAnswerRewriteStatus
     fallback_used: bool
     fallback_reason: MedicationAnswerFallbackReason | None = None
+    declared_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     draft_answer_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     generated_answer_hash: str | None = Field(
         default=None,

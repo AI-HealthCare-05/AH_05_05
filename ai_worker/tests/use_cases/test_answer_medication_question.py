@@ -1177,6 +1177,8 @@ async def test_execute_records_safe_stage_summaries_without_raw_content() -> Non
     assert llm_outputs["rewrite_status"] == "REWRITTEN"
     assert llm_outputs["fallback_used"] is False
     assert llm_outputs["fallback_reason"] is None
+    assert llm_outputs["declared_section_types"] == []
+    assert llm_outputs["covered_section_types"] == []
     assert len(llm_outputs["draft_answer_hash"]) == 64
     assert len(llm_outputs["generated_answer_hash"]) == 64
 
