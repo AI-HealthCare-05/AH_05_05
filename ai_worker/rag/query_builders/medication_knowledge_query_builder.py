@@ -610,8 +610,7 @@ class MedicationKnowledgeQueryBuilder:
         section_types: list[KnowledgeSectionType] = []
         expansion_terms: list[str] = []
         if any(
-            keyword in question
-            for keyword in ("효능", "효과", "기능", "역할", "왜 먹")
+            keyword in question for keyword in ("효능", "효과", "기능", "역할", "왜 먹")
         ) or _FUNCTION_INTENT_PATTERN.search(question):
             section_types.append(KnowledgeSectionType.FUNCTION)
             expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])

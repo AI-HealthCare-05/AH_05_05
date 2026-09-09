@@ -602,15 +602,9 @@ class AnswerMedicationQuestionUseCase:
                     "generated_answer_hash": outcome.observation.generated_answer_hash,
                     "route": generated.route.value,
                     "source_count": len(generated.sources),
-                    "declared_section_types": [
-                        section.value
-                        for section in outcome.observation.declared_section_types
-                    ],
+                    "declared_section_types": [section.value for section in outcome.observation.declared_section_types],
                     "covered_section_types": (
-                        [
-                            section.value
-                            for section in generated.evidence_coverage.covered_section_types
-                        ]
+                        [section.value for section in generated.evidence_coverage.covered_section_types]
                         if generated.evidence_coverage is not None
                         else []
                     ),
@@ -1300,10 +1294,7 @@ class AnswerMedicationQuestionUseCase:
         question: str,
         context: ActiveIntakeContext,
     ) -> bool:
-        return bool(
-            (context.medications or context.supplements)
-            and cls._PATIENT_CONTEXT_CUE_PATTERN.search(question)
-        )
+        return bool((context.medications or context.supplements) and cls._PATIENT_CONTEXT_CUE_PATTERN.search(question))
 
     @staticmethod
     def _with_interpretation(

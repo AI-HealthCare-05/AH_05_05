@@ -67,8 +67,6 @@ def build_medication_chat_messages(
 
 def _draft_answer_for_rewrite(result: MedicationChatResult) -> str:
     evidence_coverage = result.evidence_coverage
-    if evidence_coverage is None or KnowledgeSectionType.DAILY_INTAKE in (
-        evidence_coverage.requested_section_types
-    ):
+    if evidence_coverage is None or KnowledgeSectionType.DAILY_INTAKE in (evidence_coverage.requested_section_types):
         return result.answer
     return _DOSAGE_VALUE_PATTERN.sub("[용량 정보 생략]", result.answer)

@@ -167,8 +167,7 @@ class RuleBasedGroundedClaimValidator:
     ) -> bool:
         normalized_match = cls._comparison_key(match_text)
         return bool(normalized_match) and any(
-            normalized_match in cls._comparison_key(warning)
-            for warning in official_warning_texts
+            normalized_match in cls._comparison_key(warning) for warning in official_warning_texts
         )
 
     @staticmethod

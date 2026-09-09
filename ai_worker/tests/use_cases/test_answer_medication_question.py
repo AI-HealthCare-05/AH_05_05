@@ -1232,9 +1232,7 @@ async def test_execute_records_hashed_safety_match_without_raw_content() -> None
         build_request("타이레놀정500밀리그람은 어떤 약인가요?"),
     )
 
-    safety_outputs = next(
-        span.outputs for span in tracer.spans if span.name == "safety.validate"
-    )
+    safety_outputs = next(span.outputs for span in tracer.spans if span.name == "safety.validate")
     assert result.safety_status == SafetyStatus.BLOCKED
     assert safety_outputs.get("matched_rule_code") == "MEDICATION_CHANGE_INSTRUCTION"
     assert safety_outputs.get("matched_action") == "STOP"
@@ -1259,9 +1257,7 @@ async def test_execute_allows_conditioned_official_product_warning() -> None:
         build_request("타이레놀의 효능과 주의사항을 알려줘."),
     )
 
-    safety_outputs = next(
-        span.outputs for span in tracer.spans if span.name == "safety.validate"
-    )
+    safety_outputs = next(span.outputs for span in tracer.spans if span.name == "safety.validate")
     assert result.safety_status == SafetyStatus.SAFE
     assert warning in result.answer
     assert safety_outputs["official_warning_allowed"] is True
