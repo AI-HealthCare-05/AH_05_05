@@ -132,7 +132,7 @@ async def get_background_job_stats_for_admin(
     service: Annotated[BackgroundJobService, Depends(get_background_job_service)],
 ) -> AdminBackgroundJobStatsResponse:
     """내부 API 키를 노출하지 않고 관리자 JWT로 작업 상태별 건수를 조회한다."""
-    result = await service.stats(start_date, end_date)
+    result = await service.stats_for_admin(start_date, end_date)
     return AdminBackgroundJobStatsResponse.model_validate(result)
 
 

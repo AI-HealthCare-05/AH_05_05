@@ -69,7 +69,7 @@ class AdminBackgroundJobListQuery(PageQuery):
 
 
 class AdminBackgroundJobListItem(CamelModel):
-    job_id: int
+    job_id: int | str
     job_type: BackgroundJobType
     status: BackgroundJobStatus
     user_id: int | None

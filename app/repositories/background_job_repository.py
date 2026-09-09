@@ -42,7 +42,13 @@ class BackgroundJobRepository:
         )
         return items, total
 
-    async def list_for_admin(self, filters: AdminBackgroundJobListQuery) -> tuple[list[BackgroundJob], int]:
+    async def list_for_admin(
+        self,
+        filters: AdminBackgroundJobListQuery,
+        *,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[BackgroundJob], int]:
         query = BackgroundJob.all()
         if filters.keyword:
             keyword = filters.keyword.strip()
@@ -60,8 +66,14 @@ class BackgroundJobRepository:
             query = query.filter(requested_at__lt=filters.end_date + timedelta(days=1))
 
         total = await query.count()
-        offset = (filters.page - 1) * filters.size
-        items = await query.prefetch_related("user").order_by("-requested_at", "-id").offset(offset).limit(filters.size)
+        selected_offset = (filters.page - 1) * filters.size if offset is None else offset
+        selected_limit = filters.size if limit is None else limit
+        items = (
+            await query.prefetch_related("user")
+            .order_by("-requested_at", "-id")
+            .offset(selected_offset)
+            .limit(selected_limit)
+        )
         return items, total
 
     async def count_by_status(self, created_from: datetime, created_to: datetime) -> dict[BackgroundJobStatus, int]:
