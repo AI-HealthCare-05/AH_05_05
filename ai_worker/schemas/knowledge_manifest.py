@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeDocumentType,
+    KnowledgeEntityCatalogEntry,
     KnowledgeEvidenceLevel,
     KnowledgeStudyPopulation,
 )
@@ -124,6 +125,9 @@ class KnowledgePilotEntry(BaseModel):
     publication_year: int | None = Field(default=None, ge=1900, le=2100)
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
+    entity_catalog_entries: list[KnowledgeEntityCatalogEntry] = Field(
+        default_factory=list,
+    )
     evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
     study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
     verified_text_replacements: dict[str, str] = Field(default_factory=dict)

@@ -100,6 +100,32 @@ def test_ocr_selection_manifest_classifies_every_ocr_required_document() -> None
     assert selected_ids == {"kpicia_adverse_case_report-408e6bddec7da059"}
 
 
+def test_official_omega3_code_has_searchable_supplement_aliases() -> None:
+    """공식 EPA·DHA 공전은 일반 사용자의 오메가3 표현으로 검색돼야 한다."""
+    repo_root = Path(__file__).parents[3]
+    records = [
+        json.loads(line)
+        for line in (repo_root / "data/knowledge/manifests/documents.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    omega3 = next(
+        record
+        for record in records
+        if record["document_id"] == "mfds_supplement_code-40a0dea0c535ba59"
+    )
+
+    assert omega3["ingredient_names"] == ["오메가3", "EPA", "DHA"]
+    assert omega3["entity_catalog_entries"] == [
+        {
+            "canonical_name": "오메가3",
+            "aliases": ["EPA", "DHA", "EPA 및 DHA 함유 유지"],
+            "entity_type": "INGREDIENT_NAME",
+            "kind": "SUPPLEMENT",
+        }
+    ]
+
+
 def test_builder_selects_approved_qdrant_text_documents(tmp_path: Path) -> None:
     documents_path = tmp_path / "documents.jsonl"
     sources_path = tmp_path / "sources.yaml"
@@ -755,6 +781,14 @@ def test_builder_preserves_reviewed_document_metadata(tmp_path: Path) -> None:
                 "publication_year": 2024,
                 "drug_names": ["warfarin"],
                 "ingredient_names": ["vitamin K"],
+                "entity_catalog_entries": [
+                    {
+                        "canonical_name": "vitamin K",
+                        "aliases": ["비타민 K", "비타민케이"],
+                        "entity_type": "INGREDIENT_NAME",
+                        "kind": "SUPPLEMENT",
+                    }
+                ],
                 "evidence_level": "SYSTEMATIC_REVIEW",
                 "study_population": "HUMAN",
             }
@@ -799,6 +833,8 @@ sources:
     assert entry.publication_year == 2024
     assert entry.drug_names == ["warfarin"]
     assert entry.ingredient_names == ["vitamin K"]
+    assert entry.entity_catalog_entries[0].canonical_name == "vitamin K"
+    assert entry.entity_catalog_entries[0].aliases == ["비타민 K", "비타민케이"]
     assert entry.evidence_level.value == "SYSTEMATIC_REVIEW"
     assert entry.study_population.value == "HUMAN"
 

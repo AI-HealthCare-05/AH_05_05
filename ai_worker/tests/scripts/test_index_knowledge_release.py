@@ -26,6 +26,20 @@ class FakeClient:
         self.closed = True
 
 
+class FakeVectorReuseClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def scroll(self, **kwargs):
+        self.calls.append(kwargs)
+        return [
+            SimpleNamespace(
+                vector=[0.1, 0.2, 0.3],
+                payload={"embedding_text": "[문서] 기존 근거\n[원문] 내용"},
+            )
+        ], None
+
+
 class FakeIndexer:
     def __init__(self, result: KnowledgeIndexResult) -> None:
         self.result = result
@@ -34,6 +48,8 @@ class FakeIndexer:
     async def index_release(
         self,
         chunks: list[KnowledgeChunk],
+        *,
+        reusable_vectors_by_embedding_text: dict[str, list[float]] | None = None,
     ) -> KnowledgeIndexResult:
         self.received_chunks = chunks
         return self.result
@@ -402,6 +418,28 @@ def test_counts_only_identical_embedding_text_as_reusable() -> None:
     assert stats.content_hash_match_count == 2
     assert stats.exact_embedding_text_reuse_count == 1
     assert stats.reembedding_required_count == 1
+
+
+async def test_loads_reusable_vectors_only_for_verified_baseline_embedding_texts() -> None:
+    client = FakeVectorReuseClient()
+    reusable = await module.load_reusable_vectors_from_collection(
+        client=client,
+        collection_name="medication_knowledge_full_v7",
+        baseline_chunks=[
+            SimpleNamespace(embedding_text="[문서] 기존 근거\n[원문] 내용"),
+        ],
+    )
+
+    assert reusable == {"[문서] 기존 근거\n[원문] 내용": [0.1, 0.2, 0.3]}
+    assert client.calls == [
+        {
+            "collection_name": "medication_knowledge_full_v7",
+            "limit": 128,
+            "offset": None,
+            "with_payload": True,
+            "with_vectors": True,
+        }
+    ]
 
 
 def test_rejects_chunks_from_source_without_completed_approval(

@@ -102,6 +102,29 @@ def test_source_backed_calcium_iron_annotation_uses_only_its_review_document() -
     assert matches[0].food_names == []
 
 
+def test_source_backed_acetaminophen_alcohol_annotation_exposes_food_aliases() -> None:
+    repo_root = Path(__file__).parents[4]
+    registry = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        repo_root / "data/knowledge/manifests/interaction_annotations.yaml",
+    )
+
+    matches = registry.find_matches(
+        document_id="kpicia_pharm_review-3ce7212b15e7c2de",
+        text="아세트아미노펜은 알코올과의 상호작용으로 간손상을 초래할 수 있습니다.",
+    )
+
+    assert len(matches) == 1
+    assert matches[0].pair_type == InteractionPairType.DRUG_FOOD
+    assert matches[0].drug_names == ["아세트아미노펜"]
+    assert matches[0].food_names == ["알코올"]
+    assert matches[0].entity_catalog_entries[1].aliases == [
+        "알코올",
+        "술",
+        "음주",
+        "alcohol",
+    ]
+
+
 def test_rejects_blank_alias_that_would_match_every_chunk(
     tmp_path: Path,
 ) -> None:
