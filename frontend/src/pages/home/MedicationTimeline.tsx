@@ -123,7 +123,6 @@ function TimelineItem({
   );
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(() => new Set());
-  const [doseActionSettled, setDoseActionSettled] = useState(false);
   const [doseActionPending, setDoseActionPending] = useState(false);
   const doseActionPendingRef = useRef(false);
   const doseControlsPending = doseActionPending || mutationPending;
@@ -159,7 +158,6 @@ function TimelineItem({
     setExpandedMedicationEpisodes(new Set());
     setShowAllEpisodes(false);
     setSelectedEpisodes(new Set());
-    setDoseActionSettled(false);
     setCompletedEpisodes(new Set(item.completedEpisodeRecordIds));
   }, [currentDate, episodeFingerprint]);
 
@@ -213,18 +211,16 @@ function TimelineItem({
   }
 
   const visibleEpisodes = showAllEpisodes ? item.episodes : item.episodes.slice(0, 2);
-  const selected = visibleEpisodes.filter((episode) => selectedEpisodes.has(episode.recordId));
+  const selected = item.episodes.filter((episode) => selectedEpisodes.has(episode.recordId));
   const hasSelection = selected.length > 0;
-  const actionEpisodes = selected.length > 0 ? selected : visibleEpisodes;
+  const remainingEpisodes = item.episodes.filter((episode) => !completedEpisodes.has(episode.recordId));
+  const actionEpisodes = hasSelection ? selected : remainingEpisodes;
   const actionRecordIds = actionEpisodes.map((episode) => episode.recordId);
   const actionCompleted =
     actionEpisodes.length > 0 &&
     actionEpisodes.every((episode) => completedEpisodes.has(episode.recordId));
-  const allVisibleEpisodesCompleted =
-    visibleEpisodes.length > 0 &&
-    visibleEpisodes.every((episode) => completedEpisodes.has(episode.recordId));
-  const doseActionDisabled =
-    !hasSelection && (doseActionSettled || allVisibleEpisodesCompleted);
+  const allEpisodesCompleted = item.episodes.length > 0 && remainingEpisodes.length === 0;
+  const doseActionDisabled = !hasSelection && allEpisodesCompleted;
 
   async function handleDoseAction() {
     if (doseActionDisabled || doseActionPendingRef.current || mutationPending) return;
@@ -263,10 +259,8 @@ function TimelineItem({
           return new Set([...previousCompletedEpisodes, ...savedRecordIds]);
         });
         setSelectedEpisodes(new Set(failedRecordIds));
-        if (savedRecordIds.length > 0) setDoseActionSettled(true);
         return;
       }
-      setDoseActionSettled(true);
     } finally {
       doseActionPendingRef.current = false;
       setDoseActionPending(false);
@@ -321,19 +315,17 @@ function TimelineItem({
                 >
                   {selectedEpisodes.has(episode.recordId) && <Check className="size-4" />}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-start gap-2">
-                    <h3 className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base font-bold text-foreground">{episodeTitle}</h3>
+                <span className="flex min-w-0 flex-1 flex-col">
                     {episodeCompleted && (
                       <span
                         data-episode-completed-badge
-                        className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-primary-bg px-2 py-0.5 text-xs font-bold text-primary-strong"
+                        aria-hidden="true"
+                        className="mb-1 self-start rounded-pill bg-primary-bg px-2 py-0.5 text-sm font-bold text-primary-strong"
                       >
                         복용 완료
-                        <Check aria-hidden className="size-5" />
                       </span>
                     )}
-                  </span>
+                  <h3 className="min-w-0 [overflow-wrap:anywhere] text-base font-bold text-foreground">{episodeTitle}</h3>
                   <span className="block [overflow-wrap:anywhere] text-sm text-muted-foreground">
                     {summary?.name ?? '복약'}
                     {episode.medications.length > 1
@@ -440,7 +432,7 @@ function TimelineItem({
           className="min-h-touch flex-1 px-3"
           onClick={handleDoseAction}
         >
-          {actionCompleted ? '복약 기록 되돌리기' : '먹었어요'}
+          {actionCompleted || allEpisodesCompleted ? '복약 기록 되돌리기' : '먹었어요'}
         </Button>
       </div>
     </div>

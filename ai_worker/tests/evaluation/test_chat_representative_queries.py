@@ -12,6 +12,9 @@ from ai_worker.schemas.medication_chat import (
 EVALUATION_PATH = (
     Path(__file__).resolve().parents[3] / "data" / "knowledge" / "evaluation" / "chat_representative_queries.yaml"
 )
+SAFETY_RETRIEVAL_EVALUATION_PATH = (
+    Path(__file__).resolve().parents[3] / "data" / "knowledge" / "evaluation" / "chat_safety_retrieval_queries_v1.yaml"
+)
 
 
 def test_chat_representative_queries_define_balanced_source_contracts() -> None:
@@ -93,3 +96,26 @@ def test_chat_representative_queries_define_balanced_source_contracts() -> None:
         else:
             assert "PUBLIC_KNOWLEDGE" in required_sources
             assert required_sources - {"PUBLIC_KNOWLEDGE"}
+
+
+def test_chat_safety_retrieval_queries_define_twenty_fixed_cases() -> None:
+    manifest = yaml.safe_load(SAFETY_RETRIEVAL_EVALUATION_PATH.read_text(encoding="utf-8"))
+    validated = ChatEvaluationManifest.model_validate(manifest)
+
+    assert validated.dataset_version == "chat-safety-retrieval-v1"
+    assert len(validated.cases) == 20
+    assert Counter(case.category.value for case in validated.cases) == {
+        "RDB_ONLY": 7,
+        "VECTOR_ONLY": 7,
+        "RDB_AND_VECTOR": 3,
+        "NO_SOURCE": 3,
+    }
+    assert all(case.expected.answer_requirements for case in validated.cases)
+    assert all(case.expected.forbidden_claims for case in validated.cases)
+    assert all(case.expected.required_answer_markers for case in validated.cases)
+    assert all(case.expected.forbidden_answer_markers for case in validated.cases)
+
+    greeting = next(case for case in validated.cases if case.query_id == "greeting-in-scope-boundary")
+    assert greeting.expected.normalized_entities == []
+    assert greeting.expected.section_types == []
+    assert greeting.expected.route == MedicationChatRoute.OUT_OF_SCOPE

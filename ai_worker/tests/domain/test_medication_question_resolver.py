@@ -421,6 +421,32 @@ async def test_resolver_requests_clarification_for_shared_product_prefix() -> No
 
 
 @pytest.mark.asyncio
+async def test_resolver_uses_longest_multiword_prefix_for_ingredient_family() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticExpressionCatalog(
+            [
+                "비타민 A",
+                "비타민 B1",
+                "비타민 B2",
+                "비타민 B12",
+                "비타민 B12 500 다이렉트",
+            ],
+        ),
+    )
+
+    result = await resolver.resolve(question="비타민 B는 어떤 역할을 해?")
+
+    assert result.scope == MedicationQuestionScope.IN_SCOPE
+    assert result.status == (MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED)
+    assert result.candidate_names == [
+        "비타민 B1",
+        "비타민 B12",
+        "비타민 B12 500 다이렉트",
+        "비타민 B2",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_resolver_requests_clarification_for_tied_candidates() -> None:
     resolver = RuleBasedMedicationQuestionResolver(
         catalog=StaticExpressionCatalog(["타이레놀", "타이레널"]),

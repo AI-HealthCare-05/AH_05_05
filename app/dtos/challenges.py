@@ -201,6 +201,51 @@ class ProgressResponse(SnakeModel):
     completed_at: datetime | None
 
 
+class CatalogBadgeResponse(SnakeModel):
+    id: int
+    name: str
+    description: str | None
+    image_path: str
+
+
+class ChallengeCatalogResponse(SnakeModel):
+    id: int
+    name: str
+    phrase: str
+    description: str | None
+    challenge_type_code: str
+    period_code: str
+    duration_days: int
+    check_type_code: str
+    frequency_code: str
+    recruit_start_at: datetime
+    recruit_end_at: datetime
+    reward_badge: CatalogBadgeResponse | None
+    can_join: bool
+    participation_id: int | None
+
+
+class ChallengeCatalogListResponse(SnakeModel):
+    items: list[ChallengeCatalogResponse]
+    total_count: int
+    offset: int
+    limit: int
+
+
+class VerificationResponse(SnakeModel):
+    id: int
+    user_challenge_id: int
+    progress_id: int
+    verification_date: date
+    content: str | None
+    image_path: str | None
+    status: ChallengeVerificationStatus
+    rejection_reason: str | None
+    reviewed_by_admin_id: int | None
+    reviewed_at: datetime | None
+    submitted_at: datetime
+
+
 class UserChallengeResponse(SnakeModel):
     id: int
     user_id: int
@@ -216,6 +261,11 @@ class UserChallengeResponse(SnakeModel):
     completed_at: datetime | None
     cancelled_at: datetime | None
     progress_periods: list[ProgressResponse]
+    challenge: ChallengeCatalogResponse
+    today: date
+    today_verification: VerificationResponse | None
+    can_verify: bool
+    verified_dates: list[date]
 
 
 class UserChallengeListResponse(SnakeModel):
@@ -228,20 +278,6 @@ class VerificationCreateRequest(SnakeModel):
     idempotency_key: str = Field(min_length=16, max_length=64)
     content: str | None = Field(default=None, max_length=500)
     image_path: str | None = Field(default=None, max_length=500)
-
-
-class VerificationResponse(SnakeModel):
-    id: int
-    user_challenge_id: int
-    progress_id: int
-    verification_date: date
-    content: str | None
-    image_path: str | None
-    status: ChallengeVerificationStatus
-    rejection_reason: str | None
-    reviewed_by_admin_id: int | None
-    reviewed_at: datetime | None
-    submitted_at: datetime
 
 
 class VerificationListResponse(SnakeModel):

@@ -72,6 +72,81 @@ test.beforeEach(() => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
+test('completion pill stays above the hospital name across widths, expansion, selection and undo', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const overview = { ...MEDICATION_OVERVIEWS[0], alias: '연세봄내과 · 장기 건강 관리 처방' };
+  await routeHome(page, [overview]);
+  await page.goto('/home');
+  const detail = page.getByRole('group', { name: '아침약 상세' });
+  const row = detail.locator('[data-episode-row]');
+  const pill = row.locator('[data-episode-completed-badge]');
+  await expect(pill).toHaveCount(0);
+  await detail.getByRole('button', { name: /처방 펼치기$/ }).click();
+  await expect(row).toHaveAttribute('aria-pressed', 'false');
+  await row.click();
+  await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
+  await expect(row).toHaveAttribute('aria-pressed', 'false');
+  await expect(pill).toHaveText('복용 완료');
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    const pillBox = (await pill.boundingBox())!;
+    const titleBox = (await row.getByRole('heading').boundingBox())!;
+    expect(pillBox.y + pillBox.height).toBeLessThanOrEqual(titleBox.y);
+    expect(Math.abs(pillBox.x - titleBox.x)).toBeLessThanOrEqual(1);
+    expect(await detail.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    expect((await detail.getByRole('button', { name: /처방 접기$/ }).boundingBox())!.width).toBe(44);
+    await page.screenshot({ path: testInfo.outputPath(`353-home-medication-completion-${width}.png`), fullPage: true });
+  }
+  await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  await expect(pill).toHaveText('복용 완료');
+  await detail.getByRole('button', { name: '복약 기록 되돌리기' }).click();
+  await expect(pill).toHaveCount(0);
+  await expect(row).toHaveAttribute('aria-pressed', 'false');
+});
+
+for (const { hiddenFails, allVisibleTaken } of [
+  { hiddenFails: false, allVisibleTaken: false },
+  { hiddenFails: true, allVisibleTaken: false },
+  { hiddenFails: false, allVisibleTaken: true },
+]) {
+  test(`collapsed group records hidden incomplete prescriptions and preserves taken ones${hiddenFails ? ' with hidden retry' : allVisibleTaken ? ' when all visible rows are complete' : ''}`, async ({ page }) => {
+    test.setTimeout(30_000);
+    await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+    await routeHome(page);
+    const requests: Array<{ recordId: number; taken: boolean }> = [];
+    let failHidden = hiddenFails;
+    const records = [{ recordId: 36, date: '2026-08-25', slot: 'morning', taken: true }];
+    if (allVisibleTaken) records.push({ recordId: 24, date: '2026-08-25', slot: 'morning', taken: true });
+    await page.route('**/api/v1/medications/doses*', async route => {
+      if (route.request().method() === 'GET') return fulfillJson(route, records);
+      const request = route.request().postDataJSON();
+      requests.push(request);
+      if (request.recordId === 12 && failHidden) {
+        failHidden = false;
+        return fulfillJson(route, { message: '잠시 후 다시 시도해주세요' }, 503);
+      }
+      records.push(request);
+      return fulfillJson(route, request);
+    });
+    await page.goto('/home');
+    const detail = page.getByRole('group', { name: '아침약 상세' });
+    await expect(detail.getByRole('article')).toHaveCount(2);
+    await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
+    await expect.poll(() => requests.map(item => item.recordId).sort()).toEqual(allVisibleTaken ? [12] : [12, 24]);
+    expect(requests.every(item => item.taken)).toBe(true);
+    if (hiddenFails) {
+      await page.getByRole('dialog').getByRole('button', { name: '다시 시도' }).click();
+      await expect.poll(() => requests.map(item => item.recordId).sort()).toEqual([12, 12, 24]);
+    }
+    await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
+    await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(3);
+    await expect(detail.getByRole('button', { name: '복약 기록 되돌리기' })).toBeDisabled();
+    expect(requests.every(item => item.recordId !== 36 && item.taken)).toBe(true);
+  });
+}
+
 test('오늘의 복약 처방은 기존 순서의 역순으로 표시한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await routeHome(page);
@@ -126,7 +201,7 @@ test('약 이름에 포함된 함량은 펼친 상세에서 반복하지 않는�
   await expect(first.getByRole('listitem').first()).toHaveText('아모잘탄정 5/50mg');
 });
 
-test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방은 기록하지 않는다', async ({ page }) => {
+test('처방이 3개 이상이면 두 행만 먼저 보여줘도 기본 복용은 접힌 처방까지 기록한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await routeHome(page);
   await page.goto('/home');
@@ -169,14 +244,22 @@ test('처방이 3개 이상이면 두 행만 먼저 보여주고 접힌 처방�
 
   const action = detail.getByRole('button', { name: '먹었어요' });
   await action.click();
-  await expect(detail.getByRole('article').nth(0).getByText('복용 완료')).toBeVisible();
-  await expect(detail.getByRole('article').nth(1).getByText('복용 완료')).toBeVisible();
+  const firstCompleted = detail.getByRole('article').nth(0).locator('[data-episode-completed-badge]');
+  const secondCompleted = detail.getByRole('article').nth(1).locator('[data-episode-completed-badge]');
+  await expect(firstCompleted).toBeVisible();
+  await expect(secondCompleted).toBeVisible();
+  await expect(firstCompleted).toHaveAttribute('aria-hidden', 'true');
+  await expect(firstCompleted).toHaveText('복용 완료');
+  const badgeBox = (await firstCompleted.boundingBox())!;
+  const titleBox = (await detail.getByRole('article').nth(0).getByRole('heading').boundingBox())!;
+  expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(titleBox.y);
+  expect(Math.abs(badgeBox.x - titleBox.x)).toBeLessThanOrEqual(1);
   await expect(detail.getByRole('article').nth(2)).toHaveCount(0);
   await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
   const hiddenEpisode = detail.getByRole('article').nth(2);
   await expect(hiddenEpisode.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
-  await expect(hiddenEpisode.getByText('복용 완료', { exact: true })).toHaveCount(0);
-  await expect(hiddenEpisode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 선택' })).toHaveAttribute(
+  await expect(hiddenEpisode.locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
+  await expect(hiddenEpisode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 복용 완료' })).toHaveAttribute(
     'aria-pressed',
     'false',
   );
@@ -211,7 +294,7 @@ test('긴 처방 별칭과 약 이름은 모바일과 데스크톱에서 화살�
   }];
   await routeHome(page, longOverview);
 
-  for (const width of [320, 375, 430, 1280]) {
+  for (const width of [320, 390, 430, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/home');
     const article = page.getByRole('region', { name: '오늘의 복약' }).getByRole('article');

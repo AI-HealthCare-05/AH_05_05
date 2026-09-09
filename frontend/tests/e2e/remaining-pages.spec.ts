@@ -65,6 +65,7 @@ test('약에 근거한 챗봇 답변은 약봉투와 공식 자료 출처를 함
   await page.getByRole('textbox', { name: '질문 입력' }).fill('리바록사반 먹을 때 조심할 점은?');
   await page.getByRole('button', { name: '보내기' }).click();
 
+  await page.getByRole('button', { name: '근거 보기 2개' }).click();
   await expect(page.getByText('약봉투 · 리바록사반 10mg')).toBeVisible();
   await expect(page.getByText('e약은요 · 리바록사반')).toBeVisible();
 });
@@ -80,10 +81,14 @@ test('챗봇 답변의 문단 줄바꿈을 화면에서도 유지한다', async 
   await expect(answer).toContainText(/알려주세요\.\n\n임의로 중단하지 마세요\./);
 });
 
-test('로그인하지 않은 마이 방문은 뒤로 가도 마이페이지를 복원하지 않고 로그인으로 이동한다', async ({ page }) => {
+test('게스트 마이의 로그인 안내에서 로그인으로 이동한 뒤 뒤로 가면 홈을 복원한다', async ({ page }) => {
   await page.goto('/home');
   await page.getByRole('button', { name: '마이', exact: true }).click();
 
+  await expect(page).toHaveURL(/\/home$/);
+  const prompt = page.getByRole('dialog');
+  await expect(prompt.getByRole('heading', { name: '로그인하고, 나만의 복약관리를 시작해 보세요.' })).toBeVisible();
+  await prompt.getByRole('button', { name: '로그인 · 회원가입', exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goBack();
   await expect(page).toHaveURL(/\/home$/);

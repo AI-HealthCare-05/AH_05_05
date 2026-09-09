@@ -1,5 +1,8 @@
 from qdrant_client import AsyncQdrantClient
 
+from ai_worker.chains.conditional_question_interpretation_chain import (
+    build_conditional_question_interpretation_chain,
+)
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.domain.medication_question_resolver import (
@@ -130,6 +133,16 @@ def build_medication_chat_core_service(
     expression_catalog = DbMedicationExpressionCatalog(
         supplement_catalog=supplement_ingredient_catalog,
     )
+    conditional_interpretation_chain = (
+        build_conditional_question_interpretation_chain(
+            model=settings.OPENAI_CHAT_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
+        if settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED
+        else None
+    )
     use_case = AnswerMedicationQuestionUseCase(
         context_provider=DbActiveIntakeContextProvider(),
         guide_repository=DbMedicationProductGuideRepository(),
@@ -154,6 +167,7 @@ def build_medication_chat_core_service(
             catalog=expression_catalog,
         ),
         supplement_ingredient_catalog=supplement_ingredient_catalog,
+        conditional_interpretation_chain=conditional_interpretation_chain,
     )
     return MedicationChatCoreService(
         use_case=use_case,

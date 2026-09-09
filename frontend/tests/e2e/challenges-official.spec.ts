@@ -8,13 +8,13 @@ test.beforeEach(() => {
 
 test.setTimeout(20_000);
 
-test('개발용과 프로덕션 챌린지 경로 모두 목업 기준일과 초기화를 알린다', async ({ page }) => {
+test('개발용 챌린지 경로만 목업 기준일과 초기화를 알린다', async ({ page }) => {
   const notice = '목업 미리보기 · 기준일 2026.09.13 · 새로고침 시 초기화';
   await page.goto('/dev/challenges');
   await expect(page.getByText(notice, { exact: true })).toBeVisible();
 
   await page.goto('/challenges');
-  await expect(page.getByText(notice, { exact: true })).toBeVisible();
+  await expect(page.getByText(notice, { exact: true })).toHaveCount(0);
 });
 
 test('둘러보기에서 미참여 공식 챌린지를 선택하고 참여를 시작한다', async ({ page }) => {

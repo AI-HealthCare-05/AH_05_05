@@ -6,7 +6,7 @@ import { createAccount, type Gender } from '@/entities/account';
 import { login, requestPasswordReset } from '@/entities/auth';
 import { requestEmailVerification, verifyEmailCode } from '@/entities/email-verification';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
-import { TermsPage } from '@/pages/legal';
+import { PrivacyPage, TermsPage } from '@/pages/legal';
 import { ApiError } from '@/shared/api/client';
 import {
   MIN_BIRTH_DATE,
@@ -95,6 +95,7 @@ export function AuthPage() {
   const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showSignupTerms, setShowSignupTerms] = useState(false);
+  const [showSignupPrivacy, setShowSignupPrivacy] = useState(false);
   const today = formatDateInputValue(new Date());
 
   useEffect(() => {
@@ -149,6 +150,7 @@ export function AuthPage() {
     setPhoneNumberError(null);
     setLoginError(null);
     setShowSignupTerms(false);
+    setShowSignupPrivacy(false);
     setPasswordResetDialogOpen(false);
     setPasswordResetSending(false);
     setPasswordResetMessage(null);
@@ -393,6 +395,10 @@ export function AuthPage() {
 
   if (showSignupTerms) {
     return <TermsPage onBack={() => setShowSignupTerms(false)} />;
+  }
+
+  if (showSignupPrivacy) {
+    return <PrivacyPage onBack={() => setShowSignupPrivacy(false)} />;
   }
 
   return (
@@ -864,14 +870,13 @@ export function AuthPage() {
                             </div>
                           </dl>
                         </details>
-                        <Link
-                          to="/privacy"
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => setShowSignupPrivacy(true)}
                           className="inline-flex min-h-touch items-center text-sm font-semibold text-primary underline-offset-4 hover:underline"
                         >
                           개인정보 처리 안내 보기
-                        </Link>
+                        </button>
                       </div>
                     </div>
                     <div>

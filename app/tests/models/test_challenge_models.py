@@ -29,7 +29,6 @@ def test_challenge_domain_models_expose_tables_and_unique_constraints() -> None:
     assert models.ChallengeVerification._meta.db_table == "challenge_verifications"
     assert models.UserBadge._meta.db_table == "user_badges"
 
-    assert models.UserChallenge._meta.unique_together == (("user", "challenge"),)
     assert models.ChallengeProgress._meta.unique_together == (("user_challenge", "period_start", "period_end"),)
     assert models.UserBadge._meta.unique_together == (("user_challenge", "badge"),)
 

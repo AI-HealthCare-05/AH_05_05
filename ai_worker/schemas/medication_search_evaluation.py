@@ -363,3 +363,114 @@ class MedicationSearchModeComparisonReport(BaseModel):
     blocking_reasons: list[str] = Field(default_factory=list)
     warning_reasons: list[str] = Field(default_factory=list)
     metric_deltas: dict[str, float] = Field(default_factory=dict)
+
+
+class RerankerEvaluationEligibility(StrEnum):
+    ELIGIBLE = "ELIGIBLE"
+    ALREADY_IN_TOP_5 = "ALREADY_IN_TOP_5"
+    GOLD_NOT_IN_TOP_30 = "GOLD_NOT_IN_TOP_30"
+
+
+class RerankerActivationDecision(StrEnum):
+    """평가 결과일 뿐, 이 값만으로 런타임 경로를 활성화하지 않는다."""
+
+    KEEP_RUNTIME_DISABLED = "KEEP_RUNTIME_DISABLED"
+    ELIGIBLE_FOR_CONTROLLED_ACTIVATION = "ELIGIBLE_FOR_CONTROLLED_ACTIVATION"
+
+
+class RerankerEvaluationCandidate(BaseModel):
+    """Top 30 검색 후보와 오프라인 reranker 점수 관측값이다."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    document_id: str = Field(min_length=1)
+    wrong_target: bool = False
+    reranker_score: float | None = None
+
+    @field_validator("document_id")
+    @classmethod
+    def normalize_document_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("reranker 후보 document_id는 비어 있을 수 없습니다.")
+        return normalized
+
+
+class RerankerEvaluationCase(BaseModel):
+    """정답 문서가 Top 30 안에 있는지 확인할 수 있는 A/B 평가 입력이다."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query_id: str = Field(min_length=1)
+    question: str = Field(min_length=1)
+    expected_document_ids: list[str] = Field(min_length=1)
+    baseline_candidates: list[RerankerEvaluationCandidate] = Field(min_length=1, max_length=30)
+    search_latency_ms: float = Field(ge=0.0)
+    reranker_latency_ms: float = Field(ge=0.0)
+
+    @field_validator("query_id", "question")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("reranker 평가 query_id와 question은 비어 있을 수 없습니다.")
+        return normalized
+
+    @field_validator("expected_document_ids")
+    @classmethod
+    def normalize_expected_document_ids(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        if not normalized:
+            raise ValueError("reranker 평가에는 정답 문서 ID가 하나 이상 필요합니다.")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_unique_baseline_document_ids(self) -> "RerankerEvaluationCase":
+        document_ids = [candidate.document_id for candidate in self.baseline_candidates]
+        if len(document_ids) != len(set(document_ids)):
+            raise ValueError("reranker 평가 후보의 document_id는 중복될 수 없습니다.")
+        return self
+
+
+class RerankerEvaluationMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query_count: int = Field(ge=1)
+    hit_at_5: float = Field(ge=0.0, le=1.0)
+    mrr: float = Field(ge=0.0, le=1.0)
+    source_precision: float = Field(ge=0.0, le=1.0)
+    wrong_target_mixing_rate: float = Field(ge=0.0, le=1.0)
+    search_p95_ms: float = Field(ge=0.0)
+
+
+class RerankerEvaluationCaseResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query_id: str
+    eligibility: RerankerEvaluationEligibility
+    baseline_first_relevant_rank: int | None = Field(default=None, ge=1)
+    reranked_first_relevant_rank: int | None = Field(default=None, ge=1)
+    baseline_hit_at_5: bool | None = None
+    reranked_hit_at_5: bool | None = None
+    baseline_reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    reranked_reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    baseline_wrong_target_mixing_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    reranked_wrong_target_mixing_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    baseline_search_latency_ms: float = Field(ge=0.0)
+    reranked_search_latency_ms: float = Field(ge=0.0)
+
+
+class RerankerABReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = "reranker-ab-evaluation-v1"
+    final_top_k: int = Field(default=5, ge=1)
+    candidate_top_k: int = Field(default=30, ge=1)
+    max_p95_increase_ms: float = Field(ge=0.0)
+    eligible_query_count: int = Field(ge=0)
+    excluded_query_count: int = Field(ge=0)
+    baseline: RerankerEvaluationMetrics | None = None
+    reranked: RerankerEvaluationMetrics | None = None
+    decision: RerankerActivationDecision
+    blocking_reasons: list[str] = Field(default_factory=list)
+    results: list[RerankerEvaluationCaseResult]

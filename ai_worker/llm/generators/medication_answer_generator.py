@@ -154,6 +154,7 @@ class OpenAIMedicationAnswerGenerator:
                     status=MedicationAnswerRewriteStatus.DRAFT_FALLBACK,
                     fallback_used=True,
                     fallback_reason=fallback_reason,
+                    declared_section_types=payload.section_types,
                     draft_answer_hash=draft_hash,
                     generated_answer_hash=generated_hash,
                 ),
@@ -170,6 +171,7 @@ class OpenAIMedicationAnswerGenerator:
             observation=MedicationAnswerGenerationObservation(
                 status=MedicationAnswerRewriteStatus.REWRITTEN,
                 fallback_used=False,
+                declared_section_types=payload.section_types,
                 draft_answer_hash=draft_hash,
                 generated_answer_hash=generated_hash,
             ),

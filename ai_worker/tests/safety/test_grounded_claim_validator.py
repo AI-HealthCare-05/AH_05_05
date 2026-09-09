@@ -1,5 +1,8 @@
 import pytest
 
+from ai_worker.llm.assemblers.medication_answer_assembler import (
+    MEDICAL_DISCLAIMER,
+)
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
@@ -11,7 +14,11 @@ from ai_worker.schemas.medication_chat import (
 )
 
 
-def build_result(answer: str) -> MedicationChatResult:
+def build_result(
+    answer: str,
+    *,
+    official_warning_texts: list[str] | None = None,
+) -> MedicationChatResult:
     return MedicationChatResult(
         request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
         answer=answer,
@@ -19,6 +26,7 @@ def build_result(answer: str) -> MedicationChatResult:
         safety_status=SafetyStatus.SAFE,
         prompt_version="medication-chat-prompt-v1",
         schema_version="medication-chat-result-v1",
+        official_warning_texts=official_warning_texts or [],
     )
 
 
@@ -33,14 +41,64 @@ async def test_validator_replaces_medication_change_instruction() -> None:
     assert "MEDICATION_CHANGE_INSTRUCTION" in result.safety_reason_codes
 
 
-async def test_validator_restricts_answer_without_disclaimer() -> None:
+async def test_validator_allows_official_product_warning_when_answer_matches_source() -> None:
+    warning = "이 약 복용 후 피부 발진 또는 과민반응의 징후가 나타나는 경우 즉시 복용을 중단하십시오."
+
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(
+            f"주의사항: {warning}\n\n이 안내는 의료진의 진료를 대체하지 않습니다.",
+            official_warning_texts=[warning],
+        ),
+    )
+
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.safety_reason_codes == []
+    assert warning in result.answer
+
+
+async def test_validator_still_blocks_unmatched_instruction_with_official_warning_present() -> None:
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(
+            "오늘부터 약 복용을 중단하세요. 이 안내는 의료진의 진료를 대체하지 않습니다.",
+            official_warning_texts=[
+                "피부 발진이 나타나는 경우 의료진 또는 약사와 상담하십시오.",
+            ],
+        ),
+    )
+
+    assert result.safety_status == SafetyStatus.BLOCKED
+    assert "MEDICATION_CHANGE_INSTRUCTION" in result.safety_reason_codes
+
+
+async def test_validator_exposes_hashed_medication_change_diagnostics() -> None:
+    validator = RuleBasedGroundedClaimValidator()
+    original_answer = "오늘부터 약 복용을 중단하세요. 이 안내는 의료진의 진료를 대체하지 않습니다."
+
+    diagnose = getattr(validator, "diagnose", None)
+
+    assert callable(diagnose)
+    diagnostic = diagnose(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(original_answer),
+    )
+    assert diagnostic.rule_code == "MEDICATION_CHANGE_INSTRUCTION"
+    assert diagnostic.matched_action == "STOP"
+    assert diagnostic.matched_target == "MEDICATION"
+    assert len(diagnostic.matched_fragment_hash) == 64
+    assert "중단하세요" not in diagnostic.model_dump_json()
+
+
+async def test_validator_adds_disclaimer_without_restricting_safe_answer() -> None:
     result = await RuleBasedGroundedClaimValidator().validate(
         context=ActiveIntakeContext(user_id=1),
         result=build_result("제품 설명서의 주의사항을 확인하세요."),
     )
 
-    assert result.safety_status == SafetyStatus.RESTRICTED
-    assert "MISSING_MEDICAL_DISCLAIMER" in result.safety_reason_codes
+    assert result.safety_status == SafetyStatus.SAFE
+    assert "MISSING_MEDICAL_DISCLAIMER" not in result.safety_reason_codes
+    assert result.answer.endswith(MEDICAL_DISCLAIMER)
 
 
 async def test_validator_preserves_existing_restricted_status() -> None:

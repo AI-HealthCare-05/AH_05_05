@@ -8,6 +8,9 @@ from ai_worker.domain.chat_content_compactor import (
     HISTORY_COMPACTION_MARKER,
     compact_chat_content,
 )
+from ai_worker.domain.chat_session_reference_memory import (
+    ChatSessionReferenceMemory,
+)
 from ai_worker.domain.errors import AIWorkerError
 from ai_worker.observability.chat_tracer import (
     ChatSpan,
@@ -337,21 +340,23 @@ class ChatApplicationService:
             raise ChatProcessingFailedError
         started_at = self._clock()
         try:
+            history = [
+                ChatHistoryMessage(
+                    role=(ChatRole.USER if message.role == ChatMessageRole.USER else ChatRole.ASSISTANT),
+                    content=compact_chat_content(
+                        message.content,
+                        marker=HISTORY_COMPACTION_MARKER,
+                    ),
+                )
+                for message in accepted.history
+            ]
             request = MedicationChatRequest(
                 request_id=command.request_id,
                 user_id=user.id,
                 care_episode_id=(accepted.session.care_episode_id or command.record_id),
                 question=command.message,
-                history=[
-                    ChatHistoryMessage(
-                        role=(ChatRole.USER if message.role == ChatMessageRole.USER else ChatRole.ASSISTANT),
-                        content=compact_chat_content(
-                            message.content,
-                            marker=HISTORY_COMPACTION_MARKER,
-                        ),
-                    )
-                    for message in accepted.history
-                ],
+                history=history,
+                session_reference=ChatSessionReferenceMemory().from_history(history),
             )
             async with asyncio.timeout(self._answer_timeout_seconds):
                 core_result = await self._core_service.answer(

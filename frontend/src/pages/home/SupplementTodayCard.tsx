@@ -182,19 +182,21 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                   >
                     {isSelected && <Check className="size-4" strokeWidth={3} />}
                   </span>
-                  <span className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base font-bold text-foreground">{supplement.name}</span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-1 py-1">
+                    {taken && (
+                      <span
+                        data-supplement-completed-badge
+                        aria-hidden="true"
+                        className="self-start rounded-pill bg-primary-bg px-2 py-0.5 text-sm font-bold text-primary-strong"
+                      >
+                        복용 완료
+                      </span>
+                    )}
+                    <span className="[overflow-wrap:anywhere] text-base font-bold text-foreground">{supplement.name}</span>
+                  </span>
                   <span className="shrink-0 text-sm text-muted-foreground">
                     {supplement.doseAmount}{supplement.doseUnit}
                   </span>
-                  {taken && (
-                    <span
-                      data-supplement-completed-badge
-                      className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-primary-bg px-2 py-0.5 text-xs font-bold text-primary-strong"
-                    >
-                      복용 완료
-                      <Check aria-hidden className="size-4" />
-                    </span>
-                  )}
                 </button>
               </li>
             );

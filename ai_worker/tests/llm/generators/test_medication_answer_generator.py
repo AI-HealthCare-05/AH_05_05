@@ -208,6 +208,10 @@ async def test_generator_falls_back_when_rewrite_adds_uncovered_section() -> Non
     assert outcome.result.answer == initial.answer
     assert outcome.observation.status == MedicationAnswerRewriteStatus.DRAFT_FALLBACK
     assert outcome.observation.fallback_reason == (MedicationAnswerFallbackReason.UNSUPPORTED_EVIDENCE_SECTION)
+    assert outcome.observation.declared_section_types == [
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.CAUTION,
+    ]
 
 
 async def test_generator_reports_dosage_fallback_reason() -> None:

@@ -415,13 +415,14 @@ export function OcrReviewPage() {
     if (
       !batchId ||
       !result ||
-      (result.ocrStatus !== 'ready_for_review' && result.ocrStatus !== 'complete')
+      (result.ocrStatus !== 'ready_for_review' && result.ocrStatus !== 'complete' &&
+        !(result.ocrStatus === 'failed' && dismissedOcrFailure))
     ) {
       return undefined;
     }
     return {
       batchId,
-      documentImageUrl: result.documentImageUrl,
+      documentImageUrl: 'documentImageUrl' in result ? result.documentImageUrl : '',
       hospitalName,
       hospitalNameConfidence,
       hospitalNameReviewed,
@@ -431,7 +432,7 @@ export function OcrReviewPage() {
       episodeAlias,
       medications,
       reviewedMedicationIds: [...reviewedMedicationIds],
-      lowConfidenceCount: result.lowConfidenceCount,
+      lowConfidenceCount: 'lowConfidenceCount' in result ? result.lowConfidenceCount : 0,
     };
   }
 
@@ -448,6 +449,7 @@ export function OcrReviewPage() {
     if (
       !result ||
       (result.ocrStatus !== 'ready_for_review' &&
+        !(result.ocrStatus === 'failed' && dismissedOcrFailure) &&
         !(registrationEditMode && result.ocrStatus === 'complete')) ||
       !batchId ||
       !dispensedDate
@@ -602,7 +604,10 @@ export function OcrReviewPage() {
 
   const noMedicationsExtracted =
     result.ocrStatus === 'ready_for_review' && result.medications.length === 0;
-  if (noMedicationsExtracted && !dismissedOcrFailure) {
+  const ocrFailed = result.ocrStatus === 'failed';
+  // Keep legacy empty review results on the same recovery screen as failed jobs.
+  const unreadableDocument = noMedicationsExtracted || ocrFailed;
+  if (unreadableDocument && !dismissedOcrFailure) {
     return (
       <PageFrame title="다시 촬영해주세요" onBack={() => navigate('/document-upload', { replace: true })}>
         <RegistrationProgress step={2} />
@@ -618,11 +623,19 @@ export function OcrReviewPage() {
             직접 입력하기
           </Button>
         </div>
+        <ErrorDialog
+          open
+          title="문서를 읽지 못했어요"
+          message={loadError ?? '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'}
+          retryLabel="다시 촬영"
+          onRetry={() => navigate('/document-upload', { replace: true })}
+          secondaryLabel="그대로 직접 입력"
+          onSecondary={() => setDismissedOcrFailure(true)}
+        />
       </PageFrame>
     );
   }
 
-  const ocrFailed = result.ocrStatus === 'failed';
   const ocrCancelled = result.ocrStatus === 'cancelled';
   const showOcrFailure = (ocrFailed || ocrCancelled) && !dismissedOcrFailure;
   const returnToSchedule = () => {
@@ -655,7 +668,7 @@ export function OcrReviewPage() {
           <Card tone="info" title="저장한 내용을 다시 확인해보세요">
             확인을 마치면 복약 시간 설정으로 돌아갈 수 있어요.
           </Card>
-        ) : noMedicationsExtracted ? (
+        ) : unreadableDocument ? (
           <Card tone="info" title="약 정보를 직접 입력해주세요">
             사진에서 약 정보를 읽지 못했어요. 직접 추가 버튼으로 약을 입력할 수 있어요.
           </Card>

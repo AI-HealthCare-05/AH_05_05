@@ -1,9 +1,11 @@
 from datetime import date, datetime, time
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 from app.dtos.base import BaseSerializerModel
+
+HospitalName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 
 
 class FollowUpVisitCreateRequest(BaseModel):
@@ -11,7 +13,7 @@ class FollowUpVisitCreateRequest(BaseModel):
 
     visit_date: date
     visit_time: time | None = None
-    hospital: Annotated[str | None, Field(max_length=255)] = None
+    hospital: HospitalName
 
 
 class FollowUpVisitUpdateRequest(BaseModel):
@@ -19,7 +21,14 @@ class FollowUpVisitUpdateRequest(BaseModel):
 
     visit_date: date | None = None
     visit_time: time | None = None
-    hospital: Annotated[str | None, Field(max_length=255)] = None
+    hospital: HospitalName | None = None
+
+    @field_validator("hospital")
+    @classmethod
+    def reject_explicit_null_hospital(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("hospital cannot be null.")
+        return value
 
 
 class FollowUpVisitResponse(BaseSerializerModel):
