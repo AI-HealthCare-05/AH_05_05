@@ -1,4 +1,4 @@
-import { House, MessageCircle, Pill, Sprout, UserRound } from 'lucide-react';
+import { House, Trophy, Pill, Sprout, UserRound } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 
 /**
@@ -11,14 +11,14 @@ export const TABS = [
   { key: 'home', label: '홈', icon: House },
   { key: 'medication', label: '복약', icon: Pill },
   { key: 'supplement', label: '영양제', icon: Sprout },
-  { key: 'chat', label: '챗봇', icon: MessageCircle },
+  { key: 'challenge', label: '챌린지', icon: Trophy },
   { key: 'my', label: '마이', icon: UserRound },
 ] as const;
 
 export type TabKey = (typeof TABS)[number]['key'];
 
 export interface BottomTabbarProps {
-  active: TabKey;
+  active: TabKey | null;
   onChange: (key: TabKey) => void;
   className?: string;
 }

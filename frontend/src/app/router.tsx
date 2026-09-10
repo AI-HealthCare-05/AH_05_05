@@ -61,6 +61,7 @@ import {
 import { registerPushNotifications } from '@/shared/push/register';
 import { DevGallery } from './DevGallery';
 import { ChatSessionProvider } from './ChatSessionContext';
+import { ChatLauncher } from './ChatLauncher';
 import { useSession } from './SessionContext';
 
 const THREE_EXCEEDED_SUPPLEMENTS = mockSupplementsWithThreeExceeded();
@@ -210,6 +211,7 @@ export function AppRouter() {
     <ChallengeMockProvider>
       <BrowserRouter>
       <ChatSessionProvider>
+        <ChatLauncher>
         <Routes>
         <Route path="/" element={<SplashPage />} />
         <Route path="/tutorial" element={<TutorialPage />} />
@@ -456,6 +458,7 @@ export function AppRouter() {
           }
         />
         </Routes>
+        </ChatLauncher>
       </ChatSessionProvider>
       </BrowserRouter>
     </ChallengeMockProvider>

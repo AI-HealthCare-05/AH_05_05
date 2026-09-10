@@ -30,7 +30,7 @@ export function ChallengeLayout() {
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <Outlet />
       </div>
-      <BottomTabbar active="my" onChange={handleTabChange} className="border-t border-border" />
+      <BottomTabbar active="challenge" onChange={handleTabChange} className="border-t border-border" />
     </div>
   );
 }

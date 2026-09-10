@@ -200,6 +200,30 @@
 }
 
 @layer utilities {
+  /* Reserve scrollable room so the launcher cannot cover the final page actions.
+     The same rule covers non-tab forms, upload, reports and legal pages. */
+  .chat-launcher-layout main::after {
+    content: '';
+    display: block;
+    flex-shrink: 0;
+    height: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .chat-launcher {
+    right: max(16px, calc((100vw - var(--container-app)) / 2 + 16px));
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .chat-launcher-layout:has(nav[aria-label='주요 화면']) .chat-launcher {
+    bottom: calc(var(--spacing-tabbar) + 16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Keep modal focus and the on-screen keyboard clear without changing page layout. */
+  body:has([role='dialog'], [role='alertdialog']) .chat-launcher,
+  .chat-launcher-layout:has(input:focus, textarea:focus, [contenteditable='true']:focus) .chat-launcher {
+    visibility: hidden;
+  }
+
   .tnum {
     font-variant-numeric: tabular-nums;
   }

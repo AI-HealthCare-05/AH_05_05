@@ -30,6 +30,7 @@ import {
   type SendChatResult,
 } from '@/entities/chat';
 import { ChatDeleteDialog } from './ChatDeleteDialog';
+import { ChatMarkdown } from './ChatMarkdown';
 import { ChatFeedbackSheet } from './ChatFeedbackSheet';
 import { ChatSessionList } from './ChatSessionList';
 import { ChatStartGuide } from './ChatStartGuide';
@@ -264,7 +265,6 @@ export function ChatPage({
   }
 
   function handleTabChange(key: TabKey) {
-    if (key === 'chat') return;
     navigate(TAB_ROUTES[key]);
   }
 
@@ -508,7 +508,7 @@ export function ChatPage({
               </p>
             </div>
           ) : (
-            <div key={index} className="flex max-w-[85%] justify-start gap-2">
+            <div key={index} className="flex min-w-0 max-w-[85%] justify-start gap-2">
               {showAvatar ? (
                 <img
                   src="/images/rxvita-mark-128.png"
@@ -521,13 +521,8 @@ export function ChatPage({
               ) : (
                 <span aria-hidden className="size-8 shrink-0" />
               )}
-              <div className="flex flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
-                <p
-                  aria-label="답변 본문"
-                  className="whitespace-pre-wrap text-base break-words text-foreground"
-                >
-                  {message.text}
-                </p>
+              <div className="flex min-w-0 flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
+                <ChatMarkdown text={message.text} />
                 <section className="border-t border-border pt-2" aria-label="주의와 한계">
                   <h3 className="text-sm font-bold text-foreground">주의와 한계</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -566,11 +561,20 @@ export function ChatPage({
           </div>
         )}
 
+        {messages.some(message => message.role === 'assistant') && (
+          <div className="mt-auto space-y-2 pt-2 text-center text-unit text-muted-foreground">
+            <p>이 답변은 AI가 생성한 답변입니다</p>
+            <p className="leading-relaxed">
+              이 안내는 보유한 자료를 바탕으로 한 참고 정보이며 의료진의 진료, 진단 또는 처방을 대체하지 않습니다. 복용 시작·중단·용량 변경은 의료진 또는 약사와 상의하세요.
+            </p>
+          </div>
+        )}
         <div ref={bottomRef} />
       </main>
 
       {/* 입력 영역 — BottomTabbar 위에 붙습니다. */}
-      <div className="flex shrink-0 items-start gap-2 border-t border-border bg-card px-page-x py-3">
+      <div className="shrink-0 border-t border-border bg-card px-page-x py-3">
+        <div className="flex items-start gap-2">
         <Input
           aria-label="질문 입력"
           value={draft}
@@ -592,9 +596,10 @@ export function ChatPage({
         >
           보내기
         </Button>
+        </div>
       </div>
 
-      <BottomTabbar active="chat" onChange={handleTabChange} className="border-t border-border" />
+      <BottomTabbar active={null} onChange={handleTabChange} className="border-t border-border" />
       <ChatFeedbackSheet
         open={feedbackOpen}
         sessionId={conversationId ?? activeSessionId}
