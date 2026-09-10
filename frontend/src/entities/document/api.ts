@@ -9,7 +9,7 @@
  */
 import { http, mockDelay } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import { mockConfirmOcrResult, mockOcrResult, mockUploadDocument } from './api.mock';
+import { mockCancelOcrResult, mockConfirmOcrResult, mockOcrResult, mockUploadDocument } from './api.mock';
 import type {
   ConfirmOcrResultPayload,
   ConfirmOcrResultResponse,
@@ -111,6 +111,17 @@ export async function getOcrResult(batchId: string): Promise<OcrResult> {
     return mockOcrResult(batchId);
   }
   return http.get<OcrResult>(`/v1/ocr/jobs/${encodeURIComponent(batchId)}`);
+}
+
+/** 재촬영 전 검토 대기 작업 취소 — POST /ocr/jobs/{ocrJobId}/cancel */
+export async function cancelOcrResult(batchId: string): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay();
+    mockCancelOcrResult(batchId);
+  } else {
+    await http.post<void>(`/v1/ocr/jobs/${encodeURIComponent(batchId)}/cancel`);
+  }
+  releaseOcrDocumentImageUrl(batchId);
 }
 
 /** 사용자 수정본 확정 — PATCH /ocr/jobs/{ocrJobId} */

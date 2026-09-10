@@ -186,7 +186,7 @@ test("dashboard loads two-column reason ring styles", async () => {
   const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
 
   assert.match(html, /styles\.css\?v=20260831-9/);
-  assert.match(html, /dashboard\.css\?v=20260909-1/);
+  assert.match(html, /dashboard\.css\?v=20260910-1/);
   assert.match(styles, /\.chat-reason-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
   assert.match(styles, /\.chat-reason-ring\s*\{[^}]*border-radius:\s*50%;/s);
 });

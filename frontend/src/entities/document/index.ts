@@ -1,4 +1,5 @@
 export {
+  cancelOcrResult,
   confirmOcrResult,
   getOcrDocumentImageUrl,
   getOcrProcessedImageUrl,

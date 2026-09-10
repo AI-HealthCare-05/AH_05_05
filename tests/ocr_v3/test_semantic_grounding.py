@@ -197,6 +197,7 @@ def test_unresolved_review_preserves_fallback_and_marks_conflict(status):
     )
     assert build_project_review(reviewed, grounded)["medications"][0]["days"] == 5
     assert any(i.field == "days" and i.code.value == "AMBIGUOUS_FIELD_VALUE" for i in grounded.issues)
+    assert build_project_review(reviewed, grounded)["medications"][0]["confidence"] == "low"
 
 
 def test_missing_review_row_is_not_silently_reported_as_success():
@@ -205,6 +206,7 @@ def test_missing_review_row_is_not_silently_reported_as_success():
     reviewed, grounded = _materialize(catalog, rows, baseline, selection)
     assert build_project_review(reviewed, grounded)["medications"][0]["name"] == "감마정"
     assert any(i.code.value == "INCOMPLETE_SEMANTIC_REVIEW" for i in grounded.issues)
+    assert build_project_review(reviewed, grounded)["medications"][0]["confidence"] == "low"
 
 
 @pytest.mark.parametrize("membership", ["missing", "duplicate"])

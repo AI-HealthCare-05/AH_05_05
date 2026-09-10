@@ -214,6 +214,35 @@ async def get_medication_guide_ocr_job(
     return _to_public_ocr_response(await service.get(user, ocr_job_id))
 
 
+@medication_guide_ocr_router.post(
+    "/ocr/jobs/{ocrJobId}/cancel",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": OcrErrorResponse, "description": "OCR 작업 없음 (OCR_JOB_NOT_FOUND)"},
+        status.HTTP_409_CONFLICT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 작업 상태 충돌 (OCR_JOB_STATE_CONFLICT)",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": OcrErrorResponse,
+            "description": "OCR 작업 ID 검증 실패 (VALIDATION_ERROR)",
+        },
+    },
+    summary="조제약 복약안내 OCR 작업 취소",
+)
+async def cancel_medication_guide_ocr_job(
+    ocr_job_id: Annotated[int, Path(alias="ocrJobId")],
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[MedicationGuideOcrJobService, Depends(get_medication_guide_ocr_job_service)],
+) -> Response:
+    await service.cancel(user, ocr_job_id)
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @medication_guide_ocr_router.patch(
     "/ocr/jobs/{ocrJobId}",
     response_model=DocumentOcrConfirmResponse,

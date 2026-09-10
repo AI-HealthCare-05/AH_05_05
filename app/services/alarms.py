@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from tortoise.exceptions import IntegrityError
@@ -8,7 +9,8 @@ from tortoise.transactions import in_transaction
 from app.core import config
 from app.dtos.alarms import AlarmCreateRequest, AlarmUpdateRequest, DeliveryAckRequest, PushSubscriptionUpsertRequest
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
-from app.models.enums import AlarmEventType, AlarmStatus, AlarmType
+from app.models.background_jobs import BackgroundJob
+from app.models.enums import AlarmEventType, AlarmStatus, AlarmType, BackgroundJobStatus, BackgroundJobType
 from app.models.users import User
 from app.repositories.alarm_repository import AlarmRepository
 from app.services.alarm_schedule import next_occurrence, validate_alarm_shape
@@ -222,19 +224,52 @@ class AlarmService:
         return alarm
 
     async def upsert_subscription(self, user: User, data: PushSubscriptionUpsertRequest) -> PushSubscription:
-        subscription = await self.repository.get_subscription_by_endpoint(data.endpoint)
-        if subscription is not None and subscription.user_id != user.id:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Push endpoint is already registered.")
+        async with in_transaction() as connection:
+            subscription = (
+                await PushSubscription.filter(endpoint=data.endpoint).using_db(connection).select_for_update().first()
+            )
+            if subscription is not None and subscription.user_id != user.id:
+                now = datetime.now(config.TIMEZONE)
+                await (
+                    BackgroundJob.filter(
+                        job_type=BackgroundJobType.ALARM,
+                        user_id=subscription.user_id,
+                        status__in=[BackgroundJobStatus.QUEUED, BackgroundJobStatus.RETRY_WAITING],
+                        idempotency_key__contains=f":{subscription.id}:",
+                    )
+                    .using_db(connection)
+                    .update(
+                        status=BackgroundJobStatus.CANCELLED,
+                        completed_at=now,
+                        updated_at=now,
+                        error_code="PUSH_SUBSCRIPTION_REPLACED",
+                    )
+                )
+                subscription.endpoint = f"revoked:{subscription.id}:{uuid4().hex}"
+                subscription.is_active = False
+                await subscription.save(
+                    using_db=connection,
+                    update_fields=["endpoint", "is_active"],
+                )
+                subscription = None
 
-        if subscription is None:
-            return await PushSubscription.create(user_id=user.id, is_active=True, **data.model_dump())
+            if subscription is None:
+                return await PushSubscription.create(
+                    user_id=user.id,
+                    is_active=True,
+                    using_db=connection,
+                    **data.model_dump(),
+                )
 
-        changes = data.model_dump(exclude={"endpoint"})
-        for field_name, value in changes.items():
-            setattr(subscription, field_name, value)
-        subscription.is_active = True
-        await subscription.save(update_fields=[*changes.keys(), "is_active"])
-        return subscription
+            changes = data.model_dump(exclude={"endpoint"})
+            for field_name, value in changes.items():
+                setattr(subscription, field_name, value)
+            subscription.is_active = True
+            await subscription.save(
+                using_db=connection,
+                update_fields=[*changes.keys(), "is_active"],
+            )
+            return subscription
 
     async def list_subscriptions(self, user: User) -> list[PushSubscription]:
         return await self.repository.list_owned_subscriptions(user.id)
