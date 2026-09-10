@@ -32,6 +32,10 @@ async function setup(page: Page, item: ReturnType<typeof participation>) {
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
   await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({ status: 404, json: {} }));
   await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: item }));
+  await page.route('**/api/v1/user/custom-challenge-participations/701/claim-reward', route => {
+    item.status = 'COMPLETED';
+    return route.fulfill({ json: { participation: item, award: null, newlyAwarded: false } });
+  });
   await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({ json: { items: [item], totalCount: 1 } }));
   await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
   await page.route('**/api/v1/user/badges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
@@ -84,19 +88,21 @@ test('an incomplete day contributes zero even with two doses done', async ({ pag
 for (const type of ['MEDICATION', 'SUPPLEMENT']) {
   test(`${type}: refreshed undo clears record, daily completion and day fill together`, async ({ page }) => {
     const item = participation(type, true);
-    const current = Object.assign(item, { targetDayCount: 2, completedDayCount: 2, dayProgressRate: '100.00' });
+    // Keep a future goal pending: undo is live only before the entire challenge is finalized.
+    item.occurrences.push({ id: 905, targetId: 801, scheduledDate: '2026-09-12', slot: 'EVENING', scheduledAt: '2026-09-12T16:00:00+09:00', isCompleted: false });
+    const current = Object.assign(item, { endAt: '2026-09-13T00:00:00+09:00', actualEndDate: '2026-09-12', targetCount: 5, progressRate: '80.00', targetDayCount: 3, completedDayCount: 2, dayProgressRate: '66.67' });
     await setup(page, current);
     await page.goto('/challenges/custom-participations/701');
-    await expect(page.getByText('2 / 2일', { exact: true })).toBeVisible();
+    await expect(page.getByText('2 / 3일', { exact: true })).toBeVisible();
     await expect(page.getByRole('status')).toContainText('다 먹었어요!');
     current.occurrences[3].isCompleted = false;
     current.completedCount = 3;
-    current.progressRate = '75.00';
+    current.progressRate = '60.00';
     current.completedDayCount = 1;
-    current.dayProgressRate = '50.00';
+    current.dayProgressRate = '33.33';
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(page.getByText('1 / 2일', { exact: true })).toBeVisible();
-    await expect(page.getByRole('progressbar', { name: '맞춤 챌린지 진행률' })).toHaveAttribute('aria-valuenow', '50');
+    await expect(page.getByText('1 / 3일', { exact: true })).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: '맞춤 챌린지 진행률' })).toHaveAttribute('aria-valuenow', '33.33');
     await expect(page.getByRole('region', { name: '날짜별 복용 기록' }).getByText('0 / 1회 완료')).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: '다 먹었어요!' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /2026.09.11, 0\/1 완료/ }).locator('span')).not.toHaveClass(/bg-primary/);

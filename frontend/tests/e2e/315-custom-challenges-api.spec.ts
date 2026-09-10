@@ -672,8 +672,7 @@ test('zero remaining goals render without an invented last goal date', async ({ 
 
 test('completed medication detail keeps the server final snapshot and its awarded badge', async ({ page }) => {
   await authenticate(page);
-  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({
-    json: participation({
+  const frozen = participation({
       status: 'COMPLETED',
       joinedAt: '2026-09-09T09:00:00+09:00',
       endAt: '2026-09-30T23:59:59+09:00',
@@ -685,19 +684,20 @@ test('completed medication detail keeps the server final snapshot and its awarde
       completedDayCount: 21,
       dayProgressRate: '100.00',
       occurrences: [],
-    }),
-  }));
-  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({
+    });
+  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: frozen }));
+  await page.route('**/api/v1/user/custom-challenge-participations/701/claim-reward', route => route.fulfill({
     json: {
-      items: [{
+      participation: frozen,
+      award: {
         id: 501,
         participationId: 701,
         badgeId: 9,
         badgeName: '복약 루틴 배지',
         badgeImagePath: '/media/badges/medication-routine.png',
         awardedAt: '2026-09-30T23:59:59+09:00',
-      }],
-      totalCount: 1,
+      },
+      newlyAwarded: false,
     },
   }));
 

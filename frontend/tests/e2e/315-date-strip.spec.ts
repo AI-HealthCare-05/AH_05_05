@@ -36,6 +36,10 @@ async function openCalendar(page: Page, item: CustomChallengeParticipation) {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() === 'GET' && path === '/api/v1/user/custom-challenge-participations/701') return route.fulfill({ json: item });
+    if (request.method() === 'POST' && path === '/api/v1/user/custom-challenge-participations/701/claim-reward') {
+      item.status = 'COMPLETED';
+      return route.fulfill({ json: { participation: item, award: null, newlyAwarded: false } });
+    }
     if (request.method() === 'GET' && path === '/api/v1/user/custom-challenges/badges') return route.fulfill({ json: { items: [], totalCount: 0 } });
     unexpected.push(`${request.method()} ${path}`);
     return route.fulfill({ status: 404, json: {} });

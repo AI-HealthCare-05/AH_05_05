@@ -9,10 +9,12 @@ async function openCalendar(page: Page, type: 'MEDICATION' | 'SUPPLEMENT' = 'MED
     id: 701, templateId: 31, challengeType: type, challengeName: '매일 챙기는 건강 루틴',
     rewardBadge: null, status: 'ACTIVE', joinedAt: '2026-09-09T00:00:00+09:00',
     endAt: '2026-09-12T23:59:59+09:00', actualEndDate: '2026-09-12',
-    targetCount: 2, completedCount: 1, progressRate: '50.00', action: 'NONE',
+    targetCount: 3, completedCount: 1, progressRate: '33.33', action: 'NONE',
     targets: [{ id: 801, sourceId: 101, name: '실제 복용 대상' }],
-    occurrences: [0, 1].map(index => ({ id: 900 + index, targetId: 801, scheduledDate: '2026-09-10',
+    // Daily completion remains editable because a later challenge goal is still pending.
+    occurrences: [...[0, 1].map(index => ({ id: 900 + index, targetId: 801, scheduledDate: '2026-09-10',
       slot: index === 0 ? 'MORNING' : 'EVENING', scheduledAt: `2026-09-10T${index === 0 ? '08' : '18'}:00:00+09:00`, isCompleted: index === 0 })),
+      { id: 902, targetId: 801, scheduledDate: '2026-09-11', slot: 'MORNING', scheduledAt: '2026-09-11T08:00:00+09:00', isCompleted: false }],
   };
   const unexpected: string[] = [];
   await page.clock.setFixedTime(new Date('2026-09-10T19:00:00+09:00'));

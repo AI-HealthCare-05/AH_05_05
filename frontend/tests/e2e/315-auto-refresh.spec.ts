@@ -35,14 +35,20 @@ async function setup(page: Page, read: () => Reply | Promise<Reply>, cancel?: ()
   });
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
-  const counts = { reads: 0, cancels: 0, unexpected: [] as string[] };
+  const counts = { reads: 0, cancels: 0, claims: 0, unexpected: [] as string[] };
+  let frozen: unknown = null;
   // Guard actual API paths only: SPA navigation must reach Vite, every API is a fixture.
   await page.route(url => url.pathname.startsWith('/api/'), async (route: Route) => {
     const pathname = new URL(route.request().url()).pathname;
     let reply: Reply;
     if (pathname === path && route.request().method() === 'GET') {
       counts.reads += 1;
-      reply = await read();
+      reply = frozen ? { json: frozen } : await read();
+    } else if (pathname === `${path}/claim-reward` && route.request().method() === 'POST') {
+      counts.claims += 1;
+      const latest = (await read()).json as ReturnType<typeof participation>;
+      frozen = { ...latest, status: 'COMPLETED' };
+      reply = { json: { participation: frozen, award: null, newlyAwarded: false } };
     } else if (pathname === `${path}/cancel` && route.request().method() === 'POST' && cancel) {
       counts.cancels += 1;
       reply = await cancel();
@@ -83,6 +89,7 @@ for (const challengeType of ['MEDICATION', 'SUPPLEMENT']) {
     await expect(targets.locator('summary')).toHaveCount(0);
     expect(await targets.getByText(targetName).evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     expect(counts.unexpected).toEqual([]);
+    await expect.poll(() => counts.claims).toBe(1);
   });
 }
 
