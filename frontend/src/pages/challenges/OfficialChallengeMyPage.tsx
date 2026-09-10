@@ -13,7 +13,8 @@ import { Button } from '@/shared/ui/Button';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { ChallengePageHeading } from './ChallengePageHeading';
 import { OfficialChallengeProgressCard } from './OfficialChallengeProgressCard';
-import { CustomChallengeMySection } from './CustomChallengeMySection';
+import { CustomChallengeProgressCard } from './CustomChallengeProgressCard';
+import { useCustomChallengeMy } from './useCustomChallengeMy';
 
 interface ChallengeDashboard {
   participations: ChallengeParticipation[];
@@ -40,6 +41,7 @@ function newIdempotencyKey(): string {
 
 export function OfficialChallengeMyPage() {
   const { principalKey } = useSession();
+  const custom = useCustomChallengeMy();
   const principalRef = useRef(principalKey);
   const requestGenerationRef = useRef(0);
   const keysRef = useRef(new Map<string, string>());
@@ -54,6 +56,7 @@ export function OfficialChallengeMyPage() {
   principalRef.current = principalKey;
 
   useEffect(() => {
+    setHistoryExpanded(false);
     requestGenerationRef.current += 1;
     return () => {
       requestGenerationRef.current += 1;
@@ -176,6 +179,10 @@ export function OfficialChallengeMyPage() {
 
   const active = data?.participations.filter(item => item.status === 'ACTIVE') ?? [];
   const history = data?.participations.filter(item => item.status !== 'ACTIVE') ?? [];
+  const customActive = custom.items?.filter(item => item.status === 'ACTIVE') ?? [];
+  const customHistory = custom.items?.filter(item => item.status !== 'ACTIVE') ?? [];
+  const historyCount = history.length + customHistory.length;
+  const emptyActive = data !== null && custom.items !== null && active.length + customActive.length === 0;
   const awarded = data?.badges?.filter(item => item.status === 'AWARDED') ?? [];
   const earnedKinds = new Set(awarded.map(item => item.badge_id));
   const badgeRefreshRequired = refreshRequiredIds.size > 0 || data?.badgeError !== null;
@@ -227,17 +234,26 @@ export function OfficialChallengeMyPage() {
           </div>
         )}
       </section>
+        </>
+      ) : null}
 
       <section aria-labelledby="active-challenges-title" className="flex flex-col gap-3">
         <h2 id="active-challenges-title" className="text-base font-bold">진행 중인 챌린지</h2>
-        {active.length === 0 ? (
+        {custom.items === null && !custom.error ? <div role="status" aria-label="내 맞춤 챌린지 불러오는 중" className="min-h-28 animate-pulse rounded-card bg-muted-bg" /> : null}
+        {custom.error ? (
+          <div role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
+            <p className="text-sm text-muted-foreground">{custom.error}</p>
+            <Button variant="secondary" onClick={custom.reload}>맞춤 챌린지 다시 불러오기</Button>
+          </div>
+        ) : null}
+        {emptyActive ? (
           <div className="flex flex-col gap-3 rounded-card bg-card p-5 text-sm text-muted-foreground shadow-card">
             <p>참여 중인 챌린지가 없어요.</p>
-            <Link to="/challenges/browse" className="font-bold text-primary">공식 챌린지 둘러보기 ›</Link>
           </div>
-        ) : active.map(item => (
+        ) : null}
+        {active.map(item => (
           <OfficialChallengeProgressCard
-            key={item.id}
+            key={`official-${item.id}`}
             participation={item}
             pending={pendingId === item.id}
             error={actionError?.id === item.id ? actionError.message : undefined}
@@ -246,25 +262,27 @@ export function OfficialChallengeMyPage() {
             onRefresh={() => void refreshDashboard(item.id)}
           />
         ))}
+        {customActive.map(item => <CustomChallengeProgressCard key={`custom-${item.id}`} participation={item} />)}
+        <div className="flex flex-wrap justify-between gap-2 text-caption font-bold text-primary">
+          <Link to="/challenges/browse" className="flex min-h-touch items-center">공식 챌린지 둘러보기 ›</Link>
+          <Link to="/challenges/tailored" className="flex min-h-touch items-center">맞춤 새로 참여하기 ›</Link>
+        </div>
       </section>
 
-      {history.length > 0 ? (
+      {historyCount > 0 ? (
         <section aria-labelledby="challenge-history-title" className="flex flex-col gap-3">
           <div className="flex min-h-touch items-center justify-between gap-3">
             <h2 id="challenge-history-title" className="text-base font-bold">지난 기록</h2>
             <button type="button" aria-expanded={historyExpanded} aria-label={historyExpanded ? '지난 기록 접기' : '지난 기록 펼치기'} onClick={() => setHistoryExpanded(value => !value)} className="min-h-touch rounded-pill px-3 text-sm font-bold text-primary">
-              {historyExpanded ? '접기' : `${history.length}개 보기`}
+              {historyExpanded ? '접기' : `${historyCount}개 보기`}
             </button>
           </div>
           {historyExpanded ? history.map(item => (
-            <OfficialChallengeProgressCard key={item.id} participation={item} pending={false} onCheckIn={() => undefined} />
+            <OfficialChallengeProgressCard key={`official-${item.id}`} participation={item} pending={false} onCheckIn={() => undefined} />
           )) : null}
+          {historyExpanded ? customHistory.map(item => <CustomChallengeProgressCard key={`custom-${item.id}`} participation={item} />) : null}
         </section>
       ) : null}
-        </>
-      ) : null}
-
-      <CustomChallengeMySection />
       </main>
     </>
   );

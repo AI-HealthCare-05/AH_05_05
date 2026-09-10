@@ -8,10 +8,18 @@ export interface CustomChallengeRecommendationTarget {
   existingParticipationId: number | null;
 }
 
+export interface CustomChallengeRewardBadge {
+  id: number;
+  name: string;
+  description: string | null;
+  imagePath: string;
+}
+
 export interface CustomChallengeRecommendation {
   templateId: number;
   challengeType: CustomChallengeType;
   challengeName: string;
+  rewardBadge: CustomChallengeRewardBadge | null;
   action: 'NONE';
   targets: CustomChallengeRecommendationTarget[];
 }
@@ -46,10 +54,11 @@ export interface CustomChallengeParticipation {
   templateId: number;
   challengeType: CustomChallengeType;
   challengeName: string;
+  rewardBadge: CustomChallengeRewardBadge | null;
   status: CustomChallengeParticipationStatus;
   joinedAt: string;
   endAt: string;
-  actualEndDate: string;
+  actualEndDate: string | null;
   targetCount: number;
   completedCount: number;
   progressRate: number | string;
@@ -60,5 +69,19 @@ export interface CustomChallengeParticipation {
 
 export interface CustomChallengeParticipationListResponse {
   items: CustomChallengeParticipation[];
+  totalCount: number;
+}
+
+export interface CustomChallengeBadgeAward {
+  id: number;
+  participationId: number;
+  badgeId: number;
+  badgeName: string;
+  badgeImagePath: string;
+  awardedAt: string;
+}
+
+export interface CustomChallengeBadgeAwardListResponse {
+  items: CustomChallengeBadgeAward[];
   totalCount: number;
 }

@@ -1,6 +1,10 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
 test.setTimeout(60_000);
+test.beforeEach(async ({ page }) => {
+  await page.route('https://fonts.googleapis.com/**', route => route.abort());
+  await page.route('https://fonts.gstatic.com/**', route => route.abort());
+});
 
 const TODAY = '2026-09-09';
 
@@ -231,7 +235,7 @@ async function stubHome(page: Page, options: HomeStubOptions = {}) {
   return counts;
 }
 
-test('홈은 맞춤 진행률을 서버 값으로 표시하고 공식 빈 상태와 모순시키지 않는다', async ({
+test('홈은 진행 중인 맞춤 카드를 모두 표시하고 서버 진행률과 공식 빈 상태를 일관되게 보여준다', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 900 });
@@ -259,8 +263,16 @@ test('홈은 맞춤 진행률을 서버 값으로 표시하고 공식 빈 상태
   const customSection = summary.getByRole('region', { name: '맞춤 챌린지' });
   await expect(customSection.getByRole('heading', { name: '맞춤 챌린지 · 진행 중 3개' }))
     .toBeVisible();
-  await expect(customSection.getByRole('link')).toHaveCount(2);
-  await expect(customSection.getByText('세 번째 맞춤 챌린지')).toHaveCount(0);
+  await expect(customSection.getByRole('link')).toHaveCount(3);
+  for (const [name, participationId] of [
+    [longName, 701],
+    ['아직 예정이 없는 챌린지', 702],
+    ['세 번째 맞춤 챌린지', 703],
+  ] as const) {
+    const card = customSection.getByRole('link').filter({ hasText: name });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('href', `/challenges/custom-participations/${participationId}`);
+  }
   await expect(summary.getByText('참여 중인 챌린지가 없어요')).toHaveCount(0);
 
   const longTitle = customSection.getByText(longName, { exact: true });

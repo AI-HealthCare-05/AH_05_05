@@ -1,6 +1,7 @@
 import { http } from '@/shared/api/client';
 
 import type {
+  CustomChallengeBadgeAwardListResponse,
   CustomChallengeParticipation,
   CustomChallengeParticipationListResponse,
   CustomChallengeRecommendationListResponse,
@@ -31,4 +32,12 @@ export function getCustomChallengeParticipation(
   return http.get<CustomChallengeParticipation>(
     `/v1/user/custom-challenge-participations/${participationId}`,
   );
+}
+
+export function getCustomChallengeBadges(): Promise<CustomChallengeBadgeAwardListResponse> {
+  return http.get<CustomChallengeBadgeAwardListResponse>('/v1/user/custom-challenges/badges');
+}
+
+export function cancelCustomChallenge(participationId: number): Promise<CustomChallengeParticipation> {
+  return http.post<CustomChallengeParticipation>(`/v1/user/custom-challenge-participations/${participationId}/cancel`);
 }

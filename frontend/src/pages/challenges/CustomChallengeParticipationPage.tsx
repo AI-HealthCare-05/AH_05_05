@@ -1,28 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { ChevronDown } from 'lucide-react';
 
 import { useSession } from '@/app/SessionContext';
 import {
+  getCustomChallengeBadges,
   getCustomChallengeParticipation,
-  type CustomChallengeMealSlot,
+  cancelCustomChallenge,
+  invalidateCustomChallengeProgress,
+  type CustomChallengeBadgeAward,
   type CustomChallengeParticipation,
 } from '@/entities/custom-challenge';
-import { ApiError } from '@/shared/api/client';
-import { Button, Header } from '@/shared/ui';
+import { ApiError, getAuthGeneration } from '@/shared/api/client';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
+import { Button, Header, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
+import { CustomChallengeCalendar } from './CustomChallengeCalendar';
+import { customChallengeDateLabel as dateLabel } from './customChallengeDates';
 
 function positiveId(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/.test(value)) return null;
   const id = Number(value);
   return Number.isSafeInteger(id) ? id : null;
-}
-
-function dateLabel(value: string) {
-  const [year, month, day] = value.slice(0, 10).split('-');
-  return `${year}.${month}.${day}`;
-}
-
-function slotLabel(slot: CustomChallengeMealSlot) {
-  return { MORNING: '아침', LUNCH: '점심', EVENING: '저녁', BEDTIME: '자기전' }[slot];
 }
 
 function progressValue(value: number | string) {
@@ -37,20 +35,6 @@ function statusLabel(status: CustomChallengeParticipation['status']) {
   return '종료';
 }
 
-const SEOUL_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'Asia/Seoul',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-function seoulDate(now = new Date()) {
-  const parts = new Map(
-    SEOUL_DATE_FORMATTER.formatToParts(now).map(part => [part.type, part.value]),
-  );
-  return `${parts.get('year')}-${parts.get('month')}-${parts.get('day')}`;
-}
-
 export function CustomChallengeParticipationPage() {
   const { participationId } = useParams();
   const id = positiveId(participationId);
@@ -61,17 +45,35 @@ export function CustomChallengeParticipationPage() {
   const [participation, setParticipation] = useState<CustomChallengeParticipation | null>(null);
   const [notFound, setNotFound] = useState(id === null);
   const [error, setError] = useState<string | null>(null);
-  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [award, setAward] = useState<CustomChallengeBadgeAward | null>(null);
+  const [badgeError, setBadgeError] = useState<string | null>(null);
+  const [badgeReloadKey, setBadgeReloadKey] = useState(0);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const cancelPendingRef = useRef(false);
   principalRef.current = principalKey;
 
+  function handleBack() {
+    const index = window.history.state?.idx;
+    if (typeof index === 'number' && index > 0) {
+      navigate(-1);
+      return;
+    }
+    navigate('/challenges', { replace: true });
+  }
+
   useEffect(() => {
+    setCancelOpen(false);
+    setCancelPending(false);
+    setCancelError(null);
+    cancelPendingRef.current = false;
     if (id === null) {
       generationRef.current += 1;
       setParticipation(null);
       setNotFound(true);
       setError(null);
-      setHistoryExpanded(false);
       return;
     }
     const generation = generationRef.current + 1;
@@ -80,7 +82,6 @@ export function CustomChallengeParticipationPage() {
     setParticipation(null);
     setNotFound(false);
     setError(null);
-    setHistoryExpanded(false);
     getCustomChallengeParticipation(id)
       .then(result => {
         if (generationRef.current === generation && principalRef.current === requestPrincipal) setParticipation(result);
@@ -96,77 +97,144 @@ export function CustomChallengeParticipationPage() {
     };
   }, [id, principalKey, reloadKey]);
 
+  useEffect(() => {
+    if (id === null || participation?.status !== 'COMPLETED') {
+      setAward(null);
+      setBadgeError(null);
+      return;
+    }
+    let active = true;
+    setAward(null);
+    setBadgeError(null);
+    getCustomChallengeBadges()
+      .then(result => {
+        if (active) setAward(result.items.find(item => item.participationId === id) ?? null);
+      })
+      .catch((reason: unknown) => {
+        if (!active || (reason instanceof ApiError && reason.status === 401)) return;
+        setBadgeError(reason instanceof Error ? reason.message : '획득 배지를 불러오지 못했어요.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [badgeReloadKey, id, participation?.status, principalKey]);
+
+  async function cancelParticipation() {
+    if (!participation || participation.status !== 'ACTIVE' || cancelPendingRef.current) return;
+    const requestId = participation.id;
+    const requestPrincipal = principalKey;
+    const generation = generationRef.current;
+    const authGeneration = getAuthGeneration();
+    const isCurrent = () => generationRef.current === generation
+      && principalRef.current === requestPrincipal && getAuthGeneration() === authGeneration;
+    cancelPendingRef.current = true;
+    setCancelPending(true);
+    setCancelError(null);
+    try {
+      const result = await cancelCustomChallenge(requestId);
+      if (!isCurrent()) return;
+      setParticipation(result);
+      setCancelOpen(false);
+      invalidateCustomChallengeProgress();
+    } catch (reason) {
+      if (!isCurrent() || (reason instanceof ApiError && reason.status === 401)) return;
+      setCancelError(reason instanceof Error ? reason.message : '참여를 취소하지 못했어요. 다시 시도해주세요.');
+      if (reason instanceof ApiError && reason.status === 409) {
+        try {
+          const latest = await getCustomChallengeParticipation(requestId);
+          if (isCurrent()) setParticipation(latest);
+        } catch {
+          // Keep the server conflict visible; retry/close remains available.
+        }
+      }
+    } finally {
+      if (isCurrent()) {
+        cancelPendingRef.current = false;
+        setCancelPending(false);
+      }
+    }
+  }
+
   if (notFound) {
-    return <><Header title="맞춤 챌린지" onBack={() => navigate('/challenges')} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 찾을 수 없어요</h2><Button variant="secondary" onClick={() => navigate('/challenges')}>챌린지로 돌아가기</Button></main></>;
+    return <><Header title="맞춤 챌린지" onBack={handleBack} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 찾을 수 없어요</h2><Button variant="secondary" onClick={() => navigate('/challenges')}>챌린지로 돌아가기</Button></main></>;
   }
   if (error) {
-    return <><Header title="맞춤 챌린지" onBack={() => navigate('/challenges')} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 불러오지 못했어요</h2><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => setReloadKey(value => value + 1)}>다시 불러오기</Button></main></>;
+    return <><Header title="맞춤 챌린지" onBack={handleBack} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 불러오지 못했어요</h2><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => setReloadKey(value => value + 1)}>다시 불러오기</Button></main></>;
   }
   if (!participation) {
-    return <><Header title="맞춤 챌린지" onBack={() => navigate('/challenges')} /><main role="status" aria-label="맞춤 챌린지 참여 기록 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" /></>;
+    return <><Header title="맞춤 챌린지" onBack={handleBack} /><main role="status" aria-label="맞춤 챌린지 참여 기록 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" /></>;
   }
 
   const rate = progressValue(participation.progressRate);
-  const targetNames = new Map(participation.targets.map(target => [target.id, target.name]));
-  const today = seoulDate();
-  const upcomingOccurrences = participation.occurrences.filter(item => item.scheduledDate >= today);
-  const pastOccurrences = participation.occurrences.filter(item => item.scheduledDate < today);
+  const finalized = participation.status !== 'ACTIVE';
   return (
     <>
-      <Header title={participation.challengeName} onBack={() => navigate('/challenges')} />
+      <Header title={participation.challengeName} onBack={handleBack} className="h-auto! min-h-header py-4 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
       <p className="text-caption font-bold text-primary">{statusLabel(participation.status)}</p>
 
       <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="custom-progress-title">
-        <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">내 진행률</h2><strong className="text-primary">{String(participation.progressRate)}%</strong></div>
+        <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2><strong className="text-primary">{String(participation.progressRate)}%</strong></div>
         <div role="progressbar" aria-label="맞춤 챌린지 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
         <p className="text-sm text-foreground">{participation.completedCount} / {participation.targetCount}회</p>
-        <p className="text-caption text-muted-foreground">{dateLabel(participation.joinedAt)} ~ {dateLabel(participation.actualEndDate)}</p>
+        <p className="text-caption text-muted-foreground">{participation.actualEndDate
+          ? `${dateLabel(participation.joinedAt)} ~ ${dateLabel(participation.actualEndDate)}`
+          : '예정된 목표 없음'}</p>
+        {finalized ? <p className="text-caption leading-5 text-muted-foreground">{participation.status === 'CANCELLED' ? '취소 시점의 기록이에요. 기존 복용 기록은 유지되며, 지난 기록에서 확인할 수 있어요.' : '종료 시 확정된 결과예요. 이후 기록을 수정해도 결과와 배지는 유지돼요.'}</p> : null}
       </section>
 
-      <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-target-title">
-        <h2 id="custom-target-title" className="text-base font-bold">참여 대상</h2>
-        {participation.targets.map(target => <p key={target.id} className="text-sm text-foreground">{target.name}</p>)}
-      </section>
-
-      <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-record-title">
-        <h2 id="custom-record-title" className="text-base font-bold">오늘과 예정된 기록</h2>
-        {upcomingOccurrences.length === 0 ? <p className="text-sm text-muted-foreground">오늘 이후 예정된 기록이 없어요.</p> : upcomingOccurrences.map(occurrence => (
-          <p key={occurrence.id} className="text-sm text-muted-foreground">
-            {dateLabel(occurrence.scheduledDate)} · {slotLabel(occurrence.slot)} · {occurrence.isCompleted ? '완료' : '예정'} · {targetNames.get(occurrence.targetId) ?? '참여 대상'}
-          </p>
-        ))}
-      </section>
-
-      {pastOccurrences.length > 0 ? (
-        <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-history-title">
-          <div className="flex min-h-touch items-center justify-between gap-3">
-            <h2 id="custom-history-title" className="text-base font-bold">지난 기록</h2>
-            <button
-              type="button"
-              aria-expanded={historyExpanded}
-              aria-controls="custom-history-list"
-              aria-label={historyExpanded ? '지난 기록 접기' : '지난 기록 펼치기'}
-              onClick={() => setHistoryExpanded(value => !value)}
-              className="min-h-touch rounded-pill px-3 text-sm font-bold text-primary"
-            >
-              {historyExpanded ? '접기' : `${pastOccurrences.length}개 보기`}
-            </button>
-          </div>
-          {historyExpanded ? (
-            <div id="custom-history-list" className="flex flex-col gap-2">
-              {pastOccurrences.map(occurrence => (
-                <p key={occurrence.id} className="text-sm text-muted-foreground">
-                  {dateLabel(occurrence.scheduledDate)} · {slotLabel(occurrence.slot)} · {occurrence.isCompleted ? '완료' : '미완료'} · {targetNames.get(occurrence.targetId) ?? '참여 대상'}
-                </p>
-              ))}
+      {award ? (
+        <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-award-title">
+          <h2 id="custom-award-title" className="text-base font-bold">획득 배지</h2>
+          <div className="flex items-center gap-3">
+            <img src={apiAssetUrl(award.badgeImagePath)} alt={award.badgeName} className="size-14 rounded-pill object-contain" />
+            <div>
+              <p className="break-words text-sm font-bold text-foreground [overflow-wrap:anywhere]">{award.badgeName}</p>
+              <p className="text-caption text-muted-foreground">{dateLabel(award.awardedAt)} 획득</p>
             </div>
-          ) : null}
+          </div>
+        </section>
+      ) : null}
+      {badgeError ? (
+        <section role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
+          <p className="text-sm text-muted-foreground">{badgeError}</p>
+          <Button variant="secondary" onClick={() => setBadgeReloadKey(value => value + 1)}>배지 다시 불러오기</Button>
         </section>
       ) : null}
 
-      <p className="text-caption leading-5 text-muted-foreground">진행률은 홈과 복약 기록을 기준으로 자동 계산돼요.</p>
-      <Button variant="secondary" onClick={() => setReloadKey(value => value + 1)}>최신 진행률 불러오기</Button>
+      <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-target-title">
+        <details key={participation.id} className="group">
+          <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+            <h2 id="custom-target-title" className="text-base font-bold">참여 대상</h2>
+            <span className="flex shrink-0 items-center gap-2 text-caption text-muted-foreground">{participation.targets.length}개<ChevronDown aria-hidden="true" className="size-4 group-open:rotate-180" /></span>
+          </summary>
+          <ul className="mt-2 flex flex-col gap-3">
+            {participation.targets.map(target => <li key={target.id} className="break-words text-sm text-foreground [overflow-wrap:anywhere]">{target.name}</li>)}
+          </ul>
+        </details>
+      </section>
+
+      <CustomChallengeCalendar key={`${participation.id}:${participation.status}`} participation={participation} />
+
+      <p className="text-caption leading-5 text-muted-foreground">진행률은 홈과 {participation.challengeType === 'SUPPLEMENT' ? '영양제' : '복약'} 기록을 기준으로 자동 계산돼요. 달력에서는 기록을 확인할 수 있어요.</p>
+      <Button variant="secondary" disabled={cancelPending} onClick={() => setReloadKey(value => value + 1)}>최신 진행률 불러오기</Button>
+      {participation.status === 'ACTIVE' ? <Button variant="secondary" disabled={cancelPending} onClick={() => { setCancelError(null); setCancelOpen(true); }}>챌린지 참여 취소</Button> : <Button variant="secondary" onClick={() => navigate('/challenges')}>내 챌린지로 돌아가기</Button>}
+      <Dialog open={cancelOpen} onOpenChange={open => { if (!cancelPendingRef.current) { setCancelOpen(open); if (!open) setCancelError(null); } }}>
+        <DialogContent showCloseButton={!cancelPending}>
+          <DialogHeader>
+            <DialogTitle>챌린지 참여를 취소할까요?</DialogTitle>
+            <DialogDescription className="space-y-2 break-keep">
+              <span className="block">참여를 취소해도 기존 복용 기록은 삭제되지 않아요.</span>
+              <span className="block">취소한 챌린지는 지난 기록에서 확인할 수 있어요.</span>
+            </DialogDescription>
+          </DialogHeader>
+          {cancelError ? <p role="alert" className="text-sm text-danger-strong">{cancelError}</p> : null}
+          <DialogFooter>
+            <Button variant="secondary" disabled={cancelPending} onClick={() => setCancelOpen(false)}>돌아가기</Button>
+            <Button variant="danger" disabled={cancelPending || participation.status !== 'ACTIVE'} onClick={() => void cancelParticipation()}>{cancelPending ? '취소 중...' : '참여 취소'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       </main>
     </>
   );

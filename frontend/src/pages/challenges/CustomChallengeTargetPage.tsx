@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ArrowLeft, ChevronDown } from 'lucide-react';
 
 import { useSession } from '@/app/SessionContext';
 import {
   getCustomChallengeRecommendations,
   joinCustomChallenge,
-  type CustomChallengeParticipation,
   type CustomChallengeRecommendation,
 } from '@/entities/custom-challenge';
 import { ApiError, getAuthGeneration } from '@/shared/api/client';
-import { Button, Card, Header } from '@/shared/ui';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
+import { Button } from '@/shared/ui';
 
 type SupportedKind = 'medication' | 'supplement';
 
@@ -36,7 +37,7 @@ export function CustomChallengeTargetPage() {
   const supplementKeysRef = useRef(new Map<string, string>());
   const [recommendation, setRecommendation] = useState<CustomChallengeRecommendation | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [successful, setSuccessful] = useState<Map<number, CustomChallengeParticipation>>(() => new Map());
+  const [joinedMedicationIds, setJoinedMedicationIds] = useState<Record<number, number>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -52,7 +53,7 @@ export function CustomChallengeTargetPage() {
     const requestPrincipal = principalKey;
     setRecommendation(null);
     setSelectedIds([]);
-    setSuccessful(new Map());
+    setJoinedMedicationIds({});
     setLoadError(null);
     setActionError(null);
     pendingRef.current = false;
@@ -125,46 +126,64 @@ export function CustomChallengeTargetPage() {
       return;
     }
 
-    const requestedIds = [...new Set(selectedIds)].sort((left, right) => left - right);
-    const completed = new Map(successful);
-    let firstError: string | null = null;
-    for (const targetId of requestedIds) {
-      if (completed.has(targetId)) continue;
-      if (!isCurrent()) break;
-      const idempotencyKey = medicationKeysRef.current.get(targetId) ?? crypto.randomUUID();
-      medicationKeysRef.current.set(targetId, idempotencyKey);
-      try {
-        const result = await joinCustomChallenge(recommendation.templateId, {
-          targetIds: [targetId],
-          idempotencyKey,
-        });
-        if (!isCurrent()) break;
-        medicationKeysRef.current.delete(targetId);
-        completed.set(targetId, result);
-        setSuccessful(new Map(completed));
-      } catch (reason) {
-        if (!isCurrent() || (reason instanceof ApiError && reason.status === 401)) break;
-        if (!firstError) firstError = reason instanceof Error ? reason.message : '맞춤 챌린지에 참여하지 못했어요.';
-        if (reason instanceof ApiError && reason.status === 403) break;
+    const targets = recommendation.targets.filter(target => (
+      selectedIds.includes(target.id)
+      && target.existingParticipationId === null
+      && !joinedMedicationIds[target.id]
+    ));
+    const joined = { ...joinedMedicationIds };
+    const failures: Array<{ id: number; message: string }> = [];
+    try {
+      for (const target of targets) {
+        if (!isCurrent()) return;
+        const idempotencyKey = medicationKeysRef.current.get(target.id) ?? crypto.randomUUID();
+        medicationKeysRef.current.set(target.id, idempotencyKey);
+        try {
+          const result = await joinCustomChallenge(recommendation.templateId, {
+            targetIds: [target.id],
+            idempotencyKey,
+          });
+          if (!isCurrent()) return;
+          medicationKeysRef.current.delete(target.id);
+          joined[target.id] = result.id;
+        } catch (reason) {
+          if (!isCurrent() || (reason instanceof ApiError && reason.status === 401)) return;
+          const message = reason instanceof Error ? reason.message : '맞춤 챌린지에 참여하지 못했어요.';
+          failures.push({ id: target.id, message: `${target.name}: ${message}` });
+        }
       }
-    }
-    if (isCurrent()) {
-      setSuccessful(new Map(completed));
-      if (firstError) setActionError(firstError);
-      else if (requestedIds.every(id => completed.has(id))) {
-        const only = requestedIds.length === 1 ? completed.get(requestedIds[0]) : null;
-        navigate(only ? `/challenges/custom-participations/${only.id}` : '/challenges');
+      setJoinedMedicationIds(joined);
+      setSelectedIds(failures.map(failure => failure.id));
+      if (failures.length > 0) {
+        setActionError(`${failures.map(failure => failure.message).join('\n')}\n실패한 처방만 다시 시도해주세요.`);
+        return;
       }
-      pendingRef.current = false;
-      setPending(false);
+      const participationIds = Object.values(joined);
+      if (participationIds.length > 0) {
+        navigate(participationIds.length === 1
+          ? `/challenges/custom-participations/${participationIds[0]}`
+          : '/challenges');
+      }
+    } finally {
+      if (principalRef.current === requestPrincipal && generationRef.current === requestGeneration) {
+        pendingRef.current = false;
+        setPending(false);
+      }
     }
   }
 
   return (
     <>
-      <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={() => navigate('/challenges/tailored')} />
-      <main className="flex min-h-full flex-col gap-4 px-page-x py-5">
-      <p className="text-sm text-muted-foreground">참여할 기록을 선택해주세요</p>
+      <header className="flex items-center gap-3 px-page-x pt-5">
+        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges/tailored')} className="flex size-11 shrink-0 items-center justify-center rounded-pill">
+          <ArrowLeft aria-hidden="true" className="size-5" />
+        </button>
+        <div className="min-w-0">
+          <h1 className="break-words text-[22px] font-bold leading-7 [overflow-wrap:anywhere]">{recommendation?.challengeName ?? '맞춤 챌린지'}</h1>
+          <p className="text-caption text-muted-foreground">맞춤 챌린지</p>
+        </div>
+      </header>
+      <main className="flex flex-col gap-4 px-page-x py-5">
 
       {!recommendation && !loadError ? <div role="status" aria-label="참여 대상 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" /> : null}
       {loadError ? (
@@ -174,30 +193,54 @@ export function CustomChallengeTargetPage() {
         </div>
       ) : null}
       {recommendation ? (
-        <Card className="gap-3 p-5 shadow-none">
-          <h2 className="text-base font-bold">참여 대상</h2>
+        <>
+        <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-labelledby="custom-highlight-title">
+          {recommendation.rewardBadge ? <span className="flex size-14 overflow-hidden rounded-pill bg-card grayscale">
+            <img src={apiAssetUrl(recommendation.rewardBadge.imagePath)} alt={recommendation.rewardBadge.name} className="size-full object-contain" />
+          </span> : null}
+          <h2 id="custom-highlight-title" className="break-words text-base font-bold [overflow-wrap:anywhere]">{recommendation.rewardBadge?.name ?? recommendation.challengeName}</h2>
+          <p className="break-words text-sm text-primary [overflow-wrap:anywhere]">{recommendation.rewardBadge?.description || (supportedKind === 'medication' ? '처방 일정에 맞춰 복약 기록 남기기' : '매일 꾸준히 영양제 기록 남기기')}</p>
+        </section>
+        <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-participation-guide-title">
+          <h2 id="custom-participation-guide-title" className="text-base font-bold">참여 안내</h2>
+          <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+            <dt className="text-muted-foreground">수행 기간</dt>
+            <dd>{supportedKind === 'medication' ? '참여 시점부터 처방 종료일까지' : '참여일 포함 7일'}</dd>
+            <dt className="text-muted-foreground">목표</dt>
+            <dd>예정된 복용 기록 모두 남기기</dd>
+            <dt className="text-muted-foreground">인증 방식</dt>
+            <dd>복용 기록 자동 연동</dd>
+          </dl>
+          {supportedKind === 'medication' ? <p className="rounded-input bg-muted-bg p-3 text-caption leading-5 text-muted-foreground">여러 처방을 선택할 수 있어요. 처방별로 각각 참여하며, 남은 복약 일정 전체가 목표 기간이 돼요.</p> : null}
+        </section>
+        <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-join-target-title">
+          <h2 id="custom-join-target-title" className="text-base font-bold">참여 대상</h2>
+          <p className="text-caption text-muted-foreground">참여할 기록을 선택해주세요</p>
           {recommendation.targets.length === 0 ? <p className="text-sm text-muted-foreground">참여할 수 있는 기록이 없어요.</p> : null}
           <div className="flex flex-col gap-2">
             {recommendation.targets.map(target => {
-              const alreadyMedication = supportedKind === 'medication' && target.existingParticipationId !== null;
-              const done = successful.has(target.id);
+              const existingParticipationId = joinedMedicationIds[target.id] ?? target.existingParticipationId;
+              const alreadyMedication = supportedKind === 'medication' && existingParticipationId !== null;
               return (
                 <label key={target.id} className="flex min-h-touch items-start gap-3 rounded-input bg-muted-bg p-3 text-sm">
                   <input
                     type="checkbox"
                     aria-label={`${target.name} 선택`}
                     checked={selectedIds.includes(target.id)}
-                    disabled={alreadyMedication || done || pending}
-                    onChange={event => setSelectedIds(current => event.target.checked
-                      ? [...new Set([...current, target.id])]
-                      : current.filter(id => id !== target.id))}
-                    className="mt-0.5 size-5 accent-primary"
+                    disabled={alreadyMedication || pending}
+                    onChange={event => {
+                      const checked = event.target.checked;
+                      setActionError(null);
+                      setSelectedIds(current => checked
+                        ? [...new Set([...current, target.id])]
+                        : current.filter(id => id !== target.id));
+                    }}
+                    className="mt-0.5 size-5 shrink-0 accent-primary"
                   />
-                  <span>
+                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">
                     <strong className="block text-foreground">{target.name}</strong>
-                    {done ? <span className="text-xs font-bold text-primary">{target.name} 참여 완료</span> : null}
                     {alreadyMedication ? (
-                      <Link to={`/challenges/custom-participations/${target.existingParticipationId}`} className="block text-xs font-bold text-primary">
+                      <Link to={`/challenges/custom-participations/${existingParticipationId}`} className="block text-xs font-bold text-primary">
                         이미 참여 중인 처방 보기 ›
                       </Link>
                     ) : null}
@@ -209,23 +252,42 @@ export function CustomChallengeTargetPage() {
               );
             })}
           </div>
-          <p className="text-sm text-muted-foreground">선택 대상: {selectedNames.length ? selectedNames.join(' · ') : '없음'}</p>
-          <p className="text-xs leading-5 text-muted-foreground">홈에서 남긴 복용 기록이 진행률에 자동으로 반영돼요.</p>
-        </Card>
+          <div className="text-caption text-muted-foreground">
+            <p>선택 대상: {selectedNames.length ? `${selectedNames.length}개` : '없음'}</p>
+            {selectedNames.length ? <ul aria-label="선택 대상" className="mt-2 flex flex-col gap-2">
+              {selectedNames.map((name, index) => <li key={index} className="break-words [overflow-wrap:anywhere]">{name}</li>)}
+            </ul> : null}
+          </div>
+        </section>
+        <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-certification-guide-title">
+          <details key={recommendation.templateId} className="group">
+            <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+              <h2 id="custom-certification-guide-title" className="text-base font-bold">배지와 인증 안내</h2>
+              <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground group-open:rotate-180" />
+            </summary>
+            <div className="mt-2 flex flex-col gap-2 text-caption leading-5 text-muted-foreground">
+              <p>홈에서 남긴 복용 기록이 진행률에 자동으로 반영돼요.</p>
+              <p>{recommendation.rewardBadge ? '배지 지급은 챌린지 종료 시 확정된 달성 결과를 기준으로 해요.' : '현재 이 챌린지에 등록된 배지가 없어요.'}</p>
+              <p>복용 효과나 건강 상태를 검증하는 배지는 아니에요.</p>
+            </div>
+          </details>
+        </section>
+        </>
       ) : null}
 
-      {actionError ? <p role="alert" className="text-sm text-danger-strong">{actionError}</p> : null}
+      {Object.keys(joinedMedicationIds).length > 0 ? (
+        <p role="status" className="text-sm font-bold text-primary">처방 {Object.keys(joinedMedicationIds).length}개 참여 완료. 완료된 참여는 유지돼요.</p>
+      ) : null}
+      {actionError ? <p role="alert" className="whitespace-pre-line break-words text-sm text-danger-strong">{actionError}</p> : null}
       {recommendation ? (
         <Button disabled={pending || selectedIds.length === 0} onClick={() => void submit()}>
           {pending
             ? '참여 처리 중'
-            : actionError && successful.size > 0
-              ? '실패한 대상 다시 시도'
-              : actionError
-                ? '다시 시도'
+            : actionError
+              ? '다시 시도'
               : supportedKind === 'supplement'
                 ? '선택한 영양제로 참여하기'
-                : '선택한 대상으로 참여하기'}
+                : '선택한 처방으로 참여하기'}
         </Button>
       ) : null}
       <Link to="/challenges/tailored" className="min-h-touch py-3 text-center text-sm font-bold text-primary">맞춤 챌린지로 돌아가기</Link>
