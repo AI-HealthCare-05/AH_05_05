@@ -13,6 +13,10 @@ from ai_worker.chains.medication_query_plan_chain import (
     MedicationQuestionPlanResult,
     build_medication_query_plan_chain,
 )
+from ai_worker.chains.semantic_question_router import (
+    QuestionRoutingDecision,
+    SemanticRouterInput,
+)
 from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
@@ -74,8 +78,10 @@ from ai_worker.schemas.medication_chat import (
 )
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
+    MedicationQueryEntity,
     MedicationQueryEntitySource,
     MedicationQueryEntityType,
+    MedicationQuestionResolution,
 )
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
@@ -349,6 +355,16 @@ class RecordingConditionalInterpretationChain:
         return self.payload
 
 
+class RecordingSemanticRouter:
+    def __init__(self, payload: QuestionRoutingDecision) -> None:
+        self.payload = payload
+        self.inputs: list[SemanticRouterInput] = []
+
+    async def ainvoke(self, input, **kwargs):
+        self.inputs.append(input)
+        return self.payload
+
+
 class PassthroughGenerator:
     async def generate(
         self,
@@ -594,6 +610,7 @@ def build_use_case(
     supplement_ingredient_catalog=None,
     query_plan_chain=None,
     conditional_interpretation_chain=None,
+    semantic_question_router=None,
     therapeutic_class_repository=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
@@ -608,6 +625,7 @@ def build_use_case(
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         query_plan_chain=query_plan_chain,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        semantic_question_router=semantic_question_router,
         therapeutic_class_repository=therapeutic_class_repository,
     )
 
@@ -1810,7 +1828,7 @@ async def test_execute_does_not_retry_when_initial_evidence_is_complete() -> Non
 async def test_execute_skips_conditional_llm_for_high_confidence_single_entity() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
-            canonical_entity_names=["타이레놀"],
+            candidate_entity_keys=["candidate_0"],
             requested_section_types=[KnowledgeSectionType.CAUTION],
             confidence="HIGH",
             reason_codes=[],
@@ -1828,10 +1846,71 @@ async def test_execute_skips_conditional_llm_for_high_confidence_single_entity()
     assert chain.inputs == []
 
 
+async def test_execute_adds_catalog_backed_interaction_pairs_from_semantic_route() -> None:
+    router = RecordingSemanticRouter(
+        QuestionRoutingDecision.semantic(
+            route=MedicationChatRoute.INTERACTION,
+            top_score=0.91,
+            second_score=0.52,
+        )
+    )
+    retriever = RecordingQueryPlanRetriever()
+    resolution = MedicationQuestionResolution(
+        original_question="마그네슘과 아연 가치 먹어도 돼?",
+        resolved_question="마그네슘과 아연 같이 먹어도 돼?",
+        scope="IN_SCOPE",
+        status="AUTO_CORRECTED",
+        entity_resolution_available=True,
+        entities=[
+            MedicationQueryEntity(
+                surface="마그네슘",
+                canonical_name="마그네슘",
+                entity_type="INGREDIENT_NAME",
+                kind="SUPPLEMENT",
+                source="RDBMS",
+            ),
+            MedicationQueryEntity(
+                surface="아연",
+                canonical_name="아연",
+                entity_type="INGREDIENT_NAME",
+                kind="SUPPLEMENT",
+                source="RDBMS",
+            ),
+        ],
+    )
+
+    async def plan_with_resolved_entities(
+        value: MedicationQueryPlanChainInput,
+    ) -> MedicationQuestionPlanResult:
+        return await build_medication_query_plan_chain().ainvoke(
+            value.model_copy(update={"resolution": resolution}),
+        )
+
+    await build_use_case(
+        retriever=retriever,
+        query_plan_chain=RunnableLambda(plan_with_resolved_entities),
+        semantic_question_router=router,
+    ).execute(build_request(resolution.original_question))
+
+    assert router.inputs == [
+        SemanticRouterInput(
+            question=resolution.original_question,
+            candidate_count=2,
+            has_session_reference=False,
+        )
+    ]
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.section_types == [KnowledgeSectionType.INTERACTION]
+    assert [pair.pair_type for pair in query_plan.interaction_pairs] == [
+        InteractionPairType.SUPPLEMENT_SUPPLEMENT,
+    ]
+
+
 async def test_execute_discards_unknown_conditional_llm_entity_before_search() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
-            canonical_entity_names=["존재하지않는성분"],
+            candidate_entity_keys=["unknown_candidate"],
             requested_section_types=[KnowledgeSectionType.CAUTION],
             confidence="MEDIUM",
             reason_codes=["LOW_CONFIDENCE"],

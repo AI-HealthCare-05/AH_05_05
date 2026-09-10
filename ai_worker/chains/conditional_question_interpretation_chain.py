@@ -7,12 +7,13 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from ai_worker.schemas.knowledge import KnowledgeSectionType
+from ai_worker.schemas.medication_chat import MedicationChatRoute
 from ai_worker.schemas.medication_search import (
     MedicationQueryEntity,
     MedicationQuestionConfidence,
 )
 
-CONDITIONAL_QUESTION_INTERPRETATION_VERSION = "conditional-question-interpretation-v1"
+CONDITIONAL_QUESTION_INTERPRETATION_VERSION = "conditional-question-interpretation-v2"
 
 
 class ConditionalInterpretationReasonCode(StrEnum):
@@ -27,7 +28,7 @@ class ConditionalQuestionInterpretationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     question: str = Field(min_length=1)
-    candidate_entities: list[MedicationQueryEntity] = Field(min_length=1, max_length=12)
+    candidate_entities: dict[str, MedicationQueryEntity] = Field(min_length=1, max_length=12)
     requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     trigger_reasons: list[ConditionalInterpretationReasonCode] = Field(min_length=1)
 
@@ -35,6 +36,22 @@ class ConditionalQuestionInterpretationInput(BaseModel):
     @classmethod
     def strip_question(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("candidate_entities")
+    @classmethod
+    def normalize_candidate_keys(
+        cls,
+        values: dict[str, MedicationQueryEntity],
+    ) -> dict[str, MedicationQueryEntity]:
+        normalized: dict[str, MedicationQueryEntity] = {}
+        for key, entity in values.items():
+            normalized_key = key.strip()
+            if not normalized_key:
+                raise ValueError("후보 키는 비어 있을 수 없습니다.")
+            if normalized_key in normalized:
+                raise ValueError("후보 키는 중복될 수 없습니다.")
+            normalized[normalized_key] = entity
+        return normalized
 
 
 class ConditionalQuestionInterpretationOutput(BaseModel):
@@ -46,14 +63,15 @@ class ConditionalQuestionInterpretationOutput(BaseModel):
         default=CONDITIONAL_QUESTION_INTERPRETATION_VERSION,
         min_length=1,
     )
-    canonical_entity_names: list[str] = Field(default_factory=list, max_length=12)
+    route: MedicationChatRoute | None = None
+    candidate_entity_keys: list[str] = Field(default_factory=list, max_length=12)
     requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     confidence: MedicationQuestionConfidence
     reason_codes: list[ConditionalInterpretationReasonCode] = Field(default_factory=list)
 
-    @field_validator("canonical_entity_names")
+    @field_validator("candidate_entity_keys")
     @classmethod
-    def normalize_names(cls, values: list[str]) -> list[str]:
+    def normalize_keys(cls, values: list[str]) -> list[str]:
         return list(dict.fromkeys(value.strip() for value in values if value.strip()))
 
 
@@ -116,13 +134,13 @@ def build_conditional_question_interpretation_chain(
             (
                 "system",
                 "당신은 의약품·영양제 질문의 구조만 정리합니다. "
-                "제시된 후보 밖의 이름을 만들지 마세요. 추론 과정·설명문은 출력하지 말고 "
+                "제시된 후보 키 밖의 키를 만들지 마세요. 추론 과정·설명문은 출력하지 말고 "
                 "JSON Schema에 정의된 필드만 반환하세요.",
             ),
             (
                 "human",
                 "질문: {question}\n"
-                "카탈로그 후보: {candidate_names}\n"
+                "카탈로그 후보: {candidate_options}\n"
                 "현재 요청 항목: {requested_sections}\n"
                 "호출 이유: {trigger_reasons}",
             ),
@@ -141,7 +159,9 @@ def build_conditional_question_interpretation_chain(
     def render(value: ConditionalQuestionInterpretationInput):
         return prompt.format_messages(
             question=value.question,
-            candidate_names=", ".join(entity.canonical_name for entity in value.candidate_entities),
+            candidate_options=", ".join(
+                f"{key}: {entity.canonical_name}" for key, entity in value.candidate_entities.items()
+            ),
             requested_sections=", ".join(section.value for section in value.requested_section_types),
             trigger_reasons=", ".join(reason.value for reason in value.trigger_reasons),
         )
