@@ -70,12 +70,18 @@ for (const width of [375, 1280]) {
     await expect(page.locator('strong').filter({ hasText: '펙소나딘' })).toHaveText('펙소나딘정120밀리그램');
     await expect(page.locator('strong').filter({ hasText: '글로덱시' })).toHaveText('글로덱시정300mg');
     await expect(page.locator('strong').filter({ hasText: '아스피린' })).toHaveText('아스피린프로텍트정100밀리그람');
-    await expect(page.getByText('함량 100mg · 1회 투약량 1 · 1일 횟수 1회 · 투약일수 30일', { exact: true })).toBeVisible();
-    await expect(page.getByText('함량 300mg · 1회 투약량 1.5정 · 1일 횟수 3회 · 투약일수 5일', { exact: true })).toBeVisible();
-    await expect(page.getByText('함량 120mg · 1회 투약량 2 · 1일 횟수 1회 · 투약일수 5일', { exact: true })).toBeVisible();
+    for (const [name, values] of [
+      ['아스피린프로텍트정100밀리그람', ['함량100mg', '1회 투약량1', '1일 횟수1회', '투약일수30일']],
+      ['글로덱시정300mg', ['함량300mg', '1회 투약량1.5정', '1일 횟수3회', '투약일수5일']],
+      ['펙소나딘정120밀리그램', ['함량120mg', '1회 투약량2', '1일 횟수1회', '투약일수5일']],
+    ] as const) {
+      const card = page.getByRole('article', { name, exact: true });
+      await card.getByRole('button', { name: `${name} 약 정보`, exact: true }).click();
+      await expect(card.locator('dl > div')).toHaveText([...values]);
+    }
     await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(2);
     await page.screenshot({ path: `test-results-ocr-display/ocr-strength-dedup-${width}.png`, fullPage: true });
-    await page.getByRole('button', { name: /^글로덱시정300mg/ }).click();
+    await page.getByRole('button', { name: '글로덱시정300mg 수정', exact: true }).click();
     await expect(page.getByRole('dialog').getByLabel('약품명')).toHaveValue('글로덱시정300mg');
     await expect(page.getByRole('dialog').getByLabel('함량', { exact: true })).toHaveValue('300mg 0.3g');
     await expect(page.getByRole('dialog').getByLabel('1회 투약량', { exact: true })).toHaveValue('1.50정');
