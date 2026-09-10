@@ -16,6 +16,7 @@ import { ApiError, getAuthGeneration } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { captureBadgeAwardScope, enqueueBadgeAward } from '@/shared/lib/badgeAwards';
 import { Button, Header, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import { CustomChallengeCalendar } from './CustomChallengeCalendar';
 import { customChallengeDateLabel as dateLabel } from './customChallengeDates';
 
@@ -272,7 +273,7 @@ export function CustomChallengeParticipationPage() {
     return <><Header title="맞춤 챌린지" onBack={handleBack} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 불러오지 못했어요</h2><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => refreshRef.current()}>다시 불러오기</Button></main></>;
   }
   if (!participation) {
-    return <><Header title="맞춤 챌린지" onBack={handleBack} /><main role="status" aria-label="맞춤 챌린지 참여 기록 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" /></>;
+    return <><Header title="맞춤 챌린지" onBack={handleBack} /><main className="px-page-x py-5"><LoadingState label="맞춤 챌린지 참여 기록 불러오는 중">참여 기록을 불러오고 있어요.</LoadingState></main></>;
   }
 
   const days = customChallengeDayProgress(participation);
@@ -280,7 +281,7 @@ export function CustomChallengeParticipationPage() {
   const finalized = participation.status !== 'ACTIVE';
   return (
     <>
-      <Header title={participation.challengeName} onBack={handleBack} className="h-auto! min-h-header py-4 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
+      <Header title={participation.challengeName} onBack={handleBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
       <p className="text-caption font-bold text-primary">{statusLabel(participation.status)}</p>
 

@@ -239,7 +239,7 @@ async function stubHome(page: Page, options: HomeStubOptions = {}) {
   return counts;
 }
 
-test('홈은 진행 중인 맞춤 카드를 모두 표시하고 서버 진행률과 공식 빈 상태를 일관되게 보여준다', async ({
+test('홈은 오늘 남은 맞춤 목표만 표시하고 긴 이름과 서버 진행률을 보존한다', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 900 });
@@ -267,12 +267,11 @@ test('홈은 진행 중인 맞춤 카드를 모두 표시하고 서버 진행률
   await page.goto('/home');
 
   const summary = page.getByRole('region', { name: '챌린지' });
-  const customSection = summary.getByRole('region', { name: '맞춤 챌린지' });
+  const customSection = summary;
   await expect(customSection.getByRole('heading', { name: /맞춤 챌린지 · 진행 중/ })).toHaveCount(0);
-  await expect(customSection.getByRole('link')).toHaveCount(3);
+  await expect(customSection.locator('a[href*="custom-participations"]')).toHaveCount(2);
   for (const [name, participationId] of [
     [longName, 701],
-    ['아직 예정이 없는 챌린지', 702],
     ['세 번째 맞춤 챌린지', 703],
   ] as const) {
     const card = customSection.getByRole('link').filter({ hasText: name });
@@ -288,10 +287,7 @@ test('홈은 진행 중인 맞춤 카드를 모두 표시하고 서버 진행률
     .toBe(true);
 
   const zeroTarget = customSection.getByRole('link', { name: /아직 예정이 없는 챌린지/ });
-  await expect(zeroTarget).toContainText('0 / 0일');
-  await expect(zeroTarget).toContainText('예정된 목표 없음');
-  await expect(zeroTarget.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
-  await expect(zeroTarget).not.toContainText('100%');
+  await expect(zeroTarget).toHaveCount(0);
   await expect(customSection.getByText(/배지|달성/)).toHaveCount(0);
   expect(counts.customMutations).toBe(0);
 });
@@ -313,10 +309,8 @@ test('공식 조회의 loading과 error는 맞춤 카드와 재조회를 가리�
 
   await page.goto('/home');
   const summary = page.getByRole('region', { name: '챌린지' });
-  const officialSection = summary.getByRole('region', { name: '공식 챌린지' });
-  const customSection = summary.getByRole('region', { name: '맞춤 챌린지' });
-  await expect(officialSection.getByRole('status', { name: '공식 챌린지 요약 불러오는 중' }))
-    .toBeVisible();
+  const officialSection = summary;
+  const customSection = summary;
   await expect(customSection.getByText('처방 일정 지키기')).toBeVisible();
 
   releaseOfficial();
@@ -345,8 +339,8 @@ test('맞춤 조회 실패와 재시도는 공식 카드와 공식 조회 횟수
 
   await page.goto('/home');
   const summary = page.getByRole('region', { name: '챌린지' });
-  const officialSection = summary.getByRole('region', { name: '공식 챌린지' });
-  const customSection = summary.getByRole('region', { name: '맞춤 챌린지' });
+  const officialSection = summary;
+  const customSection = summary;
   await expect(officialSection.getByText('매일 30분 걷기')).toBeVisible();
   await expect(customSection.getByRole('alert')).toContainText('맞춤 요약을 불러오지 못했어요.');
 
@@ -382,12 +376,12 @@ test('복약 저장 성공과 되돌리기는 맞춤 진행률을 각각 한 번
   });
 
   await page.goto('/home');
-  const customSection = page.getByRole('region', { name: '맞춤 챌린지' });
+  const customSection = page.getByRole('region', { name: '챌린지', exact: true });
   await expect(customSection.getByText('2 / 7일')).toBeVisible();
   const initialCustomReads = counts.customReads;
 
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
-  await expect(customSection.getByText('3 / 7일')).toBeVisible();
+  await expect(customSection.getByRole('link', { name: /처방 일정 지키기/ })).toHaveCount(0);
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await page.getByRole('button', { name: '되돌리기', exact: true }).click();
@@ -427,7 +421,7 @@ test('복약 저장이 모두 실패하면 재조회하지 않고 부분 성공�
   });
 
   await page.goto('/home');
-  await expect(page.getByRole('region', { name: '맞춤 챌린지' }).getByText('2 / 7일'))
+  await expect(page.getByRole('region', { name: '챌린지', exact: true }).getByText('2 / 7일'))
     .toBeVisible();
   const initialCustomReads = counts.customReads;
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
@@ -472,7 +466,7 @@ test('영양제 저장 실패는 재조회하지 않고 재시도 성공과 되�
   });
 
   await page.goto('/home');
-  const customSection = page.getByRole('region', { name: '맞춤 챌린지' });
+  const customSection = page.getByRole('region', { name: '챌린지', exact: true });
   await expect(customSection.getByText('2 / 7일')).toBeVisible();
   const initialCustomReads = counts.customReads;
   await page.getByRole('tab', { name: '오늘의 영양제' }).click();
@@ -484,7 +478,7 @@ test('영양제 저장 실패는 재조회하지 않고 재시도 성공과 되�
   expect(counts.customReads).toBe(initialCustomReads);
 
   await supplementGroup.getByRole('button', { name: '다시 시도' }).click();
-  await expect(customSection.getByText('3 / 7일')).toBeVisible();
+  await expect(customSection.getByRole('link', { name: /처방 일정 지키기/ })).toHaveCount(0);
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await supplementGroup.getByRole('button', { name: '오메가3 복용 완료' }).click();
@@ -523,16 +517,16 @@ test('무효화 전에 시작한 늦은 맞춤 응답은 최신 진행률을 덮
 
   await page.goto('/home');
   await expect(
-    page.getByRole('region', { name: '맞춤 챌린지' }).getByRole('status'),
+    page.getByRole('region', { name: '챌린지', exact: true }).getByRole('status'),
   ).toBeVisible();
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
-  const customSection = page.getByRole('region', { name: '맞춤 챌린지' });
-  await expect(customSection.getByText('7 / 7일')).toBeVisible();
+  const customSection = page.getByRole('region', { name: '챌린지', exact: true });
+  await expect(customSection.getByText('오늘 남은 챌린지가 없어요')).toBeVisible();
   const readsAfterInvalidation = counts.customReads;
 
   releaseInitialReads();
   await page.waitForTimeout(100);
-  await expect(customSection.getByText('7 / 7일')).toBeVisible();
+  await expect(customSection.getByText('오늘 남은 챌린지가 없어요')).toBeVisible();
   await expect(customSection.getByText('1 / 7일')).toHaveCount(0);
   expect(counts.customReads).toBe(readsAfterInvalidation);
   expect(counts.customMutations).toBe(0);

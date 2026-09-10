@@ -91,14 +91,14 @@ test('home primary card and raw memo action share the same rounded light-clay de
 
 test('challenge tracks keep every title and percentage readable with reduced motion', async ({ page }, testInfo) => {
   const summary = page.getByRole('region', { name: '챌린지', exact: true });
-  const links = summary.getByRole('link', { name: /% 달성, 상세 보기$/ });
+  const links = summary.getByRole('link', { name: /% 진행 중, 상세 보기$/ });
   await expect(links.first()).toBeVisible();
   expect(await links.count()).toBeGreaterThan(1);
   const text = await links.allTextContents();
   const names = await links.evaluateAll(items => items.map(item => item.getAttribute('aria-label')));
-  const track = links.first().locator('[aria-hidden]').last();
+  const track = links.first().getByRole('progressbar');
   await expect(track).toHaveCSS('box-shadow', /inset/);
-  await expect(track).toHaveCSS('height', '8px');
+  await expect(track).toHaveCSS('height', '4px');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(links).toHaveText(text);
   expect(await links.evaluateAll(items => items.map(item => item.getAttribute('aria-label')))).toEqual(names);

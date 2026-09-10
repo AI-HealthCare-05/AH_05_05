@@ -22,9 +22,10 @@ export function SupplementRankingCard({
   subtitle,
 }: SupplementRankingCardProps) {
   const items = maxItems === undefined ? ranking.items : ranking.items.slice(0, maxItems);
+  if (items.length === 0) return null;
 
   return (
-    <section aria-label="영양제 랭킹" className="flex flex-col gap-3">
+    <section aria-label="영양제 랭킹" className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-foreground">{title ?? ranking.title}</h2>

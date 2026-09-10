@@ -9,6 +9,7 @@ import {
 import { getAuthGeneration } from '@/shared/api/client';
 import { DEFAULT_MEAL_TIMES, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import { TimeSlotNavigator } from './TimeSlotNavigator';
 import { DoseSelectionIndicator } from './DoseSelectionIndicator';
 
@@ -69,7 +70,9 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
           </Button>
         </Card>
       ) : loading || records === null ? (
-        <p role="status" className="text-sm text-muted-foreground">영양제 복용 정보를 불러오는 중이에요.</p>
+        <LoadingState label="영양제 복용 정보 불러오는 중">
+          영양제 복용 정보를 불러오는 중이에요.
+        </LoadingState>
       ) : scheduled.length === 0 ? (
         <Card className="p-4"><p className="text-sm text-muted-foreground">오늘 먹을 영양제가 없어요.</p></Card>
       ) : primarySlot ? (

@@ -165,7 +165,7 @@ test('홈 랭킹 전체 보기는 둘러보기 탭으로 바로 이동한다', a
   await page.goto('/dev/home-empty');
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
-  await ranking.getByRole('button', { name: '전체 보기 ›' }).click();
+  await ranking.getByRole('button', { name: '전체 보기', exact: true }).click();
 
   await expect(page).toHaveURL(/\/supplements\?tab=browse$/);
 });
@@ -188,7 +188,7 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
   await expect(
     ranking.getByText('개인별 복용 추천이 아닌 일반 인기 정보예요', { exact: true }),
   ).toBeVisible();
-  await expect(ranking.getByRole('button', { name: '전체 보기 ›' })).toHaveCount(0);
+  await expect(ranking.getByRole('button', { name: '전체 보기', exact: true })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /영양제 추가/ })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /제품 정보$/ })).toHaveCount(5);
   await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);

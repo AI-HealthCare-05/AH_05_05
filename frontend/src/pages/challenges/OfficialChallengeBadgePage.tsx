@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { getChallengeCatalog, getUserChallengeBadges } from '@/entities/challenge';
 import { Button } from '@/shared/ui/Button';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { officialBadgeViews, type OfficialBadgeView } from './officialBadgeViews';
 
@@ -52,7 +53,7 @@ export function OfficialChallengeBadgePage() {
   if (error) {
     return <main className="flex flex-col gap-4 px-page-x py-5"><h1 className="text-[22px] font-bold">배지 상세</h1><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button></main>;
   }
-  if (!loaded) return <main role="status" aria-label="배지 상세 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" />;
+  if (!loaded) return <main className="px-page-x py-5"><LoadingState label="배지 상세 불러오는 중">배지를 불러오고 있어요.</LoadingState></main>;
   if (!badge) return <main className="flex flex-col gap-4 px-page-x py-5"><h1 className="text-[22px] font-bold">배지를 찾을 수 없어요</h1><Link to="/challenges/badges" className="font-bold text-primary">내 배지로 돌아가기</Link></main>;
 
   const earned = badge.awards.length > 0;

@@ -1,6 +1,7 @@
 import { House, Trophy, Pill, Sprout, UserRound } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import './home-clay.css';
+import './bottom-tabbar-layout.css';
 
 /**
  * Figma: Bottom Tabbar

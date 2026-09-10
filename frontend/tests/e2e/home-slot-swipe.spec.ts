@@ -190,6 +190,8 @@ for (const kind of ['복약', '영양제']) {
     }
     const action = panel().getByRole('button', { name: kind === '복약' ? '먹었어요' : '다 먹었어요', exact: true });
     await action.scrollIntoViewIfNeeded();
+    // Native CDP touch has no actionability wait; allow the loading-height reveal to expose the target.
+    await action.click({ trial: true });
     const box = (await action.boundingBox())!;
     // The #390 floating launcher can cover the far-right edge in a short viewport.
     // Start on the exposed action itself, not on the unrelated launcher.

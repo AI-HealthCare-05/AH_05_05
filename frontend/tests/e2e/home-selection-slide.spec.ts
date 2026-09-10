@@ -163,6 +163,7 @@ for (const kind of ['복약', '영양제'] as const) {
       }
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     }
+    await row.click({ trial: true });
     const morningBox = (await row.boundingBox())!;
     await touch(morningBox.x + 180, morningBox.y + 20, -130, 0);
     const tabs = page.getByRole('tablist', { name: `${kind} 시간대` });

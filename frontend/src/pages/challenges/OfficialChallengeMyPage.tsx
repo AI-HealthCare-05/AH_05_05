@@ -10,6 +10,7 @@ import {
   type UserChallengeBadge,
 } from '@/entities/challenge';
 import { Button } from '@/shared/ui/Button';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { ChallengePageHeading } from './ChallengePageHeading';
 import { OfficialChallengeProgressCard } from './OfficialChallengeProgressCard';
@@ -203,7 +204,7 @@ export function OfficialChallengeMyPage() {
         </div>
       ) : null}
       {!data && !loadError ? (
-        <div role="status" aria-label="내 챌린지 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" />
+        <LoadingState label="내 챌린지 불러오는 중">내 챌린지를 불러오고 있어요.</LoadingState>
       ) : null}
 
       {data ? (
@@ -239,7 +240,7 @@ export function OfficialChallengeMyPage() {
 
       <section aria-labelledby="active-challenges-title" className="flex flex-col gap-3">
         <h2 id="active-challenges-title" className="text-base font-bold">진행 중인 챌린지</h2>
-        {custom.items === null && !custom.error ? <div role="status" aria-label="내 맞춤 챌린지 불러오는 중" className="min-h-28 animate-pulse rounded-card bg-muted-bg" /> : null}
+        {custom.items === null && !custom.error ? <LoadingState label="내 맞춤 챌린지 불러오는 중">맞춤 챌린지를 불러오고 있어요.</LoadingState> : null}
         {custom.error ? (
           <div role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
             <p className="text-sm text-muted-foreground">{custom.error}</p>
@@ -263,10 +264,6 @@ export function OfficialChallengeMyPage() {
           />
         ))}
         {customActive.map(item => <CustomChallengeProgressCard key={`custom-${item.id}`} participation={item} />)}
-        <div className="flex flex-wrap justify-between gap-2 text-caption font-bold text-primary">
-          <Link to="/challenges/browse" className="flex min-h-touch items-center">공식 챌린지 둘러보기 ›</Link>
-          <Link to="/challenges/tailored" className="flex min-h-touch items-center">맞춤 새로 참여하기 ›</Link>
-        </div>
       </section>
 
       {historyCount > 0 ? (

@@ -147,7 +147,6 @@ export function MedicationEpisodeCard({
                           className={`rounded-pill px-3 py-1 text-sm ${feature252 ? SLOT_CHIP_CLASSES[slot] : 'bg-muted-bg text-muted-foreground'}`}
                         >
                           {mealSlotLabel(slot)}
-                          {feature252 && ` ${overview.mealTimes[slot]}`}
                         </span>
                       ))
                     )}

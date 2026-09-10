@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react';
-import { DrawnArrow, DrawnChevron } from '@/shared/ui/DrawnArrow';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
@@ -16,6 +16,8 @@ import {
 import { ApiError } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
+import { Header } from '@/shared/ui/Header';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import {
   Dialog,
   DialogContent,
@@ -179,7 +181,7 @@ export function OfficialChallengeParticipationPage() {
   }
 
   if (!data) {
-    return <main role="status" aria-label="참여 기록 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" />;
+    return <><Header title="챌린지" onBack={() => navigate('/challenges')} /><main className="px-page-x py-5"><LoadingState label="참여 기록 불러오는 중">참여 기록을 불러오고 있어요.</LoadingState></main></>;
   }
 
   const participation = data.participation;
@@ -373,14 +375,10 @@ export function OfficialChallengeParticipationPage() {
   }
 
   return (
+    <>
+    <Header title={participation.challenge_name} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={goBack} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><DrawnArrow direction="left" className="size-5" /></button>
-        <div className="min-w-0">
-          <h1 className="break-words text-[22px] font-bold leading-7">{participation.challenge_name}</h1>
-          <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(startDate)} ~ {dateLabel(endDate)}</p>
-        </div>
-      </header>
+      <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(startDate)} ~ {dateLabel(endDate)}</p>
 
       {participation.today_verification?.status === 'APPROVED' ? (
         <section className="flex gap-3 rounded-card bg-primary-bg p-5" aria-label="오늘 인증 결과">
@@ -481,5 +479,6 @@ export function OfficialChallengeParticipationPage() {
         </DialogContent>
       </Dialog>
     </main>
+    </>
   );
 }

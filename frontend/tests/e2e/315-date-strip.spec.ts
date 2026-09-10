@@ -64,20 +64,39 @@ async function expectCentered(calendar: Locator) {
   }).toBeLessThan(1);
 }
 
-test('today initially sits exactly at the center of an arrowless blank-square strip', async ({ page }) => {
+test('today initially sits exactly at the center with its label inside the square only', async ({ page }) => {
   const { calendar, unexpected } = await openCalendar(page, participation());
   await expectCentered(calendar);
   const strip = calendar.getByRole('group', { name: '챌린지 날짜 선택' });
   await expect(strip.getByRole('button', { pressed: true })).toHaveAttribute('aria-current', 'date');
   await expect(calendar.getByRole('button', { name: /^(이전|다음) 날짜$/ })).toHaveCount(0);
   for (const button of await strip.getByRole('button').all()) {
-    expect((await button.innerText()).trim()).toBe('');
+    expect((await button.innerText()).trim()).toBe(await button.getAttribute('aria-current') === 'date' ? '오늘' : '');
     await expect(button.locator('svg,img')).toHaveCount(0);
     const box = (await button.boundingBox())!;
     expect(box.width).toBeGreaterThanOrEqual(44);
     expect(box.height).toBeGreaterThanOrEqual(44);
   }
+  await expect(calendar.locator('[aria-live]')).not.toContainText('오늘');
   expect(unexpected).toEqual([]);
+});
+
+test('centered square has a colored bold outline that follows selection without moving the today label', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const { calendar } = await openCalendar(page, participation());
+  const today = calendar.locator('button[aria-current="date"]');
+  const next = calendar.getByRole('button', { name: /^2026.09.11,/ });
+  const square = (button: Locator) => button.locator('.custom-challenge-date-square');
+  const unselectedColor = await square(next).evaluate(el => getComputedStyle(el).borderColor);
+  await expect(square(today)).toHaveCSS('border-top-width', '2px');
+  expect(await square(today).evaluate(el => getComputedStyle(el).borderColor)).not.toBe(unselectedColor);
+  await next.click();
+  await expectCentered(calendar);
+  await expect(next).toHaveAttribute('aria-pressed', 'true');
+  await expect(square(next)).toHaveCSS('border-top-width', '2px');
+  await expect(square(today)).toHaveCSS('border-top-width', '1px');
+  await expect(today).toHaveText('오늘');
+  await expect(next).toHaveText('');
 });
 
 for (const count of [1, 2, 3, 4, 7]) {

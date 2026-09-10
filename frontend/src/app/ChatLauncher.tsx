@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { MessageCircle } from 'lucide-react';
 import { LoginPromptSheet } from '@/pages/home/LoginPromptSheet';
 import { useSession } from './SessionContext';
 
@@ -19,10 +18,10 @@ export function ChatLauncher({ children }: { children: ReactNode }) {
       <button
         type="button"
         aria-label="챗봇"
-        className="chat-launcher fixed z-40 flex size-14 items-center justify-center rounded-pill bg-primary text-card shadow-sheet hover:bg-primary-strong"
+        className="chat-launcher fixed z-40 flex size-14 items-center justify-center overflow-hidden rounded-pill bg-card shadow-sheet"
         onClick={() => authenticated && principalKey ? navigate('/chat') : setLoginOpen(true)}
       >
-        <MessageCircle aria-hidden className="size-6" />
+        <img src="/images/default-profile.png" alt="" className="size-full object-contain" />
       </button>
       <LoginPromptSheet open={loginOpen} onOpenChange={setLoginOpen} onLogin={() => {
         setLoginOpen(false);

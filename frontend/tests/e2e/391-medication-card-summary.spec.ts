@@ -79,7 +79,7 @@ for (const width of [320, 390, 1280]) {
     const toggle = page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ });
     const card = page.locator('article').filter({ has: toggle });
     const edit = card.getByRole('button', { name: '처방 수정 · 2026년 9월 5일', exact: true });
-    const morning = card.getByText('아침', { exact: true });
+    const morning = card.locator(':scope > div:first-child').getByText('아침', { exact: true });
     const expectAlignedEdit = async () => {
       const chipBox = await morning.boundingBox();
       const editBox = await edit.boundingBox();
@@ -88,7 +88,7 @@ for (const width of [320, 390, 1280]) {
       expect(editBox!.y).toBeLessThan(chipBox!.y + chipBox!.height);
       expect(editBox!.y + editBox!.height).toBeGreaterThan(chipBox!.y);
       for (const label of ['아침', '점심', '저녁', '자기전']) {
-        const chip = card.getByText(label, { exact: true });
+        const chip = card.locator(':scope > div:first-child').getByText(label, { exact: true });
         await expectUnclipped(chip);
         const box = await chip.boundingBox();
         expect(box!.x + box!.width).toBeLessThanOrEqual(editBox!.x);
@@ -140,7 +140,7 @@ for (const width of [320, 390, 1280]) {
     await expectUnclipped(details.getByText(LONG_NAME, { exact: false }));
     await expect(details.getByText('필요할 때만 · 알림 없음')).toBeVisible();
     await expect(details.getByText('끝까지 복용')).toBeVisible();
-    await expect(details.getByText('자기전 22:30', { exact: true })).toBeVisible();
+    await expect(details.getByText('자기전', { exact: true })).toBeVisible();
     await expect(details.getByRole('button', { name: /복용 시간 수정/ })).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

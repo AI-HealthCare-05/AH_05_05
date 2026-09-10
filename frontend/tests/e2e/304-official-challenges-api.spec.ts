@@ -13,6 +13,9 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
     json: { items: [], totalCount: 0 },
   }));
+  await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
 });
 
 const badge = {
@@ -217,7 +220,7 @@ for (const entry of ['participation', 'catalog'] as const) {
     const history = page.getByRole('region', { name: '지난 기록', exact: true });
     await expect(history.getByRole('link', { name: /매일 30분 걷기 자세히 보기/ })).toHaveAttribute('href', '/challenges/participations/501');
     await page.getByRole('button', { name: '홈', exact: true }).click();
-    await expect(page.getByRole('link', { name: '매일 30분 걷기, 0% 진행, 상세 보기', exact: true })).toHaveAttribute('href', '/challenges/participations/502');
+    await expect(page.getByRole('link', { name: '매일 30분 걷기, 0% 진행 중, 상세 보기', exact: true })).toHaveAttribute('href', '/challenges/participations/502');
   });
 }
 
@@ -306,7 +309,7 @@ for (const outcome of ['leave', 'unauthorized'] as const) {
         window.history.pushState({}, '', '/challenges/browse');
         window.dispatchEvent(new PopStateEvent('popstate'));
       });
-      await expect(page.getByRole('heading', { name: '공식 챌린지', exact: true })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toBeVisible();
     }
     release();
     if (outcome === 'unauthorized') await expect(page).toHaveURL(/\/login$/);
@@ -351,6 +354,9 @@ async function stubChallengeReads(
   await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
     json: { items: [], totalCount: 0 },
   }));
+  await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
 }
 
 test('real My and browse keep the shared back navigation', async ({ page }) => {
@@ -366,16 +372,16 @@ test('real My and browse keep the shared back navigation', async ({ page }) => {
   await expect(page).toHaveURL(/\/home$/);
 });
 
-test('real browse renders snake_case catalog frequencies and never shows mock data', async ({ page }) => {
+test('real browse renders compact recruitment dates from the catalog and never shows mock data', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page);
 
   await page.goto('/challenges/browse');
 
-  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /매일 30분 걷기.*자세히 보기/ })).toContainText('참여일부터 14일 · 매일 인증');
-  await expect(page.getByRole('button', { name: /건강 기록 제출하기.*자세히 보기/ })).toContainText('참여일부터 30일 · 기간 동안 총 10회 인증');
-  await expect(page.getByRole('button', { name: /가볍게 스트레칭.*자세히 보기/ })).toContainText('참여일부터 14일 · 주 3회 인증');
+  await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toHaveValue('all');
+  for (const name of ['매일 30분 걷기', '건강 기록 제출하기', '가볍게 스트레칭']) {
+    await expect(page.getByRole('button', { name: `${name} 자세히 보기` })).toContainText('모집기간 : 2026년 9월 1일 ~ 2026년 9월 30일');
+  }
   await expect(page.getByText('목업 미리보기')).toHaveCount(0);
   await expect(page.getByText('물 마시기', { exact: true })).toHaveCount(0);
 });
@@ -1055,7 +1061,7 @@ test('a delayed My check-in does not refresh after leaving the page', async ({ p
   await page.goto('/challenges');
   await page.getByRole('article', { name: dailyChallenge.name }).getByRole('button', { name: '했어요' }).click();
   await page.getByRole('link', { name: '둘러보기', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '챌린지 목록' })).toContainText(dailyChallenge.name);
   const readsBeforeRelease = { challengeReads, badgeReads };
 
   releaseVerification();
@@ -1666,6 +1672,7 @@ test('unfinished personal creation route shows a clear coming-soon state', async
 
 test('catalog load failure never falls back to mock data and recovers on reload action', async ({ page }) => {
   await authenticate(page);
+  await stubChallengeReads(page);
   let reads = 0;
   await page.route('**/api/v1/user/challenge-catalog?*', route => {
     reads += 1;
@@ -1688,7 +1695,7 @@ test('empty My state directs users to official browse without inventing tailored
   await page.goto('/challenges');
 
   await expect(page.getByText('참여 중인 챌린지가 없어요.')).toBeVisible();
-  await expect(page.getByRole('link', { name: /공식 챌린지 둘러보기/ })).toHaveAttribute('href', '/challenges/browse');
+  await expect(page.getByRole('link', { name: '둘러보기', exact: true })).toHaveAttribute('href', '/challenges/browse');
   await expect(page.getByText('감기약', { exact: true })).toHaveCount(0);
 });
 
@@ -1742,7 +1749,7 @@ test('browse to join to My check-in persists after reload through server reads',
   await page.getByRole('button', { name: /매일 30분 걷기.*자세히 보기/ }).click();
   await page.getByRole('button', { name: '참여하기' }).click();
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
-  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '챌린지', exact: true }).click();
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await card.getByRole('button', { name: '했어요' }).click();
   await expect(card.getByText('4 / 14일 인증')).toBeVisible();
