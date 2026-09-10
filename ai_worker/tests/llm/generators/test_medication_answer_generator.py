@@ -76,7 +76,7 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert outcome.result.answer.startswith("정해진 용법")
     assert outcome.result.sources == build_result().sources
     assert outcome.result.model_name == "gpt-4o-mini"
-    assert outcome.result.prompt_version == "medication-chat-prompt-v4"
+    assert outcome.result.prompt_version == "medication-chat-prompt-v5"
     assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
     assert outcome.observation.fallback_used is False
     assert outcome.observation.fallback_reason is None
@@ -191,6 +191,46 @@ async def test_generator_keeps_only_limited_markdown_section_format() -> None:
     assert "#" not in outcome.result.answer
     assert "✅ **사용법**" in outcome.result.answer
     assert "* 안내된 사용법을 따릅니다." in outcome.result.answer
+
+
+async def test_generator_formats_interaction_prose_as_dash_bullet_list() -> None:
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.INTERACTION,
+            "answer": "철분과 아연의 상호작용 연구 근거입니다.",
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                covered_section_types=[KnowledgeSectionType.INTERACTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=FakeAnswerClient(
+            response={
+                "answer": (
+                    "✅ **상호작용**\n"
+                    "수용액 형태에서는 철분이 아연 흡수를 낮출 수 있습니다. "
+                    "일반 식사나 유아용 조제분유에서는 같은 영향이 확인되지 않았습니다. "
+                    "아연 요구량이 높은 임신·수유부, 청소년, 유아는 더 주의가 필요합니다."
+                ),
+                "section_types": ["INTERACTION"],
+            }
+        ),
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.result.answer == (
+        "✅ **상호작용**\n\n"
+        "- 수용액 형태에서는 철분이 아연 흡수를 낮출 수 있습니다.\n"
+        "- 일반 식사나 유아용 조제분유에서는 같은 영향이 확인되지 않았습니다.\n"
+        "- 아연 요구량이 높은 임신·수유부, 청소년, 유아는 더 주의가 필요합니다."
+    )
 
 
 async def test_generator_falls_back_to_safe_draft_when_rewrite_adds_claims() -> None:
