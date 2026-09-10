@@ -164,6 +164,7 @@ class AdminDashboardService:
             ),
             completed=counts.get(OcrJobStatus.COMPLETE, 0),
             failed=counts.get(OcrJobStatus.FAILED, 0),
+            cancelled=counts.get(OcrJobStatus.CANCELLED, 0),
             avg_field_confidence=(round(sum(job_confidences) / len(job_confidences), 6) if job_confidences else None),
         )
 

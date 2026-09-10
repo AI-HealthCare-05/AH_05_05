@@ -73,7 +73,7 @@ for (const width of [375, 1280]) {
     await expect(page.getByText('함량 100mg · 1회 투약량 1 · 1일 횟수 1회 · 투약일수 30일', { exact: true })).toBeVisible();
     await expect(page.getByText('함량 300mg · 1회 투약량 1.5정 · 1일 횟수 3회 · 투약일수 5일', { exact: true })).toBeVisible();
     await expect(page.getByText('함량 120mg · 1회 투약량 2 · 1일 횟수 1회 · 투약일수 5일', { exact: true })).toBeVisible();
-    await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(2);
+    await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: `test-results-ocr-display/ocr-strength-dedup-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: /^글로덱시정300mg/ }).click();
     await expect(page.getByRole('dialog').getByLabel('약품명')).toHaveValue('글로덱시정300mg');

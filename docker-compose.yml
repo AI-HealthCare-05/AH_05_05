@@ -83,6 +83,7 @@ services:
     volumes:
       - ./app:/app/app  # 로컬의 app 디렉토리를 컨테이너의 /app/app에 마운트(수정사항 즉시 반영)
       - ./ai_worker:/app/ai_worker:ro
+      - ./data/reference_seed:/app/data/reference_seed:ro
       - static_volume:/app/templates
       - media_volume:/app/media
     restart: always

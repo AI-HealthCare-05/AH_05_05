@@ -78,3 +78,17 @@ def test_fastapi_image_contains_minimum_chat_core_runtime() -> None:
     assert "COPY ./ai_worker ./ai_worker" in dockerfile
     assert any(dependency.startswith("qdrant-client") for dependency in app_dependencies)
     assert any(dependency.startswith("langchain-openai") for dependency in app_dependencies)
+
+
+def test_fastapi_local_runtime_exposes_reference_seed_for_migrations() -> None:
+    compose = _load_compose_config(PROJECT_ROOT / "docker-compose.yml")
+    volumes = compose["services"]["fastapi"]["volumes"]
+
+    seed_mount = next(
+        (volume for volume in volumes if volume["target"] == "/app/data/reference_seed"),
+        None,
+    )
+    assert seed_mount is not None, "Aerich needs the versioned reference seed inside the container"
+    assert seed_mount["type"] == "bind"
+    assert seed_mount["read_only"] is True
+    assert Path(seed_mount["source"]).parts[-2:] == ("data", "reference_seed")

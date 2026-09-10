@@ -242,6 +242,7 @@ function initializeDashboard() {
     ocrQueued: document.querySelector("[data-ocr-queued]"),
     ocrCompleted: document.querySelector("[data-ocr-completed]"),
     ocrFailed: document.querySelector("[data-ocr-failed]"),
+    ocrCancelled: document.querySelector("[data-ocr-cancelled]"),
     ocrAccuracy: document.querySelector("[data-ocr-accuracy]"),
     chatLiked: document.querySelector("[data-chat-liked]"),
     chatDisliked: document.querySelector("[data-chat-disliked]"),
@@ -279,6 +280,7 @@ function initializeDashboard() {
       slots.ocrQueued,
       slots.ocrCompleted,
       slots.ocrFailed,
+      slots.ocrCancelled,
       slots.chatLiked,
       slots.chatDisliked,
       slots.chatUnrated,
@@ -347,6 +349,7 @@ function initializeDashboard() {
     if (slots.ocrQueued) slots.ocrQueued.textContent = formatCount(ocrDocuments.queued);
     if (slots.ocrCompleted) slots.ocrCompleted.textContent = formatCount(ocrDocuments.completed);
     if (slots.ocrFailed) slots.ocrFailed.textContent = formatCount(ocrDocuments.failed);
+    if (slots.ocrCancelled) slots.ocrCancelled.textContent = formatCount(ocrDocuments.cancelled);
     if (slots.ocrAccuracy) {
       slots.ocrAccuracy.textContent = formatOcrConfidence(ocrDocuments.avgFieldConfidence);
     }

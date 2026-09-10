@@ -526,8 +526,12 @@ class TestDashboardOcrDocuments(DashboardTestBase):
             "queued": 3,
             "completed": 2,
             "failed": 1,
+            "cancelled": 1,
             "avgFieldConfidence": None,
         }
+        assert documents["total"] == (
+            documents["queued"] + documents["completed"] + documents["failed"] + documents["cancelled"]
+        )
 
     async def test_counts_include_only_jobs_created_in_selected_period(self) -> None:
         user = await create_user(name="OCR 회원", email=unique_email("ocr-period"))
@@ -545,6 +549,10 @@ class TestDashboardOcrDocuments(DashboardTestBase):
         assert documents["queued"] == 3
         assert documents["completed"] == 1
         assert documents["failed"] == 0
+        assert documents["cancelled"] == 0
+        assert documents["total"] == (
+            documents["queued"] + documents["completed"] + documents["failed"] + documents["cancelled"]
+        )
 
     async def test_field_confidence_averages_jobs_in_selected_created_at_period(self) -> None:
         user = await create_user(name="OCR 회원", email=unique_email("ocr-confidence"))
