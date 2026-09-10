@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
 
 import { useSession } from '@/app/SessionContext';
 import {
@@ -46,6 +46,7 @@ function canClaimReward(participation: CustomChallengeParticipation) {
 export function CustomChallengeParticipationPage() {
   const { participationId } = useParams();
   const id = positiveId(participationId);
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
@@ -104,7 +105,9 @@ export function CustomChallengeParticipationPage() {
     const requestId = id;
     const requestPrincipal = principalKey;
     const isIdentityCurrent = () => active && generationRef.current === generation
-      && principalRef.current === requestPrincipal;
+      && principalRef.current === requestPrincipal
+      // Browser history updates before React commits navigation and runs this effect's cleanup.
+      && window.location.pathname === pathname;
 
     function refresh(invalidatePending = false) {
       if (!isIdentityCurrent()) return;
@@ -210,7 +213,7 @@ export function CustomChallengeParticipationPage() {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [id, principalKey]);
+  }, [id, pathname, principalKey]);
 
   async function cancelParticipation() {
     if (!participation || participation.status !== 'ACTIVE' || cancelPendingRef.current || claimPendingRef.current) return;
@@ -219,7 +222,8 @@ export function CustomChallengeParticipationPage() {
     const generation = generationRef.current;
     const authGeneration = getAuthGeneration();
     const isCurrent = () => generationRef.current === generation
-      && principalRef.current === requestPrincipal && getAuthGeneration() === authGeneration;
+      && principalRef.current === requestPrincipal && getAuthGeneration() === authGeneration
+      && window.location.pathname === pathname;
     // A GET started before cancellation must never restore the ACTIVE snapshot.
     readGenerationRef.current += 1;
     cancelPendingRef.current = true;

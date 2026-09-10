@@ -198,6 +198,27 @@ test('a late claim after SPA route departure cannot celebrate or replace another
   await expect(dialog(page)).toHaveCount(0);
 });
 
+test('a late claim is ignored when browser location changes before React route cleanup', async ({ page }) => {
+  const { completeClaim } = await setup(page);
+  const held = gate(); let started = false;
+  await page.route(`${api}/claim-reward`, async route => { started = true; await held.pending; await completeClaim(route); });
+  await page.goto(detailUrl);
+  await expect.poll(() => started).toBe(true);
+  // Hold the browser/React boundary: the URL has changed, but route cleanup has not run yet.
+  await page.evaluate(() => window.history.pushState({}, '', '/challenges'));
+  await expect(page).toHaveURL(/\/challenges$/);
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  const response = page.waitForResponse(response => response.url().endsWith('/701/claim-reward'));
+  held.release();
+  await (await response).finished();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(dialog(page)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '획득 배지', exact: true })).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new PopStateEvent('popstate')));
+  await expect(page.getByRole('heading', { name: '챌린지', exact: true })).toBeVisible();
+  await expect(dialog(page)).toHaveCount(0);
+});
+
 test('late old-auth claim cannot show an award after session expiry', async ({ page }) => {
   const { completeClaim } = await setup(page);
   const held = gate(); let started = false;
