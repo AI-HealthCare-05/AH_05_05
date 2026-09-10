@@ -235,8 +235,6 @@ class MedicationScheduleService:
             parsed = time.fromisoformat(value)
         except ValueError as error:
             raise InvalidMedicationScheduleError() from error
-        if parsed.minute not in {0, 30}:
-            raise InvalidMedicationScheduleError()
         return parsed
 
     @staticmethod

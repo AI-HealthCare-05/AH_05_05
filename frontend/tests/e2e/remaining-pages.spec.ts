@@ -315,14 +315,34 @@ test('최초 복약 시간 설정에서도 순서가 겹치는 시각은 적용�
   await expect(page.getByRole('button', { name: /점심약 13:00/ })).toBeVisible();
 });
 
-test('기존 복약 시간 선택은 30분 단위 옵션을 유지한다', async ({ page }) => {
+test('OCR 복약 시간 선택은 1분 단위로 적용하고 다시 열어도 유지한다', async ({ page }) => {
   await page.goto('/dev/medication-schedule');
   await page.getByRole('button', { name: /점심약 13:00/ }).click();
 
   const sheet = page.getByRole('dialog', { name: '시간 선택' });
   await sheet.getByLabel('분').click();
-  await expect(page.getByRole('option', { name: /^(00|30)분$/ })).toHaveCount(2);
-  await expect(page.getByRole('option', { name: '10분', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('option', { name: /^\d{2}분$/ })).toHaveCount(60);
+  await page.getByRole('option', { name: '17분', exact: true }).click();
+  await page.screenshot({ path: test.info().outputPath('ocr-minute-picker.png') });
+  await sheet.getByRole('button', { name: '이 시간 적용' }).click();
+  await page.getByRole('button', { name: /점심약 13:17/ }).click();
+  await expect(sheet.getByLabel('분')).toContainText('17');
+});
+
+test('마이페이지 알림 시간은 1분 단위로 저장하고 다시 열어도 유지한다', async ({ page }) => {
+  await page.goto('/dev/my-authenticated');
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  const sheet = page.getByRole('dialog', { name: '알림 시간' });
+  await sheet.getByLabel('아침 분').click();
+  await expect(page.getByRole('option', { name: /^\d{2}분$/ })).toHaveCount(60);
+  await page.getByRole('option', { name: '01분', exact: true }).click();
+  await chooseMyTime(page, '자기전', '22', '59');
+  await page.screenshot({ path: test.info().outputPath('my-minute-picker.png') });
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('알림 시간을 바꿨어요.')).toBeVisible();
+  await page.getByRole('button', { name: '알림 시간 설정' }).click();
+  await expect(sheet.getByLabel('아침 분')).toContainText('01');
+  await expect(sheet.getByLabel('자기전 분')).toContainText('59');
 });
 
 test('복약 시간 설정은 약별 시간, 시작일, 알림 시각, 저장 순서로 보여준다', async ({ page }) => {

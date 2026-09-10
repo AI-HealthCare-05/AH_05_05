@@ -35,7 +35,7 @@ export function TimePickerSheet({
   open,
   description,
   value,
-  minuteStep = 30,
+  minuteStep = 1,
   preserveInvalidMinute = false,
   onApply,
   onCancel,
