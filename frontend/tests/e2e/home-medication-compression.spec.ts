@@ -57,6 +57,9 @@ async function routeHome(page: Page, overviews = MEDICATION_OVERVIEWS) {
     window.sessionStorage.setItem('poke.access-token', 'home-compression-token');
     window.sessionStorage.setItem('poke.account-principal', 'home-compression@example.com');
   });
+  await page.route('**/api/v1/**', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
   await page.route('**/api/v1/medications/doses*', (route) => fulfillJson(route, []));
   await page.route('**/api/v1/user/challenges', (route) =>
     fulfillJson(route, { items: [], total_count: 0 }),
@@ -342,6 +345,7 @@ test('펼친 처방은 내부 약 목록 토글 없이 모든 약을 표시하�
   });
   await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
   const first = detail.getByRole('article', { name: /8월 22일 처방/ });
+  await expect(first.getByRole('list')).toHaveCount(0);
   await first.getByRole('button', { name: /8월 22일 처방.*펼치기/ }).click();
   const medicationList = first.getByRole('list', { name: '8월 22일 처방 약 목록' });
   const captureVariant = process.env.CAPTURE_384_VARIANT;
@@ -356,22 +360,42 @@ test('펼친 처방은 내부 약 목록 토글 없이 모든 약을 표시하�
       fullPage: true,
     });
   }
-  await expect(medicationList.getByRole('listitem')).toHaveCount(5);
+  await expect(medicationList.getByRole('listitem')).toHaveText([
+    '아모잘탄정', '가스모틴정', '레바미피드정', '숨은 약 하나', '숨은 약 둘',
+  ]);
   await expect(medicationList.getByText(/처방/)).toHaveCount(0);
-  await expect(first.getByRole('button', { name: /약 \d+개 더보기/ })).toHaveCount(0);
-  await expect(first.getByRole('button', { name: '약 목록 접기', exact: true })).toHaveCount(0);
-
-  const episodeCollapse = first.getByRole('button', {
-    name: '첫 처방 · 8월 22일 처방 접기',
-    exact: true,
-  });
-  await expect(episodeCollapse).toHaveAttribute('aria-expanded', 'true');
-  await episodeCollapse.click();
+  await expect(first.getByRole('button', { name: /약 \d+개 더보기|약 목록 접기/ })).toHaveCount(0);
+  const collapse = first.getByRole('button', { name: '첫 처방 · 8월 22일 처방 접기', exact: true });
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+  await collapse.focus();
+  await page.keyboard.press('Space');
   await expect(medicationList).toHaveCount(0);
-  await expect(first.getByRole('button', { name: /8월 22일 처방.*펼치기/ })).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
+  await expect(first.getByRole('button', { name: '첫 처방 · 8월 22일 처방 펼치기', exact: true })).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('네 번째 이후의 긴 약 이름도 한 번의 펼침에서 폭에 맞게 줄바꿈한다', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  const longName = `복합서방정${'MEDICATION'.repeat(16)}정`;
+  const overview = { ...MEDICATION_OVERVIEWS[0], medications: MEDICATION_OVERVIEWS[0].medications.map(
+    (medication, index) => index === 4 ? { ...medication, name: longName } : medication,
+  ) };
+  await routeHome(page, [overview]);
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/home');
+    const episode = page.getByRole('article', { name: '첫 처방 · 8월 22일 처방 · 약 5개', exact: true });
+    await episode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 펼치기', exact: true }).click();
+    const name = episode.getByRole('listitem').getByText(longName, { exact: true });
+    await expect(name).toBeVisible();
+    expect(await name.evaluate(element => {
+      const style = getComputedStyle(element);
+      return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1
+        && style.textOverflow !== 'ellipsis' && style.whiteSpace !== 'nowrap';
+    })).toBe(true);
+    expect(await episode.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`home-all-drugs-${width}.png`), fullPage: true });
+  }
 });
 
 test('처방 상세 화살표는 약 목록을 펼쳐도 같은 자리에 유지된다', async ({ page }) => {
