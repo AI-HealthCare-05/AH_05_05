@@ -158,9 +158,14 @@ class KnowledgeEntityExtractor:
             document_type=document_type,
             title=title,
         )
+        has_document_annotation = (
+            self._interaction_annotations.has_document_annotation(document_id)
+            if self._interaction_annotations is not None and document_id
+            else False
+        )
         pair = (
             find_supplement_interaction_pair(f"{title}\n{content}")
-            if document_type in self._PAIR_INFERENCE_DOCUMENT_TYPES
+            if document_type in self._PAIR_INFERENCE_DOCUMENT_TYPES and not has_document_annotation
             else None
         )
         evidence_level, study_population = self._classify_evidence(

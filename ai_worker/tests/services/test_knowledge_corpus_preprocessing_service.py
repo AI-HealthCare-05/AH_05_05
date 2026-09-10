@@ -109,11 +109,7 @@ def test_official_omega3_code_has_searchable_supplement_aliases() -> None:
         if line.strip()
     ]
 
-    omega3 = next(
-        record
-        for record in records
-        if record["document_id"] == "mfds_supplement_code-40a0dea0c535ba59"
-    )
+    omega3 = next(record for record in records if record["document_id"] == "mfds_supplement_code-40a0dea0c535ba59")
 
     assert omega3["ingredient_names"] == ["오메가3", "EPA", "DHA"]
     assert omega3["entity_catalog_entries"] == [
@@ -124,6 +120,45 @@ def test_official_omega3_code_has_searchable_supplement_aliases() -> None:
             "kind": "SUPPLEMENT",
         }
     ]
+
+
+def test_restricted_micronutrient_reviews_are_registered_with_safe_metadata() -> None:
+    repo_root = Path(__file__).parents[3]
+    sources = yaml.safe_load(
+        (repo_root / "data/knowledge/manifests/sources.yaml").read_text(encoding="utf-8"),
+    )["sources"]
+    source = next(item for item in sources if item["source_id"] == "research_micronutrient_interactions")
+    records = [
+        json.loads(line)
+        for line in (repo_root / "data/knowledge/manifests/documents.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    interaction_review = next(
+        record for record in records if record["document_id"] == "research_micronutrient_interactions-e3b164ce9cc98cc6"
+    )
+    pilot_manifest = KnowledgePilotManifest.model_validate_json(
+        (repo_root / "data/knowledge/manifests/additional_micronutrient_interactions_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    sandstrom_pilot = next(
+        pilot
+        for pilot in pilot_manifest.pilots
+        if pilot.document_id == "research_micronutrient_interactions-e3b164ce9cc98cc6"
+    )
+    bond_pilot = next(
+        pilot
+        for pilot in pilot_manifest.pilots
+        if pilot.document_id == "research_micronutrient_interactions-bc3fd489c828415e"
+    )
+
+    assert source["access_scope"] == "DEMO_RESTRICTED"
+    assert source["target"] == "QDRANT"
+    assert interaction_review["ingredient_names"] == ["철분", "아연", "구리", "칼슘", "비타민 C"]
+    assert interaction_review["evidence_level"] == "REVIEW_ARTICLE"
+    assert (repo_root / interaction_review["repo_path"]).is_file()
+    assert sandstrom_pilot.manual_review_status == KnowledgeManualReviewStatus.APPROVED
+    assert bond_pilot.manual_review_status == KnowledgeManualReviewStatus.PENDING
 
 
 def test_builder_selects_approved_qdrant_text_documents(tmp_path: Path) -> None:

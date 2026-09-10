@@ -85,3 +85,59 @@ documents:
           display_name: 칼슘
           aliases:
             - calcium
+  - document_id: research_micronutrient_interactions-e3b164ce9cc98cc6
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - calcium on iron absorption
+        left:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases:
+            - calcium
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases:
+            - iron
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - absorption of zinc was reduced by iron
+          - zinc in high doses aqueous solutions impairs iron absorption
+        left:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases:
+            - iron
+        right:
+          kind: SUPPLEMENT
+          display_name: 아연
+          aliases:
+            - zinc
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - zinc-copper-iron interactions
+        left:
+          kind: SUPPLEMENT
+          display_name: 아연
+          aliases:
+            - zinc
+        right:
+          kind: SUPPLEMENT
+          display_name: 구리
+          aliases:
+            - copper
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - vitamin c is a strong promoter of iron absorption
+        left:
+          kind: SUPPLEMENT
+          display_name: 비타민 C
+          aliases:
+            - vitamin C
+            - ascorbic acid
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases:
+            - iron
