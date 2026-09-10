@@ -32,16 +32,16 @@
 }
 
 /* Only the existing dose card's header receives the pale mint backplate. */
-.rx-home #home-panel-medication > section > div:has(> [role="group"]) {
+.rx-home [data-home-dose-card] {
   background: color-mix(in srgb, var(--color-primary-bg) 32%, var(--color-card));
 }
 
-.rx-home #home-panel-medication > section > div > [role="group"] {
+.rx-home [data-home-dose-card] > [role="group"] {
   border-radius: var(--radius-card);
   background: var(--color-card);
 }
 
-.rx-home #home-panel-medication > section > div > div:first-child > p,
+.rx-home [data-home-dose-card] > div:first-child > p,
 .rx-home [data-episode-row] h3,
 .rx-home #home-panel-supplement h3,
 .rx-home-challenges h2,

@@ -1651,8 +1651,8 @@ test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page 
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 24일 처방"]');
   await morning.getByRole('button', { name: '먹었어요' }).click();
 
   await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
@@ -1707,8 +1707,8 @@ test('부분 실패는 실패 회차만 선택하고 팝업 재시도 성공 후
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 24일 처방"]');
   const firstSelector = firstEpisode.locator('[data-episode-row]');
   const secondSelector = secondEpisode.locator('[data-episode-row]');
   await firstSelector.click();
@@ -1770,7 +1770,7 @@ test('토스트 되돌리기 실패는 완료를 유지하고 팝업 재시도�
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
   await firstEpisode.locator('[data-episode-row]').click();
   await morning.getByRole('button', { name: '먹었어요' }).click();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
@@ -1815,8 +1815,8 @@ test('A와 B를 기록한 뒤 A 토스트를 되돌려도 B 완료 상태를 유
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 24일 처방"]');
   await firstEpisode.locator('[data-episode-row]').click();
   await morning.getByRole('button', { name: '먹었어요' }).click();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();

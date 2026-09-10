@@ -71,7 +71,8 @@ test('clay selection stays distinct from completion and does not move the medica
 
 test('home primary card and raw memo action share the same rounded light-clay depth', async ({ page }) => {
   const medication = page.getByRole('region', { name: '오늘의 복약', exact: true });
-  const primaryCard = medication.locator(':scope > div.rounded-card');
+  const primaryCard = medication.getByRole('group', { name: '아침약 상세', exact: true }).locator('..');
+  await expect(primaryCard.locator(':scope > div:first-child > p')).toHaveCSS('color', 'rgb(0, 44, 104)');
   const cardShadow = await primaryCard.evaluate(element => getComputedStyle(element).boxShadow);
   expect((cardShadow.match(/inset/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect(cardShadow).toMatch(/0px -[4-9]px [6-9]px/);

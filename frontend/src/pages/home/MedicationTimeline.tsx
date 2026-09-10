@@ -73,7 +73,7 @@ export function MedicationTimeline({
       {item ? (
         <TimeSlotNavigator key={currentDate} items={timeline} initialSlot={item.slot} label="복약">
           {(item) => (
-            <div className="overflow-hidden rounded-card bg-card shadow-card">
+            <div data-home-dose-card className="overflow-hidden rounded-card bg-card shadow-card">
               <div className="flex items-center justify-between gap-3 px-4 pt-4">
                 <p className="text-base font-bold text-foreground">
                   {item.label} {item.time}
