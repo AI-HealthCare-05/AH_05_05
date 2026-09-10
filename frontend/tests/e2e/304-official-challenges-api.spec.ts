@@ -132,15 +132,23 @@ test('My combines official and custom active cards and all past statuses without
   } }));
   await page.goto('/challenges');
   const active = page.getByRole('region', { name: '진행 중인 챌린지', exact: true });
+  const activeToggle = page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true });
+  await expect(activeToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(active.getByRole('article')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '지난 기록 펼치기' })).toHaveAttribute('aria-expanded', 'false');
+  await page.screenshot({ path: testInfo.outputPath('accordions-closed.png'), animations: 'disabled' });
+  await activeToggle.focus();
+  await page.keyboard.press('Enter');
   await expect(active.getByRole('article')).toHaveCount(2);
   await expect(active.getByRole('link', { name: '매일 30분 걷기 자세히 보기' })).toHaveAttribute('href', '/challenges/participations/501');
   await expect(active.getByRole('link', { name: '처방 일정 지키기 자세히 보기' })).toHaveAttribute('href', '/challenges/custom-participations/501');
   await expect(active.getByText('공식', { exact: true })).toBeVisible();
   await expect(active.getByText('맞춤', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '지난 기록 펼치기' })).toHaveText('4개 보기');
+  await expect(page.getByRole('button', { name: '지난 기록 펼치기' })).toContainText('4');
   await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
   const history = page.getByRole('region', { name: '지난 기록', exact: true });
   await expect(history.getByRole('article')).toHaveCount(4);
+  await expect(active.getByRole('article')).toHaveCount(2);
   await expect(history.getByRole('link', { name: '달성한 복약 자세히 보기' })).toHaveAttribute('href', '/challenges/custom-participations/502');
   await expect(history.getByRole('article', { name: '종료한 영양제' })).toContainText('종료');
   await expect(history.getByRole('article', { name: '취소한 복약' })).toContainText('취소');
@@ -214,6 +222,7 @@ for (const entry of ['participation', 'catalog'] as const) {
     expect(joinCalls).toBe(1);
     await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
     const active = page.getByRole('region', { name: '진행 중인 챌린지', exact: true });
+    await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
     await expect(active.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
     await expect(active.getByRole('link', { name: /매일 30분 걷기 자세히 보기/ })).toHaveAttribute('href', '/challenges/participations/502');
     await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
@@ -363,6 +372,7 @@ test('real My and browse keep the shared back navigation', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page);
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await page.getByRole('link', { name: '둘러보기', exact: true }).click();
   const back = page.getByRole('button', { name: '뒤로 가기', exact: true });
   await expect(back).toBeVisible();
@@ -590,6 +600,7 @@ test('my card trusts server progress and retries SELF check-in with the same ide
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await expect(card.getByText('3 / 14일 인증')).toBeVisible();
@@ -657,6 +668,7 @@ test('My keeps a successful check-in when optional catalog and badge refreshes f
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await card.getByRole('button', { name: '했어요' }).click();
 
@@ -864,6 +876,7 @@ test('My offers a GET-only retry when progress refresh fails after an approved c
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await card.getByRole('button', { name: '했어요' }).click();
 
@@ -949,6 +962,7 @@ test('a final check-in keeps badge totals uncertain until GET-only recovery is c
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const badgeSummary = page.getByRole('heading', { name: '작은 실천이 쌓이고 있어요' }).locator('..');
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await expect(badgeSummary.getByText('모은 배지 1종 · 1회 획득')).toBeVisible();
@@ -1005,6 +1019,7 @@ test('My keeps every card refresh-required after separate approved check-ins los
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const firstCard = page.getByRole('article', { name: dailyChallenge.name });
   const secondCard = page.getByRole('article', { name: weeklyChallenge.name });
 
@@ -1059,6 +1074,7 @@ test('a delayed My check-in does not refresh after leaving the page', async ({ p
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await page.getByRole('article', { name: dailyChallenge.name }).getByRole('button', { name: '했어요' }).click();
   await page.getByRole('link', { name: '둘러보기', exact: true }).click();
   await expect(page.getByRole('region', { name: '챌린지 목록' })).toContainText(dailyChallenge.name);
@@ -1085,6 +1101,7 @@ test('SELF participation without a reward badge is labeled as direct verificatio
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   const card = page.getByRole('article', { name: weeklyChallenge.name });
   await expect(card.getByText('직접 인증', { exact: true })).toBeVisible();
@@ -1573,7 +1590,7 @@ test('authenticated home renders a server-backed challenge summary with navigati
 });
 
 for (const width of [320, 430]) {
-  test(`home challenge density shows every active row and grows naturally at ${width}`, async ({ page }, testInfo) => {
+  test(`home challenge density keeps fixed-width compact cards and completed goals at ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await authenticate(page);
     const mutations: string[] = [];
@@ -1590,8 +1607,7 @@ for (const width of [320, 430]) {
     await expect(rows).toHaveCount(1);
     const card = rows.first().locator('..');
     const singleHeight = (await card.boundingBox())!.height;
-    // One short row should not reserve the previous two-row minimum height.
-    expect.soft(singleHeight).toBeLessThan(110);
+    expect(singleHeight).toBeLessThanOrEqual(230);
     const shortTitleRight = await rows.first().getByText('매일 30분 걷기', { exact: true }).evaluate(el => {
       const textRange = document.createRange();
       textRange.selectNodeContents(el);
@@ -1606,10 +1622,11 @@ for (const width of [320, 430]) {
       participation({ id: 505, challenge_name: '완료한 도전', status: 'COMPLETED' }),
       participation({ id: 506, challenge_name: '만료한 도전', status: 'EXPIRED' })];
     await page.reload();
-    await expect(rows).toHaveCount(3);
-    await expect(summary.getByText(/취소한 도전|완료한 도전|만료한 도전/)).toHaveCount(0);
+    await expect(rows).toHaveCount(4);
+    await expect(summary.getByText(/취소한 도전|만료한 도전/)).toHaveCount(0);
+    await expect(summary.getByText('완료한 도전', { exact: true })).toHaveCount(1);
     await expect(rows.nth(2)).toHaveAttribute('href', '/challenges/participations/503');
-    expect((await card.boundingBox())!.height).toBeGreaterThan(singleHeight + 80);
+    expect((await card.boundingBox())!.height).toBe(singleHeight);
     await summary.screenshot({ path: testInfo.outputPath(`home-challenge-three-${width}.png`) });
     expect(mutations).toEqual([]);
   });
@@ -1693,6 +1710,7 @@ test('empty My state directs users to official browse without inventing tailored
   await authenticate(page);
   await stubChallengeReads(page, { catalog: [], participations: [], badges: [] });
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   await expect(page.getByText('참여 중인 챌린지가 없어요.')).toBeVisible();
   await expect(page.getByRole('link', { name: '둘러보기', exact: true })).toHaveAttribute('href', '/challenges/browse');
@@ -1750,10 +1768,12 @@ test('browse to join to My check-in persists after reload through server reads',
   await page.getByRole('button', { name: '참여하기' }).click();
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
   await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '챌린지', exact: true }).click();
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await card.getByRole('button', { name: '했어요' }).click();
   await expect(card.getByText('4 / 14일 인증')).toBeVisible();
   await page.reload();
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('article', { name: dailyChallenge.name }).getByText('4 / 14일 인증')).toBeVisible();
   expect(joined).toBe(true);
   expect(checked).toBe(true);
@@ -1796,6 +1816,7 @@ test('a delayed previous-account response cannot replace the current account cha
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('status', { name: '내 챌린지 불러오는 중' })).toBeVisible();
   await page.goto('/login');
   await page.getByLabel('이메일').fill('account-b@example.com');
@@ -1803,6 +1824,7 @@ test('a delayed previous-account response cannot replace the current account cha
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
   await expect(page).toHaveURL(/\/home$/);
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('article', { name: '둘째 계정 챌린지' })).toBeVisible();
   releaseAccountA();
   await page.waitForTimeout(100);

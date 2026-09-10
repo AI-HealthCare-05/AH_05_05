@@ -75,16 +75,26 @@ for (const width of [320, 1280]) {
   });
 }
 
-test('expanded medication chips show meal names while editing preserves scheduled times', async ({ page }, testInfo) => {
+test('expanded medication uses legend-colored dots while editing preserves scheduled times', async ({ page }, testInfo) => {
   await page.goto('/medications');
   await page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ }).click();
   const detail = page.getByRole('region', { name: '2026년 9월 5일 처방 상세' });
   await expect(detail).not.toContainText(/\d{2}:\d{2}/);
   for (const slot of ['아침', '점심', '저녁', '자기전']) {
-    await expect(detail.getByText(slot, { exact: true })).toBeVisible();
+    const dot = detail.getByRole('img', { name: slot, exact: true });
+    await expect(dot).toBeVisible();
+    await expect(dot).toHaveText('');
+    const legend = page.getByText(slot, { exact: true });
+    expect(await dot.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(
+      await legend.evaluate(el => getComputedStyle(el).backgroundColor));
   }
   await expect(detail.getByText('끝까지 복용')).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('expanded-meal-labels.png') });
+  const chevron = page.locator('button[aria-controls="medication-episode-369"] svg');
+  const pencil = page.getByRole('button', { name: '처방 수정 · 2026년 9월 5일', exact: true }).locator('svg');
+  const c = (await chevron.boundingBox())!;
+  const p = (await pencil.boundingBox())!;
+  expect(Math.abs(c.x + c.width / 2 - p.x - p.width / 2)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath('expanded-meal-dots.png'), animations: 'disabled' });
   let saved: unknown;
   await page.route('**/api/v1/med/medication/schedule/369', async route => {
     if (route.request().method() === 'GET') return route.fallback();
@@ -94,6 +104,8 @@ test('expanded medication chips show meal names while editing preserves schedule
   await page.getByRole('button', { name: '처방 수정 · 2026년 9월 5일', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '처방 편집' });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('복용 중', { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('prescription-edit.png'), animations: 'disabled' });
   await expect(page.getByRole('button', { name: '챗봇', exact: true })).toBeHidden();
   await dialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(dialog).toHaveCount(0);

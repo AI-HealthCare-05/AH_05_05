@@ -1187,10 +1187,10 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   );
 
   const unextractedMedication = page.getByRole('article', { name: /파모티딘 원문/ });
-  await unextractedMedication.getByRole('button', { name: /약 정보$/ }).click();
-  await expect(unextractedMedication.locator('dl > div')).toHaveText([
-    '함량미추출', '1회 투약량미추출', '1일 횟수미추출', '투약일수미추출',
-  ]);
+  await unextractedMedication.getByRole('button', { name: /수정$/ }).click();
+  await expect(page.getByRole('dialog').getByLabel('함량', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('dialog').getByLabel('1회 투약량', { exact: true })).toHaveValue('');
+  await page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).click();
 
   await page.getByRole('button', { name: '리바록사반 수정', exact: true }).click();
   const editDialog = page.getByRole('dialog');
@@ -1199,8 +1199,9 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await editDialog.getByLabel('1회 투약량').fill('0.5정');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
   const editedMedication = page.getByRole('article', { name: '리바록사반 수정', exact: true });
-  await editedMedication.getByRole('button', { name: '리바록사반 수정 약 정보', exact: true }).click();
-  await expect(editedMedication.locator('dl > div').first()).toHaveText('함량15mg');
+  await editedMedication.getByRole('button', { name: '리바록사반 수정 수정', exact: true }).click();
+  await expect(page.getByRole('dialog').getByLabel('함량', { exact: true })).toHaveValue('15mg');
+  await page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).click();
 
   await page.getByRole('button', { name: '아세트아미노펜 수정', exact: true }).click();
   const prnDialog = page.getByRole('dialog');

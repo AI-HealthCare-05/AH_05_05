@@ -24,39 +24,40 @@ async function openReview(page: Page, confirmed = false) {
 test.beforeEach(() => test.skip(!IS_REAL_API, REAL_API_ONLY_REASON));
 
 for (const width of [320, 390]) {
-  test(`OCR 약 상세는 기본 접힘이고 펼치면 항목별 줄바꿈하며 이름과 경고는 유지한다 (${width}px)`, async ({ page }) => {
+  test(`OCR compact cards align the pencil with the final name line and keep warnings beside names (${width}px)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 812 });
     await openReview(page);
     const card = page.getByRole('article', { name: longName, exact: true });
-    const toggle = card.getByRole('button', { name: `${longName} 약 정보`, exact: true });
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(card).toBeVisible();
+    await expect(card.locator('[aria-expanded]')).toHaveCount(0);
     await expect(card.getByText('확인 필요', { exact: true })).toBeVisible();
     await expect(card.getByText('함량', { exact: true })).toBeHidden();
     await card.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `test-results-ocr-disclosure/ocr-collapsed-${width}.png` });
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-    const rows = card.locator('dl > div');
-    await expect(rows).toHaveText(['함량100mg', '1회 투약량1.5정', '1일 횟수3회', '투약일수30일']);
-    const bounds = await rows.evaluateAll(elements => elements.map(element => {
-      const rect = element.getBoundingClientRect();
-      return { top: rect.top, bottom: rect.bottom };
-    }));
-    for (let i = 1; i < bounds.length; i += 1) expect(bounds[i].top).toBeGreaterThanOrEqual(bounds[i - 1].bottom);
+    const edit = card.getByRole('button', { name: `${longName} 수정`, exact: true });
+    await expect(edit).toHaveText('');
+    const lastLine = await card.locator('strong').evaluate(element => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const rect = Array.from(range.getClientRects()).at(-1)!;
+      return { x: rect.x, right: rect.right, center: rect.y + rect.height / 2 };
+    });
+    const icon = (await edit.locator('svg').boundingBox())!;
+    const warning = (await card.getByText('확인 필요', { exact: true }).boundingBox())!;
+    expect(Math.abs(icon.y + icon.height / 2 - lastLine.center)).toBeLessThanOrEqual(3);
+    expect(warning.x).toBeGreaterThan(lastLine.x);
+    expect(Math.abs(warning.y + warning.height / 2 - lastLine.center)).toBeLessThanOrEqual(3);
     const name = card.locator('strong');
     expect(await name.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(30);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    await card.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `test-results-ocr-disclosure/ocr-expanded-${width}.png` });
-    await toggle.focus();
+    await page.getByRole('article').last().scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`ocr-compact-${width}.png`), animations: 'disabled' });
+    await edit.focus();
     await page.keyboard.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(card.getByText('확인 필요', { exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog').getByLabel('약품명')).toHaveValue(longName);
   });
 }
 
-test('별도 수정 버튼은 원본 값을 편집하고 수정 후에도 정보를 접었다 펼칠 수 있다', async ({ page }) => {
+test('연필은 원본 값을 편집하고 확인한 경고를 제거한다', async ({ page }) => {
   await openReview(page);
   const card = page.getByRole('article', { name: longName, exact: true });
   await card.getByRole('button', { name: `${longName} 수정`, exact: true }).click();
@@ -66,19 +67,18 @@ test('별도 수정 버튼은 원본 값을 편집하고 수정 후에도 정보
   await dialog.getByLabel('함량', { exact: true }).fill('150mg');
   await dialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(card.getByText('확인 필요', { exact: true })).toHaveCount(0);
-  await card.getByRole('button', { name: `${longName} 약 정보`, exact: true }).click();
-  await expect(card.locator('dl > div').first()).toHaveText('함량150mg');
+  await card.getByRole('button', { name: `${longName} 수정`, exact: true }).click();
+  await expect(dialog.getByLabel('함량', { exact: true })).toHaveValue('150mg');
 });
 
-test('저장된 읽기 전용 OCR도 상세를 열 수 있고 미추출과 필요 시를 구분한다', async ({ page }) => {
+test('저장된 읽기 전용 OCR은 접기 없이 미추출과 필요 시 정보를 보존한다', async ({ page }) => {
   await openReview(page, true);
   await expect(page.getByRole('button', { name: / 수정$/ })).toHaveCount(0);
   const prn = page.getByRole('article', { name: '필요시복용약', exact: true });
-  await prn.getByRole('button', { name: '필요시복용약 약 정보', exact: true }).click();
+  await expect(prn.locator('[aria-expanded]')).toHaveCount(0);
   await expect(prn.locator('dl > div')).toHaveText(['함량미추출', '1회 투약량미추출', '1일 횟수필요 시', '투약일수미추출']);
-  await expect(prn.getByText('확인 필요')).toBeVisible();
+  await expect(prn.getByText('확인 권장')).toBeVisible();
   const missing = page.getByRole('article', { name: '추출하지못한약', exact: true });
-  await missing.getByRole('button', { name: '추출하지못한약 약 정보', exact: true }).click();
   await expect(missing.locator('dl > div')).toHaveText(['함량미추출', '1회 투약량미추출', '1일 횟수미추출', '투약일수미추출']);
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });

@@ -13,16 +13,16 @@
   display: flex;
   flex: 0 0 144px;
   width: 144px;
-  min-height: 270px;
+  min-height: 220px;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: 6px;
+  padding: 10px 12px;
   border-radius: var(--radius-input);
   background: color-mix(in srgb, var(--color-primary-bg) 35%, var(--color-card));
   scroll-snap-align: start;
   animation: rx-today-reveal 180ms ease-out;
 }
-.rx-today-challenge-detail { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 10px; }
+.rx-today-challenge-detail { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
 .rx-today-challenge-detail:focus-visible,
 .rx-today-challenge-checkin:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .rx-today-challenge-checkin,

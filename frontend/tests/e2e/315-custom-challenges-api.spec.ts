@@ -219,6 +219,7 @@ test('medication multi selection creates separate participations and shows both 
   await expect(page).toHaveURL(/\/challenges$/);
   expect(requests.map(request => request.targetIds)).toEqual([[101], [102]]);
   expect(new Set(requests.map(request => request.idempotencyKey)).size).toBe(2);
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const section = page.getByRole('region', { name: '진행 중인 챌린지' });
   await expect(section.locator('a[href="/challenges/custom-participations/701"]')).toBeVisible();
   await expect(section.locator('a[href="/challenges/custom-participations/702"]')).toBeVisible();
@@ -405,6 +406,7 @@ test('My lists custom participation independently and detail renders only server
   await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: item }));
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const section = page.getByRole('region', { name: '진행 중인 챌린지' });
   await expect(section.getByText(item.challengeName)).toBeVisible();
   await expect(section.getByText('2 / 7일')).toBeVisible();
@@ -433,6 +435,7 @@ test('custom detail back returns through My without reopening the detail', async
   await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: item }));
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await page.getByRole('region', { name: '진행 중인 챌린지' })
     .getByRole('link', { name: `${item.challengeName} 자세히 보기` })
     .click();
@@ -467,11 +470,13 @@ test('route re-entry refetches custom progress and Home actions never POST a cus
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText('1 / 7일')).toBeVisible();
   const firstEntryReads = customReads;
   await page.goto('/home');
   completedCount = 4;
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText('2 / 7일')).toBeVisible();
   expect(customReads).toBeGreaterThan(firstEntryReads);
   expect(customPosts).toBe(0);
@@ -498,7 +503,7 @@ test('a delayed recommendation response cannot replace another account route', a
   release();
 
   await expect(page).toHaveURL(/\/challenges\/browse$/);
-  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: '챌린지 종류' })).toBeVisible();
   await expect(page.getByText(medicationA.challengeName)).toHaveCount(0);
 });
 
@@ -530,7 +535,7 @@ test('a delayed join cannot navigate after leaving the target page', async ({ pa
   await page.waitForTimeout(100);
 
   await expect(page).toHaveURL(/\/challenges\/browse$/);
-  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: '챌린지 종류' })).toBeVisible();
   expect(targetRequests).toEqual([[101]]);
 });
 
@@ -543,11 +548,12 @@ test('custom list failure stays inside its section while official My remains usa
   }));
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: '진행 중인 챌린지' })).toBeVisible();
   const custom = page.getByRole('region', { name: '진행 중인 챌린지' });
   await expect(custom.getByRole('alert')).toContainText('맞춤 진행률을 불러오지 못했어요.');
-  await expect(page.getByRole('link', { name: '공식 챌린지 둘러보기' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '둘러보기', exact: true })).toBeVisible();
 });
 
 test('custom My remains available when the official dashboard fails', async ({ page }) => {
@@ -562,6 +568,7 @@ test('custom My remains available when the official dashboard fails', async ({ p
   }));
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   await expect(page.getByRole('alert')).toContainText('공식 챌린지를 불러오지 못했어요.');
   await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText(medicationA.challengeName)).toBeVisible();
@@ -581,6 +588,7 @@ test('custom My can finish loading while the official dashboard is still pending
   }));
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText(medicationA.challengeName)).toBeVisible();
   await expect(page.getByRole('status', { name: '내 챌린지 불러오는 중' })).toBeVisible();
   release();
@@ -1047,6 +1055,7 @@ test('custom cancellation errors stay retryable and ended state is reconciled on
 });
 
 test('Home shows every active custom participation without a two-item cap', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-10T12:00:00+09:00'));
   await authenticate(page);
   await page.route(url => url.pathname.startsWith('/api/v1/'), route => route.fulfill({ status: 404, json: {} }));
   await page.route('**/api/v1/medications', route => route.fulfill({ json: [] }));
@@ -1055,7 +1064,7 @@ test('Home shows every active custom participation without a two-item cap', asyn
     participation(), participation({ id: 702, challengeName: '둘째 복약' }), participation({ id: 703, challengeName: '영양제 루틴', challengeType: 'SUPPLEMENT' }), participation({ id: 704, status: 'CANCELLED', challengeName: '취소한 복약' }),
   ], totalCount: 4 } }));
   await page.goto('/home');
-  const summary = page.getByRole('region', { name: '맞춤 챌린지', exact: true });
+  const summary = page.getByRole('region', { name: '챌린지', exact: true });
   await expect(summary.getByRole('link', { name: /상세 보기$/ })).toHaveCount(3);
   await expect(summary.getByRole('link', { name: /영양제 루틴.*상세 보기/ })).toHaveAttribute('href', '/challenges/custom-participations/703');
   await expect(summary.getByText('취소한 복약')).toHaveCount(0);

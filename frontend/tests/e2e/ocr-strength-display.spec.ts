@@ -70,14 +70,17 @@ for (const width of [375, 1280]) {
     await expect(page.locator('strong').filter({ hasText: '펙소나딘' })).toHaveText('펙소나딘정120밀리그램');
     await expect(page.locator('strong').filter({ hasText: '글로덱시' })).toHaveText('글로덱시정300mg');
     await expect(page.locator('strong').filter({ hasText: '아스피린' })).toHaveText('아스피린프로텍트정100밀리그람');
-    for (const [name, values] of [
-      ['아스피린프로텍트정100밀리그람', ['함량100mg', '1회 투약량1', '1일 횟수1회', '투약일수30일']],
-      ['글로덱시정300mg', ['함량300mg', '1회 투약량1.5정', '1일 횟수3회', '투약일수5일']],
-      ['펙소나딘정120밀리그램', ['함량120mg', '1회 투약량2', '1일 횟수1회', '투약일수5일']],
+    for (const [name, strength, quantity] of [
+      ['아스피린프로텍트정100밀리그람', '100mg', '1.00'],
+      ['글로덱시정300mg', '300mg 0.3g', '1.50정'],
+      ['펙소나딘정120밀리그램', '120mg', '2.00'],
     ] as const) {
       const card = page.getByRole('article', { name, exact: true });
-      await card.getByRole('button', { name: `${name} 약 정보`, exact: true }).click();
-      await expect(card.locator('dl > div')).toHaveText([...values]);
+      await card.getByRole('button', { name: `${name} 수정`, exact: true }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByLabel('함량', { exact: true })).toHaveValue(strength);
+      await expect(dialog.getByLabel('1회 투약량', { exact: true })).toHaveValue(quantity);
+      await dialog.getByRole('button', { name: '닫기', exact: true }).click();
     }
     await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: `test-results-ocr-display/ocr-strength-dedup-${width}.png`, fullPage: true });

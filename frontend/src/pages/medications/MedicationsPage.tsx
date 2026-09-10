@@ -698,9 +698,6 @@ function MedicationEpisodeSheet({
             </DialogHeader>
             {overview && (
               <div className="flex min-w-0 flex-col gap-4">
-                <span className="self-start rounded-pill bg-primary-bg px-3 py-1.5 text-sm font-bold text-primary-strong">
-                  복용 중
-                </span>
                 <Input
                   label="복약 별칭"
                   aria-label="복약 별칭"

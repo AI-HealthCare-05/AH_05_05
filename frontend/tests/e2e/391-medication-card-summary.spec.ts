@@ -140,7 +140,7 @@ for (const width of [320, 390, 1280]) {
     await expectUnclipped(details.getByText(LONG_NAME, { exact: false }));
     await expect(details.getByText('필요할 때만 · 알림 없음')).toBeVisible();
     await expect(details.getByText('끝까지 복용')).toBeVisible();
-    await expect(details.getByText('자기전', { exact: true })).toBeVisible();
+    await expect(details.getByRole('img', { name: '자기전', exact: true })).toBeVisible();
     await expect(details.getByRole('button', { name: /복용 시간 수정/ })).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -43,7 +43,7 @@ export function TodayChallengeCarousel({ items }: { items: TodayChallengeCard[] 
       {items.map(item => <article key={item.id} aria-label={item.title} className="rx-today-challenge-item">
         <Link to={item.href} aria-label={`${item.title}, ${item.progress}, 상세 보기`} className="rx-today-challenge-detail">
         <span className="self-start rounded-pill bg-primary-bg px-2 py-0.5 text-micro font-bold text-primary">{item.official ? '공식' : '맞춤'}</span>
-        <img src={item.image} alt={item.badgeName} width={64} height={64} className="size-16 self-center rounded-pill object-contain" />
+        <img src={item.image} alt={item.badgeName} width={56} height={56} className="size-14 self-center rounded-pill object-contain" />
         <span className="rx-challenge-title text-center text-sm font-bold [overflow-wrap:anywhere]">{item.title}</span>
         <span className="mt-auto text-center text-caption text-muted-foreground">{item.progress}</span>
         <span role="progressbar" aria-label={`${item.title} 진행률`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.rate} className="rx-challenge-track h-1 w-full overflow-hidden rounded-pill bg-border">

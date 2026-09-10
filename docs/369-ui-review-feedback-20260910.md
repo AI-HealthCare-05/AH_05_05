@@ -59,3 +59,15 @@
 - 최종 캡처: `frontend/test-results/369-final-captures/`(홈 인증/필터), `frontend/test-results/369-review-final/`(PC 홈/챗봇).
 
 캡처는 `frontend/test-results-369-catalog-final/`, `frontend/test-results/369-home-today-review.png`, `frontend/test-results-369-shell-green/`에 있다. main과 사용자 DB는 변경하지 않았으며 원격 push/PR 생성은 수행하지 않았다.
+
+## 9월 11일 카드 압축·아코디언·연필 추가 검수
+
+- 홈 챌린지: 기본 최소 높이 270 → 220px, 배지 64 → 56px, 여백 축소. 고정 폭 144px, 44px 인증 터치 영역, 오늘 달성 카드 유지 및 가로 스와이프는 보존한다. 최초 로딩 예약 높이도 226px로 함께 줄였다.
+- 챌린지 마이: 진행 중/지난 기록을 독립적인 아코디언으로 변경했다. 사용자 최종 결정에 따라 **둘 다 기본 접힘**이며 계정 변경 시 닫힌 상태로 초기화한다. 빈 지난 기록도 메뉴와 안내를 제공한다.
+- Watermelon `accordion-2` 원본을 조회했다: https://registry.watermelon.sh/r/accordion-2.json (preview: https://ui.watermelon.sh/components/accordion). 원본의 다중 독립 패널, 카드 배경, 펼침 상태 그림자를 RxVita 토큰과 native button의 aria-expanded/aria-controls로 적용했다. 추가 라이브러리는 설치하지 않았다.
+- 처방 편집의 '복용 중' 스티커만 제거했다. 복약 목록의 복용 상태는 유지한다.
+- 펼친 복약 카드의 시간대 글자 대신 기존 범례 배경색의 점을 표시한다. 시간대별 접근성 이름과 툴팁은 보존하며 실제 스케줄/편집 저장값은 변경하지 않았다. 연필과 꺾쇠의 중심 x좌표를 맞췄다.
+- OCR 결과: 접기/펼치기와 꺾쇠, 보이는 '수정' 글자를 제거했다. 연필만 약명 마지막 줄에 맞추고 '확인 필요/권장' 배지는 약명 옆에 배치했다. 상세 값은 기존 편집창에서 확인·수정한다. 저장된 읽기 전용 결과는 편집 버튼 없이 상세 값을 계속 표시한다.
+- 검증: 관련 API fixture 브라우저 회귀 124개, OCR 수정·확정 계약 1개 통과. 320/390/1280px 긴 약명, 시간 값 보존, 연필 키보드 접근, 아코디언 독립 토글 및 공식/맞춤 참여 흐름을 포함한다. 전체 프런트엔드 테스트나 실제 DB 변경 검증은 아니다.
+- 최종 타입 검사 및 production build 통과. 기존 500kB 번들 경고는 남아 있다. 별도 읽기 전용 코드 리뷰에서 Critical/Important 지적 없음.
+- 캡처: `frontend/test-results/369-compact-final/`, OCR 계약: `frontend/test-results/369-ocr-contract-final/`. 기존 추적 중인 `frontend/test-results-ocr-display/ocr-strength-dedup-{375,1280}.png`도 현재 UI로 갱신했다.

@@ -16,6 +16,7 @@ import { ChallengePageHeading } from './ChallengePageHeading';
 import { OfficialChallengeProgressCard } from './OfficialChallengeProgressCard';
 import { CustomChallengeProgressCard } from './CustomChallengeProgressCard';
 import { useCustomChallengeMy } from './useCustomChallengeMy';
+import { ChallengeAccordion } from './ChallengeAccordion';
 
 interface ChallengeDashboard {
   participations: ChallengeParticipation[];
@@ -52,12 +53,10 @@ export function OfficialChallengeMyPage() {
   const [actionError, setActionError] = useState<{ id: number; message: string } | null>(null);
   const [pendingId, setPendingId] = useState<number | 'badges' | null>(null);
   const [refreshRequiredIds, setRefreshRequiredIds] = useState<Set<number>>(() => new Set());
-  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
 
   useEffect(() => {
-    setHistoryExpanded(false);
     requestGenerationRef.current += 1;
     return () => {
       requestGenerationRef.current += 1;
@@ -238,8 +237,7 @@ export function OfficialChallengeMyPage() {
         </>
       ) : null}
 
-      <section aria-labelledby="active-challenges-title" className="flex flex-col gap-3">
-        <h2 id="active-challenges-title" className="text-base font-bold">진행 중인 챌린지</h2>
+      <ChallengeAccordion key={`${principalKey}-active`} title="진행 중인 챌린지" count={data && custom.items ? active.length + customActive.length : undefined}>
         {custom.items === null && !custom.error ? <LoadingState label="내 맞춤 챌린지 불러오는 중">맞춤 챌린지를 불러오고 있어요.</LoadingState> : null}
         {custom.error ? (
           <div role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
@@ -264,22 +262,15 @@ export function OfficialChallengeMyPage() {
           />
         ))}
         {customActive.map(item => <CustomChallengeProgressCard key={`custom-${item.id}`} participation={item} />)}
-      </section>
+      </ChallengeAccordion>
 
-      {historyCount > 0 ? (
-        <section aria-labelledby="challenge-history-title" className="flex flex-col gap-3">
-          <div className="flex min-h-touch items-center justify-between gap-3">
-            <h2 id="challenge-history-title" className="text-base font-bold">지난 기록</h2>
-            <button type="button" aria-expanded={historyExpanded} aria-label={historyExpanded ? '지난 기록 접기' : '지난 기록 펼치기'} onClick={() => setHistoryExpanded(value => !value)} className="min-h-touch rounded-pill px-3 text-sm font-bold text-primary">
-              {historyExpanded ? '접기' : `${historyCount}개 보기`}
-            </button>
-          </div>
-          {historyExpanded ? history.map(item => (
+        <ChallengeAccordion key={`${principalKey}-history`} title="지난 기록" count={data && custom.items ? historyCount : undefined}>
+          {data && custom.items && historyCount === 0 && <p className="px-2 py-3 text-sm text-muted-foreground">지난 기록이 없어요.</p>}
+          {history.map(item => (
             <OfficialChallengeProgressCard key={`official-${item.id}`} participation={item} pending={false} onCheckIn={() => undefined} />
-          )) : null}
-          {historyExpanded ? customHistory.map(item => <CustomChallengeProgressCard key={`custom-${item.id}`} participation={item} />) : null}
-        </section>
-      ) : null}
+          ))}
+          {customHistory.map(item => <CustomChallengeProgressCard key={`custom-${item.id}`} participation={item} />)}
+        </ChallengeAccordion>
       </main>
     </>
   );

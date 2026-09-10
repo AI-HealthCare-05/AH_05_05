@@ -1,5 +1,5 @@
-import { useEffect, useId, useState, type MouseEvent, type ReactNode } from 'react';
-import { AlertTriangle, ChevronRight, Pencil, Plus } from 'lucide-react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { AlertTriangle, Pencil, Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { formatMedicationDoseQuantity, formatMedicationLabel, formatMedicationStrength } from '@/shared/lib/medicationLabel';
@@ -685,7 +685,7 @@ export function OcrReviewPage() {
                   {reviewItemNames.length}곳만 확인해주세요
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  나머지는 잘 읽혔습니다. 수정 버튼을 눌러 약 정보를 고칠 수 있어요.
+                  나머지는 잘 읽혔습니다. 연필 아이콘을 눌러 약 정보를 고칠 수 있어요.
                 </p>
               </div>
             </div>
@@ -1068,8 +1068,6 @@ function OcrMedicationCard({
   reviewed: boolean;
   onEdit?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const detailsId = useId();
   const name = formatMedicationLabel(medication.name, medication.strength);
   const strength = formatMedicationStrength(medication.strength) || '미추출';
   const doseQuantity = formatMedicationDoseQuantity(medication.doseQuantity) || '미추출';
@@ -1089,30 +1087,31 @@ function OcrMedicationCard({
 
   return (
     <article aria-label={name} className="min-w-0 w-full rounded-card bg-card p-4 shadow-card">
-      <button
-        type="button"
-        aria-label={`${name} 약 정보`}
-        aria-expanded={expanded}
-        aria-controls={detailsId}
-        className="flex min-h-touch w-full items-center gap-3 rounded-button text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => setExpanded(current => !current)}
-      >
-        <span className="flex min-w-0 flex-1 flex-col items-start gap-2">
-          <strong className="max-w-full whitespace-normal text-lg text-foreground [overflow-wrap:anywhere]">
+      <div className="flex min-h-11 items-end gap-2">
+        <div className="flex min-w-0 flex-1 items-end gap-2">
+          <strong className="min-w-0 whitespace-normal text-lg leading-7 text-foreground [overflow-wrap:anywhere]">
             {name}
           </strong>
+          <span className="shrink-0 [&>span]:px-2 [&>span]:py-1 [&>span]:text-xs">
           {medication.confidence === 'low' && !reviewed ? (
             <StatusBadge type="review">확인 필요</StatusBadge>
           ) : (
             <ConfidenceBadge confidence={reviewed ? undefined : medication.confidence} />
           )}
-        </span>
-        <ChevronRight
-          aria-hidden
-          className={`size-5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}
-        />
-      </button>
-      <div id={detailsId} hidden={!expanded}>
+          </span>
+        </div>
+        {onEdit && (
+          <button
+            type="button"
+            aria-label={`${name} 수정`}
+            className="-mb-2 flex size-11 shrink-0 items-center justify-center rounded-button text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onEdit}
+          >
+            <Pencil aria-hidden className="size-4" />
+          </button>
+        )}
+      </div>
+      {!onEdit && (
         <dl className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-sm">
           {details.map(([label, value]) => (
             <div key={label} className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
@@ -1121,19 +1120,6 @@ function OcrMedicationCard({
             </div>
           ))}
         </dl>
-      </div>
-      {onEdit && (
-        <div className="mt-1 flex justify-end">
-          <button
-            type="button"
-            aria-label={`${name} 수정`}
-            className="inline-flex min-h-touch items-center gap-1 rounded-button px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onEdit}
-          >
-            <Pencil aria-hidden className="size-4 shrink-0" />
-            수정
-          </button>
-        </div>
       )}
     </article>
   );

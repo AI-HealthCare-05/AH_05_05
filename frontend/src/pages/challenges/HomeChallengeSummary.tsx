@@ -163,7 +163,7 @@ function OfficialHomeChallengeSummary({ principal }: { principal: string | null 
   const loading = (official.items === null && !official.error) || (custom.items === null && !custom.error);
   return <SummaryFrame>
     {items.length > 0 && <TodayChallengeCarousel items={items} />}
-    {loading && items.length === 0 && <div role="status" aria-label="오늘 챌린지 불러오는 중" className="flex min-h-[276px] items-center justify-center gap-2 text-caption text-muted-foreground"><span aria-hidden className="size-4 rounded-full border-2 border-primary-bg border-t-primary motion-safe:animate-spin" />오늘 챌린지를 확인하고 있어요</div>}
+    {loading && items.length === 0 && <div role="status" aria-label="오늘 챌린지 불러오는 중" className="flex min-h-[226px] items-center justify-center gap-2 text-caption text-muted-foreground"><span aria-hidden className="size-4 rounded-full border-2 border-primary-bg border-t-primary motion-safe:animate-spin" />오늘 챌린지를 확인하고 있어요</div>}
     {!loading && !official.error && !custom.error && items.length === 0 && <p className="py-4 text-sm text-muted-foreground">오늘 남은 챌린지가 없어요</p>}
     {([['공식 챌린지', official], ['맞춤 챌린지', custom]] as const).map(([label, state]) => state.error && <section key={label} aria-label={label} className="flex flex-col gap-2 py-2">
       <p role="alert" className="text-sm text-muted-foreground">{state.error}</p>

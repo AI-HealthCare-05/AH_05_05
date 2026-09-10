@@ -55,6 +55,7 @@ test('fixed width cards scroll inside their panel and arrows reflect remaining d
   await expect(previous).toBeHidden();
   const first = section.getByRole('article', { name: '처방 1', exact: true });
   expect((await first.boundingBox())!.width).toBe(144);
+  expect((await first.boundingBox())!.height).toBeLessThanOrEqual(230);
   await next.click();
   await expect(previous).toBeVisible();
   for (let i = 0; i < 4 && await next.isVisible(); i++) await next.click();
