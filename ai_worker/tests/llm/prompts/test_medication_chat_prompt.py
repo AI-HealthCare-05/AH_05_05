@@ -2,6 +2,7 @@ import json
 from importlib import import_module
 
 from ai_worker.llm.prompts.medication_chat_prompt import (
+    MEDICATION_CHAT_PROMPT_VERSION,
     SYSTEM_PROMPT,
     build_medication_chat_messages,
 )
@@ -76,15 +77,27 @@ def test_build_messages_applies_markdown_user_template() -> None:
 
 def test_system_prompt_requires_limited_markdown_product_answer() -> None:
     assert "✅ **효능**" in SYSTEM_PROMPT
-    assert "`* ` 기호" in SYSTEM_PROMPT
+    assert "`- ` 목록" in SYSTEM_PROMPT
     assert "# 제목" in SYSTEM_PROMPT
     assert "빈 항목은 출력하지" in SYSTEM_PROMPT
-    assert "질문과 직접 관련된 핵심 항목" in SYSTEM_PROMPT
+    assert "질문과 직접 관계있는 정보만" in SYSTEM_PROMPT
 
 
-def test_system_prompt_formats_long_single_section_as_asterisk_bullets() -> None:
-    assert "서로 다른 사실·조건·경고가 둘 이상" in SYSTEM_PROMPT
-    assert "`* ` 기호" in SYSTEM_PROMPT
+def test_system_prompt_uses_v6_few_shot_and_private_answer_checklist() -> None:
+    assert MEDICATION_CHAT_PROMPT_VERSION == "medication-chat-prompt-v6"
+    assert "Few-shot" in SYSTEM_PROMPT
+    assert "내부 점검" in SYSTEM_PROMPT
+    assert "최종 답변에는 내부 점검 과정" in SYSTEM_PROMPT
+    assert "포함된 섹션만 출력" in SYSTEM_PROMPT
+    assert "초안에 포함된 의료 면책 문구를 유지" not in SYSTEM_PROMPT
+    assert "✉️ **안내사항**" in SYSTEM_PROMPT
+    assert "📭 **공식 확인 경로**" in SYSTEM_PROMPT
+    assert "의료진·약사에게 확인할 내용" not in SYSTEM_PROMPT
+
+
+def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
+    assert "한 bullet은 약 70자 이내" in SYSTEM_PROMPT
+    assert "섹션당 핵심 bullet 한 개" in SYSTEM_PROMPT
 
 
 def test_prompt_limits_product_output_to_requested_sections() -> None:
@@ -122,7 +135,13 @@ def test_prompt_limits_product_output_to_requested_sections() -> None:
     assert isinstance(user_content, str)
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["requested_section_types"] == ["FUNCTION", "CAUTION"]
-    assert "DAILY_INTAKE가 요청된 경우에만" in SYSTEM_PROMPT
+    assert "DAILY_INTAKE가 요청되지 않았다면" in SYSTEM_PROMPT
+
+
+def test_system_prompt_treats_active_intake_as_requested_sections() -> None:
+    assert "📋 **복약정보**" in SYSTEM_PROMPT
+    assert "💊 **영양제 정보**" in SYSTEM_PROMPT
+    assert "등록한 복약정보" in SYSTEM_PROMPT
 
 
 def test_build_messages_redacts_unrequested_dosage_from_draft() -> None:

@@ -47,6 +47,7 @@ def test_assemble_omits_empty_product_guide_fields() -> None:
 
     assert "사용법: 1일 1~2캡슐" in answer
     assert "함께 주의할 약·음식" not in answer
+    assert "이 안내는 보유한 자료를 바탕으로 한 참고 정보" not in answer
 
 
 def test_assemble_omits_no_information_markers() -> None:
@@ -179,4 +180,37 @@ def test_assemble_separates_medication_and_supplement_information_with_a_blank_l
     )
 
     assert "사용자 확정 복약정보" not in answer
-    assert "복약정보\n- 와파린 · 1정 · 1일 1회\n\n영양제 정보\n- 비타민 K · 1정" in answer
+    assert "📋 **복약정보**\n- 와파린 · 1정 · 1일 1회\n\n💊 **영양제 정보**\n- 비타민 K · 1정" in answer
+
+
+def test_assemble_formats_active_intake_as_markdown_sections() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=10,
+                    name="와파린",
+                    dose="1정",
+                )
+            ],
+            supplements=[
+                ActiveSupplement(
+                    registration_id=1,
+                    supplement_nutrient_id=1,
+                    name="비타민 K",
+                    dose_amount="1",
+                    dose_unit="정",
+                    start_date="2026-09-09",
+                )
+            ],
+        ),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+    )
+
+    assert answer.startswith("📋 **복약정보**\n- 와파린 · 1정")
+    assert "\n\n💊 **영양제 정보**\n- 비타민 K · 1정" in answer

@@ -21,9 +21,6 @@ from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
-from ai_worker.llm.assemblers.medication_answer_assembler import (
-    MEDICAL_DISCLAIMER,
-)
 from ai_worker.rag.errors import (
     GuidelineRetrievalError,
     RetrievalFailureStage,
@@ -1194,9 +1191,9 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.route == MedicationChatRoute.RESTRICTED
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
-    assert "확인된 범위" in result.answer
-    assert "공식 확인 경로" in result.answer
-    assert "의료진·약사에게 확인할 내용" in result.answer
+    assert "✉️ **안내사항**" in result.answer
+    assert "📭 **공식 확인 경로**" in result.answer
+    assert "의료진·약사에게 확인할 내용" not in result.answer
     assert "안전한 조합" not in result.answer
 
 
@@ -1254,11 +1251,11 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
 
 
-async def test_execute_keeps_tylenol_efficacy_and_caution_when_answer_has_canonical_disclaimer() -> None:
+async def test_execute_keeps_tylenol_efficacy_and_caution_without_global_disclaimer() -> None:
     result = await build_use_case(
         lookup=MedicationGuideLookup(guide=build_guide()),
         answer_generator=LongAnswerGenerator(
-            f"효능\n- 통증과 발열을 완화합니다.\n\n주의사항\n- 정해진 용법을 지킵니다.\n\n{MEDICAL_DISCLAIMER}"
+            "효능\n- 통증과 발열을 완화합니다.\n\n주의사항\n- 정해진 용법을 지킵니다."
         ),
         grounded_claim_validator=RuleBasedGroundedClaimValidator(),
     ).execute(
@@ -1269,7 +1266,7 @@ async def test_execute_keeps_tylenol_efficacy_and_caution_when_answer_has_canoni
     assert result.safety_status == SafetyStatus.SAFE
     assert "통증과 발열을 완화합니다" in result.answer
     assert "정해진 용법을 지킵니다" in result.answer
-    assert result.answer.endswith(MEDICAL_DISCLAIMER)
+    assert "의료진의 진료, 진단 또는 처방을 대체하지 않습니다" not in result.answer
 
 
 async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:

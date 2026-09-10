@@ -10,12 +10,6 @@ from ai_worker.schemas.medication_chat import (
 )
 from ai_worker.schemas.medication_search import SupplementIngredientFamily
 
-MEDICAL_DISCLAIMER = (
-    "이 안내는 보유한 자료를 바탕으로 한 참고 정보이며 의료진의 진료, "
-    "진단 또는 처방을 대체하지 않습니다. 복용 시작·중단·용량 변경은 "
-    "의료진 또는 약사와 상의하세요."
-)
-
 
 class MedicationAnswerAssembler:
     _EMPTY_GUIDE_VALUES = {
@@ -163,7 +157,6 @@ class MedicationAnswerAssembler:
                 "찾지 못했습니다. 자료가 없다는 사실이 해당 제품이나 조합이 "
                 "안전하다는 뜻은 아닙니다."
             )
-        sections.append(MEDICAL_DISCLAIMER)
         return "\n\n".join(sections)
 
     @classmethod
@@ -249,11 +242,11 @@ class MedicationAnswerAssembler:
 
         sections = []
         if medication_lines:
-            sections.append("복약정보\n" + "\n".join(medication_lines))
+            sections.append("📋 **복약정보**\n" + "\n".join(medication_lines))
 
         supplement_lines = []
         for supplement in context.supplements:
             supplement_lines.append(f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}")
         if supplement_lines:
-            sections.append("영양제 정보\n" + "\n".join(supplement_lines))
+            sections.append("💊 **영양제 정보**\n" + "\n".join(supplement_lines))
         return sections

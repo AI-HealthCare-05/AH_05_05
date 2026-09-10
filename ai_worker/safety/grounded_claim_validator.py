@@ -1,9 +1,6 @@
 import hashlib
 import re
 
-from ai_worker.llm.assemblers.medication_answer_assembler import (
-    MEDICAL_DISCLAIMER,
-)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -56,8 +53,7 @@ class RuleBasedGroundedClaimValidator:
     ) -> GroundedClaimValidationDiagnostic:
         del context
         normalized_answer = self._normalize_spacing(result.answer)
-        policy_scan_answer = self._answer_for_policy_scan(normalized_answer)
-        if match := self._MEDICATION_CHANGE_PATTERN.search(policy_scan_answer):
+        if match := self._MEDICATION_CHANGE_PATTERN.search(normalized_answer):
             if self._matches_official_warning(
                 match_text=match.group(),
                 official_warning_texts=result.official_warning_texts,
@@ -71,19 +67,17 @@ class RuleBasedGroundedClaimValidator:
                 action=self._match_category(match.group(), self._MEDICATION_CHANGE_ACTIONS),
                 target=self._match_category(match.group(), self._MEDICATION_CHANGE_TARGETS),
             )
-        if match := self._DIAGNOSIS_PATTERN.search(policy_scan_answer):
+        if match := self._DIAGNOSIS_PATTERN.search(normalized_answer):
             return self._match_diagnostic(
                 rule_code="DIAGNOSTIC_ASSERTION",
                 match_text=match.group(),
             )
-        if match := self._TREATMENT_PATTERN.search(policy_scan_answer):
+        if match := self._TREATMENT_PATTERN.search(normalized_answer):
             return self._match_diagnostic(
                 rule_code="TREATMENT_DECISION",
                 match_text=match.group(),
             )
-        return GroundedClaimValidationDiagnostic(
-            disclaimer_added=not self._has_disclaimer(normalized_answer),
-        )
+        return GroundedClaimValidationDiagnostic()
 
     async def validate(
         self,
@@ -96,12 +90,6 @@ class RuleBasedGroundedClaimValidator:
             return self._blocked_result(
                 result,
                 reason_code=diagnostic.rule_code,
-            )
-        if diagnostic.disclaimer_added:
-            return result.model_copy(
-                update={
-                    "answer": f"{result.answer.rstrip()}\n\n{MEDICAL_DISCLAIMER}",
-                }
             )
         return result
 
@@ -116,17 +104,12 @@ class RuleBasedGroundedClaimValidator:
                 "answer": (
                     "안전성 검사를 통과하지 못해 원래 답변을 제공할 수 "
                     "없습니다. 복용 여부나 용량 변경은 의료진 또는 약사와 "
-                    "상의하세요.\n\n"
-                    f"{MEDICAL_DISCLAIMER}"
+                    "상의하세요."
                 ),
                 "safety_status": SafetyStatus.BLOCKED,
                 "safety_reason_codes": [reason_code],
             }
         )
-
-    @staticmethod
-    def _has_disclaimer(answer: str) -> bool:
-        return "대체" in answer and any(keyword in answer for keyword in ("의료진", "의사", "진료", "약사"))
 
     @staticmethod
     def _match_category(
@@ -158,17 +141,6 @@ class RuleBasedGroundedClaimValidator:
     @staticmethod
     def _normalize_spacing(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
-
-    @staticmethod
-    def _answer_for_policy_scan(answer: str) -> str:
-        """Exclude only the fixed disclaimer from unsafe-claim detection.
-
-        The disclaimer is a policy notice, not an instruction for the user to
-        alter a medication.  The original answer remains intact for display
-        and for checking whether a disclaimer was already present.
-        """
-
-        return answer.replace(MEDICAL_DISCLAIMER, "")
 
     @classmethod
     def _matches_official_warning(

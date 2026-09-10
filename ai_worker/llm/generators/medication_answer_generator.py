@@ -54,7 +54,7 @@ class OpenAIMedicationAnswerGenerator:
         re.IGNORECASE,
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
-    _SECTION_HEADER_PATTERN = re.compile(r"^\s*✅\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
+    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚫|📋|💊)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
     _BULLET_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•])\s*")
     _SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?。！？])\s+")
@@ -263,8 +263,9 @@ class OpenAIMedicationAnswerGenerator:
                 normalized_lines.extend(cls._format_interaction_section(interaction_lines))
                 interaction_lines = None
             if section_header is not None:
+                icon = section_header.group("icon")
                 title = section_header.group("title").strip()
-                normalized_lines.append(f"✅ **{title}**")
+                normalized_lines.append(f"{icon} **{title}**")
                 if cls._INTERACTION_SECTION_TITLE in title:
                     interaction_lines = []
                 continue

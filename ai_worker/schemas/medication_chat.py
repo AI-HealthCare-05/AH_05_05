@@ -434,7 +434,6 @@ class GroundedClaimValidationDiagnostic(BaseModel):
         pattern=r"^[0-9a-f]{64}$",
     )
     official_warning_allowed: bool = False
-    disclaimer_added: bool = False
 
     def trace_outputs(self) -> dict[str, str | bool]:
         outputs: dict[str, str | bool] = {}
@@ -447,8 +446,6 @@ class GroundedClaimValidationDiagnostic(BaseModel):
             value = getattr(self, field_name)
             if value is not None:
                 outputs[f"matched_{field_name}" if field_name == "rule_code" else field_name] = value
-        if self.disclaimer_added:
-            outputs["disclaimer_added"] = True
         if self.official_warning_allowed:
             outputs["official_warning_allowed"] = True
         return outputs

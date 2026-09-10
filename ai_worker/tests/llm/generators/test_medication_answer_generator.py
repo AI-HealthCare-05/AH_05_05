@@ -76,11 +76,30 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert outcome.result.answer.startswith("정해진 용법")
     assert outcome.result.sources == build_result().sources
     assert outcome.result.model_name == "gpt-4o-mini"
-    assert outcome.result.prompt_version == "medication-chat-prompt-v5"
+    assert outcome.result.prompt_version == "medication-chat-prompt-v6"
     assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
     assert outcome.observation.fallback_used is False
     assert outcome.observation.fallback_reason is None
     assert client.messages is not None
+
+
+def test_generator_preserves_warning_and_contraindication_section_markdown() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "⚠️ **주의사항**\n- 정기적 음주자는 복용 전 확인합니다."
+        "\n\n🚫 **복용하면 안 되는 경우**\n- 과민증이 있으면 복용하지 않습니다."
+    )
+
+    assert answer.startswith("⚠️ **주의사항**")
+    assert "🚫 **복용하면 안 되는 경우**" in answer
+
+
+def test_generator_preserves_active_intake_section_markdown() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "📋 **복약정보**\n- 가상 약 A · 1정\n\n💊 **영양제 정보**\n- 가상 영양제 B · 1캡슐"
+    )
+
+    assert answer.startswith("📋 **복약정보**")
+    assert "💊 **영양제 정보**" in answer
 
 
 async def test_generator_skips_llm_when_no_grounded_sources() -> None:
