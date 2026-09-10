@@ -218,8 +218,18 @@ def test_source_backed_micronutrient_review_matches_only_reviewed_direct_pairs()
     )[0].ingredient_names == ["철분", "아연"]
     assert registry.find_matches(
         document_id=document_id,
-        text="Zinc-copper-iron interactions were observed at high supplemental doses.",
+        text=(
+            "The interactions between iron, zinc and copper appear to be especially important. "
+            "Zinc supplementation may affect copper dependent iron metabolism and immune functions."
+        ),
     )[0].ingredient_names == ["아연", "구리"]
+    assert (
+        registry.find_matches(
+            document_id=document_id,
+            text="Zinc-copper-iron interactions were observed at high supplemental doses.",
+        )
+        == []
+    )
     assert registry.find_matches(
         document_id=document_id,
         text="Vitamin C is a strong promoter of iron absorption from the diet.",

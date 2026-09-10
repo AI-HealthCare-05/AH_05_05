@@ -116,7 +116,8 @@ documents:
             - zinc
       - pair_type: SUPPLEMENT_SUPPLEMENT
         evidence_phrases:
-          - zinc-copper-iron interactions
+          - interactions between iron, zinc and copper appear to be especially important
+          - zinc supplementation may affect copper dependent iron metabolism
         left:
           kind: SUPPLEMENT
           display_name: 아연
