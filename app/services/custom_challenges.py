@@ -30,6 +30,7 @@ from app.dtos.custom_challenges import (
     CustomChallengeRecommendationListResponse,
     CustomChallengeRecommendationTarget,
     CustomChallengeRewardBadge,
+    CustomChallengeRewardClaimResponse,
     CustomChallengeTargetResponse,
 )
 from app.models.care import CareEpisode
@@ -50,6 +51,7 @@ from app.models.enums import (
 from app.models.medications import MedicationDose
 from app.models.supplement_nutrients import SupplementDose, UserSupplementNutrient
 from app.models.users import User, UserSettings
+from app.services.custom_challenge_badges import CustomChallengeBadgeService
 from app.services.custom_challenge_goal_planner import GoalWindow, PlannedGoal, plan_goals, seven_day_end
 from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
 
@@ -134,9 +136,11 @@ class CustomChallengeService:
         self,
         now_provider: Callable[[], datetime] | None = None,
         lifecycle: CustomChallengeLifecycleService | None = None,
+        badge_service: CustomChallengeBadgeService | None = None,
     ) -> None:
         self._now_provider = now_provider or (lambda: datetime.now(config.TIMEZONE))
         self._lifecycle = lifecycle or CustomChallengeLifecycleService()
+        self._badge_service = badge_service or CustomChallengeBadgeService()
 
     async def recommendations(self, user: User) -> CustomChallengeRecommendationListResponse:
         now = await self._finalize_due_for_user(user.id)
@@ -221,6 +225,56 @@ class CustomChallengeService:
             raise CustomChallengeParticipationNotFoundError()
         return await self._to_response(participation)
 
+    async def claim_reward(
+        self,
+        user: User,
+        participation_id: int,
+    ) -> CustomChallengeRewardClaimResponse:
+        award = None
+        newly_awarded = False
+        async with in_transaction() as connection:
+            locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise CustomChallengeParticipationNotFoundError()
+            now = self._now()
+            await self._lifecycle.finalize_due_for_user(
+                user_id=user.id,
+                now=now,
+                connection=connection,
+            )
+            participation = await (
+                CustomChallengeParticipation.filter(id=participation_id, user_id=user.id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if participation is None:
+                raise CustomChallengeParticipationNotFoundError()
+            if participation.status is ChallengeParticipationStatus.ACTIVE:
+                await self._lifecycle.finalize_if_complete(participation, now, connection)
+            award = await self._badge_service.get_for_participation(
+                user.id,
+                participation.id,
+                using_db=connection,
+            )
+            if award is None and (
+                participation.status is ChallengeParticipationStatus.COMPLETED
+                and participation.finalized_at is not None
+                and participation.target_count > 0
+                and participation.completed_count == participation.target_count
+            ):
+                award, newly_awarded = await self._badge_service.award_for_completed_participation_with_status(
+                    participation,
+                    using_db=connection,
+                )
+
+            response = CustomChallengeRewardClaimResponse(
+                participation=await self._to_response(participation, connection=connection),
+                award=self._badge_service.response(award) if award is not None else None,
+                newly_awarded=newly_awarded,
+            )
+        return response
+
     async def cancel(self, user: User, participation_id: int) -> CustomChallengeParticipationResponse:
         async with in_transaction() as connection:
             locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
@@ -243,7 +297,7 @@ class CustomChallengeService:
             if participation.status is ChallengeParticipationStatus.ACTIVE:
                 await self._lifecycle.finalize_cancelled(participation, now, connection)
 
-        # Commit any due finalization (including its award) before rejecting cancellation.
+        # Commit any due result finalization before rejecting cancellation.
         if participation.status is not ChallengeParticipationStatus.CANCELLED:
             raise CustomChallengeCancelNotAllowedError()
         return await self._to_response(participation)
@@ -605,37 +659,57 @@ class CustomChallengeService:
     async def _to_response(
         self,
         participation: CustomChallengeParticipation,
+        *,
+        connection: BaseDBAsyncClient | None = None,
     ) -> CustomChallengeParticipationResponse:
-        await participation.fetch_related("reward_badge")
-        reward_badge = self._participation_reward_badge(participation.reward_badge)
+        if connection is None:
+            await participation.fetch_related("reward_badge")
+            badge = participation.reward_badge
+        else:
+            badge = (
+                await Badge.filter(id=participation.reward_badge_id).using_db(connection).first()
+                if participation.reward_badge_id is not None
+                else None
+            )
+        reward_badge = self._participation_reward_badge(badge)
         if participation.finalized_at is not None:
-            award = await CustomChallengeBadgeAward.filter(participation_id=participation.id).first()
+            award_query = CustomChallengeBadgeAward.filter(participation_id=participation.id)
+            if connection is not None:
+                award_query = award_query.using_db(connection)
+            award = await award_query.first()
             if award is not None:
                 reward_badge = CustomChallengeRewardBadge(
                     id=award.badge_id,
                     name=award.badge_name,
-                    description=(participation.reward_badge.description if participation.reward_badge else None),
+                    description=(badge.description if badge else None),
                     image_path=award.badge_image_path,
                 )
-        targets = await CustomChallengeTarget.filter(participation_id=participation.id).order_by("source_id_snapshot")
+        targets_query = CustomChallengeTarget.filter(participation_id=participation.id).order_by("source_id_snapshot")
+        if connection is not None:
+            targets_query = targets_query.using_db(connection)
+        targets = await targets_query
         target_ids = [target.id for target in targets]
-        occurrences = (
-            await CustomChallengeOccurrence.filter(target_id__in=target_ids).order_by(
-                "scheduled_at",
-                "target_id",
-                "slot",
-                "id",
-            )
-            if target_ids
-            else []
+        occurrences_query = CustomChallengeOccurrence.filter(target_id__in=target_ids).order_by(
+            "scheduled_at",
+            "target_id",
+            "slot",
+            "id",
         )
+        if connection is not None:
+            occurrences_query = occurrences_query.using_db(connection)
+        occurrences = await occurrences_query if target_ids else []
         if participation.finalized_at is not None:
             completed = {occurrence.id for occurrence in occurrences if occurrence.is_completed}
             target_count = participation.target_count
             completed_count = participation.completed_count
             progress_rate = participation.progress_rate
         else:
-            completed = await self._completed_occurrence_ids(participation, targets, occurrences)
+            completed = await self._completed_occurrence_ids(
+                participation,
+                targets,
+                occurrences,
+                connection=connection,
+            )
             target_count = len(occurrences)
             completed_count = len(completed)
             progress_rate = (
@@ -700,25 +774,33 @@ class CustomChallengeService:
         participation: CustomChallengeParticipation,
         targets: builtins.list[CustomChallengeTarget],
         occurrences: builtins.list[CustomChallengeOccurrence],
+        *,
+        connection: BaseDBAsyncClient | None = None,
     ) -> set[int]:
         if participation.challenge_type is CustomChallengeType.MEDICATION:
             source_to_target = {
                 target.care_episode_id: target.id for target in targets if target.care_episode_id is not None
             }
-            rows = await MedicationDose.filter(
+            rows_query = MedicationDose.filter(
                 user_id=participation.user_id,
                 care_episode_id__in=source_to_target,
-            ).values_list("care_episode_id", "dose_date", "slot")
+            )
+            if connection is not None:
+                rows_query = rows_query.using_db(connection)
+            rows = await rows_query.values_list("care_episode_id", "dose_date", "slot")
         elif participation.challenge_type is CustomChallengeType.SUPPLEMENT:
             source_to_target = {
                 target.supplement_registration_id: target.id
                 for target in targets
                 if target.supplement_registration_id is not None
             }
-            rows = await SupplementDose.filter(
+            rows_query = SupplementDose.filter(
                 registration_id__in=source_to_target,
                 registration__user_id=participation.user_id,
-            ).values_list("registration_id", "dose_date", "slot")
+            )
+            if connection is not None:
+                rows_query = rows_query.using_db(connection)
+            rows = await rows_query.values_list("registration_id", "dose_date", "slot")
         else:
             return set()
         completed_keys = {

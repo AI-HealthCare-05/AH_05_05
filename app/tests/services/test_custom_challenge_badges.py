@@ -1,6 +1,7 @@
 from datetime import datetime, time, timedelta
 from importlib import import_module
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
@@ -23,6 +24,8 @@ from app.models.enums import ChallengeParticipationStatus, CustomChallengeType, 
 from app.models.medications import MedicationDose
 from app.models.users import User
 from app.services.challenges import AdminChallengeService
+from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
+from app.workers.custom_challenge_worker import finalize_due_custom_challenges
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -213,7 +216,8 @@ async def test_custom_badge_api_returns_only_the_authenticated_users_awards() ->
     assert other.id != owner.id
 
 
-async def test_custom_badge_api_finalizes_due_award_when_it_is_the_first_read() -> None:
+@pytest.mark.parametrize("first_entry", ["badge-list", "worker"])
+async def test_background_finalization_freezes_completed_result_without_awarding(first_entry: str) -> None:
     owner, participation, _ = await _participation(
         email="badge-first-read@example.com",
         status=ChallengeParticipationStatus.ACTIVE,
@@ -242,11 +246,32 @@ async def test_custom_badge_api_finalizes_due_award_when_it_is_the_first_read() 
     )
     app.dependency_overrides[get_request_user] = lambda: owner
 
+    if first_entry == "worker":
+        finalized = await finalize_due_custom_challenges(
+            {"custom_challenge_lifecycle_service": CustomChallengeLifecycleService()}
+        )
+        assert finalized == 1
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/user/custom-challenges/badges")
 
     assert response.status_code == 200
-    assert response.json()["totalCount"] == 1
-    assert response.json()["items"][0]["participationId"] == participation.id
+    assert response.json() == {"items": [], "totalCount": 0}
+    assert await CustomChallengeBadgeAward.filter(participation_id=participation.id).count() == 0
     await participation.refresh_from_db()
     assert participation.status is ChallengeParticipationStatus.COMPLETED
+    assert participation.finalized_at is not None
+    assert (participation.target_count, participation.completed_count, participation.progress_rate) == (1, 1, 100)
+    await occurrence.refresh_from_db()
+    assert occurrence.is_completed is True
+
+    await MedicationDose.filter(user=owner, care_episode=episode).delete()
+    assert await finalize_due_custom_challenges(
+        {"custom_challenge_lifecycle_service": CustomChallengeLifecycleService()}
+    ) == 0
+    await participation.refresh_from_db()
+    await occurrence.refresh_from_db()
+    assert participation.status is ChallengeParticipationStatus.COMPLETED
+    assert (participation.target_count, participation.completed_count, participation.progress_rate) == (1, 1, 100)
+    assert occurrence.is_completed is True
+    assert await CustomChallengeBadgeAward.filter(participation_id=participation.id).count() == 0

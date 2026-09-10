@@ -18,6 +18,7 @@ from app.dtos.custom_challenges import (
     CustomChallengeParticipationListResponse,
     CustomChallengeParticipationResponse,
     CustomChallengeRecommendationListResponse,
+    CustomChallengeRewardClaimResponse,
 )
 from app.models.users import User
 from app.services.challenge_catalog import ChallengeCatalogService
@@ -85,6 +86,18 @@ async def get_custom_challenge_participation(
     user: Annotated[User, Depends(get_request_user)],
 ) -> CustomChallengeParticipationResponse:
     return await CustomChallengeService().get(user, participation_id)
+
+
+@challenge_router.post(
+    "/custom-challenge-participations/{participation_id}/claim-reward",
+    response_model=CustomChallengeRewardClaimResponse,
+    summary="맞춤 챌린지 완료 보상 수령",
+)
+async def claim_custom_challenge_reward(
+    participation_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+) -> CustomChallengeRewardClaimResponse:
+    return await CustomChallengeService().claim_reward(user, participation_id)
 
 
 @challenge_router.post(

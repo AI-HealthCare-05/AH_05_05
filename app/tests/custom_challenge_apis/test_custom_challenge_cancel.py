@@ -136,13 +136,13 @@ async def test_cancel_at_end_commits_final_result_before_conflict_and_preserves_
     )
     assert stored.finalized_at == participation.end_at
     assert stored.completed_count == (14 if completed else 0)
-    assert await CustomChallengeBadgeAward.filter(participation_id=participation.id).count() == int(completed)
+    assert await CustomChallengeBadgeAward.filter(participation_id=participation.id).count() == 0
     frozen = (await service.get(user, participation.id)).model_dump()
     await MedicationDose.filter(user_id=user.id).delete()
     repeated = await _cancel(user, participation.id, service, monkeypatch)
     assert repeated.status_code == 409
     assert (await service.get(user, participation.id)).model_dump() == frozen
-    assert await CustomChallengeBadgeAward.filter(participation_id=participation.id).count() == int(completed)
+    assert await CustomChallengeBadgeAward.filter(participation_id=participation.id).count() == 0
 
 
 async def test_cancel_cannot_access_another_users_participation_or_missing_id(monkeypatch):

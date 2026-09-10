@@ -22,6 +22,18 @@ class CustomChallengeBadgeService:
         *,
         using_db: BaseDBAsyncClient,
     ) -> CustomChallengeBadgeAward | None:
+        award, _ = await self.award_for_completed_participation_with_status(
+            participation,
+            using_db=using_db,
+        )
+        return award
+
+    async def award_for_completed_participation_with_status(
+        self,
+        participation: CustomChallengeParticipation,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> tuple[CustomChallengeBadgeAward | None, bool]:
         locked_participation = await (
             CustomChallengeParticipation.filter(id=participation.id)
             .using_db(using_db)
@@ -29,13 +41,13 @@ class CustomChallengeBadgeService:
             .first()
         )
         if locked_participation is None:
-            return None
+            return None, False
         participation = locked_participation
         if (
             participation.status is not ChallengeParticipationStatus.COMPLETED
             or participation.reward_badge_id is None
         ):
-            return None
+            return None, False
 
         existing = await (
             CustomChallengeBadgeAward.filter(
@@ -46,13 +58,13 @@ class CustomChallengeBadgeService:
             .first()
         )
         if existing is not None:
-            return existing
+            return existing, False
 
         badge = await Badge.filter(id=participation.reward_badge_id, is_active=True).using_db(using_db).first()
         if badge is None:
-            return None
+            return None, False
         try:
-            award, _ = await CustomChallengeBadgeAward.get_or_create(
+            award, created = await CustomChallengeBadgeAward.get_or_create(
                 participation_id=participation.id,
                 badge_id=badge.id,
                 defaults={
@@ -62,9 +74,9 @@ class CustomChallengeBadgeService:
                 },
                 using_db=using_db,
             )
-            return award
+            return award, created
         except IntegrityError:
-            return await (
+            award = await (
                 CustomChallengeBadgeAward.filter(
                     participation_id=participation.id,
                     badge_id=badge.id,
@@ -72,6 +84,7 @@ class CustomChallengeBadgeService:
                 .using_db(using_db)
                 .get()
             )
+            return award, False
 
     async def list_for_user(self, user_id: int) -> CustomChallengeBadgeAwardListResponse:
         async with in_transaction() as connection:
@@ -79,14 +92,14 @@ class CustomChallengeBadgeService:
             if locked_user is not None:
                 from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
 
-                await CustomChallengeLifecycleService(self).finalize_due_for_user(
+                await CustomChallengeLifecycleService().finalize_due_for_user(
                     user_id=user_id,
                     now=datetime.now(config.TIMEZONE),
                     connection=connection,
                 )
         awards = await CustomChallengeBadgeAward.filter(user_id=user_id).order_by("-awarded_at", "-id")
         return CustomChallengeBadgeAwardListResponse(
-            items=[self._response(award) for award in awards],
+            items=[self.response(award) for award in awards],
             total_count=len(awards),
         )
 
@@ -94,14 +107,19 @@ class CustomChallengeBadgeService:
         self,
         user_id: int,
         participation_id: int,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
     ) -> CustomChallengeBadgeAward | None:
-        return await CustomChallengeBadgeAward.get_or_none(
+        query = CustomChallengeBadgeAward.filter(
             user_id=user_id,
             participation_id=participation_id,
         )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
 
     @staticmethod
-    def _response(award: CustomChallengeBadgeAward) -> CustomChallengeBadgeAwardResponse:
+    def response(award: CustomChallengeBadgeAward) -> CustomChallengeBadgeAwardResponse:
         return CustomChallengeBadgeAwardResponse(
             id=award.id,
             participation_id=award.participation_id,

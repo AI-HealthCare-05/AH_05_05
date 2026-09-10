@@ -14,15 +14,11 @@ from app.models.enums import ChallengeParticipationStatus, CustomChallengeType, 
 from app.models.medications import MedicationDose
 from app.models.supplement_nutrients import SupplementDose
 from app.models.users import User
-from app.services.custom_challenge_badges import CustomChallengeBadgeService
 
 PERCENT_QUANTUM = Decimal("0.01")
 
 
 class CustomChallengeLifecycleService:
-    def __init__(self, badge_service: CustomChallengeBadgeService | None = None) -> None:
-        self._badge_service = badge_service or CustomChallengeBadgeService()
-
     async def finalize_due(self, now: datetime | None = None) -> int:
         cutoff = self._aware(now or datetime.now(config.TIMEZONE))
         user_ids = await (
@@ -78,6 +74,22 @@ class CustomChallengeLifecycleService:
         """Freeze an active participation after its owner and participation are locked."""
         await self._finalize(participation, cancelled_at, connection, cancelled=True)
 
+    async def finalize_if_complete(
+        self,
+        participation: CustomChallengeParticipation,
+        finalized_at: datetime,
+        connection: BaseDBAsyncClient,
+    ) -> bool:
+        """Freeze a non-empty, fully complete active participation before its deadline."""
+        if participation.status is not ChallengeParticipationStatus.ACTIVE:
+            return False
+        return await self._finalize(
+            participation,
+            finalized_at,
+            connection,
+            require_complete=True,
+        )
+
     async def _finalize(
         self,
         participation: CustomChallengeParticipation,
@@ -85,7 +97,8 @@ class CustomChallengeLifecycleService:
         connection: BaseDBAsyncClient,
         *,
         cancelled: bool = False,
-    ) -> None:
+        require_complete: bool = False,
+    ) -> bool:
         targets = await (
             CustomChallengeTarget.filter(participation_id=participation.id)
             .using_db(connection)
@@ -106,20 +119,23 @@ class CustomChallengeLifecycleService:
             occurrences,
             connection,
         )
+        target_count = len(occurrences)
+        completed_count = len(completed_ids)
+        is_complete = not cancelled and target_count > 0 and completed_count == target_count
+        if require_complete and not is_complete:
+            return False
+
         for occurrence in occurrences:
             completed = occurrence.id in completed_ids
             if occurrence.is_completed != completed:
                 occurrence.is_completed = completed
                 await occurrence.save(using_db=connection, update_fields=["is_completed"])
 
-        target_count = len(occurrences)
-        completed_count = len(completed_ids)
         progress_rate = (
             (Decimal(completed_count) * Decimal(100) / Decimal(target_count)).quantize(PERCENT_QUANTUM)
             if target_count > 0
             else Decimal("0.00")
         )
-        completed = not cancelled and target_count > 0 and completed_count == target_count
         participation.target_count = target_count
         participation.completed_count = completed_count
         participation.progress_rate = progress_rate
@@ -127,9 +143,9 @@ class CustomChallengeLifecycleService:
             participation.status = ChallengeParticipationStatus.CANCELLED
         else:
             participation.status = (
-                ChallengeParticipationStatus.COMPLETED if completed else ChallengeParticipationStatus.EXPIRED
+                ChallengeParticipationStatus.COMPLETED if is_complete else ChallengeParticipationStatus.EXPIRED
             )
-        participation.completed_at = finalized_at if completed else None
+        participation.completed_at = finalized_at if is_complete else None
         participation.finalized_at = finalized_at
         await participation.save(
             using_db=connection,
@@ -142,11 +158,7 @@ class CustomChallengeLifecycleService:
                 "finalized_at",
             ],
         )
-        if completed:
-            await self._badge_service.award_for_completed_participation(
-                participation,
-                using_db=connection,
-            )
+        return is_complete
 
     @staticmethod
     async def _completed_occurrence_ids(

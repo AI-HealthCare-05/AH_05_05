@@ -109,6 +109,12 @@ class CustomChallengeBadgeAwardResponse(CamelModel):
     awarded_at: datetime
 
 
+class CustomChallengeRewardClaimResponse(CamelModel):
+    participation: CustomChallengeParticipationResponse
+    award: CustomChallengeBadgeAwardResponse | None
+    newly_awarded: bool
+
+
 class CustomChallengeBadgeAwardListResponse(CamelModel):
     items: list[CustomChallengeBadgeAwardResponse]
     total_count: int
