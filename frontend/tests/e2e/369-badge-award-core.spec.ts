@@ -191,6 +191,23 @@ test('reduced motion shows confirmation immediately without 3D or gloss and keep
   await expect(dialog).toHaveCount(0);
 });
 
+for (const initiallyReduced of [false, true]) {
+  test(`motion preference changes never replay a settled award (initial reduced: ${initiallyReduced})`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: initiallyReduced ? 'reduce' : 'no-preference' });
+    await openApp(page);
+    await enqueue(page);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toHaveAttribute('data-phase', 'ready');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(dialog.locator('.badge-award-mask')).toHaveCount(0);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await expect(dialog.locator('.badge-award-mask')).toHaveCount(1);
+    expect(await dialog.getAttribute('data-phase')).toBe('ready');
+    expect(await dialog.locator('.badge-award-art').evaluate(element => element.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running').length)).toBe(0);
+    await expect(dialog.getByRole('button', { name: '확인', exact: true })).toBeVisible();
+  });
+}
+
 for (const width of [320, 390]) {
   test(`normal ${width}px presentation settles, shines once, then reveals copy and confirmation`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });

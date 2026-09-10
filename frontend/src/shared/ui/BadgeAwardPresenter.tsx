@@ -25,6 +25,7 @@ function AwardDialog({ award, onClose }: { award: BadgeAward; onClose: () => voi
   const badgeRef = useRef<HTMLDivElement>(null);
   const glossRef = useRef<HTMLSpanElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const presentationStartedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -44,6 +45,8 @@ function AwardDialog({ award, onClose }: { award: BadgeAward; onClose: () => voi
 
   useEffect(() => {
     if (!imageUrl) return;
+    if (presentationStartedRef.current) { setPhase('ready'); return; }
+    presentationStartedRef.current = true;
     if (reduced) { setPhase('ready'); return; }
     const badge = badgeRef.current;
     const gloss = glossRef.current;
