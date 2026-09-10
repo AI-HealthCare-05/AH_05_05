@@ -52,18 +52,13 @@ class BackgroundJobService:
         )
         ocr_jobs, ocr_total = await self._list_ocr_for_admin(filters, limit=candidate_limit)
         alarm_ids_by_job_id = {
-            job.id: self._alarm_id_from_job(job)
-            for job in jobs
-            if job.job_type == BackgroundJobType.ALARM
+            job.id: self._alarm_id_from_job(job) for job in jobs if job.job_type == BackgroundJobType.ALARM
         }
         alarm_ids = {alarm_id for alarm_id in alarm_ids_by_job_id.values() if alarm_id is not None}
         alarm_type_by_id: dict[int, AlarmType] = {}
         if alarm_ids:
             alarm_rows = await Alarm.filter(id__in=alarm_ids).values("id", "alarm_type")
-            alarm_type_by_id = {
-                int(row["id"]): AlarmType(row["alarm_type"])
-                for row in alarm_rows
-            }
+            alarm_type_by_id = {int(row["id"]): AlarmType(row["alarm_type"]) for row in alarm_rows}
         items = [
             AdminBackgroundJobListItem(
                 job_id=job.id,
