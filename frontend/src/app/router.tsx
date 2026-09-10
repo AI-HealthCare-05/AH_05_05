@@ -45,6 +45,9 @@ import { OfficialChallengeParticipationPage } from '@/pages/challenges/OfficialC
 import { OfficialChallengeBadgesPage } from '@/pages/challenges/OfficialChallengeBadgesPage';
 import { OfficialChallengeBadgePage } from '@/pages/challenges/OfficialChallengeBadgePage';
 import { OfficialChallengeComingSoonPage } from '@/pages/challenges/OfficialChallengeComingSoonPage';
+import { CustomChallengeRecommendationsPage } from '@/pages/challenges/CustomChallengeRecommendationsPage';
+import { CustomChallengeTargetPage } from '@/pages/challenges/CustomChallengeTargetPage';
+import { CustomChallengeParticipationPage } from '@/pages/challenges/CustomChallengeParticipationPage';
 import type { AccountProfile, UpdateAccountProfilePayload } from '@/entities/account';
 import type { ChatMessage, ChatSessionSummary, SendChatResult } from '@/entities/chat';
 import {
@@ -220,8 +223,9 @@ export function AppRouter() {
             <Route path="browse" element={<OfficialChallengeBrowsePage />} />
             <Route path="official/:challengeId" element={<OfficialChallengeDetailPage />} />
             <Route path="participations/:participationId" element={<OfficialChallengeParticipationPage />} />
-            <Route path="tailored" element={<OfficialChallengeComingSoonPage feature="tailored" />} />
-            <Route path="tailored/:kind" element={<OfficialChallengeComingSoonPage feature="tailored" />} />
+            <Route path="tailored" element={<CustomChallengeRecommendationsPage />} />
+            <Route path="tailored/:kind" element={<CustomChallengeTargetPage />} />
+            <Route path="custom-participations/:participationId" element={<CustomChallengeParticipationPage />} />
             <Route path="create" element={<OfficialChallengeComingSoonPage feature="personal" />} />
             <Route path="badges" element={<OfficialChallengeBadgesPage />} />
             <Route path="badges/:badgeId" element={<OfficialChallengeBadgePage />} />

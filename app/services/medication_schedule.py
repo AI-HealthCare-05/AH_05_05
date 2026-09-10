@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 
 from tortoise.backends.base.client import BaseDBAsyncClient
@@ -18,9 +19,11 @@ from app.dtos.medication_schedule import (
     SaveMedicationScheduleRequest,
 )
 from app.models.care import CareEpisode
-from app.models.enums import AlarmType, CareEpisodeStatus, MealSlot
+from app.models.enums import AlarmType, CareEpisodeStatus, CustomChallengeType, MealSlot
 from app.models.medications import Medication, MedicationSlot
 from app.models.users import User, UserSettings
+from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
+from app.services.custom_challenges import custom_challenge_meal_times
 from app.services.medication_period import medication_end_date
 from app.services.slot_alarms import SLOT_ORDER, sync_slot_alarms
 
@@ -46,6 +49,14 @@ USE_HALF_HOUR_REMINDERS = False
 
 
 class MedicationScheduleService:
+    def __init__(
+        self,
+        reconciler: CustomChallengeScheduleReconciler | None = None,
+        mutation_time_provider: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._reconciler = reconciler or CustomChallengeScheduleReconciler()
+        self._mutation_time_provider = mutation_time_provider or (lambda: datetime.now(config.TIMEZONE))
+
     async def get(self, user: User, record_id: int) -> MedicationScheduleResponse:
         episode = await CareEpisode.filter(id=record_id, user_id=user.id).first()
         if episode is None:
@@ -87,14 +98,18 @@ class MedicationScheduleService:
             if len(assignment_ids) != len(set(assignment_ids)) or set(assignment_ids) != scheduled_ids:
                 raise InvalidMedicationScheduleError()
 
-            settings, _ = await UserSettings.get_or_create(user_id=user.id, using_db=connection)
+            settings = await UserSettings.filter(user_id=user.id).using_db(connection).select_for_update().first()
+            if settings is None:
+                settings = await UserSettings.create(user_id=user.id, using_db=connection)
+            previous_meal_times = custom_challenge_meal_times(settings)
+            changed_at = self._mutation_time_provider()
             for slot, value in meal_times.items():
                 setattr(settings, SLOT_TIME_FIELDS[slot], value)
             await settings.save(using_db=connection, update_fields=list(SLOT_TIME_FIELDS.values()))
 
             episode.medication_start_date = start_date
             episode.medication_start_slot = start_slot
-            episode.updated_at = datetime.now(config.TIMEZONE)
+            episode.updated_at = changed_at
             await episode.save(
                 using_db=connection,
                 update_fields=["medication_start_date", "medication_start_slot", "updated_at"],
@@ -109,6 +124,26 @@ class MedicationScheduleService:
             if slot_rows:
                 await MedicationSlot.bulk_create(slot_rows, using_db=connection)
             await self._sync_medication_alarms(user.id, meal_times, connection)
+            if previous_meal_times != meal_times:
+                for source_kind in (
+                    CustomChallengeType.MEDICATION,
+                    CustomChallengeType.SUPPLEMENT,
+                ):
+                    await self._reconciler.reconcile(
+                        user_id=user.id,
+                        source_kind=source_kind,
+                        source_ids=None,
+                        changed_at=changed_at,
+                        connection=connection,
+                    )
+            else:
+                await self._reconciler.reconcile(
+                    user_id=user.id,
+                    source_kind=CustomChallengeType.MEDICATION,
+                    source_ids=(episode.id,),
+                    changed_at=changed_at,
+                    connection=connection,
+                )
 
     @classmethod
     async def _sync_medication_alarms(

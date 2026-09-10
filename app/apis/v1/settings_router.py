@@ -10,6 +10,10 @@ from app.services.settings import NotifySettingsService, normalize_medication_ti
 settings_router = APIRouter(prefix="/me/settings", tags=["settings"])
 
 
+def get_notify_settings_service() -> NotifySettingsService:
+    return NotifySettingsService()
+
+
 def _response(settings: UserSettings) -> NotifySettingsResponse:
     return NotifySettingsResponse(
         notify_medication=settings.is_notify_medication,
@@ -26,7 +30,7 @@ def _response(settings: UserSettings) -> NotifySettingsResponse:
 @settings_router.get("", response_model=NotifySettingsResponse, status_code=status.HTTP_200_OK)
 async def get_notify_settings(
     user: Annotated[User, Depends(get_request_user)],
-    service: Annotated[NotifySettingsService, Depends(NotifySettingsService)],
+    service: Annotated[NotifySettingsService, Depends(get_notify_settings_service)],
 ) -> NotifySettingsResponse:
     return _response(await service.get(user))
 
@@ -35,6 +39,6 @@ async def get_notify_settings(
 async def update_notify_settings(
     data: NotifySettingsUpdateRequest,
     user: Annotated[User, Depends(get_request_user)],
-    service: Annotated[NotifySettingsService, Depends(NotifySettingsService)],
+    service: Annotated[NotifySettingsService, Depends(get_notify_settings_service)],
 ) -> NotifySettingsResponse:
     return _response(await service.update(user, data))
