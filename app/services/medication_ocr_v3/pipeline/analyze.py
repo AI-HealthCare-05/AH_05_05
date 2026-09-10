@@ -107,6 +107,12 @@ class AnalyzePipelineResult:
 
     @property
     def analysis_state(self) -> str:
+        if (
+            self.project_review is not None
+            and not self.project_review.get("medications")
+            and any(stage.status == "failed" for stage in self.stages)
+        ):
+            return "FAILED"
         project_review = self.project_review or build_project_review(self.medication_rows)
         issues = self.issues or tuple(issue.as_dict() for issue in self.medication_rows.issues)
         medications = project_review.get("medications")
@@ -156,13 +162,30 @@ async def analyze_processed_image(
             ocr_elapsed_ms=ocr_elapsed_ms,
             stages=(
                 StageResult("ocr", "failed", ocr_elapsed_ms, 1, error.code.value),
-                StageResult("candidate", "skipped", 0, 0),
-                StageResult("resolve", "skipped", 0, 0),
-                StageResult("llm", "skipped", 0, 0),
-                StageResult("validate", "skipped", 0, 0),
+                StageResult("candidate", "skipped", 0, 0, "UPSTREAM_FAILED"),
+                StageResult("resolve", "skipped", 0, 0, "UPSTREAM_FAILED"),
+                StageResult("llm", "skipped", 0, 0, "UPSTREAM_FAILED"),
+                StageResult("validate", "skipped", 0, 0, "UPSTREAM_FAILED"),
             ),
         )
     ocr_stage = StageResult("ocr", "succeeded", _elapsed_ms(ocr_started), 1)
+
+    if is_cancelled is not None and await is_cancelled():
+        return AnalyzePipelineCancellation(
+            stages=(
+                ocr_stage,
+                *(
+                    StageResult(name, "skipped", 0, 0, "REQUEST_CANCELLED")
+                    for name in ("candidate", "resolve", "llm", "validate")
+                ),
+            )
+        )
+    if not ocr_result.blocks:
+        return _stopped_analysis(
+            ocr_result,
+            (StageResult("ocr", "failed", ocr_stage.elapsed_ms, 1, "NO_OCR_BLOCKS"),),
+            ("candidate", "resolve", "llm", "validate"),
+        )
 
     candidate_started = time.perf_counter()
     layout = build_ocr_layout(ocr_result)
@@ -177,6 +200,25 @@ async def analyze_processed_image(
     )
     candidate_stage = StageResult("candidate", "succeeded", _elapsed_ms(candidate_started), 0)
 
+    if not medication_rows.medications or not catalog.rows:
+        cause = next(
+            (
+                issue.code.value
+                for issue in medication_rows.issues
+                if issue.code.value in {"AMBIGUOUS_MEDICATION_TABLE", "TABLE_NOT_FOUND"}
+            ),
+            "NO_EVIDENCE_ROWS",
+        )
+        return _stopped_analysis(
+            ocr_result,
+            (ocr_stage, StageResult("candidate", "failed", candidate_stage.elapsed_ms, 0, cause)),
+            ("resolve", "llm", "validate"),
+            layout=layout,
+            medication_rows=medication_rows,
+        )
+    if medication_rows.issues or any(row.issues for row in medication_rows.medications):
+        candidate_stage = StageResult("candidate", "succeeded", candidate_stage.elapsed_ms, 0, "COMPLETED_WITH_ISSUES")
+
     if is_cancelled is not None and await is_cancelled():
         return AnalyzePipelineCancellation(
             stages=(
@@ -184,7 +226,7 @@ async def analyze_processed_image(
                 candidate_stage,
                 StageResult("resolve", "skipped", 0, 0, "REQUEST_CANCELLED"),
                 StageResult("llm", "skipped", 0, 0, "REQUEST_CANCELLED"),
-                StageResult("validate", "skipped", 0, 0),
+                StageResult("validate", "skipped", 0, 0, "REQUEST_CANCELLED"),
             )
         )
 
@@ -200,11 +242,19 @@ async def analyze_processed_image(
     grounding_required = bool(catalog.rows) if semantic else plan.ambiguity_required
     llm_skip_code: str | None = None
     should_call_llm = False
-    if not ocr_result.blocks:
-        llm_skip_code = "NO_OCR_BLOCKS"
-    elif not (catalog.rows if semantic else plan.deterministic_row_ids):
-        llm_skip_code = "NO_EVIDENCE_ROWS"
-    elif not grounding_required:
+    if not (catalog.rows if semantic else plan.deterministic_row_ids):
+        return _stopped_analysis(
+            ocr_result,
+            (
+                ocr_stage,
+                candidate_stage,
+                StageResult("resolve", "failed", _elapsed_ms(resolve_started), 0, "NO_EVIDENCE_ROWS"),
+            ),
+            ("llm", "validate"),
+            layout=layout,
+            medication_rows=medication_rows,
+        )
+    if not grounding_required:
         llm_skip_code = "DETERMINISTIC_SUFFICIENT"
     elif structurer is None:
         pipeline_issue_code = "LLM_UNAVAILABLE"
@@ -265,7 +315,17 @@ async def analyze_processed_image(
         },
         "versions": _versions(structurer),
     }
-    validate_stage = StageResult("validate", "succeeded", _elapsed_ms(validate_started), 0)
+    if not project_review.get("medications"):
+        validate_stage = StageResult("validate", "failed", _elapsed_ms(validate_started), 0, "NO_VALID_MEDICATION_ROWS")
+    else:
+        has_issues = bool(issues or any(row.issues for row in medication_rows.medications))
+        validate_stage = StageResult(
+            "validate",
+            "succeeded",
+            _elapsed_ms(validate_started),
+            0,
+            "COMPLETED_WITH_ISSUES" if has_issues else None,
+        )
     return AnalyzePipelineResult(
         ocr_result=ocr_result,
         layout=layout,
@@ -280,6 +340,27 @@ async def analyze_processed_image(
         issues=issues,
         stages=(ocr_stage, candidate_stage, resolve_stage, llm_stage, validate_stage),
         diagnostics=diagnostics,
+    )
+
+
+def _stopped_analysis(
+    ocr_result: OcrResult,
+    completed: tuple[StageResult, ...],
+    remaining: tuple[str, ...],
+    *,
+    layout: OcrLayoutResult | None = None,
+    medication_rows: MedicationRowsResult | None = None,
+) -> AnalyzePipelineResult:
+    """Preserve the cause at its origin; do not run dependent work on unusable input."""
+    return AnalyzePipelineResult(
+        ocr_result=ocr_result,
+        layout=layout if layout is not None else OcrLayoutResult((), (), ()),
+        medication_rows=medication_rows if medication_rows is not None else MedicationRowsResult(None, (), ()),
+        ocr_elapsed_ms=completed[0].elapsed_ms,
+        structure_elapsed_ms=sum(stage.elapsed_ms for stage in completed[1:]),
+        project_review={"fields": {}, "medications": [], "lowConfidenceCount": 0},
+        issues=(_pipeline_issue(completed[-1].code or "EXTRACTION_FAILED"),),
+        stages=(*completed, *(StageResult(name, "skipped", 0, 0, "UPSTREAM_FAILED") for name in remaining)),
     )
 
 

@@ -56,10 +56,10 @@ _VALIDATION_ISSUES = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class MedicationOcrV3Analysis:
-    """Worker-safe OCR result; recapture is an explicit typed success variant.
+    """Worker-safe OCR result with explicit image-quality rejection.
 
     A recapture result has ``requires_recapture=True``, an omission-based empty
-    review, and all six operational stages. No OCR or LLM provider is called.
+    review, a failed preprocess stage, and five skipped stages. No provider is called.
     This lets the job layer persist or route the outcome without recovering
     partial provider state from an exception.
     """
@@ -189,13 +189,13 @@ def _recapture_stages(preprocess_elapsed_ms: int) -> list[dict[str, object]]:
     return [
         _stage(
             name="preprocess",
-            status="succeeded",
+            status="failed",
             elapsed_ms=preprocess_elapsed_ms,
             call_count=0,
             code="RECAPTURE_REQUIRED",
         ),
         *(
-            _stage(name=name, status="skipped", elapsed_ms=0, call_count=0)
+            _stage(name=name, status="skipped", elapsed_ms=0, call_count=0, code="UPSTREAM_FAILED")
             for name in ("ocr", "candidate", "resolve", "llm", "validate")
         ),
     ]

@@ -18,6 +18,7 @@ import type {
 } from './types';
 
 const idempotencyKeys = new WeakMap<File, string>();
+const pendingUploads = new WeakMap<File, Promise<UploadDocumentsResult>>();
 const documentImageUrls = new Map<string, Promise<string>>();
 
 type OcrImageKind = 'original' | 'processed';
@@ -88,7 +89,19 @@ export function releaseOcrDocumentImageUrl(ocrJobId: string): void {
 }
 
 /** 조제약 OCR 작업 생성 — POST /ocr */
-export async function uploadDocument(file: File): Promise<UploadDocumentsResult> {
+export function uploadDocument(file: File): Promise<UploadDocumentsResult> {
+  const existing = pendingUploads.get(file);
+  if (existing) return existing;
+
+  // StrictMode effect 재실행도 같은 요청을 공유하되, 완료 후에는 재시도를 허용합니다.
+  const request = requestUploadDocument(file).finally(() => {
+    pendingUploads.delete(file);
+  });
+  pendingUploads.set(file, request);
+  return request;
+}
+
+async function requestUploadDocument(file: File): Promise<UploadDocumentsResult> {
   if (USE_MOCK) {
     await mockDelay();
     return mockUploadDocument(file);

@@ -367,7 +367,7 @@ class MedicationGuideOcrJobService:
             if review_payload is None:
                 await self._fail(
                     job,
-                    "RECAPTURE_REQUIRED",
+                    "RECAPTURE_REQUIRED" if analysis.requires_recapture else "EXTRACTION_FAILED",
                     manifest,
                     stage_results=stage_results,
                     timing=timing,
@@ -956,6 +956,8 @@ class MedicationGuideOcrJobService:
             return stage_results, None, []
         review_payload = cls._project_review_payload(analysis.project_review)
         if not review_payload["medications"]:
+            if not any(stage["status"] == "failed" for stage in stage_results):
+                stage_results[-1] = {**stage_results[-1], "status": "failed", "code": "NO_VALID_MEDICATION_ROWS"}
             return stage_results, None, []
         confidence_values = [Decimal(str(value)) for value in analysis.confidence_values]
         if any(value < 0 or value > 1 for value in confidence_values):
@@ -1042,26 +1044,19 @@ class MedicationGuideOcrJobService:
             if not isinstance(stages, list):
                 continue
             try:
-                return cls._validated_stage_results(stages)
+                validated = cls._validated_stage_results(stages)
+                if analysis is not None and error_code == "VALIDATION_FAILED":
+                    validated[-1] = {**validated[-1], "status": "failed", "code": "VALIDATION_FAILED"}
+                return validated
             except (TypeError, ValueError):
                 continue
         return cls._fallback_stage_results(error_code)
 
     @staticmethod
     def _fallback_stage_results(error_code: str) -> list[dict[str, object]]:
-        return [
-            {
-                "name": "preprocess",
-                "status": "failed",
-                "elapsedMs": 0,
-                "callCount": 0,
-                "code": error_code,
-            },
-            *(
-                {"name": name, "status": "skipped", "elapsedMs": 0, "callCount": 0}
-                for name in ("ocr", "candidate", "resolve", "llm", "validate")
-            ),
-        ]
+        # The job retains error_code. Without stage evidence, do not invent an
+        # origin or claim that any stage did (or did not) run.
+        return []
 
     @staticmethod
     def _confirmation_hash(request: MedicationGuideConfirmRequest) -> str:

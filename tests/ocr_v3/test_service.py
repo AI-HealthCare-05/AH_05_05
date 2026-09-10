@@ -265,7 +265,7 @@ async def test_recapture_returns_typed_six_stage_result_without_provider_calls(m
         "validate",
     ]
     assert [stage["status"] for stage in analysis.stages] == [
-        "succeeded",
+        "failed",
         "skipped",
         "skipped",
         "skipped",

@@ -295,6 +295,13 @@ async def test_pipeline_projects_hospital_name_and_diagnostic_evidence() -> None
             _block("block-0001", "병원정보", 10, 10, 45),
             _block("block-0002", "송도센트럴이비인후과의원", 65, 10, 140, 0.93),
             _block("block-0003", "약품명", 10, 80, 45),
+            _block("dose-header", "투약량", 250, 80, 40),
+            _block("times-header", "횟수", 310, 80, 30),
+            _block("days-header", "일수", 360, 80, 30),
+            _block("med-name", "감마정", 10, 110, 50),
+            _block("dose", "1", 260, 110, 10),
+            _block("times", "3", 320, 110, 10),
+            _block("days", "5", 370, 110, 10),
         )
     )
 
