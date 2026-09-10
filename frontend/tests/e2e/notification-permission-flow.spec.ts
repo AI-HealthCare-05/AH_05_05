@@ -45,16 +45,17 @@ async function stubPushManager(page: Page) {
       expirationTime: null,
       keys: { p256dh: 'p256dh-test-key', auth: 'auth-test-key' },
     };
+    const registration = {
+      pushManager: {
+        getSubscription: async () => null,
+        subscribe: async () => ({ toJSON: () => subscription }),
+      },
+    };
+    // `ready` 도 함께 둡니다. 구독은 **활성화된** 서비스워커로만 만들 수 있어서
+    // 등록 코드가 `register()` 결과가 아니라 `ready` 를 씁니다(#394).
     Object.defineProperty(navigator, 'serviceWorker', {
       configurable: true,
-      value: {
-        register: async () => ({
-          pushManager: {
-            getSubscription: async () => null,
-            subscribe: async () => ({ toJSON: () => subscription }),
-          },
-        }),
-      },
+      value: { register: async () => registration, ready: Promise.resolve(registration) },
     });
   });
 }
