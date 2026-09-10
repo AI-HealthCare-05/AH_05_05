@@ -611,13 +611,22 @@ export function OcrReviewPage() {
   const ocrFailed = result.ocrStatus === 'failed';
   // Keep legacy empty review results on the same recovery screen as failed jobs.
   const unreadableDocument = noMedicationsExtracted || ocrFailed;
+  const needsPhotoRecapture =
+    noMedicationsExtracted || (ocrFailed && result.errorCode === 'RECAPTURE_REQUIRED');
   if (unreadableDocument && !dismissedOcrFailure) {
     return (
-      <PageFrame title="다시 촬영해주세요" onBack={retakePhoto}>
+      <PageFrame
+        title={needsPhotoRecapture ? '다시 촬영해주세요' : '약 정보를 추출하지 못했어요'}
+        onBack={retakePhoto}
+      >
         <RegistrationProgress step={2} />
-        <Card tone="warning" title="약 정보를 추출하지 못했어요">
-          복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.
-          그림자와 빛 반사를 피하고, 글자가 선명한지 확인해주세요.
+        <Card
+          tone="warning"
+          title={needsPhotoRecapture ? '약 정보를 추출하지 못했어요' : '추출 중 문제가 생겼어요'}
+        >
+          {needsPhotoRecapture
+            ? '복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요. 그림자와 빛 반사를 피하고, 글자가 선명한지 확인해주세요.'
+            : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.'}
         </Card>
         <div className="mt-auto flex flex-col gap-2 pb-4">
           <Button onClick={retakePhoto} disabled={retaking || saving}>
@@ -629,8 +638,13 @@ export function OcrReviewPage() {
         </div>
         <ErrorDialog
           open
-          title="문서를 읽지 못했어요"
-          message={loadError ?? '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'}
+          title={needsPhotoRecapture ? '문서를 읽지 못했어요' : '약 정보를 확인하지 못했어요'}
+          message={
+            loadError ??
+            (needsPhotoRecapture
+              ? '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'
+              : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.')
+          }
           retryLabel="다시 촬영"
           onRetry={retakePhoto}
           secondaryLabel="그대로 직접 입력"

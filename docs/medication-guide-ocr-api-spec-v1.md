@@ -209,6 +209,10 @@ lowConfidenceCount
 
 `errorCode`는 화면 메시지 분기와 운영 로그 확인에 사용하는 기계 판독용 코드다.
 
+- `RECAPTURE_REQUIRED`: 전처리 품질 검사에서 재촬영이 필요하다고 판정했다. 이미지의 선명도·반사·촬영 범위를 안내한다.
+- `EXTRACTION_FAILED`: 문자 인식 이후 약 목록을 구성하지 못했거나 추출 처리에 실패했다. 이미지 품질 문제로 단정하지 않고 재시도·다른 이미지 등록·직접 입력을 안내한다.
+- 상세 실패 지점과 원인은 `stage_results.stages`에 보존한다. 빈 약 목록을 `RECAPTURE_REQUIRED`로 바꾸지 않는다.
+
 ### 응답 C: 검토 가능 또는 확정 완료
 
 ```json

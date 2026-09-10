@@ -109,6 +109,26 @@ OCR은 복약안내 문서에서 다음 정보만 추출한다.
 
 `status`는 `succeeded`, `failed`, `skipped` 중 하나이며, 필요한 경우 `code`에 오류 코드를 저장한다.
 
+### 단계 결과의 의미
+
+- `succeeded`: 다음 처리나 사용자 검토에 사용할 결과가 있다. 활용 가능한 부분 결과에 문제가 있으면 `code: COMPLETED_WITH_ISSUES`를 함께 기록한다. 빈 선택 필드만으로 작업 전체를 실패시키지 않는다.
+- `failed`: 해당 단계에서 필요한 결과를 만들지 못했다. 실패 원인은 그 단계의 `code`에 기록한다.
+- `skipped`: 실행하지 않은 단계다. 선행 단계의 치명적 실패가 원인이면 `code: UPSTREAM_FAILED`, 정상적인 결정론 처리로 LLM이 불필요하면 `code: DETERMINISTIC_SUFFICIENT`로 구분한다.
+
+| 상황 | 실패 단계와 코드 | 후속 처리 | 작업 오류 코드 |
+| --- | --- | --- | --- |
+| 이미지 품질 검사 탈락 | preprocess / RECAPTURE_REQUIRED | 모두 skipped | RECAPTURE_REQUIRED |
+| OCR 문자 블록 0개 | ocr / NO_OCR_BLOCKS | 모두 skipped | EXTRACTION_FAILED |
+| 약 표 없음·판별 불가 | candidate / TABLE_NOT_FOUND 또는 AMBIGUOUS_MEDICATION_TABLE | resolve·llm·validate skipped | EXTRACTION_FAILED |
+| 사용할 근거 없음 | candidate 또는 resolve / NO_EVIDENCE_ROWS | 해당 단계 이후 skipped | EXTRACTION_FAILED |
+| 검증 후 약 목록 0개 | validate / NO_VALID_MEDICATION_ROWS | 리뷰 생성 안 함 | EXTRACTION_FAILED |
+
+LLM 호출 실패 시에도 독립적인 결정론 결과가 남아 있으면 검증을 계속해 사용자 검토에 제공할 수 있다. 이 경우 LLM은 `failed`, 검증은 `succeeded`와 `COMPLETED_WITH_ISSUES`를 기록한다. 따라서 단계 실패가 항상 작업 전체 실패를 뜻하지는 않으며, 사용할 약 목록이 없는 경우에만 추출 실패로 종료한다. 결과 스키마 자체가 잘못된 경우는 별도로 `VALIDATION_FAILED`다.
+
+이 규칙은 변경 이후 실행되는 작업에 적용한다. 과거 작업의 상태·코드는 소급 변경하지 않는다.
+
+예외나 워커 중단으로 신뢰할 수 있는 단계 기록이 없으면 `stages: []`로 보존한다. 이때 작업 수준의 `error_code`만 확인된 오류이며, 원인을 알 수 없는데 `preprocess` 실패나 후속 단계 미실행을 추정해 기록하지 않는다.
+
 ## 4. DB 저장 구조
 
 ### `ocr_jobs`
