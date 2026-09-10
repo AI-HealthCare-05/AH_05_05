@@ -21,6 +21,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
+from tortoise.backends.mysql.client import TransactionWrapper
 
 if os.getenv("TEST315_RUN_MYSQL") != "1":
     pytest.skip("set TEST315_RUN_MYSQL=1 for the dedicated #315 MySQL integration run", allow_module_level=True)
@@ -32,6 +33,7 @@ MYSQL_PASSWORD = os.getenv("TEST315_MYSQL_PASSWORD", "migration315")
 MYSQL_BOOTSTRAP_DB = os.getenv("TEST315_MYSQL_BOOTSTRAP_DB", "migration315_bootstrap")
 MYSQL_DATABASE = f"test315_api_{os.getpid()}_{uuid4().hex[:10]}"
 assert re.fullmatch(r"[a-z0-9_]+", MYSQL_DATABASE)
+assert MYSQL_PORT == 3315, "This suite is restricted to the disposable #315 MySQL port"
 
 # app.core.config and the JWT backend are instantiated during module import.
 os.environ.update(
@@ -106,9 +108,7 @@ async def isolated_mysql_schema() -> None:
     this suite owns the real application/API behavior on the current model schema.
     """
 
-    await _server_statement(
-        f"CREATE DATABASE `{MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-    )
+    await _server_statement(f"CREATE DATABASE `{MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
     try:
         await Tortoise.init(config=TORTOISE_ORM)
         await Tortoise.generate_schemas(safe=True)
@@ -240,6 +240,222 @@ async def _run_worker_twice() -> tuple[int, int]:
         await custom_challenge_worker.shutdown(context)
 
 
+async def _claim(client: AsyncClient, headers: dict[str, str], participation_id: int) -> dict:
+    response = await client.post(
+        f"/api/v1/user/custom-challenge-participations/{participation_id}/claim-reward",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert set(payload) == {"participation", "award", "newlyAwarded"}
+    return payload
+
+
+async def _active_claim_case(client: AsyncClient, kind: CustomChallengeType) -> tuple:
+    """One actual scheduled goal, saved through the authenticated dose endpoint."""
+    now = datetime.now(config.TIMEZONE)
+    user = await _create_user(f"claim-{uuid4().hex}@example.com")
+    headers = await _auth_headers(client, user.email)
+    template = await _template(kind)
+    participation = await CustomChallengeParticipation.create(
+        user=user,
+        template=template,
+        reward_badge_id=template.reward_badge_id,
+        challenge_type=kind,
+        challenge_name="동시 수령 검증",
+        idempotency_key=uuid4().hex,
+        joined_at=now - timedelta(hours=1),
+        end_at=now + timedelta(hours=2),
+    )
+    scheduled_at = now - timedelta(minutes=1)
+    if kind is CustomChallengeType.MEDICATION:
+        episode = await _episode(user, "수령 경계 처방", scheduled_at, days=2)
+        target = await CustomChallengeTarget.create(
+            participation=participation,
+            care_episode=episode,
+            source_id_snapshot=episode.id,
+            target_name_snapshot=episode.alias,
+        )
+        dose_method, dose_path = "POST", "/api/v1/medications/doses"
+        dose_payload = {"recordId": episode.id, "date": scheduled_at.date().isoformat(), "slot": "morning"}
+    else:
+        registration = await UserSupplementNutrient.create(
+            user=user,
+            custom_name="수령 경계 영양제",
+            dose_amount=Decimal("1"),
+            dose_unit="정",
+            start_date=scheduled_at.date(),
+            status=SupplementStatus.ACTIVE,
+        )
+        await UserSupplementNutrientSlot.create(user_suppl_nutrient=registration, slot=MealSlot.MORNING)
+        target = await CustomChallengeTarget.create(
+            participation=participation,
+            supplement_registration=registration,
+            source_id_snapshot=registration.id,
+            target_name_snapshot=registration.custom_name,
+        )
+        dose_method, dose_path = "PUT", "/api/v1/med/supplement-doses"
+        dose_payload = {
+            "supplementId": registration.id,
+            "date": scheduled_at.date().isoformat(),
+            "slot": "morning",
+        }
+    occurrence = await CustomChallengeOccurrence.create(
+        target=target,
+        scheduled_date=scheduled_at.date(),
+        slot=MealSlot.MORNING,
+        scheduled_at=scheduled_at,
+    )
+    saved = await client.request(dose_method, dose_path, headers=headers, json={**dose_payload, "taken": True})
+    assert saved.status_code == 200, saved.text
+    return user, headers, participation, occurrence, dose_method, dose_path, dose_payload
+
+
+async def _overlap_at_user_lock(first_request, second_request) -> tuple:
+    """Pause the first real transaction holding User; let the second contend.
+
+    Only timing is instrumented at the driver boundary. Every SQL call executes
+    the original MySQL method, with unmodified arguments/results. No transaction,
+    authentication, service, or database response is replaced.
+    """
+    first_locked, second_attempted, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    original = TransactionWrapper.execute_query
+    first_task = second_task = None
+
+    async def observed(connection, query, *args, **kwargs):
+        is_user_lock = "FOR UPDATE" in query.upper() and "`user`" in query
+        task = asyncio.current_task()
+        if is_user_lock and task is second_task:
+            second_attempted.set()
+        result = await original(connection, query, *args, **kwargs)
+        if is_user_lock and task is first_task and not first_locked.is_set():
+            first_locked.set()
+            await release.wait()
+        return result
+
+    async def reached(event, task):
+        waiter = asyncio.create_task(event.wait())
+        try:
+            done, _ = await asyncio.wait({waiter, task}, timeout=15, return_when=asyncio.FIRST_COMPLETED)
+            if task in done:
+                response = task.result()
+                pytest.fail(f"Request finished without the expected User lock: {response.status_code} {response.text}")
+            assert waiter in done, "Request never reached its real User SELECT FOR UPDATE"
+        finally:
+            waiter.cancel()
+            await asyncio.gather(waiter, return_exceptions=True)
+
+    with patch.object(TransactionWrapper, "execute_query", observed):
+        try:
+            first_task = asyncio.create_task(first_request)
+            await reached(first_locked, first_task)
+            second_task = asyncio.create_task(second_request)
+            await reached(second_attempted, second_task)
+            assert not first_task.done() and not second_task.done()
+            release.set()
+            return tuple(await asyncio.wait_for(asyncio.gather(first_task, second_task), timeout=15))
+        finally:
+            release.set()
+            for task in (first_task, second_task):
+                if task is not None and not task.done():
+                    task.cancel()
+            if second_task is None:
+                second_request.close()
+            await asyncio.gather(
+                *(task for task in (first_task, second_task) if task is not None), return_exceptions=True
+            )
+
+
+@pytest.mark.parametrize("kind", [CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT])
+async def test_active_undo_before_claim_removes_eligibility_and_reads_never_award(kind) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        user, headers, participation, occurrence, method, path, payload = await _active_claim_case(client, kind)
+        detail_path = f"/api/v1/user/custom-challenge-participations/{participation.id}"
+        detail = await client.get(detail_path, headers=headers)
+        listed = await client.get("/api/v1/user/custom-challenge-participations", headers=headers)
+        badges = await client.get("/api/v1/user/custom-challenges/badges", headers=headers)
+        assert detail.status_code == listed.status_code == badges.status_code == 200
+        assert detail.json()["status"] == "ACTIVE"
+        assert detail.json()["completedCount"] == 1
+        assert badges.json() == {"items": [], "totalCount": 0}
+        assert await CustomChallengeBadgeAward.filter(user=user).count() == 0
+        undone = await client.request(method, path, headers=headers, json={**payload, "taken": False})
+        assert undone.status_code == 200, undone.text
+        result = await _claim(client, headers, participation.id)
+        assert result["award"] is None and result["newlyAwarded"] is False
+        assert result["participation"]["status"] == "ACTIVE"
+        assert result["participation"]["completedCount"] == 0
+        assert result["participation"]["completedDayCount"] == 0
+        assert result["participation"]["occurrences"][0]["isCompleted"] is False
+        await participation.refresh_from_db()
+        assert participation.finalized_at is None
+        assert await CustomChallengeBadgeAward.filter(user=user).count() == 0
+        foreign = await _create_user(f"foreign-{uuid4().hex}@example.com")
+        foreign_headers = await _auth_headers(client, foreign.email)
+        denied = await client.post(f"{detail_path}/claim-reward", headers=foreign_headers)
+        assert denied.status_code == 404
+
+
+@pytest.mark.parametrize("kind", [CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT])
+async def test_concurrent_duplicate_claims_award_once_on_real_mysql(kind) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        user, headers, participation, occurrence, method, path, payload = await _active_claim_case(client, kind)
+        claim_path = f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward"
+        first, second = await _overlap_at_user_lock(
+            client.post(claim_path, headers=headers), client.post(claim_path, headers=headers)
+        )
+        assert first.status_code == second.status_code == 200, (first.text, second.text)
+        assert first.json()["newlyAwarded"] is True
+        assert second.json()["newlyAwarded"] is False
+        assert first.json()["award"] == second.json()["award"]
+        assert first.json()["participation"] == second.json()["participation"]
+        await participation.refresh_from_db()
+        await occurrence.refresh_from_db()
+        assert participation.status is ChallengeParticipationStatus.COMPLETED
+        assert participation.finalized_at < participation.end_at
+        assert (participation.target_count, participation.completed_count) == (1, 1)
+        assert occurrence.is_completed is True
+        assert await CustomChallengeBadgeAward.filter(user=user, participation=participation).count() == 1
+
+
+@pytest.mark.parametrize("kind", [CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT])
+@pytest.mark.parametrize("claim_first", [True, False], ids=["claim-holds-lock", "undo-holds-lock"])
+async def test_claim_and_active_dose_undo_serialize_in_both_orders(kind, claim_first) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        user, headers, participation, occurrence, method, path, payload = await _active_claim_case(client, kind)
+        claim_request = client.post(
+            f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward", headers=headers
+        )
+        undo_request = client.request(method, path, headers=headers, json={**payload, "taken": False})
+        responses = await _overlap_at_user_lock(
+            *((claim_request, undo_request) if claim_first else (undo_request, claim_request))
+        )
+        claim_response, undo_response = responses if claim_first else responses[::-1]
+        assert claim_response.status_code == undo_response.status_code == 200, (claim_response.text, undo_response.text)
+        result = claim_response.json()
+        detail = await client.get(f"/api/v1/user/custom-challenge-participations/{participation.id}", headers=headers)
+        assert detail.status_code == 200, detail.text
+        assert detail.json() == result["participation"]
+        assert detail.json()["completedCount"] == int(claim_first)
+        assert detail.json()["completedDayCount"] == int(claim_first)
+        assert detail.json()["occurrences"][0]["isCompleted"] is claim_first
+        assert result["newlyAwarded"] is claim_first
+        assert (result["award"] is not None) is claim_first
+        assert await CustomChallengeBadgeAward.filter(user=user).count() == int(claim_first)
+        await participation.refresh_from_db()
+        assert (participation.finalized_at is not None) is claim_first
+        assert participation.status is (
+            ChallengeParticipationStatus.COMPLETED if claim_first else ChallengeParticipationStatus.ACTIVE
+        )
+        if kind is CustomChallengeType.MEDICATION:
+            assert await MedicationDose.filter(user=user).count() == 0
+        else:
+            assert await SupplementDose.filter(registration__user=user).count() == 0
+        replay = await _claim(client, headers, participation.id)
+        assert replay["newlyAwarded"] is False
+        assert replay["award"] == result["award"]
+
+
 async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_and_undo() -> None:
     """Catches cross-episode progress, seven-day truncation, replay, and mutable final snapshots."""
 
@@ -366,15 +582,9 @@ async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_a
         assert (before_worker[zero_goal.id]["target_count"], before_worker[zero_goal.id]["completed_count"]) == (0, 0)
         assert await _run_worker_twice() == (2, 0)
 
-        completed = await client.get(
-            f"/api/v1/user/custom-challenge-participations/{first_id}", headers=owner_headers
-        )
-        expired = await client.get(
-            f"/api/v1/user/custom-challenge-participations/{second_id}", headers=owner_headers
-        )
-        zero = await client.get(
-            f"/api/v1/user/custom-challenge-participations/{zero_goal.id}", headers=owner_headers
-        )
+        completed = await client.get(f"/api/v1/user/custom-challenge-participations/{first_id}", headers=owner_headers)
+        expired = await client.get(f"/api/v1/user/custom-challenge-participations/{second_id}", headers=owner_headers)
+        zero = await client.get(f"/api/v1/user/custom-challenge-participations/{zero_goal.id}", headers=owner_headers)
         assert (completed.json()["status"], completed.json()["targetCount"], completed.json()["completedCount"]) == (
             ChallengeParticipationStatus.COMPLETED.value,
             9,
@@ -390,6 +600,21 @@ async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_a
             0,
             0,
         )
+
+        unclaimed_badges = await client.get("/api/v1/user/custom-challenges/badges", headers=owner_headers)
+        assert unclaimed_badges.json() == {"items": [], "totalCount": 0}
+        assert await CustomChallengeBadgeAward.filter(user=owner).count() == 0
+        claimed = await _claim(client, owner_headers, first_id)
+        assert claimed["newlyAwarded"] is True
+        assert claimed["award"]["participationId"] == first_id
+        assert claimed["participation"] == completed.json()
+        replay_claim = await _claim(client, owner_headers, first_id)
+        assert replay_claim["newlyAwarded"] is False
+        assert replay_claim["award"] == claimed["award"]
+        for ineligible_id in (second_id, zero_goal.id):
+            ineligible = await _claim(client, owner_headers, ineligible_id)
+            assert ineligible["award"] is None
+            assert ineligible["newlyAwarded"] is False
 
         badges_before = await client.get("/api/v1/user/custom-challenges/badges", headers=owner_headers)
         other_badges = await client.get("/api/v1/user/custom-challenges/badges", headers=other_headers)
@@ -410,9 +635,7 @@ async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_a
             },
         )
         assert undone.status_code == 200, undone.text
-        frozen = await client.get(
-            f"/api/v1/user/custom-challenge-participations/{first_id}", headers=owner_headers
-        )
+        frozen = await client.get(f"/api/v1/user/custom-challenge-participations/{first_id}", headers=owner_headers)
         badges_after = await client.get("/api/v1/user/custom-challenges/badges", headers=owner_headers)
         assert await MedicationDose.filter(user=owner, care_episode=first_episode).count() == 8
         assert frozen.json() == completed.json()
@@ -480,8 +703,8 @@ async def test_supplement_api_uses_exactly_seven_days_and_freezes_completion_aft
         assert await SupplementDose.filter(registration=registration).count() == 7
 
         # Race the late worker against the first post-end undo. User-first MySQL
-        # locking must serialize them: either side may finalize, but only once and
-        # always before the dose is deleted.
+        # locking must serialize them: either side may freeze the result, but
+        # neither may award before an explicit claim.
         context: dict = {}
         await custom_challenge_worker.startup(context)
         try:
@@ -508,6 +731,13 @@ async def test_supplement_api_uses_exactly_seven_days_and_freezes_completion_aft
         completed = await client.get(
             f"/api/v1/user/custom-challenge-participations/{participation_id}", headers=headers
         )
+        unclaimed_badges = await client.get("/api/v1/user/custom-challenges/badges", headers=headers)
+        assert unclaimed_badges.json() == {"items": [], "totalCount": 0}
+        assert await CustomChallengeBadgeAward.filter(participation_id=participation_id).count() == 0
+        claimed = await _claim(client, headers, participation_id)
+        assert claimed["newlyAwarded"] is True
+        assert claimed["participation"] == completed.json()
+        assert claimed["award"]["participationId"] == participation_id
         badges_before = await client.get("/api/v1/user/custom-challenges/badges", headers=headers)
         assert (completed.json()["status"], completed.json()["targetCount"], completed.json()["completedCount"]) == (
             ChallengeParticipationStatus.COMPLETED.value,
@@ -517,9 +747,7 @@ async def test_supplement_api_uses_exactly_seven_days_and_freezes_completion_aft
         assert Decimal(str(completed.json()["progressRate"])) == Decimal("100.00")
         assert badges_before.json()["totalCount"] == 1
         assert await CustomChallengeBadgeAward.filter(participation_id=participation_id).count() == 1
-        frozen = await client.get(
-            f"/api/v1/user/custom-challenge-participations/{participation_id}", headers=headers
-        )
+        frozen = await client.get(f"/api/v1/user/custom-challenge-participations/{participation_id}", headers=headers)
         badges_after = await client.get("/api/v1/user/custom-challenges/badges", headers=headers)
         assert await SupplementDose.filter(registration=registration).count() == 6
         assert frozen.json() == completed.json()
