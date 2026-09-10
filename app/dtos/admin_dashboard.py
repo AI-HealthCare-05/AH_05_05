@@ -68,6 +68,7 @@ class OcrDocumentStats(CamelModel):
     queued: int
     completed: int
     failed: int
+    cancelled: int
     avg_field_confidence: float | None = None
 
 
