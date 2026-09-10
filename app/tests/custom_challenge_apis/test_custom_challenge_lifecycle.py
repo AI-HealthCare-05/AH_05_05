@@ -466,12 +466,8 @@ async def test_claim_reward_api_finalizes_complete_active_participation_and_awar
     app.dependency_overrides[get_request_user] = lambda: user
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        first = await client.post(
-            f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward"
-        )
-        second = await client.post(
-            f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward"
-        )
+        first = await client.post(f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward")
+        second = await client.post(f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward")
 
     assert first.status_code == second.status_code == 200
     assert first.json()["participation"]["status"] == "COMPLETED"
@@ -529,9 +525,9 @@ async def test_partial_claim_keeps_active_snapshot_unwritten() -> None:
         slot=first.slot,
     )
 
-    response = await CustomChallengeService(
-        now_provider=lambda: END_AT - timedelta(days=1)
-    ).claim_reward(user, participation.id)
+    response = await CustomChallengeService(now_provider=lambda: END_AT - timedelta(days=1)).claim_reward(
+        user, participation.id
+    )
 
     assert response.participation.status is ChallengeParticipationStatus.ACTIVE
     assert (response.participation.target_count, response.participation.completed_count) == (2, 1)
@@ -635,9 +631,9 @@ async def test_supplement_claim_freezes_complete_result() -> None:
         slot=occurrence.slot,
     )
 
-    response = await CustomChallengeService(
-        now_provider=lambda: END_AT - timedelta(days=1)
-    ).claim_reward(user, participation.id)
+    response = await CustomChallengeService(now_provider=lambda: END_AT - timedelta(days=1)).claim_reward(
+        user, participation.id
+    )
 
     assert response.participation.status is ChallengeParticipationStatus.COMPLETED
     assert response.participation.occurrences[0].is_completed is True
@@ -720,9 +716,7 @@ async def test_claim_reward_api_hides_another_users_participation() -> None:
     app.dependency_overrides[get_request_user] = lambda: other
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward"
-        )
+        response = await client.post(f"/api/v1/user/custom-challenge-participations/{participation.id}/claim-reward")
 
     assert response.status_code == 404
     assert response.json()["code"] == "CUSTOM_CHALLENGE_PARTICIPATION_NOT_FOUND"

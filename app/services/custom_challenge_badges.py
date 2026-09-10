@@ -35,18 +35,12 @@ class CustomChallengeBadgeService:
         using_db: BaseDBAsyncClient,
     ) -> tuple[CustomChallengeBadgeAward | None, bool]:
         locked_participation = await (
-            CustomChallengeParticipation.filter(id=participation.id)
-            .using_db(using_db)
-            .select_for_update()
-            .first()
+            CustomChallengeParticipation.filter(id=participation.id).using_db(using_db).select_for_update().first()
         )
         if locked_participation is None:
             return None, False
         participation = locked_participation
-        if (
-            participation.status is not ChallengeParticipationStatus.COMPLETED
-            or participation.reward_badge_id is None
-        ):
+        if participation.status is not ChallengeParticipationStatus.COMPLETED or participation.reward_badge_id is None:
             return None, False
 
         existing = await (

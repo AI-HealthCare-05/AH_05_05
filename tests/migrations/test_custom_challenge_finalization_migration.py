@@ -135,9 +135,7 @@ async def test_upgrade_preserves_rows_backfills_reward_snapshot_and_adds_termina
     participations = await migration_db.execute_query_dict(
         "SELECT * FROM `custom_challenge_participations` ORDER BY `id`"
     )
-    occurrences = await migration_db.execute_query_dict(
-        "SELECT * FROM `custom_challenge_occurrences` ORDER BY `id`"
-    )
+    occurrences = await migration_db.execute_query_dict("SELECT * FROM `custom_challenge_occurrences` ORDER BY `id`")
     assert [{key: row[key] for key in before_participations[0]} for row in participations] == before_participations
     assert [{key: row[key] for key in before_occurrences[0]} for row in occurrences] == before_occurrences
     assert [row["reward_badge_id"] for row in participations] == [10, None]

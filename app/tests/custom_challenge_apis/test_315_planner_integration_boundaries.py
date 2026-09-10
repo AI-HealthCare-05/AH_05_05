@@ -195,9 +195,7 @@ async def test_many_active_medication_episodes_are_independent_one_episode_parti
     )
 
     assert first_join.id != second_join.id
-    assert [item.scheduled_date for item in first_join.occurrences] == [
-        date(2026, 9, day) for day in range(10, 17)
-    ]
+    assert [item.scheduled_date for item in first_join.occurrences] == [date(2026, 9, day) for day in range(10, 17)]
     assert first_join.target_count == second_join.target_count == 7
 
 

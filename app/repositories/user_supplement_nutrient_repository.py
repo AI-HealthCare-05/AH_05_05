@@ -79,12 +79,7 @@ class UserSupplementNutrientRepository:
         connection: BaseDBAsyncClient | None = None,
     ) -> UserSettings:
         if connection is not None:
-            settings = (
-                await UserSettings.filter(user_id=user_id)
-                .using_db(connection)
-                .select_for_update()
-                .first()
-            )
+            settings = await UserSettings.filter(user_id=user_id).using_db(connection).select_for_update().first()
             if settings is None:
                 settings = await UserSettings.create(user_id=user_id, using_db=connection)
             return settings

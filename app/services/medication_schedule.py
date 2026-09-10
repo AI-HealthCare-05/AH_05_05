@@ -95,12 +95,7 @@ class MedicationScheduleService:
             if len(assignment_ids) != len(set(assignment_ids)) or set(assignment_ids) != scheduled_ids:
                 raise InvalidMedicationScheduleError()
 
-            settings = (
-                await UserSettings.filter(user_id=user.id)
-                .using_db(connection)
-                .select_for_update()
-                .first()
-            )
+            settings = await UserSettings.filter(user_id=user.id).using_db(connection).select_for_update().first()
             if settings is None:
                 settings = await UserSettings.create(user_id=user.id, using_db=connection)
             previous_meal_times = custom_challenge_meal_times(settings)

@@ -143,12 +143,16 @@ class MedicationService:
                     using_db=connection,
                 )
             else:
-                await MedicationDose.filter(
-                    user_id=user.id,
-                    dose_date=request.date,
-                    slot=slot,
-                    care_episode_id=episode.id,
-                ).using_db(connection).delete()
+                await (
+                    MedicationDose.filter(
+                        user_id=user.id,
+                        dose_date=request.date,
+                        slot=slot,
+                        care_episode_id=episode.id,
+                    )
+                    .using_db(connection)
+                    .delete()
+                )
         return MedicationDoseResponse(
             date=request.date,
             slot=slot.value.lower(),

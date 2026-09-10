@@ -169,9 +169,7 @@ class CustomChallengeLifecycleService:
     ) -> set[int]:
         if participation.challenge_type is CustomChallengeType.MEDICATION:
             source_to_target = {
-                target.care_episode_id: target.id
-                for target in targets
-                if target.care_episode_id is not None
+                target.care_episode_id: target.id for target in targets if target.care_episode_id is not None
             }
             rows = await (
                 MedicationDose.filter(

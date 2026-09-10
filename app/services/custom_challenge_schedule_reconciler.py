@@ -86,11 +86,7 @@ class CustomChallengeScheduleReconciler:
         )
         if selected_ids is not None:
             targets_query = targets_query.filter(source_id_snapshot__in=selected_ids)
-        targets = await (
-            targets_query.using_db(connection)
-            .select_for_update()
-            .order_by("participation_id", "id")
-        )
+        targets = await targets_query.using_db(connection).select_for_update().order_by("participation_id", "id")
         if not targets:
             return
 
@@ -120,12 +116,8 @@ class CustomChallengeScheduleReconciler:
             )
             past = [row for row in occurrences if _database_datetime(row.scheduled_at) < changed_at]
             future = [row for row in occurrences if _database_datetime(row.scheduled_at) >= changed_at]
-            preserved_keys: set[GoalKey] = {
-                (target.source_id_snapshot, row.scheduled_date, row.slot) for row in past
-            }
-            existing_keys: set[GoalKey] = {
-                (target.source_id_snapshot, row.scheduled_date, row.slot) for row in future
-            }
+            preserved_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in past}
+            existing_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in future}
             joined_at = _database_datetime(participation.joined_at)
             desired = (
                 plan_goals(
@@ -185,8 +177,7 @@ class CustomChallengeScheduleReconciler:
             source_ids = {
                 cast(int, target.care_episode_id)
                 for target in targets
-                if target.care_episode_id is not None
-                and cast(int, target.care_episode_id) == target.source_id_snapshot
+                if target.care_episode_id is not None and cast(int, target.care_episode_id) == target.source_id_snapshot
             }
             episodes = (
                 await CareEpisode.filter(
@@ -222,10 +213,7 @@ class CustomChallengeScheduleReconciler:
             if source_ids
             else []
         )
-        return {
-            registration.id: supplement_goal_windows(registration)
-            for registration in registrations
-        }
+        return {registration.id: supplement_goal_windows(registration) for registration in registrations}
 
     @staticmethod
     async def _replace_future(
@@ -235,14 +223,8 @@ class CustomChallengeScheduleReconciler:
         desired: list[PlannedGoal],
         connection: BaseDBAsyncClient,
     ) -> None:
-        existing_by_key = {
-            (row.scheduled_date, row.slot): row
-            for row in future
-        }
-        desired_by_key = {
-            (goal.scheduled_date, goal.slot): goal
-            for goal in desired
-        }
+        existing_by_key = {(row.scheduled_date, row.slot): row for row in future}
+        desired_by_key = {(goal.scheduled_date, goal.slot): goal for goal in desired}
 
         for key in existing_by_key.keys() & desired_by_key.keys():
             occurrence = existing_by_key[key]
@@ -251,19 +233,11 @@ class CustomChallengeScheduleReconciler:
                 occurrence.scheduled_at = planned.scheduled_at
                 await occurrence.save(using_db=connection, update_fields=["scheduled_at"])
 
-        deleted_ids = [
-            occurrence.id
-            for key, occurrence in existing_by_key.items()
-            if key not in desired_by_key
-        ]
+        deleted_ids = [occurrence.id for key, occurrence in existing_by_key.items() if key not in desired_by_key]
         if deleted_ids:
             await CustomChallengeOccurrence.filter(id__in=deleted_ids).using_db(connection).delete()
 
-        new_goals = [
-            goal
-            for key, goal in desired_by_key.items()
-            if key not in existing_by_key
-        ]
+        new_goals = [goal for key, goal in desired_by_key.items() if key not in existing_by_key]
         if new_goals:
             await CustomChallengeOccurrence.bulk_create(
                 [
