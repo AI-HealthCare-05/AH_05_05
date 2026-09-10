@@ -1722,14 +1722,38 @@ def test_split_does_not_treat_inline_research_term_as_heading() -> None:
     ]
 
 
-def test_split_adds_interaction_evidence_metadata_to_embedding_text() -> None:
+def test_split_adds_interaction_evidence_metadata_to_embedding_text(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "interaction-annotations.yaml"
+    annotation_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: pilot-document
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        left:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases: [칼슘, calcium]
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases: [철분, iron]
+""".strip(),
+        encoding="utf-8",
+    )
     page = build_page(
         ("Results A crossover single-meal study measured calcium and iron absorption in postmenopausal women."),
         document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
         title="Calcium and iron absorption--mechanisms and public health relevance",
     )
 
-    chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
+    chunk = KnowledgeSplitter(
+        token_counter=WordTokenCounter(),
+        interaction_annotations=KnowledgeInteractionAnnotationRegistry.from_yaml(annotation_path),
+    ).split([page])[0]
 
     assert chunk.metadata.ingredient_names == ["칼슘", "철분"]
     assert chunk.metadata.interaction_type == "SUPPLEMENT_SUPPLEMENT"
