@@ -2875,7 +2875,17 @@ class KnowledgeSplitter:
         metadata_values.update(
             {
                 "drug_names": entities.drug_names or metadata.drug_names,
-                "ingredient_names": entities.ingredient_names or metadata.ingredient_names,
+                # 공전의 manifest 성분 별칭은 사용자 표현을 검색하는 계약이다.
+                # 제목에서 다시 추출한 공전 정식명과 함께 보존한다. 다른 문서 유형은
+                # 세부 연구·표·승인 주석의 엔터티가 더 구체적이므로 기존 우선순위를 유지한다.
+                "ingredient_names": (
+                    [
+                        *metadata.ingredient_names,
+                        *entities.ingredient_names,
+                    ]
+                    if metadata.document_type == KnowledgeDocumentType.SUPPLEMENT_CODE
+                    else (entities.ingredient_names or metadata.ingredient_names)
+                ),
                 "food_names": entities.food_names or metadata.food_names,
                 "entity_catalog_entries": (entities.entity_catalog_entries or metadata.entity_catalog_entries),
                 "interaction_type": entities.interaction_type or metadata.interaction_type,

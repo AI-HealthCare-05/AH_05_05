@@ -70,6 +70,12 @@ async function routeHome(page: Page, overviews = MEDICATION_OVERVIEWS) {
   await page.route('**/api/v1/med/user-suppl-nutr*', (route) =>
     fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
   );
+  await page.route('**/api/v1/user/custom-challenge-participations*', (route) =>
+    fulfillJson(route, { items: [], totalCount: 0 }),
+  );
+  await page.route(/\/api\/v1\/user\/challenges(?:\?.*)?$/, (route) =>
+    fulfillJson(route, { items: [], totalCount: 0 }),
+  );
 }
 
 test.beforeEach(() => {

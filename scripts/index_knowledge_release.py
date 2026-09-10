@@ -91,6 +91,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=("--baseline-chunks-dir의 dataset_version입니다."),
     )
+    parser.add_argument(
+        "--reuse-vectors-from-collection",
+        default=None,
+        help=(
+            "--baseline-chunks-dir과 동일한 release의 Qdrant 컬렉션입니다. "
+            "embedding_text가 완전히 같은 청크의 벡터만 재사용합니다."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.embedding_batch_size <= 0:
         parser.error("--embedding-batch-size는 1 이상이어야 합니다.")
@@ -104,6 +112,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.baseline_dataset_version and args.baseline_dataset_version.strip()
     ):
         parser.error("--baseline-chunks-dir에는 --baseline-dataset-version이 필요합니다.")
+    if args.reuse_vectors_from_collection is not None and args.baseline_chunks_dir is None:
+        parser.error("--reuse-vectors-from-collection에는 --baseline-chunks-dir이 필요합니다.")
     return args
 
 
@@ -187,6 +197,56 @@ def assess_embedding_reuse(
         exact_embedding_text_reuse_count=exact_embedding_text_reuse_count,
         reembedding_required_count=(len(candidate_chunks) - exact_embedding_text_reuse_count),
     )
+
+
+async def load_reusable_vectors_from_collection(
+    *,
+    client: AsyncQdrantClient,
+    collection_name: str,
+    baseline_chunks: list[KnowledgeChunk],
+    batch_size: int = 128,
+) -> dict[str, list[float]]:
+    """검증된 baseline의 동일 embedding_text에만 원본 Qdrant 벡터를 연결한다."""
+    if batch_size <= 0:
+        raise ValueError("벡터 재사용 조회 배치 크기는 1 이상이어야 합니다.")
+
+    expected_texts = {chunk.embedding_text for chunk in baseline_chunks}
+    if not expected_texts:
+        raise ValueError("벡터 재사용 기준 청크가 없습니다.")
+
+    reused_vectors: dict[str, list[float]] = {}
+    offset = None
+    while True:
+        points, next_offset = await client.scroll(
+            collection_name=collection_name,
+            limit=batch_size,
+            offset=offset,
+            with_payload=True,
+            with_vectors=True,
+        )
+        for point in points:
+            payload = point.payload or {}
+            embedding_text = payload.get("embedding_text")
+            if not isinstance(embedding_text, str) or embedding_text not in expected_texts:
+                continue
+            vector = point.vector
+            if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
+                raise ValueError("벡터 재사용 원본은 단일 Dense 벡터 구조여야 합니다.")
+            normalized_vector = [float(value) for value in vector]
+            previous_vector = reused_vectors.get(embedding_text)
+            if previous_vector is not None and previous_vector != normalized_vector:
+                raise ValueError("같은 embedding_text에 서로 다른 원본 벡터가 있습니다.")
+            reused_vectors[embedding_text] = normalized_vector
+        if next_offset is None:
+            break
+        offset = next_offset
+
+    missing_texts = expected_texts - reused_vectors.keys()
+    if missing_texts:
+        raise ValueError(
+            f"벡터 재사용 원본 컬렉션에 baseline embedding_text가 없습니다: missing_count={len(missing_texts)}"
+        )
+    return reused_vectors
 
 
 def ensure_preprocessing_approved(
@@ -406,12 +466,15 @@ async def run_cli(
     )
     source_backed_metadata = ensure_source_backed_interaction_metadata(chunks)
     baseline_chunks_dir = getattr(args, "baseline_chunks_dir", None)
+    baseline_chunks: list[KnowledgeChunk] | None = None
     embedding_reuse = (
         assess_embedding_reuse(
             candidate_chunks=chunks,
-            baseline_chunks=KnowledgeChunkLoader().load(
-                baseline_chunks_dir,
-                expected_dataset_version=args.baseline_dataset_version,
+            baseline_chunks=(
+                baseline_chunks := KnowledgeChunkLoader().load(
+                    baseline_chunks_dir,
+                    expected_dataset_version=args.baseline_dataset_version,
+                )
             ),
         )
         if baseline_chunks_dir is not None
@@ -433,8 +496,21 @@ async def run_cli(
 
     qdrant_client = create_qdrant_client(resolved_settings)
     try:
+        reusable_vectors_by_embedding_text: dict[str, list[float]] = {}
+        reuse_collection = getattr(args, "reuse_vectors_from_collection", None)
+        if reuse_collection is not None:
+            if baseline_chunks is None:
+                raise ValueError("벡터 재사용에는 baseline 청크가 필요합니다.")
+            reusable_vectors_by_embedding_text = await load_reusable_vectors_from_collection(
+                client=qdrant_client,
+                collection_name=reuse_collection,
+                baseline_chunks=baseline_chunks,
+            )
+        chunks_requiring_external_embeddings = [
+            chunk for chunk in chunks if chunk.embedding_text not in reusable_vectors_by_embedding_text
+        ]
         ensure_external_embedding_allowed(
-            chunks,
+            chunks_requiring_external_embeddings,
             allow_demo_restricted=args.allow_demo_restricted,
         )
         indexer = build_indexer(
@@ -442,7 +518,10 @@ async def run_cli(
             args=args,
             qdrant_client=qdrant_client,
         )
-        return await indexer.index_release(chunks)
+        return await indexer.index_release(
+            chunks,
+            reusable_vectors_by_embedding_text=reusable_vectors_by_embedding_text,
+        )
     finally:
         await qdrant_client.close()
 
@@ -468,6 +547,8 @@ def main() -> None:
                 "dataset_version": result.dataset_version,
                 "collection_name": result.collection_name,
                 "indexed_chunk_count": result.indexed_chunk_count,
+                "reused_embedding_count": result.reused_embedding_count,
+                "new_embedding_count": result.new_embedding_count,
                 "metadata_quality": (
                     {
                         "total_chunk_count": metadata_quality.total_chunk_count,

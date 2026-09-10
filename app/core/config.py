@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 import zoneinfo
@@ -6,8 +7,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.models.enums import CustomChallengeType
 
 
 class Env(StrEnum):
@@ -88,6 +91,27 @@ class Config(BaseSettings):
     ALARM_CLICK_URL: str = "/"
 
     COOKIE_DOMAIN: str = "localhost"
+
+    # Legacy deployment setting, accepted for compatibility but no longer used.
+    # Custom challenge types are resolved from backoffice template common-code relations.
+    CUSTOM_CHALLENGE_TEMPLATE_TYPES: dict[int, CustomChallengeType] = Field(default_factory=dict)
+
+    @field_validator("CUSTOM_CHALLENGE_TEMPLATE_TYPES", mode="before")
+    @classmethod
+    def validate_custom_challenge_template_types(
+        cls,
+        value: object,
+    ) -> object:
+        if isinstance(value, str):
+            value = json.loads(value)
+        if not isinstance(value, dict):
+            return value
+        if any(int(template_id) <= 0 for template_id in value):
+            raise ValueError("custom challenge template IDs must be positive")
+        normalized_values = [CustomChallengeType(item) for item in value.values()]
+        if len(set(normalized_values)) != len(value):
+            raise ValueError("each custom challenge type may map to only one template ID")
+        return value
 
     EMAIL_QUEUE_NAME: str = "arq:email"
     EMAIL_MAX_RETRY_COUNT: int = Field(default=3, ge=0)

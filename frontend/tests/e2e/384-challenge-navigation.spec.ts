@@ -93,6 +93,9 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/user/badges', route => route.fulfill({
     json: { items: [awardedBadge], total_count: 1 },
   }));
+  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
 });
 
 function recordWrites(page: Page) {
@@ -190,5 +193,27 @@ test('내 배지 딥링크의 공통 헤더는 챌린지로 fallback한다', asy
 
   await expect(page).toHaveURL(/\/challenges$/);
   await page.screenshot({ path: testInfo.outputPath('badges-deeplink-fallback.png'), fullPage: true });
+  expect(writes).toEqual([]);
+});
+
+test('내 배지의 뒤로가기는 공식·맞춤 배지 통합 목록을 유지한다', async ({ page }) => {
+  const writes = recordWrites(page);
+  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({
+    json: { items: [{
+      id: 902,
+      participationId: 601,
+      badgeId: 32,
+      badgeName: '꾸준한 복약 배지',
+      badgeImagePath: '/images/challenges/badge-walk.png',
+      awardedAt: '2026-09-10T11:00:00+09:00',
+    }], totalCount: 1 },
+  }));
+  await page.goto('/challenges/badges');
+  await expect(page.getByText('모은 배지 2종 · 총 2회 획득')).toBeVisible();
+  await expect(page.getByRole('link', { name: '튼튼 걷기 배지, 1회 획득', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: '꾸준한 복약 배지, 1회 획득', exact: true }))
+    .toHaveAttribute('href', '/challenges/custom-participations/601');
+  await page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true }).click();
+  await expect(page).toHaveURL(/\/challenges$/);
   expect(writes).toEqual([]);
 });

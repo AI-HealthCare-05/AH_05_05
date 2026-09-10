@@ -23,6 +23,11 @@ import { mockUpdateEpisodeAlias } from '@/entities/medication-alias/api.mock';
 
 let uploadSequence = 0;
 const uploadedBatchPollCount = new Map<string, number>();
+const cancelledBatchIds = new Set<string>();
+
+export function mockCancelOcrResult(batchId: string): void {
+  cancelledBatchIds.add(batchId);
+}
 
 export function mockUploadDocument(file: File): UploadDocumentsResult {
   if (file.name.includes('upload-fail')) {
@@ -63,6 +68,7 @@ const STATUS_BY_BATCH_ID: Array<{
 ];
 
 export function mockOcrResult(batchId: string): OcrResult {
+  if (cancelledBatchIds.has(batchId)) return { batchId, ocrStatus: 'cancelled' };
   const uploadedPollCount = uploadedBatchPollCount.get(batchId);
   if (uploadedPollCount !== undefined && uploadedPollCount < 2) {
     uploadedBatchPollCount.set(batchId, uploadedPollCount + 1);

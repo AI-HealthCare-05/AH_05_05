@@ -27,7 +27,11 @@ VERSION_40_OCR = "40_20260909143654_allow_ocr_recapture_error_code.py"
 VERSION_41_TYPES = "41_20260909000001_add_custom_challenge_and_badge_types.py"
 VERSION_41 = "41_20260909120000_challenge_rejoin_attempts.py"
 VERSION_42 = "42_20260909180000_merge_challenge_schema_heads.py"
+VERSION_42_THERAPEUTIC = "42_20260909220000_add_therapeutic_classifications.py"
 VERSION_43 = "43_20260909193000_upsert_reference_seed_v1.py"
+VERSION_43_CUSTOM = "43_20260910000000_custom_challenge_finalization.py"
+VERSION_44 = "44_20260910093000_merge_therapeutic_classification_heads.py"
+VERSION_45 = "45_20260910190000_merge_custom_challenge_finalization_heads.py"
 CUSTOM_TABLES = ("custom_challenge_participations", "custom_challenge_targets", "custom_challenge_occurrences")
 
 
@@ -99,30 +103,39 @@ async def _seed_official_attempt():
 async def _seed_custom_history(user, check_type):
     from app.models.care import CareEpisode
     from app.models.challenges import CustomChallengeTemplate
-    from app.models.custom_challenges import (
-        CustomChallengeOccurrence,
-        CustomChallengeParticipation,
-        CustomChallengeTarget,
-    )
+    from app.models.custom_challenges import CustomChallengeTarget
 
     now = datetime.now(config.TIMEZONE)
     template = await CustomChallengeTemplate.create(name="Preserved template", check_type=check_type)
-    custom = await CustomChallengeParticipation.create(
-        user=user,
-        template=template,
-        challenge_type="MEDICATION",
-        challenge_name="Preserved custom history",
-        idempotency_key="preserved-custom-request",
-        end_at=now + timedelta(days=7),
+    # Seed the real historical columns, not the current ORM's post-43 fields.
+    db = Tortoise.get_connection("default")
+    custom_id = await db.execute_insert(
+        "INSERT INTO custom_challenge_participations "
+        "(user_id, template_id, challenge_type, challenge_name, idempotency_key, joined_at, end_at, status) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        [
+            user.id,
+            template.id,
+            "MEDICATION",
+            "Preserved custom history",
+            "preserved-custom-request",
+            now,
+            now + timedelta(days=7),
+            "ACTIVE",
+        ],
     )
     episode = await CareEpisode.create(user=user)
     target = await CustomChallengeTarget.create(
-        participation=custom,
+        participation_id=custom_id,
         care_episode=episode,
         source_id_snapshot=episode.id,
         target_name_snapshot="Preserved source label",
     )
-    await CustomChallengeOccurrence.create(target=target, scheduled_date=now.date(), slot="MORNING", scheduled_at=now)
+    await db.execute_insert(
+        "INSERT INTO custom_challenge_occurrences (target_id, scheduled_date, slot, scheduled_at) "
+        "VALUES (%s, %s, %s, %s)",
+        [target.id, now.date(), "MORNING", now],
+    )
 
 
 async def _add_historical_ocr_error_code_check(db, migration) -> None:
@@ -158,9 +171,10 @@ async def _run_chain(start_version: int) -> None:
         previous_40 = import_module("app.core.db.migrations.models." + VERSION_40_CUSTOM[:-3])
         current_40_ocr = import_module("app.core.db.migrations.models." + VERSION_40_OCR[:-3])
         current_42 = import_module("app.core.db.migrations.models." + VERSION_42[:-3])
-        current_43 = import_module("app.core.db.migrations.models." + VERSION_43[:-3])
+        current_45 = import_module("app.core.db.migrations.models." + VERSION_45[:-3])
         # Establish a fresh pre-custom schema from the registered parent models, then exercise actual migrations.
         # All tables are still empty here; this disposable database is the only deletion target.
+        await db.execute_script("DROP TABLE custom_challenge_badge_awards;")
         await db.execute_script(await previous_40.downgrade(db))
         await _add_historical_ocr_error_code_check(db, current_40_ocr)
         await db.execute_script("""
@@ -197,7 +211,11 @@ async def _run_chain(start_version: int) -> None:
             VERSION_41_TYPES,
             VERSION_41,
             VERSION_42,
+            VERSION_42_THERAPEUTIC,
             VERSION_43,
+            VERSION_43_CUSTOM,
+            VERSION_44,
+            VERSION_45,
         ]
         assert await command.heads() == expected
         assert await command.upgrade(fake=False) == expected
@@ -206,7 +224,7 @@ async def _run_chain(start_version: int) -> None:
         after = await Aerich.all().order_by("id").values()
         assert after[: len(history_before)] == history_before
         assert [row["version"] for row in after[len(history_before) :]] == expected
-        final_state = decompress_dict(current_43.MODELS_STATE)
+        final_state = decompress_dict(current_45.MODELS_STATE)
         assert after[-1]["content"] == final_state
         runtime_state = decompress_dict(compress_dict(get_models_describe("models")))
         differing_models = {
@@ -260,8 +278,16 @@ async def _run_chain(start_version: int) -> None:
         for table in CUSTOM_TABLES:
             rows = await db.execute_query_dict(f"SELECT * FROM `{table}` ORDER BY id")
             if start_version == 40:
-                assert rows == custom_before[table]
-                assert await db.execute_query_dict(f"SHOW CREATE TABLE `{table}`") == schema_before[table]
+                original_columns = custom_before[table][0].keys()
+                assert [{key: row[key] for key in original_columns} for row in rows] == custom_before[table]
+                if table == "custom_challenge_targets":
+                    assert await db.execute_query_dict(f"SHOW CREATE TABLE `{table}`") == schema_before[table]
+                elif table == "custom_challenge_participations":
+                    assert [(row["target_count"], row["completed_count"], row["finalized_at"]) for row in rows] == [
+                        (0, 0, None)
+                    ]
+                else:
+                    assert [row["is_completed"] for row in rows] == [0]
             else:
                 assert rows == []
         service = ChallengeParticipationService()
@@ -269,19 +295,25 @@ async def _run_chain(start_version: int) -> None:
         assert new.id != old.id and new.completed_count == 0 and new.verified_dates == []
         assert await ChallengeVerification.filter(id=verification.id, user_challenge_id=old.id).exists()
         assert (await service.get(user, old.id)).status == "CANCELLED"
+        assert await db.execute_query_dict("SHOW TABLES LIKE 'custom_challenge_badge_awards'")
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_45]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_44]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_43_CUSTOM]
         assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_43]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_42_THERAPEUTIC]
         assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_42]
         with pytest.raises(RuntimeError, match="duplicate"):
             await command.downgrade(version=-1, delete=False, fake=False)
-        assert await command.heads() == [VERSION_42, VERSION_43]
-        assert await command.upgrade(fake=False) == [VERSION_42, VERSION_43]
+        expected_restore = [VERSION_42, VERSION_42_THERAPEUTIC, VERSION_43, VERSION_43_CUSTOM, VERSION_44, VERSION_45]
+        assert await command.heads() == expected_restore
+        assert await command.upgrade(fake=False) == expected_restore
         restored = await Aerich.all().order_by("id").values()
-        assert restored[:-2] == after[:-2]
-        assert [row["version"] for row in restored[-2:]] == [VERSION_42, VERSION_43]
+        assert restored[:-6] == after[:-6]
+        assert [row["version"] for row in restored[-6:]] == expected_restore
         assert restored[-1]["content"] == final_state
         assert await UserChallenge.filter(user_id=user.id, challenge_id=challenge.id).count() == 2
         print(
-            f"ACTUAL_AERICH_{start_version}_TO_41_OK: history, schema, rows, runtime snapshot, rejoin and rollback guard"
+            f"ACTUAL_AERICH_{start_version}_TO_45_OK: history, schema, rows, runtime snapshot, rejoin and rollback guard"
         )
     finally:
         await Tortoise.close_connections()

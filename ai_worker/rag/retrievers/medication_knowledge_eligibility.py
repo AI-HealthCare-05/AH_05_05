@@ -34,6 +34,7 @@ class MedicationKnowledgeEligibilityPolicy:
         *,
         min_similarity_score: float,
         declared_pair_matches: PairTextMatcher,
+        has_declared_pair_key_match: CandidateMatcher,
         requires_entity_pair_match: PlanMatcher,
         matches_any_interaction_pair: CandidateMatcher,
         has_query_entities: PlanMatcher,
@@ -46,6 +47,7 @@ class MedicationKnowledgeEligibilityPolicy:
     ) -> None:
         self._min_similarity_score = min_similarity_score
         self._declared_pair_matches = declared_pair_matches
+        self._has_declared_pair_key_match = has_declared_pair_key_match
         self._requires_entity_pair_match = requires_entity_pair_match
         self._matches_any_interaction_pair = matches_any_interaction_pair
         self._has_query_entities = has_query_entities
@@ -90,6 +92,8 @@ class MedicationKnowledgeEligibilityPolicy:
         confidence_score = self._dense_confidence_score(result)
         if confidence_score is None:
             return MedicationKnowledgeEligibilityReason.BELOW_SCORE
+        if self._has_declared_pair_key_match(result, plan):
+            return MedicationKnowledgeEligibilityReason.ELIGIBLE
         if confidence_score >= self._min_similarity_score:
             return MedicationKnowledgeEligibilityReason.ELIGIBLE
 

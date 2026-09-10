@@ -35,6 +35,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRequest,
     MedicationChatResult,
     MedicationGuideLookup,
+    TherapeuticClassSelection,
 )
 from ai_worker.schemas.patient import PatientContext
 from ai_worker.schemas.safety import (
@@ -177,6 +178,15 @@ class InteractionRuleRepository(Protocol):
         context: ActiveIntakeContext,
         query_entity_names: list[str] | None = None,
     ) -> list[InteractionRuleFact]: ...
+
+
+class TherapeuticClassRepository(Protocol):
+    async def select_active_medications(
+        self,
+        *,
+        context: ActiveIntakeContext,
+        question: str,
+    ) -> TherapeuticClassSelection: ...
 
 
 class MedicationKnowledgeRetriever(Protocol):

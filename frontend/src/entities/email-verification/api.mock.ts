@@ -8,7 +8,7 @@ const verificationEmails = new Map<number, string>();
 export function mockRequestEmailVerification(email: string): EmailVerificationRequestResult {
   const verificationId = nextVerificationId++;
   verificationEmails.set(verificationId, email.trim().toLowerCase());
-  return { verificationId, expiresIn: 180, resendAvailableIn: 60 };
+  return { verificationId, expiresIn: 180, resendAvailableIn: 0 };
 }
 
 export function mockVerifyEmailCode(

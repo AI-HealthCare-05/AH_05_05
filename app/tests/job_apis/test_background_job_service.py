@@ -42,6 +42,8 @@ class TestBackgroundJobService(TestCase):
         assert first.id == second.id
         assert first_created is True
         assert second_created is False
+        assert first.reference_table == "alarms"
+        assert first.reference_id == self.alarm.id
 
     async def test_manual_retry_creates_child_of_failed_job(self):
         event = await AlarmEvent.create(

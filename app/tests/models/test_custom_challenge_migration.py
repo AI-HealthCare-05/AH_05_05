@@ -119,15 +119,17 @@ async def test_migration_excludes_superseded_draft_fields_and_downgrades_child_f
     ]
 
 
-def test_merge_migration_42_preserves_custom_models_and_matches_registered_metadata() -> None:
+def test_final_merge_migration_45_preserves_custom_models_and_matches_registered_metadata() -> None:
     current = decompress_dict(
-        import_module("app.core.db.migrations.models.42_20260909180000_merge_challenge_schema_heads").MODELS_STATE
+        import_module(
+            "app.core.db.migrations.models.45_20260910190000_merge_custom_challenge_finalization_heads"
+        ).MODELS_STATE
     )
 
     Tortoise.init_models(TORTOISE_APP_MODELS, "models")
     live = decompress_dict(compress_dict(get_models_describe("models")))
 
-    assert len(current) == 54
+    assert len(current) == 58
     assert current == live
     assert {
         "models.CareAdvice",
@@ -146,6 +148,12 @@ def test_merge_migration_42_preserves_custom_models_and_matches_registered_metad
             "joined_at",
             "end_at",
             "status",
+            "reward_badge_id",
+            "target_count",
+            "completed_count",
+            "progress_rate",
+            "completed_at",
+            "finalized_at",
         },
         "models.CustomChallengeTarget": {
             "id",
@@ -162,6 +170,16 @@ def test_merge_migration_42_preserves_custom_models_and_matches_registered_metad
             "scheduled_date",
             "slot",
             "scheduled_at",
+            "is_completed",
+        },
+        "models.CustomChallengeBadgeAward": {
+            "id",
+            "user_id",
+            "badge_id",
+            "participation_id",
+            "badge_name",
+            "badge_image_path",
+            "awarded_at",
         },
     }
     for model_name, columns in expected_columns.items():

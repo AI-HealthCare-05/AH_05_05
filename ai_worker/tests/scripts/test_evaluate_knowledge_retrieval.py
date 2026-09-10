@@ -10,6 +10,7 @@ from ai_worker.rag.metadata.interaction_annotation_registry import (
 from ai_worker.rag.metadata.supplement_interaction_registry import (
     find_supplement_interaction_pair,
 )
+from ai_worker.schemas.knowledge import KnowledgeVectorDistance
 from ai_worker.schemas.knowledge_evaluation import (
     KnowledgeEvaluationCase,
     KnowledgeEvaluationManifest,
@@ -79,6 +80,22 @@ def build_report(*, passed: bool) -> KnowledgeEvaluationReport:
             )
         ],
     )
+
+
+def test_build_evaluator_uses_runtime_dot_distance() -> None:
+    settings = module.Config(
+        _env_file=None,
+        OPENAI_API_KEY=SecretStr("test-key"),
+        KNOWLEDGE_VECTOR_DISTANCE=KnowledgeVectorDistance.DOT,
+    )
+
+    evaluator = module.build_evaluator(
+        settings=settings,
+        args=Namespace(collection="medication_knowledge_full_v12"),
+        qdrant_client=object(),
+    )
+
+    assert evaluator._vector_store._distance == KnowledgeVectorDistance.DOT
 
 
 async def test_run_cli_writes_report_and_closes_client(

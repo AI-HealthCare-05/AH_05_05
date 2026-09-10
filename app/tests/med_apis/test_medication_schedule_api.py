@@ -403,8 +403,8 @@ class TestMedicationScheduleAPI(TestCase):
             unordered_times = schedule_payload(scheduled.id)
             unordered_times["mealTimes"]["lunch"] = "07:30"  # type: ignore[index]
 
-            off_grid_time = schedule_payload(scheduled.id)
-            off_grid_time["mealTimes"]["morning"] = "08:15"  # type: ignore[index]
+            invalid_minute = schedule_payload(scheduled.id)
+            invalid_minute["mealTimes"]["morning"] = "08:60"  # type: ignore[index]
 
             future_start = schedule_payload(scheduled.id)
             future_start["start"]["date"] = "2999-01-01"  # type: ignore[index]
@@ -420,7 +420,7 @@ class TestMedicationScheduleAPI(TestCase):
                 for payload in (
                     duplicate_slots,
                     unordered_times,
-                    off_grid_time,
+                    invalid_minute,
                     future_start,
                     compact_date,
                     iso_week_date,

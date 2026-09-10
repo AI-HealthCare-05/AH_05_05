@@ -10,6 +10,7 @@ const STATUS_VALUES = {
   취소: "CANCELLED",
 };
 const STATUS_LABELS = { QUEUED: "대기", PROCESSING: "진행 중", RETRY_WAITING: "재시도 대기", COMPLETED: "성공", FAILED: "실패", CANCELLED: "취소" };
+const ALARM_TYPE_LABELS = { MEDICATION: "복약", NUTRIENT: "영양제", FOLLOW_UP_VISIT: "진료일정", GUIDE_CHECK: "생활가이드" };
 const TASK_PAGE_SIZE = 20;
 
 export function buildTaskQuery({ keyword, type, status, startDate, endDate, page = 1, size = TASK_PAGE_SIZE }) {
@@ -18,6 +19,29 @@ export function buildTaskQuery({ keyword, type, status, startDate, endDate, page
 
 export function formatTaskTotal(totalCount) {
   return typeof totalCount === "number" ? `총 ${totalCount}건` : "총 -건";
+}
+
+export function formatTaskError(job) {
+  if (job.errorCode === "PUSH_SUBSCRIPTION_EXPIRED") {
+    return "비활성화 처리(PUSH_SUBSCRIPTION_EXPIRED)";
+  }
+  if (job.errorCode && job.errorCode === job.errorMessage) {
+    return job.errorCode;
+  }
+  return [job.errorCode, job.errorMessage].filter(Boolean).join(" - ") || "-";
+}
+
+export function formatAlarmType(alarmType) {
+  return ALARM_TYPE_LABELS[alarmType] ?? "-";
+}
+
+export function formatTaskUser(job) {
+  if (!job.userName) return job.userId ? `사용자(${job.userId})` : "시스템 자동";
+  const characters = Array.from(job.userName);
+  const maskedName = characters.length <= 2
+    ? job.userName
+    : `${characters[0]}${"*".repeat(characters.length - 2)}${characters.at(-1)}`;
+  return job.userId ? `${maskedName}(${job.userId})` : maskedName;
 }
 
 export function getTaskPaginationState(totalCount, requestedPage, pageSize = TASK_PAGE_SIZE) {
@@ -63,11 +87,10 @@ function statusClass(value) {
 }
 
 function renderJobs(tbody, jobs) {
-  if (!jobs.length) return tableState.empty(tbody, 6, "조회 결과가 없습니다.");
+  if (!jobs.length) return tableState.empty(tbody, 7, "조회 결과가 없습니다.");
   tbody.innerHTML = jobs.map((job) => {
-    const error = [job.errorCode, job.errorMessage].filter(Boolean).join(" - ") || "-";
-    const userName = job.userName || (job.userId ? `사용자 #${job.userId}` : "시스템 자동");
-    return `<tr><td><strong>${escapeHtml(job.jobId)}</strong></td><td>${escapeHtml(job.jobType)}</td><td>${escapeHtml(userName)}</td><td>${escapeHtml(formatDateTime(job.requestedAt))}</td><td><span class="status-badge status-${statusClass(job.status)}">${escapeHtml(STATUS_LABELS[job.status] ?? job.status)}</span></td><td>${escapeHtml(error)}</td></tr>`;
+    const error = formatTaskError(job);
+    return `<tr><td><strong>${escapeHtml(job.jobId)}</strong></td><td>${escapeHtml(job.jobType)}</td><td>${escapeHtml(formatAlarmType(job.alarmType))}</td><td>${escapeHtml(formatTaskUser(job))}</td><td>${escapeHtml(formatDateTime(job.requestedAt))}</td><td><span class="status-badge status-${statusClass(job.status)}">${escapeHtml(STATUS_LABELS[job.status] ?? job.status)}</span></td><td>${escapeHtml(error)}</td></tr>`;
   }).join("");
 }
 
@@ -148,7 +171,7 @@ function initializeTaskManagement() {
 
   startDate.value = today;
   endDate.value = today;
-  tableState.loading(tbody, 6, "오늘 작업을 조회하는 중…");
+  tableState.loading(tbody, 7, "오늘 작업을 조회하는 중…");
 
   endDate.addEventListener("change", () => validateTaskDateRange(startDate.value, endDate));
   searchButton.addEventListener("click", () => {

@@ -60,6 +60,103 @@ def test_build_uses_explicit_catalog_entities_without_regex_fallback() -> None:
     ]
 
 
+def test_build_keeps_product_lookup_name_after_interaction_entity_becomes_ingredient() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="타이레놀",
+                canonical_name="아세트아미노펜",
+                product_lookup_name="타이레놀정500밀리그람",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            ),
+            MedicationQueryEntity(
+                surface="술",
+                canonical_name="알코올",
+                entity_type=MedicationQueryEntityType.FOOD_CATEGORY,
+                kind=InteractionEntityKind.FOOD,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+        ]
+    ).build("타이레놀과 술을 같이 먹어도 돼?")
+
+    assert plan.entity_names == ["아세트아미노펜", "알코올"]
+    assert plan.interaction_types == [InteractionPairType.DRUG_FOOD]
+    assert plan.medication_product_lookup_names == ["타이레놀정500밀리그람"]
+    assert plan.has_medication_product_cue is True
+
+
+def test_build_does_not_invent_product_lookup_name_for_ingredient_only_drug_food_question() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="아세트아미노펜",
+                canonical_name="아세트아미노펜",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            ),
+            MedicationQueryEntity(
+                surface="술",
+                canonical_name="알코올",
+                entity_type=MedicationQueryEntityType.FOOD_CATEGORY,
+                kind=InteractionEntityKind.FOOD,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+        ]
+    ).build("아세트아미노펜과 술을 같이 먹어도 돼?")
+
+    assert plan.interaction_types == [InteractionPairType.DRUG_FOOD]
+    assert plan.medication_product_lookup_names == []
+    assert plan.has_medication_product_cue is False
+
+
+def test_build_deduplicates_product_lookup_names_case_insensitively() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="ExampleDrug",
+                canonical_name="성분A",
+                product_lookup_name="ExampleDrug",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            ),
+            MedicationQueryEntity(
+                surface="exampledrug",
+                canonical_name="성분B",
+                product_lookup_name="exampledrug",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.DRUG,
+                source=MedicationQueryEntitySource.RDBMS,
+            ),
+        ]
+    ).build("ExampleDrug과 exampledrug을 같이 먹어도 돼?")
+
+    assert plan.medication_product_lookup_names == ["ExampleDrug"]
+
+
+def test_build_expands_resolved_entity_with_source_backed_aliases() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="오메가3",
+                canonical_name="오메가3",
+                search_aliases=["EPA", "DHA", "EPA 및 DHA 함유 유지"],
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            )
+        ]
+    ).build("오메가3의 효능, 일일 섭취량, 주의사항을 알려줘.")
+
+    assert "오메가3" in plan.expanded_query
+    assert "EPA" in plan.expanded_query
+    assert "DHA" in plan.expanded_query
+    assert "EPA 및 DHA 함유 유지" in plan.expanded_query
+
+
 def test_build_uses_dynamic_supplement_names_for_document_routing() -> None:
     plan = MedicationKnowledgeQueryBuilder(
         supplement_names=["루테인"],
@@ -644,3 +741,30 @@ def test_build_detects_drug_food_usage_as_interaction() -> None:
     assert plan.entity_names == ["알렌드로네이트", "음식"]
     assert plan.section_types == [KnowledgeSectionType.INTERACTION]
     assert plan.interaction_types == [InteractionPairType.DRUG_FOOD]
+
+
+def test_build_treats_two_resolved_supplements_with_typoed_coadministration_as_interaction() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="비타민 디",
+                canonical_name="비타민 D",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+            MedicationQueryEntity(
+                surface="칼슘",
+                canonical_name="칼슘",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+        ]
+    ).build(
+        "비타민 디랑 칼슘 같이 머거도 대?",
+    )
+
+    assert plan.entity_names == ["비타민 D", "칼슘"]
+    assert plan.section_types == [KnowledgeSectionType.INTERACTION]
+    assert plan.interaction_types == [InteractionPairType.SUPPLEMENT_SUPPLEMENT]

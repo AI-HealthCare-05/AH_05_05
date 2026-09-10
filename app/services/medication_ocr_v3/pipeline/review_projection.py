@@ -67,6 +67,13 @@ def build_project_review(
             grounded_by_index.get(source_index),
             temp_id=f"med-{source_index}",
         )
+        matched = grounded_by_index.get(source_index)
+        if grounded is not None and any(
+            (matched is not None and issue.row_id == matched.row_id)
+            or (issue.row_id is None and set(issue.block_ids).intersection(row.fields.name.block_ids))
+            for issue in grounded.issues
+        ):
+            projected["confidence"] = "low"
         medications.append(projected)
         low_confidence_count += int(projected["confidence"] == "low")
 
@@ -219,26 +226,26 @@ def _medication_confidence(
 ) -> str:
     if not _structurally_valid_name(row):
         return "low"
-    required_medical_keys = {
-        "strength",
-        "doseQuantity",
-        "timesPerDay",
-        "days",
-    }
-    if not required_medical_keys <= medication.keys():
-        return "low"
     deterministic_fields = (
-        row.fields.name,
-        row.fields.dose_quantity,
-        row.fields.times_per_day,
-        row.fields.days,
+        ("name", row.fields.name),
+        ("doseQuantity", row.fields.dose_quantity),
+        ("timesPerDay", row.fields.times_per_day),
+        ("days", row.fields.days),
     )
-    if any(_has_validation_issue(field) for field in deterministic_fields):
+    if any(_has_validation_issue(field) for _, field in deterministic_fields):
         return "low"
-    if strength is None or strength.issues:
+    # Absence is not uncertainty. Still reject observed values that validation omitted.
+    present_fields = [(key, field) for key, field in deterministic_fields if field.value not in (None, "")]
+    if any(key not in medication for key, _ in present_fields):
         return "low"
-    confidences = [field.confidence for field in deterministic_fields]
-    confidences.append(strength.confidence)
+    confidences = [field.confidence for _, field in present_fields]
+    if strength is not None:
+        if strength.issues:
+            return "low"
+        if strength.value not in (None, ""):
+            if "strength" not in medication:
+                return "low"
+            confidences.append(strength.confidence)
     if any(confidence is None for confidence in confidences):
         return "low"
     return _confidence_tier(min(confidence for confidence in confidences if confidence is not None))

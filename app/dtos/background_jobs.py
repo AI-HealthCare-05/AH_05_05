@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.dtos.base import BaseSerializerModel, CamelModel
 from app.dtos.pagination import PageQuery
-from app.models.enums import BackgroundJobStatus, BackgroundJobType
+from app.models.enums import AlarmType, BackgroundJobStatus, BackgroundJobType
 
 
 class BackgroundJobFilter(BaseModel):
@@ -71,6 +71,7 @@ class AdminBackgroundJobListQuery(PageQuery):
 class AdminBackgroundJobListItem(CamelModel):
     job_id: int | str
     job_type: BackgroundJobType
+    alarm_type: AlarmType | None
     status: BackgroundJobStatus
     user_id: int | None
     user_name: str | None

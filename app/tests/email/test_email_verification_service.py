@@ -11,7 +11,6 @@ from app.core.exceptions import (
     EmailVerificationAttemptsExceededError,
     EmailVerificationExpiredError,
     EmailVerificationInvalidError,
-    EmailVerificationRateLimitedError,
     InvalidEmailVerificationCodeError,
 )
 from app.models.email_verifications import EmailVerification
@@ -53,7 +52,7 @@ class TestEmailVerificationService(TestCase):
         assert verification.code_digest != "123456"
         assert len(verification.code_digest) == 64
         assert result.expires_in == 180
-        assert result.resend_available_in == 60
+        assert result.resend_available_in == 0
         assert self.jobs.calls == [
             {
                 "verification_id": verification.id,
@@ -64,15 +63,16 @@ class TestEmailVerificationService(TestCase):
             }
         ]
 
-    async def test_request_is_rate_limited_for_sixty_seconds(self) -> None:
-        await self.service.request("user@example.com")
+    async def test_request_allows_immediate_resend(self) -> None:
+        first = await self.service.request("user@example.com")
 
-        with pytest.raises(EmailVerificationRateLimitedError):
-            await self.service.request("user@example.com")
+        second = await self.service.request("user@example.com")
+
+        assert second.verification_id != first.verification_id
+        assert len(self.jobs.calls) == 2
 
     async def test_resend_expires_previous_open_record(self) -> None:
         first = await self.service.request("user@example.com")
-        self.now += timedelta(seconds=180)
 
         second = await self.service.request("user@example.com")
 

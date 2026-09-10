@@ -6,6 +6,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from ai_worker.schemas.knowledge import (
+    KnowledgeEntityCatalogEntry,
     KnowledgeEvidenceLevel,
     KnowledgeStudyPopulation,
 )
@@ -51,6 +52,9 @@ class KnowledgeCorpusDocument(BaseModel):
     publication_year: int | None = Field(default=None, ge=1900, le=2100)
     drug_names: list[str] = Field(default_factory=list)
     ingredient_names: list[str] = Field(default_factory=list)
+    entity_catalog_entries: list[KnowledgeEntityCatalogEntry] = Field(
+        default_factory=list,
+    )
     evidence_level: KnowledgeEvidenceLevel = KnowledgeEvidenceLevel.UNKNOWN
     study_population: KnowledgeStudyPopulation = KnowledgeStudyPopulation.UNKNOWN
     index_eligible: bool = True
@@ -158,6 +162,9 @@ class KnowledgeCorpusManifestBuilder:
                     publication_year=(document.publication_year or (reviewed.publication_year if reviewed else None)),
                     drug_names=(document.drug_names or (reviewed.drug_names if reviewed else [])),
                     ingredient_names=(document.ingredient_names or (reviewed.ingredient_names if reviewed else [])),
+                    entity_catalog_entries=(
+                        document.entity_catalog_entries or (reviewed.entity_catalog_entries if reviewed else [])
+                    ),
                     evidence_level=(
                         document.evidence_level
                         if document.evidence_level != KnowledgeEvidenceLevel.UNKNOWN

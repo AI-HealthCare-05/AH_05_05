@@ -4,6 +4,10 @@ import unicodedata
 from collections import Counter
 from typing import NamedTuple, Protocol
 
+from ai_worker.domain.interaction_question_detector import is_interaction_question
+from ai_worker.rag.metadata.supplement_ingredient_family_registry import (
+    find_supplement_ingredient_family,
+)
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
@@ -82,6 +86,7 @@ class RuleBasedMedicationQuestionResolver:
     _CANONICAL_RELATION_INTAKE = "먹어도"
     _CANONICAL_RELATION_ENDING = "돼"
     _RELATION_INTAKE_MAX_JAMO_DISTANCE = 2
+    _TRAILING_PRODUCT_INGREDIENT = re.compile(r"\((?P<ingredient>[^()]+)\)\s*$")
     _NON_ENTITY_TOKENS = {
         "같이",
         "관련",
@@ -116,6 +121,14 @@ class RuleBasedMedicationQuestionResolver:
         MedicationQueryEntitySource.CATALOG: 4,
         MedicationQueryEntitySource.ALIAS: 5,
         MedicationQueryEntitySource.REGEX: 6,
+    }
+    _CONTEXTUAL_SOURCES = {
+        MedicationQueryEntitySource.PATIENT_CONTEXT,
+        MedicationQueryEntitySource.SESSION_MEMORY,
+    }
+    _PRODUCT_ENTITY_TYPES = {
+        MedicationQueryEntityType.PRODUCT_NAME,
+        MedicationQueryEntityType.BRAND_ALIAS,
     }
     _LATIN_LETTER_PRONUNCIATIONS = {
         "A": "에이",
@@ -390,10 +403,7 @@ class RuleBasedMedicationQuestionResolver:
             key: tuple(
                 sorted(
                     values,
-                    key=lambda value: (
-                        cls._SOURCE_PRIORITY[value.source],
-                        value.canonical_name.casefold(),
-                    ),
+                    key=cls._entry_selection_priority,
                 )
             )
             for key, values in entries_by_expression.items()
@@ -415,6 +425,26 @@ class RuleBasedMedicationQuestionResolver:
             all_entries=tuple(entries),
             candidates_by_length=candidates_by_length,
             candidates_by_bigram=candidates_by_bigram,
+        )
+
+    @classmethod
+    def _entry_selection_priority(
+        cls,
+        entry: MedicationCatalogEntry,
+    ) -> tuple[int, int, str]:
+        """동일 표현의 후보를 제품·성분 의미에 따라 일관되게 고른다."""
+        if entry.source in cls._CONTEXTUAL_SOURCES:
+            category_priority = 0
+        elif entry.entity_type in cls._PRODUCT_ENTITY_TYPES:
+            category_priority = 1
+        elif entry.kind == InteractionEntityKind.SUPPLEMENT:
+            category_priority = 2
+        else:
+            category_priority = 3
+        return (
+            category_priority,
+            cls._SOURCE_PRIORITY[entry.source],
+            entry.canonical_name.casefold(),
         )
 
     @classmethod
@@ -530,6 +560,42 @@ class RuleBasedMedicationQuestionResolver:
                 catalog_index=catalog_index,
             ),
         )
+
+    @classmethod
+    def _ingredient_family_resolution(
+        cls,
+        *,
+        question: str,
+        surfaces: list[str],
+        catalog_index: _CatalogIndex,
+    ) -> MedicationQuestionResolution | None:
+        for surface in surfaces:
+            family = find_supplement_ingredient_family(surface)
+            if family is None:
+                continue
+            return cls._with_diagnostics(
+                MedicationQuestionResolution(
+                    original_question=question,
+                    resolved_question=question,
+                    scope=MedicationQuestionScope.IN_SCOPE,
+                    status=MedicationExpressionResolutionStatus.UNCHANGED,
+                    entity_resolution_available=True,
+                    entities=[
+                        MedicationQueryEntity(
+                            surface=surface,
+                            canonical_name=family.canonical_name,
+                            entity_type=(MedicationQueryEntityType.INGREDIENT_FAMILY),
+                            kind=InteractionEntityKind.SUPPLEMENT,
+                            source=MedicationQueryEntitySource.CATALOG,
+                        )
+                    ],
+                ),
+                catalog_index=catalog_index,
+                strategy=MedicationExpressionNormalizationStrategy.EXACT,
+                confidence=MedicationQuestionConfidence.HIGH,
+                shortlisted_candidate_count=1,
+            )
+        return None
 
     @classmethod
     def _with_matched_entities(
@@ -649,6 +715,17 @@ class RuleBasedMedicationQuestionResolver:
         tokens: list[_QuestionToken],
         catalog_index: _CatalogIndex,
     ) -> MedicationQuestionResolution | None:
+        ingredient_family_resolution = cls._ingredient_family_resolution(
+            question=question,
+            surfaces=cls._prefix_candidate_surfaces(
+                question=question,
+                tokens=tokens,
+                token_surfaces=surfaces,
+            ),
+            catalog_index=catalog_index,
+        )
+        if ingredient_family_resolution is not None:
+            return ingredient_family_resolution
         if not cls._contains_exact_expression(
             question=question,
             surfaces=surfaces,
@@ -656,6 +733,26 @@ class RuleBasedMedicationQuestionResolver:
             catalog=catalog_index.catalog,
         ):
             return None
+        if candidates := cls._ambiguous_product_supplement_candidates(
+            question=question,
+            tokens=tokens,
+            catalog_index=catalog_index,
+        ):
+            return cls._with_diagnostics(
+                MedicationQuestionResolution(
+                    original_question=question,
+                    resolved_question=question,
+                    scope=MedicationQuestionScope.IN_SCOPE,
+                    status=(MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED),
+                    candidate_names=candidates,
+                    entity_resolution_available=True,
+                ),
+                catalog_index=catalog_index,
+                strategy=MedicationExpressionNormalizationStrategy.EXACT,
+                confidence=MedicationQuestionConfidence.MEDIUM,
+                shortlisted_candidate_count=len(candidates),
+                tie_count=len(candidates),
+            )
         relation_resolution = cls._relation_expression_resolution(
             question=question,
             catalog_index=catalog_index,
@@ -686,6 +783,45 @@ class RuleBasedMedicationQuestionResolver:
                 else MedicationRelationResolutionStatus.NOT_APPLICABLE
             ),
         )
+
+    @classmethod
+    def _ambiguous_product_supplement_candidates(
+        cls,
+        *,
+        question: str,
+        tokens: list[_QuestionToken],
+        catalog_index: _CatalogIndex,
+    ) -> list[str]:
+        """같은 표현이 제품과 영양성분 모두를 뜻할 때만 확인을 요청한다."""
+        matches = cls._matching_spans(
+            question=question,
+            tokens=tokens,
+            catalog_index=catalog_index,
+        )
+        occupied_until = -1
+        for start, end, key in sorted(
+            matches,
+            key=lambda item: (item[0], -(item[1] - item[0]), item[2]),
+        ):
+            if start < occupied_until:
+                continue
+            occupied_until = end
+            entries = catalog_index.entries_by_expression[key]
+            if any(entry.source in cls._CONTEXTUAL_SOURCES for entry in entries):
+                continue
+            products = [entry for entry in entries if entry.entity_type in cls._PRODUCT_ENTITY_TYPES]
+            supplements = [entry for entry in entries if entry.kind == InteractionEntityKind.SUPPLEMENT]
+            if not products or not supplements:
+                continue
+            return list(
+                dict.fromkeys(
+                    [
+                        *(f"{entry.canonical_name} (의약품 제품)" for entry in products),
+                        *(f"{entry.canonical_name} (영양성분)" for entry in supplements),
+                    ]
+                )
+            )
+        return []
 
     @classmethod
     def _exact_match_strategy(
@@ -767,18 +903,45 @@ class RuleBasedMedicationQuestionResolver:
             candidates = catalog_index.entries_by_expression[key]
             canonical_names = {candidate.canonical_name for candidate in candidates}
             candidate_types = list(dict.fromkeys(candidate.entity_type for candidate in candidates))
-            selected = candidates[0]
-            dedupe_key = (selected.canonical_name.casefold(), selected.kind.value if selected.kind else "TOPIC")
+            selected = cls._select_candidate_for_question(
+                question=question,
+                candidates=candidates,
+            )
+            effective_candidate = cls._interaction_ingredient_candidate(
+                question=question,
+                selected=selected,
+                catalog_index=catalog_index,
+            )
+            if effective_candidate != selected:
+                canonical_names = {effective_candidate.canonical_name}
+                candidate_types = [effective_candidate.entity_type]
+            dedupe_key = (
+                effective_candidate.canonical_name.casefold(),
+                effective_candidate.kind.value if effective_candidate.kind else "TOPIC",
+            )
             if dedupe_key in seen:
                 continue
             entities.append(
                 MedicationQueryEntity(
                     surface=question[start:end],
-                    canonical_name=selected.canonical_name,
-                    entity_type=selected.entity_type,
+                    canonical_name=effective_candidate.canonical_name,
+                    search_aliases=list(
+                        dict.fromkeys(
+                            [*selected.expressions, *effective_candidate.expressions],
+                        )
+                    ),
+                    product_lookup_name=(
+                        selected.canonical_name
+                        if (
+                            selected.entity_type in cls._PRODUCT_ENTITY_TYPES
+                            and selected.kind == InteractionEntityKind.DRUG
+                        )
+                        else None
+                    ),
+                    entity_type=effective_candidate.entity_type,
                     candidate_types=candidate_types,
-                    kind=selected.kind,
-                    source=selected.source,
+                    kind=effective_candidate.kind,
+                    source=effective_candidate.source,
                     resolution_status=(
                         MedicationQueryResolutionStatus.AMBIGUOUS
                         if len(canonical_names) > 1 or len(candidate_types) > 1
@@ -788,6 +951,52 @@ class RuleBasedMedicationQuestionResolver:
             )
             seen.add(dedupe_key)
         return entities
+
+    @classmethod
+    def _select_candidate_for_question(
+        cls,
+        *,
+        question: str,
+        candidates: tuple[MedicationCatalogEntry, ...],
+    ) -> MedicationCatalogEntry:
+        """상호작용 질문에서 source-backed 음식 분류를 우선한다."""
+        if is_interaction_question(question):
+            for candidate in candidates:
+                if candidate.kind == InteractionEntityKind.FOOD:
+                    return candidate
+        return candidates[0]
+
+    @classmethod
+    def _interaction_ingredient_candidate(
+        cls,
+        *,
+        question: str,
+        selected: MedicationCatalogEntry,
+        catalog_index: _CatalogIndex,
+    ) -> MedicationCatalogEntry:
+        """제품명 끝의 검증된 성분명만 상호작용 검색 대상으로 바꾼다."""
+        if (
+            not is_interaction_question(question)
+            or selected.entity_type not in cls._PRODUCT_ENTITY_TYPES
+            or selected.kind != InteractionEntityKind.DRUG
+        ):
+            return selected
+
+        match = cls._TRAILING_PRODUCT_INGREDIENT.search(selected.canonical_name)
+        if match is None:
+            return selected
+        ingredient_key = cls._normalize_expression(match.group("ingredient"))
+        if not ingredient_key:
+            return selected
+
+        for candidate in catalog_index.all_entries:
+            if (
+                candidate.entity_type == MedicationQueryEntityType.INGREDIENT_NAME
+                and candidate.kind == InteractionEntityKind.DRUG
+                and cls._normalize_expression(candidate.canonical_name) == ingredient_key
+            ):
+                return candidate
+        return selected
 
     @classmethod
     def _matching_spans(

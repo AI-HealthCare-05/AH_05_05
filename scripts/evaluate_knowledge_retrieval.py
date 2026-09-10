@@ -73,6 +73,7 @@ def build_evaluator(
         client=qdrant_client,
         collection_name=args.collection,
         vector_size=settings.OPENAI_EMBEDDING_DIMENSIONS,
+        distance=settings.KNOWLEDGE_VECTOR_DISTANCE,
     )
     return KnowledgeRetrievalEvaluator(
         embedding_provider=embedding_provider,

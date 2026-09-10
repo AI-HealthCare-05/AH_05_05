@@ -1,0 +1,27 @@
+.badge-award-dialog {
+  max-width: 360px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  gap: 20px;
+  padding: 40px 24px 24px;
+  background: var(--color-card);
+  border-radius: 28px;
+  box-shadow: 0 20px 48px rgb(5 95 90 / 14%), inset 0 2px 2px rgb(255 255 255 / 80%);
+}
+.badge-award-stage {
+  display: grid;
+  place-items: center;
+  min-height: 212px;
+  perspective: 800px;
+  background: radial-gradient(ellipse, var(--color-primary-bg), transparent 70%);
+}
+.badge-award-art { position: relative; width: min(190px, 100%); aspect-ratio: 1; filter: drop-shadow(0 12px 12px rgb(5 95 90 / 15%)); }
+.badge-award-art img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.badge-award-mask { position: absolute; inset: 0; overflow: hidden; mask-size: contain; mask-position: center; mask-repeat: no-repeat; }
+.badge-award-gloss { position: absolute; inset: 0; opacity: 0; background: linear-gradient(90deg, transparent 30%, rgb(255 255 255 / 85%) 50%, transparent 70%); }
+.badge-award-copy-pending { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .badge-award-stage { perspective: none; }
+  .badge-award-art { transform: none !important; opacity: 1 !important; }
+  .badge-award-mask { display: none; }
+}

@@ -55,6 +55,11 @@ class RecordingEmbeddingProvider:
         raise AssertionError("인덱싱에서는 질문 임베딩을 호출하지 않습니다.")
 
 
+class FailingEmbeddingProvider(RecordingEmbeddingProvider):
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("OpenAI embedding failed")
+
+
 class RecordingKnowledgeStore:
     collection_name = "knowledge_release"
 
@@ -110,6 +115,57 @@ async def test_index_release_embeds_and_upserts_in_batches() -> None:
     assert result.metadata_quality is not None
     assert result.metadata_quality.total_chunk_count == 3
     assert result.metadata_quality.known_evidence_count == 0
+
+
+async def test_index_release_reuses_only_exact_embedding_text_vectors() -> None:
+    embedding_provider = RecordingEmbeddingProvider()
+    store = RecordingKnowledgeStore()
+    indexer = KnowledgeIndexer(
+        embedding_provider=embedding_provider,
+        vector_store=store,
+        embedding_batch_size=2,
+        upsert_batch_size=3,
+    )
+    chunks = [
+        build_chunk("a"),
+        build_chunk("b"),
+        build_chunk("c"),
+    ]
+
+    result = await indexer.index_release(
+        chunks,
+        reusable_vectors_by_embedding_text={
+            "embedding-a": [0.1, 0.2, 0.3],
+            "embedding-c": [0.4, 0.5, 0.6],
+        },
+    )
+
+    assert embedding_provider.batches == [["embedding-b"]]
+    assert store.saved_batches == [
+        (
+            chunks,
+            [
+                [0.1, 0.2, 0.3],
+                [1.0, 1.0, 0.0],
+                [0.4, 0.5, 0.6],
+            ],
+        )
+    ]
+    assert result.reused_embedding_count == 2
+    assert result.new_embedding_count == 1
+
+
+async def test_index_release_does_not_create_release_when_embedding_preparation_fails() -> None:
+    store = RecordingKnowledgeStore()
+    indexer = KnowledgeIndexer(
+        embedding_provider=FailingEmbeddingProvider(),
+        vector_store=store,
+    )
+
+    with pytest.raises(RuntimeError, match="embedding failed"):
+        await indexer.index_release([build_chunk("a")])
+
+    assert store.created is False
 
 
 async def test_index_release_rejects_empty_chunks() -> None:

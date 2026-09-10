@@ -101,7 +101,7 @@ test('틀린 이메일 인증번호는 입력란 아래 오류를 표시한다',
   await expect(page.getByText('2 / 4 단계', { exact: true })).toBeVisible();
 });
 
-test('인증번호는 3분 뒤 입력과 확인이 잠기고 재발송이 활성화된다', async ({ page }) => {
+test('인증번호 재발송은 발송 직후 활성화되고 3분 뒤 입력과 확인만 잠긴다', async ({ page }) => {
   await page.clock.install();
   await openSignup(page);
   await page.getByLabel('이메일').fill('expired-code@example.com');
@@ -109,6 +109,7 @@ test('인증번호는 3분 뒤 입력과 확인이 잠기고 재발송이 활성
   await page.clock.fastForward(500);
   await requestFinished;
   await expect(page.getByLabel('남은 시간')).toHaveText('03:00');
+  await expect(page.getByRole('button', { name: '다시 보내기' })).toBeEnabled();
 
   await page.clock.runFor(180_000);
 

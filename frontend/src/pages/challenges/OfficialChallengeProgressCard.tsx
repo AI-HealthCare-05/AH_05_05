@@ -57,9 +57,12 @@ export function OfficialChallengeProgressCard({
   return (
     <article aria-label={participation.challenge_name} className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
       <div className="flex items-start justify-between gap-3">
-        <Link to={`/challenges/participations/${participation.id}`} aria-label={`${participation.challenge_name} 자세히 보기`} className="min-w-0 flex-1 text-base font-bold text-foreground">
-          {participation.challenge_name}
-        </Link>
+        <div className="min-w-0 flex-1">
+          <span className="mb-1 inline-block rounded-pill bg-primary-bg px-2 py-1 text-micro font-bold text-primary">공식</span>
+          <Link to={`/challenges/participations/${participation.id}`} aria-label={`${participation.challenge_name} 자세히 보기`} className="block break-words text-base font-bold text-foreground [overflow-wrap:anywhere]">
+            {participation.challenge_name}
+          </Link>
+        </div>
         <span className="shrink-0 rounded-pill bg-primary-bg px-2 py-1 text-micro font-bold text-primary">{statusLabel(participation)}</span>
       </div>
       {refreshRequired ? (
