@@ -1087,7 +1087,7 @@ function OcrMedicationCard({
 
   return (
     <article aria-label={name} className="min-w-0 w-full rounded-card bg-card p-4 shadow-card">
-      <div className="flex min-h-11 items-end gap-2">
+      <div className="flex items-end gap-2">
         <div className="flex min-w-0 flex-1 items-end gap-2">
           <strong className="min-w-0 whitespace-normal text-lg leading-7 text-foreground [overflow-wrap:anywhere]">
             {name}
@@ -1104,23 +1104,21 @@ function OcrMedicationCard({
           <button
             type="button"
             aria-label={`${name} 수정`}
-            className="-mb-2 flex size-11 shrink-0 items-center justify-center rounded-button text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="-my-2 flex size-11 shrink-0 items-center justify-center rounded-button text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={onEdit}
           >
             <Pencil aria-hidden className="size-4" />
           </button>
         )}
       </div>
-      {!onEdit && (
-        <dl className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-sm">
+      <dl className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-sm">
           {details.map(([label, value]) => (
             <div key={label} className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
               <dt className="w-24 shrink-0 text-muted-foreground">{label}</dt>
               <dd className="min-w-0 flex-1 text-foreground [overflow-wrap:anywhere]">{value}</dd>
             </div>
           ))}
-        </dl>
-      )}
+      </dl>
     </article>
   );
 }

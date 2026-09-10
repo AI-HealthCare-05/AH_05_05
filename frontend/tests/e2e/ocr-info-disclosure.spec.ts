@@ -31,7 +31,10 @@ for (const width of [320, 390]) {
     await expect(card).toBeVisible();
     await expect(card.locator('[aria-expanded]')).toHaveCount(0);
     await expect(card.getByText('확인 필요', { exact: true })).toBeVisible();
-    await expect(card.getByText('함량', { exact: true })).toBeHidden();
+    await expect(card.locator('dl > div')).toHaveText(['함량100mg', '1회 투약량1.5정', '1일 횟수3회', '투약일수30일']);
+    const cardTop = (await card.boundingBox())!.y;
+    const nameTop = (await card.locator('strong').boundingBox())!.y;
+    expect(nameTop - cardTop).toBeLessThanOrEqual(17);
     await card.scrollIntoViewIfNeeded();
     const edit = card.getByRole('button', { name: `${longName} 수정`, exact: true });
     await expect(edit).toHaveText('');
@@ -49,6 +52,8 @@ for (const width of [320, 390]) {
     const name = card.locator('strong');
     expect(await name.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(30);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await card.evaluate(element => element.scrollIntoView({ block: 'center' }));
+    await card.screenshot({ path: testInfo.outputPath(`ocr-always-expanded-${width}.png`), animations: 'disabled' });
     await page.getByRole('article').last().scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`ocr-compact-${width}.png`), animations: 'disabled' });
     await edit.focus();

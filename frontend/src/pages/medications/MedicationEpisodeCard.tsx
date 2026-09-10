@@ -24,6 +24,14 @@ const SLOT_CHIP_CLASSES: Record<MealSlot, string> = {
   bedtime: 'bg-muted-bg text-muted-foreground',
 };
 
+// Dots use the legend's text colors so meal slots stay distinct on white cards.
+const SLOT_DOT_CLASSES: Record<MealSlot, string> = {
+  morning: 'bg-warning-strong',
+  lunch: 'bg-primary-strong',
+  evening: 'bg-brand',
+  bedtime: 'bg-muted-foreground',
+};
+
 export function MedicationEpisodeCard({
   overview,
   expanded,
@@ -134,8 +142,7 @@ export function MedicationEpisodeCard({
               <li key={medication.medicationId} className="flex min-w-0 items-start gap-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="[overflow-wrap:anywhere] font-bold text-foreground">
-                    {medication.name}{' '}
-                    <span className="font-normal text-muted-foreground">{medication.dose}</span>
+                    {medication.name}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {medication.asNeeded ? (
@@ -149,7 +156,7 @@ export function MedicationEpisodeCard({
                           role={feature252 ? 'img' : undefined}
                           aria-label={feature252 ? mealSlotLabel(slot) : undefined}
                           title={feature252 ? mealSlotLabel(slot) : undefined}
-                          className={feature252 ? `size-3.5 shrink-0 rounded-full ${SLOT_CHIP_CLASSES[slot]}` : 'rounded-pill px-3 py-1 text-sm bg-muted-bg text-muted-foreground'}
+                          className={feature252 ? `size-3.5 shrink-0 rounded-full ${SLOT_DOT_CLASSES[slot]}` : 'rounded-pill px-3 py-1 text-sm bg-muted-bg text-muted-foreground'}
                         >
                           {!feature252 && mealSlotLabel(slot)}
                         </span>

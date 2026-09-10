@@ -9,7 +9,7 @@ const prescription = {
   start: { date: '2026-09-05', slot: 'morning' }, endDate: '2026-09-14',
   daysRemaining: 5, isFinished: false,
   mealTimes: { morning: '08:00', lunch: '13:00', evening: '19:00', bedtime: '22:30' },
-  medications: [{ medicationId: 3690, name: '복합성분서방정', dose: '500mg 1정', days: 10,
+  medications: [{ medicationId: 3690, name: '복합성분서방정500mg', dose: '500mg 1정', days: 10,
     daysRemaining: 5, slots: ['morning', 'lunch', 'evening', 'bedtime'], asNeeded: false,
     untilComplete: true }],
 };
@@ -79,6 +79,7 @@ test('expanded medication uses legend-colored dots while editing preserves sched
   await page.goto('/medications');
   await page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ }).click();
   const detail = page.getByRole('region', { name: '2026년 9월 5일 처방 상세' });
+  await expect(detail.locator('li p').first()).toHaveText('복합성분서방정500mg');
   await expect(detail).not.toContainText(/\d{2}:\d{2}/);
   for (const slot of ['아침', '점심', '저녁', '자기전']) {
     const dot = detail.getByRole('img', { name: slot, exact: true });
@@ -86,7 +87,7 @@ test('expanded medication uses legend-colored dots while editing preserves sched
     await expect(dot).toHaveText('');
     const legend = page.getByText(slot, { exact: true });
     expect(await dot.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(
-      await legend.evaluate(el => getComputedStyle(el).backgroundColor));
+      await legend.evaluate(el => getComputedStyle(el).color));
   }
   await expect(detail.getByText('끝까지 복용')).toBeVisible();
   const chevron = page.locator('button[aria-controls="medication-episode-369"] svg');
