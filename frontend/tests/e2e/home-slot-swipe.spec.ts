@@ -167,7 +167,9 @@ for (const kind of ['복약', '영양제']) {
     const evening = page.getByRole('group', { name: kind === '복약' ? '저녁약 상세' : '저녁 영양제' });
     await expect(evening.getByText('복용 완료', { exact: true })).toHaveCount(0);
     await tabs.getByRole('tab', { name: '아침', exact: true }).click();
-    await expect(morning.getByText('복용 완료', { exact: true })).toHaveCount(2);
+    const morningCard = kind === '복약' ? morning.locator('..') : morning;
+    await expect(morningCard.getByText('복용 완료', { exact: true })).toHaveCount(1);
+    await expect(morning.getByRole('button', { name: /복용 완료$/ })).toHaveCount(2);
     expect(writes.every(item => item.slot === 'morning')).toBe(true);
   });
 
@@ -187,8 +189,13 @@ for (const kind of ['복약', '영양제']) {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     }
     const action = panel().getByRole('button', { name: kind === '복약' ? '먹었어요' : '다 먹었어요', exact: true });
+    await action.scrollIntoViewIfNeeded();
     const box = (await action.boundingBox())!;
-    await touch(box.x + box.width - 10, box.y + box.height / 2, -140, 0);
+    // The #390 floating launcher can cover the far-right edge in a short viewport.
+    // Start on the exposed action itself, not on the unrelated launcher.
+    const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    expect(await action.evaluate((button, point) => button.contains(document.elementFromPoint(point.x, point.y)), start)).toBe(true);
+    await touch(start.x, start.y, -140, 0);
     await expect(tabs.getByRole('tab', { name: '저녁', exact: true })).toHaveAttribute('aria-selected', 'true');
     const eveningBox = (await panel().boundingBox())!;
     await touch(eveningBox.x + 30, eveningBox.y + 30, 140, 0);

@@ -43,7 +43,7 @@ test('resizing home expands usable content and reflows supporting sections witho
     expect.soft(header!.width).toBeCloseTo(shell!.width, 0);
     expect.soft(navBox!.x).toBeCloseTo(shell!.x, 0);
     expect.soft(navBox!.width).toBeCloseTo(shell!.width, 0);
-    await expect(nav.getByRole('button')).toHaveText(['홈', '복약', '영양제', '챗봇', '마이']);
+    await expect(nav.getByRole('button')).toHaveText(['홈', '복약', '영양제', '챌린지', '마이']);
     if (width >= 1024) {
       expect.soft(challenge!.x).toBeGreaterThanOrEqual(medication!.x + medication!.width);
       expect.soft(Math.abs(challenge!.y - medication!.y)).toBeLessThan(2);

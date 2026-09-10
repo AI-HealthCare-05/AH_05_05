@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -40,6 +41,8 @@ class KnowledgeIndexResult:
     collection_name: str
     indexed_chunk_count: int
     metadata_quality: KnowledgeMetadataQualityReport | None = None
+    reused_embedding_count: int = 0
+    new_embedding_count: int = 0
 
 
 class KnowledgeIndexer:
@@ -64,6 +67,8 @@ class KnowledgeIndexer:
     async def index_release(
         self,
         chunks: list[KnowledgeChunk],
+        *,
+        reusable_vectors_by_embedding_text: Mapping[str, list[float]] | None = None,
     ) -> KnowledgeIndexResult:
         if not chunks:
             raise ValueError("인덱싱할 Knowledge 청크가 없습니다.")
@@ -75,20 +80,17 @@ class KnowledgeIndexer:
             raise ValueError("인덱싱 대상이 아닌 Knowledge 청크가 포함되었습니다.")
         self._validate_interaction_metadata(chunks)
 
+        resolved_vectors, reused_embedding_count = await self._prepare_vectors(
+            chunks,
+            reusable_vectors_by_embedding_text=reusable_vectors_by_embedding_text,
+        )
         await self._vector_store.create_release_collection()
-        vectors: list[list[float]] = []
-        for start in range(0, len(chunks), self._embedding_batch_size):
-            batch = chunks[start : start + self._embedding_batch_size]
-            batch_vectors = await self._embedding_provider.embed_documents([chunk.embedding_text for chunk in batch])
-            if len(batch_vectors) != len(batch):
-                raise ValueError("임베딩 배치의 문서 수와 벡터 수가 일치하지 않습니다.")
-            vectors.extend(batch_vectors)
 
         for start in range(0, len(chunks), self._upsert_batch_size):
             end = start + self._upsert_batch_size
             await self._vector_store.upsert_chunks(
                 chunks[start:end],
-                vectors[start:end],
+                resolved_vectors[start:end],
             )
 
         stored_count = await self._vector_store.count_points()
@@ -103,7 +105,39 @@ class KnowledgeIndexer:
             collection_name=self._vector_store.collection_name,
             indexed_chunk_count=stored_count,
             metadata_quality=self.assess_metadata_quality(chunks),
+            reused_embedding_count=reused_embedding_count,
+            new_embedding_count=(len(chunks) - reused_embedding_count),
         )
+
+    async def _prepare_vectors(
+        self,
+        chunks: list[KnowledgeChunk],
+        *,
+        reusable_vectors_by_embedding_text: Mapping[str, list[float]] | None,
+    ) -> tuple[list[list[float]], int]:
+        reused_vectors = reusable_vectors_by_embedding_text or {}
+        vectors: list[list[float] | None] = [None] * len(chunks)
+        missing_indexes: list[int] = []
+        for index, chunk in enumerate(chunks):
+            reusable_vector = reused_vectors.get(chunk.embedding_text)
+            if reusable_vector is None:
+                missing_indexes.append(index)
+                continue
+            vectors[index] = reusable_vector
+
+        for start in range(0, len(missing_indexes), self._embedding_batch_size):
+            batch_indexes = missing_indexes[start : start + self._embedding_batch_size]
+            batch = [chunks[index] for index in batch_indexes]
+            batch_vectors = await self._embedding_provider.embed_documents([chunk.embedding_text for chunk in batch])
+            if len(batch_vectors) != len(batch):
+                raise ValueError("임베딩 배치의 문서 수와 벡터 수가 일치하지 않습니다.")
+            for index, vector in zip(batch_indexes, batch_vectors, strict=True):
+                vectors[index] = vector
+
+        resolved_vectors = [vector for vector in vectors if vector is not None]
+        if len(resolved_vectors) != len(chunks):
+            raise RuntimeError("모든 Knowledge 청크의 임베딩 벡터를 준비하지 못했습니다.")
+        return resolved_vectors, (len(chunks) - len(missing_indexes))
 
     @staticmethod
     def assess_metadata_quality(

@@ -52,3 +52,29 @@ def test_does_not_expand_when_no_supported_section_is_missing() -> None:
     )
 
     assert retry is None
+
+
+def test_expands_missing_section_with_verified_entity_aliases() -> None:
+    plan = build_plan().model_copy(
+        update={
+            "entities": [
+                MedicationQueryEntity(
+                    surface="오메가3",
+                    canonical_name="오메가3",
+                    search_aliases=["EPA", "DHA", "EPA 및 DHA 함유 유지"],
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.QDRANT,
+                )
+            ],
+            "entity_names": ["오메가3"],
+        }
+    )
+
+    retry = CoverageGapQueryExpander().build(
+        query_plan=plan,
+        missing_section_types=[KnowledgeSectionType.CAUTION],
+    )
+
+    assert retry is not None
+    assert retry.query_plan.expanded_query == ("오메가3 EPA DHA EPA 및 DHA 함유 유지 주의사항 이상반응")

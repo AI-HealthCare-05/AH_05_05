@@ -89,6 +89,16 @@ export function OfficialChallengeParticipationPage() {
   const navigate = useNavigate();
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
+
+  function goBack() {
+    const index = window.history.state?.idx;
+    if (typeof index === 'number' && index > 0) {
+      navigate(-1);
+      return;
+    }
+    navigate('/challenges', { replace: true });
+  }
+
   const requestGenerationRef = useRef(0);
   const idempotencyKeyRef = useRef<string | null>(null);
   const cancelRequestRef = useRef<symbol | null>(null);
@@ -365,7 +375,7 @@ export function OfficialChallengeParticipationPage() {
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
       <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges')} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><DrawnArrow direction="left" className="size-5" /></button>
+        <button type="button" aria-label="뒤로 가기" onClick={goBack} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><DrawnArrow direction="left" className="size-5" /></button>
         <div className="min-w-0">
           <h1 className="break-words text-[22px] font-bold leading-7">{participation.challenge_name}</h1>
           <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(startDate)} ~ {dateLabel(endDate)}</p>

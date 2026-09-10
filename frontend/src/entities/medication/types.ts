@@ -25,7 +25,7 @@ export interface MedicationStartPoint {
   slot: MealSlot;
 }
 
-/** 사용자가 정한 시간대별 시각. 30분 단위(분은 00 또는 30)만 허용합니다. */
+/** 사용자가 정한 시간대별 시각. 1분 단위의 HH:mm 형식입니다. */
 export interface MealTimes {
   morning: string;
   lunch: string;

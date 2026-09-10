@@ -79,7 +79,7 @@ for (const width of [375, 1280]) {
       await card.getByRole('button', { name: `${name} 약 정보`, exact: true }).click();
       await expect(card.locator('dl > div')).toHaveText([...values]);
     }
-    await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(2);
+    await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: `test-results-ocr-display/ocr-strength-dedup-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: '글로덱시정300mg 수정', exact: true }).click();
     await expect(page.getByRole('dialog').getByLabel('약품명')).toHaveValue('글로덱시정300mg');

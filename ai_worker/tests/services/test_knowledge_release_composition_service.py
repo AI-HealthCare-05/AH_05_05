@@ -3,6 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunk,
@@ -226,6 +229,169 @@ def test_compose_accepts_partial_release_with_only_approved_chunks(
 
     assert result.processed_document_count == 1
     assert result.document_reports[0].partial_release is True
+
+
+def test_compose_accepts_manually_approved_blocked_document_when_all_released_chunks_are_approved(
+    tmp_path: Path,
+) -> None:
+    release = write_release(
+        tmp_path / "manual-override",
+        marker="m",
+        document_id="manually-approved-document",
+        dataset_version="release-manual-override",
+    )
+    raw_report = json.loads(release.quality_report_path.read_text(encoding="utf-8"))
+    document_report = raw_report["document_reports"][0]
+    document_report["automatic_status"] = "BLOCKED"
+    document_report["partial_release"] = False
+    document_report["released_chunk_count"] = 1
+    document_report["release_ready"] = True
+    release.quality_report_path.write_text(
+        json.dumps(raw_report, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    result = KnowledgeReleaseCompositionService().compose(
+        inputs=[release],
+        output_root=tmp_path / "combined",
+        dataset_version="release-combined",
+    )
+
+    assert result.processed_document_count == 1
+    assert result.document_reports[0].release_ready is True
+
+
+def test_compose_excludes_blocked_document_report_without_released_chunks(
+    tmp_path: Path,
+) -> None:
+    release = write_release(
+        tmp_path / "approved-release",
+        marker="a",
+        document_id="approved-document",
+        dataset_version="release-approved",
+    )
+    raw_report = json.loads(release.quality_report_path.read_text(encoding="utf-8"))
+    blocked_report = dict(raw_report["document_reports"][0])
+    blocked_report.update(
+        {
+            "document_id": "blocked-document",
+            "automatic_status": "BLOCKED",
+            "manual_review_status": "PENDING",
+            "approved_chunk_count": 0,
+            "pending_chunk_count": 1,
+            "released_chunk_count": 0,
+            "release_ready": False,
+        }
+    )
+    blocked_report["chunk_reviews"] = [
+        {
+            **blocked_report["chunk_reviews"][0],
+            "chunk_id": "b" * 64,
+            "status": "PENDING",
+        }
+    ]
+    raw_report["document_reports"].append(blocked_report)
+    raw_report["skipped_documents"] = [{"document_id": "blocked-document", "reason": "AUTOMATIC_QUALITY_BLOCKED"}]
+    raw_report["ready_for_bulk_source_ids"] = []
+    release.quality_report_path.write_text(
+        json.dumps(raw_report, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    result = KnowledgeReleaseCompositionService().compose(
+        inputs=[release],
+        output_root=tmp_path / "combined",
+        dataset_version="release-combined",
+    )
+
+    assert [report.document_id for report in result.document_reports] == ["approved-document"]
+    assert result.ready_for_bulk_source_ids == ["source-a"]
+    assert result.skipped_documents[0].document_id == "blocked-document"
+
+
+def test_compose_applies_curated_interaction_metadata_to_reused_chunk(
+    tmp_path: Path,
+) -> None:
+    release = write_release(
+        tmp_path / "vitamin-d-release",
+        marker="d",
+        document_id="vitamin-d-document",
+        dataset_version="release-vitamin-d",
+    )
+    chunk_path = release.chunks_dir / "vitamin-d-document.jsonl"
+    raw_chunk = json.loads(chunk_path.read_text(encoding="utf-8"))
+    raw_chunk["content"] = "비타민 D는 칼슘이 흡수되고 이용되는 데 필요합니다."
+    raw_chunk["embedding_text"] = raw_chunk["content"]
+    raw_chunk["metadata"]["title"] = "비타민 D"
+    raw_chunk["metadata"]["ingredient_names"] = ["비타민 D"]
+    chunk_path.write_text(json.dumps(raw_chunk, ensure_ascii=False), encoding="utf-8")
+    annotation_path = tmp_path / "interaction-annotations.yaml"
+    annotation_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: vitamin-d-document
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        left:
+          kind: SUPPLEMENT
+          display_name: 비타민 D
+          aliases: [비타민D, vitamin D]
+        right:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases: [calcium]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    KnowledgeReleaseCompositionService().compose(
+        inputs=[release],
+        output_root=tmp_path / "combined",
+        dataset_version="release-combined",
+        interaction_annotations=KnowledgeInteractionAnnotationRegistry.from_yaml(annotation_path),
+    )
+
+    output_chunk = json.loads(
+        (tmp_path / "combined" / "chunks" / "vitamin-d-document.jsonl").read_text(encoding="utf-8")
+    )
+    assert output_chunk["metadata"]["interaction_type"] == "SUPPLEMENT_SUPPLEMENT"
+    assert set(output_chunk["metadata"]["ingredient_names"]) >= {"비타민 D", "칼슘"}
+    assert len(output_chunk["metadata"]["interaction_pair_keys"]) == 1
+
+
+def test_compose_clears_unverified_research_pair_metadata(
+    tmp_path: Path,
+) -> None:
+    release = write_release(
+        tmp_path / "unverified-pair-release",
+        marker="u",
+        document_id="warfarin-overview",
+        dataset_version="release-unverified-pair",
+    )
+    chunk_path = release.chunks_dir / "warfarin-overview.jsonl"
+    raw_chunk = json.loads(chunk_path.read_text(encoding="utf-8"))
+    raw_chunk["content"] = "Iron and zinc are among the micronutrients discussed in this overview."
+    raw_chunk["embedding_text"] = raw_chunk["content"]
+    raw_chunk["metadata"]["ingredient_names"] = ["아연", "철분"]
+    raw_chunk["metadata"]["interaction_type"] = "SUPPLEMENT_SUPPLEMENT"
+    raw_chunk["metadata"]["interaction_pair_keys"] = ["a" * 64]
+    chunk_path.write_text(json.dumps(raw_chunk, ensure_ascii=False), encoding="utf-8")
+
+    KnowledgeReleaseCompositionService().compose(
+        inputs=[release],
+        output_root=tmp_path / "combined",
+        dataset_version="release-combined",
+    )
+
+    output_chunk = json.loads(
+        (tmp_path / "combined" / "chunks" / "warfarin-overview.jsonl").read_text(
+            encoding="utf-8",
+        )
+    )
+    assert output_chunk["metadata"]["ingredient_names"] == ["아연", "철분"]
+    assert output_chunk["metadata"]["interaction_type"] is None
+    assert output_chunk["metadata"]["interaction_pair_keys"] == []
 
 
 def test_compose_rejects_existing_output_directory(tmp_path: Path) -> None:

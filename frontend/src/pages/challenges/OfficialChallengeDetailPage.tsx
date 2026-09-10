@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
@@ -11,7 +11,6 @@ import { useSession } from '@/app/SessionContext';
 import { ApiError } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
-import { officialFrequencyLabel } from './OfficialChallengeBrowsePage';
 import { OfficialChallengeRejoinDialog } from './OfficialChallengeRejoinDialog';
 
 function positiveId(value: string | undefined): number | null {
@@ -166,7 +165,7 @@ export function OfficialChallengeDetailPage() {
           <ArrowLeft aria-hidden className="size-5" />
         </button>
         <div className="min-w-0">
-          <h1 className="break-words text-[22px] font-bold leading-7">{item.name}</h1>
+          <h1 className="break-words text-[22px] font-bold leading-7 [overflow-wrap:anywhere]">{item.name}</h1>
           <p className="text-caption text-muted-foreground">공식 챌린지</p>
         </div>
       </header>
@@ -177,28 +176,37 @@ export function OfficialChallengeDetailPage() {
             <img src={apiAssetUrl(item.reward_badge.image_path)} alt={item.reward_badge.name} className="size-full object-contain" />
           </span>
         ) : null}
-        <h2 id="official-highlight-title" className="text-base font-bold">{item.reward_badge?.name ?? item.phrase}</h2>
-        <p className="text-sm text-primary">{item.phrase}</p>
+        <h2 id="official-highlight-title" className="break-words text-base font-bold [overflow-wrap:anywhere]">{item.reward_badge?.name ?? item.phrase}</h2>
+        {item.reward_badge ? <p className="break-words text-sm text-primary [overflow-wrap:anywhere]">{item.phrase}</p> : null}
       </section>
 
       <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="participation-guide-title">
         <h2 id="participation-guide-title" className="text-base font-bold">참여 안내</h2>
-        <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 text-sm">
+        <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
           <dt className="text-muted-foreground">모집</dt>
           <dd>{shortDate(item.recruit_start_at)} ~ {shortDate(item.recruit_end_at)}</dd>
           <dt className="text-muted-foreground">수행 기간</dt>
           <dd>참여 당일부터 {item.duration_days}일</dd>
           <dt className="text-muted-foreground">목표</dt>
           <dd>{targetLabel(item)}</dd>
+          <dt className="text-muted-foreground">인증 방식</dt>
+          <dd>{selfCheck ? '직접 인증' : '관리자 확인'}</dd>
         </dl>
-        <p className="rounded-input bg-muted-bg p-3 text-caption text-muted-foreground">{officialFrequencyLabel(item)}</p>
-        {item.description ? <p className="text-sm text-muted-foreground">{item.description}</p> : null}
+        {!selfCheck ? <p className="rounded-input bg-muted-bg p-3 text-caption leading-5 text-muted-foreground">관리자 확인 방식은 현재 앱에서 참여할 수 없어요.</p> : null}
+        {item.description ? <p className="break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{item.description}</p> : null}
       </section>
 
       <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="certification-guide-title">
-        <h2 id="certification-guide-title" className="text-base font-bold">배지와 인증 안내</h2>
-        <p className="text-caption text-muted-foreground">{selfCheck ? '내가 누른 인증 기록을 기준으로 해요.' : '관리자 확인 방식은 현재 앱에서 참여할 수 없어요.'}</p>
-        <p className="text-caption text-muted-foreground">운동량·건강 상태를 검증하는 배지는 아니에요.</p>
+        <details key={item.id} className="group">
+          <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+            <h2 id="certification-guide-title" className="text-base font-bold">배지와 인증 안내</h2>
+            <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground group-open:rotate-180" />
+          </summary>
+          <div className="mt-2 flex flex-col gap-2 text-caption leading-5 text-muted-foreground">
+            {selfCheck ? <p>내가 누른 인증 기록을 기준으로 해요.</p> : null}
+            <p>운동량·건강 상태를 검증하는 배지는 아니에요.</p>
+          </div>
+        </details>
       </section>
 
       {joinError ? <p role="alert" className="text-sm text-danger-strong">{joinError}</p> : null}

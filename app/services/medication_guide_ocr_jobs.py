@@ -302,6 +302,27 @@ class MedicationGuideOcrJobService:
             timings=self._public_timings(manifest, job.stage_results),
         )
 
+    async def cancel(self, user: User, job_id: int) -> None:
+        now = datetime.now(config.TIMEZONE)
+        async with in_transaction() as connection:
+            job = await OcrJob.filter(id=job_id, user_id=user.id).using_db(connection).select_for_update().first()
+            if job is None:
+                raise OcrJobNotFoundError()
+            if job.status == OcrJobStatus.CANCELLED:
+                return
+            if job.status != OcrJobStatus.READY_FOR_REVIEW:
+                raise OcrJobStateConflictError()
+
+            job.status = OcrJobStatus.CANCELLED
+            job.expires_at = None
+            job.completed_at = now
+            job.updated_at = now
+            job.error_code = "USER_CANCELLED"
+            await job.save(
+                using_db=connection,
+                update_fields=["status", "expires_at", "completed_at", "updated_at", "error_code"],
+            )
+
     async def process(
         self,
         job_id: int,

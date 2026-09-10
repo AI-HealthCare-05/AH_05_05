@@ -206,6 +206,53 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   });
 }
 
+for (const width of [375, 1280]) {
+  test(`OCR 재촬영은 기존 작업 취소 완료 후 촬영 화면으로 이동한다 (${width})`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await authenticate(page);
+    await page.route(`**${OCR_URL}`, (route) => fulfillJson(route, readyOcrResult));
+    await page.route(`**${OCR_URL}/*image`, (route) => route.fulfill({ status: 404 }));
+    let finishCancel: (() => void) | undefined;
+    let cancelCount = 0;
+    await page.route(`**${OCR_URL}/cancel`, async (route) => {
+      expect(route.request().method()).toBe('POST');
+      expect(route.request().headers().authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+      cancelCount += 1;
+      await new Promise<void>((resolve) => { finishCancel = resolve; });
+      await route.fulfill({ status: 204 });
+    });
+    await page.goto(`/dev/ocr-review?batchId=${DOCUMENT_ID}`);
+    await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+    await expect.poll(() => cancelCount).toBe(1);
+    await expect(page).toHaveURL(/ocr-review/);
+    await expect(page.getByRole('button', { name: '취소 중...', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true })).toBeDisabled();
+    await page.screenshot({ path: testInfo.outputPath('cancel-pending.png'), fullPage: true });
+    finishCancel!();
+    await expect(page).toHaveURL(/document-upload/);
+    expect(cancelCount).toBe(1);
+  });
+}
+
+test('OCR 재촬영 취소 요청이 실패하면 검토 화면에서 다시 시도할 수 있다', async ({ page }) => {
+  await authenticate(page);
+  await page.route(`**${OCR_URL}`, (route) => fulfillJson(route, readyOcrResult));
+  await page.route(`**${OCR_URL}/*image`, (route) => route.fulfill({ status: 404 }));
+  let cancelCount = 0;
+  await page.route(`**${OCR_URL}/cancel`, async (route) => {
+    cancelCount += 1;
+    if (cancelCount === 1) await fulfillJson(route, { detail: 'temporary failure' }, 503);
+    else await route.fulfill({ status: 204 });
+  });
+  await page.goto(`/dev/ocr-review?batchId=${DOCUMENT_ID}`);
+  await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+  await expect(page.getByText('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/ocr-review/);
+  await page.getByRole('button', { name: '다시 촬영하기', exact: true }).click();
+  await expect(page).toHaveURL(/document-upload/);
+  expect(cancelCount).toBe(2);
+});
+
 async function interceptDefaultNotifySettings(page: Page) {
   await page.route('**/api/v1/me/settings', async (route) => {
     await fulfillJson(route, {
@@ -874,10 +921,8 @@ test(`OCR 2페이지 뒤로가기는 설정 취소를 확인하고 홈으로 나
   await page.goto('/dev/ocr-review');
   await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
-  await page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })
-    .getByRole('button', { name: '확인 후 저장', exact: true })
-    .click();
   await expect(page.getByLabel('복용 시작 날짜')).toHaveValue('2026-08-22');
+  await expect(page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })).toHaveCount(0);
 
   await page.getByLabel('복용 시작 날짜').fill('2026-08-20');
   await page.getByRole('button', { name: '뒤로 가기' }).click();
@@ -1133,9 +1178,9 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
 
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
   await expect(page.getByLabel('조제일')).toHaveValue('2026-08-22');
-  await expect(page.getByText('3곳만 확인해주세요')).toBeVisible();
-  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(3);
-  await expect(page.getByRole('article', { name: /파모티딘 원문/ })).toContainText('확인 필요');
+  await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
+  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
+  await expect(page.getByRole('article', { name: /파모티딘 원문/ })).not.toContainText('확인 필요');
   await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toHaveAttribute(
     'src',
     /^blob:/,
@@ -1183,7 +1228,7 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await expect(page.getByRole('article', { name: '셀레콕시브', exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: '확인 후 저장' }).click();
+  await expect(page.getByRole('button', { name: '확인 후 저장' })).toHaveCount(0);
   await expect(page).toHaveURL(
     '/medication-schedule?recordId=314&ocrJobId=501&flow=registration',
   );
@@ -2126,6 +2171,12 @@ for (const headerOnly of [false, true]) {
       lowConfidenceCount: 0,
     }));
     await page.route('**/api/v1/ocr/jobs/501/**', route => route.fulfill({ status: 404 }));
+    let cancelCount = 0;
+    await page.route('**/api/v1/ocr/jobs/501/cancel', async (route) => {
+      expect(route.request().method()).toBe('POST');
+      cancelCount += 1;
+      await route.fulfill({ status: 204 });
+    });
     await page.goto('/ocr-review?batchId=501');
     await expect(page.getByText('약 정보를 추출하지 못했어요', { exact: true })).toBeVisible();
     await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
@@ -2143,6 +2194,7 @@ for (const headerOnly of [false, true]) {
     } else {
       await failureDialog.getByRole('button', { name: '다시 촬영', exact: true }).click();
       await expect(page).toHaveURL(/\/document-upload$/);
+      expect(cancelCount).toBe(1);
     }
   });
 }

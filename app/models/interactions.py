@@ -72,6 +72,76 @@ class InteractionEntityAlias(models.Model):
         indexes = (("normalized_alias",),)
 
 
+class TherapeuticClass(models.Model):
+    """검수 가능한 약물 치료군의 안정적인 기준 용어."""
+
+    id = fields.BigIntField(primary_key=True)
+    code = fields.CharField(max_length=100, unique=True)
+    display_name = fields.CharField(max_length=255)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "therapeutic_classes"
+        indexes = (("display_name",),)
+
+
+class TherapeuticClassAlias(models.Model):
+    """사용자 질문에서 치료군을 식별하는 검수된 표현."""
+
+    id = fields.BigIntField(primary_key=True)
+    therapeutic_class = fields.ForeignKeyField(
+        "models.TherapeuticClass",
+        related_name="aliases",
+        on_delete=fields.CASCADE,
+    )
+    alias = fields.CharField(max_length=255)
+    normalized_alias = fields.CharField(max_length=255)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "therapeutic_class_aliases"
+        unique_together = (("therapeutic_class", "normalized_alias"),)
+        indexes = (("normalized_alias",),)
+
+
+class InteractionEntityTherapeuticClass(models.Model):
+    """상호작용 엔터티와 치료군을 출처·검수 상태와 함께 연결한다."""
+
+    id = fields.BigIntField(primary_key=True)
+    interaction_entity = fields.ForeignKeyField(
+        "models.InteractionEntity",
+        related_name="therapeutic_classifications",
+        on_delete=fields.RESTRICT,
+    )
+    therapeutic_class = fields.ForeignKeyField(
+        "models.TherapeuticClass",
+        related_name="entity_classifications",
+        on_delete=fields.RESTRICT,
+    )
+    review_status = fields.CharEnumField(
+        InteractionReviewStatus,
+        default=InteractionReviewStatus.PENDING,
+    )
+    classification_dataset_version = fields.CharField(max_length=100)
+    source_id = fields.CharField(max_length=100)
+    document_id = fields.CharField(max_length=150)
+    record_id = fields.CharField(max_length=150)
+    raw_classification_text = fields.TextField()
+    source_url = fields.TextField(null=True)
+    approved_at = fields.DatetimeField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "interaction_entity_therapeutic_classes"
+        unique_together = (("interaction_entity", "therapeutic_class", "classification_dataset_version"),)
+        indexes = (
+            ("therapeutic_class", "review_status"),
+            ("classification_dataset_version",),
+        )
+
+
 class InteractionEntityIdentifier(models.Model):
     id = fields.BigIntField(primary_key=True)
     interaction_entity = fields.ForeignKeyField(

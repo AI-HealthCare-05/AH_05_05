@@ -1305,6 +1305,14 @@ def test_preprocess_propagates_reviewed_document_metadata_to_every_chunk(
                     "authors": ["Example Author"],
                     "publication_year": 2023,
                     "drug_names": ["levothyroxine"],
+                    "entity_catalog_entries": [
+                        {
+                            "canonical_name": "레보티록신",
+                            "aliases": ["levothyroxine", "L-T4"],
+                            "entity_type": "INGREDIENT_NAME",
+                            "kind": "DRUG",
+                        }
+                    ],
                     "evidence_level": "SYSTEMATIC_REVIEW",
                     "study_population": "HUMAN",
                 }
@@ -1351,6 +1359,14 @@ sources:
         assert metadata["authors"] == ["Example Author"]
         assert metadata["publication_year"] == 2023
         assert metadata["drug_names"] == ["levothyroxine"]
+        assert metadata["entity_catalog_entries"] == [
+            {
+                "canonical_name": "레보티록신",
+                "aliases": ["levothyroxine", "L-T4"],
+                "entity_type": "INGREDIENT_NAME",
+                "kind": "DRUG",
+            }
+        ]
         assert metadata["evidence_level"] == (KnowledgeEvidenceLevel.SYSTEMATIC_REVIEW.value)
         assert metadata["study_population"] == (KnowledgeStudyPopulation.HUMAN.value)
 

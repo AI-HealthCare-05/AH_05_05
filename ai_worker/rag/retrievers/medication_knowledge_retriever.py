@@ -80,6 +80,10 @@ class MedicationKnowledgeRetriever:
         self._eligibility_policy = MedicationKnowledgeEligibilityPolicy(
             min_similarity_score=min_similarity_score,
             declared_pair_matches=self._declared_pair_matches,
+            has_declared_pair_key_match=lambda result, plan: self._has_declared_pair_key_match(
+                result,
+                plan=plan,
+            ),
             requires_entity_pair_match=self._requires_entity_pair_match,
             matches_any_interaction_pair=lambda result, plan: self._matches_any_interaction_pair(
                 result,
@@ -500,6 +504,18 @@ class MedicationKnowledgeRetriever:
                 searchable_text,
             )
             for pair in plan.interaction_pairs
+        )
+
+    @staticmethod
+    def _has_declared_pair_key_match(
+        result: RetrievedKnowledgeChunk,
+        *,
+        plan: MedicationKnowledgeQueryPlan,
+    ) -> bool:
+        return bool(
+            set(plan.interaction_pair_keys).intersection(
+                result.metadata.interaction_pair_keys,
+            )
         )
 
     @classmethod

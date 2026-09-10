@@ -14,17 +14,26 @@ from .challenges import (
 )
 from .chat import ChatMessage, ChatMessageSource, ChatSession
 from .common_codes import CommonCode, CommonCodeGroup
+from .custom_challenges import (
+    CustomChallengeBadgeAward,
+    CustomChallengeOccurrence,
+    CustomChallengeParticipation,
+    CustomChallengeTarget,
+)
 from .email_verifications import EmailVerification
 from .interactions import (
     InteractionEntity,
     InteractionEntityAlias,
     InteractionEntityIdentifier,
+    InteractionEntityTherapeuticClass,
     InteractionRule,
     InteractionRuleEvidenceChunk,
     InteractionRuleSource,
     MedicationInteractionEntity,
     MedicationInteractionMapping,
     SupplementInteractionEntity,
+    TherapeuticClass,
+    TherapeuticClassAlias,
 )
 from .medications import Medication, MedicationDose, MedicationNote, MedicationSlot
 from .ocr import OcrJob, OcrJobStatus

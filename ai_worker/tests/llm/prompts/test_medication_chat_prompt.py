@@ -74,10 +74,17 @@ def test_build_messages_applies_markdown_user_template() -> None:
     assert payload["draft_answer"] == "주의사항: 확인된 초안입니다."
 
 
-def test_system_prompt_requires_compact_plain_text_product_answer() -> None:
-    assert "Markdown 기호" in SYSTEM_PROMPT
+def test_system_prompt_requires_limited_markdown_product_answer() -> None:
+    assert "✅ **효능**" in SYSTEM_PROMPT
+    assert "`* ` 기호" in SYSTEM_PROMPT
+    assert "# 제목" in SYSTEM_PROMPT
     assert "빈 항목은 출력하지" in SYSTEM_PROMPT
     assert "질문과 직접 관련된 핵심 항목" in SYSTEM_PROMPT
+
+
+def test_system_prompt_formats_long_single_section_as_asterisk_bullets() -> None:
+    assert "서로 다른 사실·조건·경고가 둘 이상" in SYSTEM_PROMPT
+    assert "`* ` 기호" in SYSTEM_PROMPT
 
 
 def test_prompt_limits_product_output_to_requested_sections() -> None:

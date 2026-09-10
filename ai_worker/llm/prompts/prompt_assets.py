@@ -5,6 +5,8 @@ from importlib.resources import files
 _ALLOWED_PROMPT_ASSETS = frozenset(
     {
         "medication_chat_prompt_v3.md",
+        "medication_chat_prompt_v4.md",
+        "medication_chat_prompt_v5.md",
         "intake_report_prompt_v1.md",
     }
 )

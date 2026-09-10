@@ -18,6 +18,7 @@ import {
 import {
   getMinuteOptions,
   HOUR_OPTIONS,
+  REMINDER_MINUTE_STEP,
   type MinuteStep,
 } from './timePickerOptions';
 
@@ -35,7 +36,7 @@ export function TimePickerSheet({
   open,
   description,
   value,
-  minuteStep = 30,
+  minuteStep = REMINDER_MINUTE_STEP,
   preserveInvalidMinute = false,
   onApply,
   onCancel,

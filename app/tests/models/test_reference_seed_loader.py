@@ -1,6 +1,7 @@
 import gzip
 import hashlib
 import json
+from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -133,7 +134,7 @@ class MemoryUpsertDb:
                 found.update({field: row.get(field) for field in update_fields})
             elif insert_if_missing:
                 inserted = dict(row)
-                inserted["id"] = self.next_id
+                inserted.setdefault("id", self.next_id)
                 self.next_id += 1
                 target.append(inserted)
 
@@ -269,3 +270,100 @@ async def test_mysql_upsert_uses_row_alias_instead_of_deprecated_values_function
 
     assert " AS new ON DUPLICATE KEY UPDATE " in db.query
     assert "VALUES(`description`)" not in db.query
+
+
+def _challenge_seed(tmp_path: Path) -> Path:
+    return _write_seed_dir(
+        tmp_path,
+        {
+            "common_code_groups": (("group_code",), [{"id": 1, "group_code": "SEED_GROUP", "group_name": "공통"}]),
+            "common_codes": (("group_id", "detail_code"), [{"id": 1, "group_id": 1, "detail_code": "DAILY"}]),
+            "badges": (("name",), []),
+            "challenges": (
+                ("id",),
+                [
+                    {
+                        "id": identifier,
+                        "name": name,
+                        "recruit_start_at": encode_seed_value(datetime(2026, 9, 1)),
+                        "description": "시드 안내",
+                        "challenge_period_id": 1,
+                        "challenge_type_id": 1,
+                        "check_frequency_id": 1,
+                        "check_type_id": 1,
+                        "reward_badge_id": None,
+                    }
+                    for identifier, name in [(2, "물 마시기"), (3, "매일 걷기")]
+                ],
+            ),
+        },
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing_name", "existing_start"),
+    [("기존 사용자 챌린지", datetime(2026, 9, 1)), ("물 마시기", datetime(2026, 8, 1))],
+)
+async def test_conflicting_challenge_is_skipped_without_changing_history(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, existing_name: str, existing_start: datetime
+) -> None:
+    db = MemoryUpsertDb()
+    original = {
+        "id": 2,
+        "name": existing_name,
+        "recruit_start_at": existing_start,
+        "description": "기존 설정 보존",
+        "reward_badge_id": 71,
+        "challenge_period_id": 82,
+        "challenge_type_id": 83,
+        "check_frequency_id": 84,
+        "check_type_id": 85,
+    }
+    db.tables["challenges"] = [dict(original)]
+    db.tables["user_challenges"] = [{"id": 91, "challenge_id": 2, "completed_count": 4}]
+    db.tables["user_badges"] = [{"id": 92, "challenge_id": 2, "user_challenge_id": 91, "badge_id": 71}]
+    history = deepcopy({key: db.tables[key] for key in ("user_challenges", "user_badges")})
+    seed_dir = _challenge_seed(tmp_path)
+
+    first = await apply_reference_seed(db, seed_dir)
+    second = await apply_reference_seed(db, seed_dir)
+
+    assert db.tables["challenges"][0] == original
+    assert {key: db.tables[key] for key in history} == history
+    assert [(row["id"], row["name"]) for row in db.tables["challenges"]] == [(2, existing_name), (3, "매일 걷기")]
+    assert first.tables["challenges"].created == 1
+    assert first.tables["challenges"].skipped == 1
+    assert second.tables["challenges"].created == 0
+    assert second.tables["challenges"].skipped == 1
+    assert second.tables["challenges"].unchanged == 1
+    assert any(record.levelname == "WARNING" and "2" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_empty_challenge_database_keeps_seed_ids_and_reapplication_is_idempotent(tmp_path: Path) -> None:
+    db = MemoryUpsertDb()
+    seed_dir = _challenge_seed(tmp_path)
+
+    first = await apply_reference_seed(db, seed_dir)
+    second = await apply_reference_seed(db, seed_dir)
+
+    assert [(row["id"], row["name"]) for row in db.tables["challenges"]] == [(2, "물 마시기"), (3, "매일 걷기")]
+    assert first.tables["challenges"].created == 2
+    assert second.tables["challenges"].unchanged == 2
+    assert second.tables["challenges"].created == 0
+    assert second.tables["challenges"].skipped == 0
+
+
+@pytest.mark.asyncio
+async def test_matching_challenge_identity_still_updates_seed_fields(tmp_path: Path) -> None:
+    db = MemoryUpsertDb()
+    seed_dir = _challenge_seed(tmp_path)
+    await apply_reference_seed(db, seed_dir)
+    db.tables["challenges"][0]["description"] = "이전 안내"
+
+    result = await apply_reference_seed(db, seed_dir)
+
+    assert db.tables["challenges"][0]["description"] == "시드 안내"
+    assert result.tables["challenges"].updated == 1
+    assert result.tables["challenges"].skipped == 0

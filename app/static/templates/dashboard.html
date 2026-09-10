@@ -8,8 +8,8 @@
     <link rel="stylesheet" href="../css/styles.css?v=20260831-9"/>
     <link rel="stylesheet" href="../css/management.css?v=20260907-2"/>
     <link rel="stylesheet" href="../css/overlays.css?v=20260831-9"/>
-    <link rel="stylesheet" href="../css/dashboard.css?v=20260909-1"/>
-    <script type="module" src="../js/dashboard.js?v=20260908-1"></script>
+    <link rel="stylesheet" href="../css/dashboard.css?v=20260910-1"/>
+    <script type="module" src="../js/dashboard.js?v=20260910-1"></script>
     <script type="module" src="../js/navigation.js?v=20260827-2"></script>
     <script type="module" src="../js/sidebar.js?v=20260908-2"></script>
 </head>
@@ -86,7 +86,7 @@
                 <!-- document status card -->
                 <div class="card flex flex-col gap-4 items-start w-full">
                     <p class="font-semibold text-[14px] w-full" style="color:#111827;">OCR 문서 처리</p>
-                    <div class="flex gap-3 items-start w-full">
+                    <div class="ocr-status-grid w-full">
                         <div class="stat-card flex flex-col gap-1">
                             <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">전체 업로드</p>
                             <div class="flex items-baseline w-full">
@@ -94,13 +94,13 @@
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">OCR 대기</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#4b5563;">처리·검토 대기</p>
                             <div class="flex items-baseline w-full">
                                 <p data-ocr-queued class="font-bold text-[20px]" style="color:#111827;">0</p>
                             </div>
                         </div>
                         <div class="stat-card flex flex-col gap-1">
-                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">성공</p>
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#2563eb;">등록 완료</p>
                             <div class="flex items-baseline w-full">
                                 <p data-ocr-completed class="font-bold text-[20px]" style="color:#2563eb;">0</p>
                             </div>
@@ -109,6 +109,12 @@
                             <p class="font-medium text-[11px] whitespace-nowrap" style="color:#dc2626;">실패</p>
                             <div class="flex items-baseline w-full">
                                 <p data-ocr-failed class="font-bold text-[20px]" style="color:#dc2626;">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card flex flex-col gap-1">
+                            <p class="font-medium text-[11px] whitespace-nowrap" style="color:#6b7280;">취소</p>
+                            <div class="flex items-baseline w-full">
+                                <p data-ocr-cancelled class="font-bold text-[20px]" style="color:#6b7280;">0</p>
                             </div>
                         </div>
                     </div>

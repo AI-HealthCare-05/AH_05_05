@@ -22,7 +22,7 @@ test.beforeEach(async ({ page }) => {
 test('active tab has an inset mint surface without hiding labels or changing tab geometry', async ({ page }, testInfo) => {
   const nav = page.getByRole('navigation', { name: '주요 화면' });
   const buttons = nav.getByRole('button');
-  await expect(buttons).toHaveText(['홈', '복약', '영양제', '챗봇', '마이']);
+  await expect(buttons).toHaveText(['홈', '복약', '영양제', '챌린지', '마이']);
   const originalBoxes = await buttons.evaluateAll(items => items.map(item => {
     const { x, width, height } = item.getBoundingClientRect();
     return { x, width, height };
@@ -37,11 +37,11 @@ test('active tab has an inset mint surface without hiding labels or changing tab
   await active.focus();
   await page.keyboard.press('Tab');
   await expect(nav.getByRole('button', { name: '복약', exact: true })).toBeFocused();
-  await nav.getByRole('button', { name: '챗봇', exact: true }).click();
-  await expect(page).toHaveURL(/\/chat$/);
+  await nav.getByRole('button', { name: '챌린지', exact: true }).click();
+  await expect(page).toHaveURL(/\/challenges$/);
   const chatNav = page.getByRole('navigation', { name: '주요 화면' });
-  await expect(chatNav.getByRole('button')).toHaveText(['홈', '복약', '영양제', '챗봇', '마이']);
-  await expect(chatNav.getByRole('button', { name: '챗봇', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(chatNav.getByRole('button')).toHaveText(['홈', '복약', '영양제', '챌린지', '마이']);
+  await expect(chatNav.getByRole('button', { name: '챌린지', exact: true })).toHaveAttribute('aria-current', 'page');
   expect(await chatNav.getByRole('button').evaluateAll(items => items.map(item => {
     const { x, width, height } = item.getBoundingClientRect();
     return { x, width, height };
@@ -75,7 +75,7 @@ test('clay selection stays distinct from completion and does not move the medica
 test('home primary card and raw memo action share the same rounded light-clay depth', async ({ page }) => {
   const medication = page.getByRole('region', { name: '오늘의 복약', exact: true });
   const primaryCard = medication.getByRole('group', { name: '아침약 상세', exact: true }).locator('..');
-  await expect(primaryCard.locator(':scope > div:first-child > p')).toHaveCSS('color', 'rgb(0, 44, 104)');
+  await expect(primaryCard.locator(':scope > div:first-child p')).toHaveCSS('color', 'rgb(0, 44, 104)');
   const cardShadow = await primaryCard.evaluate(element => getComputedStyle(element).boxShadow);
   expect((cardShadow.match(/inset/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect(cardShadow).toMatch(/0px -[4-9]px [6-9]px/);

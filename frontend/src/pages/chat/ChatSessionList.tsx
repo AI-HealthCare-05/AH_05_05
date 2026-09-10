@@ -125,7 +125,7 @@ export function ChatSessionList({
           </Button>
         </div>
       )}
-      <BottomTabbar active="chat" onChange={onTabChange} className="border-t border-border" />
+      <BottomTabbar active={null} onChange={onTabChange} className="border-t border-border" />
     </div>
   );
 }

@@ -5,12 +5,15 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import logging
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 REFERENCE_TABLE_ORDER = (
     "medication_product_guides",
@@ -448,9 +451,10 @@ def _remap_foreign_keys(
 async def _preflight_challenge_collisions(
     db: ReferenceSeedDb,
     rows: list[dict[str, object]],
-) -> None:
+) -> set[object]:
+    conflicting_ids: set[object] = set()
     if not rows:
-        return
+        return conflicting_ids
     existing = await _fetch_target_rows(db, "challenges", ("id", "name", "recruit_start_at"))
     existing_by_id = {row["id"]: row for row in existing}
     for row in rows:
@@ -458,7 +462,9 @@ async def _preflight_challenge_collisions(
         if target is None:
             continue
         if target.get("name") != row.get("name") or target.get("recruit_start_at") != row.get("recruit_start_at"):
-            raise ReferenceSeedConflictError(f"챌린지 ID 충돌이 발생했습니다: {row['id']}")
+            conflicting_ids.add(row["id"])
+            logger.warning("챌린지 ID 충돌: %s — 기존 기록을 보존하고 해당 시드 행을 건너뜁니다.", row["id"])
+    return conflicting_ids
 
 
 async def apply_reference_seed(
@@ -467,7 +473,12 @@ async def apply_reference_seed(
 ) -> SeedApplyResult:
     manifest = validate_seed_artifacts(seed_dir)
     rows_by_table, _ = _load_and_preflight_rows(seed_dir, manifest)
-    await _preflight_challenge_collisions(db, rows_by_table.get("challenges", []))
+    conflicting_challenge_ids = await _preflight_challenge_collisions(db, rows_by_table.get("challenges", []))
+    if conflicting_challenge_ids:
+        # Challenge IDs are referenced by user history; never overwrite or remap a collision.
+        rows_by_table["challenges"] = [
+            row for row in rows_by_table["challenges"] if row["id"] not in conflicting_challenge_ids
+        ]
 
     id_maps: dict[str, dict[object, object]] = {}
     results: dict[str, TableApplyResult] = {}
@@ -481,6 +492,8 @@ async def apply_reference_seed(
             id_maps,
             manifest.batch_size,
         )
+        if table == "challenges":
+            result = replace(result, skipped=result.skipped + len(conflicting_challenge_ids))
         results[table] = result
         id_maps[table] = id_map
     return SeedApplyResult(results)

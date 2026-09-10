@@ -20,7 +20,7 @@ from app.dtos.background_jobs import (
 from app.dtos.pagination import PageResponse
 from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import BackgroundJobStatus, BackgroundJobType, OcrJobStatus
+from app.models.enums import AlarmType, BackgroundJobStatus, BackgroundJobType, OcrJobStatus
 from app.models.ocr import OcrJob
 from app.repositories.background_job_repository import BackgroundJobRepository
 
@@ -51,10 +51,19 @@ class BackgroundJobService:
             limit=candidate_limit,
         )
         ocr_jobs, ocr_total = await self._list_ocr_for_admin(filters, limit=candidate_limit)
+        alarm_ids_by_job_id = {
+            job.id: self._alarm_id_from_job(job) for job in jobs if job.job_type == BackgroundJobType.ALARM
+        }
+        alarm_ids = {alarm_id for alarm_id in alarm_ids_by_job_id.values() if alarm_id is not None}
+        alarm_type_by_id: dict[int, AlarmType] = {}
+        if alarm_ids:
+            alarm_rows = await Alarm.filter(id__in=alarm_ids).values("id", "alarm_type")
+            alarm_type_by_id = {int(row["id"]): AlarmType(row["alarm_type"]) for row in alarm_rows}
         items = [
             AdminBackgroundJobListItem(
                 job_id=job.id,
                 job_type=job.job_type,
+                alarm_type=alarm_type_by_id.get(alarm_ids_by_job_id.get(job.id)),
                 status=job.status,
                 user_id=job.user_id,
                 user_name=getattr(job.user, "name", None) if job.user_id is not None else None,
@@ -73,6 +82,13 @@ class BackgroundJobService:
             page=filters.page,
             size=filters.size,
         )
+
+    @staticmethod
+    def _alarm_id_from_job(job: BackgroundJob) -> int | None:
+        if job.reference_table == "alarms" and job.reference_id is not None:
+            return job.reference_id
+        matched = re.match(r"^alarm:(\d+):", job.idempotency_key)
+        return int(matched.group(1)) if matched else None
 
     async def _list_ocr_for_admin(
         self,
@@ -132,6 +148,7 @@ class BackgroundJobService:
         return AdminBackgroundJobListItem(
             job_id=f"OCR-{job.id}",
             job_type=BackgroundJobType.OCR,
+            alarm_type=None,
             status=cls._background_status_for_ocr(job.status),
             user_id=job.user_id,
             user_name=getattr(job.user, "name", None),
@@ -200,6 +217,8 @@ class BackgroundJobService:
                     "job_type": BackgroundJobType.ALARM,
                     "status": BackgroundJobStatus.QUEUED,
                     "user_id": alarm.user_id,
+                    "reference_table": "alarms",
+                    "reference_id": alarm.id,
                     "retry_count": 0,
                     "max_retry_count": config.ALARM_MAX_RETRY_COUNT,
                 }

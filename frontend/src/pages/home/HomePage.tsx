@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
+import { invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   getDoseRecords,
   getMedicationOverviews,
@@ -13,11 +14,13 @@ import {
   type SaveDoseTakenPayload,
 } from '@/entities/medication';
 import {
+  getPublicSupplementRanking,
   getSupplementRanking,
   getSupplements,
   type SupplementRanking,
   type Supplement,
 } from '@/entities/supplement';
+import { getAuthGeneration } from '@/shared/api/client';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import {
   BottomTabbar,
@@ -67,8 +70,11 @@ export function HomePage({
   doseRecordSaver = saveDoseTaken,
 }: HomePageProps) {
   const navigate = useNavigate();
-  const { authenticated } = useSession();
+  const { authenticated, principalKey } = useSession();
   const isAuthenticated = authenticatedOverride ?? authenticated;
+  const principalRef = useRef(principalKey);
+  const doseProgressGenerationRef = useRef(0);
+  principalRef.current = principalKey;
   const [loginPromptOpen, setLoginPromptOpen] = useState(false);
   const [medicationOverviews, setMedicationOverviews] = useState<MedicationOverview[] | null>(null);
   const [medicationLoadError, setMedicationLoadError] = useState<string | null>(null);
@@ -81,6 +87,9 @@ export function HomePage({
   const [doseMutationPending, setDoseMutationPending] = useState(false);
   const doseMutationPendingRef = useRef(false);
   const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
+  const [supplementRankingState, setSupplementRankingState] = useState<'loading' | 'ready' | 'error'>(
+    'loading',
+  );
   const [registeredSupplements, setRegisteredSupplements] = useState<Supplement[]>([]);
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
     () => new Set(),
@@ -93,21 +102,36 @@ export function HomePage({
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    doseProgressGenerationRef.current += 1;
+    return () => {
+      doseProgressGenerationRef.current += 1;
+    };
+  }, [principalKey]);
+
+  useEffect(() => {
     let cancelled = false;
-    getSupplementRanking()
+    setSupplementRankingState('loading');
+    const rankingRequest = isAuthenticated
+      ? getSupplementRanking()
+      : getPublicSupplementRanking();
+    rankingRequest
       .then((ranking) => {
         if (!cancelled) {
           setSupplementRanking(ranking && ranking.items.length > 0 ? ranking : null);
+          setSupplementRankingState('ready');
         }
       })
       .catch(() => {
-        if (!cancelled) setSupplementRanking(null);
+        if (!cancelled) {
+          setSupplementRanking(null);
+          setSupplementRankingState('error');
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -287,6 +311,14 @@ export function HomePage({
     const previousRecords = latestDoseRecordsRef.current;
     if (!previousRecords) return { failedRecordIds: change.recordIds };
     if (doseMutationPendingRef.current) return { failedRecordIds: change.recordIds };
+    const requestPrincipal = principalKey;
+    const authGeneration = getAuthGeneration();
+    const requestGeneration = doseProgressGenerationRef.current;
+    const canInvalidateProgress = () => (
+      principalRef.current === requestPrincipal
+      && doseProgressGenerationRef.current === requestGeneration
+      && getAuthGeneration() === authGeneration
+    );
     const changedRecordIds = knownChangedRecordIds ??
       change.recordIds.filter((recordId) => {
         const wasTaken = previousRecords.some(
@@ -318,6 +350,9 @@ export function HomePage({
       const failedRecordIds = changedRecordIds.filter(
         (_recordId, index) => results[index]?.status === 'rejected',
       );
+      if (results.some(result => result.status === 'fulfilled') && canInvalidateProgress()) {
+        invalidateCustomChallengeProgress();
+      }
       if (failedRecordIds.length === 0) {
         if (showUndo) {
           toast.success(change.taken ? '복약을 기록했어요.' : '복약 기록을 취소했어요.', {
@@ -453,6 +488,9 @@ export function HomePage({
                 subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
               />
             )}
+            {!visibleSupplementRanking && supplementRankingState === 'ready' && (
+              <GuestSupplementRankingEmpty />
+            )}
           </>
         )}
         {!isAuthenticated && <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />}
@@ -524,6 +562,17 @@ function GuestMedicationPrompt({ onLogin }: { onLogin: () => void }) {
         <p className="text-lg font-bold text-foreground">복약 일정을 확인해보세요</p>
         <p>로그인하면 기록과 알림을 이어서 볼 수 있어요.</p>
         <Button onClick={onLogin}>로그인하고 시작하기</Button>
+      </Card>
+    </section>
+  );
+}
+
+function GuestSupplementRankingEmpty() {
+  return (
+    <section aria-label="영양제 랭킹" className="flex flex-col gap-3">
+      <h2 className="text-lg font-bold text-foreground">영양제 랭킹</h2>
+      <Card>
+        <p className="text-sm text-muted-foreground">현재 공개된 영양제 랭킹이 없어요.</p>
       </Card>
     </section>
   );

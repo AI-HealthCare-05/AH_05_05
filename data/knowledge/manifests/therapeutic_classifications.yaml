@@ -1,0 +1,19 @@
+schema_version: therapeutic-classification-dataset-v1
+dataset_version: therapeutic-class-v1
+classes:
+  - code: ANTICOAGULANT
+    display_name: 항응고제
+    aliases:
+      - 항응고제
+      - 항응고 약
+      - 혈액응고와 관련된 약
+      - 혈액 응고와 관련된 약
+    assignments:
+      - entity_kind: DRUG
+        canonical_name: 와파린
+        review_status: APPROVED
+        source_id: kpicia_pharm_review
+        document_id: kpicia_pharm_review-c4ea8e68b35b65b3
+        record_id: chunk-1
+        raw_classification_text: 와파린은 비타민 K 의존적인 응혈인자를 저해하여 항응고작용을 한다.
+        approved_at: 2026-09-09T09:30:00

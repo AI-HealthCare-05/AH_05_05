@@ -10,6 +10,8 @@ from ai_worker.schemas.knowledge import (
 )
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    ActiveMedication,
+    ActiveSupplement,
     MedicationEvidenceCoverage,
     MedicationGuideFact,
 )
@@ -144,3 +146,37 @@ def test_assemble_adds_specific_member_choices_for_ingredient_family() -> None:
     assert "비타민 B는 여러 성분을 묶어 부르는 이름" in answer
     assert "비타민 B1(티아민), 비타민 B6(피리독신), 비타민 B12(코발라민)" in answer
     assert "성분명을 포함해 다시 질문" in answer
+
+
+def test_assemble_separates_medication_and_supplement_information_with_a_blank_line() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=10,
+                    name="와파린",
+                    dose="1정",
+                    times_per_day=1,
+                )
+            ],
+            supplements=[
+                ActiveSupplement(
+                    registration_id=1,
+                    supplement_nutrient_id=1,
+                    name="비타민 K",
+                    dose_amount="1",
+                    dose_unit="정",
+                    start_date="2026-09-09",
+                )
+            ],
+        ),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+    )
+
+    assert "사용자 확정 복약정보" not in answer
+    assert "복약정보\n- 와파린 · 1정 · 1일 1회\n\n영양제 정보\n- 비타민 K · 1정" in answer

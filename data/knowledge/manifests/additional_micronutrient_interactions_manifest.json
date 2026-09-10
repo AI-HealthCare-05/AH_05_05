@@ -1,0 +1,81 @@
+{
+  "policy": "제한 사용 학술 원문은 DEMO_RESTRICTED로 격리하고, 전처리 품질을 확인한 안전한 청크만 이후 릴리스 후보로 사용한다.",
+  "pilots": [
+    {
+      "source_id": "research_micronutrient_interactions",
+      "document_id": "research_micronutrient_interactions-bc3fd489c828415e",
+      "repo_path": "data/knowledge/raw/demo_restricted/research/micronutrient_interactions/bond_zinc_review_2016.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "아연 기능·흡수·식이 생체이용률과 영양소 상호작용의 제한적 근거를 검증한다.",
+      "manual_review_status": "PENDING",
+      "title": "Biomarkers of Nutrition for Development (BOND)—Zinc Review",
+      "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4807640/",
+      "doi": "10.3945/jn.115.220079",
+      "authors": [
+        "Janet C. King",
+        "Kenneth H. Brown",
+        "Rosalind S. Gibson",
+        "Nancy F. Krebs",
+        "Nicola M. Lowe",
+        "Jonathan H. Siekmann",
+        "Daniel J. Raiten"
+      ],
+      "publication_year": 2016,
+      "drug_names": [],
+      "ingredient_names": [
+        "아연",
+        "철분",
+        "구리",
+        "칼슘"
+      ],
+      "entity_catalog_entries": [
+        {"canonical_name": "아연", "aliases": ["zinc", "Zn"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"},
+        {"canonical_name": "철분", "aliases": ["iron", "Fe"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"},
+        {"canonical_name": "구리", "aliases": ["copper", "Cu"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"},
+        {"canonical_name": "칼슘", "aliases": ["calcium", "Ca"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"}
+      ],
+      "evidence_level": "REVIEW_ARTICLE",
+      "study_population": "MIXED",
+      "verified_text_replacements": {},
+      "verified_section_headings": [],
+      "approved_chunk_content_hashes": [],
+      "approved_review_reason_codes": []
+    },
+    {
+      "source_id": "research_micronutrient_interactions",
+      "document_id": "research_micronutrient_interactions-e3b164ce9cc98cc6",
+      "repo_path": "data/knowledge/raw/demo_restricted/research/micronutrient_interactions/micronutrient_interactions_absorption_bioavailability_2001.pdf",
+      "processing_status": "TEXT_EXTRACTABLE",
+      "selection_reason": "칼슘–철분, 철분–아연, 아연–구리, 비타민 C–철분의 직접 관계와 적용 조건을 검증한다.",
+      "manual_review_status": "APPROVED",
+      "title": "Micronutrient interactions: effects on absorption and bioavailability",
+      "source_url": "https://www.cambridge.org/core/journals/british-journal-of-nutrition/article/micronutrient-interactions-effects-on-absorption-and-bioavailability/1C2517BF4026FED0003C86E0E993AF48",
+      "doi": "10.1049/BJN2000312",
+      "authors": [
+        "Brittmarie Sandström"
+      ],
+      "publication_year": 2001,
+      "drug_names": [],
+      "ingredient_names": [
+        "철분",
+        "아연",
+        "구리",
+        "칼슘",
+        "비타민 C"
+      ],
+      "entity_catalog_entries": [
+        {"canonical_name": "철분", "aliases": ["iron", "Fe"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"},
+        {"canonical_name": "아연", "aliases": ["zinc", "Zn"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"},
+        {"canonical_name": "구리", "aliases": ["copper", "Cu"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"},
+        {"canonical_name": "칼슘", "aliases": ["calcium", "Ca"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"},
+        {"canonical_name": "비타민 C", "aliases": ["vitamin C", "ascorbic acid"], "entity_type": "INGREDIENT_NAME", "kind": "SUPPLEMENT"}
+      ],
+      "evidence_level": "REVIEW_ARTICLE",
+      "study_population": "MIXED",
+      "verified_text_replacements": {},
+      "verified_section_headings": [],
+      "approved_chunk_content_hashes": [],
+      "approved_review_reason_codes": []
+    }
+  ]
+}

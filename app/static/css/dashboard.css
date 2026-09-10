@@ -3,6 +3,12 @@
   --dashboard-ring-size: 88px;
 }
 
+.ocr-status-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
+}
+
 .dashboard-insight-card,
 .chat-reason-panel {
   min-height: var(--dashboard-insight-height);

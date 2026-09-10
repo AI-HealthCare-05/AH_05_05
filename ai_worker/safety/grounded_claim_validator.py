@@ -56,7 +56,8 @@ class RuleBasedGroundedClaimValidator:
     ) -> GroundedClaimValidationDiagnostic:
         del context
         normalized_answer = self._normalize_spacing(result.answer)
-        if match := self._MEDICATION_CHANGE_PATTERN.search(normalized_answer):
+        policy_scan_answer = self._answer_for_policy_scan(normalized_answer)
+        if match := self._MEDICATION_CHANGE_PATTERN.search(policy_scan_answer):
             if self._matches_official_warning(
                 match_text=match.group(),
                 official_warning_texts=result.official_warning_texts,
@@ -70,12 +71,12 @@ class RuleBasedGroundedClaimValidator:
                 action=self._match_category(match.group(), self._MEDICATION_CHANGE_ACTIONS),
                 target=self._match_category(match.group(), self._MEDICATION_CHANGE_TARGETS),
             )
-        if match := self._DIAGNOSIS_PATTERN.search(normalized_answer):
+        if match := self._DIAGNOSIS_PATTERN.search(policy_scan_answer):
             return self._match_diagnostic(
                 rule_code="DIAGNOSTIC_ASSERTION",
                 match_text=match.group(),
             )
-        if match := self._TREATMENT_PATTERN.search(normalized_answer):
+        if match := self._TREATMENT_PATTERN.search(policy_scan_answer):
             return self._match_diagnostic(
                 rule_code="TREATMENT_DECISION",
                 match_text=match.group(),
@@ -157,6 +158,17 @@ class RuleBasedGroundedClaimValidator:
     @staticmethod
     def _normalize_spacing(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
+
+    @staticmethod
+    def _answer_for_policy_scan(answer: str) -> str:
+        """Exclude only the fixed disclaimer from unsafe-claim detection.
+
+        The disclaimer is a policy notice, not an instruction for the user to
+        alter a medication.  The original answer remains intact for display
+        and for checking whether a disclaimer was already present.
+        """
+
+        return answer.replace(MEDICAL_DISCLAIMER, "")
 
     @classmethod
     def _matches_official_warning(

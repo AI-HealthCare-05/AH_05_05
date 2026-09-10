@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { formatMedicationDoseQuantity, formatMedicationLabel, formatMedicationStrength } from '@/shared/lib/medicationLabel';
 import {
+  cancelOcrResult,
   confirmOcrResult,
   getOcrDocumentImageUrl,
   getOcrProcessedImageUrl,
@@ -90,17 +91,6 @@ function ConfidenceBadge({ confidence }: { confidence?: Confidence }) {
   if (!confidence || confidence === 'high') return null;
   const badge = CONFIDENCE_BADGE[confidence];
   return <StatusBadge type={badge.type}>{badge.label}</StatusBadge>;
-}
-
-function hasMissingExtractedMedicationField(medication: EditableOcrMedication): boolean {
-  if (medication.confidence === undefined) return false;
-  return (
-    !medication.name.trim() ||
-    !medication.strength?.trim() ||
-    !medication.doseQuantity?.trim() ||
-    medication.timesPerDay === undefined ||
-    medication.days === undefined
-  );
 }
 
 export function OcrReviewPage() {
@@ -196,6 +186,7 @@ export function OcrReviewPage() {
   const [reviewConfirmOpen, setReviewConfirmOpen] = useState(false);
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [retaking, setRetaking] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dismissedOcrFailure, setDismissedOcrFailure] = useState(false);
@@ -399,17 +390,29 @@ export function OcrReviewPage() {
     reviewItemNames.push('조제일');
   }
   for (const medication of medications) {
-    if (
-      hasMissingExtractedMedicationField(medication) ||
-      (medication.confidence === 'low' && !reviewedMedicationIds.has(medication.tempId))
-    ) {
+    if (medication.confidence === 'low' && !reviewedMedicationIds.has(medication.tempId)) {
       reviewItemNames.push(medication.name || '복약 정보');
     }
   }
 
   const maxDispensedDate = seoulDateISO(31);
   const dispensedDateTooLate = dispensedDate > maxDispensedDate;
-  const canSave = Boolean(dispensedDate) && !dispensedDateTooLate && !saving;
+  const canSave = Boolean(dispensedDate) && !dispensedDateTooLate && !saving && !retaking;
+
+  async function retakePhoto() {
+    if (saving || retaking) return;
+    setRetaking(true);
+    try {
+      if (result?.ocrStatus === 'ready_for_review' && batchId) {
+        await cancelOcrResult(batchId);
+      }
+      navigate('/document-upload', { replace: true });
+    } catch {
+      toast.error('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      setRetaking(false);
+    }
+  }
 
   function createRegistrationDraft(): OcrRegistrationDraft | undefined {
     if (
@@ -447,6 +450,7 @@ export function OcrReviewPage() {
 
   async function save() {
     if (
+      saving || retaking ||
       !result ||
       (result.ocrStatus !== 'ready_for_review' &&
         !(result.ocrStatus === 'failed' && dismissedOcrFailure) &&
@@ -609,15 +613,15 @@ export function OcrReviewPage() {
   const unreadableDocument = noMedicationsExtracted || ocrFailed;
   if (unreadableDocument && !dismissedOcrFailure) {
     return (
-      <PageFrame title="다시 촬영해주세요" onBack={() => navigate('/document-upload', { replace: true })}>
+      <PageFrame title="다시 촬영해주세요" onBack={retakePhoto}>
         <RegistrationProgress step={2} />
         <Card tone="warning" title="약 정보를 추출하지 못했어요">
           복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.
           그림자와 빛 반사를 피하고, 글자가 선명한지 확인해주세요.
         </Card>
         <div className="mt-auto flex flex-col gap-2 pb-4">
-          <Button onClick={() => navigate('/document-upload', { replace: true })}>
-            다시 촬영하기
+          <Button onClick={retakePhoto} disabled={retaking || saving}>
+            {retaking ? '취소 중...' : '다시 촬영하기'}
           </Button>
           <Button variant="secondary" onClick={() => setDismissedOcrFailure(true)}>
             직접 입력하기
@@ -628,7 +632,7 @@ export function OcrReviewPage() {
           title="문서를 읽지 못했어요"
           message={loadError ?? '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'}
           retryLabel="다시 촬영"
-          onRetry={() => navigate('/document-upload', { replace: true })}
+          onRetry={retakePhoto}
           secondaryLabel="그대로 직접 입력"
           onSecondary={() => setDismissedOcrFailure(true)}
         />
@@ -828,8 +832,8 @@ export function OcrReviewPage() {
               <Button onClick={handleSaveClick} disabled={!canSave}>
                 {saving ? '저장 중...' : '저장하고 복약 시간 설정'}
               </Button>
-              <Button variant="secondary" onClick={() => navigate('/document-upload')}>
-                다시 촬영하기
+              <Button variant="secondary" onClick={retakePhoto} disabled={retaking || saving}>
+                {retaking ? '취소 중...' : '다시 촬영하기'}
               </Button>
             </>
           )}
@@ -1097,8 +1101,7 @@ function OcrMedicationCard({
           <strong className="max-w-full whitespace-normal text-lg text-foreground [overflow-wrap:anywhere]">
             {name}
           </strong>
-          {hasMissingExtractedMedicationField(medication) ||
-          (medication.confidence === 'low' && !reviewed) ? (
+          {medication.confidence === 'low' && !reviewed ? (
             <StatusBadge type="review">확인 필요</StatusBadge>
           ) : (
             <ConfidenceBadge confidence={reviewed ? undefined : medication.confidence} />

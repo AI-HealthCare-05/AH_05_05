@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import * as taskManagement from "../../static/js/task-management.js";
 import {
   buildTaskQuery,
+  formatTaskError,
   formatTaskTotal,
   getTaskPaginationState,
   renderTaskStats,
@@ -46,6 +48,27 @@ test("task management template exposes pagination below the table", () => {
   assert.ok(tableEnd < html.indexOf("data-task-pagination"));
 });
 
+test("task list masks the user name and appends the user ID", () => {
+  assert.equal(taskManagement.formatTaskUser({ userName: "김은미", userId: 9 }), "김*미(9)");
+  assert.equal(taskManagement.formatTaskUser({ userName: "김미", userId: 10 }), "김미(10)");
+  assert.equal(taskManagement.formatTaskUser({ userName: null, userId: null }), "시스템 자동");
+});
+
+test("task list renders localized alarm type labels", () => {
+  assert.equal(taskManagement.formatAlarmType("MEDICATION"), "복약");
+  assert.equal(taskManagement.formatAlarmType("NUTRIENT"), "영양제");
+  assert.equal(taskManagement.formatAlarmType("FOLLOW_UP_VISIT"), "진료일정");
+  assert.equal(taskManagement.formatAlarmType("GUIDE_CHECK"), "생활가이드");
+  assert.equal(taskManagement.formatAlarmType(null), "-");
+});
+
+test("task list headers identify the masked user ID and alarm type columns", () => {
+  const html = readFileSync(templatePath, "utf8");
+
+  assert.match(html, /<th>사용자\(ID\)<\/th>/);
+  assert.match(html, /<th>알림 유형<\/th>/);
+});
+
 test("task filter selects expose only supported type and status placeholders", () => {
   const html = readFileSync(templatePath, "utf8");
   const typeOptions = html.match(/<select data-task-type[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? "";
@@ -64,6 +87,27 @@ test("formatTaskTotal renders API total count and failure fallback", () => {
   assert.equal(formatTaskTotal(37), "총 37건");
   assert.equal(formatTaskTotal(0), "총 0건");
   assert.equal(formatTaskTotal(null), "총 -건");
+});
+
+test("formatTaskError labels an expired Push subscription as deactivated", () => {
+  assert.equal(
+    formatTaskError({
+      errorCode: "PUSH_SUBSCRIPTION_EXPIRED",
+      errorMessage: null,
+    }),
+    "비활성화 처리(PUSH_SUBSCRIPTION_EXPIRED)",
+  );
+  assert.equal(
+    formatTaskError({ errorCode: "PUSH_REJECTED", errorMessage: "provider rejected" }),
+    "PUSH_REJECTED - provider rejected",
+  );
+  assert.equal(
+    formatTaskError({
+      errorCode: "EMAIL_VERIFICATION_EXPIRED",
+      errorMessage: "EMAIL_VERIFICATION_EXPIRED",
+    }),
+    "EMAIL_VERIFICATION_EXPIRED",
+  );
 });
 
 test("getTaskPaginationState limits visible pages and clamps requested page", () => {

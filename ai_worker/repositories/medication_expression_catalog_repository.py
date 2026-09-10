@@ -3,6 +3,9 @@ import re
 import time
 
 from ai_worker.domain.interfaces import SupplementIngredientCatalog
+from ai_worker.domain.medication_expression_vocabulary import (
+    SUPPORTED_SUPPLEMENT_NAMES,
+)
 from ai_worker.schemas.interaction import InteractionEntityKind as SearchEntityKind
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
@@ -122,9 +125,29 @@ class DbMedicationExpressionCatalog:
             if str(name).strip()
         )
         entries.extend(additional_entries)
+        entries.extend(self._shared_supplement_entries(entries))
         self._cached_entries = self._deduplicate_entries(entries)
         self._cache_expires_at = now + self._cache_ttl_seconds
         return self._cached_entries.copy()
+
+    @staticmethod
+    def _shared_supplement_entries(
+        entries: list[MedicationCatalogEntry],
+    ) -> list[MedicationCatalogEntry]:
+        """동적 메타데이터가 빠진 기본 영양성분도 동일한 카탈로그로 제공한다."""
+        known_supplements = {
+            entry.canonical_name.casefold() for entry in entries if entry.kind == SearchEntityKind.SUPPLEMENT
+        }
+        return [
+            MedicationCatalogEntry(
+                canonical_name=name,
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=SearchEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.CATALOG,
+            )
+            for name in sorted(SUPPORTED_SUPPLEMENT_NAMES, key=str.casefold)
+            if name.casefold() not in known_supplements
+        ]
 
     @staticmethod
     def _list_or_empty(value: object) -> list[object]:

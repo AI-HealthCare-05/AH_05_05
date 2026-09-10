@@ -41,7 +41,7 @@
   background: var(--color-card);
 }
 
-.rx-home [data-home-dose-card] > div:first-child > p,
+.rx-home [data-home-dose-card] > div:first-child p,
 .rx-home [data-episode-row] h3,
 .rx-home #home-panel-supplement h3,
 .rx-home-challenges h2,

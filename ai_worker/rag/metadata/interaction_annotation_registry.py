@@ -52,8 +52,21 @@ class KnowledgeInteractionAnnotationPair(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pair_type: InteractionPairType
+    evidence_phrases: list[str] = Field(default_factory=list)
     left: KnowledgeInteractionAnnotationEntity
     right: KnowledgeInteractionAnnotationEntity
+
+    @field_validator("evidence_phrases")
+    @classmethod
+    def normalize_evidence_phrases(cls, values: list[str]) -> list[str]:
+        phrases: list[str] = []
+        for value in values:
+            normalized = normalize_interaction_name(value)
+            if not normalized:
+                raise ValueError("상호작용 근거 문구는 비어 있을 수 없습니다.")
+            if normalized not in phrases:
+                phrases.append(normalized)
+        return phrases
 
     @model_validator(mode="after")
     def validate_pair_type(self) -> Self:
@@ -131,6 +144,10 @@ class KnowledgeInteractionAnnotationRegistry:
             for document_id, pairs in self._pairs_by_document.items()
         }
 
+    def has_document_annotation(self, document_id: str) -> bool:
+        """문서가 검수된 직접 상호작용 주석 범위에 속하는지 확인합니다."""
+        return document_id in self._pairs_by_document
+
     @staticmethod
     def _pair_key(
         pair: KnowledgeInteractionAnnotationPair,
@@ -162,6 +179,8 @@ class KnowledgeInteractionAnnotationRegistry:
             if not self._matches_entity(normalized_text, pair.left):
                 continue
             if not self._matches_entity(normalized_text, pair.right):
+                continue
+            if not self._matches_evidence_phrase(normalized_text, pair):
                 continue
 
             left = InteractionEntity(
@@ -214,6 +233,16 @@ class KnowledgeInteractionAnnotationRegistry:
     ) -> bool:
         aliases = [entity.display_name, *entity.aliases]
         return any(cls._normalize_for_match(alias) in normalized_text for alias in aliases)
+
+    @classmethod
+    def _matches_evidence_phrase(
+        cls,
+        normalized_text: str,
+        pair: KnowledgeInteractionAnnotationPair,
+    ) -> bool:
+        return not pair.evidence_phrases or any(
+            cls._normalize_for_match(phrase) in normalized_text for phrase in pair.evidence_phrases
+        )
 
     @staticmethod
     def _normalize_for_match(value: str) -> str:
