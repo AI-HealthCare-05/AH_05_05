@@ -10,6 +10,7 @@ class BadgeRepository:
         *,
         badge_id: int | None = None,
         name: str | None = None,
+        type: int | None = None,
         is_active: bool | None = None,
         offset: int,
         limit: int,
@@ -19,6 +20,8 @@ class BadgeRepository:
             query = query.filter(id=badge_id)
         if name:
             query = query.filter(name__icontains=name.strip())
+        if type is not None:
+            query = query.filter(type_id=type)
         if is_active is not None:
             query = query.filter(is_active=is_active)
         return list(await query.order_by("-created_at").offset(offset).limit(limit)), await query.count()

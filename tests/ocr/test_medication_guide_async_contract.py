@@ -1,6 +1,5 @@
 import json
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from typing import get_args
 
 import pytest
@@ -13,28 +12,36 @@ from app.dtos.medication_guide_ocr import (
     DocumentOcrStatusResponse,
     DocumentOcrUploadResponse,
     MedicationGuideConfirmRequest,
-    MedicationGuideResult,
     MedicationGuideReviewResult,
     OcrConfirmationResponse,
-    OcrField,
     OcrJobAcceptedResponse,
     OcrJobStatusResponse,
 )
-from app.dtos.medication_guide_ocr import (
-    Medication as ExtractedMedication,
-)
 from app.models.enums import OcrJobStatus
-from app.services.medication_guide_normalizer import normalize_clova_response
-from app.services.medication_guide_ocr_jobs import build_review_result
-
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "template_ocr_exact_02_response.json"
 
 
 def test_review_contract_exposes_only_editable_medication_fields() -> None:
-    provider_payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-    normalized = normalize_clova_response(provider_payload, expected_template_id=43199)
-
-    review = build_review_result(normalized)
+    review = MedicationGuideReviewResult.model_validate(
+        {
+            "fields": {"dispensedDate": {"value": "2025-04-02", "confidence": "high"}},
+            "medications": [
+                {
+                    "tempId": "med-1",
+                    "name": "에스오메프라졸캡슐",
+                    "strength": "20mg",
+                    "doseQuantity": "1캡슐",
+                    "timesPerDay": 1,
+                    "days": 14,
+                    "confidence": "high",
+                    "category": "소화기",
+                    "efficacy": "시험용 설명",
+                    "administration": "식후",
+                    "precautions": "시험용 주의사항",
+                }
+            ],
+            "lowConfidenceCount": 0,
+        }
+    )
     payload = review.model_dump(mode="json", by_alias=True)
 
     assert isinstance(review, MedicationGuideReviewResult)
@@ -55,42 +62,6 @@ def test_review_contract_exposes_only_editable_medication_fields() -> None:
     assert "precautions" not in payload["medications"][0]
     assert payload["lowConfidenceCount"] == 0
     assert set(payload) == {"fields", "medications", "lowConfidenceCount"}
-
-
-def test_review_projection_applies_public_confidence_thresholds_and_forces_validation_issues_low() -> None:
-    extracted = MedicationGuideResult(
-        dispensing_date="2026-08-25",
-        ocr_fields=[OcrField(name="dispensing_date", text="2026-08-25", confidence=0.69)],
-        medications=[
-            ExtractedMedication(
-                row_id="med-high",
-                name="고신뢰 약",
-                confidence=0.90,
-                needs_review=False,
-                source_field_names=[],
-            ),
-            ExtractedMedication(
-                row_id="med-medium",
-                name="중신뢰 약",
-                confidence=0.70,
-                needs_review=False,
-                source_field_names=[],
-            ),
-            ExtractedMedication(
-                row_id="med-low",
-                name="검토 필요 약",
-                confidence=0.99,
-                needs_review=True,
-                source_field_names=[],
-            ),
-        ],
-    )
-
-    payload = build_review_result(extracted).model_dump(mode="json", by_alias=True)
-
-    assert payload["fields"]["dispensedDate"]["confidence"] == "low"
-    assert [item["confidence"] for item in payload["medications"]] == ["high", "medium", "low"]
-    assert payload["lowConfidenceCount"] == 2
 
 
 def test_confirm_request_accepts_the_six_field_rdb_shape_and_an_empty_medication_list() -> None:

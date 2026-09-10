@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   buildTaskQuery,
+  formatTaskTotal,
+  getTaskPaginationState,
   renderTaskStats,
   validateTaskDateRange,
 } from "../../static/js/task-management.js";
+
+const templatePath = fileURLToPath(new URL("../../static/templates/screen-5-task-management.html", import.meta.url));
 
 test("buildTaskQuery converts every selected condition to admin API parameters", () => {
   assert.deepEqual(
@@ -14,6 +20,8 @@ test("buildTaskQuery converts every selected condition to admin API parameters",
       status: "실패",
       startDate: "2026-08-01",
       endDate: "2026-08-26",
+      page: 3,
+      size: 50,
     }),
     {
       keyword: "42",
@@ -21,32 +29,74 @@ test("buildTaskQuery converts every selected condition to admin API parameters",
       status: "FAILED",
       startDate: "2026-08-01",
       endDate: "2026-08-26",
-      page: 1,
-      size: 100,
+      page: 3,
+      size: 50,
     },
   );
 });
 
+test("task management template exposes pagination below the table", () => {
+  const html = readFileSync(templatePath, "utf8");
+  const tableEnd = html.indexOf("</table>");
+
+  assert.match(html, /data-task-pagination/);
+  assert.match(html, /data-task-total[^>]*>총 -건/);
+  assert.match(html, /data-task-page-size/);
+  for (const size of [20, 50, 100]) assert.match(html, new RegExp(`<option value="${size}"`));
+  assert.ok(tableEnd < html.indexOf("data-task-pagination"));
+});
+
+test("task filter selects expose only supported type and status placeholders", () => {
+  const html = readFileSync(templatePath, "utf8");
+  const typeOptions = html.match(/<select data-task-type[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? "";
+  const statusOptions = html.match(/<select data-task-status[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? "";
+
+  assert.match(typeOptions, /<option>작업유형<\/option>/);
+  assert.match(typeOptions, /<option>OCR<\/option>/);
+  assert.match(typeOptions, /<option>ALARM<\/option>/);
+  assert.match(typeOptions, /<option>EMAIL<\/option>/);
+  assert.doesNotMatch(typeOptions, /<option>(전체|LLM|CHAT)<\/option>/);
+  assert.match(statusOptions, /<option>상태<\/option>/);
+  assert.doesNotMatch(statusOptions, /<option>전체<\/option>/);
+});
+
+test("formatTaskTotal renders API total count and failure fallback", () => {
+  assert.equal(formatTaskTotal(37), "총 37건");
+  assert.equal(formatTaskTotal(0), "총 0건");
+  assert.equal(formatTaskTotal(null), "총 -건");
+});
+
+test("getTaskPaginationState limits visible pages and clamps requested page", () => {
+  assert.deepEqual(getTaskPaginationState(121, 9, 20), {
+    currentPage: 7,
+    totalPages: 7,
+    pages: [3, 4, 5, 6, 7],
+    hasPrevious: true,
+    hasNext: false,
+  });
+  assert.deepEqual(getTaskPaginationState(0, 1, 20).pages, [1]);
+});
+
 test("buildTaskQuery maps every task type option to its API enum value", () => {
-  const types = ["전체", "OCR", "LLM", "CHAT", "ALARM", "EMAIL"];
+  const types = ["작업유형", "OCR", "ALARM", "EMAIL"];
 
   const values = types.map((type) => buildTaskQuery({
     keyword: "",
     type,
-    status: "전체",
+    status: "상태",
     startDate: "2026-08-26",
     endDate: "2026-08-26",
   }).jobType);
 
-  assert.deepEqual(values, ["", "OCR", "LLM", "CHAT", "ALARM", "EMAIL"]);
+  assert.deepEqual(values, ["", "OCR", "ALARM", "EMAIL"]);
 });
 
 test("buildTaskQuery maps all task status labels to API enum values", () => {
-  const statuses = ["전체", "진행중", "성공", "실패", "진행 대기", "재시도 대기", "취소"];
+  const statuses = ["상태", "진행중", "성공", "실패", "진행 대기", "재시도 대기", "취소"];
 
   const values = statuses.map((status) => buildTaskQuery({
     keyword: "",
-    type: "전체",
+    type: "작업유형",
     status,
     startDate: "2026-08-26",
     endDate: "2026-08-26",

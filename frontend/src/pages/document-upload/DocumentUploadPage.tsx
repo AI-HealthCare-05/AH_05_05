@@ -79,7 +79,7 @@ export function DocumentUploadPage() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">이 사진으로 등록할까요?</h1>
               <p className="mt-1 text-base text-muted-foreground">
-                글자가 흐리면 다시 담는 게 빠릅니다.
+                글자가 잘 보이지 않으면 다시 촬영해 주세요.
               </p>
             </div>
             <div className="relative overflow-hidden rounded-card bg-muted-bg shadow-card">

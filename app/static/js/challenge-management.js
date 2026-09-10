@@ -1,7 +1,18 @@
 import { ApiError, escapeHtml, get, patch, post, request, requireLogin, tableState } from "./api.js";
 
 const CHALLENGE_COLUMN_COUNT = 5;
-const BADGE_SEARCH_COLUMN_COUNT = 3;
+export const CHALLENGE_BADGE_TYPE_PATH = "/common-codes/CHL/BDG_TYPE";
+
+export function standardBadgeTypeId(items) {
+  return items.find((item) => item.detail_code === "STANDARD")?.id ?? null;
+}
+
+export function challengeActionMarkup(challengeId, isDeletable = true) {
+  const disabled = isDeletable
+    ? ""
+    : ' disabled aria-disabled="true" title="참여자가 있는 챌린지는 삭제할 수 없습니다."';
+  return `<button type="button" class="ui-link-button" data-edit-challenge="${challengeId}">수정</button> <button type="button" class="ui-link-button ui-link-button-danger" data-delete-challenge="${challengeId}"${disabled}>삭제</button>`;
+}
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -29,18 +40,7 @@ function initializeChallengeManagement() {
   const tbody = document.querySelector("[data-challenge-rows]");
   const form = document.querySelector("[data-challenge-form]");
   const searchForm = document.querySelector("[data-challenge-search]");
-  const badgeDialog = document.querySelector("[data-badge-search-dialog]");
-  const badgeSearchForm = document.querySelector("[data-badge-search-form]");
-  const badgeSearchRows = document.querySelector("[data-badge-search-rows]");
-  if (
-    !tbody ||
-    !form ||
-    !searchForm ||
-    !badgeDialog ||
-    !badgeSearchForm ||
-    !badgeSearchRows ||
-    !requireLogin()
-  ) {
+  if (!tbody || !form || !searchForm || !requireLogin()) {
     return;
   }
 
@@ -49,36 +49,51 @@ function initializeChallengeManagement() {
   let editingId = null;
   let lookups;
   let currentFilters = {};
-  let badgeSearchItems = new Map();
 
   const clearSelectedBadge = () => {
     form.elements.reward_badge_id.value = "";
-    form.elements.reward_badge_name.value = "";
   };
 
   const loadLookups = async () => {
     if (!lookups) {
-      const [types, periods, checkTypes, frequencies] = await Promise.all([
+      const [types, periods, checkTypes, frequencies, badgeTypes] = await Promise.all([
         get("/common-codes/CHL/CHL_TYPE"),
         get("/common-codes/CHL/CHL_PERIOD"),
         get("/common-codes/CHL/CHK_TYPE"),
         get("/common-codes/CHL/CHK_FREQ"),
+        get(CHALLENGE_BADGE_TYPE_PATH),
       ]);
+      const badgeTypeId = standardBadgeTypeId(badgeTypes.items);
+      if (!badgeTypeId) throw new Error("STANDARD 배지 유형을 찾을 수 없습니다.");
+      const badges = await get("/admin/badges", {
+        type: badgeTypeId,
+        is_active: true,
+        offset: 0,
+        limit: 100,
+      });
       lookups = {
         types: types.items,
         periods: periods.items,
         checkTypes: checkTypes.items,
         frequencies: frequencies.items,
+        badges: badges.items,
       };
     }
 
     const selectedSearchType = searchForm.elements.challenge_type_id.value;
     searchForm.elements.challenge_type_id.innerHTML =
-      `<option value="">전체</option>${optionMarkup(lookups.types, selectedSearchType)}`;
+      `<option value="">챌린지유형</option>${optionMarkup(lookups.types, selectedSearchType)}`;
     form.elements.challenge_type_id.innerHTML = optionMarkup(lookups.types);
     form.elements.challenge_period_id.innerHTML = optionMarkup(lookups.periods);
     form.elements.check_type_id.innerHTML = optionMarkup(lookups.checkTypes);
     form.elements.check_frequency_id.innerHTML = optionMarkup(lookups.frequencies);
+    const selectedBadge = form.elements.reward_badge_id.value;
+    form.elements.reward_badge_id.innerHTML = `<option value="">선택 안 함</option>${lookups.badges
+      .map(
+        (badge) =>
+          `<option value="${badge.id}" ${String(badge.id) === String(selectedBadge) ? "selected" : ""}>${escapeHtml(badge.name)}</option>`,
+      )
+      .join("")}`;
   };
 
   const load = async () => {
@@ -98,7 +113,7 @@ function initializeChallengeManagement() {
             <td>${item.id}</td><td><strong>${escapeHtml(item.name)}</strong></td>
             <td>${escapeHtml(formatDateTime(item.recruit_start_at))} ~ ${escapeHtml(formatDateTime(item.recruit_end_at))}</td>
             <td><span class="status-badge ${item.is_displayed ? "status-active" : "status-stopped"}">${item.is_displayed ? "전시" : "미전시"}</span></td>
-            <td><button type="button" class="ui-link-button" data-edit-challenge="${item.id}">수정</button> <button type="button" class="ui-link-button ui-link-button-danger" data-delete-challenge="${item.id}">삭제</button></td>
+            <td>${challengeActionMarkup(item.id, item.is_deletable)}</td>
           </tr>`,
         )
         .join("");
@@ -148,9 +163,7 @@ function initializeChallengeManagement() {
       }
       clearSelectedBadge();
       if (item.reward_badge_id) {
-        const badge = await get(`/admin/badges/${item.reward_badge_id}`);
-        form.elements.reward_badge_id.value = badge.id;
-        form.elements.reward_badge_name.value = badge.name;
+        form.elements.reward_badge_id.value = item.reward_badge_id;
       }
       form.elements.recruit_start_at.value = toLocalDateTime(item.recruit_start_at);
       form.elements.recruit_end_at.value = toLocalDateTime(item.recruit_end_at);
@@ -162,49 +175,6 @@ function initializeChallengeManagement() {
     } catch (caught) {
       window.alert(caught instanceof ApiError ? caught.message : "챌린지 정보를 불러오지 못했습니다.");
     }
-  };
-
-  const badgeSearchParams = () => {
-    const badgeId = badgeSearchForm.elements.badge_id.value.trim();
-    return {
-      badge_id: badgeId ? Number(badgeId) : undefined,
-      name: badgeSearchForm.elements.name.value.trim(),
-      is_active: true,
-      offset: 0,
-      limit: 100,
-    };
-  };
-
-  const loadBadgeSearch = async () => {
-    tableState.loading(badgeSearchRows, BADGE_SEARCH_COLUMN_COUNT, "배지를 불러오는 중…");
-    try {
-      const response = await get("/admin/badges", badgeSearchParams());
-      badgeSearchItems = new Map(response.items.map((item) => [String(item.id), item]));
-      if (!response.items.length) {
-        return tableState.empty(badgeSearchRows, BADGE_SEARCH_COLUMN_COUNT, "조회 결과가 없습니다.");
-      }
-      badgeSearchRows.innerHTML = response.items
-        .map(
-          (item) => `<tr>
-            <td>${item.id}</td>
-            <td>${escapeHtml(item.name)}</td>
-            <td><button type="button" class="ui-button ui-button-primary ui-button-small" data-select-badge="${item.id}">선택</button></td>
-          </tr>`,
-        )
-        .join("");
-    } catch (caught) {
-      tableState.error(
-        badgeSearchRows,
-        BADGE_SEARCH_COLUMN_COUNT,
-        caught instanceof ApiError ? caught.message : "배지 목록 조회에 실패했습니다.",
-      );
-    }
-  };
-
-  const openBadgeSearch = () => {
-    badgeSearchForm.reset();
-    badgeDialog.showModal();
-    void loadBadgeSearch();
   };
 
   searchForm.addEventListener("submit", (event) => {
@@ -232,32 +202,6 @@ function initializeChallengeManagement() {
     searchForm.reset();
     currentFilters = {};
     void load();
-  });
-
-  badgeSearchForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    void loadBadgeSearch();
-  });
-  badgeSearchForm.elements.badge_id.addEventListener("input", (event) => {
-    event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "").slice(0, 20);
-  });
-  document.querySelector("[data-reset-badge-search]").addEventListener("click", (event) => {
-    event.preventDefault();
-    badgeSearchForm.reset();
-    void loadBadgeSearch();
-  });
-  document.querySelectorAll("[data-close-badge-dialog]").forEach((button) => {
-    button.addEventListener("click", () => badgeDialog.close());
-  });
-  badgeSearchRows.addEventListener("click", (event) => {
-    if (event.target.closest("[data-retry]")) return loadBadgeSearch();
-    const selectButton = event.target.closest("[data-select-badge]");
-    if (!selectButton) return;
-    const selected = badgeSearchItems.get(selectButton.dataset.selectBadge);
-    if (!selected) return;
-    form.elements.reward_badge_id.value = selected.id;
-    form.elements.reward_badge_name.value = selected.name;
-    badgeDialog.close();
   });
 
   form.addEventListener("submit", async (event) => {
@@ -295,8 +239,6 @@ function initializeChallengeManagement() {
   });
 
   document.querySelector("[data-create-challenge]").addEventListener("click", openCreate);
-  document.querySelector("[data-open-badge-search]").addEventListener("click", openBadgeSearch);
-  document.querySelector("[data-clear-badge]").addEventListener("click", clearSelectedBadge);
   document.querySelectorAll("[data-close-form]").forEach((button) => {
     button.addEventListener("click", close);
   });
