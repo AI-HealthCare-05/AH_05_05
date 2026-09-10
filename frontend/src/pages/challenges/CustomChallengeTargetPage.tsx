@@ -267,7 +267,7 @@ export function CustomChallengeTargetPage() {
             </summary>
             <div className="mt-2 flex flex-col gap-2 text-caption leading-5 text-muted-foreground">
               <p>홈에서 남긴 복용 기록이 진행률에 자동으로 반영돼요.</p>
-              <p>{recommendation.rewardBadge ? '배지 지급은 챌린지 종료 시 확정된 달성 결과를 기준으로 해요.' : '현재 이 챌린지에 등록된 배지가 없어요.'}</p>
+              <p>{recommendation.rewardBadge ? '전체 목표를 완료한 뒤 챌린지 상세를 열면 배지를 받아요. 지급 후에는 결과와 배지가 유지돼요.' : '현재 이 챌린지에 등록된 배지가 없어요.'}</p>
               <p>복용 효과나 건강 상태를 검증하는 배지는 아니에요.</p>
             </div>
           </details>

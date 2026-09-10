@@ -10,7 +10,9 @@
 
 ## API 호환성
 
-서버는 `targetDayCount`, `completedDayCount`, `dayProgressRate`를 추가 제공한다. 기존 횟수 필드와 배지 판정은 유지한다. 이전 API를 만난 프런트엔드는 응답에 포함된 전체 occurrence의 날짜별 완료 여부로 일수를 계산한다. DB 스키마 변경은 없다.
+서버는 `targetDayCount`, `completedDayCount`, `dayProgressRate`를 추가 제공한다. 기존 횟수 필드는 유지한다. 이전 API를 만난 프런트엔드는 응답에 포함된 전체 occurrence의 날짜별 완료 여부로 일수를 계산한다. DB 스키마 변경은 없다.
+
+배지 지급 시점은 후속 승인으로 변경됐다. 전체 목표 완료 후 해당 상세에 진입할 때 서버가 즉시 확정·지급한다. 진행 중 되돌리기는 반영되지만, 확정 후에는 결과가 유지된다. 최신 정책은 [상세 진입 지급 정책](315-detail-award-policy-20260910.md)을 따른다.
 
 ## 검수 항목
 
