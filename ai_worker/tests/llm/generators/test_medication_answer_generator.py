@@ -165,21 +165,17 @@ async def test_generator_wraps_client_failure() -> None:
 async def test_generator_keeps_only_limited_markdown_section_format() -> None:
     grounded_result = build_result().model_copy(
         update={
-                "answer": (
-                    "일반 제품 안내\n"
-                    "- 안내된 사용법을 따릅니다.\n\n"
-                "이 안내는 의료진의 진료를 대체하지 않습니다."
-            )
+            "answer": ("일반 제품 안내\n- 안내된 사용법을 따릅니다.\n\n이 안내는 의료진의 진료를 대체하지 않습니다.")
         }
     )
     generator = OpenAIMedicationAnswerGenerator(
         model="gpt-4o-mini",
         client=FakeAnswerClient(
             response={
-                    "answer": (
-                        "# 제품 안내\n"
-                        "✅ **사용법**\n"
-                        "* 안내된 사용법을 따릅니다.\n\n"
+                "answer": (
+                    "# 제품 안내\n"
+                    "✅ **사용법**\n"
+                    "* 안내된 사용법을 따릅니다.\n\n"
                     "이 안내는 의료진의 진료를 대체하지 않습니다."
                 )
             }

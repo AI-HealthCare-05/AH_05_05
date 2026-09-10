@@ -54,9 +54,7 @@ class OpenAIMedicationAnswerGenerator:
         re.IGNORECASE,
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
-    _SECTION_HEADER_PATTERN = re.compile(
-        r"^\s*✅\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$"
-    )
+    _SECTION_HEADER_PATTERN = re.compile(r"^\s*✅\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
 
     def __init__(
@@ -229,10 +227,7 @@ class OpenAIMedicationAnswerGenerator:
     def _has_external_rewrite_evidence(cls, result: MedicationChatResult) -> bool:
         """등록 정보는 답변 대상을 식별할 뿐, 의학적 주장의 근거가 되지 않는다."""
 
-        return any(
-            source.kind in cls._LLM_REWRITE_SOURCE_KINDS
-            for source in result.sources
-        )
+        return any(source.kind in cls._LLM_REWRITE_SOURCE_KINDS for source in result.sources)
 
     @staticmethod
     def _skipped_outcome(
