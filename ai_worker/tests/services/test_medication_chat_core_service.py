@@ -178,7 +178,7 @@ def test_builder_uses_hybrid_store_only_for_experimental_search_modes() -> None:
     assert store.search_mode == KnowledgeSearchMode.HYBRID
 
 
-def test_builder_normalizes_embeddings_for_dot_collection() -> None:
+def test_builder_uses_dot_distance_for_dot_collection() -> None:
     service = build_medication_chat_core_service(
         settings=Config(
             OPENAI_API_KEY="test-key",
@@ -190,5 +190,4 @@ def test_builder_normalizes_embeddings_for_dot_collection() -> None:
     )
 
     retriever = service._use_case._knowledge_retriever
-    assert retriever._embedding_provider._normalize_vectors is True
     assert retriever._vector_store._distance == KnowledgeVectorDistance.DOT

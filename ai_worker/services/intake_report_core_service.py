@@ -32,7 +32,6 @@ from ai_worker.repositories.medication_product_guide_repository import (
 from ai_worker.schemas.intake_report import IntakeReportResult
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchMode,
-    KnowledgeVectorDistance,
 )
 from ai_worker.use_cases.generate_intake_report import GenerateIntakeReportUseCase
 
@@ -70,7 +69,6 @@ def build_intake_report_core_service(
         api_key=settings.OPENAI_API_KEY,
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
-        normalize_vectors=(settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
     )
     vector_store_kwargs = {
         "client": qdrant_client,

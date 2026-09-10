@@ -57,7 +57,6 @@ from ai_worker.safety.grounded_claim_validator import (
 )
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchMode,
-    KnowledgeVectorDistance,
 )
 from ai_worker.schemas.medication_chat import (
     MedicationChatProgressCallback,
@@ -112,7 +111,6 @@ def build_medication_chat_core_service(
         api_key=settings.OPENAI_API_KEY,
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
-        normalize_vectors=(settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
     )
     vector_store_kwargs = {
         "client": qdrant_client,
