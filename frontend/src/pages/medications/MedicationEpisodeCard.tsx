@@ -24,12 +24,12 @@ const SLOT_CHIP_CLASSES: Record<MealSlot, string> = {
   bedtime: 'bg-muted-bg text-muted-foreground',
 };
 
-// Dots use the legend's text colors so meal slots stay distinct on white cards.
+// Midpoint between the original pastel chips and their strong legend text colors.
 const SLOT_DOT_CLASSES: Record<MealSlot, string> = {
-  morning: 'bg-warning-strong',
-  lunch: 'bg-primary-strong',
-  evening: 'bg-brand',
-  bedtime: 'bg-muted-foreground',
+  morning: 'bg-[color-mix(in_srgb,var(--color-warning-strong)_50%,var(--color-warning-bg))]',
+  lunch: 'bg-[color-mix(in_srgb,var(--color-primary-strong)_50%,var(--color-primary-bg))]',
+  evening: 'bg-[color-mix(in_srgb,var(--color-brand)_50%,var(--color-warm-200))]',
+  bedtime: 'bg-[color-mix(in_srgb,var(--color-muted-foreground)_50%,var(--color-muted-bg))]',
 };
 
 export function MedicationEpisodeCard({
