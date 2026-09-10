@@ -4,8 +4,9 @@ from starlette import status
 from tortoise.contrib.test import TestCase
 
 from app.core import config
+from app.models.alarms import Alarm
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import AdminRole, BackgroundJobStatus, BackgroundJobType, OcrJobStatus
+from app.models.enums import AdminRole, AlarmType, BackgroundJobStatus, BackgroundJobType, MealSlot, OcrJobStatus
 from app.models.ocr import OcrJob
 from app.models.users import User
 from app.tests.admin_apis.conftest import auth_header, create_admin, request
@@ -59,6 +60,7 @@ class TestAdminJobAPI(TestCase):
                 {
                     "jobId": matched.id,
                     "jobType": "ALARM",
+                    "alarmType": None,
                     "status": "FAILED",
                     "userId": None,
                     "userName": None,
@@ -120,6 +122,7 @@ class TestAdminJobAPI(TestCase):
         assert merged.json()["items"][0] == {
             "jobId": f"OCR-{ocr_job.id}",
             "jobType": "OCR",
+            "alarmType": None,
             "status": "COMPLETED",
             "userId": user.id,
             "userName": "OCR 사용자",
@@ -130,6 +133,34 @@ class TestAdminJobAPI(TestCase):
         assert searched.status_code == status.HTTP_200_OK, searched.text
         assert searched.json()["totalCount"] == 1
         assert searched.json()["items"][0]["jobId"] == f"OCR-{ocr_job.id}"
+
+    async def test_returns_alarm_type_for_legacy_alarm_job(self) -> None:
+        user = await User.create(
+            email="alarm-job-user@example.com",
+            hashed_password="unused",
+            name="김은미",
+        )
+        alarm = await Alarm.create(
+            user=user,
+            alarm_type=AlarmType.MEDICATION,
+            meal_slot=MealSlot.MORNING,
+            title="복약 알림",
+            scheduled_at=datetime(2026, 8, 20, 8, 0, tzinfo=config.TIMEZONE),
+            next_trigger_at=datetime(2026, 8, 20, 8, 0, tzinfo=config.TIMEZONE),
+        )
+        job = await BackgroundJob.create(
+            idempotency_key=f"alarm:{alarm.id}:31:2026-08-20T08:00:00+09:00",
+            job_type=BackgroundJobType.ALARM,
+            status=BackgroundJobStatus.COMPLETED,
+            user=user,
+        )
+
+        response = await request("GET", ADMIN_JOBS_URL, headers=self.headers)
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        item = next(item for item in response.json()["items"] if item["jobId"] == job.id)
+        assert item["alarmType"] == "MEDICATION"
+        assert item["userName"] == "김은미"
 
     async def test_returns_status_counts_for_selected_date_range(self) -> None:
         statuses = [
