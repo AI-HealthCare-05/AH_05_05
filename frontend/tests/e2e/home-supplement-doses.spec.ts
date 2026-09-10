@@ -108,13 +108,14 @@ test('영양제 회차는 API 시간순으로 고르고 누락 시간은 기본 
   await expect(morning).toBeVisible();
 });
 
-test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액션을 제공한다', async ({ page }, testInfo) => {
+test('영양제 카드는 선택할 때 나타나는 선택 원과 compact 2열 복용 액션을 제공한다', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const { morning } = await openHome(page);
 
   await expect(morning.getByText('개별 선택', { exact: true })).toHaveCount(0);
   const omega = morning.getByRole('button', { name: '오메가3 선택' });
   await expect(omega).toHaveAttribute('aria-pressed', 'false');
+  await expect(omega.locator('[data-dose-selection]')).toHaveCSS('width', '0px');
 
   const indicatorBox = await omega.locator('[data-supplement-selection-indicator]').boundingBox();
   const rowBox = await omega.boundingBox();
@@ -150,6 +151,7 @@ test('영양제 카드는 항상 보이는 선택 원과 compact 2열 복용 액
   const completedBadge = completedOmega.locator('[data-supplement-completed-badge]');
   const indicator = completedOmega.locator('[data-supplement-selection-indicator]');
   await expect(completedOmega).toBeVisible();
+  await expect(completedOmega.locator('[data-dose-selection]')).toHaveCSS('width', '0px');
   await expect(completedBadge).toBeVisible();
   await expect(completedBadge).toHaveAttribute('aria-hidden', 'true');
   await expect(completedBadge).toHaveText('복용 완료');

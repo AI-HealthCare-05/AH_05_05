@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
 import {
   getSupplementDoses, saveSupplementDose,
   type Supplement, type SupplementDoseRecord, type SupplementSlot,
@@ -7,6 +6,7 @@ import {
 import { DEFAULT_MEAL_TIMES, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
 import { TimeSlotNavigator } from './TimeSlotNavigator';
+import { DoseSelectionIndicator } from './DoseSelectionIndicator';
 
 interface Props {
   supplements: Supplement[];
@@ -173,20 +173,10 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                   aria-label={`${supplement.name} ${taken ? '복용 완료' : '선택'}`}
                   aria-pressed={isSelected}
                   disabled={pending}
-                  className="flex min-h-touch w-full min-w-0 items-center gap-3 rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
+                  className="flex min-h-touch w-full min-w-0 items-center rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
                   onClick={() => toggle(supplement.supplementId)}
                 >
-                  <span
-                    data-supplement-selection-indicator
-                    aria-hidden
-                    className={`flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                      isSelected
-                        ? 'border-primary bg-primary text-card'
-                        : 'border-border bg-card text-transparent'
-                    }`}
-                  >
-                    {isSelected && <Check className="size-4" strokeWidth={3} />}
-                  </span>
+                  <DoseSelectionIndicator kind="supplement" selected={isSelected} />
                   <span className="flex min-w-0 flex-1 flex-col gap-1 py-1">
                     {taken && (
                       <span
@@ -199,7 +189,7 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                     )}
                     <span className="[overflow-wrap:anywhere] text-base font-bold text-foreground">{supplement.name}</span>
                   </span>
-                  <span className="shrink-0 text-sm text-muted-foreground">
+                  <span className="ml-3 shrink-0 text-sm text-muted-foreground">
                     {supplement.doseAmount}{supplement.doseUnit}
                   </span>
                 </button>

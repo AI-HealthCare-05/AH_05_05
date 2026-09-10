@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import type {
   DoseRecord,
   MealSlot,
@@ -10,6 +10,7 @@ import { formatDateLabel } from '@/shared/lib/dateLabel';
 import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Button } from '@/shared/ui';
 import { TimeSlotNavigator } from './TimeSlotNavigator';
+import { DoseSelectionIndicator } from './DoseSelectionIndicator';
 
 type TimelineStatus = 'completed' | 'current' | 'next' | 'missed';
 
@@ -304,22 +305,12 @@ function TimelineItem({
                   aria-pressed={selectedEpisodes.has(episode.recordId)}
                   aria-label={`${episodeAccessibleName} ${episodeCompleted ? '복용 완료' : '선택'}`}
                   disabled={doseControlsPending}
-                  className={`flex min-h-14 w-full min-w-0 items-center gap-3 border-b border-border px-3 py-2 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                  className={`flex min-h-14 w-full min-w-0 items-center border-b border-border px-3 py-2 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                     selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
                   }`}
                   onClick={() => toggleSelectedEpisode(episode.recordId)}
                 >
-                <span
-                  data-episode-selection-glyph
-                  aria-hidden
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-pill ${
-                    selectedEpisodes.has(episode.recordId)
-                      ? 'bg-primary text-card'
-                      : 'border-2 border-primary text-transparent'
-                  }`}
-                >
-                  {selectedEpisodes.has(episode.recordId) && <Check className="size-4" />}
-                </span>
+                <DoseSelectionIndicator kind="medication" selected={selectedEpisodes.has(episode.recordId)} />
                 <span className="flex min-w-0 flex-1 flex-col">
                     {episodeCompleted && (
                       <span
