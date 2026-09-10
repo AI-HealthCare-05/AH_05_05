@@ -27,6 +27,44 @@ test.beforeEach(() => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 });
 
+test('인증번호 다시 보내기는 요청 중 더블클릭을 한 번의 API 호출로 제한한다', async ({ page }) => {
+  let requestCount = 0;
+  let finishResend: (() => void) | undefined;
+  const resendGate = new Promise<void>((resolve) => {
+    finishResend = resolve;
+  });
+  await page.route('**/api/v1/auth/email-verifications', async (route) => {
+    requestCount += 1;
+    if (requestCount === 2) await resendGate;
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        verification_id: requestCount,
+        expires_in: 180,
+        resend_available_in: 0,
+      }),
+    });
+  });
+
+  await openSignup(page);
+  await page.getByLabel('이메일').fill('resend-lock@example.com');
+  await page.getByRole('button', { name: '인증코드 받기' }).click();
+  const resendButton = page.getByRole('button', { name: '다시 보내기' });
+  await expect(resendButton).toBeEnabled();
+
+  await resendButton.evaluate((button: HTMLButtonElement) => {
+    button.click();
+    button.click();
+  });
+
+  await expect(resendButton).toBeDisabled();
+  await expect.poll(() => requestCount).toBe(2);
+  finishResend?.();
+  await expect(resendButton).toBeEnabled();
+  expect(requestCount).toBe(2);
+});
+
 test('실 API 회원가입은 명세 요청을 보내고 로그인 성공 뒤 홈으로 이동한다', async ({ page }) => {
   let signupBody: unknown;
   let loginBody: unknown;
