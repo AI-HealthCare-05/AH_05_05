@@ -34,7 +34,7 @@ from app.services.custom_challenges import (
 
 
 class CustomChallengeScheduleReconciler:
-    """Diff future goals inside a caller-owned source mutation transaction."""
+    """Diff mutable goals; rows before each mutation boundary are immutable history."""
 
     async def reconcile(
         self,

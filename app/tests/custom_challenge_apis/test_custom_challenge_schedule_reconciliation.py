@@ -36,7 +36,7 @@ from app.models.enums import (
     MealSlot,
     SupplementStatus,
 )
-from app.models.medications import Medication, MedicationSlot
+from app.models.medications import Medication, MedicationDose, MedicationSlot
 from app.models.supplement_nutrients import (
     SupplementNutrient,
     UserSupplementNutrient,
@@ -338,6 +338,58 @@ async def test_notify_time_change_preserves_existing_medication_key_moved_before
     assert [(row.id, _aware(row.scheduled_at)) for row in same_key] == [
         (original.id, datetime(2026, 9, 10, 16, 0, tzinfo=config.TIMEZONE))
     ]
+
+
+async def test_repeated_time_changes_keep_past_goal_and_completion_while_future_goals_follow() -> None:
+    user = await _user("repeated-time-change@example.com")
+    medication_template, _ = await _templates()
+    episode = await _episode(user)
+    joined_at = datetime(2026, 9, 10, 16, 48, tzinfo=config.TIMEZONE)
+    response = await CustomChallengeService(now_provider=lambda: joined_at).join(
+        user,
+        medication_template.id,
+        CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="repeated-time-change"),
+    )
+    participation = await CustomChallengeParticipation.get(id=response.id)
+    today = next(
+        row
+        for row in await _occurrences(participation)
+        if row.scheduled_date == joined_at.date() and row.slot is MealSlot.EVENING
+    )
+
+    changes = (
+        (datetime(2026, 9, 10, 17, 0, tzinfo=config.TIMEZONE), time(16, 0)),
+        (datetime(2026, 9, 10, 17, 5, tzinfo=config.TIMEZONE), time(18, 0)),
+        (datetime(2026, 9, 10, 17, 10, tzinfo=config.TIMEZONE), time(15, 0)),
+    )
+    first_changed_at, first_time = changes[0]
+    await NotifySettingsService(mutation_time_provider=lambda: first_changed_at).update(
+        user,
+        NotifySettingsUpdateRequest(evening_medication_time=first_time),
+    )
+    await MedicationDose.create(
+        user_id=user.id,
+        care_episode_id=episode.id,
+        dose_date=joined_at.date(),
+        slot=MealSlot.EVENING,
+    )
+
+    for changed_at, new_time in changes[1:]:
+        await NotifySettingsService(mutation_time_provider=lambda value=changed_at: value).update(
+            user,
+            NotifySettingsUpdateRequest(evening_medication_time=new_time),
+        )
+
+    rows = await _occurrences(participation)
+    stored_today = next(row for row in rows if row.id == today.id)
+    assert _aware(stored_today.scheduled_at) == datetime(2026, 9, 10, 16, 0, tzinfo=config.TIMEZONE)
+    assert {
+        _aware(row.scheduled_at).time()
+        for row in rows
+        if row.scheduled_date > joined_at.date() and row.slot is MealSlot.EVENING
+    } == {time(15, 0)}
+    detail = await CustomChallengeService(now_provider=lambda: changes[-1][0]).get(user, participation.id)
+    assert next(occurrence for occurrence in detail.occurrences if occurrence.id == today.id).is_completed is True
 
 
 async def test_notify_time_change_preserves_existing_supplement_key_moved_before_join_and_change() -> None:
