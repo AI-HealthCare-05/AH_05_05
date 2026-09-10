@@ -6,6 +6,7 @@ import {
 } from '@/entities/supplement';
 import { DEFAULT_MEAL_TIMES, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
+import { TimeSlotNavigator } from './TimeSlotNavigator';
 
 interface Props {
   supplements: Supplement[];
@@ -68,15 +69,19 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
       ) : scheduled.length === 0 ? (
         <Card className="p-4"><p className="text-sm text-muted-foreground">오늘 먹을 영양제가 없어요.</p></Card>
       ) : primarySlot ? (
-          <SupplementSlotCard
-            key={`${date}:${primarySlot.slot}`}
-            date={date}
-            slot={primarySlot.slot}
-            time={primarySlot.time}
-            supplements={primarySlot.supplements}
-            records={records}
-            onSaved={updateRecord}
-          />
+        <TimeSlotNavigator key={date} items={supplementSlots} initialSlot={primarySlot.slot} label="영양제">
+          {(item) => (
+            <SupplementSlotCard
+              key={`${date}:${item.slot}`}
+              date={date}
+              slot={item.slot}
+              time={item.time}
+              supplements={item.supplements}
+              records={records}
+              onSaved={updateRecord}
+            />
+          )}
+        </TimeSlotNavigator>
       ) : null}
       <button type="button" className="min-h-touch self-end text-sm font-bold text-primary-strong" onClick={onBrowse}>
         영양제 살펴보기

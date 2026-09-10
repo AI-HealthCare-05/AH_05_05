@@ -9,6 +9,7 @@ import type {
 import { formatDateLabel } from '@/shared/lib/dateLabel';
 import { mealSlotLabel, SLOT_ORDER } from '@/shared/model/mealSlot';
 import { Button } from '@/shared/ui';
+import { TimeSlotNavigator } from './TimeSlotNavigator';
 
 type TimelineStatus = 'completed' | 'current' | 'next' | 'missed';
 
@@ -70,29 +71,33 @@ export function MedicationTimeline({
   return (
     <section className="flex flex-col gap-3" aria-label="오늘의 복약">
       {item ? (
-        <div className="overflow-hidden rounded-card bg-card shadow-card">
-          <div className="flex items-center justify-between gap-3 px-4 pt-4">
-            <p className="text-base font-bold text-foreground">
-              {item.label} {item.time}
-            </p>
-            <span className="text-sm text-muted-foreground tnum">
-              {item.episodes.length > 1
-                ? `처방 ${item.episodes.length}개`
-                : formatSingleEpisodeProgress(
-                    overviews.find((overview) => overview.recordId === item.episodes[0]?.recordId),
-                    currentDate,
-                  )}
-            </span>
-          </div>
-          <TimelineItem
-            item={item}
-            currentDate={currentDate}
-            onDoseChange={onDoseChange}
-            onMemo={onMemo}
-            selectionResetKey={selectionResetKey}
-            mutationPending={mutationPending}
-          />
-        </div>
+        <TimeSlotNavigator key={currentDate} items={timeline} initialSlot={item.slot} label="복약">
+          {(item) => (
+            <div className="overflow-hidden rounded-card bg-card shadow-card">
+              <div className="flex items-center justify-between gap-3 px-4 pt-4">
+                <p className="text-base font-bold text-foreground">
+                  {item.label} {item.time}
+                </p>
+                <span className="text-sm text-muted-foreground tnum">
+                  {item.episodes.length > 1
+                    ? `처방 ${item.episodes.length}개`
+                    : formatSingleEpisodeProgress(
+                        overviews.find((overview) => overview.recordId === item.episodes[0]?.recordId),
+                        currentDate,
+                      )}
+                </span>
+              </div>
+              <TimelineItem
+                item={item}
+                currentDate={currentDate}
+                onDoseChange={onDoseChange}
+                onMemo={onMemo}
+                selectionResetKey={selectionResetKey}
+                mutationPending={mutationPending}
+              />
+            </div>
+          )}
+        </TimeSlotNavigator>
       ) : (
         <div className="rounded-card bg-card p-4 text-sm text-muted-foreground shadow-card">
           오늘 복약할 약이 없어요.
