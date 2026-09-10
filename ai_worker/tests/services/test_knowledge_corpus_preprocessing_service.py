@@ -156,7 +156,12 @@ def test_restricted_micronutrient_reviews_are_registered_with_safe_metadata() ->
     assert source["target"] == "QDRANT"
     assert interaction_review["ingredient_names"] == ["철분", "아연", "구리", "칼슘", "비타민 C"]
     assert interaction_review["evidence_level"] == "REVIEW_ARTICLE"
-    assert (repo_root / interaction_review["repo_path"]).is_file()
+    assert interaction_review["source_id"] == source["source_id"]
+    assert interaction_review["access_scope"] == source["access_scope"]
+    assert interaction_review["repo_path"].startswith(
+        "data/knowledge/raw/demo_restricted/research/micronutrient_interactions/"
+    )
+    assert interaction_review["sha256"] == "e3b164ce9cc98cc68afe8194fa30e1f757d26aa40b0a8fad97ee387d5d8b9580"
     assert sandstrom_pilot.manual_review_status == KnowledgeManualReviewStatus.APPROVED
     assert bond_pilot.manual_review_status == KnowledgeManualReviewStatus.PENDING
 
