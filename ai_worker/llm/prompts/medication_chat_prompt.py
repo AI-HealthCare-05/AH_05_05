@@ -11,7 +11,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatResult,
 )
 
-MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
+MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v4"
 
 _DOSAGE_VALUE_PATTERN = re.compile(
     r"\d+(?:\s*[|,./~–-]\s*\d+)*\s*"
@@ -20,7 +20,7 @@ _DOSAGE_VALUE_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 
-PROMPT_DOCUMENT = load_prompt_template_document("medication_chat_prompt_v3.md")
+PROMPT_DOCUMENT = load_prompt_template_document("medication_chat_prompt_v4.md")
 SYSTEM_PROMPT = PROMPT_DOCUMENT.system
 USER_PROMPT_TEMPLATE = PROMPT_DOCUMENT.user
 ASSISTANT_EXAMPLE = PROMPT_DOCUMENT.assistant_example

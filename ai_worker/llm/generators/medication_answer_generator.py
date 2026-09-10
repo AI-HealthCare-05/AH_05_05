@@ -53,6 +53,11 @@ class OpenAIMedicationAnswerGenerator:
         r"(?:상호작용|부작용)(?:이|은|는)?\s*없(?:습니다|어요)",
         re.IGNORECASE,
     )
+    _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
+    _SECTION_HEADER_PATTERN = re.compile(
+        r"^\s*✅\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$"
+    )
+    _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
 
     def __init__(
         self,
@@ -145,7 +150,7 @@ class OpenAIMedicationAnswerGenerator:
                 "약·영양제 챗봇 답변 생성에 실패했습니다.",
                 reason_code=MedicationAnswerFallbackReason.CLIENT_ERROR.value,
             ) from error
-        generated_answer = self._to_plain_text(payload.answer)
+        generated_answer = self._to_limited_markdown(payload.answer)
         generated_hash = self._answer_hash(generated_answer)
         fallback_reason = self._grounding_failure_reason(
             draft_answer=result.answer,
@@ -246,10 +251,18 @@ class OpenAIMedicationAnswerGenerator:
             ),
         )
 
-    @staticmethod
-    def _to_plain_text(answer: str) -> str:
-        lines = [re.sub(r"^\s{0,3}#{1,6}\s*", "", line) for line in answer.splitlines()]
-        plain_text = "\n".join(lines)
-        plain_text = re.sub(r"\*\*(.+?)\*\*", r"\1", plain_text)
-        plain_text = re.sub(r"__(.+?)__", r"\1", plain_text)
-        return plain_text.strip()
+    @classmethod
+    def _to_limited_markdown(cls, answer: str) -> str:
+        """답변에서는 체크 표시가 붙은 소제목 강조와 목록만 허용한다."""
+
+        normalized_lines: list[str] = []
+        for line in answer.splitlines():
+            line = cls._MARKDOWN_HEADING_PATTERN.sub("", line)
+            section_header = cls._SECTION_HEADER_PATTERN.fullmatch(line)
+            if section_header is not None:
+                normalized_lines.append(f"✅ **{section_header.group('title').strip()}**")
+                continue
+            line = cls._BOLD_MARKER_PATTERN.sub(r"\1", line)
+            line = re.sub(r"__(.+?)__", r"\1", line)
+            normalized_lines.append(line)
+        return "\n".join(normalized_lines).strip()
