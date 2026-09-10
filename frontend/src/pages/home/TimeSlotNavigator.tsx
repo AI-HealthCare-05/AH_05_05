@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { mealSlotLabel, type MealSlot } from '@/shared/model/mealSlot';
+import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
 
 /** Keeps each slot mounted so selections and in-flight saves stay with their records. */
 export function TimeSlotNavigator<T extends { slot: MealSlot }>({ items, initialSlot, label, children }: {
@@ -10,49 +11,25 @@ export function TimeSlotNavigator<T extends { slot: MealSlot }>({ items, initial
 }) {
   const id = useId();
   const [selectedSlot, setSelectedSlot] = useState(initialSlot);
-  const tabs = useRef<Array<HTMLButtonElement | null>>([]);
   const gesture = useRef<{ id: number; x: number; y: number } | null>(null);
   const swiped = useRef(false);
   const selectedIndex = Math.max(0, items.findIndex(item => item.slot === selectedSlot));
   const multiple = items.length > 1;
 
-  function select(index: number, focus = false) {
+  function select(index: number) {
     const nextIndex = Math.max(0, Math.min(items.length - 1, index));
     setSelectedSlot(items[nextIndex].slot);
-    if (focus) tabs.current[nextIndex]?.focus();
   }
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {multiple && (
-        <div role="tablist" aria-label={`${label} 시간대`} className="flex rounded-card bg-muted-bg p-1">
-          {items.map((item, index) => (
-            <button
-              key={item.slot}
-              ref={element => { tabs.current[index] = element; }}
-              id={`${id}-tab-${item.slot}`}
-              type="button"
-              role="tab"
-              aria-selected={index === selectedIndex}
-              aria-controls={`${id}-panel-${item.slot}`}
-              tabIndex={index === selectedIndex ? 0 : -1}
-              className={`min-h-touch min-w-0 flex-1 rounded-button px-1 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                index === selectedIndex ? 'bg-card text-primary-strong shadow-card' : 'text-muted-foreground'
-              }`}
-              onClick={() => select(index)}
-              onKeyDown={event => {
-                const next = event.key === 'ArrowRight' ? index + 1
-                  : event.key === 'ArrowLeft' ? index - 1
-                    : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : null;
-                if (next === null) return;
-                event.preventDefault();
-                select(next, true);
-              }}
-            >
-              {mealSlotLabel(item.slot, 'short')}
-            </button>
-          ))}
-        </div>
+        <ContinuousTabs
+          label={`${label} 시간대`}
+          value={items[selectedIndex].slot}
+          onChange={setSelectedSlot}
+          items={items.map(item => ({ value: item.slot, label: mealSlotLabel(item.slot, 'short'), id: `${id}-tab-${item.slot}`, controls: `${id}-panel-${item.slot}` }))}
+        />
       )}
       <div
         className="min-w-0 touch-pan-y"

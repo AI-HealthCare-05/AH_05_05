@@ -29,6 +29,7 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
+import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
 import { MedicationTimeline, type DoseChangeResult } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
 import { SupplementTodayCard } from './SupplementTodayCard';
@@ -495,34 +496,15 @@ export function HomeSectionTabs({
   onChange: (tab: 'medication' | 'supplement') => void;
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label="오늘의 홈 탭"
-      className="rx-home-tabs grid grid-cols-2 rounded-input bg-muted-bg p-1"
-    >
-      {([
-        ['medication', '오늘의 복약'],
-        ['supplement', '오늘의 영양제'],
-      ] as const).map(([tab, label]) => {
-        const selected = activeTab === tab;
-        return (
-          <button
-            key={tab}
-            id={`home-tab-${tab}`}
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            aria-controls={`home-panel-${tab}`}
-            className={`min-h-touch rounded-input text-sm font-bold ${
-              selected ? 'bg-card text-primary shadow-card' : 'text-muted-foreground'
-            }`}
-            onClick={() => onChange(tab)}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
+    <ContinuousTabs
+      label="오늘의 홈 탭"
+      value={activeTab}
+      onChange={onChange}
+      items={[
+        { value: 'medication', label: '오늘의 복약', id: 'home-tab-medication', controls: 'home-panel-medication' },
+        { value: 'supplement', label: '오늘의 영양제', id: 'home-tab-supplement', controls: 'home-panel-supplement' },
+      ]}
+    />
   );
 }
 

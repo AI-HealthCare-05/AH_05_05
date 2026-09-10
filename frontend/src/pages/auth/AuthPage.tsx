@@ -7,6 +7,7 @@ import { login, requestPasswordReset } from '@/entities/auth';
 import { requestEmailVerification, verifyEmailCode } from '@/entities/email-verification';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { PrivacyPage, TermsPage } from '@/pages/legal';
+import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
 import { ApiError } from '@/shared/api/client';
 import {
   MIN_BIRTH_DATE,
@@ -470,32 +471,17 @@ export function AuthPage() {
           mode === 'login' ? 'pt-5' : 'pb-10 pt-5'
         }`}
       >
-        <div
-          className="rx-segmented grid h-12 grid-cols-2 rounded-input bg-muted-bg p-1"
+        <ContinuousTabs
           role="group"
-          aria-label="인증 방식"
-        >
-          {(['login', 'signup'] as const).map((item) => {
-            const selected = item === mode;
-            return (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={selected}
-                className={`min-h-touch rounded-input text-sm font-bold ${
-                  selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
-                }`}
-                onClick={() => {
-                  if (item === mode) return;
-                  setMode(item);
-                  resetAuthForm();
-                }}
-              >
-                {item === 'login' ? '로그인' : '회원가입'}
-              </button>
-            );
-          })}
-        </div>
+          label="인증 방식"
+          value={mode}
+          items={[{ value: 'login', label: '로그인' }, { value: 'signup', label: '회원가입' }]}
+          onChange={item => {
+            if (item === mode) return;
+            setMode(item);
+            resetAuthForm();
+          }}
+        />
 
         {mode === 'login' ? (
           <>

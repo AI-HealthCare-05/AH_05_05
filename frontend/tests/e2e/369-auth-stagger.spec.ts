@@ -43,6 +43,7 @@ async function captureEntrances(page: Page) {
     (window as any).__entrances = [];
     Element.prototype.animate = function (...args) {
       const animation = original.apply(this, args);
+      if (!this.classList.contains('auth-enter')) return animation;
       // StrictMode cancels and recreates the same mount entrance before paint.
       (window as any).__entrances = (window as any).__entrances.filter((entry: any) => entry.element !== this);
       (window as any).__entrances.push({
