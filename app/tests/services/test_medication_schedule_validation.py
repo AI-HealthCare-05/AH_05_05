@@ -28,11 +28,11 @@ def test_parse_time_rejects_invalid_clock_values(value: str) -> None:
 
 
 def test_inactive_half_hour_mode_can_be_enabled_again() -> None:
-    with patch('app.services.medication_schedule.USE_HALF_HOUR_REMINDERS', True, create=True):
-        assert MedicationScheduleService._parse_time('08:00') == time(8, 0)
-        assert MedicationScheduleService._parse_time('08:30') == time(8, 30)
+    with patch("app.services.medication_schedule.USE_HALF_HOUR_REMINDERS", True, create=True):
+        assert MedicationScheduleService._parse_time("08:00") == time(8, 0)
+        assert MedicationScheduleService._parse_time("08:30") == time(8, 30)
         with pytest.raises(InvalidMedicationScheduleError):
-            MedicationScheduleService._parse_time('08:17')
+            MedicationScheduleService._parse_time("08:17")
 
 
 def test_validate_request_rejects_meal_times_out_of_order() -> None:
