@@ -56,6 +56,7 @@ const supplement = {
 };
 
 function participation(overrides: Record<string, unknown> = {}) {
+  const completedCount = Number(overrides.completedCount ?? 5);
   return {
     id: 701,
     templateId: 31,
@@ -63,22 +64,28 @@ function participation(overrides: Record<string, unknown> = {}) {
     challengeName: medicationA.challengeName,
     rewardBadge: medicationA.rewardBadge,
     status: 'ACTIVE',
-    joinedAt: '2026-09-09T09:00:00+09:00',
+    joinedAt: '2026-09-09T07:00:00+09:00',
     endAt: '2026-09-16T09:00:00+09:00',
     actualEndDate: '2026-09-16',
     targetCount: 14,
     completedCount: 5,
     progressRate: '35.71',
+    // Explicit calendar fixtures exercise old API fallback from their own occurrences.
+    ...('occurrences' in overrides ? {} : {
+      targetDayCount: 7,
+      completedDayCount: Math.floor(completedCount / 2),
+      dayProgressRate: (Math.floor(completedCount / 2) * 100 / 7).toFixed(2),
+    }),
     action: 'NONE',
     targets: [{ id: 801, sourceId: 101, name: '서울의원 1차 처방' }],
-    occurrences: [{
-      id: 901,
+    occurrences: Array.from({ length: 14 }, (_, index) => ({
+      id: 901 + index,
       targetId: 801,
-      scheduledDate: '2026-09-09',
-      slot: 'MORNING',
-      scheduledAt: '2026-09-09T08:00:00+09:00',
-      isCompleted: true,
-    }],
+      scheduledDate: `2026-09-${String(9 + Math.floor(index / 2)).padStart(2, '0')}`,
+      slot: index % 2 === 0 ? 'MORNING' : 'EVENING',
+      scheduledAt: `2026-09-${String(9 + Math.floor(index / 2)).padStart(2, '0')}T${index % 2 === 0 ? '08' : '19'}:00:00+09:00`,
+      isCompleted: index < completedCount,
+    })),
     ...overrides,
   };
 }
@@ -400,15 +407,17 @@ test('My lists custom participation independently and detail renders only server
   await page.goto('/challenges');
   const section = page.getByRole('region', { name: '진행 중인 챌린지' });
   await expect(section.getByText(item.challengeName)).toBeVisible();
-  await expect(section.getByText('5 / 14회')).toBeVisible();
+  await expect(section.getByText('2 / 7일')).toBeVisible();
   await section.getByRole('link', { name: `${item.challengeName} 자세히 보기` }).click();
 
   await expect(page.getByRole('heading', { name: item.challengeName })).toBeVisible();
-  await expect(page.getByRole('progressbar', { name: '맞춤 챌린지 진행률' })).toHaveAttribute('aria-valuenow', '35.71');
+  await expect(page.getByRole('progressbar', { name: '맞춤 챌린지 진행률' })).toHaveAttribute('aria-valuenow', '28.57');
   const selectedRecords = recordsForDate(page, '2026-09-09');
-  await expect(selectedRecords.getByRole('listitem')).toHaveCount(1);
-  await expect(selectedRecords.getByRole('listitem')).toContainText('아침');
-  await expect(selectedRecords.getByRole('listitem')).toContainText('완료');
+  await expect(selectedRecords.getByRole('listitem')).toHaveCount(2);
+  await expect(selectedRecords.getByRole('listitem').first()).toContainText('아침');
+  await expect(selectedRecords.getByRole('listitem').last()).toContainText('저녁');
+  await expect(selectedRecords.getByRole('listitem').first()).toContainText('완료');
+  await expect(page.getByText('2 / 2회 완료', { exact: true })).toBeVisible();
   const detail = page.locator('main');
   await expect(detail.getByRole('button', { name: /했어요|복약|인증/ })).toHaveCount(0);
   await expect(detail.getByText(/배지/)).toHaveCount(0);
@@ -458,12 +467,12 @@ test('route re-entry refetches custom progress and Home actions never POST a cus
   });
 
   await page.goto('/challenges');
-  await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText('2 / 14회')).toBeVisible();
+  await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText('1 / 7일')).toBeVisible();
   const firstEntryReads = customReads;
   await page.goto('/home');
-  completedCount = 3;
+  completedCount = 4;
   await page.goto('/challenges');
-  await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText('3 / 14회')).toBeVisible();
+  await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByText('2 / 7일')).toBeVisible();
   expect(customReads).toBeGreaterThan(firstEntryReads);
   expect(customPosts).toBe(0);
 });
@@ -655,7 +664,7 @@ test('zero remaining goals render without an invented last goal date', async ({ 
 
   await expect(page.getByRole('heading', { name: '내 진행률' })).toBeVisible();
   await expect(page.getByText('예정된 목표 없음', { exact: true })).toBeVisible();
-  await expect(page.getByText('0 / 0회', { exact: true })).toBeVisible();
+  await expect(page.getByText('0 / 0일', { exact: true })).toBeVisible();
   await expect(page.getByText('진행 중', { exact: true })).toBeVisible();
   await expect(page.getByText('이날은 목표 기록이 없어요.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '다음 날짜' })).toHaveCount(0);
@@ -672,6 +681,9 @@ test('completed medication detail keeps the server final snapshot and its awarde
       targetCount: 42,
       completedCount: 42,
       progressRate: '100.00',
+      targetDayCount: 21,
+      completedDayCount: 21,
+      dayProgressRate: '100.00',
       occurrences: [],
     }),
   }));
@@ -692,7 +704,7 @@ test('completed medication detail keeps the server final snapshot and its awarde
   await page.goto('/challenges/custom-participations/701');
 
   await expect(page.getByText('최종 결과', { exact: true })).toBeVisible();
-  await expect(page.getByText('42 / 42회', { exact: true })).toBeVisible();
+  await expect(page.getByText('21 / 21일', { exact: true })).toBeVisible();
   await expect(page.getByText('2026.09.09 ~ 2026.09.30', { exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: '복약 루틴 배지' })).toBeVisible();
   await expect(page.getByText('2026.09.30 획득', { exact: true })).toBeVisible();

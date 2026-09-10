@@ -5,15 +5,19 @@ test.use({ viewport: { width: 320, height: 812 } });
 
 const path = '/api/v1/user/custom-challenge-participations/701';
 const targetName = '서울대학교병원 순환기내과에서 받은 아주 긴 참여 대상 이름';
-const participation = (overrides: Record<string, unknown> = {}) => ({
+const participation = (overrides: Record<string, unknown> = {}) => {
+  const completedCount = Number(overrides.completedCount ?? 1);
+  return ({
   id: 701, templateId: 31, challengeType: 'MEDICATION', challengeName: '꾸준한 건강 기록',
   rewardBadge: null, status: 'ACTIVE', joinedAt: '2026-09-09T09:00:00+09:00',
   endAt: '2026-09-16T09:00:00+09:00', actualEndDate: '2026-09-16',
   targetCount: 4, completedCount: 1, progressRate: '25.00', action: 'NONE',
+  targetDayCount: 4, completedDayCount: completedCount, dayProgressRate: String(completedCount * 25),
   targets: [{ id: 801, sourceId: 101, name: targetName }],
-  occurrences: [{ id: 901, targetId: 801, scheduledDate: '2026-09-10', slot: 'MORNING', scheduledAt: '2026-09-10T08:00:00+09:00', isCompleted: true }],
+  occurrences: [10, 11, 12, 13].map((day, index) => ({ id: 901 + index, targetId: 801, scheduledDate: `2026-09-${day}`, slot: 'MORNING', scheduledAt: `2026-09-${day}T08:00:00+09:00`, isCompleted: index < completedCount })),
   ...overrides,
-});
+  });
+};
 
 type Reply = { status?: number; json: unknown };
 const errorReply = { status: 503, json: { code: 'TEMPORARY', message: '잠시 뒤 다시 시도해주세요.' } };
@@ -60,19 +64,19 @@ for (const challengeType of ['MEDICATION', 'SUPPLEMENT']) {
     let count = 1;
     const counts = await setup(page, () => ({ json: participation({ challengeType, completedCount: count, progressRate: String(count * 25) }) }));
     await page.goto('/challenges/custom-participations/701');
-    await expect(page.getByText('1 / 4회', { exact: true })).toBeVisible();
+    await expect(page.getByText('1 / 4일', { exact: true })).toBeVisible();
     count = 2;
     await invalidate(page);
-    await expect(page.getByText('2 / 4회', { exact: true })).toBeVisible();
+    await expect(page.getByText('2 / 4일', { exact: true })).toBeVisible();
     count = 3;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(page.getByText('3 / 4회', { exact: true })).toBeVisible();
+    await expect(page.getByText('3 / 4일', { exact: true })).toBeVisible();
     count = 4;
     await page.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    await expect(page.getByText('4 / 4회', { exact: true })).toBeVisible();
+    await expect(page.getByText('4 / 4일', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '최신 진행률 불러오기' })).toHaveCount(0);
     const targets = page.getByRole('region', { name: '참여 대상', exact: true });
     await expect(targets.getByText(targetName)).toBeVisible();
@@ -93,17 +97,17 @@ test('initial failure retries and a failed background refresh retains progress a
   await expect(page.getByRole('heading', { name: '참여 기록을 불러오지 못했어요' })).toBeVisible();
   fail = false;
   await page.getByRole('button', { name: '다시 불러오기' }).click();
-  await expect(page.getByText('1 / 4회', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 / 4일', { exact: true })).toBeVisible();
   blocked = gate();
   fail = true;
   const reads = counts.reads;
   await invalidate(page);
   await expect.poll(() => counts.reads).toBe(reads + 1);
-  await expect(page.getByText('1 / 4회', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 / 4일', { exact: true })).toBeVisible();
   await expect(page.getByRole('status', { name: '맞춤 챌린지 참여 기록 불러오는 중' })).toHaveCount(0);
   blocked.release();
   await expect(page.getByRole('alert')).toContainText('잠시 뒤');
-  await expect(page.getByText('1 / 4회', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 / 4일', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '참여 대상', exact: true }).getByText(targetName)).toBeVisible();
   fail = false;
   await page.getByRole('button', { name: '다시 불러오기' }).click();
@@ -120,7 +124,7 @@ test('invalidation during a pending refresh coalesces into a fresh read without 
     return { json: participation({ completedCount: snapshot, progressRate: String(snapshot * 25) }) };
   });
   await page.goto('/challenges/custom-participations/701');
-  await expect(page.getByText('1 / 4회', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 / 4일', { exact: true })).toBeVisible();
   blocked = gate();
   count = 2;
   const initialReads = counts.reads;
@@ -131,7 +135,7 @@ test('invalidation during a pending refresh coalesces into a fresh read without 
   await invalidate(page);
   expect(counts.reads).toBe(initialReads + 1);
   blocked.release();
-  await expect(page.getByText('3 / 4회', { exact: true })).toBeVisible();
+  await expect(page.getByText('3 / 4일', { exact: true })).toBeVisible();
   expect(counts.reads).toBe(initialReads + 2);
 });
 

@@ -67,28 +67,32 @@ function officialParticipation(overrides: Record<string, unknown> = {}) {
 }
 
 function customParticipation(overrides: Record<string, unknown> = {}) {
+  const completedCount = Number(overrides.completedCount ?? 2);
   return {
     id: 701,
     templateId: 31,
     challengeType: 'MEDICATION',
     challengeName: '처방 일정 지키기',
     status: 'ACTIVE',
-    joinedAt: '2026-09-01T09:00:00+09:00',
-    endAt: '2026-09-15T00:00:00+09:00',
-    actualEndDate: '2026-09-14',
-    targetCount: 14,
+    joinedAt: '2026-09-07T07:00:00+09:00',
+    endAt: '2026-09-14T00:00:00+09:00',
+    actualEndDate: '2026-09-13',
+    targetCount: 7,
     completedCount: 2,
-    progressRate: '14.29',
+    progressRate: '28.57',
+    targetDayCount: 7,
+    completedDayCount: completedCount,
+    dayProgressRate: (completedCount * 100 / 7).toFixed(2),
     action: 'NONE',
     targets: [{ id: 801, sourceId: 12, name: '서울의원 처방' }],
-    occurrences: [{
-      id: 901,
+    occurrences: [7, 8, 9, 10, 11, 12, 13].map((day, index) => ({
+      id: 901 + index,
       targetId: 801,
-      scheduledDate: TODAY,
+      scheduledDate: `2026-09-${String(day).padStart(2, '0')}`,
       slot: 'MORNING',
-      scheduledAt: `${TODAY}T08:00:00+09:00`,
-      isCompleted: false,
-    }],
+      scheduledAt: `2026-09-${String(day).padStart(2, '0')}T08:00:00+09:00`,
+      isCompleted: index < completedCount,
+    })),
     ...overrides,
   };
 }
@@ -248,6 +252,9 @@ test('홈은 진행 중인 맞춤 카드를 모두 표시하고 서버 진행률
       targetCount: 0,
       completedCount: 0,
       progressRate: '100.00',
+      targetDayCount: 0,
+      completedDayCount: 0,
+      dayProgressRate: '0.00',
       occurrences: [],
     }),
     customParticipation({ id: 703, challengeName: '세 번째 맞춤 챌린지' }),
@@ -281,7 +288,7 @@ test('홈은 진행 중인 맞춤 카드를 모두 표시하고 서버 진행률
     .toBe(true);
 
   const zeroTarget = customSection.getByRole('link', { name: /아직 예정이 없는 챌린지/ });
-  await expect(zeroTarget).toContainText('0 / 0회');
+  await expect(zeroTarget).toContainText('0 / 0일');
   await expect(zeroTarget).toContainText('예정된 목표 없음');
   await expect(zeroTarget.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
   await expect(zeroTarget).not.toContainText('100%');
@@ -363,7 +370,7 @@ test('복약 저장 성공과 되돌리기는 맞춤 진행률을 각각 한 번
       json: {
         items: [customParticipation({
           completedCount,
-          progressRate: completedCount === 3 ? '21.43' : '14.29',
+          progressRate: completedCount === 3 ? '42.86' : '28.57',
         })],
         totalCount: 1,
       },
@@ -376,15 +383,15 @@ test('복약 저장 성공과 되돌리기는 맞춤 진행률을 각각 한 번
 
   await page.goto('/home');
   const customSection = page.getByRole('region', { name: '맞춤 챌린지' });
-  await expect(customSection.getByText('2 / 14회')).toBeVisible();
+  await expect(customSection.getByText('2 / 7일')).toBeVisible();
   const initialCustomReads = counts.customReads;
 
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
-  await expect(customSection.getByText('3 / 14회')).toBeVisible();
+  await expect(customSection.getByText('3 / 7일')).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await page.getByRole('button', { name: '되돌리기', exact: true }).click();
-  await expect(customSection.getByText('2 / 14회')).toBeVisible();
+  await expect(customSection.getByText('2 / 7일')).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 2);
   expect(counts.medicationWrites.map(item => item.taken)).toEqual([true, false]);
   expect(counts.customMutations).toBe(0);
@@ -405,7 +412,7 @@ test('복약 저장이 모두 실패하면 재조회하지 않고 부분 성공�
       json: {
         items: [customParticipation({
           completedCount,
-          progressRate: completedCount === 2 ? '14.29' : '21.43',
+          progressRate: completedCount === 2 ? '28.57' : '42.86',
         })],
         totalCount: 1,
       },
@@ -420,7 +427,7 @@ test('복약 저장이 모두 실패하면 재조회하지 않고 부분 성공�
   });
 
   await page.goto('/home');
-  await expect(page.getByRole('region', { name: '맞춤 챌린지' }).getByText('2 / 14회'))
+  await expect(page.getByRole('region', { name: '맞춤 챌린지' }).getByText('2 / 7일'))
     .toBeVisible();
   const initialCustomReads = counts.customReads;
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
@@ -449,7 +456,7 @@ test('영양제 저장 실패는 재조회하지 않고 재시도 성공과 되�
         items: [customParticipation({
           challengeType: 'SUPPLEMENT',
           completedCount,
-          progressRate: completedCount === 3 ? '21.43' : '14.29',
+          progressRate: completedCount === 3 ? '42.86' : '28.57',
         })],
         totalCount: 1,
       },
@@ -466,7 +473,7 @@ test('영양제 저장 실패는 재조회하지 않고 재시도 성공과 되�
 
   await page.goto('/home');
   const customSection = page.getByRole('region', { name: '맞춤 챌린지' });
-  await expect(customSection.getByText('2 / 14회')).toBeVisible();
+  await expect(customSection.getByText('2 / 7일')).toBeVisible();
   const initialCustomReads = counts.customReads;
   await page.getByRole('tab', { name: '오늘의 영양제' }).click();
   const supplementGroup = page.getByRole('group', { name: '아침 영양제' });
@@ -477,12 +484,12 @@ test('영양제 저장 실패는 재조회하지 않고 재시도 성공과 되�
   expect(counts.customReads).toBe(initialCustomReads);
 
   await supplementGroup.getByRole('button', { name: '다시 시도' }).click();
-  await expect(customSection.getByText('3 / 14회')).toBeVisible();
+  await expect(customSection.getByText('3 / 7일')).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await supplementGroup.getByRole('button', { name: '오메가3 복용 완료' }).click();
   await supplementGroup.getByRole('button', { name: '1개 되돌리기' }).click();
-  await expect(customSection.getByText('2 / 14회')).toBeVisible();
+  await expect(customSection.getByText('2 / 7일')).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 2);
   expect(counts.supplementWrites.map(item => item.taken)).toEqual([true, true, false]);
   expect(counts.customMutations).toBe(0);
@@ -499,12 +506,12 @@ test('무효화 전에 시작한 늦은 맞춤 응답은 최신 진행률을 덮
       if (!saved) {
         await initialReadsGate;
         return { json: {
-          items: [customParticipation({ completedCount: 1, progressRate: '7.14' })],
+          items: [customParticipation({ completedCount: 1, progressRate: '14.29' })],
           totalCount: 1,
         } };
       }
       return { json: {
-        items: [customParticipation({ completedCount: 7, progressRate: '50.00' })],
+        items: [customParticipation({ completedCount: 7, progressRate: '100.00' })],
         totalCount: 1,
       } };
     },
@@ -520,13 +527,13 @@ test('무효화 전에 시작한 늦은 맞춤 응답은 최신 진행률을 덮
   ).toBeVisible();
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
   const customSection = page.getByRole('region', { name: '맞춤 챌린지' });
-  await expect(customSection.getByText('7 / 14회')).toBeVisible();
+  await expect(customSection.getByText('7 / 7일')).toBeVisible();
   const readsAfterInvalidation = counts.customReads;
 
   releaseInitialReads();
   await page.waitForTimeout(100);
-  await expect(customSection.getByText('7 / 14회')).toBeVisible();
-  await expect(customSection.getByText('1 / 14회')).toHaveCount(0);
+  await expect(customSection.getByText('7 / 7일')).toBeVisible();
+  await expect(customSection.getByText('1 / 7일')).toHaveCount(0);
   expect(counts.customReads).toBe(readsAfterInvalidation);
   expect(counts.customMutations).toBe(0);
 });

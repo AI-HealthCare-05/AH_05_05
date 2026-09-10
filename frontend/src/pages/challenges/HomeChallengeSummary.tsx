@@ -4,6 +4,7 @@ import { useSession } from '@/app/SessionContext';
 import { getChallengeParticipations, type ChallengeParticipation } from '@/entities/challenge';
 import {
   getCustomChallengeParticipations,
+  customChallengeDayProgress,
   subscribeCustomChallengeProgressInvalidation,
   type CustomChallengeParticipation,
 } from '@/entities/custom-challenge';
@@ -321,8 +322,9 @@ function OfficialHomeChallengeSummary() {
             {customActive.length > 0 ? (
               <>
                 {customActive.map(item => {
-                  const rate = progressValue(item.progressRate, item.targetCount);
-                  const progressText = item.targetCount <= 0
+                  const days = customChallengeDayProgress(item);
+                  const rate = progressValue(days.rate, days.target);
+                  const progressText = days.target <= 0
                     ? '예정된 목표 없음'
                     : `${rate}% 진행 중`;
                   return (
@@ -334,7 +336,7 @@ function OfficialHomeChallengeSummary() {
                     >
                       <ChallengeRowTitle title={item.challengeName} official={false} />
                       <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <span>{item.completedCount} / {item.targetCount}회</span>
+                        <span>{days.completed} / {days.target}일</span>
                         <span>{progressText}</span>
                       </span>
                       <span

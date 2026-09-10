@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import {
   getCustomChallengeBadges,
+  customChallengeDayProgress,
   getCustomChallengeParticipation,
   cancelCustomChallenge,
   invalidateCustomChallengeProgress,
@@ -224,7 +225,8 @@ export function CustomChallengeParticipationPage() {
     return <><Header title="맞춤 챌린지" onBack={handleBack} /><main role="status" aria-label="맞춤 챌린지 참여 기록 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" /></>;
   }
 
-  const rate = progressValue(participation.progressRate);
+  const days = customChallengeDayProgress(participation);
+  const rate = progressValue(days.rate);
   const finalized = participation.status !== 'ACTIVE';
   return (
     <>
@@ -240,9 +242,9 @@ export function CustomChallengeParticipationPage() {
       ) : null}
 
       <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="custom-progress-title">
-        <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2><strong className="text-primary">{String(participation.progressRate)}%</strong></div>
+        <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2><strong className="text-primary">{rate.toFixed(2)}%</strong></div>
         <div role="progressbar" aria-label="맞춤 챌린지 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
-        <p className="text-sm text-foreground">{participation.completedCount} / {participation.targetCount}회</p>
+        <p className="text-sm text-foreground">{days.completed} / {days.target}일</p>
         <p className="text-caption text-muted-foreground">{participation.actualEndDate
           ? `${dateLabel(participation.joinedAt)} ~ ${dateLabel(participation.actualEndDate)}`
           : '예정된 목표 없음'}</p>

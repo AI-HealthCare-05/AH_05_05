@@ -62,6 +62,9 @@ export interface CustomChallengeParticipation {
   targetCount: number;
   completedCount: number;
   progressRate: number | string;
+  targetDayCount?: number;
+  completedDayCount?: number;
+  dayProgressRate?: number | string;
   action: 'NONE';
   targets: CustomChallengeTarget[];
   occurrences: CustomChallengeOccurrence[];
