@@ -21,6 +21,7 @@ from app.core.db.databases import TORTOISE_APP_MODELS, TORTOISE_ORM
 MIGRATION = "app.core.db.migrations.models.43_20260910000000_custom_challenge_finalization"
 VERSION_42 = "42_20260909180000_merge_challenge_schema_heads.py"
 VERSION_43 = "43_20260910000000_custom_challenge_finalization.py"
+VERSION_45 = "45_20260910190000_merge_custom_challenge_finalization_heads.py"
 ROOT = Path(__file__).resolve().parents[2]
 MYSQL_OPT_IN = getenv("MIGRATION315_RUN_MYSQL") == "1"
 MYSQL_OPT_IN_REASON = "set MIGRATION315_RUN_MYSQL=1 to run disposable MySQL migration tests"
@@ -194,7 +195,7 @@ async def test_upgrade_is_additive_and_downgrade_removes_only_migration_43_schem
     assert "DROP COLUMN `is_completed`" in downgrade_sql
 
 
-def test_migration_43_snapshot_is_frozen_at_the_registered_runtime_models() -> None:
+def test_migration_43_preserves_its_parent_and_freezes_only_custom_changes() -> None:
     current = decompress_dict(import_module(MIGRATION).MODELS_STATE)
     previous = decompress_dict(
         import_module("app.core.db.migrations.models.42_20260909180000_merge_challenge_schema_heads").MODELS_STATE
@@ -203,7 +204,18 @@ def test_migration_43_snapshot_is_frozen_at_the_registered_runtime_models() -> N
     Tortoise.init_models(TORTOISE_APP_MODELS, "models")
     live = decompress_dict(compress_dict(get_models_describe("models")))
 
-    assert current == live
+    changed = {name for name in current if current[name] != previous.get(name)}
+    assert changed == {
+        "models.User",
+        "models.Badge",
+        "models.CustomChallengeParticipation",
+        "models.CustomChallengeOccurrence",
+        "models.CustomChallengeBadgeAward",
+    }
+    assert {name: current[name] for name in changed} == {name: live[name] for name in changed}
+    assert {name: current[name] for name in previous if name not in changed} == {
+        name: previous[name] for name in previous if name not in changed
+    }
     assert len(current) == len(previous) + 1
     assert "models.CustomChallengeBadgeAward" in current
     assert "models.UserBadge" in current
@@ -211,7 +223,7 @@ def test_migration_43_snapshot_is_frozen_at_the_registered_runtime_models() -> N
 
 
 @pytest.mark.skipif(not MYSQL_OPT_IN, reason=MYSQL_OPT_IN_REASON)
-async def test_real_aerich_upgrades_a_generated_head_42_schema_to_43() -> None:
+async def test_real_aerich_upgrades_existing_main_head_with_missing_custom_migration() -> None:
     database = f"test_challenge315_aerich_{uuid4().hex}"
     db_admin = MySQLClient(
         connection_name=database,
@@ -260,20 +272,24 @@ async def test_real_aerich_upgrades_a_generated_head_42_schema_to_43() -> None:
         )
         await db.execute_script(await migration.downgrade(db))
         await Aerich.all().delete()
-        applied_versions = [version for version in await command.history() if version != VERSION_43]
+        applied_versions = [version for version in await command.history() if version not in (VERSION_43, VERSION_45)]
         for version in applied_versions:
             await Aerich.create(
                 version=version,
                 app="models",
-                content=previous if version == VERSION_42 else {},
+                content=decompress_dict(import_module("app.core.db.migrations.models." + version[:-3]).MODELS_STATE)
+                if version.startswith("44_")
+                else previous
+                if version == VERSION_42
+                else {},
             )
 
-        assert await command.heads() == [VERSION_43]
-        assert await command.upgrade(fake=False) == [VERSION_43]
+        assert await command.heads() == [VERSION_43, VERSION_45]
+        assert await command.upgrade(fake=False) == [VERSION_43, VERSION_45]
         assert await command.heads() == []
         history = await Aerich.all().order_by("id").values("version", "content")
-        assert [row["version"] for row in history] == [*applied_versions, VERSION_43]
-        assert history[-1]["content"] == decompress_dict(migration.MODELS_STATE)
+        assert [row["version"] for row in history] == [*applied_versions, VERSION_43, VERSION_45]
+        assert history[-1]["content"] == decompress_dict(compress_dict(get_models_describe("models")))
 
         columns = await db.execute_query_dict("""
             SELECT TABLE_NAME, COLUMN_NAME
