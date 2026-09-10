@@ -1,0 +1,75 @@
+/* Position and modal/keyboard visibility remain owned by the shared app shell. */
+.chat-launcher {
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 3px solid var(--color-primary);
+  border-radius: 50% 50% 14px 50%;
+  background: var(--color-card);
+  box-shadow: 0 4px 0 var(--color-primary-strong), 0 9px 16px rgb(0 44 104 / 22%);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.chat-launcher-portrait {
+  position: absolute;
+  inset: 1px;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.chat-launcher-portrait img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Crop the source's blank margins so the chick reads at this small size. */
+  width: 80px;
+  max-width: none;
+  height: 80px;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+}
+
+.chat-launcher-indicator {
+  position: absolute;
+  right: -5px;
+  bottom: -3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 23px;
+  border: 2px solid var(--color-card);
+  border-radius: 9px;
+  color: var(--color-primary-foreground);
+  background: var(--color-primary);
+  box-shadow: 0 2px 3px rgb(0 44 104 / 16%);
+}
+
+@media (hover: hover) {
+  .chat-launcher:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 0 var(--color-primary-strong), 0 12px 20px rgb(0 44 104 / 23%);
+  }
+}
+
+.chat-launcher:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--color-primary-strong), 0 5px 10px rgb(0 44 104 / 18%);
+}
+
+.chat-launcher:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-launcher {
+    transition: none;
+  }
+
+  .chat-launcher:hover,
+  .chat-launcher:active {
+    transform: none;
+  }
+}

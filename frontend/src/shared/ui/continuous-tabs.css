@@ -1,0 +1,68 @@
+/* Watermelon Continuous Tabs' light recessed track and single sliding pill,
+   adapted to RxVita's existing teal/clay palette. */
+.rx-continuous-tabs {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--color-card), var(--color-muted-bg));
+  box-shadow: inset 0 -2px 4px rgb(7 122 116 / 8%), inset 0 1px 0 rgb(255 255 255 / 90%), 0 3px 8px rgb(7 122 116 / 3%);
+}
+.rx-continuous-trigger {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 20px;
+  cursor: pointer;
+}
+.rx-continuous-trigger:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+.rx-continuous-pill {
+  position: absolute;
+  left: 0;
+  z-index: 1;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-primary);
+  background-image: var(--rx-clay-primary-surface);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 56%), inset 0 -2px 3px rgb(0 44 104 / 14%), 0 2px 4px rgb(7 122 116 / 14%);
+}
+.rx-continuous-ink {
+  position: absolute;
+  inset: 0 auto 0 0;
+  color: var(--color-card);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 20px;
+}
+.rx-continuous-ink > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  text-align: center;
+}
+@media (forced-colors: active) {
+  .rx-continuous-pill { display: none; }
+  .rx-continuous-trigger[aria-selected="true"],
+  .rx-continuous-trigger[aria-pressed="true"] { border: 2px solid Highlight; }
+}

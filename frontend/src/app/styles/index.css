@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./responsive.css";
 
 /* ============================================================
    RxVita 디자인 토큰 — Figma Light 기준
@@ -78,16 +79,16 @@
   --color-popover-foreground: var(--color-foreground);
 
   /* ---------- 모서리 ---------- */
-  --radius-card: 16px;
-  --radius-button: 14px;
-  --radius-input: 12px;
+  --radius-card: 24px;
+  --radius-button: 16px;
+  --radius-input: 14px;
   --radius-sheet: 24px;
   --radius-pill: 9999px;
   --radius-record-cell: 5px;
 
   /* ---------- 그림자 ---------- */
-  --shadow-card: 0 1px 3px rgba(36, 30, 32, 0.08);
-  --shadow-sheet: 0 -4px 24px rgba(36, 30, 32, 0.12);
+  --shadow-card: inset 0 2px 2px rgb(255 255 255 / 98%), inset 0 -4px 8px rgb(7 122 116 / 6%), 0 8px 18px rgb(7 122 116 / 9%), 0 2px 4px rgb(0 44 104 / 5%);
+  --shadow-sheet: inset 0 1px 0 rgb(255 255 255 / 96%), inset 0 -2px 4px rgb(7 122 116 / 8%), 0 -5px 20px rgb(0 44 104 / 11%);
 
   /* ---------- 크기 ---------- */
   --spacing-header: 64px;
@@ -106,7 +107,9 @@
   --animate-record-grow: record-cell-grow var(--duration-record-grow) var(--ease-record-grow);
 
   --container-page: 375px;
-  --container-app: 390px;
+  --container-app: 1120px;
+  --container-dialog: 390px;
+  --container-reading: 760px;
 
   /* ---------- 타이포 ---------- */
   --font-sans: "Noto Sans KR", system-ui, -apple-system, sans-serif;
@@ -137,6 +140,39 @@
   --text-metric--line-height: 32px;
   --text-unit: 12px;
   --text-unit--line-height: 16px;
+}
+
+:root {
+  --rx-clay-surface-overlay: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 80%) 0%,
+    rgb(255 255 255 / 32%) 48%,
+    color-mix(in srgb, var(--color-primary-bg) 22%, transparent) 100%
+  );
+  --rx-clay-primary-surface: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-primary) 95%, var(--color-card)) 0%,
+    var(--color-primary) 52%,
+    color-mix(in srgb, var(--color-primary) 74%, var(--color-primary-strong)) 100%
+  );
+  --rx-clay-primary-hover-surface: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-primary-strong) 88%, var(--color-card)) 0%,
+    var(--color-primary-strong) 55%,
+    color-mix(in srgb, var(--color-primary-strong) 84%, var(--color-brand)) 100%
+  );
+  --rx-clay-danger-surface: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-danger-strong) 92%, var(--color-card)) 0%,
+    var(--color-danger-strong) 55%,
+    color-mix(in srgb, var(--color-danger-strong) 88%, var(--color-brand)) 100%
+  );
+  --rx-clay-danger-hover-surface: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-danger-strong) 88%, var(--color-card)) 0%,
+    var(--color-danger-strong) 55%,
+    color-mix(in srgb, var(--color-danger-strong) 88%, var(--color-brand)) 100%
+  );
 }
 
 @keyframes record-cell-grow {
@@ -227,4 +263,152 @@
   .tnum {
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* RxVita interaction layer: our own motion, on existing native/Radix controls. */
+@layer components {
+  .rx-input {
+    background-image: linear-gradient(180deg, rgb(7 122 116 / 2%), transparent 45%);
+    --tw-inset-shadow: inset 0 2px 3px rgb(7 122 116 / 5%);
+    box-shadow: var(--tw-inset-shadow), var(--tw-ring-shadow, 0 0 #0000);
+  }
+  .rx-segmented {
+    background-color: color-mix(in srgb, var(--color-primary-bg) 36%, var(--color-muted-bg));
+    box-shadow: inset 0 1px 2px rgb(7 122 116 / 8%);
+  }
+  button.bg-primary:not(.rx-button):enabled {
+    background-image: var(--rx-clay-primary-surface);
+    box-shadow: inset 0 2px 1px rgb(255 255 255 / 50%), inset 0 -3px 5px rgb(0 44 104 / 16%), 0 3px 7px rgb(7 122 116 / 14%);
+  }
+  button.bg-primary:not(.rx-button):enabled:hover {
+    background-image: var(--rx-clay-primary-hover-surface);
+  }
+  .shadow-card,
+  [data-slot="dialog-content"] {
+    background-image: var(--rx-clay-surface-overlay);
+  }
+  .rx-card {
+    background-image: var(--rx-clay-surface-overlay);
+    box-shadow: var(--shadow-card);
+    transition: background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  }
+  .rx-card:enabled:active {
+    transform: translateY(1px) scale(.995);
+    box-shadow: inset 0 2px 4px rgb(0 44 104 / 13%), inset 0 -1px 1px rgb(255 255 255 / 54%), 0 1px 2px rgb(7 122 116 / 5%);
+  }
+  .rx-button {
+    /* All semantic variants have the same physical rim and light-clay depth. */
+    border: 1px solid color-mix(in srgb, var(--color-primary) 16%, transparent);
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 40%), rgb(255 255 255 / 8%) 52%, rgb(7 122 116 / 4%));
+    transition: background-color 140ms ease, box-shadow 140ms ease, transform 120ms ease;
+  }
+  .rx-button[data-variant="primary"]:enabled {
+    border-color: rgb(255 255 255 / 24%);
+    background-image: var(--rx-clay-primary-surface);
+  }
+  .rx-button[data-variant="primary"]:enabled:hover {
+    background-image: var(--rx-clay-primary-hover-surface);
+  }
+  .rx-button[data-variant="danger"]:enabled {
+    border-color: rgb(255 255 255 / 24%);
+    background-image: var(--rx-clay-danger-surface);
+  }
+  .rx-button[data-variant="danger"]:enabled:hover {
+    background-image: var(--rx-clay-danger-hover-surface);
+  }
+  .rx-button:enabled {
+    box-shadow: inset 0 1px 1px rgb(255 255 255 / 56%), inset 0 -2px 3px rgb(0 44 104 / 14%), 0 3px 6px rgb(7 122 116 / 14%), 0 1px 2px rgb(0 44 104 / 8%);
+  }
+  .rx-button:enabled:active {
+    transform: translateY(1px) scale(.99);
+    box-shadow: inset 0 2px 4px rgb(0 44 104 / 17%), inset 0 -1px 1px rgb(255 255 255 / 42%), 0 1px 2px rgb(7 122 116 / 5%);
+  }
+  .rx-button:disabled {
+    background-image: var(--rx-clay-surface-overlay);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 72%), inset 0 -2px 3px rgb(7 122 116 / 7%);
+  }
+  .rx-checkbox {
+    background-image: var(--rx-clay-surface-overlay);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 94%), inset 0 -2px 2px rgb(7 122 116 / 10%), 0 2px 4px rgb(0 44 104 / 7%);
+  }
+  .rx-checkbox[data-state="checked"] {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 38%), inset 0 -2px 2px rgb(0 44 104 / 17%), 0 2px 4px rgb(7 122 116 / 12%);
+  }
+  .rx-switch::before {
+    background-image: var(--rx-clay-surface-overlay);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 74%), inset 0 -2px 3px rgb(0 44 104 / 12%), 0 2px 5px rgb(7 122 116 / 8%);
+  }
+  .rx-switch [data-slot="switch-thumb"] {
+    background-image: var(--rx-clay-surface-overlay);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 96%), inset 0 -1px 2px rgb(7 122 116 / 8%), 0 2px 4px rgb(0 44 104 / 13%);
+  }
+  .rx-button-spinner {
+    position: absolute;
+    left: 4px;
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: rx-button-spin 750ms linear infinite;
+  }
+  .rx-checkbox[data-state="checked"] svg :is(path, polyline) {
+    stroke-dasharray: 24;
+    animation: rx-check-draw 180ms ease-out both;
+  }
+  .rx-badge-contour-water {
+    border-radius: 0;
+    clip-path: polygon(48.6842% 7.0574%, 44.8565% 7.3764%, 41.3477% 8.0144%, 38.5566% 8.7321%, 36.1643% 9.5295%, 34.0909% 10.3270%, 30.9011% 11.8421%, 27.5518% 13.8357%, 24.5215% 16.0686%, 21.2520% 19.0191%, 21.2520% 19.0989%, 19.6571% 20.6938%, 19.6571% 20.7735%, 18.6204% 21.8900%, 18.3014% 22.3684%, 17.5837% 23.1659%, 16.2281% 25.0000%, 15.9091% 25.5582%, 15.6699% 25.7974%, 14.2344% 28.1100%, 14.1547% 28.3493%, 13.9952% 28.5088%, 13.8357% 28.9075%, 13.6762% 29.0670%, 13.2775% 29.9442%, 13.1180% 30.1037%, 12.7193% 30.9011%, 12.7193% 31.0606%, 11.8421% 32.8150%, 11.8421% 32.9745%, 11.6029% 33.3732%, 11.6029% 33.5327%, 11.1244% 34.5694%, 11.0447% 34.9681%, 10.8852% 35.2073%, 10.1675% 37.3604%, 10.1675% 37.5997%, 9.9282% 38.1579%, 9.9282% 38.3971%, 9.8485% 38.4769%, 9.8485% 38.7161%, 9.7687% 38.7959%, 9.7687% 39.0351%, 9.6890% 39.1148%, 9.6890% 39.3541%, 9.6093% 39.4338%, 9.6093% 39.6730%, 9.5295% 39.7528%, 9.5295% 39.9920%, 9.2903% 40.7097%, 9.2903% 41.0287%, 9.2105% 41.1085%, 9.2105% 41.4274%, 9.0510% 41.9059%, 9.0510% 42.3046%, 8.9713% 42.3844%, 8.9713% 42.7831%, 8.8915% 42.8628%, 8.8915% 43.3413%, 8.7321% 43.8198%, 8.6523% 45.0957%, 8.5726% 45.1754%, 8.5726% 45.8931%, 8.4928% 45.9729%, 8.4928% 46.9298%, 8.4131% 47.0096%, 8.4131% 48.2855%, 8.3333% 48.3652%, 8.4131% 52.4322%, 8.4928% 52.5120%, 8.4928% 53.4689%, 8.5726% 53.5486%, 8.5726% 54.2663%, 8.6523% 54.3461%, 8.6523% 54.9841%, 8.7321% 55.0638%, 8.7321% 55.5423%, 8.8118% 55.6220%, 8.8118% 56.0207%, 8.8915% 56.1005%, 8.8915% 56.6587%, 8.9713% 56.7384%, 9.2903% 58.7321%, 9.5295% 59.4498%, 9.5295% 59.7687%, 9.6890% 60.0877%, 9.6890% 60.4067%, 9.7687% 60.4864%, 9.8485% 61.0447%, 10.1675% 61.8421%, 10.1675% 62.0813%, 10.3270% 62.3206%, 10.4864% 63.1180%, 10.7257% 63.8357%, 10.8852% 64.0750%, 11.1244% 64.9522%, 11.2839% 65.1914%, 11.2839% 65.3509%, 11.4434% 65.5901%, 11.7624% 66.5470%, 12.4003% 67.8230%, 12.4003% 67.9825%, 12.7193% 68.4609%, 12.7193% 68.6204%, 12.8788% 68.7799%, 13.6762% 70.4545%, 13.8357% 70.6140%, 13.9952% 71.0128%, 14.5534% 71.8102%, 15.1116% 72.8469%, 17.1053% 75.6380%, 19.8166% 78.8278%, 19.9761% 78.9075%, 20.0558% 79.0670%, 22.6077% 81.5391%, 25.7974% 84.0909%, 27.5518% 85.2871%, 29.3860% 86.4035%, 32.8150% 88.1579%, 35.0478% 89.1148%, 36.8022% 89.7528%, 40.0718% 90.7097%, 41.4274% 91.0287%, 44.2982% 91.5072%, 48.4450% 91.9059%, 51.9537% 91.9059%, 55.9410% 91.5072%, 58.3333% 91.1085%, 60.4864% 90.6300%, 64.2344% 89.4338%, 68.0622% 87.8389%, 70.2153% 86.7225%, 72.3684% 85.4466%, 75.7177% 83.0542%, 77.7113% 81.3796%, 77.9506% 81.0606%, 78.1898% 80.9011%, 78.1898% 80.8214%, 78.8278% 80.3429%, 78.8278% 80.2632%, 79.4657% 79.7049%, 79.4657% 79.6252%, 80.1037% 78.9872%, 80.1037% 78.9075%, 80.7416% 78.3493%, 80.7416% 78.2695%, 81.3796% 77.6316%, 83.4530% 75.0000%, 85.6061% 71.7305%, 86.4035% 70.2153%, 86.5630% 70.0558%, 86.5630% 69.8963%, 86.7225% 69.7368%, 87.2010% 68.7799%, 87.2010% 68.6204%, 87.3604% 68.4609%, 87.3604% 68.3014%, 88.1579% 66.7065%, 88.4769% 65.7496%, 88.6364% 65.5104%, 88.6364% 65.3509%, 88.7959% 65.1116%, 88.7959% 64.9522%, 88.9553% 64.7129%, 89.5933% 62.7990%, 89.5933% 62.5598%, 89.7528% 62.3206%, 89.9123% 61.4434%, 90.1515% 60.8852%, 90.1515% 60.5662%, 90.4705% 59.6093%, 90.4705% 59.2903%, 90.7097% 58.5726%, 90.7895% 57.8549%, 90.8692% 57.7751%, 90.8692% 57.3764%, 91.0287% 56.9777%, 91.0287% 56.4195%, 91.1085% 56.3397%, 91.1085% 55.9410%, 91.1882% 55.8612%, 91.1882% 55.3828%, 91.2679% 55.3030%, 91.2679% 54.7448%, 91.3477% 54.6651%, 91.4274% 53.1499%, 91.5072% 53.0702%, 91.5072% 51.7943%, 91.5869% 51.7145%, 91.5869% 47.1691%, 91.5072% 47.0893%, 91.5072% 46.2121%, 91.4274% 46.1324%, 91.4274% 45.4147%, 91.3477% 45.3349%, 91.3477% 44.5375%, 91.2679% 44.4577%, 91.2679% 43.9793%, 91.1882% 43.8995%, 91.1085% 42.8628%, 91.0287% 42.7831%, 91.0287% 42.2249%, 90.8692% 41.8262%, 90.8692% 41.5072%, 90.7097% 41.0287%, 90.5502% 39.9123%, 90.3907% 39.5136%, 90.3907% 39.1946%, 90.1515% 38.4769%, 90.1515% 38.2376%, 90.0718% 38.1579%, 90.0718% 37.9187%, 89.9920% 37.8389%, 89.9920% 37.5997%, 89.7528% 37.0415%, 89.7528% 36.8022%, 89.1148% 35.0478%, 89.1148% 34.8086%, 88.9553% 34.5694%, 88.8756% 34.1707%, 88.7161% 33.9314%, 88.3174% 32.7352%, 87.8389% 31.7783%, 87.8389% 31.6188%, 86.0048% 28.0303%, 85.1276% 26.6746%, 85.0478% 26.4354%, 84.7289% 26.0367%, 84.6491% 25.7974%, 84.4099% 25.5582%, 84.3301% 25.3190%, 84.0909% 25.0797%, 83.3732% 23.9633%, 80.9809% 21.0128%, 78.2695% 18.2217%, 75.2392% 15.6699%, 72.0494% 13.4370%, 69.3381% 11.8421%, 65.6699% 10.0877%, 62.4003% 8.8915%, 58.7321% 7.9346%, 54.8246% 7.2967%, 51.3955% 7.0574%);
+  }
+  .rx-badge-award {
+    filter:
+      drop-shadow(1px 0 0 var(--color-primary))
+      drop-shadow(-1px 0 0 var(--color-primary))
+      drop-shadow(0 1px 0 var(--color-primary))
+      drop-shadow(0 -1px 0 var(--color-primary));
+    transform-origin: center;
+    animation: rx-badge-award-turn 760ms cubic-bezier(.22,.65,.35,1) 1 both;
+  }
+  [data-slot="dialog-overlay"][data-state="open"] {
+    animation: rx-overlay-in 160ms ease-out both;
+  }
+  [data-slot="dialog-overlay"][data-state="closed"] {
+    animation: rx-overlay-out 120ms ease-in both;
+  }
+  [data-slot="dialog-content"][data-state="open"] {
+    animation: rx-dialog-in 180ms ease-out both;
+  }
+  [data-slot="dialog-content"][data-state="closed"] {
+    animation: rx-dialog-out 120ms ease-in both;
+  }
+  [data-slot="dialog-content"][data-variant="sheet"][data-state="open"] {
+    animation: rx-sheet-in 200ms cubic-bezier(.2,.65,.3,1) both;
+  }
+  [data-slot="dialog-content"][data-variant="sheet"][data-state="closed"] {
+    animation: rx-sheet-out 140ms ease-in both;
+  }
+}
+@keyframes rx-button-spin { to { transform: rotate(360deg); } }
+@keyframes rx-check-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes rx-badge-award-turn { from { transform: perspective(480px) rotateY(-360deg); } to { transform: perspective(480px) rotateY(0); } }
+@keyframes rx-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rx-overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes rx-dialog-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rx-dialog-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes rx-sheet-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes rx-sheet-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(12px); } }
+@media (prefers-reduced-motion: reduce) {
+  .rx-button { transition: none; }
+  .rx-button:enabled:active { transform: none; }
+  .rx-card { transition: none; }
+  .rx-card:enabled:active { transform: none; }
+  .rx-switch::before,
+  .rx-switch [data-slot="switch-thumb"] { transition: none; }
+  .rx-button-spinner,
+  .rx-badge-award,
+  .rx-checkbox[data-state="checked"] svg :is(path, polyline),
+  [data-slot="dialog-content"][data-state],
+  [data-slot="dialog-content"][data-variant="sheet"][data-state],
+  [data-slot="dialog-overlay"][data-state] { animation: none; }
+  .rx-badge-award { transform: none; }
 }

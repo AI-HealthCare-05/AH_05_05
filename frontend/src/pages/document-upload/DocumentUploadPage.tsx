@@ -72,7 +72,7 @@ export function DocumentUploadPage() {
         aria-label="갤러리에서 약봉투 선택"
       />
 
-      <main className="flex flex-1 flex-col gap-5 px-page-x py-5">
+      <main className="rx-reading-content flex flex-1 flex-col gap-5 px-page-x py-5">
         <RegistrationProgress step={1} />
         {file && previewUrl ? (
           <>

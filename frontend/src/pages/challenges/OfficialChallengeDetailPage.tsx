@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
@@ -11,6 +11,9 @@ import { useSession } from '@/app/SessionContext';
 import { ApiError } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
+import { Header } from '@/shared/ui/Header';
+import { LoadingState } from '@/shared/ui/LoadingState';
+import { koreanChallengeDate } from './officialChallengeDates';
 import { OfficialChallengeRejoinDialog } from './OfficialChallengeRejoinDialog';
 
 function positiveId(value: string | undefined): number | null {
@@ -27,11 +30,6 @@ function shouldReconcileJoinFailure(reason: unknown): boolean {
   if (!(reason instanceof ApiError)) return true;
   return reason.status >= 500
     || reason.status === 409;
-}
-
-function shortDate(value: string) {
-  const [, month, day] = value.slice(0, 10).split('-');
-  return `${Number(month)}.${Number(day)}`;
 }
 
 function targetLabel(item: ChallengeCatalogItem) {
@@ -109,7 +107,7 @@ export function OfficialChallengeDetailPage() {
   }
 
   if (!item) {
-    return <main role="status" aria-label="챌린지 상세 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" />;
+    return <><Header title="챌린지" onBack={() => navigate('/challenges/browse')} /><main className="px-page-x py-5"><LoadingState label="챌린지 상세 불러오는 중">챌린지를 불러오고 있어요.</LoadingState></main></>;
   }
 
   const selfCheck = item.check_type_code === 'SELF';
@@ -159,16 +157,10 @@ export function OfficialChallengeDetailPage() {
   }
 
   return (
+    <>
+    <Header title={item.name} onBack={() => navigate('/challenges/browse')} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges/browse')} className="flex size-11 shrink-0 items-center justify-center rounded-pill">
-          <ArrowLeft aria-hidden className="size-5" />
-        </button>
-        <div className="min-w-0">
-          <h1 className="break-words text-[22px] font-bold leading-7 [overflow-wrap:anywhere]">{item.name}</h1>
-          <p className="text-caption text-muted-foreground">공식 챌린지</p>
-        </div>
-      </header>
+      <p className="text-caption text-muted-foreground">공식 챌린지</p>
 
       <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-labelledby="official-highlight-title">
         {item.reward_badge ? (
@@ -183,8 +175,8 @@ export function OfficialChallengeDetailPage() {
       <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="participation-guide-title">
         <h2 id="participation-guide-title" className="text-base font-bold">참여 안내</h2>
         <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-          <dt className="text-muted-foreground">모집</dt>
-          <dd>{shortDate(item.recruit_start_at)} ~ {shortDate(item.recruit_end_at)}</dd>
+          <dt className="text-muted-foreground">모집기간</dt>
+          <dd className="break-keep">{koreanChallengeDate(item.recruit_start_at)} ~ {koreanChallengeDate(item.recruit_end_at)}</dd>
           <dt className="text-muted-foreground">수행 기간</dt>
           <dd>참여 당일부터 {item.duration_days}일</dd>
           <dt className="text-muted-foreground">목표</dt>
@@ -226,5 +218,6 @@ export function OfficialChallengeDetailPage() {
       </Button>
       <OfficialChallengeRejoinDialog open={rejoinOpen} pending={pending} onOpenChange={setRejoinOpen} onConfirm={() => void join()} />
     </main>
+    </>
   );
 }

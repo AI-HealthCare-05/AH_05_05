@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import type { DoseRecord, MedicationOverview } from '@/entities/medication/types';
 import { useChallengeMock } from '@/features/challenges';
-import { BottomTabbar, Header } from '@/shared/ui';
+import { BottomTabbar, DrawnChevron, Header } from '@/shared/ui';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { HomeSectionTabs } from '@/pages/home/HomePage';
 import { MedicationTimeline } from '@/pages/home/MedicationTimeline';
@@ -78,7 +78,7 @@ export function ChallengeHomePreviewPage() {
         <HomeChallengeSummary />
         <p className="text-caption text-muted-foreground">9월 7일 처방은 13/14회 예시예요. 챌린지 참여 후 저녁 기록으로 개별 달성과 배지 획득을 확인해보세요.</p>
         <Link to="/dev/challenges/tailored/medication" className="min-h-touch py-3 text-right text-sm font-bold text-primary">
-          복약 챌린지 참여 처방 확인 ›
+          복약 챌린지 참여 처방 확인 <DrawnChevron direction="right" className="inline size-3.5 align-middle" />
         </Link>
       </main>
       <BottomTabbar active="home" className="border-t border-border" onChange={(key) => {

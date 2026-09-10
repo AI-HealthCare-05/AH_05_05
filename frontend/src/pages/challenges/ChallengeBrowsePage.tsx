@@ -1,4 +1,5 @@
-import { ArrowRight, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { DrawnArrow, DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { Link, useLocation, useNavigate } from 'react-router';
 
 import { useChallengeMock } from '@/features/challenges';
@@ -38,7 +39,7 @@ export function ChallengeBrowsePage() {
 
       <Link to={`${base}/tailored`} className="flex min-h-12 items-center justify-between rounded-button border border-primary bg-card px-4 text-sm font-bold text-primary">
         <span>내 기록으로 맞춤 챌린지 보기</span>
-        <ArrowRight aria-hidden className="size-5" />
+        <DrawnArrow direction="right" className="size-5" />
       </Link>
 
       <Link to={`${base}/participations/part-official-active`} className="flex flex-col gap-2 rounded-card bg-primary-bg p-5 text-foreground">
@@ -68,7 +69,7 @@ export function ChallengeBrowsePage() {
                   : frequencyLabel('weekly', undefined, { days: frequency.targetDaysPerWeek, weeks: frequency.durationWeeks })}
               </span>
               <span className="text-caption text-muted-foreground">공식 · 모집 {definition.enrollmentStart!.slice(5).replace('-', '.')} ~ {definition.enrollmentEnd!.slice(5).replace('-', '.')}</span>
-              <span className="text-caption font-bold text-primary">{participation ? '참여 중 ›' : '자세히 보기 ›'}</span>
+              <span className="text-caption font-bold text-primary">{participation ? '참여 중' : '자세히 보기'} <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
             </button>
           );
         })}
@@ -76,7 +77,7 @@ export function ChallengeBrowsePage() {
 
       <Link to={`${base}/create`} className="flex flex-col gap-1 py-2">
         <span className="text-caption text-muted-foreground">나만의 작은 목표로 시작할까요?</span>
-        <span className="text-sm font-bold text-primary">나만의 챌린지 만들기 ›</span>
+        <span className="text-sm font-bold text-primary">나만의 챌린지 만들기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
       </Link>
       </main>
     </>

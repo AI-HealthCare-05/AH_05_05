@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import { useRef, type ComponentProps } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { XIcon } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
@@ -51,18 +51,35 @@ function DialogContent({
   children,
   showCloseButton = true,
   variant = 'dialog',
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: DialogContentProps) {
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-variant={variant}
+        onOpenAutoFocus={(event) => {
+          const activeElement = document.activeElement;
+          returnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+          onOpenAutoFocus?.(event);
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          const returnTarget = returnFocusRef.current;
+          if (!event.defaultPrevented && returnTarget?.isConnected) {
+            event.preventDefault();
+            returnTarget.focus();
+          }
+        }}
         className={cn(
-          'fixed left-1/2 z-50 grid max-w-app -translate-x-1/2 gap-4 bg-card p-5',
+          'fixed left-1/2 z-50 grid max-w-dialog -translate-x-1/2 gap-4 bg-card p-5',
           variant === 'dialog' &&
             'top-1/2 w-[calc(100%-2rem)] -translate-y-1/2 rounded-card border border-border shadow-card',
-          variant === 'sheet' && 'bottom-0 w-full rounded-sheet rounded-b-none shadow-sheet',
+          variant === 'sheet' && 'bottom-0 w-full rounded-sheet rounded-b-none shadow-sheet pb-[max(1.25rem,env(safe-area-inset-bottom))]',
           className,
         )}
         {...props}

@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
+import { CheckIcon } from 'lucide-react';
+import { DrawnChevron } from './DrawnArrow';
 import { cn } from '@/shared/lib/cn';
 
 /**
@@ -38,7 +39,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <DrawnChevron className="size-4 shrink-0 text-muted-foreground" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -64,11 +65,11 @@ function SelectContent({
         {...props}
       >
         <SelectPrimitive.ScrollUpButton className="flex h-touch items-center justify-center">
-          <ChevronUpIcon className="size-4" aria-hidden />
+          <DrawnChevron direction="up" className="size-4" />
         </SelectPrimitive.ScrollUpButton>
         <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
         <SelectPrimitive.ScrollDownButton className="flex h-touch items-center justify-center">
-          <ChevronDownIcon className="size-4" aria-hidden />
+          <DrawnChevron className="size-4" />
         </SelectPrimitive.ScrollDownButton>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>

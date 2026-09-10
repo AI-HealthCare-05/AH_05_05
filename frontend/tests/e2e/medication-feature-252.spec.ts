@@ -378,11 +378,11 @@ test('OCR 빈 항목은 경고하지 않고 저신뢰 약을 확인하면 경고
 
   await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
   await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
-  await page.getByRole('button', { name: /^리바록사반 확인 필요 함량 10mg/ }).click();
+  await page.getByRole('button', { name: '리바록사반 수정', exact: true }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('리바록사반 확인');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
-  const reviewedMedication = page.getByRole('button', { name: /리바록사반 확인/ });
+  const reviewedMedication = page.getByRole('article', { name: '리바록사반 확인', exact: true });
   await expect(reviewedMedication).toBeVisible();
   await expect(reviewedMedication).not.toContainText('확인 필요');
   await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(0);

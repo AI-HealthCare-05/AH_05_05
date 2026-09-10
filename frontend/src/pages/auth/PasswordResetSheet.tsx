@@ -42,7 +42,7 @@ export function PasswordResetSheet({ initialEmail, onClose, onRestoreFocus }: Pa
     <Dialog open onOpenChange={open => { if (!open) close(); }}>
       <DialogContent
         variant="sheet"
-        className="max-h-[90dvh] overflow-y-auto motion-safe:animate-[password-reset-open_240ms_ease-out]"
+        className="password-reset-sheet max-h-[90dvh] overflow-y-auto motion-safe:animate-[password-reset-open_240ms_ease-out]"
         onCloseAutoFocus={event => {
           event.preventDefault();
           onRestoreFocus();

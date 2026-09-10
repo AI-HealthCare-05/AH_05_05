@@ -41,10 +41,13 @@ test('저장된 AI 답변은 안전한 Markdown과 스크롤 가능한 표·코�
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     for (const selector of ['table', 'pre']) {
-      expect(await body.locator(selector).evaluate(el => {
+      const scroll = await body.locator(selector).evaluate(el => {
         const region = el.tagName === 'TABLE' ? el.parentElement! : el;
-        return region.scrollWidth > region.clientWidth && getComputedStyle(region).overflowX === 'auto';
-      })).toBe(true);
+        return { overflows: region.scrollWidth > region.clientWidth, overflowX: getComputedStyle(region).overflowX };
+      });
+      expect(scroll.overflowX).toBe('auto');
+      // On wide #369 layouts a table may fit without needing horizontal scrolling.
+      if (width < 768 || selector === 'pre') expect(scroll.overflows).toBe(true);
     }
     await page.screenshot({ path: testInfo.outputPath(`chat-markdown-${width}.png`), fullPage: true });
   }

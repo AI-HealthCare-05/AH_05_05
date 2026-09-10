@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { XIcon } from 'lucide-react';
+import { DrawnArrow } from '@/shared/ui/DrawnArrow';
 import { listCommonCodes, type CommonCodeItem } from '@/entities/common-code';
 import {
   saveChatFeedback,
@@ -115,6 +116,17 @@ export function ChatFeedbackSheet({
     onOpenChange(false);
   }
 
+  function backToChoice() {
+    if (saving) return;
+    saveGenerationRef.current += 1;
+    setStep('end');
+    setReasons([]);
+    setSelectedReason(null);
+    setReasonsLoading(false);
+    setReasonsError(null);
+    setSaveError(null);
+  }
+
   async function endChat(saveGeneration: number) {
     try {
       await onEnd?.();
@@ -188,15 +200,30 @@ export function ChatFeedbackSheet({
         variant="sheet"
         className="max-h-[100dvh] overflow-hidden"
       >
-        <DialogTitle className="pr-10 text-xl">{title}</DialogTitle>
-        <button
-          type="button"
-          aria-label="평가 닫기"
-          onClick={closeSheet}
-          className="absolute right-3 top-3 flex size-touch items-center justify-center rounded-input text-muted-foreground hover:bg-muted-bg"
-        >
-          <XIcon aria-hidden className="size-6" />
-        </button>
+        <div className="-mx-2 -my-2 flex items-center gap-1">
+          {step !== 'end' && (
+            <button
+              type="button"
+              aria-label="평가 선택으로 돌아가기"
+              disabled={saving}
+              onClick={backToChoice}
+              className="flex size-touch shrink-0 items-center justify-center rounded-input text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <DrawnArrow direction="left" className="size-6" />
+            </button>
+          )}
+          <DialogTitle className={cn('flex-1 text-xl', step === 'end' && 'pl-2')}>
+            {title}
+          </DialogTitle>
+          <button
+            type="button"
+            aria-label="평가 닫기"
+            onClick={closeSheet}
+            className="flex size-touch shrink-0 items-center justify-center rounded-input text-muted-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <XIcon aria-hidden className="size-6" />
+          </button>
+        </div>
 
         {step === 'end' ? (
           <>

@@ -1,4 +1,5 @@
 import type { MedicationTimes } from '@/entities/settings';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { MEAL_SLOTS, mealSlotLabel, type MealSlot } from '@/shared/model/mealSlot';
 import {
   Button,
@@ -128,7 +129,7 @@ export function MedicationTimeSettingsSheet({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span aria-hidden className="text-xl text-muted-foreground">›</span>
+                  <DrawnChevron direction="right" className="size-5 text-muted-foreground" />
                 </div>
               </div>
             );

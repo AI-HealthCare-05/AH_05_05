@@ -88,7 +88,10 @@ test('pending generation prevents duplicate requests; timeout allows retry', asy
   });
   await page.goto('/reports/new?source=medications');
   await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
-  await expect(page.getByRole('button', { name: '보고서 생성 중' })).toBeDisabled();
+  const pendingButton = page.getByRole('button', { name: '보고서 생성 중' });
+  await expect(pendingButton).toBeDisabled();
+  await expect(pendingButton).toHaveAttribute('aria-busy', 'true');
+  await expect(pendingButton.locator('.rx-button-spinner')).toBeVisible();
   expect(calls).toBe(1);
   release();
   await expect(page.getByRole('alert')).toContainText('생성 시간이 초과');

@@ -9,6 +9,9 @@ import {
 import { getAuthGeneration } from '@/shared/api/client';
 import { DEFAULT_MEAL_TIMES, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
+import { LoadingState } from '@/shared/ui/LoadingState';
+import { TimeSlotNavigator } from './TimeSlotNavigator';
+import { DoseSelectionIndicator } from './DoseSelectionIndicator';
 
 interface Props {
   supplements: Supplement[];
@@ -67,19 +70,25 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
           </Button>
         </Card>
       ) : loading || records === null ? (
-        <p role="status" className="text-sm text-muted-foreground">영양제 복용 정보를 불러오는 중이에요.</p>
+        <LoadingState label="영양제 복용 정보 불러오는 중">
+          영양제 복용 정보를 불러오는 중이에요.
+        </LoadingState>
       ) : scheduled.length === 0 ? (
         <Card className="p-4"><p className="text-sm text-muted-foreground">오늘 먹을 영양제가 없어요.</p></Card>
       ) : primarySlot ? (
-          <SupplementSlotCard
-            key={`${date}:${primarySlot.slot}`}
-            date={date}
-            slot={primarySlot.slot}
-            time={primarySlot.time}
-            supplements={primarySlot.supplements}
-            records={records}
-            onSaved={updateRecord}
-          />
+        <TimeSlotNavigator key={date} items={supplementSlots} initialSlot={primarySlot.slot} label="영양제">
+          {(item) => (
+            <SupplementSlotCard
+              key={`${date}:${item.slot}`}
+              date={date}
+              slot={item.slot}
+              time={item.time}
+              supplements={item.supplements}
+              records={records}
+              onSaved={updateRecord}
+            />
+          )}
+        </TimeSlotNavigator>
       ) : null}
       <button type="button" className="min-h-touch self-end text-sm font-bold text-primary-strong" onClick={onBrowse}>
         영양제 살펴보기
@@ -203,20 +212,10 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                   aria-label={`${supplement.name} ${taken ? '복용 완료' : '선택'}`}
                   aria-pressed={isSelected}
                   disabled={pending}
-                  className="flex min-h-touch w-full min-w-0 items-center gap-3 rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
+                  className="flex min-h-touch w-full min-w-0 items-center rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
                   onClick={() => toggle(supplement.supplementId)}
                 >
-                  <span
-                    data-supplement-selection-indicator
-                    aria-hidden
-                    className={`flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                      isSelected
-                        ? 'border-primary bg-primary text-card'
-                        : 'border-border bg-card text-transparent'
-                    }`}
-                  >
-                    {isSelected && <Check className="size-4" strokeWidth={3} />}
-                  </span>
+                  <DoseSelectionIndicator kind="supplement" selected={isSelected} />
                   <span className="flex min-w-0 flex-1 flex-col gap-1 py-1">
                     {taken && !allSupplementsTaken && (
                       <span
@@ -229,7 +228,7 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                     )}
                     <span className="[overflow-wrap:anywhere] text-base font-bold text-foreground">{supplement.name}</span>
                   </span>
-                  <span className="shrink-0 text-sm text-muted-foreground">
+                  <span className="ml-3 shrink-0 text-sm text-muted-foreground">
                     {supplement.doseAmount}{supplement.doseUnit}
                   </span>
                 </button>

@@ -24,6 +24,14 @@ const SLOT_CHIP_CLASSES: Record<MealSlot, string> = {
   bedtime: 'bg-muted-bg text-muted-foreground',
 };
 
+// Midpoint between the original pastel chips and their strong legend text colors.
+const SLOT_DOT_CLASSES: Record<MealSlot, string> = {
+  morning: 'bg-[color-mix(in_srgb,var(--color-warning-strong)_50%,var(--color-warning-bg))]',
+  lunch: 'bg-[color-mix(in_srgb,var(--color-primary-strong)_50%,var(--color-primary-bg))]',
+  evening: 'bg-[color-mix(in_srgb,var(--color-brand)_50%,var(--color-warm-200))]',
+  bedtime: 'bg-[color-mix(in_srgb,var(--color-muted-foreground)_50%,var(--color-muted-bg))]',
+};
+
 export function MedicationEpisodeCard({
   overview,
   expanded,
@@ -89,12 +97,14 @@ export function MedicationEpisodeCard({
                 {!feature252 && ` · 약 ${overview.medications.length}개`}
               </span>
             </span>
+            <span className="flex min-w-touch shrink-0 items-center justify-center">
             <ChevronDown
               aria-hidden
               className={`size-5 shrink-0 text-disabled-foreground transition-transform motion-reduce:transition-none ${
                 expanded ? 'rotate-180' : ''
               }`}
             />
+            </span>
           </button>
           {feature252 && (
             <div className="mt-3 flex min-w-0 items-start gap-2 px-4 pb-3">
@@ -129,11 +139,10 @@ export function MedicationEpisodeCard({
         >
           <ul className="divide-y divide-border" aria-label={`${dateLabel} 처방 약 목록`}>
             {overview.medications.map((medication) => (
-              <li key={medication.medicationId} className="flex min-w-0 items-start gap-3 py-4">
+              <li key={medication.medicationId} className="flex min-w-0 items-start gap-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="[overflow-wrap:anywhere] font-bold text-foreground">
-                    {medication.name}{' '}
-                    <span className="font-normal text-muted-foreground">{medication.dose}</span>
+                    {medication.name}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {medication.asNeeded ? (
@@ -144,10 +153,12 @@ export function MedicationEpisodeCard({
                       medication.slots.map((slot) => (
                         <span
                           key={slot}
-                          className={`rounded-pill px-3 py-1 text-sm ${feature252 ? SLOT_CHIP_CLASSES[slot] : 'bg-muted-bg text-muted-foreground'}`}
+                          role={feature252 ? 'img' : undefined}
+                          aria-label={feature252 ? mealSlotLabel(slot) : undefined}
+                          title={feature252 ? mealSlotLabel(slot) : undefined}
+                          className={feature252 ? `size-3.5 shrink-0 rounded-full ${SLOT_DOT_CLASSES[slot]}` : 'rounded-pill px-3 py-1 text-sm bg-muted-bg text-muted-foreground'}
                         >
-                          {mealSlotLabel(slot)}
-                          {feature252 && ` ${overview.mealTimes[slot]}`}
+                          {!feature252 && mealSlotLabel(slot)}
                         </span>
                       ))
                     )}

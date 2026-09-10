@@ -32,6 +32,7 @@ import {
 } from '@/shared/ui';
 import { MEAL_SLOTS, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { cn } from '@/shared/lib/cn';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
 import { MedicationBulkDeleteDialog } from './MedicationBulkDeleteDialog';
 import { MedicationEpisodeCard } from './MedicationEpisodeCard';
@@ -475,13 +476,11 @@ export function MedicationsPage({
             </div>
           </Card>
         ) : !overviews ? (
-          <div
-            role="status"
-            aria-label="복용약 불러오는 중"
-            className="min-h-44 animate-pulse rounded-card bg-muted-bg"
-          />
+          <LoadingState label="복용약 불러오는 중">
+            처방 기록을 불러오고 있어요.
+          </LoadingState>
         ) : overviews.length === 0 ? (
-          <Card title="이 기간에 등록한 처방이 없어요" className="p-5">
+          <Card title="이 기간에 등록한 처방이 없어요" className="p-5 motion-safe:animate-[rx-overlay-in_200ms_ease-out]">
             <div className="flex flex-col gap-4">
               <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
               <Button variant="secondary" onClick={() => setFilterOpen(true)}>
@@ -491,7 +490,7 @@ export function MedicationsPage({
           </Card>
         ) : feature252 ? (
           <>
-            <section className="flex flex-col gap-3" aria-labelledby="active-episode-list-title">
+            <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="active-episode-list-title">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
                   복용 중
@@ -501,7 +500,7 @@ export function MedicationsPage({
               {activeOverviews.map(renderEpisodeCard)}
             </section>
             {finishedOverviews.length > 0 && (
-              <section className="flex flex-col gap-3" aria-labelledby="finished-episode-list-title">
+              <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="finished-episode-list-title">
                 <div className="flex items-baseline justify-between gap-3">
                   <h2 id="finished-episode-list-title" className="text-xl font-bold text-foreground">
                     완료된 처방
@@ -513,7 +512,7 @@ export function MedicationsPage({
             )}
           </>
         ) : (
-          <section className="flex flex-col gap-3" aria-labelledby="episode-list-title">
+          <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="episode-list-title">
             <div className="flex items-baseline justify-between gap-3">
               <h2 id="episode-list-title" className="text-xl font-bold text-foreground">
                 처방 기록
@@ -699,9 +698,6 @@ function MedicationEpisodeSheet({
             </DialogHeader>
             {overview && (
               <div className="flex min-w-0 flex-col gap-4">
-                <span className="self-start rounded-pill bg-primary-bg px-3 py-1.5 text-sm font-bold text-primary-strong">
-                  복용 중
-                </span>
                 <Input
                   label="복약 별칭"
                   aria-label="복약 별칭"
