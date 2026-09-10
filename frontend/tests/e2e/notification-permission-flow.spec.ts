@@ -59,6 +59,27 @@ async function stubPushManager(page: Page) {
   });
 }
 
+async function stubExistingPushSubscription(page: Page) {
+  await page.addInitScript(() => {
+    const subscription = {
+      endpoint: 'https://push.example.test/device-existing',
+      unsubscribe: async () => {
+        (window as typeof window & { __pushUnsubscribed?: boolean }).__pushUnsubscribed = true;
+        sessionStorage.setItem('push-unsubscribed-for-test', 'true');
+        return true;
+      },
+    };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        getRegistration: async () => ({
+          pushManager: { getSubscription: async () => subscription },
+        }),
+      },
+    });
+  });
+}
+
 test('알림 설정은 복약·영양제·일정 모두 꺼진 서버 기본값으로 시작한다', async ({ page }) => {
   await stubNotificationPermission(page, 'default');
   await page.goto('/dev/my-authenticated');
@@ -175,6 +196,72 @@ test('서비스워커는 push 표시와 알림 클릭 이동을 처리한다', a
   expect(source).toContain("addEventListener('push'");
   expect(source).toContain('showNotification');
   expect(source).toContain("addEventListener('notificationclick'");
+});
+
+test('로그아웃하면 서버 구독을 비활성화한 뒤 브라우저 Push 구독을 해제한다', async ({ page }) => {
+  await stubExistingPushSubscription(page);
+  const requests: string[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions**', async (route) => {
+    requests.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{ id: 81, endpoint: 'https://push.example.test/device-existing' }],
+        }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.goto('/dev/my-authenticated');
+
+  await page.getByRole('button', { name: '로그아웃', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/home$/);
+  await expect.poll(() => page.evaluate(
+    () => sessionStorage.getItem('push-unsubscribed-for-test'),
+  )).toBe('true');
+  expect(requests).toEqual([
+    'GET /api/v1/alarms/push-subscriptions',
+    'DELETE /api/v1/alarms/push-subscriptions/81',
+  ]);
+});
+
+test('세션 만료 이벤트는 서버 호출 없이 브라우저 Push 구독을 해제한다', async ({ page }) => {
+  await stubExistingPushSubscription(page);
+  let serverRequestCount = 0;
+  await page.route('**/api/v1/alarms/push-subscriptions**', async (route) => {
+    serverRequestCount += 1;
+    await route.abort();
+  });
+  await page.goto('/dev/my-authenticated');
+
+  await page.evaluate(() => window.dispatchEvent(new Event('poke:auth-session-expired')));
+
+  await expect.poll(() => page.evaluate(
+    () => Boolean((window as typeof window & { __pushUnsubscribed?: boolean }).__pushUnsubscribed),
+  )).toBe(true);
+  expect(serverRequestCount).toBe(0);
+});
+
+test('브라우저 Push 정리에 실패해도 로그아웃은 완료한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        getRegistration: async () => {
+          throw new Error('service worker unavailable');
+        },
+      },
+    });
+  });
+  await page.goto('/dev/my-authenticated');
+
+  await page.getByRole('button', { name: '로그아웃', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/home$/);
 });
 
 test('복약시간 저장 성공 뒤 방금 정한 네 시각으로 최초 권한 사전 팝업을 연다', async ({ page }) => {

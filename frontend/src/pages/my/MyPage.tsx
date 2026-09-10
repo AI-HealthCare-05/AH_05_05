@@ -409,9 +409,9 @@ export function MyPage({
     navigate(TAB_ROUTES[key]);
   }
 
-  function handleSignOut() {
+  async function handleSignOut() {
     logoutNavigationRef.current = true;
-    signOut();
+    await signOut();
     window.location.replace('/home');
   }
 
@@ -619,7 +619,7 @@ export function MyPage({
             <button
               type="button"
               className="mt-1 h-11 min-h-touch w-full rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground transition-colors hover:bg-muted-bg"
-              onClick={handleSignOut}
+              onClick={() => void handleSignOut()}
             >
               로그아웃
             </button>

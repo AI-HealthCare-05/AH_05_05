@@ -7,12 +7,13 @@ import {
   setAccessToken,
   setAccountPrincipal,
 } from '@/shared/api/client';
+import { unregisterPushNotifications } from '@/shared/push/register';
 
 interface SessionValue {
   authenticated: boolean;
   principalKey: string | null;
   signIn: (principalKey: string) => void;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -25,6 +26,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const expireCurrentSession = () => {
+      void unregisterPushNotifications({ deactivateServer: false });
       setAccessToken(null);
       setAccountPrincipal(null);
       setPrincipalKey(null);
@@ -70,7 +72,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setPrincipalKey(normalizedPrincipal);
         setAuthenticated(true);
       },
-      signOut: () => {
+      signOut: async () => {
+        await unregisterPushNotifications();
         setAccessToken(null);
         setAccountPrincipal(null);
         setPrincipalKey(null);
