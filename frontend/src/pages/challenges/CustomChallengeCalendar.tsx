@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { Check } from 'lucide-react';
 
 import type { CustomChallengeOccurrence, CustomChallengeParticipation } from '@/entities/custom-challenge';
 import { cn } from '@/shared/lib/cn';
 import { customChallengeDateLabel as dateLabel, seoulDate } from './customChallengeDates';
+import './custom-challenge-date-strip.css';
 
 const SLOT_LABEL = { MORNING: '아침', LUNCH: '점심', EVENING: '저녁', BEDTIME: '자기전' };
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
 
 function shiftDate(date: string, amount: number) {
@@ -24,14 +24,17 @@ function monthDay(date: string) {
 export function CustomChallengeCalendar({ participation }: { participation: CustomChallengeParticipation }) {
   const today = seoulDate();
   const occurrenceDates = participation.occurrences.map(item => item.scheduledDate).sort();
-  const start = seoulDate(new Date(participation.joinedAt));
-  const end = participation.actualEndDate ?? occurrenceDates.at(-1) ?? start;
-  const initialDate = participation.status !== 'ACTIVE' ? end : today < start ? start : today > end ? end : today;
-  const [chosenDate, setChosenDate] = useState(initialDate);
+  const joinedDate = seoulDate(new Date(participation.joinedAt));
+  const start = [today, joinedDate, occurrenceDates[0] ?? joinedDate].sort()[0];
+  const end = [today, participation.actualEndDate ?? joinedDate, occurrenceDates.at(-1) ?? joinedDate].sort().at(-1)!;
+  const [chosenDate, setChosenDate] = useState(today);
   const selectedDate = chosenDate < start ? start : chosenDate > end ? end : chosenDate;
   const stripRef = useRef<HTMLDivElement>(null);
   const dateButtons = useRef(new Map<string, HTMLButtonElement>());
-  const focusDate = useRef(false);
+  const selectedDateRef = useRef(selectedDate);
+  selectedDateRef.current = selectedDate;
+  const identity = useRef(participation.id);
+  const scrollFrame = useRef<number | null>(null);
   const gesture = useRef<{ id: number; x: number; y: number } | null>(null);
   const dates: string[] = [];
   for (let date = start; date <= end; date = shiftDate(date, 1)) dates.push(date);
@@ -47,27 +50,67 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
   const allDone = selectedDate <= today && selectedRecords.length > 0 && completedCount === selectedRecords.length;
   const doseLabel = participation.challengeType === 'SUPPLEMENT' ? '영양제를' : '약을';
 
-  useEffect(() => {
-    const button = dateButtons.current.get(selectedDate);
+  function centerDate(date: string, behavior: ScrollBehavior = 'auto') {
+    const button = dateButtons.current.get(date);
     const strip = stripRef.current;
     if (!button || !strip) return;
-    // Scroll just the strip, without moving the page away from the record cards.
-    strip.scrollLeft += button.getBoundingClientRect().left - strip.getBoundingClientRect().left
-      - (strip.clientWidth - button.offsetWidth) / 2;
-    if (focusDate.current) {
-      button.focus({ preventScroll: true });
-      focusDate.current = false;
-    }
-  }, [selectedDate]);
+    strip.scrollTo({ left: strip.scrollLeft + button.getBoundingClientRect().left - strip.getBoundingClientRect().left
+      - (strip.clientWidth - button.offsetWidth) / 2, behavior });
+  }
+
+  useLayoutEffect(() => {
+    const date = identity.current === participation.id ? selectedDateRef.current : today;
+    identity.current = participation.id;
+    setChosenDate(date);
+    centerDate(date);
+    // Selection itself must never restart native scrolling. A refresh with the
+    // same bounds keeps the viewed day, while a different challenge starts today.
+  }, [participation.id, start, end, today]);
+
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    let width = strip.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (width === strip.clientWidth) return;
+      width = strip.clientWidth;
+      centerDate(selectedDateRef.current);
+    });
+    observer.observe(strip);
+    return () => {
+      observer.disconnect();
+      if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    };
+  }, []);
+
+  function syncCenteredDate() {
+    if (scrollFrame.current !== null) return;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      const strip = stripRef.current;
+      if (!strip) return;
+      const center = strip.getBoundingClientRect().left + strip.clientWidth / 2;
+      let nearest = selectedDateRef.current;
+      let distance = Infinity;
+      dateButtons.current.forEach((button, date) => {
+        const rect = button.getBoundingClientRect();
+        const delta = Math.abs(rect.left + rect.width / 2 - center);
+        if (delta < distance) { distance = delta; nearest = date; }
+      });
+      setChosenDate(nearest);
+    });
+  }
 
   function selectDate(date: string, keyboard = false) {
-    focusDate.current = keyboard;
-    setChosenDate(date < start ? start : date > end ? end : date);
+    const next = date < start ? start : date > end ? end : date;
+    if (keyboard) dateButtons.current.get(next)?.focus({ preventScroll: true });
+    centerDate(next, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth');
   }
 
   function navigateWithKeyboard(event: KeyboardEvent<HTMLButtonElement>) {
-    const next = event.key === 'ArrowLeft' ? shiftDate(selectedDate, -1)
-      : event.key === 'ArrowRight' ? shiftDate(selectedDate, 1)
+    const focused = event.currentTarget.dataset.date ?? selectedDate;
+    const next = event.key === 'ArrowLeft' ? shiftDate(focused, -1)
+      : event.key === 'ArrowRight' ? shiftDate(focused, 1)
       : event.key === 'Home' ? start : event.key === 'End' ? end : null;
     if (!next) return;
     event.preventDefault();
@@ -93,47 +136,32 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
 
   return (
     <section aria-labelledby="custom-calendar-title" className="min-w-0 rounded-card bg-card p-4 shadow-card">
-      <h2 id="custom-calendar-title" className="text-base font-bold">챌린지 달력</h2>
-      {occurrenceDates.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">예정된 목표 기록이 없어요.</p> : <>
-        <div className="mb-4 mt-5 flex items-center justify-between gap-2">
+      <h2 id="custom-calendar-title" className="sr-only">챌린지 달력</h2>
+        <div className="mb-3 mt-2 text-center">
           <div aria-live="polite" aria-atomic="true" className="min-w-0">
             <p className="text-caption text-muted-foreground">{selectedDate.slice(0, 4)}년</p>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <h3 id="custom-selected-date-title" className="text-2xl font-bold tracking-tight">{monthDay(selectedDate)}</h3>
               {selectedDate === today && <span className="rounded-pill bg-primary-bg px-2 py-0.5 text-caption font-bold text-primary">오늘</span>}
             </div>
           </div>
-          <div className="flex shrink-0 gap-1">
-            <button type="button" aria-label="이전 날짜" disabled={selectedDate <= start} onClick={() => selectDate(shiftDate(selectedDate, -1))} className={cn('flex size-11 items-center justify-center rounded-pill bg-muted-bg text-primary disabled:text-disabled-foreground', FOCUS)}>
-              <ChevronLeft size={20} aria-hidden="true" />
-            </button>
-            <button type="button" aria-label="다음 날짜" disabled={selectedDate >= end} onClick={() => selectDate(shiftDate(selectedDate, 1))} className={cn('flex size-11 items-center justify-center rounded-pill bg-muted-bg text-primary disabled:text-disabled-foreground', FOCUS)}>
-              <ChevronRight size={20} aria-hidden="true" />
-            </button>
-          </div>
         </div>
-        <div ref={stripRef} role="group" aria-label="챌린지 날짜 선택" className="flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain px-1 py-2">
+        <div ref={stripRef} role="group" aria-label="챌린지 날짜 선택" onScroll={syncCenteredDate} className="custom-challenge-date-strip">
           {dates.map(date => {
             const records = byDate.get(date) ?? [];
             const completed = records.filter(item => item.isCompleted).length;
-            const done = date <= today && records.length > 0 && completed === records.length;
-            const summary = !records.length ? '목표 없음' : date > today ? `예정 ${records.length}회` : done ? '모두 완료' : `${completed}/${records.length} 완료`;
+            const done = records.length > 0 && completed === records.length;
+            const summary = !records.length ? '목표 없음' : done ? '모두 완료' : date > today ? `예정 ${records.length}회` : `${completed}/${records.length} 완료`;
             const selected = date === selectedDate;
             return <button
               key={date} ref={button => { if (button) dateButtons.current.set(date, button); else dateButtons.current.delete(date); }}
-              type="button" tabIndex={selected ? 0 : -1}
+              type="button" data-date={date} tabIndex={selected ? 0 : -1}
               aria-label={`${dateLabel(date)}, ${summary}${date === today ? ', 오늘' : ''}`}
               aria-pressed={selected} aria-current={date === today ? 'date' : undefined}
               onClick={() => selectDate(date)} onKeyDown={navigateWithKeyboard}
-              className={cn('flex min-h-24 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-pill border text-caption', FOCUS,
-                selected ? 'border-primary bg-primary font-bold text-primary-foreground shadow-card' : 'border-border bg-card text-muted-foreground',
-                date === today && !selected && 'border-primary text-primary')}
+              className={cn('custom-challenge-date-hit', FOCUS)}
             >
-              <span>{WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]}</span>
-              <span className="text-lg font-bold">{Number(date.slice(-2))}</span>
-              <span aria-hidden="true" className="flex h-4 items-center text-[10px] leading-none">
-                {done ? <Check size={14} strokeWidth={3} /> : !records.length ? '—' : date > today ? '예정' : `${completed}/${records.length}`}
-              </span>
+              <span aria-hidden="true" className={cn('custom-challenge-date-square border border-border', done ? 'bg-primary' : 'bg-card')} />
             </button>;
           })}
         </div>
@@ -165,7 +193,6 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
           </ul>}
           <p id="custom-date-navigation-hint" className="mt-4 text-center text-caption text-muted-foreground">기록을 좌우로 밀어 다른 날짜를 확인해요.</p>
         </section>
-      </>}
     </section>
   );
 }

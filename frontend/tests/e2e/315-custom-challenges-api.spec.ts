@@ -657,7 +657,7 @@ test('zero remaining goals render without an invented last goal date', async ({ 
   await expect(page.getByText('예정된 목표 없음', { exact: true })).toBeVisible();
   await expect(page.getByText('0 / 0회', { exact: true })).toBeVisible();
   await expect(page.getByText('진행 중', { exact: true })).toBeVisible();
-  await expect(page.getByText('예정된 목표 기록이 없어요.', { exact: true })).toBeVisible();
+  await expect(page.getByText('이날은 목표 기록이 없어요.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '다음 날짜' })).toHaveCount(0);
 });
 
@@ -890,14 +890,17 @@ for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
     await expect(recordsForDate(page, '2026-09-11')).toContainText('예정');
     await page.getByRole('button', { name: '2026.10.02, 예정 1회' }).click();
     await expect(recordsForDate(page, '2026-10-02')).toContainText('저녁');
-    await expect(page.getByRole('button', { name: '다음 날짜' })).toBeDisabled();
+    await page.getByRole('button', { pressed: true }).press('ArrowRight');
+    await expect(page.getByRole('button', { name: '2026.10.02, 예정 1회' })).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { pressed: true }).press('Home');
-    await expect(page.getByRole('button', { name: '이전 날짜' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '2026.09.09, 목표 없음' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { pressed: true }).press('ArrowLeft');
+    await expect(page.getByRole('button', { name: '2026.09.09, 목표 없음' })).toHaveAttribute('aria-pressed', 'true');
     expect(writes).toEqual([]);
   });
 }
 
-test('ended calendar selects the final goal date across a year boundary', async ({ page }) => {
+test('ended calendar starts today and browses final goal records across a year boundary', async ({ page }) => {
   await page.clock.setFixedTime('2027-02-10T03:00:00Z');
   await authenticate(page);
   await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: participation({
@@ -908,9 +911,10 @@ test('ended calendar selects the final goal date across a year boundary', async 
     ],
   }) }));
   await page.goto('/challenges/custom-participations/701');
+  await expect(recordsForDate(page, '2027-02-10')).toContainText('이날은 목표 기록이 없어요.');
+  await page.getByRole('button', { name: /^2027.01.01,/ }).click();
   await expect(recordsForDate(page, '2027-01-01')).toContainText('미완료');
   await expect(page.getByRole('heading', { name: '최종 결과' })).toBeVisible();
-  await page.getByRole('button', { name: '이전 날짜' }).click();
   await page.getByRole('button', { name: '2026.12.31, 모두 완료' }).click();
   await expect(recordsForDate(page, '2026-12-31')).toContainText('점심');
 });
@@ -923,7 +927,9 @@ test('calendar uses Seoul join date for UTC instants at the month boundary', asy
     occurrences: [{ id: 901, targetId: 801, scheduledDate: '2026-10-02', slot: 'MORNING', scheduledAt: '2026-10-02T08:00:00+09:00', isCompleted: false }],
   }) }));
   await page.goto('/challenges/custom-participations/701');
-  await expect(page.getByRole('button', { name: '이전 날짜' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '2026.10.01, 목표 없음, 오늘' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { pressed: true }).press('ArrowLeft');
+  await expect(page.getByRole('button', { name: '2026.10.01, 목표 없음, 오늘' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('2026.10.01 ~ 2026.10.02', { exact: true })).toBeVisible();
   await expect(recordsForDate(page, '2026-10-01')).toContainText('이날은 목표 기록이 없어요.');
 });
