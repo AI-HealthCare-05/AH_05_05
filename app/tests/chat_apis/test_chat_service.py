@@ -6,12 +6,16 @@ import pytest
 
 from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.schemas.enums import ChatRole, SafetyStatus
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.medication_chat import (
     MedicationChatResult,
     MedicationChatRoute,
+    MedicationChatSessionReference,
+    MedicationChatSessionReferenceEntity,
     MedicationChatSource,
     MedicationChatSourceKind,
 )
+from ai_worker.schemas.medication_search import MedicationQueryEntityType
 from app.core.exceptions import (
     AppError,
     ChatProcessingFailedError,
@@ -61,8 +65,9 @@ class RecordingChatTracer:
 
 
 class FakeRepository:
-    def __init__(self, history=None) -> None:
+    def __init__(self, history=None, session_reference=None) -> None:
         self.history = history or []
+        self.session_reference = session_reference or MedicationChatSessionReference()
         self.completed = None
         self.failed = None
 
@@ -72,6 +77,7 @@ class FakeRepository:
             user_message=SimpleNamespace(id=100),
             assistant_message=SimpleNamespace(id=101),
             history=self.history,
+            session_reference=self.session_reference,
         )
 
     async def complete_request(self, **kwargs):
@@ -178,14 +184,25 @@ async def test_send_passes_server_loaded_history_to_core() -> None:
     assert response.sources[0].scope == "official"
 
 
-async def test_send_injects_reference_from_current_session_history_only() -> None:
+async def test_send_injects_structured_reference_from_current_session_only() -> None:
     history = [
         SimpleNamespace(
             role=ChatMessageRole.ASSISTANT,
-            content="일반 제품 안내\n- 제품: 타이레놀정500밀리그람 (테스트제약)\n- 효능: 통증 완화",
+            content="효능: 타이레놀정500밀리그람은 통증 완화에 사용됩니다.",
         )
     ]
-    repository = FakeRepository(history=history)
+    repository = FakeRepository(
+        history=history,
+        session_reference=MedicationChatSessionReference(
+            entities=[
+                MedicationChatSessionReferenceEntity(
+                    name="타이레놀정500밀리그람",
+                    entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                    kind=InteractionEntityKind.DRUG,
+                )
+            ]
+        ),
+    )
     core = FakeCore(result=build_result())
     service = ChatApplicationService(
         repository=repository,

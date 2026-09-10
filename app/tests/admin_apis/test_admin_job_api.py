@@ -4,8 +4,11 @@ from starlette import status
 from tortoise.contrib.test import TestCase
 
 from app.core import config
+from app.models.alarms import Alarm
 from app.models.background_jobs import BackgroundJob
-from app.models.enums import AdminRole, BackgroundJobStatus, BackgroundJobType
+from app.models.enums import AdminRole, AlarmType, BackgroundJobStatus, BackgroundJobType, MealSlot, OcrJobStatus
+from app.models.ocr import OcrJob
+from app.models.users import User
 from app.tests.admin_apis.conftest import auth_header, create_admin, request
 
 ADMIN_JOBS_URL = "/api/v1/admin/jobs"
@@ -57,6 +60,7 @@ class TestAdminJobAPI(TestCase):
                 {
                     "jobId": matched.id,
                     "jobType": "ALARM",
+                    "alarmType": None,
                     "status": "FAILED",
                     "userId": None,
                     "userName": None,
@@ -74,6 +78,89 @@ class TestAdminJobAPI(TestCase):
         response = await request("GET", ADMIN_JOBS_URL)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_merges_ocr_jobs_and_searches_prefixed_ocr_job_id(self) -> None:
+        user = await User.create(
+            email="ocr-job-user@example.com",
+            hashed_password="unused",
+            name="OCR 사용자",
+        )
+        ocr_job = await OcrJob.create(
+            user=user,
+            status=OcrJobStatus.READY_FOR_REVIEW,
+            idempotency_key="admin-ocr-job",
+            input_manifest={},
+            ocr_model="clova-general-v2",
+            schema_version="medication-guide-review/v3",
+        )
+        await OcrJob.filter(id=ocr_job.id).update(created_at=datetime(2026, 8, 20, 13, 0, tzinfo=config.TIMEZONE))
+        background_job = await BackgroundJob.create(
+            idempotency_key="admin-regular-job",
+            job_type=BackgroundJobType.ALARM,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        await BackgroundJob.filter(id=background_job.id).update(
+            requested_at=datetime(2026, 8, 20, 12, 0, tzinfo=config.TIMEZONE)
+        )
+
+        merged = await request(
+            "GET",
+            ADMIN_JOBS_URL,
+            headers=self.headers,
+            params={"startDate": "2026-08-20", "endDate": "2026-08-20"},
+        )
+        searched = await request(
+            "GET",
+            ADMIN_JOBS_URL,
+            headers=self.headers,
+            params={"keyword": f"OCR-{ocr_job.id}"},
+        )
+
+        assert merged.status_code == status.HTTP_200_OK, merged.text
+        assert merged.json()["totalCount"] == 2
+        assert [item["jobId"] for item in merged.json()["items"]] == [f"OCR-{ocr_job.id}", background_job.id]
+        assert merged.json()["items"][0] == {
+            "jobId": f"OCR-{ocr_job.id}",
+            "jobType": "OCR",
+            "alarmType": None,
+            "status": "COMPLETED",
+            "userId": user.id,
+            "userName": "OCR 사용자",
+            "requestedAt": "2026-08-20T13:00:00+09:00",
+            "errorCode": None,
+            "errorMessage": None,
+        }
+        assert searched.status_code == status.HTTP_200_OK, searched.text
+        assert searched.json()["totalCount"] == 1
+        assert searched.json()["items"][0]["jobId"] == f"OCR-{ocr_job.id}"
+
+    async def test_returns_alarm_type_for_legacy_alarm_job(self) -> None:
+        user = await User.create(
+            email="alarm-job-user@example.com",
+            hashed_password="unused",
+            name="김은미",
+        )
+        alarm = await Alarm.create(
+            user=user,
+            alarm_type=AlarmType.MEDICATION,
+            meal_slot=MealSlot.MORNING,
+            title="복약 알림",
+            scheduled_at=datetime(2026, 8, 20, 8, 0, tzinfo=config.TIMEZONE),
+            next_trigger_at=datetime(2026, 8, 20, 8, 0, tzinfo=config.TIMEZONE),
+        )
+        job = await BackgroundJob.create(
+            idempotency_key=f"alarm:{alarm.id}:31:2026-08-20T08:00:00+09:00",
+            job_type=BackgroundJobType.ALARM,
+            status=BackgroundJobStatus.COMPLETED,
+            user=user,
+        )
+
+        response = await request("GET", ADMIN_JOBS_URL, headers=self.headers)
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        item = next(item for item in response.json()["items"] if item["jobId"] == job.id)
+        assert item["alarmType"] == "MEDICATION"
+        assert item["userName"] == "김은미"
 
     async def test_returns_status_counts_for_selected_date_range(self) -> None:
         statuses = [
@@ -93,6 +180,27 @@ class TestAdminJobAPI(TestCase):
             await BackgroundJob.filter(id=job.id).update(
                 created_at=datetime(2026, 8, 20, 12, index, tzinfo=config.TIMEZONE)
             )
+        user = await User.create(email="ocr-stats@example.com", hashed_password="unused", name="OCR 통계")
+        ocr_statuses = [
+            OcrJobStatus.QUEUED,
+            OcrJobStatus.PROCESSING,
+            OcrJobStatus.READY_FOR_REVIEW,
+            OcrJobStatus.COMPLETE,
+            OcrJobStatus.FAILED,
+            OcrJobStatus.CANCELLED,
+        ]
+        for index, ocr_status in enumerate(ocr_statuses):
+            ocr_job = await OcrJob.create(
+                user=user,
+                status=ocr_status,
+                idempotency_key=f"admin-ocr-stats-{ocr_status}",
+                input_manifest={},
+                ocr_model="clova-general-v2",
+                schema_version="medication-guide-review/v3",
+            )
+            await OcrJob.filter(id=ocr_job.id).update(
+                created_at=datetime(2026, 8, 20, 13, index, tzinfo=config.TIMEZONE)
+            )
 
         response = await request(
             "GET",
@@ -105,13 +213,13 @@ class TestAdminJobAPI(TestCase):
         assert response.json() == {
             "startDate": "2026-08-20",
             "endDate": "2026-08-20",
-            "total": 6,
+            "total": 12,
             "counts": {
-                "QUEUED": 1,
-                "PROCESSING": 1,
+                "QUEUED": 2,
+                "PROCESSING": 2,
                 "RETRY_WAITING": 1,
-                "COMPLETED": 1,
-                "FAILED": 1,
-                "CANCELLED": 1,
+                "COMPLETED": 3,
+                "FAILED": 2,
+                "CANCELLED": 2,
             },
         }

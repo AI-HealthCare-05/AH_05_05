@@ -3,6 +3,9 @@ import json
 from pathlib import Path
 
 from ai_worker.rag.loaders.knowledge_pdf_loader import KnowledgePdfLoader
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
 from ai_worker.rag.normalizers.knowledge_normalizer import KnowledgeNormalizer
 from ai_worker.rag.splitters.knowledge_splitter import KnowledgeSplitter
 from ai_worker.services.knowledge_pilot_preprocessing_service import (
@@ -34,11 +37,22 @@ def parse_args() -> argparse.Namespace:
         choices=("cl100k_base", "o200k_base"),
         default="cl100k_base",
     )
+    parser.add_argument(
+        "--interaction-annotations",
+        type=Path,
+        default=Path("data/knowledge/manifests/interaction_annotations.yaml"),
+        help="문서별로 검수한 직접 상호작용 쌍 주석 매니페스트입니다.",
+    )
     return parser.parse_args()
 
 
-def build_splitter(*, tokenizer_encoding: str) -> KnowledgeSplitter:
+def build_splitter(
+    *,
+    tokenizer_encoding: str,
+    interaction_annotations: KnowledgeInteractionAnnotationRegistry | None = None,
+) -> KnowledgeSplitter:
     return KnowledgeSplitter(
+        interaction_annotations=interaction_annotations,
         tokenizer_encoding=tokenizer_encoding,
     )
 
@@ -46,12 +60,16 @@ def build_splitter(*, tokenizer_encoding: str) -> KnowledgeSplitter:
 def main() -> None:
     args = parse_args()
     repo_root = args.repo_root.resolve()
+    interaction_annotations = KnowledgeInteractionAnnotationRegistry.from_yaml(
+        repo_root / args.interaction_annotations,
+    )
     service = KnowledgePilotPreprocessingService(
         repo_root=repo_root,
         loader=KnowledgePdfLoader(),
         normalizer=KnowledgeNormalizer(),
         splitter=build_splitter(
             tokenizer_encoding=args.tokenizer_encoding,
+            interaction_annotations=interaction_annotations,
         ),
     )
     result = service.preprocess(

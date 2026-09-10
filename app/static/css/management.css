@@ -54,13 +54,22 @@
 .admin-row-actions { display: flex; align-items: center; gap: 4px; min-height: 29px; }
 .empty-row { text-align: center; color: #6b7280; padding: 32px !important; }
 .management-table td.empty-row { text-align: center; }
-.user-list-card, .admin-list-card { overflow: hidden; }
+.user-list-card, .admin-list-card, .task-list-card { overflow: hidden; }
 .user-page-size-control, .admin-page-size-control { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: #4b5563; font-size: 13px; }
 .user-page-size-control .ui-control, .admin-page-size-control .ui-control { width: 76px; }
 .user-list-footer, .admin-list-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; min-height: 64px; padding: 12px; }
 .user-pagination, .admin-pagination { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .user-page-size-control, .admin-page-size-control { grid-column: 3; justify-self: end; }
 .user-pagination-pages, .admin-pagination-pages { display: flex; gap: 6px; }
+.task-list-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; min-height: 64px; padding: 12px; }
+.task-pagination { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.task-pagination-pages { display: flex; gap: 6px; }
+.task-page-button { min-width: 36px; padding: 0 8px; }
+.task-page-button.is-active { background: var(--brand-primary-strong); border-color: var(--brand-primary-strong); color: #fff; }
+.task-page-button.is-active:hover { background: var(--brand-primary-strong-hover); }
+.task-page-size-control { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: #4b5563; font-size: 13px; }
+.task-page-size-control .ui-control { width: 76px; }
+.task-total { margin-right: 8px; color: #6b7280; font-size: 13px; }
 .user-page-button, .admin-page-button { min-width: 36px; padding: 0 8px; }
 .user-page-button.is-active, .admin-page-button.is-active { background: var(--brand-primary-strong); border-color: var(--brand-primary-strong); color: #fff; }
 .user-page-button.is-active:hover, .admin-page-button.is-active:hover { background: var(--brand-primary-strong-hover); }

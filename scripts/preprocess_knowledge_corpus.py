@@ -28,6 +28,7 @@ from ai_worker.services.knowledge_pilot_preprocessing_service import (
 DEFAULT_PILOT_MANIFEST_PATHS = (
     Path("data/knowledge/manifests/pilot_manifest.json"),
     Path("data/knowledge/manifests/additional_research_bulk_manifest.json"),
+    Path("data/knowledge/manifests/additional_micronutrient_interactions_manifest.json"),
 )
 
 

@@ -11,6 +11,7 @@ def test_resolve_pilot_manifest_paths_uses_all_verified_defaults() -> None:
     assert resolved_paths == [
         Path("data/knowledge/manifests/pilot_manifest.json"),
         Path("data/knowledge/manifests/additional_research_bulk_manifest.json"),
+        Path("data/knowledge/manifests/additional_micronutrient_interactions_manifest.json"),
     ]
 
 

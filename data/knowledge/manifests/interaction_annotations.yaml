@@ -43,6 +43,21 @@ documents:
           display_name: 메트로니다졸
           aliases:
             - metronidazole
+  - document_id: kpicia_pharm_review-3ce7212b15e7c2de
+    pairs:
+      - pair_type: DRUG_FOOD
+        left:
+          kind: DRUG
+          display_name: 아세트아미노펜
+          aliases:
+            - acetaminophen
+        right:
+          kind: FOOD
+          display_name: 알코올
+          aliases:
+            - 술
+            - 음주
+            - alcohol
   - document_id: research_supplement_interactions-016c81c9a3e29ebd
     pairs:
       - pair_type: SUPPLEMENT_SUPPLEMENT
@@ -51,6 +66,77 @@ documents:
           display_name: 칼슘
           aliases:
             - calcium
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases:
+            - iron
+  - document_id: mfds_supplement_code-72e61399c742b0e5
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        left:
+          kind: SUPPLEMENT
+          display_name: 비타민 D
+          aliases:
+            - 비타민D
+            - vitamin D
+        right:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases:
+            - calcium
+  - document_id: research_micronutrient_interactions-e3b164ce9cc98cc6
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - calcium on iron absorption
+        left:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases:
+            - calcium
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases:
+            - iron
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - absorption of zinc was reduced by iron
+          - zinc in high doses aqueous solutions impairs iron absorption
+        left:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases:
+            - iron
+        right:
+          kind: SUPPLEMENT
+          display_name: 아연
+          aliases:
+            - zinc
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - interactions between iron, zinc and copper appear to be especially important
+          - zinc supplementation may affect copper dependent iron metabolism
+        left:
+          kind: SUPPLEMENT
+          display_name: 아연
+          aliases:
+            - zinc
+        right:
+          kind: SUPPLEMENT
+          display_name: 구리
+          aliases:
+            - copper
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases:
+          - vitamin c is a strong promoter of iron absorption
+        left:
+          kind: SUPPLEMENT
+          display_name: 비타민 C
+          aliases:
+            - vitamin C
+            - ascorbic acid
         right:
           kind: SUPPLEMENT
           display_name: 철분

@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="../css/overlays.css?v=20260831-9">
     <script type="module" src="../js/navigation.js?v=20260827-2"></script>
     <script type="module" src="../js/sidebar.js?v=20260908-2"></script>
-    <script type="module" src="../js/task-management.js?v=20260826-7"></script>
+    <script type="module" src="../js/task-management.js?v=20260910-1"></script>
 </head>
 <body class="management-page flex min-h-screen">
 <!-- sidebar -->
@@ -70,15 +70,13 @@
         <div class="management-toolbar flex gap-3 mb-5 flex-wrap">
             <input data-task-search class="ui-control" type="search" placeholder="작업 ID" aria-label="작업 검색">
             <select data-task-type class="ui-control" aria-label="작업 유형">
-                <option>전체</option>
+                <option>작업유형</option>
                 <option>OCR</option>
-                <option>LLM</option>
-                <option>CHAT</option>
                 <option>ALARM</option>
                 <option>EMAIL</option>
             </select>
             <select data-task-status class="ui-control" aria-label="작업 상태">
-                <option>전체</option>
+                <option>상태</option>
                 <option>진행 대기</option>
                 <option>진행중</option>
                 <option>성공</option>
@@ -95,20 +93,35 @@
             <button data-task-search-button class="ui-button ui-button-primary" type="button">조회</button>
             <button data-task-reset class="ui-button">필터 초기화</button>
         </div>
-        <div class="management-table-wrap bg-white rounded-xl border">
-            <table class="management-table w-full text-sm">
-                <thead class="bg-gray-50">
-                <tr>
-                    <th>작업 ID</th>
-                    <th>유형</th>
-                    <th>사용자</th>
-                    <th>요청 시각</th>
-                    <th>상태</th>
-                    <th>오류</th>
-                </tr>
-                </thead>
-                <tbody data-task-rows></tbody>
-            </table>
+        <div class="task-list-card bg-white rounded-xl border">
+            <div class="management-table-wrap">
+                <table class="management-table w-full text-sm">
+                    <thead class="bg-gray-50">
+                    <tr>
+                        <th>작업 ID</th>
+                        <th>유형</th>
+                        <th>알림 유형</th>
+                        <th>사용자(ID)</th>
+                        <th>요청 시각</th>
+                        <th>상태</th>
+                        <th>오류</th>
+                    </tr>
+                    </thead>
+                    <tbody data-task-rows></tbody>
+                </table>
+            </div>
+            <footer class="task-list-footer">
+                <nav class="task-pagination" data-task-pagination aria-label="작업 목록 페이지"></nav>
+                <div class="task-page-size-control">
+                    <span class="task-total" data-task-total>총 -건</span>
+                    <label for="task-page-size">페이지당</label>
+                    <select id="task-page-size" data-task-page-size class="ui-control" aria-label="페이지당 작업 수">
+                        <option value="20" selected>20개</option>
+                        <option value="50">50개</option>
+                        <option value="100">100개</option>
+                    </select>
+                </div>
+            </footer>
         </div>
     </section>
 </main>

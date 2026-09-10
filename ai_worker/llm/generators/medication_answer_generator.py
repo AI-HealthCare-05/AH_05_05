@@ -25,6 +25,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
+    MedicationChatSourceKind,
 )
 
 
@@ -36,6 +37,13 @@ class AsyncMedicationAnswerClient(Protocol):
 
 
 class OpenAIMedicationAnswerGenerator:
+    _LLM_REWRITE_SOURCE_KINDS = frozenset(
+        {
+            MedicationChatSourceKind.MEDICATION_GUIDE,
+            MedicationChatSourceKind.INTERACTION_RULE,
+            MedicationChatSourceKind.PUBLIC_KNOWLEDGE,
+        }
+    )
     _DOSAGE_TOKEN_PATTERN = re.compile(
         r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|μg|㎍|g|mL|ml|정|캡슐|포|회|일|시간|%)",
         re.IGNORECASE,
@@ -45,6 +53,13 @@ class OpenAIMedicationAnswerGenerator:
         r"(?:상호작용|부작용)(?:이|은|는)?\s*없(?:습니다|어요)",
         re.IGNORECASE,
     )
+    _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
+    _SECTION_HEADER_PATTERN = re.compile(r"^\s*✅\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
+    _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+    _BULLET_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•])\s*")
+    _SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?。！？])\s+")
+    _DISCLAIMER_PATTERN = re.compile(r"의료\s*(?:전문가|진)의\s*(?:진단|진료|처방).*대체하지\s*않습니다")
+    _INTERACTION_SECTION_TITLE = "상호작용"
 
     def __init__(
         self,
@@ -105,6 +120,12 @@ class OpenAIMedicationAnswerGenerator:
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES,
             )
+        if not self._has_external_rewrite_evidence(result):
+            return self._skipped_outcome(
+                result,
+                draft_hash=draft_hash,
+                reason=MedicationAnswerFallbackReason.PATIENT_CONTEXT_ONLY,
+            )
         try:
             payload = await self._chain.ainvoke(
                 MedicationAnswerChainInput(
@@ -131,7 +152,7 @@ class OpenAIMedicationAnswerGenerator:
                 "약·영양제 챗봇 답변 생성에 실패했습니다.",
                 reason_code=MedicationAnswerFallbackReason.CLIENT_ERROR.value,
             ) from error
-        generated_answer = self._to_plain_text(payload.answer)
+        generated_answer = self._to_limited_markdown(payload.answer)
         generated_hash = self._answer_hash(generated_answer)
         fallback_reason = self._grounding_failure_reason(
             draft_answer=result.answer,
@@ -206,6 +227,12 @@ class OpenAIMedicationAnswerGenerator:
     def _answer_hash(answer: str) -> str:
         return hashlib.sha256(answer.strip().encode("utf-8")).hexdigest()
 
+    @classmethod
+    def _has_external_rewrite_evidence(cls, result: MedicationChatResult) -> bool:
+        """등록 정보는 답변 대상을 식별할 뿐, 의학적 주장의 근거가 되지 않는다."""
+
+        return any(source.kind in cls._LLM_REWRITE_SOURCE_KINDS for source in result.sources)
+
     @staticmethod
     def _skipped_outcome(
         result: MedicationChatResult,
@@ -223,10 +250,86 @@ class OpenAIMedicationAnswerGenerator:
             ),
         )
 
-    @staticmethod
-    def _to_plain_text(answer: str) -> str:
-        lines = [re.sub(r"^\s{0,3}#{1,6}\s*", "", line) for line in answer.splitlines()]
-        plain_text = "\n".join(lines)
-        plain_text = re.sub(r"\*\*(.+?)\*\*", r"\1", plain_text)
-        plain_text = re.sub(r"__(.+?)__", r"\1", plain_text)
-        return plain_text.strip()
+    @classmethod
+    def _to_limited_markdown(cls, answer: str) -> str:
+        """답변에서는 체크 표시가 붙은 소제목 강조와 목록만 허용한다."""
+
+        normalized_lines: list[str] = []
+        interaction_lines: list[str] | None = None
+        for line in answer.splitlines():
+            line = cls._MARKDOWN_HEADING_PATTERN.sub("", line)
+            section_header = cls._SECTION_HEADER_PATTERN.fullmatch(line)
+            if section_header is not None and interaction_lines is not None:
+                normalized_lines.extend(cls._format_interaction_section(interaction_lines))
+                interaction_lines = None
+            if section_header is not None:
+                title = section_header.group("title").strip()
+                normalized_lines.append(f"✅ **{title}**")
+                if cls._INTERACTION_SECTION_TITLE in title:
+                    interaction_lines = []
+                continue
+            if interaction_lines is not None:
+                if cls._DISCLAIMER_PATTERN.search(line):
+                    normalized_lines.extend(cls._format_interaction_section(interaction_lines))
+                    interaction_lines = None
+                else:
+                    interaction_lines.append(line)
+                    continue
+            line = cls._BOLD_MARKER_PATTERN.sub(r"\1", line)
+            line = re.sub(r"__(.+?)__", r"\1", line)
+            normalized_lines.append(line)
+        if interaction_lines is not None:
+            normalized_lines.extend(cls._format_interaction_section(interaction_lines))
+        return "\n".join(normalized_lines).strip()
+
+    @classmethod
+    def _format_interaction_section(cls, lines: list[str]) -> list[str]:
+        """상호작용 사실을 줄글 대신 대시 목록으로 고정한다."""
+
+        prose_lines: list[str] = []
+        bullet_items: list[list[str]] = []
+        current_bullet: list[str] | None = None
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            bullet_match = cls._BULLET_MARKER_PATTERN.match(line)
+            if bullet_match is not None:
+                if current_bullet is not None:
+                    bullet_items.append(current_bullet)
+                current_bullet = [line[bullet_match.end() :]]
+                continue
+            if current_bullet is not None:
+                current_bullet.append(line)
+            else:
+                prose_lines.append(line)
+
+        if current_bullet is not None:
+            bullet_items.append(current_bullet)
+
+        facts = cls._interaction_sentences(prose_lines)
+        facts.extend(cls._normalize_interaction_fact(item) for item in bullet_items)
+        facts = [fact for fact in facts if fact]
+        if not facts:
+            return []
+        return ["", *(f"- {fact}" for fact in facts)]
+
+    @classmethod
+    def _interaction_sentences(cls, lines: list[str]) -> list[str]:
+        prose = cls._normalize_interaction_fact(lines)
+        if not prose:
+            return []
+        return [
+            cls._normalize_interaction_fact([sentence])
+            for sentence in cls._SENTENCE_BOUNDARY_PATTERN.split(prose)
+            if sentence.strip()
+        ]
+
+    @classmethod
+    def _normalize_interaction_fact(cls, lines: list[str]) -> str:
+        text = " ".join(line.strip() for line in lines if line.strip())
+        text = cls._BULLET_MARKER_PATTERN.sub("", text)
+        text = cls._BOLD_MARKER_PATTERN.sub(r"\1", text)
+        text = re.sub(r"__(.+?)__", r"\1", text)
+        return re.sub(r"\s+", " ", text).strip()

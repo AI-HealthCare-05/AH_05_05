@@ -4,7 +4,10 @@ _EXPLICIT_INTERACTION_PATTERN = re.compile(
     r"상호작용|병용|조합|시간(?:을)?\s*띄",
 )
 _COADMINISTRATION_PATTERN = re.compile(
-    r"(?:같이|함께)\s*(?:먹|복용|섭취)",
+    r"(?:같이|함께)\s*(?:(?:먹|머|묵)[가-힣]*|복용|섭취)",
+)
+_TYPOED_COADMINISTRATION_PATTERN = re.compile(
+    r"(?:같이|함께)\s*(?:머|묵)[가-힣]*",
 )
 _RELATIONAL_INTAKE_PATTERN = re.compile(
     r"\S*(?:과|와|이랑|랑)\s+"
@@ -51,3 +54,10 @@ def is_interaction_question(question: str) -> bool:
             _DRUG_FOOD_USAGE_PATTERN,
         )
     )
+
+
+def requires_resolved_pair_for_interaction(question: str) -> bool:
+    """오타가 있는 병용 표현은 두 대상이 확인된 경우에만 상호작용으로 취급한다."""
+
+    normalized = re.sub(r"\s+", " ", question).strip()
+    return _TYPOED_COADMINISTRATION_PATTERN.search(normalized) is not None

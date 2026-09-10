@@ -101,6 +101,28 @@ async def test_validator_adds_disclaimer_without_restricting_safe_answer() -> No
     assert result.answer.endswith(MEDICAL_DISCLAIMER)
 
 
+async def test_validator_ignores_canonical_disclaimer_when_scanning_for_medication_change() -> None:
+    answer = f"타이레놀은 통증과 발열 완화에 사용됩니다. 주의사항을 확인하세요.\n\n{MEDICAL_DISCLAIMER}"
+
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(answer),
+    )
+
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.answer == answer
+
+
+async def test_validator_blocks_direct_instruction_even_when_canonical_disclaimer_is_present() -> None:
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result(f"오늘부터 약 복용을 중단하세요.\n\n{MEDICAL_DISCLAIMER}"),
+    )
+
+    assert result.safety_status == SafetyStatus.BLOCKED
+    assert result.safety_reason_codes == ["MEDICATION_CHANGE_INSTRUCTION"]
+
+
 async def test_validator_preserves_existing_restricted_status() -> None:
     initial = build_result("자료 검색에 실패했습니다. 이 안내는 의료진의 진료를 대체하지 않습니다.").model_copy(
         update={

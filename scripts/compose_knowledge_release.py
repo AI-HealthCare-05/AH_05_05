@@ -2,6 +2,9 @@ import argparse
 import json
 from pathlib import Path
 
+from ai_worker.rag.metadata.interaction_annotation_registry import (
+    KnowledgeInteractionAnnotationRegistry,
+)
 from ai_worker.services.knowledge_release_composition_service import (
     KnowledgeReleaseCompositionInput,
     KnowledgeReleaseCompositionService,
@@ -24,6 +27,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--dataset-version", required=True)
+    parser.add_argument(
+        "--interaction-annotations",
+        type=Path,
+        default=None,
+        help="기존 release 청크에 재적용할 검수 상호작용 주석 YAML 경로",
+    )
     args = parser.parse_args(argv)
     if not args.dataset_version.strip():
         parser.error("--dataset-version은 비어 있을 수 없습니다.")
@@ -43,6 +52,11 @@ def main() -> None:
         inputs=inputs,
         output_root=args.output,
         dataset_version=args.dataset_version,
+        interaction_annotations=(
+            KnowledgeInteractionAnnotationRegistry.from_yaml(args.interaction_annotations)
+            if args.interaction_annotations is not None
+            else None
+        ),
     )
     print(
         json.dumps(

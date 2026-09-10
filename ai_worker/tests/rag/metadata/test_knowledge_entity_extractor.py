@@ -100,20 +100,46 @@ documents:
     assert entities.entity_catalog_entries[1].aliases == ["과일주스", "자몽주스"]
 
 
-def test_extracts_supplement_interaction_pair_from_research_title() -> None:
+def test_does_not_assign_pair_key_from_research_title_without_annotation() -> None:
     entities = KnowledgeEntityExtractor().extract_from_title(
         document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
         title=("Supplemental Zinc Lowers Measures of Iron Status in Young Women with Low Iron Reserves"),
     )
 
-    assert entities.ingredient_names == ["아연", "철분"]
-    assert entities.interaction_type == "SUPPLEMENT_SUPPLEMENT"
-    assert len(entities.interaction_pair_keys) == 1
+    assert entities.ingredient_names == []
+    assert entities.interaction_type is None
+    assert entities.interaction_pair_keys == []
 
 
-def test_enriches_research_chunk_with_pair_and_human_clinical_evidence() -> None:
-    entities = KnowledgeEntityExtractor().extract_from_chunk(
+def test_enriches_annotated_research_chunk_with_pair_and_human_clinical_evidence(tmp_path) -> None:
+    annotation_path = tmp_path / "annotations.yaml"
+    annotation_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: calcium-iron-study
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        evidence_phrases: [calcium and iron absorption]
+        left:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases: [calcium]
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases: [iron]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    entities = KnowledgeEntityExtractor(
+        interaction_annotations=KnowledgeInteractionAnnotationRegistry.from_yaml(
+            annotation_path,
+        )
+    ).extract_from_chunk(
         document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        document_id="calcium-iron-study",
         title="Calcium and iron absorption--mechanisms and public health relevance",
         content=("A crossover single-meal study measured calcium and iron absorption in postmenopausal women."),
     )
@@ -123,6 +149,19 @@ def test_enriches_research_chunk_with_pair_and_human_clinical_evidence() -> None
     assert len(entities.interaction_pair_keys) == 1
     assert entities.evidence_level == KnowledgeEvidenceLevel.CLINICAL_STUDY
     assert entities.study_population == KnowledgeStudyPopulation.HUMAN
+
+
+def test_requires_document_annotation_before_assigning_research_pair_key() -> None:
+    entities = KnowledgeEntityExtractor().extract_from_chunk(
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+        document_id="warfarin-review",
+        title="Potential drug-nutrient interactions with warfarin",
+        content=("Iron and zinc are among the micronutrients discussed in this general overview."),
+        section_type=KnowledgeSectionType.INTERACTION,
+    )
+
+    assert entities.interaction_type is None
+    assert entities.interaction_pair_keys == []
 
 
 def test_enriches_animal_research_without_claiming_human_evidence() -> None:

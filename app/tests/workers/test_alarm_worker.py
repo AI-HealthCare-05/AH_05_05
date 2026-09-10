@@ -7,7 +7,7 @@ from tortoise.contrib.test import TestCase
 from tortoise.exceptions import DBConnectionError, OperationalError
 
 from app.core import config
-from app.models.alarms import AlarmEvent, PushSubscription
+from app.models.alarms import Alarm, AlarmEvent, PushSubscription
 from app.models.background_jobs import BackgroundJob
 from app.models.care import FollowUpVisit
 from app.models.enums import (
@@ -93,6 +93,35 @@ class TestAlarmWorker(TestCase):
 
         assert await BackgroundJob.filter(status=BackgroundJobStatus.QUEUED).count() == 2
         assert self.redis_pool.enqueue_job.await_count == 2
+
+    async def test_same_time_medication_nutrient_and_schedule_alarms_create_independent_jobs(self):
+        subscription = await self.create_subscription()
+        trigger_at = self.alarm.next_trigger_at
+        nutrient_alarm = await Alarm.create(
+            user=self.user,
+            alarm_type=AlarmType.NUTRIENT,
+            meal_slot=MealSlot.MORNING,
+            title="영양제 알림",
+            scheduled_at=trigger_at,
+            next_trigger_at=trigger_at,
+        )
+        schedule_alarm = await Alarm.create(
+            user=self.user,
+            alarm_type=AlarmType.FOLLOW_UP_VISIT,
+            title="일정 알림",
+            scheduled_at=trigger_at,
+            next_trigger_at=trigger_at,
+        )
+
+        await poll_due_alarms(self.context())
+
+        jobs = await BackgroundJob.filter(status=BackgroundJobStatus.QUEUED).order_by("id")
+        assert len(jobs) == 3
+        assert {job.idempotency_key for job in jobs} == {
+            self.job_service.alarm_idempotency_key(alarm_id, subscription.id, trigger_at)
+            for alarm_id in (self.alarm.id, nutrient_alarm.id, schedule_alarm.id)
+        }
+        assert self.redis_pool.enqueue_job.await_count == 3
 
     async def test_disabled_medication_notification_skips_push_job(self):
         await self.assert_notification_setting_blocks_alarm(

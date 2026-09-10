@@ -186,7 +186,7 @@ test("dashboard loads two-column reason ring styles", async () => {
   const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
 
   assert.match(html, /styles\.css\?v=20260831-9/);
-  assert.match(html, /dashboard\.css\?v=20260908-2/);
+  assert.match(html, /dashboard\.css\?v=20260910-1/);
   assert.match(styles, /\.chat-reason-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
   assert.match(styles, /\.chat-reason-ring\s*\{[^}]*border-radius:\s*50%;/s);
 });
@@ -199,6 +199,23 @@ test("OCR accuracy and chatbot reason panels share the same minimum height", asy
     styles,
     /\.dashboard-insight-card,\s*\.chat-reason-panel\s*\{[^}]*min-height:\s*var\(--dashboard-insight-height\);/s,
   );
+});
+
+test("OCR accuracy and chatbot reason rings share the same diameter", async () => {
+  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../../static/css/dashboard.css", import.meta.url), "utf8");
+
+  assert.match(html, /class="[^"]*ocr-accuracy-ring[^"]*"/);
+  assert.match(styles, /--dashboard-ring-size:\s*88px;/);
+  assert.match(styles, /\.ocr-accuracy-ring\s*\{[^}]*width:\s*var\(--dashboard-ring-size\);[^}]*height:\s*var\(--dashboard-ring-size\);/s);
+  assert.match(styles, /\.chat-reason-ring\s*\{[^}]*width:\s*var\(--dashboard-ring-size\);/s);
+});
+
+test("OCR accuracy value uses the same font size as its title", async () => {
+  const html = await readFile(new URL("../../static/templates/dashboard.html", import.meta.url), "utf8");
+
+  assert.match(html, /data-ocr-accuracy class="[^"]*text-\[12px\][^"]*"/);
+  assert.match(html, /class="font-semibold text-\[12px\][^"]*"[^>]*>OCR 추출 정확도<\/p>/);
 });
 
 test("OCR accuracy uses the shared RxVita accent tokens", async () => {

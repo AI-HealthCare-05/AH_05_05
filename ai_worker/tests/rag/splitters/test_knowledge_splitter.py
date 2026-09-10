@@ -293,6 +293,37 @@ def build_page(
     )
 
 
+def test_split_preserves_manifest_aliases_with_detected_official_ingredient_name() -> None:
+    page = build_page(
+        """
+제품의 요건 (3)
+기능성 내용 (1) 혈행 개선에 도움을 줄 수 있음
+일일섭취량 (2) EPA와 DHA의 합으로서 0.5 g 이상
+섭취 시 주의사항 (3) 항응고제 복용 시 전문가와 상담할 것
+""",
+        title="EPA 및 DHA 함유 유지",
+    ).model_copy(
+        update={
+            "metadata": build_page(
+                "placeholder",
+                title="EPA 및 DHA 함유 유지",
+            ).metadata.model_copy(
+                update={"ingredient_names": ["오메가3", "EPA", "DHA"]},
+            )
+        }
+    )
+
+    chunks = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])
+
+    assert chunks
+    assert chunks[0].metadata.ingredient_names == [
+        "오메가3",
+        "EPA",
+        "DHA",
+        "EPA 및 DHA 함유 유지",
+    ]
+
+
 def build_research_page_with_table(
     *,
     table_rows: list[list[str]],
@@ -1691,14 +1722,38 @@ def test_split_does_not_treat_inline_research_term_as_heading() -> None:
     ]
 
 
-def test_split_adds_interaction_evidence_metadata_to_embedding_text() -> None:
+def test_split_adds_interaction_evidence_metadata_to_embedding_text(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "interaction-annotations.yaml"
+    annotation_path.write_text(
+        """
+schema_version: knowledge-interaction-annotations-v1
+documents:
+  - document_id: pilot-document
+    pairs:
+      - pair_type: SUPPLEMENT_SUPPLEMENT
+        left:
+          kind: SUPPLEMENT
+          display_name: 칼슘
+          aliases: [칼슘, calcium]
+        right:
+          kind: SUPPLEMENT
+          display_name: 철분
+          aliases: [철분, iron]
+""".strip(),
+        encoding="utf-8",
+    )
     page = build_page(
         ("Results A crossover single-meal study measured calcium and iron absorption in postmenopausal women."),
         document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
         title="Calcium and iron absorption--mechanisms and public health relevance",
     )
 
-    chunk = KnowledgeSplitter(token_counter=WordTokenCounter()).split([page])[0]
+    chunk = KnowledgeSplitter(
+        token_counter=WordTokenCounter(),
+        interaction_annotations=KnowledgeInteractionAnnotationRegistry.from_yaml(annotation_path),
+    ).split([page])[0]
 
     assert chunk.metadata.ingredient_names == ["칼슘", "철분"]
     assert chunk.metadata.interaction_type == "SUPPLEMENT_SUPPLEMENT"

@@ -10,6 +10,7 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
 from ai_worker.rag.retrievers.medication_knowledge_retriever import (
     MedicationKnowledgeRetriever,
 )
+from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
     KnowledgeAccessScope,
     KnowledgeChunkMetadata,
@@ -18,7 +19,12 @@ from ai_worker.schemas.knowledge import (
     KnowledgeSectionType,
     RetrievedKnowledgeChunk,
 )
-from ai_worker.schemas.medication_search import MedicationSearchExecutionPlan
+from ai_worker.schemas.medication_search import (
+    MedicationQueryEntity,
+    MedicationQueryEntitySource,
+    MedicationQueryEntityType,
+    MedicationSearchExecutionPlan,
+)
 
 
 class FakeEmbeddingProvider:
@@ -147,6 +153,66 @@ async def test_search_preserves_vector_store_failure_stage() -> None:
     assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
+async def test_search_keeps_each_requested_section_from_one_official_document() -> None:
+    base_execution = build_execution_plan("마그네슘은 왜 먹나요?")
+    query_plan = base_execution.query_plan.model_copy(
+        update={
+            "entity_names": ["오메가3"],
+            "entities": [
+                MedicationQueryEntity(
+                    surface="오메가3",
+                    canonical_name="오메가3",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.QDRANT,
+                )
+            ],
+            "section_types": [
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.DAILY_INTAKE,
+                KnowledgeSectionType.CAUTION,
+            ],
+        }
+    )
+    execution = base_execution.model_copy(update={"query_plan": query_plan})
+    candidates = [
+        build_chunk(
+            score=0.82,
+            chunk_id="1" * 64,
+            ingredient_names=["오메가3"],
+            section_type=KnowledgeSectionType.FUNCTION,
+            document_id="mfds-omega3",
+        ),
+        build_chunk(
+            score=0.81,
+            chunk_id="2" * 64,
+            ingredient_names=["오메가3"],
+            section_type=KnowledgeSectionType.DAILY_INTAKE,
+            document_id="mfds-omega3",
+        ),
+        build_chunk(
+            score=0.80,
+            chunk_id="3" * 64,
+            ingredient_names=["오메가3"],
+            section_type=KnowledgeSectionType.CAUTION,
+            document_id="mfds-omega3",
+        ),
+    ]
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[candidates]),
+        dataset_version="knowledge-full-v10",
+    )
+
+    result = await retriever.search_with_diagnostics(execution_plan=execution)
+
+    assert {chunk.metadata.section_type for chunk in result.chunks} == {
+        KnowledgeSectionType.FUNCTION,
+        KnowledgeSectionType.DAILY_INTAKE,
+        KnowledgeSectionType.CAUTION,
+    }
+
+
 async def test_hybrid_rejects_high_rrf_candidate_without_dense_confidence() -> None:
     candidate = build_chunk(
         0.9,
@@ -228,6 +294,56 @@ async def test_hybrid_uses_dense_confidence_with_existing_pair_rescue() -> None:
     assert result.chunks == [candidate]
     assert result.diagnostics.accepted_count == 1
     assert result.diagnostics.candidate_diagnostics[0].dense_similarity_score == 0.46
+
+
+async def test_search_accepts_low_score_when_declared_interaction_pair_key_matches() -> None:
+    question = "아연 보충제와 구리를 함께 섭취할 때 주의할 점은 무엇인가요?"
+    query_plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="아연",
+                canonical_name="아연",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+            MedicationQueryEntity(
+                surface="구리",
+                canonical_name="구리",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+        ],
+    ).build(question)
+    execution_plan = build_execution_plan(question).model_copy(
+        update={"query_plan": query_plan},
+    )
+    candidate = build_chunk(
+        score=0.18,
+        ingredient_names=["아연", "구리"],
+        section_type=KnowledgeSectionType.INTERACTION,
+        content=(
+            "아연 보충은 구리에 의존하는 철 대사에 영향을 줄 수 있으므로 아연과 구리의 상호작용을 함께 고려해야 합니다."
+        ),
+        title="아연과 구리 상호작용 결론",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+    )
+    candidate.metadata.interaction_pair_keys = execution_plan.interaction_pair_keys
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[[candidate]]),
+        dataset_version="knowledge-full-v14",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=execution_plan,
+    )
+
+    assert result.chunks == [candidate]
+    assert result.diagnostics.accepted_count == 1
+    assert result.diagnostics.rejected_below_score_count == 0
 
 
 async def test_search_retries_without_entity_filters_when_filtered_search_is_empty() -> None:

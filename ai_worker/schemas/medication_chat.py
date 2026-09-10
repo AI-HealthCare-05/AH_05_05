@@ -126,6 +126,7 @@ class MedicationAnswerFallbackReason(StrEnum):
     UNSUPPORTED_SAFETY_ASSERTION = "UNSUPPORTED_SAFETY_ASSERTION"
     UNSUPPORTED_EVIDENCE_SECTION = "UNSUPPORTED_EVIDENCE_SECTION"
     NO_GROUNDED_SOURCES = "NO_GROUNDED_SOURCES"
+    PATIENT_CONTEXT_ONLY = "PATIENT_CONTEXT_ONLY"
     CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
     CLIENT_ERROR = "CLIENT_ERROR"
 
@@ -256,6 +257,29 @@ class ActiveIntakeContext(BaseModel):
     preferred_care_episode_id: int | None = Field(default=None, ge=1)
     medications: list[ActiveMedication] = Field(default_factory=list)
     supplements: list[ActiveSupplement] = Field(default_factory=list)
+
+
+class TherapeuticClassSelectionStatus(StrEnum):
+    """등록 복약정보에서 치료군을 찾은 결과 상태."""
+
+    NOT_REQUESTED = "NOT_REQUESTED"
+    MATCHED = "MATCHED"
+    NO_MATCHING_CLASS = "NO_MATCHING_CLASS"
+    NO_APPROVED_ACTIVE_MEDICATION = "NO_APPROVED_ACTIVE_MEDICATION"
+
+
+class TherapeuticClassSelection(BaseModel):
+    """질문 표현과 검수된 치료군으로 선택된 활성 의약품 식별자."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: TherapeuticClassSelectionStatus
+    class_codes: list[str] = Field(default_factory=list)
+    medication_ids: list[int] = Field(default_factory=list)
+
+    @property
+    def requested(self) -> bool:
+        return self.status != TherapeuticClassSelectionStatus.NOT_REQUESTED
 
 
 class SupplementRegistrationIngredient(BaseModel):

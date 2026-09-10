@@ -370,11 +370,11 @@ test('등록 5단계는 푸시 등록이 끝날 때까지 완료를 막고 일�
   await expect(page.getByRole('switch', { name: '복약 알림' })).toBeChecked();
 });
 
-test('OCR 확인 필요는 저신뢰 약을 고치면 사라지고 실제 미추출 약에만 남는다', async ({ page }) => {
+test('OCR 빈 항목은 경고하지 않고 저신뢰 약을 확인하면 경고가 사라진다', async ({ page }) => {
   await page.goto('/dev/ocr-review');
 
-  await expect(page.getByText('3곳만 확인해주세요')).toBeVisible();
-  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(3);
+  await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
+  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /^리바록사반 확인 필요 함량 10mg/ }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('리바록사반 확인');
@@ -382,8 +382,8 @@ test('OCR 확인 필요는 저신뢰 약을 고치면 사라지고 실제 미추
   const reviewedMedication = page.getByRole('button', { name: /리바록사반 확인/ });
   await expect(reviewedMedication).toBeVisible();
   await expect(reviewedMedication).not.toContainText('확인 필요');
-  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(2);
-  await expect(page.getByText('2곳만 확인해주세요')).toBeVisible();
+  await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('1곳만 확인해주세요')).toHaveCount(0);
 });
 
 test('복약 목록은 활성 회차를 편집하고 완료 회차를 읽기 전용으로 연다', async ({ page }) => {

@@ -479,7 +479,7 @@ def test_real_core_joins_a_split_row_and_projects_only_extracted_fields() -> Non
         "doseQuantity": "0.5정",
         "timesPerDay": 1,
         "days": 5,
-        "confidence": "low",
+        "confidence": "high",
     }
     assert review["fields"] == {}
 

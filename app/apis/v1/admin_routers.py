@@ -132,7 +132,7 @@ async def get_background_job_stats_for_admin(
     service: Annotated[BackgroundJobService, Depends(get_background_job_service)],
 ) -> AdminBackgroundJobStatsResponse:
     """내부 API 키를 노출하지 않고 관리자 JWT로 작업 상태별 건수를 조회한다."""
-    result = await service.stats(start_date, end_date)
+    result = await service.stats_for_admin(start_date, end_date)
     return AdminBackgroundJobStatsResponse.model_validate(result)
 
 
@@ -291,8 +291,9 @@ async def get_dashboard_summary(
     - `status` 는 정지 비율 기준 경보 단계다(NORMAL / WARNING / DANGER).
 
     알림 발송 현황은 ALARM 백그라운드 작업의 대기·성공·실패 및 최근 7일 성공 건수를 제공한다.
-    OCR 문서 처리 현황은 `ocr_jobs`의 전체 상태 합계와 `QUEUED`·`COMPLETE`·`FAILED`
-    상태별 건수를 제공한다. 챗봇 지표는 아직 데이터가 없어 응답에 넣지 않았다.
+    OCR 문서 처리 현황은 전체 업로드와 처리·검토 대기(`QUEUED`·`PROCESSING`·
+    `READY_FOR_REVIEW`), 등록 완료(`COMPLETE`), 실패(`FAILED`), 취소(`CANCELLED`)
+    건수를 제공한다.
 
     - **422 VALIDATION_ERROR** — 지원하지 않는 `period`
     """

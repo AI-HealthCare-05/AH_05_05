@@ -20,6 +20,7 @@ def test_config_defaults_to_approved_full_knowledge_release() -> None:
     assert settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.COSINE
     assert settings.KNOWLEDGE_DATASET_VERSION == ("knowledge-full-v1")
     assert settings.INTERACTION_RULE_DATASET_VERSION == ("interaction-pilot-v1")
+    assert settings.THERAPEUTIC_CLASS_DATASET_VERSION == ("therapeutic-class-v1")
     assert settings.MEDICATION_SAFETY_RULE_DATASET_VERSION == ("medication-safety-v1")
 
 
@@ -40,6 +41,14 @@ def test_config_disables_conditional_question_interpretation_by_default() -> Non
     settings = Config(_env_file=None)
 
     assert settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED is False
+
+
+def test_config_disables_semantic_question_router_by_default() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.SEMANTIC_ROUTER_ENABLED is False
+    assert settings.SEMANTIC_ROUTER_MIN_SCORE == 0.78
+    assert settings.SEMANTIC_ROUTER_MIN_MARGIN == 0.10
 
 
 def test_config_reads_openai_chat_integration_settings(
@@ -76,6 +85,10 @@ def test_config_reads_openai_chat_integration_settings(
         "interaction-test-v1",
     )
     monkeypatch.setenv(
+        "THERAPEUTIC_CLASS_DATASET_VERSION",
+        "therapeutic-class-test-v1",
+    )
+    monkeypatch.setenv(
         "MEDICATION_SAFETY_RULE_DATASET_VERSION",
         "medication-safety-test-v1",
     )
@@ -100,6 +113,7 @@ def test_config_reads_openai_chat_integration_settings(
     assert settings.KNOWLEDGE_SEARCH_MODE == KnowledgeSearchMode.HYBRID
     assert settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT
     assert settings.INTERACTION_RULE_DATASET_VERSION == "interaction-test-v1"
+    assert settings.THERAPEUTIC_CLASS_DATASET_VERSION == "therapeutic-class-test-v1"
     assert settings.MEDICATION_SAFETY_RULE_DATASET_VERSION == ("medication-safety-test-v1")
     assert settings.RAG_MIN_SIMILARITY_SCORE == 0.7
     assert settings.OPENAI_TIMEOUT_SECONDS == 20

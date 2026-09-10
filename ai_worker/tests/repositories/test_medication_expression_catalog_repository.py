@@ -74,12 +74,12 @@ async def test_catalog_combines_product_entity_and_alias_names(
 
     result = await DbMedicationExpressionCatalog().list_expressions()
 
-    assert result == [
+    assert {
         "아세트아미노펜",
         "타이레놀",
         "타이레놀정500밀리그람",
         "해열진통제",
-    ]
+    }.issubset(result)
 
     entries = await DbMedicationExpressionCatalog().list_entries()
     alias_entry = next(entry for entry in entries if entry.aliases == ["해열진통제"])
@@ -124,6 +124,18 @@ async def test_catalog_includes_dynamic_qdrant_ingredient_names(
     result = await catalog.list_expressions()
 
     assert "비타민 K" in result
+
+
+@pytest.mark.asyncio
+async def test_catalog_includes_shared_general_supplement_vocabulary(
+    initialized_db: None,
+) -> None:
+    entries = await DbMedicationExpressionCatalog().list_entries()
+
+    omega3 = next(entry for entry in entries if entry.canonical_name == "오메가3")
+    assert omega3.entity_type == MedicationQueryEntityType.INGREDIENT_NAME
+    assert omega3.kind == SearchEntityKind.SUPPLEMENT
+    assert omega3.source == MedicationQueryEntitySource.CATALOG
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ from itertools import combinations
 
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
+    requires_resolved_pair_for_interaction,
 )
 from ai_worker.domain.medication_expression_vocabulary import (
     SUPPORTED_SUPPLEMENT_NAMES,
@@ -398,9 +399,16 @@ class MedicationKnowledgeQueryBuilder:
             )
             else None
         )
+        has_interaction_intent = interaction_pair is not None or (
+            is_interaction_question(normalized)
+            and (
+                not requires_resolved_pair_for_interaction(normalized)
+                or self._has_resolved_interaction_entity_pair(entities)
+            )
+        )
         section_types, expansion_terms = self._intent(
             normalized,
-            has_interaction_pair=interaction_pair is not None,
+            has_interaction_intent=has_interaction_intent,
         )
         interaction_question = KnowledgeSectionType.INTERACTION in section_types
         if interaction_question and self._catalog_entities is None:
@@ -427,6 +435,8 @@ class MedicationKnowledgeQueryBuilder:
             default_terms=expansion_terms,
         )
         entity_names = [entity.canonical_name for entity in entities]
+        searchable_entity_names = self._searchable_entity_names(entities)
+        medication_product_lookup_names = self._medication_product_lookup_names(entities)
         interaction_pairs = self._interaction_pairs(entities) if interaction_question else []
         alternate_queries: list[str] = []
         if interaction_pair is not None:
@@ -454,7 +464,7 @@ class MedicationKnowledgeQueryBuilder:
             dict.fromkeys(
                 [
                     normalized,
-                    *entity_names,
+                    *searchable_entity_names,
                     *(ingredient_family.search_terms if ingredient_family else []),
                     *search_expansion_terms,
                 ]
@@ -483,19 +493,48 @@ class MedicationKnowledgeQueryBuilder:
                     ]
                 )
             ),
+            medication_product_lookup_names=medication_product_lookup_names,
             has_medication_product_cue=(
                 self._entity_normalizer.has_medication_product_cue(normalized)
                 if self._catalog_entities is None
-                else any(
-                    entity.entity_type
-                    in {
-                        MedicationQueryEntityType.PRODUCT_NAME,
-                        MedicationQueryEntityType.BRAND_ALIAS,
-                    }
-                    for entity in entities
-                )
+                else bool(medication_product_lookup_names)
             ),
         )
+
+    @staticmethod
+    def _searchable_entity_names(
+        entities: list[MedicationQueryEntity],
+    ) -> list[str]:
+        """검수된 별칭만 벡터 질의에 포함하고 답변 대상은 정식명으로 유지한다."""
+        return list(
+            dict.fromkeys(
+                expression.strip()
+                for entity in entities
+                for expression in [entity.canonical_name, *entity.search_aliases]
+                if expression.strip()
+            )
+        )
+
+    @staticmethod
+    def _medication_product_lookup_names(
+        entities: list[MedicationQueryEntity],
+    ) -> list[str]:
+        """Keep typed product provenance even when an interaction uses its ingredient."""
+
+        candidates = [entity.product_lookup_name for entity in entities if entity.product_lookup_name is not None]
+        candidates.extend(
+            entity.canonical_name
+            for entity in entities
+            if (
+                entity.kind == InteractionEntityKind.DRUG
+                and entity.entity_type
+                in {
+                    MedicationQueryEntityType.PRODUCT_NAME,
+                    MedicationQueryEntityType.BRAND_ALIAS,
+                }
+            )
+        )
+        return list(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     @staticmethod
     def _document_types(
@@ -600,12 +639,18 @@ class MedicationKnowledgeQueryBuilder:
         )[: cls._MAX_INTERACTION_PAIRS]
 
     @staticmethod
+    def _has_resolved_interaction_entity_pair(
+        entities: list[MedicationQueryEntity],
+    ) -> bool:
+        return sum(entity.kind is not None for entity in entities) >= 2
+
+    @staticmethod
     def _intent(
         question: str,
         *,
-        has_interaction_pair: bool = False,
+        has_interaction_intent: bool = False,
     ) -> tuple[list[KnowledgeSectionType], list[str]]:
-        if has_interaction_pair or is_interaction_question(question):
+        if has_interaction_intent:
             return [KnowledgeSectionType.INTERACTION], ["상호작용", "병용 주의"]
         section_types: list[KnowledgeSectionType] = []
         expansion_terms: list[str] = []

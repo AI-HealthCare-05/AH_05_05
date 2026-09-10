@@ -1,0 +1,49 @@
+schema_version: knowledge-retrieval-evaluation-v1
+dataset_version: knowledge-full-v12-o200k-source-backed-micronutrient
+thresholds:
+  min_hit_at_5: 1.00
+  min_citation_accuracy: 1.00
+  max_wrong_entity_mixing_count: 0
+  max_search_p95_ms: 300.0
+
+# Sandström (2001)에서 새로 승인·적재한 직접 관계 근거를 검증한다.
+# v11에는 이 document_id가 없으므로, v12에서만 Hit@5가 성립해야 한다.
+cases:
+  - query_id: iron-zinc-absorption
+    query: 철분과 아연을 함께 먹으면 흡수에 영향이 있나요?
+    expected_document_ids:
+      - research_micronutrient_interactions-e3b164ce9cc98cc6
+    expected_ingredient_names: [철분, 아연]
+    expected_interaction_pair_keys:
+      - 54e08cf63ea1eba49e79c48ad172b529626259c4a0ded7931d12b98609f2aed5
+    ingredient_names: [철분, 아연]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys:
+      - 54e08cf63ea1eba49e79c48ad172b529626259c4a0ded7931d12b98609f2aed5
+    document_types: [RESEARCH_ARTICLE]
+
+  - query_id: zinc-copper-status
+    query: 아연 보충제와 구리를 함께 섭취할 때 주의할 점은 무엇인가요?
+    expected_document_ids:
+      - research_micronutrient_interactions-e3b164ce9cc98cc6
+    expected_ingredient_names: [아연, 구리]
+    expected_interaction_pair_keys:
+      - 403d2c493b5fad1b522fba499094233f4947bf7c91a60c48eccd8658a08cfbbe
+    ingredient_names: [아연, 구리]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys:
+      - 403d2c493b5fad1b522fba499094233f4947bf7c91a60c48eccd8658a08cfbbe
+    document_types: [RESEARCH_ARTICLE]
+
+  - query_id: vitamin-c-iron-absorption
+    query: 비타민 C를 철분과 함께 먹으면 철 흡수에 도움이 되나요?
+    expected_document_ids:
+      - research_micronutrient_interactions-e3b164ce9cc98cc6
+    expected_ingredient_names: [비타민 C, 철분]
+    expected_interaction_pair_keys:
+      - e78c7e82b75b1436684970ea4236df98f8475c15b12345390f02a4a0ba002ecf
+    ingredient_names: [비타민 C, 철분]
+    interaction_type: SUPPLEMENT_SUPPLEMENT
+    interaction_pair_keys:
+      - e78c7e82b75b1436684970ea4236df98f8475c15b12345390f02a4a0ba002ecf
+    document_types: [RESEARCH_ARTICLE]
