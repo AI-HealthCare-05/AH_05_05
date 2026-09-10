@@ -12,6 +12,8 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem('poke.account-principal', '369-responsive@example.invalid');
   });
   await page.route('**/api/v1/**', route => route.abort());
+  await page.route('https://fonts.googleapis.com/**', route => route.abort());
+  await page.route('https://fonts.gstatic.com/**', route => route.abort());
 });
 
 async function expectNoOverflow(page: Page) {

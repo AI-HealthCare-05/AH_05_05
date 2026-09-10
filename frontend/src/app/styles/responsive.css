@@ -16,7 +16,7 @@
     column-gap: 28px;
   }
   .rx-home-content > * { min-width: 0; }
-  .rx-home-content--authenticated > .rx-home-tabs { grid-column: 1 / -1; }
+  .rx-home-content--authenticated > .rx-home-tab-layout { grid-column: 1 / -1; }
   .rx-home-content--authenticated > :nth-child(2) { grid-row: span 2; }
   .rx-home-content:not(.rx-home-content--authenticated) > :last-child {
     grid-column: 1 / -1;

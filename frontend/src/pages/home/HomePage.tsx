@@ -497,6 +497,7 @@ export function HomeSectionTabs({
 }) {
   return (
     <ContinuousTabs
+      className="rx-home-tab-layout"
       label="오늘의 홈 탭"
       value={activeTab}
       onChange={onChange}

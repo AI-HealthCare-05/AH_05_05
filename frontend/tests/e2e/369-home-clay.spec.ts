@@ -13,6 +13,9 @@ test.beforeEach(async ({ page }) => {
   });
   // This suite uses in-memory dev fixtures; never forward an API request to a DB.
   await page.route('**/api/v1/**', route => route.abort());
+  // Keep this isolated UI fixture independent of the external font stylesheet.
+  await page.route('https://fonts.googleapis.com/**', route => route.abort());
+  await page.route('https://fonts.gstatic.com/**', route => route.abort());
   await page.goto('/dev/home-multiple-episodes');
 });
 
