@@ -40,6 +40,9 @@ TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MEDICATION_ALARM_TITLE = "복약 알림"
 MEDICATION_ALARM_MESSAGE = "약 드실 시간이에요"
+# 기존 00·30분 제한은 비활성 상태로 보존합니다.
+# 복원 시 frontend/src/shared/ui/timePickerOptions.ts의 같은 설정도 True로 바꾸세요.
+USE_HALF_HOUR_REMINDERS = False
 
 
 class MedicationScheduleService:
@@ -235,7 +238,7 @@ class MedicationScheduleService:
             parsed = time.fromisoformat(value)
         except ValueError as error:
             raise InvalidMedicationScheduleError() from error
-        if parsed.minute not in {0, 30}:
+        if USE_HALF_HOUR_REMINDERS and parsed.minute not in {0, 30}:
             raise InvalidMedicationScheduleError()
         return parsed
 
