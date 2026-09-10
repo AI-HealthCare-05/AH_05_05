@@ -1,5 +1,6 @@
 import { House, MessageCircle, Pill, Sprout, UserRound } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
+import './home-clay.css';
 
 /**
  * Figma: Bottom Tabbar
@@ -26,7 +27,7 @@ export interface BottomTabbarProps {
 export function BottomTabbar({ active, onChange, className }: BottomTabbarProps) {
   return (
     <nav
-      className={cn('flex h-tabbar shrink-0 items-stretch bg-card', className)}
+      className={cn('rx-bottom-tabbar flex h-tabbar shrink-0 items-stretch bg-card', className)}
       aria-label="주요 화면"
     >
       {TABS.map((tab) => {

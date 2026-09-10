@@ -1,0 +1,139 @@
+/* RxVita's approved clay surface, kept local to home/summary/navigation.
+   Geometry, data, actions and native focus contracts remain with their owners. */
+.rx-home,
+.rx-home-challenges,
+.rx-bottom-tabbar {
+  --rx-clay-shadow: var(--shadow-card);
+  --rx-clay-inset: inset 0 1px 0 rgb(255 255 255 / 88%),
+    inset 0 -2px 3px rgb(7 122 116 / 10%);
+}
+
+.rx-home :where(.rounded-card.bg-card),
+.rx-home-challenges > .rx-challenge-card {
+  background-image: var(--rx-clay-surface-overlay);
+  box-shadow: var(--rx-clay-shadow);
+}
+
+.rx-home-tabs {
+  background: color-mix(in srgb, var(--color-primary-bg) 36%, var(--color-muted-bg));
+  box-shadow: var(--rx-clay-inset), 0 2px 5px rgb(7 122 116 / 6%);
+}
+
+.rx-home-tabs > [role="tab"] {
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.rx-home-tabs > [aria-selected="true"],
+.rx-segmented > [aria-pressed="true"] {
+  color: var(--color-card);
+  background-color: var(--color-primary);
+  background-image: var(--rx-clay-primary-surface);
+  box-shadow: inset 0 2px 1px rgb(255 255 255 / 50%), inset 0 -3px 5px rgb(0 44 104 / 16%), 0 3px 7px rgb(7 122 116 / 14%);
+}
+
+/* Only the existing dose card's header receives the pale mint backplate. */
+.rx-home #home-panel-medication > section > div:has(> [role="group"]) {
+  background: color-mix(in srgb, var(--color-primary-bg) 32%, var(--color-card));
+}
+
+.rx-home #home-panel-medication > section > div > [role="group"] {
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+}
+
+.rx-home #home-panel-medication > section > div > div:first-child > p,
+.rx-home [data-episode-row] h3,
+.rx-home #home-panel-supplement h3,
+.rx-home-challenges h2,
+.rx-home-challenges .rx-challenge-title {
+  color: var(--color-brand);
+}
+
+.rx-home [data-episode-row],
+.rx-home #home-panel-supplement li > button[aria-pressed] {
+  border-radius: var(--radius-input);
+  transition: background-color 160ms ease;
+}
+
+.rx-home [data-episode-row][aria-pressed="true"],
+.rx-home #home-panel-supplement li > button[aria-pressed="true"] {
+  background-color: var(--color-primary-bg);
+  /* Compose with Tailwind's focus ring instead of replacing it. */
+  box-shadow: var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    var(--rx-clay-inset);
+}
+
+.rx-home [data-episode-row]:active:not(:disabled),
+.rx-home #home-panel-supplement li > button[aria-pressed]:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary-bg) 72%, var(--color-card));
+}
+
+.rx-home [data-episode-selection-glyph],
+.rx-home [data-supplement-selection-indicator] {
+  box-shadow: inset 0 1px 2px rgb(7 122 116 / 8%);
+}
+
+.rx-home [aria-pressed="true"] [data-episode-selection-glyph],
+.rx-home [aria-pressed="true"] [data-supplement-selection-indicator] {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 28%), 0 1px 2px rgb(7 122 116 / 12%);
+}
+
+.rx-home-challenges .rx-challenge-row {
+  border-radius: var(--radius-input);
+  background-color: color-mix(in srgb, var(--color-primary-bg) 18%, var(--color-card));
+  transition: background-color 160ms ease;
+}
+
+.rx-home-challenges .rx-challenge-row:active {
+  background-color: var(--color-primary-bg);
+}
+
+.rx-home-challenges .rx-challenge-track {
+  box-shadow: var(--rx-clay-inset);
+}
+
+.rx-home-challenges .rx-challenge-track > span {
+  background-image: var(--rx-clay-primary-surface);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%), inset 0 -2px 2px rgb(0 44 104 / 12%);
+}
+
+/* Five equal hit areas and all labels remain fixed. Only opacity changes. */
+.rx-bottom-tabbar {
+  background-image: var(--rx-clay-surface-overlay);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 94%), inset 0 -1px 2px rgb(7 122 116 / 7%), 0 -3px 8px rgb(0 44 104 / 7%);
+}
+
+.rx-bottom-tabbar > button {
+  position: relative;
+  isolation: isolate;
+}
+
+.rx-bottom-tabbar > button::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 4px;
+  border-radius: var(--radius-button);
+  background-color: var(--color-primary-bg);
+  background-image: var(--rx-clay-surface-overlay);
+  box-shadow: var(--rx-clay-inset), 0 2px 5px rgb(7 122 116 / 8%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.rx-bottom-tabbar > button[aria-current="page"]::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rx-home-tabs > [role="tab"],
+  .rx-home [data-episode-row],
+  .rx-home #home-panel-supplement li > button[aria-pressed],
+  .rx-home-challenges .rx-challenge-row,
+  .rx-bottom-tabbar > button::before {
+    transition: none;
+  }
+}

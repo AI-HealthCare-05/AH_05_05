@@ -273,7 +273,7 @@ export function SupplementsPage({
 
       <div className="px-page-x pt-5">
         <div
-          className="grid grid-cols-2 rounded-input bg-muted-bg p-1"
+          className="rx-segmented grid grid-cols-2 rounded-input bg-muted-bg p-1"
           role="group"
           aria-label="영양제 화면"
         >

@@ -416,7 +416,8 @@ function TimelineItem({
       <div className="mt-3 flex gap-2">
         <button
           type="button"
-          className="min-h-touch flex-1 rounded-button border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-variant="secondary"
+          className="rx-button min-h-touch flex-1 rounded-button border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={onMemo}
         >
           복약 메모

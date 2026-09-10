@@ -34,6 +34,7 @@ import { ChatFeedbackSheet } from './ChatFeedbackSheet';
 import { ChatSessionList } from './ChatSessionList';
 import { ChatStartGuide } from './ChatStartGuide';
 import { SourceList } from './SourceList';
+import './chat-motion.css';
 
 /**
  * REQ-CHAT-001 · 챗봇 — 공공 근거를 보여주는 화면.
@@ -443,7 +444,7 @@ export function ChatPage({
   const composerDisabled = chatRequestPending || pending || historyLoading || view === 'loading';
 
   return (
-    <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col bg-background">
+    <div className="rx-chat mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
         title="챗봇"
         onBack={handleRoomBack}
@@ -503,7 +504,7 @@ export function ChatPage({
           const showAvatar = messages[index - 1]?.role !== 'assistant';
           return message.role === 'user' ? (
             <div key={index} className="flex justify-end">
-              <p className="max-w-[80%] rounded-card bg-primary px-3.5 py-2.5 text-base break-words text-card">
+              <p className="chat-user-bubble max-w-[80%] rounded-card bg-primary px-3.5 py-2.5 text-base break-words text-card">
                 {message.text}
               </p>
             </div>
@@ -521,7 +522,7 @@ export function ChatPage({
               ) : (
                 <span aria-hidden className="size-8 shrink-0" />
               )}
-              <div className="flex flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
+              <div className="chat-assistant-bubble flex flex-col gap-2 rounded-card bg-muted-bg px-3.5 py-2.5">
                 <p
                   aria-label="답변 본문"
                   className="whitespace-pre-wrap text-base break-words text-foreground"
@@ -560,8 +561,17 @@ export function ChatPage({
               width={32}
               height={32}
             />
-            <p className="rounded-card bg-muted-bg px-3.5 py-2.5 text-base text-muted-foreground">
+            <p className="chat-pending-bubble rounded-card px-3.5 py-2.5 text-base text-muted-foreground">
               {progressMessage}
+              <span
+                aria-hidden="true"
+                className="chat-pending-loader"
+                data-chat-pending-loader
+              >
+                {Array.from({ length: 5 }, (_, index) => (
+                  <span key={index} className="chat-pending-dot" data-chat-pending-dot />
+                ))}
+              </span>
             </p>
           </div>
         )}
@@ -570,7 +580,7 @@ export function ChatPage({
       </main>
 
       {/* 입력 영역 — BottomTabbar 위에 붙습니다. */}
-      <div className="flex shrink-0 items-start gap-2 border-t border-border bg-card px-page-x py-3">
+      <div className="chat-composer flex shrink-0 items-start gap-2 border-t border-border bg-card px-page-x py-3">
         <Input
           aria-label="질문 입력"
           value={draft}

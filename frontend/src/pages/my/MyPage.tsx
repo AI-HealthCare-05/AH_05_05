@@ -423,7 +423,7 @@ export function MyPage({
           <>
             <button
               type="button"
-              className="flex min-h-[84px] items-center gap-4 rounded-card border border-border bg-card p-3.5 text-left"
+              className="flex min-h-[84px] items-center gap-4 rounded-card border border-border bg-card p-3.5 text-left shadow-card"
               onClick={() => navigate('/my/profile')}
               aria-busy={profile === null && !profileLoadError}
             >
@@ -486,7 +486,7 @@ export function MyPage({
                   관리 항목 수를 확인하지 못했어요.
                 </p>
               )}
-              <div className="mt-3 overflow-hidden bg-card">
+              <div className="mt-3 overflow-hidden rounded-card bg-card shadow-card">
                 <ManagementRow
                   label="복용 중 처방"
                   value={
@@ -543,7 +543,7 @@ export function MyPage({
               <h2 id="notification-title" className="text-xl font-bold text-foreground">
                 알림
               </h2>
-              <div className="mt-3 overflow-hidden rounded-card border border-border bg-card">
+              <div className="mt-3 overflow-hidden rounded-card border border-border bg-card shadow-card">
                 {notifyLoadError ? (
                   <div className="p-4">
                     <p className="font-bold text-foreground">알림 설정을 불러오지 못했어요</p>
@@ -720,7 +720,7 @@ function NotificationRow({
       <Switch
         id={`notification-${label}`}
         aria-label={label}
-        className="data-[state=unchecked]:bg-input"
+        className="data-[state=unchecked]:before:bg-input"
         checked={checked}
         disabled={disabled}
         onCheckedChange={onCheckedChange}

@@ -33,6 +33,7 @@ import { MedicationTimeline, type DoseChangeResult } from './MedicationTimeline'
 import { SupplementRankingCard } from './SupplementRankingCard';
 import { SupplementTodayCard } from './SupplementTodayCard';
 import { HomeChallengeSummary } from '@/pages/challenges/HomeChallengeSummary';
+import '@/shared/ui/home-clay.css';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
@@ -348,7 +349,7 @@ export function HomePage({
   }
 
   return (
-    <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
+    <div className="rx-home mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
       {isAuthenticated ? (
         <Header
           title={
@@ -370,7 +371,7 @@ export function HomePage({
         </header>
       )}
 
-      <main tabIndex={0} aria-label="홈 콘텐츠" className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
+      <main tabIndex={0} aria-label="홈 콘텐츠" className={`rx-home-content min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary ${isAuthenticated ? 'rx-home-content--authenticated gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
           <>
             <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />
@@ -497,7 +498,7 @@ export function HomeSectionTabs({
     <div
       role="tablist"
       aria-label="오늘의 홈 탭"
-      className="grid grid-cols-2 rounded-input bg-muted-bg p-1"
+      className="rx-home-tabs grid grid-cols-2 rounded-input bg-muted-bg p-1"
     >
       {([
         ['medication', '오늘의 복약'],

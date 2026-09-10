@@ -438,12 +438,12 @@ export function AuthPage() {
     >
       <Header title="로그인 · 회원가입" onBack={goBack} />
       <main
-        className={`flex flex-1 flex-col px-page-x ${
+        className={`rx-reading-content flex flex-1 flex-col px-page-x ${
           mode === 'login' ? 'pt-5' : 'pb-10 pt-5'
         }`}
       >
         <div
-          className="grid h-12 grid-cols-2 rounded-input bg-muted-bg p-1"
+          className="rx-segmented grid h-12 grid-cols-2 rounded-input bg-muted-bg p-1"
           role="group"
           aria-label="인증 방식"
         >

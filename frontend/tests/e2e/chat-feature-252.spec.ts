@@ -104,10 +104,13 @@ test('채팅 종료는 하단 content-height 시트에서 평가를 제출하고
 
   const endSheet = page.getByRole('dialog', { name: '상담 종료' });
   await expect(endSheet).toBeVisible();
+  await expect.poll(async () => {
+    const box = await endSheet.boundingBox();
+    return Math.abs((box?.y ?? 0) + (box?.height ?? 0) - 844);
+  }).toBeLessThanOrEqual(1);
   const endSheetBox = await endSheet.boundingBox();
   expect(endSheetBox).not.toBeNull();
   expect(endSheetBox?.height).toBeLessThan(844);
-  expect(Math.abs((endSheetBox?.y ?? 0) + (endSheetBox?.height ?? 0) - 844)).toBeLessThanOrEqual(1);
 
   await endSheet.getByRole('button', { name: '좋아요' }).click();
   const positiveSheet = page.getByRole('dialog', { name: '상담 평가' });

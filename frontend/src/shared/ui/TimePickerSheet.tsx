@@ -65,7 +65,7 @@ export function TimePickerSheet({
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
       <DialogContent
         showCloseButton={false}
-        className="top-auto bottom-0 w-full max-w-app translate-y-0 rounded-b-none"
+        className="top-auto bottom-0 w-full max-w-dialog translate-y-0 rounded-b-none"
       >
         <DialogHeader>
           <DialogTitle>시간 선택</DialogTitle>

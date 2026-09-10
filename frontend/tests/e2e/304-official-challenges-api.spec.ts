@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+
+const WATER_BADGE_PNG = readFileSync(new URL('../../../app/static/media/badges/water-badge.png', import.meta.url));
 
 test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 test.setTimeout(120_000);
@@ -595,6 +598,164 @@ test('My keeps a successful check-in when optional catalog and badge refreshes f
   await expect(card.getByRole('button', { name: '오늘 인증 완료' })).toBeDisabled();
   await expect(card.getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('alert')).toContainText('배지 정보를 불러오지 못했어요.');
+});
+
+test('participation rotates the existing badge once only after GET confirms a new award', async ({ page }, testInfo) => {
+  await authenticate(page);
+  const waterBadge = {
+    ...badge,
+    name: '물마시기 배지',
+    image_path: 'media/badges/water-badge.png',
+  };
+  const waterChallenge = { ...dailyChallenge, can_join: false, participation_id: 501, reward_badge: waterBadge };
+  const verification = {
+    id: 901,
+    user_challenge_id: 501,
+    progress_id: 801,
+    verification_date: '2026-09-10',
+    content: null,
+    image_path: null,
+    status: 'APPROVED',
+    rejection_reason: null,
+    reviewed_by_admin_id: null,
+    reviewed_at: '2026-09-10T11:00:00+09:00',
+    submitted_at: '2026-09-10T11:00:00+09:00',
+  };
+  const before = participation({ completed_count: 13, progress_rate: '92.86', challenge: waterChallenge });
+  const after = participation({
+    status: 'COMPLETED',
+    completed_count: 14,
+    progress_rate: '100.00',
+    completed_at: '2026-09-10T11:00:00+09:00',
+    can_verify: false,
+    today_verification: verification,
+    verified_dates: ['2026-09-10'],
+    challenge: waterChallenge,
+  });
+  const awardedBadge = {
+    id: 702,
+    user_id: 7,
+    badge_id: waterBadge.id,
+    challenge_id: dailyChallenge.id,
+    user_challenge_id: 501,
+    status: 'AWARDED',
+    badge_name: waterBadge.name,
+    badge_image_path: waterBadge.image_path,
+    awarded_at: '2026-09-10T11:00:00+09:00',
+    revoked_at: null,
+    revoke_reason: null,
+  };
+  let checked = false;
+  let badgeReads = 0;
+  let releaseBadgeImage!: () => void;
+  const badgeImageGate = new Promise<void>(resolve => {
+    releaseBadgeImage = resolve;
+  });
+  await page.route('**/api/v1/user/challenges/501', route =>
+    route.fulfill({ json: checked ? after : before }),
+  );
+  await page.route('**/api/v1/user/badges', route => {
+    badgeReads += 1;
+    const items = checked ? [awardedBadge] : [];
+    return route.fulfill({ json: { items, total_count: items.length } });
+  });
+  await page.route('**/api/v1/user/challenges/501/verifications', route => {
+    checked = true;
+    return route.fulfill({ status: 201, json: verification });
+  });
+  await page.route('**/media/badges/water-badge.png', async route => {
+    await badgeImageGate;
+    await route.fulfill({ status: 200, contentType: 'image/png', body: WATER_BADGE_PNG });
+  });
+
+  await page.goto('/challenges/participations/501');
+  await page.getByRole('button', { name: '했어요', exact: true }).click();
+
+  const completion = page.getByRole('region', { name: '챌린지 완료 결과' });
+  const awardedArt = completion.getByRole('img', { name: waterBadge.name });
+  await expect(awardedArt).toHaveAttribute('data-newly-awarded', 'true');
+  await expect(awardedArt).toHaveCSS('animation-name', 'none');
+  expect(await awardedArt.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(false);
+  releaseBadgeImage();
+  await expect.poll(() => awardedArt.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+  await expect(awardedArt).toHaveAttribute('data-award-art-ready', 'true');
+  await expect(awardedArt).toHaveCSS('animation-name', 'rx-badge-award-turn');
+  await expect(awardedArt).toHaveCSS('animation-iteration-count', '1');
+  await awardedArt.evaluate(element => {
+    const animation = element.getAnimations().find(item => item.animationName === 'rx-badge-award-turn');
+    animation?.pause();
+    if (animation) animation.currentTime = 380;
+  });
+  await page.screenshot({ path: testInfo.outputPath('water-contour-rotation-390x844.png') });
+  expect(badgeReads).toBeGreaterThanOrEqual(2);
+
+  await page.reload();
+  const revisitedArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: waterBadge.name });
+  await expect(revisitedArt).not.toHaveAttribute('data-newly-awarded', 'true');
+  await expect(revisitedArt).toHaveCSS('animation-name', 'none');
+
+  checked = false;
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.reload();
+  await page.getByRole('button', { name: '했어요', exact: true }).click();
+  const reducedArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: waterBadge.name });
+  await expect(reducedArt).toHaveAttribute('data-newly-awarded', 'true');
+  await expect(reducedArt).toHaveCSS('animation-name', 'none');
+});
+
+test('water reward clips to its own teal contour without changing other badge artwork', async ({ page }, testInfo) => {
+  await authenticate(page);
+  const waterBadge = {
+    ...badge,
+    name: '물마시기 배지',
+    image_path: 'media/badges/water-badge.png',
+  };
+  let rewardBadge = waterBadge;
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation({
+    status: 'COMPLETED',
+    completed_count: 14,
+    progress_rate: '100.00',
+    completed_at: '2026-09-10T11:00:00+09:00',
+    can_verify: false,
+    challenge: { ...dailyChallenge, can_join: false, participation_id: 501, reward_badge: rewardBadge },
+  }) }));
+  await page.route('**/api/v1/user/badges', route => {
+    const item = {
+      id: 800 + rewardBadge.id,
+      user_id: 7,
+      badge_id: rewardBadge.id,
+      challenge_id: dailyChallenge.id,
+      user_challenge_id: 501,
+      status: 'AWARDED',
+      badge_name: rewardBadge.name,
+      badge_image_path: rewardBadge.image_path,
+      awarded_at: '2026-09-10T11:00:00+09:00',
+      revoked_at: null,
+      revoke_reason: null,
+    };
+    return route.fulfill({ json: { items: [item], total_count: 1 } });
+  });
+
+  await page.goto('/challenges/participations/501');
+  const waterArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: waterBadge.name });
+  await expect(waterArt).toHaveAttribute('src', '/media/badges/water-badge.png');
+  await expect(waterArt).toHaveAttribute('data-award-contour', 'water');
+  await expect(waterArt).toHaveCSS('clip-path', /polygon/);
+  await expect(waterArt).toHaveCSS('border-radius', '0px');
+  await page.screenshot({ path: testInfo.outputPath('water-contour-light-390x844.png') });
+  await page.addStyleTag({ content: '[aria-label="챌린지 완료 결과"] { background: #002c68 !important; }' });
+  await page.screenshot({ path: testInfo.outputPath('water-contour-dark-390x844.png') });
+
+  rewardBadge = badge;
+  await page.reload();
+  const walkArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: badge.name });
+  await expect(walkArt).not.toHaveAttribute('data-award-contour', 'water');
+  await expect(walkArt).toHaveCSS('clip-path', 'none');
+  await expect(walkArt).toHaveClass(/rounded-pill/);
 });
 
 test('My offers a GET-only retry when progress refresh fails after an approved check-in', async ({ page }) => {

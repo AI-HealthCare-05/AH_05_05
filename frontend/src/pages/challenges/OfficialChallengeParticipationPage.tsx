@@ -46,6 +46,10 @@ function progressValue(value: number | string) {
   return Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0;
 }
 
+function usesWaterBadgeContour(imagePath: string) {
+  return /(^|\/)water-badge\.png(?:[?#].*)?$/i.test(imagePath);
+}
+
 function unitLabel(participation: ChallengeParticipation) {
   return participation.challenge.frequency_code === 'DAILY' ? '일 인증' : '회 인증';
 }
@@ -99,6 +103,8 @@ export function OfficialChallengeParticipationPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [rejoinOpen, setRejoinOpen] = useState(false);
   const [rejoinPending, setRejoinPending] = useState(false);
+  const [newAwardId, setNewAwardId] = useState<number | null>(null);
+  const [awardArtReady, setAwardArtReady] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
 
@@ -123,6 +129,8 @@ export function OfficialChallengeParticipationPage() {
     setCancelError(null);
     setRejoinOpen(false);
     setRejoinPending(false);
+    setNewAwardId(null);
+    setAwardArtReady(false);
     idempotencyKeyRef.current = null;
     cancelRequestRef.current = null;
     rejoinRequestRef.current = null;
@@ -171,6 +179,7 @@ export function OfficialChallengeParticipationPage() {
   const rate = progressValue(participation.progress_rate);
   const unit = unitLabel(participation);
   const badge = participation.challenge.reward_badge;
+  const waterBadgeContour = badge ? usesWaterBadgeContour(badge.image_path) : false;
   const badgeEarned = badge && data.badges
     ? data.badges.some(item => item.badge_id === badge.id && item.status === 'AWARDED')
     : false;
@@ -235,6 +244,9 @@ export function OfficialChallengeParticipationPage() {
       && requestGenerationRef.current === requestGeneration
     );
     const key = idempotencyKeyRef.current ?? crypto.randomUUID();
+    const previousAwardIds = new Set(
+      data?.badges?.filter(item => item.status === 'AWARDED').map(item => item.id) ?? [],
+    );
     idempotencyKeyRef.current = key;
     setPending(true);
     setActionError(null);
@@ -259,6 +271,13 @@ export function OfficialChallengeParticipationPage() {
       try {
         const refreshed = await loadParticipationData(participation.id);
         if (!isCurrentRequest()) return;
+        const newlyAwarded = refreshed.badges?.find(item => (
+          item.status === 'AWARDED'
+          && item.badge_id === participation.challenge.reward_badge?.id
+          && !previousAwardIds.has(item.id)
+        ));
+        setAwardArtReady(false);
+        setNewAwardId(newlyAwarded?.badge_id ?? null);
         setData(refreshed);
         setRefreshRequired(false);
       } catch {
@@ -376,7 +395,7 @@ export function OfficialChallengeParticipationPage() {
 
       {participation.status === 'COMPLETED' ? (
         <section className="flex flex-col items-center gap-2 rounded-card bg-primary-bg p-5 text-center" aria-label="챌린지 완료 결과">
-          {badge ? <img src={apiAssetUrl(badge.image_path)} alt={badge.name} className={`size-16 rounded-pill object-contain ${data.badges && !badgeEarned ? 'grayscale opacity-60' : ''}`} /> : null}
+          {badge ? <img src={apiAssetUrl(badge.image_path)} alt={badge.name} data-award-contour={waterBadgeContour ? 'water' : undefined} data-newly-awarded={newAwardId === badge.id ? 'true' : undefined} data-award-art-ready={newAwardId === badge.id && awardArtReady ? 'true' : undefined} onLoad={(event) => { if (newAwardId !== badge.id) return; const image = event.currentTarget; void image.decode().catch(() => undefined).then(() => { if (image.isConnected && image.complete && image.naturalWidth > 0) setAwardArtReady(true); }); }} className={`size-16 object-contain ${waterBadgeContour ? 'rx-badge-contour-water' : 'rounded-pill'} ${data.badges && !badgeEarned ? 'grayscale opacity-60' : ''} ${newAwardId === badge.id && awardArtReady ? 'rx-badge-award' : ''}`} /> : null}
           <h2 className="text-lg font-bold">챌린지를 완주했어요</h2>
           {badge ? <Link to={`/challenges/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 ›</Link> : null}
         </section>

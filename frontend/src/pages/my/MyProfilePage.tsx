@@ -131,7 +131,7 @@ export function MyProfilePage({
         title={<span aria-label="기본정보 수정">기본정보</span>}
         onBack={() => navigate(-1)}
       />
-      <main className="flex flex-1 flex-col overflow-y-auto px-page-x pb-3 pt-8">
+      <main className="rx-reading-content flex flex-1 flex-col overflow-y-auto px-page-x pb-3 pt-8">
         {loadError ? (
           <Card title="기본정보를 불러오지 못했어요">{loadError}</Card>
         ) : !profile ? (
