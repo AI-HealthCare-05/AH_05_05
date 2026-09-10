@@ -29,6 +29,7 @@ from app.dtos.challenges import (
 )
 from app.models.challenges import Badge, Challenge, CustomChallengeTemplate, UserBadge, UserChallenge
 from app.models.common_codes import CommonCode
+from app.models.custom_challenges import CustomChallengeBadgeAward, CustomChallengeParticipation
 from app.repositories.badge_repository import BadgeRepository
 from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.custom_challenge_template_repository import CustomChallengeTemplateRepository
@@ -120,7 +121,19 @@ class AdminChallengeService:
             "badge_id",
             flat=True,
         )
-        return set(challenge_ids) | set(template_ids) | set(awarded_ids)
+        custom_awarded_ids = await CustomChallengeBadgeAward.filter(
+            badge_id__in=badge_ids,
+        ).values_list("badge_id", flat=True)
+        custom_snapshot_ids = await CustomChallengeParticipation.filter(
+            reward_badge_id__in=badge_ids,
+        ).values_list("reward_badge_id", flat=True)
+        return (
+            set(challenge_ids)
+            | set(template_ids)
+            | set(awarded_ids)
+            | set(custom_awarded_ids)
+            | set(custom_snapshot_ids)
+        )
 
     async def create_challenge(
         self,

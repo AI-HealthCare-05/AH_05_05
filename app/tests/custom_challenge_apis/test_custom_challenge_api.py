@@ -92,7 +92,7 @@ async def _user(email: str = "custom@example.com") -> User:
 async def _templates() -> tuple[CustomChallengeTemplate, CustomChallengeTemplate]:
     group = await CommonCodeGroup.create(
         category="CHL",
-        group_code="CUSTOM_API_TEST",
+        group_code="CST_CHK_TYPE",
         group_name="맞춤 챌린지 테스트",
     )
     check_type = await CommonCode.create(
@@ -100,14 +100,19 @@ async def _templates() -> tuple[CustomChallengeTemplate, CustomChallengeTemplate
         detail_code="AUTO",
         detail_name="자동",
     )
+    type_group = await CommonCodeGroup.create(category="CHL", group_code="CST_CHL_TYPE", group_name="맞춤 챌린지 유형")
+    medication_type = await CommonCode.create(group=type_group, detail_code="MEDICATION", detail_name="복약")
+    supplement_type = await CommonCode.create(group=type_group, detail_code="SUPPLEMENT", detail_name="영양제")
     medication = await CustomChallengeTemplate.create(
         name="7일 복약",
         check_type=check_type,
+        challenge_type=medication_type,
         is_active=True,
     )
     supplement = await CustomChallengeTemplate.create(
         name="7일 영양제",
         check_type=check_type,
+        challenge_type=supplement_type,
         is_active=True,
     )
     config.CUSTOM_CHALLENGE_TEMPLATE_TYPES = {
@@ -303,12 +308,12 @@ async def test_join_supplement_accepts_many_and_uses_inclusive_source_end(
     assert response.actual_end_date == NOW.date() + timedelta(days=1)
 
 
-async def test_join_rejects_unmapped_template_and_rolls_back_zero_goal_source(
+async def test_join_rejects_untyped_template_and_rolls_back_zero_goal_source(
     service: CustomChallengeService,
 ) -> None:
     user = await _user()
     medication_template, supplement_template = await _templates()
-    config.CUSTOM_CHALLENGE_TEMPLATE_TYPES.pop(supplement_template.id)
+    await CustomChallengeTemplate.filter(id=supplement_template.id).update(challenge_type_id=None)
     with pytest.raises(CustomChallengeTemplateUnavailableError):
         await service.join(
             user,
@@ -398,7 +403,7 @@ async def test_supplement_duplicate_active_check_uses_exact_canonical_target_set
         )
 
 
-async def test_active_duplicate_is_rejected_after_template_mapping_replacement(
+async def test_active_duplicate_is_rejected_after_backoffice_template_replacement(
     service: CustomChallengeService,
 ) -> None:
     user = await _user()
@@ -412,6 +417,7 @@ async def test_active_duplicate_is_rejected_after_template_mapping_replacement(
     replacement = await CustomChallengeTemplate.create(
         name="새 7일 복약",
         check_type_id=medication_template.check_type_id,
+        challenge_type_id=medication_template.challenge_type_id,
         is_active=True,
     )
     config.CUSTOM_CHALLENGE_TEMPLATE_TYPES = {
@@ -420,9 +426,7 @@ async def test_active_duplicate_is_rejected_after_template_mapping_replacement(
     }
 
     recommendations = await service.recommendations(user)
-    medication_recommendation = next(
-        item for item in recommendations.items if item.template_id == replacement.id
-    )
+    medication_recommendation = next(item for item in recommendations.items if item.template_id == replacement.id)
     assert medication_recommendation.targets[0].existing_participation_id == existing.id
 
     with pytest.raises(CustomChallengeAlreadyActiveError):
@@ -435,20 +439,24 @@ async def test_active_duplicate_is_rejected_after_template_mapping_replacement(
     assert await CustomChallengeParticipation.filter(user_id=user.id).count() == 1
 
 
-async def test_idempotent_retry_rejects_stored_type_mismatch(
+async def test_idempotent_retry_rejects_different_target_set(
     service: CustomChallengeService,
 ) -> None:
     user = await _user()
     medication_template, _ = await _templates()
     episode = await _medication_episode(user)
-    request = CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="stored-type")
-    participation = await service.join(user, medication_template.id, request)
-    await CustomChallengeParticipation.filter(id=participation.id).update(
-        challenge_type=CustomChallengeType.SUPPLEMENT
-    )
+    other_episode = await _medication_episode(user)
+    request = CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="same-key")
+    await service.join(user, medication_template.id, request)
 
     with pytest.raises(CustomChallengeIdempotencyConflictError):
-        await service.join(user, medication_template.id, request)
+        await service.join(
+            user,
+            medication_template.id,
+            CustomChallengeJoinRequest(target_ids=[other_episode.id], idempotency_key="same-key"),
+        )
+
+    assert await CustomChallengeParticipation.filter(user_id=user.id).count() == 1
 
 
 class _LockOrderRepository(UserSupplementNutrientRepository):
@@ -620,9 +628,7 @@ async def test_routes_require_auth_and_serialize_camel_case(service: CustomChall
             json={"targetIds": [episode.id], "idempotencyKey": "route-request"},
         )
         listed = await client.get("/api/v1/user/custom-challenge-participations")
-        detail = await client.get(
-            f"/api/v1/user/custom-challenge-participations/{joined.json()['id']}"
-        )
+        detail = await client.get(f"/api/v1/user/custom-challenge-participations/{joined.json()['id']}")
 
     assert joined.status_code == 201, joined.text
     assert joined.json()["templateId"] == medication_template.id

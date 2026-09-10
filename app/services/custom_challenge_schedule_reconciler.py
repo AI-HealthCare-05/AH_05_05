@@ -27,6 +27,7 @@ from app.services.custom_challenge_goal_planner import (
 )
 from app.services.custom_challenges import (
     custom_challenge_meal_times,
+    medication_challenge_end,
     medication_goal_windows,
     supplement_goal_windows,
 )
@@ -56,6 +57,15 @@ class CustomChallengeScheduleReconciler:
         selected_ids = None if source_ids is None else tuple(sorted(set(source_ids)))
         if selected_ids == ():
             return
+
+        from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
+
+        lifecycle = CustomChallengeLifecycleService()
+        await lifecycle.finalize_due_for_user(
+            user_id=user_id,
+            now=changed_at,
+            connection=connection,
+        )
 
         participations = await (
             CustomChallengeParticipation.filter(
@@ -95,6 +105,13 @@ class CustomChallengeScheduleReconciler:
 
         for target in targets:
             participation = participations_by_id[cast(int, target.participation_id)]
+            planned_end_at = await self._planned_end_at(
+                participation=participation,
+                source_kind=source_kind,
+                windows=windows_by_source.get(target.source_id_snapshot, []),
+                changed_at=changed_at,
+                connection=connection,
+            )
             occurrences = await (
                 CustomChallengeOccurrence.filter(target_id=target.id)
                 .using_db(connection)
@@ -106,13 +123,18 @@ class CustomChallengeScheduleReconciler:
             preserved_keys: set[GoalKey] = {
                 (target.source_id_snapshot, row.scheduled_date, row.slot) for row in past
             }
-            desired = plan_goals(
-                windows=windows_by_source.get(target.source_id_snapshot, []),
-                meal_times=meal_times,
-                joined_at=_database_datetime(participation.joined_at),
-                end_at=_database_datetime(participation.end_at),
-                not_before=changed_at,
-                preserved_keys=preserved_keys,
+            joined_at = _database_datetime(participation.joined_at)
+            desired = (
+                plan_goals(
+                    windows=windows_by_source.get(target.source_id_snapshot, []),
+                    meal_times=meal_times,
+                    joined_at=joined_at,
+                    end_at=planned_end_at,
+                    not_before=changed_at,
+                    preserved_keys=preserved_keys,
+                )
+                if planned_end_at > joined_at
+                else []
             )
             await self._replace_future(
                 target_id=target.id,
@@ -120,6 +142,32 @@ class CustomChallengeScheduleReconciler:
                 desired=desired,
                 connection=connection,
             )
+
+        if source_kind is CustomChallengeType.MEDICATION:
+            await lifecycle.finalize_due_for_user(
+                user_id=user_id,
+                now=changed_at,
+                connection=connection,
+            )
+
+    @staticmethod
+    async def _planned_end_at(
+        *,
+        participation: CustomChallengeParticipation,
+        source_kind: CustomChallengeType,
+        windows: list[GoalWindow],
+        changed_at: datetime,
+        connection: BaseDBAsyncClient,
+    ) -> datetime:
+        current_end_at = _database_datetime(participation.end_at)
+        if source_kind is not CustomChallengeType.MEDICATION:
+            return current_end_at
+        source_end_at = medication_challenge_end(windows)
+        planned_end_at = max(source_end_at or changed_at, changed_at)
+        if current_end_at != planned_end_at:
+            participation.end_at = planned_end_at
+            await participation.save(using_db=connection, update_fields=["end_at"])
+        return planned_end_at
 
     @staticmethod
     async def _windows_by_source(

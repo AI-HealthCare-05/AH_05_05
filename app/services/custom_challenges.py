@@ -14,6 +14,7 @@ from app.core import config as _config
 from app.core.config import Config
 from app.core.exceptions import (
     CustomChallengeAlreadyActiveError,
+    CustomChallengeCancelNotAllowedError,
     CustomChallengeIdempotencyConflictError,
     CustomChallengeInvalidTargetsError,
     CustomChallengeParticipationNotFoundError,
@@ -28,11 +29,13 @@ from app.dtos.custom_challenges import (
     CustomChallengeRecommendation,
     CustomChallengeRecommendationListResponse,
     CustomChallengeRecommendationTarget,
+    CustomChallengeRewardBadge,
     CustomChallengeTargetResponse,
 )
 from app.models.care import CareEpisode
-from app.models.challenges import CustomChallengeTemplate
+from app.models.challenges import Badge, CustomChallengeTemplate
 from app.models.custom_challenges import (
+    CustomChallengeBadgeAward,
     CustomChallengeOccurrence,
     CustomChallengeParticipation,
     CustomChallengeTarget,
@@ -48,6 +51,7 @@ from app.models.medications import MedicationDose
 from app.models.supplement_nutrients import SupplementDose, UserSupplementNutrient
 from app.models.users import User, UserSettings
 from app.services.custom_challenge_goal_planner import GoalWindow, PlannedGoal, plan_goals, seven_day_end
+from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
 
 config = cast(Config, _config)
 
@@ -66,14 +70,12 @@ SLOT_TIME_FIELDS = {
 }
 PERCENT_QUANTUM = Decimal("0.01")
 
+
 def custom_challenge_meal_times(settings: UserSettings | None) -> dict[MealSlot, time]:
     """Return planner meal times without creating or mutating user settings."""
     if settings is None:
         return DEFAULT_MEAL_TIMES.copy()
-    return {
-        slot: _normalize_time(getattr(settings, field_name))
-        for slot, field_name in SLOT_TIME_FIELDS.items()
-    }
+    return {slot: _normalize_time(getattr(settings, field_name)) for slot, field_name in SLOT_TIME_FIELDS.items()}
 
 
 def _normalize_time(value: time | timedelta) -> time:
@@ -120,14 +122,26 @@ def supplement_goal_windows(registration: UserSupplementNutrient) -> list[GoalWi
     ]
 
 
+def medication_challenge_end(windows: builtins.list[GoalWindow]) -> datetime | None:
+    last_dates = [window.last_date for window in windows if window.last_date is not None]
+    if not last_dates:
+        return None
+    return datetime.combine(max(last_dates) + timedelta(days=1), time.min, tzinfo=config.TIMEZONE)
+
+
 class CustomChallengeService:
-    def __init__(self, now_provider: Callable[[], datetime] | None = None) -> None:
+    def __init__(
+        self,
+        now_provider: Callable[[], datetime] | None = None,
+        lifecycle: CustomChallengeLifecycleService | None = None,
+    ) -> None:
         self._now_provider = now_provider or (lambda: datetime.now(config.TIMEZONE))
+        self._lifecycle = lifecycle or CustomChallengeLifecycleService()
 
     async def recommendations(self, user: User) -> CustomChallengeRecommendationListResponse:
-        now = self._now()
+        now = await self._finalize_due_for_user(user.id)
         meal_times = await self._meal_times(user.id)
-        templates = await self._active_mapped_templates()
+        templates = await self._active_templates()
         medication_sources = await self._eligible_medication_sources(
             user.id,
             now,
@@ -142,8 +156,8 @@ class CustomChallengeService:
 
         recommendations: builtins.list[CustomChallengeRecommendation] = []
         for template in templates:
-            challenge_type = config.CUSTOM_CHALLENGE_TEMPLATE_TYPES[template.id]
-            if challenge_type is CustomChallengeType.VISIT:
+            challenge_type = self._template_type(template)
+            if challenge_type is None or challenge_type is CustomChallengeType.VISIT:
                 continue
             sources = medication_sources if challenge_type is CustomChallengeType.MEDICATION else supplement_sources
             if not sources:
@@ -153,13 +167,12 @@ class CustomChallengeService:
                     template_id=template.id,
                     challenge_type=challenge_type,
                     challenge_name=template.name,
+                    reward_badge=self._reward_badge(template),
                     targets=[
                         CustomChallengeRecommendationTarget(
                             id=source_id,
                             name=name,
-                            existing_participation_id=active_target_participations.get(
-                                (challenge_type, source_id)
-                            ),
+                            existing_participation_id=active_target_participations.get((challenge_type, source_id)),
                         )
                         for source_id, name, _windows, _goals in sources
                     ],
@@ -196,14 +209,43 @@ class CustomChallengeService:
         return await self.get(user, participation_id)
 
     async def list(self, user: User) -> CustomChallengeParticipationListResponse:
+        await self._finalize_due_for_user(user.id)
         participations = await CustomChallengeParticipation.filter(user_id=user.id).order_by("-joined_at", "-id")
         items = [await self._to_response(participation) for participation in participations]
         return CustomChallengeParticipationListResponse(items=items, total_count=len(items))
 
     async def get(self, user: User, participation_id: int) -> CustomChallengeParticipationResponse:
+        await self._finalize_due_for_user(user.id)
         participation = await CustomChallengeParticipation.get_or_none(id=participation_id, user_id=user.id)
         if participation is None:
             raise CustomChallengeParticipationNotFoundError()
+        return await self._to_response(participation)
+
+    async def cancel(self, user: User, participation_id: int) -> CustomChallengeParticipationResponse:
+        async with in_transaction() as connection:
+            locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise CustomChallengeParticipationNotFoundError()
+            now = self._now()
+            await self._lifecycle.finalize_due_for_user(
+                user_id=user.id,
+                now=now,
+                connection=connection,
+            )
+            participation = await (
+                CustomChallengeParticipation.filter(id=participation_id, user_id=user.id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if participation is None:
+                raise CustomChallengeParticipationNotFoundError()
+            if participation.status is ChallengeParticipationStatus.ACTIVE:
+                await self._lifecycle.finalize_cancelled(participation, now, connection)
+
+        # Commit any due finalization (including its award) before rejecting cancellation.
+        if participation.status is not ChallengeParticipationStatus.CANCELLED:
+            raise CustomChallengeCancelNotAllowedError()
         return await self._to_response(participation)
 
     async def _join_transaction(
@@ -214,14 +256,16 @@ class CustomChallengeService:
         target_ids: tuple[int, ...],
         idempotency_key: str,
     ) -> int:
-        now = self._now()
-        end_at = seven_day_end(now)
         async with in_transaction() as connection:
-            locked_user = (
-                await User.filter(id=user_id).using_db(connection).select_for_update().first()
-            )
+            locked_user = await User.filter(id=user_id).using_db(connection).select_for_update().first()
             if locked_user is None:
                 raise CustomChallengeParticipationNotFoundError()
+            now = self._now()
+            await self._lifecycle.finalize_due_for_user(
+                user_id=user_id,
+                now=now,
+                connection=connection,
+            )
             existing = (
                 await CustomChallengeParticipation.filter(
                     user_id=user_id,
@@ -250,6 +294,14 @@ class CustomChallengeService:
             if tuple(source[0] for source in sources) != target_ids:
                 raise CustomChallengeInvalidTargetsError()
 
+            end_at = (
+                medication_challenge_end(sources[0][2])
+                if challenge_type is CustomChallengeType.MEDICATION
+                else seven_day_end(now)
+            )
+            if end_at is None or end_at <= now:
+                raise CustomChallengeInvalidTargetsError()
+
             await self._assert_no_active_duplicate(
                 user_id=user_id,
                 challenge_type=challenge_type,
@@ -259,6 +311,7 @@ class CustomChallengeService:
             participation = await CustomChallengeParticipation.create(
                 user_id=user_id,
                 template_id=template_id,
+                reward_badge_id=template.reward_badge_id,
                 challenge_type=challenge_type,
                 challenge_name=template.name,
                 idempotency_key=idempotency_key,
@@ -304,9 +357,10 @@ class CustomChallengeService:
             await CustomChallengeTemplate.filter(id=template_id, is_active=True)
             .using_db(connection)
             .select_for_update()
+            .prefetch_related("challenge_type__group", "check_type__group")
             .first()
         )
-        challenge_type = config.CUSTOM_CHALLENGE_TEMPLATE_TYPES.get(template_id)
+        challenge_type = self._template_type(template) if template is not None else None
         if template is None or challenge_type is None:
             raise CustomChallengeTemplateUnavailableError()
         if challenge_type is CustomChallengeType.VISIT:
@@ -324,8 +378,11 @@ class CustomChallengeService:
     ) -> None:
         # Match MedicationScheduleService's established order: User -> source -> settings.
         source_model = CareEpisode if challenge_type is CustomChallengeType.MEDICATION else UserSupplementNutrient
-        await source_model.filter(id__in=target_ids, user_id=user_id).using_db(connection).select_for_update().order_by(
-            "id"
+        await (
+            source_model.filter(id__in=target_ids, user_id=user_id)
+            .using_db(connection)
+            .select_for_update()
+            .order_by("id")
         )
 
     @staticmethod
@@ -346,9 +403,7 @@ class CustomChallengeService:
         now: datetime,
         meal_times: dict[MealSlot, time],
         connection: BaseDBAsyncClient,
-    ) -> builtins.list[
-        tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]
-    ]:
+    ) -> builtins.list[tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]]:
         if challenge_type is CustomChallengeType.MEDICATION:
             return await self._eligible_medication_sources(
                 user_id,
@@ -374,9 +429,7 @@ class CustomChallengeService:
         requested_ids: tuple[int, ...] | None = None,
         connection: BaseDBAsyncClient | None = None,
         lock: bool = False,
-    ) -> builtins.list[
-        tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]
-    ]:
+    ) -> builtins.list[tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]]:
         query = CareEpisode.filter(
             user_id=user_id,
             status=CareEpisodeStatus.ACTIVE,
@@ -390,12 +443,12 @@ class CustomChallengeService:
         if lock:
             query = query.select_for_update()
         episodes = await query.prefetch_related("medications__slots")
-        end_at = seven_day_end(now)
-        result: builtins.list[
-            tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]
-        ] = []
+        result: builtins.list[tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]] = []
         for episode in episodes:
             windows = medication_goal_windows(episode)
+            end_at = medication_challenge_end(windows)
+            if end_at is None or end_at <= now:
+                continue
             goals = plan_goals(
                 windows=windows,
                 meal_times=meal_times,
@@ -416,9 +469,7 @@ class CustomChallengeService:
         requested_ids: tuple[int, ...] | None = None,
         connection: BaseDBAsyncClient | None = None,
         lock: bool = False,
-    ) -> builtins.list[
-        tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]
-    ]:
+    ) -> builtins.list[tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]]:
         query = UserSupplementNutrient.filter(
             user_id=user_id,
             status=SupplementStatus.ACTIVE,
@@ -431,9 +482,7 @@ class CustomChallengeService:
             query = query.select_for_update()
         registrations = await query.prefetch_related("slots", "supplement_nutrient")
         end_at = seven_day_end(now)
-        result: builtins.list[
-            tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]
-        ] = []
+        result: builtins.list[tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]] = []
         for registration in registrations:
             windows = supplement_goal_windows(registration)
             goals = plan_goals(
@@ -459,12 +508,7 @@ class CustomChallengeService:
         if connection is not None:
             query = query.using_db(connection)
         existing_target_ids = tuple(await query.values_list("source_id_snapshot", flat=True))
-        expected_type = config.CUSTOM_CHALLENGE_TEMPLATE_TYPES.get(template_id)
-        if (
-            existing.template_id != template_id
-            or existing.challenge_type != expected_type
-            or existing_target_ids != target_ids
-        ):
+        if existing.template_id != template_id or existing_target_ids != target_ids:
             raise CustomChallengeIdempotencyConflictError()
 
     async def _assert_no_active_duplicate(
@@ -495,11 +539,44 @@ class CustomChallengeService:
             if existing_ids == target_ids:
                 raise CustomChallengeAlreadyActiveError()
 
-    async def _active_mapped_templates(self) -> builtins.list[CustomChallengeTemplate]:
-        template_ids = sorted(config.CUSTOM_CHALLENGE_TEMPLATE_TYPES)
-        if not template_ids:
-            return []
-        return await CustomChallengeTemplate.filter(id__in=template_ids, is_active=True).order_by("id")
+    async def _active_templates(self) -> builtins.list[CustomChallengeTemplate]:
+        return (
+            await CustomChallengeTemplate.filter(is_active=True)
+            .prefetch_related("challenge_type__group", "check_type__group", "reward_badge")
+            .order_by("id")
+        )
+
+    @staticmethod
+    def _template_type(template: CustomChallengeTemplate) -> CustomChallengeType | None:
+        type_code = template.challenge_type
+        if type_code is None:
+            return None
+        for code, group_code in (
+            (type_code, "CST_CHL_TYPE"),
+            (template.check_type, "CST_CHK_TYPE"),
+        ):
+            if (
+                not code.is_active
+                or not code.group.is_active
+                or code.group.category != "CHL"
+                or code.group.group_code != group_code
+            ):
+                return None
+        if template.check_type.detail_code != "AUTO":
+            return None
+        try:
+            return CustomChallengeType(type_code.detail_code)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _reward_badge(template: CustomChallengeTemplate) -> CustomChallengeRewardBadge | None:
+        badge = template.reward_badge
+        if badge is None or not badge.is_active:
+            return None
+        return CustomChallengeRewardBadge(
+            id=badge.id, name=badge.name, description=badge.description, image_path=badge.image_path
+        )
 
     async def _active_target_participations(
         self,
@@ -529,6 +606,17 @@ class CustomChallengeService:
         self,
         participation: CustomChallengeParticipation,
     ) -> CustomChallengeParticipationResponse:
+        await participation.fetch_related("reward_badge")
+        reward_badge = self._participation_reward_badge(participation.reward_badge)
+        if participation.finalized_at is not None:
+            award = await CustomChallengeBadgeAward.filter(participation_id=participation.id).first()
+            if award is not None:
+                reward_badge = CustomChallengeRewardBadge(
+                    id=award.badge_id,
+                    name=award.badge_name,
+                    description=(participation.reward_badge.description if participation.reward_badge else None),
+                    image_path=award.badge_image_path,
+                )
         targets = await CustomChallengeTarget.filter(participation_id=participation.id).order_by("source_id_snapshot")
         target_ids = [target.id for target in targets]
         occurrences = (
@@ -541,14 +629,20 @@ class CustomChallengeService:
             if target_ids
             else []
         )
-        completed = await self._completed_occurrence_ids(participation, targets, occurrences)
-        target_count = len(occurrences)
-        completed_count = len(completed)
-        progress_rate = (
-            (Decimal(completed_count) * Decimal(100) / Decimal(target_count)).quantize(PERCENT_QUANTUM)
-            if target_count
-            else Decimal("0.00")
-        )
+        if participation.finalized_at is not None:
+            completed = {occurrence.id for occurrence in occurrences if occurrence.is_completed}
+            target_count = participation.target_count
+            completed_count = participation.completed_count
+            progress_rate = participation.progress_rate
+        else:
+            completed = await self._completed_occurrence_ids(participation, targets, occurrences)
+            target_count = len(occurrences)
+            completed_count = len(completed)
+            progress_rate = (
+                (Decimal(completed_count) * Decimal(100) / Decimal(target_count)).quantize(PERCENT_QUANTUM)
+                if target_count
+                else Decimal("0.00")
+            )
         occurrence_responses = [
             CustomChallengeOccurrenceResponse(
                 id=occurrence.id,
@@ -565,10 +659,11 @@ class CustomChallengeService:
             template_id=participation.template_id,
             challenge_type=participation.challenge_type,
             challenge_name=participation.challenge_name,
+            reward_badge=reward_badge,
             status=participation.status,
             joined_at=self._aware(participation.joined_at),
             end_at=self._aware(participation.end_at),
-            actual_end_date=occurrences[-1].scheduled_date,
+            actual_end_date=occurrences[-1].scheduled_date if occurrences else None,
             target_count=target_count,
             completed_count=completed_count,
             progress_rate=progress_rate,
@@ -609,18 +704,50 @@ class CustomChallengeService:
             ).values_list("registration_id", "dose_date", "slot")
         else:
             return set()
-        completed_keys = {(source_to_target[source_id], dose_date, slot) for source_id, dose_date, slot in rows}
+        completed_keys = {
+            (source_to_target[source_id], dose_date, _meal_slot(slot))
+            for source_id, dose_date, slot in rows
+            if source_id in source_to_target
+        }
         return {
             occurrence.id
             for occurrence in occurrences
-            if (occurrence.target_id, occurrence.scheduled_date, occurrence.slot) in completed_keys
+            if (occurrence.target_id, occurrence.scheduled_date, _meal_slot(occurrence.slot)) in completed_keys
         }
+
+    @staticmethod
+    def _participation_reward_badge(badge: Badge | None) -> CustomChallengeRewardBadge | None:
+        if badge is None:
+            return None
+        return CustomChallengeRewardBadge(
+            id=badge.id,
+            name=badge.name,
+            description=badge.description,
+            image_path=badge.image_path,
+        )
 
     def _now(self) -> datetime:
         return self._aware(self._now_provider())
+
+    async def _finalize_due_for_user(self, user_id: int) -> datetime:
+        async with in_transaction() as connection:
+            locked_user = await User.filter(id=user_id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise CustomChallengeParticipationNotFoundError()
+            now = self._now()
+            await self._lifecycle.finalize_due_for_user(
+                user_id=user_id,
+                now=now,
+                connection=connection,
+            )
+        return now
 
     @staticmethod
     def _aware(value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             return value.replace(tzinfo=config.TIMEZONE)
         return value.astimezone(config.TIMEZONE)
+
+
+def _meal_slot(value: MealSlot | str) -> MealSlot:
+    return value if isinstance(value, MealSlot) else MealSlot(value)

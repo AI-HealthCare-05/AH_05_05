@@ -9,7 +9,7 @@ from tortoise.fields.relational import OnDelete
 
 from app.core.db.databases import TORTOISE_APP_MODELS
 from app.models.care import CareEpisode
-from app.models.challenges import CustomChallengeTemplate
+from app.models.challenges import Badge, CustomChallengeTemplate
 from app.models.common_codes import CommonCode, CommonCodeGroup
 from app.models.enums import ChallengeParticipationStatus, MealSlot
 from app.models.users import User
@@ -104,12 +104,18 @@ def test_exact_minimal_model_fields() -> None:
         "id",
         "user_id",
         "template_id",
+        "reward_badge_id",
         "challenge_type",
         "challenge_name",
         "idempotency_key",
         "joined_at",
         "end_at",
         "status",
+        "target_count",
+        "completed_count",
+        "progress_rate",
+        "completed_at",
+        "finalized_at",
     }
     assert set(target._meta.fields_db_projection.values()) == {
         "id",
@@ -126,6 +132,7 @@ def test_exact_minimal_model_fields() -> None:
         "scheduled_date",
         "slot",
         "scheduled_at",
+        "is_completed",
     }
 
 
@@ -144,6 +151,8 @@ def test_enums_unique_constraints_and_delete_policies_match_storage_contract() -
     occurrence_fields = occurrence._meta.fields_map
     assert participation_fields["user"].on_delete is OnDelete.CASCADE
     assert participation_fields["template"].on_delete is OnDelete.RESTRICT
+    assert participation_fields["reward_badge"].on_delete is OnDelete.RESTRICT
+    assert participation_fields["reward_badge"].null is True
     assert target_fields["participation"].on_delete is OnDelete.CASCADE
     assert target_fields["care_episode"].on_delete is OnDelete.SET_NULL
     assert target_fields["supplement_registration"].on_delete is OnDelete.SET_NULL
@@ -152,6 +161,54 @@ def test_enums_unique_constraints_and_delete_policies_match_storage_contract() -
     assert target_fields["supplement_registration"].null is True
     assert target_fields["follow_up_visit"].null is True
     assert occurrence_fields["target"].on_delete is OnDelete.CASCADE
+    assert occurrence_fields["is_completed"].default is False
+
+
+def test_custom_badge_award_has_snapshot_fields_and_restrictive_relations() -> None:
+    award = import_module("app.models.custom_challenges").CustomChallengeBadgeAward
+
+    assert award._meta.db_table == "custom_challenge_badge_awards"
+    assert set(award._meta.fields_db_projection.values()) == {
+        "id",
+        "user_id",
+        "badge_id",
+        "participation_id",
+        "badge_name",
+        "badge_image_path",
+        "awarded_at",
+    }
+    assert award._meta.unique_together == (("participation", "badge"),)
+    assert award._meta.fields_map["user"].on_delete is OnDelete.RESTRICT
+    assert award._meta.fields_map["badge"].on_delete is OnDelete.RESTRICT
+    assert award._meta.fields_map["participation"].on_delete is OnDelete.RESTRICT
+
+
+async def test_custom_badge_award_rejects_duplicate_participation_and_badge() -> None:
+    challenge_type, participation_model, _, _ = _custom_models()
+    award_model = import_module("app.models.custom_challenges").CustomChallengeBadgeAward
+    user = await _create_user()
+    template = await _create_template()
+    badge = await Badge.create(name="맞춤 테스트 배지", image_path="media/badges/custom-test.png")
+    participation = await participation_model.create(
+        user=user,
+        template=template,
+        reward_badge=badge,
+        challenge_type=challenge_type.MEDICATION,
+        challenge_name=template.name,
+        idempotency_key="award-request-1",
+        end_at=datetime.now() + timedelta(days=7),
+    )
+    values = {
+        "user": user,
+        "badge": badge,
+        "participation": participation,
+        "badge_name": badge.name,
+        "badge_image_path": badge.image_path,
+    }
+    await award_model.create(**values)
+
+    with pytest.raises(IntegrityError):
+        await award_model.create(**values)
 
 
 async def test_rejects_duplicate_participation_request_for_user() -> None:

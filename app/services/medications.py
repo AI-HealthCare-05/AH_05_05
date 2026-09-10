@@ -35,6 +35,7 @@ from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus, CustomChallengeType, MealSlot
 from app.models.medications import Medication, MedicationDose, MedicationNote
 from app.models.users import User, UserSettings
+from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
 from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
 from app.services.medication_period import medication_end_date, resolve_medication_overview_range
 
@@ -56,9 +57,11 @@ class MedicationService:
         self,
         reconciler: CustomChallengeScheduleReconciler | None = None,
         mutation_time_provider: Callable[[], datetime] | None = None,
+        lifecycle: CustomChallengeLifecycleService | None = None,
     ) -> None:
         self._reconciler = reconciler or CustomChallengeScheduleReconciler()
         self._mutation_time_provider = mutation_time_provider or (lambda: datetime.now(config.TIMEZONE))
+        self._lifecycle = lifecycle or CustomChallengeLifecycleService()
 
     async def list_overviews(
         self,
@@ -112,22 +115,40 @@ class MedicationService:
         if request.date < earliest or request.date > today:
             raise InvalidDoseDateError()
 
-        episode = await self._get_owned_episode(request.record_id, user)
         slot = self._parse_slot(request.slot)
-        if request.taken:
-            await MedicationDose.get_or_create(
-                user_id=user.id,
-                dose_date=request.date,
-                slot=slot,
-                care_episode_id=episode.id,
+        async with in_transaction() as connection:
+            locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise MedicationRecordNotFoundError()
+            episode = await (
+                CareEpisode.filter(id=request.record_id, user_id=user.id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
             )
-        else:
-            await MedicationDose.filter(
+            if episode is None:
+                raise MedicationRecordNotFoundError()
+            mutation_at = self._mutation_time_provider()
+            await self._lifecycle.finalize_due_for_user(
                 user_id=user.id,
-                dose_date=request.date,
-                slot=slot,
-                care_episode_id=episode.id,
-            ).delete()
+                now=mutation_at,
+                connection=connection,
+            )
+            if request.taken:
+                await MedicationDose.get_or_create(
+                    user_id=user.id,
+                    dose_date=request.date,
+                    slot=slot,
+                    care_episode_id=episode.id,
+                    using_db=connection,
+                )
+            else:
+                await MedicationDose.filter(
+                    user_id=user.id,
+                    dose_date=request.date,
+                    slot=slot,
+                    care_episode_id=episode.id,
+                ).using_db(connection).delete()
         return MedicationDoseResponse(
             date=request.date,
             slot=slot.value.lower(),

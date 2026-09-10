@@ -92,8 +92,8 @@ class Config(BaseSettings):
 
     COOKIE_DOMAIN: str = "localhost"
 
-    # DB별 시드 ID를 이름으로 추론하지 않고 사용자 맞춤 챌린지 유형에 고정한다.
-    # 예: {"41":"MEDICATION","42":"SUPPLEMENT"}
+    # Legacy deployment setting, accepted for compatibility but no longer used.
+    # Custom challenge types are resolved from backoffice template common-code relations.
     CUSTOM_CHALLENGE_TEMPLATE_TYPES: dict[int, CustomChallengeType] = Field(default_factory=dict)
 
     @field_validator("CUSTOM_CHALLENGE_TEMPLATE_TYPES", mode="before")

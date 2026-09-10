@@ -154,6 +154,12 @@ class CustomChallengeParticipationNotFoundError(AppError):
     message = "맞춤 챌린지 참여 정보를 찾을 수 없습니다."
 
 
+class CustomChallengeCancelNotAllowedError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CUSTOM_CHALLENGE_CANCEL_NOT_ALLOWED"
+    message = "종료된 맞춤 챌린지는 취소할 수 없습니다."
+
+
 class ChallengeNotRecruitingError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "CHALLENGE_NOT_RECRUITING"

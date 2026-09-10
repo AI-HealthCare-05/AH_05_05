@@ -13,6 +13,7 @@ from app.dtos.challenges import (
     VerificationResponse,
 )
 from app.dtos.custom_challenges import (
+    CustomChallengeBadgeAwardListResponse,
     CustomChallengeJoinRequest,
     CustomChallengeParticipationListResponse,
     CustomChallengeParticipationResponse,
@@ -21,6 +22,7 @@ from app.dtos.custom_challenges import (
 from app.models.users import User
 from app.services.challenge_catalog import ChallengeCatalogService
 from app.services.challenge_participation import ChallengeParticipationService
+from app.services.custom_challenge_badges import CustomChallengeBadgeService
 from app.services.custom_challenges import CustomChallengeService
 
 challenge_router = APIRouter(prefix="/user", tags=["user-challenges"])
@@ -63,6 +65,17 @@ async def list_custom_challenge_participations(
 
 
 @challenge_router.get(
+    "/custom-challenges/badges",
+    response_model=CustomChallengeBadgeAwardListResponse,
+    summary="내 맞춤 챌린지 배지 목록 조회",
+)
+async def list_custom_challenge_badges(
+    user: Annotated[User, Depends(get_request_user)],
+) -> CustomChallengeBadgeAwardListResponse:
+    return await CustomChallengeBadgeService().list_for_user(user.id)
+
+
+@challenge_router.get(
     "/custom-challenge-participations/{participation_id}",
     response_model=CustomChallengeParticipationResponse,
     summary="내 맞춤 챌린지 상세 조회",
@@ -72,6 +85,18 @@ async def get_custom_challenge_participation(
     user: Annotated[User, Depends(get_request_user)],
 ) -> CustomChallengeParticipationResponse:
     return await CustomChallengeService().get(user, participation_id)
+
+
+@challenge_router.post(
+    "/custom-challenge-participations/{participation_id}/cancel",
+    response_model=CustomChallengeParticipationResponse,
+    summary="맞춤 챌린지 참여 취소",
+)
+async def cancel_custom_challenge_participation(
+    participation_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+) -> CustomChallengeParticipationResponse:
+    return await CustomChallengeService().cancel(user, participation_id)
 
 
 @challenge_router.get(

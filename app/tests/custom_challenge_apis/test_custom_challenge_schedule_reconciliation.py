@@ -87,7 +87,7 @@ async def _user(email: str) -> User:
 async def _templates() -> tuple[CustomChallengeTemplate, CustomChallengeTemplate]:
     group = await CommonCodeGroup.create(
         category="CHL",
-        group_code="RECONCILE_TEST",
+        group_code="CST_CHK_TYPE",
         group_name="미래 목표 재계산 테스트",
     )
     check_type = await CommonCode.create(
@@ -95,14 +95,19 @@ async def _templates() -> tuple[CustomChallengeTemplate, CustomChallengeTemplate
         detail_code="AUTO",
         detail_name="자동",
     )
+    type_group = await CommonCodeGroup.create(category="CHL", group_code="CST_CHL_TYPE", group_name="맞춤 챌린지 유형")
+    medication_type = await CommonCode.create(group=type_group, detail_code="MEDICATION", detail_name="복약")
+    supplement_type = await CommonCode.create(group=type_group, detail_code="SUPPLEMENT", detail_name="영양제")
     medication = await CustomChallengeTemplate.create(
         name="7일 복약",
         check_type=check_type,
+        challenge_type=medication_type,
         is_active=True,
     )
     supplement = await CustomChallengeTemplate.create(
         name="7일 영양제",
         check_type=check_type,
+        challenge_type=supplement_type,
         is_active=True,
     )
     config.CUSTOM_CHALLENGE_TEMPLATE_TYPES = {
@@ -225,21 +230,9 @@ async def test_reconcile_updates_inserts_and_deletes_only_future_occurrences() -
     episode = await _episode(user)
     participation = await _join(user, medication_template, [episode.id], "future-diff")
     before = await _occurrences(participation)
-    past = next(
-        row
-        for row in before
-        if row.scheduled_date == CHANGED_AT.date() and row.slot is MealSlot.MORNING
-    )
-    retained = next(
-        row
-        for row in before
-        if row.scheduled_date == date(2026, 9, 11) and row.slot is MealSlot.MORNING
-    )
-    removed = next(
-        row
-        for row in before
-        if row.scheduled_date == CHANGED_AT.date() and row.slot is MealSlot.EVENING
-    )
+    past = next(row for row in before if row.scheduled_date == CHANGED_AT.date() and row.slot is MealSlot.MORNING)
+    retained = next(row for row in before if row.scheduled_date == date(2026, 9, 11) and row.slot is MealSlot.MORNING)
+    removed = next(row for row in before if row.scheduled_date == CHANGED_AT.date() and row.slot is MealSlot.EVENING)
     past_snapshot = (past.id, past.scheduled_date, past.slot, _aware(past.scheduled_at))
 
     async with in_transaction() as connection:
@@ -287,11 +280,7 @@ async def test_reconcile_does_not_recreate_past_key_moved_after_changed_at() -> 
     participation = await _join(user, medication_template, [episode.id], "past-key")
     changed_at = datetime(2026, 9, 9, 9, 0, tzinfo=config.TIMEZONE)
     before = await _occurrences(participation)
-    original = next(
-        row
-        for row in before
-        if row.scheduled_date == changed_at.date() and row.slot is MealSlot.MORNING
-    )
+    original = next(row for row in before if row.scheduled_date == changed_at.date() and row.slot is MealSlot.MORNING)
 
     async with in_transaction() as connection:
         await User.filter(id=user.id).using_db(connection).select_for_update().get()
@@ -354,6 +343,27 @@ async def test_reconcile_is_owner_scoped_and_zero_future_does_not_complete_or_aw
     assert (await CustomChallengeParticipation.get(id=owned.id)).status is ChallengeParticipationStatus.ACTIVE
     assert (await CustomChallengeParticipation.get(id=foreign.id)).status is ChallengeParticipationStatus.ACTIVE
     assert await ChallengeProgress.all().count() == 0
+    assert await UserBadge.all().count() == 0
+
+
+async def test_ending_source_before_first_goal_keeps_empty_participation_readable() -> None:
+    user = await _user("empty-goals@example.com")
+    _, template = await _templates()
+    registration = await _supplement(user, name="첫 목표 전 종료")
+    participation = await _join(user, template, [registration.id], "empty-goals")
+    service = UserSupplementNutrientService(mutation_time_provider=lambda: JOINED_AT)
+
+    await service.complete(user, registration.id)
+
+    challenges = CustomChallengeService(now_provider=lambda: JOINED_AT)
+    detail = await challenges.get(user, participation.id)
+    listing = await challenges.list(user)
+    assert detail.target_count == detail.completed_count == 0
+    assert detail.progress_rate == Decimal("0.00")
+    assert detail.actual_end_date is None
+    assert detail.status is ChallengeParticipationStatus.ACTIVE
+    assert detail.occurrences == []
+    assert listing.items == [detail]
     assert await UserBadge.all().count() == 0
 
 
@@ -455,6 +465,62 @@ async def test_medication_schedule_save_reconciles_only_changed_episode_when_tim
     ] == untouched_before
 
 
+async def test_medication_duration_extension_moves_the_participation_end_to_the_episode_end() -> None:
+    user = await _user("duration-extension@example.com")
+    medication_template, _ = await _templates()
+    episode = await _episode(user, alias="기간 연장 처방")
+    participation = await _join(user, medication_template, [episode.id], "duration-extension")
+    medication = await Medication.get(care_episode_id=episode.id)
+
+    async with in_transaction() as connection:
+        await User.filter(id=user.id).using_db(connection).select_for_update().get()
+        await CareEpisode.filter(id=episode.id).using_db(connection).select_for_update().get()
+        medication = await Medication.filter(id=medication.id).using_db(connection).select_for_update().get()
+        medication.days = 30
+        await medication.save(using_db=connection, update_fields=["days"])
+        await CustomChallengeScheduleReconciler().reconcile(
+            user_id=user.id,
+            source_kind=CustomChallengeType.MEDICATION,
+            source_ids=(episode.id,),
+            changed_at=CHANGED_AT,
+            connection=connection,
+        )
+
+    await participation.refresh_from_db()
+    assert _aware(participation.end_at) == datetime(2026, 10, 9, tzinfo=config.TIMEZONE)
+    occurrences = await _occurrences(participation)
+    assert occurrences[-1].scheduled_date == date(2026, 10, 8)
+
+
+async def test_late_reconciliation_cannot_extend_an_already_due_participation() -> None:
+    user = await _user("late-extension@example.com")
+    medication_template, _ = await _templates()
+    episode = await _episode(user, alias="이미 종료된 처방")
+    participation = await _join(user, medication_template, [episode.id], "late-extension")
+    original_end_at = _aware(participation.end_at)
+    medication = await Medication.get(care_episode_id=episode.id)
+    changed_at = original_end_at + timedelta(days=1)
+
+    async with in_transaction() as connection:
+        await User.filter(id=user.id).using_db(connection).select_for_update().get()
+        await CareEpisode.filter(id=episode.id).using_db(connection).select_for_update().get()
+        medication = await Medication.filter(id=medication.id).using_db(connection).select_for_update().get()
+        medication.days = 30
+        await medication.save(using_db=connection, update_fields=["days"])
+        await CustomChallengeScheduleReconciler().reconcile(
+            user_id=user.id,
+            source_kind=CustomChallengeType.MEDICATION,
+            source_ids=(episode.id,),
+            changed_at=changed_at,
+            connection=connection,
+        )
+
+    await participation.refresh_from_db()
+    assert participation.status is ChallengeParticipationStatus.EXPIRED
+    assert _aware(participation.end_at) == original_end_at
+    assert _aware(participation.finalized_at) == changed_at
+
+
 async def test_medication_schedule_global_time_change_reconciles_all_owned_types() -> None:
     owner = await _user("global-time-owner@example.com")
     other = await _user("global-time-other@example.com")
@@ -468,8 +534,7 @@ async def test_medication_schedule_global_time_change_reconciles_all_owned_types
     nutrient = await _join(owner, supplement_template, [supplement.id], "global-supplement")
     foreign = await _join(other, supplement_template, [other_supplement.id], "global-foreign")
     foreign_before = [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(foreign)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(foreign)
     ]
     medication = await Medication.get(care_episode_id=first_episode.id)
     mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
@@ -489,8 +554,7 @@ async def test_medication_schedule_global_time_change_reconciles_all_owned_types
         assert future_mornings
         assert {_aware(row.scheduled_at).time() for row in future_mornings} == {time(9, 0)}
     assert [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(foreign)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(foreign)
     ] == foreign_before
 
 
@@ -589,8 +653,7 @@ async def test_medication_schedule_and_cancel_preserve_owner_error_contracts() -
     participation = await _join(owner, medication_template, [episode.id], "med-owner")
     medication = await Medication.get(care_episode_id=episode.id)
     before = [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(participation)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(participation)
     ]
     mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
 
@@ -604,13 +667,12 @@ async def test_medication_schedule_and_cancel_preserve_owner_error_contracts() -
         await MedicationService(mutation_time_provider=lambda: mutation_at).cancel(other, episode.id)
 
     assert [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(participation)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(participation)
     ] == before
     assert (await CareEpisode.get(id=episode.id)).status is CareEpisodeStatus.ACTIVE
 
 
-async def test_medication_cancel_removes_future_without_status_or_badge_side_effects() -> None:
+async def test_medication_cancel_ends_and_finalizes_the_episode_challenge() -> None:
     user = await _user("cancel-goals@example.com")
     medication_template, _ = await _templates()
     episode = await _episode(user)
@@ -623,7 +685,10 @@ async def test_medication_cancel_removes_future_without_status_or_badge_side_eff
     assert len(remaining) == 1
     assert all(_aware(row.scheduled_at) < mutation_at for row in remaining)
     assert (await CareEpisode.get(id=episode.id)).status is CareEpisodeStatus.CANCELLED
-    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.ACTIVE
+    stored = await CustomChallengeParticipation.get(id=participation.id)
+    assert stored.status is ChallengeParticipationStatus.EXPIRED
+    assert _aware(stored.end_at) == mutation_at
+    assert _aware(stored.finalized_at) == mutation_at
     assert await UserBadge.all().count() == 0
 
 
@@ -645,8 +710,7 @@ async def test_supplement_update_reconciles_only_selected_registration() -> None
         for row in await CustomChallengeOccurrence.filter(target_id=sibling_target.id).order_by("id")
     ]
     foreign_before = [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(foreign)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(foreign)
     ]
     mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
 
@@ -669,8 +733,7 @@ async def test_supplement_update_reconciles_only_selected_registration() -> None
         for row in await CustomChallengeOccurrence.filter(target_id=sibling_target.id).order_by("id")
     ] == sibling_before
     assert [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(foreign)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(foreign)
     ] == foreign_before
 
 
@@ -750,8 +813,7 @@ async def test_supplement_update_rejects_foreign_registration_without_goal_write
     registration = await _supplement(owner)
     participation = await _join(owner, supplement_template, [registration.id], "supp-foreign")
     before = [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(participation)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(participation)
     ]
     mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
 
@@ -764,8 +826,7 @@ async def test_supplement_update_rejects_foreign_registration_without_goal_write
 
     assert exc_info.value.status_code == 404
     assert [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(participation)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(participation)
     ] == before
 
 
@@ -780,8 +841,7 @@ async def test_notify_time_change_reconciles_all_owned_medication_and_supplement
     nutrient = await _join(owner, supplement_template, [supplement.id], "notify-supp")
     foreign = await _join(other, supplement_template, [foreign_registration.id], "notify-foreign")
     foreign_before = [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(foreign)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(foreign)
     ]
     mutation_at = datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
 
@@ -799,8 +859,7 @@ async def test_notify_time_change_reconciles_all_owned_medication_and_supplement
         assert future_mornings
         assert {_aware(row.scheduled_at).time() for row in future_mornings} == {time(9, 30)}
     assert [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(foreign)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(foreign)
     ] == foreign_before
 
 
@@ -814,21 +873,19 @@ async def test_notify_toggle_only_update_does_not_change_occurrences() -> None:
     registration = await _supplement(user)
     participation = await _join(user, supplement_template, [registration.id], "notify-toggle")
     before = [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(participation)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(participation)
     ]
 
     await NotifySettingsService(
         reconciler=FailIfCalledReconciler(),
-        mutation_time_provider=lambda: datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE)
+        mutation_time_provider=lambda: datetime(2026, 9, 9, 12, 0, tzinfo=config.TIMEZONE),
     ).update(
         user,
         NotifySettingsUpdateRequest(notify_medication=True),
     )
 
     assert [
-        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at))
-        for row in await _occurrences(participation)
+        (row.id, row.scheduled_date, row.slot, _aware(row.scheduled_at)) for row in await _occurrences(participation)
     ] == before
 
 
@@ -913,8 +970,5 @@ def test_settings_routes_register_without_service_constructor_parameters() -> No
     operations = app.openapi()["paths"]["/api/v1/me/settings"]
     assert {"get", "patch"} <= operations.keys()
     for method in ("get", "patch"):
-        parameter_names = {
-            parameter["name"]
-            for parameter in operations[method].get("parameters", [])
-        }
+        parameter_names = {parameter["name"] for parameter in operations[method].get("parameters", [])}
         assert parameter_names.isdisjoint({"reconciler", "mutation_time_provider"})

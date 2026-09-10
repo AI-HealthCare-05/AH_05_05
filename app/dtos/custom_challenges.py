@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -38,10 +38,18 @@ class CustomChallengeRecommendationTarget(CamelModel):
     existing_participation_id: int | None = None
 
 
+class CustomChallengeRewardBadge(CamelModel):
+    id: int
+    name: str
+    description: str | None
+    image_path: str
+
+
 class CustomChallengeRecommendation(CamelModel):
     template_id: int
     challenge_type: CustomChallengeType
     challenge_name: str
+    reward_badge: CustomChallengeRewardBadge | None = None
     action: Literal["NONE"] = "NONE"
     targets: list[CustomChallengeRecommendationTarget]
 
@@ -71,10 +79,11 @@ class CustomChallengeParticipationResponse(CamelModel):
     template_id: int
     challenge_type: CustomChallengeType
     challenge_name: str
+    reward_badge: CustomChallengeRewardBadge | None = None
     status: ChallengeParticipationStatus
     joined_at: AwareDatetime
     end_at: AwareDatetime
-    actual_end_date: date
+    actual_end_date: date | None
     target_count: int
     completed_count: int
     progress_rate: Decimal
@@ -85,4 +94,18 @@ class CustomChallengeParticipationResponse(CamelModel):
 
 class CustomChallengeParticipationListResponse(CamelModel):
     items: list[CustomChallengeParticipationResponse]
+    total_count: int
+
+
+class CustomChallengeBadgeAwardResponse(CamelModel):
+    id: int
+    participation_id: int
+    badge_id: int
+    badge_name: str
+    badge_image_path: str
+    awarded_at: datetime
+
+
+class CustomChallengeBadgeAwardListResponse(CamelModel):
+    items: list[CustomChallengeBadgeAwardResponse]
     total_count: int
