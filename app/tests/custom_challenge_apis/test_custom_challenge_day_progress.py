@@ -1,7 +1,7 @@
 """Run with --noconftest: every row lives only in this file's in-memory SQLite database."""
 
 import sqlite3
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -10,6 +10,8 @@ from tortoise import Tortoise
 
 from app.core import config
 from app.core.db.databases import TORTOISE_APP_MODELS
+from app.dtos.medications import SaveMedicationDoseRequest
+from app.dtos.supplement_doses import SupplementDoseRequest
 from app.models.care import CareEpisode
 from app.models.challenges import CustomChallengeTemplate
 from app.models.common_codes import CommonCode, CommonCodeGroup
@@ -19,6 +21,8 @@ from app.models.medications import MedicationDose
 from app.models.supplement_nutrients import SupplementDose, UserSupplementNutrient
 from app.models.users import User
 from app.services.custom_challenges import CustomChallengeService
+from app.services.medications import MedicationService
+from app.services.supplement_doses import SupplementDoseService
 
 NOW = datetime(2026, 9, 10, 7, tzinfo=config.TIMEZONE)
 END = datetime(2026, 9, 20, tzinfo=config.TIMEZONE)
@@ -156,6 +160,61 @@ async def test_all_targets_on_the_same_date_must_complete_before_the_day_counts(
         Decimal("50.00"),
     )
     assert response.progress_rate == Decimal("66.67")
+
+
+@pytest.mark.parametrize("kind", [CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT])
+async def test_active_dose_service_undo_updates_occurrence_and_decrements_achieved_days(kind):
+    now = datetime.now(config.TIMEZONE)
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    user, participation = await fixture(
+        kind,
+        [(0, yesterday, MORNING, True), (0, today, MORNING, True), (0, today, EVENING, True)],
+    )
+    # Keep this genuine mutation inside the active period independently of the test run date.
+    participation.end_at = now + timedelta(days=2)
+    await participation.save(update_fields=["end_at"])
+    target = await CustomChallengeTarget.get(participation_id=participation.id)
+    service = CustomChallengeService(now_provider=lambda: now)
+    before = await service.get(user, participation.id)
+    assert (before.target_day_count, before.completed_day_count, before.day_progress_rate) == (
+        2,
+        2,
+        Decimal("100.00"),
+    )
+    assert all(item.is_completed for item in before.occurrences)
+
+    if kind is CustomChallengeType.MEDICATION:
+        result = await MedicationService(mutation_time_provider=lambda: now).save_dose(
+            user,
+            SaveMedicationDoseRequest(date=today, slot="morning", taken=False, record_id=target.care_episode_id),
+        )
+    else:
+        result = await SupplementDoseService().save(
+            user,
+            SupplementDoseRequest(
+                date=today, slot="morning", taken=False, supplement_id=target.supplement_registration_id
+            ),
+        )
+    assert result.taken is False
+
+    detail = await service.get(user, participation.id)
+    listing = await service.list(user)
+    for response in [detail, listing.items[0]]:
+        assert response.status is ChallengeParticipationStatus.ACTIVE
+        assert (response.target_day_count, response.completed_day_count, response.day_progress_rate) == (
+            2,
+            1,
+            Decimal("50.00"),
+        )
+        assert (response.target_count, response.completed_count, response.progress_rate) == (3, 2, Decimal("66.67"))
+        assert {(item.scheduled_date, item.slot): item.is_completed for item in response.occurrences} == {
+            (yesterday, MORNING): True,
+            (today, MORNING): False,
+            (today, EVENING): True,
+        }
+    await participation.refresh_from_db()
+    assert participation.finalized_at is None
 
 
 @pytest.mark.parametrize("kind", [CustomChallengeType.MEDICATION, CustomChallengeType.SUPPLEMENT])
