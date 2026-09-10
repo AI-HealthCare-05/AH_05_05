@@ -20,7 +20,6 @@ from app.core.exceptions import (
     EmailVerificationAttemptsExceededError,
     EmailVerificationExpiredError,
     EmailVerificationInvalidError,
-    EmailVerificationRateLimitedError,
     InvalidEmailVerificationCodeError,
     SignupEmailAlreadyExistsError,
 )
@@ -97,13 +96,6 @@ class EmailVerificationService:
         purpose = EmailVerificationPurpose.SIGNUP
         expires_at = now + timedelta(seconds=config.EMAIL_VERIFICATION_TTL_SECONDS)
         async with in_transaction() as connection:
-            latest = await self.repository.get_latest(
-                email=normalized_email,
-                purpose=purpose,
-                using_db=connection,
-            )
-            if latest is not None and latest.expires_at > now:
-                raise EmailVerificationRateLimitedError()
             await self.repository.expire_open(
                 email=normalized_email,
                 purpose=purpose,
@@ -139,7 +131,7 @@ class EmailVerificationService:
         return EmailVerificationRequestResult(
             verification_id=verification.id,
             expires_in=config.EMAIL_VERIFICATION_TTL_SECONDS,
-            resend_available_in=config.EMAIL_VERIFICATION_RESEND_SECONDS,
+            resend_available_in=0,
         )
 
     async def verify(self, verification_id: int, code: str) -> EmailVerificationVerifyResult:

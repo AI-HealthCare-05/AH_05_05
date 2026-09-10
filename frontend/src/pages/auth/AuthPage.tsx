@@ -66,6 +66,7 @@ export function AuthPage() {
   const location = useLocation();
   const { signIn } = useSession();
   const emailInputRef = useRef<HTMLInputElement>(null);
+  const resendInFlightRef = useRef(false);
   const [mode, setMode] = useState<AuthMode>('login');
   const [signupStep, setSignupStep] = useState<SignupStep>(1);
   const [verificationCode, setVerificationCode] = useState('');
@@ -101,6 +102,7 @@ export function AuthPage() {
   const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null);
   const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [verificationResending, setVerificationResending] = useState(false);
   const [showSignupTerms, setShowSignupTerms] = useState(false);
   const [showSignupPrivacy, setShowSignupPrivacy] = useState(false);
   const today = formatDateInputValue(new Date());
@@ -127,6 +129,8 @@ export function AuthPage() {
 
   /** 탭을 옮길 때는 가입 흐름을 새로 시작합니다. 같은 탭을 다시 누르는 경우는 보존합니다. */
   function resetAuthForm() {
+    resendInFlightRef.current = false;
+    setVerificationResending(false);
     setSignupStep(1);
     setVerificationCode('');
     setVerificationId(null);
@@ -280,6 +284,26 @@ export function AuthPage() {
       setPasswordResetError('임시비밀번호를 발송하지 못했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setPasswordResetSending(false);
+    }
+  }
+
+  async function resendEmailVerification() {
+    if (resendInFlightRef.current) return;
+    resendInFlightRef.current = true;
+    setVerificationResending(true);
+    try {
+      const result = await requestEmailVerification(email);
+      setVerificationId(result.verificationId);
+      setVerificationToken(null);
+      setVerificationCode('');
+      setVerificationError(null);
+      setVerificationSeconds(result.expiresIn);
+      setVerificationExpiresAt(Date.now() + result.expiresIn * 1_000);
+    } catch (error) {
+      setVerificationError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
+    } finally {
+      resendInFlightRef.current = false;
+      setVerificationResending(false);
     }
   }
 
@@ -700,25 +724,8 @@ export function AuthPage() {
                     <button
                       type="button"
                       className="min-h-touch font-semibold text-primary disabled:cursor-not-allowed disabled:text-tertiary-foreground"
-                      disabled={verificationSeconds > 0 || saving}
-                      onClick={async () => {
-                        setSaving(true);
-                        try {
-                          const result = await requestEmailVerification(email);
-                          setVerificationId(result.verificationId);
-                          setVerificationToken(null);
-                          setVerificationCode('');
-                          setVerificationError(null);
-                          setVerificationSeconds(result.expiresIn);
-                          setVerificationExpiresAt(Date.now() + result.expiresIn * 1_000);
-                        } catch (error) {
-                          setVerificationError(
-                            error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR,
-                          );
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
+                      disabled={verificationResending}
+                      onClick={resendEmailVerification}
                     >
                       다시 보내기
                     </button>

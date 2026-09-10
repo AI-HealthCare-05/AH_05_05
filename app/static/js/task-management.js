@@ -25,6 +25,9 @@ export function formatTaskError(job) {
   if (job.errorCode === "PUSH_SUBSCRIPTION_EXPIRED") {
     return "비활성화 처리(PUSH_SUBSCRIPTION_EXPIRED)";
   }
+  if (job.errorCode && job.errorCode === job.errorMessage) {
+    return job.errorCode;
+  }
   return [job.errorCode, job.errorMessage].filter(Boolean).join(" - ") || "-";
 }
 
