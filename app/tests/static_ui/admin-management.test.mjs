@@ -540,6 +540,25 @@ test("populateAdminEditFields places email in the readonly control value", () =>
   assert.equal(controls["[name='role']"].value, "일반 관리자");
 });
 
+test("loadAdminDetailForEdit fetches the unmasked detail response", async () => {
+  const calls = [];
+  const detail = {
+    adminId: 7,
+    name: "김은미",
+    email: "eunmi@ozcoding.ai",
+    role: "ADMIN",
+    status: "ACTIVE",
+  };
+
+  const result = await adminManagement.loadAdminDetailForEdit?.(7, async (path) => {
+    calls.push(path);
+    return detail;
+  });
+
+  assert.deepEqual(calls, ["/admin/accounts/7"]);
+  assert.deepEqual(result, detail);
+});
+
 test("edit overlay states the password policy", async () => {
   const templateUrl = new URL("../../static/templates/overlay-admin-edit.html", import.meta.url);
   const html = await readFile(templateUrl, "utf8");
@@ -578,6 +597,14 @@ test("reset confirmation says the account status is preserved", async () => {
 
   assert.match(html, /계정 상태는 변경되지 않습니다/);
   assert.match(html, /기존 비밀번호는 사용할 수 없습니다/);
+});
+
+test("temporary password reset success message says the password was sent", async () => {
+  const scriptUrl = new URL("../../static/js/admin-management.js", import.meta.url);
+  const source = await readFile(scriptUrl, "utf8");
+
+  assert.match(source, /\$\{result\.email\}로 임시 비밀번호를 발송했습니다\./);
+  assert.doesNotMatch(source, /\$\{result\.email\}로 보낼 임시 비밀번호 이메일을 등록했습니다\./);
 });
 
 test("edit overlay does not resurrect the account-active checkbox", async () => {

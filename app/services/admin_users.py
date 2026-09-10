@@ -7,7 +7,12 @@ from tortoise.transactions import in_transaction
 
 from app.core.exceptions import CannotReactivateWithdrawnError, UserNotFoundError
 from app.core.phone_encryption import decrypt_phone_number
-from app.core.utils.common import format_phone_number, mask_phone_number
+from app.core.utils.common import (
+    format_phone_number,
+    mask_admin_user_name,
+    mask_email_address,
+    mask_phone_number,
+)
 from app.dtos.admin_users import (
     AdminUserDetailResponse,
     AdminUserListItem,
@@ -40,8 +45,8 @@ class AdminUserQueryService:
             items=[
                 AdminUserListItem(
                     user_id=user.id,
-                    name=user.name,
-                    email=user.email,
+                    name=mask_admin_user_name(user.name),
+                    email=mask_email_address(user.email),
                     phone=mask_phone_number(decrypt_phone_number(user.phone)),
                     status=user.status,
                     created_at=user.created_at,
