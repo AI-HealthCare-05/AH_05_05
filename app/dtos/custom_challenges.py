@@ -87,6 +87,9 @@ class CustomChallengeParticipationResponse(CamelModel):
     target_count: int
     completed_count: int
     progress_rate: Decimal
+    target_day_count: int
+    completed_day_count: int
+    day_progress_rate: Decimal
     action: Literal["NONE"] = "NONE"
     targets: list[CustomChallengeTargetResponse]
     occurrences: list[CustomChallengeOccurrenceResponse]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Callable
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import cast
 
@@ -643,6 +643,20 @@ class CustomChallengeService:
                 if target_count
                 else Decimal("0.00")
             )
+        # A day is achieved only when every actual goal across its targets is complete.
+        # Reuse the resolved IDs above so finalized responses retain frozen snapshots.
+        completed_by_date: dict[date, bool] = {}
+        for occurrence in occurrences:
+            completed_by_date[occurrence.scheduled_date] = (
+                completed_by_date.get(occurrence.scheduled_date, True) and occurrence.id in completed
+            )
+        target_day_count = len(completed_by_date)
+        completed_day_count = sum(completed_by_date.values())
+        day_progress_rate = (
+            (Decimal(completed_day_count) * Decimal(100) / Decimal(target_day_count)).quantize(PERCENT_QUANTUM)
+            if target_day_count
+            else Decimal("0.00")
+        )
         occurrence_responses = [
             CustomChallengeOccurrenceResponse(
                 id=occurrence.id,
@@ -667,6 +681,9 @@ class CustomChallengeService:
             target_count=target_count,
             completed_count=completed_count,
             progress_rate=progress_rate,
+            target_day_count=target_day_count,
+            completed_day_count=completed_day_count,
+            day_progress_rate=day_progress_rate,
             targets=[
                 CustomChallengeTargetResponse(
                     id=target.id,
