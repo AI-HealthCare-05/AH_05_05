@@ -7,7 +7,8 @@ import {
   setAccessToken,
   setAccountPrincipal,
 } from '@/shared/api/client';
-import { unregisterPushNotifications } from '@/shared/push/register';
+import { getPushPermission } from '@/shared/push/permission';
+import { registerPushNotifications, unregisterPushNotifications } from '@/shared/push/register';
 
 interface SessionValue {
   authenticated: boolean;
@@ -23,6 +24,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(restoreAccessToken() && restoreAccountPrincipal()),
   );
+
+  useEffect(() => {
+    if (!authenticated || getPushPermission() !== 'granted') return;
+
+    // Push 재등록 실패가 로그인 자체를 막지는 않습니다. 다음 로그인이나 알림 설정에서 재시도합니다.
+    void registerPushNotifications().catch(() => undefined);
+  }, [authenticated, principalKey]);
 
   useEffect(() => {
     const expireCurrentSession = () => {

@@ -80,6 +80,80 @@ async function stubExistingPushSubscription(page: Page) {
   });
 }
 
+async function seedAuthenticatedSession(page: Page) {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'mock-access-token');
+    sessionStorage.setItem('poke.account-principal', 'patient@example.com');
+  });
+}
+
+test('로그인 성공 뒤 이미 허용된 Push 구독을 자동 등록한다', async ({ page }) => {
+  await stubNotificationPermission(page, 'granted');
+  await stubPushManager(page);
+  let registrationCount = 0;
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    registrationCount += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"id":1}' });
+  });
+
+  await page.goto('/login');
+  await page.getByLabel('이메일').fill('patient@example.com');
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+
+  await expect(page).toHaveURL(/\/home$/);
+  await expect.poll(() => registrationCount).toBe(1);
+});
+
+test('React 중복 effect에서도 Push 구독 등록 요청은 한 번만 전송한다', async ({ page }) => {
+  await seedAuthenticatedSession(page);
+  await stubNotificationPermission(page, 'granted');
+  await stubPushManager(page);
+  let registrationCount = 0;
+  await page.route('**/api/v1/alarms/push-subscriptions', async (route) => {
+    registrationCount += 1;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"id":1}' });
+  });
+
+  await page.goto('/home');
+
+  await expect.poll(() => registrationCount).toBe(1);
+  await page.waitForTimeout(200);
+  expect(registrationCount).toBe(1);
+});
+
+test('세션 만료 뒤 재로그인하면 같은 계정의 직전 Push 구독을 비활성화한다', async ({ page }) => {
+  await stubNotificationPermission(page, 'granted');
+  await stubPushManager(page);
+  const requests: string[] = [];
+  await page.route('**/api/v1/alarms/push-subscriptions**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    requests.push(`${route.request().method()} ${path}`);
+    if (route.request().method() === 'PUT') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"id":12}' });
+      return;
+    }
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await page.goto('/login');
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'poke.push-subscription-registration',
+      JSON.stringify({ principalKey: 'patient@example.com', subscriptionId: 11 }),
+    );
+  });
+  await page.getByLabel('이메일').fill('patient@example.com');
+  await page.getByLabel('비밀번호').fill('password1234');
+  await page.getByRole('button', { name: '로그인', exact: true }).last().click();
+
+  await expect.poll(() => requests).toEqual([
+    'PUT /api/v1/alarms/push-subscriptions',
+    'DELETE /api/v1/alarms/push-subscriptions/11',
+  ]);
+});
+
 test('알림 설정은 복약·영양제·일정 모두 꺼진 서버 기본값으로 시작한다', async ({ page }) => {
   await stubNotificationPermission(page, 'default');
   await page.goto('/dev/my-authenticated');
