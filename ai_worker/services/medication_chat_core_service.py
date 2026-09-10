@@ -3,6 +3,10 @@ from qdrant_client import AsyncQdrantClient
 from ai_worker.chains.conditional_question_interpretation_chain import (
     build_conditional_question_interpretation_chain,
 )
+from ai_worker.chains.semantic_question_router import (
+    LocalSemanticQuestionRouter,
+    SentenceTransformerQuestionEmbeddingModel,
+)
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.domain.medication_question_resolver import (
@@ -146,6 +150,17 @@ def build_medication_chat_core_service(
         if settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED
         else None
     )
+    semantic_question_router = (
+        LocalSemanticQuestionRouter(
+            embedder=SentenceTransformerQuestionEmbeddingModel(
+                model_name=settings.SEMANTIC_ROUTER_MODEL,
+            ),
+            min_score=settings.SEMANTIC_ROUTER_MIN_SCORE,
+            min_margin=settings.SEMANTIC_ROUTER_MIN_MARGIN,
+        )
+        if settings.SEMANTIC_ROUTER_ENABLED
+        else None
+    )
     use_case = AnswerMedicationQuestionUseCase(
         context_provider=DbActiveIntakeContextProvider(),
         guide_repository=DbMedicationProductGuideRepository(),
@@ -171,6 +186,7 @@ def build_medication_chat_core_service(
         ),
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        semantic_question_router=semantic_question_router,
         therapeutic_class_repository=DbTherapeuticClassRepository(
             active_dataset_version=settings.THERAPEUTIC_CLASS_DATASET_VERSION,
         ),

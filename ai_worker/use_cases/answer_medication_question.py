@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass
 
@@ -16,6 +17,13 @@ from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChainInput,
     MedicationQuestionPlanResult,
     build_medication_query_plan_chain,
+)
+from ai_worker.chains.semantic_question_router import (
+    QuestionRoutingDecision,
+    QuestionRoutingReasonCode,
+    QuestionRoutingStage,
+    SemanticQuestionRouter,
+    SemanticRouterInput,
 )
 from ai_worker.domain.chat_content_compactor import (
     ANSWER_COMPACTION_MARKER,
@@ -171,6 +179,12 @@ class _CoverageRetryOutcome:
     evidence_coverage: MedicationEvidenceCoverage
 
 
+@dataclass(frozen=True)
+class _QuestionRoutingOutcome:
+    planning: MedicationQuestionPlanResult
+    decision: QuestionRoutingDecision | None
+
+
 class AnswerMedicationQuestionUseCase:
     _MAX_PRODUCT_NAME_CANDIDATES = 12
     _EXACT_PRODUCT_REQUIRED_PATTERN = re.compile(
@@ -208,6 +222,7 @@ class AnswerMedicationQuestionUseCase:
         supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
         query_plan_chain: MedicationQueryPlanChain | None = None,
         conditional_interpretation_chain: ConditionalQuestionInterpretationChain | None = None,
+        semantic_question_router: SemanticQuestionRouter | None = None,
         risk_policy: MedicationChatRiskPolicy | None = None,
         dose_question_policy: MedicationDoseQuestionPolicy | None = None,
         therapeutic_class_repository: TherapeuticClassRepository | None = None,
@@ -223,6 +238,7 @@ class AnswerMedicationQuestionUseCase:
         self._supplement_ingredient_catalog = supplement_ingredient_catalog
         self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
         self._conditional_interpretation_chain = conditional_interpretation_chain
+        self._semantic_question_router = semantic_question_router
         self._risk_policy = risk_policy or MedicationChatRiskPolicy()
         self._dose_question_policy = dose_question_policy or MedicationDoseQuestionPolicy()
         self._therapeutic_class_repository = therapeutic_class_repository
@@ -274,9 +290,15 @@ class AnswerMedicationQuestionUseCase:
                 request=request,
                 context=context,
             )
+        routing_outcome = await self._semantically_route_question(
+            request=request,
+            planning=planning,
+        )
+        planning = routing_outcome.planning
         planning = await self._conditionally_interpret_question(
             request=request,
             planning=planning,
+            routing_decision=routing_outcome.decision,
         )
         therapeutic_class_selection = await self._select_therapeutic_class(
             request=request,
@@ -902,14 +924,22 @@ class AnswerMedicationQuestionUseCase:
         *,
         request: MedicationChatRequest,
         planning: MedicationQuestionPlanResult,
+        routing_decision: QuestionRoutingDecision | None = None,
     ) -> MedicationQuestionPlanResult:
         chain = self._conditional_interpretation_chain
         trigger_reasons = self._conditional_interpretation_reasons(
             request=request,
             planning=planning,
         )
-        if chain is None or not trigger_reasons or not planning.query_plan.entities:
+        if (
+            chain is None
+            or not trigger_reasons
+            or not planning.query_plan.entities
+            or (routing_decision is not None and routing_decision.stage == QuestionRoutingStage.SEMANTIC)
+        ):
             return planning
+
+        candidate_entities = {f"candidate_{index}": entity for index, entity in enumerate(planning.query_plan.entities)}
 
         async with self._tracer.span("query.plan.conditional") as conditional_span:
             try:
@@ -917,7 +947,7 @@ class AnswerMedicationQuestionUseCase:
                     await chain.ainvoke(
                         ConditionalQuestionInterpretationInput(
                             question=request.question,
-                            candidate_entities=planning.query_plan.entities,
+                            candidate_entities=candidate_entities,
                             requested_section_types=planning.query_plan.section_types,
                             trigger_reasons=trigger_reasons,
                         ),
@@ -943,21 +973,18 @@ class AnswerMedicationQuestionUseCase:
             validated = self._validated_conditional_plan(
                 planning=planning,
                 output=output,
+                candidate_entities=candidate_entities,
             )
-            accepted_entity_count = len(
-                set(validated.interpretation.normalized_entity_names).intersection(
-                    output.canonical_entity_names,
-                )
-            )
+            accepted_entity_count = len([key for key in output.candidate_entity_keys if key in candidate_entities])
             trace_outputs = {
                 "status": "APPLIED",
                 "interpretation_version": output.interpretation_version,
                 "trigger_reasons": [reason.value for reason in trigger_reasons],
                 "model_confidence": output.confidence.value,
                 "model_reason_codes": [reason.value for reason in output.reason_codes],
-                "proposed_entity_count": len(output.canonical_entity_names),
+                "proposed_entity_count": len(output.candidate_entity_keys),
                 "accepted_entity_count": accepted_entity_count,
-                "discarded_entity_count": (len(output.canonical_entity_names) - accepted_entity_count),
+                "discarded_entity_count": (len(output.candidate_entity_keys) - accepted_entity_count),
                 "added_section_count": (
                     len(validated.query_plan.section_types) - len(planning.query_plan.section_types)
                 ),
@@ -987,11 +1014,11 @@ class AnswerMedicationQuestionUseCase:
         *,
         planning: MedicationQuestionPlanResult,
         output: ConditionalQuestionInterpretationOutput,
+        candidate_entities: dict[str, MedicationQueryEntity],
     ) -> MedicationQuestionPlanResult:
         query_plan = planning.query_plan
-        known_names = {"".join(entity.canonical_name.casefold().split()) for entity in query_plan.entities}
-        validated_names = [
-            name for name in output.canonical_entity_names if "".join(name.casefold().split()) in known_names
+        validated_entities = [
+            candidate_entities[key] for key in output.candidate_entity_keys if key in candidate_entities
         ]
         supported_sections = {
             KnowledgeSectionType.FUNCTION,
@@ -1014,7 +1041,7 @@ class AnswerMedicationQuestionUseCase:
             dict.fromkeys(
                 [
                     *planning.interpretation.normalized_entity_names,
-                    *validated_names,
+                    *(entity.canonical_name for entity in validated_entities),
                 ]
             )
         )
@@ -1025,8 +1052,148 @@ class AnswerMedicationQuestionUseCase:
                 "query_plan_hash": validated_query_plan.query_plan_hash,
             }
         )
-        return MedicationQuestionPlanResult(
+        validated = MedicationQuestionPlanResult(
             query_plan=validated_query_plan,
+            interpretation=interpretation,
+        )
+        if output.route is None:
+            return validated
+        return AnswerMedicationQuestionUseCase._validated_routing_plan(
+            planning=validated,
+            decision=QuestionRoutingDecision(
+                stage=QuestionRoutingStage.LLM,
+                route=output.route,
+                confidence=output.confidence,
+                reason_codes=[],
+            ),
+        )
+
+    async def _semantically_route_question(
+        self,
+        *,
+        request: MedicationChatRequest,
+        planning: MedicationQuestionPlanResult,
+    ) -> _QuestionRoutingOutcome:
+        """불확실한 카탈로그 기반 계획만 로컬 Router로 보조한다."""
+        router = self._semantic_question_router
+        if router is None or not self._semantic_routing_required(planning):
+            return _QuestionRoutingOutcome(planning=planning, decision=None)
+        started_at = time.perf_counter()
+        async with self._tracer.span("query.plan.semantic_router") as router_span:
+            try:
+                decision = QuestionRoutingDecision.model_validate(
+                    await router.ainvoke(
+                        SemanticRouterInput(
+                            question=request.question,
+                            candidate_count=len(planning.query_plan.entities),
+                            has_session_reference=bool(request.session_reference.entities),
+                        )
+                    )
+                )
+            except Exception as exc:
+                router_span.end(
+                    {
+                        "status": QuestionRoutingStage.FALLBACK.value,
+                        "error_type": type(exc).__name__,
+                        "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                    }
+                )
+                return _QuestionRoutingOutcome(
+                    planning=planning,
+                    decision=QuestionRoutingDecision.fallback(
+                        top_score=None,
+                        second_score=None,
+                        reason_codes=[QuestionRoutingReasonCode.ROUTER_UNAVAILABLE],
+                    ),
+                )
+            validated = self._validated_routing_plan(
+                planning=planning,
+                decision=decision,
+            )
+            router_span.end(
+                {
+                    "status": decision.stage.value,
+                    "proposed_route": (decision.route.value if decision.route is not None else None),
+                    "applied": validated != planning,
+                    "confidence": decision.confidence.value,
+                    "top_score": decision.top_score,
+                    "second_score": decision.second_score,
+                    "reason_codes": [reason.value for reason in decision.reason_codes],
+                    "candidate_count": len(planning.query_plan.entities),
+                    "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                }
+            )
+            return _QuestionRoutingOutcome(
+                planning=validated,
+                decision=decision,
+            )
+
+    @staticmethod
+    def _semantic_routing_required(
+        planning: MedicationQuestionPlanResult,
+    ) -> bool:
+        interpretation = planning.interpretation
+        return bool(
+            planning.query_plan.entities
+            and interpretation.confidence != MedicationQuestionConfidence.HIGH
+            and not interpretation.needs_clarification
+            and interpretation.intent
+            not in {
+                MedicationQuestionIntent.GREETING,
+                MedicationQuestionIntent.OUT_OF_SCOPE,
+                MedicationQuestionIntent.CLARIFICATION,
+            }
+        )
+
+    @classmethod
+    def _validated_routing_plan(
+        cls,
+        *,
+        planning: MedicationQuestionPlanResult,
+        decision: QuestionRoutingDecision,
+    ) -> MedicationQuestionPlanResult:
+        """Semantic Router는 검증된 두 대상의 상호작용 의도만 보완할 수 있다."""
+        query_plan = planning.query_plan
+        if (
+            decision.stage
+            not in {
+                QuestionRoutingStage.SEMANTIC,
+                QuestionRoutingStage.LLM,
+            }
+            or decision.route != MedicationChatRoute.INTERACTION
+            or query_plan.interaction_pairs
+        ):
+            return planning
+        pairs = cls._interaction_pairs_for_entities(query_plan.entities)
+        if not pairs:
+            return planning
+        section_types = list(dict.fromkeys([*query_plan.section_types, KnowledgeSectionType.INTERACTION]))
+        query_plan = query_plan.model_copy(
+            update={
+                "section_types": section_types,
+                "interaction_pairs": pairs,
+                "interaction_types": list(
+                    dict.fromkeys(pair.pair_type for pair in pairs),
+                ),
+                "interaction_pair_keys": list(
+                    dict.fromkeys(pair.pair_key for pair in pairs),
+                ),
+            }
+        )
+        reason_codes = list(planning.interpretation.reason_codes)
+        if MedicationQuestionReasonCode.INTERACTION_PAIR_IDENTIFIED not in reason_codes:
+            reason_codes.append(MedicationQuestionReasonCode.INTERACTION_PAIR_IDENTIFIED)
+        interpretation = planning.interpretation.model_copy(
+            update={
+                "intent": MedicationQuestionIntent.INTERACTION,
+                "requested_section_types": section_types,
+                "interaction_types": query_plan.interaction_types,
+                "reason_codes": reason_codes,
+                "query_plan_hash": query_plan.query_plan_hash,
+            }
+        )
+        return MedicationQuestionPlanResult(
+            query_plan=query_plan,
             interpretation=interpretation,
         )
 
@@ -1493,7 +1660,7 @@ class AnswerMedicationQuestionUseCase:
             catalog_entities=entities,
         ).build(planning_question)
         if is_interaction:
-            interaction_pairs = cls._active_intake_interaction_pairs(entities)
+            interaction_pairs = cls._interaction_pairs_for_entities(entities)
             query_plan = query_plan.model_copy(
                 update={
                     "interaction_pairs": interaction_pairs,
@@ -1587,7 +1754,7 @@ class AnswerMedicationQuestionUseCase:
         return entities
 
     @classmethod
-    def _active_intake_interaction_pairs(
+    def _interaction_pairs_for_entities(
         cls,
         entities: list[MedicationQueryEntity],
     ) -> list[MedicationInteractionQueryPair]:

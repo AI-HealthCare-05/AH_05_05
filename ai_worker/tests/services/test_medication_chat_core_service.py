@@ -1,5 +1,8 @@
 import pytest
 
+from ai_worker.chains.semantic_question_router import (
+    LocalSemanticQuestionRouter,
+)
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.observability.chat_tracer import NoOpChatTracer
@@ -108,6 +111,23 @@ def test_builder_reuses_injected_chat_tracer() -> None:
 
     assert service.tracer is tracer
     assert service._use_case._conditional_interpretation_chain is None
+    assert service._use_case._semantic_question_router is None
+
+
+def test_builder_wires_semantic_router_only_when_enabled() -> None:
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            SEMANTIC_ROUTER_ENABLED=True,
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+    )
+
+    assert isinstance(
+        service._use_case._semantic_question_router,
+        LocalSemanticQuestionRouter,
+    )
 
 
 def test_builder_shares_dynamic_supplement_catalog_with_resolver_and_use_case() -> None:

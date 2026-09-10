@@ -43,6 +43,14 @@ def test_config_disables_conditional_question_interpretation_by_default() -> Non
     assert settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED is False
 
 
+def test_config_disables_semantic_question_router_by_default() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.SEMANTIC_ROUTER_ENABLED is False
+    assert settings.SEMANTIC_ROUTER_MIN_SCORE == 0.78
+    assert settings.SEMANTIC_ROUTER_MIN_MARGIN == 0.10
+
+
 def test_config_reads_openai_chat_integration_settings(
     monkeypatch,
 ) -> None:

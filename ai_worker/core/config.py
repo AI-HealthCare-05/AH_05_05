@@ -29,6 +29,10 @@ class Config(BaseSettings):
     OPENAI_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     OPENAI_MAX_RETRIES: int = Field(default=2, ge=0)
     CONDITIONAL_QUESTION_INTERPRETATION_ENABLED: bool = False
+    SEMANTIC_ROUTER_ENABLED: bool = False
+    SEMANTIC_ROUTER_MODEL: str = "intfloat/multilingual-e5-small"
+    SEMANTIC_ROUTER_MIN_SCORE: float = Field(default=0.78, ge=-1.0, le=1.0)
+    SEMANTIC_ROUTER_MIN_MARGIN: float = Field(default=0.10, ge=0.0, le=2.0)
 
     LANGSMITH_TRACING: bool = False
     LANGSMITH_API_KEY: SecretStr | None = None
