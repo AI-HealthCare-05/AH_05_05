@@ -25,6 +25,7 @@ const custom = {
 test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
+  await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({ status: 404, json: {} }));
   await page.clock.setFixedTime('2026-09-10T03:00:00Z');
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'layout-test-token');
@@ -37,7 +38,7 @@ async function expectNoOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
-test('custom detail keeps full title and essential progress visible while records open by date', async ({ page }, testInfo) => {
+test('custom detail keeps full title and essential progress visible with immediately visible targets and selected date records', async ({ page }, testInfo) => {
   await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: custom }));
   await page.goto('/challenges/custom-participations/701');
   await expect(page.getByRole('heading', { name: longName, exact: true })).toBeVisible();
@@ -51,22 +52,16 @@ test('custom detail keeps full title and essential progress visible while record
   })).toBe(true);
   await expect(page.getByRole('heading', { name: '내 진행률' })).toBeVisible();
   await expect(page.getByRole('region', { name: '챌린지 달력', exact: true })).toBeVisible();
-  const targets = page.locator('details').filter({ has: page.locator('summary', { hasText: '참여 대상' }) });
-  await expect(targets).not.toHaveAttribute('open', '');
-  await expect(targets.getByText(firstTarget, { exact: true })).toBeHidden();
-  await targets.locator('summary').focus();
-  await targets.locator('summary').press('Enter');
+  const targets = page.getByRole('region', { name: '참여 대상', exact: true });
   await expect(targets.getByText(firstTarget, { exact: true })).toBeVisible();
-  const records = page.getByRole('region', { name: '2026.09.10 기록' });
-  await expect(records).toContainText('2개');
-  await expect(records.getByRole('list')).toBeHidden();
-  await records.locator('summary').click();
+  await expect(targets.getByText(secondTarget, { exact: true })).toBeVisible();
+  const records = page.getByRole('region', { name: '날짜별 복용 기록' });
+  await expect(records.getByRole('list')).toBeVisible();
   await expect(records.getByRole('listitem')).toHaveCount(2);
   await page.getByRole('button', { name: '2026.09.11, 예정 1회' }).click();
-  const nextRecords = page.getByRole('region', { name: '2026.09.11 기록' });
-  await expect(nextRecords.getByRole('list')).toBeHidden();
-  await nextRecords.locator('summary').click();
-  await expect(nextRecords.getByRole('listitem')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: '9월 11일' })).toBeVisible();
+  await expect(records.getByRole('list')).toBeVisible();
+  await expect(records.getByRole('listitem')).toHaveCount(1);
   await expect(page.getByRole('button', { name: '챌린지 참여 취소', exact: true })).toBeVisible();
   await expectNoOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('custom-detail-expanded-mobile.png'), fullPage: true });

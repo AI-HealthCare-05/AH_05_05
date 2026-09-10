@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ChevronDown } from 'lucide-react';
 
 import { useSession } from '@/app/SessionContext';
 import {
@@ -8,6 +7,7 @@ import {
   getCustomChallengeParticipation,
   cancelCustomChallenge,
   invalidateCustomChallengeProgress,
+  subscribeCustomChallengeProgressInvalidation,
   type CustomChallengeBadgeAward,
   type CustomChallengeParticipation,
 } from '@/entities/custom-challenge';
@@ -42,10 +42,12 @@ export function CustomChallengeParticipationPage() {
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
   const generationRef = useRef(0);
+  const readGenerationRef = useRef(0);
+  const refreshRef = useRef<() => void>(() => {});
+  const refreshAfterCancelRef = useRef(false);
   const [participation, setParticipation] = useState<CustomChallengeParticipation | null>(null);
   const [notFound, setNotFound] = useState(id === null);
   const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
   const [award, setAward] = useState<CustomChallengeBadgeAward | null>(null);
   const [badgeError, setBadgeError] = useState<string | null>(null);
   const [badgeReloadKey, setBadgeReloadKey] = useState(0);
@@ -65,37 +67,86 @@ export function CustomChallengeParticipationPage() {
   }
 
   useEffect(() => {
+    const generation = ++generationRef.current;
+    let active = true;
+    let pending = false;
+    let invalidatedGeneration: number | null = null;
+    let hasData = false;
     setCancelOpen(false);
     setCancelPending(false);
     setCancelError(null);
     cancelPendingRef.current = false;
+    refreshAfterCancelRef.current = false;
+    setParticipation(null);
+    setNotFound(id === null);
+    setError(null);
     if (id === null) {
-      generationRef.current += 1;
-      setParticipation(null);
-      setNotFound(true);
-      setError(null);
+      refreshRef.current = () => {};
       return;
     }
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
+    const requestId = id;
     const requestPrincipal = principalKey;
-    setParticipation(null);
-    setNotFound(false);
-    setError(null);
-    getCustomChallengeParticipation(id)
-      .then(result => {
-        if (generationRef.current === generation && principalRef.current === requestPrincipal) setParticipation(result);
-      })
-      .catch((reason: unknown) => {
-        if (generationRef.current !== generation || principalRef.current !== requestPrincipal) return;
-        if (reason instanceof ApiError && reason.status === 401) return;
-        if (reason instanceof ApiError && reason.status === 404) setNotFound(true);
-        else setError(reason instanceof Error ? reason.message : '맞춤 챌린지를 불러오지 못했어요.');
-      });
+    const isIdentityCurrent = () => active && generationRef.current === generation
+      && principalRef.current === requestPrincipal;
+
+    function refresh(invalidatePending = false) {
+      if (!isIdentityCurrent()) return;
+      if (cancelPendingRef.current) {
+        refreshAfterCancelRef.current = true;
+        return;
+      }
+      if (pending) {
+        // Focus/visibility bursts share a read. A saved record requires a newer snapshot.
+        if (invalidatePending) {
+          invalidatedGeneration = ++readGenerationRef.current;
+        }
+        return;
+      }
+      pending = true;
+      const readGeneration = ++readGenerationRef.current;
+      const authGeneration = getAuthGeneration();
+      const isCurrent = () => isIdentityCurrent()
+        && readGenerationRef.current === readGeneration && getAuthGeneration() === authGeneration;
+      setError(null);
+      getCustomChallengeParticipation(requestId)
+        .then(result => {
+          if (!isCurrent()) return;
+          hasData = true;
+          setNotFound(false);
+          setParticipation(result);
+        })
+        .catch((reason: unknown) => {
+          if (!isCurrent() || (reason instanceof ApiError && reason.status === 401)) return;
+          if (!hasData && reason instanceof ApiError && reason.status === 404) setNotFound(true);
+          else setError(reason instanceof Error ? reason.message : '맞춤 챌린지를 불러오지 못했어요.');
+        })
+        .finally(() => {
+          pending = false;
+          if (isIdentityCurrent() && invalidatedGeneration !== null) {
+            // Cancellation also advances the generation, discarding pre-cancel queued reads.
+            const shouldRefresh = invalidatedGeneration === readGenerationRef.current;
+            invalidatedGeneration = null;
+            if (shouldRefresh) refresh();
+          }
+        });
+    }
+
+    refreshRef.current = () => refresh(true);
+    const unsubscribe = subscribeCustomChallengeProgressInvalidation(() => refresh(true));
+    const onFocus = () => refresh();
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    refresh();
     return () => {
-      if (generationRef.current === generation) generationRef.current += 1;
+      active = false;
+      generationRef.current += 1;
+      readGenerationRef.current += 1;
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [id, principalKey, reloadKey]);
+  }, [id, principalKey]);
 
   useEffect(() => {
     if (id === null || participation?.status !== 'COMPLETED') {
@@ -127,13 +178,18 @@ export function CustomChallengeParticipationPage() {
     const authGeneration = getAuthGeneration();
     const isCurrent = () => generationRef.current === generation
       && principalRef.current === requestPrincipal && getAuthGeneration() === authGeneration;
+    // A GET started before cancellation must never restore the ACTIVE snapshot.
+    readGenerationRef.current += 1;
     cancelPendingRef.current = true;
     setCancelPending(true);
     setCancelError(null);
+    let cancelled = false;
     try {
       const result = await cancelCustomChallenge(requestId);
       if (!isCurrent()) return;
+      cancelled = true;
       setParticipation(result);
+      setError(null);
       setCancelOpen(false);
       invalidateCustomChallengeProgress();
     } catch (reason) {
@@ -151,6 +207,9 @@ export function CustomChallengeParticipationPage() {
       if (isCurrent()) {
         cancelPendingRef.current = false;
         setCancelPending(false);
+        const shouldRefresh = refreshAfterCancelRef.current && !cancelled;
+        refreshAfterCancelRef.current = false;
+        if (shouldRefresh) refreshRef.current();
       }
     }
   }
@@ -158,8 +217,8 @@ export function CustomChallengeParticipationPage() {
   if (notFound) {
     return <><Header title="맞춤 챌린지" onBack={handleBack} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 찾을 수 없어요</h2><Button variant="secondary" onClick={() => navigate('/challenges')}>챌린지로 돌아가기</Button></main></>;
   }
-  if (error) {
-    return <><Header title="맞춤 챌린지" onBack={handleBack} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 불러오지 못했어요</h2><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => setReloadKey(value => value + 1)}>다시 불러오기</Button></main></>;
+  if (error && !participation) {
+    return <><Header title="맞춤 챌린지" onBack={handleBack} /><main className="flex flex-col gap-4 px-page-x py-5"><h2 className="text-xl font-bold">참여 기록을 불러오지 못했어요</h2><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => refreshRef.current()}>다시 불러오기</Button></main></>;
   }
   if (!participation) {
     return <><Header title="맞춤 챌린지" onBack={handleBack} /><main role="status" aria-label="맞춤 챌린지 참여 기록 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" /></>;
@@ -172,6 +231,13 @@ export function CustomChallengeParticipationPage() {
       <Header title={participation.challengeName} onBack={handleBack} className="h-auto! min-h-header py-4 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
       <p className="text-caption font-bold text-primary">{statusLabel(participation.status)}</p>
+
+      {error ? (
+        <section role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="secondary" disabled={cancelPending} onClick={() => refreshRef.current()}>다시 불러오기</Button>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="custom-progress-title">
         <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2><strong className="text-primary">{String(participation.progressRate)}%</strong></div>
@@ -203,21 +269,18 @@ export function CustomChallengeParticipationPage() {
       ) : null}
 
       <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-target-title">
-        <details key={participation.id} className="group">
-          <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+          <div className="flex items-center justify-between gap-3">
             <h2 id="custom-target-title" className="text-base font-bold">참여 대상</h2>
-            <span className="flex shrink-0 items-center gap-2 text-caption text-muted-foreground">{participation.targets.length}개<ChevronDown aria-hidden="true" className="size-4 group-open:rotate-180" /></span>
-          </summary>
+            <span className="shrink-0 text-caption text-muted-foreground">{participation.targets.length}개</span>
+          </div>
           <ul className="mt-2 flex flex-col gap-3">
             {participation.targets.map(target => <li key={target.id} className="break-words text-sm text-foreground [overflow-wrap:anywhere]">{target.name}</li>)}
           </ul>
-        </details>
       </section>
 
       <CustomChallengeCalendar key={`${participation.id}:${participation.status}`} participation={participation} />
 
       <p className="text-caption leading-5 text-muted-foreground">진행률은 홈과 {participation.challengeType === 'SUPPLEMENT' ? '영양제' : '복약'} 기록을 기준으로 자동 계산돼요. 달력에서는 기록을 확인할 수 있어요.</p>
-      <Button variant="secondary" disabled={cancelPending} onClick={() => setReloadKey(value => value + 1)}>최신 진행률 불러오기</Button>
       {participation.status === 'ACTIVE' ? <Button variant="secondary" disabled={cancelPending} onClick={() => { setCancelError(null); setCancelOpen(true); }}>챌린지 참여 취소</Button> : <Button variant="secondary" onClick={() => navigate('/challenges')}>내 챌린지로 돌아가기</Button>}
       <Dialog open={cancelOpen} onOpenChange={open => { if (!cancelPendingRef.current) { setCancelOpen(open); if (!open) setCancelError(null); } }}>
         <DialogContent showCloseButton={!cancelPending}>

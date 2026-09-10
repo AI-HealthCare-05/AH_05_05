@@ -267,9 +267,6 @@ function OfficialHomeChallengeSummary() {
             ) : null}
             {officialActive.length > 0 ? (
               <>
-                <h3 className="text-sm font-bold text-foreground">
-                  공식 챌린지 · 진행 중 {officialActive.length}개
-                </h3>
                 {officialActive.map(item => {
                   const rate = progressLabel(item.progress_rate, item.target_count);
                   const endDate = inclusiveChallengeEndDate(item.end_at);
@@ -323,9 +320,6 @@ function OfficialHomeChallengeSummary() {
             ) : null}
             {customActive.length > 0 ? (
               <>
-                <h3 className="text-sm font-bold text-foreground">
-                  맞춤 챌린지 · 진행 중 {customActive.length}개
-                </h3>
                 {customActive.map(item => {
                   const rate = progressValue(item.progressRate, item.targetCount);
                   const progressText = item.targetCount <= 0

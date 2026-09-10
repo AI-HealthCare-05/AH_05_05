@@ -7,9 +7,17 @@ test.setTimeout(120_000);
 test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
+  await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({ status: 404, json: {} }));
   page.setDefaultTimeout(5_000);
   page.setDefaultNavigationTimeout(60_000);
 });
+
+function recordsForDate(page: Page, date: string) {
+  const [, month, day] = date.split('-').map(Number);
+  return page.getByRole('region', { name: '챌린지 달력', exact: true })
+    .filter({ has: page.getByRole('heading', { name: `${month}월 ${day}일`, exact: true }) })
+    .getByRole('region', { name: '날짜별 복용 기록' });
+}
 
 const medicationA = {
   templateId: 31,
@@ -397,8 +405,7 @@ test('My lists custom participation independently and detail renders only server
 
   await expect(page.getByRole('heading', { name: item.challengeName })).toBeVisible();
   await expect(page.getByRole('progressbar', { name: '맞춤 챌린지 진행률' })).toHaveAttribute('aria-valuenow', '35.71');
-  const selectedRecords = page.getByRole('region', { name: '2026.09.09 기록' });
-  await selectedRecords.locator('summary').click();
+  const selectedRecords = recordsForDate(page, '2026-09-09');
   await expect(selectedRecords.getByRole('listitem')).toHaveCount(1);
   await expect(selectedRecords.getByRole('listitem')).toContainText('아침');
   await expect(selectedRecords.getByRole('listitem')).toContainText('완료');
@@ -624,13 +631,11 @@ test('custom detail calendar shows only the selected date records', async ({ pag
 
   await page.goto('/challenges/custom-participations/701');
 
-  const records = page.getByRole('region', { name: '2026.09.10 기록' });
-  await records.locator('summary').click();
+  const records = recordsForDate(page, '2026-09-10');
   await expect(records).toContainText('저녁');
   await expect(records).not.toContainText('아침');
   await page.getByRole('button', { name: '2026.09.09, 모두 완료' }).click();
-  await page.getByRole('region', { name: '2026.09.09 기록' }).locator('summary').click();
-  await expect(page.getByRole('region', { name: '2026.09.09 기록' })).toContainText('아침');
+  await expect(recordsForDate(page, '2026-09-09')).toContainText('아침');
   await expect(records).toHaveCount(0);
 });
 
@@ -653,7 +658,7 @@ test('zero remaining goals render without an invented last goal date', async ({ 
   await expect(page.getByText('0 / 0회', { exact: true })).toBeVisible();
   await expect(page.getByText('진행 중', { exact: true })).toBeVisible();
   await expect(page.getByText('예정된 목표 기록이 없어요.', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '다음 달' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '다음 날짜' })).toHaveCount(0);
 });
 
 test('completed medication detail keeps the server final snapshot and its awarded badge', async ({ page }) => {
@@ -838,11 +843,9 @@ test.describe('Asia/Seoul occurrence boundary', () => {
     }));
 
     await page.goto('/challenges/custom-participations/701');
-
-    await page.getByRole('region', { name: '2026.09.10 기록' }).locator('summary').click();
-    await expect(page.getByRole('region', { name: '2026.09.10 기록' })).toContainText('아침');
+    await expect(recordsForDate(page, '2026-09-10')).toContainText('아침');
     await expect(page.getByRole('button', { name: '2026.09.10, 0/1 완료, 오늘' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('region', { name: '2026.09.09 기록' })).toHaveCount(0);
+    await expect(recordsForDate(page, '2026-09-09')).toHaveCount(0);
   });
 });
 
@@ -873,10 +876,9 @@ for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
     }) }));
     await page.goto('/challenges/custom-participations/701');
     await expect(page.getByRole('button', { name: '2026.09.10, 1/2 완료, 오늘' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('button', { name: '2026.09.08, 참여 기간 밖' })).toBeDisabled();
-    await expect(page.getByRole('button', { name: '2026.09.12, 목표 없음' })).toBeDisabled();
-    const records = page.getByRole('region', { name: '2026.09.10 기록' });
-    await records.locator('summary').click();
+    await expect(page.getByRole('button', { name: /2026.09.08/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '2026.09.12, 목표 없음' })).toBeEnabled();
+    const records = recordsForDate(page, '2026-09-10');
     await expect(records.getByRole('listitem')).toHaveCount(2);
     await expect(records.getByRole('listitem').first()).toContainText('아침');
     if (kind === 'SUPPLEMENT') {
@@ -885,15 +887,12 @@ for (const kind of ['MEDICATION', 'SUPPLEMENT']) {
     }
     await page.getByRole('region', { name: '챌린지 달력', exact: true }).screenshot({ path: testInfo.outputPath('calendar.png') });
     await page.getByRole('button', { name: '2026.09.11, 예정 1회' }).click();
-    await page.getByRole('region', { name: '2026.09.11 기록' }).locator('summary').click();
-    await expect(page.getByRole('region', { name: '2026.09.11 기록' })).toContainText('예정');
-    await page.getByRole('button', { name: '다음 달' }).click();
+    await expect(recordsForDate(page, '2026-09-11')).toContainText('예정');
     await page.getByRole('button', { name: '2026.10.02, 예정 1회' }).click();
-    await page.getByRole('region', { name: '2026.10.02 기록' }).locator('summary').click();
-    await expect(page.getByRole('region', { name: '2026.10.02 기록' })).toContainText('저녁');
-    await expect(page.getByRole('button', { name: '다음 달' })).toBeDisabled();
-    await page.getByRole('button', { name: '이전 달' }).click();
-    await expect(page.getByRole('button', { name: '이전 달' })).toBeDisabled();
+    await expect(recordsForDate(page, '2026-10-02')).toContainText('저녁');
+    await expect(page.getByRole('button', { name: '다음 날짜' })).toBeDisabled();
+    await page.getByRole('button', { pressed: true }).press('Home');
+    await expect(page.getByRole('button', { name: '이전 날짜' })).toBeDisabled();
     expect(writes).toEqual([]);
   });
 }
@@ -909,13 +908,11 @@ test('ended calendar selects the final goal date across a year boundary', async 
     ],
   }) }));
   await page.goto('/challenges/custom-participations/701');
-  await page.getByRole('region', { name: '2027.01.01 기록' }).locator('summary').click();
-  await expect(page.getByRole('region', { name: '2027.01.01 기록' })).toContainText('미완료');
+  await expect(recordsForDate(page, '2027-01-01')).toContainText('미완료');
   await expect(page.getByRole('heading', { name: '최종 결과' })).toBeVisible();
-  await page.getByRole('button', { name: '이전 달' }).click();
+  await page.getByRole('button', { name: '이전 날짜' }).click();
   await page.getByRole('button', { name: '2026.12.31, 모두 완료' }).click();
-  await page.getByRole('region', { name: '2026.12.31 기록' }).locator('summary').click();
-  await expect(page.getByRole('region', { name: '2026.12.31 기록' })).toContainText('점심');
+  await expect(recordsForDate(page, '2026-12-31')).toContainText('점심');
 });
 
 test('calendar uses Seoul join date for UTC instants at the month boundary', async ({ page }) => {
@@ -926,10 +923,9 @@ test('calendar uses Seoul join date for UTC instants at the month boundary', asy
     occurrences: [{ id: 901, targetId: 801, scheduledDate: '2026-10-02', slot: 'MORNING', scheduledAt: '2026-10-02T08:00:00+09:00', isCompleted: false }],
   }) }));
   await page.goto('/challenges/custom-participations/701');
-  await expect(page.getByRole('button', { name: '이전 달' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '이전 날짜' })).toBeDisabled();
   await expect(page.getByText('2026.10.01 ~ 2026.10.02', { exact: true })).toBeVisible();
-  await page.getByRole('region', { name: '2026.10.01 기록' }).locator('summary').click();
-  await expect(page.getByRole('region', { name: '2026.10.01 기록' })).toContainText('이날은 목표 기록이 없어요.');
+  await expect(recordsForDate(page, '2026-10-01')).toContainText('이날은 목표 기록이 없어요.');
 });
 
 test('custom medication join uses badge and guide cards while retaining existing participation links', async ({ page }, testInfo) => {
@@ -1034,7 +1030,7 @@ test('custom cancellation errors stay retryable and ended state is reconciled on
 
 test('Home shows every active custom participation without a two-item cap', async ({ page }) => {
   await authenticate(page);
-  await page.route('**/api/v1/**', route => route.fulfill({ status: 404, json: {} }));
+  await page.route(url => url.pathname.startsWith('/api/v1/'), route => route.fulfill({ status: 404, json: {} }));
   await page.route('**/api/v1/medications', route => route.fulfill({ json: [] }));
   await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
   await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({ json: { items: [

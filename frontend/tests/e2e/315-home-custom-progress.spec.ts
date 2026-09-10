@@ -168,7 +168,7 @@ async function stubHome(page: Page, options: HomeStubOptions = {}) {
     supplementWrites: [] as Array<Record<string, unknown>>,
   };
 
-  await page.route('**/api/v1/**', route => route.fulfill({
+  await page.route(url => url.pathname.startsWith('/api/v1/'), route => route.fulfill({
     status: 404,
     json: { code: 'NOT_FOUND', message: '이 테스트에서 지정하지 않은 요청입니다.' },
   }));
@@ -261,8 +261,7 @@ test('홈은 진행 중인 맞춤 카드를 모두 표시하고 서버 진행률
 
   const summary = page.getByRole('region', { name: '챌린지' });
   const customSection = summary.getByRole('region', { name: '맞춤 챌린지' });
-  await expect(customSection.getByRole('heading', { name: '맞춤 챌린지 · 진행 중 3개' }))
-    .toBeVisible();
+  await expect(customSection.getByRole('heading', { name: /맞춤 챌린지 · 진행 중/ })).toHaveCount(0);
   await expect(customSection.getByRole('link')).toHaveCount(3);
   for (const [name, participationId] of [
     [longName, 701],
