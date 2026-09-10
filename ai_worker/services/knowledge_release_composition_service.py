@@ -10,7 +10,11 @@ from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
 )
 from ai_worker.rag.metadata.knowledge_entity_extractor import KnowledgeEntityExtractor
-from ai_worker.schemas.knowledge import KnowledgeChunk, KnowledgeEntityCatalogEntry
+from ai_worker.schemas.knowledge import (
+    KnowledgeChunk,
+    KnowledgeDocumentType,
+    KnowledgeEntityCatalogEntry,
+)
 from ai_worker.services.knowledge_pilot_preprocessing_service import (
     KnowledgeAutomaticQualityStatus,
     KnowledgeChunkReviewStatus,
@@ -27,6 +31,11 @@ class KnowledgeReleaseCompositionInput(BaseModel):
 
 class KnowledgeReleaseCompositionService:
     """검증된 여러 청크 release를 새 불변 dataset으로 조합합니다."""
+
+    _ANNOTATION_REQUIRED_PAIR_DOCUMENT_TYPES = {
+        KnowledgeDocumentType.RESEARCH_ARTICLE,
+        KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH,
+    }
 
     def __init__(
         self,
@@ -285,13 +294,16 @@ class KnowledgeReleaseCompositionService:
             document_id=metadata.document_id,
             section_type=metadata.section_type,
         )
-        if not extracted.interaction_pair_keys:
-            return chunk
+        requires_annotation = (
+            metadata.document_type in KnowledgeReleaseCompositionService._ANNOTATION_REQUIRED_PAIR_DOCUMENT_TYPES
+        )
+        existing_interaction_type = None if requires_annotation else metadata.interaction_type
+        existing_pair_keys = [] if requires_annotation else metadata.interaction_pair_keys
 
         interaction_types = {
             value
             for value in (
-                metadata.interaction_type,
+                existing_interaction_type,
                 extracted.interaction_type,
             )
             if value is not None
@@ -314,7 +326,7 @@ class KnowledgeReleaseCompositionService:
                         ),
                         "interaction_type": next(iter(interaction_types)) if len(interaction_types) == 1 else None,
                         "interaction_pair_keys": KnowledgeReleaseCompositionService._unique_strings(
-                            [*metadata.interaction_pair_keys, *extracted.interaction_pair_keys]
+                            [*existing_pair_keys, *extracted.interaction_pair_keys]
                         ),
                     }
                 )

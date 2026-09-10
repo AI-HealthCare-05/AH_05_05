@@ -360,6 +360,40 @@ documents:
     assert len(output_chunk["metadata"]["interaction_pair_keys"]) == 1
 
 
+def test_compose_clears_unverified_research_pair_metadata(
+    tmp_path: Path,
+) -> None:
+    release = write_release(
+        tmp_path / "unverified-pair-release",
+        marker="u",
+        document_id="warfarin-overview",
+        dataset_version="release-unverified-pair",
+    )
+    chunk_path = release.chunks_dir / "warfarin-overview.jsonl"
+    raw_chunk = json.loads(chunk_path.read_text(encoding="utf-8"))
+    raw_chunk["content"] = "Iron and zinc are among the micronutrients discussed in this overview."
+    raw_chunk["embedding_text"] = raw_chunk["content"]
+    raw_chunk["metadata"]["ingredient_names"] = ["아연", "철분"]
+    raw_chunk["metadata"]["interaction_type"] = "SUPPLEMENT_SUPPLEMENT"
+    raw_chunk["metadata"]["interaction_pair_keys"] = ["a" * 64]
+    chunk_path.write_text(json.dumps(raw_chunk, ensure_ascii=False), encoding="utf-8")
+
+    KnowledgeReleaseCompositionService().compose(
+        inputs=[release],
+        output_root=tmp_path / "combined",
+        dataset_version="release-combined",
+    )
+
+    output_chunk = json.loads(
+        (tmp_path / "combined" / "chunks" / "warfarin-overview.jsonl").read_text(
+            encoding="utf-8",
+        )
+    )
+    assert output_chunk["metadata"]["ingredient_names"] == ["아연", "철분"]
+    assert output_chunk["metadata"]["interaction_type"] is None
+    assert output_chunk["metadata"]["interaction_pair_keys"] == []
+
+
 def test_compose_rejects_existing_output_directory(tmp_path: Path) -> None:
     release = write_release(
         tmp_path / "first",
