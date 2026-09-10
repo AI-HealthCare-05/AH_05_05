@@ -88,3 +88,9 @@ export interface CustomChallengeBadgeAwardListResponse {
   items: CustomChallengeBadgeAward[];
   totalCount: number;
 }
+
+export interface CustomChallengeRewardClaimResponse {
+  participation: CustomChallengeParticipation;
+  award: CustomChallengeBadgeAward | null;
+  newlyAwarded: boolean;
+}

@@ -5,6 +5,7 @@ import type {
   CustomChallengeParticipation,
   CustomChallengeParticipationListResponse,
   CustomChallengeRecommendationListResponse,
+  CustomChallengeRewardClaimResponse,
   JoinCustomChallengePayload,
 } from './types';
 
@@ -40,4 +41,8 @@ export function getCustomChallengeBadges(): Promise<CustomChallengeBadgeAwardLis
 
 export function cancelCustomChallenge(participationId: number): Promise<CustomChallengeParticipation> {
   return http.post<CustomChallengeParticipation>(`/v1/user/custom-challenge-participations/${participationId}/cancel`);
+}
+
+export function claimCustomChallengeReward(participationId: number): Promise<CustomChallengeRewardClaimResponse> {
+  return http.post<CustomChallengeRewardClaimResponse>(`/v1/user/custom-challenge-participations/${participationId}/claim-reward`);
 }

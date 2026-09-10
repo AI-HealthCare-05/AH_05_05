@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 
 import { useSession } from '@/app/SessionContext';
 import {
-  getCustomChallengeBadges,
+  claimCustomChallengeReward,
   customChallengeDayProgress,
   getCustomChallengeParticipation,
   cancelCustomChallenge,
@@ -14,6 +14,7 @@ import {
 } from '@/entities/custom-challenge';
 import { ApiError, getAuthGeneration } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
+import { captureBadgeAwardScope, enqueueBadgeAward } from '@/shared/lib/badgeAwards';
 import { Button, Header, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
 import { CustomChallengeCalendar } from './CustomChallengeCalendar';
 import { customChallengeDateLabel as dateLabel } from './customChallengeDates';
@@ -36,6 +37,12 @@ function statusLabel(status: CustomChallengeParticipation['status']) {
   return '종료';
 }
 
+function canClaimReward(participation: CustomChallengeParticipation) {
+  return participation.status === 'COMPLETED'
+    || (participation.status === 'ACTIVE' && participation.occurrences.length > 0
+      && participation.occurrences.every(occurrence => occurrence.isCompleted));
+}
+
 export function CustomChallengeParticipationPage() {
   const { participationId } = useParams();
   const id = positiveId(participationId);
@@ -50,8 +57,10 @@ export function CustomChallengeParticipationPage() {
   const [notFound, setNotFound] = useState(id === null);
   const [error, setError] = useState<string | null>(null);
   const [award, setAward] = useState<CustomChallengeBadgeAward | null>(null);
-  const [badgeError, setBadgeError] = useState<string | null>(null);
-  const [badgeReloadKey, setBadgeReloadKey] = useState(0);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [claimPending, setClaimPending] = useState(false);
+  const claimPendingRef = useRef(false);
+  const retryClaimRef = useRef<() => void>(() => {});
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -73,6 +82,8 @@ export function CustomChallengeParticipationPage() {
     let pending = false;
     let invalidatedGeneration: number | null = null;
     let hasData = false;
+    let claimAttempted = false;
+    let claimSettled = false;
     setCancelOpen(false);
     setCancelPending(false);
     setCancelError(null);
@@ -81,6 +92,11 @@ export function CustomChallengeParticipationPage() {
     setParticipation(null);
     setNotFound(id === null);
     setError(null);
+    setAward(null);
+    setClaimError(null);
+    setClaimPending(false);
+    claimPendingRef.current = false;
+    retryClaimRef.current = () => {};
     if (id === null) {
       refreshRef.current = () => {};
       return;
@@ -110,11 +126,57 @@ export function CustomChallengeParticipationPage() {
         && readGenerationRef.current === readGeneration && getAuthGeneration() === authGeneration;
       setError(null);
       getCustomChallengeParticipation(requestId)
-        .then(result => {
+        .then(async result => {
           if (!isCurrent()) return;
           hasData = true;
           setNotFound(false);
           setParticipation(result);
+          if (!canClaimReward(result)) {
+            claimAttempted = false;
+            setClaimError(null);
+            setAward(null);
+            return;
+          }
+          if (claimAttempted || claimSettled) return;
+          const scope = captureBadgeAwardScope(requestPrincipal);
+          if (!scope) return;
+          claimAttempted = true;
+          claimPendingRef.current = true;
+          setClaimPending(true);
+          setClaimError(null);
+          const isClaimCurrent = () => isIdentityCurrent() && getAuthGeneration() === scope.authGeneration;
+          try {
+            // Only this detail GET path claims; Home/list/background badge reads never finalize early.
+            const claimed = await claimCustomChallengeReward(requestId);
+            if (!isClaimCurrent()) return;
+            // A dose invalidation needs a fresh live read, but a server-finalized result is immutable.
+            if (!isCurrent() && claimed.participation.status === 'ACTIVE') {
+              claimAttempted = false;
+              return;
+            }
+            setParticipation(claimed.participation);
+            setAward(claimed.award);
+            claimSettled = claimed.participation.status === 'COMPLETED';
+            if (!canClaimReward(claimed.participation)) claimAttempted = false;
+            if (claimed.newlyAwarded && claimed.award && claimed.participation.status === 'COMPLETED') {
+              enqueueBadgeAward(scope, {
+                source: 'custom', awardId: claimed.award.id, participationId: claimed.award.participationId,
+                name: claimed.award.badgeName, imageUrl: apiAssetUrl(claimed.award.badgeImagePath),
+              }, { confirmedTransition: true });
+            }
+            if (claimed.newlyAwarded || JSON.stringify(claimed.participation) !== JSON.stringify(result)) {
+              invalidateCustomChallengeProgress();
+            }
+          } catch (reason) {
+            if (!isClaimCurrent() || (reason instanceof ApiError && reason.status === 401)) return;
+            setClaimError(reason instanceof Error ? reason.message : '달성 결과를 확인하지 못했어요. 다시 시도해주세요.');
+          } finally {
+            if (isIdentityCurrent()) {
+              claimPendingRef.current = false;
+              setClaimPending(false);
+              if (!isClaimCurrent()) claimAttempted = false;
+            }
+          }
         })
         .catch((reason: unknown) => {
           if (!isCurrent() || (reason instanceof ApiError && reason.status === 401)) return;
@@ -133,6 +195,7 @@ export function CustomChallengeParticipationPage() {
     }
 
     refreshRef.current = () => refresh(true);
+    retryClaimRef.current = () => { claimAttempted = false; refresh(true); };
     const unsubscribe = subscribeCustomChallengeProgressInvalidation(() => refresh(true));
     const onFocus = () => refresh();
     const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
@@ -149,30 +212,8 @@ export function CustomChallengeParticipationPage() {
     };
   }, [id, principalKey]);
 
-  useEffect(() => {
-    if (id === null || participation?.status !== 'COMPLETED') {
-      setAward(null);
-      setBadgeError(null);
-      return;
-    }
-    let active = true;
-    setAward(null);
-    setBadgeError(null);
-    getCustomChallengeBadges()
-      .then(result => {
-        if (active) setAward(result.items.find(item => item.participationId === id) ?? null);
-      })
-      .catch((reason: unknown) => {
-        if (!active || (reason instanceof ApiError && reason.status === 401)) return;
-        setBadgeError(reason instanceof Error ? reason.message : '획득 배지를 불러오지 못했어요.');
-      });
-    return () => {
-      active = false;
-    };
-  }, [badgeReloadKey, id, participation?.status, principalKey]);
-
   async function cancelParticipation() {
-    if (!participation || participation.status !== 'ACTIVE' || cancelPendingRef.current) return;
+    if (!participation || participation.status !== 'ACTIVE' || cancelPendingRef.current || claimPendingRef.current) return;
     const requestId = participation.id;
     const requestPrincipal = principalKey;
     const generation = generationRef.current;
@@ -190,6 +231,8 @@ export function CustomChallengeParticipationPage() {
       if (!isCurrent()) return;
       cancelled = true;
       setParticipation(result);
+      setClaimError(null);
+      setAward(null);
       setError(null);
       setCancelOpen(false);
       invalidateCustomChallengeProgress();
@@ -199,7 +242,10 @@ export function CustomChallengeParticipationPage() {
       if (reason instanceof ApiError && reason.status === 409) {
         try {
           const latest = await getCustomChallengeParticipation(requestId);
-          if (isCurrent()) setParticipation(latest);
+          if (isCurrent()) {
+            setParticipation(latest);
+            if (latest.status === 'COMPLETED') refreshAfterCancelRef.current = true;
+          }
         } catch {
           // Keep the server conflict visible; retry/close remains available.
         }
@@ -237,7 +283,7 @@ export function CustomChallengeParticipationPage() {
       {error ? (
         <section role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
           <p className="text-sm text-muted-foreground">{error}</p>
-          <Button variant="secondary" disabled={cancelPending} onClick={() => refreshRef.current()}>다시 불러오기</Button>
+          <Button variant="secondary" disabled={cancelPending || claimPending} onClick={() => refreshRef.current()}>다시 불러오기</Button>
         </section>
       ) : null}
 
@@ -248,7 +294,7 @@ export function CustomChallengeParticipationPage() {
         <p className="text-caption text-muted-foreground">{participation.actualEndDate
           ? `${dateLabel(participation.joinedAt)} ~ ${dateLabel(participation.actualEndDate)}`
           : '예정된 목표 없음'}</p>
-        {finalized ? <p className="text-caption leading-5 text-muted-foreground">{participation.status === 'CANCELLED' ? '취소 시점의 기록이에요. 기존 복용 기록은 유지되며, 지난 기록에서 확인할 수 있어요.' : '종료 시 확정된 결과예요. 이후 기록을 수정해도 결과와 배지는 유지돼요.'}</p> : null}
+        {finalized ? <p className="text-caption leading-5 text-muted-foreground">{participation.status === 'CANCELLED' ? '취소 시점의 기록이에요. 기존 복용 기록은 유지되며, 지난 기록에서 확인할 수 있어요.' : participation.status === 'COMPLETED' ? '달성 시 확정된 결과예요. 이후 기록을 수정해도 결과와 배지는 유지돼요.' : '종료 시 확정된 결과예요. 이후 기록을 수정해도 결과와 배지는 유지돼요.'}</p> : null}
       </section>
 
       {award ? (
@@ -263,10 +309,11 @@ export function CustomChallengeParticipationPage() {
           </div>
         </section>
       ) : null}
-      {badgeError ? (
+      {claimPending ? <p role="status" className="text-sm text-muted-foreground">달성 결과 확인 중...</p> : null}
+      {claimError ? (
         <section role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
-          <p className="text-sm text-muted-foreground">{badgeError}</p>
-          <Button variant="secondary" onClick={() => setBadgeReloadKey(value => value + 1)}>배지 다시 불러오기</Button>
+          <p className="text-sm text-muted-foreground">{claimError}</p>
+          <Button variant="secondary" disabled={cancelPending || claimPending} onClick={() => retryClaimRef.current()}>달성 확인 다시 시도</Button>
         </section>
       ) : null}
 
@@ -283,7 +330,7 @@ export function CustomChallengeParticipationPage() {
       <CustomChallengeCalendar key={`${participation.id}:${participation.status}`} participation={participation} />
 
       <p className="text-caption leading-5 text-muted-foreground">진행률은 홈과 {participation.challengeType === 'SUPPLEMENT' ? '영양제' : '복약'} 기록을 기준으로 자동 계산돼요. 달력에서는 기록을 확인할 수 있어요.</p>
-      {participation.status === 'ACTIVE' ? <Button variant="secondary" disabled={cancelPending} onClick={() => { setCancelError(null); setCancelOpen(true); }}>챌린지 참여 취소</Button> : <Button variant="secondary" onClick={() => navigate('/challenges')}>내 챌린지로 돌아가기</Button>}
+      {participation.status === 'ACTIVE' ? <Button variant="secondary" disabled={cancelPending || claimPending} onClick={() => { setCancelError(null); setCancelOpen(true); }}>챌린지 참여 취소</Button> : <Button variant="secondary" onClick={() => navigate('/challenges')}>내 챌린지로 돌아가기</Button>}
       <Dialog open={cancelOpen} onOpenChange={open => { if (!cancelPendingRef.current) { setCancelOpen(open); if (!open) setCancelError(null); } }}>
         <DialogContent showCloseButton={!cancelPending}>
           <DialogHeader>
@@ -296,7 +343,7 @@ export function CustomChallengeParticipationPage() {
           {cancelError ? <p role="alert" className="text-sm text-danger-strong">{cancelError}</p> : null}
           <DialogFooter>
             <Button variant="secondary" disabled={cancelPending} onClick={() => setCancelOpen(false)}>돌아가기</Button>
-            <Button variant="danger" disabled={cancelPending || participation.status !== 'ACTIVE'} onClick={() => void cancelParticipation()}>{cancelPending ? '취소 중...' : '참여 취소'}</Button>
+            <Button variant="danger" disabled={cancelPending || claimPending || participation.status !== 'ACTIVE'} onClick={() => void cancelParticipation()}>{cancelPending ? '취소 중...' : '참여 취소'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
