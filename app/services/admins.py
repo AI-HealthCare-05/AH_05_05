@@ -17,6 +17,7 @@ from app.core.exceptions import (
     LastActiveAdminError,
     SameRoleError,
 )
+from app.core.utils.common import mask_admin_user_name, mask_email_address
 from app.dependencies.admin import AuthenticatedAdmin
 from app.dtos.admins import (
     AdminCreateRequest,
@@ -61,8 +62,8 @@ class AdminQueryService:
             items=[
                 AdminListItem(
                     admin_id=admin.id,
-                    name=admin.name,
-                    email=admin.email,
+                    name=mask_admin_user_name(admin.name),
+                    email=mask_email_address(admin.email),
                     role=admin.role,
                     status=admin.status,
                 )

@@ -1,6 +1,21 @@
 import re
 
 
+def mask_admin_user_name(name: str) -> str:
+    """관리자 회원조회 응답에서 이름의 첫 글자와 마지막 글자만 남긴다."""
+    if len(name) <= 2:
+        return name
+    return f"{name[0]}{'*' * (len(name) - 2)}{name[-1]}"
+
+
+def mask_email_address(email: str) -> str:
+    """이메일 로컬 영역의 처음 세 글자를 제외한 나머지를 가린다."""
+    local_part, separator, domain = email.partition("@")
+    if not separator:
+        return email
+    return f"{local_part[:3]}{'*' * max(0, len(local_part) - 3)}@{domain}"
+
+
 def normalize_phone_number(phone_number: str) -> str:
     if phone_number.startswith("+82"):
         phone_number = "0" + phone_number[3:]
