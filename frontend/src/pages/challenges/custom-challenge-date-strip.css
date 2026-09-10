@@ -39,6 +39,19 @@
   transform: scale(1.18);
 }
 
+.custom-challenge-day-check {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+}
+
+/* The settled drawing is also the no-motion/no-animation fallback. */
+.custom-challenge-check-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .custom-challenge-date-square { transition: none; }
 }
