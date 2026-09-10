@@ -2,6 +2,7 @@ export {
   addSupplement,
   fetchSupplementReviews,
   getSupplementProduct,
+  getPublicSupplementRanking,
   getSupplementRanking,
   getSupplements,
   reportSupplementReview,

@@ -49,12 +49,155 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
+function schedule(recordId: number, timesPerDay: number, slots = ['morning']) {
+  return {
+    start: { date: '2026-08-22', slot: 'morning' },
+    mealTimes: MEAL_TIMES,
+    medications: [
+      {
+        medicationId: recordId * 10,
+        name: '셀레콕시브',
+        dose: '200mg',
+        timesPerDay,
+        timing: '식후',
+        slots,
+      },
+    ],
+  };
+}
+
 test.beforeEach(async ({ page }) => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
+  await page.route('**/api/v1/user/challenges', (route) =>
+    fulfillJson(route, { items: [], total_count: 0 }),
+  );
+  await page.route('**/api/v1/med/medication/schedule/*', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    const recordId = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    await fulfillJson(route, schedule(recordId, 1));
+  });
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'medication-management-token');
     sessionStorage.setItem('poke.account-principal', 'medication-management@example.com');
   });
+});
+
+test('처방 편집은 원본 하루 횟수까지만 선택하고 기존 시간을 바꿀 수 있다', async ({ page }) => {
+  let scheduleLoads = 0;
+  let savedPayload: unknown;
+  await page.route('**/api/v1/medications', (route) =>
+    fulfillJson(route, [overview(12, false, 3)]),
+  );
+  await page.route('**/api/v1/med/medication/schedule/12', async (route) => {
+    if (route.request().method() === 'GET') {
+      scheduleLoads += 1;
+      await fulfillJson(route, schedule(12, 1));
+      return;
+    }
+    savedPayload = route.request().postDataJSON();
+    await fulfillJson(route, { saved: true });
+  });
+  await page.route('**/api/v1/med/episodes/12/alias', (route) => route.fulfill({ status: 204 }));
+
+  await page.goto('/medications');
+  await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '처방 편집' });
+  const morning = dialog.getByRole('button', { name: '셀레콕시브 아침약' });
+  const lunch = dialog.getByRole('button', { name: '셀레콕시브 점심약' });
+  await expect.poll(() => scheduleLoads).toBe(1);
+  await expect(dialog.getByText('하루 1회', { exact: true })).toBeVisible();
+
+  await lunch.click();
+  await expect(morning).toHaveAttribute('aria-pressed', 'true');
+  await expect(lunch).toHaveAttribute('aria-pressed', 'false');
+  await expect(dialog.getByRole('alert')).toHaveText(
+    '하루 1회만 선택할 수 있어요. 선택한 시간을 취소한 뒤 다른 시간을 선택해주세요.',
+  );
+
+  await morning.click();
+  await lunch.click();
+  await expect(morning).toHaveAttribute('aria-pressed', 'false');
+  await expect(lunch).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
+  expect(savedPayload).toEqual({
+    start: { date: '2026-08-22', slot: 'morning' },
+    mealTimes: MEAL_TIMES,
+    medications: [{ medicationId: 120, slots: ['lunch'] }],
+  });
+});
+
+test('원본 횟수 조회 중이거나 실패하면 편집 저장을 막고 재시도한다', async ({ page }) => {
+  let attempts = 0;
+  let releaseFirstLoad!: () => void;
+  const firstLoadReleased = new Promise<void>((resolve) => {
+    releaseFirstLoad = resolve;
+  });
+  await page.route('**/api/v1/medications', (route) =>
+    fulfillJson(route, [overview(12, false, 3)]),
+  );
+  await page.route('**/api/v1/med/medication/schedule/12', async (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      await firstLoadReleased;
+      await fulfillJson(route, { code: 'SERVER_ERROR', message: '서버 내부 오류' }, 500);
+      return;
+    }
+    await fulfillJson(route, schedule(12, 1));
+  });
+
+  await page.goto('/medications');
+  await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '처방 편집' });
+  const morning = dialog.getByRole('button', { name: '셀레콕시브 아침약' });
+  const save = dialog.getByRole('button', { name: '저장', exact: true });
+  await expect(dialog.getByRole('status')).toHaveText('처방 복용 횟수를 확인하고 있어요.');
+  await expect(morning).toBeDisabled();
+  await expect(save).toBeDisabled();
+
+  releaseFirstLoad();
+  const loadError = dialog.getByRole('alert');
+  await expect(loadError).toContainText('처방 복용 횟수를 불러오지 못했어요.');
+  await expect(morning).toBeDisabled();
+  await expect(save).toBeDisabled();
+
+  await loadError.getByRole('button', { name: '다시 시도' }).click();
+  await expect(dialog.getByText('하루 1회', { exact: true })).toBeVisible();
+  await expect(morning).toBeEnabled();
+  await expect(save).toBeEnabled();
+  expect(attempts).toBe(2);
+});
+
+test('이미 원본 횟수를 넘은 저장값은 자르지 않고 사용자가 바로잡기 전 저장하지 않는다', async ({ page }) => {
+  const invalidOverview = overview(12, false, 3);
+  invalidOverview.medications[0].slots = ['morning', 'lunch'];
+  await page.route('**/api/v1/medications', (route) =>
+    fulfillJson(route, [invalidOverview]),
+  );
+  await page.route('**/api/v1/med/medication/schedule/12', (route) =>
+    fulfillJson(route, schedule(12, 1, ['morning', 'lunch'])),
+  );
+
+  await page.goto('/medications');
+  await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '처방 편집' });
+  const morning = dialog.getByRole('button', { name: '셀레콕시브 아침약' });
+  const lunch = dialog.getByRole('button', { name: '셀레콕시브 점심약' });
+  const save = dialog.getByRole('button', { name: '저장', exact: true });
+  await expect(dialog.getByText('하루 1회', { exact: true })).toBeVisible();
+  await expect(morning).toHaveAttribute('aria-pressed', 'true');
+  await expect(lunch).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('alert')).toContainText('하루 1회만 선택할 수 있어요.');
+  await expect(save).toBeDisabled();
+
+  await lunch.click();
+  await expect(morning).toHaveAttribute('aria-pressed', 'true');
+  await expect(lunch).toHaveAttribute('aria-pressed', 'false');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await expect(save).toBeEnabled();
 });
 
 test('완료 상태는 daysRemaining이 아니라 서버 isFinished만 따른다', async ({ page }) => {
@@ -107,8 +250,8 @@ test('느린 회차 저장 중 반복 클릭해도 일정 저장 요청은 한 �
     fulfillJson(route, [overview(12, false, 3)]),
   );
   await page.route('**/api/v1/med/medication/schedule/12', async (route) => {
-    if (route.request().method() !== 'PUT') {
-      await route.continue();
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, schedule(12, 1));
       return;
     }
     saveCalls += 1;
@@ -161,7 +304,7 @@ test('별칭 PATCH 뒤 홈 진입과 재진입은 후속 처방 조회의 별칭
     await fulfillJson(route, [{ ...item, ...(alias ? { alias } : {}) }]);
   });
   await page.route('**/api/v1/med/medication/schedule/12', (route) =>
-    fulfillJson(route, { saved: true }),
+    fulfillJson(route, route.request().method() === 'GET' ? schedule(12, 1) : { saved: true }),
   );
   await page.route('**/api/v1/med/episodes/12/alias', async (route) => {
     const payload = route.request().postDataJSON() as { alias: string | null };

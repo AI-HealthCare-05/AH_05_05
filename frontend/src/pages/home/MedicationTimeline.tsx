@@ -71,21 +71,16 @@ export function MedicationTimeline({
     <section className="flex flex-col gap-3" aria-label="오늘의 복약">
       {item ? (
         <div className="overflow-hidden rounded-card bg-card shadow-card">
-          <div className="flex items-center justify-between gap-3 px-4 pt-4">
-            <p className="text-base font-bold text-foreground">
-              {item.label} {item.time}
-            </p>
-            <span className="text-sm text-muted-foreground tnum">
-              {item.episodes.length > 1
+          <TimelineItem
+            item={item}
+            progressLabel={
+              item.episodes.length > 1
                 ? `처방 ${item.episodes.length}개`
                 : formatSingleEpisodeProgress(
                     overviews.find((overview) => overview.recordId === item.episodes[0]?.recordId),
                     currentDate,
-                  )}
-            </span>
-          </div>
-          <TimelineItem
-            item={item}
+                  )
+            }
             currentDate={currentDate}
             onDoseChange={onDoseChange}
             onMemo={onMemo}
@@ -104,6 +99,7 @@ export function MedicationTimeline({
 
 function TimelineItem({
   item,
+  progressLabel,
   currentDate,
   onDoseChange,
   onMemo,
@@ -111,6 +107,7 @@ function TimelineItem({
   mutationPending,
 }: {
   item: TimelineItemData;
+  progressLabel: string;
   currentDate: string;
   onDoseChange: MedicationTimelineProps['onDoseChange'];
   onMemo: MedicationTimelineProps['onMemo'];
@@ -255,8 +252,25 @@ function TimelineItem({
   }
 
   return (
-    <div role="group" aria-label={`${item.label}약 상세`} className="px-4 pb-4 pt-3">
-      <div className="flex flex-col">
+    <>
+      <div className="flex items-center justify-between gap-3 px-4 pt-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="text-base font-bold text-foreground">
+            {item.label} {item.time}
+          </p>
+          {allEpisodesCompleted && (
+            <span
+              data-medication-completed-summary
+              aria-hidden="true"
+              className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-sm font-bold text-primary-strong"
+            >
+              복용 완료
+            </span>
+          )}
+        </div>
+        <span className="text-sm text-muted-foreground tnum">{progressLabel}</span>
+      </div>
+      <div role="group" aria-label={`${item.label}약 상세`} className="flex flex-col px-4 pb-4 pt-3">
         {visibleEpisodes.map((episode) => {
           const episodeDate = formatDateLabel(episode.startDate);
           const episodeAlias = episode.alias?.trim();
@@ -298,7 +312,7 @@ function TimelineItem({
                   {selectedEpisodes.has(episode.recordId) && <Check className="size-4" />}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
-                    {episodeCompleted && (
+                    {episodeCompleted && !allEpisodesCompleted && (
                       <span
                         data-episode-completed-badge
                         aria-hidden="true"
@@ -374,31 +388,30 @@ function TimelineItem({
             {showAllEpisodes ? '접기' : '펼치기'}
           </button>
         )}
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            className="min-h-touch flex-1 rounded-button border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onMemo}
+          >
+            복약 메모
+          </button>
+          <Button
+            fullWidth={false}
+            variant={
+              !doseActionDisabled && (hasSelection || (current && !actionCompleted))
+                ? 'primary'
+                : 'secondary'
+            }
+            disabled={doseActionDisabled || doseControlsPending}
+            className="min-h-touch flex-1 px-3"
+            onClick={handleDoseAction}
+          >
+            {actionCompleted || allEpisodesCompleted ? '복약 기록 되돌리기' : '먹었어요'}
+          </Button>
+        </div>
       </div>
-
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          className="min-h-touch flex-1 rounded-button border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={onMemo}
-        >
-          복약 메모
-        </button>
-        <Button
-          fullWidth={false}
-          variant={
-            !doseActionDisabled && (hasSelection || (current && !actionCompleted))
-              ? 'primary'
-              : 'secondary'
-          }
-          disabled={doseActionDisabled || doseControlsPending}
-          className="min-h-touch flex-1 px-3"
-          onClick={handleDoseAction}
-        >
-          {actionCompleted || allEpisodesCompleted ? '복약 기록 되돌리기' : '먹었어요'}
-        </Button>
-      </div>
-    </div>
+    </>
   );
 }
 

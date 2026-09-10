@@ -44,6 +44,14 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem('poke.account-principal', 'feature-391@example.com');
   });
   await page.route('**/api/v1/**', (route) => json(route, {}));
+  await page.route('**/api/v1/med/medication/schedule/391', (route) => json(route, {
+    start: active.start,
+    mealTimes: active.mealTimes,
+    medications: [{
+      medicationId: 3910, name: LONG_NAME, dose: '125/500mg 2정',
+      timesPerDay: 4, timing: '식후', slots: ['morning', 'lunch', 'evening', 'bedtime'],
+    }],
+  }));
   await page.route('**/api/v1/medications', (route) => json(route, [active, {
     ...active, recordId: 392, alias: '지난 처방', isFinished: true, daysRemaining: 0,
     start: { date: '2026-08-01', slot: 'morning' }, endDate: '2026-08-10',
@@ -170,6 +178,10 @@ test('연필만 기존 편집창을 열고 선택 모드는 편집과 펼침 없
 test('연필로 수정한 별칭과 시간대를 기존 API에 저장하고 요약에 반영한다', async ({ page }) => {
   const saved: Array<{ method: string; path: string; body: unknown }> = [];
   await page.route('**/api/v1/med/**', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fallback();
+      return;
+    }
     saved.push({ method: route.request().method(), path: new URL(route.request().url()).pathname,
       body: route.request().postDataJSON() });
     await json(route, { saved: true });
