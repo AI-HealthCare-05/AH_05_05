@@ -77,7 +77,6 @@ from app.models.users import User  # noqa: E402
 from app.services import custom_challenges as custom_challenge_module  # noqa: E402
 from app.services import medications as medication_module  # noqa: E402
 from app.services import supplement_doses as supplement_dose_module  # noqa: E402
-from app.workers import custom_challenge_worker  # noqa: E402
 
 PASSWORD = "Password123!"
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -226,18 +225,6 @@ async def _recommendation(
     response = await client.get("/api/v1/user/custom-challenge-recommendations", headers=headers)
     assert response.status_code == 200, response.text
     return next(item for item in response.json()["items"] if item["challengeType"] == challenge_type.value)
-
-
-async def _run_worker_twice() -> tuple[int, int]:
-    context: dict = {}
-    await custom_challenge_worker.startup(context)
-    try:
-        return (
-            await custom_challenge_worker.finalize_due_custom_challenges(context),
-            await custom_challenge_worker.finalize_due_custom_challenges(context),
-        )
-    finally:
-        await custom_challenge_worker.shutdown(context)
 
 
 async def _claim(client: AsyncClient, headers: dict[str, str], participation_id: int) -> dict:
@@ -551,7 +538,7 @@ async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_a
             joined_at=joined_at,
             end_at=joined_at + timedelta(hours=1),
         )
-        # Prove the exact persisted state that grounds the worker count: the
+        # Prove the persisted state before a first list read: the
         # second episode was already lazily finalized by prior authenticated API
         # access, while the completed and zero-goal candidates remain due/ACTIVE.
         before_worker = {
@@ -580,7 +567,13 @@ async def test_medication_api_keeps_episode_results_and_badge_frozen_after_end_a
         assert before_worker[zero_goal.id]["end_at"] <= real_now
         assert before_worker[zero_goal.id]["finalized_at"] is None
         assert (before_worker[zero_goal.id]["target_count"], before_worker[zero_goal.id]["completed_count"]) == (0, 0)
-        assert await _run_worker_twice() == (2, 0)
+        first_list = await client.get("/api/v1/user/custom-challenge-participations", headers=owner_headers)
+        second_list = await client.get("/api/v1/user/custom-challenge-participations", headers=owner_headers)
+        assert first_list.status_code == second_list.status_code == 200
+        assert first_list.json() == second_list.json()
+        await zero_goal.refresh_from_db()
+        assert zero_goal.status is ChallengeParticipationStatus.EXPIRED
+        assert await CustomChallengeBadgeAward.filter(user=owner).count() == 0
 
         completed = await client.get(f"/api/v1/user/custom-challenge-participations/{first_id}", headers=owner_headers)
         expired = await client.get(f"/api/v1/user/custom-challenge-participations/{second_id}", headers=owner_headers)
@@ -702,31 +695,23 @@ async def test_supplement_api_uses_exactly_seven_days_and_freezes_completion_aft
                 assert saved.status_code == 200, saved.text
         assert await SupplementDose.filter(registration=registration).count() == 7
 
-        # Race the late worker against the first post-end undo. User-first MySQL
-        # locking must serialize them: either side may freeze the result, but
-        # neither may award before an explicit claim.
-        context: dict = {}
-        await custom_challenge_worker.startup(context)
-        try:
-            worker_result, undone = await asyncio.gather(
-                custom_challenge_worker.finalize_due_custom_challenges(context),
-                client.put(
-                    "/api/v1/med/supplement-doses",
-                    headers=headers,
-                    json={
-                        "supplementId": registration.id,
-                        "date": occurrences[0]["scheduledDate"],
-                        "slot": occurrences[0]["slot"].lower(),
-                        "taken": False,
-                    },
-                ),
-            )
-            replayed_worker = await custom_challenge_worker.finalize_due_custom_challenges(context)
-        finally:
-            await custom_challenge_worker.shutdown(context)
+        # A first post-end read and undo share the same user lock; neither
+        # awards a badge until explicit detail claim.
+        first_read, undone = await asyncio.gather(
+            client.get("/api/v1/user/custom-challenge-participations", headers=headers),
+            client.put(
+                "/api/v1/med/supplement-doses",
+                headers=headers,
+                json={
+                    "supplementId": registration.id,
+                    "date": occurrences[0]["scheduledDate"],
+                    "slot": occurrences[0]["slot"].lower(),
+                    "taken": False,
+                },
+            ),
+        )
         assert undone.status_code == 200, undone.text
-        assert worker_result in {0, 1}
-        assert replayed_worker == 0
+        assert first_read.status_code == 200, first_read.text
 
         completed = await client.get(
             f"/api/v1/user/custom-challenge-participations/{participation_id}", headers=headers

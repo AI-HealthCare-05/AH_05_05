@@ -24,8 +24,6 @@ from app.models.enums import ChallengeParticipationStatus, CustomChallengeType, 
 from app.models.medications import MedicationDose
 from app.models.users import User
 from app.services.challenges import AdminChallengeService
-from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
-from app.workers.custom_challenge_worker import finalize_due_custom_challenges
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -216,8 +214,8 @@ async def test_custom_badge_api_returns_only_the_authenticated_users_awards() ->
     assert other.id != owner.id
 
 
-@pytest.mark.parametrize("first_entry", ["badge-list", "worker"])
-async def test_background_finalization_freezes_completed_result_without_awarding(first_entry: str) -> None:
+@pytest.mark.parametrize("first_entry", ["badge-list", "participation-list", "detail"])
+async def test_first_read_finalizes_completed_result_without_awarding(first_entry: str) -> None:
     owner, participation, _ = await _participation(
         email="badge-first-read@example.com",
         status=ChallengeParticipationStatus.ACTIVE,
@@ -246,13 +244,14 @@ async def test_background_finalization_freezes_completed_result_without_awarding
     )
     app.dependency_overrides[get_request_user] = lambda: owner
 
-    if first_entry == "worker":
-        finalized = await finalize_due_custom_challenges(
-            {"custom_challenge_lifecycle_service": CustomChallengeLifecycleService()}
-        )
-        assert finalized == 1
-
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        paths = {
+            "badge-list": "/api/v1/user/custom-challenges/badges",
+            "participation-list": "/api/v1/user/custom-challenge-participations",
+            "detail": f"/api/v1/user/custom-challenge-participations/{participation.id}",
+        }
+        first = await client.get(paths[first_entry])
+        assert first.status_code == 200
         response = await client.get("/api/v1/user/custom-challenges/badges")
 
     assert response.status_code == 200
@@ -266,9 +265,9 @@ async def test_background_finalization_freezes_completed_result_without_awarding
     assert occurrence.is_completed is True
 
     await MedicationDose.filter(user=owner, care_episode=episode).delete()
-    assert await finalize_due_custom_challenges(
-        {"custom_challenge_lifecycle_service": CustomChallengeLifecycleService()}
-    ) == 0
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        repeated = await client.get(paths[first_entry])
+        assert repeated.status_code == 200
     await participation.refresh_from_db()
     await occurrence.refresh_from_db()
     assert participation.status is ChallengeParticipationStatus.COMPLETED
