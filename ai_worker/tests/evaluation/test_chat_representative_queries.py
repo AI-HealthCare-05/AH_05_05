@@ -142,7 +142,8 @@ def test_chat_safety_retrieval_queries_define_twenty_fixed_cases() -> None:
     strict_pair_cases = {
         case.query_id: case
         for case in validated.cases
-        if case.query_id in {
+        if case.query_id
+        in {
             "typo-magnesium-zinc-interaction",
             "typo-vitamin-d-calcium-interaction",
         }

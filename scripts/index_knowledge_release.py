@@ -244,8 +244,7 @@ async def load_reusable_vectors_from_collection(
     missing_texts = expected_texts - reused_vectors.keys()
     if missing_texts:
         raise ValueError(
-            "벡터 재사용 원본 컬렉션에 baseline embedding_text가 없습니다: "
-            f"missing_count={len(missing_texts)}"
+            f"벡터 재사용 원본 컬렉션에 baseline embedding_text가 없습니다: missing_count={len(missing_texts)}"
         )
     return reused_vectors
 
@@ -471,10 +470,12 @@ async def run_cli(
     embedding_reuse = (
         assess_embedding_reuse(
             candidate_chunks=chunks,
-            baseline_chunks=(baseline_chunks := KnowledgeChunkLoader().load(
-                baseline_chunks_dir,
-                expected_dataset_version=args.baseline_dataset_version,
-            )),
+            baseline_chunks=(
+                baseline_chunks := KnowledgeChunkLoader().load(
+                    baseline_chunks_dir,
+                    expected_dataset_version=args.baseline_dataset_version,
+                )
+            ),
         )
         if baseline_chunks_dir is not None
         else None

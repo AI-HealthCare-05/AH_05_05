@@ -163,8 +163,7 @@ class KnowledgeCorpusManifestBuilder:
                     drug_names=(document.drug_names or (reviewed.drug_names if reviewed else [])),
                     ingredient_names=(document.ingredient_names or (reviewed.ingredient_names if reviewed else [])),
                     entity_catalog_entries=(
-                        document.entity_catalog_entries
-                        or (reviewed.entity_catalog_entries if reviewed else [])
+                        document.entity_catalog_entries or (reviewed.entity_catalog_entries if reviewed else [])
                     ),
                     evidence_level=(
                         document.evidence_level

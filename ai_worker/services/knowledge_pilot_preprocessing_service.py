@@ -1161,9 +1161,7 @@ class KnowledgePilotPreprocessingService:
             file_name=pilot.repo_path.name,
             drug_names=pilot.drug_names or entities.drug_names,
             ingredient_names=(pilot.ingredient_names or entities.ingredient_names),
-            entity_catalog_entries=(
-                pilot.entity_catalog_entries or entities.entity_catalog_entries
-            ),
+            entity_catalog_entries=(pilot.entity_catalog_entries or entities.entity_catalog_entries),
             interaction_type=entities.interaction_type,
             interaction_pair_keys=entities.interaction_pair_keys,
             evidence_level=pilot.evidence_level,

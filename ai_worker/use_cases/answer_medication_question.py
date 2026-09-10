@@ -1421,12 +1421,9 @@ class AnswerMedicationQuestionUseCase:
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
     ) -> TherapeuticClassSelection:
-        if (
-            self._therapeutic_class_repository is None
-            or not self._is_active_intake_interaction_question(
-                question=request.question,
-                context=context,
-            )
+        if self._therapeutic_class_repository is None or not self._is_active_intake_interaction_question(
+            question=request.question,
+            context=context,
         ):
             return TherapeuticClassSelection(
                 status=TherapeuticClassSelectionStatus.NOT_REQUESTED,
@@ -1460,9 +1457,7 @@ class AnswerMedicationQuestionUseCase:
         return context.model_copy(
             update={
                 "medications": [
-                    medication
-                    for medication in context.medications
-                    if medication.medication_id in selected_ids
+                    medication for medication in context.medications if medication.medication_id in selected_ids
                 ]
             }
         )
@@ -1493,9 +1488,7 @@ class AnswerMedicationQuestionUseCase:
             question=request.question,
             context=context,
         )
-        planning_question = (
-            f"{request.question} 상호작용" if is_interaction else request.question
-        )
+        planning_question = f"{request.question} 상호작용" if is_interaction else request.question
         query_plan = MedicationKnowledgeQueryBuilder(
             catalog_entities=entities,
         ).build(planning_question)
@@ -1504,16 +1497,8 @@ class AnswerMedicationQuestionUseCase:
             query_plan = query_plan.model_copy(
                 update={
                     "interaction_pairs": interaction_pairs,
-                    "interaction_types": list(
-                        dict.fromkeys(
-                            pair.pair_type for pair in interaction_pairs
-                        )
-                    ),
-                    "interaction_pair_keys": list(
-                        dict.fromkeys(
-                            pair.pair_key for pair in interaction_pairs
-                        )
-                    ),
+                    "interaction_types": list(dict.fromkeys(pair.pair_type for pair in interaction_pairs)),
+                    "interaction_pair_keys": list(dict.fromkeys(pair.pair_key for pair in interaction_pairs)),
                 }
             )
         query_plan = query_plan.model_copy(
@@ -1522,8 +1507,7 @@ class AnswerMedicationQuestionUseCase:
         reason_codes = [
             reason_code
             for reason_code in planning.interpretation.reason_codes
-            if reason_code
-            != MedicationQuestionReasonCode.NO_ENTITY_IDENTIFIED
+            if reason_code != MedicationQuestionReasonCode.NO_ENTITY_IDENTIFIED
         ]
         reason_codes.append(MedicationQuestionReasonCode.ENTITY_IDENTIFIED)
         if query_plan.interaction_pairs:
@@ -1557,16 +1541,8 @@ class AnswerMedicationQuestionUseCase:
         query_plan: MedicationKnowledgeQueryPlan,
         context: ActiveIntakeContext,
     ) -> bool:
-        active_names = {
-            cls._normalize_entity_name(item.name)
-            for item in [*context.medications, *context.supplements]
-        }
-        return bool(
-            active_names.intersection(
-                cls._normalize_entity_name(name)
-                for name in query_plan.entity_names
-            )
-        )
+        active_names = {cls._normalize_entity_name(item.name) for item in [*context.medications, *context.supplements]}
+        return bool(active_names.intersection(cls._normalize_entity_name(name) for name in query_plan.entity_names))
 
     @staticmethod
     def _active_intake_query_entities(
@@ -1651,15 +1627,9 @@ class AnswerMedicationQuestionUseCase:
     ) -> MedicationQuestionIntent:
         if KnowledgeSectionType.INTERACTION in query_plan.section_types:
             return MedicationQuestionIntent.INTERACTION
-        if any(
-            entity.kind == InteractionEntityKind.DRUG
-            for entity in query_plan.entities
-        ):
+        if any(entity.kind == InteractionEntityKind.DRUG for entity in query_plan.entities):
             return MedicationQuestionIntent.MEDICATION_GUIDE
-        if any(
-            entity.kind == InteractionEntityKind.SUPPLEMENT
-            for entity in query_plan.entities
-        ):
+        if any(entity.kind == InteractionEntityKind.SUPPLEMENT for entity in query_plan.entities):
             return MedicationQuestionIntent.SUPPLEMENT_GUIDE
         return MedicationQuestionIntent.GENERAL_GUIDANCE
 
@@ -1675,10 +1645,7 @@ class AnswerMedicationQuestionUseCase:
                 question=question,
                 context=context,
             )
-            and (
-                is_interaction_question(question)
-                or cls._ACTIVE_INTAKE_INTERACTION_CUE_PATTERN.search(question)
-            )
+            and (is_interaction_question(question) or cls._ACTIVE_INTAKE_INTERACTION_CUE_PATTERN.search(question))
         )
 
     @classmethod
@@ -1692,13 +1659,10 @@ class AnswerMedicationQuestionUseCase:
 
         if cls._PATIENT_CONTEXT_CUE_PATTERN.search(request.question) is not None:
             return True
-        return (
-            request.care_episode_id is not None
-            and route in {
-                MedicationChatRoute.ACTIVE_INTAKE,
-                MedicationChatRoute.MEDICATION_GUIDE,
-            }
-        )
+        return request.care_episode_id is not None and route in {
+            MedicationChatRoute.ACTIVE_INTAKE,
+            MedicationChatRoute.MEDICATION_GUIDE,
+        }
 
     @staticmethod
     def _answer_context(
@@ -1947,9 +1911,7 @@ class AnswerMedicationQuestionUseCase:
     ) -> bool:
         requested_pair_keys = set(query_plan.interaction_pair_keys)
         return bool(
-            requested_pair_keys.intersection(
-                rule.pair_key for rule in rules
-            )
+            requested_pair_keys.intersection(rule.pair_key for rule in rules)
             or evidence_coverage.verified_interaction_pair_keys
         )
 

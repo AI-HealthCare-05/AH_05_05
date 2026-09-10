@@ -1240,9 +1240,7 @@ async def test_execute_keeps_tylenol_efficacy_and_caution_when_answer_has_canoni
     result = await build_use_case(
         lookup=MedicationGuideLookup(guide=build_guide()),
         answer_generator=LongAnswerGenerator(
-            "효능\n- 통증과 발열을 완화합니다.\n\n"
-            "주의사항\n- 정해진 용법을 지킵니다.\n\n"
-            f"{MEDICAL_DISCLAIMER}"
+            f"효능\n- 통증과 발열을 완화합니다.\n\n주의사항\n- 정해진 용법을 지킵니다.\n\n{MEDICAL_DISCLAIMER}"
         ),
         grounded_claim_validator=RuleBasedGroundedClaimValidator(),
     ).execute(

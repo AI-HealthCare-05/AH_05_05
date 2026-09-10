@@ -415,11 +415,7 @@ class ChatRepository:
         history: list[ChatMessage],
         connection,
     ) -> MedicationChatSessionReference:
-        assistant_message_ids = [
-            message.id
-            for message in history
-            if message.role == ChatMessageRole.ASSISTANT
-        ]
+        assistant_message_ids = [message.id for message in history if message.role == ChatMessageRole.ASSISTANT]
         if not assistant_message_ids:
             return MedicationChatSessionReference()
 
@@ -504,11 +500,9 @@ class ChatRepository:
             return {}
         return {
             guide_id: product_name
-            for guide_id, product_name in await (
-                MedicationProductGuide.filter(id__in=guide_ids)
-                .using_db(connection)
-                .values_list("id", "product_name")
-            )
+            for guide_id, product_name in await MedicationProductGuide.filter(id__in=guide_ids)
+            .using_db(connection)
+            .values_list("id", "product_name")
         }
 
     @staticmethod
@@ -530,11 +524,9 @@ class ChatRepository:
             return {}
         return {
             medication_id: name
-            for medication_id, name in await (
-                Medication.filter(id__in=medication_ids)
-                .using_db(connection)
-                .values_list("id", "name")
-            )
+            for medication_id, name in await Medication.filter(id__in=medication_ids)
+            .using_db(connection)
+            .values_list("id", "name")
         }
 
     @staticmethod

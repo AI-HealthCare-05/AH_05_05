@@ -191,10 +191,7 @@ async def inspect_evaluation_seed_prerequisites(
         review_status=InteractionReviewStatus.APPROVED,
         classification_dataset_version=plan.therapeutic_class_dataset_version,
     ).exists():
-        missing.append(
-            "승인된 와파린 항응고제 분류 없음: "
-            f"{plan.therapeutic_class_dataset_version}"
-        )
+        missing.append(f"승인된 와파린 항응고제 분류 없음: {plan.therapeutic_class_dataset_version}")
 
     approved_rule_pair_keys: list[str] = []
     for rule_spec in plan.required_rules:
@@ -203,15 +200,12 @@ async def inspect_evaluation_seed_prerequisites(
         if left is None or right is None:
             continue
         rules = await InteractionRule.filter(
-            Q(left_entity_id=left.id, right_entity_id=right.id)
-            | Q(left_entity_id=right.id, right_entity_id=left.id),
+            Q(left_entity_id=left.id, right_entity_id=right.id) | Q(left_entity_id=right.id, right_entity_id=left.id),
             review_status=InteractionReviewStatus.APPROVED,
             rule_dataset_version=plan.interaction_rule_dataset_version,
         ).order_by("id")
         rules_with_sources = [
-            rule
-            for rule in rules
-            if await InteractionRuleSource.filter(interaction_rule_id=rule.id).exists()
+            rule for rule in rules if await InteractionRuleSource.filter(interaction_rule_id=rule.id).exists()
         ]
         if not rules_with_sources:
             missing.append(
@@ -342,10 +336,14 @@ async def _create_or_reuse_episode(
     alias: str,
     current_date: date,
 ) -> tuple[CareEpisode, int]:
-    episode = await CareEpisode.filter(
-        user_id=user_id,
-        alias=alias,
-    ).using_db(connection).first()
+    episode = (
+        await CareEpisode.filter(
+            user_id=user_id,
+            alias=alias,
+        )
+        .using_db(connection)
+        .first()
+    )
     if episode is not None:
         return episode, 0
     return (
@@ -369,10 +367,14 @@ async def _create_or_reuse_medication(
     name: str,
     current_date: date,
 ) -> tuple[Medication, int]:
-    medication = await Medication.filter(
-        care_episode_id=care_episode_id,
-        name=name,
-    ).using_db(connection).first()
+    medication = (
+        await Medication.filter(
+            care_episode_id=care_episode_id,
+            name=name,
+        )
+        .using_db(connection)
+        .first()
+    )
     if medication is not None:
         return medication, 0
     return (
@@ -396,10 +398,14 @@ async def _ensure_medication_mapping(
     interaction_entity_id: int,
     matched_source_text: str,
 ) -> int:
-    mapping_exists = await MedicationInteractionEntity.filter(
-        medication_id=medication_id,
-        interaction_entity_id=interaction_entity_id,
-    ).using_db(connection).exists()
+    mapping_exists = (
+        await MedicationInteractionEntity.filter(
+            medication_id=medication_id,
+            interaction_entity_id=interaction_entity_id,
+        )
+        .using_db(connection)
+        .exists()
+    )
     if mapping_exists:
         return 0
     await MedicationInteractionEntity.create(
@@ -419,10 +425,14 @@ async def _create_or_reuse_supplement_registration(
     supplement_nutrient_id: int,
     current_date: date,
 ) -> int:
-    registration = await UserSupplementNutrient.filter(
-        user_id=user_id,
-        supplement_nutrient_id=supplement_nutrient_id,
-    ).using_db(connection).first()
+    registration = (
+        await UserSupplementNutrient.filter(
+            user_id=user_id,
+            supplement_nutrient_id=supplement_nutrient_id,
+        )
+        .using_db(connection)
+        .first()
+    )
     if registration is not None:
         return 0
     await UserSupplementNutrient.create(
@@ -442,9 +452,13 @@ async def _find_registered_supplement(
 ) -> SupplementNutrient | None:
     if supplement_entity is None:
         return None
-    mapping = await SupplementInteractionEntity.filter(
-        interaction_entity_id=supplement_entity.id,
-    ).order_by("supplement_nutrient_id").first()
+    mapping = (
+        await SupplementInteractionEntity.filter(
+            interaction_entity_id=supplement_entity.id,
+        )
+        .order_by("supplement_nutrient_id")
+        .first()
+    )
     if mapping is None:
         return None
     return await SupplementNutrient.get_or_none(id=mapping.supplement_nutrient_id)

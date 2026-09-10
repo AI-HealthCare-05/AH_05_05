@@ -33,8 +33,7 @@ class EvidenceGapGuidanceBuilder:
             "일반 안내\n"
             "- 등록된 약·영양제는 성분·함량·복용 시점에 따라 서로 영향을 줄 수 있습니다.\n"
             "- 확인 전에는 복용 시작·중단·용량 변경 또는 병용 여부를 임의로 결정하지 마세요.",
-            "알 수 없는 범위\n"
-            "- 근거를 찾지 못한 사실만 확인했으며, 해당 조합이 안전하다고 결론낼 수는 없습니다.",
+            "알 수 없는 범위\n- 근거를 찾지 못한 사실만 확인했으며, 해당 조합이 안전하다고 결론낼 수는 없습니다.",
             self._official_route(EvidenceGapSubject.INTERACTION),
             "의료진·약사에게 확인할 내용\n"
             "- 제품명·성분명·함량·복용 시점\n"
@@ -86,9 +85,7 @@ class EvidenceGapGuidanceBuilder:
         title: str,
         names: list[str],
     ) -> str:
-        unique_names = list(
-            dict.fromkeys(name.strip() for name in names if name.strip())
-        )
+        unique_names = list(dict.fromkeys(name.strip() for name in names if name.strip()))
         if not unique_names:
             return ""
         return title + "\n" + "\n".join(f"- {name}" for name in unique_names)

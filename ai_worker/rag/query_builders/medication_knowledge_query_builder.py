@@ -521,11 +521,7 @@ class MedicationKnowledgeQueryBuilder:
     ) -> list[str]:
         """Keep typed product provenance even when an interaction uses its ingredient."""
 
-        candidates = [
-            entity.product_lookup_name
-            for entity in entities
-            if entity.product_lookup_name is not None
-        ]
+        candidates = [entity.product_lookup_name for entity in entities if entity.product_lookup_name is not None]
         candidates.extend(
             entity.canonical_name
             for entity in entities

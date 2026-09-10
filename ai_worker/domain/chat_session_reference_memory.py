@@ -17,6 +17,7 @@ class ChatSessionReferenceResolution:
 
 class ChatSessionReferenceMemory:
     """저장된 구조화 엔터티를 현재 질문의 지시어에 연결한다."""
+
     _SINGLE_DRUG_REFERENCE_PATTERN = re.compile(r"그\s*약")
     _SINGLE_INGREDIENT_REFERENCE_PATTERN = re.compile(r"그\s*(?:성분|영양제)")
     _GROUP_REFERENCE_PATTERN = re.compile(r"그\s*중")

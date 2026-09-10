@@ -77,6 +77,4 @@ def test_expands_missing_section_with_verified_entity_aliases() -> None:
     )
 
     assert retry is not None
-    assert retry.query_plan.expanded_query == (
-        "오메가3 EPA DHA EPA 및 DHA 함유 유지 주의사항 이상반응"
-    )
+    assert retry.query_plan.expanded_query == ("오메가3 EPA DHA EPA 및 DHA 함유 유지 주의사항 이상반응")
