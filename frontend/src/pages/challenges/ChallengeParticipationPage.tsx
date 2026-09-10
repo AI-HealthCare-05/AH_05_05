@@ -1,4 +1,5 @@
-import { ArrowLeft, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { DrawnArrow, DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 
 import { useChallengeMock } from '@/features/challenges';
@@ -49,7 +50,7 @@ export function ChallengeParticipationPage() {
     return (
       <main className="flex flex-col gap-4 px-page-x py-5">
         <header className="flex items-center gap-3">
-          <button type="button" aria-label="뒤로 가기" onClick={() => navigate(base)} className="flex size-11 items-center justify-center rounded-pill"><ArrowLeft aria-hidden className="size-5" /></button>
+          <button type="button" aria-label="뒤로 가기" onClick={() => navigate(base)} className="flex size-11 items-center justify-center rounded-pill"><DrawnArrow direction="left" className="size-5" /></button>
           <h1 className="text-[22px] font-bold">{participation.title}</h1>
         </header>
         <ChallengeChecklistView participation={participation} />
@@ -71,7 +72,7 @@ export function ChallengeParticipationPage() {
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
       <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate(base)} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><ArrowLeft aria-hidden className="size-5" /></button>
+        <button type="button" aria-label="뒤로 가기" onClick={() => navigate(base)} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><DrawnArrow direction="left" className="size-5" /></button>
         <div className="min-w-0">
           <h1 className="break-words text-[22px] font-bold leading-7">{participation.title}</h1>
           <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(participation.startDate)} ~ {dateLabel(participation.endDate)}</p>
@@ -101,7 +102,7 @@ export function ChallengeParticipationPage() {
           {badge ? <ChallengeBadgeArt badge={badge} className="size-16" /> : null}
           <h2 className="text-lg font-bold">{participation.kind === 'medication' ? '이 처방의 기록 목표를 달성했어요' : '챌린지를 완주했어요'}</h2>
           {participation.kind === 'medication' ? <p className="text-caption text-primary">다른 처방의 진행률과 관계없이 배지 1회를 받았어요.</p> : null}
-          {badge ? <Link to={`${base}/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 ›</Link> : null}
+          {badge ? <Link to={`${base}/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></Link> : null}
         </section>
       ) : participation.status === 'missed' ? (
         <section className="rounded-card bg-muted-bg p-5 text-center">

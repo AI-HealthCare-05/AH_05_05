@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Plus, Star } from 'lucide-react';
+import { Plus, Star } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { getMyProfile, type Gender } from '@/entities/account';
 import {
@@ -443,7 +444,7 @@ export function SupplementsPage({
                                 </span>
                               )}
                             </span>
-                            <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+                            <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
                           </button>
                         </li>
                       ))}
@@ -505,7 +506,7 @@ export function SupplementsPage({
                       }
                     >
                       <span>생년월일과 성별을 입력하면 나이·성별에 맞는 기준을 보여드려요</span>
-                      <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+                      <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
                     </button>
                   )}
                 </div>

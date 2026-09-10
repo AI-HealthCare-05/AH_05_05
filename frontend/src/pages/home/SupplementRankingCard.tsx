@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import type { SupplementRanking } from '@/entities/supplement';
 import { Card, StatusBadge } from '@/shared/ui';
 
@@ -38,7 +38,7 @@ export function SupplementRankingCard({
             className="min-h-touch shrink-0 px-1 text-caption font-bold text-primary-strong"
             onClick={onMore}
           >
-            전체 보기 ›
+            전체 보기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" />
           </button>
         )}
       </div>
@@ -64,7 +64,7 @@ export function SupplementRankingCard({
                   {!registrationPending && item.alreadyRegistered && (
                     <StatusBadge type="done" className="px-2.5 py-1 text-xs">등록됨</StatusBadge>
                   )}
-                  <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+                  <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
                 </button>
               ) : (
                 <div className="flex min-h-touch items-center gap-3 px-4 py-2">

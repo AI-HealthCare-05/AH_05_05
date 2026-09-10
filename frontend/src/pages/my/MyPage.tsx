@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -455,7 +455,7 @@ export function MyPage({
                 )}
                 <p className="text-sm text-muted-foreground">기본정보</p>
               </div>
-              <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+              <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
             </button>
             {profileLoadError && (
               <button
@@ -599,8 +599,8 @@ export function MyPage({
                           ].join(' · ')}
                         </span>
                       </span>
-                      <ChevronRight
-                        aria-hidden
+                      <DrawnChevron
+                        direction="right"
                         className="size-5 shrink-0 text-disabled-foreground"
                       />
                     </button>
@@ -694,7 +694,7 @@ function ManagementRow({
     >
       <span className="flex-1 text-[15px] font-bold text-foreground">{label}</span>
       <span className="text-sm text-muted-foreground">{value}</span>
-      <ChevronRight aria-hidden className="size-5 text-disabled-foreground" />
+      <DrawnChevron direction="right" className="size-5 text-disabled-foreground" />
     </button>
   );
 }

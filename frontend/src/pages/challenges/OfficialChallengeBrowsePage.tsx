@@ -1,4 +1,4 @@
-import { ArrowRight } from 'lucide-react';
+import { DrawnArrow, DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 
@@ -57,7 +57,7 @@ export function OfficialChallengeBrowsePage() {
 
       <Link to="/challenges/tailored" className="flex min-h-12 items-center justify-between rounded-button border border-primary bg-card px-4 text-sm font-bold text-primary">
         <span>내 기록으로 맞춤 챌린지 보기</span>
-        <ArrowRight aria-hidden className="size-5" />
+        <DrawnArrow direction="right" className="size-5" />
       </Link>
 
       <section aria-labelledby="official-challenges-title" className="flex flex-col gap-3">
@@ -88,7 +88,7 @@ export function OfficialChallengeBrowsePage() {
             <span className="text-sm text-primary">{item.phrase}</span>
             <span className="text-caption text-muted-foreground">{officialFrequencyLabel(item)}</span>
             <span className="text-caption text-muted-foreground">공식 · 모집 {shortDate(item.recruit_start_at)} ~ {shortDate(item.recruit_end_at)}</span>
-            <span className="text-caption font-bold text-primary">{item.can_join && item.participation_id ? '다시 참여하기 ›' : item.participation_id ? '참여 기록 보기 ›' : '자세히 보기 ›'}</span>
+            <span className="text-caption font-bold text-primary">{item.can_join && item.participation_id ? '다시 참여하기' : item.participation_id ? '참여 기록 보기' : '자세히 보기'} <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
           </button>
         ))}
       </section>

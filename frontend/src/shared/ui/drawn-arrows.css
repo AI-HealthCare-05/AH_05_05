@@ -1,0 +1,26 @@
+.rx-drawn-icon path {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 0;
+  animation: rx-arrow-draw 240ms ease-out both;
+}
+
+.rx-drawn-chevron > g {
+  transform-box: view-box;
+  transform-origin: center;
+  transform: rotate(var(--drawn-chevron-turn, 0deg));
+  transition: transform 180ms ease-in-out;
+}
+
+[data-slot='select-trigger'][data-state='open'] .rx-drawn-chevron > g {
+  transform: rotate(180deg);
+}
+
+@keyframes rx-arrow-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rx-drawn-icon path { animation: none; stroke-dashoffset: 0; }
+  .rx-drawn-chevron > g { transition: none; }
+}

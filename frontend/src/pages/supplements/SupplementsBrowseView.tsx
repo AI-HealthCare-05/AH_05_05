@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import {
   getSupplementRanking,
   searchSupplementProducts,
@@ -395,7 +396,7 @@ function SearchResultItem({
             등록됨
           </StatusBadge>
         )}
-        <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+        <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
       </button>
     </li>
   );

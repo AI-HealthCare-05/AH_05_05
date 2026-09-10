@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router';
-import { Card } from '@/shared/ui';
+import { Card, DrawnChevron } from '@/shared/ui';
 
 function useChallengeBase() {
   const { pathname } = useLocation();
@@ -60,7 +60,7 @@ export function ChallengeTailoredPage({ empty = false }: ChallengeTailoredPagePr
                 <p className="text-sm leading-6 text-muted-foreground">
                   복용 중인 약, 영양제 또는 예정된 진료를 등록하면 관련 챌린지를 볼 수 있어요.
                 </p>
-                <span className="text-sm font-bold text-primary">기록 등록하기 ›</span>
+                <span className="text-sm font-bold text-primary">기록 등록하기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
               </Card>
             </Link>
             <Link to={`${base}/browse`} className="block">
@@ -70,7 +70,7 @@ export function ChallengeTailoredPage({ empty = false }: ChallengeTailoredPagePr
                 <p className="text-sm leading-6 text-muted-foreground">
                   공식 챌린지에 참여하거나 나만의 작은 목표를 만들어보세요.
                 </p>
-                <span className="text-sm font-bold text-primary">둘러보기 ›</span>
+                <span className="text-sm font-bold text-primary">둘러보기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
               </Card>
             </Link>
           </>
@@ -81,7 +81,7 @@ export function ChallengeTailoredPage({ empty = false }: ChallengeTailoredPagePr
                 <h2 className="text-base font-bold text-foreground">{option.title}</h2>
                 <p className="text-xs text-primary">{option.meta}</p>
                 <p className="text-sm leading-6 text-muted-foreground">{option.body}</p>
-                <span className="text-right text-sm font-bold text-primary">자세히 보기 ›</span>
+                <span className="text-right text-sm font-bold text-primary">자세히 보기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
               </Card>
             </Link>
           ))
@@ -92,7 +92,7 @@ export function ChallengeTailoredPage({ empty = false }: ChallengeTailoredPagePr
             <h2 className="text-base font-bold text-foreground">나만의 작은 루틴</h2>
             <p className="text-xs text-primary">누구나 시작할 수 있어요</p>
             <p className="text-sm leading-6 text-muted-foreground">걷기, 물 마시기 등 목표를 정해요.</p>
-            <span className="text-sm font-bold text-primary">챌린지 만들기 ›</span>
+            <span className="text-sm font-bold text-primary">챌린지 만들기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
           </Card>
         </Link>}
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import type { Supplement, UpdateSupplementPayload } from '@/entities/supplement';
 import { mealSlotLabel, type MealSlot } from '@/shared/model/mealSlot';
 import {
@@ -226,7 +226,7 @@ export function EditSupplementSheet({
                     onClick={() => onProductInfo(supplement.productId!)}
                   >
                     <span>제품 정보 보기</span>
-                    <ChevronRight aria-hidden className="size-5 text-muted-foreground" />
+                    <DrawnChevron direction="right" className="size-5 text-muted-foreground" />
                   </button>
                 )}
               </section>

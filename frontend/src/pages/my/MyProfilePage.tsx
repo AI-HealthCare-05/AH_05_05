@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -193,7 +193,7 @@ export function MyProfilePage({
                 onClick={() => setPasswordSheetOpen(true)}
               >
                 <span>비밀번호 변경</span>
-                <ChevronRight aria-hidden className="size-5 text-muted-foreground" />
+                <DrawnChevron direction="right" className="size-5 text-muted-foreground" />
               </button>
               <Button
                 type="submit"

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { Link, useLocation } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { getChallengeParticipations, type ChallengeParticipation } from '@/entities/challenge';
@@ -19,7 +20,7 @@ function ChallengeRowTitle({ title, official }: { title: string; official: boole
       <span className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-micro text-primary">
         {official ? '공식' : '맞춤'}
       </span>
-      <span aria-hidden className="ml-auto shrink-0 text-base leading-none text-tertiary-foreground">›</span>
+      <DrawnChevron direction="right" className="ml-auto size-4 shrink-0 text-tertiary-foreground" />
     </span>
   );
 }
@@ -72,7 +73,7 @@ function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
               to={`${base}/tailored`}
               className="flex min-h-touch items-center justify-center rounded-input bg-primary-bg text-sm font-bold text-primary"
             >
-              맞춤 챌린지 보기 ›
+              맞춤 챌린지 보기 <DrawnChevron direction="right" className="ml-1 size-3.5" />
             </Link>
           </>
         ) : (
@@ -149,7 +150,7 @@ function OfficialHomeChallengeSummary() {
           <div role="alert" className="flex flex-col gap-2"><p className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" className="h-11 min-h-11" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button></div>
         ) : null}
         {participations !== null && !error && active.length === 0 ? (
-          <><p className="text-sm font-bold text-foreground">참여 중인 챌린지가 없어요</p><Link to="/challenges/browse" className="flex min-h-touch items-center justify-center rounded-input bg-primary-bg text-sm font-bold text-primary">공식 챌린지 둘러보기 ›</Link></>
+          <><p className="text-sm font-bold text-foreground">참여 중인 챌린지가 없어요</p><Link to="/challenges/browse" className="flex min-h-touch items-center justify-center rounded-input bg-primary-bg text-sm font-bold text-primary">공식 챌린지 둘러보기 <DrawnChevron direction="right" className="ml-1 size-3.5" /></Link></>
         ) : null}
         {active.map(item => {
           const rate = progressLabel(item.progress_rate);

@@ -1,4 +1,5 @@
-import { ArrowLeft, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { DrawnArrow, DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
@@ -364,7 +365,7 @@ export function OfficialChallengeParticipationPage() {
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
       <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges')} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><ArrowLeft aria-hidden className="size-5" /></button>
+        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges')} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><DrawnArrow direction="left" className="size-5" /></button>
         <div className="min-w-0">
           <h1 className="break-words text-[22px] font-bold leading-7">{participation.challenge_name}</h1>
           <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(startDate)} ~ {dateLabel(endDate)}</p>
@@ -397,7 +398,7 @@ export function OfficialChallengeParticipationPage() {
         <section className="flex flex-col items-center gap-2 rounded-card bg-primary-bg p-5 text-center" aria-label="챌린지 완료 결과">
           {badge ? <img src={apiAssetUrl(badge.image_path)} alt={badge.name} data-award-contour={waterBadgeContour ? 'water' : undefined} data-newly-awarded={newAwardId === badge.id ? 'true' : undefined} data-award-art-ready={newAwardId === badge.id && awardArtReady ? 'true' : undefined} onLoad={(event) => { if (newAwardId !== badge.id) return; const image = event.currentTarget; void image.decode().catch(() => undefined).then(() => { if (image.isConnected && image.complete && image.naturalWidth > 0) setAwardArtReady(true); }); }} className={`size-16 object-contain ${waterBadgeContour ? 'rx-badge-contour-water' : 'rounded-pill'} ${data.badges && !badgeEarned ? 'grayscale opacity-60' : ''} ${newAwardId === badge.id && awardArtReady ? 'rx-badge-award' : ''}`} /> : null}
           <h2 className="text-lg font-bold">챌린지를 완주했어요</h2>
-          {badge ? <Link to={`/challenges/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 ›</Link> : null}
+          {badge ? <Link to={`/challenges/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></Link> : null}
         </section>
       ) : null}
 

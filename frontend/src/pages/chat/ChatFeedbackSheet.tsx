@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeftIcon, XIcon } from 'lucide-react';
+import { XIcon } from 'lucide-react';
+import { DrawnArrow } from '@/shared/ui/DrawnArrow';
 import { listCommonCodes, type CommonCodeItem } from '@/entities/common-code';
 import {
   saveChatFeedback,
@@ -208,7 +209,7 @@ export function ChatFeedbackSheet({
               onClick={backToChoice}
               className="flex size-touch shrink-0 items-center justify-center rounded-input text-foreground hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <ArrowLeftIcon aria-hidden className="size-6" />
+              <DrawnArrow direction="left" className="size-6" />
             </button>
           )}
           <DialogTitle className={cn('flex-1 text-xl', step === 'end' && 'pl-2')}>
