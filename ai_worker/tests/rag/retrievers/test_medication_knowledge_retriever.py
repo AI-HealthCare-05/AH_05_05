@@ -296,6 +296,56 @@ async def test_hybrid_uses_dense_confidence_with_existing_pair_rescue() -> None:
     assert result.diagnostics.candidate_diagnostics[0].dense_similarity_score == 0.46
 
 
+async def test_search_accepts_low_score_when_declared_interaction_pair_key_matches() -> None:
+    question = "아연 보충제와 구리를 함께 섭취할 때 주의할 점은 무엇인가요?"
+    query_plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="아연",
+                canonical_name="아연",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+            MedicationQueryEntity(
+                surface="구리",
+                canonical_name="구리",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            ),
+        ],
+    ).build(question)
+    execution_plan = build_execution_plan(question).model_copy(
+        update={"query_plan": query_plan},
+    )
+    candidate = build_chunk(
+        score=0.18,
+        ingredient_names=["아연", "구리"],
+        section_type=KnowledgeSectionType.INTERACTION,
+        content=(
+            "아연 보충은 구리에 의존하는 철 대사에 영향을 줄 수 있으므로 아연과 구리의 상호작용을 함께 고려해야 합니다."
+        ),
+        title="아연과 구리 상호작용 결론",
+        document_type=KnowledgeDocumentType.RESEARCH_ARTICLE,
+    )
+    candidate.metadata.interaction_pair_keys = execution_plan.interaction_pair_keys
+    retriever = MedicationKnowledgeRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        vector_store=FakeKnowledgeStore(responses=[[candidate]]),
+        dataset_version="knowledge-full-v14",
+        min_similarity_score=0.65,
+    )
+
+    result = await retriever.search_with_diagnostics(
+        execution_plan=execution_plan,
+    )
+
+    assert result.chunks == [candidate]
+    assert result.diagnostics.accepted_count == 1
+    assert result.diagnostics.rejected_below_score_count == 0
+
+
 async def test_search_retries_without_entity_filters_when_filtered_search_is_empty() -> None:
     store = FakeKnowledgeStore(responses=[[], [build_chunk()]])
     retriever = MedicationKnowledgeRetriever(
