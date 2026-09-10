@@ -100,6 +100,72 @@ def test_ocr_selection_manifest_classifies_every_ocr_required_document() -> None
     assert selected_ids == {"kpicia_adverse_case_report-408e6bddec7da059"}
 
 
+def test_official_omega3_code_has_searchable_supplement_aliases() -> None:
+    """공식 EPA·DHA 공전은 일반 사용자의 오메가3 표현으로 검색돼야 한다."""
+    repo_root = Path(__file__).parents[3]
+    records = [
+        json.loads(line)
+        for line in (repo_root / "data/knowledge/manifests/documents.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    omega3 = next(record for record in records if record["document_id"] == "mfds_supplement_code-40a0dea0c535ba59")
+
+    assert omega3["ingredient_names"] == ["오메가3", "EPA", "DHA"]
+    assert omega3["entity_catalog_entries"] == [
+        {
+            "canonical_name": "오메가3",
+            "aliases": ["EPA", "DHA", "EPA 및 DHA 함유 유지"],
+            "entity_type": "INGREDIENT_NAME",
+            "kind": "SUPPLEMENT",
+        }
+    ]
+
+
+def test_restricted_micronutrient_reviews_are_registered_with_safe_metadata() -> None:
+    repo_root = Path(__file__).parents[3]
+    sources = yaml.safe_load(
+        (repo_root / "data/knowledge/manifests/sources.yaml").read_text(encoding="utf-8"),
+    )["sources"]
+    source = next(item for item in sources if item["source_id"] == "research_micronutrient_interactions")
+    records = [
+        json.loads(line)
+        for line in (repo_root / "data/knowledge/manifests/documents.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    interaction_review = next(
+        record for record in records if record["document_id"] == "research_micronutrient_interactions-e3b164ce9cc98cc6"
+    )
+    pilot_manifest = KnowledgePilotManifest.model_validate_json(
+        (repo_root / "data/knowledge/manifests/additional_micronutrient_interactions_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    sandstrom_pilot = next(
+        pilot
+        for pilot in pilot_manifest.pilots
+        if pilot.document_id == "research_micronutrient_interactions-e3b164ce9cc98cc6"
+    )
+    bond_pilot = next(
+        pilot
+        for pilot in pilot_manifest.pilots
+        if pilot.document_id == "research_micronutrient_interactions-bc3fd489c828415e"
+    )
+
+    assert source["access_scope"] == "DEMO_RESTRICTED"
+    assert source["target"] == "QDRANT"
+    assert interaction_review["ingredient_names"] == ["철분", "아연", "구리", "칼슘", "비타민 C"]
+    assert interaction_review["evidence_level"] == "REVIEW_ARTICLE"
+    assert interaction_review["source_id"] == source["source_id"]
+    assert interaction_review["access_scope"] == source["access_scope"]
+    assert interaction_review["repo_path"].startswith(
+        "data/knowledge/raw/demo_restricted/research/micronutrient_interactions/"
+    )
+    assert interaction_review["sha256"] == "e3b164ce9cc98cc68afe8194fa30e1f757d26aa40b0a8fad97ee387d5d8b9580"
+    assert sandstrom_pilot.manual_review_status == KnowledgeManualReviewStatus.APPROVED
+    assert bond_pilot.manual_review_status == KnowledgeManualReviewStatus.PENDING
+
+
 def test_builder_selects_approved_qdrant_text_documents(tmp_path: Path) -> None:
     documents_path = tmp_path / "documents.jsonl"
     sources_path = tmp_path / "sources.yaml"
@@ -755,6 +821,14 @@ def test_builder_preserves_reviewed_document_metadata(tmp_path: Path) -> None:
                 "publication_year": 2024,
                 "drug_names": ["warfarin"],
                 "ingredient_names": ["vitamin K"],
+                "entity_catalog_entries": [
+                    {
+                        "canonical_name": "vitamin K",
+                        "aliases": ["비타민 K", "비타민케이"],
+                        "entity_type": "INGREDIENT_NAME",
+                        "kind": "SUPPLEMENT",
+                    }
+                ],
                 "evidence_level": "SYSTEMATIC_REVIEW",
                 "study_population": "HUMAN",
             }
@@ -799,6 +873,8 @@ sources:
     assert entry.publication_year == 2024
     assert entry.drug_names == ["warfarin"]
     assert entry.ingredient_names == ["vitamin K"]
+    assert entry.entity_catalog_entries[0].canonical_name == "vitamin K"
+    assert entry.entity_catalog_entries[0].aliases == ["비타민 K", "비타민케이"]
     assert entry.evidence_level.value == "SYSTEMATIC_REVIEW"
     assert entry.study_population.value == "HUMAN"
 

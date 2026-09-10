@@ -47,3 +47,26 @@ def test_build_splitter_records_requested_tokenizer(
     )
 
     assert splitter.tokenizer_encoding == "o200k_base"
+
+
+def test_build_splitter_forwards_interaction_annotations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSplitter:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(module, "KnowledgeSplitter", FakeSplitter)
+    annotations = object()
+
+    module.build_splitter(
+        tokenizer_encoding="o200k_base",
+        interaction_annotations=annotations,
+    )
+
+    assert captured == {
+        "tokenizer_encoding": "o200k_base",
+        "interaction_annotations": annotations,
+    }

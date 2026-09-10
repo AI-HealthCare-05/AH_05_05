@@ -76,7 +76,7 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert outcome.result.answer.startswith("정해진 용법")
     assert outcome.result.sources == build_result().sources
     assert outcome.result.model_name == "gpt-4o-mini"
-    assert outcome.result.prompt_version == "medication-chat-prompt-v3"
+    assert outcome.result.prompt_version == "medication-chat-prompt-v5"
     assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
     assert outcome.observation.fallback_used is False
     assert outcome.observation.fallback_reason is None
@@ -103,6 +103,50 @@ async def test_generator_skips_llm_when_no_grounded_sources() -> None:
     assert outcome.observation.generated_answer_hash is None
 
 
+async def test_generator_skips_llm_when_only_registered_intake_sources_exist() -> None:
+    client = FakeAnswerClient(error=AssertionError("호출하면 안 됩니다."))
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.INTERACTION,
+            "answer": (
+                "복약정보\n- 와파린\n\n"
+                "영양제 정보\n- 비타민 K · 1정\n\n"
+                "확인된 상호작용\n"
+                "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다."
+            ),
+            "sources": [
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PATIENT_MEDICATION,
+                    title="사용자 확정 복약정보 · 와파린",
+                    medication_id=1,
+                    care_episode_id=1,
+                ),
+                MedicationChatSource(
+                    kind=MedicationChatSourceKind.PATIENT_SUPPLEMENT,
+                    title="사용자 복용 영양제 · 비타민 K",
+                    user_supplement_id=1,
+                ),
+            ],
+        }
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.result == initial
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.SKIPPED
+    assert outcome.observation.fallback_reason is not None
+    assert outcome.observation.fallback_reason.value == "PATIENT_CONTEXT_ONLY"
+    assert outcome.observation.generated_answer_hash is None
+
+
 async def test_generator_wraps_client_failure() -> None:
     generator = OpenAIMedicationAnswerGenerator(
         model="gpt-4o-mini",
@@ -118,14 +162,10 @@ async def test_generator_wraps_client_failure() -> None:
     assert exc_info.value.reason_code == MedicationAnswerFallbackReason.CLIENT_ERROR
 
 
-async def test_generator_removes_markdown_heading_and_bold_markers() -> None:
+async def test_generator_keeps_only_limited_markdown_section_format() -> None:
     grounded_result = build_result().model_copy(
         update={
-            "answer": (
-                "일반 제품 안내\n"
-                "- 사용법: 1일 1~2캡슐을 나누어 복용합니다.\n\n"
-                "이 안내는 의료진의 진료를 대체하지 않습니다."
-            )
+            "answer": ("일반 제품 안내\n- 안내된 사용법을 따릅니다.\n\n이 안내는 의료진의 진료를 대체하지 않습니다.")
         }
     )
     generator = OpenAIMedicationAnswerGenerator(
@@ -133,8 +173,9 @@ async def test_generator_removes_markdown_heading_and_bold_markers() -> None:
         client=FakeAnswerClient(
             response={
                 "answer": (
-                    "# 마그오캡슐500mg 안내\n"
-                    "**사용법**: 1일 1~2캡슐을 나누어 복용합니다.\n\n"
+                    "# 제품 안내\n"
+                    "✅ **사용법**\n"
+                    "* 안내된 사용법을 따릅니다.\n\n"
                     "이 안내는 의료진의 진료를 대체하지 않습니다."
                 )
             }
@@ -148,8 +189,48 @@ async def test_generator_removes_markdown_heading_and_bold_markers() -> None:
     )
 
     assert "#" not in outcome.result.answer
-    assert "**" not in outcome.result.answer
-    assert "사용법: 1일 1~2캡슐" in outcome.result.answer
+    assert "✅ **사용법**" in outcome.result.answer
+    assert "* 안내된 사용법을 따릅니다." in outcome.result.answer
+
+
+async def test_generator_formats_interaction_prose_as_dash_bullet_list() -> None:
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.INTERACTION,
+            "answer": "철분과 아연의 상호작용 연구 근거입니다.",
+            "evidence_coverage": MedicationEvidenceCoverage(
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                covered_section_types=[KnowledgeSectionType.INTERACTION],
+            ),
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=FakeAnswerClient(
+            response={
+                "answer": (
+                    "✅ **상호작용**\n"
+                    "수용액 형태에서는 철분이 아연 흡수를 낮출 수 있습니다. "
+                    "일반 식사나 유아용 조제분유에서는 같은 영향이 확인되지 않았습니다. "
+                    "아연 요구량이 높은 임신·수유부, 청소년, 유아는 더 주의가 필요합니다."
+                ),
+                "section_types": ["INTERACTION"],
+            }
+        ),
+    )
+
+    outcome = await generator.generate(
+        request=build_request(),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.result.answer == (
+        "✅ **상호작용**\n\n"
+        "- 수용액 형태에서는 철분이 아연 흡수를 낮출 수 있습니다.\n"
+        "- 일반 식사나 유아용 조제분유에서는 같은 영향이 확인되지 않았습니다.\n"
+        "- 아연 요구량이 높은 임신·수유부, 청소년, 유아는 더 주의가 필요합니다."
+    )
 
 
 async def test_generator_falls_back_to_safe_draft_when_rewrite_adds_claims() -> None:

@@ -27,7 +27,9 @@ VERSION_40_OCR = "40_20260909143654_allow_ocr_recapture_error_code.py"
 VERSION_41_TYPES = "41_20260909000001_add_custom_challenge_and_badge_types.py"
 VERSION_41 = "41_20260909120000_challenge_rejoin_attempts.py"
 VERSION_42 = "42_20260909180000_merge_challenge_schema_heads.py"
+VERSION_42_THERAPEUTIC = "42_20260909220000_add_therapeutic_classifications.py"
 VERSION_43 = "43_20260909193000_upsert_reference_seed_v1.py"
+VERSION_44 = "44_20260910093000_merge_therapeutic_classification_heads.py"
 CUSTOM_TABLES = ("custom_challenge_participations", "custom_challenge_targets", "custom_challenge_occurrences")
 
 
@@ -158,7 +160,7 @@ async def _run_chain(start_version: int) -> None:
         previous_40 = import_module("app.core.db.migrations.models." + VERSION_40_CUSTOM[:-3])
         current_40_ocr = import_module("app.core.db.migrations.models." + VERSION_40_OCR[:-3])
         current_42 = import_module("app.core.db.migrations.models." + VERSION_42[:-3])
-        current_43 = import_module("app.core.db.migrations.models." + VERSION_43[:-3])
+        current_44 = import_module("app.core.db.migrations.models." + VERSION_44[:-3])
         # Establish a fresh pre-custom schema from the registered parent models, then exercise actual migrations.
         # All tables are still empty here; this disposable database is the only deletion target.
         await db.execute_script(await previous_40.downgrade(db))
@@ -197,7 +199,9 @@ async def _run_chain(start_version: int) -> None:
             VERSION_41_TYPES,
             VERSION_41,
             VERSION_42,
+            VERSION_42_THERAPEUTIC,
             VERSION_43,
+            VERSION_44,
         ]
         assert await command.heads() == expected
         assert await command.upgrade(fake=False) == expected
@@ -206,7 +210,7 @@ async def _run_chain(start_version: int) -> None:
         after = await Aerich.all().order_by("id").values()
         assert after[: len(history_before)] == history_before
         assert [row["version"] for row in after[len(history_before) :]] == expected
-        final_state = decompress_dict(current_43.MODELS_STATE)
+        final_state = decompress_dict(current_44.MODELS_STATE)
         assert after[-1]["content"] == final_state
         runtime_state = decompress_dict(compress_dict(get_models_describe("models")))
         differing_models = {
@@ -269,15 +273,18 @@ async def _run_chain(start_version: int) -> None:
         assert new.id != old.id and new.completed_count == 0 and new.verified_dates == []
         assert await ChallengeVerification.filter(id=verification.id, user_challenge_id=old.id).exists()
         assert (await service.get(user, old.id)).status == "CANCELLED"
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_44]
         assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_43]
+        assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_42_THERAPEUTIC]
         assert await command.downgrade(version=-1, delete=False, fake=False) == [VERSION_42]
         with pytest.raises(RuntimeError, match="duplicate"):
             await command.downgrade(version=-1, delete=False, fake=False)
-        assert await command.heads() == [VERSION_42, VERSION_43]
-        assert await command.upgrade(fake=False) == [VERSION_42, VERSION_43]
+        expected_restore = [VERSION_42, VERSION_42_THERAPEUTIC, VERSION_43, VERSION_44]
+        assert await command.heads() == expected_restore
+        assert await command.upgrade(fake=False) == expected_restore
         restored = await Aerich.all().order_by("id").values()
-        assert restored[:-2] == after[:-2]
-        assert [row["version"] for row in restored[-2:]] == [VERSION_42, VERSION_43]
+        assert restored[:-4] == after[:-4]
+        assert [row["version"] for row in restored[-4:]] == expected_restore
         assert restored[-1]["content"] == final_state
         assert await UserChallenge.filter(user_id=user.id, challenge_id=challenge.id).count() == 2
         print(

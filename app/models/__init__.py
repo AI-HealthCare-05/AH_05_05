@@ -19,12 +19,15 @@ from .interactions import (
     InteractionEntity,
     InteractionEntityAlias,
     InteractionEntityIdentifier,
+    InteractionEntityTherapeuticClass,
     InteractionRule,
     InteractionRuleEvidenceChunk,
     InteractionRuleSource,
     MedicationInteractionEntity,
     MedicationInteractionMapping,
     SupplementInteractionEntity,
+    TherapeuticClass,
+    TherapeuticClassAlias,
 )
 from .medications import Medication, MedicationDose, MedicationNote, MedicationSlot
 from .ocr import OcrJob, OcrJobStatus

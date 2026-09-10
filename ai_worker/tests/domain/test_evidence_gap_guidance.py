@@ -15,7 +15,8 @@ def test_interaction_gap_guidance_offers_official_routes_without_claiming_safety
     assert "알 수 없는 범위" in answer
     assert "공식 확인 경로" in answer
     assert "의료진·약사에게 확인할 내용" in answer
-    assert "안내 한계" in answer
+    assert "안내 한계" not in answer
+    assert "의료 전문가의 진단이나 처방을 대신하지 않습니다" not in answer
     assert "의약품안전나라" in answer
     assert "식품안전나라" in answer
     assert "아스피린 ↔ 오메가3" in answer

@@ -12,6 +12,9 @@ from ai_worker.rag.loaders.herb_drug_review_layout_parser import (
 from ai_worker.rag.loaders.levothyroxine_calcium_review_layout_parser import (
     LevothyroxineCalciumReviewLayoutParser,
 )
+from ai_worker.rag.loaders.micronutrient_interactions_layout_parser import (
+    MicronutrientInteractionsLayoutParser,
+)
 from ai_worker.rag.loaders.pdf_layout_extractor import PdfLayoutExtraction
 from ai_worker.rag.loaders.primary_care_herb_drug_review_layout_parser import (
     PrimaryCareHerbDrugReviewLayoutParser,
@@ -45,6 +48,7 @@ class VerifiedKnowledgeLayoutParser:
             DrugVitaminDReviewLayoutParser(),
             StatinsVitaminDReviewLayoutParser(),
             LevothyroxineCalciumReviewLayoutParser(),
+            MicronutrientInteractionsLayoutParser(),
             PrimaryCareHerbDrugReviewLayoutParser(),
             StJohnsWortReviewLayoutParser(),
             HerbDrugReviewLayoutParser(),

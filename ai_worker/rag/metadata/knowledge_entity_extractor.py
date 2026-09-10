@@ -9,9 +9,6 @@ from ai_worker.rag.metadata.entity_name_policy import (
 from ai_worker.rag.metadata.interaction_annotation_registry import (
     KnowledgeInteractionAnnotationRegistry,
 )
-from ai_worker.rag.metadata.supplement_interaction_registry import (
-    find_supplement_interaction_pair,
-)
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
     KnowledgeEntityCatalogEntry,
@@ -91,11 +88,6 @@ class KnowledgeEntityExtractor:
         KnowledgeDocumentType.SUPPLEMENT_CODE,
     }
 
-    _PAIR_INFERENCE_DOCUMENT_TYPES = {
-        KnowledgeDocumentType.RESEARCH_ARTICLE,
-        KnowledgeDocumentType.SUPPLEMENT_INTERACTION_MONOGRAPH,
-    }
-
     def __init__(
         self,
         interaction_annotations: KnowledgeInteractionAnnotationRegistry | None = None,
@@ -135,14 +127,6 @@ class KnowledgeEntityExtractor:
             return ExtractedKnowledgeEntities(
                 drug_names=[normalized],
             )
-        if document_type == KnowledgeDocumentType.RESEARCH_ARTICLE:
-            pair = find_supplement_interaction_pair(normalized)
-            if pair is not None:
-                return ExtractedKnowledgeEntities(
-                    ingredient_names=list(pair.canonical_names),
-                    interaction_type="SUPPLEMENT_SUPPLEMENT",
-                    interaction_pair_keys=[pair.pair_key],
-                )
         return ExtractedKnowledgeEntities()
 
     def extract_from_chunk(
@@ -157,11 +141,6 @@ class KnowledgeEntityExtractor:
         title_entities = self.extract_from_title(
             document_type=document_type,
             title=title,
-        )
-        pair = (
-            find_supplement_interaction_pair(f"{title}\n{content}")
-            if document_type in self._PAIR_INFERENCE_DOCUMENT_TYPES
-            else None
         )
         evidence_level, study_population = self._classify_evidence(
             document_type=document_type,
@@ -209,25 +188,17 @@ class KnowledgeEntityExtractor:
                     "study_population": study_population,
                 }
             )
-        if pair is None:
-            return title_entities.model_copy(
-                update={
-                    "drug_names": self._unique([*title_entities.drug_names, *regulatory_drug_names]),
-                    "ingredient_names": self._unique(
-                        [
-                            *title_entities.ingredient_names,
-                            *table_ingredient_names,
-                        ]
-                    ),
-                    "evidence_level": evidence_level,
-                    "study_population": study_population,
-                }
-            )
         return title_entities.model_copy(
             update={
-                "ingredient_names": self._unique([*pair.canonical_names, *table_ingredient_names]),
-                "interaction_type": "SUPPLEMENT_SUPPLEMENT",
-                "interaction_pair_keys": [pair.pair_key],
+                "drug_names": self._unique(
+                    [*title_entities.drug_names, *regulatory_drug_names],
+                ),
+                "ingredient_names": self._unique(
+                    [
+                        *title_entities.ingredient_names,
+                        *table_ingredient_names,
+                    ],
+                ),
                 "evidence_level": evidence_level,
                 "study_population": study_population,
             }

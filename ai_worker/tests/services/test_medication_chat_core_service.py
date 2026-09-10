@@ -9,6 +9,9 @@ from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
 from ai_worker.repositories.supplement_ingredient_catalog_repository import (
     CompositeSupplementIngredientCatalog,
 )
+from ai_worker.repositories.therapeutic_class_repository import (
+    DbTherapeuticClassRepository,
+)
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchMode,
@@ -122,6 +125,21 @@ def test_builder_shares_dynamic_supplement_catalog_with_resolver_and_use_case() 
     catalog = use_case._supplement_ingredient_catalog
     assert isinstance(catalog, CompositeSupplementIngredientCatalog)
     assert use_case._question_resolver._catalog._supplement_catalog is catalog
+
+
+def test_builder_wires_versioned_therapeutic_class_repository() -> None:
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            THERAPEUTIC_CLASS_DATASET_VERSION="therapeutic-class-test-v1",
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+    )
+
+    repository = service._use_case._therapeutic_class_repository
+    assert isinstance(repository, DbTherapeuticClassRepository)
+    assert repository._active_dataset_version == "therapeutic-class-test-v1"
 
 
 def test_builder_uses_hybrid_store_only_for_experimental_search_modes() -> None:

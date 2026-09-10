@@ -34,7 +34,7 @@ class CoverageGapQueryExpander:
 
         terms = self._unique_terms(
             [
-                *query_plan.entity_names,
+                *self._searchable_entity_names(query_plan),
                 *(term for section in supported_missing for term in self._SECTION_TERMS[section]),
             ]
         )
@@ -47,6 +47,19 @@ class CoverageGapQueryExpander:
             ),
             missing_section_types=supported_missing,
         )
+
+    @staticmethod
+    def _searchable_entity_names(
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> list[str]:
+        """정식명은 유지하고 검수된 별칭만 재검색 질의에 보탠다."""
+        if not query_plan.entities:
+            return query_plan.entity_names
+        return [
+            expression
+            for entity in query_plan.entities
+            for expression in [entity.canonical_name, *entity.search_aliases]
+        ]
 
     @staticmethod
     def _unique_terms(values: list[str]) -> list[str]:
