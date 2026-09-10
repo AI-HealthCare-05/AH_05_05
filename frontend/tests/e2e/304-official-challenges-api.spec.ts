@@ -378,7 +378,7 @@ test('real browse renders compact recruitment dates from the catalog and never s
 
   await page.goto('/challenges/browse');
 
-  await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toHaveValue('all');
+  await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toContainText('전체');
   for (const name of ['매일 30분 걷기', '건강 기록 제출하기', '가볍게 스트레칭']) {
     await expect(page.getByRole('button', { name: `${name} 자세히 보기` })).toContainText('모집기간 : 2026년 9월 1일 ~ 2026년 9월 30일');
   }

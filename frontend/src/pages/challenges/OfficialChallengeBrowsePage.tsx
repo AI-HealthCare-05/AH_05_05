@@ -7,6 +7,7 @@ import { getChallengeCatalog, getChallengeParticipations } from '@/entities/chal
 import { getCustomChallengeRecommendations } from '@/entities/custom-challenge';
 import { Button } from '@/shared/ui/Button';
 import { LoadingState } from '@/shared/ui/LoadingState';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { ChallengePageHeading } from './ChallengePageHeading';
 import { koreanChallengeDate } from './officialChallengeDates';
 
@@ -92,16 +93,19 @@ export function OfficialChallengeBrowsePage() {
           <Link aria-current="page" to="/challenges/browse" className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">둘러보기</Link>
         </nav>
 
-        <select
-          aria-label="챌린지 종류 필터"
-          value={filter}
-          onChange={event => setFilter(event.target.value)}
-          className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="all">전체</option>
-          <option value="official">공식</option>
-          <option value="custom">맞춤</option>
-        </select>
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger
+            aria-label="챌린지 종류 필터"
+            className="h-control text-[length:var(--text-control)] font-normal"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start" className="w-[var(--radix-select-trigger-width)] min-w-0">
+            <SelectItem value="all">전체</SelectItem>
+            <SelectItem value="official">공식</SelectItem>
+            <SelectItem value="custom">맞춤</SelectItem>
+          </SelectContent>
+        </Select>
 
         <section aria-label="챌린지 목록" className="flex flex-col gap-3">
           {loading && entries.length === 0 ? <LoadingState label="챌린지 불러오는 중">챌린지를 불러오고 있어요.</LoadingState> : null}

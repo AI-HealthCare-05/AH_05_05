@@ -29,15 +29,18 @@ async function setup(page: Page, items: ReturnType<typeof custom>[]) {
   await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({ json: { items, totalCount: items.length } }));
 }
 
-test('home shows only unfinished goals scheduled today with colored badge links', async ({ page }) => {
+test('home keeps completed goals scheduled today with colored badge links', async ({ page }) => {
   await setup(page, [custom(1), custom(2, '2026-09-11'), custom(3, today, true)]);
   await page.goto('/home');
   const section = page.locator('section[aria-labelledby="home-challenge-title"]');
   await expect(section.getByRole('link', { name: /처방 1/ })).toBeVisible();
   await expect(section.getByRole('link', { name: /처방 2/ })).toHaveCount(0);
-  await expect(section.getByRole('link', { name: /처방 3/ })).toHaveCount(0);
-  await expect(section.getByRole('img', { name: '복약 배지' })).toBeVisible();
-  await expect.poll(() => section.getByRole('img', { name: '복약 배지' }).evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await expect(section.getByRole('link', { name: /처방 3/ })).toBeVisible();
+  await expect(section.getByRole('article', { name: '처방 1', exact: true })).toContainText('미달성');
+  await expect(section.getByRole('article', { name: '처방 3', exact: true })).toContainText('달성');
+  await expect(section.getByRole('button', { name: /했어요/ })).toHaveCount(0);
+  await expect(section.getByRole('img', { name: '복약 배지' }).first()).toBeVisible();
+  await expect.poll(() => section.getByRole('img', { name: '복약 배지' }).first().evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect(section.getByRole('link', { name: /처방 1/ })).toHaveAttribute('href', '/challenges/custom-participations/1');
 });
 
@@ -50,7 +53,7 @@ test('fixed width cards scroll inside their panel and arrows reflect remaining d
   const previous = section.getByRole('button', { name: '이전 챌린지' });
   await expect(next).toBeVisible();
   await expect(previous).toBeHidden();
-  const first = section.getByRole('link', { name: /처방 1/ });
+  const first = section.getByRole('article', { name: '처방 1', exact: true });
   expect((await first.boundingBox())!.width).toBe(144);
   await next.click();
   await expect(previous).toBeVisible();
@@ -87,9 +90,130 @@ test('same-account revalidation keeps the visible card until the new records arr
   await expect(card).toBeVisible();
   await expect(section.getByRole('status')).toHaveCount(0);
   release();
-  await expect(card).toHaveCount(0);
-  await expect(section.getByText('오늘 남은 챌린지가 없어요')).toBeVisible();
+  await expect(card).toBeVisible();
+  await expect(section.getByText('달성', { exact: true })).toBeVisible();
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({ json: { items: [custom(1)], totalCount: 1 } }));
+  await page.evaluate(() => window.dispatchEvent(new Event('rxvita:custom-challenge-progress-invalidated')));
+  await expect(section.getByText('미달성', { exact: true })).toBeVisible();
 });
+
+function official() {
+  return { id: 91, user_id: 1, challenge_id: 1, challenge_name: '걷기 챌린지', status: 'ACTIVE',
+    started_at: `${today}T00:00:00+09:00`, joined_at: `${today}T00:00:00+09:00`, end_at: '2026-09-17T00:00:00+09:00',
+    target_count: 7, completed_count: 0, progress_rate: 0, completed_at: null, cancelled_at: null, progress_periods: [],
+    challenge: { id: 1, name: '걷기 챌린지', check_type_code: 'SELF', reward_badge: null },
+    today, today_verification: null, can_verify: true, verified_dates: [] as string[],
+  };
+}
+
+test('official home check-in writes once, stays on home and preserves server-confirmed completion during stale refresh', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page, [custom(1)]);
+  const item = official();
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: [item], total_count: 1 } }));
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const writes: Record<string, string>[] = [];
+  await page.route('**/api/v1/user/challenges/91/verifications', async route => {
+    writes.push(route.request().postDataJSON());
+    await gate;
+    await route.fulfill({ json: { id: 1, participation_id: 91, verification_date: today, status: 'APPROVED' } });
+  });
+  await page.goto('/home');
+  const card = page.getByRole('article', { name: '걷기 챌린지', exact: true });
+  const action = card.getByRole('button', { name: /했어요/ });
+  await expect(action).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('home-before-checkin.png'), animations: 'disabled' });
+  await action.click();
+  await expect(action).toBeDisabled();
+  await action.dispatchEvent('click');
+  expect(writes).toHaveLength(1);
+  expect(writes[0].verification_date).toBe(today);
+  expect(writes[0].idempotency_key).toBeTruthy();
+  await expect(card.getByText('달성', { exact: true })).toHaveCount(0);
+  release();
+  await expect(card.getByText('달성', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(card.getByRole('button')).toHaveCount(0);
+  item.verified_dates.push(today);
+  item.completed_count = 1;
+  item.progress_rate = 14.29;
+  item.can_verify = false;
+  await page.reload();
+  await expect(card.getByText('달성', { exact: true })).toBeVisible();
+  await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '14.29');
+  await page.screenshot({ path: testInfo.outputPath('home-after-checkin.png'), animations: 'disabled' });
+  await card.getByRole('link').click();
+  await expect(page).toHaveURL(/\/challenges\/participations\/91$/);
+});
+
+test('server-completed one-day challenges remain on home today without another check-in button', async ({ page }) => {
+  await setup(page, [{ ...custom(1, today, true), status: 'COMPLETED' }]);
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: [{
+    ...official(), status: 'COMPLETED', can_verify: false, verified_dates: [today], end_at: `${today}T10:00:00+09:00`,
+    completed_count: 1, target_count: 1, progress_rate: 100,
+  }], total_count: 1 } }));
+  await page.goto('/home');
+  const section = page.getByRole('region', { name: '챌린지', exact: true });
+  await expect(section.getByText('달성', { exact: true })).toHaveCount(2);
+  await expect(section.getByRole('button', { name: /했어요/ })).toHaveCount(0);
+});
+
+test('failed official check-in stays unachieved and retry reuses its idempotency key', async ({ page }) => {
+  await setup(page, []);
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: [official()], total_count: 1 } }));
+  const keys: string[] = [];
+  await page.route('**/api/v1/user/challenges/91/verifications', route => {
+    keys.push(route.request().postDataJSON().idempotency_key);
+    return route.fulfill(keys.length === 1 ? { status: 503, json: { message: '저장 실패' } }
+      : { json: { id: 1, participation_id: 91, verification_date: today, status: 'APPROVED' } });
+  });
+  await page.goto('/home');
+  const card = page.getByRole('article', { name: '걷기 챌린지', exact: true });
+  await card.getByRole('button', { name: /했어요/ }).click();
+  await expect(card.getByRole('alert')).toBeVisible();
+  await expect(card.getByText('달성', { exact: true })).toHaveCount(0);
+  await card.getByRole('button', { name: /했어요/ }).click();
+  await expect(card.getByText('달성', { exact: true })).toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
+});
+
+for (const pendingBeforeMidnight of [false, true]) {
+  test(`midnight without visibility or timer does not use yesterday's ${pendingBeforeMidnight ? 'pending response' : 'check-in date'}`, async ({ page }) => {
+    await setup(page, []);
+    let tomorrow = false;
+    let reads = 0;
+    const writes: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/v1/user/challenges', route => {
+      reads++;
+      return route.fulfill({ json: { items: [{ ...official(), today: tomorrow ? '2026-09-11' : today }], total_count: 1 } });
+    });
+    await page.route('**/api/v1/user/challenges/91/verifications', async route => {
+      writes.push(route.request().postDataJSON().verification_date);
+      if (pendingBeforeMidnight) await gate;
+      await route.fulfill({ json: { id: 1, verification_date: today, status: 'APPROVED' } });
+    });
+    await page.goto('/home');
+    const card = page.getByRole('article', { name: '걷기 챌린지', exact: true });
+    const action = card.getByRole('button', { name: /했어요/ });
+    await expect(action).toBeVisible();
+    if (pendingBeforeMidnight) {
+      await action.click();
+      await expect.poll(() => writes.length).toBe(1);
+    }
+    const previousReads = reads;
+    tomorrow = true;
+    await page.clock.setFixedTime(new Date('2026-09-11T00:00:01+09:00'));
+    if (pendingBeforeMidnight) release(); else await action.click();
+    await expect.poll(() => reads).toBeGreaterThan(previousReads);
+    await expect(action).toBeEnabled();
+    await expect(card.getByText('달성', { exact: true })).toHaveCount(0);
+    expect(writes).toEqual(pendingBeforeMidnight ? [today] : []);
+  });
+}
 
 test('crossing Korea midnight reloads official eligibility without reloading the page', async ({ page }) => {
   await setup(page, []);
@@ -104,11 +228,13 @@ test('crossing Korea midnight reloads official eligibility without reloading the
   }] } }));
   await page.goto('/home');
   const section = page.locator('section[aria-labelledby="home-challenge-title"]');
-  await expect(section.getByText('오늘 남은 챌린지가 없어요')).toBeVisible();
+  await expect(section.getByText('달성', { exact: true })).toBeVisible();
   nextDay = true;
   await page.clock.setFixedTime(new Date('2026-09-11T00:01:00+09:00'));
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect(section.getByRole('link', { name: /물 마시기 챌린지/ })).toBeVisible();
+  await expect(section.getByRole('button', { name: /했어요/ })).toBeVisible();
+  await expect(section.getByText('달성', { exact: true })).toHaveCount(0);
 });
 
 test('native swipe over a challenge moves the carousel without opening its link', async ({ page }) => {

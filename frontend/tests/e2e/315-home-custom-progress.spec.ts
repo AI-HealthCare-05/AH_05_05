@@ -288,7 +288,7 @@ test('홈은 오늘 남은 맞춤 목표만 표시하고 긴 이름과 서버 �
 
   const zeroTarget = customSection.getByRole('link', { name: /아직 예정이 없는 챌린지/ });
   await expect(zeroTarget).toHaveCount(0);
-  await expect(customSection.getByText(/배지|달성/)).toHaveCount(0);
+  await expect(customSection.getByText('미달성', { exact: true })).toHaveCount(2);
   expect(counts.customMutations).toBe(0);
 });
 
@@ -381,7 +381,8 @@ test('복약 저장 성공과 되돌리기는 맞춤 진행률을 각각 한 번
   const initialCustomReads = counts.customReads;
 
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
-  await expect(customSection.getByRole('link', { name: /처방 일정 지키기/ })).toHaveCount(0);
+  await expect(customSection.getByText('3 / 7일')).toBeVisible();
+  await expect(customSection.getByText('달성', { exact: true })).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await page.getByRole('button', { name: '되돌리기', exact: true }).click();
@@ -478,7 +479,8 @@ test('영양제 저장 실패는 재조회하지 않고 재시도 성공과 되�
   expect(counts.customReads).toBe(initialCustomReads);
 
   await supplementGroup.getByRole('button', { name: '다시 시도' }).click();
-  await expect(customSection.getByRole('link', { name: /처방 일정 지키기/ })).toHaveCount(0);
+  await expect(customSection.getByText('3 / 7일')).toBeVisible();
+  await expect(customSection.getByText('달성', { exact: true })).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 1);
 
   await supplementGroup.getByRole('button', { name: '오메가3 복용 완료' }).click();
@@ -521,12 +523,12 @@ test('무효화 전에 시작한 늦은 맞춤 응답은 최신 진행률을 덮
   ).toBeVisible();
   await page.getByRole('button', { name: '먹었어요', exact: true }).click();
   const customSection = page.getByRole('region', { name: '챌린지', exact: true });
-  await expect(customSection.getByText('오늘 남은 챌린지가 없어요')).toBeVisible();
+  await expect(customSection.getByText('7 / 7일')).toBeVisible();
   const readsAfterInvalidation = counts.customReads;
 
   releaseInitialReads();
   await page.waitForTimeout(100);
-  await expect(customSection.getByText('오늘 남은 챌린지가 없어요')).toBeVisible();
+  await expect(customSection.getByText('7 / 7일')).toBeVisible();
   await expect(customSection.getByText('1 / 7일')).toHaveCount(0);
   expect(counts.customReads).toBe(readsAfterInvalidation);
   expect(counts.customMutations).toBe(0);

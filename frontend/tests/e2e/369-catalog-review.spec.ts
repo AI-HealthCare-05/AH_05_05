@@ -48,7 +48,7 @@ test('browse filters official and custom entries, keeps routes and disables only
   await prepare(page);
   await page.goto('/challenges/browse');
   const filter = page.getByRole('combobox', { name: '챌린지 종류 필터' });
-  await expect(filter).toHaveValue('all');
+  await expect(filter).toContainText('전체');
   const rows = page.getByRole('region', { name: '챌린지 목록' }).getByRole('button');
   await expect(rows).toHaveCount(5);
   await expect(rows.nth(0)).toHaveAccessibleName('다시 걷기 자세히 보기');
@@ -59,9 +59,11 @@ test('browse filters official and custom entries, keeps routes and disables only
   await expect(rows.nth(0)).toContainText('모집기간 : 2026년 9월 1일 ~ 2026년 9월 30일');
   await expect(rows.nth(2)).toContainText('모집기간 : 상시');
   await page.screenshot({ path: testInfo.outputPath('browse-all-390.png'), fullPage: true });
-  await filter.selectOption('official');
+  await filter.click();
+  await page.getByRole('option', { name: '공식', exact: true }).click();
   await expect(rows).toHaveCount(3);
-  await filter.selectOption('custom');
+  await filter.click();
+  await page.getByRole('option', { name: '맞춤', exact: true }).click();
   await expect(rows).toHaveCount(2);
   await page.getByRole('button', { name: '처방 일정 지키기 대상 선택' }).click();
   await expect(page).toHaveURL(/\/challenges\/tailored\/medication\?templateId=31$/);
