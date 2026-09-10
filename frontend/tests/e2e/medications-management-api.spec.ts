@@ -118,7 +118,7 @@ test('느린 회차 저장 중 반복 클릭해도 일정 저장 요청은 한 �
   });
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+  await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const saveButton = dialog.getByRole('button', { name: /저장/ });
   await expect(saveButton).toHaveText('저장');
@@ -151,6 +151,9 @@ test('느린 회차 저장 중 반복 클릭해도 일정 저장 요청은 한 �
 
 test('별칭 PATCH 뒤 홈 진입과 재진입은 후속 처방 조회의 별칭을 표시한다', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.route('**/api/v1/**', (route) =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
   let alias: string | undefined;
   const aliasPayloads: unknown[] = [];
   await page.route(/\/api\/v1\/medications(?:\?.*)?$/, async (route) => {
@@ -175,7 +178,7 @@ test('별칭 PATCH 뒤 홈 진입과 재진입은 후속 처방 조회의 별칭
   );
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+  await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
   const episodeDialog = page.getByRole('dialog');
   await episodeDialog.getByLabel('복약 별칭').fill('실 API 홈 별칭');
   await episodeDialog.getByRole('button', { name: '저장', exact: true }).click();
@@ -213,7 +216,7 @@ test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 �
   expect(overviewRequests).toBe(1);
 });
 
-test('긴 처방 별칭과 약 이름은 목록·선택·편집·완료 시트에서 전체가 보인다', async ({ page }) => {
+test('긴 별칭과 약 이름은 요약·선택·편집·완료 상세에서 전체가 보인다', async ({ page }) => {
   test.setTimeout(120_000);
   const longAlias = `장기복약관리${'PRESCRIPTION'.repeat(16)}처방`;
   const finishedAlias = `완료복약관리${'FINISHED'.repeat(20)}처방`;
@@ -259,16 +262,19 @@ test('긴 처방 별칭과 약 이름은 목록·선택·편집·완료 시트�
     await page.goto('/medications');
     const activeCard = page.getByRole('button', { name: /2026년 8월 22일 처방/ });
     const activeName = activeCard.getByText(longAlias, { exact: true });
-    const summary = activeCard.getByText(new RegExp(longMedication));
     await expectContained(activeName, activeCard);
-    await expectContained(summary, activeCard);
+    await expect(activeCard.getByText(new RegExp(longMedication))).toHaveCount(0);
+    await activeCard.click();
+    const details = page.getByRole('region', { name: '2026년 8월 22일 처방 상세' });
+    await expectContained(details.getByText(new RegExp(longMedication)), details);
+    await activeCard.click();
 
     await page.getByRole('button', { name: '삭제', exact: true }).click();
     await expect(page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ })).toBeVisible();
     await expectContained(activeName, activeCard);
     await page.getByRole('button', { name: '완료', exact: true }).click();
 
-    await activeCard.click();
+    await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
     const editSheet = page.getByRole('dialog', { name: '처방 편집' });
     const aliasPreview = editSheet.getByLabel('복약 별칭 전체');
     await expect(aliasPreview).toHaveText(longAlias);
@@ -280,10 +286,11 @@ test('긴 처방 별칭과 약 이름은 목록·선택·편집·완료 시트�
     await editSheet.getByRole('button', { name: '닫기' }).click();
 
     await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
-    const finishedSheet = page.getByRole('dialog', { name: '완료된 처방' });
-    await expectContained(finishedSheet.getByText(finishedAlias, { exact: true }), finishedSheet);
+    const finishedSheet = page.getByRole('region', { name: '2026년 8월 24일 처방 상세' });
+    const finishedCard = page.locator('article').filter({ has: finishedSheet });
+    await expectContained(finishedCard.getByText(finishedAlias, { exact: true }), finishedCard);
     await expectContained(finishedSheet.locator('p').filter({ hasText: longMedication }).first(), finishedSheet);
-    await finishedSheet.getByRole('button', { name: '닫기' }).click();
+    await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
   }
 
   await page.setViewportSize({ width: 320, height: 900 });
