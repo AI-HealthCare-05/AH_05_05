@@ -118,6 +118,7 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
 
   const takenIds = new Set(records.filter(item => item.slot === slot && item.taken).map(item => item.supplementId));
   const remaining = supplements.filter(item => !takenIds.has(item.supplementId));
+  const allSupplementsTaken = supplements.length > 0 && remaining.length === 0;
   const undo = selected.length > 0 && takenIds.has(selected[0]);
   const selectedLabel = selected.length > 0
     ? `${selected.length}개 ${undo ? '되돌리기' : '먹었어요'}`
@@ -154,9 +155,20 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
   return (
     <Card className="gap-2 p-4">
       <div role="group" aria-label={`${mealSlotLabel(slot, 'short')} 영양제`} className="flex flex-col gap-2">
-        <h3 className="text-base font-bold text-foreground">
-          {mealSlotLabel(slot, 'short')} {time}
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-bold text-foreground">
+            {mealSlotLabel(slot, 'short')} {time}
+          </h3>
+          {allSupplementsTaken && (
+            <span
+              data-supplement-completed-summary
+              aria-hidden="true"
+              className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-sm font-bold text-primary-strong"
+            >
+              복용 완료
+            </span>
+          )}
+        </div>
         <ul className="flex flex-col" aria-label={`${mealSlotLabel(slot, 'short')}에 먹을 영양제`}>
           {supplements.map(supplement => {
             const taken = takenIds.has(supplement.supplementId);
@@ -183,7 +195,7 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                     {isSelected && <Check className="size-4" strokeWidth={3} />}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-1 py-1">
-                    {taken && (
+                    {taken && !allSupplementsTaken && (
                       <span
                         data-supplement-completed-badge
                         aria-hidden="true"

@@ -216,6 +216,15 @@ export async function getSupplementRanking(): Promise<SupplementRanking | null> 
     await mockDelay();
     return mockSupplementRanking();
   }
+  return requestSupplementRanking();
+}
+
+/** 로그인 여부나 목업 모드와 관계없이 백오피스의 현재 공개 전시를 조회합니다. */
+export async function getPublicSupplementRanking(): Promise<SupplementRanking | null> {
+  return requestSupplementRanking();
+}
+
+async function requestSupplementRanking(): Promise<SupplementRanking | null> {
   try {
     const response = await http.get<SupplementRankingApiResponse>(
       '/v1/display/med/nutr/rank',

@@ -1,10 +1,11 @@
 import { Award } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { useSession } from '@/app/SessionContext';
 import { getChallengeCatalog, getUserChallengeBadges } from '@/entities/challenge';
 import { Button } from '@/shared/ui/Button';
+import { Header } from '@/shared/ui/Header';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { officialBadgeViews, type OfficialBadgeView } from './officialBadgeViews';
 
@@ -14,10 +15,20 @@ async function loadBadges() {
 }
 
 export function OfficialChallengeBadgesPage() {
+  const navigate = useNavigate();
   const { principalKey } = useSession();
   const [badges, setBadges] = useState<OfficialBadgeView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+
+  function goBack() {
+    const index = window.history.state?.idx;
+    if (typeof index === 'number' && index > 0) {
+      navigate(-1);
+      return;
+    }
+    navigate('/challenges', { replace: true });
+  }
 
   useEffect(() => {
     let active = true;
@@ -37,21 +48,24 @@ export function OfficialChallengeBadgesPage() {
 
   if (error) {
     return (
-      <main className="flex flex-col gap-4 px-page-x py-5">
-        <h1 className="text-[22px] font-bold">내 배지</h1>
-        <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card"><p className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button></div>
-      </main>
+      <>
+        <Header title="내 배지" onBack={goBack} />
+        <main className="flex flex-col gap-4 px-page-x py-5">
+          <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card"><p className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button></div>
+        </main>
+      </>
     );
   }
 
-  if (!badges) return <main role="status" aria-label="배지 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" />;
+  if (!badges) return <><Header title="내 배지" onBack={goBack} /><main role="status" aria-label="배지 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" /></>;
 
   const earnedCount = badges.filter(item => item.awards.length > 0).length;
   const awardCount = badges.reduce((sum, item) => sum + item.awards.length, 0);
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-page-x py-5">
-      <h1 className="text-[22px] font-bold leading-8 text-foreground">내 배지</h1>
+    <>
+      <Header title="내 배지" onBack={goBack} />
+      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-page-x py-5">
       <p className="text-sm text-muted-foreground">모은 배지 {earnedCount}종 · 총 {awardCount}회 획득</p>
       {badges.length === 0 ? (
         <div className="flex min-h-56 flex-col items-center justify-center gap-4 rounded-card bg-card p-5 text-center shadow-card">
@@ -76,6 +90,7 @@ export function OfficialChallengeBadgesPage() {
           })}
         </ul>
       )}
-    </main>
+      </main>
+    </>
   );
 }

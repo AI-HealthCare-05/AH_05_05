@@ -85,6 +85,9 @@ async function enterRegistrationAlarmStep(page: Page, alias = '알람 권한 처
 test.beforeEach(async ({ page }) => {
   test.skip(IS_REAL_API, MOCK_ONLY_REASON);
   await page.clock.setFixedTime(new Date('2026-09-03T12:00:00+09:00'));
+  await page.route('**/api/v1/user/challenges', (route) =>
+    route.fulfill({ json: { items: [], total_count: 0 } }),
+  );
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'feature-252-medication-token');
     sessionStorage.setItem('poke.account-principal', 'feature-252-medication@example.com');
@@ -394,7 +397,9 @@ test('복약 목록은 활성 회차를 편집하고 완료 회차를 읽기 전
   await expect(activeCard).toContainText('아침 08:00');
   await activeCard.click();
   await expect(page.getByRole('dialog').getByRole('heading', { name: '처방 편집' })).toBeVisible();
-  await expect(page.getByLabel('복약 별칭')).toBeVisible();
+  await expect(
+    page.getByRole('dialog').getByRole('textbox', { name: '복약 별칭', exact: true }),
+  ).toBeVisible();
   await page.getByRole('dialog').getByRole('button', { name: '닫기' }).click();
 
   await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
@@ -405,7 +410,9 @@ test('복약 목록은 활성 회차를 편집하고 완료 회차를 읽기 전
   await expect(completedDialog.getByText('2026년 8월 24일 ~ 28일', { exact: true })).toBeVisible();
   await expect(completedDialog.getByText(/아목시실린 500mg/)).toBeVisible();
   await expect(completedDialog.getByText(/아침약 08:00/)).toBeVisible();
-  await expect(completedDialog.getByLabel('복약 별칭')).toHaveCount(0);
+  await expect(
+    completedDialog.getByRole('textbox', { name: '복약 별칭', exact: true }),
+  ).toHaveCount(0);
   await expect(completedDialog.getByRole('button', { name: /아목시실린 아침약/ })).toHaveCount(0);
 });
 
@@ -495,11 +502,13 @@ for (const width of [375, 1280]) {
 }
 
 test('복약 탭에서 바꾼 처방 별칭은 홈 진입과 재진입에 바로 반영된다', async ({ page }) => {
-  await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
+  await page.clock.setFixedTime(new Date('2026-08-25T22:00:00+09:00'));
   await page.goto('/medications');
   await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
   const episodeDialog = page.getByRole('dialog');
-  await episodeDialog.getByLabel('복약 별칭').fill('홈에 보일 별칭');
+  await episodeDialog
+    .getByRole('textbox', { name: '복약 별칭', exact: true })
+    .fill('홈에 보일 별칭');
   await episodeDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
 
