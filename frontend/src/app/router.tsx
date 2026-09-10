@@ -215,6 +215,7 @@ export function AppRouter() {
         <Route path="/tutorial" element={<TutorialPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/login" element={<AuthPage />} />
+        <Route path="/password-reset" element={<Navigate to="/login" replace state={{ passwordReset: true }} />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route element={<RequireAuthentication />}>

@@ -3,11 +3,12 @@ import { Eye, EyeOff } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { createAccount, type Gender } from '@/entities/account';
-import { login, requestPasswordReset } from '@/entities/auth';
+import { login } from '@/entities/auth';
 import { requestEmailVerification, verifyEmailCode } from '@/entities/email-verification';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { PrivacyPage, TermsPage } from '@/pages/legal';
 import { ApiError } from '@/shared/api/client';
+import { PasswordResetSheet } from './PasswordResetSheet';
 import {
   MIN_BIRTH_DATE,
   UNDER_FOURTEEN_MESSAGE,
@@ -29,12 +30,6 @@ import {
 import {
   Button,
   CheckboxField,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   GenderRadioGroup,
   Header,
   Input,
@@ -67,6 +62,10 @@ export function AuthPage() {
   const { signIn } = useSession();
   const emailInputRef = useRef<HTMLInputElement>(null);
   const resendInFlightRef = useRef(false);
+  const resetButtonRef = useRef<HTMLButtonElement>(null);
+  const [showPasswordReset, setShowPasswordReset] = useState(
+    () => (location.state as { passwordReset?: unknown } | null)?.passwordReset === true,
+  );
   const [mode, setMode] = useState<AuthMode>('login');
   const [signupStep, setSignupStep] = useState<SignupStep>(1);
   const [verificationCode, setVerificationCode] = useState('');
@@ -97,10 +96,6 @@ export function AuthPage() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [passwordResetDialogOpen, setPasswordResetDialogOpen] = useState(false);
-  const [passwordResetSending, setPasswordResetSending] = useState(false);
-  const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null);
-  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [verificationResending, setVerificationResending] = useState(false);
   const [showSignupTerms, setShowSignupTerms] = useState(false);
@@ -162,10 +157,6 @@ export function AuthPage() {
     setLoginError(null);
     setShowSignupTerms(false);
     setShowSignupPrivacy(false);
-    setPasswordResetDialogOpen(false);
-    setPasswordResetSending(false);
-    setPasswordResetMessage(null);
-    setPasswordResetError(null);
     emailInputRef.current?.setCustomValidity('');
   }
 
@@ -175,8 +166,6 @@ export function AuthPage() {
     if (sanitized !== typed) input.value = sanitized;
     setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
     setEmail(sanitized);
-    setPasswordResetMessage(null);
-    setPasswordResetError(null);
     setVerificationId(null);
     setVerificationToken(null);
     setVerificationCode('');
@@ -258,33 +247,6 @@ export function AuthPage() {
       return;
     }
     navigate(-1);
-  }
-
-  function openPasswordResetDialog() {
-    if (!email.trim()) {
-      setEmailError('이메일을 입력해주세요');
-      emailInputRef.current?.focus();
-      return;
-    }
-    setEmailError(null);
-    setPasswordResetMessage(null);
-    setPasswordResetError(null);
-    setPasswordResetDialogOpen(true);
-  }
-
-  async function confirmPasswordReset() {
-    if (passwordResetSending) return;
-    setPasswordResetSending(true);
-    setPasswordResetError(null);
-    try {
-      await requestPasswordReset(email.trim());
-      setPasswordResetDialogOpen(false);
-      setPasswordResetMessage('입력한 이메일로 임시비밀번호 발송을 요청했습니다.');
-    } catch {
-      setPasswordResetError('임시비밀번호를 발송하지 못했습니다. 잠시 후 다시 시도해주세요.');
-    } finally {
-      setPasswordResetSending(false);
-    }
   }
 
   async function resendEmailVerification() {
@@ -559,54 +521,18 @@ export function AuthPage() {
                 <span>비밀번호를 잊으셨나요? </span>
                 <button
                   type="button"
+                  ref={resetButtonRef}
                   className="font-bold text-foreground underline-offset-2 hover:underline"
-                  onClick={openPasswordResetDialog}
+                  onClick={() => setShowPasswordReset(true)}
                 >
                   재설정
                 </button>
-                {passwordResetMessage && (
-                  <p className="mt-2 text-primary" role="status">
-                    {passwordResetMessage}
-                  </p>
-                )}
               </div>
               <Button type="submit" className="text-base" disabled={saving}>
                 로그인
               </Button>
             </form>
 
-            <Dialog open={passwordResetDialogOpen} onOpenChange={setPasswordResetDialogOpen}>
-              <DialogContent showCloseButton={false}>
-                <DialogHeader>
-                  <DialogTitle>비밀번호 재설정</DialogTitle>
-                  <DialogDescription>
-                    입력한 이메일로 임시비밀번호가 발송됩니다. 재설정 하시겠습니까?
-                  </DialogDescription>
-                </DialogHeader>
-                {passwordResetError && (
-                  <p className="text-sm text-danger-strong" role="alert">
-                    {passwordResetError}
-                  </p>
-                )}
-                <DialogFooter className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={passwordResetSending}
-                    onClick={() => setPasswordResetDialogOpen(false)}
-                  >
-                    취소
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={passwordResetSending}
-                    onClick={confirmPasswordReset}
-                  >
-                    {passwordResetSending ? '발송 중...' : '확인'}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </>
         ) : (
           <>
@@ -976,6 +902,18 @@ export function AuthPage() {
           </>
         )}
       </main>
+      {showPasswordReset && (
+        <PasswordResetSheet
+          initialEmail={email}
+          onClose={() => {
+            setShowPasswordReset(false);
+            if ((location.state as { passwordReset?: unknown } | null)?.passwordReset === true) {
+              navigate('/login', { replace: true, state: null });
+            }
+          }}
+          onRestoreFocus={() => resetButtonRef.current?.focus()}
+        />
+      )}
       {mode === 'login' && (
         <footer className="flex h-15 min-h-15 shrink-0 items-start justify-center gap-2 px-page-x pt-4 text-xs text-muted-foreground">
           <Link to="/terms" className="flex min-h-touch hover:text-foreground">
