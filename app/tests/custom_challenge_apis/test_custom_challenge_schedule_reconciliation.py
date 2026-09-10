@@ -306,6 +306,98 @@ async def test_reconcile_does_not_recreate_past_key_moved_after_changed_at() -> 
     ]
 
 
+async def test_notify_time_change_preserves_existing_medication_key_moved_before_join_and_change() -> None:
+    user = await _user("medication-future-to-past@example.com")
+    medication_template, _ = await _templates()
+    episode = await _episode(user)
+    joined_at = datetime(2026, 9, 10, 16, 48, tzinfo=config.TIMEZONE)
+    changed_at = datetime(2026, 9, 10, 17, 0, tzinfo=config.TIMEZONE)
+    response = await CustomChallengeService(now_provider=lambda: joined_at).join(
+        user,
+        medication_template.id,
+        CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="medication-future-to-past"),
+    )
+    participation = await CustomChallengeParticipation.get(id=response.id)
+    original = next(
+        row
+        for row in await _occurrences(participation)
+        if row.scheduled_date == joined_at.date() and row.slot is MealSlot.EVENING
+    )
+    assert _aware(original.scheduled_at) == datetime(2026, 9, 10, 19, 0, tzinfo=config.TIMEZONE)
+
+    await NotifySettingsService(mutation_time_provider=lambda: changed_at).update(
+        user,
+        NotifySettingsUpdateRequest(evening_medication_time=time(16, 0)),
+    )
+
+    same_key = await CustomChallengeOccurrence.filter(
+        target__participation_id=participation.id,
+        scheduled_date=joined_at.date(),
+        slot=MealSlot.EVENING,
+    )
+    assert [(row.id, _aware(row.scheduled_at)) for row in same_key] == [
+        (original.id, datetime(2026, 9, 10, 16, 0, tzinfo=config.TIMEZONE))
+    ]
+
+
+async def test_notify_time_change_preserves_existing_supplement_key_moved_before_join_and_change() -> None:
+    user = await _user("supplement-future-to-past@example.com")
+    _, supplement_template = await _templates()
+    registration = await _supplement(user)
+    await UserSupplementNutrientSlot.filter(user_suppl_nutrient_id=registration.id).delete()
+    await UserSupplementNutrientSlot.create(
+        user_suppl_nutrient_id=registration.id,
+        slot=MealSlot.EVENING,
+    )
+    joined_at = datetime(2026, 9, 10, 16, 48, tzinfo=config.TIMEZONE)
+    changed_at = datetime(2026, 9, 10, 17, 0, tzinfo=config.TIMEZONE)
+    response = await CustomChallengeService(now_provider=lambda: joined_at).join(
+        user,
+        supplement_template.id,
+        CustomChallengeJoinRequest(target_ids=[registration.id], idempotency_key="supplement-future-to-past"),
+    )
+    participation = await CustomChallengeParticipation.get(id=response.id)
+    original = next(
+        row
+        for row in await _occurrences(participation)
+        if row.scheduled_date == joined_at.date() and row.slot is MealSlot.EVENING
+    )
+
+    await NotifySettingsService(mutation_time_provider=lambda: changed_at).update(
+        user,
+        NotifySettingsUpdateRequest(evening_medication_time=time(16, 0)),
+    )
+
+    same_key = await CustomChallengeOccurrence.filter(
+        target__participation_id=participation.id,
+        scheduled_date=joined_at.date(),
+        slot=MealSlot.EVENING,
+    )
+    assert [(row.id, _aware(row.scheduled_at)) for row in same_key] == [
+        (original.id, datetime(2026, 9, 10, 16, 0, tzinfo=config.TIMEZONE))
+    ]
+
+
+async def test_join_after_current_slot_time_does_not_backfill_a_new_goal() -> None:
+    user = await _user("join-after-current-slot@example.com")
+    medication_template, _ = await _templates()
+    episode = await _episode(user)
+    await UserSettings.create(user_id=user.id, evening_medication_time=time(16, 0))
+    joined_at = datetime(2026, 9, 10, 16, 48, tzinfo=config.TIMEZONE)
+
+    response = await CustomChallengeService(now_provider=lambda: joined_at).join(
+        user,
+        medication_template.id,
+        CustomChallengeJoinRequest(target_ids=[episode.id], idempotency_key="join-after-current-slot"),
+    )
+    participation = await CustomChallengeParticipation.get(id=response.id)
+
+    assert not any(
+        row.scheduled_date == joined_at.date() and row.slot is MealSlot.EVENING
+        for row in await _occurrences(participation)
+    )
+
+
 async def test_reconcile_is_owner_scoped_and_zero_future_does_not_complete_or_award() -> None:
     owner = await _user("zero-owner@example.com")
     other = await _user("zero-other@example.com")
@@ -634,7 +726,14 @@ async def test_medication_schedule_uses_one_post_lock_boundary_for_all_source_ty
     assert provider_calls == 1
     assert reconciler.changed_ats == [changed_at, changed_at]
     assert _aware((await CustomChallengeOccurrence.get(id=medication_row.id)).scheduled_at) == just_before
-    assert await CustomChallengeOccurrence.filter(id=supplement_row.id).exists() is False
+    assert _aware((await CustomChallengeOccurrence.get(id=supplement_row.id)).scheduled_at) == datetime(
+        2026,
+        9,
+        9,
+        9,
+        30,
+        tzinfo=config.TIMEZONE,
+    )
     for participation in (medication_participation, supplement_participation):
         future_mornings = [
             row
@@ -953,7 +1052,14 @@ async def test_notify_time_change_uses_one_post_lock_boundary_for_all_source_typ
     assert provider_calls == 1
     assert reconciler.changed_ats == [changed_at, changed_at]
     assert _aware((await CustomChallengeOccurrence.get(id=medication_row.id)).scheduled_at) == just_before
-    assert await CustomChallengeOccurrence.filter(id=supplement_row.id).exists() is False
+    assert _aware((await CustomChallengeOccurrence.get(id=supplement_row.id)).scheduled_at) == datetime(
+        2026,
+        9,
+        9,
+        9,
+        30,
+        tzinfo=config.TIMEZONE,
+    )
     for participation in (medication, nutrient):
         future_mornings = [
             row

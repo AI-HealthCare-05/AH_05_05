@@ -123,6 +123,9 @@ class CustomChallengeScheduleReconciler:
             preserved_keys: set[GoalKey] = {
                 (target.source_id_snapshot, row.scheduled_date, row.slot) for row in past
             }
+            existing_keys: set[GoalKey] = {
+                (target.source_id_snapshot, row.scheduled_date, row.slot) for row in future
+            }
             joined_at = _database_datetime(participation.joined_at)
             desired = (
                 plan_goals(
@@ -132,6 +135,7 @@ class CustomChallengeScheduleReconciler:
                     end_at=planned_end_at,
                     not_before=changed_at,
                     preserved_keys=preserved_keys,
+                    existing_keys=existing_keys,
                 )
                 if planned_end_at > joined_at
                 else []

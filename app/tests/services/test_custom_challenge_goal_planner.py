@@ -243,3 +243,23 @@ def test_preserved_past_key_wins_over_a_rescheduled_future_time() -> None:
     assert [(goal.scheduled_date, goal.scheduled_at) for goal in goals] == [
         (date(2026, 9, 11), datetime(2026, 9, 11, 10, tzinfo=KST))
     ]
+
+
+def test_only_existing_key_can_move_before_change_and_join_boundaries() -> None:
+    existing_evening = (1, date(2026, 9, 10), MealSlot.EVENING)
+
+    goals = plan_goals(
+        windows=[
+            GoalWindow(1, MealSlot.LUNCH, date(2026, 9, 10), date(2026, 9, 10)),
+            GoalWindow(1, MealSlot.EVENING, date(2026, 9, 10), date(2026, 9, 10)),
+        ],
+        meal_times={MealSlot.LUNCH: time(13), MealSlot.EVENING: time(16)},
+        joined_at=datetime(2026, 9, 10, 16, 48, tzinfo=KST),
+        end_at=datetime(2026, 9, 11, tzinfo=KST),
+        not_before=datetime(2026, 9, 10, 17, tzinfo=KST),
+        existing_keys={existing_evening},
+    )
+
+    assert [(goal.scheduled_date, goal.slot, goal.scheduled_at) for goal in goals] == [
+        (date(2026, 9, 10), MealSlot.EVENING, datetime(2026, 9, 10, 16, tzinfo=KST))
+    ]

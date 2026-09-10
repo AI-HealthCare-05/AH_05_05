@@ -41,6 +41,7 @@ def plan_goals(
     end_at: datetime,
     not_before: datetime | None = None,
     preserved_keys: Collection[GoalKey] = (),
+    existing_keys: Collection[GoalKey] = (),
 ) -> list[PlannedGoal]:
     joined_kst = _as_kst(joined_at, "joined_at")
     end_kst = _as_kst(end_at, "end_at")
@@ -52,6 +53,7 @@ def plan_goals(
         lower_bound = max(lower_bound, _as_kst(not_before, "not_before"))
 
     preserved = set(preserved_keys)
+    existing = set(existing_keys)
     planned_by_key: dict[GoalKey, PlannedGoal] = {}
     for window in windows:
         meal_time = meal_times.get(window.slot)
@@ -63,7 +65,7 @@ def plan_goals(
         while scheduled_date <= last_date:
             key = (window.source_id, scheduled_date, window.slot)
             scheduled_at = datetime.combine(scheduled_date, meal_time, tzinfo=KST)
-            if key not in preserved and lower_bound <= scheduled_at < end_kst:
+            if key not in preserved and scheduled_at < end_kst and (lower_bound <= scheduled_at or key in existing):
                 planned_by_key.setdefault(
                     key,
                     PlannedGoal(
