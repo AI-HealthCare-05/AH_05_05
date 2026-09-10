@@ -58,7 +58,7 @@ test('홈은 시간대 안에서 처방 회차를 요약하고 메모와 복용 
   const secondEpisode = detail.getByRole('article', { name: /8월 24일 처방/ });
   await expect(firstEpisode).toBeVisible();
   await expect(secondEpisode).toBeVisible();
-  await expect(firstEpisode.getByText('셀레콕시브 외 1개')).toBeVisible();
+  await expect(firstEpisode.getByText('셀레콕시브', { exact: true })).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: /8월 22일 처방.*펼치기/ }).click();
   await expect(
@@ -159,7 +159,7 @@ test('다중 처방은 각 회차를 독립적으로 펼치고 접는다', async
   await expect(morning.getByRole('heading', { name: '지난 처방', exact: true })).toBeVisible();
 
   await firstEpisode.getByRole('button', { name: /접기/ }).click();
-  await expect(firstEpisode.getByText('셀레콕시브', { exact: true })).toHaveCount(0);
+  await expect(firstEpisode.getByText('셀레콕시브', { exact: true })).toBeVisible();
   await expect(
     secondEpisode.getByRole('list', { name: /처방 약 목록/ }).getByText('아목시실린', {
       exact: true,
@@ -245,7 +245,8 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await page.goto('/dev/home-active');
 
-  const detail = page.getByRole('region', { name: '오늘의 복약' }).getByRole('group', {
+  const timeline = page.getByRole('region', { name: '오늘의 복약' });
+  const detail = timeline.getByRole('group', {
     name: '아침약 상세',
   });
   const firstEpisode = detail.getByRole('article', { name: /8월 22일 처방/ });
@@ -265,13 +266,10 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
   await expect(completedEpisode).toHaveAttribute('aria-pressed', 'false');
   await expect(selectionGlyph).toHaveClass(/border-2/);
   await expect(selectionGlyph.locator('svg')).toHaveCount(0);
-  const completedBadge = firstEpisode.locator('[data-episode-completed-badge]');
-  await expect(completedBadge).toHaveAttribute('aria-hidden', 'true');
-  await expect(completedBadge).toHaveText('복용 완료');
-  const badgeBox = (await completedBadge.boundingBox())!;
-  const titleBox = (await firstEpisode.getByRole('heading').boundingBox())!;
-  expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(titleBox.y);
-  expect(Math.abs(badgeBox.x - titleBox.x)).toBeLessThanOrEqual(1);
+  const completedSummary = timeline.locator('[data-medication-completed-summary]');
+  await expect(completedSummary).toHaveAttribute('aria-hidden', 'true');
+  await expect(completedSummary).toHaveText('복용 완료');
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
 
   const undo = detail.getByRole('button', { name: '복약 기록 되돌리기' });
   await expect(undo).toBeVisible();
@@ -361,6 +359,8 @@ test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 �
   await expect(activeAction).toHaveClass(/bg-primary/);
   await activeAction.click();
   await expect(second.getByRole('button', { name: /8월 24일 처방 복용 완료/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: '오늘의 복약' }).locator('[data-medication-completed-summary]')).toHaveCount(1);
+  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(0);
   const completedAction = detail.getByRole('button', { name: '복약 기록 되돌리기' });
   await expect(completedAction).toBeDisabled();
   await second.getByRole('button', { name: /8월 24일 처방.*복용 완료/ }).click();
@@ -444,6 +444,27 @@ test('게스트 홈은 세 배너 compact carousel을 유지하며 390x844에서
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/v1/display/med/nutr/rank', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      display_id: 384,
+      title: '9월 면역력 관리',
+      start_at: '2026-09-01T00:00:00+09:00',
+      end_at: '2026-09-30T23:59:59+09:00',
+      is_enabled: true,
+      created_by_admin_id: 1,
+      created_at: '2026-09-01T00:00:00+09:00',
+      updated_at: null,
+      items: [
+        { supplement_nutrient_id: 1, name: '오메가3', rank_no: 1 },
+        { supplement_nutrient_id: 2, name: '종합비타민', rank_no: 2 },
+        { supplement_nutrient_id: 3, name: '철분', rank_no: 3 },
+        { supplement_nutrient_id: 4, name: '비타민 D', rank_no: 4 },
+        { supplement_nutrient_id: 5, name: '밀크씨슬', rank_no: 5 },
+      ],
+    }),
+  }));
   await page.goto('/home');
 
   const carousel = page.getByRole('region', { name: 'RxVita 기능 소개' });

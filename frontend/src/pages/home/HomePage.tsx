@@ -14,6 +14,7 @@ import {
   type SaveDoseTakenPayload,
 } from '@/entities/medication';
 import {
+  getPublicSupplementRanking,
   getSupplementRanking,
   getSupplements,
   type SupplementRanking,
@@ -84,6 +85,9 @@ export function HomePage({
   const [doseMutationPending, setDoseMutationPending] = useState(false);
   const doseMutationPendingRef = useRef(false);
   const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
+  const [supplementRankingState, setSupplementRankingState] = useState<'loading' | 'ready' | 'error'>(
+    'loading',
+  );
   const [registeredSupplements, setRegisteredSupplements] = useState<Supplement[]>([]);
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
     () => new Set(),
@@ -104,20 +108,28 @@ export function HomePage({
 
   useEffect(() => {
     let cancelled = false;
-    getSupplementRanking()
+    setSupplementRankingState('loading');
+    const rankingRequest = isAuthenticated
+      ? getSupplementRanking()
+      : getPublicSupplementRanking();
+    rankingRequest
       .then((ranking) => {
         if (!cancelled) {
           setSupplementRanking(ranking && ranking.items.length > 0 ? ranking : null);
+          setSupplementRankingState('ready');
         }
       })
       .catch(() => {
-        if (!cancelled) setSupplementRanking(null);
+        if (!cancelled) {
+          setSupplementRanking(null);
+          setSupplementRankingState('error');
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -474,6 +486,9 @@ export function HomePage({
                 subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
               />
             )}
+            {!visibleSupplementRanking && supplementRankingState === 'ready' && (
+              <GuestSupplementRankingEmpty />
+            )}
           </>
         )}
         {!isAuthenticated && <RxVitaFeatureCarousel autoAdvanceMs={3_000} size="compact" />}
@@ -563,6 +578,17 @@ function GuestMedicationPrompt({ onLogin }: { onLogin: () => void }) {
         <p className="text-lg font-bold text-foreground">복약 일정을 확인해보세요</p>
         <p>로그인하면 기록과 알림을 이어서 볼 수 있어요.</p>
         <Button onClick={onLogin}>로그인하고 시작하기</Button>
+      </Card>
+    </section>
+  );
+}
+
+function GuestSupplementRankingEmpty() {
+  return (
+    <section aria-label="영양제 랭킹" className="flex flex-col gap-3">
+      <h2 className="text-lg font-bold text-foreground">영양제 랭킹</h2>
+      <Card>
+        <p className="text-sm text-muted-foreground">현재 공개된 영양제 랭킹이 없어요.</p>
       </Card>
     </section>
   );

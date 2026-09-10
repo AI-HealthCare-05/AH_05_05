@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { expect, test, type Page, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
@@ -57,6 +58,9 @@ async function routeHome(page: Page, overviews = MEDICATION_OVERVIEWS) {
     window.sessionStorage.setItem('poke.account-principal', 'home-compression@example.com');
   });
   await page.route('**/api/v1/medications/doses*', (route) => fulfillJson(route, []));
+  await page.route('**/api/v1/user/challenges', (route) =>
+    fulfillJson(route, { items: [], total_count: 0 }),
+  );
   await page.route(/\/api\/v1\/medications(?:\?.*)?$/, (route) =>
     fulfillJson(route, overviews),
   );
@@ -84,30 +88,37 @@ test('completion pill stays above the hospital name across widths, expansion, se
   const overview = { ...MEDICATION_OVERVIEWS[0], alias: '연세봄내과 · 장기 건강 관리 처방' };
   await routeHome(page, [overview]);
   await page.goto('/home');
+  const timeline = page.getByRole('region', { name: '오늘의 복약' });
   const detail = page.getByRole('group', { name: '아침약 상세' });
   const row = detail.locator('[data-episode-row]');
   const pill = row.locator('[data-episode-completed-badge]');
+  const headerSummary = timeline.locator('[data-medication-completed-summary]');
   await expect(pill).toHaveCount(0);
+  await expect(headerSummary).toHaveCount(0);
   await detail.getByRole('button', { name: /처방 펼치기$/ }).click();
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await row.click();
   await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(row).toHaveAttribute('aria-pressed', 'false');
-  await expect(pill).toHaveText('복용 완료');
+  await expect(headerSummary).toHaveText('복용 완료');
+  await expect(pill).toHaveCount(0);
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 844 });
-    const pillBox = (await pill.boundingBox())!;
-    const titleBox = (await row.getByRole('heading').boundingBox())!;
-    expect(pillBox.y + pillBox.height).toBeLessThanOrEqual(titleBox.y);
-    expect(Math.abs(pillBox.x - titleBox.x)).toBeLessThanOrEqual(1);
+    const summaryBox = (await headerSummary.boundingBox())!;
+    const titleBox = (await timeline.locator('p').first().boundingBox())!;
+    expect(summaryBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width - 1);
+    expect(Math.abs(
+      summaryBox.y + summaryBox.height / 2 - (titleBox.y + titleBox.height / 2),
+    )).toBeLessThanOrEqual(4);
     expect(await detail.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     expect((await detail.getByRole('button', { name: /처방 접기$/ }).boundingBox())!.width).toBe(44);
     await page.screenshot({ path: testInfo.outputPath(`353-home-medication-completion-${width}.png`), fullPage: true });
   }
   await row.click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
-  await expect(pill).toHaveText('복용 완료');
+  await expect(headerSummary).toHaveText('복용 완료');
   await detail.getByRole('button', { name: '복약 기록 되돌리기' }).click();
+  await expect(headerSummary).toHaveCount(0);
   await expect(pill).toHaveCount(0);
   await expect(row).toHaveAttribute('aria-pressed', 'false');
 });
@@ -147,7 +158,8 @@ for (const { hiddenFails, allVisibleTaken } of [
       await expect.poll(() => requests.map(item => item.recordId).sort()).toEqual([12, 12, 24]);
     }
     await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
-    await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(3);
+    await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(1);
+    await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(0);
     await expect(detail.getByRole('button', { name: '복약 기록 되돌리기' })).toBeDisabled();
     expect(requests.every(item => item.recordId !== 36 && item.taken)).toBe(true);
   });
@@ -250,21 +262,14 @@ test('처방이 3개 이상이면 두 행만 먼저 보여줘도 기본 복용�
 
   const action = detail.getByRole('button', { name: '먹었어요' });
   await action.click();
-  const firstCompleted = detail.getByRole('article').nth(0).locator('[data-episode-completed-badge]');
-  const secondCompleted = detail.getByRole('article').nth(1).locator('[data-episode-completed-badge]');
-  await expect(firstCompleted).toBeVisible();
-  await expect(secondCompleted).toBeVisible();
-  await expect(firstCompleted).toHaveAttribute('aria-hidden', 'true');
-  await expect(firstCompleted).toHaveText('복용 완료');
-  const badgeBox = (await firstCompleted.boundingBox())!;
-  const titleBox = (await detail.getByRole('article').nth(0).getByRole('heading').boundingBox())!;
-  expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(titleBox.y);
-  expect(Math.abs(badgeBox.x - titleBox.x)).toBeLessThanOrEqual(1);
+  await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(1);
+  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(0);
   await expect(detail.getByRole('article').nth(2)).toHaveCount(0);
   await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
   const hiddenEpisode = detail.getByRole('article').nth(2);
   await expect(hiddenEpisode.getByRole('heading', { name: '첫 처방', exact: true })).toBeVisible();
-  await expect(hiddenEpisode.locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
+  await expect(hiddenEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(page.locator('[data-medication-completed-summary]')).toHaveText('복용 완료');
   await expect(hiddenEpisode.getByRole('button', { name: '첫 처방 · 8월 22일 처방 복용 완료' })).toHaveAttribute(
     'aria-pressed',
     'false',
@@ -326,7 +331,8 @@ test('긴 처방 별칭과 약 이름은 모바일과 데스크톱에서 화살�
   }
 });
 
-test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 펼친다', async ({ page }) => {
+test('펼친 처방은 내부 약 목록 토글 없이 모든 약을 표시하고 외부 처방 접기는 유지한다', async ({ page }, testInfo) => {
+  test.setTimeout(30_000);
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   await routeHome(page);
   await page.goto('/home');
@@ -338,23 +344,31 @@ test('펼친 처방의 약은 세 개까지 보이고 남은 약을 별도로 �
   const first = detail.getByRole('article', { name: /8월 22일 처방/ });
   await first.getByRole('button', { name: /8월 22일 처방.*펼치기/ }).click();
   const medicationList = first.getByRole('list', { name: '8월 22일 처방 약 목록' });
-  await expect(medicationList.getByRole('listitem')).toHaveCount(3);
-  await expect(medicationList.getByText(/처방/)).toHaveCount(0);
-  const more = first.getByRole('button', { name: '약 2개 더보기' });
-  await expect(more).toBeVisible();
-  await expect(more).toHaveCSS('font-size', '11px');
-  await expect(more).toHaveCSS('font-weight', '500');
-  await expect(more).toHaveAttribute('aria-expanded', 'false');
-  await more.click();
+  const captureVariant = process.env.CAPTURE_384_VARIANT;
+  if (captureVariant === 'before' || captureVariant === 'after') {
+    await page.screenshot({
+      path: path.resolve(
+        testInfo.config.rootDir,
+        '../../../design-plans/384/screenshots',
+        captureVariant,
+        'issue6-expanded-episode-all-medications.png',
+      ),
+      fullPage: true,
+    });
+  }
   await expect(medicationList.getByRole('listitem')).toHaveCount(5);
-  const medicationCollapse = first.getByRole('button', { name: '약 목록 접기', exact: true });
-  await expect(medicationCollapse).toHaveCount(1);
-  await expect(medicationCollapse).toHaveAttribute('aria-expanded', 'true');
-  await expect(medicationCollapse).toHaveText('');
-  await expect(medicationCollapse.locator('svg')).toHaveCount(1);
-  await medicationCollapse.click();
-  await expect(medicationList.getByRole('listitem')).toHaveCount(3);
-  await expect(first.getByRole('button', { name: '약 2개 더보기' })).toHaveAttribute(
+  await expect(medicationList.getByText(/처방/)).toHaveCount(0);
+  await expect(first.getByRole('button', { name: /약 \d+개 더보기/ })).toHaveCount(0);
+  await expect(first.getByRole('button', { name: '약 목록 접기', exact: true })).toHaveCount(0);
+
+  const episodeCollapse = first.getByRole('button', {
+    name: '첫 처방 · 8월 22일 처방 접기',
+    exact: true,
+  });
+  await expect(episodeCollapse).toHaveAttribute('aria-expanded', 'true');
+  await episodeCollapse.click();
+  await expect(medicationList).toHaveCount(0);
+  await expect(first.getByRole('button', { name: /8월 22일 처방.*펼치기/ })).toHaveAttribute(
     'aria-expanded',
     'false',
   );
