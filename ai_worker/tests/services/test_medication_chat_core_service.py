@@ -54,6 +54,15 @@ class FakeUseCase:
             schema_version="medication-chat-result-v1",
         )
 
+    async def current_medication_names(
+        self,
+        *,
+        user_id: int,
+        care_episode_id: int | None,
+    ) -> list[str]:
+        self.current_medication_names_input = (user_id, care_episode_id)
+        return ["타이레놀정500밀리그램"]
+
 
 async def test_service_reuses_use_case_entrypoint() -> None:
     use_case = FakeUseCase()
@@ -87,6 +96,19 @@ async def test_service_forwards_progress_callback() -> None:
     assert use_case.progress_callback is callback
 
 
+async def test_service_exposes_current_medication_names() -> None:
+    use_case = FakeUseCase()
+    service = MedicationChatCoreService(use_case=use_case)
+
+    names = await service.current_medication_names(
+        user_id=7,
+        care_episode_id=12,
+    )
+
+    assert names == ["타이레놀정500밀리그램"]
+    assert use_case.current_medication_names_input == (7, 12)
+
+
 def test_builder_rejects_missing_openai_key() -> None:
     settings = Config(OPENAI_API_KEY=None, _env_file=None)
 
@@ -111,7 +133,23 @@ def test_builder_reuses_injected_chat_tracer() -> None:
 
     assert service.tracer is tracer
     assert service._use_case._conditional_interpretation_chain is None
+    assert service._use_case._conversation_gate_chain is None
+    assert service._use_case._conversation_response_generator is None
     assert service._use_case._semantic_question_router is None
+
+
+def test_builder_wires_conversation_gate_and_response_generator_when_enabled() -> None:
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            CONVERSATION_GATE_ENABLED=True,
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+    )
+
+    assert service._use_case._conversation_gate_chain is not None
+    assert service._use_case._conversation_response_generator is not None
 
 
 def test_builder_wires_semantic_router_only_when_enabled() -> None:

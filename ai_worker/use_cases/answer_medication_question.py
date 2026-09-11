@@ -12,6 +12,10 @@ from ai_worker.chains.conditional_question_interpretation_chain import (
     ConditionalQuestionInterpretationInput,
     ConditionalQuestionInterpretationOutput,
 )
+from ai_worker.chains.conversation_gate_chain import (
+    ConversationGateChain,
+    ConversationGateInput,
+)
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChain,
     MedicationQueryPlanChainInput,
@@ -33,6 +37,7 @@ from ai_worker.domain.chat_risk_policy import MedicationChatRiskPolicy
 from ai_worker.domain.chat_session_reference_memory import (
     ChatSessionReferenceMemory,
 )
+from ai_worker.domain.conversation_safety_policy import ConversationSafetyPolicy
 from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.evidence_gap_guidance import (
     EvidenceGapGuidanceBuilder,
@@ -42,6 +47,7 @@ from ai_worker.domain.fatigue_conversation_policy import (
     FatigueConversationDisposition,
     FatigueConversationPolicy,
 )
+from ai_worker.domain.intake_display import format_active_medication_names
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
@@ -67,8 +73,13 @@ from ai_worker.domain.medication_evidence_coverage import (
 from ai_worker.domain.medication_question_retrieval_policy import (
     should_execute_source_backed_retrieval,
 )
+from ai_worker.domain.urgent_health_signal_policy import UrgentHealthSignalPolicy
 from ai_worker.llm.assemblers.medication_answer_assembler import (
     MedicationAnswerAssembler,
+)
+from ai_worker.llm.generators.conversation_response_generator import (
+    ConversationResponseGenerator,
+    ConversationResponseInput,
 )
 from ai_worker.observability.chat_tracer import ChatTracer, NoOpChatTracer
 from ai_worker.rag.errors import GuidelineRetrievalError
@@ -82,6 +93,11 @@ from ai_worker.rag.query_builders.coverage_gap_query_expander import (
 )
 from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
     MedicationKnowledgeQueryBuilder,
+)
+from ai_worker.schemas.conversation_gate import (
+    ConversationClassification,
+    ConversationDisposition,
+    ConversationIntent,
 )
 from ai_worker.schemas.enums import SafetyStatus
 from ai_worker.schemas.interaction import (
@@ -111,6 +127,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRiskDecision,
+    MedicationChatRiskScope,
     MedicationChatRoute,
     MedicationChatSource,
     MedicationChatSourceKind,
@@ -187,6 +204,7 @@ class _QuestionRoutingOutcome:
 
 class AnswerMedicationQuestionUseCase:
     _MAX_PRODUCT_NAME_CANDIDATES = 12
+    _PARENTHETICAL_DESCRIPTION_PATTERN = re.compile(r"\s*[\(（][^()（）]*[\)）]")
     _EXACT_PRODUCT_REQUIRED_PATTERN = re.compile(
         r"복용법|사용법|어떻게\s*(?:먹|복용)|"
         r"몇\s*(?:정|캡슐|포)|용량|횟수|간격|"
@@ -222,6 +240,10 @@ class AnswerMedicationQuestionUseCase:
         supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
         query_plan_chain: MedicationQueryPlanChain | None = None,
         conditional_interpretation_chain: ConditionalQuestionInterpretationChain | None = None,
+        conversation_gate_chain: ConversationGateChain | None = None,
+        conversation_response_generator: ConversationResponseGenerator | None = None,
+        conversation_safety_policy: ConversationSafetyPolicy | None = None,
+        urgent_health_signal_policy: UrgentHealthSignalPolicy | None = None,
         semantic_question_router: SemanticQuestionRouter | None = None,
         risk_policy: MedicationChatRiskPolicy | None = None,
         dose_question_policy: MedicationDoseQuestionPolicy | None = None,
@@ -238,6 +260,10 @@ class AnswerMedicationQuestionUseCase:
         self._supplement_ingredient_catalog = supplement_ingredient_catalog
         self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
         self._conditional_interpretation_chain = conditional_interpretation_chain
+        self._conversation_gate_chain = conversation_gate_chain
+        self._conversation_response_generator = conversation_response_generator
+        self._conversation_safety_policy = conversation_safety_policy or ConversationSafetyPolicy()
+        self._urgent_health_signal_policy = urgent_health_signal_policy or UrgentHealthSignalPolicy()
         self._semantic_question_router = semantic_question_router
         self._risk_policy = risk_policy or MedicationChatRiskPolicy()
         self._dose_question_policy = dose_question_policy or MedicationDoseQuestionPolicy()
@@ -511,6 +537,7 @@ class AnswerMedicationQuestionUseCase:
             execution_plan=execution_plan,
             resolution=resolution,
             rag_unavailable=rag_unavailable,
+            risk_decision=risk_decision,
             interpretation=interpretation,
             guide_lookup=guide_lookup,
             rules=rules,
@@ -554,13 +581,10 @@ class AnswerMedicationQuestionUseCase:
                 product_name=referenced_product_name,
                 evidence_coverage=evidence_coverage,
             )
-            include_patient_context = self._should_include_patient_context(
+            answer_context = self._answer_context_for_route(
+                context=context,
                 request=request,
                 route=route,
-            )
-            answer_context = self._answer_context(
-                context=context,
-                include_patient_context=include_patient_context,
             )
             draft = MedicationChatResult(
                 request_id=request.request_id,
@@ -687,6 +711,30 @@ class AnswerMedicationQuestionUseCase:
             generated=generated,
             execution_plan=execution_plan,
         )
+
+    async def current_medication_names(
+        self,
+        *,
+        user_id: int,
+        care_episode_id: int | None,
+    ) -> list[str]:
+        """챗 상단에 표시할 활성 복약정보의 제품명만 반환한다."""
+
+        context = await self._context_provider.get_active_context(
+            user_id=user_id,
+            care_episode_id=care_episode_id,
+        )
+        names: list[str] = []
+        seen: set[str] = set()
+        for medication in context.medications:
+            name = self._PARENTHETICAL_DESCRIPTION_PATTERN.sub("", medication.name)
+            name = " ".join(name.split())
+            key = name.casefold()
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            names.append(name)
+        return names
 
     async def _validate_generated_answer(
         self,
@@ -1212,6 +1260,15 @@ class AnswerMedicationQuestionUseCase:
                 resolution=None,
                 early_result=fatigue_result,
             )
+        if self._urgent_health_signal_policy.evaluate(request.question):
+            return PreparedMedicationQuestion(
+                request=request,
+                resolution=None,
+                early_result=self._urgent_health_result(
+                    request=request,
+                    context=context,
+                ),
+            )
         resolution = await self._resolve_question(
             request=request,
             context=context,
@@ -1226,13 +1283,20 @@ class AnswerMedicationQuestionUseCase:
             MedicationQuestionScope.GREETING,
             MedicationQuestionScope.OUT_OF_SCOPE,
         }:
+            conversation_result = await self._conversation_terminal_result(
+                request=request,
+                context=context,
+            )
             return PreparedMedicationQuestion(
                 request=request,
                 resolution=resolution,
-                early_result=self._out_of_scope_result(
-                    request=request,
-                    context=context,
-                    resolution=resolution,
+                early_result=(
+                    conversation_result
+                    or self._out_of_scope_result(
+                        request=request,
+                        context=context,
+                        resolution=resolution,
+                    )
                 ),
             )
         if resolution.status == MedicationExpressionResolutionStatus.CLARIFICATION_REQUIRED:
@@ -1251,6 +1315,177 @@ class AnswerMedicationQuestionUseCase:
             ),
             resolution=resolution,
             early_result=None,
+        )
+
+    async def _conversation_terminal_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> MedicationChatResult | None:
+        """카탈로그 대상이 없는 질문만 구조화 Gate로 안전하게 처리한다."""
+
+        if self._conversation_gate_chain is None:
+            return None
+        try:
+            classification = ConversationClassification.model_validate(
+                await self._conversation_gate_chain.ainvoke(
+                    ConversationGateInput(
+                        question=request.question,
+                        recent_history=request.history,
+                    )
+                )
+            )
+        except Exception:
+            return None
+
+        return await self._conversation_classification_result(
+            request=request,
+            context=context,
+            classification=classification,
+        )
+
+    async def _conversation_classification_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        classification: ConversationClassification,
+    ) -> MedicationChatResult | None:
+        decision = self._conversation_safety_policy.decide(classification)
+        if decision.disposition is ConversationDisposition.URGENT:
+            return self._urgent_health_result(request=request, context=context)
+        if decision.disposition is ConversationDisposition.BLOCK:
+            return self._sensitive_request_result(request=request, context=context)
+        if decision.disposition is ConversationDisposition.REDIRECT:
+            return self._conversation_result(
+                request=request,
+                context=context,
+                answer=(
+                    "이 챗봇은 약·영양제·복약 정보와 건강관리 관련 질문을 안내합니다. "
+                    "관련된 내용으로 질문해 주세요."
+                ),
+                route=MedicationChatRoute.OUT_OF_SCOPE,
+                safety_status=SafetyStatus.SAFE,
+                reason_code=MedicationChatReasonCode.OUT_OF_SCOPE_REDIRECTED,
+            )
+        return await self._conversation_allow_result(
+            request=request,
+            context=context,
+            classification=classification,
+        )
+
+    async def _conversation_allow_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        classification: ConversationClassification,
+    ) -> MedicationChatResult | None:
+        if self._conversation_response_generator is None:
+            return None
+
+        route_and_reason = {
+            ConversationIntent.VAGUE_SYMPTOM: (
+                MedicationChatRoute.CLARIFICATION,
+                MedicationChatReasonCode.SYMPTOM_FOLLOW_UP_REQUIRED,
+            ),
+            ConversationIntent.SPECIFIC_SYMPTOM: (
+                MedicationChatRoute.CLARIFICATION,
+                MedicationChatReasonCode.SYMPTOM_FOLLOW_UP_REQUIRED,
+            ),
+            ConversationIntent.CASUAL: (
+                MedicationChatRoute.OUT_OF_SCOPE,
+                MedicationChatReasonCode.CONVERSATION_CASUAL,
+            ),
+            ConversationIntent.GREETING: (
+                MedicationChatRoute.OUT_OF_SCOPE,
+                MedicationChatReasonCode.CONVERSATION_GREETING,
+            ),
+        }.get(classification.intent)
+        if route_and_reason is None:
+            return None
+        route, reason_code = route_and_reason
+
+        active_medication_names = (
+            format_active_medication_names(item.name for item in context.medications)
+            if classification.intent is ConversationIntent.SPECIFIC_SYMPTOM
+            else []
+        )
+        response_input = ConversationResponseInput(
+            question=request.question,
+            intent=classification.intent,
+            follow_up_fields=classification.follow_up_fields,
+            active_medication_names=active_medication_names,
+        )
+        try:
+            answer = await self._conversation_response_generator.generate(response_input)
+        except Exception:
+            answer = self._conversation_response_generator.fallback(response_input)
+        return self._conversation_result(
+            request=request,
+            context=context,
+            answer=answer,
+            route=route,
+            safety_status=SafetyStatus.SAFE,
+            reason_code=reason_code,
+        )
+
+    @classmethod
+    def _conversation_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        answer: str,
+        route: MedicationChatRoute,
+        safety_status: SafetyStatus,
+        reason_code: MedicationChatReasonCode,
+    ) -> MedicationChatResult:
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=answer,
+            route=route,
+            safety_status=safety_status,
+            safety_reason_codes=[reason_code.value],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+        )
+
+    @classmethod
+    def _urgent_health_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> MedicationChatResult:
+        return cls._conversation_result(
+            request=request,
+            context=context,
+            answer=(
+                "호흡이 어렵거나 심한 흉통·의식 저하 같은 증상이 있으면 즉시 119 또는 "
+                "가까운 응급의료기관에 도움을 요청하세요."
+            ),
+            route=MedicationChatRoute.RESTRICTED,
+            safety_status=SafetyStatus.RESTRICTED,
+            reason_code=MedicationChatReasonCode.HEALTH_URGENCY,
+        )
+
+    @classmethod
+    def _sensitive_request_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> MedicationChatResult:
+        return cls._conversation_result(
+            request=request,
+            context=context,
+            answer="요청하신 내용을 돕거나 구체적인 방법을 안내할 수 없습니다.",
+            route=MedicationChatRoute.RESTRICTED,
+            safety_status=SafetyStatus.BLOCKED,
+            reason_code=MedicationChatReasonCode.SENSITIVE_REQUEST_BLOCKED,
         )
 
     @classmethod
@@ -1816,30 +2051,27 @@ class AnswerMedicationQuestionUseCase:
         )
 
     @classmethod
-    def _should_include_patient_context(
+    def _answer_context_for_route(
         cls,
         *,
+        context: ActiveIntakeContext,
         request: MedicationChatRequest,
         route: MedicationChatRoute,
-    ) -> bool:
-        """사용자가 자신의 복약정보를 직접 요청한 경우에만 답변에 노출한다."""
+    ) -> ActiveIntakeContext:
+        """질문 경로에 필요한 등록 정보만 답변 초안과 LLM에 전달한다."""
 
-        if cls._PATIENT_CONTEXT_CUE_PATTERN.search(request.question) is not None:
-            return True
-        return request.care_episode_id is not None and route in {
+        requested_personal_context = cls._PATIENT_CONTEXT_CUE_PATTERN.search(request.question) is not None
+        include_medications = requested_personal_context or route in {
             MedicationChatRoute.ACTIVE_INTAKE,
             MedicationChatRoute.MEDICATION_GUIDE,
+            MedicationChatRoute.INTERACTION,
         }
-
-    @staticmethod
-    def _answer_context(
-        *,
-        context: ActiveIntakeContext,
-        include_patient_context: bool,
-    ) -> ActiveIntakeContext:
-        if include_patient_context:
-            return context
-        return ActiveIntakeContext(user_id=context.user_id)
+        return ActiveIntakeContext(
+            user_id=context.user_id,
+            preferred_care_episode_id=context.preferred_care_episode_id,
+            medications=context.medications if include_medications else [],
+            supplements=context.supplements if requested_personal_context else [],
+        )
 
     @staticmethod
     def _with_interpretation(
@@ -2020,6 +2252,7 @@ class AnswerMedicationQuestionUseCase:
         execution_plan: MedicationSearchExecutionPlan,
         resolution: MedicationQuestionResolution | None,
         rag_unavailable: bool,
+        risk_decision: MedicationChatRiskDecision,
         interpretation: MedicationQuestionInterpretation,
         guide_lookup: MedicationGuideLookup,
         rules: list[InteractionRuleFact],
@@ -2065,18 +2298,52 @@ class AnswerMedicationQuestionUseCase:
             progress_callback,
             MedicationChatProgressStage.SAFETY_CHECKING,
         )
+        draft = self._no_evidence_result(
+            request=request,
+            context=context,
+            execution_plan=execution_plan,
+            resolution=resolution,
+            rag_unavailable=rag_unavailable,
+            interpretation=interpretation,
+        )
+        if self._allows_general_supplement_guidance_without_direct_evidence(
+            question=request.question,
+            query_plan=execution_plan.query_plan,
+            rag_unavailable=rag_unavailable,
+            risk_decision=risk_decision,
+        ):
+            draft = draft.model_copy(
+                update={
+                    "route": MedicationChatRoute.SUPPLEMENT_GUIDE,
+                    "safety_status": SafetyStatus.SAFE,
+                    "safety_reason_codes": ["GENERAL_SUPPLEMENT_GUIDANCE"],
+                    "risk_decision": risk_decision,
+                }
+            )
         return await self._rewrite_evidence_gap_result(
             request=request,
             context=context,
             execution_plan=execution_plan,
-            draft=self._no_evidence_result(
-                request=request,
-                context=context,
-                execution_plan=execution_plan,
-                resolution=resolution,
-                rag_unavailable=rag_unavailable,
-                interpretation=interpretation,
-            ),
+            draft=draft,
+        )
+
+    @staticmethod
+    def _allows_general_supplement_guidance_without_direct_evidence(
+        *,
+        question: str,
+        query_plan: MedicationKnowledgeQueryPlan,
+        rag_unavailable: bool,
+        risk_decision: MedicationChatRiskDecision,
+    ) -> bool:
+        """직접 근거가 없어도 저위험 영양제 조합에는 일반 정보만 안내한다."""
+
+        return (
+            not rag_unavailable
+            and risk_decision.domain == MedicationChatAnswerDomain.SUPPLEMENT
+            and risk_decision.scope == MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE
+            and is_interaction_question(question)
+            and bool(query_plan.entities)
+            and all(entity.kind == InteractionEntityKind.SUPPLEMENT for entity in query_plan.entities)
         )
 
     async def _rewrite_evidence_gap_result(
@@ -2089,12 +2356,10 @@ class AnswerMedicationQuestionUseCase:
     ) -> MedicationChatResult:
         """근거 부재라는 확인 사실은 유지한 채 LLM이 출력 경로만 짧게 정리한다."""
 
-        answer_context = self._answer_context(
+        answer_context = self._answer_context_for_route(
             context=context,
-            include_patient_context=self._should_include_patient_context(
-                request=request,
-                route=draft.route,
-            ),
+            request=request,
+            route=draft.route,
         )
         async with self._tracer.span("llm.generate", run_type="llm") as llm_span:
             try:
