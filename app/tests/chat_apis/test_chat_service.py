@@ -93,10 +93,12 @@ class FakeCore:
         self,
         result: MedicationChatResult | None = None,
         error: BaseException | None = None,
+        current_medication_names: list[str] | None = None,
     ) -> None:
         self.result = result
         self.error = error
         self.requests = []
+        self._current_medication_names = current_medication_names or []
 
     async def answer(
         self,
@@ -111,8 +113,25 @@ class FakeCore:
             raise self.error
         return self.result
 
+    async def current_medication_names(
+        self,
+        *,
+        user_id: int,
+        care_episode_id: int | None,
+    ) -> list[str]:
+        self.current_medication_names_input = (user_id, care_episode_id)
+        return self._current_medication_names
+
 
 class SlowCore:
+    async def current_medication_names(
+        self,
+        *,
+        user_id: int,
+        care_episode_id: int | None,
+    ) -> list[str]:
+        return []
+
     async def answer(
         self,
         request,
@@ -182,6 +201,26 @@ async def test_send_passes_server_loaded_history_to_core() -> None:
     assert response.conversation_id == 42
     assert response.message_id == 101
     assert response.sources[0].scope == "official"
+
+
+async def test_send_returns_current_medication_names_for_chat_header() -> None:
+    core = FakeCore(
+        result=build_result(),
+        current_medication_names=["타이레놀정500밀리그램", "리바록사반정"],
+    )
+    service = ChatApplicationService(
+        repository=FakeRepository(),
+        core_service=core,
+        clock=lambda: 1.0,
+    )
+
+    response = await service.send(
+        user=SimpleNamespace(id=1),
+        command=build_command(),
+    )
+
+    assert response.current_medications == ["타이레놀정500밀리그램", "리바록사반정"]
+    assert core.current_medication_names_input == (1, None)
 
 
 async def test_send_injects_structured_reference_from_current_session_only() -> None:

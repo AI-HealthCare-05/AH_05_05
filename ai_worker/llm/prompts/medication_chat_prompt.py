@@ -9,6 +9,7 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRoute,
 )
 
 MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v6"
@@ -32,6 +33,11 @@ def build_medication_chat_messages(
     context: ActiveIntakeContext,
     result: MedicationChatResult,
 ) -> list[BaseMessage]:
+    show_active_medication_section = bool(context.medications) and result.route in {
+        MedicationChatRoute.ACTIVE_INTAKE,
+        MedicationChatRoute.INTERACTION,
+        MedicationChatRoute.MEDICATION_GUIDE,
+    }
     payload = {
         "question": request.question,
         "history": (
@@ -39,11 +45,21 @@ def build_medication_chat_messages(
             if request.session_reference.entities
             else []
         ),
-        "active_medication_names": [item.name for item in context.medications],
+        "active_medication_names": (
+            [item.name for item in context.medications]
+            if show_active_medication_section
+            else []
+        ),
+        "show_active_medication_section": show_active_medication_section,
         "active_supplement_names": [item.name for item in context.supplements],
         "draft_answer": _draft_answer_for_rewrite(result),
         "source_titles": [source.title for source in result.sources],
         "route": result.route.value,
+        "general_supplement_guidance_allowed": (
+            "GENERAL_SUPPLEMENT_GUIDANCE" in result.safety_reason_codes
+            and result.risk_decision is not None
+            and result.risk_decision.scope.value == "EVIDENCE_WITH_GENERAL_GUIDANCE"
+        ),
         "requested_section_types": (
             [section.value for section in result.evidence_coverage.requested_section_types]
             if result.evidence_coverage is not None

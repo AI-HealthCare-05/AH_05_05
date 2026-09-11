@@ -75,6 +75,7 @@ class DbPatientContextProvider:
                         visit_date=visit.visit_date,
                         visit_time=visit.visit_time,
                     ),
+                    visit_time=visit.visit_time,
                     hospital=visit.hospital,
                 )
                 for visit in follow_up_visits

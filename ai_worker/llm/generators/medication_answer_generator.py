@@ -25,6 +25,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRiskScope,
     MedicationChatRoute,
     MedicationChatSourceKind,
 )
@@ -38,6 +39,7 @@ class AsyncMedicationAnswerClient(Protocol):
 
 
 class OpenAIMedicationAnswerGenerator:
+    _GENERAL_SUPPLEMENT_GUIDANCE_REASON_CODE = "GENERAL_SUPPLEMENT_GUIDANCE"
     _LLM_REWRITE_SOURCE_KINDS = frozenset(
         {
             MedicationChatSourceKind.MEDICATION_GUIDE,
@@ -55,7 +57,7 @@ class OpenAIMedicationAnswerGenerator:
         re.IGNORECASE,
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
-    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚫|📋|💊)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
+    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚫|💊|💪🏻)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
     _BULLET_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•])\s*")
     _SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?。！？])\s+")
@@ -115,13 +117,13 @@ class OpenAIMedicationAnswerGenerator:
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED,
             )
-        if not result.sources and not self._is_evidence_gap_guidance(result):
+        if not result.sources and not self._allows_no_source_llm_guidance(result):
             return self._skipped_outcome(
                 result,
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES,
             )
-        if not self._has_external_rewrite_evidence(result) and not self._is_evidence_gap_guidance(result):
+        if not self._has_external_rewrite_evidence(result) and not self._allows_no_source_llm_guidance(result):
             return self._skipped_outcome(
                 result,
                 draft_hash=draft_hash,
@@ -241,6 +243,17 @@ class OpenAIMedicationAnswerGenerator:
         return (
             MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value
             in result.safety_reason_codes
+        )
+
+    @classmethod
+    def _allows_no_source_llm_guidance(cls, result: MedicationChatResult) -> bool:
+        """근거 부재 안내와 저위험 일반 영양 안내만 출처 없이 LLM 정리를 허용한다."""
+
+        return cls._is_evidence_gap_guidance(result) or (
+            cls._GENERAL_SUPPLEMENT_GUIDANCE_REASON_CODE in result.safety_reason_codes
+            and result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+            and result.risk_decision is not None
+            and result.risk_decision.scope == MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE
         )
 
     @staticmethod

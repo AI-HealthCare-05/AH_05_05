@@ -1,6 +1,6 @@
 import hashlib
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from langchain_core.runnables import RunnableLambda
@@ -83,6 +83,7 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryEntityType,
     MedicationQuestionResolution,
 )
+from ai_worker.schemas.patient import FollowUpSchedule
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
@@ -132,6 +133,21 @@ class FakeContextProvider:
         care_episode_id: int | None,
     ) -> ActiveIntakeContext:
         return self.context
+
+
+class StaticFollowUpScheduleProvider:
+    def __init__(self, schedules: list[FollowUpSchedule]) -> None:
+        self.schedules = schedules
+        self.received_input: tuple[int, int] | None = None
+
+    async def list_upcoming_schedules(
+        self,
+        *,
+        user_id: int,
+        limit: int,
+    ) -> list[FollowUpSchedule]:
+        self.received_input = (user_id, limit)
+        return self.schedules
 
 
 class FakeGuideRepository:
@@ -644,6 +660,7 @@ def build_use_case(
     conversation_gate_chain=None,
     conversation_response_generator=None,
     guide_repository=None,
+    follow_up_schedule_provider=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -661,6 +678,7 @@ def build_use_case(
         therapeutic_class_repository=therapeutic_class_repository,
         conversation_gate_chain=conversation_gate_chain,
         conversation_response_generator=conversation_response_generator,
+        follow_up_schedule_provider=follow_up_schedule_provider,
     )
 
 
@@ -688,6 +706,62 @@ async def test_vague_symptom_uses_conversation_gate_without_retrieval() -> None:
     assert result.safety_status is SafetyStatus.SAFE
     assert retriever.received_kwargs is None
     assert "어디" in result.answer
+
+
+async def test_follow_up_schedule_question_returns_registered_upcoming_visits() -> None:
+    schedule_provider = StaticFollowUpScheduleProvider(
+        [
+            FollowUpSchedule(
+                follow_up_visit_id=1,
+                visit_at=datetime(2026, 9, 16, 14, 0),
+                visit_time=datetime(2026, 9, 16, 14, 0).time(),
+                hospital="서울내과",
+            ),
+            FollowUpSchedule(
+                follow_up_visit_id=2,
+                visit_at=datetime(2026, 9, 20, 0, 0),
+                hospital="대학병원",
+            ),
+        ]
+    )
+    result = await build_use_case(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="FOLLOW_UP_SCHEDULE",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+        follow_up_schedule_provider=schedule_provider,
+    ).execute(build_request("내 진료 일정 알려줘"))
+
+    assert result.route.value == "FOLLOW_UP_SCHEDULE"
+    assert "🗓️ **진료 일정**" in result.answer
+    assert "- 9월 16일 14:00 · 서울내과" in result.answer
+    assert "- 9월 20일 · 대학병원" in result.answer
+    assert schedule_provider.received_input == (1, 5)
+
+
+async def test_follow_up_schedule_question_explains_when_no_upcoming_visit_exists() -> None:
+    result = await build_use_case(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="FOLLOW_UP_SCHEDULE",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+        follow_up_schedule_provider=StaticFollowUpScheduleProvider([]),
+    ).execute(build_request("진료 일정 알려줘"))
+
+    assert result.route is MedicationChatRoute.FOLLOW_UP_SCHEDULE
+    assert result.answer == "등록된 예정 진료일정이 없습니다."
 
 
 async def test_specific_symptom_requests_candidate_medicine_without_exposing_active_medications() -> None:
@@ -3018,7 +3092,7 @@ async def test_product_name_drug_food_question_uses_official_guide_with_suppleme
     }
 
 
-async def test_multi_entity_answer_separates_supported_and_unverified_pairs() -> None:
+async def test_multi_entity_answer_uses_generic_notice_for_unverified_pairs() -> None:
     calcium_iron_chunk = build_chunk().model_copy(
         update={
             "content": "칼슘은 한 끼 식사에서 철 흡수에 영향을 줄 수 있습니다.",
@@ -3043,15 +3117,10 @@ async def test_multi_entity_answer_separates_supported_and_unverified_pairs() ->
 
     assert result.route == MedicationChatRoute.INTERACTION
     assert "검색된 상호작용 연구 근거" in result.answer
-    assert "근거를 확인하지 못한 조합" in result.answer
-    assert "와파린 ↔ 비타민 K" in result.answer
-    assert (
-        "칼슘 ↔ 철분"
-        not in result.answer.split(
-            "근거를 확인하지 못한 조합",
-            maxsplit=1,
-        )[1]
-    )
+    assert "☑️ **확인하지 못한 조합**" in result.answer
+    assert "🔁 **확인된 상호작용**" not in result.answer
+    assert "와파린 ↔ 비타민 K" not in result.answer
+    assert "칼슘 ↔ 철분" not in result.answer
 
 
 async def test_unknown_risk_does_not_restrict_general_omega3_intake_guidance() -> None:

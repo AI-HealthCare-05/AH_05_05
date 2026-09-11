@@ -27,6 +27,9 @@ from ai_worker.observability.chat_tracer import (
 from ai_worker.providers.db_active_intake_context_provider import (
     DbActiveIntakeContextProvider,
 )
+from ai_worker.providers.db_follow_up_schedule_provider import (
+    DbFollowUpScheduleProvider,
+)
 from ai_worker.rag.embeddings.openai_embedding_provider import (
     OpenAIEmbeddingProvider,
 )
@@ -226,6 +229,7 @@ def build_medication_chat_core_service(
         therapeutic_class_repository=DbTherapeuticClassRepository(
             active_dataset_version=settings.THERAPEUTIC_CLASS_DATASET_VERSION,
         ),
+        follow_up_schedule_provider=DbFollowUpScheduleProvider(),
     )
     return MedicationChatCoreService(
         use_case=use_case,

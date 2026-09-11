@@ -10,9 +10,12 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationAnswerFallbackReason,
     MedicationAnswerRewriteStatus,
+    MedicationChatAnswerDomain,
     MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRiskDecision,
+    MedicationChatRiskScope,
     MedicationChatRoute,
     MedicationChatSource,
     MedicationChatSourceKind,
@@ -96,11 +99,11 @@ def test_generator_preserves_warning_and_contraindication_section_markdown() -> 
 
 def test_generator_preserves_active_intake_section_markdown() -> None:
     answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
-        "📋 **복약정보**\n- 가상 약 A · 1정\n\n💊 **영양제 정보**\n- 가상 영양제 B · 1캡슐"
+        "💊 **복약정보**\n- 가상 약 A · 1정\n\n💪🏻 **영양제 정보**\n- 가상 영양제 B · 1캡슐"
     )
 
-    assert answer.startswith("📋 **복약정보**")
-    assert "💊 **영양제 정보**" in answer
+    assert answer.startswith("💊 **복약정보**")
+    assert "💪🏻 **영양제 정보**" in answer
 
 
 async def test_generator_skips_llm_when_no_grounded_sources() -> None:
@@ -121,6 +124,49 @@ async def test_generator_skips_llm_when_no_grounded_sources() -> None:
     assert outcome.observation.status == MedicationAnswerRewriteStatus.SKIPPED
     assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES
     assert outcome.observation.generated_answer_hash is None
+
+
+async def test_generator_uses_llm_for_low_risk_general_supplement_guidance_without_rag_source() -> None:
+    client = FakeAnswerClient(
+        response={
+            "answer": (
+                "✅ **함께 섭취 시 참고사항**\n\n"
+                "- 마그네슘과 아연은 일반적으로 함께 섭취되는 영양성분입니다.\n"
+                "- 제품별 총 섭취량과 속 불편함 여부를 확인해 주세요."
+            ),
+            "section_types": [],
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.SUPPLEMENT_GUIDE,
+            "answer": "마그네슘과 아연 병용에 대한 직접 검색 근거는 확인되지 않았습니다.",
+            "sources": [],
+            "safety_reason_codes": ["GENERAL_SUPPLEMENT_GUIDANCE"],
+            "risk_decision": MedicationChatRiskDecision(
+                domain=MedicationChatAnswerDomain.SUPPLEMENT,
+                scope=MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE,
+            ),
+        }
+    )
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="마그네슘과 아연을 같이 먹어도 돼?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
+    assert "함께 섭취 시 참고사항" in outcome.result.answer
+    assert client.messages is not None
 
 
 async def test_generator_uses_llm_for_evidence_gap_official_guidance() -> None:

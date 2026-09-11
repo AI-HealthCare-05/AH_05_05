@@ -11,6 +11,7 @@ from ai_worker.schemas.enums import ChatRole, SafetyStatus
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
+    ActiveMedication,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -224,9 +225,86 @@ def test_prompt_limits_product_output_to_requested_sections() -> None:
 
 
 def test_system_prompt_treats_active_intake_as_requested_sections() -> None:
-    assert "📋 **복약정보**" in SYSTEM_PROMPT
-    assert "💊 **영양제 정보**" in SYSTEM_PROMPT
-    assert "등록한 복약정보" in SYSTEM_PROMPT
+    assert "💊 **복약정보**" in SYSTEM_PROMPT
+    assert "💪🏻 **영양제 정보**" in SYSTEM_PROMPT
+    assert "active_supplement_names" in SYSTEM_PROMPT
+
+
+def test_system_prompt_requires_server_selected_active_medication_section() -> None:
+    assert "show_active_medication_section" in SYSTEM_PROMPT
+    assert "active_medication_names" in SYSTEM_PROMPT
+
+
+def test_build_messages_marks_active_medication_section_as_required_for_medication_route() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="타이레놀의 효능을 알려줘",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="💊 **복약정보**\n- 세레콕시브캡슐200mg\n\n타이레놀 안내",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="세레콕시브캡슐200mg",
+                )
+            ],
+        ),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["show_active_medication_section"] is True
+
+
+def test_build_messages_does_not_require_active_medication_section_for_general_route() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="안녕하세요",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="안녕하세요.",
+        route=MedicationChatRoute.GENERAL_GUIDANCE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="세레콕시브캡슐200mg",
+                )
+            ],
+        ),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["show_active_medication_section"] is False
 
 
 def test_build_messages_redacts_unrequested_dosage_from_draft() -> None:

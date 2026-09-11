@@ -47,11 +47,13 @@ from ai_worker.domain.fatigue_conversation_policy import (
     FatigueConversationDisposition,
     FatigueConversationPolicy,
 )
+from ai_worker.domain.follow_up_schedule_answer import FollowUpScheduleAnswerAssembler
 from ai_worker.domain.interaction_question_detector import (
     is_interaction_question,
 )
 from ai_worker.domain.interfaces import (
     ActiveIntakeContextProvider,
+    FollowUpScheduleProvider,
     GroundedClaimValidator,
     InteractionRuleRepository,
     MedicationAnswerGenerator,
@@ -248,6 +250,7 @@ class AnswerMedicationQuestionUseCase:
         risk_policy: MedicationChatRiskPolicy | None = None,
         dose_question_policy: MedicationDoseQuestionPolicy | None = None,
         therapeutic_class_repository: TherapeuticClassRepository | None = None,
+        follow_up_schedule_provider: FollowUpScheduleProvider | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -268,6 +271,7 @@ class AnswerMedicationQuestionUseCase:
         self._risk_policy = risk_policy or MedicationChatRiskPolicy()
         self._dose_question_policy = dose_question_policy or MedicationDoseQuestionPolicy()
         self._therapeutic_class_repository = therapeutic_class_repository
+        self._follow_up_schedule_provider = follow_up_schedule_provider
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -1286,6 +1290,18 @@ class AnswerMedicationQuestionUseCase:
             request=request,
             resolution=resolution,
         )
+        if self._is_entity_free_unresolved_question(resolution):
+            schedule_result = await self._conversation_terminal_result(
+                request=request,
+                context=context,
+                allowed_intents=frozenset({ConversationIntent.FOLLOW_UP_SCHEDULE}),
+            )
+            if schedule_result is not None:
+                return PreparedMedicationQuestion(
+                    request=request,
+                    resolution=resolution,
+                    early_result=schedule_result,
+                )
         if resolution.scope in {
             MedicationQuestionScope.GREETING,
             MedicationQuestionScope.OUT_OF_SCOPE,
@@ -1383,8 +1399,9 @@ class AnswerMedicationQuestionUseCase:
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
+        allowed_intents: frozenset[ConversationIntent] | None = None,
     ) -> MedicationChatResult | None:
-        """카탈로그 대상이 없는 질문만 구조화 Gate로 안전하게 처리한다."""
+        """카탈로그 대상이 없는 대화를 구조화 Gate로 안전하게 처리한다."""
 
         if self._conversation_gate_chain is None:
             return None
@@ -1420,10 +1437,23 @@ class AnswerMedicationQuestionUseCase:
                 }
             )
 
+        if allowed_intents is not None and classification.intent not in allowed_intents:
+            return None
+
         return await self._conversation_classification_result(
             request=request,
             context=context,
             classification=classification,
+        )
+
+    @staticmethod
+    def _is_entity_free_unresolved_question(
+        resolution: MedicationQuestionResolution,
+    ) -> bool:
+        return (
+            resolution.status is MedicationExpressionResolutionStatus.UNRESOLVED
+            and resolution.entity_resolution_available
+            and not resolution.entities
         )
 
     async def _conversation_classification_result(
@@ -1449,10 +1479,66 @@ class AnswerMedicationQuestionUseCase:
                 safety_status=SafetyStatus.SAFE,
                 reason_code=MedicationChatReasonCode.OUT_OF_SCOPE_REDIRECTED,
             )
+        if classification.intent is ConversationIntent.FOLLOW_UP_SCHEDULE:
+            return await self._follow_up_schedule_result(
+                request=request,
+                context=context,
+            )
         return await self._conversation_allow_result(
             request=request,
             context=context,
             classification=classification,
+        )
+
+    async def _follow_up_schedule_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+    ) -> MedicationChatResult | None:
+        if self._follow_up_schedule_provider is None:
+            return None
+
+        started_at = time.perf_counter()
+        async with self._tracer.span(
+            "follow_up_schedule.load",
+            run_type="tool",
+        ) as schedule_span:
+            try:
+                schedules = await self._follow_up_schedule_provider.list_upcoming_schedules(
+                    user_id=request.user_id,
+                    limit=5,
+                )
+            except Exception:
+                schedule_span.end(
+                    {
+                        "duration_ms": round((time.perf_counter() - started_at) * 1000),
+                        "status": "FAILED",
+                    }
+                )
+                return self._conversation_result(
+                    request=request,
+                    context=context,
+                    answer="진료일정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                    route=MedicationChatRoute.FOLLOW_UP_SCHEDULE,
+                    safety_status=SafetyStatus.SAFE,
+                    reason_code=MedicationChatReasonCode.FOLLOW_UP_SCHEDULE_UNAVAILABLE,
+                )
+            schedule_span.end(
+                {
+                    "schedule_count": len(schedules),
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000),
+                    "status": "COMPLETED",
+                }
+            )
+
+        return self._conversation_result(
+            request=request,
+            context=context,
+            answer=FollowUpScheduleAnswerAssembler.assemble(schedules),
+            route=MedicationChatRoute.FOLLOW_UP_SCHEDULE,
+            safety_status=SafetyStatus.SAFE,
+            reason_code=MedicationChatReasonCode.FOLLOW_UP_SCHEDULE_REQUESTED,
         )
 
     async def _conversation_allow_result(

@@ -57,3 +57,15 @@ async def test_chain_sends_only_four_recent_messages_and_returns_structured_outp
         "대화 5",
         "대화 6",
     ]
+
+
+def test_classification_accepts_follow_up_schedule_intent() -> None:
+    output = ConversationClassification.model_validate(
+        {
+            "intent": "FOLLOW_UP_SCHEDULE",
+            "safety_signal": "NONE",
+            "confidence": "HIGH",
+        }
+    )
+
+    assert output.intent.value == "FOLLOW_UP_SCHEDULE"

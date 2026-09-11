@@ -251,6 +251,7 @@ async def update_chat_feedback(
 @chat_router.post(
     "",
     response_model=SendChatResponse,
+    response_model_exclude_unset=True,
     summary="약·영양제 근거 기반 답변 생성",
     description=(
         "인증 사용자의 확인 완료 복약 기록과 현재 복용 영양제를 우선 조회하고, "
@@ -325,6 +326,7 @@ async def _chat_event_stream(
                     response.model_dump(
                         mode="json",
                         by_alias=True,
+                        exclude_unset=True,
                     ),
                 )
             )

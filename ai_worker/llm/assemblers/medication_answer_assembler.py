@@ -44,14 +44,9 @@ class MedicationAnswerAssembler:
             interaction_lines = [
                 f"- {rule.left_name} ↔ {rule.right_name}: " + " ".join(rule.effect_texts) for rule in rules
             ]
-            sections.append("확인된 상호작용\n" + "\n".join(interaction_lines))
+            sections.append("🔁 **확인된 상호작용**\n" + "\n".join(interaction_lines))
         elif interaction_question and not chunks:
-            sections.append(
-                "확인된 상호작용\n"
-                "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 "
-                "확인하지 못했습니다. 확인되지 않았다는 뜻이지 안전하다는 "
-                "뜻은 아닙니다."
-            )
+            sections.append(self._unverified_interaction_section())
         if guide is not None:
             covered = self._covered_sections(evidence_coverage)
             guide_lines = [
@@ -204,11 +199,14 @@ class MedicationAnswerAssembler:
     def _unsupported_pairs_section(pairs: list[str]) -> str:
         if not pairs:
             return ""
-        return "근거를 확인하지 못한 조합\n" + "\n".join(
-            f"- {pair}: 현재 승인 규칙과 검색 근거에서 확인하지 "
-            "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 "
-            "아닙니다."
-            for pair in pairs
+        return MedicationAnswerAssembler._unverified_interaction_section()
+
+    @staticmethod
+    def _unverified_interaction_section() -> str:
+        return (
+            "☑️ **확인하지 못한 조합**\n"
+            "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
+            "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
         )
 
     @staticmethod
@@ -242,11 +240,11 @@ class MedicationAnswerAssembler:
 
         sections = []
         if medication_lines:
-            sections.append("📋 **복약정보**\n" + "\n".join(medication_lines))
+            sections.append("💊 **복약정보**\n" + "\n".join(medication_lines))
 
         supplement_lines = []
         for supplement in context.supplements:
             supplement_lines.append(f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}")
         if supplement_lines:
-            sections.append("💊 **영양제 정보**\n" + "\n".join(supplement_lines))
+            sections.append("💪🏻 **영양제 정보**\n" + "\n".join(supplement_lines))
         return sections
