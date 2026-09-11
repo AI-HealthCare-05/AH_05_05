@@ -29,6 +29,10 @@ class Config(BaseSettings):
     OPENAI_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     OPENAI_MAX_RETRIES: int = Field(default=2, ge=0)
     CONDITIONAL_QUESTION_INTERPRETATION_ENABLED: bool = False
+    CONVERSATION_GATE_ENABLED: bool = False
+    CONVERSATION_GATE_MODEL: str = "gpt-4o-mini"
+    CONVERSATION_GATE_MAX_HISTORY_MESSAGES: int = Field(default=4, ge=0, le=10)
+    CONVERSATION_GATE_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
     SEMANTIC_ROUTER_ENABLED: bool = False
     SEMANTIC_ROUTER_MODEL: str = "intfloat/multilingual-e5-small"
     SEMANTIC_ROUTER_MIN_SCORE: float = Field(default=0.78, ge=-1.0, le=1.0)
