@@ -722,6 +722,122 @@ async def test_specific_symptom_lists_active_medications_without_recommending_dr
     assert "복통에 효과 있는 약" not in result.answer
 
 
+async def test_specific_symptom_does_not_infer_interaction_from_active_medications() -> None:
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="리바록사반정",
+                ),
+                ActiveMedication(
+                    medication_id=2,
+                    care_episode_id=1,
+                    name="파모티딘정",
+                ),
+            ],
+        ),
+        rule_repository=FailingRuleRepository(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SPECIFIC_SYMPTOM",
+                safety_signal="NONE",
+                confidence="HIGH",
+                follow_up_fields=["ONSET", "SEVERITY"],
+            )
+        ),
+        conversation_response_generator=StaticConversationResponseGenerator(
+            "💊 **복약정보**\n- 리바록사반정\n- 파모티딘정\n\n"
+            "🩺 **확인을 위해 필요한 정보**\n- 증상이 시작된 시점과 통증 정도를 알려주세요."
+        ),
+    ).execute(build_request("배가 아프고 속이 쓰려"))
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert "🔁 **상호작용**" not in result.answer
+    assert "상호작용이 있습니다" not in result.answer
+
+
+async def test_explicit_active_medication_interaction_uses_approved_rule() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=1,
+                name="파모티딘정",
+            ),
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(
+                kind=InteractionEntityKind.DRUG,
+                display_name="리바록사반정",
+            ),
+            InteractionEntity(
+                kind=InteractionEntityKind.DRUG,
+                display_name="파모티딘정",
+            ),
+        ),
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="파모티딘정",
+        risk_level="CAUTION",
+        effect_texts=["승인된 상호작용 근거입니다."],
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert any(
+        source.kind is MedicationChatSourceKind.INTERACTION_RULE
+        for source in result.sources
+    )
+
+
+async def test_active_medication_interaction_without_approved_rule_states_uncertainty() -> None:
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="리바록사반정",
+                ),
+                ActiveMedication(
+                    medication_id=2,
+                    care_episode_id=1,
+                    name="파모티딘정",
+                ),
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert "상호작용을 확인하지 못했습니다" in result.answer
+    assert "안전하다는 의미는 아닙니다" in result.answer
+
+
 async def test_harmful_request_is_blocked_before_rag() -> None:
     result = await build_use_case(
         retriever=RecordingQueryPlanRetriever(),
