@@ -6,6 +6,7 @@ import { generateIntakeReport } from '@/entities/intake-report/api';
 import type { IntakeReport } from '@/entities/intake-report/types';
 import { ApiError, getAuthGeneration } from '@/shared/api/client';
 import { Button, Header } from '@/shared/ui';
+import { ReportEmailButton } from './ReportEmailButton';
 const IntakeReportBody = lazy(() => import('./IntakeReportBody').then(module => ({ default: module.IntakeReportBody })));
 
 export function AiReportRequestPage() {
@@ -54,7 +55,7 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
         <p className="break-keep text-sm leading-relaxed text-muted-foreground">등록한 복용약과 영양제를 함께 분석해요. 생성하기를 누르면 현재 복용 정보를 바탕으로 AI 보고서를 요청해요.</p>
         <p className="text-sm text-muted-foreground">보고서는 저장되지 않아요.</p>
       </section>}
-      {pending && <p role="status" className="text-sm text-primary">보고서를 생성하고 있어요. 최대 30초 정도 걸릴 수 있어요.</p>}
+      {pending && <p role="status" className="text-sm text-primary">보고서를 생성·검증하고 있어요. 내용 보정이 필요하면 최대 2분 정도 걸릴 수 있어요.</p>}
       {error && <p role="alert" className="rounded-card border border-border bg-card p-4 text-sm text-foreground">{error}</p>}
       {report?.reportStatus === 'EMPTY' ? <section className="space-y-4 rounded-card bg-card p-5 shadow-card">
         <h2 className="text-lg font-bold">분석할 복용 정보가 없어요</h2>

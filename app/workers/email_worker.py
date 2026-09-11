@@ -14,7 +14,7 @@ from app.core.email.smtp_sender import EmailDeliveryError, SmtpEmailSender
 from app.core.utils.security import hash_password
 from app.models.background_jobs import BackgroundJob
 from app.models.email_verifications import EmailVerification
-from app.models.enums import AccountStatus, BackgroundJobStatus
+from app.models.enums import AccountStatus, BackgroundJobStatus, EmailVerificationPurpose
 from app.models.users import User
 from app.repositories.background_job_repository import BackgroundJobRepository
 from app.services.admin_settings import SmtpSettingsService
@@ -166,6 +166,23 @@ async def _is_user_password_reset_sendable(job: BackgroundJob, recipient_email: 
     ).exists()
 
 
+async def _is_intake_report_sendable(job: BackgroundJob, recipient_email: str) -> bool:
+    if job.reference_table != "intake_reports" or job.reference_id is None or job.user_id != job.reference_id:
+        return False
+    user = await User.get_or_none(
+        id=job.reference_id,
+        email=recipient_email.casefold(),
+        status=AccountStatus.ACTIVE,
+    )
+    if user is None:
+        return False
+    return await EmailVerification.filter(
+        email=user.email.casefold(),
+        purpose=EmailVerificationPurpose.SIGNUP,
+        verified_at__not_isnull=True,
+    ).exists()
+
+
 async def _sendability_cancellation_code(payload: EmailJobPayload, job: BackgroundJob) -> str | None:
     if payload.template is EmailTemplate.SIGNUP_VERIFICATION_CODE:
         if not await _is_signup_verification_sendable(payload.verification_id, datetime.now(config.TIMEZONE)):
@@ -173,6 +190,9 @@ async def _sendability_cancellation_code(payload: EmailJobPayload, job: Backgrou
     elif payload.template is EmailTemplate.USER_PASSWORD_RESET:
         if not await _is_user_password_reset_sendable(job, str(payload.recipient_email)):
             return "EMAIL_PASSWORD_RESET_TARGET_INVALID"
+    elif payload.template is EmailTemplate.INTAKE_REPORT:
+        if not await _is_intake_report_sendable(job, str(payload.recipient_email)):
+            return "EMAIL_INTAKE_REPORT_TARGET_INVALID"
     return None
 
 

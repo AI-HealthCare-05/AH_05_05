@@ -128,3 +128,27 @@ def test_user_password_reset_payload_requires_temporary_password() -> None:
             template=EmailTemplate.USER_PASSWORD_RESET,
             recipient_email="recipient@example.com",
         )
+
+
+def test_intake_report_payload_round_trip_is_encrypted() -> None:
+    codec = EmailPayloadCodec(Fernet.generate_key().decode())
+    original = EmailJobPayload(
+        template=EmailTemplate.INTAKE_REPORT,
+        recipient_email="recipient@example.com",
+        report_id="report-20260911-abc123",
+        report_markdown="# 복용약 보고서\n\n제품명: 아주 긴 제품명",
+    )
+
+    token = codec.encrypt(original)
+
+    assert codec.decrypt(token) == original
+    assert "복용약 보고서" not in token
+
+
+def test_intake_report_payload_requires_report_id_and_markdown() -> None:
+    with pytest.raises(ValidationError):
+        EmailJobPayload(
+            template=EmailTemplate.INTAKE_REPORT,
+            recipient_email="recipient@example.com",
+            report_id="report-20260911-abc123",
+        )

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 
+from ai_worker.domain.errors import IntakeReportGenerationError
 from ai_worker.schemas.intake_report import (
     IntakeReportChartData,
     IntakeReportCurrentStackItem,
@@ -17,6 +18,7 @@ from ai_worker.schemas.intake_report import (
 from app.dependencies.intake_report import get_intake_report_application_service
 from app.dependencies.security import get_request_user
 from app.main import app
+from app.services.intake_report import IntakeReportApplicationService
 
 
 def _report() -> IntakeReportResult:
@@ -129,6 +131,13 @@ async def test_post_intake_report_returns_authenticated_camel_case_report() -> N
         "productGuides": [],
         "unverifiedItems": [],
         "reportMarkdown": "# 약·영양제 생활관리 보고서\n\n등록 정보를 확인했습니다.",
+        "presentationVersion": None,
+        "cards": None,
+        "profileLabel": None,
+        "basisNote": None,
+        "fallbackUsed": False,
+        "fallbackReason": None,
+        "emailToken": None,
     }
     assert service.received_user.id == 7
 
@@ -174,6 +183,27 @@ async def test_intake_report_api_is_documented_in_openapi_and_redoc() -> None:
 
     operation = schema["paths"]["/api/v1/intake-reports"]["post"]
     assert operation["summary"] == "내 복용약·영양제 생활관리 보고서 생성"
-    assert set(operation["responses"]) >= {"200", "401", "503", "504"}
+    assert set(operation["responses"]) >= {"200", "401", "502", "503", "504"}
+    assert "120" in operation["responses"]["504"]["description"]
     assert operation["responses"]["200"]["description"] == ("현재 활성 복용정보 기반 보고서 생성 완료")
     assert redoc.status_code == status.HTTP_200_OK
+
+
+async def test_exhausted_generation_returns_502_without_any_report_body() -> None:
+    class FailedCore:
+        async def generate(self, *, user_id):
+            raise IntakeReportGenerationError(reason_code="VALIDATION_FAILED", issue_codes=("MISSING_PRODUCTS",))
+
+    service = IntakeReportApplicationService(core_service=FailedCore())
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
+    app.dependency_overrides[get_intake_report_application_service] = lambda: service
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/v1/intake-reports", json={})
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 502
+    assert response.json() == {
+        "code": "INTAKE_REPORT_GENERATION_FAILED",
+        "message": "AI 보고서가 검증을 통과하지 못해 표시하지 않았어요. 다시 시도해주세요.",
+    }

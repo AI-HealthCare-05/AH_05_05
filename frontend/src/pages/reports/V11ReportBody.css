@@ -1,0 +1,75 @@
+.v11-report { width: 100%; min-width: 0; padding: .25rem 0; color: #183d34; background: linear-gradient(180deg, #eef4ee 0, #f5f7f3 14rem, #f5f7f3 100%); }
+.v11-report, .v11-report * { box-sizing: border-box; }
+.v11-report h1, .v11-report h2, .v11-report h3, .v11-report p { margin: 0; }
+.v11-report h1 { font-size: 1.5rem; line-height: 1.3; letter-spacing: -.05em; }
+.v11-report h2 { font-size: 1.125rem; line-height: 1.35; letter-spacing: -.03em; }
+.v11-report h3 { font-size: .9375rem; line-height: 1.45; overflow-wrap: anywhere; }
+.v11-hero, .v11-card { min-width: 0; border: 1px solid #dce7df; border-radius: 1.2rem; background: #fff; box-shadow: 0 6px 18px rgb(43 81 62 / .035); }
+.v11-hero { padding: 1.25rem; border-color: #d9e6dc; box-shadow: 0 8px 22px rgb(43 81 62 / .06); }
+.v11-eyebrow { display: block; margin-bottom: .375rem; color: #37806a; font-size: .75rem; font-weight: 800; }
+.v11-meta { margin-top: .5rem !important; color: #60786d; font-size: .8125rem; }
+.v11-notice { margin-top: .75rem !important; padding: .625rem .75rem; border-radius: .7rem; background: #eff6ef; color: #48675a; font-size: .75rem; line-height: 1.6; }
+.v11-status { margin: .75rem 0 !important; padding: .75rem; border: 1px solid #dfcfac; border-radius: .7rem; background: #fff8e9; color: #654d25; font-size: .8125rem; line-height: 1.6; }
+.v11-anchor-chips { display: flex; gap: .45rem; overflow-x: auto; margin: .875rem .0625rem 1.125rem; padding: .0625rem 0 .1875rem; scrollbar-width: none; }
+.v11-anchor-chips::-webkit-scrollbar { display: none; }
+.v11-anchor-chips a { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 2.75rem; padding: .375rem .7rem; border: 1px solid #d2e2d5; border-radius: 999px; background: #fbfdfb; color: #296d59; font-size: .75rem; font-weight: 800; text-decoration: none; }
+.v11-anchor-chips a:first-child { border-color: #286e5a; background: #286e5a; color: #fff; }
+.v11-card { margin-bottom: .75rem; padding: 1.125rem; }
+.v11-card > h2 { margin-bottom: .6875rem; scroll-margin-top: 1rem; }
+.v11-interaction-card { border-color: #e5d6b9; background: #fffcf6; box-shadow: none; }
+.v11-interaction-card > h2 { display: flex; align-items: center; gap: .5rem; }
+.v11-interaction-card > h2::before { width: .5rem; height: .5rem; border-radius: 999px; background: #b77525; box-shadow: 0 0 0 .25rem #f7ead5; content: ''; }
+.v11-pair { min-width: 0; padding: 1rem 0; border-top: 1px solid #e7e6dc; }
+.v11-pair:first-of-type { padding-top: .125rem; border-top: 0; }
+.v11-pair:last-child { padding-bottom: 0; }
+.v11-pair h3 { margin-top: .4375rem; }
+.v11-pair p { margin-top: .4375rem; color: #4d685a; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
+.v11-tag { display: inline-block; padding: .1875rem .4375rem; border-radius: .375rem; background: #f6edd8; color: #785822; font-size: .6875rem; font-weight: 800; }
+.v11-urgent .v11-tag { background: #fbe4de; color: #983e30; }
+.v11-action { padding: .625rem; border-radius: .5625rem; background: #f3f6ef; color: #405e51 !important; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
+.v11-urgent .v11-action { background: #fff0eb; }
+.v11-action-group { min-width: 0; padding: 1rem 0; border-top: 1px solid #e7e6dc; }
+.v11-card > h2 + .v11-action-group { padding-top: .125rem; border-top: 0; }
+.v11-action-group:last-child { padding-bottom: 0; }
+.v11-action-group .v11-action-shared { margin-bottom: .875rem; }
+.v11-action-shared-label { display: block; margin-bottom: .25rem; color: #296d59; font-size: .6875rem; font-weight: 800; }
+.v11-action-group .v11-pair { padding-top: .875rem; }
+.v11-action-group .v11-pair:first-of-type { padding-top: 0; }
+.v11-action-group .v11-pair:last-child { padding-bottom: 0; }
+.v11-collapsible { margin-top: .4375rem; font-size: .8125rem; }
+.v11-collapsible-preview { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow-wrap: anywhere; }
+.v11-collapsible-full { margin-top: .375rem; color: #4d685a; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
+.v11-expand-label, .v11-collapse-label { display: inline-flex; align-items: center; gap: .25rem; margin-top: .25rem; color: #1d6e55; font-size: .75rem; font-weight: 800; }
+.v11-collapse-label { display: none; }
+.v11-collapsible[open] .v11-collapsible-preview, .v11-collapsible[open] .v11-expand-label { display: none; }
+.v11-collapsible[open] .v11-collapse-label { display: inline-flex; }
+.v11-card-sources { margin-top: .625rem !important; color: #657b70 !important; font-size: .75rem !important; }
+.v11-report a { color: #1d6e55; }
+.v11-hint, .v11-reference { color: #687c72; font-size: .75rem; line-height: 1.6; overflow-wrap: anywhere; }
+.v11-nutrient { min-width: 0; padding: 1rem 0; border-bottom: 1px solid #e8efea; }
+.v11-nutrient:last-of-type { padding-bottom: 0; border-bottom: 0; }
+.v11-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; min-width: 0; }
+.v11-row-head h3 { min-width: 0; }
+.v11-row-head h3 span { color: #647a6d; font-size: .75rem; font-weight: 400; }
+.v11-row-head strong { flex: 0 0 auto; color: #225f4f; font-size: 1rem; }
+.v11-track { position: relative; height: .5rem; margin: .625rem 0 .3125rem; border-radius: 999px; background: #e9f0eb; }
+.v11-track::after { position: absolute; top: -.1875rem; left: 75%; width: .125rem; height: .875rem; border-radius: .125rem; background: #7a8a82; content: ''; }
+.v11-track > span { display: block; height: 100%; border-radius: inherit; background: #39876f; }
+.v11-scale { position: relative; height: 1.125rem; color: #7a8a82; font-size: .625rem; }
+.v11-scale span { position: absolute; top: 0; }
+.v11-scale span:first-child { left: 0; }.v11-scale span:nth-child(2) { left: 75%; transform: translateX(-50%); }.v11-scale span:last-child { right: 0; }
+.v11-medicine { min-width: 0; padding: 1.125rem 0; border-top: 1px solid #e6eee8; }
+.v11-medicine:first-of-type { padding-top: .125rem; border-top: 0; }.v11-medicine:last-child { padding-bottom: 0; }
+.v11-medicine h3 { font-size: 1rem; }.v11-medicine dl { margin: .9375rem 0 0; }
+.v11-medicine dl > div { margin: .8125rem 0; }.v11-medicine dt { margin-bottom: .25rem; color: #347a66; font-size: .75rem; font-weight: 800; }.v11-medicine dd { margin: 0; color: #3b5d50; font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
+.v11-medicine details, .v11-source-card details { margin-top: 1rem; border-top: 1px solid #e6eee8; }
+.v11-report summary { display: list-item; min-height: 2.75rem; padding: .75rem 0; cursor: pointer; color: #285f4f; font-size: .8125rem; font-weight: 800; }
+.v11-collapsible summary { display: block; min-height: 0; padding: 0; list-style: none; color: #4d685a; font-size: inherit; font-weight: 400; line-height: 1.65; }
+.v11-collapsible summary::-webkit-details-marker { display: none; }
+.v11-extra { margin: .875rem 0; }.v11-extra strong { color: #2b6850; font-size: .75rem; }.v11-extra p { margin-top: .25rem; color: #4d685a; font-size: .8125rem; line-height: 1.65; }
+.v11-supplements { padding: 0; margin: 0; list-style: none; }.v11-supplements li { padding: 1rem 0; border-top: 1px solid #e6eee8; }.v11-supplements li:first-child { padding-top: .125rem; border-top: 0; }.v11-supplements li:last-child { padding-bottom: 0; }.v11-supplements p { margin-top: .375rem; color: #37806a; font-size: .75rem; font-weight: 800; }
+.v11-source-card { background: #fbfdfb; }.v11-source-card details { margin-top: 0; border-top: 0; }.v11-details-body p { margin: 0 0 .75rem; color: #50695a; font-size: .8125rem; line-height: 1.65; }.v11-source-list { margin: 0; padding-left: 1.1rem; color: #50695a; font-size: .8125rem; line-height: 1.7; }.v11-source-list li + li { margin-top: .5rem; }
+.v11-footer { margin: 1.2rem .1875rem 0 !important; color: #708178; font-size: .6875rem; line-height: 1.65; }
+.v11-report a:focus-visible, .v11-report summary:focus-visible { outline: 3px solid #64a991; outline-offset: 3px; border-radius: .25rem; }
+@media (max-width: 350px) { .v11-hero, .v11-card { padding: 1rem; }.v11-report h1 { font-size: 1.35rem; }.v11-action-group, .v11-action-group .v11-pair { padding-top: .625rem; } }
+@media (prefers-reduced-motion: reduce) { .v11-report { scroll-behavior: auto; } }

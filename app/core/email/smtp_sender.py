@@ -84,4 +84,4 @@ class SmtpEmailSender:
         except smtplib.SMTPException as exc:
             raise EmailDeliveryError("EMAIL_SMTP_PERMANENT_ERROR", retryable=False) from exc
 
-        logger.info("email sent: to=%s subject=%s", message.to, message.subject)
+        logger.info("email sent")

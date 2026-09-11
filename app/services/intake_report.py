@@ -2,7 +2,7 @@ import asyncio
 import time
 from collections.abc import Callable
 
-from ai_worker.domain.errors import AIWorkerError
+from ai_worker.domain.errors import AIWorkerError, IntakeReportGenerationError
 from ai_worker.observability.chat_tracer import (
     ChatTracer,
     NoOpChatTracer,
@@ -10,13 +10,14 @@ from ai_worker.observability.chat_tracer import (
 from ai_worker.schemas.intake_report import IntakeReportResult
 from ai_worker.services.intake_report_core_service import IntakeReportCoreService
 from app.core.exceptions import (
+    IntakeReportGenerationFailedError,
     IntakeReportProcessingFailedError,
     IntakeReportTimeoutError,
     IntakeReportUpstreamUnavailableError,
 )
 from app.models.users import User
 
-INTAKE_REPORT_API_GUARD_TIMEOUT_SECONDS = 30.0
+INTAKE_REPORT_API_GUARD_TIMEOUT_SECONDS = 120.0
 
 
 class IntakeReportApplicationService:
@@ -58,6 +59,21 @@ class IntakeReportApplicationService:
                     }
                 )
                 raise IntakeReportTimeoutError from error
+            except IntakeReportGenerationError as error:
+                root_span.end(
+                    {
+                        "status": "FAILED",
+                        "error_type": type(error).__name__,
+                        "reason_code": error.reason_code,
+                        "issue_codes": list(error.issue_codes),
+                        "duration_ms": self._duration_ms(started_at),
+                    }
+                )
+                if error.reason_code == "TIMEOUT":
+                    raise IntakeReportTimeoutError from error
+                if error.reason_code == "VALIDATION_FAILED":
+                    raise IntakeReportGenerationFailedError from error
+                raise IntakeReportUpstreamUnavailableError from error
             except AIWorkerError as error:
                 root_span.end(
                     {
