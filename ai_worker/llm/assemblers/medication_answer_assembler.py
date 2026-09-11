@@ -39,6 +39,7 @@ class MedicationAnswerAssembler:
         evidence_coverage: MedicationEvidenceCoverage | None = None,
     ) -> str:
         sections: list[str] = []
+        has_unverified_interaction_notice = False
         sections.extend(self._patient_intake_sections(context))
         if rules:
             interaction_lines = [
@@ -47,6 +48,7 @@ class MedicationAnswerAssembler:
             sections.append("🔁 **확인된 상호작용**\n" + "\n".join(interaction_lines))
         elif interaction_question and not chunks:
             sections.append(self._unverified_interaction_section())
+            has_unverified_interaction_notice = True
         if guide is not None:
             covered = self._covered_sections(evidence_coverage)
             guide_lines = [
@@ -143,8 +145,13 @@ class MedicationAnswerAssembler:
         unsupported_section = self._unsupported_pairs_section(
             unsupported_pairs or [],
         )
-        sections.extend([unsupported_section] if unsupported_section else [])
-        missing_section = self._missing_evidence_section(evidence_coverage)
+        if unsupported_section and not has_unverified_interaction_notice:
+            sections.append(unsupported_section)
+            has_unverified_interaction_notice = True
+        missing_section = self._missing_evidence_section(
+            evidence_coverage,
+            exclude_interaction=has_unverified_interaction_notice,
+        )
         sections.extend([missing_section] if missing_section else [])
         if not sections:
             sections.append(
@@ -182,6 +189,8 @@ class MedicationAnswerAssembler:
     @staticmethod
     def _missing_evidence_section(
         coverage: MedicationEvidenceCoverage | None,
+        *,
+        exclude_interaction: bool = False,
     ) -> str:
         if coverage is None or not coverage.missing_section_types:
             return ""
@@ -191,8 +200,15 @@ class MedicationAnswerAssembler:
             KnowledgeSectionType.CAUTION: "주의사항",
             KnowledgeSectionType.INTERACTION: "상호작용",
         }
+        missing_sections = [
+            section
+            for section in coverage.missing_section_types
+            if not (exclude_interaction and section is KnowledgeSectionType.INTERACTION)
+        ]
+        if not missing_sections:
+            return ""
         return "근거를 확인하지 못한 항목\n" + "\n".join(
-            f"- {labels[section]}: 현재 근거에서 확인하지 못했습니다." for section in coverage.missing_section_types
+            f"- {labels[section]}: 현재 근거에서 확인하지 못했습니다." for section in missing_sections
         )
 
     @staticmethod
@@ -227,16 +243,7 @@ class MedicationAnswerAssembler:
 
     @staticmethod
     def _patient_intake_sections(context: ActiveIntakeContext) -> list[str]:
-        medication_lines = []
-        for medication in context.medications:
-            details = [medication.name]
-            if medication.dose:
-                details.append(medication.dose)
-            if medication.times_per_day:
-                details.append(f"1일 {medication.times_per_day}회")
-            if medication.days:
-                details.append(f"{medication.days}일")
-            medication_lines.append("- " + " · ".join(details))
+        medication_lines = [f"- {medication.name}" for medication in context.medications]
 
         sections = []
         if medication_lines:

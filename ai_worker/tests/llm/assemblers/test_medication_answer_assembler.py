@@ -161,6 +161,7 @@ def test_assemble_separates_medication_and_supplement_information_with_a_blank_l
                     name="와파린",
                     dose="1정",
                     times_per_day=1,
+                    days=7,
                 )
             ],
             supplements=[
@@ -181,7 +182,10 @@ def test_assemble_separates_medication_and_supplement_information_with_a_blank_l
     )
 
     assert "사용자 확정 복약정보" not in answer
-    assert "💊 **복약정보**\n- 와파린 · 1정 · 1일 1회\n\n💪🏻 **영양제 정보**\n- 비타민 K · 1정" in answer
+    assert "💊 **복약정보**\n- 와파린\n\n💪🏻 **영양제 정보**\n- 비타민 K · 1정" in answer
+    assert "1정" not in answer.split("💪🏻 **영양제 정보**", maxsplit=1)[0]
+    assert "1일 1회" not in answer
+    assert "7일" not in answer
 
 
 def test_assemble_formats_active_intake_as_markdown_sections() -> None:
@@ -213,7 +217,8 @@ def test_assemble_formats_active_intake_as_markdown_sections() -> None:
         interaction_question=False,
     )
 
-    assert answer.startswith("💊 **복약정보**\n- 와파린 · 1정")
+    assert answer.startswith("💊 **복약정보**\n- 와파린")
+    assert "와파린 · 1정" not in answer
     assert "\n\n💪🏻 **영양제 정보**\n- 비타민 K · 1정" in answer
 
 
@@ -254,3 +259,21 @@ def test_assemble_labels_unverified_interaction_without_confirmed_heading() -> N
     assert "☑️ **확인하지 못한 조합**" in answer
     assert "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
     assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in answer
+
+
+def test_assemble_does_not_repeat_unverified_interaction_notice_as_missing_evidence() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=True,
+        unsupported_pairs=["마그네슘 ↔ 아연"],
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.INTERACTION],
+            missing_section_types=[KnowledgeSectionType.INTERACTION],
+        ),
+    )
+
+    assert answer.count("☑️ **확인하지 못한 조합**") == 1
+    assert "근거를 확인하지 못한 항목" not in answer

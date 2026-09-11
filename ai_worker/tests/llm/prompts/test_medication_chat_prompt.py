@@ -181,6 +181,11 @@ def test_system_prompt_uses_v6_few_shot_and_private_answer_checklist() -> None:
     assert "의료진·약사에게 확인할 내용" not in SYSTEM_PROMPT
 
 
+def test_system_prompt_forbids_repeating_unverified_interaction_notice() -> None:
+    assert "`☑️ **확인하지 못한 조합**`이 있으면" in SYSTEM_PROMPT
+    assert "`근거를 확인하지 못한 항목`" in SYSTEM_PROMPT
+
+
 def test_system_prompt_limits_each_requested_section_to_short_bullets() -> None:
     assert "한 bullet은 약 70자 이내" in SYSTEM_PROMPT
     assert "섹션당 핵심 bullet 한 개" in SYSTEM_PROMPT
