@@ -22,6 +22,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationAnswerGenerationOutcome,
     MedicationAnswerPayload,
     MedicationAnswerRewriteStatus,
+    MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -114,13 +115,13 @@ class OpenAIMedicationAnswerGenerator:
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED,
             )
-        if not result.sources:
+        if not result.sources and not self._is_evidence_gap_guidance(result):
             return self._skipped_outcome(
                 result,
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES,
             )
-        if not self._has_external_rewrite_evidence(result):
+        if not self._has_external_rewrite_evidence(result) and not self._is_evidence_gap_guidance(result):
             return self._skipped_outcome(
                 result,
                 draft_hash=draft_hash,
@@ -232,6 +233,15 @@ class OpenAIMedicationAnswerGenerator:
         """등록 정보는 답변 대상을 식별할 뿐, 의학적 주장의 근거가 되지 않는다."""
 
         return any(source.kind in cls._LLM_REWRITE_SOURCE_KINDS for source in result.sources)
+
+    @staticmethod
+    def _is_evidence_gap_guidance(result: MedicationChatResult) -> bool:
+        """근거 부재 안내는 새 의학 주장을 만들지 않는 범위에서만 LLM이 정리한다."""
+
+        return (
+            MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value
+            in result.safety_reason_codes
+        )
 
     @staticmethod
     def _skipped_outcome(

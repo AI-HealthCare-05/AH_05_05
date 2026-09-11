@@ -806,7 +806,7 @@ async def test_active_intake_question_without_external_evidence_uses_registered_
     result = await build_use_case(
         context=context,
         retriever=retriever,
-        answer_generator=UnexpectedMedicationGenerator(),
+        answer_generator=PassthroughGenerator(),
     ).execute(
         build_request("혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"),
     )
@@ -865,7 +865,7 @@ async def test_active_intake_therapeutic_class_question_uses_only_classified_reg
         context=context,
         retriever=retriever,
         tracer=tracer,
-        answer_generator=UnexpectedMedicationGenerator(),
+        answer_generator=PassthroughGenerator(),
         therapeutic_class_repository=therapeutic_class_repository,
     ).execute(
         build_request("혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"),
@@ -1192,7 +1192,7 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
     assert "✉️ **안내사항**" in result.answer
-    assert "📭 **공식 확인 경로**" in result.answer
+    assert "📭 **공식 확인 경로**" not in result.answer
     assert "의료진·약사에게 확인할 내용" not in result.answer
     assert "안전한 조합" not in result.answer
 

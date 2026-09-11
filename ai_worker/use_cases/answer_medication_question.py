@@ -2039,13 +2039,18 @@ class AnswerMedicationQuestionUseCase:
                 progress_callback,
                 MedicationChatProgressStage.SAFETY_CHECKING,
             )
-            return self._active_intake_no_evidence_result(
+            return await self._rewrite_evidence_gap_result(
                 request=request,
                 context=context,
                 execution_plan=execution_plan,
-                rag_unavailable=rag_unavailable,
-                interpretation=interpretation,
-                evidence_coverage=evidence_coverage,
+                draft=self._active_intake_no_evidence_result(
+                    request=request,
+                    context=context,
+                    execution_plan=execution_plan,
+                    rag_unavailable=rag_unavailable,
+                    interpretation=interpretation,
+                    evidence_coverage=evidence_coverage,
+                ),
             )
         if resolution is None or self._has_grounded_evidence(
             request=request,
@@ -2060,13 +2065,80 @@ class AnswerMedicationQuestionUseCase:
             progress_callback,
             MedicationChatProgressStage.SAFETY_CHECKING,
         )
-        return self._no_evidence_result(
+        return await self._rewrite_evidence_gap_result(
             request=request,
             context=context,
             execution_plan=execution_plan,
-            resolution=resolution,
-            rag_unavailable=rag_unavailable,
-            interpretation=interpretation,
+            draft=self._no_evidence_result(
+                request=request,
+                context=context,
+                execution_plan=execution_plan,
+                resolution=resolution,
+                rag_unavailable=rag_unavailable,
+                interpretation=interpretation,
+            ),
+        )
+
+    async def _rewrite_evidence_gap_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        execution_plan: MedicationSearchExecutionPlan,
+        draft: MedicationChatResult,
+    ) -> MedicationChatResult:
+        """근거 부재라는 확인 사실은 유지한 채 LLM이 출력 경로만 짧게 정리한다."""
+
+        answer_context = self._answer_context(
+            context=context,
+            include_patient_context=self._should_include_patient_context(
+                request=request,
+                route=draft.route,
+            ),
+        )
+        async with self._tracer.span("llm.generate", run_type="llm") as llm_span:
+            try:
+                outcome = await self._answer_generator.generate(
+                    request=request,
+                    context=answer_context,
+                    result=draft,
+                )
+            except ChatAnswerGenerationError as error:
+                llm_span.end(
+                    {
+                        "rewrite_status": "FAILED",
+                        "fallback_used": False,
+                        "fallback_reason": error.reason_code,
+                        "route": draft.route.value,
+                        "source_count": len(draft.sources),
+                    }
+                )
+                raise
+            generated = outcome.result.model_copy(
+                update={
+                    "answer": compact_chat_content(
+                        outcome.result.answer,
+                        marker=ANSWER_COMPACTION_MARKER,
+                    )
+                }
+            )
+            llm_span.end(
+                {
+                    "rewrite_status": outcome.observation.status.value,
+                    "fallback_used": outcome.observation.fallback_used,
+                    "fallback_reason": (
+                        outcome.observation.fallback_reason.value
+                        if outcome.observation.fallback_reason is not None
+                        else None
+                    ),
+                    "route": generated.route.value,
+                    "source_count": len(generated.sources),
+                }
+            )
+        return await self._validate_generated_answer(
+            context=answer_context,
+            generated=generated,
+            execution_plan=execution_plan,
         )
 
     @staticmethod

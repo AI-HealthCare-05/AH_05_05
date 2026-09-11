@@ -34,7 +34,11 @@ def build_medication_chat_messages(
 ) -> list[BaseMessage]:
     payload = {
         "question": request.question,
-        "history": [message.model_dump(mode="json") for message in request.history],
+        "history": (
+            [message.model_dump(mode="json") for message in request.history]
+            if request.session_reference.entities
+            else []
+        ),
         "active_medication_names": [item.name for item in context.medications],
         "active_supplement_names": [item.name for item in context.supplements],
         "draft_answer": _draft_answer_for_rewrite(result),

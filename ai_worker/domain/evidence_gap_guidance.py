@@ -34,7 +34,6 @@ class EvidenceGapGuidanceBuilder:
             "- 등록된 약·영양제는 성분·함량·복용 시점에 따라 서로 영향을 줄 수 있습니다.\n"
             "- 확인 전에는 복용 시작·중단·용량 변경 또는 병용 여부를 임의로 결정하지 마세요.",
             "알 수 없는 범위\n- 근거를 찾지 못한 사실만 확인했으며, 해당 조합이 안전하다고 결론낼 수는 없습니다.",
-            self._official_route(EvidenceGapSubject.INTERACTION),
             "의료진·약사에게 확인할 내용\n"
             "- 제품명·성분명·함량·복용 시점\n"
             "- 현재 복용 중인 약과 영양제 목록\n"
@@ -53,7 +52,6 @@ class EvidenceGapGuidanceBuilder:
             [
                 "✉️ **안내사항**\n\n"
                 f"- {target} 관련 자료를 찾지 못했습니다.",
-                self._official_route(subject),
             ]
         )
 
@@ -93,15 +91,3 @@ class EvidenceGapGuidanceBuilder:
         if not unique_names:
             return ""
         return title + "\n" + "\n".join(f"- {name}" for name in unique_names)
-
-    @staticmethod
-    def _official_route(subject: EvidenceGapSubject) -> str:
-        if subject == EvidenceGapSubject.MEDICATION:
-            return "📭 **공식 확인 경로**\n\n- 의약품안전나라에서 제품명 또는 성분명을 확인하세요."
-        if subject == EvidenceGapSubject.SUPPLEMENT:
-            return "📭 **공식 확인 경로**\n\n- 식품안전나라에서 건강기능식품 또는 기능성 원료 정보를 확인하세요."
-        return (
-            "📭 **공식 확인 경로**\n\n"
-            "- 의약품은 의약품안전나라에서 제품명 또는 성분명을 확인하세요.\n"
-            "- 영양제는 식품안전나라에서 건강기능식품 또는 기능성 원료 정보를 확인하세요."
-        )

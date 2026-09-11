@@ -10,6 +10,7 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationAnswerFallbackReason,
     MedicationAnswerRewriteStatus,
+    MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
@@ -120,6 +121,46 @@ async def test_generator_skips_llm_when_no_grounded_sources() -> None:
     assert outcome.observation.status == MedicationAnswerRewriteStatus.SKIPPED
     assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES
     assert outcome.observation.generated_answer_hash is None
+
+
+async def test_generator_uses_llm_for_evidence_gap_official_guidance() -> None:
+    client = FakeAnswerClient(
+        response={
+            "answer": (
+                "✉️ **안내사항**\n\n"
+                "- 마그네슘 ↔ 아연 관련 자료를 찾지 못했습니다.\n\n"
+                "📭 **공식 확인 경로**\n\n"
+                "- 식품안전나라의 기능성 원료 정보를 확인하세요."
+            ),
+            "section_types": [],
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.RESTRICTED,
+            "answer": "마그네슘 ↔ 아연 관련 자료를 찾지 못했습니다.",
+            "sources": [],
+            "safety_reason_codes": [MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value],
+        }
+    )
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="마그네슘과 아연을 같이 먹어도 돼?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
+    assert client.messages is not None
+    assert "식품안전나라" in outcome.result.answer
 
 
 async def test_generator_skips_llm_when_only_registered_intake_sources_exist() -> None:

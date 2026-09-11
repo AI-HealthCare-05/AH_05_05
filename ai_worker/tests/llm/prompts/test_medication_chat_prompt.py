@@ -6,15 +6,19 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
     SYSTEM_PROMPT,
     build_medication_chat_messages,
 )
-from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.chat import ChatHistoryMessage
+from ai_worker.schemas.enums import ChatRole, SafetyStatus
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationChatRequest,
     MedicationChatResult,
     MedicationChatRoute,
+    MedicationChatSessionReference,
+    MedicationChatSessionReferenceEntity,
     MedicationEvidenceCoverage,
 )
+from ai_worker.schemas.medication_search import MedicationQueryEntityType
 
 
 def test_prompt_document_parser_extracts_runtime_sections() -> None:
@@ -73,6 +77,87 @@ def test_build_messages_applies_markdown_user_template() -> None:
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["question"] == "타이레놀의 주의사항을 알려줘"
     assert payload["draft_answer"] == "주의사항: 확인된 초안입니다."
+
+
+def test_build_messages_omits_unreferenced_history_from_general_question() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="마그네슘과 아연을 같이 먹어도 돼?",
+        history=[
+            ChatHistoryMessage(
+                role=ChatRole.ASSISTANT,
+                content="리바록사반은 임의로 중단하지 마세요.",
+            )
+        ],
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="마그네슘과 아연 관련 근거를 확인합니다.",
+        route=MedicationChatRoute.INTERACTION,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["history"] == []
+    assert "리바록사반" not in user_content
+
+
+def test_build_messages_keeps_history_for_confirmed_session_reference() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="그 약의 복용법도 알려줘.",
+        history=[
+            ChatHistoryMessage(
+                role=ChatRole.ASSISTANT,
+                content="타이레놀정500밀리그람의 효능을 안내했습니다.",
+            )
+        ],
+        session_reference=MedicationChatSessionReference(
+            entities=[
+                MedicationChatSessionReferenceEntity(
+                    name="타이레놀정500밀리그람",
+                    entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                    kind="DRUG",
+                )
+            ]
+        ),
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="제품 복용법 초안입니다.",
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["history"] == [
+        {
+            "role": "ASSISTANT",
+            "content": "타이레놀정500밀리그람의 효능을 안내했습니다.",
+        }
+    ]
 
 
 def test_system_prompt_requires_limited_markdown_product_answer() -> None:
