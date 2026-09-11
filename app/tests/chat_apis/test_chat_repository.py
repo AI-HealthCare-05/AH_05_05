@@ -14,6 +14,7 @@ from app.models.chat import ChatMessage, ChatMessageSource, ChatSession
 from app.models.enums import (
     ChatMessageRole,
     ChatMessageStatus,
+    ChatRouteType,
     ChatSafetyStatus,
 )
 from app.models.interactions import MedicationProductGuide
@@ -77,6 +78,14 @@ def build_core_result() -> MedicationChatResult:
         schema_version="medication-chat-result-v1",
         context_hash="a" * 64,
     )
+
+
+def test_medication_note_summary_route_is_persisted_as_patient_db() -> None:
+    result = build_core_result().model_copy(
+        update={"route": MedicationChatRoute.MEDICATION_NOTE_SUMMARY},
+    )
+
+    assert ChatRepository._chat_route(result) is ChatRouteType.PATIENT_DB
 
 
 @pytest.mark.asyncio

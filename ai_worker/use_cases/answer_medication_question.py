@@ -162,6 +162,7 @@ from ai_worker.use_cases.medication_chat_pipeline import (
     MedicationEvidenceBundle,
     PreparedMedicationQuestion,
 )
+from ai_worker.use_cases.medication_note_summary import MedicationNoteSummaryUseCase
 
 MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
 MEDICATION_CHAT_SCHEMA_VERSION = "medication-chat-result-v1"
@@ -251,6 +252,7 @@ class AnswerMedicationQuestionUseCase:
         dose_question_policy: MedicationDoseQuestionPolicy | None = None,
         therapeutic_class_repository: TherapeuticClassRepository | None = None,
         follow_up_schedule_provider: FollowUpScheduleProvider | None = None,
+        medication_note_summary_use_case: MedicationNoteSummaryUseCase | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -272,6 +274,7 @@ class AnswerMedicationQuestionUseCase:
         self._dose_question_policy = dose_question_policy or MedicationDoseQuestionPolicy()
         self._therapeutic_class_repository = therapeutic_class_repository
         self._follow_up_schedule_provider = follow_up_schedule_provider
+        self._medication_note_summary_use_case = medication_note_summary_use_case
         self._assembler = MedicationAnswerAssembler()
 
     async def execute(
@@ -1294,7 +1297,12 @@ class AnswerMedicationQuestionUseCase:
             schedule_result = await self._conversation_terminal_result(
                 request=request,
                 context=context,
-                allowed_intents=frozenset({ConversationIntent.FOLLOW_UP_SCHEDULE}),
+                allowed_intents=frozenset(
+                    {
+                        ConversationIntent.FOLLOW_UP_SCHEDULE,
+                        ConversationIntent.MEDICATION_NOTE_SUMMARY,
+                    }
+                ),
             )
             if schedule_result is not None:
                 return PreparedMedicationQuestion(
@@ -1431,6 +1439,11 @@ class AnswerMedicationQuestionUseCase:
                     "intent": classification.intent.value,
                     "safety_signal": classification.safety_signal.value,
                     "confidence": classification.confidence.value,
+                    "note_summary_scope": (
+                        classification.note_summary_scope.value
+                        if classification.note_summary_scope is not None
+                        else None
+                    ),
                     "history_count": history_count,
                     "duration_ms": round((time.perf_counter() - started_at) * 1000),
                     "status": "COMPLETED",
@@ -1483,6 +1496,12 @@ class AnswerMedicationQuestionUseCase:
             return await self._follow_up_schedule_result(
                 request=request,
                 context=context,
+            )
+        if classification.intent is ConversationIntent.MEDICATION_NOTE_SUMMARY:
+            return await self._medication_note_summary_result(
+                request=request,
+                context=context,
+                classification=classification,
             )
         return await self._conversation_allow_result(
             request=request,
@@ -1539,6 +1558,24 @@ class AnswerMedicationQuestionUseCase:
             route=MedicationChatRoute.FOLLOW_UP_SCHEDULE,
             safety_status=SafetyStatus.SAFE,
             reason_code=MedicationChatReasonCode.FOLLOW_UP_SCHEDULE_REQUESTED,
+        )
+
+    async def _medication_note_summary_result(
+        self,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        classification: ConversationClassification,
+    ) -> MedicationChatResult | None:
+        if (
+            self._medication_note_summary_use_case is None
+            or classification.note_summary_scope is None
+        ):
+            return None
+        return await self._medication_note_summary_use_case.execute(
+            request=request,
+            scope=classification.note_summary_scope,
+            context_hash=self._context_hash(context),
         )
 
     async def _conversation_allow_result(

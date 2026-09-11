@@ -19,6 +19,9 @@ from ai_worker.llm.generators.conversation_response_generator import (
 from ai_worker.llm.generators.medication_answer_generator import (
     OpenAIMedicationAnswerGenerator,
 )
+from ai_worker.llm.generators.medication_note_summary_generator import (
+    build_medication_note_summary_generator,
+)
 from ai_worker.observability.chat_tracer import (
     ChatTracer,
     NoOpChatTracer,
@@ -29,6 +32,9 @@ from ai_worker.providers.db_active_intake_context_provider import (
 )
 from ai_worker.providers.db_follow_up_schedule_provider import (
     DbFollowUpScheduleProvider,
+)
+from ai_worker.providers.db_medication_note_summary_provider import (
+    DbMedicationNoteSummaryProvider,
 )
 from ai_worker.rag.embeddings.openai_embedding_provider import (
     OpenAIEmbeddingProvider,
@@ -73,6 +79,7 @@ from ai_worker.schemas.medication_chat import (
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
+from ai_worker.use_cases.medication_note_summary import MedicationNoteSummaryUseCase
 
 
 class MedicationChatCoreService:
@@ -187,6 +194,16 @@ def build_medication_chat_core_service(
         if settings.CONVERSATION_GATE_ENABLED
         else None
     )
+    medication_note_summary_use_case = MedicationNoteSummaryUseCase(
+        provider=DbMedicationNoteSummaryProvider(),
+        generator=build_medication_note_summary_generator(
+            model=settings.CONVERSATION_GATE_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout_seconds=settings.CONVERSATION_GATE_TIMEOUT_SECONDS,
+            max_retries=0,
+        ),
+        tracer=chat_tracer,
+    )
     semantic_question_router = (
         LocalSemanticQuestionRouter(
             embedder=SentenceTransformerQuestionEmbeddingModel(
@@ -230,6 +247,7 @@ def build_medication_chat_core_service(
             active_dataset_version=settings.THERAPEUTIC_CLASS_DATASET_VERSION,
         ),
         follow_up_schedule_provider=DbFollowUpScheduleProvider(),
+        medication_note_summary_use_case=medication_note_summary_use_case,
     )
     return MedicationChatCoreService(
         use_case=use_case,

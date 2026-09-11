@@ -76,6 +76,7 @@ from ai_worker.schemas.medication_chat import (
     TherapeuticClassSelection,
     TherapeuticClassSelectionStatus,
 )
+from ai_worker.schemas.medication_note_summary import MedicationNoteSummaryScope
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
     MedicationQueryEntity,
@@ -400,6 +401,26 @@ class StaticConversationResponseGenerator:
         return self.answer
 
 
+class StaticMedicationNoteSummaryUseCase:
+    def __init__(self) -> None:
+        self.received_scope: MedicationNoteSummaryScope | None = None
+        self.received_context_hash: str | None = None
+
+    async def execute(self, *, request, scope, context_hash):
+        self.received_scope = scope
+        self.received_context_hash = context_hash
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer="📝 **복약메모 요약**\n- 두통을 기록함.",
+            route=MedicationChatRoute.MEDICATION_NOTE_SUMMARY,
+            safety_status=SafetyStatus.SAFE,
+            safety_reason_codes=["MEDICATION_NOTE_SUMMARY_REQUESTED"],
+            prompt_version="medication-note-summary-prompt-v1",
+            schema_version="medication-chat-result-v1",
+            context_hash=context_hash,
+        )
+
+
 class RecordingSemanticRouter:
     def __init__(self, payload: QuestionRoutingDecision) -> None:
         self.payload = payload
@@ -661,6 +682,7 @@ def build_use_case(
     conversation_response_generator=None,
     guide_repository=None,
     follow_up_schedule_provider=None,
+    medication_note_summary_use_case=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
@@ -679,6 +701,7 @@ def build_use_case(
         conversation_gate_chain=conversation_gate_chain,
         conversation_response_generator=conversation_response_generator,
         follow_up_schedule_provider=follow_up_schedule_provider,
+        medication_note_summary_use_case=medication_note_summary_use_case,
     )
 
 
@@ -762,6 +785,30 @@ async def test_follow_up_schedule_question_explains_when_no_upcoming_visit_exist
 
     assert result.route is MedicationChatRoute.FOLLOW_UP_SCHEDULE
     assert result.answer == "등록된 예정 진료일정이 없습니다."
+
+
+async def test_note_summary_request_bypasses_rag_retrieval() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    summary_use_case = StaticMedicationNoteSummaryUseCase()
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_NOTE_SUMMARY",
+                safety_signal="NONE",
+                confidence="HIGH",
+                note_summary_scope=MedicationNoteSummaryScope.RECENT_SIX_MONTHS,
+            )
+        ),
+        medication_note_summary_use_case=summary_use_case,
+    ).execute(build_request("복약메모 정리해줘"))
+
+    assert result.route is MedicationChatRoute.MEDICATION_NOTE_SUMMARY
+    assert retriever.received_kwargs is None
+    assert summary_use_case.received_scope is MedicationNoteSummaryScope.RECENT_SIX_MONTHS
 
 
 async def test_specific_symptom_requests_candidate_medicine_without_exposing_active_medications() -> None:
