@@ -3,6 +3,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from arq.connections import ArqRedis, RedisSettings, create_pool
+from tortoise.exceptions import IntegrityError
 
 from app.core import config
 from app.core.email.payload import EmailJobPayload, EmailPayloadCodec, EmailTemplate
@@ -155,6 +156,69 @@ class EmailJobService:
                     template=EmailTemplate.USER_PASSWORD_RESET,
                     recipient_email=recipient_email,
                     temporary_password=temporary_password,
+                )
+            )
+        except Exception as exc:
+            await self._mark_failed(job, "EMAIL_PAYLOAD_ENCRYPTION_FAILED", exc)
+            return job
+
+        pool = self.redis_pool
+        owns_pool = pool is None
+        try:
+            if pool is None:
+                pool = await create_pool(
+                    RedisSettings(host=config.REDIS_HOST, port=config.REDIS_PORT, database=config.REDIS_DB)
+                )
+            await pool.enqueue_job(
+                "send_email",
+                job.id,
+                encrypted_payload,
+                _job_id=job.idempotency_key,
+                _queue_name=config.EMAIL_QUEUE_NAME,
+            )
+        except Exception as exc:
+            await self._mark_failed(job, "EMAIL_QUEUE_UNAVAILABLE", exc)
+        finally:
+            if owns_pool and pool is not None:
+                await pool.aclose()
+        return job
+
+    async def enqueue_intake_report(
+        self,
+        *,
+        user_id: int,
+        recipient_email: str,
+        report_markdown: str,
+        report_id: str,
+    ) -> BackgroundJob:
+        idempotency_key = f"email:intake-report:{user_id}:{report_id}"
+        try:
+            job = await BackgroundJob.create(
+                idempotency_key=idempotency_key,
+                job_type=BackgroundJobType.EMAIL,
+                status=BackgroundJobStatus.QUEUED,
+                user_id=user_id,
+                reference_table="intake_reports",
+                reference_id=user_id,
+                retry_count=0,
+                max_retry_count=config.EMAIL_MAX_RETRY_COUNT,
+            )
+        except IntegrityError:
+            existing = await BackgroundJob.get_or_none(idempotency_key=idempotency_key)
+            if existing is None:
+                raise
+            if existing.status is not BackgroundJobStatus.QUEUED:
+                return existing
+            job = existing
+
+        try:
+            codec = self.codec or EmailPayloadCodec(config.EMAIL_PAYLOAD_ENCRYPTION_KEY)
+            encrypted_payload = codec.encrypt(
+                EmailJobPayload(
+                    template=EmailTemplate.INTAKE_REPORT,
+                    recipient_email=recipient_email,
+                    report_id=report_id,
+                    report_markdown=report_markdown,
                 )
             )
         except Exception as exc:

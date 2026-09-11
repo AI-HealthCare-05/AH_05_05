@@ -1,6 +1,6 @@
 import { ApiError, http } from '@/shared/api/client';
 import { USE_MOCK } from '@/shared/config/env';
-import type { IntakeReport } from './types';
+import type { IntakeReport, IntakeReportEmailJob } from './types';
 
 export async function generateIntakeReport(): Promise<IntakeReport> {
   if (USE_MOCK) {
@@ -8,4 +8,12 @@ export async function generateIntakeReport(): Promise<IntakeReport> {
   }
   // The server resolves scope from authentication, never a client userId or prompt.
   return http.post<IntakeReport>('/v1/intake-reports', {});
+}
+
+export function emailIntakeReport(emailToken: string): Promise<IntakeReportEmailJob> {
+  return http.post<IntakeReportEmailJob>('/v1/intake-reports/email', { emailToken });
+}
+
+export function getIntakeReportEmailJob(jobId: number): Promise<IntakeReportEmailJob> {
+  return http.get<IntakeReportEmailJob>(`/v1/intake-reports/email/${jobId}`);
 }

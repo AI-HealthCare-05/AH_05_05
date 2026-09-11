@@ -126,7 +126,22 @@ async def test_interaction_repository_returns_only_approved_rules(
         document_id="dur-ddi",
         record_id="row-1",
         raw_effect_text="출혈 위험이 증가할 수 있어 전문가 확인이 필요합니다.",
+    )
+    await InteractionRuleSource.create(
+        interaction_rule=approved,
+        source_id="MFDS_DUR",
+        document_id="dur-ddi",
+        record_id="row-2",
+        raw_effect_text="출혈 위험이 증가할 수 있어 전문가 확인이 필요합니다.",
         source_url="https://example.org/dur/1",
+    )
+    await InteractionRuleSource.create(
+        interaction_rule=approved,
+        source_id="MFDS_DUR",
+        document_id="label-ddi",
+        record_id="row-3",
+        raw_effect_text="제품 라벨의 복용 주의사항도 함께 확인해 주세요.",
+        source_url="https://example.org/label/1",
     )
     await InteractionRuleSource.create(
         interaction_rule=pending,
@@ -166,7 +181,15 @@ async def test_interaction_repository_returns_only_approved_rules(
     )
 
     assert [rule.interaction_rule_id for rule in rules] == [approved.id]
-    assert rules[0].effect_texts == ["출혈 위험이 증가할 수 있어 전문가 확인이 필요합니다."]
+    assert rules[0].effect_texts == [
+        "출혈 위험이 증가할 수 있어 전문가 확인이 필요합니다.",
+        "제품 라벨의 복용 주의사항도 함께 확인해 주세요.",
+    ]
+    assert rules[0].model_dump().get("source_references") == [
+        {"title": "dur-ddi", "url": None},
+        {"title": "dur-ddi", "url": "https://example.org/dur/1"},
+        {"title": "label-ddi", "url": "https://example.org/label/1"},
+    ]
 
 
 @pytest.mark.asyncio

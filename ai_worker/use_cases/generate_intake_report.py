@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 
 from ai_worker.assemblers.intake_report_assembler import IntakeReportAssembler
 from ai_worker.domain.errors import AIWorkerError
@@ -12,7 +13,13 @@ from ai_worker.domain.interfaces import (
     MedicationKnowledgeRetriever,
 )
 from ai_worker.observability.chat_tracer import ChatTracer, NoOpChatTracer
-from ai_worker.schemas.intake_report import IntakeReportResult, IntakeReportStatus
+from ai_worker.reports.nutrients import ReportNutrientData
+from ai_worker.schemas.intake_report import (
+    IntakeReportDraft,
+    IntakeReportItemType,
+    IntakeReportResult,
+    IntakeReportStatus,
+)
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import (
     KnowledgeDocumentType,
@@ -44,6 +51,7 @@ class GenerateIntakeReportUseCase:
         generator: IntakeReportGenerator,
         assembler: IntakeReportAssembler | None = None,
         tracer: ChatTracer | None = None,
+        nutrient_loader: Callable[[ActiveIntakeContext], Awaitable[ReportNutrientData]] | None = None,
     ) -> None:
         self._context_provider = context_provider
         self._guide_repository = guide_repository
@@ -52,6 +60,7 @@ class GenerateIntakeReportUseCase:
         self._generator = generator
         self._assembler = assembler or IntakeReportAssembler()
         self._tracer = tracer or NoOpChatTracer()
+        self._nutrient_loader = nutrient_loader
 
     async def execute(
         self,
@@ -65,10 +74,16 @@ class GenerateIntakeReportUseCase:
         guide_lookups, approved_rules = await self._collect_rdbms_evidence(
             context=context,
         )
-        knowledge_chunks, rag_available = await self._retrieve_knowledge(
-            context=context,
-            approved_rules=approved_rules,
-        )
+        # Evidence-locked cards do not consume free-form retrieval passages.
+        # Do not label an unused dependency's outage as a partial card report.
+        # Legacy generators retain their existing retrieval path by default.
+        if getattr(self._generator, "uses_knowledge_evidence", True):
+            knowledge_chunks, rag_available = await self._retrieve_knowledge(
+                context=context,
+                approved_rules=approved_rules,
+            )
+        else:
+            knowledge_chunks, rag_available = [], True
         draft = self._assembler.assemble(
             context=context,
             guide_lookups=guide_lookups,
@@ -76,6 +91,34 @@ class GenerateIntakeReportUseCase:
             knowledge_chunks=knowledge_chunks,
             rag_available=rag_available,
         )
+        # Preserve registration identity even when names are repeated or a guide
+        # has a canonical display name different from the user's registration.
+        medication_names = list(dict.fromkeys(item.name.strip() for item in context.medications if item.name.strip()))
+        guides_by_name = {
+            name: lookup.guide.medication_guide_id
+            for name, lookup in zip(medication_names, guide_lookups, strict=True)
+            if lookup.guide is not None and not lookup.is_ambiguous
+        }
+        draft = draft.model_copy(
+            update={
+                "guide_item_bindings": {
+                    item.medication_id: guides_by_name[item.name.strip()]
+                    for item in context.medications
+                    if item.name.strip() in guides_by_name
+                },
+                "guide_evidence": list(
+                    {
+                        lookup.guide.medication_guide_id: lookup.guide
+                        for lookup in guide_lookups
+                        if lookup.guide is not None and not lookup.is_ambiguous
+                    }.values()
+                ),
+                "knowledge_evidence": knowledge_chunks,
+            }
+        )
+        if self._nutrient_loader is not None:
+            nutrient_data = await self._nutrient_loader(context)
+            draft = self._with_nutrients(draft, context, nutrient_data)
         async with self._tracer.span("intake_report.generate_markdown") as span:
             outcome = await self._generator.generate(draft=draft)
             span.end(
@@ -84,10 +127,48 @@ class GenerateIntakeReportUseCase:
                     "fallback_reason": (outcome.fallback_reason.value if outcome.fallback_reason is not None else None),
                 }
             )
-        status = IntakeReportStatus.COMPLETED if rag_available else IntakeReportStatus.PARTIAL
+        status = (
+            IntakeReportStatus.COMPLETED if rag_available and not outcome.fallback_used else IntakeReportStatus.PARTIAL
+        )
         return draft.to_result(
             status=status,
             report_markdown=outcome.report_markdown,
+            cards=outcome.cards,
+            fallback_used=outcome.fallback_used,
+            fallback_reason=outcome.fallback_reason,
+        )
+
+    @staticmethod
+    def _with_nutrients(
+        draft: IntakeReportDraft,
+        context: ActiveIntakeContext,
+        data: ReportNutrientData,
+    ) -> IntakeReportDraft:
+        labels = {s.registration_id: data.product_labels.get(s.supplement_nutrient_id) for s in context.supplements}
+        stack = [
+            item.model_copy(
+                update={"registered_intake_info": item.registered_intake_info + " · " + labels[item.item_id]}
+            )
+            if item.item_type == IntakeReportItemType.SUPPLEMENT and labels.get(item.item_id)
+            else item
+            for item in draft.current_stack
+        ]
+        lines = ["## 영양소 비교 기준", data.profile_label, data.basis_note]
+        for total in data.totals:
+            reference = (
+                f"{total.reference_kind} {total.reference_value} {total.unit} · {total.reference_percent}%"
+                if total.reference_percent is not None
+                else "비교 기준 확인 필요"
+            )
+            lines.append(f"- {total.nutrient_name}: {total.daily_total} · {reference}")
+        return draft.model_copy(
+            update={
+                "current_stack": stack,
+                "nutrient_totals": data.totals,
+                "profile_label": data.profile_label,
+                "basis_note": data.basis_note,
+                "deterministic_markdown": draft.deterministic_markdown + "\n\n" + "\n\n".join(lines),
+            }
         )
 
     async def _load_context(self, *, user_id: int) -> ActiveIntakeContext:

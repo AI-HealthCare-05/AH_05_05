@@ -1,0 +1,13 @@
+{% extends "emails/base.html" %}
+{% set email_width = 680 %}
+{% block title %}
+<tr><td align="center" style="padding-top:28px;font-size:24px;font-weight:700">복용약·영양제 AI 보고서</td></tr>
+{% endblock %}
+{% block intro %}
+<tr><td style="padding-top:14px;font-size:14px;line-height:1.7;color:#59636f">로그인한 본인의 요청으로 현재 보고서를 보내드립니다. 의료적 판단이나 처방 변경은 의료 전문가와 상담해 주세요.</td></tr>
+{% endblock %}
+{% block content %}
+<tr><td class="report-content" style="padding-top:24px;font-size:15px;line-height:1.75;overflow-wrap:anywhere;word-break:break-word">
+  {{ report_html }}
+</td></tr>
+{% endblock %}

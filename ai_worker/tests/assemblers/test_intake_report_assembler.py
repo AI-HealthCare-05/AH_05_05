@@ -83,3 +83,34 @@ def test_assembler_marks_missing_amount_without_total() -> None:
 
     assert draft.nutrient_totals == []
     assert draft.unverified_items[0].item_type == IntakeReportUnverifiedItemType.MISSING_AMOUNT
+
+
+def test_assembler_preserves_nullable_urls_for_repeated_source_titles() -> None:
+    rule = InteractionRuleFact(
+        interaction_rule_id=2,
+        pair_key="warfarin::vitamin_k::sources",
+        pair_type="DRUG_SUPPLEMENT",
+        left_name="와파린",
+        right_name="비타민 K",
+        risk_level="CAUTION",
+        effect_texts=["출처 연결을 확인합니다."],
+        source_references=[
+            {"title": "승인 규칙 출처", "url": None},
+            {"title": "승인 규칙 출처", "url": "https://example.com/rule"},
+            {"title": "제품 라벨", "url": "https://example.com/label"},
+        ],
+    )
+
+    draft = IntakeReportAssembler().assemble(
+        context=_context_with_active_intakes(),
+        guide_lookups=[],
+        approved_rules=[rule],
+        knowledge_chunks=[],
+        rag_available=True,
+    )
+
+    assert [source.model_dump(include={"title", "url"}) for source in draft.sources] == [
+        {"title": "승인 규칙 출처", "url": None},
+        {"title": "승인 규칙 출처", "url": "https://example.com/rule"},
+        {"title": "제품 라벨", "url": "https://example.com/label"},
+    ]

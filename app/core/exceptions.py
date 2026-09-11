@@ -591,6 +591,12 @@ class IntakeReportUpstreamUnavailableError(AppError):
     message = "보고서를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
 
 
+class IntakeReportGenerationFailedError(AppError):
+    status_code = status.HTTP_502_BAD_GATEWAY
+    code = "INTAKE_REPORT_GENERATION_FAILED"
+    message = "AI 보고서가 검증을 통과하지 못해 표시하지 않았어요. 다시 시도해주세요."
+
+
 class IntakeReportTimeoutError(AppError):
     status_code = status.HTTP_504_GATEWAY_TIMEOUT
     code = "INTAKE_REPORT_TIMEOUT"

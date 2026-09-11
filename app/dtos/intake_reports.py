@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from ai_worker.schemas.intake_report import (
     IntakeReportChartData,
@@ -15,6 +15,7 @@ from ai_worker.schemas.intake_report import (
     IntakeReportSource,
     IntakeReportUnverifiedItem,
 )
+from ai_worker.schemas.intake_report_cards import IntakeReportCards
 from app.dtos.base import CamelModel
 
 
@@ -22,6 +23,18 @@ class GenerateIntakeReportRequest(CamelModel):
     """버튼 호출은 빈 객체만 허용하며, 분석 범위는 인증 사용자로 고정한다."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+class SendIntakeReportEmailRequest(CamelModel):
+    """A server-issued encrypted report snapshot; no recipient or HTML is accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+    email_token: str = Field(min_length=1, max_length=900_000)
+
+
+class IntakeReportEmailJobResponse(CamelModel):
+    job_id: int
+    status: str
 
 
 class IntakeReportErrorResponse(CamelModel):
@@ -146,6 +159,12 @@ class IntakeReportNutrientTotalResponse(CamelModel):
     daily_total: str
     included_product_names: list[str]
     calculation_status: str
+    amount: str | None = None
+    unit: str | None = None
+    reference_value: str | None = None
+    reference_kind: Literal["RNI", "AI"] | None = None
+    reference_percent: str | None = None
+    unknown_product_names: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_schema(cls, total: IntakeReportNutrientTotal) -> "IntakeReportNutrientTotalResponse":
@@ -210,6 +229,13 @@ class IntakeReportResponse(CamelModel):
     product_guides: list[IntakeReportProductGuideResponse]
     unverified_items: list[IntakeReportUnverifiedItemResponse]
     report_markdown: str
+    presentation_version: Literal["ai-report-v2", "ai-report-v11"] | None = None
+    cards: IntakeReportCards | None = None
+    profile_label: str | None = None
+    basis_note: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    email_token: str | None = None
 
     @classmethod
     def from_result(cls, result: IntakeReportResult) -> "IntakeReportResponse":
@@ -229,4 +255,10 @@ class IntakeReportResponse(CamelModel):
             product_guides=[IntakeReportProductGuideResponse.from_schema(guide) for guide in result.product_guides],
             unverified_items=[IntakeReportUnverifiedItemResponse.from_schema(item) for item in result.unverified_items],
             report_markdown=result.report_markdown,
+            presentation_version=result.presentation_version,
+            cards=result.cards,
+            profile_label=result.profile_label,
+            basis_note=result.basis_note,
+            fallback_used=result.fallback_used,
+            fallback_reason=result.fallback_reason,
         )

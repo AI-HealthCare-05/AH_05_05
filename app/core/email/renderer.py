@@ -1,14 +1,17 @@
+import html
 from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from app.core.email.markdown_renderer import render_safe_markdown
 from app.core.email.payload import EmailJobPayload, EmailTemplate
 from app.core.email.smtp_sender import EmailMessage, InlineAttachment
 
 ADMIN_TEMPORARY_PASSWORD_SUBJECT = "RxVita 관리자 임시비밀번호"
 USER_PASSWORD_RESET_SUBJECT = "RxVita 비밀번호 재설정"
 SIGNUP_VERIFICATION_SUBJECT = "RxVita 회원가입 이메일 인증번호"
+INTAKE_REPORT_SUBJECT = "RxVita 복용약·영양제 AI 보고서"
 LOGO_PATH = Path(__file__).resolve().parents[2] / "static" / "images" / "rxvita-logo-480.png"
 
 
@@ -56,6 +59,16 @@ class EmailTemplateRenderer:
                 subject=USER_PASSWORD_RESET_SUBJECT,
                 text_body=self._user_password_reset_plain_text(temporary_password),
                 html_body=template.render(temporary_password=temporary_password),
+                inline_attachments=(self._logo_attachment(),),
+            )
+        if payload.template is EmailTemplate.INTAKE_REPORT:
+            template = self._environment.get_template("emails/intake_report.html")
+            report_markdown = payload.report_markdown or ""
+            return EmailMessage(
+                to=str(payload.recipient_email),
+                subject=INTAKE_REPORT_SUBJECT,
+                text_body=self._intake_report_plain_text(report_markdown),
+                html_body=template.render(report_html=render_safe_markdown(report_markdown)),
                 inline_attachments=(self._logo_attachment(),),
             )
         raise ValueError("지원하지 않는 이메일 템플릿입니다.")
@@ -113,4 +126,12 @@ class EmailTemplateRenderer:
             f"임시비밀번호 : {temporary_password}\n\n"
             "로그인 후 비밀번호를 변경해 주세요.\n\n"
             "감사합니다.\n"
+        )
+
+    @staticmethod
+    def _intake_report_plain_text(report_markdown: str) -> str:
+        return (
+            "복용약·영양제 AI 보고서\n\n"
+            + html.unescape(report_markdown)
+            + "\n\n이 메일은 로그인한 본인의 요청으로 발송되었습니다.\n"
         )

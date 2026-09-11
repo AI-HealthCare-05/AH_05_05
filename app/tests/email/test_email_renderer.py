@@ -120,3 +120,75 @@ def test_all_email_templates_attach_rxvita_logo_480() -> None:
         attachment = renderer.render(payload).inline_attachments[0]
         assert attachment.filename == "rxvita-logo-480.png"
         assert attachment.data.startswith(b"\x89PNG")
+
+
+def test_intake_report_template_renders_safe_korean_markdown() -> None:
+    message = EmailTemplateRenderer().render(
+        EmailJobPayload(
+            template=EmailTemplate.INTAKE_REPORT,
+            recipient_email="recipient@example.com",
+            report_id="report-20260911-abc123",
+            report_markdown=(
+                "# 복용약·영양제 AI 보고서\n\n"
+                "## 현재 복용 목록\n\n"
+                "| 제품명 | 안내 |\n| --- | --- |\n"
+                "| 매우 긴 한글 제품명 | [식품안전나라](https://www.foodsafetykorea.go.kr) |\n\n"
+                "<script>alert('xss')</script>\n\n"
+                "[위험 링크](javascript:alert(1))"
+            ),
+        )
+    )
+
+    assert message.subject == "RxVita 복용약·영양제 AI 보고서"
+    assert "복용약·영양제 AI 보고서" in message.text_body
+    assert "매우 긴 한글 제품명" in message.html_body
+    assert "<table" in message.html_body
+    assert 'href="https://www.foodsafetykorea.go.kr"' in message.html_body
+    assert "<script>" not in message.html_body
+    assert "javascript:" not in message.html_body
+    assert "&lt;script&gt;alert" in message.html_body
+    assert 'src="cid:rxvita-logo"' in message.html_body
+
+
+def test_intake_report_plain_text_decodes_literal_entities_once() -> None:
+    message = EmailTemplateRenderer().render(
+        EmailJobPayload(
+            template=EmailTemplate.INTAKE_REPORT,
+            recipient_email="recipient@example.com",
+            report_id="report-literal-preview",
+            report_markdown="# 가상 제품 &#91;검증&#93; &amp;amp; &lt;태그&gt;",
+        )
+    )
+    assert "가상 제품 [검증] &amp; <태그>" in message.text_body
+    assert "&#91;" not in message.text_body
+    assert "<태그>" not in message.html_body
+
+
+def test_intake_report_links_preserve_query_encoding_and_do_not_bold_url_contents() -> None:
+    message = EmailTemplateRenderer().render(
+        EmailJobPayload(
+            template=EmailTemplate.INTAKE_REPORT,
+            recipient_email="recipient@example.com",
+            report_id="report-20260911-link-test",
+            report_markdown="[**공식 안내**](https://example.com/docs/**overview**?a=1&b=2)",
+        )
+    )
+
+    assert 'href="https://example.com/docs/**overview**?a=1&amp;b=2"' in message.html_body
+    assert "amp;amp" not in message.html_body
+    assert '<a href="https://example.com/docs/**overview**?a=1&amp;b=2"' in message.html_body
+    assert "<strong>공식 안내</strong>" in message.html_body
+
+
+def test_intake_report_rejects_malformed_link_without_failing_render() -> None:
+    message = EmailTemplateRenderer().render(
+        EmailJobPayload(
+            template=EmailTemplate.INTAKE_REPORT,
+            recipient_email="recipient@example.com",
+            report_id="report-20260911-malformed-link",
+            report_markdown="[잘못된 링크](https://[invalid)",
+        )
+    )
+
+    assert "잘못된 링크" in message.html_body
+    assert "https://[invalid" not in message.html_body

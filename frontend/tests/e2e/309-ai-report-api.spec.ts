@@ -3,7 +3,7 @@ import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
 
 test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 // WSL's mounted worktree can spend >45s on Vite's first module transform.
-// Assertion timeouts remain unchanged; production API keeps its 30s server limit.
+// Assertion timeouts remain unchanged; report generation has a bounded server-side repair budget.
 test.setTimeout(120_000);
 
 const report = {
@@ -57,7 +57,7 @@ for (const source of ['medications', 'supplements']) {
     await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
     await expect(page.getByRole('heading', { name: '생활관리 안내' })).toBeVisible();
     await expect(page.getByRole('button', { name: '이메일로 받기', exact: true })).toBeDisabled();
-    await expect(page.getByText('이메일 발송 기능은 준비 중이에요.', { exact: true })).toBeVisible();
+    await expect(page.getByText('이 보고서는 이메일 발송을 사용할 수 없어요. 새 보고서를 생성해주세요.', { exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: '현재 복용 목록' })).toContainText('테스트 처방약');
     await expect(page.getByRole('table', { name: '일일 성분 합계' })).toContainText('100 mg');
     await expect(page.getByRole('figure', { name: '확인 항목 수' })).toContainText('정보 부족');
@@ -124,4 +124,73 @@ test('report entry does not promise history storage', async ({ page }) => {
   await page.goto('/reports/new?source=medications');
   await expect(page.getByText('보고서는 저장되지 않아요.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '보고서 생성하기', exact: true })).toBeEnabled();
+});
+
+test('ai-report-v2 renders the generated Markdown as the report body and keeps only registered values as supporting data', async ({ page }, testInfo) => {
+  const aiGeneratedReport = {
+    ...report,
+    presentationVersion: 'ai-report-v2',
+    profileLabel: '등록 정보 4종',
+    basisNote: '등록한 복용 정보와 확인된 근거를 바탕으로 생성했습니다.',
+    fallbackUsed: false,
+    fallbackReason: null,
+    dataAvailability: { activeMedicationCount: 3, activeSupplementCount: 1, approvedInteractionRuleAvailable: true, ragEvidenceAvailable: true },
+    currentStack: [
+      { itemType: 'MEDICATION', itemId: 1, productName: '낯선 약 알파 200mg', ingredientName: '성분 알파', registeredIntakeInfo: '하루 1정', scheduledSlots: ['MORNING'], evidenceLevel: 'REGISTERED_INTAKE' },
+      { itemType: 'MEDICATION', itemId: 2, productName: '처방약 베타 100mg', ingredientName: '성분 베타', registeredIntakeInfo: '하루 1정', scheduledSlots: ['LUNCH'], evidenceLevel: 'REGISTERED_INTAKE' },
+      { itemType: 'MEDICATION', itemId: 3, productName: '처방약 감마', ingredientName: null, registeredIntakeInfo: '필요 시 1정', scheduledSlots: [], evidenceLevel: 'REGISTERED_INTAKE' },
+      { itemType: 'SUPPLEMENT', itemId: 4, productName: '영양제 철분', ingredientName: null, registeredIntakeInfo: '하루 1정', scheduledSlots: ['LUNCH'], evidenceLevel: 'REGISTERED_INTAKE' },
+    ],
+    reviewCards: [],
+    nutrientTotals: [
+      { nutrientName: '철', dailyTotal: '30 mg', includedProductNames: ['영양제 철분'], calculationStatus: 'CALCULATED', amount: '30', unit: 'mg', referenceValue: '12', referenceKind: 'RNI', referencePercent: '250', unknownProductNames: ['영양제 확인필요'] },
+      { nutrientName: '비타민 B', dailyTotal: '10 μg', includedProductNames: ['영양제 철분'], calculationStatus: 'CALCULATED', amount: '10', unit: 'μg', referenceValue: '10', referenceKind: 'AI', referencePercent: '100' },
+    ],
+    productGuides: [],
+    unverifiedItems: [],
+    reportMarkdown: '# 실제 AI 생성 보고서\n\n## 복용약과 영양제 조합\n\n등록한 네 가지 제품의 조합을 검토했어요.\n\n## 생활 관리\n\n복용 변경 전에는 의료진과 상의하세요.\n\n## 약별 안내\n\n### 낯선 약 알파 200mg\n\n- 효능: AI가 확인한 설명\n- 주의: 등록 정보와 다르면 확인하세요.\n- 금기: 개인 상태에 따라 의료진에게 확인하세요.\n\n## 근거 출처\n\n[공공 근거](https://example.com/evidence)\n\n<script>window.reportInjected = true</script>\n\n[위험 링크](javascript:alert(1))\n\n![외부 추적](https://example.com/tracker.png)',
+  };
+  await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: aiGeneratedReport }));
+
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 812 });
+    await page.goto('/reports/new?source=medications');
+    await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '실제 AI 생성 보고서' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '복용약과 영양제 조합' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '생활 관리' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '약별 안내' })).toBeVisible();
+    await expect(page.getByText('AI가 확인한 설명', { exact: false })).toBeVisible();
+    for (const productName of ['낯선 약 알파 200mg', '처방약 베타 100mg', '처방약 감마', '영양제 철분']) {
+      await expect(page.getByRole('table', { name: '현재 복용 목록' }).getByText(productName, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole('heading', { name: '등록한 복용 정보' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '영양소 합계' })).toBeVisible();
+    await expect(page.getByText('250%', { exact: true })).toBeVisible();
+    await expect(page.getByText(/권장섭취량 12mg 기준/)).toBeVisible();
+    await expect(page.getByText(/충분섭취량 10μg 기준/)).toBeVisible();
+    await expect(page.getByRole('img', { name: '철 250%' }).locator('span')).toHaveAttribute('style', /width: 100%/);
+    await expect(page.getByRole('img', { name: '철 250%' }).locator('..').getByText('100%', { exact: true })).toHaveClass(/left-\[75%\]/);
+    await expect(page.getByRole('heading', { name: '먼저 확인할 약 조합' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: '약 정보' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: '공공 근거' })).toHaveAttribute('href', 'https://example.com/evidence');
+    expect(await page.locator('a[href^="javascript:"], main script').count()).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.screenshot({ path: testInfo.outputPath('ai-report-v2-390.png'), fullPage: true });
+});
+
+test('ai-report-v2 visibly identifies the verified-information fallback', async ({ page }) => {
+  await page.route('**/api/v1/intake-reports', route => route.fulfill({ json: {
+    ...report,
+    presentationVersion: 'ai-report-v2',
+    fallbackUsed: true,
+    fallbackReason: 'AI 응답 시간이 초과되었습니다.',
+    reportMarkdown: '## 확인된 등록정보\n\n등록한 정보를 표시합니다.',
+  } }));
+  await page.goto('/reports/new?source=medications');
+  await page.getByRole('button', { name: '보고서 생성하기', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('AI 생성 결과가 아니라 확인된 등록정보·근거를 표시합니다');
+  await expect(page.getByRole('alert')).toContainText('AI 응답 시간이 초과되었습니다.');
+  await expect(page.getByRole('heading', { name: '확인된 등록정보' })).toBeVisible();
 });
