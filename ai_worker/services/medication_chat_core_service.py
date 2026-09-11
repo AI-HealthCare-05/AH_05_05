@@ -3,6 +3,7 @@ from qdrant_client import AsyncQdrantClient
 from ai_worker.chains.conditional_question_interpretation_chain import (
     build_conditional_question_interpretation_chain,
 )
+from ai_worker.chains.conversation_gate_chain import build_conversation_gate_chain
 from ai_worker.chains.semantic_question_router import (
     LocalSemanticQuestionRouter,
     SentenceTransformerQuestionEmbeddingModel,
@@ -12,8 +13,14 @@ from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
+from ai_worker.llm.generators.conversation_response_generator import (
+    build_conversation_response_generator,
+)
 from ai_worker.llm.generators.medication_answer_generator import (
     OpenAIMedicationAnswerGenerator,
+)
+from ai_worker.llm.generators.medication_note_summary_generator import (
+    build_medication_note_summary_generator,
 )
 from ai_worker.observability.chat_tracer import (
     ChatTracer,
@@ -22,6 +29,12 @@ from ai_worker.observability.chat_tracer import (
 )
 from ai_worker.providers.db_active_intake_context_provider import (
     DbActiveIntakeContextProvider,
+)
+from ai_worker.providers.db_follow_up_schedule_provider import (
+    DbFollowUpScheduleProvider,
+)
+from ai_worker.providers.db_medication_note_summary_provider import (
+    DbMedicationNoteSummaryProvider,
 )
 from ai_worker.rag.embeddings.openai_embedding_provider import (
     OpenAIEmbeddingProvider,
@@ -57,7 +70,6 @@ from ai_worker.safety.grounded_claim_validator import (
 )
 from ai_worker.schemas.knowledge import (
     KnowledgeSearchMode,
-    KnowledgeVectorDistance,
 )
 from ai_worker.schemas.medication_chat import (
     MedicationChatProgressCallback,
@@ -67,6 +79,7 @@ from ai_worker.schemas.medication_chat import (
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
+from ai_worker.use_cases.medication_note_summary import MedicationNoteSummaryUseCase
 
 
 class MedicationChatCoreService:
@@ -96,6 +109,17 @@ class MedicationChatCoreService:
             progress_callback=progress_callback,
         )
 
+    async def current_medication_names(
+        self,
+        *,
+        user_id: int,
+        care_episode_id: int | None,
+    ) -> list[str]:
+        return await self._use_case.current_medication_names(
+            user_id=user_id,
+            care_episode_id=care_episode_id,
+        )
+
 
 def build_medication_chat_core_service(
     *,
@@ -112,7 +136,6 @@ def build_medication_chat_core_service(
         api_key=settings.OPENAI_API_KEY,
         timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
-        normalize_vectors=(settings.KNOWLEDGE_VECTOR_DISTANCE == KnowledgeVectorDistance.DOT),
     )
     vector_store_kwargs = {
         "client": qdrant_client,
@@ -150,6 +173,37 @@ def build_medication_chat_core_service(
         if settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED
         else None
     )
+    conversation_gate_chain = (
+        build_conversation_gate_chain(
+            model=settings.CONVERSATION_GATE_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout_seconds=settings.CONVERSATION_GATE_TIMEOUT_SECONDS,
+            max_retries=0,
+            max_history_messages=settings.CONVERSATION_GATE_MAX_HISTORY_MESSAGES,
+        )
+        if settings.CONVERSATION_GATE_ENABLED
+        else None
+    )
+    conversation_response_generator = (
+        build_conversation_response_generator(
+            model=settings.CONVERSATION_GATE_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout_seconds=settings.CONVERSATION_GATE_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
+        if settings.CONVERSATION_GATE_ENABLED
+        else None
+    )
+    medication_note_summary_use_case = MedicationNoteSummaryUseCase(
+        provider=DbMedicationNoteSummaryProvider(),
+        generator=build_medication_note_summary_generator(
+            model=settings.CONVERSATION_GATE_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout_seconds=settings.CONVERSATION_GATE_TIMEOUT_SECONDS,
+            max_retries=0,
+        ),
+        tracer=chat_tracer,
+    )
     semantic_question_router = (
         LocalSemanticQuestionRouter(
             embedder=SentenceTransformerQuestionEmbeddingModel(
@@ -186,10 +240,14 @@ def build_medication_chat_core_service(
         ),
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        conversation_gate_chain=conversation_gate_chain,
+        conversation_response_generator=conversation_response_generator,
         semantic_question_router=semantic_question_router,
         therapeutic_class_repository=DbTherapeuticClassRepository(
             active_dataset_version=settings.THERAPEUTIC_CLASS_DATASET_VERSION,
         ),
+        follow_up_schedule_provider=DbFollowUpScheduleProvider(),
+        medication_note_summary_use_case=medication_note_summary_use_case,
     )
     return MedicationChatCoreService(
         use_case=use_case,

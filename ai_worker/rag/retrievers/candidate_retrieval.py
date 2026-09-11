@@ -1,7 +1,8 @@
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
+
+from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from ai_worker.domain.interfaces import EmbeddingProvider
 from ai_worker.rag.errors import (
@@ -86,9 +87,10 @@ class MedicationKnowledgeCandidateRetriever:
         candidate_limit = min(50, max(20, execution_plan.limit * 4))
         queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
         try:
-            query_vectors = await asyncio.gather(
-                *(self._embedding_provider.embed_query(query) for query in queries),
-            )
+            query_vectors_by_key = await RunnableParallel(
+                **{f"query_{index}": self._embedding_runnable(query=query) for index, query in enumerate(queries)},
+            ).ainvoke({})
+            query_vectors = [query_vectors_by_key[f"query_{index}"] for index in range(len(queries))]
         except Exception as error:
             raise GuidelineRetrievalError(
                 stage=RetrievalFailureStage.EMBEDDING,
@@ -107,21 +109,24 @@ class MedicationKnowledgeCandidateRetriever:
         for tier in self.search_tiers(execution_plan):
             attempted_search_tiers.append(tier.name)
             try:
-                tier_batches = await asyncio.gather(
-                    *(
-                        self._search_once(
+                tier_batches_by_key = await RunnableParallel(
+                    **{
+                        f"query_{index}": self._search_runnable(
                             query=query,
                             query_vector=query_vector,
                             tier=tier,
                             candidate_limit=candidate_limit,
                         )
-                        for query, query_vector in zip(
-                            queries,
-                            query_vectors,
-                            strict=True,
+                        for index, (query, query_vector) in enumerate(
+                            zip(
+                                queries,
+                                query_vectors,
+                                strict=True,
+                            )
                         )
-                    )
-                )
+                    },
+                ).ainvoke({})
+                tier_batches = [tier_batches_by_key[f"query_{index}"] for index in range(len(queries))]
             except Exception as error:
                 raise GuidelineRetrievalError(
                     stage=RetrievalFailureStage.VECTOR_STORE,
@@ -207,4 +212,38 @@ class MedicationKnowledgeCandidateRetriever:
                 interaction_pair_keys=list(tier.interaction_pair_keys),
                 limit=candidate_limit,
             ),
+        )
+
+    def _embedding_runnable(
+        self,
+        *,
+        query: str,
+    ) -> RunnableLambda:
+        async def embed_query(_input: object) -> list[float]:
+            return await self._embedding_provider.embed_query(query)
+
+        return RunnableLambda(
+            embed_query,
+            name="medication_knowledge_query_embedding",
+        )
+
+    def _search_runnable(
+        self,
+        *,
+        query: str,
+        query_vector: list[float],
+        tier: MedicationKnowledgeSearchTier,
+        candidate_limit: int,
+    ) -> RunnableLambda:
+        async def search(_input: object) -> list[RetrievedKnowledgeChunk]:
+            return await self._search_once(
+                query=query,
+                query_vector=query_vector,
+                tier=tier,
+                candidate_limit=candidate_limit,
+            )
+
+        return RunnableLambda(
+            search,
+            name="medication_knowledge_candidate_search",
         )

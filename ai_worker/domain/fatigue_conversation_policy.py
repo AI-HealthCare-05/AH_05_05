@@ -2,6 +2,8 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from ai_worker.domain.urgent_health_signal_policy import UrgentHealthSignalPolicy
+
 
 class FatigueConversationDisposition(StrEnum):
     FOLLOW_UP = "FOLLOW_UP"
@@ -20,15 +22,11 @@ class FatigueConversationPolicy:
     _FATIGUE_PATTERN = re.compile(
         r"피곤|피로|기운\s*(?:없|이\s*없)|무기력|쉽게\s*지침",
     )
-    _URGENT_PATTERN = re.compile(
-        r"흉통|가슴\s*통증|숨\s*(?:이\s*)?(?:차|가쁘)|호흡\s*곤란|"
-        r"실신|의식\s*(?:저하|소실)|마비|검은\s*변|피\s*(?:를\s*)?토",
-    )
 
     def evaluate(self, question: str) -> FatigueConversationDecision | None:
         if not self._FATIGUE_PATTERN.search(question):
             return None
-        if self._URGENT_PATTERN.search(question):
+        if UrgentHealthSignalPolicy().evaluate(question):
             return FatigueConversationDecision(
                 disposition=FatigueConversationDisposition.URGENT,
                 answer=(

@@ -42,3 +42,8 @@ class ChatAnswerGenerationError(AIWorkerError):
     def __init__(self, message: str, *, reason_code: str = "CLIENT_ERROR") -> None:
         super().__init__(message)
         self.reason_code = reason_code
+
+
+class MedicationNoteSummaryGenerationError(AIWorkerError):
+    code = "MEDICATION_NOTE_SUMMARY_GENERATION_FAILED"
+    retryable = True

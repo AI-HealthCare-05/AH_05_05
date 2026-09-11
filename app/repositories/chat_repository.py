@@ -796,6 +796,7 @@ class ChatRepository:
             MedicationChatRoute.INTERACTION: ChatRouteType.INTERACTION,
             MedicationChatRoute.GENERAL_GUIDANCE: ChatRouteType.GENERAL_LIFESTYLE,
             MedicationChatRoute.CLARIFICATION: ChatRouteType.SAFETY_RESPONSE,
+            MedicationChatRoute.MEDICATION_NOTE_SUMMARY: ChatRouteType.PATIENT_DB,
             MedicationChatRoute.RESTRICTED: ChatRouteType.SAFETY_RESPONSE,
             MedicationChatRoute.OUT_OF_SCOPE: (ChatRouteType.OUT_OF_SCOPE_RESPONSE),
         }

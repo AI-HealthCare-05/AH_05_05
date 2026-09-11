@@ -10,8 +10,12 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     MedicationAnswerFallbackReason,
     MedicationAnswerRewriteStatus,
+    MedicationChatAnswerDomain,
+    MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRiskDecision,
+    MedicationChatRiskScope,
     MedicationChatRoute,
     MedicationChatSource,
     MedicationChatSourceKind,
@@ -76,11 +80,30 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert outcome.result.answer.startswith("정해진 용법")
     assert outcome.result.sources == build_result().sources
     assert outcome.result.model_name == "gpt-4o-mini"
-    assert outcome.result.prompt_version == "medication-chat-prompt-v5"
+    assert outcome.result.prompt_version == "medication-chat-prompt-v6"
     assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
     assert outcome.observation.fallback_used is False
     assert outcome.observation.fallback_reason is None
     assert client.messages is not None
+
+
+def test_generator_preserves_warning_and_contraindication_section_markdown() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "⚠️ **주의사항**\n- 정기적 음주자는 복용 전 확인합니다."
+        "\n\n🚫 **복용하면 안 되는 경우**\n- 과민증이 있으면 복용하지 않습니다."
+    )
+
+    assert answer.startswith("⚠️ **주의사항**")
+    assert "🚫 **복용하면 안 되는 경우**" in answer
+
+
+def test_generator_preserves_active_intake_section_markdown() -> None:
+    answer = OpenAIMedicationAnswerGenerator._to_limited_markdown(
+        "💊 **복약정보**\n- 가상 약 A · 1정\n\n💪🏻 **영양제 정보**\n- 가상 영양제 B · 1캡슐"
+    )
+
+    assert answer.startswith("💊 **복약정보**")
+    assert "💪🏻 **영양제 정보**" in answer
 
 
 async def test_generator_skips_llm_when_no_grounded_sources() -> None:
@@ -101,6 +124,89 @@ async def test_generator_skips_llm_when_no_grounded_sources() -> None:
     assert outcome.observation.status == MedicationAnswerRewriteStatus.SKIPPED
     assert outcome.observation.fallback_reason == MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES
     assert outcome.observation.generated_answer_hash is None
+
+
+async def test_generator_uses_llm_for_low_risk_general_supplement_guidance_without_rag_source() -> None:
+    client = FakeAnswerClient(
+        response={
+            "answer": (
+                "✅ **함께 섭취 시 참고사항**\n\n"
+                "- 마그네슘과 아연은 일반적으로 함께 섭취되는 영양성분입니다.\n"
+                "- 제품별 총 섭취량과 속 불편함 여부를 확인해 주세요."
+            ),
+            "section_types": [],
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.SUPPLEMENT_GUIDE,
+            "answer": "마그네슘과 아연 병용에 대한 직접 검색 근거는 확인되지 않았습니다.",
+            "sources": [],
+            "safety_reason_codes": ["GENERAL_SUPPLEMENT_GUIDANCE"],
+            "risk_decision": MedicationChatRiskDecision(
+                domain=MedicationChatAnswerDomain.SUPPLEMENT,
+                scope=MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE,
+            ),
+        }
+    )
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="마그네슘과 아연을 같이 먹어도 돼?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
+    assert "함께 섭취 시 참고사항" in outcome.result.answer
+    assert client.messages is not None
+
+
+async def test_generator_uses_llm_for_evidence_gap_official_guidance() -> None:
+    client = FakeAnswerClient(
+        response={
+            "answer": (
+                "✉️ **안내사항**\n\n"
+                "- 마그네슘 ↔ 아연 관련 자료를 찾지 못했습니다.\n\n"
+                "📭 **공식 확인 경로**\n\n"
+                "- 식품안전나라의 기능성 원료 정보를 확인하세요."
+            ),
+            "section_types": [],
+        }
+    )
+    generator = OpenAIMedicationAnswerGenerator(
+        model="gpt-4o-mini",
+        client=client,
+    )
+    initial = build_result().model_copy(
+        update={
+            "route": MedicationChatRoute.RESTRICTED,
+            "answer": "마그네슘 ↔ 아연 관련 자료를 찾지 못했습니다.",
+            "sources": [],
+            "safety_reason_codes": [MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value],
+        }
+    )
+
+    outcome = await generator.generate(
+        request=MedicationChatRequest(
+            request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+            user_id=1,
+            question="마그네슘과 아연을 같이 먹어도 돼?",
+        ),
+        context=ActiveIntakeContext(user_id=1),
+        result=initial,
+    )
+
+    assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
+    assert client.messages is not None
+    assert "식품안전나라" in outcome.result.answer
 
 
 async def test_generator_skips_llm_when_only_registered_intake_sources_exist() -> None:

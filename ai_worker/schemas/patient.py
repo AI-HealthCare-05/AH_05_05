@@ -1,5 +1,5 @@
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any
 
 from pydantic import (
@@ -109,6 +109,7 @@ class FollowUpSchedule(BaseModel):
 
     follow_up_visit_id: int | None = None
     visit_at: datetime | None = None
+    visit_time: time | None = None
     hospital: str | None = None
 
 

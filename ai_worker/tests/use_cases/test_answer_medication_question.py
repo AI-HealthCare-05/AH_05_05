@@ -1,6 +1,6 @@
 import hashlib
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from langchain_core.runnables import RunnableLambda
@@ -21,9 +21,6 @@ from ai_worker.domain.errors import ChatAnswerGenerationError
 from ai_worker.domain.medication_question_resolver import (
     RuleBasedMedicationQuestionResolver,
 )
-from ai_worker.llm.assemblers.medication_answer_assembler import (
-    MEDICAL_DISCLAIMER,
-)
 from ai_worker.rag.errors import (
     GuidelineRetrievalError,
     RetrievalFailureStage,
@@ -34,7 +31,9 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
-from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.chat import ChatHistoryMessage
+from ai_worker.schemas.conversation_gate import ConversationClassification
+from ai_worker.schemas.enums import ChatRole, SafetyStatus
 from ai_worker.schemas.interaction import (
     InteractionEntity,
     InteractionEntityKind,
@@ -61,6 +60,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationAnswerGenerationObservation,
     MedicationAnswerGenerationOutcome,
     MedicationAnswerRewriteStatus,
+    MedicationChatAnswerDomain,
     MedicationChatProgressStage,
     MedicationChatReasonCode,
     MedicationChatRequest,
@@ -76,6 +76,7 @@ from ai_worker.schemas.medication_chat import (
     TherapeuticClassSelection,
     TherapeuticClassSelectionStatus,
 )
+from ai_worker.schemas.medication_note_summary import MedicationNoteSummaryScope
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
     MedicationQueryEntity,
@@ -83,6 +84,7 @@ from ai_worker.schemas.medication_search import (
     MedicationQueryEntityType,
     MedicationQuestionResolution,
 )
+from ai_worker.schemas.patient import FollowUpSchedule
 from ai_worker.use_cases.answer_medication_question import (
     AnswerMedicationQuestionUseCase,
 )
@@ -132,6 +134,21 @@ class FakeContextProvider:
         care_episode_id: int | None,
     ) -> ActiveIntakeContext:
         return self.context
+
+
+class StaticFollowUpScheduleProvider:
+    def __init__(self, schedules: list[FollowUpSchedule]) -> None:
+        self.schedules = schedules
+        self.received_input: tuple[int, int] | None = None
+
+    async def list_upcoming_schedules(
+        self,
+        *,
+        user_id: int,
+        limit: int,
+    ) -> list[FollowUpSchedule]:
+        self.received_input = (user_id, limit)
+        return self.schedules
 
 
 class FakeGuideRepository:
@@ -353,6 +370,55 @@ class RecordingConditionalInterpretationChain:
     async def ainvoke(self, input, config=None, **kwargs):
         self.inputs.append(input)
         return self.payload
+
+
+class StaticConversationGate:
+    def __init__(self, payload: ConversationClassification) -> None:
+        self.payload = payload
+        self.inputs = []
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        self.inputs.append(input)
+        return self.payload
+
+
+class UnexpectedConversationGate:
+    async def ainvoke(self, input, config=None, **kwargs):
+        raise AssertionError("카탈로그가 확인한 약 질문에서 Conversation Gate를 호출했습니다.")
+
+
+class StaticConversationResponseGenerator:
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+        self.inputs = []
+
+    async def generate(self, input) -> str:
+        self.inputs.append(input)
+        return self.answer
+
+    def fallback(self, input) -> str:
+        self.inputs.append(input)
+        return self.answer
+
+
+class StaticMedicationNoteSummaryUseCase:
+    def __init__(self) -> None:
+        self.received_scope: MedicationNoteSummaryScope | None = None
+        self.received_context_hash: str | None = None
+
+    async def execute(self, *, request, scope, context_hash):
+        self.received_scope = scope
+        self.received_context_hash = context_hash
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer="📝 **복약메모 요약**\n- 두통을 기록함.",
+            route=MedicationChatRoute.MEDICATION_NOTE_SUMMARY,
+            safety_status=SafetyStatus.SAFE,
+            safety_reason_codes=["MEDICATION_NOTE_SUMMARY_REQUESTED"],
+            prompt_version="medication-note-summary-prompt-v1",
+            schema_version="medication-chat-result-v1",
+            context_hash=context_hash,
+        )
 
 
 class RecordingSemanticRouter:
@@ -612,10 +678,15 @@ def build_use_case(
     conditional_interpretation_chain=None,
     semantic_question_router=None,
     therapeutic_class_repository=None,
+    conversation_gate_chain=None,
+    conversation_response_generator=None,
+    guide_repository=None,
+    follow_up_schedule_provider=None,
+    medication_note_summary_use_case=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
-        guide_repository=FakeGuideRepository(lookup or MedicationGuideLookup()),
+        guide_repository=(guide_repository or FakeGuideRepository(lookup or MedicationGuideLookup())),
         interaction_rule_repository=(rule_repository or FakeRuleRepository(rules or [])),
         knowledge_retriever=retriever or FakeKnowledgeRetriever(),
         answer_generator=answer_generator or PassthroughGenerator(),
@@ -627,7 +698,411 @@ def build_use_case(
         conditional_interpretation_chain=conditional_interpretation_chain,
         semantic_question_router=semantic_question_router,
         therapeutic_class_repository=therapeutic_class_repository,
+        conversation_gate_chain=conversation_gate_chain,
+        conversation_response_generator=conversation_response_generator,
+        follow_up_schedule_provider=follow_up_schedule_provider,
+        medication_note_summary_use_case=medication_note_summary_use_case,
     )
+
+
+async def test_vague_symptom_uses_conversation_gate_without_retrieval() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="VAGUE_SYMPTOM",
+                safety_signal="NONE",
+                confidence="HIGH",
+                follow_up_fields=["LOCATION", "ONSET"],
+            )
+        ),
+        conversation_response_generator=StaticConversationResponseGenerator(
+            "많이 불편하시겠어요. 어디가 언제부터 아픈지 알려주세요."
+        ),
+    ).execute(build_request("아픈데 어떻게 해?"))
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert result.safety_status is SafetyStatus.SAFE
+    assert retriever.received_kwargs is None
+    assert "어디" in result.answer
+
+
+async def test_follow_up_schedule_question_returns_registered_upcoming_visits() -> None:
+    schedule_provider = StaticFollowUpScheduleProvider(
+        [
+            FollowUpSchedule(
+                follow_up_visit_id=1,
+                visit_at=datetime(2026, 9, 16, 14, 0),
+                visit_time=datetime(2026, 9, 16, 14, 0).time(),
+                hospital="서울내과",
+            ),
+            FollowUpSchedule(
+                follow_up_visit_id=2,
+                visit_at=datetime(2026, 9, 20, 0, 0),
+                hospital="대학병원",
+            ),
+        ]
+    )
+    result = await build_use_case(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="FOLLOW_UP_SCHEDULE",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+        follow_up_schedule_provider=schedule_provider,
+    ).execute(build_request("내 진료 일정 알려줘"))
+
+    assert result.route.value == "FOLLOW_UP_SCHEDULE"
+    assert "🗓️ **진료 일정**" in result.answer
+    assert "- 9월 16일 14:00 · 서울내과" in result.answer
+    assert "- 9월 20일 · 대학병원" in result.answer
+    assert schedule_provider.received_input == (1, 5)
+
+
+async def test_follow_up_schedule_question_explains_when_no_upcoming_visit_exists() -> None:
+    result = await build_use_case(
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="FOLLOW_UP_SCHEDULE",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+        follow_up_schedule_provider=StaticFollowUpScheduleProvider([]),
+    ).execute(build_request("진료 일정 알려줘"))
+
+    assert result.route is MedicationChatRoute.FOLLOW_UP_SCHEDULE
+    assert result.answer == "등록된 예정 진료일정이 없습니다."
+
+
+async def test_note_summary_request_bypasses_rag_retrieval() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    summary_use_case = StaticMedicationNoteSummaryUseCase()
+    result = await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="MEDICATION_NOTE_SUMMARY",
+                safety_signal="NONE",
+                confidence="HIGH",
+                note_summary_scope=MedicationNoteSummaryScope.RECENT_SIX_MONTHS,
+            )
+        ),
+        medication_note_summary_use_case=summary_use_case,
+    ).execute(build_request("복약메모 정리해줘"))
+
+    assert result.route is MedicationChatRoute.MEDICATION_NOTE_SUMMARY
+    assert retriever.received_kwargs is None
+    assert summary_use_case.received_scope is MedicationNoteSummaryScope.RECENT_SIX_MONTHS
+
+
+async def test_specific_symptom_requests_candidate_medicine_without_exposing_active_medications() -> None:
+    response_generator = StaticConversationResponseGenerator(
+        "🩺 **상호작용 확인을 위해 필요한 정보**\n- 추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
+    )
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="리바록사반정(항응고제)",
+                )
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SPECIFIC_SYMPTOM",
+                safety_signal="NONE",
+                confidence="HIGH",
+                follow_up_fields=["ONSET", "SEVERITY"],
+            )
+        ),
+        conversation_response_generator=response_generator,
+    ).execute(build_request("배가 아프고 속이 쓰려"))
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert "제품명 또는 성분명" in result.answer
+    assert "active_medication_names" not in response_generator.inputs[0].model_dump()
+
+
+async def test_specific_symptom_does_not_infer_interaction_from_active_medications() -> None:
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="리바록사반정",
+                ),
+                ActiveMedication(
+                    medication_id=2,
+                    care_episode_id=1,
+                    name="파모티딘정",
+                ),
+            ],
+        ),
+        rule_repository=FailingRuleRepository(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SPECIFIC_SYMPTOM",
+                safety_signal="NONE",
+                confidence="HIGH",
+                follow_up_fields=["ONSET", "SEVERITY"],
+            )
+        ),
+        conversation_response_generator=StaticConversationResponseGenerator(
+            "💊 **복약정보**\n- 리바록사반정\n- 파모티딘정\n\n"
+            "🩺 **확인을 위해 필요한 정보**\n- 증상이 시작된 시점과 통증 정도를 알려주세요."
+        ),
+    ).execute(build_request("배가 아프고 속이 쓰려"))
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert "🔁 **상호작용**" not in result.answer
+    assert "상호작용이 있습니다" not in result.answer
+
+
+async def test_symptom_follow_up_candidate_uses_active_intake_interaction_rules() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            )
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="리바록사반정"),
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="알마겔"),
+        ),
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="알마겔",
+        risk_level="CAUTION",
+        effect_texts=["승인된 병용 확인 근거입니다."],
+    )
+    request = build_request("알마겔").model_copy(
+        update={
+            "history": [
+                ChatHistoryMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=(
+                        "증상 원인이나 복통약 추천은 할 수 없지만, "
+                        "추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
+                    ),
+                )
+            ]
+        }
+    )
+    guide_repository = RecordingGuideRepository()
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        guide_repository=guide_repository,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="알마겔",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(request)
+
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
+    assert guide_repository.requested_names == []
+
+
+async def test_explicit_active_medication_interaction_uses_approved_rule() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=1,
+                name="파모티딘정",
+            ),
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(
+                kind=InteractionEntityKind.DRUG,
+                display_name="리바록사반정",
+            ),
+            InteractionEntity(
+                kind=InteractionEntityKind.DRUG,
+                display_name="파모티딘정",
+            ),
+        ),
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="파모티딘정",
+        risk_level="CAUTION",
+        effect_texts=["승인된 상호작용 근거입니다."],
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
+
+
+async def test_active_medication_interaction_without_approved_rule_states_uncertainty() -> None:
+    result = await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="리바록사반정",
+                ),
+                ActiveMedication(
+                    medication_id=2,
+                    care_episode_id=1,
+                    name="파모티딘정",
+                ),
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert "상호작용을 확인하지 못했습니다" in result.answer
+    assert "안전하다는 의미는 아닙니다" in result.answer
+
+
+async def test_harmful_request_is_blocked_before_rag() -> None:
+    result = await build_use_case(
+        retriever=RecordingQueryPlanRetriever(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SENSITIVE_REQUEST",
+                safety_signal="HARMFUL_INSTRUCTIONS",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(build_request("핵폭탄 만드는 법 알려줘"))
+
+    assert result.route is MedicationChatRoute.RESTRICTED
+    assert result.safety_status is SafetyStatus.BLOCKED
+
+
+async def test_conversation_trace_records_decision_without_sensitive_content() -> None:
+    tracer = RecordingChatTracer(capture_content=False)
+
+    await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="리바록사반정",
+                )
+            ],
+        ),
+        tracer=tracer,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SPECIFIC_SYMPTOM",
+                safety_signal="NONE",
+                confidence="HIGH",
+                follow_up_fields=["ONSET", "SEVERITY"],
+            )
+        ),
+        conversation_response_generator=StaticConversationResponseGenerator(
+            "💊 **복약정보**\n- 리바록사반정\n\n"
+            "🩺 **확인을 위해 필요한 정보**\n- 증상이 시작된 시점과 통증 정도를 알려주세요."
+        ),
+    ).execute(build_request("배가 아프고 속이 쓰려"))
+
+    classify_outputs = next(span.outputs for span in tracer.spans if span.name == "conversation.classify")
+    respond_outputs = next(span.outputs for span in tracer.spans if span.name == "conversation.respond")
+    assert classify_outputs["intent"] == "SPECIFIC_SYMPTOM"
+    assert classify_outputs["safety_signal"] == "NONE"
+    assert classify_outputs["history_count"] == 0
+    assert classify_outputs["status"] == "COMPLETED"
+    assert classify_outputs["duration_ms"] >= 0
+    assert "question" not in classify_outputs
+    assert "active_medication_names" not in classify_outputs
+    assert respond_outputs["intent"] == "SPECIFIC_SYMPTOM"
+    assert respond_outputs["disposition"] == "ALLOW"
+    assert respond_outputs["fallback_used"] is False
+    assert respond_outputs["status"] == "COMPLETED"
+    assert respond_outputs["duration_ms"] >= 0
+
+
+async def test_medication_question_bypasses_conversation_gate() -> None:
+    result = await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog(["타이레놀"]),
+        ),
+        conversation_gate_chain=UnexpectedConversationGate(),
+    ).execute(build_request("타이레놀은 어디에 좋아?"))
+
+    assert result.route is MedicationChatRoute.MEDICATION_GUIDE
 
 
 async def test_execute_uses_injected_query_plan_chain() -> None:
@@ -809,7 +1284,7 @@ async def test_active_intake_question_without_external_evidence_uses_registered_
     result = await build_use_case(
         context=context,
         retriever=retriever,
-        answer_generator=UnexpectedMedicationGenerator(),
+        answer_generator=PassthroughGenerator(),
     ).execute(
         build_request("혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"),
     )
@@ -868,7 +1343,7 @@ async def test_active_intake_therapeutic_class_question_uses_only_classified_reg
         context=context,
         retriever=retriever,
         tracer=tracer,
-        answer_generator=UnexpectedMedicationGenerator(),
+        answer_generator=PassthroughGenerator(),
         therapeutic_class_repository=therapeutic_class_repository,
     ).execute(
         build_request("혈액응고와 관련된 약은 등록한 영양제와 어떤 점을 조심해야 해?"),
@@ -1194,9 +1669,9 @@ async def test_execute_distinguishes_in_scope_question_without_evidence() -> Non
     assert result.route == MedicationChatRoute.RESTRICTED
     assert result.safety_status == SafetyStatus.RESTRICTED
     assert result.safety_reason_codes == ["IN_SCOPE_NO_EVIDENCE"]
-    assert "확인된 범위" in result.answer
-    assert "공식 확인 경로" in result.answer
-    assert "의료진·약사에게 확인할 내용" in result.answer
+    assert "✉️ **안내사항**" in result.answer
+    assert "📭 **공식 확인 경로**" not in result.answer
+    assert "의료진·약사에게 확인할 내용" not in result.answer
     assert "안전한 조합" not in result.answer
 
 
@@ -1254,11 +1729,11 @@ async def test_general_drug_question_runs_without_episode() -> None:
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
 
 
-async def test_execute_keeps_tylenol_efficacy_and_caution_when_answer_has_canonical_disclaimer() -> None:
+async def test_execute_keeps_tylenol_efficacy_and_caution_without_global_disclaimer() -> None:
     result = await build_use_case(
         lookup=MedicationGuideLookup(guide=build_guide()),
         answer_generator=LongAnswerGenerator(
-            f"효능\n- 통증과 발열을 완화합니다.\n\n주의사항\n- 정해진 용법을 지킵니다.\n\n{MEDICAL_DISCLAIMER}"
+            "효능\n- 통증과 발열을 완화합니다.\n\n주의사항\n- 정해진 용법을 지킵니다."
         ),
         grounded_claim_validator=RuleBasedGroundedClaimValidator(),
     ).execute(
@@ -1269,7 +1744,7 @@ async def test_execute_keeps_tylenol_efficacy_and_caution_when_answer_has_canoni
     assert result.safety_status == SafetyStatus.SAFE
     assert "통증과 발열을 완화합니다" in result.answer
     assert "정해진 용법을 지킵니다" in result.answer
-    assert result.answer.endswith(MEDICAL_DISCLAIMER)
+    assert "의료진의 진료, 진단 또는 처방을 대체하지 않습니다" not in result.answer
 
 
 async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:
@@ -1907,6 +2382,149 @@ async def test_execute_adds_catalog_backed_interaction_pairs_from_semantic_route
     ]
 
 
+async def test_execute_uses_general_guidance_for_low_risk_supplement_pair_without_direct_evidence() -> None:
+    resolution = MedicationQuestionResolution(
+        original_question="마그네슘과 아연을 같이 먹어도 돼?",
+        resolved_question="마그네슘과 아연을 같이 먹어도 돼?",
+        scope="IN_SCOPE",
+        status="UNCHANGED",
+        entity_resolution_available=True,
+        entities=[
+            MedicationQueryEntity(
+                surface="마그네슘",
+                canonical_name="마그네슘",
+                entity_type="INGREDIENT_NAME",
+                kind="SUPPLEMENT",
+                source="RDBMS",
+            ),
+            MedicationQueryEntity(
+                surface="아연",
+                canonical_name="아연",
+                entity_type="INGREDIENT_NAME",
+                kind="SUPPLEMENT",
+                source="RDBMS",
+            ),
+        ],
+    )
+
+    async def plan_with_resolved_entities(
+        value: MedicationQueryPlanChainInput,
+    ) -> MedicationQuestionPlanResult:
+        return await build_medication_query_plan_chain().ainvoke(
+            value.model_copy(update={"resolution": resolution}),
+        )
+
+    result = await build_use_case(
+        query_plan_chain=RunnableLambda(plan_with_resolved_entities),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="마그네슘",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.RDBMS,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="아연",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.RDBMS,
+                    ),
+                ]
+            )
+        ),
+    ).execute(build_request(resolution.original_question))
+
+    assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.safety_reason_codes == ["GENERAL_SUPPLEMENT_GUIDANCE"]
+    assert result.risk_decision is not None
+    assert result.risk_decision.domain == MedicationChatAnswerDomain.SUPPLEMENT
+    assert result.risk_decision.scope == MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE
+
+
+async def test_current_medication_names_omit_parenthetical_descriptions_and_duplicates() -> None:
+    use_case = build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=10,
+                    name="타이레놀정500밀리그램(아세트아미노펜)",
+                ),
+                ActiveMedication(
+                    medication_id=2,
+                    care_episode_id=10,
+                    name=" 타이레놀정500밀리그램 ",
+                ),
+                ActiveMedication(
+                    medication_id=3,
+                    care_episode_id=10,
+                    name="리바록사반정(항응고제)",
+                ),
+            ],
+        )
+    )
+
+    assert await use_case.current_medication_names(
+        user_id=1,
+        care_episode_id=10,
+    ) == ["타이레놀정500밀리그램", "리바록사반정"]
+
+
+def test_answer_context_displays_only_active_medications_for_medication_and_interaction_routes() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=10,
+                name="타이레놀정500밀리그램",
+            )
+        ],
+        supplements=[
+            ActiveSupplement(
+                registration_id=1,
+                supplement_nutrient_id=1,
+                name="비타민 D",
+                dose_amount="1",
+                dose_unit="정",
+                start_date="2026-09-01",
+            )
+        ],
+    )
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="타이레놀의 효능을 알려줘",
+    )
+
+    medication_context = AnswerMedicationQuestionUseCase._answer_context_for_route(
+        context=context,
+        request=request,
+        route=MedicationChatRoute.MEDICATION_GUIDE,
+    )
+    interaction_context = AnswerMedicationQuestionUseCase._answer_context_for_route(
+        context=context,
+        request=request,
+        route=MedicationChatRoute.INTERACTION,
+    )
+    general_context = AnswerMedicationQuestionUseCase._answer_context_for_route(
+        context=context,
+        request=request,
+        route=MedicationChatRoute.GENERAL_GUIDANCE,
+    )
+
+    assert [item.name for item in medication_context.medications] == ["타이레놀정500밀리그램"]
+    assert medication_context.supplements == []
+    assert [item.name for item in interaction_context.medications] == ["타이레놀정500밀리그램"]
+    assert interaction_context.supplements == []
+    assert general_context.medications == []
+    assert general_context.supplements == []
+
+
 async def test_execute_discards_unknown_conditional_llm_entity_before_search() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
@@ -2521,7 +3139,7 @@ async def test_product_name_drug_food_question_uses_official_guide_with_suppleme
     }
 
 
-async def test_multi_entity_answer_separates_supported_and_unverified_pairs() -> None:
+async def test_multi_entity_answer_uses_generic_notice_for_unverified_pairs() -> None:
     calcium_iron_chunk = build_chunk().model_copy(
         update={
             "content": "칼슘은 한 끼 식사에서 철 흡수에 영향을 줄 수 있습니다.",
@@ -2546,15 +3164,10 @@ async def test_multi_entity_answer_separates_supported_and_unverified_pairs() ->
 
     assert result.route == MedicationChatRoute.INTERACTION
     assert "검색된 상호작용 연구 근거" in result.answer
-    assert "근거를 확인하지 못한 조합" in result.answer
-    assert "와파린 ↔ 비타민 K" in result.answer
-    assert (
-        "칼슘 ↔ 철분"
-        not in result.answer.split(
-            "근거를 확인하지 못한 조합",
-            maxsplit=1,
-        )[1]
-    )
+    assert "☑️ **확인하지 못한 조합**" in result.answer
+    assert "🔁 **확인된 상호작용**" not in result.answer
+    assert "와파린 ↔ 비타민 K" not in result.answer
+    assert "칼슘 ↔ 철분" not in result.answer
 
 
 async def test_unknown_risk_does_not_restrict_general_omega3_intake_guidance() -> None:

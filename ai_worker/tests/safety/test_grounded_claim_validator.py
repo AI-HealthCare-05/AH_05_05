@@ -1,8 +1,5 @@
 import pytest
 
-from ai_worker.llm.assemblers.medication_answer_assembler import (
-    MEDICAL_DISCLAIMER,
-)
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
@@ -90,19 +87,8 @@ async def test_validator_exposes_hashed_medication_change_diagnostics() -> None:
     assert "중단하세요" not in diagnostic.model_dump_json()
 
 
-async def test_validator_adds_disclaimer_without_restricting_safe_answer() -> None:
-    result = await RuleBasedGroundedClaimValidator().validate(
-        context=ActiveIntakeContext(user_id=1),
-        result=build_result("제품 설명서의 주의사항을 확인하세요."),
-    )
-
-    assert result.safety_status == SafetyStatus.SAFE
-    assert "MISSING_MEDICAL_DISCLAIMER" not in result.safety_reason_codes
-    assert result.answer.endswith(MEDICAL_DISCLAIMER)
-
-
-async def test_validator_ignores_canonical_disclaimer_when_scanning_for_medication_change() -> None:
-    answer = f"타이레놀은 통증과 발열 완화에 사용됩니다. 주의사항을 확인하세요.\n\n{MEDICAL_DISCLAIMER}"
+async def test_validator_keeps_safe_answer_without_global_disclaimer() -> None:
+    answer = "제품 설명서의 주의사항을 확인하세요."
 
     result = await RuleBasedGroundedClaimValidator().validate(
         context=ActiveIntakeContext(user_id=1),
@@ -113,14 +99,28 @@ async def test_validator_ignores_canonical_disclaimer_when_scanning_for_medicati
     assert result.answer == answer
 
 
-async def test_validator_blocks_direct_instruction_even_when_canonical_disclaimer_is_present() -> None:
+async def test_validator_allows_non_instructional_answer_without_disclaimer() -> None:
+    answer = "타이레놀은 통증과 발열 완화에 사용됩니다. 주의사항을 확인하세요."
+
     result = await RuleBasedGroundedClaimValidator().validate(
         context=ActiveIntakeContext(user_id=1),
-        result=build_result(f"오늘부터 약 복용을 중단하세요.\n\n{MEDICAL_DISCLAIMER}"),
+        result=build_result(answer),
+    )
+
+    assert result.safety_status == SafetyStatus.SAFE
+    assert result.answer == answer
+
+
+async def test_validator_blocks_direct_instruction_without_global_disclaimer() -> None:
+    result = await RuleBasedGroundedClaimValidator().validate(
+        context=ActiveIntakeContext(user_id=1),
+        result=build_result("오늘부터 약 복용을 중단하세요."),
     )
 
     assert result.safety_status == SafetyStatus.BLOCKED
     assert result.safety_reason_codes == ["MEDICATION_CHANGE_INSTRUCTION"]
+    assert "복용 여부나 용량 변경은 의료진 또는 약사와 상의하세요." in result.answer
+    assert "이 안내는 보유한 자료를 바탕으로 한 참고 정보" not in result.answer
 
 
 async def test_validator_preserves_existing_restricted_status() -> None:

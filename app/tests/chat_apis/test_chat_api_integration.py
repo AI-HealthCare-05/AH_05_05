@@ -25,6 +25,14 @@ from app.services.chat import ChatApplicationService
 
 
 class FakeMedicationChatCore:
+    async def current_medication_names(
+        self,
+        *,
+        user_id: int,
+        care_episode_id: int | None,
+    ) -> list[str]:
+        return []
+
     async def answer(
         self,
         request,

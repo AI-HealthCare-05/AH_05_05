@@ -22,8 +22,10 @@ from ai_worker.schemas.medication_chat import (
     MedicationAnswerGenerationOutcome,
     MedicationAnswerPayload,
     MedicationAnswerRewriteStatus,
+    MedicationChatReasonCode,
     MedicationChatRequest,
     MedicationChatResult,
+    MedicationChatRiskScope,
     MedicationChatRoute,
     MedicationChatSourceKind,
 )
@@ -37,6 +39,7 @@ class AsyncMedicationAnswerClient(Protocol):
 
 
 class OpenAIMedicationAnswerGenerator:
+    _GENERAL_SUPPLEMENT_GUIDANCE_REASON_CODE = "GENERAL_SUPPLEMENT_GUIDANCE"
     _LLM_REWRITE_SOURCE_KINDS = frozenset(
         {
             MedicationChatSourceKind.MEDICATION_GUIDE,
@@ -54,7 +57,7 @@ class OpenAIMedicationAnswerGenerator:
         re.IGNORECASE,
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
-    _SECTION_HEADER_PATTERN = re.compile(r"^\s*✅\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
+    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚫|💊|💪🏻)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
     _BULLET_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•])\s*")
     _SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?。！？])\s+")
@@ -114,13 +117,13 @@ class OpenAIMedicationAnswerGenerator:
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.CLARIFICATION_REQUIRED,
             )
-        if not result.sources:
+        if not result.sources and not self._allows_no_source_llm_guidance(result):
             return self._skipped_outcome(
                 result,
                 draft_hash=draft_hash,
                 reason=MedicationAnswerFallbackReason.NO_GROUNDED_SOURCES,
             )
-        if not self._has_external_rewrite_evidence(result):
+        if not self._has_external_rewrite_evidence(result) and not self._allows_no_source_llm_guidance(result):
             return self._skipped_outcome(
                 result,
                 draft_hash=draft_hash,
@@ -234,6 +237,23 @@ class OpenAIMedicationAnswerGenerator:
         return any(source.kind in cls._LLM_REWRITE_SOURCE_KINDS for source in result.sources)
 
     @staticmethod
+    def _is_evidence_gap_guidance(result: MedicationChatResult) -> bool:
+        """근거 부재 안내는 새 의학 주장을 만들지 않는 범위에서만 LLM이 정리한다."""
+
+        return MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value in result.safety_reason_codes
+
+    @classmethod
+    def _allows_no_source_llm_guidance(cls, result: MedicationChatResult) -> bool:
+        """근거 부재 안내와 저위험 일반 영양 안내만 출처 없이 LLM 정리를 허용한다."""
+
+        return cls._is_evidence_gap_guidance(result) or (
+            cls._GENERAL_SUPPLEMENT_GUIDANCE_REASON_CODE in result.safety_reason_codes
+            and result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+            and result.risk_decision is not None
+            and result.risk_decision.scope == MedicationChatRiskScope.EVIDENCE_WITH_GENERAL_GUIDANCE
+        )
+
+    @staticmethod
     def _skipped_outcome(
         result: MedicationChatResult,
         *,
@@ -263,8 +283,9 @@ class OpenAIMedicationAnswerGenerator:
                 normalized_lines.extend(cls._format_interaction_section(interaction_lines))
                 interaction_lines = None
             if section_header is not None:
+                icon = section_header.group("icon")
                 title = section_header.group("title").strip()
-                normalized_lines.append(f"✅ **{title}**")
+                normalized_lines.append(f"{icon} **{title}**")
                 if cls._INTERACTION_SECTION_TITLE in title:
                     interaction_lines = []
                 continue

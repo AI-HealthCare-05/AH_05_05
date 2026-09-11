@@ -26,6 +26,8 @@ class MedicationChatRoute(StrEnum):
     INTERACTION = "INTERACTION"
     GENERAL_GUIDANCE = "GENERAL_GUIDANCE"
     CLARIFICATION = "CLARIFICATION"
+    FOLLOW_UP_SCHEDULE = "FOLLOW_UP_SCHEDULE"
+    MEDICATION_NOTE_SUMMARY = "MEDICATION_NOTE_SUMMARY"
     RESTRICTED = "RESTRICTED"
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
@@ -141,6 +143,16 @@ class MedicationChatReasonCode(StrEnum):
     INGREDIENT_FAMILY_DETAIL_REQUIRED = "INGREDIENT_FAMILY_DETAIL_REQUIRED"
     FATIGUE_FOLLOW_UP_REQUIRED = "FATIGUE_FOLLOW_UP_REQUIRED"
     FATIGUE_URGENT_ASSISTANCE = "FATIGUE_URGENT_ASSISTANCE"
+    CONVERSATION_GREETING = "CONVERSATION_GREETING"
+    CONVERSATION_CASUAL = "CONVERSATION_CASUAL"
+    SYMPTOM_FOLLOW_UP_REQUIRED = "SYMPTOM_FOLLOW_UP_REQUIRED"
+    FOLLOW_UP_SCHEDULE_REQUESTED = "FOLLOW_UP_SCHEDULE_REQUESTED"
+    FOLLOW_UP_SCHEDULE_UNAVAILABLE = "FOLLOW_UP_SCHEDULE_UNAVAILABLE"
+    MEDICATION_NOTE_SUMMARY_REQUESTED = "MEDICATION_NOTE_SUMMARY_REQUESTED"
+    MEDICATION_NOTE_SUMMARY_UNAVAILABLE = "MEDICATION_NOTE_SUMMARY_UNAVAILABLE"
+    SENSITIVE_REQUEST_BLOCKED = "SENSITIVE_REQUEST_BLOCKED"
+    OUT_OF_SCOPE_REDIRECTED = "OUT_OF_SCOPE_REDIRECTED"
+    HEALTH_URGENCY = "HEALTH_URGENCY"
     PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED = "PERSONAL_DOSE_CHANGE_CONFIRMATION_REQUIRED"
     POSSIBLE_OVERDOSE = "POSSIBLE_OVERDOSE"
 
@@ -212,6 +224,7 @@ class MedicationChatRequest(BaseModel):
         max_length=CHAT_CONTENT_MAX_LENGTH,
     )
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
+    symptom_interaction_follow_up: bool = False
     session_reference: MedicationChatSessionReference = Field(
         default_factory=MedicationChatSessionReference,
     )
@@ -440,7 +453,6 @@ class GroundedClaimValidationDiagnostic(BaseModel):
         pattern=r"^[0-9a-f]{64}$",
     )
     official_warning_allowed: bool = False
-    disclaimer_added: bool = False
 
     def trace_outputs(self) -> dict[str, str | bool]:
         outputs: dict[str, str | bool] = {}
@@ -453,8 +465,6 @@ class GroundedClaimValidationDiagnostic(BaseModel):
             value = getattr(self, field_name)
             if value is not None:
                 outputs[f"matched_{field_name}" if field_name == "rule_code" else field_name] = value
-        if self.disclaimer_added:
-            outputs["disclaimer_added"] = True
         if self.official_warning_allowed:
             outputs["official_warning_allowed"] = True
         return outputs

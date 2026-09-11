@@ -12,6 +12,7 @@ from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     ActiveMedication,
     ActiveSupplement,
+    InteractionRuleFact,
     MedicationEvidenceCoverage,
     MedicationGuideFact,
 )
@@ -47,6 +48,7 @@ def test_assemble_omits_empty_product_guide_fields() -> None:
 
     assert "사용법: 1일 1~2캡슐" in answer
     assert "함께 주의할 약·음식" not in answer
+    assert "이 안내는 보유한 자료를 바탕으로 한 참고 정보" not in answer
 
 
 def test_assemble_omits_no_information_markers() -> None:
@@ -159,6 +161,7 @@ def test_assemble_separates_medication_and_supplement_information_with_a_blank_l
                     name="와파린",
                     dose="1정",
                     times_per_day=1,
+                    days=7,
                 )
             ],
             supplements=[
@@ -179,4 +182,98 @@ def test_assemble_separates_medication_and_supplement_information_with_a_blank_l
     )
 
     assert "사용자 확정 복약정보" not in answer
-    assert "복약정보\n- 와파린 · 1정 · 1일 1회\n\n영양제 정보\n- 비타민 K · 1정" in answer
+    assert "💊 **복약정보**\n- 와파린\n\n💪🏻 **영양제 정보**\n- 비타민 K · 1정" in answer
+    assert "1정" not in answer.split("💪🏻 **영양제 정보**", maxsplit=1)[0]
+    assert "1일 1회" not in answer
+    assert "7일" not in answer
+
+
+def test_assemble_formats_active_intake_as_markdown_sections() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=10,
+                    name="와파린",
+                    dose="1정",
+                )
+            ],
+            supplements=[
+                ActiveSupplement(
+                    registration_id=1,
+                    supplement_nutrient_id=1,
+                    name="비타민 K",
+                    dose_amount="1",
+                    dose_unit="정",
+                    start_date="2026-09-09",
+                )
+            ],
+        ),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+    )
+
+    assert answer.startswith("💊 **복약정보**\n- 와파린")
+    assert "와파린 · 1정" not in answer
+    assert "\n\n💪🏻 **영양제 정보**\n- 비타민 K · 1정" in answer
+
+
+def test_assemble_marks_only_verified_interactions_as_confirmed() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[
+            InteractionRuleFact(
+                interaction_rule_id=1,
+                pair_key="DRUG:와파린|SUPPLEMENT:비타민 K",
+                pair_type="DRUG_SUPPLEMENT",
+                left_name="와파린",
+                right_name="비타민 K",
+                risk_level="CAUTION",
+                effect_texts=["약효에 영향을 줄 수 있어 섭취량을 일정하게 유지해야 합니다."],
+            )
+        ],
+        chunks=[],
+        interaction_question=True,
+    )
+
+    assert "🔁 **확인된 상호작용**" in answer
+    assert "- 와파린 ↔ 비타민 K: 약효에 영향을 줄 수 있어 섭취량을 일정하게 유지해야 합니다." in answer
+    assert "☑️ **확인하지 못한 조합**" not in answer
+
+
+def test_assemble_labels_unverified_interaction_without_confirmed_heading() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=True,
+    )
+
+    assert "🔁 **확인된 상호작용**" not in answer
+    assert "☑️ **확인하지 못한 조합**" in answer
+    assert "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 못했습니다." in answer
+    assert "확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다." in answer
+
+
+def test_assemble_does_not_repeat_unverified_interaction_notice_as_missing_evidence() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=True,
+        unsupported_pairs=["마그네슘 ↔ 아연"],
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[KnowledgeSectionType.INTERACTION],
+            missing_section_types=[KnowledgeSectionType.INTERACTION],
+        ),
+    )
+
+    assert answer.count("☑️ **확인하지 못한 조합**") == 1
+    assert "근거를 확인하지 못한 항목" not in answer

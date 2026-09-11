@@ -19,9 +19,10 @@ from app.services.chat import (
 
 
 class FakeChatApplicationService:
-    def __init__(self) -> None:
+    def __init__(self, *, current_medications: list[str] | None = None) -> None:
         self.received_user = None
         self.received_command = None
+        self.current_medications = current_medications
 
     async def send(self, *, user, command, progress_callback=None) -> SendChatResult:
         self.received_user = user
@@ -43,6 +44,7 @@ class FakeChatApplicationService:
             conversation_id=42,
             message_id=101,
             answer="확인 가능한 근거를 바탕으로 안내합니다.",
+            current_medications=self.current_medications,
             sources=[
                 ChatSourceView(
                     scope="official",
@@ -60,7 +62,9 @@ class TimeoutChatApplicationService:
 
 
 async def test_post_chat_returns_camel_case_response() -> None:
-    service = FakeChatApplicationService()
+    service = FakeChatApplicationService(
+        current_medications=["타이레놀정500밀리그램"],
+    )
     app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
     app.dependency_overrides[get_chat_application_service] = lambda: service
 
@@ -86,6 +90,7 @@ async def test_post_chat_returns_camel_case_response() -> None:
         "conversationId": 42,
         "messageId": 101,
         "answer": "확인 가능한 근거를 바탕으로 안내합니다.",
+        "currentMedications": ["타이레놀정500밀리그램"],
         "sources": [
             {
                 "scope": "official",
@@ -100,8 +105,36 @@ async def test_post_chat_returns_camel_case_response() -> None:
     assert service.received_command.message == "타이레놀은 어떤 약인가요?"
 
 
-async def test_post_chat_stream_returns_progress_then_verified_final_answer() -> None:
+async def test_post_chat_omits_current_medications_when_no_active_medication_exists() -> None:
     service = FakeChatApplicationService()
+    app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
+    app.dependency_overrides[get_chat_application_service] = lambda: service
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(
+                "/api/v1/chat",
+                json={
+                    "requestId": "6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+                    "recordId": None,
+                    "conversationId": None,
+                    "message": "타이레놀은 어떤 약인가요?",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "currentMedications" not in response.json()
+
+
+async def test_post_chat_stream_returns_progress_then_verified_final_answer() -> None:
+    service = FakeChatApplicationService(
+        current_medications=["타이레놀정500밀리그램"],
+    )
     app.dependency_overrides[get_request_user] = lambda: SimpleNamespace(id=7)
     app.dependency_overrides[get_chat_application_service] = lambda: service
 
@@ -129,6 +162,7 @@ async def test_post_chat_stream_returns_progress_then_verified_final_answer() ->
     assert '"message":"안전 확인 중"' in response.text
     assert "event: complete\n" in response.text
     assert '"answer":"확인 가능한 근거를 바탕으로 안내합니다."' in response.text
+    assert '"currentMedications":["타이레놀정500밀리그램"]' in response.text
     assert response.text.index("질문 확인 중") < response.text.index("안전 확인 중")
     assert response.text.index("안전 확인 중") < response.text.index("event: complete")
 

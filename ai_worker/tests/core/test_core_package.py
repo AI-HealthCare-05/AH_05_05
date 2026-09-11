@@ -51,6 +51,15 @@ def test_config_disables_semantic_question_router_by_default() -> None:
     assert settings.SEMANTIC_ROUTER_MIN_MARGIN == 0.10
 
 
+def test_config_disables_conversation_gate_by_default() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.CONVERSATION_GATE_ENABLED is False
+    assert settings.CONVERSATION_GATE_MODEL == "gpt-4o-mini"
+    assert settings.CONVERSATION_GATE_MAX_HISTORY_MESSAGES == 4
+    assert settings.CONVERSATION_GATE_TIMEOUT_SECONDS == 5.0
+
+
 def test_config_reads_openai_chat_integration_settings(
     monkeypatch,
 ) -> None:

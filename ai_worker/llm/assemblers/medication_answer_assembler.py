@@ -10,12 +10,6 @@ from ai_worker.schemas.medication_chat import (
 )
 from ai_worker.schemas.medication_search import SupplementIngredientFamily
 
-MEDICAL_DISCLAIMER = (
-    "이 안내는 보유한 자료를 바탕으로 한 참고 정보이며 의료진의 진료, "
-    "진단 또는 처방을 대체하지 않습니다. 복용 시작·중단·용량 변경은 "
-    "의료진 또는 약사와 상의하세요."
-)
-
 
 class MedicationAnswerAssembler:
     _EMPTY_GUIDE_VALUES = {
@@ -45,19 +39,16 @@ class MedicationAnswerAssembler:
         evidence_coverage: MedicationEvidenceCoverage | None = None,
     ) -> str:
         sections: list[str] = []
+        has_unverified_interaction_notice = False
         sections.extend(self._patient_intake_sections(context))
         if rules:
             interaction_lines = [
                 f"- {rule.left_name} ↔ {rule.right_name}: " + " ".join(rule.effect_texts) for rule in rules
             ]
-            sections.append("확인된 상호작용\n" + "\n".join(interaction_lines))
+            sections.append("🔁 **확인된 상호작용**\n" + "\n".join(interaction_lines))
         elif interaction_question and not chunks:
-            sections.append(
-                "확인된 상호작용\n"
-                "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 "
-                "확인하지 못했습니다. 확인되지 않았다는 뜻이지 안전하다는 "
-                "뜻은 아닙니다."
-            )
+            sections.append(self._unverified_interaction_section())
+            has_unverified_interaction_notice = True
         if guide is not None:
             covered = self._covered_sections(evidence_coverage)
             guide_lines = [
@@ -154,8 +145,13 @@ class MedicationAnswerAssembler:
         unsupported_section = self._unsupported_pairs_section(
             unsupported_pairs or [],
         )
-        sections.extend([unsupported_section] if unsupported_section else [])
-        missing_section = self._missing_evidence_section(evidence_coverage)
+        if unsupported_section and not has_unverified_interaction_notice:
+            sections.append(unsupported_section)
+            has_unverified_interaction_notice = True
+        missing_section = self._missing_evidence_section(
+            evidence_coverage,
+            exclude_interaction=has_unverified_interaction_notice,
+        )
         sections.extend([missing_section] if missing_section else [])
         if not sections:
             sections.append(
@@ -163,7 +159,6 @@ class MedicationAnswerAssembler:
                 "찾지 못했습니다. 자료가 없다는 사실이 해당 제품이나 조합이 "
                 "안전하다는 뜻은 아닙니다."
             )
-        sections.append(MEDICAL_DISCLAIMER)
         return "\n\n".join(sections)
 
     @classmethod
@@ -194,6 +189,8 @@ class MedicationAnswerAssembler:
     @staticmethod
     def _missing_evidence_section(
         coverage: MedicationEvidenceCoverage | None,
+        *,
+        exclude_interaction: bool = False,
     ) -> str:
         if coverage is None or not coverage.missing_section_types:
             return ""
@@ -203,19 +200,29 @@ class MedicationAnswerAssembler:
             KnowledgeSectionType.CAUTION: "주의사항",
             KnowledgeSectionType.INTERACTION: "상호작용",
         }
+        missing_sections = [
+            section
+            for section in coverage.missing_section_types
+            if not (exclude_interaction and section is KnowledgeSectionType.INTERACTION)
+        ]
+        if not missing_sections:
+            return ""
         return "근거를 확인하지 못한 항목\n" + "\n".join(
-            f"- {labels[section]}: 현재 근거에서 확인하지 못했습니다." for section in coverage.missing_section_types
+            f"- {labels[section]}: 현재 근거에서 확인하지 못했습니다." for section in missing_sections
         )
 
     @staticmethod
     def _unsupported_pairs_section(pairs: list[str]) -> str:
         if not pairs:
             return ""
-        return "근거를 확인하지 못한 조합\n" + "\n".join(
-            f"- {pair}: 현재 승인 규칙과 검색 근거에서 확인하지 "
-            "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 "
-            "아닙니다."
-            for pair in pairs
+        return MedicationAnswerAssembler._unverified_interaction_section()
+
+    @staticmethod
+    def _unverified_interaction_section() -> str:
+        return (
+            "☑️ **확인하지 못한 조합**\n"
+            "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
+            "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
         )
 
     @staticmethod
@@ -236,24 +243,15 @@ class MedicationAnswerAssembler:
 
     @staticmethod
     def _patient_intake_sections(context: ActiveIntakeContext) -> list[str]:
-        medication_lines = []
-        for medication in context.medications:
-            details = [medication.name]
-            if medication.dose:
-                details.append(medication.dose)
-            if medication.times_per_day:
-                details.append(f"1일 {medication.times_per_day}회")
-            if medication.days:
-                details.append(f"{medication.days}일")
-            medication_lines.append("- " + " · ".join(details))
+        medication_lines = [f"- {medication.name}" for medication in context.medications]
 
         sections = []
         if medication_lines:
-            sections.append("복약정보\n" + "\n".join(medication_lines))
+            sections.append("💊 **복약정보**\n" + "\n".join(medication_lines))
 
         supplement_lines = []
         for supplement in context.supplements:
             supplement_lines.append(f"- {supplement.name} · {supplement.dose_amount}{supplement.dose_unit}")
         if supplement_lines:
-            sections.append("영양제 정보\n" + "\n".join(supplement_lines))
+            sections.append("💪🏻 **영양제 정보**\n" + "\n".join(supplement_lines))
         return sections

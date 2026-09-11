@@ -18,6 +18,8 @@ class AsyncEmbeddingClient(Protocol):
 
 
 class OpenAIEmbeddingProvider:
+    _UNIT_NORM_ABSOLUTE_TOLERANCE = 1e-3
+
     def __init__(
         self,
         model: str,
@@ -26,7 +28,6 @@ class OpenAIEmbeddingProvider:
         client: AsyncEmbeddingClient | None = None,
         timeout_seconds: float = 30.0,
         max_retries: int = 2,
-        normalize_vectors: bool = False,
     ) -> None:
         normalized_model = model.strip()
 
@@ -38,7 +39,6 @@ class OpenAIEmbeddingProvider:
 
         self._model_name = normalized_model
         self._dimension = dimensions
-        self._normalize_vectors = normalize_vectors
 
         self._client: AsyncEmbeddingClient = (
             client
@@ -79,9 +79,7 @@ class OpenAIEmbeddingProvider:
 
         for vector in vectors:
             self._validate_vector(vector)
-
-        if self._normalize_vectors:
-            return [self._normalize_vector(vector) for vector in vectors]
+            self._validate_document_vector_norm(vector)
         return vectors
 
     async def embed_query(
@@ -96,9 +94,6 @@ class OpenAIEmbeddingProvider:
         vector = await self._client.aembed_query(normalized_query)
 
         self._validate_vector(vector)
-
-        if self._normalize_vectors:
-            return self._normalize_vector(vector)
         return vector
 
     def _validate_vector(
@@ -108,9 +103,13 @@ class OpenAIEmbeddingProvider:
         if len(vector) != self._dimension:
             raise ValueError("임베딩 벡터 차원이 설정값과 일치하지 않습니다.")
 
-    @staticmethod
-    def _normalize_vector(vector: list[float]) -> list[float]:
+    @classmethod
+    def _validate_document_vector_norm(cls, vector: list[float]) -> None:
         norm = math.sqrt(math.fsum(value * value for value in vector))
-        if norm == 0:
-            raise ValueError("0 벡터는 L2 정규화할 수 없습니다.")
-        return [value / norm for value in vector]
+        if not math.isclose(
+            norm,
+            1.0,
+            rel_tol=0.0,
+            abs_tol=cls._UNIT_NORM_ABSOLUTE_TOLERANCE,
+        ):
+            raise ValueError("OpenAI 문서 임베딩 벡터는 L2 단위 벡터여야 합니다.")

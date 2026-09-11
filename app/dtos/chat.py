@@ -50,15 +50,19 @@ class SendChatResponse(CamelModel):
     message_id: int
     answer: str
     sources: list[ChatSourceResponse]
+    current_medications: list[str] | None = None
 
     @classmethod
     def from_result(cls, result: SendChatResult) -> "SendChatResponse":
-        return cls(
-            conversation_id=result.conversation_id,
-            message_id=result.message_id,
-            answer=result.answer,
-            sources=[ChatSourceResponse.from_view(source) for source in result.sources],
-        )
+        fields: dict[str, object] = {
+            "conversation_id": result.conversation_id,
+            "message_id": result.message_id,
+            "answer": result.answer,
+            "sources": [ChatSourceResponse.from_view(source) for source in result.sources],
+        }
+        if result.current_medications:
+            fields["current_medications"] = result.current_medications
+        return cls(**fields)
 
 
 class ChatSessionSummaryResponse(CamelModel):

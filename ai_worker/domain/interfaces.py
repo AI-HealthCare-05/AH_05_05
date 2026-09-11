@@ -37,7 +37,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationGuideLookup,
     TherapeuticClassSelection,
 )
-from ai_worker.schemas.patient import PatientContext
+from ai_worker.schemas.patient import FollowUpSchedule, PatientContext
 from ai_worker.schemas.safety import (
     ConflictCheckResult,
     SafetyResult,
@@ -141,6 +141,15 @@ class ActiveIntakeContextProvider(Protocol):
         user_id: int,
         care_episode_id: int | None,
     ) -> ActiveIntakeContext: ...
+
+
+class FollowUpScheduleProvider(Protocol):
+    async def list_upcoming_schedules(
+        self,
+        *,
+        user_id: int,
+        limit: int,
+    ) -> list[FollowUpSchedule]: ...
 
 
 class MedicationGuideRepository(Protocol):

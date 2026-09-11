@@ -79,6 +79,7 @@ class SendChatResult:
     message_id: int
     answer: str
     sources: list[ChatSourceView]
+    current_medications: list[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,6 +314,10 @@ class ChatApplicationService:
             user=user,
             command=command,
         )
+        current_medications = await self._core_service.current_medication_names(
+            user_id=user.id,
+            care_episode_id=(accepted.session.care_episode_id or command.record_id),
+        )
 
         if accepted.reused_assistant_message is not None:
             saved_message = accepted.reused_assistant_message
@@ -331,6 +336,7 @@ class ChatApplicationService:
                 message_id=saved_message.id,
                 answer=saved_message.content,
                 sources=[self._saved_source_view(source) for source in saved_sources],
+                current_medications=current_medications or None,
             )
 
         if accepted.assistant_message is None:
@@ -409,6 +415,7 @@ class ChatApplicationService:
             message_id=completed.id,
             answer=core_result.answer,
             sources=[self._core_source_view(source) for source in core_result.sources],
+            current_medications=current_medications or None,
         )
         root_span.end(
             {
