@@ -162,6 +162,7 @@ async def test_pipeline_stage_lists_include_resolve_for_ocr_failure_and_cancella
     assert isinstance(failed, AnalyzePipelineFailure)
     assert [stage.name for stage in failed.stages] == ["ocr", "candidate", "resolve", "llm", "validate"]
     assert [stage.status for stage in failed.stages] == ["failed", "skipped", "skipped", "skipped", "skipped"]
+    assert all(stage.code == "UPSTREAM_FAILED" for stage in failed.stages[1:])
 
     class Provider:
         async def recognize(self, _image: bytes) -> OcrResult:
@@ -176,12 +177,12 @@ async def test_pipeline_stage_lists_include_resolve_for_ocr_failure_and_cancella
     assert [stage.name for stage in cancelled_result.stages] == ["ocr", "candidate", "resolve", "llm", "validate"]
     assert [stage.status for stage in cancelled_result.stages] == [
         "succeeded",
-        "succeeded",
+        "skipped",
         "skipped",
         "skipped",
         "skipped",
     ]
-    assert cancelled_result.stages[2].code == "REQUEST_CANCELLED"
+    assert cancelled_result.stages[1].code == "REQUEST_CANCELLED"
 
 
 @pytest.mark.asyncio
@@ -222,7 +223,7 @@ async def test_resolve_and_validate_stages_own_their_complete_local_work(monkeyp
 
     class Provider:
         async def recognize(self, _image: bytes) -> OcrResult:
-            return OcrResult(())
+            return _stacked_header_receipt()
 
     result = await analyze_processed_image(Provider(), b"test-image")
 
@@ -231,6 +232,149 @@ async def test_resolve_and_validate_stages_own_their_complete_local_work(monkeyp
     assert elapsed_by_name["resolve"] == 11
     assert elapsed_by_name["validate"] == 30
     assert result.structure_elapsed_ms == 41
+
+
+@pytest.mark.asyncio
+async def test_cancellation_after_candidate_marks_every_remaining_stage():
+    class Provider:
+        async def recognize(self, _image):
+            return _stacked_header_receipt()
+
+    cancellations = iter((False, True))
+
+    async def cancelled():
+        return next(cancellations)
+
+    result = await analyze_processed_image(Provider(), b"synthetic", is_cancelled=cancelled)
+    assert isinstance(result, AnalyzePipelineCancellation)
+    assert [stage.status for stage in result.stages] == ["succeeded", "succeeded", "skipped", "skipped", "skipped"]
+    assert all(stage.code == "REQUEST_CANCELLED" for stage in result.stages[2:])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kind,failed_stage,code",
+    [
+        ("empty", "ocr", "NO_OCR_BLOCKS"),
+        ("no-table", "candidate", "TABLE_NOT_FOUND"),
+        ("rejected-table", "candidate", "AMBIGUOUS_MEDICATION_TABLE"),
+    ],
+)
+async def test_unusable_output_fails_at_origin_and_does_not_run_downstream(monkeypatch, kind, failed_stage, code):
+    source = _stacked_header_receipt()
+    if kind == "empty":
+        source = OcrResult(())
+    elif kind == "no-table":
+        source = OcrResult((_block("notice", "복약 안내입니다", 10, 10, 100),))
+    else:
+        source = OcrResult(
+            (
+                _block("h-name", "품목명", 10, 10, 50),
+                _block("h-dose", "투약량", 250, 10, 40),
+                _block("h-times", "횟수", 310, 10, 30),
+                _block("h-days", "일수", 360, 10, 30),
+                _block("name", "급여산정내역", 10, 40, 200),
+                _block("dose", "1", 260, 40, 10),
+                _block("times", "3", 320, 40, 10),
+                _block("days", "5", 370, 40, 10),
+            )
+        )
+
+    class Provider:
+        async def recognize(self, _image):
+            return source
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("downstream processing must not run after fatal extraction failure")
+
+    monkeypatch.setattr(analyze_module, "plan_deterministic_grounding", forbidden)
+    monkeypatch.setattr(analyze_module, "build_project_review", forbidden)
+    result = await analyze_processed_image(Provider(), b"synthetic")
+    stages = {stage.name: stage for stage in result.stages}
+    assert stages[failed_stage].status == "failed"
+    assert stages[failed_stage].code == code
+    after_failure = False
+    for stage in result.stages:
+        if after_failure:
+            assert (stage.status, stage.code, stage.elapsed_ms, stage.call_count) == (
+                "skipped",
+                "UPSTREAM_FAILED",
+                0,
+                0,
+            )
+        after_failure = after_failure or stage.name == failed_stage
+    assert result.project_review["medications"] == []
+    assert result.analysis_state == "FAILED"
+
+
+@pytest.mark.parametrize(
+    "name,accepted",
+    [
+        ("아목시실린클라불란산정625mg", True),
+        ("아목시실린클라불란산정 625mg", True),
+        ("트라넥삼산정500mg", True),
+        ("엽산정1mg", True),
+        ("산정", False),
+        ("재산정", False),
+        ("재산정625mg", False),
+        ("•재산정625mg", False),
+        ("비)재산정625mg", False),
+        ("정산정625mg", False),
+        ("산정내역", False),
+        ("보험료산정", False),
+        ("급여산정625mg", False),
+        ("산정625mg", False),
+    ],
+)
+def test_acid_tablet_strength_does_not_trigger_administrative_calculation_filter(name, accepted):
+    source = OcrResult(
+        (
+            _block("h-name", "품목명", 10, 10, 50),
+            _block("h-dose", "투약량", 250, 10, 40),
+            _block("h-times", "횟수", 310, 10, 30),
+            _block("h-days", "일수", 360, 10, 30),
+            _block("name", name, 10, 40, 200),
+            _block("dose", "1", 260, 40, 10),
+            _block("times", "3", 320, 40, 10),
+            _block("days", "5", 370, 40, 10),
+        )
+    )
+    rows = materialize_medication_rows(build_ocr_layout(source))
+    assert bool(rows.medications) is accepted
+    if accepted:
+        assert len(rows.medications) == 1
+        assert rows.medications[0].times_per_day == 3
+
+
+@pytest.mark.asyncio
+async def test_validation_retains_partial_output_but_marks_issues():
+    class Provider:
+        async def recognize(self, _image):
+            source = _stacked_header_receipt()
+            return OcrResult(
+                tuple(replace(b, confidence=0.4) if b.block_id == "receipt-name" else b for b in source.blocks)
+            )
+
+    result = await analyze_processed_image(Provider(), b"synthetic")
+    assert len(result.project_review["medications"]) == 1
+    assert result.project_review["medications"][0]["confidence"] == "low"
+    stage = next(stage for stage in result.stages if stage.name == "validate")
+    assert (stage.status, stage.code) == ("succeeded", "COMPLETED_WITH_ISSUES")
+
+
+@pytest.mark.asyncio
+async def test_validation_rejects_empty_projected_output_at_validate(monkeypatch):
+    class Provider:
+        async def recognize(self, _image):
+            return _stacked_header_receipt()
+
+    monkeypatch.setattr(
+        analyze_module, "build_project_review", lambda *a: {"fields": {}, "medications": [], "lowConfidenceCount": 0}
+    )
+    result = await analyze_processed_image(Provider(), b"synthetic")
+    stage = next(stage for stage in result.stages if stage.name == "validate")
+    assert (stage.status, stage.code) == ("failed", "NO_VALID_MEDICATION_ROWS")
+    assert result.analysis_state == "FAILED"
 
 
 @pytest.mark.asyncio

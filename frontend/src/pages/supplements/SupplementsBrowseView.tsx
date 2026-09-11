@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import {
   getSupplementRanking,
   searchSupplementProducts,
@@ -50,7 +51,6 @@ export function SupplementsBrowseView({
   onSelectProduct,
 }: SupplementsBrowseViewProps) {
   const [ranking, setRanking] = useState<Awaited<ReturnType<typeof getSupplementRanking>>>(null);
-  const [rankingError, setRankingError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SupplementSortKey>('name');
   const [direction, setDirection] = useState<SupplementSortDirection>('asc');
@@ -75,10 +75,8 @@ export function SupplementsBrowseView({
       .then((value) => {
         if (!cancelled) setRanking(value);
       })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setRankingError(error instanceof Error ? error.message : '랭킹을 불러오지 못했어요.');
-        }
+      .catch(() => {
+        if (!cancelled) setRanking(null);
       });
     return () => {
       cancelled = true;
@@ -297,17 +295,13 @@ export function SupplementsBrowseView({
           onSelectProduct={onSelectProduct}
           onLoadMore={loadMore}
         />
-      ) : rankingError ? (
-        <Card title="랭킹을 불러오지 못했어요">{rankingError}</Card>
       ) : visibleRanking ? (
         <SupplementRankingCard
           ranking={visibleRanking}
           registrationPending={registrationPending}
           onSelect={onSelectProduct}
         />
-      ) : (
-        <p className="text-sm text-muted-foreground">랭킹을 불러오는 중...</p>
-      )}
+      ) : null}
     </>
   );
 }
@@ -395,7 +389,7 @@ function SearchResultItem({
             등록됨
           </StatusBadge>
         )}
-        <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
+        <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
       </button>
     </li>
   );

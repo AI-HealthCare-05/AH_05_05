@@ -64,8 +64,9 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
       </section> : report ? <Suspense fallback={<p role="status" className="text-sm text-primary">보고서 화면을 준비하고 있어요.</p>}><IntakeReportBody report={report} /></Suspense> : null}
       <div className="mt-auto flex flex-col gap-3 pt-4 pb-3">
         {report && report.reportStatus !== 'EMPTY' ? <>
-          <ReportEmailButton emailToken={report.emailToken} onRegenerate={() => void generate()} />
-        </> : <Button onClick={() => void generate()} disabled={pending}>{pending ? '보고서 생성 중' : error ? '다시 시도' : '보고서 생성하기'}</Button>}
+          <Button disabled aria-describedby="report-email-help">이메일로 받기</Button>
+          <p id="report-email-help" className="text-center text-xs text-muted-foreground">이메일 발송 기능은 준비 중이에요.</p>
+        </> : <Button onClick={() => void generate()} disabled={pending} loading={pending}>{pending ? '보고서 생성 중' : error ? '다시 시도' : '보고서 생성하기'}</Button>}
         <Button variant="secondary" onClick={() => navigate(`/${source}`)}>{source === 'medications' ? '복약으로 돌아가기' : '영양제로 돌아가기'}</Button>
       </div>
     </main>

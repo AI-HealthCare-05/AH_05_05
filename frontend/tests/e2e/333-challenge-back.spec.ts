@@ -2,6 +2,7 @@ import { expect, test } from 'playwright/test';
 
 test.setTimeout(120_000);
 test.beforeEach(async ({ page }) => {
+  await page.route(url => url.pathname.startsWith('/api/'), route => route.abort());
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
   // Ordinary challenge routes use the official API; keep this synthetic session authenticated.
   for (const resource of ['challenges', 'badges']) {
@@ -24,7 +25,7 @@ test('challenge My returns to the home it was opened from', async ({ page }) => 
 test('direct challenge entry has a full-width shared header, safe home fallback, and accessible touch target', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/challenges');
-  const header = page.getByRole('banner');
+  const header = page.locator('header').filter({ has: page.getByRole('button', { name: '뒤로 가기', exact: true }) });
   await expect(header).toBeVisible();
   await expect(header).toHaveCSS('height', '64px');
   await expect(header).toHaveCSS('background-color', 'rgb(255, 255, 255)');
@@ -39,7 +40,7 @@ test('direct challenge entry has a full-width shared header, safe home fallback,
   expect(tabsBounds!.x - headerBounds!.x).toBe(20);
   const back = page.getByRole('button', { name: '뒤로 가기', exact: true });
   await expect(back).toBeVisible();
-  await expect(back.locator('svg')).toHaveClass(/lucide-chevron-left/);
+  await expect(back.locator('svg')).toHaveAttribute('aria-hidden', 'true');
   const bounds = await back.boundingBox();
   expect(bounds!.width).toBeGreaterThanOrEqual(44);
   expect(bounds!.height).toBeGreaterThanOrEqual(44);

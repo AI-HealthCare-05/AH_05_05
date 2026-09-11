@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { DrawnArrow } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate, useParams } from 'react-router';
 
 import { useChallengeMock } from '@/features/challenges';
@@ -51,7 +51,7 @@ export function OfficialChallengePage() {
     <main className="flex flex-col gap-4 px-page-x py-5">
       <header className="flex items-center gap-3">
         <button type="button" aria-label="뒤로 가기" onClick={() => navigate(`${base}/browse`)} className="flex size-11 shrink-0 items-center justify-center rounded-pill">
-          <ArrowLeft aria-hidden className="size-5" />
+          <DrawnArrow direction="left" className="size-5" />
         </button>
         <div className="min-w-0">
           <h1 className="truncate text-[22px] font-bold leading-7">{definition.title}</h1>

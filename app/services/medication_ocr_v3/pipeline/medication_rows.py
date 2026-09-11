@@ -72,6 +72,10 @@ _NON_MEDICATION_TABLE_VOCABULARY_PATTERN = re.compile(
     r"잔액|단가|수가|정산|산정|조정|행정|비용|내역|접수|운영|평가|검사|"
     r"테스트|항목|목록|구분|분류|번호|일련|업무|대상|상태|결과|기록|표|자료|문서|서비스|관리)"
 )
+_ACID_TABLET_WITH_STRENGTH_PATTERN = re.compile(
+    r"(?<=[가-힣A-Za-z])산정(?=[0-9]+(?:\.[0-9]+)?(?:mg|g|mcg|ug|μg|밀리그램|그램|마이크로그램)$)",
+    re.IGNORECASE,
+)
 _DUPLICATE_NAME_SIMILARITY = 0.75
 _DUPLICATE_NAME_MEAN_SIMILARITY = 0.85
 _MIN_TRUNCATED_NAME_PREFIX_LENGTH = 4
@@ -1409,15 +1413,21 @@ def _is_plausible_product_name(text: str) -> bool:
 
 
 def _has_non_medication_table_vocabulary(rows: tuple[LayoutRow, ...]) -> bool:
-    return any(
-        name is not None
-        and (
-            _canonical_candidate_name(name.text) == "품목"
-            or _NON_MEDICATION_TABLE_VOCABULARY_PATTERN.search(_canonical_candidate_name(name.text)) is not None
-        )
-        for row in rows
-        if (name := row.cells[0]) is not None
-    )
+    for row in rows:
+        name = row.cells[0]
+        if name is None:
+            continue
+        # Preserve explicit strength before canonical name normalization strips
+        # space-separated units. Mask only acid+tablet 산정, not other admin words.
+        compact = "".join(unicodedata.normalize("NFKC", name.text).split())
+        if any(match.group() != "산정" for match in _NON_MEDICATION_TABLE_VOCABULARY_PATTERN.finditer(compact)):
+            return True
+        if "재산정" not in compact:
+            compact = _ACID_TABLET_WITH_STRENGTH_PATTERN.sub("정", compact)
+        vocabulary_text = _canonical_candidate_name(compact)
+        if vocabulary_text == "품목" or _NON_MEDICATION_TABLE_VOCABULARY_PATTERN.search(vocabulary_text):
+            return True
+    return False
 
 
 def _is_semantically_eligible_medication_candidate(candidate: TableCandidate) -> bool:

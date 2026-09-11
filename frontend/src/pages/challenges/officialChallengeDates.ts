@@ -7,6 +7,14 @@ const koreaDateFormatter = new Intl.DateTimeFormat('en-US', {
   day: '2-digit',
 });
 
+export function koreanChallengeDate(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  const parts = koreaDateFormatter.formatToParts(new Date(timestamp));
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(item => item.type === type)?.value);
+  return `${part('year')}년 ${part('month')}월 ${part('day')}일`;
+}
+
 export function inclusiveChallengeEndDate(exclusiveEndAt: string): string {
   const timestamp = Date.parse(exclusiveEndAt);
   if (!Number.isFinite(timestamp)) return exclusiveEndAt.slice(0, 10);

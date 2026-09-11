@@ -148,14 +148,8 @@ def provider_failure_stages(*, code: str = "OCR_TIMEOUT") -> list[dict[str, obje
 
 
 def fallback_failure_stages(*, code: str) -> list[dict[str, object]]:
-    return [
-        {"name": "preprocess", "status": "failed", "elapsedMs": 0, "callCount": 0, "code": code},
-        {"name": "ocr", "status": "skipped", "elapsedMs": 0, "callCount": 0},
-        {"name": "candidate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
-        {"name": "resolve", "status": "skipped", "elapsedMs": 0, "callCount": 0},
-        {"name": "llm", "status": "skipped", "elapsedMs": 0, "callCount": 0},
-        {"name": "validate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
-    ]
+    # No execution evidence: the job retains its error code, stages must not guess an origin.
+    return []
 
 
 class FixtureAnalyzer:
@@ -202,7 +196,7 @@ class RecaptureAnalyzer(FixtureAnalyzer):
         analysis.stages = [
             {
                 "name": "preprocess",
-                "status": "succeeded",
+                "status": "failed",
                 "elapsedMs": 4,
                 "callCount": 0,
                 "code": "RECAPTURE_REQUIRED",
@@ -915,7 +909,7 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert failed.stage_results["stages"] == [
                 {
                     "name": "preprocess",
-                    "status": "succeeded",
+                    "status": "failed",
                     "elapsedMs": 4,
                     "callCount": 0,
                     "code": "RECAPTURE_REQUIRED",
@@ -926,7 +920,7 @@ class TestMedicationGuideOcrJobService(TestCase):
                 {"name": "validate", "status": "skipped", "elapsedMs": 0, "callCount": 0},
             ]
 
-    async def test_process_marks_an_empty_medication_analysis_as_recapture_required(self) -> None:
+    async def test_process_marks_an_empty_medication_analysis_as_extraction_failed(self) -> None:
         user = await create_user("ocr-empty-medications@example.com")
         with TemporaryDirectory() as directory:
             service = MedicationGuideOcrJobService(
@@ -946,10 +940,12 @@ class TestMedicationGuideOcrJobService(TestCase):
                 status_response = await service.get(user, job.id)
 
                 assert failed.status is OcrJobStatus.FAILED
-                assert failed.error_code == "RECAPTURE_REQUIRED"
+                assert failed.error_code == "EXTRACTION_FAILED"
                 assert failed.structured_result is None
                 assert status_response.status is MedicationGuideOcrJobStatus.FAILED
-                assert status_response.error_code == "RECAPTURE_REQUIRED"
+                assert status_response.error_code == "EXTRACTION_FAILED"
+                assert failed.stage_results["stages"][-1]["status"] == "failed"
+                assert failed.stage_results["stages"][-1]["code"] == "NO_VALID_MEDICATION_ROWS"
                 assert status_response.result is None
 
     async def test_confirmation_registers_a_recent_failed_ocr_job(self) -> None:
@@ -1107,7 +1103,9 @@ class TestMedicationGuideOcrJobService(TestCase):
             assert failed.status is OcrJobStatus.FAILED
             assert failed.error_code == "VALIDATION_FAILED"
             assert failed.structured_result is None
-            assert failed.stage_results["stages"] == successful_stages()
+            assert failed.stage_results["stages"] == successful_stages()[:-1] + [
+                {**successful_stages()[-1], "status": "failed", "code": "VALIDATION_FAILED"}
+            ]
 
     async def test_process_uses_exact_fallback_stages_when_analyzer_stages_are_invalid(self) -> None:
         user = await create_user("ocr-invalid-stages@example.com")

@@ -33,7 +33,7 @@ export function ChallengeBadgesPage({ badgesOverride }: ChallengeBadgesPageProps
           </Link>
         </div>
       ) : (
-        <ul aria-label="챌린지 배지" className="grid grid-cols-2 gap-4">
+        <ul aria-label="챌린지 배지" className="rx-badge-grid grid grid-cols-2 gap-4">
           {visibleBadges.map((badge) => {
             const earned = Boolean(badge.earnedAt);
             const label = badge.awards?.length ? `${badge.awards.length}회 획득` : earned ? '획득' : '미획득';

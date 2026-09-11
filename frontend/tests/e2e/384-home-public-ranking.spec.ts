@@ -57,31 +57,35 @@ test('비로그인 홈은 목업 랭킹 대신 백오피스 공개 랭킹 API �
   expect(request.authorizationHeader()).toBeUndefined();
 });
 
-test('백오피스에 현재 공개 랭킹이 없으면 예시 제품 대신 정확한 빈 상태를 표시한다', async ({ page }, testInfo) => {
+test('백오피스에 현재 공개 랭킹이 없으면 랭킹 영역을 숨긴다', async ({ page }, testInfo) => {
   await routePublicRanking(
     page,
     { code: 'SUPPLEMENT_RANK_DISPLAY_NOT_FOUND', message: '현재 전시가 없습니다.' },
     404,
   );
 
+  const response = page.waitForResponse('**/api/v1/display/med/nutr/rank');
   await page.goto('/home');
+  await response;
+  await page.waitForLoadState('networkidle');
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
-  await expect(ranking).toBeVisible();
+  await expect(ranking).toHaveCount(0);
   await captureComparison(page, testInfo, 'issue5-ranking-empty.png');
-  await expect(ranking.getByText('현재 공개된 영양제 랭킹이 없어요.', { exact: true })).toBeVisible();
-  await expect(ranking.getByRole('listitem')).toHaveCount(0);
-  await expect(ranking.getByText('오쏘몰 이뮨', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('현재 공개된 영양제 랭킹이 없어요.', { exact: true })).toHaveCount(0);
 });
 
-test('백오피스 공개 랭킹의 items가 비어 있어도 같은 빈 상태를 표시한다', async ({ page }) => {
+test('백오피스 공개 랭킹의 items가 비어 있으면 랭킹 영역을 숨긴다', async ({ page }) => {
   await routePublicRanking(page, { ...PUBLIC_RANKING, items: [] });
 
+  const response = page.waitForResponse('**/api/v1/display/med/nutr/rank');
   await page.goto('/home');
+  await response;
+  await page.waitForLoadState('networkidle');
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
-  await expect(ranking.getByText('현재 공개된 영양제 랭킹이 없어요.', { exact: true })).toBeVisible();
-  await expect(ranking.getByRole('listitem')).toHaveCount(0);
+  await expect(ranking).toHaveCount(0);
+  await expect(page.getByText('현재 공개된 영양제 랭킹이 없어요.', { exact: true })).toHaveCount(0);
 });
 
 async function captureComparison(

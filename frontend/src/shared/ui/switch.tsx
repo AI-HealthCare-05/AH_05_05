@@ -15,8 +15,9 @@ function Switch({ className, ...props }: ComponentProps<typeof SwitchPrimitive.R
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        'relative inline-flex h-8 w-14 shrink-0 items-center rounded-pill transition-colors',
-        'data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted',
+        'rx-switch relative inline-flex h-touch w-14 shrink-0 items-center',
+        'before:absolute before:inset-x-0 before:top-1/2 before:h-8 before:-translate-y-1/2 before:rounded-pill before:bg-muted before:transition-colors',
+        'data-[state=checked]:before:bg-primary',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         'disabled:cursor-not-allowed disabled:opacity-60',
         className,
@@ -24,8 +25,9 @@ function Switch({ className, ...props }: ComponentProps<typeof SwitchPrimitive.R
       {...props}
     >
       <SwitchPrimitive.Thumb
+        data-slot="switch-thumb"
         className={cn(
-          'pointer-events-none block size-6 translate-x-1 rounded-pill bg-card transition-transform',
+          'pointer-events-none z-10 block size-6 translate-x-1 rounded-pill bg-card transition-transform',
           'data-[state=checked]:translate-x-7',
         )}
       />

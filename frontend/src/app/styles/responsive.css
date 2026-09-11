@@ -1,0 +1,49 @@
+/* The shell grows with the viewport; reading and dialog widths stay independent. */
+@media (min-width: 640px) {
+  :root {
+    --spacing-page-x: 24px;
+    --container-dialog: 560px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root { --spacing-page-x: 32px; }
+  .rx-home-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    align-content: start;
+    align-items: start;
+    column-gap: 28px;
+  }
+  .rx-home-content > * { min-width: 0; }
+  .rx-home-content--authenticated > .rx-home-tab-layout { grid-column: 1 / -1; }
+  .rx-home-content--authenticated > :nth-child(2) { grid-row: span 2; }
+  .rx-home-content:not(.rx-home-content--authenticated) {
+    grid-template-columns: minmax(0, 640px);
+    justify-content: center;
+  }
+  .rx-home-content:not(.rx-home-content--authenticated) > [aria-label='RxVita 기능 소개'] > div:first-child {
+    margin-right: 0;
+  }
+}
+
+.rx-reading-content {
+  width: 100%;
+  max-width: var(--container-reading);
+  margin-inline: auto;
+}
+
+.rx-chat > main,
+.rx-chat > .chat-composer {
+  width: 100%;
+  max-width: 840px;
+  margin-inline: auto;
+}
+
+.rx-badge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 640px) {
+  .rx-badge-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .rx-badge-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

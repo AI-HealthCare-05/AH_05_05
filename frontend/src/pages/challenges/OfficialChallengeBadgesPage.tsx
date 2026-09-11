@@ -10,6 +10,7 @@ import {
 } from '@/entities/custom-challenge';
 import { Button } from '@/shared/ui/Button';
 import { Header } from '@/shared/ui/Header';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { officialBadgeViews, type OfficialBadgeView } from './officialBadgeViews';
 
@@ -94,7 +95,7 @@ export function OfficialChallengeBadgesPage() {
   }, [customReloadKey, principalKey]);
 
   if (badges === null && customBadges === null && !error && !customError) {
-    return <><Header title="내 배지" onBack={goBack} /><main role="status" aria-label="배지 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" /></>;
+    return <><Header title="내 배지" onBack={goBack} /><main className="px-page-x py-5"><LoadingState label="배지 불러오는 중">배지를 불러오고 있어요.</LoadingState></main></>;
   }
 
   const officialBadges = badges ?? [];
@@ -129,7 +130,7 @@ export function OfficialChallengeBadgesPage() {
           <Link to="/challenges/browse" className="font-bold text-primary">챌린지 둘러보기</Link>
         </div>
       ) : hasBadges ? (
-        <ul aria-label="챌린지 배지" className="grid grid-cols-2 gap-4">
+        <ul aria-label="챌린지 배지" className="rx-badge-grid grid grid-cols-2 gap-4">
           {officialBadges.map(item => {
             const earned = item.awards.length > 0;
             const label = earned ? `${item.awards.length}회 획득` : '미획득';

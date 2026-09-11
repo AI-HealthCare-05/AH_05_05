@@ -29,6 +29,11 @@
 }
 
 .custom-challenge-date-square {
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
   width: 32px;
   height: 32px;
   border-radius: 8px;
@@ -36,6 +41,7 @@
 }
 
 .custom-challenge-date-hit[aria-pressed='true'] .custom-challenge-date-square {
+  border: 2px solid var(--color-primary);
   transform: scale(1.18);
 }
 

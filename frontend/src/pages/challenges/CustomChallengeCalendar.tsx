@@ -183,7 +183,6 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
             <p className="text-caption text-muted-foreground">{selectedDate.slice(0, 4)}년</p>
             <div className="flex flex-wrap items-center justify-center gap-2">
               <h3 id="custom-selected-date-title" className="text-2xl font-bold tracking-tight">{monthDay(selectedDate)}</h3>
-              {selectedDate === today && <span className="rounded-pill bg-primary-bg px-2 py-0.5 text-caption font-bold text-primary">오늘</span>}
             </div>
           </div>
         </div>
@@ -202,7 +201,9 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
               onClick={() => selectDate(date)} onKeyDown={navigateWithKeyboard}
               className={cn('custom-challenge-date-hit', FOCUS)}
             >
-              <span aria-hidden="true" className={cn('custom-challenge-date-square border border-border', done ? 'bg-primary' : 'bg-card')} />
+              <span aria-hidden="true" className={cn('custom-challenge-date-square border border-border', done ? 'bg-primary text-primary-foreground' : 'bg-card text-primary')}>
+                {date === today ? '오늘' : null}
+              </span>
             </button>;
           })}
         </div>

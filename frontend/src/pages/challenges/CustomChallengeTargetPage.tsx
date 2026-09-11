@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
-import { ArrowLeft, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 import { useSession } from '@/app/SessionContext';
 import {
@@ -10,7 +10,8 @@ import {
 } from '@/entities/custom-challenge';
 import { ApiError, getAuthGeneration } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
-import { Button } from '@/shared/ui';
+import { Button, Header } from '@/shared/ui';
+import { LoadingState } from '@/shared/ui/LoadingState';
 
 type SupportedKind = 'medication' | 'supplement';
 
@@ -174,18 +175,11 @@ export function CustomChallengeTargetPage() {
 
   return (
     <>
-      <header className="flex items-center gap-3 px-page-x pt-5">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges/tailored')} className="flex size-11 shrink-0 items-center justify-center rounded-pill">
-          <ArrowLeft aria-hidden="true" className="size-5" />
-        </button>
-        <div className="min-w-0">
-          <h1 className="break-words text-[22px] font-bold leading-7 [overflow-wrap:anywhere]">{recommendation?.challengeName ?? '맞춤 챌린지'}</h1>
-          <p className="text-caption text-muted-foreground">맞춤 챌린지</p>
-        </div>
-      </header>
+      <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={() => navigate('/challenges/tailored')} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
+      <p className="text-caption text-muted-foreground">맞춤 챌린지</p>
 
-      {!recommendation && !loadError ? <div role="status" aria-label="참여 대상 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" /> : null}
+      {!recommendation && !loadError ? <LoadingState label="참여 대상 불러오는 중">참여 대상을 불러오고 있어요.</LoadingState> : null}
       {loadError ? (
         <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
           <p className="text-sm text-muted-foreground">{loadError}</p>
@@ -290,7 +284,6 @@ export function CustomChallengeTargetPage() {
                 : '선택한 처방으로 참여하기'}
         </Button>
       ) : null}
-      <Link to="/challenges/tailored" className="min-h-touch py-3 text-center text-sm font-bold text-primary">맞춤 챌린지로 돌아가기</Link>
       </main>
     </>
   );

@@ -1,0 +1,47 @@
+.rx-today-challenge-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 3px;
+  scrollbar-width: none;
+  padding: 3px;
+}
+.rx-today-challenge-scroll::-webkit-scrollbar { display: none; }
+.rx-today-challenge-item {
+  display: flex;
+  flex: 0 0 144px;
+  width: 144px;
+  min-height: 220px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-input);
+  background: color-mix(in srgb, var(--color-primary-bg) 35%, var(--color-card));
+  scroll-snap-align: start;
+  animation: rx-today-reveal 180ms ease-out;
+}
+.rx-today-challenge-detail { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
+.rx-today-challenge-detail:focus-visible,
+.rx-today-challenge-checkin:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.rx-today-challenge-checkin,
+.rx-today-challenge-state { display: flex; min-height: 44px; align-items: center; justify-content: center; gap: 4px; font-size: 13px; font-weight: 700; }
+.rx-today-challenge-checkin { border-radius: var(--radius-button); background: var(--color-primary); color: var(--color-primary-foreground); }
+.rx-today-challenge-checkin:disabled { opacity: 0.65; cursor: wait; }
+.rx-today-challenge-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-card);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-card);
+}
+@keyframes rx-today-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .rx-today-challenge-item { animation: none; } }

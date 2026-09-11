@@ -227,7 +227,7 @@ function VisitCard({ visit, onClick }: { visit: FollowUpVisit; onClick: () => vo
     <button
       type="button"
       onClick={onClick}
-      className="mt-4 flex min-h-[148px] w-full flex-col rounded-[20px] border border-border bg-card p-4 text-left"
+      className="mt-4 flex min-h-touch w-full flex-col rounded-[20px] border border-border bg-card p-4 text-left"
     >
       <span className="flex items-start justify-between gap-3">
         <span className="text-lg font-bold text-foreground">
@@ -237,14 +237,9 @@ function VisitCard({ visit, onClick }: { visit: FollowUpVisit; onClick: () => vo
           {daysUntil(visit.visitDate)}
         </span>
       </span>
-      <span className="mt-2 text-[15px] font-medium text-foreground">
+      <span className="mt-2 w-full break-words text-[15px] font-medium text-foreground">
         {visit.hospital ?? '병원 미정'} · {visit.visitTime ?? '시간 미정'}
       </span>
-      {visit.hospital && (
-        <span className="mt-4 border-t border-border pt-3 text-[13px] text-muted-foreground">
-          병원 {visit.hospital}
-        </span>
-      )}
     </button>
   );
 }

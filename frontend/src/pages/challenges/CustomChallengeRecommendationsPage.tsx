@@ -9,6 +9,7 @@ import {
 } from '@/entities/custom-challenge';
 import { ApiError } from '@/shared/api/client';
 import { Button, Card, Header } from '@/shared/ui';
+import { LoadingState } from '@/shared/ui/LoadingState';
 
 function kindPath(type: CustomChallengeRecommendation['challengeType']) {
   if (type === 'MEDICATION') return 'medication';
@@ -55,7 +56,7 @@ export function CustomChallengeRecommendationsPage() {
       <p className="text-sm text-muted-foreground">등록한 기록에 맞는 챌린지를 확인해보세요</p>
 
       {items === null && !error ? (
-        <div role="status" aria-label="맞춤 챌린지 불러오는 중" className="min-h-72 animate-pulse rounded-card bg-muted-bg" />
+        <LoadingState label="맞춤 챌린지 불러오는 중">맞춤 챌린지를 불러오고 있어요.</LoadingState>
       ) : null}
       {error ? (
         <div role="alert" className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
@@ -97,7 +98,6 @@ export function CustomChallengeRecommendationsPage() {
         );
       })}
 
-      <Link to="/challenges" className="mt-auto min-h-touch py-3 text-center text-sm font-bold text-primary">챌린지로 돌아가기</Link>
       </main>
     </>
   );

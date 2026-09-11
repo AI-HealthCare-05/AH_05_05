@@ -32,10 +32,14 @@ import {
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
+import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
+import { LoadingState } from '@/shared/ui/LoadingState';
+import { SmoothHeight } from '@/shared/ui/SmoothHeight';
 import { MedicationTimeline, type DoseChangeResult } from './MedicationTimeline';
 import { SupplementRankingCard } from './SupplementRankingCard';
 import { SupplementTodayCard } from './SupplementTodayCard';
 import { HomeChallengeSummary } from '@/pages/challenges/HomeChallengeSummary';
+import '@/shared/ui/home-clay.css';
 
 export type MedicationHomeState = 'empty' | 'active' | 'ended';
 
@@ -85,9 +89,6 @@ export function HomePage({
   const [doseMutationPending, setDoseMutationPending] = useState(false);
   const doseMutationPendingRef = useRef(false);
   const [supplementRanking, setSupplementRanking] = useState<SupplementRanking | null>(null);
-  const [supplementRankingState, setSupplementRankingState] = useState<'loading' | 'ready' | 'error'>(
-    'loading',
-  );
   const [registeredSupplements, setRegisteredSupplements] = useState<Supplement[]>([]);
   const [registeredProductIds, setRegisteredProductIds] = useState<Set<string>>(
     () => new Set(),
@@ -108,7 +109,6 @@ export function HomePage({
 
   useEffect(() => {
     let cancelled = false;
-    setSupplementRankingState('loading');
     const rankingRequest = isAuthenticated
       ? getSupplementRanking()
       : getPublicSupplementRanking();
@@ -116,13 +116,11 @@ export function HomePage({
       .then((ranking) => {
         if (!cancelled) {
           setSupplementRanking(ranking && ranking.items.length > 0 ? ranking : null);
-          setSupplementRankingState('ready');
         }
       })
       .catch(() => {
         if (!cancelled) {
           setSupplementRanking(null);
-          setSupplementRankingState('error');
         }
       });
 
@@ -383,7 +381,7 @@ export function HomePage({
   }
 
   return (
-    <div className="mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
+    <div className="rx-home mx-auto flex h-dvh min-h-dvh w-full max-w-app flex-col overflow-hidden bg-background">
       {isAuthenticated ? (
         <Header
           title={
@@ -405,10 +403,11 @@ export function HomePage({
         </header>
       )}
 
-      <main tabIndex={0} aria-label="홈 콘텐츠" className={`min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary ${isAuthenticated ? 'gap-5' : 'gap-3'}`}>
+      <main tabIndex={0} aria-label="홈 콘텐츠" className={`rx-home-content min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary ${isAuthenticated ? 'rx-home-content--authenticated gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
           <>
             <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />
+            <SmoothHeight>
             {homeTab === 'medication' && (medicationLoadError || doseLoadError) ? (
               <Card title="복약 정보를 불러오지 못했어요">
                 {medicationLoadError ?? doseLoadError}
@@ -420,6 +419,7 @@ export function HomePage({
                     id="home-panel-medication"
                     role="tabpanel"
                     aria-labelledby="home-tab-medication"
+                    className="motion-safe:animate-[rx-overlay-in_200ms_ease-out]"
                   >
                     <LoggedInMedicationContent
                       state={resolvedMedicationState}
@@ -455,12 +455,11 @@ export function HomePage({
                 )}
               </>
             ) : (
-              <div
-                role="status"
-                aria-label="복약 정보 불러오는 중"
-                className="min-h-84 animate-pulse rounded-card bg-muted-bg"
-              />
+              <LoadingState label="복약 정보 불러오는 중">
+                오늘의 복약 정보를 불러오고 있어요.
+              </LoadingState>
             )}
+            </SmoothHeight>
             <HomeChallengeSummary empty={challengeEmpty} />
             {visibleSupplementRanking && (
               <SupplementRankingCard
@@ -485,9 +484,6 @@ export function HomePage({
                 onSelect={() => setLoginPromptOpen(true)}
                 subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
               />
-            )}
-            {!visibleSupplementRanking && supplementRankingState === 'ready' && (
-              <GuestSupplementRankingEmpty />
             )}
           </>
         )}
@@ -532,34 +528,16 @@ export function HomeSectionTabs({
   onChange: (tab: 'medication' | 'supplement') => void;
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label="오늘의 홈 탭"
-      className="grid grid-cols-2 rounded-input bg-muted-bg p-1"
-    >
-      {([
-        ['medication', '오늘의 복약'],
-        ['supplement', '오늘의 영양제'],
-      ] as const).map(([tab, label]) => {
-        const selected = activeTab === tab;
-        return (
-          <button
-            key={tab}
-            id={`home-tab-${tab}`}
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            aria-controls={`home-panel-${tab}`}
-            className={`min-h-touch rounded-input text-sm font-bold ${
-              selected ? 'bg-card text-primary shadow-card' : 'text-muted-foreground'
-            }`}
-            onClick={() => onChange(tab)}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
+    <ContinuousTabs
+      className="rx-home-tab-layout"
+      label="오늘의 홈 탭"
+      value={activeTab}
+      onChange={onChange}
+      items={[
+        { value: 'medication', label: '오늘의 복약', id: 'home-tab-medication', controls: 'home-panel-medication' },
+        { value: 'supplement', label: '오늘의 영양제', id: 'home-tab-supplement', controls: 'home-panel-supplement' },
+      ]}
+    />
   );
 }
 
@@ -578,17 +556,6 @@ function GuestMedicationPrompt({ onLogin }: { onLogin: () => void }) {
         <p className="text-lg font-bold text-foreground">복약 일정을 확인해보세요</p>
         <p>로그인하면 기록과 알림을 이어서 볼 수 있어요.</p>
         <Button onClick={onLogin}>로그인하고 시작하기</Button>
-      </Card>
-    </section>
-  );
-}
-
-function GuestSupplementRankingEmpty() {
-  return (
-    <section aria-label="영양제 랭킹" className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold text-foreground">영양제 랭킹</h2>
-      <Card>
-        <p className="text-sm text-muted-foreground">현재 공개된 영양제 랭킹이 없어요.</p>
       </Card>
     </section>
   );

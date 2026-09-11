@@ -1,4 +1,5 @@
-import { ArrowLeft, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
@@ -15,6 +16,8 @@ import {
 import { ApiError } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
+import { Header } from '@/shared/ui/Header';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +47,10 @@ function dateLabel(value: string) {
 function progressValue(value: number | string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0;
+}
+
+function usesWaterBadgeContour(imagePath: string) {
+  return /(^|\/)water-badge\.png(?:[?#].*)?$/i.test(imagePath);
 }
 
 function unitLabel(participation: ChallengeParticipation) {
@@ -109,6 +116,8 @@ export function OfficialChallengeParticipationPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [rejoinOpen, setRejoinOpen] = useState(false);
   const [rejoinPending, setRejoinPending] = useState(false);
+  const [newAwardId, setNewAwardId] = useState<number | null>(null);
+  const [awardArtReady, setAwardArtReady] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   principalRef.current = principalKey;
 
@@ -133,6 +142,8 @@ export function OfficialChallengeParticipationPage() {
     setCancelError(null);
     setRejoinOpen(false);
     setRejoinPending(false);
+    setNewAwardId(null);
+    setAwardArtReady(false);
     idempotencyKeyRef.current = null;
     cancelRequestRef.current = null;
     rejoinRequestRef.current = null;
@@ -170,7 +181,7 @@ export function OfficialChallengeParticipationPage() {
   }
 
   if (!data) {
-    return <main role="status" aria-label="참여 기록 불러오는 중" className="mx-page-x my-5 min-h-72 animate-pulse rounded-card bg-muted-bg" />;
+    return <><Header title="챌린지" onBack={() => navigate('/challenges')} /><main className="px-page-x py-5"><LoadingState label="참여 기록 불러오는 중">참여 기록을 불러오고 있어요.</LoadingState></main></>;
   }
 
   const participation = data.participation;
@@ -181,6 +192,7 @@ export function OfficialChallengeParticipationPage() {
   const rate = progressValue(participation.progress_rate);
   const unit = unitLabel(participation);
   const badge = participation.challenge.reward_badge;
+  const waterBadgeContour = badge ? usesWaterBadgeContour(badge.image_path) : false;
   const badgeEarned = badge && data.badges
     ? data.badges.some(item => item.badge_id === badge.id && item.status === 'AWARDED')
     : false;
@@ -245,6 +257,9 @@ export function OfficialChallengeParticipationPage() {
       && requestGenerationRef.current === requestGeneration
     );
     const key = idempotencyKeyRef.current ?? crypto.randomUUID();
+    const previousAwardIds = new Set(
+      data?.badges?.filter(item => item.status === 'AWARDED').map(item => item.id) ?? [],
+    );
     idempotencyKeyRef.current = key;
     setPending(true);
     setActionError(null);
@@ -269,6 +284,13 @@ export function OfficialChallengeParticipationPage() {
       try {
         const refreshed = await loadParticipationData(participation.id);
         if (!isCurrentRequest()) return;
+        const newlyAwarded = refreshed.badges?.find(item => (
+          item.status === 'AWARDED'
+          && item.badge_id === participation.challenge.reward_badge?.id
+          && !previousAwardIds.has(item.id)
+        ));
+        setAwardArtReady(false);
+        setNewAwardId(newlyAwarded?.badge_id ?? null);
         setData(refreshed);
         setRefreshRequired(false);
       } catch {
@@ -353,14 +375,10 @@ export function OfficialChallengeParticipationPage() {
   }
 
   return (
+    <>
+    <Header title={participation.challenge_name} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={goBack} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><ArrowLeft aria-hidden className="size-5" /></button>
-        <div className="min-w-0">
-          <h1 className="break-words text-[22px] font-bold leading-7">{participation.challenge_name}</h1>
-          <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(startDate)} ~ {dateLabel(endDate)}</p>
-        </div>
-      </header>
+      <p className="text-caption text-muted-foreground">내 수행 기간 · {dateLabel(startDate)} ~ {dateLabel(endDate)}</p>
 
       {participation.today_verification?.status === 'APPROVED' ? (
         <section className="flex gap-3 rounded-card bg-primary-bg p-5" aria-label="오늘 인증 결과">
@@ -386,9 +404,9 @@ export function OfficialChallengeParticipationPage() {
 
       {participation.status === 'COMPLETED' ? (
         <section className="flex flex-col items-center gap-2 rounded-card bg-primary-bg p-5 text-center" aria-label="챌린지 완료 결과">
-          {badge ? <img src={apiAssetUrl(badge.image_path)} alt={badge.name} className={`size-16 rounded-pill object-contain ${data.badges && !badgeEarned ? 'grayscale opacity-60' : ''}`} /> : null}
+          {badge ? <img src={apiAssetUrl(badge.image_path)} alt={badge.name} data-award-contour={waterBadgeContour ? 'water' : undefined} data-newly-awarded={newAwardId === badge.id ? 'true' : undefined} data-award-art-ready={newAwardId === badge.id && awardArtReady ? 'true' : undefined} onLoad={(event) => { if (newAwardId !== badge.id) return; const image = event.currentTarget; void image.decode().catch(() => undefined).then(() => { if (image.isConnected && image.complete && image.naturalWidth > 0) setAwardArtReady(true); }); }} className={`size-16 object-contain ${waterBadgeContour ? 'rx-badge-contour-water' : 'rounded-pill'} ${data.badges && !badgeEarned ? 'grayscale opacity-60' : ''} ${newAwardId === badge.id && awardArtReady ? 'rx-badge-award' : ''}`} /> : null}
           <h2 className="text-lg font-bold">챌린지를 완주했어요</h2>
-          {badge ? <Link to={`/challenges/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 ›</Link> : null}
+          {badge ? <Link to={`/challenges/badges/${badge.id}`} className="text-sm font-bold text-primary">{badge.name} 자세히 보기 <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></Link> : null}
         </section>
       ) : null}
 
@@ -461,5 +479,6 @@ export function OfficialChallengeParticipationPage() {
         </DialogContent>
       </Dialog>
     </main>
+    </>
   );
 }
