@@ -1,4 +1,5 @@
 import { Link, useLocation, useParams } from 'react-router';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useChallengeMock } from '@/features/challenges';
 import { ChallengeBadgeArt } from './ChallengeBadgeArt';
 
@@ -47,7 +48,7 @@ export function ChallengeBadgePage() {
             {badge.awards.map((award) => (
               <li key={award.participationId}>
                 <Link to={`${base}/participations/${award.participationId}`} className="flex min-h-touch flex-col gap-1 py-3">
-                  <span className="text-sm font-bold text-foreground">{award.title} ›</span>
+                  <span className="text-sm font-bold text-foreground">{award.title} <DrawnChevron direction="right" className="inline size-3.5 align-middle" /></span>
                   <span className="text-caption text-muted-foreground">{award.earnedAt} 획득 · 1회</span>
                 </Link>
               </li>

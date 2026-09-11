@@ -1,0 +1,10 @@
+.rx-smooth-height {
+  overflow: clip;
+  overflow-clip-margin: 10px;
+  transition: height 240ms ease-out;
+}
+/* Focused controls must be fully exposed immediately, including keyboard navigation. */
+.rx-smooth-height:focus-within { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rx-smooth-height { transition: none; }
+}

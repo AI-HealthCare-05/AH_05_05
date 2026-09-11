@@ -12,6 +12,16 @@ class AIConfigurationError(AIWorkerError):
     code = "AI_CONFIGURATION_ERROR"
 
 
+class IntakeReportGenerationError(AIWorkerError):
+    code = "INTAKE_REPORT_GENERATION_FAILED"
+    retryable = True
+
+    def __init__(self, *, reason_code: str, issue_codes: tuple[str, ...] = ()) -> None:
+        super().__init__("AI 보고서를 완성하지 못했어요. 다시 시도해주세요.")
+        self.reason_code = reason_code
+        self.issue_codes = issue_codes
+
+
 class PatientContextNotFoundError(AIWorkerError):
     code = "PATIENT_CONTEXT_NOT_FOUND"
 

@@ -1,8 +1,11 @@
 import base64
+import binascii
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 from typing import cast
 
 from tortoise.expressions import Q
+from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.core.exceptions import (
@@ -29,9 +32,11 @@ from app.dtos.medications import (
     UpdateMedicationNoteRequest,
 )
 from app.models.care import CareEpisode
-from app.models.enums import CareEpisodeStatus, MealSlot
+from app.models.enums import CareEpisodeStatus, CustomChallengeType, MealSlot
 from app.models.medications import Medication, MedicationDose, MedicationNote
 from app.models.users import User, UserSettings
+from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
+from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
 from app.services.medication_period import medication_end_date, resolve_medication_overview_range
 
 MAX_DOSE_HISTORY_DAYS = 366
@@ -48,6 +53,16 @@ DEFAULT_MEAL_TIMES = {
 
 
 class MedicationService:
+    def __init__(
+        self,
+        reconciler: CustomChallengeScheduleReconciler | None = None,
+        mutation_time_provider: Callable[[], datetime] | None = None,
+        lifecycle: CustomChallengeLifecycleService | None = None,
+    ) -> None:
+        self._reconciler = reconciler or CustomChallengeScheduleReconciler()
+        self._mutation_time_provider = mutation_time_provider or (lambda: datetime.now(config.TIMEZONE))
+        self._lifecycle = lifecycle or CustomChallengeLifecycleService()
+
     async def list_overviews(
         self,
         user: User,
@@ -100,22 +115,44 @@ class MedicationService:
         if request.date < earliest or request.date > today:
             raise InvalidDoseDateError()
 
-        episode = await self._get_owned_episode(request.record_id, user)
         slot = self._parse_slot(request.slot)
-        if request.taken:
-            await MedicationDose.get_or_create(
-                user_id=user.id,
-                dose_date=request.date,
-                slot=slot,
-                care_episode_id=episode.id,
+        async with in_transaction() as connection:
+            locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise MedicationRecordNotFoundError()
+            episode = await (
+                CareEpisode.filter(id=request.record_id, user_id=user.id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
             )
-        else:
-            await MedicationDose.filter(
+            if episode is None:
+                raise MedicationRecordNotFoundError()
+            mutation_at = self._mutation_time_provider()
+            await self._lifecycle.finalize_due_for_user(
                 user_id=user.id,
-                dose_date=request.date,
-                slot=slot,
-                care_episode_id=episode.id,
-            ).delete()
+                now=mutation_at,
+                connection=connection,
+            )
+            if request.taken:
+                await MedicationDose.get_or_create(
+                    user_id=user.id,
+                    dose_date=request.date,
+                    slot=slot,
+                    care_episode_id=episode.id,
+                    using_db=connection,
+                )
+            else:
+                await (
+                    MedicationDose.filter(
+                        user_id=user.id,
+                        dose_date=request.date,
+                        slot=slot,
+                        care_episode_id=episode.id,
+                    )
+                    .using_db(connection)
+                    .delete()
+                )
         return MedicationDoseResponse(
             date=request.date,
             slot=slot.value.lower(),
@@ -124,12 +161,29 @@ class MedicationService:
         )
 
     async def cancel(self, user: User, record_id: int) -> None:
-        episode = await self._get_episode(user, record_id)
-        if episode.status == CareEpisodeStatus.CANCELLED:
-            return
-        episode.status = CareEpisodeStatus.CANCELLED
-        episode.updated_at = datetime.now(config.TIMEZONE)
-        await episode.save(update_fields=["status", "updated_at"])
+        async with in_transaction() as connection:
+            locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise MedicationRecordNotFoundError()
+            episode = await CareEpisode.filter(id=record_id).using_db(connection).select_for_update().first()
+            if episode is None:
+                raise MedicationRecordNotFoundError()
+            if cast(int, episode.user_id) != user.id:  # type: ignore[attr-defined]
+                raise MedicationRecordForbiddenError()
+            await UserSettings.filter(user_id=user.id).using_db(connection).select_for_update().first()
+            changed_at = self._mutation_time_provider()
+            if episode.status == CareEpisodeStatus.CANCELLED:
+                return
+            episode.status = CareEpisodeStatus.CANCELLED
+            episode.updated_at = changed_at
+            await episode.save(using_db=connection, update_fields=["status", "updated_at"])
+            await self._reconciler.reconcile(
+                user_id=user.id,
+                source_kind=CustomChallengeType.MEDICATION,
+                source_ids=(episode.id,),
+                changed_at=changed_at,
+                connection=connection,
+            )
 
     async def update_episode_alias(
         self,
@@ -343,7 +397,7 @@ class MedicationService:
             if note_id <= 0:
                 return None
             return dosed_at, note_id
-        except (ValueError, UnicodeDecodeError, base64.binascii.Error):
+        except (ValueError, UnicodeDecodeError, binascii.Error):
             return None
 
     @staticmethod

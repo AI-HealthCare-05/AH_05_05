@@ -1,9 +1,22 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
 
+const WATER_BADGE_PNG = readFileSync(new URL('../../../app/static/media/badges/water-badge.png', import.meta.url));
+
 test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 test.setTimeout(120_000);
+test.beforeEach(async ({ page }) => {
+  await page.route('https://fonts.googleapis.com/**', route => route.abort());
+  await page.route('https://fonts.gstatic.com/**', route => route.abort());
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
+  await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
+});
 
 const badge = {
   id: 31,
@@ -95,6 +108,57 @@ function cancelledAttempt(canJoin = true, latestId = 501) {
   });
 }
 
+test('My combines official and custom active cards and all past statuses without id collisions', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('poke.access-token', 'mixed-challenges-test');
+    sessionStorage.setItem('poke.account-principal', 'mixed-challenges@example.com');
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: {
+    items: [participation(), participation({ id: 502, challenge_name: '지난 공식 걷기', status: 'EXPIRED', can_verify: false })], total_count: 2,
+  } }));
+  await page.route('**/api/v1/user/badges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
+  const custom = {
+    id: 501, templateId: 31, challengeType: 'MEDICATION', challengeName: '처방 일정 지키기',
+    rewardBadge: null, status: 'ACTIVE', joinedAt: '2026-09-09T09:00:00+09:00', endAt: '2026-09-16T09:00:00+09:00',
+    actualEndDate: '2026-09-16', targetCount: 14, completedCount: 5, progressRate: '35.71', action: 'NONE',
+    targets: [{ id: 801, sourceId: 101, name: '서울의원 처방' }], occurrences: [],
+  };
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({ json: {
+    items: [custom,
+      { ...custom, id: 502, status: 'COMPLETED', challengeName: '달성한 복약', progressRate: '100.00', completedCount: 14 },
+      { ...custom, id: 503, status: 'EXPIRED', challengeType: 'SUPPLEMENT', challengeName: '종료한 영양제' },
+      { ...custom, id: 504, status: 'CANCELLED', challengeName: '취소한 복약' }], totalCount: 4,
+  } }));
+  await page.goto('/challenges');
+  const active = page.getByRole('region', { name: '진행 중인 챌린지', exact: true });
+  const activeToggle = page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true });
+  await expect(activeToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(active.getByRole('article')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '지난 기록 펼치기' })).toHaveAttribute('aria-expanded', 'false');
+  await page.screenshot({ path: testInfo.outputPath('accordions-closed.png'), animations: 'disabled' });
+  await activeToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(active.getByRole('article')).toHaveCount(2);
+  await expect(active.getByRole('link', { name: '매일 30분 걷기 자세히 보기' })).toHaveAttribute('href', '/challenges/participations/501');
+  await expect(active.getByRole('link', { name: '처방 일정 지키기 자세히 보기' })).toHaveAttribute('href', '/challenges/custom-participations/501');
+  await expect(active.getByText('공식', { exact: true })).toBeVisible();
+  await expect(active.getByText('맞춤', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '지난 기록 펼치기' })).toContainText('4');
+  await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
+  const history = page.getByRole('region', { name: '지난 기록', exact: true });
+  await expect(history.getByRole('article')).toHaveCount(4);
+  await expect(active.getByRole('article')).toHaveCount(2);
+  await expect(history.getByRole('link', { name: '달성한 복약 자세히 보기' })).toHaveAttribute('href', '/challenges/custom-participations/502');
+  await expect(history.getByRole('article', { name: '종료한 영양제' })).toContainText('종료');
+  await expect(history.getByRole('article', { name: '취소한 복약' })).toContainText('취소');
+  await expect(history.getByRole('link', { name: '지난 공식 걷기 자세히 보기' })).toHaveAttribute('href', '/challenges/participations/502');
+  await history.screenshot({ path: testInfo.outputPath('combined-history.png') });
+  await page.getByRole('button', { name: '지난 기록 접기' }).click();
+  await expect(history.getByRole('article')).toHaveCount(0);
+  await expect(active.getByRole('article')).toHaveCount(2);
+});
+
 function restartedAttempt() {
   return participation({
     id: 502, completed_count: 0, progress_rate: '0.00', verified_dates: [],
@@ -158,13 +222,14 @@ for (const entry of ['participation', 'catalog'] as const) {
     expect(joinCalls).toBe(1);
     await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
     const active = page.getByRole('region', { name: '진행 중인 챌린지', exact: true });
+    await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
     await expect(active.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
     await expect(active.getByRole('link', { name: /매일 30분 걷기 자세히 보기/ })).toHaveAttribute('href', '/challenges/participations/502');
     await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
     const history = page.getByRole('region', { name: '지난 기록', exact: true });
     await expect(history.getByRole('link', { name: /매일 30분 걷기 자세히 보기/ })).toHaveAttribute('href', '/challenges/participations/501');
     await page.getByRole('button', { name: '홈', exact: true }).click();
-    await expect(page.getByRole('link', { name: '매일 30분 걷기, 0% 달성, 상세 보기', exact: true })).toHaveAttribute('href', '/challenges/participations/502');
+    await expect(page.getByRole('link', { name: '매일 30분 걷기, 0% 진행 중, 상세 보기', exact: true })).toHaveAttribute('href', '/challenges/participations/502');
   });
 }
 
@@ -253,7 +318,7 @@ for (const outcome of ['leave', 'unauthorized'] as const) {
         window.history.pushState({}, '', '/challenges/browse');
         window.dispatchEvent(new PopStateEvent('popstate'));
       });
-      await expect(page.getByRole('heading', { name: '공식 챌린지', exact: true })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toBeVisible();
     }
     release();
     if (outcome === 'unauthorized') await expect(page).toHaveURL(/\/login$/);
@@ -276,11 +341,13 @@ async function stubChallengeReads(
     catalog?: unknown[];
     participations?: unknown[];
     badges?: unknown[];
+    customBadges?: unknown[];
   } = {},
 ) {
   const catalog = options.catalog ?? [manualChallenge, weeklyChallenge, dailyChallenge];
   const participations = options.participations ?? [];
   const badges = options.badges ?? [];
+  const customBadges = options.customBadges ?? [];
   await page.route('**/api/v1/user/challenge-catalog?*', route => route.fulfill({
     json: { items: catalog, total_count: catalog.length, offset: 0, limit: 100 },
   }));
@@ -290,12 +357,22 @@ async function stubChallengeReads(
   await page.route('**/api/v1/user/badges', route => route.fulfill({
     json: { items: badges, total_count: badges.length },
   }));
+  await page.route('**/api/v1/user/custom-challenges/badges', route => route.fulfill({
+    json: { items: customBadges, totalCount: customBadges.length },
+  }));
+  await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
+  await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({
+    json: { items: [], totalCount: 0 },
+  }));
 }
 
 test('real My and browse keep the shared back navigation', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page);
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await page.getByRole('link', { name: '둘러보기', exact: true }).click();
   const back = page.getByRole('button', { name: '뒤로 가기', exact: true });
   await expect(back).toBeVisible();
@@ -305,16 +382,16 @@ test('real My and browse keep the shared back navigation', async ({ page }) => {
   await expect(page).toHaveURL(/\/home$/);
 });
 
-test('real browse renders snake_case catalog frequencies and never shows mock data', async ({ page }) => {
+test('real browse renders compact recruitment dates from the catalog and never shows mock data', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page);
 
   await page.goto('/challenges/browse');
 
-  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /매일 30분 걷기.*자세히 보기/ })).toContainText('참여일부터 14일 · 매일 인증');
-  await expect(page.getByRole('button', { name: /건강 기록 제출하기.*자세히 보기/ })).toContainText('참여일부터 30일 · 기간 동안 총 10회 인증');
-  await expect(page.getByRole('button', { name: /가볍게 스트레칭.*자세히 보기/ })).toContainText('참여일부터 14일 · 주 3회 인증');
+  await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toContainText('전체');
+  for (const name of ['매일 30분 걷기', '건강 기록 제출하기', '가볍게 스트레칭']) {
+    await expect(page.getByRole('button', { name: `${name} 자세히 보기` })).toContainText('모집기간 : 2026년 9월 1일 ~ 2026년 9월 30일');
+  }
   await expect(page.getByText('목업 미리보기')).toHaveCount(0);
   await expect(page.getByText('물 마시기', { exact: true })).toHaveCount(0);
 });
@@ -335,6 +412,7 @@ test('SELF detail joins once with no body and routes to the returned participati
     await joinGate;
     await route.fulfill({ status: 201, json: participation() });
   });
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation() }));
 
   await page.goto('/challenges/official/101');
 
@@ -381,6 +459,7 @@ test('a lost join response reconciles the committed participation from catalog d
   await page.getByRole('button', { name: '참여하기' }).click();
 
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
+  await expect(page.getByRole('heading', { name: dailyChallenge.name })).toBeVisible();
   expect(joinCalls).toBe(1);
   expect(detailReads).toBeGreaterThanOrEqual(2);
 });
@@ -521,6 +600,7 @@ test('my card trusts server progress and retries SELF check-in with the same ide
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await expect(card.getByText('3 / 14일 인증')).toBeVisible();
@@ -588,6 +668,7 @@ test('My keeps a successful check-in when optional catalog and badge refreshes f
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await card.getByRole('button', { name: '했어요' }).click();
 
@@ -595,6 +676,164 @@ test('My keeps a successful check-in when optional catalog and badge refreshes f
   await expect(card.getByRole('button', { name: '오늘 인증 완료' })).toBeDisabled();
   await expect(card.getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('alert')).toContainText('배지 정보를 불러오지 못했어요.');
+});
+
+test('participation rotates the existing badge once only after GET confirms a new award', async ({ page }, testInfo) => {
+  await authenticate(page);
+  const waterBadge = {
+    ...badge,
+    name: '물마시기 배지',
+    image_path: 'media/badges/water-badge.png',
+  };
+  const waterChallenge = { ...dailyChallenge, can_join: false, participation_id: 501, reward_badge: waterBadge };
+  const verification = {
+    id: 901,
+    user_challenge_id: 501,
+    progress_id: 801,
+    verification_date: '2026-09-10',
+    content: null,
+    image_path: null,
+    status: 'APPROVED',
+    rejection_reason: null,
+    reviewed_by_admin_id: null,
+    reviewed_at: '2026-09-10T11:00:00+09:00',
+    submitted_at: '2026-09-10T11:00:00+09:00',
+  };
+  const before = participation({ completed_count: 13, progress_rate: '92.86', challenge: waterChallenge });
+  const after = participation({
+    status: 'COMPLETED',
+    completed_count: 14,
+    progress_rate: '100.00',
+    completed_at: '2026-09-10T11:00:00+09:00',
+    can_verify: false,
+    today_verification: verification,
+    verified_dates: ['2026-09-10'],
+    challenge: waterChallenge,
+  });
+  const awardedBadge = {
+    id: 702,
+    user_id: 7,
+    badge_id: waterBadge.id,
+    challenge_id: dailyChallenge.id,
+    user_challenge_id: 501,
+    status: 'AWARDED',
+    badge_name: waterBadge.name,
+    badge_image_path: waterBadge.image_path,
+    awarded_at: '2026-09-10T11:00:00+09:00',
+    revoked_at: null,
+    revoke_reason: null,
+  };
+  let checked = false;
+  let badgeReads = 0;
+  let releaseBadgeImage!: () => void;
+  const badgeImageGate = new Promise<void>(resolve => {
+    releaseBadgeImage = resolve;
+  });
+  await page.route('**/api/v1/user/challenges/501', route =>
+    route.fulfill({ json: checked ? after : before }),
+  );
+  await page.route('**/api/v1/user/badges', route => {
+    badgeReads += 1;
+    const items = checked ? [awardedBadge] : [];
+    return route.fulfill({ json: { items, total_count: items.length } });
+  });
+  await page.route('**/api/v1/user/challenges/501/verifications', route => {
+    checked = true;
+    return route.fulfill({ status: 201, json: verification });
+  });
+  await page.route('**/media/badges/water-badge.png', async route => {
+    await badgeImageGate;
+    await route.fulfill({ status: 200, contentType: 'image/png', body: WATER_BADGE_PNG });
+  });
+
+  await page.goto('/challenges/participations/501');
+  await page.getByRole('button', { name: '했어요', exact: true }).click();
+
+  const completion = page.getByRole('region', { name: '챌린지 완료 결과' });
+  const awardedArt = completion.getByRole('img', { name: waterBadge.name });
+  await expect(awardedArt).toHaveAttribute('data-newly-awarded', 'true');
+  await expect(awardedArt).toHaveCSS('animation-name', 'none');
+  expect(await awardedArt.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(false);
+  releaseBadgeImage();
+  await expect.poll(() => awardedArt.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+  await expect(awardedArt).toHaveAttribute('data-award-art-ready', 'true');
+  await expect(awardedArt).toHaveCSS('animation-name', 'rx-badge-award-turn');
+  await expect(awardedArt).toHaveCSS('animation-iteration-count', '1');
+  await awardedArt.evaluate(element => {
+    const animation = element.getAnimations().find(item => item.animationName === 'rx-badge-award-turn');
+    animation?.pause();
+    if (animation) animation.currentTime = 380;
+  });
+  await page.screenshot({ path: testInfo.outputPath('water-contour-rotation-390x844.png') });
+  expect(badgeReads).toBeGreaterThanOrEqual(2);
+
+  await page.reload();
+  const revisitedArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: waterBadge.name });
+  await expect(revisitedArt).not.toHaveAttribute('data-newly-awarded', 'true');
+  await expect(revisitedArt).toHaveCSS('animation-name', 'none');
+
+  checked = false;
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.reload();
+  await page.getByRole('button', { name: '했어요', exact: true }).click();
+  const reducedArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: waterBadge.name });
+  await expect(reducedArt).toHaveAttribute('data-newly-awarded', 'true');
+  await expect(reducedArt).toHaveCSS('animation-name', 'none');
+});
+
+test('water reward clips to its own teal contour without changing other badge artwork', async ({ page }, testInfo) => {
+  await authenticate(page);
+  const waterBadge = {
+    ...badge,
+    name: '물마시기 배지',
+    image_path: 'media/badges/water-badge.png',
+  };
+  let rewardBadge = waterBadge;
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: participation({
+    status: 'COMPLETED',
+    completed_count: 14,
+    progress_rate: '100.00',
+    completed_at: '2026-09-10T11:00:00+09:00',
+    can_verify: false,
+    challenge: { ...dailyChallenge, can_join: false, participation_id: 501, reward_badge: rewardBadge },
+  }) }));
+  await page.route('**/api/v1/user/badges', route => {
+    const item = {
+      id: 800 + rewardBadge.id,
+      user_id: 7,
+      badge_id: rewardBadge.id,
+      challenge_id: dailyChallenge.id,
+      user_challenge_id: 501,
+      status: 'AWARDED',
+      badge_name: rewardBadge.name,
+      badge_image_path: rewardBadge.image_path,
+      awarded_at: '2026-09-10T11:00:00+09:00',
+      revoked_at: null,
+      revoke_reason: null,
+    };
+    return route.fulfill({ json: { items: [item], total_count: 1 } });
+  });
+
+  await page.goto('/challenges/participations/501');
+  const waterArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: waterBadge.name });
+  await expect(waterArt).toHaveAttribute('src', '/media/badges/water-badge.png');
+  await expect(waterArt).toHaveAttribute('data-award-contour', 'water');
+  await expect(waterArt).toHaveCSS('clip-path', /polygon/);
+  await expect(waterArt).toHaveCSS('border-radius', '0px');
+  await page.screenshot({ path: testInfo.outputPath('water-contour-light-390x844.png') });
+  await page.addStyleTag({ content: '[aria-label="챌린지 완료 결과"] { background: #002c68 !important; }' });
+  await page.screenshot({ path: testInfo.outputPath('water-contour-dark-390x844.png') });
+
+  rewardBadge = badge;
+  await page.reload();
+  const walkArt = page.getByRole('region', { name: '챌린지 완료 결과' })
+    .getByRole('img', { name: badge.name });
+  await expect(walkArt).not.toHaveAttribute('data-award-contour', 'water');
+  await expect(walkArt).toHaveCSS('clip-path', 'none');
+  await expect(walkArt).toHaveClass(/rounded-pill/);
 });
 
 test('My offers a GET-only retry when progress refresh fails after an approved check-in', async ({ page }) => {
@@ -637,6 +876,7 @@ test('My offers a GET-only retry when progress refresh fails after an approved c
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await card.getByRole('button', { name: '했어요' }).click();
 
@@ -722,6 +962,7 @@ test('a final check-in keeps badge totals uncertain until GET-only recovery is c
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const badgeSummary = page.getByRole('heading', { name: '작은 실천이 쌓이고 있어요' }).locator('..');
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await expect(badgeSummary.getByText('모은 배지 1종 · 1회 획득')).toBeVisible();
@@ -778,6 +1019,7 @@ test('My keeps every card refresh-required after separate approved check-ins los
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const firstCard = page.getByRole('article', { name: dailyChallenge.name });
   const secondCard = page.getByRole('article', { name: weeklyChallenge.name });
 
@@ -832,9 +1074,10 @@ test('a delayed My check-in does not refresh after leaving the page', async ({ p
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await page.getByRole('article', { name: dailyChallenge.name }).getByRole('button', { name: '했어요' }).click();
   await page.getByRole('link', { name: '둘러보기', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '공식 챌린지' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '챌린지 목록' })).toContainText(dailyChallenge.name);
   const readsBeforeRelease = { challengeReads, badgeReads };
 
   releaseVerification();
@@ -858,6 +1101,7 @@ test('SELF participation without a reward badge is labeled as direct verificatio
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   const card = page.getByRole('article', { name: weeklyChallenge.name });
   await expect(card.getByText('직접 인증', { exact: true })).toBeVisible();
@@ -1257,6 +1501,10 @@ test('relative badge media paths resolve from the server root on every official 
   });
   await page.route('**/api/v1/user/challenge-catalog/101', route => route.fulfill({ json: mediaChallenge }));
   await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: completed }));
+  await page.route('**/media/badges/walk.png', route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+  }));
 
   const expectedPath = '/media/badges/walk.png';
   const surfaces = [
@@ -1342,7 +1590,7 @@ test('authenticated home renders a server-backed challenge summary with navigati
 });
 
 for (const width of [320, 430]) {
-  test(`home challenge density shows every active row and grows naturally at ${width}`, async ({ page }, testInfo) => {
+  test(`home challenge density keeps fixed-width compact cards and completed goals at ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await authenticate(page);
     const mutations: string[] = [];
@@ -1359,8 +1607,7 @@ for (const width of [320, 430]) {
     await expect(rows).toHaveCount(1);
     const card = rows.first().locator('..');
     const singleHeight = (await card.boundingBox())!.height;
-    // One short row should not reserve the previous two-row minimum height.
-    expect.soft(singleHeight).toBeLessThan(110);
+    expect(singleHeight).toBeLessThanOrEqual(230);
     const shortTitleRight = await rows.first().getByText('매일 30분 걷기', { exact: true }).evaluate(el => {
       const textRange = document.createRange();
       textRange.selectNodeContents(el);
@@ -1375,10 +1622,11 @@ for (const width of [320, 430]) {
       participation({ id: 505, challenge_name: '완료한 도전', status: 'COMPLETED' }),
       participation({ id: 506, challenge_name: '만료한 도전', status: 'EXPIRED' })];
     await page.reload();
-    await expect(rows).toHaveCount(3);
-    await expect(summary.getByText(/취소한 도전|완료한 도전|만료한 도전/)).toHaveCount(0);
+    await expect(rows).toHaveCount(4);
+    await expect(summary.getByText(/취소한 도전|만료한 도전/)).toHaveCount(0);
+    await expect(summary.getByText('완료한 도전', { exact: true })).toHaveCount(1);
     await expect(rows.nth(2)).toHaveAttribute('href', '/challenges/participations/503');
-    expect((await card.boundingBox())!.height).toBeGreaterThan(singleHeight + 80);
+    expect((await card.boundingBox())!.height).toBe(singleHeight);
     await summary.screenshot({ path: testInfo.outputPath(`home-challenge-three-${width}.png`) });
     expect(mutations).toEqual([]);
   });
@@ -1425,24 +1673,23 @@ test('home challenge summary stays available when medication loading fails', asy
   await expect(page.getByRole('region', { name: '챌린지' }).getByRole('link', { name: /매일 30분 걷기.*21.43%/ })).toBeVisible();
 });
 
-test('unfinished tailored and personal real routes show a clear coming-soon state', async ({ page }) => {
+test('unfinished personal creation route shows a clear coming-soon state', async ({ page }) => {
   await authenticate(page);
   const mutations: string[] = [];
   page.on('request', request => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) mutations.push(request.url());
   });
 
-  for (const path of ['/challenges/tailored', '/challenges/tailored/medication', '/challenges/create']) {
-    await page.goto(path);
-    await expect(page.getByRole('heading', { name: '준비 중이에요' })).toBeVisible();
-    await expect(page.getByText('#315에서 제공할 예정이에요.')).toBeVisible();
-    await expect(page.getByText('감기약', { exact: true })).toHaveCount(0);
-  }
+  await page.goto('/challenges/create');
+  await expect(page.getByRole('heading', { name: '준비 중이에요' })).toBeVisible();
+  await expect(page.getByText('#315에서 제공할 예정이에요.')).toBeVisible();
+  await expect(page.getByText('감기약', { exact: true })).toHaveCount(0);
   expect(mutations).toEqual([]);
 });
 
 test('catalog load failure never falls back to mock data and recovers on reload action', async ({ page }) => {
   await authenticate(page);
+  await stubChallengeReads(page);
   let reads = 0;
   await page.route('**/api/v1/user/challenge-catalog?*', route => {
     reads += 1;
@@ -1463,9 +1710,10 @@ test('empty My state directs users to official browse without inventing tailored
   await authenticate(page);
   await stubChallengeReads(page, { catalog: [], participations: [], badges: [] });
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   await expect(page.getByText('참여 중인 챌린지가 없어요.')).toBeVisible();
-  await expect(page.getByRole('link', { name: /공식 챌린지 둘러보기/ })).toHaveAttribute('href', '/challenges/browse');
+  await expect(page.getByRole('link', { name: '둘러보기', exact: true })).toHaveAttribute('href', '/challenges/browse');
   await expect(page.getByText('감기약', { exact: true })).toHaveCount(0);
 });
 
@@ -1519,11 +1767,13 @@ test('browse to join to My check-in persists after reload through server reads',
   await page.getByRole('button', { name: /매일 30분 걷기.*자세히 보기/ }).click();
   await page.getByRole('button', { name: '참여하기' }).click();
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
-  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '챌린지', exact: true }).click();
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   const card = page.getByRole('article', { name: dailyChallenge.name });
   await card.getByRole('button', { name: '했어요' }).click();
   await expect(card.getByText('4 / 14일 인증')).toBeVisible();
   await page.reload();
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('article', { name: dailyChallenge.name }).getByText('4 / 14일 인증')).toBeVisible();
   expect(joined).toBe(true);
   expect(checked).toBe(true);
@@ -1566,6 +1816,7 @@ test('a delayed previous-account response cannot replace the current account cha
   });
 
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('status', { name: '내 챌린지 불러오는 중' })).toBeVisible();
   await page.goto('/login');
   await page.getByLabel('이메일').fill('account-b@example.com');
@@ -1573,6 +1824,7 @@ test('a delayed previous-account response cannot replace the current account cha
   await page.getByRole('button', { name: '로그인', exact: true }).last().click();
   await expect(page).toHaveURL(/\/home$/);
   await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('article', { name: '둘째 계정 챌린지' })).toBeVisible();
   releaseAccountA();
   await page.waitForTimeout(100);

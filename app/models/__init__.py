@@ -14,6 +14,12 @@ from .challenges import (
 )
 from .chat import ChatMessage, ChatMessageSource, ChatSession
 from .common_codes import CommonCode, CommonCodeGroup
+from .custom_challenges import (
+    CustomChallengeBadgeAward,
+    CustomChallengeOccurrence,
+    CustomChallengeParticipation,
+    CustomChallengeTarget,
+)
 from .email_verifications import EmailVerification
 from .interactions import (
     InteractionEntity,

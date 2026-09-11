@@ -54,7 +54,7 @@ function primaryMedicationOverview(): MedicationOverview {
   const medications = hasRegisteredMedication ? [
     { medicationId: 301, name: '셀레콕시브', dose: '200mg', days: 7, daysRemaining: 3, slots: ['morning', 'evening'] as const, asNeeded: false },
     { medicationId: 302, name: '리바록사반', dose: '10mg', days: 10, daysRemaining: 10, slots: ['evening'] as const, asNeeded: false, untilComplete: true },
-    { medicationId: 304, name: '파모티딘', dose: '20mg', days: 7, daysRemaining: 3, slots: ['morning', 'evening'] as const, asNeeded: false },
+    { medicationId: 304, name: '파모티딘', dose: '20mg', days: 7, daysRemaining: 3, slots: ['bedtime'] as const, asNeeded: false },
     { medicationId: 303, name: '아세트아미노펜', dose: '650mg', days: 7, daysRemaining: null, slots: [] as const, asNeeded: true },
   ] : [];
   const alias = mockMedicationAlias(12, '감기약');

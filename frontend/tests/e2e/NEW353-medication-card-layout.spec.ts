@@ -90,12 +90,7 @@ test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별�
     const title = activeCard.getByText(LONG_ALIAS, { exact: true });
     const status = activeCard.getByText('복용 중', { exact: true });
     const remaining = activeCard.getByText('5일 남음', { exact: true });
-    const medicineSummary = activeCard.getByText(new RegExp(LONG_MEDICATION_NAME));
-    const timeSummary = activeCard.getByText(
-      '아침 08:00 · 점심 13:00 · 저녁 19:00 · 자기전 22:30',
-      { exact: true },
-    );
-    const period = activeCard.getByText('2026년 9월 5일 ~ 14일 · 약 2개', { exact: true });
+    const period = activeCard.getByText('2026년 9월 5일 ~ 14일', { exact: true });
 
     await expect(activeCard).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`after-medication-cards-${width}.png`), fullPage: true });
@@ -118,7 +113,7 @@ test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별�
     expect(Math.max(statusBox!.y + statusBox!.height, remainingBox!.y + remainingBox!.height))
       .toBeLessThanOrEqual(titleBox!.y);
 
-    for (const text of [title, medicineSummary, timeSummary, period]) {
+    for (const text of [title, period]) {
       await expectTextFits(text);
     }
 
@@ -126,6 +121,11 @@ test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별�
     expect((await chevron.boundingBox())!.width).toBe(20);
     expect(await activeCard.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await activeCard.click();
+    const details = page.getByRole('region', { name: '2026년 9월 5일 처방 상세' });
+    await expectTextFits(details.getByText(new RegExp(LONG_MEDICATION_NAME)));
+    await expect(details.getByText('자기전 22:30', { exact: true })).toBeVisible();
 
     const finishedCard = page.getByRole('button', { name: /2026년 8월 1일 처방.*복용 완료/ });
     const finishedStatus = finishedCard.getByText('복용 완료', { exact: true });
@@ -142,13 +142,17 @@ test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별�
   }
 });
 
-test('feature252 일수와 열기, 기본 카드 D-Day와 펼침, 선택 모드를 유지한다', async ({ page }) => {
+test('본 카드의 펼침과 연필 편집, 기본 카드 D-Day, 선택 모드를 유지한다', async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto('/medications');
 
   const featureCard = page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ });
   await expect(featureCard.getByText('5일 남음', { exact: true })).toBeVisible();
   await featureCard.click();
+  await expect(page.getByRole('region', { name: '2026년 9월 5일 처방 상세' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '처방 편집' })).toHaveCount(0);
+  await featureCard.click();
+  await page.getByRole('button', { name: '처방 수정 · 2026년 9월 5일', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '처방 편집' })).toBeVisible();
   await expect(page.getByRole('region', { name: '2026년 9월 5일 처방 상세' })).toHaveCount(0);
   await page.getByRole('dialog').getByRole('button', { name: '닫기' }).click();

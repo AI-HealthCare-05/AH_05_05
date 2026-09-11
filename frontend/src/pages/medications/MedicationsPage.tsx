@@ -5,12 +5,14 @@ import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
 import {
   cancelMedication,
+  getMedicationSchedule,
   getMedicationOverviews,
   saveMedicationSchedule,
   type MealSlot,
   type MedicationOverview,
   type MedicationOverviewItem,
   type MedicationOverviewRange,
+  type MedicationSchedule,
 } from '@/entities/medication';
 import { updateEpisodeAlias } from '@/entities/medication-alias';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
@@ -30,6 +32,7 @@ import {
 } from '@/shared/ui';
 import { MEAL_SLOTS, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { cn } from '@/shared/lib/cn';
+import { LoadingState } from '@/shared/ui/LoadingState';
 import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
 import { MedicationBulkDeleteDialog } from './MedicationBulkDeleteDialog';
 import { MedicationEpisodeCard } from './MedicationEpisodeCard';
@@ -49,6 +52,32 @@ interface EditingMedication {
   medication: MedicationOverviewItem;
 }
 
+function medicationFrequency(schedule: MedicationSchedule | null, medicationId: number) {
+  return schedule?.medications.find((medication) => medication.medicationId === medicationId)
+    ?.timesPerDay;
+}
+
+function hasValidEpisodeSchedule(
+  overview: MedicationOverview,
+  slots: Record<number, MealSlot[]>,
+  schedule: MedicationSchedule | null,
+) {
+  if (!schedule) return false;
+  return overview.medications
+    .filter((medication) => !medication.asNeeded)
+    .every((medication) => {
+      const timesPerDay = medicationFrequency(schedule, medication.medicationId);
+      const selectedCount = (slots[medication.medicationId] ?? []).length;
+      return (
+        typeof timesPerDay === 'number' &&
+        Number.isInteger(timesPerDay) &&
+        timesPerDay > 0 &&
+        selectedCount > 0 &&
+        selectedCount <= timesPerDay
+      );
+    });
+}
+
 export function MedicationsPage({
   overviewsLoader = getMedicationOverviews,
   medicationCanceller = cancelMedication,
@@ -64,6 +93,7 @@ export function MedicationsPage({
     loader: typeof overviewsLoader;
     promise: Promise<MedicationOverview[]>;
   } | null>(null);
+  const episodeRequestIdRef = useRef(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const queryKey = searchParams.toString();
   const range = useMemo(
@@ -81,6 +111,10 @@ export function MedicationsPage({
   const [episodeEditing, setEpisodeEditing] = useState<MedicationOverview | null>(null);
   const [episodeAlias, setEpisodeAlias] = useState('');
   const [episodeSlots, setEpisodeSlots] = useState<Record<number, MealSlot[]>>({});
+  const [episodeSchedule, setEpisodeSchedule] = useState<MedicationSchedule | null>(null);
+  const [episodeScheduleLoading, setEpisodeScheduleLoading] = useState(false);
+  const [episodeScheduleError, setEpisodeScheduleError] = useState<string | null>(null);
+  const [episodeSlotLimitErrors, setEpisodeSlotLimitErrors] = useState<Record<number, boolean>>({});
   const [episodeSaving, setEpisodeSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -152,9 +186,55 @@ export function MedicationsPage({
         overview.medications.map((medication) => [medication.medicationId, [...medication.slots]]),
       ),
     );
+    setEpisodeSchedule(null);
+    setEpisodeScheduleError(null);
+    setEpisodeSlotLimitErrors({});
+    if (overview.isFinished) {
+      setEpisodeScheduleLoading(false);
+      return;
+    }
+    void loadEpisodeSchedule(overview);
+  }
+
+  async function loadEpisodeSchedule(overview: MedicationOverview) {
+    const requestId = ++episodeRequestIdRef.current;
+    setEpisodeScheduleLoading(true);
+    setEpisodeScheduleError(null);
+    try {
+      const schedule = await getMedicationSchedule(overview.recordId);
+      if (requestId !== episodeRequestIdRef.current) return;
+      const scheduledMedicationIds = overview.medications
+        .filter((medication) => !medication.asNeeded)
+        .map((medication) => medication.medicationId);
+      const hasAllFrequencies = scheduledMedicationIds.every((medicationId) =>
+        schedule.medications.some(
+          (medication) =>
+            medication.medicationId === medicationId &&
+            typeof medication.timesPerDay === 'number' &&
+            Number.isInteger(medication.timesPerDay) &&
+            medication.timesPerDay > 0,
+        ),
+      );
+      if (!hasAllFrequencies) throw new Error('처방 복용 횟수를 확인할 수 없어요.');
+      setEpisodeSchedule(schedule);
+    } catch {
+      if (requestId !== episodeRequestIdRef.current) return;
+      setEpisodeScheduleError('처방 복용 횟수를 불러오지 못했어요.');
+    } finally {
+      if (requestId === episodeRequestIdRef.current) setEpisodeScheduleLoading(false);
+    }
   }
 
   function toggleEpisodeSlot(medicationId: number, slot: MealSlot) {
+    if (episodeScheduleLoading || episodeScheduleError) return;
+    const timesPerDay = medicationFrequency(episodeSchedule, medicationId);
+    if (typeof timesPerDay !== 'number') return;
+    const selected = episodeSlots[medicationId] ?? [];
+    if (!selected.includes(slot) && selected.length >= timesPerDay) {
+      setEpisodeSlotLimitErrors((current) => ({ ...current, [medicationId]: true }));
+      return;
+    }
+    setEpisodeSlotLimitErrors((current) => ({ ...current, [medicationId]: false }));
     setEpisodeSlots((current) => {
       const next = new Set(current[medicationId] ?? []);
       if (next.has(slot)) next.delete(slot);
@@ -164,7 +244,13 @@ export function MedicationsPage({
   }
 
   async function saveEpisode() {
-    if (!episodeEditing || episodeSaving) return;
+    if (
+      !episodeEditing ||
+      episodeSaving ||
+      episodeScheduleLoading ||
+      episodeScheduleError ||
+      !hasValidEpisodeSchedule(episodeEditing, episodeSlots, episodeSchedule)
+    ) return;
     setEpisodeSaving(true);
     setSaveError(null);
     try {
@@ -390,13 +476,11 @@ export function MedicationsPage({
             </div>
           </Card>
         ) : !overviews ? (
-          <div
-            role="status"
-            aria-label="복용약 불러오는 중"
-            className="min-h-44 animate-pulse rounded-card bg-muted-bg"
-          />
+          <LoadingState label="복용약 불러오는 중">
+            처방 기록을 불러오고 있어요.
+          </LoadingState>
         ) : overviews.length === 0 ? (
-          <Card title="이 기간에 등록한 처방이 없어요" className="p-5">
+          <Card title="이 기간에 등록한 처방이 없어요" className="p-5 motion-safe:animate-[rx-overlay-in_200ms_ease-out]">
             <div className="flex flex-col gap-4">
               <p>다른 기간을 선택해 처방 기록을 확인해보세요.</p>
               <Button variant="secondary" onClick={() => setFilterOpen(true)}>
@@ -406,7 +490,7 @@ export function MedicationsPage({
           </Card>
         ) : feature252 ? (
           <>
-            <section className="flex flex-col gap-3" aria-labelledby="active-episode-list-title">
+            <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="active-episode-list-title">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
                   복용 중
@@ -416,7 +500,7 @@ export function MedicationsPage({
               {activeOverviews.map(renderEpisodeCard)}
             </section>
             {finishedOverviews.length > 0 && (
-              <section className="flex flex-col gap-3" aria-labelledby="finished-episode-list-title">
+              <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="finished-episode-list-title">
                 <div className="flex items-baseline justify-between gap-3">
                   <h2 id="finished-episode-list-title" className="text-xl font-bold text-foreground">
                     완료된 처방
@@ -428,7 +512,7 @@ export function MedicationsPage({
             )}
           </>
         ) : (
-          <section className="flex flex-col gap-3" aria-labelledby="episode-list-title">
+          <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="episode-list-title">
             <div className="flex items-baseline justify-between gap-3">
               <h2 id="episode-list-title" className="text-xl font-bold text-foreground">
                 처방 기록
@@ -479,11 +563,19 @@ export function MedicationsPage({
         overview={episodeEditing}
         alias={episodeAlias}
         slots={episodeSlots}
+        schedule={episodeSchedule}
+        scheduleLoading={episodeScheduleLoading}
+        scheduleError={episodeScheduleError}
+        slotLimitErrors={episodeSlotLimitErrors}
         onAliasChange={setEpisodeAlias}
         onToggleSlot={toggleEpisodeSlot}
         onOpenChange={(open) => {
-          if (!open) setEpisodeEditing(null);
+          if (!open) {
+            episodeRequestIdRef.current += 1;
+            setEpisodeEditing(null);
+          }
         }}
+        onRetrySchedule={() => episodeEditing && void loadEpisodeSchedule(episodeEditing)}
         saving={episodeSaving}
         onSave={() => void saveEpisode()}
       />
@@ -514,9 +606,14 @@ interface MedicationEpisodeSheetProps {
   overview: MedicationOverview | null;
   alias: string;
   slots: Record<number, MealSlot[]>;
+  schedule: MedicationSchedule | null;
+  scheduleLoading: boolean;
+  scheduleError: string | null;
+  slotLimitErrors: Record<number, boolean>;
   onAliasChange: (value: string) => void;
   onToggleSlot: (medicationId: number, slot: MealSlot) => void;
   onOpenChange: (open: boolean) => void;
+  onRetrySchedule: () => void;
   saving: boolean;
   onSave: () => void;
 }
@@ -525,13 +622,19 @@ function MedicationEpisodeSheet({
   overview,
   alias,
   slots,
+  schedule,
+  scheduleLoading,
+  scheduleError,
+  slotLimitErrors,
   onAliasChange,
   onToggleSlot,
   onOpenChange,
+  onRetrySchedule,
   saving,
   onSave,
 }: MedicationEpisodeSheetProps) {
   const readOnly = overview?.isFinished ?? false;
+  const canSave = overview ? hasValidEpisodeSchedule(overview, slots, schedule) : false;
   return (
     <Dialog open={overview !== null} onOpenChange={onOpenChange}>
       <DialogContent variant="sheet" className="max-h-[88dvh] overflow-y-auto">
@@ -595,9 +698,6 @@ function MedicationEpisodeSheet({
             </DialogHeader>
             {overview && (
               <div className="flex min-w-0 flex-col gap-4">
-                <span className="self-start rounded-pill bg-primary-bg px-3 py-1.5 text-sm font-bold text-primary-strong">
-                  복용 중
-                </span>
                 <Input
                   label="복약 별칭"
                   aria-label="복약 별칭"
@@ -614,49 +714,103 @@ function MedicationEpisodeSheet({
                     {alias}
                   </p>
                 )}
-                <div className="flex flex-col gap-3">
-                  {overview.medications.map((medication) => (
-                    <div
-                      key={medication.medicationId}
-                      className="rounded-card border border-border bg-card p-3"
+                {scheduleLoading && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    처방 복용 횟수를 확인하고 있어요.
+                  </p>
+                )}
+                {scheduleError && (
+                  <div
+                    role="alert"
+                    className="rounded-control bg-danger-bg p-3 text-sm text-danger-strong"
+                  >
+                    <p>{scheduleError}</p>
+                    <button
+                      type="button"
+                      className="mt-2 min-h-touch font-bold underline underline-offset-2"
+                      onClick={onRetrySchedule}
                     >
-                      <p className="[overflow-wrap:anywhere] font-bold text-foreground">
-                        {medication.name}{' '}
-                        <span className="font-normal text-muted-foreground">{medication.dose}</span>
-                      </p>
-                      {medication.asNeeded ? (
-                        <p className="mt-2 text-sm text-muted-foreground">필요할 때만 · 알림 없음</p>
-                      ) : (
-                        <div className="mt-3 grid grid-cols-4 gap-2">
-                          {MEAL_SLOTS.map((slot) => {
-                            const selected = (slots[medication.medicationId] ?? []).includes(slot.value);
-                            return (
-                              <button
-                                key={slot.value}
-                                type="button"
-                                aria-pressed={selected}
-                                aria-label={`${medication.name} ${slot.label}`}
-                                onClick={() => onToggleSlot(medication.medicationId, slot.value)}
-                                className={cn(
-                                  'min-h-touch rounded-input border text-sm',
-                                  selected
-                                    ? 'border-primary bg-primary font-bold text-card'
-                                    : 'border-border bg-card text-muted-foreground',
-                                )}
-                              >
-                                {slot.short}
-                              </button>
-                            );
-                          })}
+                      다시 시도
+                    </button>
+                  </div>
+                )}
+                <div className="flex flex-col gap-3">
+                  {overview.medications.map((medication) => {
+                    const timesPerDay = medicationFrequency(schedule, medication.medicationId);
+                    const selectedCount = (slots[medication.medicationId] ?? []).length;
+                    const showLimitError =
+                      typeof timesPerDay === 'number' &&
+                      (slotLimitErrors[medication.medicationId] || selectedCount > timesPerDay);
+                    return (
+                      <div
+                        key={medication.medicationId}
+                        className="rounded-card border border-border bg-card p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 [overflow-wrap:anywhere] font-bold text-foreground">
+                            {medication.name}{' '}
+                            <span className="font-normal text-muted-foreground">{medication.dose}</span>
+                          </p>
+                          {!medication.asNeeded && typeof timesPerDay === 'number' && (
+                            <span className="shrink-0 text-sm font-bold text-primary-strong">
+                              하루 {timesPerDay}회
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        {medication.asNeeded ? (
+                          <p className="mt-2 text-sm text-muted-foreground">필요할 때만 · 알림 없음</p>
+                        ) : (
+                          <>
+                            <div className="mt-3 grid grid-cols-4 gap-2">
+                              {MEAL_SLOTS.map((slot) => {
+                                const selected = (slots[medication.medicationId] ?? []).includes(slot.value);
+                                return (
+                                  <button
+                                    key={slot.value}
+                                    type="button"
+                                    aria-pressed={selected}
+                                    aria-label={`${medication.name} ${slot.label}`}
+                                    aria-describedby={
+                                      showLimitError
+                                        ? `episode-slot-limit-${medication.medicationId}`
+                                        : undefined
+                                    }
+                                    disabled={scheduleLoading || Boolean(scheduleError) || !schedule}
+                                    onClick={() => onToggleSlot(medication.medicationId, slot.value)}
+                                    className={cn(
+                                      'min-h-touch rounded-input border text-sm',
+                                      selected
+                                        ? 'border-primary bg-primary font-bold text-card'
+                                        : 'border-border bg-card text-muted-foreground',
+                                    )}
+                                  >
+                                    {slot.short}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {showLimitError && (
+                              <p
+                                id={`episode-slot-limit-${medication.medicationId}`}
+                                role="alert"
+                                className="mt-3 text-sm text-danger-strong"
+                              >
+                                하루 {timesPerDay}회만 선택할 수 있어요. 선택한 시간을 취소한 뒤 다른 시간을 선택해주세요.
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
             <DialogFooter>
-              <Button disabled={saving} onClick={onSave}>
+              <Button
+                disabled={saving || scheduleLoading || Boolean(scheduleError) || !canSave}
+                onClick={onSave}
+              >
                 {saving ? '저장 중...' : '저장'}
               </Button>
             </DialogFooter>

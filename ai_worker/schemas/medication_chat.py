@@ -357,6 +357,11 @@ class MedicationGuideLookup(BaseModel):
     candidate_names: list[str] = Field(default_factory=list)
 
 
+class InteractionRuleSourceReference(BaseModel):
+    title: str = Field(min_length=1)
+    url: str | None = None
+
+
 class InteractionRuleFact(BaseModel):
     interaction_rule_id: int = Field(ge=1)
     pair_key: str = Field(min_length=1)
@@ -367,6 +372,7 @@ class InteractionRuleFact(BaseModel):
     effect_texts: list[str] = Field(min_length=1)
     source_titles: list[str] = Field(default_factory=list)
     source_urls: list[str] = Field(default_factory=list)
+    source_references: list[InteractionRuleSourceReference] = Field(default_factory=list)
     evidence_chunk_ids: list[str] = Field(default_factory=list)
 
 

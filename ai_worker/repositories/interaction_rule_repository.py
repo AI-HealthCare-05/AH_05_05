@@ -2,6 +2,7 @@ from ai_worker.schemas.interaction import normalize_interaction_name
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
     InteractionRuleFact,
+    InteractionRuleSourceReference,
 )
 from app.models.enums import InteractionReviewStatus
 from app.models.interactions import (
@@ -104,6 +105,13 @@ class DbInteractionRuleRepository:
         effect_texts = list(dict.fromkeys(source.raw_effect_text for source in sources))
         source_titles = list(dict.fromkeys(source.document_id for source in sources))
         source_urls = list(dict.fromkeys(source.source_url for source in sources if source.source_url))
+        source_references = [
+            InteractionRuleSourceReference(
+                title=source.document_id,
+                url=source.source_url,
+            )
+            for source in sources
+        ]
         evidence_chunk_ids = list(
             dict.fromkeys(chunk.vector_chunk_id for source in sources for chunk in source.evidence_chunks)
         )
@@ -117,5 +125,6 @@ class DbInteractionRuleRepository:
             effect_texts=effect_texts,
             source_titles=source_titles,
             source_urls=source_urls,
+            source_references=source_references,
             evidence_chunk_ids=evidence_chunk_ids,
         )

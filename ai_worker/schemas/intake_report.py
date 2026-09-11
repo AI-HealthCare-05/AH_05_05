@@ -1,7 +1,12 @@
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from ai_worker.schemas.intake_report_cards import IntakeReportCards
+from ai_worker.schemas.knowledge import RetrievedKnowledgeChunk
+from ai_worker.schemas.medication_chat import MedicationGuideFact
 
 
 class IntakeReportStatus(StrEnum):
@@ -100,6 +105,12 @@ class IntakeReportNutrientTotal(BaseModel):
     daily_total: str = Field(min_length=1)
     included_product_names: list[str] = Field(default_factory=list)
     calculation_status: str = Field(min_length=1)
+    amount: str | None = None
+    unit: str | None = None
+    reference_value: str | None = None
+    reference_kind: Literal["RNI", "AI"] | None = None
+    reference_percent: str | None = None
+    unknown_product_names: list[str] = Field(default_factory=list)
 
 
 class IntakeReportChartData(BaseModel):
@@ -146,12 +157,20 @@ class IntakeReportDraft(BaseModel):
     unverified_items: list[IntakeReportUnverifiedItem] = Field(default_factory=list)
     sources: list[IntakeReportSource] = Field(default_factory=list)
     deterministic_markdown: str = Field(min_length=1)
+    guide_evidence: list[MedicationGuideFact] = Field(default_factory=list)
+    guide_item_bindings: dict[int, int] = Field(default_factory=dict)
+    knowledge_evidence: list[RetrievedKnowledgeChunk] = Field(default_factory=list)
+    profile_label: str | None = None
+    basis_note: str | None = None
 
     def to_result(
         self,
         *,
         status: IntakeReportStatus,
         report_markdown: str,
+        cards: IntakeReportCards | None = None,
+        fallback_used: bool = False,
+        fallback_reason: IntakeReportFallbackReason | None = None,
     ) -> "IntakeReportResult":
         return IntakeReportResult(
             status=status,
@@ -165,6 +184,12 @@ class IntakeReportDraft(BaseModel):
             product_guides=self.product_guides,
             unverified_items=self.unverified_items,
             report_markdown=report_markdown,
+            presentation_version="ai-report-v11" if cards is not None else "ai-report-v2",
+            cards=cards,
+            profile_label=self.profile_label,
+            basis_note=self.basis_note,
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
         )
 
 
@@ -180,6 +205,7 @@ class IntakeReportGenerationOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     report_markdown: str = Field(min_length=1)
+    cards: IntakeReportCards | None = None
     fallback_used: bool
     fallback_reason: IntakeReportFallbackReason | None = None
 
@@ -198,6 +224,12 @@ class IntakeReportResult(BaseModel):
     product_guides: list[IntakeReportProductGuide] = Field(default_factory=list)
     unverified_items: list[IntakeReportUnverifiedItem] = Field(default_factory=list)
     report_markdown: str = Field(min_length=1)
+    presentation_version: Literal["ai-report-v2", "ai-report-v11"] | None = None
+    cards: IntakeReportCards | None = None
+    profile_label: str | None = None
+    basis_note: str | None = None
+    fallback_used: bool = False
+    fallback_reason: IntakeReportFallbackReason | None = None
 
     @classmethod
     def empty(cls, *, user_id: int) -> "IntakeReportResult":

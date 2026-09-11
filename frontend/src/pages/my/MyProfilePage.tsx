@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -131,7 +131,7 @@ export function MyProfilePage({
         title={<span aria-label="기본정보 수정">기본정보</span>}
         onBack={() => navigate(-1)}
       />
-      <main className="flex flex-1 flex-col overflow-y-auto px-page-x pb-3 pt-8">
+      <main className="rx-reading-content flex flex-1 flex-col overflow-y-auto px-page-x pb-3 pt-8">
         {loadError ? (
           <Card title="기본정보를 불러오지 못했어요">{loadError}</Card>
         ) : !profile ? (
@@ -193,7 +193,7 @@ export function MyProfilePage({
                 onClick={() => setPasswordSheetOpen(true)}
               >
                 <span>비밀번호 변경</span>
-                <ChevronRight aria-hidden className="size-5 text-muted-foreground" />
+                <DrawnChevron direction="right" className="size-5 text-muted-foreground" />
               </button>
               <Button
                 type="submit"

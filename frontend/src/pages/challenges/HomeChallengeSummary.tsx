@@ -1,167 +1,173 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router';
 import { useSession } from '@/app/SessionContext';
-import { getChallengeParticipations, type ChallengeParticipation } from '@/entities/challenge';
+import { getChallengeParticipations, submitChallengeVerification, type ChallengeParticipation } from '@/entities/challenge';
+import { getCustomChallengeParticipations, customChallengeDayProgress, subscribeCustomChallengeProgressInvalidation, type CustomChallengeParticipation } from '@/entities/custom-challenge';
 import { useChallengeMock } from '@/features/challenges';
+import { getAuthGeneration } from '@/shared/api/client';
+import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
-import { inclusiveChallengeEndDate } from './officialChallengeDates';
+import { TodayChallengeCarousel, type TodayChallengeCard } from './TodayChallengeCarousel';
+import '@/shared/ui/home-clay.css';
 
-function compactDate(value: string) {
-  const [, month, day] = value.split('-');
-  return `${Number(month)}.${Number(day)}`;
+const koreaDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' });
+const loadOfficial = () => getChallengeParticipations().then(result => result.items);
+const loadCustom = () => getCustomChallengeParticipations().then(result => result.items);
+function rate(value: number | string, target: number) {
+  const parsed = Number(value);
+  return target > 0 && Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0;
 }
 
-function ChallengeRowTitle({ title, official }: { title: string; official: boolean }) {
-  return (
-    <span className="flex items-start gap-2 text-xs font-bold text-foreground">
-      <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
-      <span className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-micro text-primary">
-        {official ? '공식' : '맞춤'}
-      </span>
-      <span aria-hidden className="ml-auto shrink-0 text-base leading-none text-tertiary-foreground">›</span>
-    </span>
-  );
+/** Keep the last successful list while refreshing; the parent key isolates accounts. */
+function useSummaryList<T>(load: () => Promise<T[]>, principal: string | null, fallback: string) {
+  const [items, setItems] = useState<T[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const generation = useRef(0);
+  useEffect(() => {
+    const requestGeneration = ++generation.current;
+    const auth = getAuthGeneration();
+    let active = true;
+    const current = () => active && generation.current === requestGeneration && auth === getAuthGeneration();
+    setError(null);
+    load().then(result => { if (current()) setItems(result); })
+      .catch((reason: unknown) => { if (current()) setError(reason instanceof Error ? reason.message : fallback); });
+    return () => { active = false; };
+  }, [load, principal, fallback, reloadKey]);
+  return { items, error, reload: () => setReloadKey(key => key + 1) };
 }
 
 export function HomeChallengeSummary({ empty = false }: { empty?: boolean }) {
   const location = useLocation();
+  const { principalKey } = useSession();
   return location.pathname.startsWith('/dev/')
     ? <MockHomeChallengeSummary empty={empty} />
-    : <OfficialHomeChallengeSummary />;
+    : <OfficialHomeChallengeSummary key={principalKey ?? 'guest'} principal={principalKey} />;
 }
 
-function MockHomeChallengeSummary({ empty = false }: { empty?: boolean }) {
-  const { participations, medicationEpisodes } = useChallengeMock();
-  const location = useLocation();
-  const base = location.pathname.startsWith('/dev/') ? '/dev/challenges' : '/challenges';
-  const allActive = empty ? [] : participations.filter((item) => item.status === 'active');
-  const medication = empty ? [] : participations.filter((item) =>
-    item.kind === 'medication' && medicationEpisodes.some((episode) => episode.id === item.episodeId),
-  );
-  const active = allActive.filter((item) =>
-    item.kind !== 'medication' || medicationEpisodes.some((episode) => episode.id === item.episodeId),
-  );
-
-  return (
-    <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">
-            챌린지
-          </h2>
-          <span className="rounded-pill bg-muted-bg px-2 py-1 text-micro text-muted-foreground">
-            예시 데이터
-          </span>
-        </div>
-        <Link to={base} className="min-h-touch py-3 text-caption font-bold text-primary">
-          전체 보기
-        </Link>
-      </div>
-      <div className="flex flex-col gap-3 rounded-card bg-card px-4 py-3 shadow-card">
-        {medication.length ? (
-          <div className="space-y-1 border-b border-border pb-3">
-            <h3 className="text-sm font-bold">복약 챌린지 · 처방별 진행</h3>
-            <p className="text-xs text-muted-foreground">진행 중 {medication.filter((item) => item.status === 'active').length}개 · 달성 {medication.filter((item) => item.status === 'achieved').length}개</p>
-          </div>
-        ) : null}
-        {active.length === 0 ? (
-          <>
-            <p className="text-sm font-bold text-foreground">참여 중인 챌린지가 없어요</p>
-            <Link
-              to={`${base}/tailored`}
-              className="flex min-h-touch items-center justify-center rounded-input bg-primary-bg text-sm font-bold text-primary"
-            >
-              맞춤 챌린지 보기 ›
-            </Link>
-          </>
-        ) : (
-          active.map((participation) => {
-            const title =
-              participation.kind === 'supplement'
-                ? `${participation.title} 챌린지`
-                : participation.title;
-            return <Link
-              key={participation.id}
-              to={`${base}/participations/${participation.id}`}
-              aria-label={`${title}, ${participation.percent}% 달성, 상세 보기`}
-              className="group flex min-h-12 flex-col gap-1"
-            >
-              <ChallengeRowTitle title={title} official={participation.kind === 'official'} />
-              <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span className="tnum">
-                  {compactDate(participation.startDate)} ~ {compactDate(participation.endDate)}
-                </span>
-                <span>{participation.percent}% {participation.status === 'achieved' ? '달성 · 배지 획득' : '달성했어요'}</span>
-              </span>
-              <span className="h-2 overflow-hidden rounded-pill bg-border" aria-hidden>
-                <span
-                  className="block h-full rounded-pill bg-primary"
-                  style={{ width: `${Math.max(0, Math.min(100, participation.percent))}%` }}
-                />
-              </span>
-            </Link>;
-          })
-        )}
-      </div>
-    </section>
-  );
-}
-
-function progressLabel(value: number | string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? String(parsed) : '0';
-}
-
-function OfficialHomeChallengeSummary() {
-  const { principalKey } = useSession();
-  const [participations, setParticipations] = useState<ChallengeParticipation[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    setParticipations(null);
-    setError(null);
-    getChallengeParticipations()
-      .then(result => {
-        if (active) setParticipations(result.items);
-      })
-      .catch((reason: unknown) => {
-        if (active) setError(reason instanceof Error ? reason.message : '챌린지를 불러오지 못했어요.');
-      });
-    return () => {
-      active = false;
-    };
-  }, [principalKey, reloadKey]);
-
-  const active = participations?.filter(item => item.status === 'ACTIVE') ?? [];
-
-  return (
-    <section aria-labelledby="home-challenge-title" className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
+function SummaryFrame({ children, base = '/challenges', mock = false }: { children: ReactNode; base?: string; mock?: boolean }) {
+  return <section aria-labelledby="home-challenge-title" className="rx-home-challenges flex min-w-0 flex-col gap-3">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
         <h2 id="home-challenge-title" className="text-lg font-bold text-foreground">챌린지</h2>
-        <Link to="/challenges" className="min-h-touch py-3 text-caption font-bold text-primary">전체 보기</Link>
+        {mock && <span className="rounded-pill bg-muted-bg px-2 py-1 text-micro text-muted-foreground">예시 데이터</span>}
       </div>
-      <div className="flex flex-col gap-3 rounded-card bg-card px-4 py-3 shadow-card">
-        {participations === null && !error ? <div role="status" aria-label="챌린지 요약 불러오는 중" className="min-h-20 animate-pulse rounded-input bg-muted-bg" /> : null}
-        {error ? (
-          <div role="alert" className="flex flex-col gap-2"><p className="text-sm text-muted-foreground">{error}</p><Button variant="secondary" className="h-11 min-h-11" onClick={() => setReloadKey(key => key + 1)}>다시 불러오기</Button></div>
-        ) : null}
-        {participations !== null && !error && active.length === 0 ? (
-          <><p className="text-sm font-bold text-foreground">참여 중인 챌린지가 없어요</p><Link to="/challenges/browse" className="flex min-h-touch items-center justify-center rounded-input bg-primary-bg text-sm font-bold text-primary">공식 챌린지 둘러보기 ›</Link></>
-        ) : null}
-        {active.map(item => {
-          const rate = progressLabel(item.progress_rate);
-          const endDate = inclusiveChallengeEndDate(item.end_at);
-          return (
-            <Link key={item.id} to={`/challenges/participations/${item.id}`} aria-label={`${item.challenge_name}, ${rate}% 달성, 상세 보기`} className="group flex min-h-12 flex-col gap-1">
-              <ChallengeRowTitle title={item.challenge_name} official />
-              <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="tnum">{compactDate(item.started_at.slice(0, 10))} ~ {compactDate(endDate)}</span><span>{rate}% 달성했어요</span></span>
-              <span className="h-2 overflow-hidden rounded-pill bg-border" aria-hidden><span className="block h-full rounded-pill bg-primary" style={{ width: `${Math.min(100, Math.max(0, Number(item.progress_rate) || 0))}%` }} /></span>
-            </Link>
-          );
-        })}
-      </div>
-    </section>
-  );
+      <Link to={base} className="min-h-touch py-3 text-caption font-bold text-primary">전체 보기</Link>
+    </div>
+    <div className="rx-challenge-card min-w-0 rounded-card bg-card p-4 shadow-card">{children}</div>
+  </section>;
+}
+
+function MockHomeChallengeSummary({ empty }: { empty: boolean }) {
+  const { participations, medicationEpisodes, badges, demoToday, checkIn } = useChallengeMock();
+  const items: TodayChallengeCard[] = (empty ? [] : participations).filter(item =>
+    (item.status === 'active' || item.status === 'achieved') && item.startDate <= demoToday && item.endDate >= demoToday
+    && (item.kind !== 'medication' || medicationEpisodes.some(episode => episode.id === item.episodeId)),
+  ).map(item => {
+    const badge = badges.find(b => b.id === item.badgeId);
+    return { id: item.id, title: item.title, href: '/dev/challenges/participations/' + item.id, official: item.kind === 'official',
+      image: badge?.imageUrl ?? '/images/challenges/badge-medication.png', badgeName: badge?.name ?? '챌린지 배지',
+      progress: item.percent + '% 진행 중', rate: rate(item.percent, item.target), completed: item.todayCompleted,
+      onCheckIn: item.kind === 'official' && item.status === 'active' ? () => checkIn(item.id) : undefined };
+  });
+  return <SummaryFrame base="/dev/challenges" mock>{items.length ? <TodayChallengeCarousel items={items} /> : <p className="py-4 text-sm text-muted-foreground">오늘 남은 챌린지가 없어요</p>}</SummaryFrame>;
+}
+
+function OfficialHomeChallengeSummary({ principal }: { principal: string | null }) {
+  const official = useSummaryList<ChallengeParticipation>(loadOfficial, principal, '공식 챌린지를 불러오지 못했어요.');
+  const custom = useSummaryList<CustomChallengeParticipation>(loadCustom, principal, '맞춤 챌린지를 불러오지 못했어요.');
+  const [today, setToday] = useState(() => koreaDate.format(new Date()));
+  const reloadCustom = useRef(custom.reload);
+  const reloadOfficial = useRef(official.reload);
+  const dateRef = useRef(today);
+  const alive = useRef(true);
+  const pendingIds = useRef(new Set<number>());
+  const keys = useRef(new Map<string, string>());
+  const [pending, setPending] = useState<Record<number, boolean>>({});
+  const [confirmed, setConfirmed] = useState<Record<number, string>>({});
+  const [actionErrors, setActionErrors] = useState<Record<number, string>>({});
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  reloadCustom.current = custom.reload;
+  reloadOfficial.current = official.reload;
+  function syncCurrentDate() {
+    const next = koreaDate.format(new Date());
+    if (next !== dateRef.current) {
+      dateRef.current = next;
+      setToday(next);
+      reloadOfficial.current();
+      reloadCustom.current();
+    }
+    return next;
+  }
+  useEffect(() => subscribeCustomChallengeProgressInvalidation(() => reloadCustom.current()), []);
+  useEffect(() => {
+    const update = () => { syncCurrentDate(); };
+    const timer = window.setInterval(update, 60_000);
+    document.addEventListener('visibilitychange', update);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
+  }, []);
+
+  async function checkIn(item: ChallengeParticipation) {
+    const date = syncCurrentDate();
+    if (pendingIds.current.has(item.id) || confirmed[item.id] === date || !item.can_verify
+      || item.status !== 'ACTIVE' || item.today !== date || item.challenge.check_type_code !== 'SELF') return;
+    const auth = getAuthGeneration();
+    const current = () => alive.current && auth === getAuthGeneration() && syncCurrentDate() === date;
+    const keyId = `${item.id}:${date}`;
+    const key = keys.current.get(keyId) ?? crypto.randomUUID();
+    keys.current.set(keyId, key);
+    pendingIds.current.add(item.id);
+    setPending(state => ({ ...state, [item.id]: true }));
+    setActionErrors(state => ({ ...state, [item.id]: '' }));
+    try {
+      const verification = await submitChallengeVerification(item.id, { verification_date: date, idempotency_key: key });
+      if (!current()) return;
+      if (verification.status === 'APPROVED' && verification.verification_date === date) {
+        setConfirmed(state => ({ ...state, [item.id]: date }));
+        keys.current.delete(keyId);
+      } else {
+        setActionErrors(state => ({ ...state, [item.id]: '인증 상태를 상세에서 확인해주세요.' }));
+      }
+      reloadOfficial.current();
+    } catch (reason) {
+      if (current()) setActionErrors(state => ({ ...state, [item.id]: reason instanceof Error ? reason.message : '저장하지 못했어요. 다시 눌러주세요.' }));
+    } finally {
+      pendingIds.current.delete(item.id);
+      if (alive.current && auth === getAuthGeneration()) setPending(state => ({ ...state, [item.id]: false }));
+    }
+  }
+
+  const officialDone = (item: ChallengeParticipation) => confirmed[item.id] === today || item.verified_dates.includes(today)
+    || (item.today_verification?.verification_date === today && item.today_verification.status === 'APPROVED');
+
+  const officialCards: TodayChallengeCard[] = (official.items ?? []).filter(item =>
+    (item.status === 'ACTIVE' || item.status === 'COMPLETED') && (item.can_verify || officialDone(item))
+    && koreaDate.format(new Date(item.started_at)) <= today && (Date.parse(item.end_at) > Date.now() || officialDone(item)),
+  ).map(item => ({ id: 'official-' + item.id, title: item.challenge_name, href: '/challenges/participations/' + item.id, official: true,
+    image: item.challenge.reward_badge?.image_path ? apiAssetUrl(item.challenge.reward_badge.image_path) : '/images/challenges/badge-walk.png',
+    badgeName: item.challenge.reward_badge?.name ?? '공식 챌린지 배지',
+    progress: rate(item.progress_rate, item.target_count) + '% 진행 중', rate: rate(item.progress_rate, item.target_count),
+    completed: officialDone(item), pending: pending[item.id], error: actionErrors[item.id],
+    onCheckIn: item.status === 'ACTIVE' && item.can_verify && item.today === today && item.challenge.check_type_code === 'SELF' ? () => void checkIn(item) : undefined }));
+  const customCards: TodayChallengeCard[] = (custom.items ?? []).filter(item =>
+    (item.status === 'ACTIVE' || item.status === 'COMPLETED') && item.occurrences.some(occurrence => occurrence.scheduledDate === today),
+  ).map(item => {
+    const days = customChallengeDayProgress(item);
+    const fallback = item.challengeType === 'SUPPLEMENT' ? 'supplement' : item.challengeType === 'VISIT' ? 'review' : 'medication';
+    return { id: 'custom-' + item.id, title: item.challengeName, href: '/challenges/custom-participations/' + item.id, official: false,
+      image: item.rewardBadge?.imagePath ? apiAssetUrl(item.rewardBadge.imagePath) : '/images/challenges/badge-' + fallback + '.png', badgeName: item.rewardBadge?.name ?? '맞춤 챌린지 배지',
+      progress: days.completed + ' / ' + days.target + '일', rate: rate(days.rate, days.target),
+      completed: item.occurrences.filter(occurrence => occurrence.scheduledDate === today).every(occurrence => occurrence.isCompleted) };
+  });
+  const items = [...officialCards, ...customCards];
+  const loading = (official.items === null && !official.error) || (custom.items === null && !custom.error);
+  return <SummaryFrame>
+    {items.length > 0 && <TodayChallengeCarousel items={items} />}
+    {loading && items.length === 0 && <div role="status" aria-label="오늘 챌린지 불러오는 중" className="flex min-h-[226px] items-center justify-center gap-2 text-caption text-muted-foreground"><span aria-hidden className="size-4 rounded-full border-2 border-primary-bg border-t-primary motion-safe:animate-spin" />오늘 챌린지를 확인하고 있어요</div>}
+    {!loading && !official.error && !custom.error && items.length === 0 && <p className="py-4 text-sm text-muted-foreground">오늘 남은 챌린지가 없어요</p>}
+    {([['공식 챌린지', official], ['맞춤 챌린지', custom]] as const).map(([label, state]) => state.error && <section key={label} aria-label={label} className="flex flex-col gap-2 py-2">
+      <p role="alert" className="text-sm text-muted-foreground">{state.error}</p>
+      <Button variant="secondary" className="h-11 min-h-11" onClick={state.reload}>다시 불러오기</Button>
+    </section>)}
+  </SummaryFrame>;
 }

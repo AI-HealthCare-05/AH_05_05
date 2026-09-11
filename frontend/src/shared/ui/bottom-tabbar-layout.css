@@ -1,0 +1,10 @@
+/* A minimum viewport height alone lets long content push navigation offscreen.
+   Bound existing tab shells, leaving their content as the scroll surface. */
+.min-h-dvh:has(> .rx-bottom-tabbar) {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.min-h-dvh:has(> .rx-bottom-tabbar) > main {
+  min-height: 0;
+}

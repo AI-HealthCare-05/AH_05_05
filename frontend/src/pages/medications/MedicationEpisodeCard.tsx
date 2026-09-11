@@ -1,7 +1,7 @@
-import { ChevronDown, Clock3 } from 'lucide-react';
+import { ChevronDown, Clock3, Pencil } from 'lucide-react';
 import type { MedicationOverview, MedicationOverviewItem } from '@/entities/medication';
 import { formatDateLabel, formatDatePeriod } from '@/shared/lib/dateLabel';
-import { SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
+import { SLOT_ORDER, mealSlotLabel, type MealSlot } from '@/shared/model/mealSlot';
 import { Checkbox } from '@/shared/ui';
 
 interface MedicationEpisodeCardProps {
@@ -12,10 +12,25 @@ interface MedicationEpisodeCardProps {
   onToggleExpanded: () => void;
   onToggleSelected: () => void;
   onEditMedication: (medication: MedicationOverviewItem) => void;
-  /** Feature #252 본 경로에서는 회차 전체를 바로 편집/열람합니다. */
+  /** 본 경로에서는 요약을 펼치고 연필로 회차 전체를 편집합니다. */
   feature252?: boolean;
   onOpenEpisode?: () => void;
 }
+
+const SLOT_CHIP_CLASSES: Record<MealSlot, string> = {
+  morning: 'bg-warning-bg text-warning-strong',
+  lunch: 'bg-primary-bg text-primary-strong',
+  evening: 'bg-warm-200 text-brand',
+  bedtime: 'bg-muted-bg text-muted-foreground',
+};
+
+// Midpoint between the original pastel chips and their strong legend text colors.
+const SLOT_DOT_CLASSES: Record<MealSlot, string> = {
+  morning: 'bg-[color-mix(in_srgb,var(--color-warning-strong)_50%,var(--color-warning-bg))]',
+  lunch: 'bg-[color-mix(in_srgb,var(--color-primary-strong)_50%,var(--color-primary-bg))]',
+  evening: 'bg-[color-mix(in_srgb,var(--color-brand)_50%,var(--color-warm-200))]',
+  bedtime: 'bg-[color-mix(in_srgb,var(--color-muted-foreground)_50%,var(--color-muted-bg))]',
+};
 
 export function MedicationEpisodeCard({
   overview,
@@ -32,14 +47,9 @@ export function MedicationEpisodeCard({
   const panelId = `medication-episode-${overview.recordId}`;
   const statusLabel = overview.isFinished ? '복용 완료' : '복용 중';
   const dDay = overview.daysRemaining <= 1 ? 'D-Day' : `D-${overview.daysRemaining - 1}`;
-  const medicineSummary = overview.medications
-    .map((medication) => `${medication.name} ${medication.dose}`)
-    .join(' · ');
-  const timeSummary = SLOT_ORDER.filter((slot) =>
-    overview.medications.some((medication) => medication.slots.includes(slot)),
-  )
-    .map((slot) => `${mealSlotLabel(slot)} ${overview.mealTimes[slot]}`)
-    .join(' · ');
+  const scheduledSlots = SLOT_ORDER.filter((slot) =>
+    overview.medications.some((medication) => !medication.asNeeded && medication.slots.includes(slot)),
+  );
 
   return (
     <article className="rounded-card bg-card shadow-card">
@@ -53,56 +63,71 @@ export function MedicationEpisodeCard({
             />
           </label>
         )}
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={panelId}
-          aria-label={`${dateLabel} 처방 · 약 ${overview.medications.length}개 · ${statusLabel}`}
-          className="flex min-h-24 min-w-0 flex-1 items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          onClick={selectionMode ? onToggleSelected : (onOpenEpisode ?? onToggleExpanded)}
-        >
-          <span className="min-w-0 flex-1">
-            <span className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
-              <span
-                className={`shrink-0 rounded-pill px-2.5 py-1 text-xs font-bold ${
-                  overview.isFinished
-                    ? 'bg-muted-bg text-muted-foreground'
-                    : 'bg-primary-bg text-primary-strong'
-                }`}
-              >
-                {statusLabel}
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={panelId}
+            aria-label={`${dateLabel} 처방 · 약 ${overview.medications.length}개 · ${statusLabel}`}
+            className={`flex min-h-24 w-full min-w-0 items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${feature252 ? 'pb-0' : ''}`}
+            onClick={selectionMode ? onToggleSelected : onToggleExpanded}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+                <span
+                  className={`shrink-0 rounded-pill px-2.5 py-1 text-xs font-bold ${
+                    overview.isFinished
+                      ? 'bg-muted-bg text-muted-foreground'
+                      : 'bg-primary-bg text-primary-strong'
+                  }`}
+                >
+                  {statusLabel}
+                </span>
+                {!overview.isFinished && (
+                  <span className="text-xs font-bold text-primary-strong tnum">
+                    {feature252 ? `${Math.max(0, overview.daysRemaining)}일 남음` : dDay}
+                  </span>
+                )}
               </span>
-              {!overview.isFinished && (
-                <span className="text-xs font-bold text-primary-strong tnum">
-                  {feature252 ? `${Math.max(0, overview.daysRemaining)}일 남음` : dDay}
-                </span>
+              <strong className="block [overflow-wrap:anywhere] text-lg text-foreground">
+                {feature252 && overview.alias?.trim() ? overview.alias : `${dateLabel} 처방`}
+              </strong>
+              <span className="mt-1 block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
+                {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })}
+                {!feature252 && ` · 약 ${overview.medications.length}개`}
+              </span>
+            </span>
+            <span className="flex min-w-touch shrink-0 items-center justify-center">
+            <ChevronDown
+              aria-hidden
+              className={`size-5 shrink-0 text-disabled-foreground transition-transform motion-reduce:transition-none ${
+                expanded ? 'rotate-180' : ''
+              }`}
+            />
+            </span>
+          </button>
+          {feature252 && (
+            <div className="mt-3 flex min-w-0 items-start gap-2 px-4 pb-3">
+              <div className="flex min-h-touch min-w-0 flex-1 flex-wrap content-start gap-2 py-2">
+                {scheduledSlots.map((slot) => (
+                  <span key={slot} className={`rounded-pill px-2.5 py-1 text-xs font-bold ${SLOT_CHIP_CLASSES[slot]}`}>
+                    {mealSlotLabel(slot)}
+                  </span>
+                ))}
+              </div>
+              {!selectionMode && !overview.isFinished && onOpenEpisode && (
+                <button
+                  type="button"
+                  aria-label={`처방 수정 · ${dateLabel}`}
+                  className="flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-control text-primary-strong hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={onOpenEpisode}
+                >
+                  <Pencil aria-hidden className="size-4" />
+                </button>
               )}
-            </span>
-            <strong className="block [overflow-wrap:anywhere] text-lg text-foreground">
-              {feature252 && overview.alias ? overview.alias : `${dateLabel} 처방`}
-            </strong>
-            {feature252 && (
-              <>
-                <span className="mt-1 block [overflow-wrap:anywhere] text-sm text-foreground">
-                  {medicineSummary}
-                </span>
-                <span className="mt-1 block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
-                  {timeSummary || '필요 시 복용'}
-                </span>
-              </>
-            )}
-            <span className="mt-1 block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
-              {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })} · 약{' '}
-              {overview.medications.length}개
-            </span>
-          </span>
-          <ChevronDown
-            aria-hidden
-            className={`size-5 shrink-0 text-disabled-foreground transition-transform motion-reduce:transition-none ${
-              expanded ? 'rotate-180' : ''
-            }`}
-          />
-        </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {expanded && (
@@ -114,11 +139,10 @@ export function MedicationEpisodeCard({
         >
           <ul className="divide-y divide-border" aria-label={`${dateLabel} 처방 약 목록`}>
             {overview.medications.map((medication) => (
-              <li key={medication.medicationId} className="flex min-w-0 items-start gap-3 py-4">
+              <li key={medication.medicationId} className="flex min-w-0 items-start gap-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="[overflow-wrap:anywhere] font-bold text-foreground">
-                    {medication.name}{' '}
-                    <span className="font-normal text-muted-foreground">{medication.dose}</span>
+                    {medication.name}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {medication.asNeeded ? (
@@ -129,9 +153,12 @@ export function MedicationEpisodeCard({
                       medication.slots.map((slot) => (
                         <span
                           key={slot}
-                          className="rounded-pill bg-muted-bg px-3 py-1 text-sm text-muted-foreground"
+                          role={feature252 ? 'img' : undefined}
+                          aria-label={feature252 ? mealSlotLabel(slot) : undefined}
+                          title={feature252 ? mealSlotLabel(slot) : undefined}
+                          className={feature252 ? `size-3.5 shrink-0 rounded-full ${SLOT_DOT_CLASSES[slot]}` : 'rounded-pill px-3 py-1 text-sm bg-muted-bg text-muted-foreground'}
                         >
-                          {mealSlotLabel(slot)}
+                          {!feature252 && mealSlotLabel(slot)}
                         </span>
                       ))
                     )}
@@ -142,7 +169,7 @@ export function MedicationEpisodeCard({
                     )}
                   </div>
                 </div>
-                {!overview.isFinished && !medication.asNeeded && (
+                {!feature252 && !selectionMode && !overview.isFinished && !medication.asNeeded && (
                   <button
                     type="button"
                     aria-label={`${medication.name} ${medication.dose} 복용 시간 수정`}

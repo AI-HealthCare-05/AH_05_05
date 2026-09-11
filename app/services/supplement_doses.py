@@ -9,11 +9,15 @@ from app.models.enums import MealSlot, SupplementStatus
 from app.models.supplement_nutrients import SupplementDose, UserSupplementNutrientSlot
 from app.models.users import User
 from app.repositories.user_supplement_nutrient_repository import UserSupplementNutrientRepository
+from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
 
 SLOT_ORDER = {slot: index for index, slot in enumerate(MealSlot)}
 
 
 class SupplementDoseService:
+    def __init__(self, lifecycle: CustomChallengeLifecycleService | None = None) -> None:
+        self._lifecycle = lifecycle or CustomChallengeLifecycleService()
+
     @staticmethod
     def validate_date(dose_date: date) -> None:
         today = datetime.now(config.TIMEZONE).date()
@@ -36,6 +40,9 @@ class SupplementDoseService:
 
     async def save(self, user: User, data: SupplementDoseRequest) -> SupplementDoseResponse:
         async with in_transaction() as connection:
+            locked_user = await User.filter(id=user.id).using_db(connection).select_for_update().first()
+            if locked_user is None:
+                raise HTTPException(status_code=404, detail="사용자를 찾지 못했어요.")
             # Lock the registration so concurrent save/undo and registration edits serialize.
             registration = await UserSupplementNutrientRepository().get_owned_for_update(
                 data.supplement_id,
@@ -44,6 +51,12 @@ class SupplementDoseService:
             )
             if registration is None:
                 raise HTTPException(status_code=404, detail="영양제를 찾지 못했어요.")
+            mutation_at = datetime.now(config.TIMEZONE)
+            await self._lifecycle.finalize_due_for_user(
+                user_id=user.id,
+                now=mutation_at,
+                connection=connection,
+            )
             self.validate_date(data.date)
             slot = MealSlot(data.slot.upper())
             key = {"registration_id": registration.id, "dose_date": data.date, "slot": slot}

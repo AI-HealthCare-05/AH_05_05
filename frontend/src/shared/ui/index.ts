@@ -30,6 +30,7 @@ export { ImageViewer } from './ImageViewer';
 export type { ImageViewerProps } from './ImageViewer';
 
 export { Header } from './Header';
+export { DrawnArrow, DrawnChevron } from './DrawnArrow';
 export type { HeaderProps } from './Header';
 
 export { TimePickerSheet } from './TimePickerSheet';

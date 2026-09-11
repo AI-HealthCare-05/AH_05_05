@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
+import { useSession } from '@/app/SessionContext';
+import { invalidateCustomChallengeProgress } from '@/entities/custom-challenge';
 import {
   getSupplementDoses, saveSupplementDose,
   type Supplement, type SupplementDoseRecord, type SupplementSlot,
 } from '@/entities/supplement';
+import { getAuthGeneration } from '@/shared/api/client';
 import { DEFAULT_MEAL_TIMES, SLOT_ORDER, mealSlotLabel } from '@/shared/model/mealSlot';
 import { Button, Card } from '@/shared/ui';
+import { LoadingState } from '@/shared/ui/LoadingState';
+import { TimeSlotNavigator } from './TimeSlotNavigator';
+import { DoseSelectionIndicator } from './DoseSelectionIndicator';
 
 interface Props {
   supplements: Supplement[];
@@ -64,19 +70,25 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
           </Button>
         </Card>
       ) : loading || records === null ? (
-        <p role="status" className="text-sm text-muted-foreground">영양제 복용 정보를 불러오는 중이에요.</p>
+        <LoadingState label="영양제 복용 정보 불러오는 중">
+          영양제 복용 정보를 불러오는 중이에요.
+        </LoadingState>
       ) : scheduled.length === 0 ? (
         <Card className="p-4"><p className="text-sm text-muted-foreground">오늘 먹을 영양제가 없어요.</p></Card>
       ) : primarySlot ? (
-          <SupplementSlotCard
-            key={`${date}:${primarySlot.slot}`}
-            date={date}
-            slot={primarySlot.slot}
-            time={primarySlot.time}
-            supplements={primarySlot.supplements}
-            records={records}
-            onSaved={updateRecord}
-          />
+        <TimeSlotNavigator key={date} items={supplementSlots} initialSlot={primarySlot.slot} label="영양제">
+          {(item) => (
+            <SupplementSlotCard
+              key={`${date}:${item.slot}`}
+              date={date}
+              slot={item.slot}
+              time={item.time}
+              supplements={item.supplements}
+              records={records}
+              onSaved={updateRecord}
+            />
+          )}
+        </TimeSlotNavigator>
       ) : null}
       <button type="button" className="min-h-touch self-end text-sm font-bold text-primary-strong" onClick={onBrowse}>
         영양제 살펴보기
@@ -111,13 +123,22 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
   const [failed, setFailed] = useState<SupplementDoseRecord[]>([]);
   const inFlight = useRef(false);
   const alive = useRef(true);
+  const { principalKey } = useSession();
+  const principalRef = useRef(principalKey);
+  const requestGenerationRef = useRef(0);
+  principalRef.current = principalKey;
   useEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
-  }, []);
+    requestGenerationRef.current += 1;
+    return () => {
+      alive.current = false;
+      requestGenerationRef.current += 1;
+    };
+  }, [principalKey]);
 
   const takenIds = new Set(records.filter(item => item.slot === slot && item.taken).map(item => item.supplementId));
   const remaining = supplements.filter(item => !takenIds.has(item.supplementId));
+  const allSupplementsTaken = supplements.length > 0 && remaining.length === 0;
   const undo = selected.length > 0 && takenIds.has(selected[0]);
   const selectedLabel = selected.length > 0
     ? `${selected.length}개 ${undo ? '되돌리기' : '먹었어요'}`
@@ -137,14 +158,26 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
     inFlight.current = true;
     setPending(true);
     setFailed([]);
+    const requestPrincipal = principalKey;
+    const authGeneration = getAuthGeneration();
+    const requestGeneration = requestGenerationRef.current;
+    const isCurrentRequest = () => (
+      alive.current
+      && principalRef.current === requestPrincipal
+      && requestGenerationRef.current === requestGeneration
+      && getAuthGeneration() === authGeneration
+    );
     const failures: SupplementDoseRecord[] = [];
+    let savedAny = false;
     await Promise.all(changes.map(async change => {
       try {
         const result = await saveSupplementDose(change);
-        if (alive.current) onSaved(result);
+        savedAny = true;
+        if (isCurrentRequest()) onSaved(result);
       } catch { failures.push(change); }
     }));
-    if (!alive.current) return;
+    if (!isCurrentRequest()) return;
+    if (savedAny) invalidateCustomChallengeProgress();
     setFailed(failures);
     setSelected(failures.map(item => item.supplementId));
     setPending(false);
@@ -154,9 +187,20 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
   return (
     <Card className="gap-2 p-4">
       <div role="group" aria-label={`${mealSlotLabel(slot, 'short')} 영양제`} className="flex flex-col gap-2">
-        <h3 className="text-base font-bold text-foreground">
-          {mealSlotLabel(slot, 'short')} {time}
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-bold text-foreground">
+            {mealSlotLabel(slot, 'short')} {time}
+          </h3>
+          {allSupplementsTaken && (
+            <span
+              data-supplement-completed-summary
+              aria-hidden="true"
+              className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-sm font-bold text-primary-strong"
+            >
+              복용 완료
+            </span>
+          )}
+        </div>
         <ul className="flex flex-col" aria-label={`${mealSlotLabel(slot, 'short')}에 먹을 영양제`}>
           {supplements.map(supplement => {
             const taken = takenIds.has(supplement.supplementId);
@@ -168,22 +212,12 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                   aria-label={`${supplement.name} ${taken ? '복용 완료' : '선택'}`}
                   aria-pressed={isSelected}
                   disabled={pending}
-                  className="flex min-h-touch w-full min-w-0 items-center gap-3 rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
+                  className="flex min-h-touch w-full min-w-0 items-center rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
                   onClick={() => toggle(supplement.supplementId)}
                 >
-                  <span
-                    data-supplement-selection-indicator
-                    aria-hidden
-                    className={`flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                      isSelected
-                        ? 'border-primary bg-primary text-card'
-                        : 'border-border bg-card text-transparent'
-                    }`}
-                  >
-                    {isSelected && <Check className="size-4" strokeWidth={3} />}
-                  </span>
+                  <DoseSelectionIndicator kind="supplement" selected={isSelected} />
                   <span className="flex min-w-0 flex-1 flex-col gap-1 py-1">
-                    {taken && (
+                    {taken && !allSupplementsTaken && (
                       <span
                         data-supplement-completed-badge
                         aria-hidden="true"
@@ -194,7 +228,7 @@ function SupplementSlotCard({ date, slot, time, supplements, records, onSaved }:
                     )}
                     <span className="[overflow-wrap:anywhere] text-base font-bold text-foreground">{supplement.name}</span>
                   </span>
-                  <span className="shrink-0 text-sm text-muted-foreground">
+                  <span className="ml-3 shrink-0 text-sm text-muted-foreground">
                     {supplement.doseAmount}{supplement.doseUnit}
                   </span>
                 </button>

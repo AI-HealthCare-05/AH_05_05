@@ -6,10 +6,17 @@ from app.models.supplement_nutrients import (
     UserSupplementNutrient,
     UserSupplementNutrientSlot,
 )
-from app.models.users import UserSettings
+from app.models.users import User, UserSettings
 
 
 class UserSupplementNutrientRepository:
+    async def get_user_for_update(
+        self,
+        user_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> User | None:
+        return await User.filter(id=user_id).using_db(connection).select_for_update().first()
+
     async def get_product(self, product_id: int) -> SupplementNutrient | None:
         return await SupplementNutrient.get_or_none(id=product_id)
 
@@ -71,6 +78,11 @@ class UserSupplementNutrientRepository:
         user_id: int,
         connection: BaseDBAsyncClient | None = None,
     ) -> UserSettings:
+        if connection is not None:
+            settings = await UserSettings.filter(user_id=user_id).using_db(connection).select_for_update().first()
+            if settings is None:
+                settings = await UserSettings.create(user_id=user_id, using_db=connection)
+            return settings
         settings, _ = await UserSettings.get_or_create(user_id=user_id, using_db=connection)
         return settings
 

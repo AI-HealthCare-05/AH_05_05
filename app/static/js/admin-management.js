@@ -286,6 +286,11 @@ export function populateAdminEditFields(panel, admin) {
   panel.querySelector("[name='role']").value = roleLabel(admin.role);
 }
 
+/** 목록 값은 마스킹되어 있으므로 수정 팝업에는 상세조회 API의 원본 값을 사용한다. */
+export async function loadAdminDetailForEdit(adminId, request = get) {
+  return request(`/admin/accounts/${adminId}`);
+}
+
 export function initializeAdminPasswordToggles(panel) {
   panel.querySelectorAll("[data-admin-password-toggle]").forEach((toggle) => {
     const input = panel.querySelector(`[name='${toggle.dataset.passwordTarget}']`);
@@ -321,7 +326,7 @@ async function resetTemporaryPassword(adminId, reloadList) {
         await reloadList();
         // 재설정 "링크"가 아니라 임시 비밀번호를 보낸다. 문구를 실제 동작에 맞춘다.
         if (result.emailJobStatus === "QUEUED") {
-          showToast(`${result.email}로 보낼 임시 비밀번호 이메일을 등록했습니다.`);
+          showToast(`${result.email}로 임시 비밀번호를 발송했습니다.`);
         } else {
           // 서버는 발송에 실패해도 되돌리지 않고 비밀번호를 이미 바꿔놨다(reset_password).
           showToast(RESET_MAIL_FAILED_MESSAGE, "error");
@@ -678,7 +683,13 @@ function initializeAdminManagement() {
 
     if (button.dataset.adminAction === "edit") {
       if (!admin) return;
-      await openEditOverlay(admin, { currentAdminId, currentRole }, load);
+      try {
+        const detail = await loadAdminDetailForEdit(adminId);
+        await openEditOverlay(detail, { currentAdminId, currentRole }, load);
+      } catch (error) {
+        const message = error instanceof ApiError ? error.message : "관리자 정보를 불러오지 못했습니다.";
+        showToast(message, "error");
+      }
     }
   });
 

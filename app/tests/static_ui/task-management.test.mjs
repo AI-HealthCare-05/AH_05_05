@@ -101,6 +101,13 @@ test("formatTaskError labels an expired Push subscription as deactivated", () =>
     formatTaskError({ errorCode: "PUSH_REJECTED", errorMessage: "provider rejected" }),
     "PUSH_REJECTED - provider rejected",
   );
+  assert.equal(
+    formatTaskError({
+      errorCode: "EMAIL_VERIFICATION_EXPIRED",
+      errorMessage: "EMAIL_VERIFICATION_EXPIRED",
+    }),
+    "EMAIL_VERIFICATION_EXPIRED",
+  );
 });
 
 test("getTaskPaginationState limits visible pages and clamps requested page", () => {

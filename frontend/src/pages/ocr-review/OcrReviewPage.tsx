@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import { AlertTriangle, ChevronRight, Plus } from 'lucide-react';
+import { AlertTriangle, Pencil, Plus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { formatMedicationDoseQuantity, formatMedicationLabel, formatMedicationStrength } from '@/shared/lib/medicationLabel';
@@ -611,13 +611,22 @@ export function OcrReviewPage() {
   const ocrFailed = result.ocrStatus === 'failed';
   // Keep legacy empty review results on the same recovery screen as failed jobs.
   const unreadableDocument = noMedicationsExtracted || ocrFailed;
+  const needsPhotoRecapture =
+    noMedicationsExtracted || (ocrFailed && result.errorCode === 'RECAPTURE_REQUIRED');
   if (unreadableDocument && !dismissedOcrFailure) {
     return (
-      <PageFrame title="다시 촬영해주세요" onBack={retakePhoto}>
+      <PageFrame
+        title={needsPhotoRecapture ? '다시 촬영해주세요' : '약 정보를 추출하지 못했어요'}
+        onBack={retakePhoto}
+      >
         <RegistrationProgress step={2} />
-        <Card tone="warning" title="약 정보를 추출하지 못했어요">
-          복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.
-          그림자와 빛 반사를 피하고, 글자가 선명한지 확인해주세요.
+        <Card
+          tone="warning"
+          title={needsPhotoRecapture ? '약 정보를 추출하지 못했어요' : '추출 중 문제가 생겼어요'}
+        >
+          {needsPhotoRecapture
+            ? '복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요. 그림자와 빛 반사를 피하고, 글자가 선명한지 확인해주세요.'
+            : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.'}
         </Card>
         <div className="mt-auto flex flex-col gap-2 pb-4">
           <Button onClick={retakePhoto} disabled={retaking || saving}>
@@ -629,8 +638,13 @@ export function OcrReviewPage() {
         </div>
         <ErrorDialog
           open
-          title="문서를 읽지 못했어요"
-          message={loadError ?? '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'}
+          title={needsPhotoRecapture ? '문서를 읽지 못했어요' : '약 정보를 확인하지 못했어요'}
+          message={
+            loadError ??
+            (needsPhotoRecapture
+              ? '약봉투에서 내용을 읽어내지 못했어요. 다시 촬영하거나 직접 입력할 수 있어요.'
+              : '약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.')
+          }
           retryLabel="다시 촬영"
           onRetry={retakePhoto}
           secondaryLabel="그대로 직접 입력"
@@ -685,7 +699,7 @@ export function OcrReviewPage() {
                   {reviewItemNames.length}곳만 확인해주세요
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  나머지는 잘 읽혔습니다. 아무 항목이나 눌러 고칠 수 있어요.
+                  나머지는 잘 읽혔습니다. 연필 아이콘을 눌러 약 정보를 고칠 수 있어요.
                 </p>
               </div>
             </div>
@@ -807,40 +821,14 @@ export function OcrReviewPage() {
             )}
           </div>
           {medications.map((medication) => (
-            <button
+            <OcrMedicationCard
               key={medication.tempId}
-              type="button"
-              disabled={confirmedReviewMode}
-              className="flex min-h-20 w-full items-center gap-3 rounded-card bg-card px-4 py-3 text-left shadow-card disabled:cursor-default"
-              onClick={() =>
+              medication={medication}
+              reviewed={reviewedMedicationIds.has(medication.tempId)}
+              onEdit={confirmedReviewMode ? undefined : () =>
                 setMedicationEditorTarget({ mode: 'edit', tempId: medication.tempId })
               }
-            >
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2">
-                  <strong className="text-lg text-foreground">
-                    {formatMedicationLabel(medication.name, medication.strength)}
-                  </strong>
-                  {medication.confidence === 'low' && !reviewedMedicationIds.has(medication.tempId) ? (
-                    <StatusBadge type="review">확인 필요</StatusBadge>
-                  ) : (
-                    <ConfidenceBadge
-                      confidence={
-                        reviewedMedicationIds.has(medication.tempId)
-                          ? undefined
-                          : medication.confidence
-                      }
-                    />
-                  )}
-                </span>
-                <span className="mt-1 block text-sm text-muted-foreground">
-                  {medicationSummary(medication)}
-                </span>
-              </span>
-              {!confirmedReviewMode && (
-                <ChevronRight aria-hidden className="size-5 shrink-0 text-disabled-foreground" />
-              )}
-            </button>
+            />
           ))}
         </section>
 
@@ -1085,7 +1073,16 @@ function PageFrame({ onBack, children, title = '저장 완료' }: { onBack: () =
   );
 }
 
-function medicationSummary(medication: EditableOcrMedication): string {
+function OcrMedicationCard({
+  medication,
+  reviewed,
+  onEdit,
+}: {
+  medication: EditableOcrMedication;
+  reviewed: boolean;
+  onEdit?: () => void;
+}) {
+  const name = formatMedicationLabel(medication.name, medication.strength);
   const strength = formatMedicationStrength(medication.strength) || '미추출';
   const doseQuantity = formatMedicationDoseQuantity(medication.doseQuantity) || '미추출';
   const frequency =
@@ -1095,5 +1092,47 @@ function medicationSummary(medication: EditableOcrMedication): string {
         ? '필요 시'
         : `${medication.timesPerDay}회`;
   const days = medication.days === undefined ? '미추출' : `${medication.days}일`;
-  return `함량 ${strength} · 1회 투약량 ${doseQuantity} · 1일 횟수 ${frequency} · 투약일수 ${days}`;
+  const details = [
+    ['함량', strength],
+    ['1회 투약량', doseQuantity],
+    ['1일 횟수', frequency],
+    ['투약일수', days],
+  ];
+
+  return (
+    <article aria-label={name} className="min-w-0 w-full rounded-card bg-card p-4 shadow-card">
+      <div className="flex items-end gap-2">
+        <div className="flex min-w-0 flex-1 items-end gap-2">
+          <strong className="min-w-0 whitespace-normal text-lg leading-7 text-foreground [overflow-wrap:anywhere]">
+            {name}
+          </strong>
+          <span className="shrink-0 [&>span]:px-2 [&>span]:py-1 [&>span]:text-xs">
+          {medication.confidence === 'low' && !reviewed ? (
+            <StatusBadge type="review">확인 필요</StatusBadge>
+          ) : (
+            <ConfidenceBadge confidence={reviewed ? undefined : medication.confidence} />
+          )}
+          </span>
+        </div>
+        {onEdit && (
+          <button
+            type="button"
+            aria-label={`${name} 수정`}
+            className="-my-2 flex size-11 shrink-0 items-center justify-center rounded-button text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onEdit}
+          >
+            <Pencil aria-hidden className="size-4" />
+          </button>
+        )}
+      </div>
+      <dl className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-sm">
+          {details.map(([label, value]) => (
+            <div key={label} className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
+              <dt className="w-24 shrink-0 text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 flex-1 text-foreground [overflow-wrap:anywhere]">{value}</dd>
+            </div>
+          ))}
+      </dl>
+    </article>
+  );
 }

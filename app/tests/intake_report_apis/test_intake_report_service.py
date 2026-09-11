@@ -4,8 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from ai_worker.domain.errors import IntakeReportGenerationError
 from ai_worker.schemas.intake_report import IntakeReportResult
-from app.core.exceptions import IntakeReportTimeoutError
+from app.core.exceptions import AppError, IntakeReportTimeoutError
 from app.services.intake_report import IntakeReportApplicationService
 
 
@@ -74,3 +75,25 @@ async def test_generate_raises_timeout_when_core_exceeds_guard() -> None:
 
     with pytest.raises(IntakeReportTimeoutError):
         await service.generate(user=SimpleNamespace(id=7))
+
+
+@pytest.mark.parametrize(
+    "reason, expected_code",
+    [
+        ("VALIDATION_FAILED", "INTAKE_REPORT_GENERATION_FAILED"),
+        ("TIMEOUT", "INTAKE_REPORT_TIMEOUT"),
+        ("CLIENT_ERROR", "INTAKE_REPORT_UPSTREAM_UNAVAILABLE"),
+    ],
+)
+async def test_generation_failure_reaches_retryable_error_instead_of_report(reason, expected_code) -> None:
+    class FailedCore:
+        async def generate(self, *, user_id):
+            raise IntakeReportGenerationError(reason_code=reason, issue_codes=("MISSING_PRODUCTS",))
+
+    tracer = RecordingTracer()
+    service = IntakeReportApplicationService(core_service=FailedCore(), tracer=tracer)
+    with pytest.raises(AppError) as caught:
+        await service.generate(user=SimpleNamespace(id=7))
+    assert caught.value.code == expected_code
+    assert tracer.span_instance.outputs["reason_code"] == reason
+    assert tracer.span_instance.outputs["issue_codes"] == ["MISSING_PRODUCTS"]

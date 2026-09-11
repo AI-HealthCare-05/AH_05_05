@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate } from 'react-router';
 import {
   Button,
@@ -726,9 +727,7 @@ export function MedicationSchedulePage({
                   {unused && (
                     <span className="text-sm text-disabled-foreground">이 시간에 먹는 약 없음</span>
                   )}
-                  <span aria-hidden className="ml-auto text-muted-foreground">
-                    ›
-                  </span>
+                  <DrawnChevron direction="right" className="ml-auto size-4 text-muted-foreground" />
                 </button>
               );
             })}
@@ -1340,9 +1339,7 @@ function MedicationRegistrationWizard({
                       <span className="ml-auto text-sm text-muted-foreground">
                         {used ? '복용 약 있음' : '사용 안 함'}
                       </span>
-                      <span aria-hidden className="text-muted-foreground">
-                        ›
-                      </span>
+                      <DrawnChevron direction="right" className="size-4 text-muted-foreground" />
                     </button>
                   );
                 })}

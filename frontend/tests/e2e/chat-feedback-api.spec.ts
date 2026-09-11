@@ -20,6 +20,7 @@ interface CommonCodeResponseItem {
 }
 
 interface FeedbackHarnessOptions {
+  commonCodeHandler?: (route: Route, groupCode: 'P_REASON' | 'N_REASON') => Promise<void>;
   commonCodeItems?: Partial<Record<'P_REASON' | 'N_REASON', CommonCodeResponseItem[]>>;
   commonCodeFailures?: Partial<Record<'P_REASON' | 'N_REASON', number>>;
   feedbackHandler?: (route: Route, payload: FeedbackPayload, attempt: number) => Promise<void>;
@@ -67,6 +68,11 @@ async function installFeedbackHarness(
     window.sessionStorage.setItem('poke.account-principal', 'chat-feedback-e2e@example.com');
   }, ACCESS_TOKEN);
 
+  // Fail closed: even unanticipated API calls cannot reach a real backend.
+  await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+    route.fulfill({ status: 200, json: { items: [] } }),
+  );
+
   await page.route('**/api/v1/chat/sessions', async (route) => {
     expect(route.request().method()).toBe('GET');
     await route.fulfill({
@@ -96,6 +102,10 @@ async function installFeedbackHarness(
       | 'P_REASON'
       | 'N_REASON';
     commonCodeAttempts[groupCode] += 1;
+    if (options.commonCodeHandler) {
+      await options.commonCodeHandler(route, groupCode);
+      return;
+    }
     const failuresRemaining = options.commonCodeFailures?.[groupCode] ?? 0;
     if (commonCodeAttempts[groupCode] <= failuresRemaining) {
       await route.fulfill({
@@ -175,6 +185,98 @@ async function openFeedbackStep(
   const feedbackSheet = page.getByRole('dialog', { name: '상담 평가' });
   await expect(feedbackSheet.locator('button[aria-pressed]')).toHaveCount(expectedReasonCount);
   return feedbackSheet;
+}
+
+for (const [first, other, firstReason, otherReason, width] of [
+  ['좋아요', '아쉬워요', '긍정 사유 1', '부정 사유 1', 320],
+  ['아쉬워요', '좋아요', '부정 사유 1', '긍정 사유 1', 390],
+] as const) {
+  test(`${first} 사유에서 뒤로 가면 평가 없이 선택 단계로 돌아가 다른 평가를 고른다`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 812 });
+    const harness = await installFeedbackHarness(page);
+    await openAnsweredChat(page);
+    const choice = await openEndSheet(page);
+    await expect(choice.getByRole('button', { name: '평가 선택으로 돌아가기' })).toHaveCount(0);
+    await choice.getByRole('button', { name: first, exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: '상담 평가' });
+    await sheet.getByRole('button', { name: firstReason, exact: true }).click();
+    const back = sheet.getByRole('button', { name: '평가 선택으로 돌아가기' });
+    await expect(back).toBeVisible();
+    const backBox = await back.boundingBox();
+    const titleBox = await sheet.getByRole('heading', { name: '상담 평가' }).boundingBox();
+    const closeBox = await sheet.getByRole('button', { name: '평가 닫기' }).boundingBox();
+    expect(backBox!.width).toBeGreaterThanOrEqual(44);
+    expect(backBox!.height).toBeGreaterThanOrEqual(44);
+    expect(backBox!.x + backBox!.width).toBeLessThanOrEqual(titleBox!.x);
+    expect(titleBox!.x + titleBox!.width).toBeLessThanOrEqual(closeBox!.x);
+    await back.focus();
+    await back.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(back).toBeFocused();
+    expect(await back.evaluate((button) => getComputedStyle(button).boxShadow)).not.toBe('none');
+    await page.screenshot({ path: testInfo.outputPath(`feedback-back-${width}.png`) });
+    await back.press('Enter');
+    await expect(choice).toBeVisible();
+    expect(harness.feedbackRequests).toEqual([]);
+    expect(harness.deleteRequests).toEqual([]);
+    await choice.getByRole('button', { name: other, exact: true }).click();
+    await expect(sheet.getByRole('button', { name: otherReason, exact: true })).toHaveAttribute('aria-pressed', 'false');
+    await expect(sheet.getByRole('button', { name: firstReason, exact: true })).toHaveCount(0);
+    await sheet.getByRole('button', { name: '평가 닫기' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByText(ANSWER, { exact: true })).toBeVisible();
+    expect(harness.feedbackRequests).toEqual([]);
+    expect(harness.deleteRequests).toEqual([]);
+  });
+}
+
+test('뒤로 간 뒤 도착한 이전 사유 응답은 현재 평가를 바꾸지 않는다', async ({ page }) => {
+  let releasePositive!: () => void;
+  const positiveGate = new Promise<void>((resolve) => { releasePositive = resolve; });
+  const harness = await installFeedbackHarness(page, {
+    commonCodeHandler: async (route, group) => {
+      if (group === 'P_REASON') await positiveGate;
+      await route.fulfill({ status: 200, json: { items: DEFAULT_COMMON_CODES[group] } });
+    },
+  });
+  await openAnsweredChat(page);
+  const choice = await openEndSheet(page);
+  await choice.getByRole('button', { name: '좋아요', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: '상담 평가' });
+  await expect(sheet.getByRole('status')).toBeVisible();
+  await expect.poll(() => harness.commonCodeAttempts.P_REASON).toBe(1);
+  await sheet.getByRole('button', { name: '평가 선택으로 돌아가기' }).click();
+  await choice.getByRole('button', { name: '아쉬워요', exact: true }).click();
+  await expect(sheet.getByRole('button', { name: '부정 사유 1', exact: true })).toBeVisible();
+  const response = page.waitForResponse((res) => new URL(res.url()).pathname.endsWith('/P_REASON'));
+  releasePositive();
+  await (await response).finished();
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await expect(sheet.getByRole('button', { name: '부정 사유 1', exact: true })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: '긍정 사유 1', exact: true })).toHaveCount(0);
+  expect(harness.feedbackRequests).toEqual([]);
+  expect(harness.deleteRequests).toEqual([]);
+});
+
+for (const error of ['reasons', 'save'] as const) {
+  test(`뒤로 가기는 이전 ${error} 오류를 선택 단계에서 지운다`, async ({ page }) => {
+    const harness = await installFeedbackHarness(page, error === 'reasons'
+      ? { commonCodeFailures: { P_REASON: 1 } }
+      : { feedbackHandler: async (route) => { await route.fulfill({ status: 500, json: {} }); } });
+    await openAnsweredChat(page);
+    const sheet = await openFeedbackStep(page, 'positive', error === 'reasons' ? 0 : 5);
+    if (error === 'save') await sheet.getByRole('button', { name: '제출하고 종료' }).click();
+    await expect(sheet.getByRole('alert')).toBeVisible();
+    await sheet.getByRole('button', { name: '평가 선택으로 돌아가기' }).click();
+    const choice = page.getByRole('dialog', { name: '상담 종료' });
+    await expect(choice).toBeVisible();
+    await expect(choice.getByRole('alert')).toHaveCount(0);
+    await choice.getByRole('button', { name: '아쉬워요', exact: true }).click();
+    await expect(sheet.getByRole('button', { name: '부정 사유 1', exact: true })).toBeVisible();
+    await expect(sheet.getByRole('alert')).toHaveCount(0);
+    expect(harness.deleteRequests).toEqual([]);
+    expect(harness.feedbackRequests).toHaveLength(error === 'save' ? 1 : 0);
+  });
 }
 
 test('실 API 좋아요 평가는 저장한 뒤 세션을 soft delete한다', async ({ page }, testInfo) => {
@@ -399,6 +501,7 @@ test('지연된 이전 저장이 닫았다가 다시 연 부정 평가를 닫지
   await positiveSheet.locator('button[aria-pressed]').first().click();
   await positiveSheet.getByRole('button', { name: '제출하고 종료' }).click();
   await expect.poll(() => harness.feedbackRequests.length).toBe(1);
+  await expect(positiveSheet.getByRole('button', { name: '평가 선택으로 돌아가기' })).toBeDisabled();
   await positiveSheet.getByRole('button', { name: '평가 닫기' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
@@ -408,6 +511,7 @@ test('지연된 이전 저장이 닫았다가 다시 연 부정 평가를 닫지
   await expect(negativeSheet).toBeVisible();
   await expect(page.getByText(ANSWER, { exact: true })).toBeVisible();
   expect(harness.feedbackRequests).toEqual([{ isLike: true, reasonCode: 'P01' }]);
+  expect(harness.deleteRequests).toEqual([]);
   await negativeSheet.getByRole('button', { name: '평가 닫기' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });

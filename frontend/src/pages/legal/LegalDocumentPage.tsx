@@ -20,7 +20,7 @@ export function LegalDocumentPage({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title={title} onBack={onBack ?? (() => navigate(-1))} />
-      <main className="flex flex-1 flex-col gap-6 px-page-x py-6 text-sm leading-7 text-foreground">
+      <main className="rx-reading-content flex flex-1 flex-col gap-6 px-page-x py-6 text-sm leading-7 text-foreground">
         <div className="rounded-card bg-primary-bg px-4 py-4 text-muted-foreground">
           {description}
         </div>

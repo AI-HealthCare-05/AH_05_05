@@ -2,8 +2,8 @@ from qdrant_client import AsyncQdrantClient
 
 from ai_worker.core.config import Config
 from ai_worker.domain.errors import AIConfigurationError
-from ai_worker.llm.generators.intake_report_generator import (
-    OpenAIIntakeReportGenerator,
+from ai_worker.llm.generators.intake_report_cards_generator import (
+    OpenAIIntakeReportCardsGenerator,
 )
 from ai_worker.observability.chat_tracer import (
     ChatTracer,
@@ -23,6 +23,7 @@ from ai_worker.rag.vectorstores.qdrant_hybrid_knowledge_store import (
     QdrantHybridKnowledgeStore,
 )
 from ai_worker.rag.vectorstores.qdrant_knowledge_store import QdrantKnowledgeStore
+from ai_worker.reports.nutrients import load_report_nutrients
 from ai_worker.repositories.interaction_rule_repository import (
     DbInteractionRuleRepository,
 )
@@ -95,13 +96,17 @@ def build_intake_report_core_service(
             dataset_version=settings.KNOWLEDGE_DATASET_VERSION,
             min_similarity_score=settings.RAG_MIN_SIMILARITY_SCORE,
         ),
-        generator=OpenAIIntakeReportGenerator(
+        generator=OpenAIIntakeReportCardsGenerator(
             model=settings.OPENAI_CHAT_MODEL,
             api_key=settings.OPENAI_API_KEY,
-            timeout_seconds=settings.OPENAI_TIMEOUT_SECONDS,
+            # A complete evidence-locked card plan is longer than a chat reply.
+            # Keep the generator's overall 90s budget while allowing one full
+            # response instead of repeatedly cancelling it at the chat timeout.
+            timeout_seconds=max(settings.OPENAI_TIMEOUT_SECONDS, 75.0),
             max_retries=settings.OPENAI_MAX_RETRIES,
         ),
         tracer=report_tracer,
+        nutrient_loader=load_report_nutrients,
     )
     return IntakeReportCoreService(
         use_case=use_case,

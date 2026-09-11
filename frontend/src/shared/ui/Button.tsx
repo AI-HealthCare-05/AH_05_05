@@ -17,6 +17,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   variant?: 'primary' | 'secondary' | 'danger';
   /** 화면 하단 CTA는 대부분 가로 전체를 차지합니다. */
   fullWidth?: boolean;
+  /** 실제 요청 중에만 사용합니다. 문구·너비를 유지하고 중복 입력을 막습니다. */
+  loading?: boolean;
   children: ReactNode;
 }
 
@@ -24,33 +26,38 @@ export function Button({
   variant = 'primary',
   fullWidth = true,
   disabled = false,
+  loading = false,
   className,
   children,
   type = 'button',
   ...rest
 }: ButtonProps) {
+  const inactive = disabled || loading;
   return (
     <button
       type={type}
-      disabled={disabled}
+      disabled={inactive}
+      aria-busy={loading || undefined}
+      data-variant={variant}
       className={cn(
         // 공통 — 최소 터치 영역 44px 보장(NFR-ACC-001)
-        'inline-flex min-h-touch items-center justify-center rounded-button px-4 text-sm font-bold transition-colors',
+        'rx-button relative inline-flex min-h-touch items-center justify-center rounded-button px-4 text-sm font-bold',
         'h-control',
         fullWidth && 'w-full',
         // 변형
-        variant === 'primary' && !disabled && 'bg-primary text-card hover:bg-primary-strong',
+        variant === 'primary' && !inactive && 'bg-primary text-card hover:bg-primary-strong',
         variant === 'secondary' &&
-          !disabled &&
+          !inactive &&
           'border border-border bg-card text-foreground hover:bg-muted-bg',
-        variant === 'danger' && !disabled && 'bg-danger text-card hover:bg-danger-strong',
+        variant === 'danger' && !inactive && 'bg-danger text-card hover:bg-danger-strong',
         // 비활성
-        disabled && 'cursor-not-allowed bg-muted-bg text-disabled-foreground',
-        disabled && variant === 'secondary' && 'border border-border bg-card',
+        inactive && 'cursor-not-allowed bg-muted-bg text-disabled-foreground',
+        inactive && variant === 'secondary' && 'border border-border bg-card',
         className,
       )}
       {...rest}
     >
+      {loading && <span className="rx-button-spinner" aria-hidden="true" />}
       {children}
     </button>
   );

@@ -21,6 +21,9 @@ async function createConversation(page: Page, question: string) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
+  // Home reads official challenges even in mock mode. A real 401 would expire the chat fixture.
+  await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: [], total_count: 0 } }));
   await page.goto('/dev/chat');
   await page.evaluate(
     ({ patientKey, otherKey, principalKey, account }) => {

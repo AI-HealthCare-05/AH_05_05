@@ -117,7 +117,8 @@ function capture(route: Route): CapturedRequest {
     url: request.url(),
     headers: request.headers(),
     body: request.postDataBuffer()?.toString('utf8') ?? '',
-    requestedAt: Date.now(),
+    // Polling intervals must not change when the host wall clock is corrected.
+    requestedAt: performance.now(),
   };
 }
 
@@ -126,6 +127,19 @@ async function authenticate(page: Page) {
     window.sessionStorage.setItem('poke.access-token', token);
     window.sessionStorage.setItem('poke.account-principal', 'ocr-e2e@example.com');
   }, ACCESS_TOKEN);
+}
+
+async function stubNonMedicationHomeData(page: Page) {
+  // 홈의 부가 요청이 실제 서버로 새어 fixture 계정을 로그아웃시키지 않게 합니다.
+  await page.route('**/api/v1/user/challenges', route =>
+    fulfillJson(route, { items: [], total_count: 0 }),
+  );
+  await page.route('**/api/v1/display/med/nutr/rank*', route =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
+  await page.route('**/api/v1/med/user-suppl-nutr*', route =>
+    fulfillJson(route, { code: 'NOT_FOUND', message: 'Not found' }, 404),
+  );
 }
 
 async function stubNotificationPermission(
@@ -621,10 +635,10 @@ test('복약 시간 설정은 봉투에서 시간대를 읽은 약도 숨기지 
   await expect(page.getByRole('button', { name: /저녁약 19:00/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /취침약 22:00/ })).toBeVisible();
 
-  await expect(page.getByText('세프디니르건조시럽 5mL', { exact: true })).toBeVisible();
-  await expect(page.getByText('암브록솔시럽 5mL', { exact: true })).toBeVisible();
-  await expect(page.getByText('슈도에페드린시럽 5mL', { exact: true })).toBeVisible();
-  await expect(page.getByText('프로바이오틱스분말 1포', { exact: true })).toBeVisible();
+  await expect(page.getByText('세프디니르건조시럽', { exact: true })).toBeVisible();
+  await expect(page.getByText('암브록솔시럽', { exact: true })).toBeVisible();
+  await expect(page.getByText('슈도에페드린시럽', { exact: true })).toBeVisible();
+  await expect(page.getByText('프로바이오틱스분말', { exact: true })).toBeVisible();
 
   const pseudoMorning = page.getByRole('button', { name: '슈도에페드린시럽 아침약' });
   const pseudoLunch = page.getByRole('button', { name: '슈도에페드린시럽 점심약' });
@@ -790,11 +804,11 @@ test(`복약 시간 설정의 ${backMethod} 뒤로가기는 로딩 없이 수정
 
   expect(patchPayloads).toHaveLength(1);
   await page.screenshot({ path: testInfo.outputPath('ocr-back-editable.png'), fullPage: true });
-  await page.getByRole('button', { name: /^셀레콕시브 함량 200mg/ }).click();
+  await page.getByRole('button', { name: '셀레콕시브 수정', exact: true }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('셀레콕시브 수정');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page.getByRole('button', { name: /^셀레콕시브 수정 함량 200mg/ })).toBeVisible();
+  await expect(page.getByRole('article', { name: '셀레콕시브 수정', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   const reviewDialog = page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' });
   if (await reviewDialog.isVisible()) {
@@ -1092,6 +1106,65 @@ test('조제일은 서울 오늘로부터 31일 뒤까지 수정하고 저장할
   );
 });
 
+for (const failFirst of [false, true]) {
+  test(`동일 File 업로드는 진행 중 요청을 공유하고 ${failFirst ? '실패' : '성공'} 후 재시도한다`, async ({ page }) => {
+    await authenticate(page);
+    const uploads: CapturedRequest[] = [];
+    let releaseUploads!: () => void;
+    const pending = new Promise<void>(resolve => { releaseUploads = resolve; });
+    await page.route('**/api/v1/ocr', async route => {
+      uploads.push(capture(route));
+      const attempt = uploads.length;
+      await pending;
+      await fulfillJson(route, failFirst && attempt === 1
+        ? { message: 'temporary upload failure' }
+        : { documentIds: [attempt], ocrStatus: 'queued' },
+      failFirst && attempt === 1 ? 503 : 200);
+    });
+    await page.goto('/document-upload');
+    const outcome = page.evaluate(async () => {
+      const modulePath = '/src/entities/document/api.ts';
+      const { uploadDocument } = await import(modulePath);
+      const file = new File(['photo'], 'photo.png', { type: 'image/png' });
+      const first = uploadDocument(file);
+      const duplicate = uploadDocument(file);
+      // 같은 이름과 내용이라도 다른 File 객체이면 독립 요청입니다.
+      const other = uploadDocument(new File(['photo'], 'photo.png', { type: 'image/png' }));
+      const results = await Promise.allSettled([first, duplicate, other]);
+      const retry = uploadDocument(file);
+      const retryDuplicate = uploadDocument(file);
+      const retried = await Promise.all([retry, retryDuplicate]);
+      return {
+        sharedPromise: first === duplicate,
+        statuses: results.map(result => result.status),
+        sharedOutcome: results[0].status === 'fulfilled' && results[1].status === 'fulfilled'
+          ? results[0].value === results[1].value
+          : results[0].status === 'rejected' && results[1].status === 'rejected'
+            && results[0].reason === results[1].reason,
+        retrySharedPromise: retry === retryDuplicate,
+        retried,
+      };
+    });
+    // 다른 파일도 첫 파일의 응답을 기다리지 않고 전송되어야 합니다.
+    await expect.poll(() => uploads.length).toBeGreaterThanOrEqual(2);
+    releaseUploads();
+    const result = await outcome;
+    expect(uploads).toHaveLength(3);
+    expect(result.sharedPromise).toBe(true);
+    expect(result.sharedOutcome).toBe(true);
+    expect(result.statuses).toEqual([failFirst ? 'rejected' : 'fulfilled', failFirst ? 'rejected' : 'fulfilled', 'fulfilled']);
+    expect(result.retrySharedPromise).toBe(true);
+    expect(result.retried).toEqual([
+      { documentIds: [3], ocrStatus: 'queued' },
+      { documentIds: [3], ocrStatus: 'queued' },
+    ]);
+    const keys = uploads.map(upload => upload.headers['idempotency-key']);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).not.toBe(keys[0]);
+    expect(keys[2]).toBe(keys[0]);
+  });
+}
+
 test('HTTP 모바일에서 randomUUID 없이 촬영 사진을 업로드하고 OCR 결과를 표시한다', async ({ page }, testInfo) => {
   test.slow();
   await authenticate(page);
@@ -1108,6 +1181,7 @@ test('HTTP 모바일에서 randomUUID 없이 촬영 사진을 업로드하고 OC
   await page.getByRole('button', { name: '등록하기' }).click();
   await expect.poll(() => trace.uploads.length).toBeGreaterThan(0);
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible({ timeout: 10_000 });
+  expect(trace.uploads).toHaveLength(1);
   expect(trace.uploads[0].body).toContain('filename="camera-photo.png"');
   expect(trace.uploads[0].headers['idempotency-key']).toBeTruthy();
   expect(trace.polls).toHaveLength(3);
@@ -1166,32 +1240,36 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await expect(page.getByLabel('조제일')).toHaveValue('2026-08-22');
   await expect(page.getByText('1곳만 확인해주세요')).toBeVisible();
   await expect(page.getByText('확인 필요', { exact: true })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).not.toContainText('확인 필요');
+  await expect(page.getByRole('article', { name: /파모티딘 원문/ })).not.toContainText('확인 필요');
   await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toHaveAttribute(
     'src',
     /^blob:/,
   );
 
-  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('함량 미추출');
-  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('1회 투약량 미추출');
-  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('1일 횟수 미추출');
-  await expect(page.getByRole('button', { name: /파모티딘 원문/ })).toContainText('투약일수 미추출');
+  const unextractedMedication = page.getByRole('article', { name: /파모티딘 원문/ });
+  await unextractedMedication.getByRole('button', { name: /수정$/ }).click();
+  await expect(page.getByRole('dialog').getByLabel('함량', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('dialog').getByLabel('1회 투약량', { exact: true })).toHaveValue('');
+  await page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).click();
 
-  await page.getByRole('button', { name: /^리바록사반 .*함량 10mg/ }).click();
+  await page.getByRole('button', { name: '리바록사반 수정', exact: true }).click();
   const editDialog = page.getByRole('dialog');
   await editDialog.getByLabel('약품명').fill('리바록사반 수정');
   await editDialog.getByLabel('함량').fill('15mg');
   await editDialog.getByLabel('1회 투약량').fill('0.5정');
   await editDialog.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(page.getByRole('button', { name: /^리바록사반 수정 .*함량 15mg/ })).toBeVisible();
+  const editedMedication = page.getByRole('article', { name: '리바록사반 수정', exact: true });
+  await editedMedication.getByRole('button', { name: '리바록사반 수정 수정', exact: true }).click();
+  await expect(page.getByRole('dialog').getByLabel('함량', { exact: true })).toHaveValue('15mg');
+  await page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).click();
 
-  await page.getByRole('button', { name: /^아세트아미노펜 .*함량 650mg/ }).click();
+  await page.getByRole('button', { name: '아세트아미노펜 수정', exact: true }).click();
   const prnDialog = page.getByRole('dialog');
   await prnDialog.getByRole('combobox').click();
   await page.getByRole('option', { name: '필요 시', exact: true }).click();
   await prnDialog.getByRole('button', { name: '저장', exact: true }).click();
 
-  await page.getByRole('button', { name: /파모티딘 원문/ }).click();
+  await page.getByRole('button', { name: /파모티딘 원문 수정$/ }).click();
   const sourceNameDialog = page.getByRole('dialog');
   await sourceNameDialog.getByLabel('1회 투약량').fill('0.75');
   await sourceNameDialog.getByRole('button', { name: '저장', exact: true }).click();
@@ -1204,11 +1282,11 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await addDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByRole('heading', { name: '약 5개' })).toBeVisible();
 
-  await page.getByRole('button', { name: /^셀레콕시브 함량 200mg/ }).click();
+  await page.getByRole('button', { name: '셀레콕시브 수정', exact: true }).click();
   const deleteDialog = page.getByRole('dialog');
   await deleteDialog.getByRole('button', { name: '이 약 삭제' }).click();
   await deleteDialog.getByRole('button', { name: '삭제', exact: true }).click();
-  await expect(page.getByRole('button', { name: /^셀레콕시브 함량 200mg/ })).toHaveCount(0);
+  await expect(page.getByRole('article', { name: '셀레콕시브', exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await expect(page.getByRole('button', { name: '확인 후 저장' })).toHaveCount(0);
@@ -1375,6 +1453,7 @@ test('등록 5단계의 알람 선택과 시각을 기존 설정 PATCH payload�
 
 test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여준다', async ({ page }) => {
   await authenticate(page);
+  await stubNonMedicationHomeData(page);
   await page.route('**/api/medications', async (route) => {
     await route.fulfill({
       status: 404,
@@ -1407,6 +1486,7 @@ test('로그인 홈은 v1 복약 개요의 빈 목록을 등록 상태로 보여
 
 test('400일 전 ACTIVE 회차는 from을 처방 시작일로 유지한다', async ({ page }) => {
   await authenticate(page);
+  await stubNonMedicationHomeData(page);
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   const ranges: URL[] = [];
   await page.route('**/api/v1/medications/doses*', async (route) => {
@@ -1451,6 +1531,7 @@ test('400일 전 ACTIVE 회차는 from을 처방 시작일로 유지한다', asy
 
 test('365일 처방과 새 30일 회차는 정확히 366일 범위로 복약 기록을 조회한다', async ({ page }) => {
   await authenticate(page);
+  await stubNonMedicationHomeData(page);
   await page.clock.setFixedTime(new Date('2026-08-25T12:00:00+09:00'));
   const ranges: URL[] = [];
   await page.route('**/api/v1/medications/doses*', async (route) => {
@@ -1676,8 +1757,8 @@ test('여러 처방 저장 중 실패한 처방만 롤백한다', async ({ page 
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 24일 처방"]');
   await morning.getByRole('button', { name: '먹었어요' }).click();
 
   await expect(page.getByRole('dialog', { name: '기록하지 못했어요' })).toBeVisible();
@@ -1732,8 +1813,8 @@ test('부분 실패는 실패 회차만 선택하고 팝업 재시도 성공 후
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 24일 처방"]');
   const firstSelector = firstEpisode.locator('[data-episode-row]');
   const secondSelector = secondEpisode.locator('[data-episode-row]');
   await firstSelector.click();
@@ -1795,7 +1876,7 @@ test('토스트 되돌리기 실패는 완료를 유지하고 팝업 재시도�
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
   await firstEpisode.locator('[data-episode-row]').click();
   await morning.getByRole('button', { name: '먹었어요' }).click();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
@@ -1840,8 +1921,8 @@ test('A와 B를 기록한 뒤 A 토스트를 되돌려도 B 완료 상태를 유
   const morning = page
     .getByRole('region', { name: '오늘의 복약' })
     .getByRole('group', { name: '아침약 상세' });
-  const firstEpisode = page.locator('article[aria-label*="8월 22일 처방"]');
-  const secondEpisode = page.locator('article[aria-label*="8월 24일 처방"]');
+  const firstEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 22일 처방"]');
+  const secondEpisode = page.locator('[role="group"][aria-label="아침약 상세"] article[aria-label*="8월 24일 처방"]');
   await firstEpisode.locator('[data-episode-row]').click();
   await morning.getByRole('button', { name: '먹었어요' }).click();
   await expect(firstEpisode.locator('[data-episode-completed-badge]')).toBeVisible();
@@ -2179,6 +2260,26 @@ for (const headerOnly of [false, true]) {
   });
 }
 
+test('명시적 재촬영 OCR 실패만 사진 품질 안내를 표시한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/ocr/jobs/recapture-required', route => fulfillJson(route, {
+    batchId: 'recapture-required',
+    ocrStatus: 'failed',
+    errorCode: 'RECAPTURE_REQUIRED',
+  }));
+
+  await page.goto('/ocr-review?batchId=recapture-required');
+
+  await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.'),
+  ).toBeVisible();
+  const failureDialog = page.getByRole('dialog', { name: '문서를 읽지 못했어요' });
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog.getByRole('button', { name: '다시 촬영', exact: true })).toBeVisible();
+  await expect(failureDialog.getByRole('button', { name: '그대로 직접 입력', exact: true })).toBeVisible();
+});
+
 test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으로 보여준다', async ({ page }) => {
   await authenticate(page);
   await interceptDefaultNotifySettings(page);
@@ -2218,11 +2319,17 @@ test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으�
   failed = true;
   await page.goto('/dev/ocr-review');
   const failureDialog = page.getByRole('dialog');
-  await expect(failureDialog.getByRole('heading', { name: '문서를 읽지 못했어요' })).toBeVisible();
+  await expect(failureDialog.getByRole('heading', { name: '약 정보를 확인하지 못했어요' })).toBeVisible();
   await expect(failureDialog.getByRole('button', { name: '다시 촬영' })).toBeVisible();
   await expect(failureDialog.getByRole('button', { name: '그대로 직접 입력' })).toBeVisible();
-  await expect(page.getByText('다시 촬영해주세요', { exact: true })).toBeVisible();
-  await expect(page.getByText('약 정보를 추출하지 못했어요', { exact: true })).toBeVisible();
+  await expect(page.getByText('추출 중 문제가 생겼어요', { exact: true })).toBeVisible();
+  await expect(
+    failureDialog.getByText('약 정보를 추출하는 중 문제가 생겼어요. 잠시 후 다시 시도하거나 직접 입력할 수 있어요.'),
+  ).toBeVisible();
+  await expect(page.getByText('다시 촬영해주세요', { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText('복약안내문의 구김을 펴고 네 모서리가 모두 보이게 다시 촬영해주세요.'),
+  ).toHaveCount(0);
   await expect(page.getByLabel('복약 별칭')).toHaveCount(0);
   await expect(page.getByText('나머지는 잘 읽혔습니다.', { exact: false })).toHaveCount(0);
   await page.screenshot({ path: 'test-results/failed-ocr-mobile.png', fullPage: true });
@@ -2242,6 +2349,6 @@ test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으�
   expect(patches).toHaveLength(1);
   expect(JSON.parse(patches[0].body).medications[0].name).toBe('직접입력약');
   await page.goBack();
-  await expect(page.getByRole('button', { name: /직접입력약/ })).toBeVisible();
+  await expect(page.getByRole('article', { name: /직접입력약/ })).toBeVisible();
   await expect(page.getByRole('dialog', { name: '문서를 읽지 못했어요' })).toHaveCount(0);
 });

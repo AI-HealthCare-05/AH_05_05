@@ -1,0 +1,63 @@
+.custom-challenge-date-strip {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  padding-block: 12px;
+  scrollbar-width: none;
+}
+
+.custom-challenge-date-strip::-webkit-scrollbar { display: none; }
+
+/* Including the adjacent gap, either end button can reach the exact center. */
+.custom-challenge-date-strip::before,
+.custom-challenge-date-strip::after {
+  content: '';
+  flex: 0 0 calc(50% - 30px);
+}
+
+.custom-challenge-date-hit {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  scroll-snap-align: center;
+}
+
+.custom-challenge-date-square {
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  transition: transform 220ms ease-out;
+}
+
+.custom-challenge-date-hit[aria-pressed='true'] .custom-challenge-date-square {
+  border: 2px solid var(--color-primary);
+  transform: scale(1.18);
+}
+
+.custom-challenge-day-check {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+}
+
+/* The settled drawing is also the no-motion/no-animation fallback. */
+.custom-challenge-check-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-challenge-date-square { transition: none; }
+}

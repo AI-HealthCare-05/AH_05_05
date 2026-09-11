@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import { createAccount, type Gender } from '@/entities/account';
-import { login, requestPasswordReset } from '@/entities/auth';
+import { login } from '@/entities/auth';
 import { requestEmailVerification, verifyEmailCode } from '@/entities/email-verification';
 import { prepareMedicationStateForNewAccount } from '@/entities/medication';
 import { PrivacyPage, TermsPage } from '@/pages/legal';
+import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
 import { ApiError } from '@/shared/api/client';
+import { PasswordResetSheet } from './PasswordResetSheet';
 import {
   MIN_BIRTH_DATE,
   UNDER_FOURTEEN_MESSAGE,
@@ -29,12 +31,6 @@ import {
 import {
   Button,
   CheckboxField,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   GenderRadioGroup,
   Header,
   Input,
@@ -66,6 +62,12 @@ export function AuthPage() {
   const location = useLocation();
   const { signIn } = useSession();
   const emailInputRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLElement>(null);
+  const resendInFlightRef = useRef(false);
+  const resetButtonRef = useRef<HTMLButtonElement>(null);
+  const [showPasswordReset, setShowPasswordReset] = useState(
+    () => (location.state as { passwordReset?: unknown } | null)?.passwordReset === true,
+  );
   const [mode, setMode] = useState<AuthMode>('login');
   const [signupStep, setSignupStep] = useState<SignupStep>(1);
   const [verificationCode, setVerificationCode] = useState('');
@@ -96,14 +98,41 @@ export function AuthPage() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [passwordResetDialogOpen, setPasswordResetDialogOpen] = useState(false);
-  const [passwordResetSending, setPasswordResetSending] = useState(false);
-  const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null);
-  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [verificationResending, setVerificationResending] = useState(false);
   const [showSignupTerms, setShowSignupTerms] = useState(false);
   const [showSignupPrivacy, setShowSignupPrivacy] = useState(false);
   const today = formatDateInputValue(new Date());
+
+  // Animate existing nodes only on navigation, so typing and validation retain
+  // the same DOM, caret and focus. Labels, controls and hints move as one field.
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (reducedMotion.matches) return;
+    const entrances = new Map<Element, Animation>();
+    content.querySelectorAll('.auth-enter').forEach((element, index) => {
+      if (element.contains(document.activeElement)) return;
+      entrances.set(element, element.animate(
+        [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0px)' }],
+        { duration: 280, delay: index * 80, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'backwards' },
+      ));
+    });
+    const cancelAll = () => entrances.forEach((animation) => animation.cancel());
+    const revealFocusedGroup = (event: FocusEvent) => {
+      if (!(event.target instanceof Element)) return;
+      const group = event.target.closest('.auth-enter');
+      if (group) entrances.get(group)?.cancel();
+    };
+    content.addEventListener('focusin', revealFocusedGroup);
+    reducedMotion.addEventListener('change', cancelAll);
+    return () => {
+      cancelAll();
+      content.removeEventListener('focusin', revealFocusedGroup);
+      reducedMotion.removeEventListener('change', cancelAll);
+    };
+  }, [mode, signupStep]);
 
   useEffect(() => {
     if (mode === 'signup' && signupStep === 1) {
@@ -127,6 +156,8 @@ export function AuthPage() {
 
   /** 탭을 옮길 때는 가입 흐름을 새로 시작합니다. 같은 탭을 다시 누르는 경우는 보존합니다. */
   function resetAuthForm() {
+    resendInFlightRef.current = false;
+    setVerificationResending(false);
     setSignupStep(1);
     setVerificationCode('');
     setVerificationId(null);
@@ -158,10 +189,6 @@ export function AuthPage() {
     setLoginError(null);
     setShowSignupTerms(false);
     setShowSignupPrivacy(false);
-    setPasswordResetDialogOpen(false);
-    setPasswordResetSending(false);
-    setPasswordResetMessage(null);
-    setPasswordResetError(null);
     emailInputRef.current?.setCustomValidity('');
   }
 
@@ -171,8 +198,6 @@ export function AuthPage() {
     if (sanitized !== typed) input.value = sanitized;
     setEmailError(sanitized === typed ? null : '이메일은 영문, 숫자와 기호만 입력할 수 있어요.');
     setEmail(sanitized);
-    setPasswordResetMessage(null);
-    setPasswordResetError(null);
     setVerificationId(null);
     setVerificationToken(null);
     setVerificationCode('');
@@ -256,30 +281,23 @@ export function AuthPage() {
     navigate(-1);
   }
 
-  function openPasswordResetDialog() {
-    if (!email.trim()) {
-      setEmailError('이메일을 입력해주세요');
-      emailInputRef.current?.focus();
-      return;
-    }
-    setEmailError(null);
-    setPasswordResetMessage(null);
-    setPasswordResetError(null);
-    setPasswordResetDialogOpen(true);
-  }
-
-  async function confirmPasswordReset() {
-    if (passwordResetSending) return;
-    setPasswordResetSending(true);
-    setPasswordResetError(null);
+  async function resendEmailVerification() {
+    if (resendInFlightRef.current) return;
+    resendInFlightRef.current = true;
+    setVerificationResending(true);
     try {
-      await requestPasswordReset(email.trim());
-      setPasswordResetDialogOpen(false);
-      setPasswordResetMessage('입력한 이메일로 임시비밀번호 발송을 요청했습니다.');
-    } catch {
-      setPasswordResetError('임시비밀번호를 발송하지 못했습니다. 잠시 후 다시 시도해주세요.');
+      const result = await requestEmailVerification(email);
+      setVerificationId(result.verificationId);
+      setVerificationToken(null);
+      setVerificationCode('');
+      setVerificationError(null);
+      setVerificationSeconds(result.expiresIn);
+      setVerificationExpiresAt(Date.now() + result.expiresIn * 1_000);
+    } catch (error) {
+      setVerificationError(error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR);
     } finally {
-      setPasswordResetSending(false);
+      resendInFlightRef.current = false;
+      setVerificationResending(false);
     }
   }
 
@@ -431,71 +449,39 @@ export function AuthPage() {
   }
 
   return (
-    <div
-      className={`mx-auto flex min-h-dvh w-full max-w-app flex-col ${
-        mode === 'login' ? 'bg-card' : 'bg-background'
-      }`}
-    >
+    <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header title="로그인 · 회원가입" onBack={goBack} />
       <main
-        className={`flex flex-1 flex-col px-page-x ${
+        ref={contentRef}
+        className={`rx-reading-content flex flex-1 flex-col px-page-x ${
           mode === 'login' ? 'pt-5' : 'pb-10 pt-5'
         }`}
       >
-        <div
-          className="grid h-12 grid-cols-2 rounded-input bg-muted-bg p-1"
+        <ContinuousTabs
           role="group"
-          aria-label="인증 방식"
-        >
-          {(['login', 'signup'] as const).map((item) => {
-            const selected = item === mode;
-            return (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={selected}
-                className={`rounded-input text-sm font-bold ${
-                  mode === 'login'
-                    ? `relative -my-1 h-12 min-h-touch ${
-                        selected ? 'text-primary' : 'text-muted-foreground'
-                      }`
-                    : `min-h-touch ${
-                        selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
-                      }`
-                }`}
-                onClick={() => {
-                  if (item === mode) return;
-                  setMode(item);
-                  resetAuthForm();
-                }}
-              >
-                {mode === 'login' ? (
-                  <span
-                    className={`pointer-events-none absolute inset-x-0 top-1 flex h-10 items-center justify-center rounded-[10px] ${
-                      selected ? 'bg-card shadow-card' : 'bg-transparent'
-                    }`}
-                  >
-                    {item === 'login' ? '로그인' : '회원가입'}
-                  </span>
-                ) : (
-                  item === 'login' ? '로그인' : '회원가입'
-                )}
-              </button>
-            );
-          })}
-        </div>
+          label="인증 방식"
+          value={mode}
+          items={[{ value: 'login', label: '로그인' }, { value: 'signup', label: '회원가입' }]}
+          onChange={item => {
+            if (item === mode) return;
+            setMode(item);
+            resetAuthForm();
+          }}
+        />
 
         {mode === 'login' ? (
           <>
-            <div className="mt-8">
-              <h1 className="text-2xl font-bold leading-8 text-foreground">다시 만나서 반가워요</h1>
-              <p className="mt-2 text-caption text-muted-foreground">
+            <div className="mt-4 h-7 shrink-0" aria-hidden="true" />
+            <div className="mt-4">
+              <h1 className="auth-enter text-2xl font-bold leading-8 text-foreground">다시 만나서 반가워요</h1>
+              <p className="auth-enter mt-2 text-caption text-muted-foreground">
                 로그인하면 저장한 복용약과 영양제를 이어서 볼 수 있어요.
               </p>
             </div>
 
             <form className="mt-5 flex flex-1 flex-col gap-4" onSubmit={complete}>
               <Input
+                className="auth-enter"
                 label="이메일"
                 inputRef={emailInputRef}
                 // type="email" 이 아닙니다. 브라우저가 한글 도메인을 퓨니코드로 바꾸지 않게 합니다.
@@ -521,6 +507,7 @@ export function AuthPage() {
                 required
               />
               <Input
+                className="auth-enter"
                 label="비밀번호"
                 type="password"
                 autoComplete="current-password"
@@ -535,54 +522,18 @@ export function AuthPage() {
                 <span>비밀번호를 잊으셨나요? </span>
                 <button
                   type="button"
+                  ref={resetButtonRef}
                   className="font-bold text-foreground underline-offset-2 hover:underline"
-                  onClick={openPasswordResetDialog}
+                  onClick={() => setShowPasswordReset(true)}
                 >
                   재설정
                 </button>
-                {passwordResetMessage && (
-                  <p className="mt-2 text-primary" role="status">
-                    {passwordResetMessage}
-                  </p>
-                )}
               </div>
               <Button type="submit" className="text-base" disabled={saving}>
                 로그인
               </Button>
             </form>
 
-            <Dialog open={passwordResetDialogOpen} onOpenChange={setPasswordResetDialogOpen}>
-              <DialogContent showCloseButton={false}>
-                <DialogHeader>
-                  <DialogTitle>비밀번호 재설정</DialogTitle>
-                  <DialogDescription>
-                    입력한 이메일로 임시비밀번호가 발송됩니다. 재설정 하시겠습니까?
-                  </DialogDescription>
-                </DialogHeader>
-                {passwordResetError && (
-                  <p className="text-sm text-danger-strong" role="alert">
-                    {passwordResetError}
-                  </p>
-                )}
-                <DialogFooter className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={passwordResetSending}
-                    onClick={() => setPasswordResetDialogOpen(false)}
-                  >
-                    취소
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={passwordResetSending}
-                    onClick={confirmPasswordReset}
-                  >
-                    {passwordResetSending ? '발송 중...' : '확인'}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </>
         ) : (
           <>
@@ -610,16 +561,16 @@ export function AuthPage() {
             </div>
 
             <div className="mt-4">
-              <h2 className="text-2xl font-bold leading-7 text-foreground">
+              <h2 className="auth-enter text-2xl font-bold leading-7 text-foreground">
                 {signupStepCopy.title}
               </h2>
               {signupStepCopy.description && (
-                <p className="mt-2 text-caption text-muted-foreground">
+                <p className="auth-enter mt-2 text-caption text-muted-foreground">
                   {signupStepCopy.description}
                 </p>
               )}
               {signupStep === 2 && (
-                <p className="mt-2 text-caption text-muted-foreground">
+                <p className="auth-enter mt-2 text-caption text-muted-foreground">
                   {email} 으로 6자리 코드를 보냈어요.
                 </p>
               )}
@@ -629,6 +580,7 @@ export function AuthPage() {
               {signupStep === 1 && (
                 <>
                   <Input
+                    className="auth-enter"
                     label="이메일"
                     inputRef={emailInputRef}
                     type="text"
@@ -662,6 +614,7 @@ export function AuthPage() {
               {signupStep === 2 && (
                 <>
                   <Input
+                    className="auth-enter"
                     label="인증코드"
                     type="text"
                     inputMode="numeric"
@@ -700,25 +653,8 @@ export function AuthPage() {
                     <button
                       type="button"
                       className="min-h-touch font-semibold text-primary disabled:cursor-not-allowed disabled:text-tertiary-foreground"
-                      disabled={verificationSeconds > 0 || saving}
-                      onClick={async () => {
-                        setSaving(true);
-                        try {
-                          const result = await requestEmailVerification(email);
-                          setVerificationId(result.verificationId);
-                          setVerificationToken(null);
-                          setVerificationCode('');
-                          setVerificationError(null);
-                          setVerificationSeconds(result.expiresIn);
-                          setVerificationExpiresAt(Date.now() + result.expiresIn * 1_000);
-                        } catch (error) {
-                          setVerificationError(
-                            error instanceof ApiError ? error.message : LOGIN_FALLBACK_ERROR,
-                          );
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
+                      disabled={verificationResending}
+                      onClick={resendEmailVerification}
                     >
                       다시 보내기
                     </button>
@@ -740,6 +676,7 @@ export function AuthPage() {
               {signupStep === 3 && (
                 <>
                   <Input
+                    className="auth-enter"
                     label="비밀번호"
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="new-password"
@@ -774,6 +711,7 @@ export function AuthPage() {
                     required
                   />
                   <Input
+                    className="auth-enter"
                     label="비밀번호 확인"
                     type={showPasswordConfirm ? 'text' : 'password'}
                     autoComplete="new-password"
@@ -819,6 +757,7 @@ export function AuthPage() {
               {signupStep === 4 && (
                 <>
                   <Input
+                    className="auth-enter"
                     label="이름"
                     autoComplete="name"
                     value={name}
@@ -835,6 +774,7 @@ export function AuthPage() {
                     required
                   />
                   <Input
+                    className="auth-enter"
                     label="전화번호"
                     type="tel"
                     inputMode="tel"
@@ -849,6 +789,7 @@ export function AuthPage() {
                     required
                   />
                   <Input
+                    className="auth-enter"
                     label="생년월일"
                     type="date"
                     min={MIN_BIRTH_DATE}
@@ -863,8 +804,10 @@ export function AuthPage() {
                     }}
                     required
                   />
-                  <GenderRadioGroup value={gender} onChange={setGender} />
-                  <fieldset className="mt-2 flex flex-col gap-3">
+                  <div className="auth-enter">
+                    <GenderRadioGroup value={gender} onChange={setGender} />
+                  </div>
+                  <fieldset className="auth-enter mt-2 flex flex-col gap-3">
                     <legend className="mb-2 text-base font-bold text-foreground">필수 동의</legend>
                     <div>
                       <CheckboxField
@@ -969,6 +912,18 @@ export function AuthPage() {
           </>
         )}
       </main>
+      {showPasswordReset && (
+        <PasswordResetSheet
+          initialEmail={email}
+          onClose={() => {
+            setShowPasswordReset(false);
+            if ((location.state as { passwordReset?: unknown } | null)?.passwordReset === true) {
+              navigate('/login', { replace: true, state: null });
+            }
+          }}
+          onRestoreFocus={() => resetButtonRef.current?.focus()}
+        />
+      )}
       {mode === 'login' && (
         <footer className="flex h-15 min-h-15 shrink-0 items-start justify-center gap-2 px-page-x pt-4 text-xs text-muted-foreground">
           <Link to="/terms" className="flex min-h-touch hover:text-foreground">

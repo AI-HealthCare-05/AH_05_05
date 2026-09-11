@@ -6,7 +6,8 @@ from tortoise.contrib.test import TestCase
 
 from app.core import config
 from app.core.email.payload import EmailPayloadCodec, EmailPayloadConfigurationError, EmailTemplate
-from app.models.enums import BackgroundJobStatus, BackgroundJobType
+from app.models.enums import AccountStatus, BackgroundJobStatus, BackgroundJobType
+from app.models.users import User
 from app.services.email_jobs import EmailJobService
 
 
@@ -123,3 +124,36 @@ class TestEmailJobService(TestCase):
         payload = self.codec.decrypt(encrypted_payload)
         assert payload.template is EmailTemplate.USER_PASSWORD_RESET
         assert payload.temporary_password == "Temp1234!"
+
+    async def test_intake_report_job_requeues_existing_queued_job_with_same_encrypted_report(self) -> None:
+        user = await User.create(
+            id=31,
+            email="recipient@example.com",
+            hashed_password="hashed-password",
+            name="보고서 사용자",
+            status=AccountStatus.ACTIVE,
+        )
+        first = await self.service.enqueue_intake_report(
+            user_id=user.id,
+            recipient_email="recipient@example.com",
+            report_id="report-20260911-abc123",
+            report_markdown="# 복용약 보고서\n\n아주 긴 제품명",
+        )
+        second = await self.service.enqueue_intake_report(
+            user_id=user.id,
+            recipient_email="recipient@example.com",
+            report_id="report-20260911-abc123",
+            report_markdown="# 복용약 보고서\n\n아주 긴 제품명",
+        )
+
+        assert first.id == second.id
+        assert first.reference_table == "intake_reports"
+        assert first.reference_id == 31
+        assert first.user_id == 31
+        assert first.idempotency_key == "email:intake-report:31:report-20260911-abc123"
+        assert self.redis_pool.enqueue_job.await_count == 2
+        encrypted_payload = self.redis_pool.enqueue_job.await_args.args[2]
+        assert "복용약 보고서" not in encrypted_payload
+        payload = self.codec.decrypt(encrypted_payload)
+        assert payload.template is EmailTemplate.INTAKE_REPORT
+        assert payload.report_id == "report-20260911-abc123"

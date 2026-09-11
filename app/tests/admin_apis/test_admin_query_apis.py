@@ -63,7 +63,16 @@ class TestAdminListAPI(AdminQueryTestBase):
 
         body = response.json()
         assert body["totalCount"] == 1
-        assert body["items"][0]["email"] == "eunmi@ozcoding.ai"
+        assert body["items"][0]["email"] == "eun**@ozcoding.ai"
+
+    async def test_masks_name_and_email_in_admin_list(self) -> None:
+        response = await request("GET", ADMIN_ACCOUNTS_URL, headers=self.headers)
+
+        items = {item["adminId"]: item for item in response.json()["items"]}
+        assert items[self.super_admin.id]["name"] == "김*미"
+        assert items[self.super_admin.id]["email"] == "eun**@ozcoding.ai"
+        assert items[self.staff.id]["name"] == "김*형"
+        assert items[self.staff.id]["email"] == "jin******@ozcoding.ai"
 
     async def test_filters_by_name_and_email(self) -> None:
         response = await request(
@@ -96,6 +105,8 @@ class TestAdminDetailAPI(AdminQueryTestBase):
         response = await request("GET", f"{ADMIN_ACCOUNTS_URL}/{self.super_admin.id}", headers=self.headers)
 
         assert response.status_code == status.HTTP_200_OK
+        assert response.json()["name"] == "김은미"
+        assert response.json()["email"] == "eunmi@ozcoding.ai"
         assert set(response.json()) == {
             "adminId",
             "name",
@@ -144,10 +155,12 @@ class TestUserListAPI(AdminQueryTestBase):
         assert body["totalCount"] == 2
         assert set(body["items"][0]) == {"userId", "name", "email", "phone", "status", "createdAt"}
 
-    async def test_returns_decrypted_and_dot_masked_phone_in_user_list(self) -> None:
+    async def test_returns_masked_personal_information_in_user_list(self) -> None:
         response = await request("GET", ADMIN_USERS_URL, headers=self.headers)
 
         items = {item["userId"]: item for item in response.json()["items"]}
+        assert items[self.active_user.id]["name"] == "홍*동"
+        assert items[self.active_user.id]["email"] == "use*@mail.com"
         assert items[self.active_user.id]["phone"] == "010-••••-5678"
         assert items[self.pending_user.id]["phone"] is None
 
@@ -246,7 +259,7 @@ class TestUserDetailAPI(AdminQueryTestBase):
 
         assert response.json()["isTermsAgreed"] is True
 
-    async def test_formats_ten_digit_phone_without_changing_digits(self) -> None:
+    async def test_formats_ten_digit_phone_without_masking(self) -> None:
         user = await create_user(
             name="구형번호",
             email="legacy-phone@mail.com",
@@ -256,6 +269,17 @@ class TestUserDetailAPI(AdminQueryTestBase):
         response = await request("GET", f"{ADMIN_USERS_URL}/{user.id}", headers=self.headers)
 
         assert response.json()["phone"] == "011-123-4567"
+
+    async def test_returns_name_and_email_without_masking(self) -> None:
+        user = await create_user(
+            name="홍길동일이삼",
+            email="abcdef@example.com",
+        )
+
+        response = await request("GET", f"{ADMIN_USERS_URL}/{user.id}", headers=self.headers)
+
+        assert response.json()["name"] == "홍길동일이삼"
+        assert response.json()["email"] == "abcdef@example.com"
 
     async def test_treats_missing_settings_as_not_agreed(self) -> None:
         """설정 행이 아직 없는 가입 직후 사용자는 미동의로 본다."""

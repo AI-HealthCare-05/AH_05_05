@@ -1,4 +1,5 @@
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
+import { DrawnArrow } from '@/shared/ui/DrawnArrow';
 import { useNavigate } from 'react-router';
 
 import { Button } from '@/shared/ui/Button';
@@ -9,7 +10,7 @@ export function OfficialChallengeComingSoonPage({ feature }: { feature: 'tailore
   return (
     <main className="flex flex-col gap-4 px-page-x py-5">
       <header className="flex items-center gap-3">
-        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges/browse')} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><ArrowLeft aria-hidden className="size-5" /></button>
+        <button type="button" aria-label="뒤로 가기" onClick={() => navigate('/challenges/browse')} className="flex size-11 shrink-0 items-center justify-center rounded-pill"><DrawnArrow direction="left" className="size-5" /></button>
         <p className="text-caption font-bold text-primary">{label}</p>
       </header>
       <section className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-card bg-card p-5 text-center shadow-card">

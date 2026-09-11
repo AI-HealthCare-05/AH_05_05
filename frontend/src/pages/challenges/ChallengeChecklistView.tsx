@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router';
+import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import type { ChallengeParticipation } from '@/features/challenges';
 
 export interface ChallengeChecklistViewProps {
@@ -64,7 +65,7 @@ export function ChallengeChecklistView({ participation }: ChallengeChecklistView
             <span className="flex-1 text-sm font-bold text-foreground">{item.label}</span>
             <span className="sr-only">{item.checked ? '확인 완료' : '미확인'}</span>
             {!item.available && <span className="text-xs text-tertiary-foreground">기록 없음</span>}
-            <span aria-hidden="true" className="text-xl text-tertiary-foreground">›</span>
+            <DrawnChevron direction="right" className="size-5 text-tertiary-foreground" />
           </Link>
         ))}
       </div>

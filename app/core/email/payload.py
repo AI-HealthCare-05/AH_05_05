@@ -9,6 +9,7 @@ class EmailTemplate(StrEnum):
     ADMIN_TEMPORARY_PASSWORD = "ADMIN_TEMPORARY_PASSWORD"
     USER_PASSWORD_RESET = "USER_PASSWORD_RESET"
     SIGNUP_VERIFICATION_CODE = "SIGNUP_VERIFICATION_CODE"
+    INTAKE_REPORT = "INTAKE_REPORT"
 
 
 class EmailJobPayload(BaseModel):
@@ -20,6 +21,8 @@ class EmailJobPayload(BaseModel):
     verification_code: str | None = Field(default=None, pattern=r"^\d{6}$")
     expires_in: int | None = Field(default=None, gt=0)
     expires_at: datetime | None = None
+    report_id: str | None = Field(default=None, min_length=1, max_length=100)
+    report_markdown: str | None = Field(default=None, min_length=1, max_length=200_000)
 
     @model_validator(mode="after")
     def validate_template_fields(self) -> "EmailJobPayload":
@@ -29,6 +32,9 @@ class EmailJobPayload(BaseModel):
         elif self.template is EmailTemplate.USER_PASSWORD_RESET:
             if self.temporary_password is None:
                 raise ValueError("사용자 비밀번호 재설정 이메일 필드가 누락되었습니다.")
+        elif self.template is EmailTemplate.INTAKE_REPORT:
+            if self.report_id is None or self.report_markdown is None:
+                raise ValueError("복용약 보고서 이메일 필드가 누락되었습니다.")
         elif self.verification_id is None or self.verification_code is None or self.expires_at is None:
             raise ValueError("회원가입 이메일 인증 필드가 누락되었습니다.")
         return self

@@ -215,6 +215,15 @@ class IntakeReportAssembler:
     def _sources_from_rule(
         rule: InteractionRuleFact,
     ) -> list[IntakeReportSource]:
+        if rule.source_references:
+            return [
+                IntakeReportSource(
+                    title=source.title,
+                    url=source.url,
+                    evidence_level=IntakeReportEvidenceLevel.APPROVED_RULE,
+                )
+                for source in rule.source_references
+            ]
         return [
             IntakeReportSource(
                 title=title,

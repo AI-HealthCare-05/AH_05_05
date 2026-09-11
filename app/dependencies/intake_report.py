@@ -7,7 +7,9 @@ from ai_worker.services.intake_report_core_service import (
     build_intake_report_core_service,
 )
 from app.core.exceptions import IntakeReportUpstreamUnavailableError
+from app.services.email_jobs import EmailJobService
 from app.services.intake_report import IntakeReportApplicationService
+from app.services.intake_report_email import IntakeReportEmailService
 
 
 async def get_intake_report_application_service(
@@ -46,3 +48,11 @@ async def get_intake_report_application_service(
     request.app.state.intake_report_tracer = core_service.tracer
     request.app.state.intake_report_application_service = service
     return service
+
+
+def get_intake_report_email_service() -> IntakeReportEmailService:
+    return IntakeReportEmailService()
+
+
+def get_intake_report_email_job_service() -> EmailJobService:
+    return EmailJobService()

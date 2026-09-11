@@ -9,6 +9,9 @@ _ALLOWED_PROMPT_ASSETS = frozenset(
         "medication_chat_prompt_v5.md",
         "medication_chat_prompt_v6.md",
         "intake_report_prompt_v1.md",
+        "intake_report_prompt_v11.md",
+        "intake_report_plain_language.md",
+        "intake_report_plain_language_review.md",
     }
 )
 

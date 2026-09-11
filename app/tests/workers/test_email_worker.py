@@ -95,11 +95,13 @@ class TestEmailWorker(TestCase):
         max_retry_count: int = 3,
         reference_table: str = "admin",
         reference_id: int = 7,
+        user_id: int | None = None,
     ) -> BackgroundJob:
         return await BackgroundJob.create(
             idempotency_key=f"email-worker-{status}-{retry_count}-{max_retry_count}",
             job_type=BackgroundJobType.EMAIL,
             status=status,
+            user_id=user_id,
             reference_table=reference_table,
             reference_id=reference_id,
             retry_count=retry_count,
@@ -146,6 +148,16 @@ class TestEmailWorker(TestCase):
                 template=EmailTemplate.USER_PASSWORD_RESET,
                 recipient_email="recipient@example.com",
                 temporary_password=password,
+            )
+        )
+
+    def intake_report_payload(self) -> str:
+        return self.codec.encrypt(
+            EmailJobPayload(
+                template=EmailTemplate.INTAKE_REPORT,
+                recipient_email="recipient@example.com",
+                report_id="report-20260911-abc123",
+                report_markdown="# 복용약 보고서\n\n내용",
             )
         )
 
@@ -217,6 +229,44 @@ class TestEmailWorker(TestCase):
         assert job.status is BackgroundJobStatus.CANCELLED
         assert job.error_code == "EMAIL_PASSWORD_RESET_TARGET_INVALID"
         self.sender.send.assert_not_called()
+
+    async def test_intake_report_is_cancelled_when_account_email_is_not_verified(self) -> None:
+        user = await User.create(
+            email="recipient@example.com",
+            hashed_password=hash_password("Original123!"),
+            name="보고서 사용자",
+            status=AccountStatus.ACTIVE,
+        )
+        job = await self.create_job(reference_table="intake_reports", reference_id=user.id, user_id=user.id)
+
+        await worker.send_email(self.context, job.id, self.intake_report_payload())
+
+        await job.refresh_from_db()
+        assert job.status is BackgroundJobStatus.CANCELLED
+        assert job.error_code == "EMAIL_INTAKE_REPORT_TARGET_INVALID"
+        self.sender.send.assert_not_called()
+
+    async def test_intake_report_is_sent_for_active_user_with_verified_email(self) -> None:
+        user = await User.create(
+            email="recipient@example.com",
+            hashed_password=hash_password("Original123!"),
+            name="보고서 사용자",
+            status=AccountStatus.ACTIVE,
+        )
+        await EmailVerification.create(
+            email=user.email,
+            purpose=EmailVerificationPurpose.SIGNUP,
+            code_digest="a" * 64,
+            expires_at=datetime.now(config.TIMEZONE) + timedelta(minutes=5),
+            verified_at=datetime.now(config.TIMEZONE),
+        )
+        job = await self.create_job(reference_table="intake_reports", reference_id=user.id, user_id=user.id)
+
+        await worker.send_email(self.context, job.id, self.intake_report_payload())
+
+        await job.refresh_from_db()
+        assert job.status is BackgroundJobStatus.COMPLETED
+        self.sender.send.assert_called_once()
 
     async def test_retryable_failure_waits_and_raises_arq_retry(self) -> None:
         job = await self.create_job(max_retry_count=3)
