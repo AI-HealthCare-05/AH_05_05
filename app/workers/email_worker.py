@@ -167,11 +167,7 @@ async def _is_user_password_reset_sendable(job: BackgroundJob, recipient_email: 
 
 
 async def _is_intake_report_sendable(job: BackgroundJob, recipient_email: str) -> bool:
-    if (
-        job.reference_table != "intake_reports"
-        or job.reference_id is None
-        or job.user_id != job.reference_id
-    ):
+    if job.reference_table != "intake_reports" or job.reference_id is None or job.user_id != job.reference_id:
         return False
     user = await User.get_or_none(
         id=job.reference_id,

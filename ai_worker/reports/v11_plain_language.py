@@ -239,7 +239,11 @@ class PlainLanguageRefiner:
                 HumanMessage(content=json.dumps(review_payload, ensure_ascii=False, separators=(",", ":"))),
             ]
         )
-        review = raw_review if isinstance(raw_review, PlainLanguageReview) else PlainLanguageReview.model_validate(raw_review)
+        review = (
+            raw_review
+            if isinstance(raw_review, PlainLanguageReview)
+            else PlainLanguageReview.model_validate(raw_review)
+        )
         reviews_by_key = _exact_key_map(review.reviews, {field.key for field in fields})
         if reviews_by_key is None:
             return cards

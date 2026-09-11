@@ -139,9 +139,7 @@ async def test_evidence_locked_generator_does_not_depend_on_unused_rag() -> None
 
     retriever = FakeRetriever(unavailable=True)
     generator = EvidenceLockedGenerator()
-    result = await _use_case(
-        context=_supplement_context(), retriever=retriever, generator=generator
-    ).execute(user_id=1)
+    result = await _use_case(context=_supplement_context(), retriever=retriever, generator=generator).execute(user_id=1)
 
     assert retriever.calls == 0
     assert generator.calls == 1

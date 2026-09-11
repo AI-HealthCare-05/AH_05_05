@@ -149,15 +149,22 @@ class OpenAIIntakeReportCardsGenerator:
                 # Its separate, short budget and zero retries preserve a usable
                 # canonical report when editing or semantic review is unavailable.
                 display_client = ChatOpenAI(
-                    model=normalized_model, temperature=0, api_key=api_key,
-                    timeout=25.0, max_retries=0,
+                    model=normalized_model,
+                    temperature=0,
+                    api_key=api_key,
+                    timeout=25.0,
+                    max_retries=0,
                 )
                 self._plain_language_refiner = PlainLanguageRefiner(
                     writer=display_client.with_structured_output(
-                        PlainLanguageEdits, method="json_schema", strict=True,
+                        PlainLanguageEdits,
+                        method="json_schema",
+                        strict=True,
                     ).with_config(run_name="intake_report_cards.plain_language"),
                     reviewer=display_client.with_structured_output(
-                        PlainLanguageReview, method="json_schema", strict=True,
+                        PlainLanguageReview,
+                        method="json_schema",
+                        strict=True,
                     ).with_config(run_name="intake_report_cards.plain_language_review"),
                     timeout_seconds=25.0,
                 )

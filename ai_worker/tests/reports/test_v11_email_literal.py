@@ -2,11 +2,13 @@ from app.core.email.markdown_renderer import render_safe_markdown
 
 
 def test_entity_encoded_card_text_stays_literal_without_invented_links_or_html() -> None:
-    rendered = str(render_safe_markdown(
-        "## 약 정보\n\n"
-        "&#91;등록명&#93;&#40;https://not-a-source.example&#41; "
-        "&#42;&#42;강조 아님&#42;&#42; &lt;img src=x onerror=alert(1)&gt;"
-    ))
+    rendered = str(
+        render_safe_markdown(
+            "## 약 정보\n\n"
+            "&#91;등록명&#93;&#40;https://not-a-source.example&#41; "
+            "&#42;&#42;강조 아님&#42;&#42; &lt;img src=x onerror=alert(1)&gt;"
+        )
+    )
     assert "[등록명](https://not-a-source.example)" in rendered
     assert "**강조 아님**" in rendered
     assert "&lt;img src=x onerror=alert(1)&gt;" in rendered

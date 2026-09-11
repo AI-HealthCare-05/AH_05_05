@@ -65,10 +65,14 @@ class TestIntakeReportEmailService(TestCase):
             "reportId": "report-id",
             "reportMarkdown": "# 보고서",
         }
-        token = Fernet(self.key.encode("ascii")).encrypt_at_time(
-            json.dumps(old_payload).encode("utf-8"),
-            current_time=int(time.time()) - INTAKE_REPORT_EMAIL_TOKEN_TTL_SECONDS - 1,
-        ).decode("ascii")
+        token = (
+            Fernet(self.key.encode("ascii"))
+            .encrypt_at_time(
+                json.dumps(old_payload).encode("utf-8"),
+                current_time=int(time.time()) - INTAKE_REPORT_EMAIL_TOKEN_TTL_SECONDS - 1,
+            )
+            .decode("ascii")
+        )
 
         with pytest.raises(IntakeReportEmailTokenError):
             self.service.consume_snapshot_token(token=token, user=self.user)
@@ -127,7 +131,6 @@ class TestIntakeReportEmailService(TestCase):
         assert other_response.status_code == status.HTTP_404_NOT_FOUND
 
 
-
 class StubSnapshotService:
     def consume_snapshot_token(self, *, token: str, user: object):
         assert token == "server-issued-token"
@@ -157,7 +160,9 @@ async def test_email_api_only_enqueues_server_snapshot_to_verified_owner() -> No
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/v1/intake-reports/email", json={"emailToken": "server-issued-token"})
-            repeated_response = await client.post("/api/v1/intake-reports/email", json={"emailToken": "server-issued-token"})
+            repeated_response = await client.post(
+                "/api/v1/intake-reports/email", json={"emailToken": "server-issued-token"}
+            )
     finally:
         app.dependency_overrides.clear()
 
@@ -165,14 +170,18 @@ async def test_email_api_only_enqueues_server_snapshot_to_verified_owner() -> No
     assert response.json() == {"jobId": 91, "status": "QUEUED"}
     assert repeated_response.status_code == status.HTTP_202_ACCEPTED
     assert repeated_response.json() == {"jobId": 91, "status": "QUEUED"}
-    assert job_service.calls == [
-        {
-            "user_id": 7,
-            "recipient_email": "verified@example.com",
-            "report_markdown": "# 서버 보고서",
-            "report_id": "report-7",
-        }
-    ] * 2
+    assert (
+        job_service.calls
+        == [
+            {
+                "user_id": 7,
+                "recipient_email": "verified@example.com",
+                "report_markdown": "# 서버 보고서",
+                "report_id": "report-7",
+            }
+        ]
+        * 2
+    )
 
 
 async def test_email_api_rejects_extra_client_content_and_queue_failure() -> None:

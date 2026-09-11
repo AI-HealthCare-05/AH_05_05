@@ -690,9 +690,7 @@ def build_evidence_catalog(draft: IntakeReportDraft) -> V11EvidenceCatalog:
             for card in guidance_cards
         ),
     ]
-    sources_by_id = {
-        source.id: source for source in [*medication_sources, *review_sources, *guidance_sources]
-    }
+    sources_by_id = {source.id: source for source in [*medication_sources, *review_sources, *guidance_sources]}
     return V11EvidenceCatalog(
         medications=medications,
         interactions=tuple(interactions),

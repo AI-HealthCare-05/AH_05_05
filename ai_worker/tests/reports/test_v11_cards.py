@@ -822,14 +822,34 @@ def test_markdown_lists_sources_once_at_bottom_without_inline_references() -> No
 
 def test_markdown_groups_same_context_actions_without_losing_cards() -> None:
     shared = "복용 전 전문가에게 확인하세요."
-    cards = IntakeReportCards(interactions=[
-        InteractionCard(id="a", title="가상 조합 A", summary="첫 번째 설명", action=shared,
-                        evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
-        InteractionCard(id="b", title="가상 조합 B", summary="두 번째 설명", action=shared,
-                        evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
-        InteractionCard(id="c", title="가상 조합 C", summary="중요 설명", action=shared,
-                        evidence_level="APPROVED_RULE", action_level="WARNING"),
-    ])
+    cards = IntakeReportCards(
+        interactions=[
+            InteractionCard(
+                id="a",
+                title="가상 조합 A",
+                summary="첫 번째 설명",
+                action=shared,
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
+            InteractionCard(
+                id="b",
+                title="가상 조합 B",
+                summary="두 번째 설명",
+                action=shared,
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
+            InteractionCard(
+                id="c",
+                title="가상 조합 C",
+                summary="중요 설명",
+                action=shared,
+                evidence_level="APPROVED_RULE",
+                action_level="WARNING",
+            ),
+        ]
+    )
     markdown = render_cards_markdown(cards, _draft())
     assert markdown.count(shared) == 2
     assert markdown.count("공통 안내 · 2개 항목") == 1
@@ -841,14 +861,30 @@ def test_markdown_groups_actions_that_normalize_to_the_same_text_via_one_pass_en
     merged_action = "복용 전 γ-GTP 수치를 확인하세요."
     cards = IntakeReportCards(
         interactions=[
-            InteractionCard(id="literal", title="가상 조합 A", summary="설명 A", action=merged_action,
-                            evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
-            InteractionCard(id="entity", title="가상 조합 B", summary="설명 B",
-                            action="복용   전  &gamma;-GTP  수치를  확인하세요.",
-                            evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
-            InteractionCard(id="double-escaped", title="가상 조합 C", summary="설명 C",
-                            action="복용 전 &amp;gamma;-GTP 수치를 확인하세요.",
-                            evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
+            InteractionCard(
+                id="literal",
+                title="가상 조합 A",
+                summary="설명 A",
+                action=merged_action,
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
+            InteractionCard(
+                id="entity",
+                title="가상 조합 B",
+                summary="설명 B",
+                action="복용   전  &gamma;-GTP  수치를  확인하세요.",
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
+            InteractionCard(
+                id="double-escaped",
+                title="가상 조합 C",
+                summary="설명 C",
+                action="복용 전 &amp;gamma;-GTP 수치를 확인하세요.",
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
         ]
     )
 
@@ -972,10 +1008,22 @@ def test_markdown_group_retains_distinct_source_metadata_only_at_bottom_without_
 def test_markdown_does_not_group_blank_whitespace_actions_even_when_identical() -> None:
     cards = IntakeReportCards(
         interactions=[
-            InteractionCard(id="a", title="가상 조합 A", summary="설명 A", action=" ",
-                            evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
-            InteractionCard(id="b", title="가상 조합 B", summary="설명 B", action=" ",
-                            evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
+            InteractionCard(
+                id="a",
+                title="가상 조합 A",
+                summary="설명 A",
+                action=" ",
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
+            InteractionCard(
+                id="b",
+                title="가상 조합 B",
+                summary="설명 B",
+                action=" ",
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
         ]
     )
 
@@ -990,12 +1038,30 @@ def test_grouping_does_not_mutate_original_card_objects_or_their_order() -> None
     original_order = ["c", "a", "b"]
     cards = IntakeReportCards(
         interactions=[
-            InteractionCard(id="c", title="가상 조합 C", summary="설명 C", action=shared_action,
-                            evidence_level="APPROVED_RULE", action_level="WARNING"),
-            InteractionCard(id="a", title="가상 조합 A", summary="설명 A", action=shared_action,
-                            evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
-            InteractionCard(id="b", title="가상 조합 B", summary="설명 B", action=shared_action,
-                            evidence_level="PUBLIC_GUIDE", action_level="CHECK"),
+            InteractionCard(
+                id="c",
+                title="가상 조합 C",
+                summary="설명 C",
+                action=shared_action,
+                evidence_level="APPROVED_RULE",
+                action_level="WARNING",
+            ),
+            InteractionCard(
+                id="a",
+                title="가상 조합 A",
+                summary="설명 A",
+                action=shared_action,
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
+            InteractionCard(
+                id="b",
+                title="가상 조합 B",
+                summary="설명 B",
+                action=shared_action,
+                evidence_level="PUBLIC_GUIDE",
+                action_level="CHECK",
+            ),
         ]
     )
     before = list(cards.interactions)
@@ -1126,16 +1192,24 @@ async def test_generator_uses_approved_display_copy_in_cards_and_email_without_l
         async def refine(self, cards):
             original = cards.medications[0]
             updated = original.model_copy(update={"efficacy": original.efficacy.model_copy(update={"text": plain})})
-            return cards.model_copy(update={
-                "medications": [updated, *cards.medications[1:]],
-                "original_texts": [OriginalCardText(
-                    key="medication/0/efficacy", label=f"{original.product_name} · 효능",
-                    text=original.efficacy.text, source_ids=original.efficacy.source_ids,
-                )],
-            })
+            return cards.model_copy(
+                update={
+                    "medications": [updated, *cards.medications[1:]],
+                    "original_texts": [
+                        OriginalCardText(
+                            key="medication/0/efficacy",
+                            label=f"{original.product_name} · 효능",
+                            text=original.efficacy.text,
+                            source_ids=original.efficacy.source_ids,
+                        )
+                    ],
+                }
+            )
 
     outcome = await OpenAIIntakeReportCardsGenerator(
-        model="offline-test", client=ValidClient(), plain_language_refiner=ApprovedDisplayRefiner(),
+        model="offline-test",
+        client=ValidClient(),
+        plain_language_refiner=ApprovedDisplayRefiner(),
     ).generate(draft=draft)
 
     assert outcome.cards.medications[0].efficacy.text == plain
@@ -1155,7 +1229,9 @@ async def test_display_refinement_uses_only_remaining_generation_budget() -> Non
             raise AssertionError("display editing must stop at the report deadline")
 
     outcome = await OpenAIIntakeReportCardsGenerator(
-        model="offline-test", client=ValidClient(), plain_language_refiner=SlowDisplayRefiner(),
+        model="offline-test",
+        client=ValidClient(),
+        plain_language_refiner=SlowDisplayRefiner(),
         generation_timeout_seconds=0.05,
     ).generate(draft=_draft())
 
@@ -1699,8 +1775,7 @@ def test_food_card_summary_prepends_nutrient_specific_rationale_before_food_exam
     assert len(cards) == 1
     summary = cards[0].summary
     rationale = (
-        f"등록한 영양제에서 확인된 {nutrient_name} 함량이 비교 기준보다 낮아, "
-        "식단에서 참고할 수 있는 식품을 안내해요."
+        f"등록한 영양제에서 확인된 {nutrient_name} 함량이 비교 기준보다 낮아, 식단에서 참고할 수 있는 식품을 안내해요."
     )
     assert summary.startswith(rationale)
     assert food_keyword in summary
@@ -1762,9 +1837,7 @@ def test_food_card_omitted_when_amount_reference_or_unit_is_invalid(overrides: d
 @pytest.mark.parametrize("unit", ["μg", "µg", "mcg", "㎍"])
 def test_vitamin_d_food_card_accepts_all_microgram_spellings(unit: str) -> None:
     draft = _draft(
-        nutrient_totals=[
-            _nutrient_total(nutrient_name="비타민 D", amount="5", unit=unit, reference_value="10")
-        ]
+        nutrient_totals=[_nutrient_total(nutrient_name="비타민 D", amount="5", unit=unit, reference_value="10")]
     )
 
     cards, _sources = build_lifestyle_guidance_cards(draft)
@@ -1916,7 +1989,9 @@ def test_timing_card_omitted_when_unit_does_not_match_expected_nutrient_unit(
         included_product_names=[product_name],
     )
     draft = _draft(nutrient_totals=[total]).model_copy(
-        update={"current_stack": [*_draft().current_stack, _supplement_item(item_id=item_id, product_name=product_name)]}
+        update={
+            "current_stack": [*_draft().current_stack, _supplement_item(item_id=item_id, product_name=product_name)]
+        }
     )
 
     cards, _sources = build_lifestyle_guidance_cards(draft)
@@ -2084,7 +2159,14 @@ def test_catalog_only_includes_sources_for_cards_that_were_actually_emitted() ->
 
     catalog = build_evidence_catalog(draft)
 
-    new_card_ids = {"food:calcium", "food:iron", "food:vitamin-c", "food:vitamin-d", "timing:vitamin-d", "timing:calcium"}
+    new_card_ids = {
+        "food:calcium",
+        "food:iron",
+        "food:vitamin-c",
+        "food:vitamin-d",
+        "timing:vitamin-d",
+        "timing:calcium",
+    }
     emitted_ids = {card.card_id for card in catalog.lifestyle if card.card_id in new_card_ids}
     assert emitted_ids == {"food:vitamin-d", "timing:vitamin-d"}
     referenced_source_ids = {

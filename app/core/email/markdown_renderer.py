@@ -54,11 +54,7 @@ def render_safe_markdown(markdown: str) -> Markup:  # noqa: C901
 
 
 def _is_table_start(lines: list[str], index: int) -> bool:
-    return (
-        index + 1 < len(lines)
-        and lines[index].strip().startswith("|")
-        and _is_table_divider(lines[index + 1])
-    )
+    return index + 1 < len(lines) and lines[index].strip().startswith("|") and _is_table_divider(lines[index + 1])
 
 
 def _is_table_divider(line: str) -> bool:

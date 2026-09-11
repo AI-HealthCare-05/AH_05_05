@@ -1,3 +1,5 @@
+import pytest
+
 from ai_worker.schemas.intake_report import (
     IntakeReportNutrientTotal,
     IntakeReportResult,
@@ -50,7 +52,23 @@ def test_api_dto_preserves_generated_report_and_visible_fallback_metadata() -> N
     assert payload["reportMarkdown"] == "## 생성 결과가 아닌 기본 정보"
 
 
-def test_api_dto_preserves_v11_cards_and_same_email_markdown() -> None:
+@pytest.mark.parametrize(
+    "original_texts",
+    [
+        None,
+        [],
+        [
+            {
+                "key": "med:73:efficacy",
+                "label": "새로 등록한 약 · 효능",
+                "text": "확인한 효능의 원문",
+                "sourceIds": ["guide:9"],
+            }
+        ],
+    ],
+    ids=["omitted-originals", "empty-originals", "preserved-originals"],
+)
+def test_api_dto_preserves_v11_cards_and_same_email_markdown(original_texts: list[dict] | None) -> None:
     from app.dtos.intake_reports import IntakeReportResponse
 
     cards = {
@@ -78,6 +96,9 @@ def test_api_dto_preserves_v11_cards_and_same_email_markdown() -> None:
             }
         ],
     }
+    if original_texts is not None:
+        cards["originalTexts"] = original_texts
+    expected_cards = {**cards, "originalTexts": original_texts if original_texts is not None else []}
     values = IntakeReportResult.empty(user_id=1).model_dump()
     values.update(
         status="COMPLETED",
@@ -87,7 +108,7 @@ def test_api_dto_preserves_v11_cards_and_same_email_markdown() -> None:
     )
     result = IntakeReportResult.model_validate(values)
     payload = IntakeReportResponse.from_result(result).model_dump(mode="json", by_alias=True)
-    assert payload["cards"] == cards
+    assert payload["cards"] == expected_cards
     assert payload["presentationVersion"] == "ai-report-v11"
     assert payload["reportMarkdown"] == values["report_markdown"]
     assert payload["emailToken"] is None

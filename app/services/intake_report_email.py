@@ -62,7 +62,9 @@ class IntakeReportEmailService:
             "reportId": str(uuid4()),
             "reportMarkdown": report_markdown,
         }
-        return fernet.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).decode("ascii")
+        return fernet.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).decode(
+            "ascii"
+        )
 
     def consume_snapshot_token(self, *, token: str, user: User) -> IntakeReportEmailSnapshot:
         if len(token) > MAX_INTAKE_REPORT_EMAIL_TOKEN_LENGTH:
@@ -96,10 +98,15 @@ class IntakeReportEmailService:
 
     async def require_verified_recipient(self, *, user: User) -> str:
         recipient_email = self._normalized_email(user.email)
-        if user.status is not AccountStatus.ACTIVE or not await EmailVerification.filter(
-            email=recipient_email,
-            purpose=EmailVerificationPurpose.SIGNUP,
-        ).exclude(verified_at=None).exists():
+        if (
+            user.status is not AccountStatus.ACTIVE
+            or not await EmailVerification.filter(
+                email=recipient_email,
+                purpose=EmailVerificationPurpose.SIGNUP,
+            )
+            .exclude(verified_at=None)
+            .exists()
+        ):
             raise IntakeReportEmailNotVerifiedError("이메일 인증을 완료한 계정에서만 보고서를 보낼 수 있습니다.")
         return recipient_email
 

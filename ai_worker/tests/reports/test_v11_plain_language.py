@@ -203,9 +203,7 @@ async def test_refine_keeps_identical_shared_actions_consistent() -> None:
             )
         ],
     )
-    writer = _Writer(
-        {"interaction:i1:action": "복용 전 전문가에게 확인해요."}
-    )
+    writer = _Writer({"interaction:i1:action": "복용 전 전문가에게 확인해요."})
 
     refined = await PlainLanguageRefiner(writer=writer, reviewer=_Reviewer()).refine(cards)
 
