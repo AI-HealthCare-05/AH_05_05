@@ -4,7 +4,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from ai_worker.domain.intake_display import format_active_medication_names
 from ai_worker.llm.prompts.prompt_assets import load_prompt_template_document
 from ai_worker.schemas.conversation_gate import ConversationIntent, SymptomFollowUpField
 
@@ -17,7 +16,6 @@ class ConversationResponseInput(BaseModel):
     question: str = Field(min_length=1)
     intent: ConversationIntent
     follow_up_fields: list[SymptomFollowUpField] = Field(default_factory=list, max_length=3)
-    active_medication_names: list[str] = Field(default_factory=list, max_length=20)
 
     @field_validator("question")
     @classmethod
@@ -70,10 +68,14 @@ class ConversationResponseGenerator:
             ConversationIntent.GREETING: "안녕하세요. 무엇을 도와드릴까요?",
             ConversationIntent.CASUAL: "그랬군요. 어떤 점이 가장 신경 쓰이는지 말씀해 주세요.",
             ConversationIntent.VAGUE_SYMPTOM: (
-                "많이 불편하시겠어요. 어디가 언제부터 얼마나 아픈지 알려주실 수 있을까요?"
+                "많이 불편하시겠어요. 증상 원인이나 치료 약 추천은 할 수 없지만, "
+                "현재 복용 중인 약과 함께 먹어도 되는지는 확인해드릴 수 있어요. "
+                "추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
             ),
             ConversationIntent.SPECIFIC_SYMPTOM: (
-                "증상이 시작된 시점과 통증 정도, 함께 나타나는 증상을 알려주세요."
+                "많이 불편하시겠어요. 증상 원인이나 치료 약 추천은 할 수 없지만, "
+                "현재 복용 중인 약과 함께 먹어도 되는지는 확인해드릴 수 있어요. "
+                "추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
             ),
         }
         return self._format_answer(input=input, body=bodies.get(input.intent, "무엇을 도와드릴까요?"))
@@ -85,10 +87,7 @@ class ConversationResponseGenerator:
             return normalized_body
 
         sections: list[str] = []
-        medication_names = format_active_medication_names(input.active_medication_names)
-        if medication_names:
-            sections.append("💊 **복약정보**\n" + "\n".join(f"- {name}" for name in medication_names))
-        sections.append(f"🩺 **확인을 위해 필요한 정보**\n- {normalized_body}")
+        sections.append(f"🩺 **상호작용 확인을 위해 필요한 정보**\n- {normalized_body}")
         return "\n\n".join(sections)
 
 

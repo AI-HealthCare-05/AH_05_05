@@ -31,8 +31,9 @@ from ai_worker.rag.query_builders.medication_knowledge_query_builder import (
 from ai_worker.safety.grounded_claim_validator import (
     RuleBasedGroundedClaimValidator,
 )
+from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import ConversationClassification
-from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.enums import ChatRole, SafetyStatus
 from ai_worker.schemas.interaction import (
     InteractionEntity,
     InteractionEntityKind,
@@ -642,10 +643,11 @@ def build_use_case(
     therapeutic_class_repository=None,
     conversation_gate_chain=None,
     conversation_response_generator=None,
+    guide_repository=None,
 ) -> AnswerMedicationQuestionUseCase:
     return AnswerMedicationQuestionUseCase(
         context_provider=FakeContextProvider(context or ActiveIntakeContext(user_id=1)),
-        guide_repository=FakeGuideRepository(lookup or MedicationGuideLookup()),
+        guide_repository=(guide_repository or FakeGuideRepository(lookup or MedicationGuideLookup())),
         interaction_rule_repository=(rule_repository or FakeRuleRepository(rules or [])),
         knowledge_retriever=retriever or FakeKnowledgeRetriever(),
         answer_generator=answer_generator or PassthroughGenerator(),
@@ -688,7 +690,10 @@ async def test_vague_symptom_uses_conversation_gate_without_retrieval() -> None:
     assert "어디" in result.answer
 
 
-async def test_specific_symptom_lists_active_medications_without_recommending_drug() -> None:
+async def test_specific_symptom_requests_candidate_medicine_without_exposing_active_medications() -> None:
+    response_generator = StaticConversationResponseGenerator(
+        "🩺 **상호작용 확인을 위해 필요한 정보**\n- 추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
+    )
     result = await build_use_case(
         context=ActiveIntakeContext(
             user_id=1,
@@ -711,15 +716,12 @@ async def test_specific_symptom_lists_active_medications_without_recommending_dr
                 follow_up_fields=["ONSET", "SEVERITY"],
             )
         ),
-        conversation_response_generator=StaticConversationResponseGenerator(
-            "💊 **복약정보**\n- 리바록사반정\n\n🩺 **확인을 위해 필요한 정보**\n- 증상이 시작된 시점과 통증 정도를 알려주세요."
-        ),
+        conversation_response_generator=response_generator,
     ).execute(build_request("배가 아프고 속이 쓰려"))
 
     assert result.route is MedicationChatRoute.CLARIFICATION
-    assert "💊 **복약정보**" in result.answer
-    assert "리바록사반정" in result.answer
-    assert "복통에 효과 있는 약" not in result.answer
+    assert "제품명 또는 성분명" in result.answer
+    assert "active_medication_names" not in response_generator.inputs[0].model_dump()
 
 
 async def test_specific_symptom_does_not_infer_interaction_from_active_medications() -> None:
@@ -760,6 +762,74 @@ async def test_specific_symptom_does_not_infer_interaction_from_active_medicatio
     assert result.route is MedicationChatRoute.CLARIFICATION
     assert "🔁 **상호작용**" not in result.answer
     assert "상호작용이 있습니다" not in result.answer
+
+
+async def test_symptom_follow_up_candidate_uses_active_intake_interaction_rules() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            )
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="리바록사반정"),
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="알마겔"),
+        ),
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="알마겔",
+        risk_level="CAUTION",
+        effect_texts=["승인된 병용 확인 근거입니다."],
+    )
+    request = build_request("알마겔").model_copy(
+        update={
+            "history": [
+                ChatHistoryMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=(
+                        "증상 원인이나 복통약 추천은 할 수 없지만, "
+                        "추가로 복용하려는 약의 제품명 또는 성분명을 알려주세요."
+                    ),
+                )
+            ]
+        }
+    )
+    guide_repository = RecordingGuideRepository()
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        guide_repository=guide_repository,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="알마겔",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SYMPTOM_INTERACTION_FOLLOW_UP",
+                safety_signal="NONE",
+                confidence="HIGH",
+            )
+        ),
+    ).execute(request)
+
+    assert result.route is MedicationChatRoute.ACTIVE_INTAKE
+    assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
+    assert guide_repository.requested_names == []
 
 
 async def test_explicit_active_medication_interaction_uses_approved_rule() -> None:
@@ -806,10 +876,7 @@ async def test_explicit_active_medication_interaction_uses_approved_rule() -> No
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
     assert result.route is MedicationChatRoute.ACTIVE_INTAKE
-    assert any(
-        source.kind is MedicationChatSourceKind.INTERACTION_RULE
-        for source in result.sources
-    )
+    assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
 
 
 async def test_active_medication_interaction_without_approved_rule_states_uncertainty() -> None:
@@ -889,12 +956,8 @@ async def test_conversation_trace_records_decision_without_sensitive_content() -
         ),
     ).execute(build_request("배가 아프고 속이 쓰려"))
 
-    classify_outputs = next(
-        span.outputs for span in tracer.spans if span.name == "conversation.classify"
-    )
-    respond_outputs = next(
-        span.outputs for span in tracer.spans if span.name == "conversation.respond"
-    )
+    classify_outputs = next(span.outputs for span in tracer.spans if span.name == "conversation.classify")
+    respond_outputs = next(span.outputs for span in tracer.spans if span.name == "conversation.respond")
     assert classify_outputs["intent"] == "SPECIFIC_SYMPTOM"
     assert classify_outputs["safety_signal"] == "NONE"
     assert classify_outputs["history_count"] == 0
