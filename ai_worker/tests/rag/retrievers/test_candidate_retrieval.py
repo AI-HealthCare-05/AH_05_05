@@ -31,12 +31,16 @@ class FakeKnowledgeStore:
 
 
 def build_execution_plan() -> MedicationSearchExecutionPlan:
-    query_plan = MedicationKnowledgeQueryBuilder().build(
-        "마그네슘은 왜 먹나요?",
-    ).model_copy(
-        update={
-            "alternate_queries": ["마그네슘 기능성"],
-        },
+    query_plan = (
+        MedicationKnowledgeQueryBuilder()
+        .build(
+            "마그네슘은 왜 먹나요?",
+        )
+        .model_copy(
+            update={
+                "alternate_queries": ["마그네슘 기능성"],
+            },
+        )
     )
     return MedicationSearchExecutionPlan(
         query_plan=query_plan,

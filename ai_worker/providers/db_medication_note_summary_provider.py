@@ -60,10 +60,7 @@ class DbMedicationNoteSummaryProvider:
         for note in notes:
             grouped_notes[note.care_episode_id].append(note)
 
-        episodes = [
-            self._to_episode(group_notes)
-            for group_notes in grouped_notes.values()
-        ]
+        episodes = [self._to_episode(group_notes) for group_notes in grouped_notes.values()]
         episodes.sort(
             key=lambda episode: max(note.dosed_at for note in episode.notes),
             reverse=True,
@@ -105,9 +102,7 @@ class DbMedicationNoteSummaryProvider:
                     medication_note_id=note.id,
                     dosed_at=note.dosed_at,
                     body=note.body,
-                    medication_name=(
-                        note.medication.name if note.medication is not None else None
-                    ),
+                    medication_name=(note.medication.name if note.medication is not None else None),
                 )
                 for note in ordered_notes
             ],

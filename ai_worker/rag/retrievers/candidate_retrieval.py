@@ -88,10 +88,7 @@ class MedicationKnowledgeCandidateRetriever:
         queries = list(dict.fromkeys([plan.expanded_query, *plan.alternate_queries]))
         try:
             query_vectors_by_key = await RunnableParallel(
-                **{
-                    f"query_{index}": self._embedding_runnable(query=query)
-                    for index, query in enumerate(queries)
-                },
+                **{f"query_{index}": self._embedding_runnable(query=query) for index, query in enumerate(queries)},
             ).ainvoke({})
             query_vectors = [query_vectors_by_key[f"query_{index}"] for index in range(len(queries))]
         except Exception as error:

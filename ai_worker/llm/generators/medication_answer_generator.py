@@ -240,10 +240,7 @@ class OpenAIMedicationAnswerGenerator:
     def _is_evidence_gap_guidance(result: MedicationChatResult) -> bool:
         """근거 부재 안내는 새 의학 주장을 만들지 않는 범위에서만 LLM이 정리한다."""
 
-        return (
-            MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value
-            in result.safety_reason_codes
-        )
+        return MedicationChatReasonCode.IN_SCOPE_NO_EVIDENCE.value in result.safety_reason_codes
 
     @classmethod
     def _allows_no_source_llm_guidance(cls, result: MedicationChatResult) -> bool:

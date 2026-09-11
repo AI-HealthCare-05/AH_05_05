@@ -55,9 +55,7 @@ async def test_specific_symptom_requests_candidate_medicine_without_exposing_act
         )
     )
 
-    answer = await generator.generate(
-        specific_symptom_input()
-    )
+    answer = await generator.generate(specific_symptom_input())
 
     assert "🩺 **상호작용 확인을 위해 필요한 정보**" in answer
     assert "제품명 또는 성분명" in answer
@@ -87,9 +85,7 @@ def test_specific_symptom_fallback_requests_candidate_medicine_without_exposing_
         client=StaticConversationResponseClient(ConversationResponsePayload(answer="사용하지 않습니다."))
     )
 
-    answer = generator.fallback(
-        specific_symptom_input()
-    )
+    answer = generator.fallback(specific_symptom_input())
 
     assert "제품명 또는 성분명" in answer
     assert "복약정보" not in answer

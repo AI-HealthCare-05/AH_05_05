@@ -22,6 +22,7 @@ class FatigueConversationPolicy:
     _FATIGUE_PATTERN = re.compile(
         r"피곤|피로|기운\s*(?:없|이\s*없)|무기력|쉽게\s*지침",
     )
+
     def evaluate(self, question: str) -> FatigueConversationDecision | None:
         if not self._FATIGUE_PATTERN.search(question):
             return None

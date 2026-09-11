@@ -137,10 +137,7 @@ async def test_recent_scope_returns_three_latest_episodes_and_marks_more(
         hashed_password="hashed-password",
         name="소유자",
     )
-    episodes = [
-        await _create_episode(user=owner, alias=f"진료 {index}")
-        for index in range(1, 5)
-    ]
+    episodes = [await _create_episode(user=owner, alias=f"진료 {index}") for index in range(1, 5)]
     for index, episode in enumerate(episodes, start=1):
         await _create_note(
             user=owner,

@@ -3,11 +3,7 @@ from pathlib import Path
 import yaml
 
 DATASET = (
-    Path(__file__).resolve().parents[3]
-    / "data"
-    / "knowledge"
-    / "evaluation"
-    / "chat_conversation_gate_queries_v1.yaml"
+    Path(__file__).resolve().parents[3] / "data" / "knowledge" / "evaluation" / "chat_conversation_gate_queries_v1.yaml"
 )
 
 

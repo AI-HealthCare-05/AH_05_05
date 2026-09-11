@@ -5,9 +5,7 @@ from ai_worker.schemas.medication_note_summary import (
     MedicationNoteSummarySelection,
 )
 
-_FACTUAL_DISCLAIMER = (
-    "※ 위 내용은 사용자가 기록한 사실을 요약한 것이며, 약물과의 관련성을 판단한 내용은 아닙니다."
-)
+_FACTUAL_DISCLAIMER = "※ 위 내용은 사용자가 기록한 사실을 요약한 것이며, 약물과의 관련성을 판단한 내용은 아닙니다."
 _RECENT_THREE_NOTICE = "📌 최근 3건의 진료 기록만 정리했습니다. 이전 진료 기록도 필요하면 말씀해 주세요."
 
 
@@ -20,9 +18,7 @@ class MedicationNoteSummaryAssembler:
         selection: MedicationNoteSummarySelection,
         payload: MedicationNoteSummaryPayload,
     ) -> str:
-        payload_by_episode = {
-            episode.care_episode_id: episode for episode in payload.episodes
-        }
+        payload_by_episode = {episode.care_episode_id: episode for episode in payload.episodes}
         blocks = [
             self._episode_block(
                 episode=episode,
@@ -41,15 +37,11 @@ class MedicationNoteSummaryAssembler:
         episode: MedicationNoteSummaryEpisode,
         payload: MedicationNoteEpisodeSummaryPayload,
     ) -> str:
-        note_summaries = {
-            item.medication_note_id: item.summary
-            for item in payload.note_summaries
-        }
+        note_summaries = {item.medication_note_id: item.summary for item in payload.note_summaries}
         medications = episode.medication_names or ["등록된 약 정보가 없습니다."]
         medication_lines = "\n".join(f"- {name}" for name in medications)
         note_lines = "\n".join(
-            f"- {note.dosed_at.month}월 {note.dosed_at.day}일: "
-            f"{note_summaries[note.medication_note_id]}"
+            f"- {note.dosed_at.month}월 {note.dosed_at.day}일: {note_summaries[note.medication_note_id]}"
             for note in episode.notes
         )
         return "\n\n".join(

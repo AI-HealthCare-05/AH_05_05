@@ -10,10 +10,7 @@ def test_interaction_gap_guidance_keeps_only_grounded_notice_for_llm_rewrite() -
         entity_names=["아스피린", "오메가3"],
     )
 
-    assert answer == (
-        "✉️ **안내사항**\n\n"
-        "- 아스피린 ↔ 오메가3 관련 자료를 찾지 못했습니다."
-    )
+    assert answer == ("✉️ **안내사항**\n\n- 아스피린 ↔ 오메가3 관련 자료를 찾지 못했습니다.")
     assert "의료 전문가의 진단이나 처방을 대신하지 않습니다" not in answer
     assert "일반 안내" not in answer
     assert "알 수 없는 범위" not in answer

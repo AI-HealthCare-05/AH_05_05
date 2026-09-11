@@ -185,6 +185,4 @@ async def test_trace_does_not_include_note_body_when_content_capture_is_disabled
         "medication_note_summary.load",
         "medication_note_summary.generate",
     ]
-    assert "민감 메모 본문" not in str(
-        [(span.inputs, span.metadata, span.outputs) for span in tracer.spans]
-    )
+    assert "민감 메모 본문" not in str([(span.inputs, span.metadata, span.outputs) for span in tracer.spans])

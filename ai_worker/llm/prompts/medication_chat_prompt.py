@@ -46,9 +46,7 @@ def build_medication_chat_messages(
             else []
         ),
         "active_medication_names": (
-            [item.name for item in context.medications]
-            if show_active_medication_section
-            else []
+            [item.name for item in context.medications] if show_active_medication_section else []
         ),
         "show_active_medication_section": show_active_medication_section,
         "active_supplement_names": [item.name for item in context.supplements],

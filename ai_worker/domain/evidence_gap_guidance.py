@@ -34,8 +34,7 @@ class EvidenceGapGuidanceBuilder:
             "일반 안내\n"
             "- 등록된 약·영양제는 성분·함량·복용 시점에 따라 서로 영향을 줄 수 있습니다.\n"
             "- 확인 전에는 복용 시작·중단·용량 변경 또는 병용 여부를 임의로 결정하지 마세요.",
-            "알 수 없는 범위\n"
-            "- 상호작용을 확인하지 못했다는 것은 안전하다는 의미는 아닙니다.",
+            "알 수 없는 범위\n- 상호작용을 확인하지 못했다는 것은 안전하다는 의미는 아닙니다.",
             "의료진·약사에게 확인할 내용\n"
             "- 제품명·성분명·함량·복용 시점\n"
             "- 현재 복용 중인 약과 영양제 목록\n"
@@ -52,8 +51,7 @@ class EvidenceGapGuidanceBuilder:
         target = self._notice_target(subject=subject, entity_names=entity_names)
         return "\n\n".join(
             [
-                "✉️ **안내사항**\n\n"
-                f"- {target} 관련 자료를 찾지 못했습니다.",
+                f"✉️ **안내사항**\n\n- {target} 관련 자료를 찾지 못했습니다.",
             ]
         )
 

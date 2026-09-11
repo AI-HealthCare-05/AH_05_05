@@ -1567,10 +1567,7 @@ class AnswerMedicationQuestionUseCase:
         context: ActiveIntakeContext,
         classification: ConversationClassification,
     ) -> MedicationChatResult | None:
-        if (
-            self._medication_note_summary_use_case is None
-            or classification.note_summary_scope is None
-        ):
+        if self._medication_note_summary_use_case is None or classification.note_summary_scope is None:
             return None
         return await self._medication_note_summary_use_case.execute(
             request=request,

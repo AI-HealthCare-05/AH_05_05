@@ -75,9 +75,7 @@ class MedicationNoteSummaryGenerator:
         payload: MedicationNoteSummaryPayload,
     ) -> None:
         expected_note_ids = {
-            episode.care_episode_id: {
-                note.medication_note_id for note in episode.notes
-            }
+            episode.care_episode_id: {note.medication_note_id for note in episode.notes}
             for episode in selection.episodes
         }
         actual_episode_ids = [episode.care_episode_id for episode in payload.episodes]
