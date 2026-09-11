@@ -1327,17 +1327,37 @@ class AnswerMedicationQuestionUseCase:
 
         if self._conversation_gate_chain is None:
             return None
-        try:
-            classification = ConversationClassification.model_validate(
-                await self._conversation_gate_chain.ainvoke(
-                    ConversationGateInput(
-                        question=request.question,
-                        recent_history=request.history,
+        history_count = len(request.history[-4:])
+        started_at = time.perf_counter()
+        async with self._tracer.span("conversation.classify") as classify_span:
+            try:
+                classification = ConversationClassification.model_validate(
+                    await self._conversation_gate_chain.ainvoke(
+                        ConversationGateInput(
+                            question=request.question,
+                            recent_history=request.history,
+                        )
                     )
                 )
+            except Exception:
+                classify_span.end(
+                    {
+                        "history_count": history_count,
+                        "duration_ms": round((time.perf_counter() - started_at) * 1000),
+                        "status": "FAILED",
+                    }
+                )
+                return None
+            classify_span.end(
+                {
+                    "intent": classification.intent.value,
+                    "safety_signal": classification.safety_signal.value,
+                    "confidence": classification.confidence.value,
+                    "history_count": history_count,
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000),
+                    "status": "COMPLETED",
+                }
             )
-        except Exception:
-            return None
 
         return await self._conversation_classification_result(
             request=request,
@@ -1418,10 +1438,35 @@ class AnswerMedicationQuestionUseCase:
             follow_up_fields=classification.follow_up_fields,
             active_medication_names=active_medication_names,
         )
-        try:
-            answer = await self._conversation_response_generator.generate(response_input)
-        except Exception:
-            answer = self._conversation_response_generator.fallback(response_input)
+        started_at = time.perf_counter()
+        async with self._tracer.span("conversation.respond") as response_span:
+            fallback_used = False
+            try:
+                answer = await self._conversation_response_generator.generate(response_input)
+            except Exception:
+                fallback_used = True
+                try:
+                    answer = self._conversation_response_generator.fallback(response_input)
+                except Exception:
+                    response_span.end(
+                        {
+                            "intent": classification.intent.value,
+                            "disposition": ConversationDisposition.ALLOW.value,
+                            "fallback_used": fallback_used,
+                            "duration_ms": round((time.perf_counter() - started_at) * 1000),
+                            "status": "FAILED",
+                        }
+                    )
+                    return None
+            response_span.end(
+                {
+                    "intent": classification.intent.value,
+                    "disposition": ConversationDisposition.ALLOW.value,
+                    "fallback_used": fallback_used,
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000),
+                    "status": "COMPLETED",
+                }
+            )
         return self._conversation_result(
             request=request,
             context=context,

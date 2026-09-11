@@ -857,6 +857,58 @@ async def test_harmful_request_is_blocked_before_rag() -> None:
     assert result.safety_status is SafetyStatus.BLOCKED
 
 
+async def test_conversation_trace_records_decision_without_sensitive_content() -> None:
+    tracer = RecordingChatTracer(capture_content=False)
+
+    await build_use_case(
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="리바록사반정",
+                )
+            ],
+        ),
+        tracer=tracer,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+        conversation_gate_chain=StaticConversationGate(
+            ConversationClassification(
+                intent="SPECIFIC_SYMPTOM",
+                safety_signal="NONE",
+                confidence="HIGH",
+                follow_up_fields=["ONSET", "SEVERITY"],
+            )
+        ),
+        conversation_response_generator=StaticConversationResponseGenerator(
+            "💊 **복약정보**\n- 리바록사반정\n\n"
+            "🩺 **확인을 위해 필요한 정보**\n- 증상이 시작된 시점과 통증 정도를 알려주세요."
+        ),
+    ).execute(build_request("배가 아프고 속이 쓰려"))
+
+    classify_outputs = next(
+        span.outputs for span in tracer.spans if span.name == "conversation.classify"
+    )
+    respond_outputs = next(
+        span.outputs for span in tracer.spans if span.name == "conversation.respond"
+    )
+    assert classify_outputs["intent"] == "SPECIFIC_SYMPTOM"
+    assert classify_outputs["safety_signal"] == "NONE"
+    assert classify_outputs["history_count"] == 0
+    assert classify_outputs["status"] == "COMPLETED"
+    assert classify_outputs["duration_ms"] >= 0
+    assert "question" not in classify_outputs
+    assert "active_medication_names" not in classify_outputs
+    assert respond_outputs["intent"] == "SPECIFIC_SYMPTOM"
+    assert respond_outputs["disposition"] == "ALLOW"
+    assert respond_outputs["fallback_used"] is False
+    assert respond_outputs["status"] == "COMPLETED"
+    assert respond_outputs["duration_ms"] >= 0
+
+
 async def test_medication_question_bypasses_conversation_gate() -> None:
     result = await build_use_case(
         lookup=MedicationGuideLookup(guide=build_guide()),
