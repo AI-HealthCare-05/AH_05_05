@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from ai_worker.domain.conversation_safety_policy import ConversationSafetyPolicy
 from ai_worker.schemas.conversation_gate import ConversationClassification
+from ai_worker.schemas.medication_note_summary import MedicationNoteSummaryScope
 
 
 def test_health_urgency_wins_over_sensitive_topic() -> None:
@@ -36,6 +37,17 @@ def test_off_topic_conversation_is_redirected_without_harmful_flag() -> None:
     )
 
     assert ConversationSafetyPolicy().decide(classification).disposition == "REDIRECT"
+
+
+def test_medication_note_summary_is_allowed_when_no_safety_signal_exists() -> None:
+    classification = ConversationClassification(
+        intent="MEDICATION_NOTE_SUMMARY",
+        safety_signal="NONE",
+        confidence="HIGH",
+        note_summary_scope=MedicationNoteSummaryScope.RECENT_SIX_MONTHS,
+    )
+
+    assert ConversationSafetyPolicy().decide(classification).disposition == "ALLOW"
 
 
 def test_conversation_classification_rejects_unapproved_model_fields() -> None:
