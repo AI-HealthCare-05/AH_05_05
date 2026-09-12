@@ -86,7 +86,7 @@ export function OfficialChallengeBrowsePage() {
       <ChallengePageHeading />
       <main className="flex flex-col gap-4 px-page-x py-5">
         <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
-          <Link to="/challenges" className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">마이</Link>
+          <Link to="/challenges" className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">나의 챌린지</Link>
           <Link aria-current="page" to="/challenges/browse" className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">둘러보기</Link>
         </nav>
 

@@ -18,7 +18,7 @@ test('지난 기록은 기본으로 접혀 있고 다시 진입해도 접힌 상
   await expect(page.getByRole('link', { name: '저녁 산책 7일 자세히 보기' })).toBeVisible();
 
   await page.getByRole('link', { name: '둘러보기' }).click();
-  await page.getByRole('link', { name: '마이' }).click();
+  await page.getByRole('navigation', { name: '챌린지 보기' }).getByRole('link', { name: '나의 챌린지', exact: true }).click();
   await expect(page.getByRole('button', { name: '지난 기록 펼치기' })).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByRole('link', { name: '저녁 산책 7일 자세히 보기' })).toHaveCount(0);
 });
