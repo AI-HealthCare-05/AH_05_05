@@ -9,7 +9,6 @@ from app.dtos.settings import NotifySettingsUpdateRequest
 from app.models.enums import CustomChallengeType, MealSlot
 from app.models.users import User, UserSettings
 from app.services.custom_challenge_schedule_reconciler import CustomChallengeScheduleReconciler
-from app.services.follow_up_visit_alarms import FollowUpVisitAlarmService
 from app.services.medication_schedule import SLOT_ORDER, MedicationScheduleService
 from app.services.user_supplement_nutrients import UserSupplementNutrientService
 
@@ -121,12 +120,6 @@ class NotifySettingsService:
                     settings,
                     connection,
                 )
-                if "evening_medication_time" in time_update_fields:
-                    await FollowUpVisitAlarmService.sync_future_alarms(
-                        user.id,
-                        meal_times[MealSlot.EVENING],
-                        connection,
-                    )
                 await self._reconciler.reconcile(
                     user_id=user.id,
                     source_kind=CustomChallengeType.MEDICATION,

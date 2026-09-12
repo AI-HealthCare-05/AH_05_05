@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
@@ -576,6 +576,7 @@ export function MyPage({
                     />
                     <NotificationRow
                       label="일정 알림"
+                      description="전날 21:00 알림"
                       checked={notifySettings.notifySchedule}
                       disabled={
                         pendingSettingKeys.includes('notifySchedule') || pushUnsupported
@@ -703,25 +704,32 @@ function ManagementRow({
 
 function NotificationRow({
   label,
+  description,
   checked,
   onCheckedChange,
   disabled = false,
   divided = false,
 }: {
   label: string;
+  description?: string;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   disabled?: boolean;
   divided?: boolean;
 }) {
+  const descriptionId = useId();
   return (
-    <div className={`flex min-h-16 items-center justify-between px-4 ${divided ? 'border-t border-border' : ''}`}>
-      <label htmlFor={`notification-${label}`} className="text-base font-bold text-foreground">
-        {label}
-      </label>
+    <div className={`flex min-h-16 items-center justify-between gap-3 px-4 ${divided ? 'border-t border-border' : ''}`}>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <label htmlFor={`notification-${label}`} className="text-base font-bold text-foreground">
+          {label}
+        </label>
+        {description ? <span id={descriptionId} className="text-sm text-muted-foreground">{description}</span> : null}
+      </div>
       <Switch
         id={`notification-${label}`}
         aria-label={label}
+        aria-describedby={description ? descriptionId : undefined}
         className="data-[state=unchecked]:before:bg-input"
         checked={checked}
         disabled={disabled}
