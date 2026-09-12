@@ -244,7 +244,7 @@ test('마이에서 연 복약 메모는 작성 취소와 수정 저장 뒤에도
   await expect(page).toHaveURL('/my');
 });
 
-test('홈 랭킹에서 제품을 추가한 내 영양제의 뒤로가기는 제품이 아니라 홈으로 복귀한다', async ({ page }, testInfo) => {
+test('홈 랭킹에서 추가했거나 이미 등록된 제품의 내 영양제 CTA는 뒤로가기 시 홈으로 복귀한다', async ({ page }, testInfo) => {
   let registered = false;
   await page.route('**/api/v1/display/med/nutr/rank', route => fulfillJson(route, {
     display_id: 3,
@@ -313,6 +313,15 @@ test('홈 랭킹에서 제품을 추가한 내 영양제의 뒤로가기는 제�
   await expect(page).toHaveURL('/supplements');
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.screenshot({ path: testInfo.outputPath('supplements-after-add-desktop.png'), fullPage: true });
+
+  await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '홈', exact: true }).click();
+  await expect(page).toHaveURL('/home');
+  await page.getByRole('button', { name: '1위 종합비타민 제품 정보', exact: true }).click();
+  await expect(page.getByRole('button', { name: '내 영양제에서 보기', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '내 영양제에서 보기', exact: true }).click();
+  await expect(page).toHaveURL('/supplements');
+  await page.goBack();
+  await expect(page).toHaveURL('/home');
 });
 
 test('직접 URL 진입은 각 기능의 안전한 상위 화면으로 replace 된다', async ({ page }) => {

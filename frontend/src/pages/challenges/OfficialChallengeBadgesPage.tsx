@@ -132,7 +132,7 @@ export function OfficialChallengeBadgesPage() {
             const label = earned ? `${item.awards.length}회 획득` : '미획득';
             return (
               <li key={`official-${item.id}`}>
-                <Link to={`/challenges/badges/${item.id}`} aria-label={`${item.name}, ${label}`} className="flex min-h-40 flex-col gap-2.5 rounded-card bg-card p-4 shadow-card">
+                <Link to={`/challenges/badges/${item.id}`} state={{ returnTo: '/challenges/badges' }} aria-label={`${item.name}, ${label}`} className="flex min-h-40 flex-col gap-2.5 rounded-card bg-card p-4 shadow-card">
                   <img src={apiAssetUrl(item.imagePath)} alt={item.name} className={`size-11 rounded-pill object-contain ${earned ? '' : 'grayscale opacity-60'}`} />
                   <span className="line-clamp-2 text-sm font-bold text-foreground">{item.name}</span>
                   <span className="text-xs text-muted-foreground">{label}</span>

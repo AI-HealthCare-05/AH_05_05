@@ -153,7 +153,7 @@ export function SupplementProductPage() {
               disabled={registrationPending}
               onClick={() => {
                 if (alreadyRegistered) {
-                  navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements');
+                  navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements', { replace: true });
                 } else {
                   setAddOpen(true);
                 }
