@@ -10,6 +10,7 @@ import { LoadingState } from '@/shared/ui/LoadingState';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { ChallengePageHeading } from './ChallengePageHeading';
 import { koreanChallengeDate } from './officialChallengeDates';
+import { ChallengeTypeBadge } from './ChallengeTypeBadge';
 
 interface BrowseEntry {
   key: string;
@@ -65,8 +66,7 @@ export function OfficialChallengeBrowsePage() {
           name: item.challengeName,
           type: 'custom',
           recruitment: '상시',
-          // Medication targets each represent one attempt. Supplements allow new target combinations.
-          participating: item.challengeType === 'MEDICATION' && item.targets.length > 0
+          participating: item.targets.length > 0
             && item.targets.every(target => target.existingParticipationId !== null),
           destination: `/challenges/tailored/${item.challengeType === 'MEDICATION' ? 'medication' : 'supplement'}?templateId=${item.templateId}`,
         })));
@@ -134,6 +134,7 @@ export function OfficialChallengeBrowsePage() {
                 </span>
                 <span className={`text-caption leading-5 ${item.participating ? 'text-disabled-foreground' : 'text-muted-foreground'}`}>모집기간 : {item.recruitment}</span>
               </span>
+              <ChallengeTypeBadge official={item.type === 'official'} />
               {!item.participating ? <DrawnChevron direction="right" className="size-5 shrink-0 text-primary" /> : null}
             </button>
           ))}

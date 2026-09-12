@@ -590,7 +590,10 @@ class CustomChallengeService:
                 .order_by("source_id_snapshot")
                 .values_list("source_id_snapshot", flat=True)
             )
-            if existing_ids == target_ids:
+            # User and source rows are locked before this check, so concurrent
+            # joins cannot create overlapping active targets. Idempotent retries
+            # have already returned above, including historical participations.
+            if set(existing_ids).intersection(target_ids):
                 raise CustomChallengeAlreadyActiveError()
 
     async def _active_templates(self) -> builtins.list[CustomChallengeTemplate]:

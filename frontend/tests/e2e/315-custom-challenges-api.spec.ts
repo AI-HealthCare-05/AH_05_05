@@ -367,7 +367,7 @@ test('supplement sends one canonical set and keeps its key when retrying', async
     templateId: 41,
     challengeType: 'SUPPLEMENT',
     challengeName: supplement.challengeName,
-    targets: [201, 203].map((sourceId, index) => ({ id: 810 + index, sourceId, name: `영양제 ${sourceId}` })),
+    targets: [201, 202].map((sourceId, index) => ({ id: 810 + index, sourceId, name: `영양제 ${sourceId}` })),
   });
   const requests: Array<{ targetIds: number[]; idempotencyKey: string }> = [];
   await page.route('**/api/v1/user/custom-challenge-recommendations/41/participations', route => {
@@ -382,7 +382,8 @@ test('supplement sends one canonical set and keeps its key when retrying', async
   }));
 
   await page.goto('/challenges/tailored/supplement?templateId=41');
-  await page.getByLabel('비타민D 선택').check();
+  await expect(page.getByLabel('비타민D 선택')).toBeDisabled();
+  await page.getByLabel('유산균 선택').check();
   await page.getByLabel('오메가3 선택').check();
   await page.getByRole('button', { name: '선택한 영양제로 참여하기' }).click();
   await expect(page.getByRole('alert')).toContainText('다시 시도해주세요.');
@@ -390,8 +391,8 @@ test('supplement sends one canonical set and keeps its key when retrying', async
   await expect(page).toHaveURL(/\/challenges\/custom-participations\/801$/);
 
   expect(requests).toHaveLength(2);
-  expect(requests[0].targetIds).toEqual([201, 203]);
-  expect(requests[1].targetIds).toEqual([201, 203]);
+  expect(requests[0].targetIds).toEqual([201, 202]);
+  expect(requests[1].targetIds).toEqual([201, 202]);
   expect(requests[1].idempotencyKey).toBe(requests[0].idempotencyKey);
 });
 

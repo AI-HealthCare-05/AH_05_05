@@ -32,6 +32,7 @@ import {
   trailingNonVerificationDays,
 } from './officialChallengeDates';
 import { OfficialChallengeRejoinDialog } from './OfficialChallengeRejoinDialog';
+import { officialChallengeProgress } from './officialChallengeProgress';
 
 function positiveId(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/.test(value)) return null;
@@ -44,17 +45,8 @@ function dateLabel(value: string) {
   return `${year}.${Number(month)}.${Number(day)}`;
 }
 
-function progressValue(value: number | string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0;
-}
-
 function usesWaterBadgeContour(imagePath: string) {
   return /(^|\/)water-badge\.png(?:[?#].*)?$/i.test(imagePath);
-}
-
-function unitLabel(participation: ChallengeParticipation) {
-  return participation.challenge.frequency_code === 'DAILY' ? '일 인증' : '회 인증';
 }
 
 function checkInLabel(participation: ChallengeParticipation, pending: boolean) {
@@ -189,8 +181,7 @@ export function OfficialChallengeParticipationPage() {
   const startDate = participation.started_at.slice(0, 10);
   const verificationDates = challengeVerificationDates(participation.progress_periods);
   const nonVerificationDays = trailingNonVerificationDays(participation.progress_periods, endDate);
-  const rate = progressValue(participation.progress_rate);
-  const unit = unitLabel(participation);
+  const { rate, label: progressLabel } = officialChallengeProgress(participation);
   const badge = participation.challenge.reward_badge;
   const waterBadgeContour = badge ? usesWaterBadgeContour(badge.image_path) : false;
   const badgeEarned = badge && data.badges
@@ -397,7 +388,7 @@ export function OfficialChallengeParticipationPage() {
       {participation.status === 'ACTIVE' && !refreshRequired ? (
         <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-label="오늘의 챌린지 진행">
           <h2 className="text-base font-bold">오늘도 한 걸음</h2>
-          <p className="text-sm text-primary">{participation.completed_count} / {participation.target_count}{unit} · {checkInLabel(participation, false)}</p>
+          <p className="text-sm text-primary">{progressLabel} 인증 · {checkInLabel(participation, false)}</p>
           <div className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
         </section>
       ) : null}
@@ -415,7 +406,7 @@ export function OfficialChallengeParticipationPage() {
       ) : null}
 
       <section className="flex flex-col gap-3 rounded-card bg-card p-5 shadow-card" aria-labelledby="my-record-title">
-        <div className="flex items-center justify-between gap-3"><h2 id="my-record-title" className="text-base font-bold">내 인증 기록</h2>{!refreshRequired ? <span className="text-sm font-bold text-primary">{participation.completed_count} / {participation.target_count}{unit}</span> : null}</div>
+        <div className="flex items-center justify-between gap-3"><h2 id="my-record-title" className="text-base font-bold">내 인증 기록</h2>{!refreshRequired ? <span className="text-sm font-bold text-primary">{progressLabel} 인증</span> : null}</div>
         <div className="grid grid-cols-7 gap-1" aria-label="날짜별 인증 기록">
           {verificationDates.map(date => {
             const checked = participation.verified_dates.includes(date);
@@ -444,11 +435,9 @@ export function OfficialChallengeParticipationPage() {
 
       {participation.status === 'CANCELLED' ? canRejoin ? (
         <Button disabled={rejoinPending} onClick={() => setRejoinOpen(true)}>다시 참여하기</Button>
-      ) : hasNewerAttempt ? (
-        <Button onClick={() => navigate(`/challenges/participations/${latestId}`, { replace: true })}>진행 보기</Button>
-      ) : (
+      ) : !hasNewerAttempt ? (
         <p className="text-center text-sm text-muted-foreground">{recruitmentClosed ? '모집이 마감됐어요' : '지금은 다시 참여할 수 없어요'}</p>
-      ) : null}
+      ) : null : null}
 
       <OfficialChallengeRejoinDialog open={rejoinOpen} pending={rejoinPending} onOpenChange={setRejoinOpen} onConfirm={() => void rejoin()} />
 

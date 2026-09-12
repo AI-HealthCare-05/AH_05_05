@@ -217,10 +217,9 @@ for (const entry of ['participation', 'catalog'] as const) {
     await page.goto('/challenges/participations/501');
     await expect(page.getByRole('progressbar', { name: '내 인증 기록 진행률' })).toHaveAttribute('aria-valuenow', '21.43');
     await expect(page.getByRole('button', { name: '다시 참여하기', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: '진행 보기', exact: true }).click();
-    await expect(page).toHaveURL(/\/challenges\/participations\/502$/);
+    await expect(page.getByRole('button', { name: '진행 보기', exact: true })).toHaveCount(0);
     expect(joinCalls).toBe(1);
-    await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
+    await page.goto('/challenges');
     const active = page.getByRole('region', { name: '진행 중인 챌린지', exact: true });
     await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
     await expect(active.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
@@ -229,7 +228,7 @@ for (const entry of ['participation', 'catalog'] as const) {
     const history = page.getByRole('region', { name: '지난 기록', exact: true });
     await expect(history.getByRole('link', { name: /매일 30분 걷기 자세히 보기/ })).toHaveAttribute('href', '/challenges/participations/501');
     await page.getByRole('button', { name: '홈', exact: true }).click();
-    await expect(page.getByRole('link', { name: '매일 30분 걷기, 0% 진행 중, 상세 보기', exact: true })).toHaveAttribute('href', '/challenges/participations/502');
+    await expect(page.getByRole('link', { name: '매일 30분 걷기, 0 / 14일, 상세 보기', exact: true })).toHaveAttribute('href', '/challenges/participations/502');
   });
 }
 
@@ -1088,7 +1087,7 @@ test('a delayed My check-in does not refresh after leaving the page', async ({ p
   await expect(page).toHaveURL(/\/challenges\/browse$/);
 });
 
-test('SELF participation without a reward badge is labeled as direct verification', async ({ page }) => {
+test('SELF participation without a reward badge keeps its official type and check-in action', async ({ page }) => {
   await authenticate(page);
   await stubChallengeReads(page, {
     catalog: [weeklyChallenge],
@@ -1104,7 +1103,8 @@ test('SELF participation without a reward badge is labeled as direct verificatio
   await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
 
   const card = page.getByRole('article', { name: weeklyChallenge.name });
-  await expect(card.getByText('직접 인증', { exact: true })).toBeVisible();
+  await expect(card.getByText('공식', { exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: '했어요' })).toBeEnabled();
   await expect(card.getByText('공식 배지', { exact: true })).toHaveCount(0);
 });
 
@@ -1582,10 +1582,10 @@ test('authenticated home renders a server-backed challenge summary with navigati
   await page.goto('/home');
 
   const summary = page.getByRole('region', { name: '챌린지' });
-  await expect(summary.getByRole('link', { name: /매일 30분 걷기.*21.43%/ })).toBeVisible();
+  await expect(summary.getByRole('link', { name: /매일 30분 걷기.*3 \/ 14일/ })).toBeVisible();
   await expect(summary.getByText('예시 데이터')).toHaveCount(0);
   await expect(summary.getByRole('button', { name: /했어요/ })).toHaveCount(0);
-  await summary.getByRole('link', { name: /매일 30분 걷기.*21.43%/ }).click();
+  await summary.getByRole('link', { name: /매일 30분 걷기.*3 \/ 14일/ }).click();
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
 });
 
