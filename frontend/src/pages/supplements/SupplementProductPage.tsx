@@ -186,10 +186,12 @@ function ProductInformation({ product }: { product: SupplementProduct }) {
         {rows.map((row) => (
           <div
             key={row.label}
-            className="flex min-h-touch items-center justify-between gap-4 border-t border-border py-3 first:border-t-0"
+            className="flex min-h-touch min-w-0 items-center justify-between gap-4 border-t border-border py-3 first:border-t-0"
           >
-            <dt className="text-sm font-bold text-muted-foreground">{row.label}</dt>
-            <dd className="text-right text-sm font-bold text-foreground">{row.value}</dd>
+            <dt className="shrink-0 text-sm font-bold text-muted-foreground">{row.label}</dt>
+            <dd className="min-w-0 [overflow-wrap:anywhere] text-right text-sm font-bold text-foreground">
+              {row.value}
+            </dd>
           </div>
         ))}
       </dl>

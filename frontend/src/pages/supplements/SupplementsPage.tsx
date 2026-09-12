@@ -377,8 +377,11 @@ export function SupplementsPage({
                                 <strong className="block [overflow-wrap:anywhere] text-base text-foreground">
                                   {supplement.name}
                                 </strong>
-                                <span className="block truncate text-sm text-muted-foreground">
-                                  {formatDoseAmount(supplement.doseAmount)}{supplement.doseUnit} ·{' '}
+                                <span className="block text-sm text-muted-foreground">
+                                  하루 {supplement.slots.length}회 · 1회 {formatDoseAmount(supplement.doseAmount)}
+                                  {supplement.doseUnit}
+                                </span>
+                                <span className="mt-0.5 block text-sm text-muted-foreground">
                                   {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                                 </span>
                               </span>

@@ -173,6 +173,47 @@ test('내 영양제 목록은 복용 정보를 줄로 나누고 정상 상태에
   expect(memoFits).toBe(true);
 });
 
+test('작은 화면의 삭제 선택 목록도 제품명·복용량·시간대를 3줄로 보여준다', async ({
+  page,
+}, testInfo) => {
+  await routeSupplementList(page, {
+    ...ACTIVE_REGISTRATION,
+    dose_amount: '2.000',
+    supplement: null,
+    custom_name: '직접 입력 테스트 영양제',
+    slots: [
+      { slot: 'MORNING', time: '08:00:00' },
+      { slot: 'LUNCH', time: '12:00:00' },
+      { slot: 'EVENING', time: '19:00:00' },
+      { slot: 'BEDTIME', time: '22:00:00' },
+    ],
+  });
+
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.goto('/dev/supplements');
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+
+  const selection = page.getByRole('checkbox', { name: '직접 입력 테스트 영양제 선택' });
+  const row = selection.locator('xpath=ancestor::label');
+  const name = row.getByText('직접 입력 테스트 영양제', { exact: true });
+  const dose = row.getByText('하루 4회 · 1회 2정', { exact: true });
+  const slots = row.getByText('아침 · 점심 · 저녁 · 자기전', { exact: true });
+  await expect(name).toBeVisible();
+  await expect(dose).toBeVisible();
+  await expect(slots).toBeVisible();
+
+  const lineTops = await Promise.all([
+    name.evaluate((element) => element.getBoundingClientRect().top),
+    dose.evaluate((element) => element.getBoundingClientRect().top),
+    slots.evaluate((element) => element.getBoundingClientRect().top),
+  ]);
+  expect(lineTops[0]).toBeLessThan(lineTops[1]);
+  expect(lineTops[1]).toBeLessThan(lineTops[2]);
+  expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+
+  await page.screenshot({ path: testInfo.outputPath('426-delete-list-375-green.png'), fullPage: true });
+});
+
 async function openSelectedProduct(
   page: Page,
   products: Array<typeof PRODUCT> = [PRODUCT],
@@ -287,4 +328,39 @@ test('제품 상세는 없는 정보를 숨기고 복용 정보를 중복 없는
   expect(infoStyle.boxShadow).toBe('none');
 
   await page.screenshot({ path: testInfo.outputPath('426-product-1280-green.png'), fullPage: true });
+});
+
+test('작은 화면에서 공백 없는 긴 제품 정보도 상세 영역 안에서 줄바꿈한다', async ({ page }) => {
+  const longValue = 'LONGUNBROKENPRODUCTINFORMATION426'.repeat(18);
+  await routeSupplementList(page, { ...ACTIVE_REGISTRATION, supplement: null });
+  await page.route('**/api/v1/med/nutr/701', (route) =>
+    fulfillJson(route, {
+      ...PRODUCT,
+      target: longValue,
+      serving_desc: longValue,
+      daily_freq: longValue,
+    }),
+  );
+  await page.route('**/api/v1/med/nutr/701/reviews?*', (route) =>
+    fulfillJson(route, {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+      rating_average: null,
+      review_count: 0,
+    }),
+  );
+
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.goto('/dev/supplements/product/701');
+
+  const info = page.getByRole('region', { name: '제품 정보 상세' });
+  await expect(info).toBeVisible();
+  const valuesFit = await info.locator('dd').evaluateAll((values) =>
+    values.every((value) => value.scrollWidth <= value.clientWidth + 1),
+  );
+  expect(valuesFit).toBe(true);
+  expect(await info.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  expect(await page.locator('main').evaluate((main) => main.scrollWidth <= main.clientWidth + 1)).toBe(true);
 });
