@@ -1031,7 +1031,7 @@ for (const challengeType of ['MEDICATION', 'SUPPLEMENT']) {
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText('취소', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '챌린지 참여 취소', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: '내 챌린지로 돌아가기' }).click();
+    await page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true }).click();
     await expect(page.getByRole('region', { name: '진행 중인 챌린지' }).getByRole('article')).toHaveCount(0);
     await page.getByRole('button', { name: '지난 기록 펼치기' }).click();
     await expect(page.getByRole('region', { name: '지난 기록' }).getByRole('article')).toContainText('취소');

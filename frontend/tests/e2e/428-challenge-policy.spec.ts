@@ -161,3 +161,56 @@ test('historical participation omits redundant progress button and retains eligi
   await page.reload();
   await expect(page.getByRole('button', { name: '다시 참여하기', exact: true })).toBeVisible();
 });
+
+for (const status of ['COMPLETED', 'EXPIRED', 'CANCELLED'] as const) {
+  for (const width of [390, 1280]) {
+    test(`ended custom ${status} detail uses header navigation without a redundant footer at ${width}px`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const ended = { ...custom, status, ...(status === 'COMPLETED' ? {
+        completedCount: 14, progressRate: '100.00', completedDayCount: 7, dayProgressRate: '100.00',
+        occurrences: custom.occurrences.map(occurrence => ({ ...occurrence, isCompleted: true })),
+      } : {}) };
+      await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: ended }));
+      await page.route('**/api/v1/user/custom-challenge-participations/701/claim-reward', route => route.fulfill({ json: { participation: ended, award: null, newlyAwarded: false } }));
+      await page.goto('/challenges/custom-participations/701');
+      await expect(page.getByRole('region', { name: '최종 결과', exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: '참여 대상', exact: true })).toContainText('비타민');
+      await expect(page.getByRole('button', { name: /내 챌린지로 돌아가기|챌린지 참여 취소/ })).toHaveCount(0);
+      const back = page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true });
+      await expect(back).toBeVisible();
+      await expect(page.getByRole('alert')).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath(`custom-${status.toLowerCase()}-top-${width}.png`), animations: 'disabled' });
+      await page.getByText('진행률은 홈과 영양제 기록을 기준으로 자동 계산돼요.', { exact: false }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`custom-${status.toLowerCase()}-bottom-${width}.png`), animations: 'disabled' });
+      await back.click();
+      await expect(page).toHaveURL(/\/challenges$/);
+    });
+  }
+}
+
+test('active custom detail retains cancel action and dialog dismissal without cancelling', async ({ page }) => {
+  let cancelPosts = 0;
+  await lists(page);
+  await page.route('**/api/v1/user/custom-challenge-participations/701/cancel', route => {
+    cancelPosts += 1;
+    return route.fulfill({ json: { ...custom, status: 'CANCELLED' } });
+  });
+  await page.goto('/challenges/custom-participations/701');
+  await expect(page.getByRole('region', { name: '내 진행률', exact: true })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '챌린지 참여 취소', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: '참여 취소', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: '돌아가기', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '챌린지 참여 취소', exact: true })).toBeEnabled();
+  expect(cancelPosts).toBe(0);
+});
+
+test('missing custom participation keeps its error fallback navigation', async ({ page }) => {
+  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: '참여 없음' } }));
+  await page.goto('/challenges/custom-participations/701');
+  await expect(page.getByRole('heading', { name: '참여 기록을 찾을 수 없어요', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '챌린지로 돌아가기', exact: true }).click();
+  await expect(page).toHaveURL(/\/challenges$/);
+});
