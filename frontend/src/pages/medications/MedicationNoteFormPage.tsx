@@ -151,6 +151,8 @@ export function MedicationNoteFormPage() {
   const [episodes, setEpisodes] = useState<NoteEpisodeOption[] | null>(null);
   const [form, setForm] = useState<NoteFormState>(() => initialForm(null));
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
+  const [inventoryLoadError, setInventoryLoadError] = useState<string | null>(null);
+  const [initialLoadRetryKey, setInitialLoadRetryKey] = useState(0);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -160,6 +162,7 @@ export function MedicationNoteFormPage() {
   const deletePendingRef = useRef(false);
   const saveGenerationRef = useRef(0);
   const deleteGenerationRef = useRef(0);
+  const preserveFormOnLoadRef = useRef(false);
   const principalKeyRef = useRef(principalKey);
   principalKeyRef.current = principalKey;
 
@@ -179,9 +182,12 @@ export function MedicationNoteFormPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const preserveForm = preserveFormOnLoadRef.current;
+    preserveFormOnLoadRef.current = false;
     setInitialLoadError(null);
+    setInventoryLoadError(null);
     setMutationError(null);
-    setEpisodes(null);
+    if (!preserveForm) setEpisodes(null);
     const noteRequest = noteId
       ? getMedicationNote(decodeURIComponent(noteId))
       : Promise.resolve(null);
@@ -222,17 +228,35 @@ export function MedicationNoteFormPage() {
             (episode) => !inventoryEpisodes.some((inventory) => inventory.id === episode.id),
           ),
         ];
+        const inventoryFailure = !loadedNote && inventoryResult.status === 'rejected'
+          ? inventoryResult.reason instanceof Error
+            ? inventoryResult.reason.message
+            : '전체 처방 목록을 불러오지 못했어요.'
+          : null;
         if (!loadedNote && initialEpisodeId !== undefined &&
           !availableEpisodes.some((episode) => episode.id === initialEpisodeId)) {
-          const referenceNote = referenceNoteId === undefined
-            ? (await listMedicationNotes({ episodeId: initialEpisodeId, limit: 1 })).items[0]
-            : await getMedicationNote(referenceNoteId);
-          if (cancelled) return;
-          if (!referenceNote || referenceNote.careEpisodeId !== initialEpisodeId) {
-            throw new Error('선택한 처방을 확인하지 못했어요. 목록에서 다시 선택해주세요.');
+          try {
+            const referenceNote = referenceNoteId === undefined
+              ? (await listMedicationNotes({ episodeId: initialEpisodeId, limit: 1 })).items[0]
+              : await getMedicationNote(referenceNoteId);
+            if (cancelled) return;
+            if (!referenceNote || referenceNote.careEpisodeId !== initialEpisodeId) {
+              throw new Error('선택한 처방을 확인하지 못했어요. 목록에서 다시 선택해주세요.');
+            }
+            availableEpisodes.unshift(episodeFromNote(referenceNote));
+          } catch (error: unknown) {
+            if (inventoryFailure) {
+              setInitialLoadError(inventoryFailure);
+              return;
+            }
+            throw error;
           }
-          availableEpisodes.unshift(episodeFromNote(referenceNote));
         }
+        if (inventoryFailure && availableEpisodes.length === 0) {
+          setInitialLoadError(inventoryFailure);
+          return;
+        }
+        if (inventoryFailure) setInventoryLoadError(`${inventoryFailure} 전체 처방 목록이 아닐 수 있어요.`);
         if (
           overviewResult.status === 'rejected' &&
           inventoryResult.status === 'rejected' &&
@@ -273,7 +297,9 @@ export function MedicationNoteFormPage() {
         ) {
           nextForm.medicationId = DELETED_MEDICATION_ID;
         }
-        setForm(nextForm);
+        setForm((current) => preserveForm && Object.values(current).some((value) => value !== '')
+          ? current
+          : nextForm);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -283,7 +309,12 @@ export function MedicationNoteFormPage() {
     return () => {
       cancelled = true;
     };
-  }, [initialEpisodeId, noteId, principalKey, referenceNoteId]);
+  }, [initialEpisodeId, initialLoadRetryKey, noteId, principalKey, referenceNoteId]);
+
+  function retryInitialLoad() {
+    preserveFormOnLoadRef.current = true;
+    setInitialLoadRetryKey((value) => value + 1);
+  }
 
   const selectedEpisode = useMemo(
     () => episodes?.find((episode) => String(episode.id) === form.recordId) ?? null,
@@ -420,11 +451,20 @@ export function MedicationNoteFormPage() {
       />
       <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
         {initialLoadError ? (
-          <p role="alert" className="text-sm text-danger-strong">
-            {initialLoadError}
-          </p>
+          <div className="flex flex-col items-start gap-3">
+            <p role="alert" className="text-sm text-danger-strong">
+              {initialLoadError}
+            </p>
+            <Button variant="secondary" fullWidth={false} onClick={retryInitialLoad}>다시 시도</Button>
+          </div>
         ) : (
           <>
+            {inventoryLoadError && (
+              <div className="flex flex-col items-start gap-3">
+                <p role="alert" className="text-sm text-danger-strong">{inventoryLoadError}</p>
+                <Button variant="secondary" fullWidth={false} onClick={retryInitialLoad}>다시 시도</Button>
+              </div>
+            )}
             {mutationError && (
               <p role="alert" className="text-sm text-danger-strong">
                 {mutationError}

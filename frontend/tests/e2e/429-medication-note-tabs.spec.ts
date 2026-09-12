@@ -245,12 +245,19 @@ for (const response of ['success', 'error'] as const) {
     await expect.poll(() => requested).toBe(true);
     await page.getByRole('button', { name: /저녁 감기 처방.*접기/ }).click();
     await expect(page.getByRole('button', { name: /저녁 감기 처방.*펼치기/ })).toBeVisible();
+    const responseFinished = page.waitForResponse((candidate) =>
+      /\/api\/v1\/med\/notes(?:\?.*)?$/.test(candidate.url()),
+    );
     releaseResponse();
 
-    await page.waitForTimeout(100);
+    await (await responseFinished).finished();
     await expect(page.getByRole('button', { name: /저녁 감기 처방.*펼치기/ })).toBeVisible();
-    await expect(page.getByText('열이 내려가고 잠이 잘 왔어요.')).toHaveCount(0);
-    await expect(page.getByRole('alert')).toHaveCount(0);
+    await page.getByRole('button', { name: /저녁 감기 처방.*펼치기/ }).click();
+    if (response === 'success') {
+      await expect(page.getByText('열이 내려가고 잠이 잘 왔어요.')).toBeVisible();
+    } else {
+      await expect(page.getByRole('alert')).toContainText('조회 실패');
+    }
   });
 }
 
@@ -314,4 +321,118 @@ test('처방 인벤토리가 비어 있으면 등록된 처방이 없다고 안�
   await page.goto('/medications/notes');
   await expect(page.getByText('등록된 처방이 없어요.')).toBeVisible();
   await expect(page.getByText('모든 처방에 건강상태 기록이 있어요.')).toHaveCount(0);
+});
+
+test('완료 처방 작성 중 인벤토리가 실패하면 빈 선택기를 보이지 않고 재시도로 복구한다', async ({ page }) => {
+  let inventoryRequests = 0;
+  let formInventoryRequests = 0;
+  let failFormInventory = true;
+  const inventoryUrl = /\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/;
+  const completedEpisode = {
+    careEpisodeId: 103,
+    alias: '완료 처방',
+    startDate: '2026-09-10',
+    status: 'COMPLETED',
+    noteCount: 0,
+    medicationCount: 1,
+    representativeMedicationName: '타이레놀정500mg',
+    medications: [{ id: 503, name: '타이레놀정500mg', dose: '500mg' }],
+  };
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, []));
+  await page.route(inventoryUrl, (route) => {
+    inventoryRequests += 1;
+    return fulfillJson(route, [completedEpisode]);
+  });
+  await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) => fulfillJson(route, {
+    items: [], total: 0, nextCursor: null,
+  }));
+
+  await page.goto('/medications/notes');
+  await page.getByRole('button', { name: /완료 처방.*펼치기/ }).click();
+  await page.unroute(inventoryUrl);
+  await page.route(inventoryUrl, (route) => {
+    formInventoryRequests += 1;
+    if (failFormInventory) {
+      return fulfillJson(route, { message: '처방 인벤토리 조회 실패' }, 500);
+    }
+    return fulfillJson(route, [completedEpisode]);
+  });
+  await page.getByRole('button', { name: '이 처방에 메모 작성' }).click();
+
+  await expect.poll(() => formInventoryRequests).toBeGreaterThan(0);
+  await expect(page.getByRole('alert')).toContainText('처방 인벤토리 조회 실패');
+  await expect(page.getByLabel('처방', { exact: true })).toHaveCount(0);
+  const failedFormRequests = formInventoryRequests;
+  failFormInventory = false;
+  await page.getByRole('button', { name: '다시 시도' }).click();
+  await expect(page.getByLabel('처방', { exact: true })).toHaveValue('103');
+  await expect(page.getByLabel('약', { exact: true })).toHaveValue('');
+  expect(inventoryRequests).toBeGreaterThan(0);
+  expect(formInventoryRequests).toBeGreaterThan(failedFormRequests);
+});
+
+test('인벤토리 실패 때 usable overview를 경고와 함께 유지하고 재시도해도 입력을 보존한다', async ({ page }) => {
+  const inventoryUrl = /\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/;
+  let failFormInventory = true;
+  let formInventoryRequests = 0;
+  const recoveredEpisode = {
+    careEpisodeId: 777,
+    alias: '복구된 완료 처방',
+    startDate: '2024-01-01',
+    status: 'COMPLETED',
+    noteCount: 0,
+    medicationCount: 1,
+    representativeMedicationName: '복구약정',
+    medications: [{ id: 7077, name: '복구약정', dose: null }],
+  };
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, [overviews[0]]));
+  await page.route(inventoryUrl, (route) => fulfillJson(route, []));
+
+  await page.goto('/medications/notes');
+  await page.unroute(inventoryUrl);
+  await page.route(inventoryUrl, (route) => {
+    formInventoryRequests += 1;
+    if (failFormInventory) return fulfillJson(route, { message: '처방 인벤토리 조회 실패' }, 500);
+    return fulfillJson(route, [recoveredEpisode]);
+  });
+  await page.getByRole('button', { name: '새 메모 작성' }).click();
+
+  await expect(page.getByRole('alert')).toContainText('전체 처방 목록이 아닐 수 있어요');
+  await page.getByLabel('처방', { exact: true }).selectOption('103');
+  await page.getByLabel('복용 일시').fill('2026-09-12T20:30');
+  await page.getByLabel('건강상태 기록').fill('재시도 전 입력');
+  const failedFormRequests = formInventoryRequests;
+  failFormInventory = false;
+  await page.getByRole('button', { name: '다시 시도' }).click();
+
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByLabel('처방', { exact: true })).toHaveValue('103');
+  await expect(page.getByRole('option', { name: '복구된 완료 처방' })).toBeAttached();
+  await expect(page.getByLabel('복용 일시')).toHaveValue('2026-09-12T20:30');
+  await expect(page.getByLabel('건강상태 기록')).toHaveValue('재시도 전 입력');
+  expect(formInventoryRequests).toBeGreaterThan(failedFormRequests);
+});
+
+test('처방이 실제로 비어 있는 새 메모와 overview 실패 편집은 기존 폼 계약을 유지한다', async ({ page }) => {
+  let inventoryRequests = 0;
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, []));
+  await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, (route) => {
+    inventoryRequests += 1;
+    return fulfillJson(route, []);
+  });
+
+  await page.goto('/medications/notes');
+  await page.getByRole('button', { name: '새 메모 작성' }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByLabel('처방', { exact: true })).toBeEnabled();
+  await expect(page.getByLabel('처방', { exact: true }).locator('option')).toHaveText(['처방을 선택해주세요']);
+  const createInventoryRequests = inventoryRequests;
+
+  await page.route('**/api/v1/medications', (route) => fulfillJson(route, { message: 'overview 실패' }, 500));
+  await page.route('**/api/v1/med/notes/9003', (route) => fulfillJson(route, note));
+  await page.goto('/medications/notes/9003');
+  await expect(page.getByLabel('처방', { exact: true })).toHaveValue('103');
+  await expect(page.getByLabel('건강상태 기록')).toHaveValue(note.body);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(inventoryRequests).toBe(createInventoryRequests);
 });

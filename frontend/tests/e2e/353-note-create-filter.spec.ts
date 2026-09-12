@@ -181,9 +181,16 @@ for (const status of ['COMPLETED', 'CANCELLED']) {
 }
 
 test('목록 인벤토리에 약이 없으면 기존 메모를 참고해 새 메모의 처방을 복원한다', async ({ page }) => {
+  let fallbackRequests = 0;
   await page.route('**/api/v1/medications', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/v1/med/notes/episodes**', (route) => route.fulfill({ json: [{
+    ...episodes[0], noteCount: 0, medicationCount: 0, representativeMedicationName: null, medications: [],
+  }] }));
   await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) => {
     const url = new URL(route.request().url());
+    if (url.searchParams.get('episodeId') === '41' && url.searchParams.get('limit') === '1') {
+      fallbackRequests += 1;
+    }
     const items = url.searchParams.get('episodeId') === '41' && url.searchParams.get('limit') === '1' ? [{
       id: 9909, careEpisodeId: 41, careEpisodeAlias: '지난 처방', careEpisodeStartDate: '2025-01-01',
       careEpisodeStatus: 'COMPLETED', availableMedications: [], medicationId: null, medication: null,
@@ -194,4 +201,5 @@ test('목록 인벤토리에 약이 없으면 기존 메모를 참고해 새 메
   await openNewNote(page);
   await expect(page.getByLabel('처방', { exact: true })).toHaveValue('41');
   await expect(page.getByLabel('건강상태 기록')).toHaveValue('');
+  expect(fallbackRequests).toBe(1);
 });
