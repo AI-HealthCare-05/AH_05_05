@@ -264,15 +264,6 @@ function TimelineItem({
           <p className="text-base font-bold text-foreground">
             {item.label} {item.time}
           </p>
-          {allEpisodesCompleted && (
-            <span
-              data-medication-completed-summary
-              aria-hidden="true"
-              className="shrink-0 rounded-pill bg-primary-bg px-2 py-0.5 text-sm font-bold text-primary-strong"
-            >
-              복용 완료
-            </span>
-          )}
         </div>
         <span className="text-sm text-muted-foreground tnum">{progressLabel}</span>
       </div>
@@ -308,7 +299,7 @@ function TimelineItem({
                 >
                 <DoseSelectionIndicator kind="medication" selected={selectedEpisodes.has(episode.recordId)} />
                 <span className="flex min-w-0 flex-1 flex-col">
-                    {episodeCompleted && !allEpisodesCompleted && (
+                    {episodeCompleted && (
                       <span
                         data-episode-completed-badge
                         aria-hidden="true"

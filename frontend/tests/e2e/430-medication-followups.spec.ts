@@ -175,6 +175,69 @@ for (const width of [390, 1280]) {
   });
 }
 
+for (const width of [375, 390, 1280]) {
+  test(`전체 완료도 건별 완료와 같은 처방명 위 태그를 유지한다 (${width}px)`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const thirdOverview = {
+      ...OVERVIEWS[1],
+      recordId: 432,
+      alias: '숨긴 처방',
+      medications: [{
+        ...OVERVIEWS[1].medications[0],
+        medicationId: 4321,
+        name: '카르보시스테인시럽',
+      }],
+    };
+    await routeApp(page, [...OVERVIEWS, thirdOverview]);
+    const doseRecords: Array<{ recordId: number; date: string; slot: string; taken: boolean }> = [];
+    await page.route('**/api/v1/medications/doses*', async (route) => {
+      if (route.request().method() === 'GET') return json(route, doseRecords);
+      const body = route.request().postDataJSON() as typeof doseRecords[number];
+      const existing = doseRecords.findIndex((record) => record.recordId === body.recordId);
+      if (existing >= 0) doseRecords.splice(existing, 1);
+      if (body.taken) doseRecords.push(body);
+      return json(route, body);
+    });
+    await page.goto('/home');
+
+    const detail = page.getByRole('group', { name: '아침약 상세' });
+    const first = detail.getByRole('article', { name: /숨긴 처방/ });
+    const second = detail.getByRole('article', { name: /저녁 처방/ });
+    const completionBadges = detail.locator('[data-episode-completed-badge]');
+
+    await first.locator('[data-episode-row]').click();
+    await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
+    await expect(first.locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
+    await expect(second.locator('[data-episode-completed-badge]')).toHaveCount(0);
+    await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(0);
+
+    await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
+    await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(0);
+    await expect(completionBadges).toHaveCount(2);
+    await detail.getByRole('button', { name: '다른 처방 펼치기' }).click();
+    await expect(completionBadges).toHaveCount(3);
+    for (const article of await detail.getByRole('article').all()) {
+      const [badgeBox, titleBox] = await Promise.all([
+        article.locator('[data-episode-completed-badge]').boundingBox(),
+        article.getByRole('heading').boundingBox(),
+      ]);
+      expect(badgeBox).not.toBeNull();
+      expect(titleBox).not.toBeNull();
+      expect(badgeBox!.y + badgeBox!.height).toBeLessThanOrEqual(titleBox!.y);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`home-completion-position-${width}.png`), fullPage: true });
+
+    await second.locator('[data-episode-row]').click();
+    await detail.getByRole('button', { name: '복약 기록 되돌리기', exact: true }).click();
+    await expect(second.locator('[data-episode-completed-badge]')).toHaveCount(0);
+    await expect(first.locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
+    await expect(detail.getByRole('article', { name: /해맑은소아청소년과의원/ })
+      .locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
+    await expect(page.locator('[data-medication-completed-summary]')).toHaveCount(0);
+  });
+}
+
 test('복약 상단은 처방 추가와 선택을 구분하고 선택 중 삭제와 취소 경로를 제공한다', async ({ page }, testInfo) => {
   await routeApp(page);
   await page.goto('/medications');
