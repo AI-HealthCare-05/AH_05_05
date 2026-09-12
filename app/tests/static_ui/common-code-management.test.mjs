@@ -171,3 +171,54 @@ test("the two code sanitizers agree on every input", async () => {
     );
   }
 });
+
+test("code input guard blocks Korean before insertion but allows code characters and deletion", async () => {
+  const { guardCodeInput } = await import(moduleUrl);
+  let koreanBlocked = false;
+  let latinBlocked = false;
+  let deletionBlocked = false;
+
+  guardCodeInput({
+    type: "beforeinput",
+    data: "한",
+    preventDefault() { koreanBlocked = true; },
+  });
+  guardCodeInput({
+    type: "beforeinput",
+    data: "a_1",
+    preventDefault() { latinBlocked = true; },
+  });
+  guardCodeInput({
+    type: "beforeinput",
+    data: null,
+    preventDefault() { deletionBlocked = true; },
+  });
+
+  assert.equal(koreanBlocked, true);
+  assert.equal(latinBlocked, false);
+  assert.equal(deletionBlocked, false);
+});
+
+test("code input guard blocks an active IME keydown before composition text appears", async () => {
+  const { guardCodeInput } = await import(moduleUrl);
+  let imeBlocked = false;
+  let latinBlocked = false;
+
+  guardCodeInput({
+    type: "keydown",
+    key: "Process",
+    keyCode: 229,
+    isComposing: true,
+    preventDefault() { imeBlocked = true; },
+  });
+  guardCodeInput({
+    type: "keydown",
+    key: "a",
+    keyCode: 65,
+    isComposing: false,
+    preventDefault() { latinBlocked = true; },
+  });
+
+  assert.equal(imeBlocked, true);
+  assert.equal(latinBlocked, false);
+});

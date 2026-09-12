@@ -20,6 +20,19 @@ export function sanitizeDetailCodeInput(value) {
   return normalizeCodeInput(value).replace(/[^A-Z0-9_]/g, "").slice(0, 20);
 }
 
+export function guardCodeInput(event) {
+  if (
+    event.type === "keydown"
+    && (event.isComposing || event.key === "Process" || event.keyCode === 229)
+  ) {
+    event.preventDefault();
+    return;
+  }
+  if (event.type === "beforeinput" && event.data && /[^A-Za-z0-9_]/.test(event.data)) {
+    event.preventDefault();
+  }
+}
+
 export function sanitizeSortOrderInput(value) {
   return String(value ?? "").replace(/\D/g, "");
 }
@@ -121,11 +134,15 @@ function initializeCommonCodeManagement() {
 
   if (!isAdmin) document.querySelectorAll("[data-write-control]").forEach((node) => node.remove());
   document.querySelectorAll(".common-code-input").forEach((input) => {
+    input.addEventListener("keydown", guardCodeInput);
+    input.addEventListener("beforeinput", guardCodeInput);
     input.addEventListener("input", () => {
       input.value = sanitizeGroupCodeInput(input.value);
     });
   });
   document.querySelectorAll(".detail-code-input").forEach((input) => {
+    input.addEventListener("keydown", guardCodeInput);
+    input.addEventListener("beforeinput", guardCodeInput);
     input.addEventListener("input", () => {
       input.value = sanitizeDetailCodeInput(input.value);
     });
