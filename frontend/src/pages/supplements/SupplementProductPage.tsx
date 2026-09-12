@@ -181,7 +181,7 @@ function ProductInformation({ product }: { product: SupplementProduct }) {
   if (rows.length === 0) return null;
 
   return (
-    <section aria-label="제품 정보 상세" className="border-y border-border">
+    <section aria-label="제품 정보 상세" className="border border-border bg-card px-4">
       <dl>
         {rows.map((row) => (
           <div
