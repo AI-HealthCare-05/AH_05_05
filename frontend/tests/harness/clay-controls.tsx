@@ -23,6 +23,14 @@ function Harness() {
       <Button variant="secondary" disabled onClick={() => setCount(999)}>취소 불가</Button>
       <Button disabled onClick={() => setCount(999)}>저장 불가</Button>
     </div>
+    <div role="group" aria-label="선택형 control" className="grid grid-cols-2 gap-2">
+      <button type="button" aria-pressed="true" className="min-h-touch rounded-input bg-primary px-4 text-card">
+        선택됨
+      </button>
+      <button type="button" aria-pressed="false" className="min-h-touch rounded-input bg-card px-4 text-muted-foreground">
+        선택 안 됨
+      </button>
+    </div>
     <Button variant="danger">삭제</Button>
     <output aria-label="작업 횟수">{count}</output>
     <HomeSectionTabs activeTab={active} onChange={setActive} />

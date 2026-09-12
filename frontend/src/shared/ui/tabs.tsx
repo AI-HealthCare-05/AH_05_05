@@ -1,5 +1,6 @@
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import * as TabsPrimitive from '@radix-ui/react-tabs';
+import { NavLink } from 'react-router';
 import { cn } from '@/shared/lib/cn';
 
 /**
@@ -22,7 +23,7 @@ function TabsList({ className, ...props }: ComponentProps<typeof TabsPrimitive.L
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        'inline-flex h-touch w-full items-center justify-center gap-1 rounded-input bg-muted p-1',
+        'grid min-h-touch w-full grid-flow-col auto-cols-fr border-b border-border',
         className,
       )}
       {...props}
@@ -35,8 +36,9 @@ function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsPrimitiv
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        'inline-flex flex-1 items-center justify-center rounded-input py-2 text-sm font-bold text-muted-foreground transition-colors',
-        'data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-card',
+        'relative inline-flex min-h-touch min-w-0 items-center justify-center px-2 pb-2 pt-1 text-sm font-bold text-muted-foreground transition-colors',
+        "after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-pill after:bg-transparent after:content-['']",
+        'hover:text-foreground data-[state=active]:text-primary data-[state=active]:after:bg-primary',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         'disabled:pointer-events-none disabled:opacity-50',
         className,
@@ -56,4 +58,48 @@ function TabsContent({ className, ...props }: ComponentProps<typeof TabsPrimitiv
   );
 }
 
-export { Tabs, TabsContent, TabsList, TabsTrigger };
+export interface NavigationTabItem {
+  label: ReactNode;
+  to: string;
+  /** 상위 경로가 하위 탭까지 선택된 것으로 표시되지 않게 합니다. */
+  end?: boolean;
+}
+
+export interface NavigationTabsProps extends Omit<ComponentProps<'nav'>, 'aria-label' | 'children'> {
+  label: string;
+  items: NavigationTabItem[];
+}
+
+/**
+ * 페이지를 이동하는 탭입니다. 채워진 clay 표면 대신 하단 ink를 써서
+ * 실행 버튼과 역할을 시각적으로 구분합니다.
+ */
+function NavigationTabs({ label, items, className, ...props }: NavigationTabsProps) {
+  return (
+    <nav
+      aria-label={label}
+      data-slot="navigation-tabs"
+      className={cn('grid min-h-touch grid-flow-col auto-cols-fr border-b border-border', className)}
+      {...props}
+    >
+      {items.map(item => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          className={({ isActive }) => cn(
+            'relative flex min-h-touch min-w-0 items-center justify-center px-2 pb-2 pt-1 text-sm font-bold transition-colors',
+            "after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-pill after:bg-transparent after:content-['']",
+            isActive
+              ? 'text-primary after:bg-primary'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {item.label}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
+export { NavigationTabs, Tabs, TabsContent, TabsList, TabsTrigger };

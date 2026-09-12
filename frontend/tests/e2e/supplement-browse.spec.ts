@@ -52,9 +52,9 @@ test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 �
   test.skip(IS_REAL_API, '고정된 내 영양제 목록을 확인하는 목업 전용 테스트입니다.');
   await page.goto('/dev/supplements');
 
-  const tabs = page.getByRole('group', { name: '영양제 화면' });
-  await expect(tabs.getByRole('button', { name: '내 영양제' })).toHaveAttribute(
-    'aria-pressed',
+  const tabs = page.getByRole('tablist', { name: '영양제 화면' });
+  await expect(tabs.getByRole('tab', { name: '내 영양제' })).toHaveAttribute(
+    'aria-selected',
     'true',
   );
   await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
@@ -62,8 +62,8 @@ test('영양제 기본 화면은 내 영양제이고 쿼리로 둘러보기를 �
 
   await page.goto('/dev/supplements?tab=browse');
 
-  await expect(tabs.getByRole('button', { name: '둘러보기' })).toHaveAttribute(
-    'aria-pressed',
+  await expect(tabs.getByRole('tab', { name: '둘러보기' })).toHaveAttribute(
+    'aria-selected',
     'true',
   );
   await page.getByRole('banner').getByRole('button', { name: 'AI 보고서 받기' }).click();
@@ -74,12 +74,12 @@ test('탭을 반복해서 바꿔도 replace 이동이라 브라우저 이력이 
   await page.goto('/dev/gallery');
   await page.goto('/dev/supplements');
 
-  const tabs = page.getByRole('group', { name: '영양제 화면' });
-  await tabs.getByRole('button', { name: '둘러보기' }).click();
+  const tabs = page.getByRole('tablist', { name: '영양제 화면' });
+  await tabs.getByRole('tab', { name: '둘러보기' }).click();
   await expect(page).toHaveURL(/\/dev\/supplements\?tab=browse$/);
-  await tabs.getByRole('button', { name: '내 영양제' }).click();
+  await tabs.getByRole('tab', { name: '내 영양제' }).click();
   await expect(page).toHaveURL(/\/dev\/supplements$/);
-  await tabs.getByRole('button', { name: '둘러보기' }).click();
+  await tabs.getByRole('tab', { name: '둘러보기' }).click();
   await expect(page).toHaveURL(/\/dev\/supplements\?tab=browse$/);
 
   await page.goBack();
@@ -92,8 +92,8 @@ test('둘러보기에서 내 영양제로 돌아오면 기존 목록과 성분 �
   test.skip(IS_REAL_API, '고정된 내 영양제 목록과 합계를 확인하는 목업 전용 테스트입니다.');
   await page.goto('/dev/supplements?tab=browse');
 
-  const tabs = page.getByRole('group', { name: '영양제 화면' });
-  await tabs.getByRole('button', { name: '내 영양제' }).click();
+  const tabs = page.getByRole('tablist', { name: '영양제 화면' });
+  await tabs.getByRole('tab', { name: '내 영양제' }).click();
 
   await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: '성분 합계' })).toBeVisible();

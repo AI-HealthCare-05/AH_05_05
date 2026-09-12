@@ -6,6 +6,7 @@ import { useSession } from '@/app/SessionContext';
 import { getChallengeCatalog, getChallengeParticipations } from '@/entities/challenge';
 import { getCustomChallengeRecommendations } from '@/entities/custom-challenge';
 import { Button } from '@/shared/ui/Button';
+import { NavigationTabs } from '@/shared/ui/tabs';
 import { LoadingState } from '@/shared/ui/LoadingState';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { ChallengePageHeading } from './ChallengePageHeading';
@@ -88,10 +89,13 @@ export function OfficialChallengeBrowsePage() {
     <>
       <ChallengePageHeading />
       <main className="flex flex-col gap-4 px-page-x py-5">
-        <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
-          <Link to="/challenges" className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">마이</Link>
-          <Link aria-current="page" to="/challenges/browse" className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">둘러보기</Link>
-        </nav>
+        <NavigationTabs
+          label="챌린지 보기"
+          items={[
+            { label: '나의 챌린지', to: '/challenges', end: true },
+            { label: '둘러보기', to: '/challenges/browse' },
+          ]}
+        />
 
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger

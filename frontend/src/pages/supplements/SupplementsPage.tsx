@@ -26,6 +26,9 @@ import {
   ErrorDialog,
   Header,
   StatusBadge,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
@@ -273,31 +276,28 @@ export function SupplementsPage({
       />
 
       <div className="px-page-x pt-5">
-        <div
-          className="rx-segmented grid grid-cols-2 rounded-input bg-muted-bg p-1"
-          role="group"
-          aria-label="영양제 화면"
+        <Tabs
+          value={activeView}
+          onValueChange={(view) => changeView(view as 'my' | 'browse')}
+          className="gap-0"
         >
-          {(['my', 'browse'] as const).map((view) => {
-            const selected = view === activeView;
-            return (
-              <button
-                key={view}
-                type="button"
-                aria-pressed={selected}
-                className={`min-h-touch rounded-input text-sm font-bold ${
-                  selected ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'
-                }`}
-                onClick={() => changeView(view)}
-              >
-                {view === 'my' ? '내 영양제' : '둘러보기'}
-              </button>
-            );
-          })}
-        </div>
+          <TabsList aria-label="영양제 화면">
+            <TabsTrigger id="supplements-tab-my" value="my" aria-controls="supplements-panel">
+              내 영양제
+            </TabsTrigger>
+            <TabsTrigger id="supplements-tab-browse" value="browse" aria-controls="supplements-panel">
+              둘러보기
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5">
+      <main
+        id="supplements-panel"
+        role="tabpanel"
+        aria-labelledby={`supplements-tab-${activeView}`}
+        className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5"
+      >
         {activeView === 'browse' ? (
           <SupplementsBrowseView
             registeredProductIds={registeredProductIds}
