@@ -140,7 +140,8 @@ test('대화방 AI 아바타는 플로팅 챗봇과 같은 병아리 알약 캐�
   await expect(page.getByText('추가 답변이에요.', { exact: true })).toBeVisible();
 });
 
-test('보고서 생성 중에는 안내만 표시하고 spinner 없이 중복 요청을 막는다', async ({ page }, testInfo) => {
+for (const source of ['medications', 'supplements']) {
+test(`보고서 ${source} 생성 대기는 말풍선과 움직이는 점으로 표시하며 중복 요청을 막는다`, async ({ page }, testInfo) => {
   let requests = 0;
   let release!: () => void;
   const pendingResponse = new Promise<void>(resolve => { release = resolve; });
@@ -151,7 +152,7 @@ test('보고서 생성 중에는 안내만 표시하고 spinner 없이 중복 �
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/reports/new?source=medications');
+  await page.goto(`/reports/new?source=${source}`);
   const generateButton = page.getByRole('button', { name: '보고서 생성하기', exact: true });
   await generateButton.evaluate((button: HTMLButtonElement) => {
     button.click();
@@ -161,15 +162,56 @@ test('보고서 생성 중에는 안내만 표시하고 spinner 없이 중복 �
   const pendingButton = page.getByRole('button', { name: '보고서 생성 중', exact: true });
   await expect(pendingButton).toBeDisabled();
   await expect(pendingButton).toHaveAttribute('aria-busy', 'true');
-  await expect(page.getByRole('status')).toHaveText('보고서 생성 중 (최대 2분 소요)…');
+  const status = page.getByRole('status');
+  await expect(status).toHaveCount(1);
+  await expect(status).toContainText('보고서 생성 중 (최대 2분 소요)');
+  const surface = await status.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { border: parseFloat(style.borderTopWidth), radius: parseFloat(style.borderTopRightRadius), shadow: style.boxShadow, background: style.backgroundColor };
+  });
+  expect(surface.border).toBeGreaterThanOrEqual(1);
+  expect(surface.radius).toBeGreaterThanOrEqual(20);
+  expect(surface.shadow).not.toBe('none');
+  expect(surface.background).not.toBe('rgba(0, 0, 0, 0)');
+  const dots = status.locator('[data-chat-pending-dot]');
+  await expect(dots).toHaveCount(5);
+  await expect(status.locator('[data-chat-pending-loader]')).toHaveAttribute('aria-hidden', 'true');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const animation = await dots.first().evaluate(async element => {
+    const motion = element.getAnimations()[0];
+    if (!motion) return null;
+    await motion.ready;
+    const initial = Number(motion.currentTime);
+    const transform = getComputedStyle(element).transform;
+    await new Promise(resolve => setTimeout(resolve, 220));
+    return { elapsed: Number(motion.currentTime) - initial, changed: transform !== getComputedStyle(element).transform };
+  });
+  expect(animation?.elapsed).toBeGreaterThan(100);
+  expect(animation?.changed).toBe(true);
   await expect(pendingButton.locator('.rx-button-spinner')).toHaveCount(0);
   expect(requests).toBe(1);
-  await page.screenshot({ path: testInfo.outputPath('report-loading-390.png'), fullPage: true });
-
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.screenshot({ path: testInfo.outputPath('report-loading-1280.png'), fullPage: true });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  for (const width of [375, 390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const layout = await status.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      const loader = element.querySelector('[data-chat-pending-loader]')!.getBoundingClientRect();
+      return { boxRight: box.right, loaderRight: loader.right, loaderLeft: loader.left, boxLeft: box.left, overflow: element.scrollWidth > element.clientWidth };
+    });
+    expect(layout.loaderRight).toBeLessThanOrEqual(layout.boxRight);
+    expect(layout.loaderLeft).toBeGreaterThanOrEqual(layout.boxLeft);
+    expect(layout.overflow).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`report-loading-${width}.png`), fullPage: true });
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const dot of await dots.all()) {
+    await expect(dot).toHaveCSS('animation-name', 'none');
+    expect(await dot.evaluate(element => element.getAnimations().length)).toBe(0);
+  }
 
   release();
   await expect(page.getByRole('alert')).toContainText('테스트 종료');
+  await expect(status).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '다시 시도', exact: true })).toBeEnabled();
 });
+}

@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useChatSession } from '@/app/ChatSessionContext';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
+import { PendingBubble } from '@/shared/ui/PendingBubble';
 import {
   BottomTabbar,
   Button,
@@ -546,18 +547,7 @@ export function ChatPage({
             <span aria-hidden className="chat-assistant-avatar mt-0.5 size-8 shrink-0">
               <img src="/images/default-profile.png" alt="" />
             </span>
-            <p className="chat-pending-bubble rounded-card px-3.5 py-2.5 text-base text-muted-foreground">
-              {progressMessage}
-              <span
-                aria-hidden="true"
-                className="chat-pending-loader"
-                data-chat-pending-loader
-              >
-                {Array.from({ length: 5 }, (_, index) => (
-                  <span key={index} className="chat-pending-dot" data-chat-pending-dot />
-                ))}
-              </span>
-            </p>
+            <PendingBubble>{progressMessage}</PendingBubble>
           </div>
         )}
 

@@ -91,7 +91,7 @@ test('pending generation prevents duplicate requests; timeout allows retry', asy
   const pendingButton = page.getByRole('button', { name: '보고서 생성 중' });
   await expect(pendingButton).toBeDisabled();
   await expect(pendingButton).toHaveAttribute('aria-busy', 'true');
-  await expect(page.getByRole('status')).toHaveText('보고서 생성 중 (최대 2분 소요)…');
+  await expect(page.getByRole('status')).toHaveText('보고서 생성 중 (최대 2분 소요)');
   await expect(pendingButton.locator('.rx-button-spinner')).toHaveCount(0);
   expect(calls).toBe(1);
   release();
