@@ -626,41 +626,33 @@ function NutrientTotalCard({
 function StandardStatus({ total }: { total: NutrientTotal }) {
   const evaluation = evaluateNutrientStandard(total);
   const baseLabel = evaluation.baseKind === 'ai' ? '충분섭취량' : '권장량';
-  if (evaluation.status === 'unrated') {
-    return null;
-  }
+  let statusLabel: string | null = null;
   if (evaluation.status === 'over-upper-limit') {
-    return (
+    statusLabel = '상한 초과';
+  } else if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
+    statusLabel = `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`;
+  } else if (evaluation.status === 'recommended') {
+    statusLabel =
+      total.ul === null && evaluation.percentOfBase !== null
+        ? `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`
+        : '권장 범위예요';
+  }
+  if (statusLabel === null) return null;
+
+  const upperLimitPosition = rangePositions(total, evaluation.base).upper;
+  return (
+    <div className="relative mx-1 h-5">
       <p
         data-nutrient-status
-        className="ml-auto text-right text-sm font-bold text-danger-strong"
+        className={`absolute top-0 whitespace-nowrap text-right text-sm ${
+          upperLimitPosition === null ? 'right-0' : '-translate-x-1/2'
+        } ${evaluation.status === 'over-upper-limit' ? 'font-bold text-danger-strong' : 'text-muted-foreground'}`}
+        style={upperLimitPosition === null ? undefined : { left: `${upperLimitPosition}%` }}
       >
-        상한 초과
+        {statusLabel}
       </p>
-    );
-  }
-  if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
-    return (
-      <p data-nutrient-status className="ml-auto text-right text-sm text-muted-foreground">
-        {baseLabel}의 {numberFormat.format(evaluation.percentOfBase)}%예요
-      </p>
-    );
-  }
-  if (evaluation.status === 'recommended') {
-    if (total.ul === null && evaluation.percentOfBase !== null) {
-      return (
-        <p data-nutrient-status className="ml-auto text-right text-sm text-muted-foreground">
-          {baseLabel}의 {numberFormat.format(evaluation.percentOfBase)}%예요
-        </p>
-      );
-    }
-    return (
-      <p data-nutrient-status className="ml-auto text-right text-sm text-muted-foreground">
-        권장 범위예요
-      </p>
-    );
-  }
-  return null;
+    </div>
+  );
 }
 
 function NutrientRangeBar({ total }: { total: NutrientTotal }) {

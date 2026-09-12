@@ -7,6 +7,7 @@ test.beforeEach(() => {
 });
 
 test('성분명 옆 합계와 그래프 오른쪽 위의 기존 판정 문구를 표시한다', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/dev/supplements');
 
   const totals = page.getByRole('region', { name: '성분 합계' });
@@ -21,10 +22,14 @@ test('성분명 옆 합계와 그래프 오른쪽 위의 기존 판정 문구를
 
   const status = vitaminA.getByText('상한 초과', { exact: true });
   const graph = vitaminA.locator('[data-nutrient-range]');
+  const upperLimit = vitaminA.locator('[data-threshold="upper-limit"]');
   const statusBox = await status.boundingBox();
   const graphBox = await graph.boundingBox();
+  const upperLimitBox = await upperLimit.boundingBox();
   expect(statusBox?.y).toBeLessThan(graphBox?.y ?? 0);
-  expect(statusBox?.x).toBeGreaterThan((graphBox?.x ?? 0) + (graphBox?.width ?? 0) / 2);
+  const statusCenter = (statusBox?.x ?? 0) + (statusBox?.width ?? 0) / 2;
+  const upperLimitCenter = (upperLimitBox?.x ?? 0) + (upperLimitBox?.width ?? 0) / 2;
+  expect(Math.abs(statusCenter - upperLimitCenter)).toBeLessThanOrEqual(2);
 
   const calcium = totals.getByRole('article', { name: '칼슘 성분 합계' });
   await expect(calcium.getByText('권장량의 50%예요', { exact: true })).toBeVisible();
