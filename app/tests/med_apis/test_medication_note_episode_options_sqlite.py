@@ -1,6 +1,7 @@
 """Isolated SQLite contract tests for medication-note filter episode options."""
 
-from datetime import date, datetime
+import sqlite3
+from datetime import date, datetime, time
 
 import pytest_asyncio
 from fastapi import FastAPI
@@ -13,15 +14,16 @@ from app.core.db.databases import TORTOISE_APP_MODELS
 from app.core.exception_handlers import register_exception_handlers
 from app.dependencies.security import get_request_user
 from app.models.care import CareEpisode
-from app.models.enums import AccountStatus, CareEpisodeStatus
+from app.models.enums import AccountStatus, CareEpisodeStatus, MealSlot
 from app.models.medications import Medication, MedicationNote
-from app.models.users import User
+from app.models.users import User, UserSettings
 
 OPTIONS_URL = "/api/v1/med/notes/episodes"
 
 
 @pytest_asyncio.fixture
 async def isolated_db() -> None:
+    sqlite3.register_adapter(time, lambda value: value.isoformat())
     await Tortoise.init(
         db_url="sqlite://:memory:",
         modules={"models": TORTOISE_APP_MODELS},
@@ -256,6 +258,8 @@ async def test_note_episode_options_can_include_owned_active_and_completed_episo
         cancelled_with_note.id,
     ]
     assert [item["noteCount"] for item in items] == [0, 0, 2, 1]
+    assert items[0]["firstDoseAt"] == "2026-09-05T08:00:00"
+    assert items[1]["firstDoseAt"] == "2026-09-04T08:00:00"
     assert items[0]["representativeMedicationName"] == "현재 처방 약50mg"
     assert items[0]["medications"] == [{"id": active_medication.id, "name": "현재 처방 약50mg", "dose": "50mg"}]
     assert items[1]["representativeMedicationName"] == "종료 처방 약10mg"
@@ -263,3 +267,37 @@ async def test_note_episode_options_can_include_owned_active_and_completed_episo
     assert cancelled_without_note.id not in {item["careEpisodeId"] for item in items}
     assert other_episode.id not in {item["careEpisodeId"] for item in items}
     assert empty_draft.id not in {item["careEpisodeId"] for item in items}
+
+
+async def test_note_inventory_first_dose_uses_owned_schedule_for_all_slots_and_preserves_unknown_date(
+    isolated_db: None,
+) -> None:
+    owner = await create_user("first-dose-owner@example.com")
+    await UserSettings.create(
+        user=owner,
+        morning_medication_time=time(9, 15),
+        lunch_medication_time=time(16, 30),
+        evening_medication_time=time(20, 45),
+        bedtime_medication_time=time(23, 10),
+    )
+    expected: dict[int, str | None] = {}
+    for slot, clock in [
+        (MealSlot.MORNING, "09:15"),
+        (MealSlot.LUNCH, "16:30"),
+        (MealSlot.EVENING, "20:45"),
+        (MealSlot.BEDTIME, "23:10"),
+    ]:
+        episode = await create_episode(
+            owner, alias=slot.value, start_date=date(2024, 1, 1), episode_status=CareEpisodeStatus.COMPLETED
+        )
+        episode.medication_start_slot = slot
+        await episode.save(update_fields=["medication_start_slot"])
+        await Medication.create(care_episode=episode, name="완료 처방 약")
+        expected[episode.id] = "2024-01-01T" + clock + ":00"
+    unknown = await create_episode(owner, alias="시작일 미상", start_date=None, episode_status=CareEpisodeStatus.ACTIVE)
+    await Medication.create(care_episode=unknown, name="시작일 미상 약")
+    expected[unknown.id] = None
+    async with AsyncClient(transport=ASGITransport(app=api_for(owner)), base_url="http://test") as client:
+        response = await client.get(OPTIONS_URL, params={"includeWithoutNotes": "true"})
+    assert response.status_code == 200
+    assert {item["careEpisodeId"]: item["firstDoseAt"] for item in response.json()} == expected

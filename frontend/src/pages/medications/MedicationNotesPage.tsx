@@ -392,7 +392,7 @@ export function MedicationNotesPage() {
         )}
         <Tabs value={tab} onValueChange={changeTab}>
           <TabsList aria-label="복약 메모 처방 분류">
-            <TabsTrigger value="withoutNotes">메모작성하기</TabsTrigger>
+            <TabsTrigger value="withoutNotes">메모 작성하기</TabsTrigger>
             <TabsTrigger value="withNotes">작성한 메모</TabsTrigger>
           </TabsList>
           <TabsContent value="withoutNotes" className="pt-2">
@@ -406,7 +406,7 @@ export function MedicationNotesPage() {
                 </Button>
               </Card>
             ) : noteEpisodes === null ? (
-              <div role="status" aria-label="메모작성하기 처방 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
+              <div role="status" aria-label="메모 작성하기 처방 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
             ) : noteEpisodes.length === 0 ? (
               <Card className="p-5">등록된 처방이 없어요.</Card>
             ) : episodesWithoutNotes.length === 0 ? (

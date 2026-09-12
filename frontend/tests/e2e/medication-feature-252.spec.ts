@@ -539,7 +539,7 @@ test('복약 메모는 SessionContext principal별로 격리된다', async ({ pa
   });
   await otherPage.goto('/medications/notes');
   await expect(otherPage.getByText('계정 A의 메모')).toHaveCount(0);
-  await expect(otherPage.getByRole('tab', { name: '메모작성하기', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(otherPage.getByRole('tab', { name: '메모 작성하기', exact: true })).toHaveAttribute('aria-selected', 'true');
   await otherPage.getByRole('tab', { name: '작성한 메모', exact: true }).click();
   await expect(otherPage.getByText('작성한 건강상태 기록이 아직 없어요.', { exact: true })).toBeVisible();
   await expect(otherPage.getByText('계정 A의 메모')).toHaveCount(0);

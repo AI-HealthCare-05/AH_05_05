@@ -170,15 +170,22 @@ export function mockListMedicationNoteEpisodes(
       medicationCount: note.availableMedications.length,
       ...(options.includeWithoutNotes ? { noteCount: 1 } : {}),
       ...(options.includeWithoutNotes ? { medications: note.availableMedications } : {}),
+      ...(options.includeWithoutNotes ? { firstDoseAt: null } : {}),
     });
   }
   if (options.includeWithoutNotes) {
     for (const overview of mockMedicationOverviews()) {
-      if (byEpisodeId.has(overview.recordId)) continue;
+      const firstDoseAt = overview.start.date + 'T' + overview.mealTimes[overview.start.slot] + ':00';
+      const existing = byEpisodeId.get(overview.recordId);
+      if (existing) {
+        existing.firstDoseAt = firstDoseAt;
+        continue;
+      }
       byEpisodeId.set(overview.recordId, {
         careEpisodeId: overview.recordId,
         alias: overview.alias ?? null,
         startDate: overview.start.date,
+        firstDoseAt,
         status: overview.isFinished ? 'COMPLETED' : 'ACTIVE',
         representativeMedicationName: overview.medications[0]?.name ?? null,
         medicationCount: overview.medications.length,

@@ -281,7 +281,7 @@ class MedicationService:
         rows = await (
             episode_query.distinct()
             .order_by("-medication_start_date", "-id")
-            .values("id", "alias", "medication_start_date", "status")
+            .values("id", "alias", "medication_start_date", "medication_start_slot", "status")
         )
         episode_ids = [row["id"] for row in rows]
         medication_rows = (
@@ -315,11 +315,20 @@ class MedicationService:
             for note_row in note_rows:
                 episode_id = note_row["care_episode_id"]
                 note_counts[episode_id] = note_counts.get(episode_id, 0) + 1
-            rows = [
-                row
-                for row in rows
-                if medication_counts.get(row["id"], 0) > 0 or note_counts.get(row["id"], 0) > 0
-            ]
+            rows = [row for row in rows if medication_counts.get(row["id"], 0) > 0 or note_counts.get(row["id"], 0) > 0]
+
+        first_dose_at_by_episode: dict[int, datetime | None] = {}
+        if include_without_notes:
+            settings = await UserSettings.get_or_none(user_id=user.id)
+            meal_times = self._meal_times(settings)
+            for row in rows:
+                start_date = row["medication_start_date"]
+                start_slot = row["medication_start_slot"] or MealSlot.MORNING
+                first_dose_at_by_episode[row["id"]] = (
+                    datetime.combine(start_date, time.fromisoformat(getattr(meal_times, start_slot.value.lower())))
+                    if start_date is not None
+                    else None
+                )
 
         return [
             MedicationNoteEpisodeResponse(
@@ -331,6 +340,7 @@ class MedicationService:
                 medication_count=medication_counts.get(row["id"], 0),
                 **({"note_count": note_counts.get(row["id"], 0)} if include_without_notes else {}),
                 **({"medications": medications_by_episode.get(row["id"], [])} if include_without_notes else {}),
+                **({"first_dose_at": first_dose_at_by_episode[row["id"]]} if include_without_notes else {}),
             )
             for row in rows
         ]

@@ -146,6 +146,7 @@ class MedicationNoteEpisodeResponse(CamelModel):
     care_episode_id: int
     alias: str | None = None
     start_date: date | None = None
+    first_dose_at: datetime | None = None
     status: CareEpisodeStatus
     representative_medication_name: str | None = None
     medication_count: int = Field(default=0, ge=0)

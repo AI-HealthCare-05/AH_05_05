@@ -32,6 +32,8 @@ export interface MedicationNoteEpisode {
   careEpisodeId: number;
   alias: string | null;
   startDate: string | null;
+  /** includeWithoutNotes=true: 처방 시작일과 첫 복용 시간대의 설정 시각(KST 로컬) */
+  firstDoseAt?: string | null;
   status: MedicationNoteEpisodeStatus;
   representativeMedicationName?: string | null;
   medicationCount?: number;

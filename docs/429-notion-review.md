@@ -1,5 +1,17 @@
 # #429 복약 메모 Notion 검토
 
+## 최신 후속 — 첫 복용 일시 기본값 / 띄어쓰기
+
+- 사용자 새 지시로 왼쪽 탭을 정확히 `메모 작성하기`로 변경한다. 오른쪽 `작성한 메모` 및 처방 단위 작성 정책은 유지한다. 아래 붙여 쓴 문구는 이전 승인 기록이다.
+- 첫 복용 일시는 기존 의미인 **처방 시작일 + 첫 복용 시간대의 사용자 설정 시각**이다. 실제 복용 체크 시각이나 메모 작성 현재 시각으로 바꾸지 않는다.
+- 원인: 일반 overview는 ACTIVE/OCR/날짜 범위에 한정되지만 메모 inventory는 완료·과거·수동 처방도 제공한다. inventory에는 시작일만 있고 첫 시각이 없어 작성 기본값이 비었다.
+- `includeWithoutNotes=true` 응답에만 `firstDoseAt`을 추가하고 작성 폼에서 사용한다. 정상 overview 첫 시간은 유지하고, overview 시간이 없을 때만 inventory로 보완한다. 시작일 미상은 null/빈칸이며 오늘 날짜나 임의 시각으로 채우지 않는다.
+- 날짜·시각은 기존 화면과 같은 한국 로컬 wall-clock 값으로 전달한다. 사용자가 바꾼 복용 일시·본문은 재시도 시 유지하고, 기존 메모 편집은 저장된 dosedAt을 유지한다.
+- 기존 기본 응답의 키·소유권·noteCount·약 목록, 신규 약ID 생략/기존 약 연결 보존은 유지한다. 새 실행 결과는 아래 후속 검증에 기록하며 이전 결과와 구분한다.
+- Fresh 검증: SQLite API 계약4 passed (77.55s), real fixture 핵심13 passed (26.4s), mock 문구·계정 분리2 passed (20.7s), 390px 첫 일시 캡처2 passed (17.8s), TypeScript exit0, scoped Ruff/format 성공. 집중 실행 숫자는 중복이 있으므로 고유 테스트 수로 합산하지 않는다.
+- RED: 범위 밖 처방 일시 및 overview 시간 누락에서 기본값이 빈 문자열로 재현됐고, backend 응답의 firstDoseAt 키 누락도 재현됐다. 처음의 출력 없는 종료 및 SQLite time 바인딩 fixture 오류는 제품 실패/통과와 별도로 기록한다. 테스트에만 표준 SQLite time adapter를 추가했다.
+- 최신 캡처는 `artifacts/429-first-dose/real/notes-390.png`와 `first-dose-ACTIVE.png`/`first-dose-COMPLETED.png`이며 첫 일시 캡처도390px이다. 과거·완료 처방의 기본 일시, 사용자 수정 일시의 저장, 재시도 입력 보존, 기존 편집 값 유지가 확인됐다. runtime 종료/45539 listener0 확인 완료.
+
 ## 최신 직접 지시 — 처방 단위 작성 (2026-09-12 후속)
 
 - 사용자가 `약선택은 없애자 그냥 에피소드별로만`을 명시했다. 아래 이전 검수의 선택적 개별 약 UI 정책은 이번 지시로 대체한다.

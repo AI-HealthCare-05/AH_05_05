@@ -98,7 +98,7 @@ test('메모 유무는 전체 처방 메타데이터로 분류하고 처방별 �
 
   await page.goto('/medications/notes');
 
-  const noNotesTab = page.getByRole('tab', { name: '메모작성하기' });
+  const noNotesTab = page.getByRole('tab', { name: '메모 작성하기', exact: true });
   const hasNotesTab = page.getByRole('tab', { name: '작성한 메모' });
   await expect(noNotesTab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('button', { name: /메모 전 아침 처방.*펼치기/ })).toBeVisible();
@@ -122,11 +122,11 @@ test('메모 유무는 전체 처방 메타데이터로 분류하고 처방별 �
   await expect(page.getByText('둘째 페이지의 건강상태 기록')).toBeVisible();
   expect(noteQueries).toEqual(['?episodeId=103', '?episodeId=103&cursor=next-103']);
   await waitForVisibleImages(page);
-  await page.screenshot({ path: '../artifacts/429-episode-only/real/notes-375.png', fullPage: true });
+  await page.screenshot({ path: '../artifacts/429-first-dose/real/notes-375.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: '../artifacts/429-episode-only/real/notes-390.png', fullPage: true });
+  await page.screenshot({ path: '../artifacts/429-first-dose/real/notes-390.png', fullPage: true });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.screenshot({ path: '../artifacts/429-episode-only/real/notes-1280.png', fullPage: true });
+  await page.screenshot({ path: '../artifacts/429-first-dose/real/notes-1280.png', fullPage: true });
 });
 
 test('첫 메모를 저장하면 처방이 메모 있는 탭으로 이동한다', async ({ page }) => {
@@ -205,7 +205,7 @@ test(`새 메모는 헤더 우측에 있고 약 선택 없이 처방별 건강�
   await expect(page.getByRole('combobox')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await waitForVisibleImages(page);
-  await page.screenshot({ path: '../artifacts/429-episode-only/real/429-note-form-' + width + '.png', fullPage: true });
+  await page.screenshot({ path: '../artifacts/429-first-dose/real/429-note-form-' + width + '.png', fullPage: true });
 });
 }
 
@@ -235,7 +235,7 @@ test('메모 삭제는 목록이 아니라 수정 상세의 확인 절차에서 
   await page.getByRole('button', { name: '삭제하기' }).click();
   await expect.poll(() => deleted).toBe(true);
   await expect(page).toHaveURL('/medications/notes?episodeId=103');
-  await expect(page.getByRole('tab', { name: '메모작성하기' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: '메모 작성하기', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('button', { name: /저녁 감기 처방.*접기/ })).toBeVisible();
 });
 
@@ -278,10 +278,12 @@ for (const episodeStatus of ['ACTIVE', 'COMPLETED'] as const) {
   test(`${episodeStatus} 무메모 처방이 overview에 없어도 처방 전체로 첫 메모를 작성한다`, async ({ page }) => {
     let created = false;
     let postedPayload: Record<string, unknown> | null = null;
+    await page.setViewportSize({ width: 390, height: 844 });
     const inventoryEpisode = {
       careEpisodeId: 777,
       alias: episodeStatus === 'ACTIVE' ? '범위 밖 활성 처방' : '지난 완료 처방',
       startDate: '2024-01-01',
+      firstDoseAt: '2024-01-01T16:30:00',
       status: episodeStatus,
       representativeMedicationName: '원제품명정50mg',
       medicationCount: 1,
@@ -318,13 +320,37 @@ for (const episodeStatus of ['ACTIVE', 'COMPLETED'] as const) {
     await page.getByRole('button', { name: '이 처방에 메모 작성' }).click();
     await expect(page.getByLabel('처방', { exact: true })).toHaveValue('777');
     await expect(page.getByLabel('약', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('복용 일시')).toHaveValue('2024-01-01T16:30');
+    await waitForVisibleImages(page);
+    await page.screenshot({ path: '../artifacts/429-first-dose/real/first-dose-' + episodeStatus + '.png', fullPage: true });
     await page.getByLabel('복용 일시').fill('2024-01-02T09:00');
     await page.getByLabel('건강상태 기록').fill('첫 건강상태 기록');
     await page.getByRole('button', { name: '저장', exact: true }).click();
 
     await expect.poll(() => postedPayload).not.toBeNull();
-    expect(postedPayload).toMatchObject({ careEpisodeId: 777, body: '첫 건강상태 기록' });
+    expect(postedPayload).toMatchObject({ careEpisodeId: 777, dosedAt: '2024-01-02T09:00', body: '첫 건강상태 기록' });
     expect(postedPayload).not.toHaveProperty('medicationId');
+  });
+}
+
+for (const firstDoseAt of ['2024-01-01T00:15:00', null]) {
+  test('overview에 유효한 첫 시간이 없으면 인벤토리 기본값만 쓰고 미상은 비워 둔다: ' + firstDoseAt, async ({ page }) => {
+    const incompleteOverview = {
+      ...overviews[0], start: { date: '2024-01-01', slot: 'evening' },
+      mealTimes: { ...overviews[0].mealTimes, evening: '' },
+    };
+    await page.route('**/api/v1/medications', (route) => fulfillJson(route, [incompleteOverview]));
+    await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, (route) => fulfillJson(route, [{
+      careEpisodeId: 103, alias: '시간 확인 처방', startDate: '2024-01-01', firstDoseAt,
+      status: 'ACTIVE', noteCount: 0, medicationCount: 1,
+      medications: [{ id: 1003, name: '타이레놀정500mg', dose: '500mg' }],
+    }]));
+    await page.goto('/medications/notes/new');
+    await page.getByLabel('처방', { exact: true }).selectOption('103');
+    await expect(page.getByLabel('복용 일시')).toHaveValue(firstDoseAt === null ? '' : '2024-01-01T00:15');
+    await page.getByLabel('건강상태 기록').fill('건강상태 입력');
+    if (firstDoseAt === null) await expect(page.getByRole('button', { name: '저장', exact: true })).toBeDisabled();
+    else await expect(page.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
   });
 }
 

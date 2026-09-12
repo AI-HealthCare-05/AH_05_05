@@ -107,7 +107,7 @@ function episodeFromInventory(episode: MedicationNoteEpisode): NoteEpisodeOption
     id: episode.careEpisodeId,
     alias: episode.alias,
     startDate: episode.startDate,
-    firstDoseAt: null,
+    firstDoseAt: episode.firstDoseAt ? toLocalDateTime(episode.firstDoseAt) : null,
     status: episode.status,
   };
 }
@@ -205,7 +205,12 @@ export function MedicationNoteFormPage() {
           : [];
         const overviewById = new Map(overviewEpisodes.map((episode) => [episode.id, episode]));
         const availableEpisodes = [
-          ...inventoryEpisodes.map((episode) => overviewById.get(episode.id) ?? episode),
+          ...inventoryEpisodes.map((episode) => {
+            const overview = overviewById.get(episode.id);
+            return overview
+              ? { ...overview, firstDoseAt: overview.firstDoseAt ?? episode.firstDoseAt }
+              : episode;
+          }),
           ...overviewEpisodes.filter(
             (episode) => !inventoryEpisodes.some((inventory) => inventory.id === episode.id),
           ),
