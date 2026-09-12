@@ -12,6 +12,7 @@ import { ApiError, getAuthGeneration } from '@/shared/api/client';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button, Header } from '@/shared/ui';
 import { LoadingState } from '@/shared/ui/LoadingState';
+import { navigateBackOrReplace } from '@/shared/lib/navigation';
 
 type SupportedKind = 'medication' | 'supplement';
 
@@ -30,6 +31,7 @@ export function CustomChallengeTargetPage() {
   const [searchParams] = useSearchParams();
   const templateId = positiveId(searchParams.get('templateId'));
   const navigate = useNavigate();
+  const goBack = () => navigateBackOrReplace(navigate, '/challenges/browse');
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
   const generationRef = useRef(0);
@@ -175,7 +177,7 @@ export function CustomChallengeTargetPage() {
 
   return (
     <>
-      <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={() => navigate('/challenges/tailored')} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
+      <Header title={recommendation?.challengeName ?? '맞춤 챌린지'} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
       <p className="text-caption text-muted-foreground">맞춤 챌린지</p>
 

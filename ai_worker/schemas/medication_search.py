@@ -309,12 +309,21 @@ class MedicationQuestionInterpretation(BaseModel):
     )
     interaction_types: list[InteractionPairType] = Field(default_factory=list)
     needs_clarification: bool = False
+    clarification_question: str | None = None
     correction_count: int = Field(default=0, ge=0)
     candidate_count: int = Field(default=0, ge=0)
     reason_codes: list[MedicationQuestionReasonCode] = Field(
         default_factory=list,
     )
     query_plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("clarification_question")
+    @classmethod
+    def normalize_clarification_question(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class MedicationSearchExecutionPlan(BaseModel):

@@ -12,7 +12,7 @@ test('RNI를 우선한 기준선과 상한선을 표시하고 초과를 세 가�
   const totals = page.getByRole('region', { name: '성분 합계' });
   const exceededCard = totals.getByRole('article', { name: '비타민 A 성분 합계' });
   const exceeded = exceededCard.getByRole('heading', { name: '비타민 A', exact: true });
-  const neutral = totals.getByText('비타민 D', { exact: true });
+  const neutral = totals.getByRole('heading', { name: '비타민 D', exact: true });
   await expect(exceeded).toBeVisible();
   await expect(exceededCard.getByText('상한 초과', { exact: true })).toBeVisible();
   await expect(exceededCard.getByText('3,200', { exact: true })).toBeVisible();
@@ -69,15 +69,15 @@ test('기준과 상한의 누락 조합을 숨기거나 임의 판정하지 않�
 test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시한다', async ({ page }) => {
   await page.goto('/dev/supplements');
 
-  await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 남성')).toBeVisible();
+  await expect(page.getByText('2025 한국인 영양소 섭취기준 · 만 26세 남성', { exact: true })).toBeVisible();
   await expect(
     page.getByText(
-      '등록한 영양제의 성분만 더한 값이에요',
+      '검색된 영양제의 성분만 합산된 결과예요.',
     ),
   ).toBeVisible();
   await expect(
-    page.getByText('직접 입력한 0개는 성분을 알 수 없어 합계에 포함하지 않았습니다.'),
-  ).toHaveCount(0);
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
+  ).toBeVisible();
 });
 
 test('생년월일이나 성별이 없으면 기준을 숨기고 기본정보 입력으로 안내한다', async ({ page }) => {
@@ -238,15 +238,15 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   const manual = supplementList.getByRole('button').first();
   await expect(manual).toContainText('우리집 영양제');
-  await expect(manual).not.toContainText('성분 정보 없음');
+  await expect(manual.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
   await expect(manual).toContainText('하루 1회 · 1회 1정');
   await expect(manual).toContainText('자기전');
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
   ).toBeVisible();
   await expect(
     page.getByText(
-      '등록한 영양제의 성분만 더한 값이에요',
+      '검색된 영양제의 성분만 합산된 결과예요.',
     ),
   ).toBeVisible();
 });

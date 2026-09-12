@@ -6,11 +6,14 @@ from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from ai_worker.llm.prompts.prompt_assets import load_prompt_template_document
+from ai_worker.llm.prompts.prompt_assets import (
+    MedicationPromptStage,
+    load_prompt_chain_stage,
+)
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import ConversationClassification
 
-CONVERSATION_GATE_PROMPT_VERSION = "conversation-gate-prompt-v1"
+CONVERSATION_GATE_PROMPT_VERSION = "conversation-gate-prompt-v7"
 
 
 class ConversationGateInput(BaseModel):
@@ -40,10 +43,12 @@ class AsyncConversationGateClient(Protocol):
     async def ainvoke(self, messages: Any) -> ConversationClassification | dict[str, Any]: ...
 
 
-PROMPT_DOCUMENT = load_prompt_template_document("conversation_gate_prompt_v1.md")
+PROMPT_DOCUMENT = load_prompt_chain_stage(
+    MedicationPromptStage.CONVERSATION_GATE,
+)
 PROMPT = ChatPromptTemplate.from_messages(
     [
-        ("system", PROMPT_DOCUMENT.system),
+        ("system", PROMPT_DOCUMENT.compiled_system),
         ("human", PROMPT_DOCUMENT.user),
     ]
 )

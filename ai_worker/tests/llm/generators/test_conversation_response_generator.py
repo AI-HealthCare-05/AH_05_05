@@ -1,4 +1,5 @@
 from ai_worker.llm.generators.conversation_response_generator import (
+    CONVERSATION_RESPONSE_PROMPT_VERSION,
     ConversationResponseGenerator,
     ConversationResponseInput,
     ConversationResponsePayload,
@@ -8,8 +9,10 @@ from ai_worker.llm.generators.conversation_response_generator import (
 class StaticConversationResponseClient:
     def __init__(self, payload: ConversationResponsePayload) -> None:
         self._payload = payload
+        self.messages = []
 
     async def ainvoke(self, messages):
+        self.messages = messages
         return self._payload
 
 
@@ -30,13 +33,10 @@ def specific_symptom_input() -> ConversationResponseInput:
 
 
 async def test_vague_symptom_asks_follow_up_without_medication_claim() -> None:
-    generator = ConversationResponseGenerator(
-        client=StaticConversationResponseClient(
-            ConversationResponsePayload(
-                answer="많이 불편하시겠어요. 어디가 언제부터 얼마나 아픈지 알려주실 수 있을까요?"
-            )
-        )
+    client = StaticConversationResponseClient(
+        ConversationResponsePayload(answer="많이 불편하시겠어요. 어디가 언제부터 얼마나 아픈지 알려주실 수 있을까요?")
     )
+    generator = ConversationResponseGenerator(client=client)
 
     answer = await generator.generate(vague_symptom_input())
 
@@ -44,6 +44,9 @@ async def test_vague_symptom_asks_follow_up_without_medication_claim() -> None:
     assert "언제부터" in answer
     assert "추천" not in answer
     assert "복용" not in answer
+    assert CONVERSATION_RESPONSE_PROMPT_VERSION == "conversation-response-prompt-v7"
+    assert "역할(Role)" in client.messages[0].content
+    assert "예시(Example)" in client.messages[0].content
 
 
 async def test_specific_symptom_requests_candidate_medicine_without_exposing_active_medications() -> None:

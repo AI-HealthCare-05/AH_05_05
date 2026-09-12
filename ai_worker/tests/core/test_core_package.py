@@ -43,6 +43,12 @@ def test_config_disables_conditional_question_interpretation_by_default() -> Non
     assert settings.CONDITIONAL_QUESTION_INTERPRETATION_ENABLED is False
 
 
+def test_config_disables_interaction_evidence_reasoning_by_default() -> None:
+    settings = Config(_env_file=None)
+
+    assert settings.INTERACTION_EVIDENCE_REASONING_ENABLED is False
+
+
 def test_config_disables_semantic_question_router_by_default() -> None:
     settings = Config(_env_file=None)
 

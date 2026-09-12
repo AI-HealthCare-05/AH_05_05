@@ -9,6 +9,7 @@ import {
 } from '@/entities/supplement';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { BottomTabbar, Button, Card, ErrorDialog, Header } from '@/shared/ui';
+import { navigateBackOrReplace } from '@/shared/lib/navigation';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { SupplementReviewSection } from './SupplementReviewSection';
 
@@ -76,7 +77,7 @@ export function SupplementProductPage() {
       await addSupplement(payload);
       if (!mountedRef.current || activeLocationKeyRef.current !== saveLocationKey) return;
       setAlreadyRegistered(true);
-      navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements');
+      navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements', { replace: true });
     } catch (error: unknown) {
       if (mountedRef.current && activeLocationKeyRef.current === saveLocationKey) {
         setSaveError(error instanceof Error ? error.message : '영양제를 추가하지 못했어요.');
@@ -87,7 +88,13 @@ export function SupplementProductPage() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="제품 정보" onBack={() => navigate(-1)} />
+      <Header
+        title="제품 정보"
+        onBack={() => navigateBackOrReplace(
+          navigate,
+          location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements',
+        )}
+      />
 
       <main className="flex flex-1 flex-col gap-6 overflow-y-auto px-page-x py-5">
         {loadError ? (
@@ -132,7 +139,7 @@ export function SupplementProductPage() {
               disabled={registrationPending}
               onClick={() => {
                 if (alreadyRegistered) {
-                  navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements');
+                  navigate(location.pathname.startsWith('/dev/') ? '/dev/supplements' : '/supplements', { replace: true });
                 } else {
                   setAddOpen(true);
                 }
