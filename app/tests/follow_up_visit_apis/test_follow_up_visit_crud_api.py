@@ -133,7 +133,7 @@ class TestFollowUpVisitCrudAPI(TestCase):
         assert await FollowUpVisit.get_or_none(id=visit_id) is None
         assert not await Alarm.filter(follow_up_visit_id=visit_id).exists()
 
-    async def test_create_future_visit_schedules_previous_evening_alarm(self) -> None:
+    async def test_create_future_visit_schedules_previous_day_2100_alarm(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "follow-up-alarm-create@example.com"
             headers = await authentication_headers(client, email, "01011110106")
@@ -158,7 +158,7 @@ class TestFollowUpVisitCrudAPI(TestCase):
         assert created.status_code == status.HTTP_201_CREATED
         assert alarm.scheduled_at == datetime.combine(
             visit_date - timedelta(days=1),
-            time(19, 0),
+            time(21, 0),
             tzinfo=config.TIMEZONE,
         )
         assert alarm.next_trigger_at == alarm.scheduled_at
@@ -224,7 +224,7 @@ class TestFollowUpVisitCrudAPI(TestCase):
         assert date_updated.status_code == status.HTTP_200_OK
         assert alarm.scheduled_at.date() == today + timedelta(days=4)
 
-    async def test_evening_time_change_reschedules_only_future_visit_alarm(self) -> None:
+    async def test_evening_time_change_preserves_future_and_past_visit_alarms(self) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             email = "follow-up-alarm-settings@example.com"
             headers = await authentication_headers(client, email, "01011110109")
@@ -260,7 +260,8 @@ class TestFollowUpVisitCrudAPI(TestCase):
         await future_alarm.refresh_from_db()
         await past_alarm.refresh_from_db()
         assert patched.status_code == status.HTTP_200_OK
-        assert future_alarm.scheduled_at.time() == time(18)
+        assert future_alarm.scheduled_at.time() == time(19)
+        assert future_alarm.next_trigger_at == future_alarm.scheduled_at
         assert past_alarm.scheduled_at == past_trigger
 
     async def test_list_supports_date_range_and_pagination(self) -> None:

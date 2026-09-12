@@ -1,40 +1,29 @@
 from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 
-from app.core import config
 from app.models.alarms import Alarm
 from app.models.care import FollowUpVisit
 from app.models.enums import AlarmStatus, AlarmType
 
 FOLLOW_UP_ALARM_TITLE = "진료 일정 알림"
 FOLLOW_UP_ALARM_MESSAGE = "내일 진료 일정이 있어요"
+FOLLOW_UP_ALARM_TIME = time(21)
+FOLLOW_UP_ALARM_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 class FollowUpVisitAlarmService:
-    @classmethod
-    async def sync_future_alarms(
-        cls,
-        user_id: int,
-        evening_time: time | timedelta,
-        connection: BaseDBAsyncClient,
-    ) -> None:
-        today = datetime.now(config.TIMEZONE).date()
-        visits = await FollowUpVisit.filter(user_id=user_id, visit_date__gte=today).using_db(connection)
-        for visit in visits:
-            await cls.sync_alarm(visit, evening_time, connection)
-
     @staticmethod
     async def sync_alarm(
         visit: FollowUpVisit,
-        evening_time: time | timedelta,
         connection: BaseDBAsyncClient,
     ) -> None:
-        now = datetime.now(config.TIMEZONE)
+        now = datetime.now(FOLLOW_UP_ALARM_TIMEZONE)
         scheduled_at = datetime.combine(
             visit.visit_date - timedelta(days=1),
-            normalize_time(evening_time),
-            tzinfo=config.TIMEZONE,
+            FOLLOW_UP_ALARM_TIME,
+            tzinfo=FOLLOW_UP_ALARM_TIMEZONE,
         )
         alarm = (
             await Alarm.filter(
@@ -46,6 +35,14 @@ class FollowUpVisitAlarmService:
             .select_for_update()
             .first()
         )
+        # Never revive terminal/paused alarms, reset a dispatch attempt, or replay history.
+        if alarm is not None and (
+            alarm.status != AlarmStatus.ACTIVE
+            or alarm.last_triggered_at is not None
+            or alarm.scheduled_at <= now
+            or alarm.next_trigger_at <= now
+        ):
+            return
         if scheduled_at <= now:
             if alarm is not None and alarm.status != AlarmStatus.CANCELLED:
                 alarm.status = AlarmStatus.CANCELLED
@@ -62,7 +59,7 @@ class FollowUpVisitAlarmService:
             "message": FOLLOW_UP_ALARM_MESSAGE,
             "scheduled_at": scheduled_at,
             "recurrence_rule": None,
-            "timezone": str(config.TIMEZONE),
+            "timezone": str(FOLLOW_UP_ALARM_TIMEZONE),
             "next_trigger_at": scheduled_at,
             "status": AlarmStatus.ACTIVE,
             "last_triggered_at": None,
