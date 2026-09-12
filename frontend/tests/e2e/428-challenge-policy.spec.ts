@@ -108,12 +108,110 @@ test('home distinguishes no participation from an active challenge without today
   await expect(summary).toContainText('오늘 예정된 챌린지가 없어요.');
 });
 
-test('an unfinished official card shows its state alongside the check-in action', async ({ page }) => {
+test('an unfinished official card shows only its check-in action without redundant status', async ({ page }) => {
   await lists(page, [{ ...official, can_verify: true, verified_dates: [] }], []);
   await page.goto('/home');
   const card = page.getByRole('region', { name: '챌린지', exact: true }).getByRole('article', { name: '매일 걷기', exact: true });
-  await expect(card.getByText('미완료', { exact: true })).toBeVisible();
   await expect(card.getByRole('button', { name: '매일 걷기 했어요' })).toBeEnabled();
+  await expect(card.getByText('미완료', { exact: true })).toHaveCount(0);
+});
+
+for (const width of [320, 390]) {
+  test(`official check-in label leaves custom status and full-width action intact at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await lists(page, [{ ...official, can_verify: true, verified_dates: [] }]);
+    await page.goto('/home');
+    const summary = page.getByRole('region', { name: '챌린지', exact: true });
+    const walking = summary.getByRole('article', { name: '매일 걷기', exact: true });
+    const supplement = summary.getByRole('article', { name: '영양제 챌린지', exact: true });
+    const action = walking.getByRole('button', { name: '매일 걷기 했어요' });
+    await expect(action).toHaveText('했어요');
+    await expect(walking.getByText('미완료', { exact: true })).toHaveCount(0);
+    const actionBox = await action.boundingBox();
+    const linkBox = await walking.getByRole('link').boundingBox();
+    expect(actionBox!.height).toBeGreaterThanOrEqual(44);
+    expect(Math.abs(actionBox!.width - linkBox!.width)).toBeLessThanOrEqual(1);
+    await expect(supplement.getByText('미완료', { exact: true })).toBeVisible();
+    await expect(supplement.getByRole('button', { name: /했어요/ })).toHaveCount(0);
+    await expect(walking.getByRole('link')).toHaveAttribute('href', '/challenges/participations/501');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await summary.getByRole('img').evaluateAll(async images => {
+      await Promise.all(images.map(image => (image as HTMLImageElement).decode()));
+      if (images.some(image => !(image as HTMLImageElement).naturalWidth)) throw new Error('Undecoded image');
+    });
+    await summary.screenshot({ path: testInfo.outputPath(`428-official-checkin-label-${width}.png`), animations: 'disabled' });
+  });
+}
+
+test('official check-in label preserves pending suppression failure retry and completed card', async ({ page }) => {
+  await lists(page, [{ ...official, can_verify: true, verified_dates: [] }], []);
+  const submissions: Array<{ verification_date: string; idempotency_key: string }> = [];
+  let releaseFailure!: () => void;
+  const gate = new Promise<void>(resolve => { releaseFailure = resolve; });
+  await page.route('**/api/v1/user/challenges/501/verifications', async route => {
+    submissions.push(route.request().postDataJSON());
+    if (submissions.length === 1) {
+      await gate;
+      return route.fulfill({ status: 503, json: { code: 'TEMPORARY', message: '잠시 후 다시 눌러주세요.' } });
+    }
+    return route.fulfill({ status: 201, json: {
+      id: 901, user_challenge_id: 501, progress_id: 801, verification_date: '2026-09-10',
+      content: null, image_path: null, status: 'APPROVED', rejection_reason: null,
+      reviewed_by_admin_id: null, reviewed_at: null, submitted_at: '2026-09-10T12:00:00+09:00',
+    } });
+  });
+  await page.goto('/home');
+  const walking = page.getByRole('region', { name: '챌린지', exact: true }).getByRole('article', { name: '매일 걷기', exact: true });
+  const action = walking.getByRole('button', { name: '매일 걷기 했어요' });
+  await action.click();
+  await expect(action).toBeDisabled();
+  await expect(action).toHaveText('저장 중…');
+  await expect(walking.getByText('미완료', { exact: true })).toHaveCount(0);
+  await action.evaluate((element: HTMLButtonElement) => { element.click(); element.click(); });
+  expect(submissions).toHaveLength(1);
+  releaseFailure();
+  await expect(walking.getByRole('alert')).toContainText('잠시 후 다시 눌러주세요.');
+  await expect(action).toBeEnabled();
+  await action.click();
+  await expect(walking.getByText('완료', { exact: true })).toBeVisible();
+  await expect(action).toHaveCount(0);
+  await expect(walking.getByRole('alert')).toHaveCount(0);
+  await expect(walking.getByRole('link')).toBeVisible();
+  expect(submissions).toHaveLength(2);
+  expect(submissions[0].verification_date).toBe('2026-09-10');
+  expect(submissions[0].idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
+  expect(submissions[1]).toEqual(submissions[0]);
+});
+
+for (const variant of ['MANUAL', 'previous-day'] as const) {
+  test(`official check-in label does not manufacture an action for ${variant}`, async ({ page }) => {
+    await lists(page, [{ ...official, can_verify: true, verified_dates: [],
+      ...(variant === 'MANUAL' ? { challenge: { ...challenge, check_type_code: 'MANUAL' } } : { today: '2026-09-09' }),
+    }], []);
+    await page.goto('/home');
+    const walking = page.getByRole('region', { name: '챌린지', exact: true }).getByRole('article', { name: '매일 걷기', exact: true });
+    await expect(walking).toBeVisible();
+    await expect(walking.getByText('미완료', { exact: true })).toHaveCount(0);
+    await expect(walking.getByRole('button')).toHaveCount(0);
+    await expect(walking.getByRole('link')).toHaveAttribute('href', '/challenges/participations/501');
+  });
+}
+
+test('official check-in label also applies to mock home without backend verification', async ({ page }) => {
+  const backendPosts: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/') && request.method() === 'POST') backendPosts.push(request.url());
+  });
+  await page.goto('/dev/home-challenges');
+  const walking = page.getByRole('region', { name: '챌린지', exact: true }).getByRole('article', { name: '매일 30분 걷기', exact: true });
+  const action = walking.getByRole('button', { name: '매일 30분 걷기 했어요' });
+  await expect(action).toBeEnabled();
+  await expect(walking.getByText('미완료', { exact: true })).toHaveCount(0);
+  await action.click();
+  await expect(walking.getByText('완료', { exact: true })).toBeVisible();
+  await expect(action).toHaveCount(0);
+  await expect(walking.getByRole('link')).toHaveAttribute('href', /\/dev\/challenges\/participations\//);
+  expect(backendPosts).toEqual([]);
 });
 
 test('entire participation card opens details while check-in stays separate', async ({ page }) => {
