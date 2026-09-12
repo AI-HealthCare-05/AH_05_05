@@ -68,6 +68,9 @@ def build_medication_chat_messages(
             if result.evidence_coverage is not None
             else []
         ),
+        "evidence_reasoning": (
+            result.evidence_reasoning.model_dump(mode="json") if result.evidence_reasoning is not None else None
+        ),
     }
     return [
         SystemMessage(content=SYSTEM_PROMPT),

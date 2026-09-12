@@ -29,6 +29,7 @@ class Config(BaseSettings):
     OPENAI_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     OPENAI_MAX_RETRIES: int = Field(default=2, ge=0)
     CONDITIONAL_QUESTION_INTERPRETATION_ENABLED: bool = False
+    INTERACTION_EVIDENCE_REASONING_ENABLED: bool = False
     CONVERSATION_GATE_ENABLED: bool = False
     CONVERSATION_GATE_MODEL: str = "gpt-4o-mini"
     CONVERSATION_GATE_MAX_HISTORY_MESSAGES: int = Field(default=4, ge=0, le=10)

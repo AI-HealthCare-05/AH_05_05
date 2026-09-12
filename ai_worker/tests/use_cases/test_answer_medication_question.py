@@ -36,6 +36,11 @@ from ai_worker.safety.grounded_claim_validator import (
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import ConversationClassification
 from ai_worker.schemas.enums import ChatRole, SafetyStatus
+from ai_worker.schemas.evidence_reasoning import (
+    EvidenceClaim,
+    EvidenceReasoningOutput,
+    InteractionEvidenceDecision,
+)
 from ai_worker.schemas.interaction import (
     InteractionEntity,
     InteractionEntityKind,
@@ -374,6 +379,21 @@ class RecordingConditionalInterpretationChain:
         return self.payload
 
 
+class RecordingEvidenceReasoningChain:
+    def __init__(self, payload: EvidenceReasoningOutput) -> None:
+        self.payload = payload
+        self.inputs = []
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        self.inputs.append(input)
+        return self.payload
+
+
+class FailingEvidenceReasoningChain:
+    async def ainvoke(self, input, config=None, **kwargs):
+        raise RuntimeError("evidence reasoning unavailable")
+
+
 class StaticConversationGate:
     def __init__(self, payload: ConversationClassification) -> None:
         self.payload = payload
@@ -678,6 +698,7 @@ def build_use_case(
     supplement_ingredient_catalog=None,
     query_plan_chain=None,
     conditional_interpretation_chain=None,
+    interaction_evidence_reasoning_chain=None,
     semantic_question_router=None,
     therapeutic_class_repository=None,
     conversation_gate_chain=None,
@@ -698,6 +719,7 @@ def build_use_case(
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         query_plan_chain=query_plan_chain,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        interaction_evidence_reasoning_chain=interaction_evidence_reasoning_chain,
         semantic_question_router=semantic_question_router,
         therapeutic_class_repository=therapeutic_class_repository,
         conversation_gate_chain=conversation_gate_chain,
@@ -1000,6 +1022,121 @@ async def test_explicit_active_medication_interaction_uses_approved_rule() -> No
 
     assert result.route is MedicationChatRoute.ACTIVE_INTAKE
     assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
+
+
+async def test_interaction_with_evidence_calls_structured_reasoning_chain() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=1,
+                name="파모티딘정",
+            ),
+        ],
+    )
+    pair_key = build_interaction_pair_key(
+        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="리바록사반정"),
+        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="파모티딘정"),
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=pair_key,
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="파모티딘정",
+        risk_level="CAUTION",
+        effect_texts=["승인된 상호작용 근거입니다."],
+    )
+    reasoning = EvidenceReasoningOutput(
+        reasoning_status="SUPPORTED",
+        interaction_decision="INTERACTION_CONFIRMED",
+        claims=[
+            EvidenceClaim(
+                section_type=KnowledgeSectionType.INTERACTION,
+                statement="승인 규칙에서 두 약의 관계를 확인했습니다.",
+                evidence_ids=["rule:1"],
+            )
+        ],
+    )
+    chain = RecordingEvidenceReasoningChain(reasoning)
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        interaction_evidence_reasoning_chain=chain,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert len(chain.inputs) == 1
+    assert [item.evidence_id for item in chain.inputs[0].approved_rules] == ["rule:1"]
+    assert result.evidence_reasoning == reasoning
+    assert "evidence_reasoning" not in result.model_dump()
+
+
+async def test_non_interaction_question_skips_evidence_reasoning_chain() -> None:
+    reasoning = EvidenceReasoningOutput(
+        reasoning_status="INSUFFICIENT",
+        interaction_decision=InteractionEvidenceDecision.NO_DIRECT_EVIDENCE,
+        missing_section_types=[KnowledgeSectionType.INTERACTION],
+    )
+    chain = RecordingEvidenceReasoningChain(reasoning)
+
+    await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        interaction_evidence_reasoning_chain=chain,
+    ).execute(build_request("타이레놀의 효능을 알려줘"))
+
+    assert chain.inputs == []
+
+
+async def test_evidence_reasoning_failure_keeps_deterministic_answer() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=1,
+                name="파모티딘정",
+            ),
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="리바록사반정"),
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="파모티딘정"),
+        ),
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="파모티딘정",
+        risk_level="CAUTION",
+        effect_texts=["승인된 상호작용 근거입니다."],
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        interaction_evidence_reasoning_chain=FailingEvidenceReasoningChain(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert "승인된 상호작용 근거입니다." in result.answer
+    assert result.evidence_reasoning is None
 
 
 async def test_active_medication_interaction_without_approved_rule_states_uncertainty() -> None:

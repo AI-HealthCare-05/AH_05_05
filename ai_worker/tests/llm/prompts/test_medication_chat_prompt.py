@@ -8,6 +8,7 @@ from ai_worker.llm.prompts.medication_chat_prompt import (
 )
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import ChatRole, SafetyStatus
+from ai_worker.schemas.evidence_reasoning import EvidenceClaim, EvidenceReasoningOutput
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -78,6 +79,58 @@ def test_build_messages_applies_markdown_user_template() -> None:
     payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
     assert payload["question"] == "타이레놀의 주의사항을 알려줘"
     assert payload["draft_answer"] == "주의사항: 확인된 초안입니다."
+
+
+def test_build_messages_includes_only_structured_evidence_reasoning_result() -> None:
+    request = MedicationChatRequest(
+        request_id="6925e6ec-259c-4a96-8e69-6d5e8a626f1e",
+        user_id=1,
+        question="마그네슘과 아연을 같이 먹어도 돼?",
+    )
+    result = MedicationChatResult(
+        request_id=request.request_id,
+        answer="확인된 상호작용 초안입니다.",
+        route=MedicationChatRoute.INTERACTION,
+        safety_status=SafetyStatus.SAFE,
+        prompt_version="draft-v1",
+        schema_version="medication-chat-result-v1",
+        evidence_reasoning=EvidenceReasoningOutput(
+            reasoning_status="SUPPORTED",
+            interaction_decision="INTERACTION_CONFIRMED",
+            claims=[
+                EvidenceClaim(
+                    section_type=KnowledgeSectionType.INTERACTION,
+                    statement="두 성분의 직접 관계가 확인됐습니다.",
+                    evidence_ids=["chunk:abc"],
+                )
+            ],
+        ),
+    )
+
+    messages = build_medication_chat_messages(
+        request=request,
+        context=ActiveIntakeContext(user_id=1),
+        result=result,
+    )
+
+    user_content = messages[-1].content
+    assert isinstance(user_content, str)
+    payload = json.loads(user_content.removeprefix("입력 데이터(JSON)\n"))
+    assert payload["evidence_reasoning"] == {
+        "reasoning_status": "SUPPORTED",
+        "interaction_decision": "INTERACTION_CONFIRMED",
+        "claims": [
+            {
+                "section_type": "INTERACTION",
+                "statement": "두 성분의 직접 관계가 확인됐습니다.",
+                "evidence_ids": ["chunk:abc"],
+                "scope_note": None,
+            }
+        ],
+        "supported_action": None,
+        "missing_section_types": [],
+        "conflict_evidence_ids": [],
+    }
 
 
 def test_build_messages_omits_unreferenced_history_from_general_question() -> None:

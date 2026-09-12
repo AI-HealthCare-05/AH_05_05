@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ai_worker.domain.chat_content_compactor import CHAT_CONTENT_MAX_LENGTH
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.evidence_reasoning import EvidenceReasoningOutput
 from ai_worker.schemas.interaction import InteractionEntityKind
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_search import (
@@ -427,6 +428,10 @@ class MedicationChatResult(BaseModel):
         exclude=True,
     )
     evidence_coverage: MedicationEvidenceCoverage | None = Field(
+        default=None,
+        exclude=True,
+    )
+    evidence_reasoning: EvidenceReasoningOutput | None = Field(
         default=None,
         exclude=True,
     )

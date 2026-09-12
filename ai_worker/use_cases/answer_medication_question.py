@@ -16,6 +16,9 @@ from ai_worker.chains.conversation_gate_chain import (
     ConversationGateChain,
     ConversationGateInput,
 )
+from ai_worker.chains.interaction_evidence_reasoning_chain import (
+    InteractionEvidenceReasoningChain,
+)
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChain,
     MedicationQueryPlanChainInput,
@@ -102,6 +105,11 @@ from ai_worker.schemas.conversation_gate import (
     ConversationSafetySignal,
 )
 from ai_worker.schemas.enums import SafetyStatus
+from ai_worker.schemas.evidence_reasoning import (
+    EvidenceItem,
+    EvidenceReasoningInput,
+    EvidenceReasoningOutput,
+)
 from ai_worker.schemas.interaction import (
     InteractionEntity,
     InteractionEntityKind,
@@ -249,6 +257,7 @@ class AnswerMedicationQuestionUseCase:
         supplement_ingredient_catalog: SupplementIngredientCatalog | None = None,
         query_plan_chain: MedicationQueryPlanChain | None = None,
         conditional_interpretation_chain: ConditionalQuestionInterpretationChain | None = None,
+        interaction_evidence_reasoning_chain: InteractionEvidenceReasoningChain | None = None,
         conversation_gate_chain: ConversationGateChain | None = None,
         conversation_response_generator: ConversationResponseGenerator | None = None,
         conversation_safety_policy: ConversationSafetyPolicy | None = None,
@@ -271,6 +280,7 @@ class AnswerMedicationQuestionUseCase:
         self._supplement_ingredient_catalog = supplement_ingredient_catalog
         self._query_plan_chain = query_plan_chain or build_medication_query_plan_chain()
         self._conditional_interpretation_chain = conditional_interpretation_chain
+        self._interaction_evidence_reasoning_chain = interaction_evidence_reasoning_chain
         self._conversation_gate_chain = conversation_gate_chain
         self._conversation_response_generator = conversation_response_generator
         self._conversation_safety_policy = conversation_safety_policy or ConversationSafetyPolicy()
@@ -562,6 +572,14 @@ class AnswerMedicationQuestionUseCase:
             progress_callback=progress_callback,
         ):
             return terminal_result
+        evidence_reasoning = await self._reason_about_interaction_evidence(
+            request=request,
+            query_plan=query_plan,
+            execution_plan=execution_plan,
+            rules=rules,
+            answer_chunks=answer_chunks,
+            interaction_question=interaction_question,
+        )
         unsupported_pairs = self._unsupported_interaction_pairs(
             query_plan=query_plan,
             rules=rules,
@@ -636,6 +654,7 @@ class AnswerMedicationQuestionUseCase:
                     )
                 ),
                 evidence_coverage=evidence_coverage,
+                evidence_reasoning=evidence_reasoning,
                 official_warning_texts=self._official_warning_texts(
                     guide_lookup.guide,
                 ),
@@ -727,6 +746,83 @@ class AnswerMedicationQuestionUseCase:
             generated=generated,
             execution_plan=execution_plan,
         )
+
+    async def _reason_about_interaction_evidence(
+        self,
+        *,
+        request: MedicationChatRequest,
+        query_plan: MedicationKnowledgeQueryPlan,
+        execution_plan: MedicationSearchExecutionPlan,
+        rules: list[InteractionRuleFact],
+        answer_chunks: list[RetrievedKnowledgeChunk],
+        interaction_question: bool,
+    ) -> EvidenceReasoningOutput | None:
+        chain = self._interaction_evidence_reasoning_chain
+        entity_names = list(
+            dict.fromkeys(
+                [
+                    *query_plan.entity_names,
+                    *execution_plan.medication_names,
+                    *execution_plan.supplement_names,
+                ]
+            )
+        )
+        if chain is None or not interaction_question or len(entity_names) < 2 or (not rules and not answer_chunks):
+            return None
+
+        approved_rules = [
+            EvidenceItem(
+                evidence_id=f"rule:{rule.interaction_rule_id}",
+                content=" ".join(rule.effect_texts),
+                section_types=[KnowledgeSectionType.INTERACTION],
+                pair_keys=[rule.pair_key],
+                study_scope="APPROVED_RULE",
+            )
+            for rule in rules
+        ]
+        evidence_items = [
+            EvidenceItem(
+                evidence_id=f"chunk:{chunk.chunk_id}",
+                content=chunk.content,
+                section_types=[chunk.metadata.section_type],
+                pair_keys=chunk.metadata.interaction_pair_keys,
+                study_scope=chunk.metadata.study_population.value,
+            )
+            for chunk in answer_chunks
+        ]
+        reasoning_input = EvidenceReasoningInput(
+            question=request.question,
+            entity_names=entity_names,
+            requested_section_types=query_plan.section_types,
+            interaction_pair_keys=execution_plan.interaction_pair_keys,
+            evidence_items=evidence_items,
+            approved_rules=approved_rules,
+            risk_profile=request.risk_profile.model_dump(mode="json"),
+        )
+        async with self._tracer.span(
+            "medication.evidence_reasoning",
+            run_type="llm",
+        ) as reasoning_span:
+            try:
+                raw_result = await chain.ainvoke(reasoning_input)
+                result = EvidenceReasoningOutput.model_validate(raw_result)
+            except Exception as error:
+                reasoning_span.end(
+                    {
+                        "status": "FAILED",
+                        "error_type": type(error).__name__,
+                    }
+                )
+                return None
+            reasoning_span.end(
+                {
+                    "status": result.reasoning_status.value,
+                    "interaction_decision": result.interaction_decision.value,
+                    "claim_count": len(result.claims),
+                    "missing_section_types": [section.value for section in result.missing_section_types],
+                }
+            )
+            return result
 
     async def current_medication_names(
         self,
