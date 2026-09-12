@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { AlertTriangle, Pencil, Plus, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
@@ -978,14 +978,54 @@ function OcrEnvelopeImageViewer({
   onOpenChange: (open: boolean) => void;
 }) {
   const [zoomIndex, setZoomIndex] = useState(0);
+  const [fittedSize, setFittedSize] = useState<{ width: number; height: number } | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const src = imageView === 'processed'
     ? (processedImageUrl ?? originalImageUrl ?? '')
     : (originalImageUrl ?? processedImageUrl ?? '');
   const zoom = OCR_PREVIEW_ZOOM_LEVELS[zoomIndex];
+  const scaledSize = fittedSize
+    ? { width: fittedSize.width * zoom, height: fittedSize.height * zoom }
+    : null;
+
+  function measureFittedSize() {
+    const area = scrollAreaRef.current;
+    const image = imageRef.current;
+    if (!area || !image || image.naturalWidth === 0 || image.naturalHeight === 0) return;
+    const areaBox = area.getBoundingClientRect();
+    const fit = Math.min(
+      areaBox.width / image.naturalWidth,
+      areaBox.height / image.naturalHeight,
+      1,
+    );
+    const next = {
+      width: image.naturalWidth * fit,
+      height: image.naturalHeight * fit,
+    };
+    setFittedSize((current) =>
+      current &&
+      Math.abs(current.width - next.width) < 0.5 &&
+      Math.abs(current.height - next.height) < 0.5
+        ? current
+        : next,
+    );
+  }
 
   useEffect(() => {
-    if (open) setZoomIndex(0);
+    if (open) {
+      setZoomIndex(0);
+      setFittedSize(null);
+    }
   }, [imageView, open, src]);
+
+  useLayoutEffect(() => {
+    if (!open || !scrollAreaRef.current) return undefined;
+    measureFittedSize();
+    const observer = new ResizeObserver(measureFittedSize);
+    observer.observe(scrollAreaRef.current);
+    return () => observer.disconnect();
+  }, [open, src]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1004,7 +1044,7 @@ function OcrEnvelopeImageViewer({
               type="button"
               aria-pressed={imageView === 'processed'}
               disabled={!processedImageUrl}
-              className={`min-h-10 rounded-full px-3 text-xs font-bold disabled:opacity-40 sm:px-4 sm:text-sm ${
+              className={`min-h-touch rounded-full px-3 text-xs font-bold disabled:opacity-40 sm:px-4 sm:text-sm ${
                 imageView === 'processed' ? 'bg-primary text-primary-foreground' : 'text-foreground'
               }`}
               onClick={() => onImageViewChange('processed')}
@@ -1015,7 +1055,7 @@ function OcrEnvelopeImageViewer({
               type="button"
               aria-pressed={imageView === 'original'}
               disabled={!originalImageUrl}
-              className={`min-h-10 rounded-full px-3 text-xs font-bold disabled:opacity-40 sm:px-4 sm:text-sm ${
+              className={`min-h-touch rounded-full px-3 text-xs font-bold disabled:opacity-40 sm:px-4 sm:text-sm ${
                 imageView === 'original' ? 'bg-primary text-primary-foreground' : 'text-foreground'
               }`}
               onClick={() => onImageViewChange('original')}
@@ -1032,19 +1072,25 @@ function OcrEnvelopeImageViewer({
         </div>
 
         <div
+          ref={scrollAreaRef}
+          role="region"
           tabIndex={0}
           aria-label="확대한 약봉투 이동 영역"
-          className="flex min-h-0 flex-1 overflow-auto overscroll-contain rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
           style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
         >
-          <div className="flex min-h-full min-w-full items-center justify-center">
+          <div
+            className="grid min-h-full min-w-full place-items-center"
+            style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
+          >
             <img
+              ref={imageRef}
               src={src}
               alt={imageView === 'processed' ? '확대한 약봉투' : '확대한 약봉투 원본'}
               draggable={false}
-              className={zoom === 1 ? 'max-h-full w-auto max-w-full object-contain' : 'h-auto max-w-none object-contain'}
-              style={zoom === 1 ? undefined : { width: `${zoom * 100}%` }}
-              onClick={() => onOpenChange(false)}
+              className={scaledSize ? 'block max-w-none object-contain' : 'max-h-full w-auto max-w-full object-contain'}
+              style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
+              onLoad={measureFittedSize}
             />
           </div>
         </div>
@@ -1058,7 +1104,7 @@ function OcrEnvelopeImageViewer({
             type="button"
             aria-label="축소"
             disabled={zoomIndex === 0}
-            className="flex size-10 items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex size-touch items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setZoomIndex((index) => Math.max(0, index - 1))}
           >
             <ZoomOut aria-hidden className="size-5" />
@@ -1070,7 +1116,7 @@ function OcrEnvelopeImageViewer({
             type="button"
             aria-label="확대"
             disabled={zoomIndex === OCR_PREVIEW_ZOOM_LEVELS.length - 1}
-            className="flex size-10 items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex size-touch items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setZoomIndex((index) => Math.min(OCR_PREVIEW_ZOOM_LEVELS.length - 1, index + 1))}
           >
             <ZoomIn aria-hidden className="size-5" />

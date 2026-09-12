@@ -302,7 +302,7 @@ for (const width of [390, 1280]) {
 }
 
 for (const width of [375, 390, 1280]) {
-  test(`OCR 미리보기는 항상 펼친 약 정보와 키보드 확대·축소를 제공한다 (${width}px)`, async ({ page }, testInfo) => {
+  test(`OCR 미리보기 확대는 fitted baseline과 네 모서리 스크롤을 보장한다 (${width}px)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.route('**/api/v1/ocr/jobs/430', (route) => json(route, OCR_RESULT));
     await page.route('**/api/v1/ocr/jobs/430/*image', (route) => route.fulfill({
@@ -321,16 +321,76 @@ for (const width of [375, 390, 1280]) {
 
     await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
     const viewer = page.getByRole('dialog', { name: '약봉투 이미지 크게 보기' });
+    const scrollArea = viewer.getByLabel('확대한 약봉투 이동 영역');
+    const image = viewer.getByRole('img', { name: '확대한 약봉투' });
     const zoomIn = viewer.getByRole('button', { name: '확대', exact: true });
     const zoomOut = viewer.getByRole('button', { name: '축소', exact: true });
+    await expect(image).toBeVisible();
     await expect(zoomOut).toBeDisabled();
+    const baselineBox = await image.boundingBox();
+    expect(baselineBox).not.toBeNull();
+
     await zoomIn.focus();
     await page.keyboard.press('Enter');
     await expect(viewer.getByRole('status')).toHaveText('150%');
     await expect(zoomOut).toBeEnabled();
+    const zoomedBox = await image.boundingBox();
+    expect(zoomedBox).not.toBeNull();
+    expect(zoomedBox!.width / baselineBox!.width).toBeGreaterThanOrEqual(1.49);
+    expect(zoomedBox!.width / baselineBox!.width).toBeLessThanOrEqual(1.51);
+    expect(zoomedBox!.height / baselineBox!.height).toBeGreaterThanOrEqual(1.49);
+    expect(zoomedBox!.height / baselineBox!.height).toBeLessThanOrEqual(1.51);
+
+    await scrollArea.evaluate((element) => element.scrollTo({ left: 0, top: 0 }));
+    const [startAreaBox, startImageBox] = await Promise.all([
+      scrollArea.boundingBox(),
+      image.boundingBox(),
+    ]);
+    expect(startAreaBox).not.toBeNull();
+    expect(startImageBox).not.toBeNull();
+    expect(startImageBox!.x).toBeGreaterThanOrEqual(startAreaBox!.x - 1);
+    expect(startImageBox!.y).toBeGreaterThanOrEqual(startAreaBox!.y - 1);
+
+    await scrollArea.evaluate((element) => element.scrollTo({
+      left: element.scrollWidth,
+      top: element.scrollHeight,
+    }));
+    await expect.poll(() => scrollArea.evaluate((element) =>
+      Math.abs(element.scrollLeft - (element.scrollWidth - element.clientWidth)) <= 1 &&
+      Math.abs(element.scrollTop - (element.scrollHeight - element.clientHeight)) <= 1,
+    )).toBe(true);
+    const [endAreaBox, endImageBox] = await Promise.all([
+      scrollArea.boundingBox(),
+      image.boundingBox(),
+    ]);
+    expect(endAreaBox).not.toBeNull();
+    expect(endImageBox).not.toBeNull();
+    expect(endImageBox!.x + endImageBox!.width)
+      .toBeLessThanOrEqual(endAreaBox!.x + endAreaBox!.width + 1);
+    expect(endImageBox!.y + endImageBox!.height)
+      .toBeLessThanOrEqual(endAreaBox!.y + endAreaBox!.height + 1);
+
+    for (const control of [
+      viewer.getByRole('button', { name: '선명하게 보기' }),
+      viewer.getByRole('button', { name: '원본 보기' }),
+      zoomOut,
+      zoomIn,
+      viewer.getByRole('button', { name: '닫기', exact: true }),
+    ]) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+
+    await scrollArea.evaluate((element) => element.scrollTo({ left: 0, top: 0 }));
     expect(await viewer.evaluate((element) => element.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`ocr-preview-zoom-${width}.png`) });
     await zoomOut.click();
     await expect(viewer.getByRole('status')).toHaveText('100%');
+    await image.click();
+    await expect(viewer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
   });
 }

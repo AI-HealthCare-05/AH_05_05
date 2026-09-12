@@ -382,7 +382,7 @@ async function selectGalleryPng(page: Page) {
 }
 
 for (const width of [375, 1280]) {
-test(`OCR 이미지 미리보기 전환과 선명한 닫기·한 번 클릭 닫기 (${width})`, async ({ page }, testInfo) => {
+test(`OCR 이미지 미리보기 전환과 명시적 닫기·Escape 닫기 (${width})`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
   await authenticate(page);
   const requestedImages: string[] = [];
@@ -443,16 +443,14 @@ test(`OCR 이미지 미리보기 전환과 선명한 닫기·한 번 클릭 닫�
   expect.soft(closeBox!.height).toBeGreaterThanOrEqual(48);
   await page.screenshot({ path: testInfo.outputPath(`image-viewer-${width}.png`) });
   await viewer.getByRole('img', { name: '확대한 약봉투 원본' }).click();
+  await expect(viewer).toBeVisible();
+  await close.click();
   await expect(viewer).toBeHidden();
   await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
   await viewer.getByRole('button', { name: '선명하게 보기' }).click();
   await expect(viewer).toBeVisible();
   await viewer.getByRole('img', { name: '확대한 약봉투' }).click();
-  await expect(viewer).toBeHidden();
-  await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
-  await close.click();
-  await expect(viewer).toBeHidden();
-  await page.getByRole('button', { name: '약봉투 크게 보기' }).click();
+  await expect(viewer).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(viewer).toBeHidden();
 });
