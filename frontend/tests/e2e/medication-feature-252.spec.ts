@@ -394,7 +394,7 @@ test('복약 목록은 연필로 활성 회차를 편집하고 완료 회차를 
 
   const activeCard = page.getByRole('button', { name: /2026년 8월 22일 처방/ });
   await expect(activeCard).not.toContainText('셀레콕시브 200mg');
-  await expect(page.locator('article').filter({ has: activeCard }).getByText('아침', { exact: true })).toBeVisible();
+  await expect(page.locator('article').filter({ has: activeCard }).getByText('아침', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
   await expect(page.getByRole('dialog').getByRole('heading', { name: '처방 편집' })).toBeVisible();
   await expect(
@@ -408,8 +408,11 @@ test('복약 목록은 연필로 활성 회차를 편집하고 완료 회차를 
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText('지난 처방', { exact: true })).toBeVisible();
   await expect(page.getByText('2026년 8월 24일 ~ 28일', { exact: true })).toBeVisible();
-  await expect(completedDialog.getByText(/아목시실린 500mg/)).toBeVisible();
-  await expect(completedDialog.getByText(/아침 08:00/)).toBeVisible();
+  await expect(completedDialog.getByRole('rowheader', { name: '아목시실린', exact: true })).toBeVisible();
+  await expect(completedDialog).not.toContainText('500mg');
+  await expect(completedDialog.getByRole('columnheader', { name: '아침', exact: true })).toBeVisible();
+  await expect(completedDialog.getByRole('img', { name: '아침', exact: true })).toBeVisible();
+  await expect(completedDialog).not.toContainText(/\d{2}:\d{2}/);
   await expect(
     completedDialog.getByRole('textbox', { name: '복약 별칭', exact: true }),
   ).toHaveCount(0);

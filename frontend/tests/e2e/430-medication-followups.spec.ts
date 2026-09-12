@@ -290,33 +290,47 @@ for (const width of [375, 390, 1280]) {
 }
 
 for (const width of [390, 1280]) {
-  test(`복용 중 카드의 시간대 범례와 중간톤 점을 유지한다 (${width}px)`, async ({ page }, testInfo) => {
+  test(`복용 중 카드의 상태·제목별 동작 정렬과 고정 시간 표를 유지한다 (${width}px)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await routeApp(page);
     await page.goto('/medications');
     const toggle = page.getByRole('button', { name: /2026년 9월 10일 처방.*복용 중/ });
     const card = page.locator('article').filter({ has: toggle });
     const edit = card.getByRole('button', { name: '처방 수정 · 2026년 9월 10일' });
-    await expect(card.getByText('복용 중', { exact: true })).toBeVisible();
-    const [chevronBox, pencilBox, editBox] = await Promise.all([
+    const status = card.getByText('복용 중', { exact: true });
+    const title = card.getByText('해맑은소아청소년과의원', { exact: true });
+    await expect(status).toBeVisible();
+    const [chevronBox, pencilBox, editBox, statusBox, titleBox] = await Promise.all([
       toggle.locator('svg').last().boundingBox(),
       edit.locator('svg').boundingBox(),
       edit.boundingBox(),
+      status.boundingBox(),
+      title.boundingBox(),
     ]);
     expect(chevronBox).not.toBeNull();
     expect(pencilBox).not.toBeNull();
     expect(editBox).not.toBeNull();
+    expect(statusBox).not.toBeNull();
+    expect(titleBox).not.toBeNull();
     expect(Math.abs(
-      chevronBox!.y + chevronBox!.height / 2 - (pencilBox!.y + pencilBox!.height / 2),
+      pencilBox!.y + pencilBox!.height / 2 - (statusBox!.y + statusBox!.height / 2),
+    )).toBeLessThanOrEqual(3);
+    expect(Math.abs(
+      chevronBox!.y + chevronBox!.height / 2 - (titleBox!.y + titleBox!.height / 2),
     )).toBeLessThanOrEqual(3);
     expect(editBox!.width).toBeGreaterThanOrEqual(44);
     expect(editBox!.height).toBeGreaterThanOrEqual(44);
     const memo = page.getByRole('button', { name: '복약 메모', exact: true });
     expect(await memo.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
-    for (const label of ['아침', '점심', '저녁']) {
-      await expect(card.getByText(label, { exact: true })).toBeVisible();
+    for (const label of ['아침', '점심', '저녁', '자기전']) {
+      await expect(card.getByText(label, { exact: true })).toHaveCount(0);
     }
     await toggle.click();
+    const table = card.getByRole('table');
+    await expect(table).toBeVisible();
+    for (const label of ['복용약', '아침', '점심', '저녁', '자기전']) {
+      await expect(table.getByRole('columnheader', { name: label, exact: true })).toBeVisible();
+    }
     const dots = card.getByRole('region').getByRole('img');
     await expect(dots).toHaveCount(3);
     const colors = await dots.evaluateAll((elements) =>

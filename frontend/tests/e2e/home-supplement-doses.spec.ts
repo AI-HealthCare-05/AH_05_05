@@ -341,19 +341,25 @@ test('등록한 영양제가 없는 홈의 살펴보기는 둘러보기 탭으�
   expect(requests).toHaveLength(0);
 });
 
-test('등록된 영양제 홈은 복용 전과 전체 완료 후에도 살펴보기를 표시하지 않는다', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const { morning } = await openHome(page);
-  const browse = page.getByRole('tabpanel', { name: '오늘의 영양제' })
-    .getByRole('button', { name: '영양제 살펴보기' });
-  await expect(morning.getByRole('button', { name: '오메가3 선택' })).toBeVisible();
-  await expect(browse).toHaveCount(0);
-  await morning.getByRole('button', { name: '다 먹었어요' }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: testInfo.outputPath('430-registered-supplement-home-390.png'), fullPage: true });
-  await morning.getByRole('button', { name: '다 먹었어요' }).click();
-  await expect(morning.getByRole('button', { name: '다 먹었어요' })).toBeDisabled();
-  await expect(browse).toHaveCount(0);
-});
+for (const width of [320, 390]) {
+  test(`등록된 영양제 홈은 복용 전과 전체 완료 후에도 살펴보기를 표시하지 않는다 (${width}px)`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width, height: 844 });
+    const { morning } = await openHome(page);
+    const browse = page.getByRole('tabpanel', { name: '오늘의 영양제' })
+      .getByRole('button', { name: '영양제 살펴보기' });
+    await expect(morning.getByRole('button', { name: '오메가3 선택' })).toBeVisible();
+    await expect(browse).toHaveCount(0);
+    await morning.getByRole('button', { name: '다 먹었어요' }).scrollIntoViewIfNeeded();
+    await page.locator('img:visible').evaluateAll(async images => {
+      await Promise.all(images.map(image => (image as HTMLImageElement).decode()));
+    });
+    await page.screenshot({ path: testInfo.outputPath(`430-registered-supplement-home-${width}.png`), fullPage: true, animations: 'disabled' });
+    await morning.getByRole('button', { name: '다 먹었어요' }).click();
+    await expect(morning.getByRole('button', { name: '다 먹었어요' })).toBeDisabled();
+    await expect(browse).toHaveCount(0);
+  });
+}
 
 test('등록된 영양제가 미래에 시작해 오늘 회차가 없어도 살펴보기를 표시하지 않는다', async ({ page }) => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);

@@ -73,7 +73,7 @@ test('접힌 처방의 화살표는 아래를 가리킨다', async ({ page }) =>
 });
 
 for (const width of [320, 390, 1280]) {
-  test(`연필은 헤더 화살표와 정렬되고 시간대 범례와 펼침 방향을 유지한다 (${width})`, async ({ page }, testInfo) => {
+  test(`연필과 화살표는 각각 상태와 제목에 정렬되고 펼침 방향을 유지한다 (${width})`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/medications');
     const toggle = page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ });
@@ -83,18 +83,25 @@ for (const width of [320, 390, 1280]) {
       const chevronBox = await toggle.locator('svg').last().boundingBox();
       const pencilBox = await edit.locator('svg').boundingBox();
       const editBox = await edit.boundingBox();
+      const statusBox = await card.getByText('복용 중', { exact: true }).boundingBox();
+      const titleBox = await card.getByText(LONG_ALIAS, { exact: true }).boundingBox();
       expect(chevronBox).not.toBeNull();
       expect(pencilBox).not.toBeNull();
       expect(editBox).not.toBeNull();
+      expect(statusBox).not.toBeNull();
+      expect(titleBox).not.toBeNull();
+      expect(Math.abs(
+        statusBox!.y + statusBox!.height / 2 -
+          (pencilBox!.y + pencilBox!.height / 2),
+      )).toBeLessThanOrEqual(3);
       expect(Math.abs(
         chevronBox!.y + chevronBox!.height / 2 -
-          (pencilBox!.y + pencilBox!.height / 2),
+          (titleBox!.y + titleBox!.height / 2),
       )).toBeLessThanOrEqual(3);
       expect(editBox!.width).toBeGreaterThanOrEqual(44);
       expect(editBox!.height).toBeGreaterThanOrEqual(44);
       for (const label of ['아침', '점심', '저녁', '자기전']) {
-        const chip = card.locator(':scope > div:first-child').getByText(label, { exact: true });
-        await expectUnclipped(chip);
+        await expect(card.locator(':scope > div:first-child').getByText(label, { exact: true })).toHaveCount(0);
       }
     };
     const chevronDirection = () => toggle.locator('svg path').evaluate((path) => {
@@ -128,18 +135,21 @@ for (const width of [320, 390, 1280]) {
     await expect(card.getByText('2026년 9월 5일 ~ 14일', { exact: true })).toBeVisible();
     await expect(card.getByText(/약 2개|08:00|13:00|19:00/)).toHaveCount(0);
     await expectUnclipped(card.getByText(LONG_ALIAS, { exact: true }));
-    const colors = [];
     for (const slot of ['아침', '점심', '저녁']) {
-      const chip = card.getByText(slot, { exact: true });
-      await expect(chip).toBeVisible();
-      colors.push(await chip.evaluate((element) => getComputedStyle(element).backgroundColor));
+      await expect(card.getByText(slot, { exact: true })).toHaveCount(0);
     }
-    expect(new Set(colors).size).toBe(3);
     await page.screenshot({ path: testInfo.outputPath(`summary-${width}.png`), fullPage: true });
     await toggle.focus();
     await page.keyboard.press('Enter');
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     const details = card.getByRole('region', { name: '2026년 9월 5일 처방 상세' });
+    const colors = [];
+    for (const slot of ['아침', '점심', '저녁']) {
+      const dot = details.getByRole('img', { name: slot, exact: true });
+      await expect(dot).toBeVisible();
+      colors.push(await dot.evaluate((element) => getComputedStyle(element).backgroundColor));
+    }
+    expect(new Set(colors).size).toBe(3);
     await expectUnclipped(details.getByText(LONG_NAME, { exact: false }));
     await expect(details.getByText('필요할 때만 · 알림 없음')).toBeVisible();
     await expect(details.getByText('끝까지 복용')).toBeVisible();
@@ -208,6 +218,13 @@ test('연필로 수정한 별칭과 시간대를 기존 API에 저장하고 요�
   const card = page.locator('article').filter({ hasText: '변경한 별칭' });
   await expect(card.getByText('점심', { exact: true })).toHaveCount(0);
   await expect(card.getByRole('button', { expanded: false })).toBeVisible();
+  await card.getByRole('button', { expanded: false }).click();
+  const changedMedication = card.getByRole('row').filter({ hasText: LONG_NAME });
+  await expect(changedMedication.getByRole('img', { name: '점심', exact: true })).toHaveCount(0);
+  await expect(changedMedication.getByRole('img')).toHaveCount(3);
+  for (const slot of ['아침', '저녁', '자기전']) {
+    await expect(changedMedication.getByRole('img', { name: slot, exact: true })).toBeVisible();
+  }
 });
 
 test('완료 처방은 펼쳐 읽을 수 있지만 수정하지 못한다', async ({ page }) => {
