@@ -643,6 +643,25 @@ test('기준 행이 없으면 프로필이 채워져 있어도 기준선을 숨�
   ).toBeVisible();
 });
 
+test('상한만 있고 판정 문구가 없는 성분은 긴 이름에 헤더 전체 폭을 제공한다', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openSupplementFixture(page, IRON_PRODUCT, {
+    ...MALE_NUTRIENT_STANDARD,
+    iron_mg: { rni: null, ai: null, ul: '45.000' },
+  });
+
+  const iron = page.getByRole('article', { name: '철 성분 합계' });
+  const summary = iron.getByTestId('nutrient-total-summary');
+  await iron.getByRole('heading', { name: '철' }).evaluate((element) => {
+    element.textContent = '아미노산킬레이트복합미네랄유래철';
+  });
+
+  await expect(iron.locator('[data-nutrient-status]')).toHaveCount(0);
+  const summaryMaxWidth = await summary.evaluate((element) => getComputedStyle(element).maxWidth);
+  expect(summaryMaxWidth).toBe('100%');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('합산할 성분이 없으면 합계 섹션과 0개 안내 문구를 표시하지 않는다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {

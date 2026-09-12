@@ -552,7 +552,8 @@ function NutrientTotalCard({
 }) {
   const evaluation = evaluateNutrientStandard(total);
   const isOverUpperLimit = showStandards && evaluation.status === 'over-upper-limit';
-  const hasStatus = showStandards && evaluation.status !== 'unrated';
+  const statusLabel = showStandards ? standardStatusLabel(total, evaluation) : null;
+  const hasStatus = statusLabel !== null;
 
   const content = (
     <div className="flex flex-col gap-2">
@@ -576,7 +577,9 @@ function NutrientTotalCard({
             </strong>
             <span className="text-unit text-muted-foreground">{total.unit}</span>
           </div>
-          {showStandards && <StandardStatus total={total} />}
+          {statusLabel !== null && (
+            <StandardStatus total={total} evaluation={evaluation} label={statusLabel} />
+          )}
         </div>
 
         {showStandards && (evaluation.base !== null || total.ul !== null) && (
@@ -624,22 +627,36 @@ function NutrientTotalCard({
   );
 }
 
-function StandardStatus({ total }: { total: NutrientTotal }) {
-  const evaluation = evaluateNutrientStandard(total);
+function standardStatusLabel(
+  total: NutrientTotal,
+  evaluation: ReturnType<typeof evaluateNutrientStandard>,
+): string | null {
   const baseLabel = evaluation.baseKind === 'ai' ? '충분섭취량' : '권장량';
-  let statusLabel: string | null = null;
   if (evaluation.status === 'over-upper-limit') {
-    statusLabel = '상한 초과';
-  } else if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
-    statusLabel = `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`;
-  } else if (evaluation.status === 'recommended') {
-    statusLabel =
+    return '상한 초과';
+  }
+  if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
+    return `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`;
+  }
+  if (evaluation.status === 'recommended') {
+    return (
       total.ul === null && evaluation.percentOfBase !== null
         ? `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`
-        : '권장 범위예요';
+        : '권장 범위예요'
+    );
   }
-  if (statusLabel === null) return null;
+  return null;
+}
 
+function StandardStatus({
+  total,
+  evaluation,
+  label,
+}: {
+  total: NutrientTotal;
+  evaluation: ReturnType<typeof evaluateNutrientStandard>;
+  label: string;
+}) {
   const upperLimitPosition = rangePositions(total, evaluation.base).upper;
   return (
     <p
@@ -649,7 +666,7 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
       } ${evaluation.status === 'over-upper-limit' ? 'font-bold text-danger-strong' : 'text-muted-foreground'}`}
       style={upperLimitPosition === null ? undefined : { left: `${upperLimitPosition}%` }}
     >
-      {statusLabel}
+      {label}
     </p>
   );
 }
