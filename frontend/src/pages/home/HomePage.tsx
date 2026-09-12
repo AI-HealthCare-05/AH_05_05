@@ -482,7 +482,6 @@ export function HomePage({
                 registrationPending={false}
                 maxItems={5}
                 onSelect={() => setLoginPromptOpen(true)}
-                subtitle="개인별 복용 추천이 아닌 일반 인기 정보예요"
               />
             )}
           </>

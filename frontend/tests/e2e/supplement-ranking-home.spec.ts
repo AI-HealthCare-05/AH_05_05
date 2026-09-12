@@ -186,8 +186,9 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
   await expect(ranking).toBeVisible();
   await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
   await expect(
-    ranking.getByText('개인별 복용 추천이 아닌 일반 인기 정보예요', { exact: true }),
+    ranking.getByText('RxVita가 골랐어요', { exact: true }),
   ).toBeVisible();
+  await expect(ranking).not.toContainText('개인별 복용 추천이 아닌 일반 인기 정보예요');
   await expect(ranking.getByRole('button', { name: '전체 보기', exact: true })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /영양제 추가/ })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /제품 정보$/ })).toHaveCount(5);
