@@ -283,7 +283,7 @@ function TimelineItem({
             <article
               key={episode.recordId}
               aria-label={`${episodeAccessibleName} · 약 ${episode.medications.length}개`}
-              className="w-full min-w-0 max-w-full overflow-hidden"
+              className="w-full min-w-0 max-w-full overflow-hidden rounded-input border border-border [&+article]:mt-3"
             >
               <div className="relative w-full min-w-0">
                 <button
@@ -292,7 +292,7 @@ function TimelineItem({
                   aria-pressed={selectedEpisodes.has(episode.recordId)}
                   aria-label={`${episodeAccessibleName} ${episodeCompleted ? '복용 완료' : '선택'}`}
                   disabled={doseControlsPending}
-                  className={`flex min-h-14 w-full min-w-0 items-center border-b border-border px-3 py-2 pr-14 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                  className={`flex min-h-14 w-full min-w-0 items-center rounded-none! border-0 px-3 py-2 pr-14 text-left shadow-none [--rx-clay-inset:0_0_#0000] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                     selectedEpisodes.has(episode.recordId) ? 'bg-action-soft' : 'bg-card'
                   }`}
                   onClick={() => toggleSelectedEpisode(episode.recordId)}
@@ -343,7 +343,7 @@ function TimelineItem({
                   id={`episode-detail-${item.slot}-${episode.recordId}`}
                   role="group"
                   aria-label={`${episodeDate} 처방 약 상세`}
-                  className="w-full min-w-0 max-w-full border-b border-border px-3 py-3"
+                  className="w-full min-w-0 max-w-full px-3 py-3"
                 >
                   <ul className="flex flex-col gap-2" aria-label={`${episodeDate} 처방 약 목록`}>
                     {episode.medications.map((medication) => {
