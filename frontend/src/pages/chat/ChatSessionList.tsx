@@ -75,7 +75,7 @@ export function ChatSessionList({
         <h2 className="text-xl font-bold text-foreground">
           {selectionMode ? '삭제할 대화를 선택하세요' : '최근 대화'}
         </h2>
-        <div className="flex flex-col overflow-hidden rounded-card border border-border bg-card shadow-card">
+        <div className="flex shrink-0 flex-col overflow-hidden rounded-card border border-border bg-card shadow-card">
           {sessions.map((session) => {
             const content = (
               <>
