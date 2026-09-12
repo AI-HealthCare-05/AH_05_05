@@ -335,7 +335,7 @@ export function CustomChallengeParticipationPage() {
       <CustomChallengeCalendar key={`${participation.id}:${participation.status}`} participation={participation} />
 
       <p className="text-caption leading-5 text-muted-foreground">진행률은 홈과 {participation.challengeType === 'SUPPLEMENT' ? '영양제' : '복약'} 기록을 기준으로 자동 계산돼요. 달력에서는 기록을 확인할 수 있어요.</p>
-      {participation.status === 'ACTIVE' ? <Button variant="secondary" disabled={cancelPending || claimPending} onClick={() => { setCancelError(null); setCancelOpen(true); }}>챌린지 참여 취소</Button> : <Button variant="secondary" onClick={() => navigate('/challenges')}>내 챌린지로 돌아가기</Button>}
+      {participation.status === 'ACTIVE' ? <Button variant="secondary" disabled={cancelPending || claimPending} onClick={() => { setCancelError(null); setCancelOpen(true); }}>챌린지 참여 취소</Button> : null}
       <Dialog open={cancelOpen} onOpenChange={open => { if (!cancelPendingRef.current) { setCancelOpen(open); if (!open) setCancelError(null); } }}>
         <DialogContent showCloseButton={!cancelPending}>
           <DialogHeader>

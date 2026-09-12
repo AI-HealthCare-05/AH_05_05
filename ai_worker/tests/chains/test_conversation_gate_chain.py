@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from ai_worker.chains.conversation_gate_chain import (
+    CONVERSATION_GATE_PROMPT_VERSION,
     ConversationGateInput,
     build_conversation_gate_chain,
 )
@@ -65,6 +66,16 @@ async def test_chain_sends_only_four_recent_messages_and_returns_structured_outp
         "대화 5",
         "대화 6",
     ]
+    assert CONVERSATION_GATE_PROMPT_VERSION == "conversation-gate-prompt-v7"
+    for heading in (
+        "역할(Role)",
+        "작업(Task)",
+        "내용(Content)",
+        "형식(Format)",
+        "제약(Constraint)",
+        "예시(Example)",
+    ):
+        assert heading in client.rendered_system_prompt
 
 
 def test_classification_accepts_follow_up_schedule_intent() -> None:

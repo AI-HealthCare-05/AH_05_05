@@ -211,7 +211,7 @@ async function openSupplementFixture(
 
 test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값을 PATCH로 보낸다', async ({ page }) => {
   await authenticate(page);
-  let patchBody: Record<string, unknown> | null = null;
+  const patchBodies: Record<string, unknown>[] = [];
   const registration = {
     ...registrationFor(IRON_PRODUCT, 9001, '1.000'),
     score: 4,
@@ -228,12 +228,15 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
       });
       return;
     }
-    patchBody = route.request().postDataJSON() as Record<string, unknown>;
-    await fulfillJson(route, {
-      ...registration,
-      score: patchBody.score,
-      note: patchBody.note,
-    });
+    const patchBody = route.request().postDataJSON() as Record<string, unknown>;
+    patchBodies.push(patchBody);
+    // Keep response-shaped slot objects instead of copying PATCH slot strings.
+    for (const field of ['score', 'note', 'review_body']) {
+      if (Object.prototype.hasOwnProperty.call(patchBody, field)) {
+        Object.assign(registration, { [field]: patchBody[field] });
+      }
+    }
+    await fulfillJson(route, registration);
   });
   await page.route('**/api/v1/users/me', async (route) => {
     await fulfillJson(route, {
@@ -268,13 +271,11 @@ test('목록 응답의 별점과 메모를 편집 시트에 채우고 저장값�
   await recordEditor.getByRole('button', { name: '저장' }).click();
   await expect(recordEditor).toBeHidden();
 
-  expect(patchBody).toEqual({
-    dose_amount: 1,
-    slots: ['MORNING'],
-    score: 3,
-    note: '저녁 식후',
-    review_body: null,
-  });
+  expect(patchBodies).toEqual([
+    { dose_amount: 1, slots: ['MORNING'], score: 3 },
+    { dose_amount: 1, slots: ['MORNING'], note: '저녁 식후' },
+  ]);
+  await expect(sheet.getByText('저녁 식후', { exact: true })).toBeVisible();
   await sheet.getByRole('button', { name: '닫기', exact: true }).click();
   await expect(iron.getByLabel('별 3점')).toBeVisible();
 });
@@ -643,6 +644,25 @@ test('기준 행이 없으면 프로필이 채워져 있어도 기준선을 숨�
   ).toBeVisible();
 });
 
+test('상한만 있고 판정 문구가 없는 성분은 긴 이름에 헤더 전체 폭을 제공한다', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openSupplementFixture(page, IRON_PRODUCT, {
+    ...MALE_NUTRIENT_STANDARD,
+    iron_mg: { rni: null, ai: null, ul: '45.000' },
+  });
+
+  const iron = page.getByRole('article', { name: '철 성분 합계' });
+  const summary = iron.getByTestId('nutrient-total-summary');
+  await iron.getByRole('heading', { name: '철' }).evaluate((element) => {
+    element.textContent = '아미노산킬레이트복합미네랄유래철';
+  });
+
+  await expect(iron.locator('[data-nutrient-status]')).toHaveCount(0);
+  const summaryMaxWidth = await summary.evaluate((element) => getComputedStyle(element).maxWidth);
+  expect(summaryMaxWidth).toBe('100%');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('합산할 성분이 없으면 합계 섹션과 0개 안내 문구를 표시하지 않는다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
@@ -872,7 +892,8 @@ test('권장 슬롯과 회당 수량을 선택해 med 사용자 영양제 API에
     .getByRole('button')
     .first();
   await expect(firstSupplement).toContainText('튼튼 철분 캡슐');
-  await expect(firstSupplement).toContainText('하루 1회 · 1회 3캡슐 · 점심');
+  await expect(firstSupplement).toContainText('하루 1회 · 1회 3캡슐');
+  await expect(firstSupplement).toContainText('점심');
 });
 
 test('RDB의 소수 및 20 초과 1회 섭취량을 그대로 선택하고 저장한다', async ({ page }) => {
@@ -990,12 +1011,14 @@ test('같은 RDB 제품 재등록은 목록을 교체하고 새로고침 뒤에�
 
   const list = page.getByRole('region', { name: '먹고 있는 영양제' });
   await expect(list.getByRole('button')).toHaveCount(1);
-  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
+  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐');
+  await expect(list.getByRole('button').first()).toContainText('자기전');
 
   await page.reload();
   await expect(page.getByText('먹고 있는 영양제 1개')).toBeVisible();
   await expect(list.getByRole('button')).toHaveCount(1);
-  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
+  await expect(list.getByRole('button').first()).toContainText('하루 1회 · 1회 2캡슐');
+  await expect(list.getByRole('button').first()).toContainText('자기전');
   expect(listRequests.length).toBeGreaterThanOrEqual(2);
   expect(listRequests.every((request) => request.searchParams.get('status') === 'ACTIVE')).toBe(true);
   expect(listRequests.every((request) => request.searchParams.get('offset') === '0')).toBe(true);
@@ -1152,13 +1175,13 @@ test('직접 입력으로 등록하면 목록에 뜨고 성분 합계에서 제�
   const manualCard = page
     .getByRole('region', { name: '먹고 있는 영양제' })
     .getByRole('button', { name: /실 API 직접 입력 오메가3/ });
-  await expect(manualCard).toContainText('성분 정보 없음');
+  await expect(manualCard.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
   ).toBeVisible();
 });
 
-test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async ({ page }) => {
+test('직접 입력 제품의 성분 정보 없음 배지를 숨기고 합계 제외 안내는 유지한다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
     await fulfillJson(route, {
@@ -1199,10 +1222,11 @@ test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async (
   const manualCard = page
     .getByRole('region', { name: '먹고 있는 영양제' })
     .getByRole('button', { name: /성분 없는 직접 입력 제품/ });
-  await expect(manualCard).toContainText('성분 정보 없음');
-  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
+  await expect(manualCard.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
+  await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐');
+  await expect(manualCard).toContainText('자기전');
   await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('article')).toHaveCount(0);
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
   ).toBeVisible();
 });

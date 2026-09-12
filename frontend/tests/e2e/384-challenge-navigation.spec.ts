@@ -110,6 +110,7 @@ function recordWrites(page: Page) {
 
 async function openParticipationFromChallengeMy(page: Page) {
   await expect(page).toHaveURL(/\/challenges$/);
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await page.getByRole('link', { name: `${challenge.name} 자세히 보기`, exact: true }).click();
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
   await expect(page.getByRole('heading', { name: challenge.name })).toBeVisible();
@@ -170,7 +171,7 @@ test('챌린지의 배지 전체 보기는 공통 헤더로 내 배지에서 돌
   const header = page.getByRole('banner');
   const back = header.getByRole('button', { name: '뒤로 가기', exact: true });
   await expect(header.getByRole('heading', { name: '내 배지', exact: true })).toBeVisible();
-  await expect(back.locator('svg')).toHaveClass(/lucide-chevron-left/);
+  await expect(back.locator('svg')).toHaveAttribute('aria-hidden', 'true');
   const bounds = await back.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.width).toBeGreaterThanOrEqual(44);
@@ -213,7 +214,32 @@ test('내 배지의 뒤로가기는 공식·맞춤 배지 통합 목록을 유�
   await expect(page.getByRole('link', { name: '튼튼 걷기 배지, 1회 획득', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '꾸준한 복약 배지, 1회 획득', exact: true }))
     .toHaveAttribute('href', '/challenges/custom-participations/601');
+  await page.getByRole('link', { name: '튼튼 걷기 배지, 1회 획득', exact: true }).click();
+  await expect(page).toHaveURL('/challenges/badges/31');
+  await page.getByRole('button', { name: '내 배지로 돌아가기', exact: true }).click();
+  await expect(page).toHaveURL('/challenges/badges');
   await page.getByRole('banner').getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL(/\/challenges$/);
   expect(writes).toEqual([]);
+});
+
+test('참여 상세에서 연 배지의 명명 CTA는 참여 화면이 아니라 내 배지 목록으로 이동한다', async ({ page }) => {
+  await page.route('**/api/v1/user/challenges/501', route => route.fulfill({
+    json: {
+      ...participation,
+      status: 'COMPLETED',
+      completed_count: 14,
+      progress_rate: '100.00',
+      completed_at: '2026-09-22T08:00:00+09:00',
+      can_verify: false,
+    },
+  }));
+  await page.goto('/challenges/participations/501');
+  await page.getByRole('link', { name: `${badge.name} 자세히 보기`, exact: true }).click();
+  await expect(page).toHaveURL('/challenges/badges/31');
+
+  await page.getByRole('button', { name: '내 배지로 돌아가기', exact: true }).click();
+  await expect(page).toHaveURL('/challenges/badges');
+  await page.goBack();
+  await expect(page).toHaveURL('/challenges/participations/501');
 });

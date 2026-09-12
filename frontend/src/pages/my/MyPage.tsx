@@ -533,7 +533,9 @@ export function MyPage({
                 <ManagementRow
                   label="복약 메모 모아보기"
                   value=""
-                  onClick={() => navigate('/medications/notes')}
+                  onClick={() => navigate('/medications/notes', {
+                    state: { entry: 'my', returnTo: location.pathname },
+                  })}
                   divided
                 />
               </div>

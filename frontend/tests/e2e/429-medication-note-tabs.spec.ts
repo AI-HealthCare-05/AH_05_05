@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 const overviews = [
   {
@@ -120,7 +121,10 @@ test('메모 유무는 전체 처방 메타데이터로 분류하고 처방별 �
   await page.getByRole('button', { name: '더 보기' }).click();
   await expect(page.getByText('둘째 페이지의 건강상태 기록')).toBeVisible();
   expect(noteQueries).toEqual(['?episodeId=103', '?episodeId=103&cursor=next-103']);
+  await waitForVisibleImages(page);
   await page.screenshot({ path: testInfo.outputPath('notes-375.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath('notes-390.png'), fullPage: true });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.screenshot({ path: testInfo.outputPath('notes-1280.png'), fullPage: true });
 });
@@ -172,7 +176,9 @@ test('첫 메모를 저장하면 처방이 메모 있는 탭으로 이동한다'
   await expect(page.getByText('속쓰림이 줄었어요.')).toBeVisible();
 });
 
-test('새 메모는 헤더 우측에 있고 작성 폼은 처방 전체와 건강상태 문구를 기본으로 쓴다', async ({ page }) => {
+for (const width of [375, 390, 1280]) {
+test(`새 메모는 헤더 우측에 있고 작성 폼은 처방 전체와 건강상태 문구를 기본으로 쓴다 (${width}px)`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
   await page.route('**/api/v1/medications', (route) => fulfillJson(route, [overviews[0]]));
   await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, (route) => fulfillJson(route, []));
   await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) => fulfillJson(route, { items: [], total: 0, nextCursor: null }));
@@ -181,6 +187,12 @@ test('새 메모는 헤더 우측에 있고 작성 폼은 처방 전체와 건�
   const header = page.locator('header');
   const newButton = header.getByRole('button', { name: '새 메모 작성' });
   await expect(newButton).toBeVisible();
+  const [heading, action] = await Promise.all([
+    header.getByRole('heading', { name: '복약 메모', exact: true }).boundingBox(), newButton.boundingBox(),
+  ]);
+  expect(action!.x).toBeGreaterThan(heading!.x + heading!.width);
+  expect(Math.abs(action!.y + action!.height / 2 - heading!.y - heading!.height / 2)).toBeLessThanOrEqual(2);
+  expect(action!.height).toBeGreaterThanOrEqual(44);
   await newButton.click();
 
   await expect(page.getByRole('heading', { name: '복용시 건강상태 변화를 기록해 보세요.' })).toBeVisible();
@@ -194,7 +206,15 @@ test('새 메모는 헤더 우측에 있고 작성 폼은 처방 전체와 건�
     '처방 전체',
     '타이레놀정500mg',
   ]);
+  await page.getByLabel('약', { exact: true }).selectOption('1003');
+  await expect(page.getByLabel('약', { exact: true })).toHaveValue('1003');
+  await page.getByLabel('약', { exact: true }).selectOption('');
+  await expect(page.getByLabel('약', { exact: true })).toHaveValue('');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await waitForVisibleImages(page);
+  await page.screenshot({ path: testInfo.outputPath(`429-note-form-${width}.png`), fullPage: true });
 });
+}
 
 test('메모 삭제는 목록이 아니라 수정 상세의 확인 절차에서 수행한다', async ({ page }) => {
   let deleted = false;

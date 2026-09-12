@@ -1,6 +1,8 @@
 import { expect, test, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+import { expectSelectedSlotDepth } from './helpers/doseSlotDepth';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 const MEAL_TIMES = {
   morning: '08:00',
@@ -84,6 +86,56 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem('poke.account-principal', 'medication-management@example.com');
   });
 });
+
+for (const individual of [false, true]) {
+  for (const width of [375, 390, 1280]) {
+    test(`복약 ${individual ? '개별 약' : '처방'} 선택 시간은 입체감과 동일한 선택색을 유지한다 (${width}px)`, async ({ page }, testInfo) => {
+      const item = overview(12, false, 3);
+      item.medications[0].slots = ['morning', 'evening'];
+      await page.route('**/api/v1/medications', (route) => fulfillJson(route, [item]));
+      await page.route('**/api/v1/med/medication/schedule/12', (route) =>
+        fulfillJson(route, schedule(12, 3, ['morning', 'evening'])),
+      );
+      await page.route('**/api/v1/ocr/jobs/12/image', (route) => route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="80"><rect width="64" height="80" fill="#fff"/><text x="5" y="35" font-size="9">fixture</text></svg>',
+      }));
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(individual ? '/dev/medications' : '/medications');
+      if (individual) {
+        await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+        await page.getByRole('button', { name: /셀레콕시브.*복용 시간 수정/ }).click();
+      } else {
+        await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
+      }
+      const dialog = page.getByRole('dialog', { name: individual ? '셀레콕시브 복용 시간' : '처방 편집' });
+      const lunch = dialog.getByRole('button', { name: '셀레콕시브 점심약' });
+      if (testInfo.project.use.hasTouch) await lunch.tap();
+      else {
+        await lunch.click();
+        await lunch.hover();
+      }
+      const selected = dialog.locator('button[aria-pressed="true"]');
+      await expectSelectedSlotDepth(selected);
+      await page.keyboard.press('Tab');
+      await lunch.focus();
+      await expect(lunch).toBeFocused();
+      await expect(lunch).toHaveCSS('outline-style', 'solid');
+      await expect(lunch).toHaveCSS('outline-width', '2px');
+      await expectSelectedSlotDepth(selected);
+      await lunch.scrollIntoViewIfNeeded();
+      if (width === 390) {
+        await waitForVisibleImages(page);
+        await page.screenshot({ path: testInfo.outputPath(`426-medication-${individual ? 'individual' : 'prescription'}-depth-390.png`) });
+      }
+      await lunch.click();
+      await expect(lunch).toHaveAttribute('aria-pressed', 'false');
+      await expect(lunch).toHaveCSS('background-image', 'none');
+      await expect(lunch).toHaveCSS('box-shadow', 'none');
+      await expectSelectedSlotDepth(selected);
+    });
+  }
+}
 
 test('처방 편집은 원본 하루 횟수까지만 선택하고 기존 시간을 바꿀 수 있다', async ({ page }) => {
   let scheduleLoads = 0;
@@ -328,6 +380,9 @@ test('별칭 PATCH 뒤 홈 진입과 재진입은 후속 처방 조회의 별칭
   await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
   expect(aliasPayloads).toEqual([{ alias: '실 API 홈 별칭' }]);
 
+  // Move off the bottom toast before navigation: hovering keeps its dismissal timer paused.
+  await page.mouse.move(0, 0);
+  await expect(page.getByText('처방을 저장했어요.')).toBeHidden({ timeout: 10_000 });
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await expect(page.getByRole('heading', { name: '실 API 홈 별칭', exact: true })).toBeVisible();
   await page.goto('/medications');
@@ -348,9 +403,9 @@ test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 �
   const cards = page.getByRole('button', { name: /처방 · 약/ });
   await expect(cards).toHaveCount(41);
 
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox').first().check();
-  await page.getByRole('button', { name: '선택한 처방 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '삭제하기' }).click();
 
   await expect(page.getByText('1개를 삭제했어요')).toBeVisible();
@@ -412,10 +467,10 @@ test('긴 별칭과 약 이름은 요약·선택·편집·완료 상세에서 �
     await expectContained(details.getByText(new RegExp(longMedication)), details);
     await activeCard.click();
 
-    await page.getByRole('button', { name: '삭제', exact: true }).click();
+    await page.getByRole('button', { name: '선택', exact: true }).click();
     await expect(page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ })).toBeVisible();
     await expectContained(activeName, activeCard);
-    await page.getByRole('button', { name: '완료', exact: true }).click();
+    await page.getByRole('button', { name: '취소', exact: true }).click();
 
     await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
     const editSheet = page.getByRole('dialog', { name: '처방 편집' });
@@ -432,7 +487,7 @@ test('긴 별칭과 약 이름은 요약·선택·편집·완료 상세에서 �
     const finishedSheet = page.getByRole('region', { name: '2026년 8월 24일 처방 상세' });
     const finishedCard = page.locator('article').filter({ has: finishedSheet });
     await expectContained(finishedCard.getByText(finishedAlias, { exact: true }), finishedCard);
-    await expectContained(finishedSheet.locator('p').filter({ hasText: longMedication }).first(), finishedSheet);
+    await expectContained(finishedSheet.getByRole('rowheader', { name: longMedication, exact: true }), finishedSheet);
     await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
   }
 
@@ -466,10 +521,10 @@ test('선택 삭제는 순차 실행하고 부분 실패 항목만 선택 상태
   });
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
   await page.getByRole('checkbox', { name: /2026년 8월 24일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '선택한 처방 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '삭제하기' }).click();
 
   await expect(page.getByText('1개를 삭제했어요. 1개는 실패했어요')).toBeVisible();
@@ -497,10 +552,10 @@ test('선택 삭제가 전부 실패하면 같은 항목들을 순서대로 재�
   });
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
   await page.getByRole('checkbox', { name: /2026년 8월 24일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '선택한 처방 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: '삭제하기' }).click();
 

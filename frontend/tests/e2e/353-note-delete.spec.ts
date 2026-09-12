@@ -119,7 +119,10 @@ test('삭제 응답을 기다리는 중 세션이 끝나면 늦은 성공이 이
   await page.getByRole('button', { name: '삭제하기' }).click();
   await requested;
   await page.evaluate(() => window.dispatchEvent(new Event('poke:auth-session-expired')));
+  const deleteFinished = page.waitForResponse((response) => response.request().method() === 'DELETE');
   releaseDelete();
+  await (await deleteFinished).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
   await expect(page).toHaveURL(/\/login/);
   await expect(page).not.toHaveURL('/medications/notes');

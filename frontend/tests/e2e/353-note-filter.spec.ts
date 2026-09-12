@@ -115,7 +115,7 @@ test('처방 인벤토리 조회가 실패하면 오류를 보이고 다시 시�
   expect(attempts).toBeGreaterThan(failedAttempts);
 });
 
-test('나중에 도착한 이전 처방 옵션 응답이 최신 응답을 덮지 않는다', async ({ page }) => {
+test('이전 effect 세대의 처방 옵션 응답이 최신 세대 응답을 덮지 않는다', async ({ page }) => {
   let optionRequests = 0;
   let releaseOldResponse: (() => void) | undefined;
   const oldResponseCanFinish = new Promise<void>((resolve) => {
@@ -127,7 +127,7 @@ test('나중에 도착한 이전 처방 옵션 응답이 최신 응답을 덮지
       await oldResponseCanFinish;
       await fulfillJson(route, [{
         careEpisodeId: 71,
-        alias: '이전 계정 처방',
+        alias: '이전 세대 처방',
         startDate: '2026-01-01',
         status: 'ACTIVE',
       }]);
@@ -135,7 +135,7 @@ test('나중에 도착한 이전 처방 옵션 응답이 최신 응답을 덮지
     }
     await fulfillJson(route, [{
       careEpisodeId: 72,
-      alias: '새 계정 처방',
+      alias: '최신 세대 처방',
       startDate: '2026-02-01',
       status: 'ACTIVE',
     }]);
@@ -146,9 +146,13 @@ test('나중에 도착한 이전 처방 옵션 응답이 최신 응답을 덮지
 
   await page.goto('/medications/notes');
   await expect.poll(() => optionRequests).toBeGreaterThan(1);
-  await expect(page.getByText('새 계정 처방')).toBeVisible();
+  await expect(page.getByText('최신 세대 처방')).toBeVisible();
+  const oldResponseFinished = page.waitForResponse((response) => response.url().includes('/api/v1/med/notes/episodes'));
   releaseOldResponse?.();
-  await expect(page.getByText('이전 계정 처방')).toHaveCount(0);
+  await (await oldResponseFinished).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByText('최신 세대 처방')).toBeVisible();
+  await expect(page.getByText('이전 세대 처방')).toHaveCount(0);
 });
 
 test('세션이 종료되면 이전 계정의 대기 중인 처방 옵션을 노출하지 않는다', async ({ page }) => {
@@ -174,7 +178,10 @@ test('세션이 종료되면 이전 계정의 대기 중인 처방 옵션을 노
   await page.goto('/medications/notes');
   await expect.poll(() => optionRequests).toBeGreaterThan(0);
   await page.evaluate(() => window.dispatchEvent(new Event('poke:auth-session-expired')));
+  const oldResponseFinished = page.waitForResponse((response) => response.url().includes('/api/v1/med/notes/episodes'));
   releaseOldResponse?.();
+  await (await oldResponseFinished).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
   await expect(page).toHaveURL(/\/login/);
   await expect(page.getByText('이전 계정 처방')).toHaveCount(0);

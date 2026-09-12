@@ -42,6 +42,8 @@ def plan_goals(
     not_before: datetime | None = None,
     preserved_keys: Collection[GoalKey] = (),
     existing_keys: Collection[GoalKey] = (),
+    include_join_slot: bool = False,
+    excluded_keys: Collection[GoalKey] = (),
 ) -> list[PlannedGoal]:
     joined_kst = _as_kst(joined_at, "joined_at")
     end_kst = _as_kst(end_at, "end_at")
@@ -49,11 +51,18 @@ def plan_goals(
         raise ValueError("end_at must be after joined_at")
 
     lower_bound = joined_kst
+    if include_join_slot:
+        # Use all configured slots, not just this source's assigned slots. A
+        # missing/already-taken current slot must not fall back to an older one.
+        elapsed_times = [value for value in meal_times.values() if value <= joined_kst.time()]
+        if elapsed_times:
+            lower_bound = datetime.combine(joined_kst.date(), max(elapsed_times), tzinfo=KST)
     if not_before is not None:
-        lower_bound = max(lower_bound, _as_kst(not_before, "not_before"))
+        lower_bound = max(joined_kst, lower_bound, _as_kst(not_before, "not_before"))
 
     preserved = set(preserved_keys)
     existing = set(existing_keys)
+    excluded = set(excluded_keys)
     planned_by_key: dict[GoalKey, PlannedGoal] = {}
     for window in windows:
         meal_time = meal_times.get(window.slot)
@@ -65,7 +74,12 @@ def plan_goals(
         while scheduled_date <= last_date:
             key = (window.source_id, scheduled_date, window.slot)
             scheduled_at = datetime.combine(scheduled_date, meal_time, tzinfo=KST)
-            if key not in preserved and scheduled_at < end_kst and (lower_bound <= scheduled_at or key in existing):
+            if (
+                key not in preserved
+                and key not in excluded
+                and scheduled_at < end_kst
+                and (lower_bound <= scheduled_at or key in existing)
+            ):
                 planned_by_key.setdefault(
                     key,
                     PlannedGoal(

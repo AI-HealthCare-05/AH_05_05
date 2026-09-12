@@ -79,7 +79,7 @@ test('expanded medication uses legend-colored dots while editing preserves sched
   await page.goto('/medications');
   await page.getByRole('button', { name: /2026년 9월 5일 처방.*복용 중/ }).click();
   const detail = page.getByRole('region', { name: '2026년 9월 5일 처방 상세' });
-  await expect(detail.locator('li p').first()).toHaveText('복합성분서방정500mg');
+  await expect(detail.getByRole('rowheader').first()).toContainText('복합성분서방정500mg');
   await expect(detail).not.toContainText(/\d{2}:\d{2}/);
   const midpointColors = [[224, 172, 133], [113, 170, 166], [113, 138, 167], [166, 172, 172]];
   for (const [index, slot] of ['아침', '점심', '저녁', '자기전'].entries()) {

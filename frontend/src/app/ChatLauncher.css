@@ -3,17 +3,31 @@
   width: 60px;
   height: 60px;
   padding: 0;
-  border: 3px solid var(--color-primary);
+  border: 0;
   border-radius: 50% 50% 14px 50%;
-  background: var(--color-card);
+  background: var(--color-primary);
   box-shadow: 0 4px 0 var(--color-primary-strong), 0 9px 16px rgb(0 44 104 / 22%);
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
+/* One continuous speech bubble, rather than a second badge on the portrait. */
+.chat-launcher::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -5px;
+  width: 18px;
+  height: 18px;
+  background: var(--color-primary);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+  pointer-events: none;
+}
+
 .chat-launcher-portrait {
   position: absolute;
-  inset: 1px;
+  z-index: 1;
+  inset: 4px;
   overflow: hidden;
   border-radius: inherit;
 }
@@ -28,22 +42,6 @@
   height: 80px;
   object-fit: contain;
   transform: translate(-50%, -50%);
-}
-
-.chat-launcher-indicator {
-  position: absolute;
-  right: -5px;
-  bottom: -3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 25px;
-  height: 23px;
-  border: 2px solid var(--color-card);
-  border-radius: 9px;
-  color: var(--color-primary-foreground);
-  background: var(--color-primary);
-  box-shadow: 0 2px 3px rgb(0 44 104 / 16%);
 }
 
 @media (hover: hover) {

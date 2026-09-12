@@ -74,9 +74,7 @@ export function CustomChallengeRecommendationsPage() {
       {items?.map(item => {
         const kind = kindPath(item.challengeType);
         if (!kind) return null;
-        const available = item.challengeType === 'MEDICATION'
-          ? item.targets.filter(target => target.existingParticipationId === null).length
-          : item.targets.length;
+        const available = item.targets.filter(target => target.existingParticipationId === null).length;
         return (
           <Link
             key={item.templateId}

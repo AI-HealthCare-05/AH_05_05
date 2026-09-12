@@ -438,6 +438,38 @@ class TestAlarmWorker(TestCase):
         self.push_service.send.assert_awaited_once()
         assert await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.SENT).count() == 1
 
+    async def test_failure_deadlock_retries_database_without_resending_push(self):
+        subscription = await self.create_subscription()
+        job = await self.create_job(subscription)
+        self.push_service.build_payload.return_value = {"title": "알림"}
+        self.push_service.send.return_value = PushResult(
+            PushResultKind.EXPIRED,
+            410,
+            "PUSH_SUBSCRIPTION_EXPIRED",
+        )
+        original_save = PushSubscription.save
+        attempts = 0
+
+        async def flaky_save(instance, *args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OperationalError(1213, "Deadlock found")
+            return await original_save(instance, *args, **kwargs)
+
+        with patch.object(PushSubscription, "save", autospec=True, side_effect=flaky_save):
+            await send_alarm_push(
+                self.context(), job.id, self.alarm.id, subscription.id, self.alarm.next_trigger_at.isoformat()
+            )
+
+        await subscription.refresh_from_db()
+        await job.refresh_from_db()
+        assert subscription.is_active is False
+        assert job.status == BackgroundJobStatus.FAILED
+        assert attempts == 2
+        self.push_service.send.assert_awaited_once()
+        assert await AlarmEvent.filter(alarm=self.alarm, event_type=AlarmEventType.FAILED).count() == 1
+
     async def test_recovery_closes_stalled_processing_without_resending(self):
         subscription = await self.create_subscription()
         job = await self.create_job(subscription)
