@@ -79,13 +79,15 @@ async def list_medication_notes(
 @medication_resource_router.get(
     "/notes/episodes",
     response_model=list[MedicationNoteEpisodeResponse],
+    response_model_exclude_unset=True,
     summary="복약 메모 필터 처방 목록 조회",
 )
 async def list_medication_note_episodes(
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[MedicationService, Depends(get_medication_service)],
+    include_without_notes: Annotated[bool, Query(alias="includeWithoutNotes")] = False,
 ) -> list[MedicationNoteEpisodeResponse]:
-    return await service.list_note_episodes(user)
+    return await service.list_note_episodes(user, include_without_notes=include_without_notes)
 
 
 @medication_resource_router.post(
