@@ -511,14 +511,9 @@ export function ChatPage({
           ) : (
             <div key={index} className="flex min-w-0 max-w-[85%] justify-start gap-2">
               {showAvatar ? (
-                <img
-                  src="/images/rxvita-mark-128.png"
-                  alt=""
-                  aria-hidden
-                  className="mt-0.5 size-8 shrink-0"
-                  width={32}
-                  height={32}
-                />
+                <span aria-hidden className="chat-assistant-avatar mt-0.5 size-8 shrink-0">
+                  <img src="/images/default-profile.png" alt="" />
+                </span>
               ) : (
                 <span aria-hidden className="size-8 shrink-0" />
               )}
@@ -548,14 +543,9 @@ export function ChatPage({
 
         {(chatRequestPending || pending) && (
           <div className="flex max-w-[85%] justify-start gap-2">
-            <img
-              src="/images/rxvita-mark-128.png"
-              alt=""
-              aria-hidden
-              className="mt-0.5 size-8 shrink-0"
-              width={32}
-              height={32}
-            />
+            <span aria-hidden className="chat-assistant-avatar mt-0.5 size-8 shrink-0">
+              <img src="/images/default-profile.png" alt="" />
+            </span>
             <p className="chat-pending-bubble rounded-card px-3.5 py-2.5 text-base text-muted-foreground">
               {progressMessage}
               <span

@@ -14,6 +14,25 @@
   color: var(--color-muted-foreground);
 }
 
+.chat-assistant-avatar {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-card);
+}
+
+.chat-assistant-avatar img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  max-width: none;
+  height: 44px;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+}
+
 .chat-pending-loader {
   display: inline-flex;
   flex-shrink: 0;

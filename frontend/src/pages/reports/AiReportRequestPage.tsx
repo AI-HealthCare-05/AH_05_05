@@ -55,7 +55,7 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
         <p className="break-keep text-sm leading-relaxed text-muted-foreground">등록한 복용약과 영양제를 함께 분석해요. 생성하기를 누르면 현재 복용 정보를 바탕으로 AI 보고서를 요청해요.</p>
         <p className="text-sm text-muted-foreground">보고서는 저장되지 않아요.</p>
       </section>}
-      {pending && <p role="status" className="text-sm text-primary">보고서를 생성·검증하고 있어요. 내용 보정이 필요하면 최대 2분 정도 걸릴 수 있어요.</p>}
+      {pending && <p role="status" className="text-sm text-primary">보고서 생성 중 (최대 2분 소요)…</p>}
       {error && <p role="alert" className="rounded-card border border-border bg-card p-4 text-sm text-foreground">{error}</p>}
       {report?.reportStatus === 'EMPTY' ? <section className="space-y-4 rounded-card bg-card p-5 shadow-card">
         <h2 className="text-lg font-bold">분석할 복용 정보가 없어요</h2>
@@ -66,7 +66,7 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
         {report && report.reportStatus !== 'EMPTY' ? <>
           <Button disabled aria-describedby="report-email-help">이메일로 받기</Button>
           <p id="report-email-help" className="text-center text-xs text-muted-foreground">이메일 발송 기능은 준비 중이에요.</p>
-        </> : <Button onClick={() => void generate()} disabled={pending} loading={pending}>{pending ? '보고서 생성 중' : error ? '다시 시도' : '보고서 생성하기'}</Button>}
+        </> : <Button onClick={() => void generate()} disabled={pending} aria-busy={pending || undefined}>{pending ? '보고서 생성 중' : error ? '다시 시도' : '보고서 생성하기'}</Button>}
         <Button variant="secondary" onClick={() => navigate(`/${source}`)}>{source === 'medications' ? '복약으로 돌아가기' : '영양제로 돌아가기'}</Button>
       </div>
     </main>
