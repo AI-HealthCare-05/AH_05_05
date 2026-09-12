@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useSession } from '@/app/SessionContext';
@@ -29,10 +29,13 @@ import {
   ErrorDialog,
   Header,
   RxVitaFeatureCarousel,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   type TabKey,
 } from '@/shared/ui';
 import { LoginPromptSheet } from './LoginPromptSheet';
-import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
 import { LoadingState } from '@/shared/ui/LoadingState';
 import { SmoothHeight } from '@/shared/ui/SmoothHeight';
 import { MedicationTimeline, type DoseChangeResult } from './MedicationTimeline';
@@ -405,22 +408,18 @@ export function HomePage({
 
       <main tabIndex={0} aria-label="홈 콘텐츠" className={`rx-home-content min-h-0 flex flex-1 flex-col overflow-y-auto px-page-x py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary ${isAuthenticated ? 'rx-home-content--authenticated gap-5' : 'gap-3'}`}>
         {isAuthenticated ? (
-          <>
-            <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab} />
+          <HomeSectionTabs activeTab={homeTab} onChange={setHomeTab}>
             <SmoothHeight>
             {homeTab === 'medication' && (medicationLoadError || doseLoadError) ? (
-              <Card title="복약 정보를 불러오지 못했어요">
-                {medicationLoadError ?? doseLoadError}
-              </Card>
+              <HomeSectionPanel value="medication">
+                <Card title="복약 정보를 불러오지 못했어요">
+                  {medicationLoadError ?? doseLoadError}
+                </Card>
+              </HomeSectionPanel>
             ) : homeTab === 'supplement' || (resolvedMedicationState && pageDataReady) ? (
               <>
                 {homeTab === 'medication' && resolvedMedicationState ? (
-                  <div
-                    id="home-panel-medication"
-                    role="tabpanel"
-                    aria-labelledby="home-tab-medication"
-                    className="motion-safe:animate-[rx-overlay-in_200ms_ease-out]"
-                  >
+                  <HomeSectionPanel value="medication" className="motion-safe:animate-[rx-overlay-in_200ms_ease-out]">
                     <LoggedInMedicationContent
                       state={resolvedMedicationState}
                       overviews={medicationOverviews ?? []}
@@ -435,13 +434,9 @@ export function HomePage({
                       onMemo={() => navigate('/medications/notes/new', { state: { entry: 'home' } })}
                       onUpload={() => navigate('/document-upload')}
                     />
-                  </div>
+                  </HomeSectionPanel>
                 ) : (
-                  <div
-                    id="home-panel-supplement"
-                    role="tabpanel"
-                    aria-labelledby="home-tab-supplement"
-                  >
+                  <HomeSectionPanel value="supplement">
                     <SupplementTodayCard
                       key={currentDate}
                       supplements={registeredSupplements}
@@ -451,13 +446,15 @@ export function HomePage({
                       onRetry={() => setSupplementReloadKey(key => key + 1)}
                       onBrowse={() => navigate('/supplements?tab=browse')}
                     />
-                  </div>
+                  </HomeSectionPanel>
                 )}
               </>
             ) : (
-              <LoadingState label="복약 정보 불러오는 중">
-                오늘의 복약 정보를 불러오고 있어요.
-              </LoadingState>
+              <HomeSectionPanel value="medication">
+                <LoadingState label="복약 정보 불러오는 중">
+                  오늘의 복약 정보를 불러오고 있어요.
+                </LoadingState>
+              </HomeSectionPanel>
             )}
             </SmoothHeight>
             <HomeChallengeSummary empty={challengeEmpty} />
@@ -472,7 +469,7 @@ export function HomePage({
                 }
               />
             )}
-          </>
+          </HomeSectionTabs>
         ) : (
           <>
             <GuestMedicationPrompt onLogin={() => navigate('/login')} />
@@ -522,21 +519,51 @@ export function HomePage({
 export function HomeSectionTabs({
   activeTab,
   onChange,
+  children,
 }: {
   activeTab: 'medication' | 'supplement';
   onChange: (tab: 'medication' | 'supplement') => void;
+  children?: ReactNode;
 }) {
   return (
-    <ContinuousTabs
-      className="rx-home-tab-layout"
-      label="오늘의 홈 탭"
+    <Tabs
+      className="rx-home-tab-layout gap-5"
       value={activeTab}
-      onChange={onChange}
-      items={[
-        { value: 'medication', label: '오늘의 복약', id: 'home-tab-medication', controls: 'home-panel-medication' },
-        { value: 'supplement', label: '오늘의 영양제', id: 'home-tab-supplement', controls: 'home-panel-supplement' },
-      ]}
-    />
+      onValueChange={(value) => {
+        if (value === 'medication' || value === 'supplement') onChange(value);
+      }}
+    >
+      <TabsList aria-label="오늘의 홈 탭">
+        <TabsTrigger id="home-tab-medication" value="medication" aria-controls="home-panel-medication">
+          오늘의 복약
+        </TabsTrigger>
+        <TabsTrigger id="home-tab-supplement" value="supplement" aria-controls="home-panel-supplement">
+          오늘의 영양제
+        </TabsTrigger>
+      </TabsList>
+      {children}
+    </Tabs>
+  );
+}
+
+export function HomeSectionPanel({
+  value,
+  className,
+  children,
+}: {
+  value: 'medication' | 'supplement';
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <TabsContent
+      value={value}
+      id={`home-panel-${value}`}
+      aria-labelledby={`home-tab-${value}`}
+      className={className}
+    >
+      {children}
+    </TabsContent>
   );
 }
 
