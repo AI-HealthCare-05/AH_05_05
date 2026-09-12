@@ -12,6 +12,7 @@ import { Button } from '@/shared/ui/Button';
 import { Header } from '@/shared/ui/Header';
 import { LoadingState } from '@/shared/ui/LoadingState';
 import { apiAssetUrl } from '@/shared/api/assetUrl';
+import { navigateBackOrReplace } from '@/shared/lib/navigation';
 import { officialBadgeViews, type OfficialBadgeView } from './officialBadgeViews';
 
 async function loadOfficialBadges() {
@@ -54,12 +55,7 @@ export function OfficialChallengeBadgesPage() {
   const [customReloadKey, setCustomReloadKey] = useState(0);
 
   function goBack() {
-    const index = window.history.state?.idx;
-    if (typeof index === 'number' && index > 0) {
-      navigate(-1);
-      return;
-    }
-    navigate('/challenges', { replace: true });
+    navigateBackOrReplace(navigate, '/challenges');
   }
 
   useEffect(() => {

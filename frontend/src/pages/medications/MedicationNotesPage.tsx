@@ -13,6 +13,7 @@ import {
 import { useSession } from '@/app/SessionContext';
 import { getAuthGeneration } from '@/shared/api/client';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
+import { navigateBackOrReplace, trustedBackTarget } from '@/shared/lib/navigation';
 import {
   BottomTabbar,
   Button,
@@ -53,6 +54,7 @@ export function MedicationNotesPage() {
   const location = useLocation();
   const enteredFromMedications =
     (location.state as { entry?: unknown } | null)?.entry === 'medications';
+  const myReturnTarget = trustedBackTarget(location.state, ['/my', '/dev/my-authenticated']);
   const [searchParams, setSearchParams] = useSearchParams();
   const { principalKey } = useSession();
   const [page, setPage] = useState<MedicationNotePage | null>(null);
@@ -337,7 +339,8 @@ export function MedicationNotesPage() {
   }
 
   function returnToMedications() {
-    if (enteredFromMedications) navigate(-1);
+    if (enteredFromMedications) navigateBackOrReplace(navigate, '/medications');
+    else if (myReturnTarget !== null) navigateBackOrReplace(navigate, myReturnTarget);
     else navigate('/medications', { replace: true, state: { entry: 'direct-note-exit' } });
   }
 
