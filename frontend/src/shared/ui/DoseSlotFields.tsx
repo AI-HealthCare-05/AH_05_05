@@ -71,7 +71,7 @@ export function DoseSlotFields({
                 type="button"
                 aria-pressed={selected}
                 className={cn(
-                  'min-h-touch rounded-input border px-1 text-sm font-bold',
+                  'rx-dose-slot min-h-touch rounded-input border px-1 text-sm font-bold',
                   selected
                     ? 'border-primary bg-[var(--color-primary)] text-card'
                     : 'border-border bg-card text-muted-foreground',

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
+import { expectSelectedSlotDepth } from './helpers/doseSlotDepth';
 
 const LONG_RANKING_NAME = `매일 챙겨 먹는 ${'아주긴영양제이름'.repeat(8)}`;
 
@@ -250,9 +251,44 @@ test('마지막으로 누른 복용 시간도 다른 선택 시간과 같은 배
     .locator('button[aria-pressed="true"]')
     .evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).backgroundImage));
   expect(new Set(selectedBackgrounds).size).toBe(1);
+  await expectSelectedSlotDepth(product.locator('button[aria-pressed="true"]'));
   await lunch.focus();
   await expect(lunch).toBeFocused();
 });
+
+for (const width of [375, 390, 1280]) {
+  test(`영양제 편집 선택 시간은 입체감과 동일한 선택색을 유지한다 (${width}px)`, async ({ page }, testInfo) => {
+    await routeSupplementList(page);
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/dev/supplements');
+    await page.getByRole('region', { name: '먹고 있는 영양제' })
+      .getByRole('button', { name: /테스트 종합 영양제/ }).click();
+    const editor = page.getByRole('dialog', { name: PRODUCT.name });
+    const slots = editor.getByRole('group', { name: '복용 시간' });
+    const lunch = slots.getByRole('button', { name: '점심', exact: true });
+    if (testInfo.project.use.hasTouch) await lunch.tap();
+    else {
+      await lunch.click();
+      await lunch.hover();
+    }
+    await expectSelectedSlotDepth(slots.locator('button[aria-pressed="true"]'));
+    await page.keyboard.press('Tab');
+    await lunch.focus();
+    await expect(lunch).toBeFocused();
+    await expect(lunch).toHaveCSS('outline-style', 'solid');
+    await expect(lunch).toHaveCSS('outline-width', '2px');
+    await expectSelectedSlotDepth(slots.locator('button[aria-pressed="true"]'));
+    await slots.scrollIntoViewIfNeeded();
+    if (width === 390) {
+      await page.screenshot({ path: testInfo.outputPath('426-supplement-edit-depth-390.png') });
+    }
+    await lunch.click();
+    await expect(lunch).toHaveAttribute('aria-pressed', 'false');
+    await expect(lunch).toHaveCSS('background-image', 'none');
+    await expect(lunch).toHaveCSS('box-shadow', 'none');
+    await expectSelectedSlotDepth(slots.locator('button[aria-pressed="true"]'));
+  });
+}
 
 test('작은 화면에서 선택한 제품 카드의 상세 정보와 추가 버튼이 잘리지 않는다', async ({
   page,
