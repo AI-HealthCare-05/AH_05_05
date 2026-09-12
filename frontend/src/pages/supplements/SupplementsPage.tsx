@@ -25,7 +25,6 @@ import {
   Card,
   ErrorDialog,
   Header,
-  StatusBadge,
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
@@ -414,11 +413,6 @@ export function SupplementsPage({
                             <span className="min-w-0 flex-1">
                               <span className="flex min-w-0 items-start gap-2">
                                 <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">{supplement.name}</strong>
-                                {!supplement.nutrientDataAvailable && (
-                                  <StatusBadge type="done" className="shrink-0 px-2.5 py-1 text-xs">
-                                    성분 정보 없음
-                                  </StatusBadge>
-                                )}
                               </span>
                               <span className="block text-sm text-muted-foreground">
                                 하루 {supplement.slots.length}회 · 1회 {formatDoseAmount(supplement.doseAmount)}
@@ -558,30 +552,37 @@ function NutrientTotalCard({
 }) {
   const evaluation = evaluateNutrientStandard(total);
   const isOverUpperLimit = showStandards && evaluation.status === 'over-upper-limit';
+  const hasStatus = showStandards && evaluation.status !== 'unrated';
 
   const content = (
-    <div className="flex flex-col gap-4">
-      <div
-        data-testid="nutrient-total-summary"
-        className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
-      >
-        <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
-        <strong
-          className={`text-lg font-bold tnum ${
-            isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
-          }`}
-        >
-          {numberFormat.format(total.amount)}
-        </strong>
-        <span className="text-unit text-muted-foreground">{total.unit}</span>
-      </div>
-
-      {showStandards && (
-        <div className="flex flex-col gap-1">
-          <StandardStatus total={total} />
-          {(evaluation.base !== null || total.ul !== null) && <NutrientRangeBar total={total} />}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-0">
+        <div data-testid="nutrient-total-header" className="relative mx-1 min-h-7">
+          <div
+            data-testid="nutrient-total-summary"
+            className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 ${
+              hasStatus ? 'max-w-[60%]' : 'max-w-full'
+            }`}
+          >
+            <h3 className="[overflow-wrap:anywhere] text-lg font-bold text-foreground">
+              {total.name}
+            </h3>
+            <strong
+              className={`text-lg font-bold tnum ${
+                isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
+              }`}
+            >
+              {numberFormat.format(total.amount)}
+            </strong>
+            <span className="text-unit text-muted-foreground">{total.unit}</span>
+          </div>
+          {showStandards && <StandardStatus total={total} />}
         </div>
-      )}
+
+        {showStandards && (evaluation.base !== null || total.ul !== null) && (
+          <NutrientRangeBar total={total} />
+        )}
+      </div>
 
       <details className="group text-sm text-muted-foreground">
         <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 rounded-control py-1 font-bold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -641,17 +642,15 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
 
   const upperLimitPosition = rangePositions(total, evaluation.base).upper;
   return (
-    <div className="relative mx-1 h-5">
-      <p
-        data-nutrient-status
-        className={`absolute top-0 whitespace-nowrap text-right text-sm ${
-          upperLimitPosition === null ? 'right-0' : '-translate-x-1/2'
-        } ${evaluation.status === 'over-upper-limit' ? 'font-bold text-danger-strong' : 'text-muted-foreground'}`}
-        style={upperLimitPosition === null ? undefined : { left: `${upperLimitPosition}%` }}
-      >
-        {statusLabel}
-      </p>
-    </div>
+    <p
+      data-nutrient-status
+      className={`absolute top-0 whitespace-nowrap text-right text-sm ${
+        upperLimitPosition === null ? 'right-0' : '-translate-x-1/2'
+      } ${evaluation.status === 'over-upper-limit' ? 'font-bold text-danger-strong' : 'text-muted-foreground'}`}
+      style={upperLimitPosition === null ? undefined : { left: `${upperLimitPosition}%` }}
+    >
+      {statusLabel}
+    </p>
   );
 }
 

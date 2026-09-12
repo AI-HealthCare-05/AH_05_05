@@ -1152,13 +1152,13 @@ test('직접 입력으로 등록하면 목록에 뜨고 성분 합계에서 제�
   const manualCard = page
     .getByRole('region', { name: '먹고 있는 영양제' })
     .getByRole('button', { name: /실 API 직접 입력 오메가3/ });
-  await expect(manualCard).toContainText('성분 정보 없음');
+  await expect(manualCard.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
   ).toBeVisible();
 });
 
-test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async ({ page }) => {
+test('직접 입력 제품의 성분 정보 없음 배지를 숨기고 합계 제외 안내는 유지한다', async ({ page }) => {
   await authenticate(page);
   await page.route('**/api/v1/med/user-suppl-nutr**', async (route) => {
     await fulfillJson(route, {
@@ -1199,10 +1199,10 @@ test('직접 입력 제품에 성분 정보 없음 배지가 보인다', async (
   const manualCard = page
     .getByRole('region', { name: '먹고 있는 영양제' })
     .getByRole('button', { name: /성분 없는 직접 입력 제품/ });
-  await expect(manualCard).toContainText('성분 정보 없음');
+  await expect(manualCard.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
   await expect(manualCard).toContainText('하루 1회 · 1회 2캡슐 · 자기전');
   await expect(page.getByRole('region', { name: '성분 합계' }).getByRole('article')).toHaveCount(0);
   await expect(
-    page.getByText('직접 입력한 1개는 성분을 알 수 없어 합계에 포함하지 않았어요.'),
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),
   ).toBeVisible();
 });

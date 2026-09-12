@@ -239,7 +239,7 @@ test('검색하지 못한 제품은 이름만 직접 입력하고 성분 합계 
   const supplementList = page.getByRole('region', { name: '먹고 있는 영양제' });
   const manual = supplementList.getByRole('button').first();
   await expect(manual).toContainText('우리집 영양제');
-  await expect(manual).toContainText('성분 정보 없음');
+  await expect(manual.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
   await expect(manual).toContainText('하루 1회 · 1회 1정 · 자기전');
   await expect(
     page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.'),

@@ -12,7 +12,9 @@ test('성분명 옆 합계와 그래프 오른쪽 위의 기존 판정 문구를
 
   const totals = page.getByRole('region', { name: '성분 합계' });
   const vitaminA = totals.getByRole('article', { name: '비타민 A 성분 합계' });
+  const header = vitaminA.getByTestId('nutrient-total-header');
   const summary = vitaminA.getByTestId('nutrient-total-summary');
+  await expect(header).toBeVisible();
   await expect(summary).toContainText('비타민 A');
   await expect(summary).toContainText('3,200');
   await expect(summary).toContainText('µg RAE');
@@ -24,17 +26,64 @@ test('성분명 옆 합계와 그래프 오른쪽 위의 기존 판정 문구를
   const graph = vitaminA.locator('[data-nutrient-range]');
   const upperLimit = vitaminA.locator('[data-threshold="upper-limit"]');
   const statusBox = await status.boundingBox();
+  const summaryBox = await summary.boundingBox();
+  const headerBox = await header.boundingBox();
   const graphBox = await graph.boundingBox();
   const upperLimitBox = await upperLimit.boundingBox();
   expect(statusBox?.y).toBeLessThan(graphBox?.y ?? 0);
   const statusCenter = (statusBox?.x ?? 0) + (statusBox?.width ?? 0) / 2;
   const upperLimitCenter = (upperLimitBox?.x ?? 0) + (upperLimitBox?.width ?? 0) / 2;
   expect(Math.abs(statusCenter - upperLimitCenter)).toBeLessThanOrEqual(2);
+  expect(Math.abs((summaryBox?.y ?? 0) - (statusBox?.y ?? 0))).toBeLessThanOrEqual(8);
+  expect((graphBox?.y ?? 0) - ((headerBox?.y ?? 0) + (headerBox?.height ?? 0))).toBeLessThanOrEqual(8);
 
   const calcium = totals.getByRole('article', { name: '칼슘 성분 합계' });
   await expect(calcium.getByText('권장량의 50%예요', { exact: true })).toBeVisible();
   const vitaminD = totals.getByRole('article', { name: '비타민 D 성분 합계' });
   await expect(vitaminD.getByText('권장 범위예요', { exact: true })).toBeVisible();
+});
+
+test('긴 성분명과 전체 판정 문구를 좁은 화면에서 겹치거나 자르지 않는다', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/dev/supplements');
+
+  const calcium = page
+    .getByRole('region', { name: '성분 합계' })
+    .getByRole('article', { name: '칼슘 성분 합계' });
+  const header = calcium.getByTestId('nutrient-total-header');
+  const summary = calcium.getByTestId('nutrient-total-summary');
+  const status = calcium.getByText('권장량의 50%예요', { exact: true });
+  await calcium.getByRole('heading', { name: '칼슘' }).evaluate((element) => {
+    element.textContent = '해조칼슘복합추출물유래칼슘';
+  });
+
+  await expect(header).toContainText('해조칼슘복합추출물유래칼슘');
+  await expect(status).toHaveText('권장량의 50%예요');
+  const summaryBox = await summary.boundingBox();
+  const statusBox = await status.boundingBox();
+  const horizontallySeparated = (summaryBox?.x ?? 0) + (summaryBox?.width ?? 0) <= (statusBox?.x ?? 0);
+  const verticallySeparated = (summaryBox?.y ?? 0) + (summaryBox?.height ?? 0) <= (statusBox?.y ?? 0);
+  expect(horizontallySeparated || verticallySeparated).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('직접 입력 제품은 목록 배지를 숨기고 성분 합계 제외 안내는 유지한다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+  await page.getByRole('button', { name: '영양제 추가', exact: true }).last().click();
+  const sheet = page.getByRole('dialog');
+  await sheet.getByRole('searchbox', { name: '영양제 제품 검색' }).fill('없는제품-427');
+  await sheet.getByRole('button', { name: '직접 입력' }).first().click();
+  await sheet.getByRole('textbox', { name: '직접 입력 제품명' }).fill('직접 입력 테스트 영양제');
+  await sheet.getByRole('button', { name: '추가하기' }).click();
+
+  const manual = page
+    .getByRole('region', { name: '먹고 있는 영양제' })
+    .getByRole('button', { name: /직접 입력 테스트 영양제/ });
+  await expect(manual).toBeVisible();
+  await expect(manual.getByText('성분 정보 없음', { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.', { exact: true }),
+  ).toBeVisible();
 });
 
 test('성분 포함 제품을 접어서 제공하고 펼치면 제품명을 모두 보여준다', async ({ page }) => {
