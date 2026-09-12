@@ -35,11 +35,11 @@ async function openProduct(page: Page, overrides: Record<string, string | null> 
   await expect(page.getByRole('heading', { name: PRODUCT.name })).toBeVisible({ timeout: 60_000 });
 }
 
-for (const width of [375, 390, 1280]) {
+for (const width of [320, 375, 390, 1280]) {
   // Catches a transparent, flush-to-edge information section or accidental Card clay styling.
-  test(`제품 정보는 흰 사각 패널로 구분하고 성분 카드 입체감은 보존한다 (${width}px)`, async ({ page }, testInfo) => {
+  test(`제품 정보와 성분은 흰 사각 패널이고 추가 버튼 입체감은 보존한다 (${width}px)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 1280 ? 900 : 844 });
-    await openProduct(page);
+    await openProduct(page, { calcium_mg: null, fat_g: '1.00', vitamin_c_mg: '100.00' });
     const info = page.getByRole('region', { name: '제품 정보 상세' });
     await expect(info).toBeVisible();
     await expect(info.locator('dt')).toHaveText(['섭취 대상', '1회 섭취량', '하루 섭취 횟수']);
@@ -70,14 +70,23 @@ for (const width of [375, 390, 1280]) {
     expect(style.image).toBe('none');
 
     const ingredients = page.getByRole('region', { name: '성분', exact: true });
+    await expect(ingredients.locator('dt')).toHaveText(['지방', '비타민 C']);
+    await expect(ingredients.locator('dd')).toHaveText(['0.5 g', '50 mg']);
     await expect(ingredients.getByText('50 mg', { exact: true })).toBeVisible();
-    const cardStyle = await ingredients.locator('.rx-card').evaluate((card) => {
+    const cardStyle = await ingredients.locator(':scope > div').evaluate((card) => {
       const css = getComputedStyle(card);
-      return { radius: css.borderRadius, shadow: css.boxShadow, image: css.backgroundImage };
+      return { radius: css.borderRadius, shadow: css.boxShadow, image: css.backgroundImage, background: css.backgroundColor };
     });
-    expect(parseFloat(cardStyle.radius)).toBeGreaterThan(0);
-    expect(cardStyle.shadow).not.toBe('none');
-    expect(cardStyle.image).toContain('linear-gradient');
+    expect(cardStyle.radius).toBe('0px');
+    expect(cardStyle.shadow).toBe('none');
+    expect(cardStyle.image).toBe('none');
+    expect(cardStyle.background).toBe('rgb(255, 255, 255)');
+    await expect(ingredients.locator('dl > div').nth(1)).toHaveCSS('border-top-width', '1px');
+    const add = page.getByRole('button', { name: '내 영양제에 추가', exact: true });
+    await expect(add).toBeEnabled();
+    expect(await add.evaluate(element => getComputedStyle(element).boxShadow)).not.toBe('none');
+    expect(await add.evaluate(element => getComputedStyle(element).backgroundImage)).toContain('linear-gradient');
+    expect(await page.locator('main').evaluate(main => main.scrollWidth <= main.clientWidth)).toBe(true);
     await waitForVisibleImages(page);
     await page.screenshot({ path: testInfo.outputPath(`426-product-info-panel-${width}.png`), fullPage: true });
   });

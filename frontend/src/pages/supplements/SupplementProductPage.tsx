@@ -108,7 +108,7 @@ export function SupplementProductPage() {
               <h2 id="product-nutrients-title" className="text-xl font-bold text-foreground">
                 성분
               </h2>
-              <Card className="gap-0 overflow-hidden p-0">
+              <div className="overflow-hidden border border-border bg-card text-sm">
                 <dl aria-label="제품 성분">
                   {product.nutrients.map((nutrient) => (
                     <div
@@ -122,7 +122,7 @@ export function SupplementProductPage() {
                     </div>
                   ))}
                 </dl>
-              </Card>
+              </div>
             </section>
 
             <SupplementReviewSection productId={product.productId} />
