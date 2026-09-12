@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Plus } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
-import { toast } from 'sonner';
 import {
-  deleteMedicationNote,
   listMedicationNoteEpisodes,
   listMedicationNotes,
   type MedicationNote,
@@ -11,24 +9,27 @@ import {
   type MedicationNotePage,
 } from '@/entities/medication-note';
 import { useSession } from '@/app/SessionContext';
-import { getAuthGeneration } from '@/shared/api/client';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
 import {
   BottomTabbar,
   Button,
   Card,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   Header,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from '@/shared/ui';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { consumeSavedNoteFilter } from './medicationNoteReturnFilter';
 
-const INVALID_EPISODE_FILTER_VALUE = '__invalid_episode__';
+type NotesTab = 'withoutNotes' | 'withNotes';
+
+interface EpisodePageState {
+  page: MedicationNotePage | null;
+  error: string | null;
+  loadingMore: boolean;
+}
 
 function noteDateLabel(value: string): string {
   const date = value.slice(0, 10);
@@ -37,15 +38,24 @@ function noteDateLabel(value: string): string {
   return `${formatDateLabel(date)} ${time}`;
 }
 
-function filterEpisodeBaseLabel(episode: MedicationNoteEpisode): string {
-  if (episode.alias && episode.startDate) {
-    return `${episode.alias} · ${formatDateLabel(episode.startDate, { includeYear: true })}`;
-  }
+function episodeLabel(episode: MedicationNoteEpisode): string {
   if (episode.alias) return episode.alias;
   if (episode.startDate) {
     return `${formatDateLabel(episode.startDate, { includeYear: true })} 처방`;
   }
   return '처방';
+}
+
+function episodeMedicationSummary(episode: MedicationNoteEpisode): string {
+  const first = episode.representativeMedicationName?.trim();
+  if (!first) return '처방약 정보 없음';
+  const count = episode.medicationCount ?? 0;
+  return count > 1 ? `${first} 외 ${count - 1}개` : first;
+}
+
+function medicineLabel(note: MedicationNote): string {
+  if (note.medicationId === null) return '처방 전체';
+  return note.medication?.name ?? '삭제된 약';
 }
 
 export function MedicationNotesPage() {
@@ -55,285 +65,168 @@ export function MedicationNotesPage() {
     (location.state as { entry?: unknown } | null)?.entry === 'medications';
   const [searchParams, setSearchParams] = useSearchParams();
   const { principalKey } = useSession();
-  const [page, setPage] = useState<MedicationNotePage | null>(null);
-  const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-  const [episodeOptions, setEpisodeOptions] = useState<MedicationNoteEpisode[] | null>(null);
-  const [episodeOptionsError, setEpisodeOptionsError] = useState<string | null>(null);
-  const [episodeOptionsRetryKey, setEpisodeOptionsRetryKey] = useState(0);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<number>>(new Set());
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletePending, setDeletePending] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [deleteTargets, setDeleteTargets] = useState<number[]>([]);
   const episodeIdParam = searchParams.get('episodeId');
   const parsedEpisodeId = episodeIdParam === null ? undefined : Number(episodeIdParam);
-  const episodeId =
+  const selectedEpisodeId =
     parsedEpisodeId !== undefined && Number.isSafeInteger(parsedEpisodeId) && parsedEpisodeId > 0
       ? parsedEpisodeId
       : undefined;
-  const invalidEpisodeFilter = episodeIdParam !== null && episodeId === undefined;
-  const formEntry = {
-    entry: 'notes', fromMedications: enteredFromMedications,
-    listKey: location.key, initialEpisodeId: episodeId,
-    referenceNoteId: episodeId === undefined ? undefined
-      : page?.items.find((note) => note.careEpisodeId === episodeId)?.id,
-  };
+  const invalidEpisodeId = episodeIdParam !== null && selectedEpisodeId === undefined;
+  const [tab, setTab] = useState<NotesTab>(selectedEpisodeId ? 'withNotes' : 'withoutNotes');
+  const [expandedEpisodeId, setExpandedEpisodeId] = useState<number | null>(selectedEpisodeId ?? null);
+  const [noteEpisodes, setNoteEpisodes] = useState<MedicationNoteEpisode[] | null>(null);
+  const [noteEpisodesError, setNoteEpisodesError] = useState<string | null>(null);
+  const [metadataRetryKey, setMetadataRetryKey] = useState(0);
+  const [episodePages, setEpisodePages] = useState<Record<number, EpisodePageState>>({});
+  const metadataGenerationRef = useRef(0);
+  const episodeRequestGenerationRef = useRef(new Map<number, number>());
+  const principalKeyRef = useRef(principalKey);
+  principalKeyRef.current = principalKey;
+
   useEffect(() => {
     const savedEpisodeId = consumeSavedNoteFilter(location.key, principalKey);
     if (savedEpisodeId !== null) {
       setSearchParams({ episodeId: String(savedEpisodeId) }, { replace: true, state: location.state });
     }
   }, [location.key, location.state, principalKey, setSearchParams]);
-  const episodeFilterValue = invalidEpisodeFilter
-    ? INVALID_EPISODE_FILTER_VALUE
-    : episodeId === undefined ? '' : String(episodeId);
-  const requestGenerationRef = useRef(0);
-  const optionRequestGenerationRef = useRef(0);
-  const deleteGenerationRef = useRef(0);
-  const deletePendingRef = useRef(false);
-  const principalKeyRef = useRef(principalKey);
-  principalKeyRef.current = principalKey;
 
   useEffect(() => {
-    let cancelled = false;
+    const generation = metadataGenerationRef.current + 1;
+    metadataGenerationRef.current = generation;
     const requestPrincipal = principalKey;
-    const requestGeneration = optionRequestGenerationRef.current + 1;
-    optionRequestGenerationRef.current = requestGeneration;
-    setEpisodeOptions(null);
-    setEpisodeOptionsError(null);
-    listMedicationNoteEpisodes()
-      .then((options) => {
-        if (
-          cancelled ||
-          optionRequestGenerationRef.current !== requestGeneration ||
-          principalKeyRef.current !== requestPrincipal
-        ) return;
-        setEpisodeOptions(options);
+    setNoteEpisodes(null);
+    setNoteEpisodesError(null);
+    setEpisodePages({});
+    episodeRequestGenerationRef.current.clear();
+
+    void listMedicationNoteEpisodes({ includeWithoutNotes: true })
+      .then((episodes) => {
+        if (metadataGenerationRef.current === generation && principalKeyRef.current === requestPrincipal) {
+          setNoteEpisodes(episodes);
+        }
       })
       .catch(() => {
-        if (
-          !cancelled &&
-          optionRequestGenerationRef.current === requestGeneration &&
-          principalKeyRef.current === requestPrincipal
-        ) {
-          setEpisodeOptionsError('필터용 처방 목록을 불러오지 못했어요.');
+        if (metadataGenerationRef.current === generation && principalKeyRef.current === requestPrincipal) {
+          setNoteEpisodesError('메모가 있는 처방을 불러오지 못했어요.');
         }
       });
     return () => {
-      cancelled = true;
-      if (optionRequestGenerationRef.current === requestGeneration) {
-        optionRequestGenerationRef.current += 1;
-      }
+      if (metadataGenerationRef.current === generation) metadataGenerationRef.current += 1;
+      episodeRequestGenerationRef.current.clear();
     };
-  }, [episodeOptionsRetryKey, principalKey]);
+  }, [metadataRetryKey, principalKey]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const requestGeneration = requestGenerationRef.current + 1;
-    requestGenerationRef.current = requestGeneration;
-    const deleteGeneration = deleteGenerationRef.current + 1;
-    deleteGenerationRef.current = deleteGeneration;
-    deletePendingRef.current = false;
-    setPage(null);
-    setInitialLoadError(null);
-    setLoadMoreError(null);
-    setLoadingMore(false);
-    setSelectionMode(false);
-    setSelectedNoteIds(new Set());
-    setDeleteOpen(false);
-    setDeletePending(false);
-    setDeleteError(null);
-    setDeleteTargets([]);
-    const cancelRequest = () => {
-      cancelled = true;
-      if (requestGenerationRef.current === requestGeneration) {
-        requestGenerationRef.current += 1;
-      }
-      if (deleteGenerationRef.current === deleteGeneration) {
-        deleteGenerationRef.current += 1;
-      }
-      deletePendingRef.current = false;
-    };
-    if (invalidEpisodeFilter) {
-      setPage({ items: [], total: 0, nextCursor: null });
-      return cancelRequest;
-    }
-    listMedicationNotes({ episodeId })
-      .then((nextPage) => {
-        if (cancelled || requestGenerationRef.current !== requestGeneration) return;
-        setPage(nextPage);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled && requestGenerationRef.current === requestGeneration) {
-          setInitialLoadError(error instanceof Error ? error.message : '복약 메모를 불러오지 못했어요.');
-        }
-      });
-    return cancelRequest;
-  }, [episodeId, invalidEpisodeFilter, principalKey, retryKey]);
-
-  async function loadMore() {
-    if (!page?.nextCursor || loadingMore || selectionMode || deletePendingRef.current) return;
-    const requestGeneration = requestGenerationRef.current;
-    const requestedCursor = page.nextCursor;
-    setLoadingMore(true);
-    setLoadMoreError(null);
+  const loadEpisodePage = useCallback(async (id: number, cursor?: string) => {
+    const requestPrincipal = principalKey;
+    const requestGeneration = (episodeRequestGenerationRef.current.get(id) ?? 0) + 1;
+    episodeRequestGenerationRef.current.set(id, requestGeneration);
+    setEpisodePages((current) => ({
+      ...current,
+      [id]: {
+        page: cursor ? current[id]?.page ?? null : null,
+        error: null,
+        loadingMore: cursor !== undefined,
+      },
+    }));
     try {
-      const nextPage = await listMedicationNotes({ episodeId, cursor: requestedCursor });
-      if (requestGenerationRef.current !== requestGeneration) return;
-      setPage((current) => {
-        if (!current) return nextPage;
-        const existingIds = new Set(current.items.map((note) => note.id));
+      const nextPage = await listMedicationNotes({ episodeId: id, ...(cursor ? { cursor } : {}) });
+      if (
+        episodeRequestGenerationRef.current.get(id) !== requestGeneration ||
+        principalKeyRef.current !== requestPrincipal
+      ) return;
+      setEpisodePages((current) => {
+        const previous = cursor ? current[id]?.page : null;
+        const existingIds = new Set(previous?.items.map((item) => item.id) ?? []);
         return {
-          items: [...current.items, ...nextPage.items.filter((note) => !existingIds.has(note.id))],
-          total: nextPage.total,
-          nextCursor: nextPage.nextCursor,
+          ...current,
+          [id]: {
+            page: previous
+              ? {
+                  items: [...previous.items, ...nextPage.items.filter((item) => !existingIds.has(item.id))],
+                  total: nextPage.total,
+                  nextCursor: nextPage.nextCursor,
+                }
+              : nextPage,
+            error: null,
+            loadingMore: false,
+          },
         };
       });
     } catch (error: unknown) {
-      if (requestGenerationRef.current !== requestGeneration) return;
-      setLoadMoreError(error instanceof Error ? error.message : '복약 메모를 더 불러오지 못했어요.');
-    } finally {
-      if (requestGenerationRef.current === requestGeneration) setLoadingMore(false);
+      if (
+        episodeRequestGenerationRef.current.get(id) !== requestGeneration ||
+        principalKeyRef.current !== requestPrincipal
+      ) return;
+      setEpisodePages((current) => ({
+        ...current,
+        [id]: {
+          page: current[id]?.page ?? null,
+          error: error instanceof Error ? error.message : '건강상태 기록을 불러오지 못했어요.',
+          loadingMore: false,
+        },
+      }));
+    }
+  }, [principalKey]);
+
+  useEffect(() => {
+    if (!selectedEpisodeId || !noteEpisodes) return;
+    const selectedEpisode = noteEpisodes.find((episode) => episode.careEpisodeId === selectedEpisodeId);
+    if (!selectedEpisode) return;
+    const hasNotes = (selectedEpisode.noteCount ?? 0) > 0;
+    setTab(hasNotes ? 'withNotes' : 'withoutNotes');
+    setExpandedEpisodeId(selectedEpisodeId);
+    if (hasNotes && !episodePages[selectedEpisodeId]) void loadEpisodePage(selectedEpisodeId);
+  }, [episodePages, loadEpisodePage, noteEpisodes, selectedEpisodeId]);
+
+  const episodesWithNotesIds = useMemo(
+    () => new Set(noteEpisodes?.filter((episode) => (episode.noteCount ?? 0) > 0).map((episode) => episode.careEpisodeId) ?? []),
+    [noteEpisodes],
+  );
+  const episodesWithoutNotes = useMemo(
+    () => noteEpisodes?.filter((episode) => !episodesWithNotesIds.has(episode.careEpisodeId)) ?? [],
+    [noteEpisodes, episodesWithNotesIds],
+  );
+  const episodesWithNotes = useMemo(
+    () => noteEpisodes?.filter((episode) => episodesWithNotesIds.has(episode.careEpisodeId)) ?? [],
+    [noteEpisodes, episodesWithNotesIds],
+  );
+  const selectedEpisodeMissing = selectedEpisodeId !== undefined && noteEpisodes !== null &&
+    !noteEpisodes.some((episode) => episode.careEpisodeId === selectedEpisodeId);
+
+  function formEntry(id?: number) {
+    return {
+      entry: 'notes',
+      fromMedications: enteredFromMedications,
+      listKey: location.key,
+      initialEpisodeId: id,
+      referenceNoteId: id === undefined ? undefined : episodePages[id]?.page?.items[0]?.id,
+    };
+  }
+
+  function openNewNote(id?: number) {
+    navigate('/medications/notes/new', { state: formEntry(id) });
+  }
+
+  function changeTab(value: string) {
+    const next = value as NotesTab;
+    setTab(next);
+    setExpandedEpisodeId(null);
+    if (next === 'withoutNotes' && episodeIdParam !== null) {
+      setSearchParams({}, { replace: true, state: location.state });
     }
   }
 
-  const notes = page?.items ?? [];
-  const notesHeading = page ? `복약 메모 ${page.total}개` : '복약 메모 목록';
-  const optionBaseLabels = episodeOptions?.map(filterEpisodeBaseLabel) ?? [];
-  const optionLabelCounts = new Map<string, number>();
-  for (const label of optionBaseLabels) {
-    optionLabelCounts.set(label, (optionLabelCounts.get(label) ?? 0) + 1);
-  }
-  const optionMedicationLabels = (episodeOptions ?? []).map((episode, index) => {
-    const baseLabel = optionBaseLabels[index];
-    const medicationName = episode.representativeMedicationName?.trim();
-    if (optionLabelCounts.get(baseLabel) === 1 || !medicationName) return baseLabel;
-    const remaining = Number.isSafeInteger(episode.medicationCount) && (episode.medicationCount ?? 0) > 1
-      ? ` 외 ${episode.medicationCount! - 1}개` : '';
-    return `${baseLabel} · ${medicationName}${remaining}`;
-  });
-  const fullLabelCounts = new Map<string, number>();
-  for (const label of optionMedicationLabels) {
-    fullLabelCounts.set(label, (fullLabelCounts.get(label) ?? 0) + 1);
-  }
-  const labelOrdinals = new Map<string, number>();
-  const optionLabels = optionMedicationLabels.map((label) => {
-    if (fullLabelCounts.get(label) === 1) return label;
-    const ordinal = (labelOrdinals.get(label) ?? 0) + 1;
-    labelOrdinals.set(label, ordinal);
-    return `${label} · 처방 ${ordinal}`;
-  });
-  const selectedEpisodeIsMissing = episodeId !== undefined &&
-    episodeOptions !== null &&
-    !episodeOptions.some((episode) => episode.careEpisodeId === episodeId);
-
-  function leaveSelectionMode() {
-    if (deletePendingRef.current) return;
-    setSelectionMode(false);
-    setSelectedNoteIds(new Set());
-    setDeleteOpen(false);
-    setDeleteError(null);
-    setDeleteTargets([]);
-  }
-
-  function toggleSelected(noteId: number) {
-    setSelectedNoteIds((current) => {
-      const next = new Set(current);
-      if (next.has(noteId)) next.delete(noteId);
-      else next.add(noteId);
-      return next;
-    });
-  }
-
-  function openDeleteConfirmation() {
-    const targets = notes.filter((note) => selectedNoteIds.has(note.id)).map((note) => note.id);
-    if (targets.length === 0) return;
-    setDeleteTargets(targets);
-    setDeleteError(null);
-    setDeleteOpen(true);
-  }
-
-  async function deleteSelectedNotes(noteIds: number[]) {
-    if (deletePendingRef.current || noteIds.length === 0) return;
-    const mutationPrincipal = principalKey;
-    const mutationGeneration = deleteGenerationRef.current;
-    const mutationAuthGeneration = getAuthGeneration();
-    const mutationIsCurrent = () =>
-      deleteGenerationRef.current === mutationGeneration &&
-      principalKeyRef.current === mutationPrincipal &&
-      getAuthGeneration() === mutationAuthGeneration;
-    deletePendingRef.current = true;
-    setDeletePending(true);
-    setDeleteError(null);
-    const succeeded: number[] = [];
-    const failed: number[] = [];
-
-    try {
-      for (const noteId of noteIds) {
-        if (!mutationIsCurrent()) return;
-        try {
-          await deleteMedicationNote(String(noteId));
-          if (!mutationIsCurrent()) return;
-          succeeded.push(noteId);
-        } catch {
-          if (!mutationIsCurrent()) return;
-          failed.push(noteId);
-        }
-      }
-
-      if (!mutationIsCurrent()) return;
-
-      if (succeeded.length > 0) {
-        const succeededIds = new Set(succeeded);
-        setPage((current) => current && ({
-          ...current,
-          items: current.items.filter((note) => !succeededIds.has(note.id)),
-          total: Math.max(0, current.total - succeeded.length),
-        }));
-        setEpisodeOptionsRetryKey((current) => current + 1);
-      }
-
-      if (failed.length === 0) {
-        setDeleteOpen(false);
-        setSelectionMode(false);
-        setSelectedNoteIds(new Set());
-        setDeleteTargets([]);
-        toast.success(`${succeeded.length}개를 삭제했어요`);
-      } else if (succeeded.length > 0) {
-        setDeleteOpen(false);
-        setSelectedNoteIds(new Set(failed));
-        setDeleteTargets(failed);
-        toast.warning(`${succeeded.length}개를 삭제했어요. ${failed.length}개는 실패했어요`);
-      } else {
-        setSelectedNoteIds(new Set(failed));
-        setDeleteTargets(failed);
-        setDeleteError('선택한 복약 메모를 삭제하지 못했어요. 다시 시도해주세요.');
-      }
-    } finally {
-      if (deleteGenerationRef.current === mutationGeneration) {
-        deletePendingRef.current = false;
-        setDeletePending(false);
-      }
+  function toggleEpisode(episode: MedicationNoteEpisode, kind: NotesTab) {
+    const id = episode.careEpisodeId;
+    if (expandedEpisodeId === id) {
+      setExpandedEpisodeId(null);
+      return;
     }
-  }
-
-  function prescriptionLabel(note: MedicationNote): string {
-    if (note.careEpisodeAlias) return note.careEpisodeAlias;
-    if (note.careEpisodeStartDate) {
-      return `${formatDateLabel(note.careEpisodeStartDate, { includeYear: true })} 처방`;
+    setExpandedEpisodeId(id);
+    setSearchParams({ episodeId: String(id) }, { replace: true, state: location.state });
+    if (kind === 'withNotes') {
+      if (!episodePages[id]) void loadEpisodePage(id);
     }
-    return '처방';
-  }
-
-  function setEpisodeFilter(value: string) {
-    setSearchParams(value === '' ? {} : { episodeId: value }, {
-      replace: true,
-      state: location.state,
-    });
   }
 
   function returnToMedications() {
@@ -341,225 +234,191 @@ export function MedicationNotesPage() {
     else navigate('/medications', { replace: true, state: { entry: 'direct-note-exit' } });
   }
 
-  function medicineLabel(note: MedicationNote): string {
-    if (note.medicationId === null) return '처방 전체';
-    return note.medication
-      ? `${note.medication.name} ${note.medication.dose ?? ''}`.trim()
-      : '삭제된 약';
+  function renderEpisodeHeader(episode: MedicationNoteEpisode, kind: NotesTab) {
+    const id = episode.careEpisodeId;
+    const expanded = expandedEpisodeId === id;
+    const label = episodeLabel(episode);
+    const date = episode.startDate;
+    return (
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={`medication-note-episode-${id}`}
+        aria-label={`${label} ${expanded ? '접기' : '펼치기'}`}
+        onClick={() => toggleEpisode(episode, kind)}
+        className="flex min-h-20 w-full items-center gap-3 rounded-card px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <span className="min-w-0 flex-1">
+          <strong className="block [overflow-wrap:anywhere] text-base text-foreground">{label}</strong>
+          <span className="mt-1 block [overflow-wrap:anywhere] text-sm text-muted-foreground">
+            {date && `${formatDateLabel(date, { includeYear: true })} · `}{episodeMedicationSummary(episode)}
+          </span>
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={`size-5 shrink-0 text-primary transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
+    );
+  }
+
+  function renderWithoutNotesEpisode(episode: MedicationNoteEpisode) {
+    const expanded = expandedEpisodeId === episode.careEpisodeId;
+    return (
+      <article key={episode.careEpisodeId} className="overflow-hidden rounded-card bg-card shadow-card">
+        {renderEpisodeHeader(episode, 'withoutNotes')}
+        {expanded && (
+          <div id={`medication-note-episode-${episode.careEpisodeId}`} className="flex flex-col gap-3 border-t border-border px-4 pb-4 pt-3">
+            <p className="text-sm text-muted-foreground">이 처방의 건강상태 기록이 아직 없어요.</p>
+            {episode.status === 'ACTIVE' ? (
+              <Button onClick={() => openNewNote(episode.careEpisodeId)}>이 처방에 메모 작성</Button>
+            ) : (
+              <p className="text-sm font-medium text-muted-foreground">복용이 끝난 처방이에요.</p>
+            )}
+          </div>
+        )}
+      </article>
+    );
+  }
+
+  function renderWithNotesEpisode(episode: MedicationNoteEpisode) {
+    const id = episode.careEpisodeId;
+    const expanded = expandedEpisodeId === id;
+    const state = episodePages[id];
+    const notes = state?.page?.items ?? [];
+    return (
+      <article key={id} className="overflow-hidden rounded-card bg-card shadow-card">
+        {renderEpisodeHeader(episode, 'withNotes')}
+        {expanded && (
+          <div id={`medication-note-episode-${id}`} className="flex flex-col gap-3 border-t border-border px-3 pb-3 pt-3">
+            {!state || (state.page === null && !state.error) ? (
+              <div role="status" aria-label="건강상태 기록 불러오는 중" className="min-h-24 animate-pulse rounded-card bg-muted-bg" />
+            ) : state.page === null ? (
+              <Card className="items-start p-4">
+                <p role="alert" className="text-danger-strong">{state.error}</p>
+                <Button className="mt-3" variant="secondary" fullWidth={false} onClick={() => void loadEpisodePage(id)}>
+                  다시 시도
+                </Button>
+              </Card>
+            ) : (
+              <>
+                <h3 className="px-1 text-sm font-bold text-muted-foreground">
+                  건강상태 기록 {state.page.total}개
+                </h3>
+                {notes.length === 0 ? (
+                  <Card className="p-4">이 처방의 건강상태 기록이 아직 없어요.</Card>
+                ) : notes.map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    aria-label={`${medicineLabel(note)} ${note.body}`}
+                    onClick={() => navigate(`/medications/notes/${note.id}`, { state: formEntry(id) })}
+                    className="flex min-h-28 w-full flex-col gap-2 rounded-card bg-muted-bg p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                      <span>{medicineLabel(note)}</span>
+                      <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
+                    </span>
+                    <span className="whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-foreground">{note.body}</span>
+                  </button>
+                ))}
+                {state.error && <p role="alert" className="px-1 text-sm text-danger-strong">{state.error}</p>}
+                {state.page.nextCursor && (
+                  <Button
+                    variant="secondary"
+                    disabled={state.loadingMore}
+                    loading={state.loadingMore}
+                    onClick={() => void loadEpisodePage(id, state.page?.nextCursor ?? undefined)}
+                  >
+                    {state.loadingMore ? '불러오는 중...' : '더 보기'}
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={() => openNewNote(id)}>이 처방에 새 메모</Button>
+              </>
+            )}
+          </div>
+        )}
+      </article>
+    );
   }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
-      <Header title="복약 메모" onBack={returnToMedications} />
-      <main className="flex flex-1 flex-col gap-5 overflow-y-auto px-page-x py-5">
-        <div className="flex items-center justify-between gap-2">
-          <Button
-            className="self-start"
-            fullWidth={false}
-            onClick={() => navigate('/medications/notes/new', { state: formEntry })}
-            disabled={selectionMode}
-          >
-            <Plus aria-hidden className="mr-1 size-4" />
-            새 메모 작성
-          </Button>
+      <Header
+        title="복약 메모"
+        onBack={returnToMedications}
+        right={(
           <button
             type="button"
-            className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:text-disabled-foreground"
-            onClick={() => selectionMode ? leaveSelectionMode() : !loadingMore && setSelectionMode(true)}
-            disabled={deletePending || loadingMore}
+            aria-label="새 메모 작성"
+            onClick={() => openNewNote()}
+            className="flex min-h-touch items-center gap-1 rounded-control px-2 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {selectionMode ? '완료' : '삭제'}
+            <Plus aria-hidden className="size-4" />
+            새 메모
           </button>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="flex flex-col gap-1 text-sm font-bold text-foreground">
-            처방
-            <select
-              aria-label="처방별 메모 필터"
-              value={episodeFilterValue}
-              onChange={(event) => setEpisodeFilter(event.target.value)}
-              disabled={(episodeOptions === null && !invalidEpisodeFilter) || selectionMode || deletePending}
-              className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
-            >
-              {episodeOptions === null ? invalidEpisodeFilter ? (
-                <>
-                  <option value={INVALID_EPISODE_FILTER_VALUE} disabled>올바르지 않은 처방 필터</option>
-                  <option value="">전체</option>
-                </>
-              ) : (
-                <option value={episodeFilterValue}>
-                  {episodeOptionsError ? '처방 목록 확인 필요' : '처방 목록 불러오는 중'}
-                </option>
-              ) : (
-                <>
-                  {invalidEpisodeFilter && (
-                    <option value={INVALID_EPISODE_FILTER_VALUE} disabled>올바르지 않은 처방 필터</option>
-                  )}
-                  <option value="">전체</option>
-                  {episodeOptions.map((episode, index) => {
-                    return (
-                      <option key={episode.careEpisodeId} value={episode.careEpisodeId}>
-                        {optionLabels[index]}
-                      </option>
-                    );
-                  })}
-                  {selectedEpisodeIsMissing && (
-                    <option value={episodeId}>선택한 처방</option>
-                  )}
-                </>
-              )}
-            </select>
-          </label>
-          {episodeOptionsError && (
-            <div className="flex flex-wrap items-center gap-2">
-              <p role="alert" className="text-sm text-danger-strong">{episodeOptionsError}</p>
-              <Button
-                variant="secondary"
-                fullWidth={false}
-                onClick={() => setEpisodeOptionsRetryKey((current) => current + 1)}
-              >
-                처방 목록 다시 시도
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <section className="flex flex-col gap-3" aria-labelledby="medication-notes-title">
-          <h2 id="medication-notes-title" aria-label={notesHeading} className="text-xl font-bold text-foreground">
-            {notesHeading}
-          </h2>
-          {initialLoadError ? (
-            <div className="flex flex-col items-start gap-3">
-              <p role="alert" className="text-sm text-danger-strong">{initialLoadError}</p>
-              <Button
-                variant="secondary"
-                fullWidth={false}
-                onClick={() => setRetryKey((current) => current + 1)}
-              >
-                다시 시도
-              </Button>
-            </div>
-          ) : page === null ? (
-            <div role="status" aria-label="복약 메모 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
-          ) : invalidEpisodeFilter ? (
-            <Card className="p-5">
-              <p role="alert" className="text-sm text-danger-strong">
-                올바르지 않은 처방 필터예요. 전체 또는 다른 처방을 선택해주세요.
-              </p>
-            </Card>
-          ) : notes.length === 0 ? (
-            <Card className="p-5">
-              <p>복용 후 느낀 점을 남겨두면 다음 진료 때 도움이 돼요.</p>
-            </Card>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {notes.map((note) => (
-                <article
-                  key={note.id}
-                  className="overflow-hidden rounded-card bg-card shadow-card"
-                >
-                  {selectionMode ? (
-                    <label className="flex min-h-28 w-full cursor-pointer items-start gap-3 p-4 text-left transition-colors hover:bg-muted-bg">
-                      <input
-                        type="checkbox"
-                        aria-label={`메모 선택: ${note.id}`}
-                        checked={selectedNoteIds.has(note.id)}
-                        onChange={() => toggleSelected(note.id)}
-                        disabled={deletePending}
-                        className="mt-1 size-5 shrink-0 accent-primary"
-                      />
-                      <span className="flex min-w-0 flex-1 flex-col gap-2">
-                        <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                          <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
-                          <span className="min-w-0 max-w-full break-words rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
-                            {prescriptionLabel(note)}
-                          </span>
-                        </span>
-                        <span className="font-bold text-foreground">{medicineLabel(note)}</span>
-                        <span className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{note.body}</span>
-                      </span>
-                    </label>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label={`${medicineLabel(note)} ${note.body}`}
-                      className="flex min-h-28 w-full flex-col gap-2 p-4 text-left transition-colors hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                      onClick={() => navigate(`/medications/notes/${encodeURIComponent(note.id)}`, { state: formEntry })}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                        <span className="tnum">{noteDateLabel(note.dosedAt)}</span>
-                        <span className="min-w-0 max-w-full break-words rounded-pill bg-primary-bg px-2.5 py-1 font-bold text-primary-strong">
-                          {prescriptionLabel(note)}
-                        </span>
-                      </div>
-                      <p className="font-bold text-foreground">{medicineLabel(note)}</p>
-                      <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{note.body}</p>
-                    </button>
-                  )}
-                </article>
-              ))}
-              {loadMoreError && (
-                <p role="alert" className="text-sm text-danger-strong">{loadMoreError}</p>
-              )}
-              {page.nextCursor && (
-                <Button
-                  variant="secondary"
-                  onClick={() => void loadMore()}
-                  disabled={loadingMore || selectionMode || deletePending}
-                  aria-busy={loadingMore}
-                >
-                  {loadingMore ? '불러오는 중...' : '더 보기'}
+        )}
+      />
+      <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-page-x py-5">
+        <p className="text-sm text-muted-foreground">
+          처방을 펼쳐 복용 중 느낀 건강상태 변화를 확인하세요.
+        </p>
+        {invalidEpisodeId && (
+          <Card className="p-4">
+            <p role="alert" className="text-danger-strong">올바르지 않은 처방 주소예요.</p>
+          </Card>
+        )}
+        {selectedEpisodeMissing && (
+          <Card className="p-4">
+            <p role="alert" className="text-danger-strong">선택한 처방을 찾지 못했어요.</p>
+          </Card>
+        )}
+        <Tabs value={tab} onValueChange={changeTab}>
+          <TabsList aria-label="복약 메모 처방 분류">
+            <TabsTrigger value="withoutNotes">메모 없는 처방</TabsTrigger>
+            <TabsTrigger value="withNotes">메모 있는 처방</TabsTrigger>
+          </TabsList>
+          <TabsContent value="withoutNotes" className="pt-2">
+            {noteEpisodesError ? (
+              <Card className="items-start p-5">
+                <p role="alert" className="text-danger-strong">
+                  {noteEpisodesError}
+                </p>
+                <Button className="mt-3" variant="secondary" fullWidth={false} onClick={() => setMetadataRetryKey((value) => value + 1)}>
+                  다시 시도
                 </Button>
-              )}
-              {selectionMode && (
-                <Button
-                  variant="danger"
-                  disabled={selectedNoteIds.size === 0 || deletePending}
-                  onClick={openDeleteConfirmation}
-                >
-                  선택한 {selectedNoteIds.size}개 삭제
+              </Card>
+            ) : noteEpisodes === null ? (
+              <div role="status" aria-label="메모 없는 처방 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
+            ) : episodesWithoutNotes.length === 0 ? (
+              <Card className="p-5">모든 처방에 건강상태 기록이 있어요.</Card>
+            ) : (
+              <div className="flex flex-col gap-3">{episodesWithoutNotes.map(renderWithoutNotesEpisode)}</div>
+            )}
+          </TabsContent>
+          <TabsContent value="withNotes" className="pt-2">
+            {noteEpisodesError ? (
+              <Card className="items-start p-5">
+                <p role="alert" className="text-danger-strong">{noteEpisodesError}</p>
+                <Button className="mt-3" variant="secondary" fullWidth={false} onClick={() => setMetadataRetryKey((value) => value + 1)}>
+                  다시 시도
                 </Button>
-              )}
-            </div>
-          )}
-        </section>
+              </Card>
+            ) : noteEpisodes === null ? (
+              <div role="status" aria-label="메모 있는 처방 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
+            ) : episodesWithNotes.length === 0 ? (
+              <Card className="p-5">작성한 건강상태 기록이 아직 없어요.</Card>
+            ) : (
+              <div className="flex flex-col gap-3">{episodesWithNotes.map(renderWithNotesEpisode)}</div>
+            )}
+          </TabsContent>
+        </Tabs>
       </main>
       <BottomTabbar
         active="medication"
         onChange={(key) => key === 'medication' ? returnToMedications() : navigate(TAB_ROUTES[key])}
         className="border-t border-border"
       />
-      <Dialog
-        open={deleteOpen}
-        onOpenChange={(open) => {
-          if (deletePending) return;
-          setDeleteOpen(open);
-          if (!open) setDeleteError(null);
-        }}
-      >
-        <DialogContent variant="sheet">
-          <DialogHeader>
-            <DialogTitle>선택한 복약 메모를 삭제할까요?</DialogTitle>
-            <DialogDescription>
-              {deleteTargets.length}개의 메모가 삭제되며 다시 볼 수 없어요.
-            </DialogDescription>
-          </DialogHeader>
-          {deleteError && <p role="alert" className="text-sm text-danger-strong">{deleteError}</p>}
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={deletePending}>
-              취소
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => void deleteSelectedNotes(deleteTargets)}
-              disabled={deletePending}
-            >
-              {deletePending ? '삭제 중...' : deleteError ? '다시 시도' : '삭제하기'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

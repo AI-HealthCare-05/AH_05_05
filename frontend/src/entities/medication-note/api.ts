@@ -19,12 +19,15 @@ import type {
 
 type MedicationNoteListResponse = MedicationNotePage;
 
-export async function listMedicationNoteEpisodes(): Promise<MedicationNoteEpisode[]> {
+export async function listMedicationNoteEpisodes(
+  options: { includeWithoutNotes?: boolean } = {},
+): Promise<MedicationNoteEpisode[]> {
   if (USE_MOCK) {
     await mockDelay();
-    return mockListMedicationNoteEpisodes();
+    return mockListMedicationNoteEpisodes(options);
   }
-  return http.get<MedicationNoteEpisode[]>('/v1/med/notes/episodes');
+  const suffix = options.includeWithoutNotes ? '?includeWithoutNotes=true' : '';
+  return http.get<MedicationNoteEpisode[]>(`/v1/med/notes/episodes${suffix}`);
 }
 
 function notePath(noteId: number | string): string {

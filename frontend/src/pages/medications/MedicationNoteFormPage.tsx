@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router';
 import { useSession } from '@/app/SessionContext';
 import {
   createMedicationNote,
+  deleteMedicationNote,
   getMedicationNote,
   listMedicationNotes,
   updateMedicationNote,
@@ -13,12 +14,20 @@ import {
   getMedicationOverviews,
   type MedicationOverview,
 } from '@/entities/medication';
+import { getAuthGeneration } from '@/shared/api/client';
 import { formatDateLabel } from '@/shared/lib/dateLabel';
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { clearSavedNoteFilter, rememberSavedNoteFilter } from './medicationNoteReturnFilter';
+import { toast } from 'sonner';
 import {
   BottomTabbar,
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Header,
   Input,
 } from '@/shared/ui';
@@ -57,7 +66,7 @@ function prescriptionLabel(episode: NoteEpisodeOption): string {
 }
 
 function medicineLabel(medication: MedicationNoteMedication): string {
-  return `${medication.name} ${medication.dose ?? ''}`.trim();
+  return medication.name;
 }
 
 function toLocalDateTime(value: string): string {
@@ -131,15 +140,27 @@ export function MedicationNoteFormPage() {
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const deletePendingRef = useRef(false);
   const saveGenerationRef = useRef(0);
+  const deleteGenerationRef = useRef(0);
+  const principalKeyRef = useRef(principalKey);
+  principalKeyRef.current = principalKey;
 
   useEffect(() => {
     clearSavedNoteFilter();
     savingRef.current = false;
+    deletePendingRef.current = false;
     setSaving(false);
+    setDeleteOpen(false);
+    setDeletePending(false);
+    setDeleteError(null);
     return () => {
       saveGenerationRef.current += 1;
+      deleteGenerationRef.current += 1;
     };
   }, [location.key, principalKey]);
 
@@ -206,7 +227,7 @@ export function MedicationNoteFormPage() {
           const initialEpisode = nextEpisodes.find((episode) => episode.id === initialEpisodeId);
           if (initialEpisode) {
             nextForm.recordId = String(initialEpisode.id);
-            nextForm.medicationId = initialEpisode.medications[0] ? String(initialEpisode.medications[0].id) : '';
+            nextForm.medicationId = '';
             nextForm.takenAt = initialEpisode.firstDoseAt ?? '';
           }
         }
@@ -263,9 +284,43 @@ export function MedicationNoteFormPage() {
     setForm((current) => ({
       ...current,
       recordId: value,
-      medicationId: next?.medications[0] ? String(next.medications[0].id) : '',
+      medicationId: '',
       takenAt: next?.firstDoseAt ?? '',
     }));
+  }
+
+  async function removeNote() {
+    if (!editing || !noteId || deletePendingRef.current) return;
+    const generation = deleteGenerationRef.current + 1;
+    deleteGenerationRef.current = generation;
+    const mutationPrincipal = principalKey;
+    const authGeneration = getAuthGeneration();
+    const mutationIsCurrent = () =>
+      deleteGenerationRef.current === generation &&
+      principalKeyRef.current === mutationPrincipal &&
+      getAuthGeneration() === authGeneration;
+    deletePendingRef.current = true;
+    setDeletePending(true);
+    setDeleteError(null);
+    try {
+      await deleteMedicationNote(decodeURIComponent(noteId));
+      if (!mutationIsCurrent()) return;
+      setDeleteOpen(false);
+      toast.success('복약 메모를 삭제했어요');
+      if (enteredFromNotes) navigate(-1);
+      else {
+        const suffix = note ? `?episodeId=${note.careEpisodeId}` : '';
+        navigate(`/medications/notes${suffix}`, { replace: true });
+      }
+    } catch (error: unknown) {
+      if (!mutationIsCurrent()) return;
+      setDeleteError(error instanceof Error ? error.message : '복약 메모를 삭제하지 못했어요.');
+    } finally {
+      if (mutationIsCurrent()) {
+        deletePendingRef.current = false;
+        setDeletePending(false);
+      }
+    }
   }
 
   async function save() {
@@ -342,10 +397,10 @@ export function MedicationNoteFormPage() {
             )}
             <section className="flex flex-col gap-1">
               <h2 id="note-form-intro" className="text-xl font-bold text-foreground">
-                느낀 점을 해당 복용 기록과 함께 남겨보세요.
+                복용시 건강상태 변화를 기록해 보세요.
               </h2>
               <p className="text-sm text-muted-foreground">
-                다음 진료 때 의료진과 함께 확인할 수 있어요.
+                다음 진료시 의료진과 상담내용으로 활용할 수 있어요.
               </p>
             </section>
 
@@ -409,15 +464,15 @@ export function MedicationNoteFormPage() {
               />
 
               <label className="flex flex-col gap-1 text-sm font-bold text-foreground">
-                복용 후 느낀 점
+                건강상태 기록
                 <textarea
-                  aria-label="복용 후 느낀 점"
+                  aria-label="건강상태 기록"
                   value={form.experience}
                   onChange={(event) => setField('experience', event.target.value)}
                   rows={5}
                   maxLength={500}
                   disabled={episodes === null || saving}
-                  placeholder="복용 후 느낀 점을 적어주세요."
+                  placeholder="건강상태 변화를 작성하여 다음 진료시 의료진과 상담내용으로 활용해보세요."
                   className="w-full resize-y rounded-input border border-input bg-card px-3.5 py-3 text-base font-normal text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
                 />
               </label>
@@ -426,6 +481,18 @@ export function MedicationNoteFormPage() {
         )}
 
         <div className="mt-auto flex flex-col gap-2 pb-4">
+          {editing && (
+            <Button
+              variant="danger"
+              onClick={() => {
+                setDeleteError(null);
+                setDeleteOpen(true);
+              }}
+              disabled={saving || deletePending}
+            >
+              메모 삭제
+            </Button>
+          )}
           <Button onClick={() => void save()} disabled={!canSave || saving}>
             {saving ? '저장 중...' : editing ? '수정 저장' : '저장'}
           </Button>
@@ -442,6 +509,31 @@ export function MedicationNoteFormPage() {
         }}
         className="border-t border-border"
       />
+
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (deletePending) return;
+          setDeleteOpen(open);
+          if (!open) setDeleteError(null);
+        }}
+      >
+        <DialogContent variant="sheet">
+          <DialogHeader>
+            <DialogTitle>이 복약 메모를 삭제할까요?</DialogTitle>
+            <DialogDescription>삭제한 건강상태 기록은 다시 볼 수 없어요.</DialogDescription>
+          </DialogHeader>
+          {deleteError && <p role="alert" className="text-sm text-danger-strong">{deleteError}</p>}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={deletePending}>
+              취소
+            </Button>
+            <Button variant="danger" onClick={() => void removeNote()} disabled={deletePending}>
+              {deletePending ? '삭제 중...' : deleteError ? '다시 시도' : '삭제하기'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

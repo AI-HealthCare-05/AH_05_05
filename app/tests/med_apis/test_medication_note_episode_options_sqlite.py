@@ -175,3 +175,81 @@ async def test_note_episode_options_return_distinct_owned_historical_summaries(
     assert no_notes.id not in {item["careEpisodeId"] for item in response.json()}
     assert other_episode.id not in {item["careEpisodeId"] for item in response.json()}
     assert foreign_note_only.id not in {item["careEpisodeId"] for item in response.json()}
+
+
+async def test_note_episode_options_can_include_owned_active_and_completed_episodes_without_notes(
+    isolated_db: None,
+) -> None:
+    owner = await create_user("note-inventory-owner@example.com")
+    other = await create_user("note-inventory-other@example.com")
+    active_without_note = await create_episode(
+        owner,
+        alias="현재 무메모 처방",
+        start_date=date(2026, 9, 5),
+        episode_status=CareEpisodeStatus.ACTIVE,
+    )
+    completed_without_note = await create_episode(
+        owner,
+        alias="종료 무메모 처방",
+        start_date=date(2026, 9, 4),
+        episode_status=CareEpisodeStatus.COMPLETED,
+    )
+    active_with_note = await create_episode(
+        owner,
+        alias="메모 있는 처방",
+        start_date=date(2026, 9, 3),
+        episode_status=CareEpisodeStatus.ACTIVE,
+    )
+    cancelled_with_note = await create_episode(
+        owner,
+        alias="취소됐지만 기록 있음",
+        start_date=date(2026, 9, 2),
+        episode_status=CareEpisodeStatus.CANCELLED,
+    )
+    cancelled_without_note = await create_episode(
+        owner,
+        alias="취소 무메모 처방",
+        start_date=date(2026, 9, 1),
+        episode_status=CareEpisodeStatus.CANCELLED,
+    )
+    other_episode = await create_episode(
+        other,
+        alias="다른 사용자 처방",
+        start_date=date(2026, 9, 6),
+        episode_status=CareEpisodeStatus.ACTIVE,
+    )
+    empty_draft = await create_episode(
+        owner,
+        alias="약이 없는 미완성 처방",
+        start_date=date(2026, 9, 7),
+        episode_status=CareEpisodeStatus.ACTIVE,
+    )
+    await Medication.create(care_episode=active_without_note, name="현재 처방 약")
+    await Medication.create(care_episode=completed_without_note, name="종료 처방 약")
+    await Medication.create(care_episode=active_with_note, name="기록 처방 약")
+    await create_note(owner, active_with_note, "기록 1")
+    await create_note(owner, active_with_note, "기록 2")
+    await create_note(owner, cancelled_with_note, "취소 전 기록")
+    await create_note(other, active_without_note, "다른 사용자가 잘못 연결한 기록")
+    await create_note(owner, other_episode, "다른 처방에 잘못 연결한 기록")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_for(owner)),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(OPTIONS_URL, params={"includeWithoutNotes": "true"})
+
+    assert response.status_code == status.HTTP_200_OK
+    items = response.json()
+    assert [item["careEpisodeId"] for item in items] == [
+        active_without_note.id,
+        completed_without_note.id,
+        active_with_note.id,
+        cancelled_with_note.id,
+    ]
+    assert [item["noteCount"] for item in items] == [0, 0, 2, 1]
+    assert items[0]["representativeMedicationName"] == "현재 처방 약"
+    assert items[1]["representativeMedicationName"] == "종료 처방 약"
+    assert cancelled_without_note.id not in {item["careEpisodeId"] for item in items}
+    assert other_episode.id not in {item["careEpisodeId"] for item in items}
+    assert empty_draft.id not in {item["careEpisodeId"] for item in items}

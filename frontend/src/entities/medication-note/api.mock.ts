@@ -150,10 +150,16 @@ export function mockListMedicationNotes({ episodeId, limit = 20, cursor }: Medic
   };
 }
 
-export function mockListMedicationNoteEpisodes(): MedicationNoteEpisode[] {
+export function mockListMedicationNoteEpisodes(
+  options: { includeWithoutNotes?: boolean } = {},
+): MedicationNoteEpisode[] {
   const byEpisodeId = new Map<number, MedicationNoteEpisode>();
   for (const note of readNotes().map(hydrateNote)) {
-    if (byEpisodeId.has(note.careEpisodeId)) continue;
+    const existing = byEpisodeId.get(note.careEpisodeId);
+    if (existing) {
+      if (options.includeWithoutNotes) existing.noteCount = (existing.noteCount ?? 0) + 1;
+      continue;
+    }
     const representative = [...note.availableMedications].sort((a, b) => a.id - b.id)[0];
     byEpisodeId.set(note.careEpisodeId, {
       careEpisodeId: note.careEpisodeId,
@@ -162,7 +168,22 @@ export function mockListMedicationNoteEpisodes(): MedicationNoteEpisode[] {
       status: note.careEpisodeStatus,
       representativeMedicationName: representative?.name ?? null,
       medicationCount: note.availableMedications.length,
+      ...(options.includeWithoutNotes ? { noteCount: 1 } : {}),
     });
+  }
+  if (options.includeWithoutNotes) {
+    for (const overview of mockMedicationOverviews()) {
+      if (byEpisodeId.has(overview.recordId)) continue;
+      byEpisodeId.set(overview.recordId, {
+        careEpisodeId: overview.recordId,
+        alias: overview.alias ?? null,
+        startDate: overview.start.date,
+        status: overview.isFinished ? 'COMPLETED' : 'ACTIVE',
+        representativeMedicationName: overview.medications[0]?.name ?? null,
+        medicationCount: overview.medications.length,
+        noteCount: 0,
+      });
+    }
   }
   return [...byEpisodeId.values()].sort(
     (a, b) =>

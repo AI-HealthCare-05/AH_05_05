@@ -35,6 +35,8 @@ export interface MedicationNoteEpisode {
   status: MedicationNoteEpisodeStatus;
   representativeMedicationName?: string | null;
   medicationCount?: number;
+  /** includeWithoutNotes=true일 때만 내려오는 사용자 소유 메모 수 */
+  noteCount?: number;
 }
 
 export interface MedicationNoteListParams {

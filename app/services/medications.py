@@ -263,13 +263,23 @@ class MedicationService:
         )
         return page.items
 
-    async def list_note_episodes(self, user: User) -> list[MedicationNoteEpisodeResponse]:
-        rows = await (
-            CareEpisode.filter(
+    async def list_note_episodes(
+        self,
+        user: User,
+        *,
+        include_without_notes: bool = False,
+    ) -> list[MedicationNoteEpisodeResponse]:
+        if include_without_notes:
+            episode_query = CareEpisode.filter(user_id=user.id).filter(
+                Q(status__not=CareEpisodeStatus.CANCELLED) | Q(medication_notes__user_id=user.id)
+            )
+        else:
+            episode_query = CareEpisode.filter(
                 user_id=user.id,
                 medication_notes__user_id=user.id,
             )
-            .distinct()
+        rows = await (
+            episode_query.distinct()
             .order_by("-medication_start_date", "-id")
             .values("id", "alias", "medication_start_date", "status")
         )
@@ -288,6 +298,21 @@ class MedicationService:
             representative_medication_names.setdefault(episode_id, medication_row["name"])
             medication_counts[episode_id] = medication_counts.get(episode_id, 0) + 1
 
+        note_counts: dict[int, int] = {}
+        if include_without_notes and episode_ids:
+            note_rows = await MedicationNote.filter(
+                user_id=user.id,
+                care_episode_id__in=episode_ids,
+            ).values("care_episode_id")
+            for note_row in note_rows:
+                episode_id = note_row["care_episode_id"]
+                note_counts[episode_id] = note_counts.get(episode_id, 0) + 1
+            rows = [
+                row
+                for row in rows
+                if medication_counts.get(row["id"], 0) > 0 or note_counts.get(row["id"], 0) > 0
+            ]
+
         return [
             MedicationNoteEpisodeResponse(
                 care_episode_id=row["id"],
@@ -296,6 +321,7 @@ class MedicationService:
                 status=row["status"],
                 representative_medication_name=representative_medication_names.get(row["id"]),
                 medication_count=medication_counts.get(row["id"], 0),
+                **({"note_count": note_counts.get(row["id"], 0)} if include_without_notes else {}),
             )
             for row in rows
         ]
