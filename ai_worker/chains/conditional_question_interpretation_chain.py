@@ -1,25 +1,54 @@
+import json
 from enum import StrEnum
 from typing import Any, Protocol
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from ai_worker.llm.prompts.prompt_assets import (
+    MedicationPromptStage,
+    load_prompt_chain_stage,
+)
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import MedicationChatRoute
 from ai_worker.schemas.medication_search import (
+    MedicationKnowledgeQueryPlan,
     MedicationQueryEntity,
     MedicationQuestionConfidence,
 )
 
-CONDITIONAL_QUESTION_INTERPRETATION_VERSION = "conditional-question-interpretation-v2"
+CONDITIONAL_QUESTION_INTERPRETATION_VERSION = "conditional-question-interpretation-v3"
 
 
 class ConditionalInterpretationReasonCode(StrEnum):
     LOW_CONFIDENCE = "LOW_CONFIDENCE"
     MULTI_ENTITY = "MULTI_ENTITY"
     SESSION_REFERENCE = "SESSION_REFERENCE"
+
+
+class DirectionalSearchTarget(StrEnum):
+    MEDICATION_PRODUCT_GUIDE = "MEDICATION_PRODUCT_GUIDE"
+    SUPPLEMENT_GUIDE = "SUPPLEMENT_GUIDE"
+    INTERACTION_EVIDENCE = "INTERACTION_EVIDENCE"
+    ACTIVE_INTAKE = "ACTIVE_INTAKE"
+
+
+class DirectionalSearchStimulus(BaseModel):
+    """모델이 제안하고 서버가 다시 검증하는 제한된 검색 방향."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query: str = Field(min_length=1)
+    target: DirectionalSearchTarget
+    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
+    purpose: str = Field(min_length=1)
+
+    @field_validator("query", "purpose")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
 
 
 class ConditionalQuestionInterpretationInput(BaseModel):
@@ -31,6 +60,10 @@ class ConditionalQuestionInterpretationInput(BaseModel):
     candidate_entities: dict[str, MedicationQueryEntity] = Field(min_length=1, max_length=12)
     requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
     trigger_reasons: list[ConditionalInterpretationReasonCode] = Field(min_length=1)
+    candidate_pair_keys: list[str] = Field(default_factory=list)
+    allowed_search_terms: list[str] = Field(default_factory=list)
+    session_reference_entities: dict[str, str] = Field(default_factory=dict)
+    current_query_plan: MedicationKnowledgeQueryPlan | None = None
 
     @field_validator("question")
     @classmethod
@@ -53,6 +86,11 @@ class ConditionalQuestionInterpretationInput(BaseModel):
             normalized[normalized_key] = entity
         return normalized
 
+    @field_validator("candidate_pair_keys", "allowed_search_terms")
+    @classmethod
+    def normalize_string_lists(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
 
 class ConditionalQuestionInterpretationOutput(BaseModel):
     """모델의 자유 추론문 없이, 후속 검증에 쓸 값만 받는 출력 계약."""
@@ -63,16 +101,49 @@ class ConditionalQuestionInterpretationOutput(BaseModel):
         default=CONDITIONAL_QUESTION_INTERPRETATION_VERSION,
         min_length=1,
     )
+    normalized_question: str = Field(min_length=1)
     route: MedicationChatRoute | None = None
     candidate_entity_keys: list[str] = Field(default_factory=list, max_length=12)
     requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
+    interaction_pair_keys: list[str] = Field(default_factory=list)
+    stimuli: list[DirectionalSearchStimulus] = Field(default_factory=list, max_length=3)
     confidence: MedicationQuestionConfidence
     reason_codes: list[ConditionalInterpretationReasonCode] = Field(default_factory=list)
+    needs_clarification: bool = False
+    clarification_question: str | None = None
 
     @field_validator("candidate_entity_keys")
     @classmethod
     def normalize_keys(cls, values: list[str]) -> list[str]:
         return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @field_validator("normalized_question")
+    @classmethod
+    def strip_normalized_question(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("interaction_pair_keys")
+    @classmethod
+    def normalize_pair_keys(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @field_validator("clarification_question")
+    @classmethod
+    def normalize_clarification_question(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_clarification_contract(self) -> "ConditionalQuestionInterpretationOutput":
+        if self.needs_clarification and self.clarification_question is None:
+            raise ValueError("확인 질문이 필요한 경우 clarification_question을 제공해야 합니다.")
+        if not self.needs_clarification and self.clarification_question is not None:
+            raise ValueError("확인 질문은 needs_clarification일 때만 사용할 수 있습니다.")
+        if self.needs_clarification and self.stimuli:
+            raise ValueError("확인 질문이 필요한 경우 검색 자극을 만들 수 없습니다.")
+        return self
 
 
 class ConditionalQuestionInterpretationChain(Protocol):
@@ -129,21 +200,14 @@ def build_conditional_question_interpretation_chain(
             .with_config(run_name="medication.conditional_interpretation.model")
         )
 
+    prompt_document = load_prompt_chain_stage(
+        "medication_chat_prompt_v7.md",
+        MedicationPromptStage.DIRECTIONAL_QUERY,
+    )
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "당신은 의약품·영양제 질문의 구조만 정리합니다. "
-                "제시된 후보 키 밖의 키를 만들지 마세요. 추론 과정·설명문은 출력하지 말고 "
-                "JSON Schema에 정의된 필드만 반환하세요.",
-            ),
-            (
-                "human",
-                "질문: {question}\n"
-                "카탈로그 후보: {candidate_options}\n"
-                "현재 요청 항목: {requested_sections}\n"
-                "호출 이유: {trigger_reasons}",
-            ),
+            ("system", prompt_document.compiled_system),
+            ("human", prompt_document.user),
         ]
     )
 
@@ -159,12 +223,44 @@ def build_conditional_question_interpretation_chain(
     def render(value: ConditionalQuestionInterpretationInput):
         return prompt.format_messages(
             question=value.question,
-            candidate_options=", ".join(
-                f"{key}: {entity.canonical_name}" for key, entity in value.candidate_entities.items()
+            session_reference_json=json.dumps(
+                value.session_reference_entities,
+                ensure_ascii=False,
+                separators=(",", ":"),
             ),
-            requested_sections=", ".join(section.value for section in value.requested_section_types),
-            trigger_reasons=", ".join(reason.value for reason in value.trigger_reasons),
+            candidate_entities_json=json.dumps(
+                {key: entity.model_dump(mode="json") for key, entity in value.candidate_entities.items()},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            candidate_pair_keys_json=json.dumps(
+                value.candidate_pair_keys,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            allowed_search_terms_json=json.dumps(
+                value.allowed_search_terms,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            current_query_plan_json=json.dumps(
+                (value.current_query_plan.model_dump(mode="json") if value.current_query_plan is not None else {}),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            trigger_reasons_json=json.dumps(
+                [reason.value for reason in value.trigger_reasons],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
         )
+
+    def validate_output(
+        value: ConditionalQuestionInterpretationOutput | dict[str, Any],
+    ) -> ConditionalQuestionInterpretationOutput:
+        if isinstance(value, ConditionalQuestionInterpretationOutput):
+            return value
+        return ConditionalQuestionInterpretationOutput.model_validate(value)
 
     return (
         RunnableLambda(validate).with_config(
@@ -174,6 +270,9 @@ def build_conditional_question_interpretation_chain(
             run_name="medication.conditional_interpretation.prompt",
         )
         | response_runnable
+        | RunnableLambda(validate_output).with_config(
+            run_name="medication.conditional_interpretation.output",
+        )
     ).with_types(
         input_type=ConditionalQuestionInterpretationInput,
         output_type=ConditionalQuestionInterpretationOutput,

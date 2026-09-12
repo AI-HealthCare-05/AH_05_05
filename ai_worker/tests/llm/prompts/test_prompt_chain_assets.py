@@ -20,6 +20,8 @@ def test_v7_prompt_pack_loads_only_requested_stage() -> None:
     assert "{question}" in document.user
     assert "FUNCTION과 CAUTION" in document.examples
     assert "복약메모" not in document.user
+    for element in ("역할(Role)", "작업(Task)", "내용(Content)", "형식(Format)", "제약(Constraint)"):
+        assert element in document.system
     assert document.compiled_system.startswith(document.common)
     assert document.system in document.compiled_system
     assert document.examples in document.compiled_system

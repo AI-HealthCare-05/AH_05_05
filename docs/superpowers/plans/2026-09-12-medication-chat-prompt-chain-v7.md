@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - `medication_chat_prompt_v7.md` 한 파일에 공통 규칙과 단계별 구역을 두고, 런타임은 필요한 구역만 로드한다.
+- 각 stage는 `Role`, `Task`, `Content`, `Format`, `Constraint`, `Example` 6요소를 명시하며 공통 제약은 중복하지 않는다.
 - 의료 사실·제품명·성분명·pair key·evidence ID는 서버가 제공한 후보 밖에서 생성하거나 채택하지 않는다.
 - 내부 추론 원문(CoT)은 모델 출력, Trace, DB, API 응답에 저장하지 않는다.
 - Conversation Gate의 진료일정·복약메모 분기와 기존 프론트 고정 면책 문구 정책을 유지한다.

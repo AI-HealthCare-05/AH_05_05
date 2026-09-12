@@ -7,6 +7,8 @@ from langchain_core.runnables import RunnableLambda
 
 from ai_worker.chains.conditional_question_interpretation_chain import (
     ConditionalQuestionInterpretationOutput,
+    DirectionalSearchStimulus,
+    DirectionalSearchTarget,
 )
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChainInput,
@@ -2303,6 +2305,7 @@ async def test_execute_does_not_retry_when_initial_evidence_is_complete() -> Non
 async def test_execute_skips_conditional_llm_for_high_confidence_single_entity() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
+            normalized_question="타이레놀의 효능을 알려주세요.",
             candidate_entity_keys=["candidate_0"],
             requested_section_types=[KnowledgeSectionType.CAUTION],
             confidence="HIGH",
@@ -2525,9 +2528,61 @@ def test_answer_context_displays_only_active_medications_for_medication_and_inte
     assert general_context.supplements == []
 
 
+async def test_execute_applies_only_bounded_directional_search_stimuli() -> None:
+    base_chunk = build_chunk()
+    chunk = base_chunk.model_copy(
+        update={
+            "metadata": base_chunk.metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            )
+        }
+    )
+    retriever = SequencedKnowledgeRetriever([[chunk]])
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question="마그네슘은 왜 먹나요?",
+            route="SUPPLEMENT_GUIDE",
+            candidate_entity_keys=["candidate_0"],
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            stimuli=[
+                DirectionalSearchStimulus(
+                    query="마그네슘 효능",
+                    target=DirectionalSearchTarget.SUPPLEMENT_GUIDE,
+                    section_types=[KnowledgeSectionType.FUNCTION],
+                    purpose="마그네슘의 확인된 기능을 찾습니다.",
+                ),
+                DirectionalSearchStimulus(
+                    query="마그네슘 피로회복",
+                    target=DirectionalSearchTarget.SUPPLEMENT_GUIDE,
+                    section_types=[KnowledgeSectionType.FUNCTION],
+                    purpose="입력에 없는 효과를 찾습니다.",
+                ),
+            ],
+            confidence="MEDIUM",
+            reason_codes=["LOW_CONFIDENCE"],
+        )
+    )
+
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+
+    assert len(chain.inputs) == 1
+    assert "마그네슘" in chain.inputs[0].allowed_search_terms
+    assert "효능" in chain.inputs[0].allowed_search_terms
+    assert retriever.execution_plans[0].query_plan.alternate_queries == ["마그네슘 효능"]
+
+
 async def test_execute_discards_unknown_conditional_llm_entity_before_search() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
+            normalized_question="마그네슘의 효능을 알려주세요.",
             candidate_entity_keys=["unknown_candidate"],
             requested_section_types=[KnowledgeSectionType.CAUTION],
             confidence="MEDIUM",

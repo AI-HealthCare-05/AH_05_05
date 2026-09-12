@@ -228,6 +228,12 @@ class AnswerMedicationQuestionUseCase:
         r"(?:복용|용량|섭취량)\s*(?:을|를)?\s*(?:늘리|줄이|바꾸|변경)|"
         r"(?:시작|중단|증량|감량)\s*(?:해도|해야|해|할)",
     )
+    _CONDITIONAL_SECTION_SEARCH_TERMS = {
+        KnowledgeSectionType.FUNCTION: ("효능", "효과", "기능"),
+        KnowledgeSectionType.DAILY_INTAKE: ("복용법", "섭취량", "용법"),
+        KnowledgeSectionType.CAUTION: ("주의사항", "금기", "이상반응"),
+        KnowledgeSectionType.INTERACTION: ("상호작용", "병용", "흡수"),
+    }
 
     def __init__(
         self,
@@ -998,6 +1004,10 @@ class AnswerMedicationQuestionUseCase:
             return planning
 
         candidate_entities = {f"candidate_{index}": entity for index, entity in enumerate(planning.query_plan.entities)}
+        allowed_search_terms = self._conditional_allowed_search_terms(
+            planning.query_plan,
+        )
+        candidate_pair_keys = list(planning.query_plan.interaction_pair_keys)
 
         async with self._tracer.span("query.plan.conditional") as conditional_span:
             try:
@@ -1008,6 +1018,15 @@ class AnswerMedicationQuestionUseCase:
                             candidate_entities=candidate_entities,
                             requested_section_types=planning.query_plan.section_types,
                             trigger_reasons=trigger_reasons,
+                            candidate_pair_keys=candidate_pair_keys,
+                            allowed_search_terms=allowed_search_terms,
+                            session_reference_entities={
+                                f"session_{index}": entity.name
+                                for index, entity in enumerate(
+                                    request.session_reference.entities,
+                                )
+                            },
+                            current_query_plan=planning.query_plan,
                         ),
                         config={
                             "metadata": {
@@ -1032,6 +1051,8 @@ class AnswerMedicationQuestionUseCase:
                 planning=planning,
                 output=output,
                 candidate_entities=candidate_entities,
+                candidate_pair_keys=candidate_pair_keys,
+                allowed_search_terms=allowed_search_terms,
             )
             accepted_entity_count = len([key for key in output.candidate_entity_keys if key in candidate_entities])
             trace_outputs = {
@@ -1067,12 +1088,15 @@ class AnswerMedicationQuestionUseCase:
             reasons.append(ConditionalInterpretationReasonCode.SESSION_REFERENCE)
         return reasons
 
-    @staticmethod
+    @classmethod
     def _validated_conditional_plan(
+        cls,
         *,
         planning: MedicationQuestionPlanResult,
         output: ConditionalQuestionInterpretationOutput,
         candidate_entities: dict[str, MedicationQueryEntity],
+        candidate_pair_keys: list[str],
+        allowed_search_terms: list[str],
     ) -> MedicationQuestionPlanResult:
         query_plan = planning.query_plan
         validated_entities = [
@@ -1092,8 +1116,40 @@ class AnswerMedicationQuestionUseCase:
                 ]
             )
         )
+        validated_pair_keys = (
+            [pair_key for pair_key in output.interaction_pair_keys if pair_key in candidate_pair_keys]
+            if (output.route == MedicationChatRoute.INTERACTION or KnowledgeSectionType.INTERACTION in section_types)
+            else []
+        )
+        validated_stimuli = [
+            stimulus.query
+            for stimulus in output.stimuli
+            if cls._is_allowed_conditional_stimulus(
+                query=stimulus.query,
+                allowed_search_terms=allowed_search_terms,
+                selected_entities=validated_entities,
+            )
+        ]
         validated_query_plan = query_plan.model_copy(
-            update={"section_types": section_types},
+            update={
+                "section_types": section_types,
+                "interaction_pair_keys": list(
+                    dict.fromkeys(
+                        [
+                            *query_plan.interaction_pair_keys,
+                            *validated_pair_keys,
+                        ]
+                    )
+                ),
+                "alternate_queries": list(
+                    dict.fromkeys(
+                        [
+                            *query_plan.alternate_queries,
+                            *validated_stimuli,
+                        ]
+                    )
+                ),
+            },
         )
         normalized_names = list(
             dict.fromkeys(
@@ -1106,7 +1162,9 @@ class AnswerMedicationQuestionUseCase:
         interpretation = planning.interpretation.model_copy(
             update={
                 "normalized_entity_names": normalized_names,
+                "resolved_question": output.normalized_question,
                 "requested_section_types": section_types,
+                "needs_clarification": output.needs_clarification,
                 "query_plan_hash": validated_query_plan.query_plan_hash,
             }
         )
@@ -1124,6 +1182,48 @@ class AnswerMedicationQuestionUseCase:
                 confidence=output.confidence,
                 reason_codes=[],
             ),
+        )
+
+    @classmethod
+    def _conditional_allowed_search_terms(
+        cls,
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> list[str]:
+        values = [
+            *(entity.surface for entity in query_plan.entities),
+            *(entity.canonical_name for entity in query_plan.entities),
+            *query_plan.entity_names,
+        ]
+        for section in query_plan.section_types:
+            values.extend(cls._CONDITIONAL_SECTION_SEARCH_TERMS.get(section, ()))
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @staticmethod
+    def _is_allowed_conditional_stimulus(
+        *,
+        query: str,
+        allowed_search_terms: list[str],
+        selected_entities: list[MedicationQueryEntity],
+    ) -> bool:
+        query_tokens = set(re.findall(r"[0-9a-zA-Z가-힣μ㎍%]+", query.casefold()))
+        allowed_tokens = {
+            token
+            for term in allowed_search_terms
+            for token in re.findall(
+                r"[0-9a-zA-Z가-힣μ㎍%]+",
+                term.casefold(),
+            )
+        }
+        selected_entity_tokens = {
+            token
+            for entity in selected_entities
+            for token in re.findall(
+                r"[0-9a-zA-Z가-힣μ㎍%]+",
+                entity.canonical_name.casefold(),
+            )
+        }
+        return bool(
+            query_tokens and selected_entity_tokens.intersection(query_tokens) and query_tokens.issubset(allowed_tokens)
         )
 
     async def _semantically_route_question(
