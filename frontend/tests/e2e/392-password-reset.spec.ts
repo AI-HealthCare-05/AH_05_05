@@ -53,6 +53,10 @@ test('separate email can be edited, validated and sent once while pending', asyn
   await expect.poll(() => payloads.length).toBe(1);
   release();
   await expect(page.getByRole('status')).toContainText('발송을 요청했어요');
+  await expect(page.getByText('가입한 이메일 주소를 입력해주세요.')).toHaveCount(0);
+  await expect(page.getByRole('status')).toContainText(
+    '임시 비밀번호로 로그인후 마이페이지에서 비밀번호 변경을 해주세요.',
+  );
   expect(payloads).toEqual([{ email: 'second@example.com' }]);
   await expect(page.getByRole('button', { name: '임시비밀번호 발송' })).toHaveCount(0);
   await page.getByRole('button', { name: '로그인으로 돌아가기' }).click();

@@ -51,15 +51,17 @@ export function PasswordResetSheet({ initialEmail, onClose, onRestoreFocus }: Pa
         <div aria-hidden className="mx-auto h-1 w-10 rounded-pill bg-border" />
         <div className="flex flex-col gap-2 pt-2">
           <DialogTitle className="text-xl">비밀번호 재설정</DialogTitle>
-          <DialogDescription className="leading-relaxed">
-            가입한 이메일 주소를 입력해주세요.<br />임시 비밀번호를 메일로 보내드려요.
-          </DialogDescription>
+          {!sent && (
+            <DialogDescription className="leading-relaxed">
+              가입한 이메일 주소를 입력해주세요.<br />임시 비밀번호를 메일로 보내드려요.
+            </DialogDescription>
+          )}
         </div>
         {sent ? (
           <div className="mt-6 flex flex-col gap-6">
             <div role="status" className="rounded-input bg-primary-bg p-4 text-sm leading-relaxed text-foreground">
               <p className="font-bold">임시 비밀번호 발송을 요청했어요.</p>
-              <p className="mt-2">가입한 이메일이라면 임시 비밀번호를 받을 수 있어요. 메일함과 스팸함을 확인해주세요.</p>
+              <p className="mt-2">임시 비밀번호로 로그인후 마이페이지에서 비밀번호 변경을 해주세요.</p>
             </div>
             <Button type="button" onClick={close}>로그인으로 돌아가기</Button>
           </div>
