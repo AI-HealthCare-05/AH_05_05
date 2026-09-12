@@ -810,11 +810,11 @@ function rangePositions(total: NutrientTotal, base: number | null) {
 
 function standardSourceLabel(profile: NutrientStandardProfile | null): string {
   if (!profile?.birthDate || !profile.gender) {
-    return '기준 · 2025 한국인 영양소 섭취기준';
+    return '2025 한국인 영양소 섭취기준';
   }
   const age = calculateFullAge(profile.birthDate);
   const gender = profile.gender === 'female' ? '여성' : '남성';
-  return `기준 · 2025 한국인 영양소 섭취기준 · 만 ${age}세 ${gender}`;
+  return `2025 한국인 영양소 섭취기준 · 만 ${age}세 ${gender}`;
 }
 
 function formatDoseAmount(amount: number): string {

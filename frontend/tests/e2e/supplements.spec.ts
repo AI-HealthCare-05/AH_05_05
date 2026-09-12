@@ -69,7 +69,7 @@ test('기준과 상한의 누락 조합을 숨기거나 임의 판정하지 않�
 test('사용자 기준 정보와 합계 범위의 필수 고지를 모두 표시한다', async ({ page }) => {
   await page.goto('/dev/supplements');
 
-  await expect(page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 남성')).toBeVisible();
+  await expect(page.getByText('2025 한국인 영양소 섭취기준 · 만 26세 남성', { exact: true })).toBeVisible();
   await expect(
     page.getByText(
       '검색된 영양제의 성분만 합산된 결과예요.',
