@@ -138,12 +138,41 @@ Conversation Gate, 증상 후속 응답, 복약메모 요약, 최종 답변이 �
 - 성공: 신규 회귀를 포함한 대상 테스트 108개 통과.
 - 이유: LLM이 입력 밖 근거나 과도한 출력으로 다음 프롬프트를 오염시키는 경계를 코드와 Pydantic 양쪽에서 제한했고, 확인이 필요한 질문은 검색 전에 종료한다.
 
+## 실험 7: 검토에서 발견된 쌍 근거·실패 경계 보강
+
+### 문제
+
+구현 검토에서 다음 경계 문제가 확인됐다.
+
+- 근거 항목이 허용 길이를 넘으면 Pydantic 입력 생성이 예외 복구 바깥에서 실패했다.
+- 여러 상호작용 조합이 함께 있을 때 claim, 행동 안내, 충돌 판정이 다른 조합의 근거 ID를 인용할 수 있었다.
+- 조건부 LLM이 일부 pair key만 선택해도 기존 pair 목록, interaction type, 재검색어, 승인 규칙에 선택되지 않은 조합이 남았다.
+- LLM 확인 질문이 최종 근거·안전성 검사를 거치지 않고 바로 반환됐다.
+- 모든 Directional Stimulus가 서버 검증에서 거부돼도 일부 LLM 해석값이 기존 Query Plan을 변경했다.
+
+### 실험
+
+- RED: 과대 근거 입력이 결정론적 답변 대신 `ValidationError`를 발생시키는 테스트를 추가했다.
+- RED: 다른 pair의 근거를 claim·supported action·conflict에 연결하는 출력이 채택되는 테스트를 추가했다.
+- RED: 단일 pair 선택 뒤 선택되지 않은 pair와 승인 규칙이 실행 계획에 남는 테스트를 추가했다.
+- RED: 안전하지 않은 확인 질문과 전부 거부된 stimulus가 기존 흐름을 변경하는 테스트를 추가했다.
+- 수정: 근거 입력 모델 생성까지 예외 복구 범위에 포함했다.
+- 수정: 상호작용 claim, supported action, conflict가 각각 명시한 `pair_key`와 동일한 pair metadata를 가진 `INTERACTION` 근거만 참조하도록 검증했다.
+- 수정: 조건부 pair 선택 시 pair 목록·타입·재검색어·승인 규칙을 같은 선택 집합으로 좁혔다.
+- 수정: 확인 질문도 `GroundedClaimValidator`를 통과시키고, 유효 stimulus가 하나도 없으면 원래 Query Plan을 그대로 유지했다.
+- 수정: LLM 텍스트·배열 필드에 길이와 항목 수 제한을 추가하고, `PARTIAL + NO_DIRECT_EVIDENCE` 계약을 명세와 코드에서 일치시켰다.
+
+### 결과
+
+- 성공: 신규 경계 테스트를 포함한 관련 테스트 141개 통과.
+- 이유: evidence ID 존재 여부만 검사하던 경계를 정확한 pair 단위로 강화했고, LLM 결과를 부분 채택할 때 파생 필드 전체를 동일한 범위로 정렬했다.
+
 ## 최종 검증
 
 - `uv run ruff check ai_worker`: 통과.
 - `uv run ruff format --check ai_worker`: 378개 파일 포맷 확인.
-- `uv run pytest ai_worker/tests -q`: 1,371 passed, 1 skipped.
-- Ruff와 연속 실행한 첫 검증에서는 테스트 완료 뒤 macOS `libc++`의 `recursive_mutex lock failed`가 발생해 종료 코드 134를 반환했다. 같은 pytest 명령을 즉시 단독 재실행했을 때 1,371개 테스트가 종료 코드 0으로 통과했다. 테스트 assertion 실패와 분리된 간헐적 SentenceTransformer/native library 종료 시점 문제로 기록하고 반복 여부를 추적한다.
+- `uv run pytest ai_worker/tests -q`: 1,383 passed, 1 skipped.
+- 검토 보완 뒤 전체 테스트를 단독 실행했으며 종료 코드 0으로 통과했다. 이전 검증에서 한 차례 발생한 macOS `libc++`의 `recursive_mutex lock failed`는 재현되지 않았다.
 
 ## 현재 결론
 

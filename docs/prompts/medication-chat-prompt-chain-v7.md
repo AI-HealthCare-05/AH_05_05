@@ -388,6 +388,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
 
 ```json
 {
+  "interpretation_version": "conditional-question-interpretation-v3",
   "normalized_question": "타이레놀은 어디에 좋고 복용할 때 무엇을 조심해야 하나요?",
   "route": "MEDICATION_GUIDE",
   "candidate_entity_keys": ["drug_01"],
@@ -408,6 +409,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
     }
   ],
   "confidence": "HIGH",
+  "reason_codes": ["LOW_CONFIDENCE"],
   "needs_clarification": false,
   "clarification_question": null
 }
@@ -419,18 +421,19 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
 
 - 질문: `마그네슘이랑 아연 가치 머거도 돼?`
 - 후보: `supp_01 → 마그네슘`, `supp_02 → 아연`
-- 후보 pair key: `supp_01|supp_02`
+- 후보 pair key: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`
 - 허용 검색어: `마그네슘`, `아연`, `같이 섭취`, `상호작용`, `흡수`
 
 출력:
 
 ```json
 {
+  "interpretation_version": "conditional-question-interpretation-v3",
   "normalized_question": "마그네슘과 아연을 같이 먹어도 되나요?",
   "route": "INTERACTION",
   "candidate_entity_keys": ["supp_01", "supp_02"],
   "requested_section_types": ["INTERACTION"],
-  "interaction_pair_keys": ["supp_01|supp_02"],
+  "interaction_pair_keys": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
   "stimuli": [
     {
       "query": "마그네슘 아연 같이 섭취 상호작용 흡수",
@@ -440,6 +443,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
     }
   ],
   "confidence": "HIGH",
+  "reason_codes": ["MULTI_ENTITY"],
   "needs_clarification": false,
   "clarification_question": null
 }
@@ -457,6 +461,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
 
 ```json
 {
+  "interpretation_version": "conditional-question-interpretation-v3",
   "normalized_question": "타이레놀정500밀리그람의 복용법도 알려주세요.",
   "route": "MEDICATION_GUIDE",
   "candidate_entity_keys": ["session_drug_01"],
@@ -471,6 +476,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
     }
   ],
   "confidence": "HIGH",
+  "reason_codes": ["SESSION_REFERENCE"],
   "needs_clarification": false,
   "clarification_question": null
 }
@@ -487,6 +493,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
 
 ```json
 {
+  "interpretation_version": "conditional-question-interpretation-v3",
   "normalized_question": "피로와 관련된 영양성분 정보를 알려주세요.",
   "route": "CLARIFICATION",
   "candidate_entity_keys": [],
@@ -494,6 +501,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
   "interaction_pair_keys": [],
   "stimuli": [],
   "confidence": "LOW",
+  "reason_codes": ["LOW_CONFIDENCE"],
   "needs_clarification": true,
   "clarification_question": "확인하려는 영양제의 제품명 또는 성분명을 알려주세요."
 }
@@ -507,16 +515,22 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "normalized_question": {"type": "string"},
+    "interpretation_version": {"type": "string", "minLength": 1, "maxLength": 80},
+    "normalized_question": {"type": "string", "minLength": 1, "maxLength": 500},
     "route": {
-      "type": "string",
-      "enum": [
-        "MEDICATION_GUIDE",
-        "SUPPLEMENT_GUIDE",
-        "ACTIVE_INTAKE",
-        "INTERACTION",
-        "GENERAL_GUIDANCE",
-        "CLARIFICATION"
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "MEDICATION_GUIDE",
+            "SUPPLEMENT_GUIDE",
+            "ACTIVE_INTAKE",
+            "INTERACTION",
+            "GENERAL_GUIDANCE",
+            "CLARIFICATION"
+          ]
+        },
+        {"type": "null"}
       ]
     },
     "candidate_entity_keys": {
@@ -526,6 +540,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
     },
     "requested_section_types": {
       "type": "array",
+      "maxItems": 4,
       "uniqueItems": true,
       "items": {
         "type": "string",
@@ -534,6 +549,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
     },
     "interaction_pair_keys": {
       "type": "array",
+      "maxItems": 16,
       "items": {"type": "string"}
     },
     "stimuli": {
@@ -543,7 +559,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "query": {"type": "string"},
+          "query": {"type": "string", "minLength": 1, "maxLength": 300},
           "target": {
             "type": "string",
             "enum": [
@@ -555,12 +571,13 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
           },
           "section_types": {
             "type": "array",
+            "maxItems": 4,
             "items": {
               "type": "string",
               "enum": ["FUNCTION", "DAILY_INTAKE", "CAUTION", "INTERACTION"]
             }
           },
-          "purpose": {"type": "string"}
+          "purpose": {"type": "string", "minLength": 1, "maxLength": 240}
         },
         "required": ["query", "target", "section_types", "purpose"]
       }
@@ -569,10 +586,19 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
       "type": "string",
       "enum": ["HIGH", "MEDIUM", "LOW"]
     },
+    "reason_codes": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "enum": ["LOW_CONFIDENCE", "MULTI_ENTITY", "SESSION_REFERENCE"]
+      }
+    },
     "needs_clarification": {"type": "boolean"},
-    "clarification_question": {"type": ["string", "null"]}
+    "clarification_question": {"type": ["string", "null"], "maxLength": 300}
   },
   "required": [
+    "interpretation_version",
     "normalized_question",
     "route",
     "candidate_entity_keys",
@@ -580,6 +606,7 @@ Prompt Chaining은 각 단계가 하나의 판단만 담당하도록 구성합�
     "interaction_pair_keys",
     "stimuli",
     "confidence",
+    "reason_codes",
     "needs_clarification",
     "clarification_question"
   ]
@@ -632,14 +659,14 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
 4. 연구 대상이 사람, 동물, 세포 중 무엇인지 확인하고 적용 범위를 유지합니다.
 5. 용량, 제형, 섭취 형태, 연령, 임신·수유 등 결론의 조건을 확인합니다.
 6. 서로 다른 근거가 같은 조건에서 일치하는지 확인합니다.
-7. 행동 지침은 해당 문장을 직접 지원하는 evidence ID가 있을 때만 연결합니다.
+7. 상호작용 주장과 행동 지침은 하나의 요청 pair key와 그 pair key를 가진 evidence ID에 연결합니다.
 8. 지원되지 않는 요청 항목을 `missing_section_types`에 기록합니다.
 
 내부 점검 과정은 출력하지 않습니다. JSON에는 근거가 지원하는 주장, evidence ID, 적용 범위, 판정값과 부족한 항목만 포함합니다.
 
-`INTERACTION_CONFIRMED`는 두 대상의 직접 관계를 설명하는 근거가 있을 때 사용합니다. 두 성분이 같은 문서에 등장한 사실만 확인되면 `NO_DIRECT_EVIDENCE`를 사용합니다. 근거가 조건별로 다른 결론을 제시하면 `CONFLICTING_EVIDENCE`를 사용합니다.
+`INTERACTION_CONFIRMED`는 두 대상의 직접 관계를 설명하는 근거가 있을 때 사용합니다. 두 성분이 같은 문서에 등장한 사실만 확인되면 `INSUFFICIENT + NO_DIRECT_EVIDENCE`를 사용합니다. 세포·동물처럼 범위가 제한된 관계 근거만 있으면 `PARTIAL + NO_DIRECT_EVIDENCE`로 사람 대상 결론과 구분합니다. 근거가 조건별로 다른 결론을 제시하면 `CONFLICTING_EVIDENCE`를 사용합니다.
 
-`안전하다`, `문제가 없다`와 같은 결론 대신 확인된 관계와 확인되지 않은 범위를 구분합니다. 복용량, 복용 간격과 중단 지침은 근거가 직접 제공한 경우에만 `supported_action`에 포함합니다.
+`안전하다`, `문제가 없다`와 같은 결론 대신 확인된 관계와 확인되지 않은 범위를 구분합니다. 복용량, 복용 간격과 중단 지침은 동일한 pair key의 근거가 직접 제공한 경우에만 `supported_action`에 포함합니다. `NO_DIRECT_EVIDENCE`에서는 `supported_action`을 만들지 않습니다.
 <!-- prompt:evidence_reasoning:system:end -->
 
 ### User Prompt
@@ -681,17 +708,20 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   "claims": [
     {
       "section_type": "INTERACTION",
+      "pair_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "statement": "제시된 섭취 조건에서는 성분 B가 성분 A의 흡수를 낮출 수 있습니다.",
       "evidence_ids": ["EV-101"],
       "scope_note": "근거에 제시된 사람 대상 섭취 조건에 한정합니다."
     }
   ],
   "supported_action": {
+    "pair_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "statement": "근거에 따라 두 시간 간격을 확인합니다.",
     "evidence_ids": ["EV-102"]
   },
   "missing_section_types": [],
-  "conflict_evidence_ids": []
+  "conflict_evidence_ids": [],
+  "conflict_pair_key": null
 }
 ```
 
@@ -712,7 +742,8 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   "claims": [],
   "supported_action": null,
   "missing_section_types": ["INTERACTION"],
-  "conflict_evidence_ids": []
+  "conflict_evidence_ids": [],
+  "conflict_pair_key": null
 }
 ```
 
@@ -732,6 +763,7 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   "claims": [
     {
       "section_type": "INTERACTION",
+      "pair_key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "statement": "세포 수준에서 두 성분의 반응이 관찰됐습니다.",
       "evidence_ids": ["EV-301"],
       "scope_note": "세포 연구 결과이므로 사람의 섭취 결과로 확정하지 않습니다."
@@ -739,7 +771,8 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   ],
   "supported_action": null,
   "missing_section_types": ["INTERACTION"],
-  "conflict_evidence_ids": []
+  "conflict_evidence_ids": [],
+  "conflict_pair_key": null
 }
 ```
 
@@ -759,6 +792,7 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   "claims": [
     {
       "section_type": "INTERACTION",
+      "pair_key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "statement": "섭취 형태와 식사 조건에 따라 결과가 다르게 나타났습니다.",
       "evidence_ids": ["EV-401", "EV-402"],
       "scope_note": "각 연구의 섭취 조건을 함께 확인해야 합니다."
@@ -766,7 +800,8 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   ],
   "supported_action": null,
   "missing_section_types": [],
-  "conflict_evidence_ids": ["EV-401", "EV-402"]
+  "conflict_evidence_ids": ["EV-401", "EV-402"],
+  "conflict_pair_key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 }
 ```
 
@@ -787,12 +822,14 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   "claims": [
     {
       "section_type": "FUNCTION",
+      "pair_key": null,
       "statement": "정확 제품 안내에 명시된 증상 완화에 사용합니다.",
       "evidence_ids": ["EV-501"],
       "scope_note": "해당 제품 안내 범위에 한정합니다."
     },
     {
       "section_type": "CAUTION",
+      "pair_key": null,
       "statement": "정확 제품 안내에 명시된 복용 전 확인사항을 확인합니다.",
       "evidence_ids": ["EV-502"],
       "scope_note": "해당 제품 안내 범위에 한정합니다."
@@ -800,7 +837,8 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
   ],
   "supported_action": null,
   "missing_section_types": [],
-  "conflict_evidence_ids": []
+  "conflict_evidence_ids": [],
+  "conflict_pair_key": null
 }
 ```
 <!-- prompt:evidence_reasoning:examples:end -->
@@ -835,15 +873,20 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
             "type": "string",
             "enum": ["FUNCTION", "DAILY_INTAKE", "CAUTION", "INTERACTION"]
           },
-          "statement": {"type": "string"},
+          "pair_key": {
+            "type": ["string", "null"],
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "statement": {"type": "string", "minLength": 1, "maxLength": 240},
           "evidence_ids": {
             "type": "array",
             "minItems": 1,
             "items": {"type": "string"}
           },
-          "scope_note": {"type": ["string", "null"]}
+          "scope_note": {"type": ["string", "null"], "maxLength": 160}
         },
-        "required": ["section_type", "statement", "evidence_ids", "scope_note"]
+        "required": ["section_type", "pair_key", "statement", "evidence_ids", "scope_note"]
       }
     },
     "supported_action": {
@@ -852,14 +895,15 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "statement": {"type": "string"},
+            "pair_key": {"type": "string", "minLength": 64, "maxLength": 64},
+            "statement": {"type": "string", "minLength": 1, "maxLength": 240},
             "evidence_ids": {
               "type": "array",
               "minItems": 1,
               "items": {"type": "string"}
             }
           },
-          "required": ["statement", "evidence_ids"]
+          "required": ["pair_key", "statement", "evidence_ids"]
         },
         {"type": "null"}
       ]
@@ -874,6 +918,11 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
     "conflict_evidence_ids": {
       "type": "array",
       "items": {"type": "string"}
+    },
+    "conflict_pair_key": {
+      "type": ["string", "null"],
+      "minLength": 64,
+      "maxLength": 64
     }
   },
   "required": [
@@ -882,7 +931,8 @@ Few-Shot은 직접 근거, 간접 동시 등장, 연구 범위 제한, 근거 �
     "claims",
     "supported_action",
     "missing_section_types",
-    "conflict_evidence_ids"
+    "conflict_evidence_ids",
+    "conflict_pair_key"
   ]
 }
 ```

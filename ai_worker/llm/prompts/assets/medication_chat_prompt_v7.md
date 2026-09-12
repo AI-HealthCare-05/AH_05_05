@@ -75,9 +75,9 @@
 
 내용(Content): 검증된 질문 해석, 사용자 위험정보, 검색된 evidence item과 승인된 규칙만 사용하세요.
 
-형식(Format): 지정된 JSON Schema의 reasoning_status, interaction_decision, claims, supported_action, missing section과 conflict evidence ID만 반환하세요.
+형식(Format): 지정된 JSON Schema의 reasoning_status, interaction_decision, pair_key가 연결된 claims와 supported_action, missing section, conflict evidence ID와 conflict_pair_key만 반환하세요.
 
-제약(Constraint): 질문 대상과 evidence item을 대조하고 두 대상의 관계가 본문에 직접 설명됐는지 확인하세요. 같은 문서에 두 성분이 따로 등장한 사실은 직접 근거가 아닙니다. 사람·동물·세포, 용량, 제형, 섭취 형태와 대상자 조건을 claim의 범위에 유지하세요. 각 claim과 supported action은 입력 evidence ID를 가져야 합니다. 복용 간격·중단·용량 조정은 근거가 직접 제공한 경우에만 지원할 수 있습니다. `안전하다` 또는 `문제가 없다`로 바꾸지 마세요.
+제약(Constraint): 질문 대상과 evidence item을 대조하고 두 대상의 관계가 본문에 직접 설명됐는지 확인하세요. 같은 문서에 두 성분이 따로 등장한 사실은 직접 근거가 아닙니다. 사람·동물·세포, 용량, 제형, 섭취 형태와 대상자 조건을 claim의 범위에 유지하세요. INTERACTION claim, supported action과 충돌 근거는 요청받은 하나의 pair_key와 그 pair_key를 가진 입력 evidence ID만 연결하세요. 직접 행동 근거가 없으면 supported_action은 null입니다. 세포·동물처럼 범위가 제한된 간접 근거는 PARTIAL과 NO_DIRECT_EVIDENCE로 구분할 수 있습니다. 복용 간격·중단·용량 조정은 근거가 직접 제공한 경우에만 지원할 수 있습니다. `안전하다` 또는 `문제가 없다`로 바꾸지 마세요.
 <!-- prompt:evidence_reasoning:system:end -->
 
 <!-- prompt:evidence_reasoning:user:start -->
@@ -90,10 +90,10 @@
 <!-- prompt:evidence_reasoning:user:end -->
 
 <!-- prompt:evidence_reasoning:examples:start -->
-두 대상의 흡수 변화를 사람 대상 연구가 직접 설명하면 INTERACTION_CONFIRMED로 판정하고 해당 evidence ID만 claim에 연결합니다.
+두 대상의 흡수 변화를 사람 대상 연구가 직접 설명하면 INTERACTION_CONFIRMED로 판정하고 동일한 pair_key와 해당 evidence ID만 claim에 연결합니다.
 두 성분의 일일 기준이 별도 문단에 있을 뿐 관계가 없으면 NO_DIRECT_EVIDENCE와 INTERACTION 누락을 반환합니다.
-세포 연구만 있으면 사람 섭취 결과로 확대하지 않고 범위를 명시합니다.
-동일한 두 대상이라도 공복 액상과 식사 동반 조건의 결과가 다르면 CONFLICTING_EVIDENCE와 양쪽 evidence ID를 반환합니다.
+세포 연구만 있으면 PARTIAL과 NO_DIRECT_EVIDENCE를 사용하고 사람 섭취 결과로 확대하지 않습니다.
+동일한 두 대상이라도 공복 액상과 식사 동반 조건의 결과가 다르면 CONFLICTING_EVIDENCE, 동일한 conflict_pair_key와 양쪽 evidence ID를 반환합니다.
 <!-- prompt:evidence_reasoning:examples:end -->
 
 <!-- prompt:answer_generation:system:start -->

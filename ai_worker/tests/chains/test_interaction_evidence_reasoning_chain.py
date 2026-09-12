@@ -9,6 +9,7 @@ from ai_worker.schemas.evidence_reasoning import (
     EvidenceReasoningInput,
     EvidenceReasoningOutput,
     InteractionEvidenceDecision,
+    SupportedEvidenceAction,
 )
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 
@@ -45,6 +46,7 @@ async def test_chain_accepts_claims_backed_by_input_evidence_ids() -> None:
                 "claims": [
                     {
                         "section_type": "INTERACTION",
+                        "pair_key": PAIR_KEY,
                         "statement": "제시된 연구 조건에서 두 성분의 관계가 확인됐습니다.",
                         "evidence_ids": ["chunk:abc"],
                         "scope_note": "사람 대상 연구 조건에 한정합니다.",
@@ -78,6 +80,7 @@ async def test_chain_rejects_claim_with_unknown_evidence_id() -> None:
                 "claims": [
                     {
                         "section_type": "INTERACTION",
+                        "pair_key": PAIR_KEY,
                         "statement": "확인됐습니다.",
                         "evidence_ids": ["chunk:invented"],
                         "scope_note": None,
@@ -106,6 +109,7 @@ async def test_chain_rejects_interaction_claim_backed_by_wrong_pair() -> None:
                 "claims": [
                     {
                         "section_type": "INTERACTION",
+                        "pair_key": PAIR_KEY,
                         "statement": "다른 조합의 근거입니다.",
                         "evidence_ids": ["chunk:abc"],
                         "scope_note": None,
@@ -118,6 +122,114 @@ async def test_chain_rejects_interaction_claim_backed_by_wrong_pair() -> None:
 
     payload = build_input().model_dump()
     payload["evidence_items"][0]["pair_keys"] = ["b" * 64]
+    chain = build_interaction_evidence_reasoning_chain(
+        model="test-model",
+        client=Client(),
+    )
+
+    with pytest.raises(ValueError, match="요청한 상호작용 조합"):
+        await chain.ainvoke(EvidenceReasoningInput.model_validate(payload))
+
+
+async def test_chain_rejects_cross_pair_claim_when_both_pairs_are_requested() -> None:
+    second_pair_key = "b" * 64
+
+    class Client:
+        async def ainvoke(self, messages):
+            return {
+                "reasoning_status": "SUPPORTED",
+                "interaction_decision": "INTERACTION_CONFIRMED",
+                "claims": [
+                    {
+                        "section_type": "INTERACTION",
+                        "pair_key": second_pair_key,
+                        "statement": "두 번째 조합의 관계가 확인됐습니다.",
+                        "evidence_ids": ["chunk:abc"],
+                        "scope_note": None,
+                    }
+                ],
+                "supported_action": None,
+                "missing_section_types": [],
+                "conflict_evidence_ids": [],
+            }
+
+    payload = build_input().model_dump()
+    payload["interaction_pair_keys"].append(second_pair_key)
+    chain = build_interaction_evidence_reasoning_chain(
+        model="test-model",
+        client=Client(),
+    )
+
+    with pytest.raises(ValueError, match="claim pair_key"):
+        await chain.ainvoke(EvidenceReasoningInput.model_validate(payload))
+
+
+async def test_chain_rejects_supported_action_backed_by_wrong_pair() -> None:
+    class Client:
+        async def ainvoke(self, messages):
+            return {
+                "reasoning_status": "SUPPORTED",
+                "interaction_decision": "INTERACTION_CONFIRMED",
+                "claims": [
+                    {
+                        "section_type": "INTERACTION",
+                        "pair_key": PAIR_KEY,
+                        "statement": "요청한 조합의 관계가 확인됐습니다.",
+                        "evidence_ids": ["chunk:abc"],
+                        "scope_note": None,
+                    }
+                ],
+                "supported_action": {
+                    "pair_key": PAIR_KEY,
+                    "statement": "두 성분을 나누어 섭취하세요.",
+                    "evidence_ids": ["chunk:wrong-pair"],
+                },
+                "missing_section_types": [],
+                "conflict_evidence_ids": [],
+            }
+
+    payload = build_input().model_dump()
+    payload["evidence_items"].append(
+        {
+            "evidence_id": "chunk:wrong-pair",
+            "content": "다른 두 성분의 복용 간격을 설명한 근거입니다.",
+            "section_types": ["INTERACTION"],
+            "pair_keys": ["b" * 64],
+            "study_scope": "HUMAN",
+        }
+    )
+    chain = build_interaction_evidence_reasoning_chain(
+        model="test-model",
+        client=Client(),
+    )
+
+    with pytest.raises(ValueError, match="요청한 상호작용 조합"):
+        await chain.ainvoke(EvidenceReasoningInput.model_validate(payload))
+
+
+async def test_chain_rejects_conflict_evidence_backed_by_wrong_pair() -> None:
+    class Client:
+        async def ainvoke(self, messages):
+            return {
+                "reasoning_status": "CONFLICTING",
+                "interaction_decision": "CONFLICTING_EVIDENCE",
+                "claims": [],
+                "supported_action": None,
+                "missing_section_types": [],
+                "conflict_evidence_ids": ["chunk:abc", "chunk:wrong-pair"],
+                "conflict_pair_key": PAIR_KEY,
+            }
+
+    payload = build_input().model_dump()
+    payload["evidence_items"].append(
+        {
+            "evidence_id": "chunk:wrong-pair",
+            "content": "다른 조합에서 상반된 결과를 설명한 근거입니다.",
+            "section_types": ["INTERACTION"],
+            "pair_keys": ["b" * 64],
+            "study_scope": "HUMAN",
+        }
+    )
     chain = build_interaction_evidence_reasoning_chain(
         model="test-model",
         client=Client(),
@@ -150,6 +262,7 @@ def test_confirmed_decision_requires_interaction_claim() -> None:
             claims=[
                 EvidenceClaim(
                     section_type=KnowledgeSectionType.CAUTION,
+                    pair_key=None,
                     statement="주의가 필요합니다.",
                     evidence_ids=["chunk:abc"],
                 )
@@ -166,6 +279,40 @@ def test_conflicting_decision_requires_two_conflict_evidence_ids() -> None:
             claims=[],
             missing_section_types=[],
             conflict_evidence_ids=["chunk:abc"],
+            conflict_pair_key=PAIR_KEY,
+        )
+
+
+def test_partial_no_direct_evidence_allows_scoped_indirect_claim() -> None:
+    output = EvidenceReasoningOutput(
+        reasoning_status="PARTIAL",
+        interaction_decision="NO_DIRECT_EVIDENCE",
+        claims=[
+            EvidenceClaim(
+                section_type=KnowledgeSectionType.INTERACTION,
+                pair_key=PAIR_KEY,
+                statement="세포 수준에서 두 성분의 반응이 관찰됐습니다.",
+                evidence_ids=["chunk:abc"],
+                scope_note="사람의 섭취 결과로 확정하지 않습니다.",
+            )
+        ],
+        missing_section_types=[KnowledgeSectionType.INTERACTION],
+    )
+
+    assert output.reasoning_status == "PARTIAL"
+
+
+def test_no_direct_evidence_rejects_supported_action() -> None:
+    with pytest.raises(ValueError, match="supported_action"):
+        EvidenceReasoningOutput(
+            reasoning_status="INSUFFICIENT",
+            interaction_decision="NO_DIRECT_EVIDENCE",
+            supported_action=SupportedEvidenceAction(
+                pair_key=PAIR_KEY,
+                statement="두 성분을 나누어 섭취하세요.",
+                evidence_ids=["chunk:abc"],
+            ),
+            missing_section_types=[KnowledgeSectionType.INTERACTION],
         )
 
 
@@ -185,6 +332,7 @@ def test_evidence_output_rejects_more_than_four_claims() -> None:
             claims=[
                 EvidenceClaim(
                     section_type=KnowledgeSectionType.INTERACTION,
+                    pair_key=PAIR_KEY,
                     statement=f"근거 요약 {index}",
                     evidence_ids=["chunk:abc"],
                 )
@@ -197,6 +345,7 @@ def test_evidence_claim_rejects_oversized_statement() -> None:
     with pytest.raises(ValueError):
         EvidenceClaim(
             section_type=KnowledgeSectionType.INTERACTION,
+            pair_key=PAIR_KEY,
             statement="가" * 241,
             evidence_ids=["chunk:abc"],
         )
@@ -206,6 +355,7 @@ def test_evidence_claim_rejects_whitespace_only_statement() -> None:
     with pytest.raises(ValueError):
         EvidenceClaim(
             section_type=KnowledgeSectionType.INTERACTION,
+            pair_key=PAIR_KEY,
             statement=" ",
             evidence_ids=["chunk:abc"],
         )

@@ -394,6 +394,10 @@ class AnswerMedicationQuestionUseCase:
                 rules = []
                 rule_status = InteractionRuleLookupStatus.RULE_REPOSITORY_UNAVAILABLE
             else:
+                rules = self._rules_for_query_plan(
+                    rules=rules,
+                    query_plan=query_plan,
+                )
                 rule_status = (
                     InteractionRuleLookupStatus.MATCHED if rules else InteractionRuleLookupStatus.NO_APPROVED_RULE
                 )
@@ -770,40 +774,40 @@ class AnswerMedicationQuestionUseCase:
         ):
             return None
 
-        approved_rules = [
-            EvidenceItem(
-                evidence_id=f"rule:{rule.interaction_rule_id}",
-                content=" ".join(rule.effect_texts),
-                section_types=[KnowledgeSectionType.INTERACTION],
-                pair_keys=[rule.pair_key],
-                study_scope="APPROVED_RULE",
-            )
-            for rule in rules
-        ]
-        evidence_items = [
-            EvidenceItem(
-                evidence_id=f"chunk:{chunk.chunk_id}",
-                content=chunk.content,
-                section_types=[chunk.metadata.section_type],
-                pair_keys=chunk.metadata.interaction_pair_keys,
-                study_scope=chunk.metadata.study_population.value,
-            )
-            for chunk in interaction_chunks
-        ]
-        reasoning_input = EvidenceReasoningInput(
-            question=request.question,
-            entity_names=entity_names,
-            requested_section_types=query_plan.section_types,
-            interaction_pair_keys=execution_plan.interaction_pair_keys,
-            evidence_items=evidence_items,
-            approved_rules=approved_rules,
-            risk_profile=request.risk_profile.model_dump(mode="json"),
-        )
         async with self._tracer.span(
             "medication.evidence_reasoning",
             run_type="llm",
         ) as reasoning_span:
             try:
+                approved_rules = [
+                    EvidenceItem(
+                        evidence_id=f"rule:{rule.interaction_rule_id}",
+                        content=" ".join(rule.effect_texts),
+                        section_types=[KnowledgeSectionType.INTERACTION],
+                        pair_keys=[rule.pair_key],
+                        study_scope="APPROVED_RULE",
+                    )
+                    for rule in rules
+                ]
+                evidence_items = [
+                    EvidenceItem(
+                        evidence_id=f"chunk:{chunk.chunk_id}",
+                        content=chunk.content,
+                        section_types=[chunk.metadata.section_type],
+                        pair_keys=chunk.metadata.interaction_pair_keys,
+                        study_scope=chunk.metadata.study_population.value,
+                    )
+                    for chunk in interaction_chunks
+                ]
+                reasoning_input = EvidenceReasoningInput(
+                    question=request.question,
+                    entity_names=entity_names,
+                    requested_section_types=query_plan.section_types,
+                    interaction_pair_keys=execution_plan.interaction_pair_keys,
+                    evidence_items=evidence_items,
+                    approved_rules=approved_rules,
+                    risk_profile=request.risk_profile.model_dump(mode="json"),
+                )
                 raw_result = await chain.ainvoke(reasoning_input)
                 result = EvidenceReasoningOutput.model_validate(raw_result)
             except Exception as error:
@@ -1242,16 +1246,39 @@ class AnswerMedicationQuestionUseCase:
                 selected_entities=validated_entities,
             )
         ]
+        if output.stimuli and not validated_stimuli:
+            return planning
+        selected_pair_keys = validated_pair_keys or query_plan.interaction_pair_keys
+        if validated_pair_keys:
+            selected_pair_key_set = set(selected_pair_keys)
+            selected_pairs = [pair for pair in query_plan.interaction_pairs if pair.pair_key in selected_pair_key_set]
+            selected_interaction_pair = (
+                query_plan.interaction_pair
+                if (
+                    query_plan.interaction_pair is not None
+                    and query_plan.interaction_pair.pair_key in selected_pair_key_set
+                )
+                else None
+            )
+            alternate_queries = cls._alternate_queries_for_selected_pairs(
+                query_plan=query_plan,
+                selected_pairs=selected_pairs,
+            )
+        else:
+            selected_pairs = query_plan.interaction_pairs
+            selected_interaction_pair = query_plan.interaction_pair
+            alternate_queries = query_plan.alternate_queries
         validated_query_plan = query_plan.model_copy(
             update={
                 "section_types": section_types,
-                "interaction_pair_keys": (
-                    validated_pair_keys if validated_pair_keys else query_plan.interaction_pair_keys
-                ),
+                "interaction_pair": selected_interaction_pair,
+                "interaction_pairs": selected_pairs,
+                "interaction_types": list(dict.fromkeys(pair.pair_type for pair in selected_pairs)),
+                "interaction_pair_keys": selected_pair_keys,
                 "alternate_queries": list(
                     dict.fromkeys(
                         [
-                            *query_plan.alternate_queries,
+                            *alternate_queries,
                             *validated_stimuli,
                         ]
                     )
@@ -1291,6 +1318,26 @@ class AnswerMedicationQuestionUseCase:
                 reason_codes=[],
             ),
         )
+
+    @staticmethod
+    def _alternate_queries_for_selected_pairs(
+        *,
+        query_plan: MedicationKnowledgeQueryPlan,
+        selected_pairs: list[MedicationInteractionQueryPair],
+    ) -> list[str]:
+        pair_key_by_query = {
+            f"{pair.left_name} {pair.right_name} 상호작용": pair.pair_key for pair in query_plan.interaction_pairs
+        }
+        if query_plan.interaction_pair is not None:
+            pair_key_by_query[query_plan.interaction_pair.english_query] = query_plan.interaction_pair.pair_key
+        selected_pair_keys = {pair.pair_key for pair in selected_pairs}
+        filtered_queries = [
+            query
+            for query in query_plan.alternate_queries
+            if query not in pair_key_by_query or pair_key_by_query[query] in selected_pair_keys
+        ]
+        selected_pair_queries = [f"{pair.left_name} {pair.right_name} 상호작용" for pair in selected_pairs]
+        return list(dict.fromkeys([*filtered_queries, *selected_pair_queries]))
 
     @staticmethod
     def _conditional_allowed_search_terms(
@@ -2214,7 +2261,7 @@ class AnswerMedicationQuestionUseCase:
                 interpretation=interpretation,
             )
         if interpretation.needs_clarification and interpretation.clarification_question:
-            return self._conditional_clarification_result(
+            return await self._conditional_clarification_result(
                 request=request,
                 context=context,
                 interpretation=interpretation,
@@ -2242,9 +2289,8 @@ class AnswerMedicationQuestionUseCase:
             decision=dose_decision,
         )
 
-    @classmethod
-    def _conditional_clarification_result(
-        cls,
+    async def _conditional_clarification_result(
+        self,
         *,
         request: MedicationChatRequest,
         context: ActiveIntakeContext,
@@ -2252,7 +2298,7 @@ class AnswerMedicationQuestionUseCase:
     ) -> MedicationChatResult:
         if not interpretation.clarification_question:
             raise ValueError("조건부 확인 응답에는 확인 질문이 필요합니다.")
-        return MedicationChatResult(
+        result = MedicationChatResult(
             request_id=request.request_id,
             answer=interpretation.clarification_question,
             route=MedicationChatRoute.CLARIFICATION,
@@ -2262,8 +2308,12 @@ class AnswerMedicationQuestionUseCase:
             ],
             prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
             schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
-            context_hash=cls._context_hash(context),
+            context_hash=self._context_hash(context),
             question_interpretation=interpretation,
+        )
+        return await self._grounded_claim_validator.validate(
+            context=context,
+            result=result,
         )
 
     @classmethod
@@ -3259,6 +3309,17 @@ class AnswerMedicationQuestionUseCase:
             approved_rules_hash=cls._approved_rules_hash(rules),
             limit=limit,
         )
+
+    @staticmethod
+    def _rules_for_query_plan(
+        *,
+        rules: list[InteractionRuleFact],
+        query_plan: MedicationKnowledgeQueryPlan,
+    ) -> list[InteractionRuleFact]:
+        requested_pair_keys = set(query_plan.interaction_pair_keys)
+        if not requested_pair_keys:
+            return rules
+        return [rule for rule in rules if rule.pair_key in requested_pair_keys]
 
     @staticmethod
     def _approved_rules_hash(rules: list[InteractionRuleFact]) -> str:

@@ -132,6 +132,38 @@ def test_output_requires_clarification_question_only_when_needed() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("normalized_question", "가" * 501),
+        ("clarification_question", "나" * 301),
+    ],
+)
+def test_output_rejects_oversized_model_text(
+    field_name: str,
+    field_value: str,
+) -> None:
+    payload = {
+        "normalized_question": "제품을 확인해 주세요.",
+        "confidence": "LOW",
+        "needs_clarification": True,
+        "clarification_question": "제품명을 알려주세요.",
+        field_name: field_value,
+    }
+
+    with pytest.raises(ValueError):
+        ConditionalQuestionInterpretationOutput.model_validate(payload)
+
+
+def test_directional_stimulus_rejects_oversized_model_text() -> None:
+    with pytest.raises(ValueError):
+        DirectionalSearchStimulus(
+            query="마" * 301,
+            target=DirectionalSearchTarget.INTERACTION_EVIDENCE,
+            purpose="두 성분의 직접 관계를 찾습니다.",
+        )
+
+
 async def test_chain_uses_v7_directional_stage_prompt() -> None:
     observed_messages = []
 

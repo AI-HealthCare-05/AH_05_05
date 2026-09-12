@@ -40,10 +40,10 @@ class DirectionalSearchStimulus(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    query: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=300)
     target: DirectionalSearchTarget
-    section_types: list[KnowledgeSectionType] = Field(default_factory=list)
-    purpose: str = Field(min_length=1)
+    section_types: list[KnowledgeSectionType] = Field(default_factory=list, max_length=4)
+    purpose: str = Field(min_length=1, max_length=240)
 
     @field_validator("query", "purpose")
     @classmethod
@@ -100,17 +100,18 @@ class ConditionalQuestionInterpretationOutput(BaseModel):
     interpretation_version: str = Field(
         default=CONDITIONAL_QUESTION_INTERPRETATION_VERSION,
         min_length=1,
+        max_length=80,
     )
-    normalized_question: str = Field(min_length=1)
+    normalized_question: str = Field(min_length=1, max_length=500)
     route: MedicationChatRoute | None = None
     candidate_entity_keys: list[str] = Field(default_factory=list, max_length=12)
-    requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
-    interaction_pair_keys: list[str] = Field(default_factory=list)
+    requested_section_types: list[KnowledgeSectionType] = Field(default_factory=list, max_length=4)
+    interaction_pair_keys: list[str] = Field(default_factory=list, max_length=16)
     stimuli: list[DirectionalSearchStimulus] = Field(default_factory=list, max_length=3)
     confidence: MedicationQuestionConfidence
-    reason_codes: list[ConditionalInterpretationReasonCode] = Field(default_factory=list)
+    reason_codes: list[ConditionalInterpretationReasonCode] = Field(default_factory=list, max_length=3)
     needs_clarification: bool = False
-    clarification_question: str | None = None
+    clarification_question: str | None = Field(default=None, max_length=300)
 
     @field_validator("candidate_entity_keys")
     @classmethod

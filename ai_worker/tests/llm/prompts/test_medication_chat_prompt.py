@@ -100,6 +100,7 @@ def test_build_messages_includes_only_structured_evidence_reasoning_result() -> 
             claims=[
                 EvidenceClaim(
                     section_type=KnowledgeSectionType.INTERACTION,
+                    pair_key="a" * 64,
                     statement="두 성분의 직접 관계가 확인됐습니다.",
                     evidence_ids=["chunk:abc"],
                 )
@@ -122,6 +123,7 @@ def test_build_messages_includes_only_structured_evidence_reasoning_result() -> 
         "claims": [
             {
                 "section_type": "INTERACTION",
+                "pair_key": "a" * 64,
                 "statement": "두 성분의 직접 관계가 확인됐습니다.",
                 "evidence_ids": ["chunk:abc"],
                 "scope_note": None,
@@ -130,6 +132,7 @@ def test_build_messages_includes_only_structured_evidence_reasoning_result() -> 
         "supported_action": None,
         "missing_section_types": [],
         "conflict_evidence_ids": [],
+        "conflict_pair_key": None,
     }
 
 
