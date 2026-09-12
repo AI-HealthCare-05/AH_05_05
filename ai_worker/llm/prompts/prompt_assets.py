@@ -52,7 +52,7 @@ class PromptChainStageDocument:
             (
                 self.common,
                 self.system,
-                "예시(Example)\n" + self.examples,
+                "[예시(Example)]\n" + self.examples,
             )
         )
 

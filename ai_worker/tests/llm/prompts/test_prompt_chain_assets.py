@@ -27,6 +27,36 @@ def test_v7_prompt_pack_loads_only_requested_stage() -> None:
     assert "예시(Example)" in document.compiled_system
 
 
+@pytest.mark.parametrize(
+    ("stage_name", "uses_directional_stimulus"),
+    [
+        ("CONVERSATION_GATE", False),
+        ("DIRECTIONAL_QUERY", True),
+        ("EVIDENCE_REASONING", True),
+        ("ANSWER_GENERATION", False),
+    ],
+)
+def test_primary_prompt_stages_expose_labeled_prompt_elements(
+    stage_name: str,
+    uses_directional_stimulus: bool,
+) -> None:
+    prompt_assets = _prompt_assets_module()
+    stage = getattr(prompt_assets.MedicationPromptStage, stage_name)
+
+    document = prompt_assets.load_prompt_chain_stage(stage)
+
+    for element in (
+        "[역할(Role)]",
+        "[작업(Task)]",
+        "[내용(Content)]",
+        "[형식(Format)]",
+        "[제약(Constraint)]",
+        "[예시(Example)]",
+    ):
+        assert element in document.compiled_system
+    assert ("[방향 자극(Directional Stimulus)]" in document.compiled_system) is uses_directional_stimulus
+
+
 def test_stage_parser_rejects_missing_stage_marker() -> None:
     prompt_assets = _prompt_assets_module()
 
