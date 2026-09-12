@@ -162,7 +162,7 @@ export function OfficialChallengeDetailPage() {
     <>
     <Header title={item.name} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
     <main className="flex flex-col gap-4 px-page-x py-5">
-      <p className="text-caption text-muted-foreground">공식 챌린지</p>
+      <span className="self-start rounded-pill bg-primary-bg px-2 py-1 text-micro font-bold text-primary">공식</span>
 
       <section className="flex flex-col gap-2 rounded-card bg-primary-bg p-5" aria-labelledby="official-highlight-title">
         {item.reward_badge ? (
