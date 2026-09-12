@@ -1,11 +1,12 @@
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 
 import { useSession } from '@/app/SessionContext';
 import { getChallengeCatalog, getChallengeParticipations } from '@/entities/challenge';
 import { getCustomChallengeRecommendations } from '@/entities/custom-challenge';
 import { Button } from '@/shared/ui/Button';
+import { NavigationTabs } from '@/shared/ui/tabs';
 import { LoadingState } from '@/shared/ui/LoadingState';
 import { ChallengeAccordion } from './ChallengeAccordion';
 import { ChallengePageHeading } from './ChallengePageHeading';
@@ -85,10 +86,13 @@ export function OfficialChallengeBrowsePage() {
     <>
       <ChallengePageHeading />
       <main className="flex flex-col gap-4 px-page-x py-5">
-        <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
-          <Link to="/challenges" className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">나의 챌린지</Link>
-          <Link aria-current="page" to="/challenges/browse" className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">둘러보기</Link>
-        </nav>
+        <NavigationTabs
+          label="챌린지 보기"
+          items={[
+            { label: '나의 챌린지', to: '/challenges', end: true },
+            { label: '둘러보기', to: '/challenges/browse' },
+          ]}
+        />
 
         <section aria-label="챌린지 목록" className="flex flex-col gap-3">
           {groups.map(group => (

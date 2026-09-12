@@ -12,14 +12,6 @@ async function surface(button: Locator) {
   });
 }
 
-async function seekPill(pill: Locator, time: number) {
-  await pill.evaluate((element, currentTime) => {
-    [element, ...element.querySelectorAll('[data-continuous-ink]')].forEach(layer => {
-      layer.getAnimations().forEach(animation => { animation.pause(); animation.currentTime = currentTime; });
-    });
-  }, time);
-}
-
 function colorChannels(value: string) {
   const srgb = value.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
   if (srgb) return srgb.slice(1, 4).map(Number);
@@ -76,36 +68,20 @@ test('cancel and save use equal rim and depth geometry in rest, focus, press and
   await expect(page.getByRole('status', { name: '작업 횟수' })).toHaveText('0');
 });
 
-test('home tabs keep one sliding pill and cross intermediate positions on fast reversal', async ({ page }, testInfo) => {
+test('home screen tabs keep one static underline and stable geometry on fast reversal', async ({ page }, testInfo) => {
   const tabs = page.getByRole('tablist', { name: '오늘의 홈 탭' });
-  const pill = tabs.locator('[data-continuous-pill]');
-  await expect(pill).toHaveCount(1);
-  const first = await pill.boundingBox();
-  const lastTab = tabs.getByRole('tab', { name: '오늘의 영양제' });
-  const destination = await lastTab.boundingBox();
-  await lastTab.click();
-  // Seek the browser's actual animation for deterministic intermediate layout.
-  await seekPill(pill, 90);
-  const middle = (await pill.boundingBox())!;
-  expect(middle.x).toBeGreaterThan(first!.x + 5);
-  expect(middle.x).toBeLessThan(destination!.x - 5);
-  const labelCenters = await tabs.evaluate(element => {
-    const buttons = Array.from(element.querySelectorAll('.rx-continuous-trigger'));
-    const ink = Array.from(element.querySelectorAll('[data-continuous-ink] > span'));
-    return buttons.map((button, index) => {
-      const base = button.getBoundingClientRect(); const overlay = ink[index].getBoundingClientRect();
-      return Math.abs(base.x + base.width / 2 - overlay.x - overlay.width / 2);
-    });
-  });
-  expect(labelCenters.every(delta => delta < 1)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('tabs-moving.png') });
-  const previous = await pill.elementHandle();
-  await tabs.getByRole('tab', { name: '오늘의 복약' }).click();
-  await seekPill(pill, 0);
-  expect(Math.abs((await pill.boundingBox())!.x - middle.x)).toBeLessThan(2);
-  expect(await previous!.evaluate(element => element.isConnected)).toBe(true);
-  await seekPill(pill, 600);
-  await expect.poll(async () => Math.abs((await pill.boundingBox())!.x - first!.x)).toBeLessThan(1);
+  const medication = tabs.getByRole('tab', { name: '오늘의 복약' });
+  const supplement = tabs.getByRole('tab', { name: '오늘의 영양제' });
+  await expect(tabs.locator('[data-continuous-pill]')).toHaveCount(0);
+  const before = await tabs.getByRole('tab').evaluateAll(items => items.map(item => item.getBoundingClientRect().toJSON()));
+  await supplement.click();
+  await expect(supplement).toHaveAttribute('aria-selected', 'true');
+  expect(await supplement.evaluate(element => getComputedStyle(element, '::after').backgroundColor)).toBe('rgb(7, 122, 116)');
+  expect(await medication.evaluate(element => getComputedStyle(element, '::after').backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  await medication.click();
+  await expect(medication).toHaveAttribute('aria-selected', 'true');
+  expect(await tabs.getByRole('tab').evaluateAll(items => items.map(item => item.getBoundingClientRect().toJSON()))).toEqual(before);
+  await page.screenshot({ path: testInfo.outputPath('home-tabs-underline.png') });
 });
 
 test('tab instances stay independent, roving keys preserve slot inputs, and resize aligns the pill', async ({ page }) => {
@@ -143,13 +119,12 @@ test('the visible tab ink and semantic action surfaces keep readable contrast', 
   }
   const tabs = page.getByRole('tablist', { name: '오늘의 홈 탭' });
   const colors = await tabs.evaluate(element => ({
-    active: getComputedStyle(element.querySelector('[data-continuous-ink]')!).color,
-    activeSurface: getComputedStyle(element.querySelector('[data-continuous-pill]')!).backgroundImage,
-    inactive: getComputedStyle(element.querySelector('button')!).color,
-    track: getComputedStyle(element).backgroundImage,
+    active: getComputedStyle(element.querySelector('[aria-selected="true"]')!).color,
+    inactive: getComputedStyle(element.querySelector('[aria-selected="false"]')!).color,
+    background: getComputedStyle(document.body).backgroundColor,
   }));
-  expect(contrast(colors.active, colors.activeSurface)).toBeGreaterThanOrEqual(4.5);
-  expect(contrast(colors.inactive, colors.track)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(colors.active, colors.background)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(colors.inactive, colors.background)).toBeGreaterThanOrEqual(4.5);
 });
 
 for (const width of [320, 390, 1280]) {
@@ -158,10 +133,9 @@ for (const width of [320, 390, 1280]) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const tabs = page.getByRole('tablist', { name: '오늘의 홈 탭' });
     await tabs.getByRole('tab', { name: '오늘의 영양제' }).click();
-    const pill = tabs.locator('[data-continuous-pill]');
-    await expect(pill).toHaveCount(1);
-    expect(await pill.evaluate(element => element.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0);
-    expect(Math.abs((await pill.boundingBox())!.x - (await tabs.getByRole('tab', { selected: true }).boundingBox())!.x)).toBeLessThan(1);
+    await expect(tabs.locator('[data-continuous-pill]')).toHaveCount(0);
+    await expect(tabs.getByRole('tab', { selected: true })).toHaveText('오늘의 영양제');
+    expect(await tabs.getByRole('tab').evaluateAll(elements => elements.every(element => element.getAnimations().length === 0))).toBe(true);
     const buttons = page.getByRole('tab');
     for (const button of await buttons.all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
