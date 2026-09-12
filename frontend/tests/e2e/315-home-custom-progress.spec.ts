@@ -380,7 +380,7 @@ test('복약 저장 성공과 되돌리기는 맞춤 진행률을 각각 한 번
   await expect(customSection.getByText('2 / 7일')).toBeVisible();
   const initialCustomReads = counts.customReads;
 
-  await page.getByRole('button', { name: /먹었어요$/ }).click();
+  await page.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(customSection.getByText('3 / 7일')).toBeVisible();
   await expect(customSection.getByText('달성', { exact: true })).toBeVisible();
   expect(counts.customReads).toBe(initialCustomReads + 1);
@@ -425,7 +425,7 @@ test('복약 저장이 모두 실패하면 재조회하지 않고 부분 성공�
   await expect(page.getByRole('region', { name: '챌린지', exact: true }).getByText('2 / 7일'))
     .toBeVisible();
   const initialCustomReads = counts.customReads;
-  await page.getByRole('button', { name: /먹었어요$/ }).click();
+  await page.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(
     page.getByRole('dialog').getByRole('heading', { name: '기록하지 못했어요' }),
   ).toBeVisible();
@@ -521,7 +521,7 @@ test('무효화 전에 시작한 늦은 맞춤 응답은 최신 진행률을 덮
   await expect(
     page.getByRole('region', { name: '챌린지', exact: true }).getByRole('status'),
   ).toBeVisible();
-  await page.getByRole('button', { name: /먹었어요$/ }).click();
+  await page.getByRole('button', { name: '먹었어요', exact: true }).click();
   const customSection = page.getByRole('region', { name: '챌린지', exact: true });
   await expect(customSection.getByText('7 / 7일')).toBeVisible();
   const readsAfterInvalidation = counts.customReads;

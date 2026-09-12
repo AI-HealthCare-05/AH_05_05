@@ -136,17 +136,35 @@ test('홈 빈 복약과 빈 영양제는 같은 안내 구조와 각각의 CTA�
 });
 
 for (const width of [390, 1280]) {
-  test(`홈 복약은 전체·선택 동작을 구분하고 펼친 약명을 보통 굵기로 표시한다 (${width}px)`, async ({ page }, testInfo) => {
+  test(`홈 복약은 일부 복용과 되돌리기를 유지하고 펼친 약명을 보통 굵기로 표시한다 (${width}px)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await routeApp(page);
+    const doseWrites: Array<{ recordId: number; taken: boolean }> = [];
+    await page.route('**/api/v1/medications/doses*', async (route) => {
+      if (route.request().method() === 'GET') return json(route, []);
+      const body = route.request().postDataJSON() as { recordId: number; taken: boolean };
+      doseWrites.push(body);
+      return json(route, body);
+    });
     await page.goto('/home');
 
     const morning = page.getByRole('group', { name: '아침약 상세' });
-    await expect(morning.getByRole('button', { name: '모두 먹었어요', exact: true })).toBeVisible();
+    const doseAction = morning.getByRole('button', { name: '먹었어요', exact: true });
+    await expect(doseAction).toBeVisible();
     const episode = morning.getByRole('article', { name: /해맑은소아청소년과의원/ });
     await episode.locator('[data-episode-row]').click();
-    await expect(morning.getByRole('button', { name: '선택한 약 먹었어요', exact: true })).toBeVisible();
+    await expect(doseAction).toBeVisible();
     await expect(episode.locator('[data-episode-row]')).toHaveAttribute('aria-pressed', 'true');
+    await doseAction.click();
+    await expect.poll(() => doseWrites).toEqual([
+      expect.objectContaining({ recordId: 430, taken: true }),
+    ]);
+    await episode.locator('[data-episode-row]').click();
+    await morning.getByRole('button', { name: '복약 기록 되돌리기', exact: true }).click();
+    await expect.poll(() => doseWrites).toEqual([
+      expect.objectContaining({ recordId: 430, taken: true }),
+      expect.objectContaining({ recordId: 430, taken: false }),
+    ]);
     await episode.getByRole('button', { name: /처방 펼치기$/ }).click();
     const medicationName = episode.getByRole('group', { name: /처방 약 상세/ })
       .getByText('세프디니르건조시럽', { exact: true });

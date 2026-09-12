@@ -38,10 +38,10 @@ test('목업 홈의 개별 처방 기록은 선택 대상만 한 회 집계하�
   await expect(progress).toContainText('67%');
   // The second prescription is not a challenge target yet.
   await medication.getByRole('button', { name: /9월 7일 처방.*선택$/ }).click();
-  await medication.getByRole('button', { name: /먹었어요$/ }).click();
+  await medication.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(progress).toContainText('67%');
   await medication.getByRole('button', { name: /감기약.*선택$/ }).click();
-  await medication.getByRole('button', { name: /먹었어요$/ }).click();
+  await medication.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(progress).toContainText('78%');
   await medication.getByRole('button', { name: /감기약.*복용 완료$/ }).click();
   await medication.getByRole('button', { name: '복약 기록 되돌리기', exact: true }).click();
@@ -56,7 +56,7 @@ test('참여하지 않은 처방 기록은 배지를 주지 않고 나중에 참
   await page.goto('/dev/home-challenges');
   const medication = page.getByRole('region', { name: '오늘의 복약' });
   await medication.getByRole('button', { name: /9월 7일 처방.*선택$/ }).click();
-  await medication.getByRole('button', { name: /먹었어요$/ }).click();
+  await medication.getByRole('button', { name: '먹었어요', exact: true }).click();
   await page.getByRole('region', { name: '챌린지' }).getByRole('link', { name: '전체 보기', exact: true }).click();
   await page.getByRole('region', { name: '작은 실천이 쌓이고 있어요' }).getByRole('link', { name: /전체 보기/ }).click();
   await expect(page.getByRole('link', { name: '복약 루틴 배지, 1회 획득', exact: true })).toBeVisible();

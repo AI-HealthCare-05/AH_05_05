@@ -49,7 +49,7 @@ test('홈 기록은 해당 처방만 달성시키고 같은 배지를 획득 이
   await expect(cold).toContainText('67%');
   await expect(other).toContainText('93%');
   await medication.getByRole('button', { name: /9월 7일 처방.*선택$/ }).click();
-  await medication.getByRole('button', { name: /먹었어요$/ }).click();
+  await medication.getByRole('button', { name: '먹었어요', exact: true }).click();
   await expect(cold).toContainText('67%');
   await expect(other).toHaveCount(0);
   await expect(summary).toContainText('진행 중 1개 · 달성 1개');
