@@ -489,13 +489,20 @@ test('a delayed recommendation response cannot replace another account route', a
     json: { items: [], total_count: 0, offset: 0, limit: 100 },
   }));
   let release!: () => void;
+  let switchedRoute = false;
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/v1/user/custom-challenge-recommendations', async route => {
+    if (switchedRoute) {
+      await route.fulfill({ json: { items: [], totalCount: 0 } });
+      return;
+    }
     await gate;
     await route.fulfill({ json: { items: [medicationA], totalCount: 1 } });
   });
 
   await page.goto('/challenges/tailored');
+  await expect(page.getByRole('status')).toBeVisible();
+  switchedRoute = true;
   await page.evaluate(() => {
     sessionStorage.setItem('poke.account-principal', 'another-account@example.com');
     window.history.pushState({}, '', '/challenges/browse');
@@ -504,7 +511,8 @@ test('a delayed recommendation response cannot replace another account route', a
   release();
 
   await expect(page).toHaveURL(/\/challenges\/browse$/);
-  await expect(page.getByRole('combobox', { name: '챌린지 종류' })).toBeVisible();
+  await page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true }).click();
+  await expect(page.getByRole('region', { name: '맞춤 챌린지', exact: true })).toContainText('지금 참여할 수 있는 맞춤 챌린지가 없어요.');
   await expect(page.getByText(medicationA.challengeName)).toHaveCount(0);
 });
 
@@ -536,7 +544,7 @@ test('a delayed join cannot navigate after leaving the target page', async ({ pa
   await page.waitForTimeout(100);
 
   await expect(page).toHaveURL(/\/challenges\/browse$/);
-  await expect(page.getByRole('combobox', { name: '챌린지 종류' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true })).toBeVisible();
   expect(targetRequests).toEqual([[101]]);
 });
 

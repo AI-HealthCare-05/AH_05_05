@@ -139,6 +139,8 @@ test('browse labels each type and keeps full recruitment dates', async ({ page }
   await page.route('**/api/v1/user/challenge-catalog?*', route => route.fulfill({ json: { items: [{ ...challenge, can_join: true, participation_id: null }], total_count: 1, offset: 0, limit: 100 } }));
   await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({ json: { items: [{ templateId: 41, challengeType: 'SUPPLEMENT', challengeName: '영양제 챌린지', targets: [{ id: 201, name: '비타민', existingParticipationId: null }], rewardBadge: null, action: 'NONE' }], totalCount: 1 } }));
   await page.goto('/challenges/browse');
+  await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
+  await page.getByRole('button', { name: '맞춤 챌린지 펼치기', exact: true }).click();
   const officialEntry = page.getByRole('button', { name: '매일 걷기 자세히 보기' });
   await expect(officialEntry.getByText('공식', { exact: true })).toBeVisible();
   await expect(officialEntry).toContainText('2026년 9월 1일 ~ 2026년 9월 30일');

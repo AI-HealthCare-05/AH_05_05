@@ -196,6 +196,7 @@ for (const entry of ['participation', 'catalog'] as const) {
     });
     await page.goto(entry === 'participation' ? '/challenges/participations/501' : '/challenges/browse');
     if (entry === 'catalog') {
+      await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
       await page.getByRole('button', { name: /매일 30분 걷기.*자세히 보기/ }).click();
       await expect(page).toHaveURL(/\/challenges\/official\/101$/);
     }
@@ -317,7 +318,7 @@ for (const outcome of ['leave', 'unauthorized'] as const) {
         window.history.pushState({}, '', '/challenges/browse');
         window.dispatchEvent(new PopStateEvent('popstate'));
       });
-      await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true })).toBeVisible();
     }
     release();
     if (outcome === 'unauthorized') await expect(page).toHaveURL(/\/login$/);
@@ -387,7 +388,7 @@ test('real browse renders compact recruitment dates from the catalog and never s
 
   await page.goto('/challenges/browse');
 
-  await expect(page.getByRole('combobox', { name: '챌린지 종류 필터' })).toContainText('전체');
+  await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
   for (const name of ['매일 30분 걷기', '건강 기록 제출하기', '가볍게 스트레칭']) {
     await expect(page.getByRole('button', { name: `${name} 자세히 보기` })).toContainText('모집기간 : 2026년 9월 1일 ~ 2026년 9월 30일');
   }
@@ -1076,6 +1077,7 @@ test('a delayed My check-in does not refresh after leaving the page', async ({ p
   await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
   await page.getByRole('article', { name: dailyChallenge.name }).getByRole('button', { name: '했어요' }).click();
   await page.getByRole('link', { name: '둘러보기', exact: true }).click();
+  await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('region', { name: '챌린지 목록' })).toContainText(dailyChallenge.name);
   const readsBeforeRelease = { challengeReads, badgeReads };
 
@@ -1670,7 +1672,7 @@ test('home challenge summary stays available when medication loading fails', asy
   await page.goto('/home');
 
   await expect(page.getByText('복약 서버를 확인해주세요.')).toBeVisible();
-  await expect(page.getByRole('region', { name: '챌린지' }).getByRole('link', { name: /매일 30분 걷기.*21.43%/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: '챌린지' }).getByRole('link', { name: /매일 30분 걷기.*3 \/ 14일/ })).toBeVisible();
 });
 
 test('unfinished personal creation route shows a clear coming-soon state', async ({ page }) => {
@@ -1699,6 +1701,7 @@ test('catalog load failure never falls back to mock data and recovers on reload 
   });
 
   await page.goto('/challenges/browse');
+  await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('공식 챌린지 서버를 확인해주세요.');
   await expect(page.getByText('물 마시기', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '다시 불러오기' }).click();
@@ -1764,6 +1767,7 @@ test('browse to join to My check-in persists after reload through server reads',
   });
 
   await page.goto('/challenges/browse');
+  await page.getByRole('button', { name: '공식 챌린지 펼치기', exact: true }).click();
   await page.getByRole('button', { name: /매일 30분 걷기.*자세히 보기/ }).click();
   await page.getByRole('button', { name: '참여하기' }).click();
   await expect(page).toHaveURL(/\/challenges\/participations\/501$/);
