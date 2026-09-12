@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '../../src/shared/ui/Button';
-import { HomeSectionTabs } from '../../src/pages/home/HomePage';
+import { HomeSectionPanel, HomeSectionTabs } from '../../src/pages/home/HomePage';
 import { TimeSlotNavigator } from '../../src/pages/home/TimeSlotNavigator';
 import '../../src/app/styles/index.css';
 
@@ -33,8 +33,9 @@ function Harness() {
     </div>
     <Button variant="danger">삭제</Button>
     <output aria-label="작업 횟수">{count}</output>
-    <HomeSectionTabs activeTab={active} onChange={setActive} />
-    <p>선택: {active}</p>
+    <HomeSectionTabs activeTab={active} onChange={setActive}>
+      <HomeSectionPanel value={active}><p>선택: {active}</p></HomeSectionPanel>
+    </HomeSectionTabs>
     <TimeSlotNavigator items={[{slot:'morning'},{slot:'lunch'},{slot:'evening'},{slot:'bedtime'}]} initialSlot="morning" label="복약">
       {item => <SlotInput slot={item.slot} />}
     </TimeSlotNavigator>

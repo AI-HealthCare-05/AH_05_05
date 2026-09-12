@@ -89,3 +89,36 @@ for (const width of [390, 1280]) {
     await page.screenshot({ path: testInfo.outputPath(`supplement-tabs-${width}.png`), fullPage: true });
   });
 }
+
+for (const width of [375, 390, 1280]) {
+  test(`홈 상위 section도 공통 underline 탭과 panel keyboard 계약을 지킨다 (${width}px)`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.addInitScript(() => {
+      sessionStorage.setItem('poke.access-token', 'home-screen-tabs-test');
+      sessionStorage.setItem('poke.account-principal', 'home-screen-tabs@example.com');
+    });
+    await page.goto('/dev/home-multiple-episodes');
+
+    const tabs = page.getByRole('tablist', { name: '오늘의 홈 탭' });
+    const medication = tabs.getByRole('tab', { name: '오늘의 복약', exact: true });
+    const supplement = tabs.getByRole('tab', { name: '오늘의 영양제', exact: true });
+    await expect(tabs).toHaveCSS('background-image', 'none');
+    await expect(tabs).toHaveCSS('box-shadow', 'none');
+    await expect(medication).toHaveAttribute('aria-selected', 'true');
+    await expect(medication).toHaveAttribute('aria-controls', 'home-panel-medication');
+    await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toHaveAttribute('id', 'home-panel-medication');
+
+    const indicator = await medication.evaluate(element => getComputedStyle(element, '::after').backgroundColor);
+    expect(indicator).toBe('rgb(7, 122, 116)');
+    expect((await medication.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+    await medication.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(supplement).toBeFocused();
+    await expect(supplement).toHaveAttribute('aria-selected', 'true');
+    await expect(supplement).toHaveAttribute('aria-controls', 'home-panel-supplement');
+    await expect(page.getByRole('tabpanel', { name: '오늘의 영양제' })).toHaveAttribute('id', 'home-panel-supplement');
+    await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`home-tabs-${width}.png`), fullPage: true });
+  });
+}

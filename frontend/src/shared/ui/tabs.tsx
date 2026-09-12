@@ -36,7 +36,7 @@ function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsPrimitiv
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        'relative inline-flex min-h-touch min-w-0 items-center justify-center px-2 pb-2 pt-1 text-sm font-bold text-muted-foreground transition-colors',
+        'relative inline-flex min-h-touch min-w-0 items-center justify-center px-2 pb-2 pt-1 text-sm font-bold text-muted-foreground transition-colors motion-reduce:transition-none',
         "after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-pill after:bg-transparent after:content-['']",
         'hover:text-foreground data-[state=active]:text-primary data-[state=active]:after:bg-primary',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -88,7 +88,7 @@ function NavigationTabs({ label, items, className, ...props }: NavigationTabsPro
           to={item.to}
           end={item.end}
           className={({ isActive }) => cn(
-            'relative flex min-h-touch min-w-0 items-center justify-center px-2 pb-2 pt-1 text-sm font-bold transition-colors',
+            'relative flex min-h-touch min-w-0 items-center justify-center px-2 pb-2 pt-1 text-sm font-bold transition-colors motion-reduce:transition-none',
             "after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-pill after:bg-transparent after:content-['']",
             isActive
               ? 'text-primary after:bg-primary'
