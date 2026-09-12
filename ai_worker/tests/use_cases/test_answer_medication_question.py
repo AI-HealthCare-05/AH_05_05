@@ -7,6 +7,8 @@ from langchain_core.runnables import RunnableLambda
 
 from ai_worker.chains.conditional_question_interpretation_chain import (
     ConditionalQuestionInterpretationOutput,
+    DirectionalSearchStimulus,
+    DirectionalSearchTarget,
 )
 from ai_worker.chains.medication_query_plan_chain import (
     MedicationQueryPlanChainInput,
@@ -34,6 +36,11 @@ from ai_worker.safety.grounded_claim_validator import (
 from ai_worker.schemas.chat import ChatHistoryMessage
 from ai_worker.schemas.conversation_gate import ConversationClassification
 from ai_worker.schemas.enums import ChatRole, SafetyStatus
+from ai_worker.schemas.evidence_reasoning import (
+    EvidenceClaim,
+    EvidenceReasoningOutput,
+    InteractionEvidenceDecision,
+)
 from ai_worker.schemas.interaction import (
     InteractionEntity,
     InteractionEntityKind,
@@ -79,10 +86,13 @@ from ai_worker.schemas.medication_chat import (
 from ai_worker.schemas.medication_note_summary import MedicationNoteSummaryScope
 from ai_worker.schemas.medication_search import (
     MedicationCatalogEntry,
+    MedicationInteractionQueryPair,
+    MedicationKnowledgeQueryPlan,
     MedicationQueryEntity,
     MedicationQueryEntitySource,
     MedicationQueryEntityType,
     MedicationQuestionResolution,
+    SupplementInteractionPair,
 )
 from ai_worker.schemas.patient import FollowUpSchedule
 from ai_worker.use_cases.answer_medication_question import (
@@ -370,6 +380,21 @@ class RecordingConditionalInterpretationChain:
     async def ainvoke(self, input, config=None, **kwargs):
         self.inputs.append(input)
         return self.payload
+
+
+class RecordingEvidenceReasoningChain:
+    def __init__(self, payload: EvidenceReasoningOutput) -> None:
+        self.payload = payload
+        self.inputs = []
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        self.inputs.append(input)
+        return self.payload
+
+
+class FailingEvidenceReasoningChain:
+    async def ainvoke(self, input, config=None, **kwargs):
+        raise RuntimeError("evidence reasoning unavailable")
 
 
 class StaticConversationGate:
@@ -676,6 +701,7 @@ def build_use_case(
     supplement_ingredient_catalog=None,
     query_plan_chain=None,
     conditional_interpretation_chain=None,
+    interaction_evidence_reasoning_chain=None,
     semantic_question_router=None,
     therapeutic_class_repository=None,
     conversation_gate_chain=None,
@@ -696,6 +722,7 @@ def build_use_case(
         supplement_ingredient_catalog=supplement_ingredient_catalog,
         query_plan_chain=query_plan_chain,
         conditional_interpretation_chain=conditional_interpretation_chain,
+        interaction_evidence_reasoning_chain=interaction_evidence_reasoning_chain,
         semantic_question_router=semantic_question_router,
         therapeutic_class_repository=therapeutic_class_repository,
         conversation_gate_chain=conversation_gate_chain,
@@ -998,6 +1025,216 @@ async def test_explicit_active_medication_interaction_uses_approved_rule() -> No
 
     assert result.route is MedicationChatRoute.ACTIVE_INTAKE
     assert any(source.kind is MedicationChatSourceKind.INTERACTION_RULE for source in result.sources)
+
+
+async def test_interaction_with_evidence_calls_structured_reasoning_chain() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=1,
+                name="파모티딘정",
+            ),
+        ],
+    )
+    pair_key = build_interaction_pair_key(
+        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="리바록사반정"),
+        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="파모티딘정"),
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=pair_key,
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="파모티딘정",
+        risk_level="CAUTION",
+        effect_texts=["승인된 상호작용 근거입니다."],
+    )
+    reasoning = EvidenceReasoningOutput(
+        reasoning_status="SUPPORTED",
+        interaction_decision="INTERACTION_CONFIRMED",
+        claims=[
+            EvidenceClaim(
+                section_type=KnowledgeSectionType.INTERACTION,
+                pair_key=pair_key,
+                statement="승인 규칙에서 두 약의 관계를 확인했습니다.",
+                evidence_ids=["rule:1"],
+            )
+        ],
+    )
+    chain = RecordingEvidenceReasoningChain(reasoning)
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        interaction_evidence_reasoning_chain=chain,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert len(chain.inputs) == 1
+    assert [item.evidence_id for item in chain.inputs[0].approved_rules] == ["rule:1"]
+    assert result.evidence_reasoning == reasoning
+    assert "evidence_reasoning" not in result.model_dump()
+
+
+def test_interaction_evidence_chunks_exclude_unrelated_sections() -> None:
+    pair_key = "c" * 64
+    interaction_chunk = build_chunk().model_copy(
+        update={
+            "chunk_id": "d" * 64,
+            "metadata": build_chunk().metadata.model_copy(
+                update={"section_type": KnowledgeSectionType.INTERACTION},
+            ),
+        }
+    )
+    pair_scoped_chunk = build_chunk().model_copy(
+        update={
+            "chunk_id": "e" * 64,
+            "metadata": build_chunk().metadata.model_copy(
+                update={"interaction_pair_keys": [pair_key]},
+            ),
+        }
+    )
+    unrelated_chunk = build_chunk().model_copy(
+        update={"chunk_id": "f" * 64},
+    )
+
+    selected = AnswerMedicationQuestionUseCase._interaction_evidence_chunks(
+        answer_chunks=[interaction_chunk, pair_scoped_chunk, unrelated_chunk],
+        interaction_pair_keys=[pair_key],
+    )
+
+    assert [chunk.chunk_id for chunk in selected] == ["d" * 64, "e" * 64]
+
+
+async def test_non_interaction_question_skips_evidence_reasoning_chain() -> None:
+    reasoning = EvidenceReasoningOutput(
+        reasoning_status="INSUFFICIENT",
+        interaction_decision=InteractionEvidenceDecision.NO_DIRECT_EVIDENCE,
+        missing_section_types=[KnowledgeSectionType.INTERACTION],
+    )
+    chain = RecordingEvidenceReasoningChain(reasoning)
+
+    await build_use_case(
+        lookup=MedicationGuideLookup(guide=build_guide()),
+        interaction_evidence_reasoning_chain=chain,
+    ).execute(build_request("타이레놀의 효능을 알려줘"))
+
+    assert chain.inputs == []
+
+
+async def test_evidence_reasoning_failure_keeps_deterministic_answer() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=1,
+                name="파모티딘정",
+            ),
+        ],
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="리바록사반정"),
+            InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="파모티딘정"),
+        ),
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="파모티딘정",
+        risk_level="CAUTION",
+        effect_texts=["승인된 상호작용 근거입니다."],
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        interaction_evidence_reasoning_chain=FailingEvidenceReasoningChain(),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert "승인된 상호작용 근거입니다." in result.answer
+    assert result.evidence_reasoning is None
+
+
+async def test_oversized_evidence_input_keeps_deterministic_answer() -> None:
+    context = ActiveIntakeContext(
+        user_id=1,
+        medications=[
+            ActiveMedication(
+                medication_id=1,
+                care_episode_id=1,
+                name="리바록사반정",
+            ),
+            ActiveMedication(
+                medication_id=2,
+                care_episode_id=1,
+                name="파모티딘정",
+            ),
+        ],
+    )
+    pair_key = build_interaction_pair_key(
+        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="리바록사반정"),
+        InteractionEntity(kind=InteractionEntityKind.DRUG, display_name="파모티딘정"),
+    )
+    rule = InteractionRuleFact(
+        interaction_rule_id=1,
+        pair_key=pair_key,
+        pair_type="DRUG_DRUG",
+        left_name="리바록사반정",
+        right_name="파모티딘정",
+        risk_level="CAUTION",
+        effect_texts=["승인된 상호작용 근거입니다."],
+    )
+    base_chunk = build_chunk()
+    oversized_chunk = base_chunk.model_copy(
+        update={
+            "content": "가" * 4001,
+            "metadata": base_chunk.metadata.model_copy(
+                update={
+                    "section_type": KnowledgeSectionType.INTERACTION,
+                    "interaction_pair_keys": [pair_key],
+                }
+            ),
+        }
+    )
+    chain = RecordingEvidenceReasoningChain(
+        EvidenceReasoningOutput(
+            reasoning_status="INSUFFICIENT",
+            interaction_decision="NO_DIRECT_EVIDENCE",
+            missing_section_types=[KnowledgeSectionType.INTERACTION],
+        )
+    )
+
+    result = await build_use_case(
+        context=context,
+        rules=[rule],
+        retriever=FakeKnowledgeRetriever([oversized_chunk]),
+        interaction_evidence_reasoning_chain=chain,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticExpressionCatalog([]),
+        ),
+    ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
+
+    assert "승인된 상호작용 근거입니다." in result.answer
+    assert result.evidence_reasoning is None
+    assert chain.inputs == []
 
 
 async def test_active_medication_interaction_without_approved_rule_states_uncertainty() -> None:
@@ -2303,6 +2540,7 @@ async def test_execute_does_not_retry_when_initial_evidence_is_complete() -> Non
 async def test_execute_skips_conditional_llm_for_high_confidence_single_entity() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
+            normalized_question="타이레놀의 효능을 알려주세요.",
             candidate_entity_keys=["candidate_0"],
             requested_section_types=[KnowledgeSectionType.CAUTION],
             confidence="HIGH",
@@ -2525,9 +2763,116 @@ def test_answer_context_displays_only_active_medications_for_medication_and_inte
     assert general_context.supplements == []
 
 
+async def test_execute_applies_only_bounded_directional_search_stimuli() -> None:
+    base_chunk = build_chunk()
+    chunk = base_chunk.model_copy(
+        update={
+            "metadata": base_chunk.metadata.model_copy(
+                update={
+                    "document_type": KnowledgeDocumentType.SUPPLEMENT_FUNCTION_GUIDE,
+                    "ingredient_names": ["마그네슘"],
+                    "section_type": KnowledgeSectionType.FUNCTION,
+                }
+            )
+        }
+    )
+    retriever = SequencedKnowledgeRetriever([[chunk]])
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question="마그네슘은 왜 먹나요?",
+            route="SUPPLEMENT_GUIDE",
+            candidate_entity_keys=["candidate_0"],
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            stimuli=[
+                DirectionalSearchStimulus(
+                    query="마그네슘 효능",
+                    target=DirectionalSearchTarget.SUPPLEMENT_GUIDE,
+                    section_types=[KnowledgeSectionType.FUNCTION],
+                    purpose="마그네슘의 확인된 기능을 찾습니다.",
+                ),
+                DirectionalSearchStimulus(
+                    query="마그네슘 피로회복",
+                    target=DirectionalSearchTarget.SUPPLEMENT_GUIDE,
+                    section_types=[KnowledgeSectionType.FUNCTION],
+                    purpose="입력에 없는 효과를 찾습니다.",
+                ),
+            ],
+            confidence="MEDIUM",
+            reason_codes=["LOW_CONFIDENCE"],
+        )
+    )
+
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("마그네슘은 왜 먹나요?"))
+
+    assert len(chain.inputs) == 1
+    assert "마그네슘" in chain.inputs[0].allowed_search_terms
+    assert "효능" in chain.inputs[0].allowed_search_terms
+    assert retriever.execution_plans[0].query_plan.alternate_queries == ["마그네슘 효능"]
+
+
+async def test_execute_returns_conditional_llm_clarification_before_retrieval() -> None:
+    class UnexpectedRetriever(FakeKnowledgeRetriever):
+        async def search_with_diagnostics(self, *, execution_plan):
+            raise AssertionError("확인 질문이 있으면 근거 검색을 실행하지 않아야 합니다.")
+
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question="마그네슘 제품의 종류를 확인해 주세요.",
+            candidate_entity_keys=["candidate_0"],
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            confidence="LOW",
+            reason_codes=["LOW_CONFIDENCE"],
+            needs_clarification=True,
+            clarification_question="의약품 마그네슘과 영양제 마그네슘 중 무엇을 뜻하나요?",
+        )
+    )
+
+    result = await build_use_case(
+        retriever=UnexpectedRetriever(),
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("마그네슘에 대해 알려줘"))
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert result.answer == "의약품 마그네슘과 영양제 마그네슘 중 무엇을 뜻하나요?"
+    assert result.question_interpretation is not None
+    assert result.question_interpretation.needs_clarification is True
+
+
+async def test_execute_safety_validates_conditional_llm_clarification() -> None:
+    class UnsafeClarificationChain:
+        async def ainvoke(self, input, config=None, **kwargs):
+            return ConditionalQuestionInterpretationOutput(
+                normalized_question=input.question,
+                candidate_entity_keys=list(input.candidate_entities),
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                confidence="LOW",
+                reason_codes=["LOW_CONFIDENCE"],
+                needs_clarification=True,
+                clarification_question="이 약 복용을 즉시 중단하세요.",
+            )
+
+    result = await build_use_case(
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(
+            ["마그네슘"],
+        ),
+        conditional_interpretation_chain=UnsafeClarificationChain(),
+        grounded_claim_validator=RuleBasedGroundedClaimValidator(),
+    ).execute(build_request("마그네슘에 대해 알려줘"))
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert result.safety_status is SafetyStatus.BLOCKED
+    assert "즉시 중단" not in result.answer
+
+
 async def test_execute_discards_unknown_conditional_llm_entity_before_search() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
+            normalized_question="마그네슘의 효능을 알려주세요.",
             candidate_entity_keys=["unknown_candidate"],
             requested_section_types=[KnowledgeSectionType.CAUTION],
             confidence="MEDIUM",
@@ -2550,6 +2895,153 @@ async def test_execute_discards_unknown_conditional_llm_entity_before_search() -
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.CAUTION,
     ]
+
+
+async def test_execute_uses_validated_conditional_pair_selection_to_narrow_search() -> None:
+    class SelectFirstPairChain:
+        async def ainvoke(self, input, config=None, **kwargs):
+            return ConditionalQuestionInterpretationOutput(
+                normalized_question=input.question,
+                route="INTERACTION",
+                candidate_entity_keys=list(input.candidate_entities),
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                interaction_pair_keys=input.candidate_pair_keys[:1],
+                confidence="MEDIUM",
+                reason_codes=["MULTI_ENTITY"],
+            )
+
+    supplement_names = ["마그네슘", "아연", "칼슘"]
+    pair_entities = [
+        InteractionEntity(
+            kind=InteractionEntityKind.SUPPLEMENT,
+            display_name=name,
+        )
+        for name in supplement_names
+    ]
+    rules = [
+        InteractionRuleFact(
+            interaction_rule_id=index,
+            pair_key=build_interaction_pair_key(left, right),
+            pair_type="SUPPLEMENT_SUPPLEMENT",
+            left_name=left.display_name,
+            right_name=right.display_name,
+            risk_level="CAUTION",
+            effect_texts=[f"{left.display_name}-{right.display_name} 근거"],
+        )
+        for index, (left, right) in enumerate(
+            [
+                (pair_entities[0], pair_entities[1]),
+                (pair_entities[0], pair_entities[2]),
+                (pair_entities[1], pair_entities[2]),
+            ],
+            start=1,
+        )
+    ]
+    retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        rules=rules,
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(
+            supplement_names,
+        ),
+        conditional_interpretation_chain=SelectFirstPairChain(),
+    ).execute(build_request("마그네슘, 아연, 칼슘을 같이 먹어도 돼?"))
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert len(query_plan.interaction_pair_keys) == 1
+    assert len(query_plan.interaction_pairs) == 1
+    assert query_plan.interaction_types == [InteractionPairType.SUPPLEMENT_SUPPLEMENT]
+    assert query_plan.alternate_queries == ["마그네슘 아연 상호작용"]
+    assert retriever.received_kwargs["execution_plan"].approved_rule_pair_keys == [query_plan.interaction_pair_keys[0]]
+
+
+def test_pair_narrowing_removes_unselected_legacy_pair_query() -> None:
+    legacy_pair = SupplementInteractionPair(
+        canonical_names=("칼슘", "철분"),
+        alias_groups=(("칼슘", "calcium"), ("철분", "iron")),
+        english_query="calcium iron absorption interaction",
+    )
+    selected_pair = MedicationInteractionQueryPair(
+        left_name="칼슘",
+        right_name="아연",
+        pair_type=InteractionPairType.SUPPLEMENT_SUPPLEMENT,
+        pair_key=build_interaction_pair_key(
+            InteractionEntity(kind=InteractionEntityKind.SUPPLEMENT, display_name="칼슘"),
+            InteractionEntity(kind=InteractionEntityKind.SUPPLEMENT, display_name="아연"),
+        ),
+    )
+    plan = MedicationKnowledgeQueryPlan(
+        original_query="칼슘, 철분, 아연을 같이 먹어도 돼?",
+        expanded_query="칼슘 철분 아연 상호작용",
+        alternate_queries=[
+            legacy_pair.english_query,
+            "칼슘 철분 상호작용",
+            "칼슘 아연 상호작용",
+        ],
+        interaction_pair=legacy_pair,
+        interaction_pairs=[
+            MedicationInteractionQueryPair(
+                left_name="칼슘",
+                right_name="철분",
+                pair_type=InteractionPairType.SUPPLEMENT_SUPPLEMENT,
+                pair_key=legacy_pair.pair_key,
+            ),
+            selected_pair,
+        ],
+        interaction_pair_keys=[legacy_pair.pair_key, selected_pair.pair_key],
+    )
+
+    queries = AnswerMedicationQuestionUseCase._alternate_queries_for_selected_pairs(
+        query_plan=plan,
+        selected_pairs=[selected_pair],
+    )
+
+    assert queries == ["칼슘 아연 상호작용"]
+
+
+async def test_execute_keeps_original_plan_when_all_directional_stimuli_are_rejected() -> None:
+    class InvalidStimulusChain:
+        async def ainvoke(self, input, config=None, **kwargs):
+            return ConditionalQuestionInterpretationOutput(
+                normalized_question="와파린과 아스피린의 주의사항",
+                route="MEDICATION_CAUTION",
+                candidate_entity_keys=list(input.candidate_entities),
+                requested_section_types=[KnowledgeSectionType.CAUTION],
+                stimuli=[
+                    DirectionalSearchStimulus(
+                        query="와파린 아스피린 상호작용",
+                        target=DirectionalSearchTarget.INTERACTION_EVIDENCE,
+                        section_types=[KnowledgeSectionType.INTERACTION],
+                        purpose="후보에 없는 약물 조합을 찾습니다.",
+                    )
+                ],
+                confidence="MEDIUM",
+                reason_codes=["MULTI_ENTITY"],
+            )
+
+    original_retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        retriever=original_retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(
+            ["마그네슘", "아연"],
+        ),
+    ).execute(build_request("마그네슘과 아연을 같이 먹어도 돼?"))
+
+    interpreted_retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        retriever=interpreted_retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(
+            ["마그네슘", "아연"],
+        ),
+        conditional_interpretation_chain=InvalidStimulusChain(),
+    ).execute(build_request("마그네슘과 아연을 같이 먹어도 돼?"))
+
+    assert original_retriever.received_kwargs is not None
+    assert interpreted_retriever.received_kwargs is not None
+    original_plan = original_retriever.received_kwargs["execution_plan"].query_plan
+    interpreted_plan = interpreted_retriever.received_kwargs["execution_plan"].query_plan
+    assert interpreted_plan == original_plan
 
 
 async def test_execute_records_fallback_reason_without_answer_content() -> None:

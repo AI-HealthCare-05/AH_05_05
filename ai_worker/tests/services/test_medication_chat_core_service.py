@@ -133,6 +133,7 @@ def test_builder_reuses_injected_chat_tracer() -> None:
 
     assert service.tracer is tracer
     assert service._use_case._conditional_interpretation_chain is None
+    assert service._use_case._interaction_evidence_reasoning_chain is None
     assert service._use_case._conversation_gate_chain is None
     assert service._use_case._conversation_response_generator is None
     assert service._use_case._semantic_question_router is None
@@ -150,6 +151,19 @@ def test_builder_wires_conversation_gate_and_response_generator_when_enabled() -
 
     assert service._use_case._conversation_gate_chain is not None
     assert service._use_case._conversation_response_generator is not None
+
+
+def test_builder_wires_interaction_evidence_reasoning_only_when_enabled() -> None:
+    service = build_medication_chat_core_service(
+        settings=Config(
+            OPENAI_API_KEY="test-key",
+            INTERACTION_EVIDENCE_REASONING_ENABLED=True,
+            _env_file=None,
+        ),
+        qdrant_client=object(),
+    )
+
+    assert service._use_case._interaction_evidence_reasoning_chain is not None
 
 
 def test_builder_wires_semantic_router_only_when_enabled() -> None:

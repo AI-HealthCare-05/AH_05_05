@@ -5,6 +5,7 @@ import pytest
 
 from ai_worker.domain.errors import MedicationNoteSummaryGenerationError
 from ai_worker.llm.generators.medication_note_summary_generator import (
+    MEDICATION_NOTE_SUMMARY_PROMPT_VERSION,
     MedicationNoteSummaryGenerator,
 )
 from ai_worker.schemas.medication_note_summary import (
@@ -21,9 +22,10 @@ from ai_worker.schemas.medication_note_summary import (
 class StaticSummaryClient:
     def __init__(self, payload: MedicationNoteSummaryPayload) -> None:
         self._payload = payload
+        self.messages = []
 
     async def ainvoke(self, messages: Any) -> MedicationNoteSummaryPayload:
-        del messages
+        self.messages = messages
         return self._payload
 
 
@@ -72,6 +74,20 @@ async def test_generator_rejects_note_identifier_not_present_in_selection() -> N
 
     with pytest.raises(MedicationNoteSummaryGenerationError, match="메모 식별자"):
         await generator.generate(selection=_selection())
+
+
+@pytest.mark.asyncio
+async def test_generator_uses_v7_six_element_prompt_without_causal_judgment() -> None:
+    client = StaticSummaryClient(_payload())
+    generator = MedicationNoteSummaryGenerator(client=client)
+
+    await generator.generate(selection=_selection())
+
+    assert MEDICATION_NOTE_SUMMARY_PROMPT_VERSION == "medication-note-summary-prompt-v7"
+    system_prompt = client.messages[0].content
+    assert "역할(Role)" in system_prompt
+    assert "예시(Example)" in system_prompt
+    assert "인과관계" in system_prompt
 
 
 @pytest.mark.asyncio
