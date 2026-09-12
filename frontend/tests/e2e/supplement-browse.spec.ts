@@ -96,8 +96,9 @@ test('둘러보기에서 내 영양제로 돌아오면 기존 목록과 성분 �
   await tabs.getByRole('tab', { name: '내 영양제' }).click();
 
   await expect(page.getByRole('heading', { name: /먹고 있는 영양제/ })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '성분 합계' })).toBeVisible();
-  await expect(page.getByText('등록한 영양제의 성분만 더한 값이에요')).toBeVisible();
+  const totals = page.getByRole('region', { name: '성분 합계' });
+  await expect(totals.getByRole('heading', { name: '성분 합계' })).toBeVisible();
+  await expect(totals.getByRole('article')).toHaveCount(8);
 });
 test('둘러보기는 랭킹 5개와 현재 복용 중인 제품 상태를 보여준다', async ({ page }) => {
   test.skip(IS_REAL_API, '목업의 고정 랭킹과 등록 상태를 확인하는 테스트입니다.');

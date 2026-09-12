@@ -166,10 +166,36 @@ for (const width of [390, 1280]) {
       expect.objectContaining({ recordId: 430, taken: false }),
     ]);
     await episode.getByRole('button', { name: /처방 펼치기$/ }).click();
-    const medicationName = episode.getByRole('group', { name: /처방 약 상세/ })
+    const medicationDetail = episode.getByRole('group', { name: /처방 약 상세/ });
+    const medicationName = medicationDetail
       .getByText('세프디니르건조시럽', { exact: true });
     expect(Number(await medicationName.evaluate((element) => getComputedStyle(element).fontWeight)))
       .toBeLessThan(600);
+    const [episodeBox, detailBox, border] = await Promise.all([
+      episode.boundingBox(),
+      medicationDetail.boundingBox(),
+      episode.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          top: `${style.borderTopStyle} ${style.borderTopWidth}`,
+          right: `${style.borderRightStyle} ${style.borderRightWidth}`,
+          bottom: `${style.borderBottomStyle} ${style.borderBottomWidth}`,
+          left: `${style.borderLeftStyle} ${style.borderLeftWidth}`,
+        };
+      }),
+    ]);
+    expect(border).toEqual({
+      top: 'solid 1px',
+      right: 'solid 1px',
+      bottom: 'solid 1px',
+      left: 'solid 1px',
+    });
+    expect(episodeBox).not.toBeNull();
+    expect(detailBox).not.toBeNull();
+    expect(detailBox!.x).toBeGreaterThanOrEqual(episodeBox!.x);
+    expect(detailBox!.y).toBeGreaterThanOrEqual(episodeBox!.y);
+    expect(detailBox!.x + detailBox!.width).toBeLessThanOrEqual(episodeBox!.x + episodeBox!.width);
+    expect(detailBox!.y + detailBox!.height).toBeLessThanOrEqual(episodeBox!.y + episodeBox!.height);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`home-medication-${width}.png`), fullPage: true });
   });
