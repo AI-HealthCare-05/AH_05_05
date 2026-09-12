@@ -107,29 +107,15 @@ export function SupplementProductPage() {
               <h2 id="product-name" className="[overflow-wrap:anywhere] text-2xl font-bold text-foreground">
                 {product.productName}
               </h2>
-              <p className="text-sm text-muted-foreground">
-                {product.manufacturer} · {product.servingDescription} · {product.dailyFrequency}
-              </p>
-              <Card className="mt-2 flex-row items-center justify-between gap-3 px-4 py-4">
-                <strong className="text-base text-foreground">
-                  {product.servingDescription} · {product.dailyFrequency}
-                </strong>
-                {product.ratingAverage !== null && (
-                  <span
-                    aria-label={`평점 ${product.ratingAverage.toFixed(1)}점`}
-                    className="text-lg font-bold text-warning-strong"
-                  >
-                    {displayStars(product.ratingAverage)}
-                  </span>
-                )}
-              </Card>
             </section>
+
+            <ProductInformation product={product} />
 
             <section className="flex flex-col gap-3" aria-labelledby="product-nutrients-title">
               <h2 id="product-nutrients-title" className="text-xl font-bold text-foreground">
                 성분
               </h2>
-              <Card className="gap-0 overflow-hidden p-0">
+              <div className="overflow-hidden border border-border bg-card text-sm">
                 <dl aria-label="제품 성분">
                   {product.nutrients.map((nutrient) => (
                     <div
@@ -143,7 +129,7 @@ export function SupplementProductPage() {
                     </div>
                   ))}
                 </dl>
-              </Card>
+              </div>
             </section>
 
             <SupplementReviewSection productId={product.productId} />
@@ -192,7 +178,36 @@ export function SupplementProductPage() {
   );
 }
 
-function displayStars(rating: number): string {
-  const filled = Math.max(0, Math.min(5, Math.round(rating)));
-  return `${'★'.repeat(filled)}${'☆'.repeat(5 - filled)}`;
+function ProductInformation({ product }: { product: SupplementProduct }) {
+  const rows = [
+    { label: '섭취 대상', value: availableProductInformation(product.manufacturer) },
+    { label: '1회 섭취량', value: availableProductInformation(product.servingDescription) },
+    { label: '하루 섭취 횟수', value: availableProductInformation(product.dailyFrequency) },
+  ].filter((row): row is { label: string; value: string } => row.value !== null);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section aria-label="제품 정보 상세" className="border border-border bg-card px-4">
+      <dl>
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex min-h-touch min-w-0 items-center justify-between gap-4 border-t border-border py-3 first:border-t-0"
+          >
+            <dt className="shrink-0 text-sm font-bold text-muted-foreground">{row.label}</dt>
+            <dd className="min-w-0 [overflow-wrap:anywhere] text-right text-sm font-bold text-foreground">
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function availableProductInformation(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized || normalized === '-' || normalized.includes('정보 없음')) return null;
+  return normalized;
 }

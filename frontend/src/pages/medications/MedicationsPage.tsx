@@ -793,9 +793,9 @@ function MedicationEpisodeSheet({
                                     disabled={scheduleLoading || Boolean(scheduleError) || !schedule}
                                     onClick={() => onToggleSlot(medication.medicationId, slot.value)}
                                     className={cn(
-                                      'min-h-touch rounded-input border text-sm',
+                                      'rx-dose-slot min-h-touch rounded-input border text-sm',
                                       selected
-                                        ? 'border-primary bg-primary font-bold text-card'
+                                        ? 'border-primary bg-[var(--color-primary)] font-bold text-card'
                                         : 'border-border bg-card text-muted-foreground',
                                     )}
                                   >

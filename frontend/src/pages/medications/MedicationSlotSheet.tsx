@@ -60,9 +60,9 @@ export function MedicationSlotSheet({
                 aria-pressed={selected}
                 aria-label={`${medication?.name ?? '약'} ${slot.label}`}
                 className={cn(
-                  'min-h-touch rounded-input border text-sm font-bold',
+                  'rx-dose-slot min-h-touch rounded-input border text-sm font-bold',
                   selected
-                    ? 'border-primary bg-primary text-card'
+                    ? 'border-primary bg-[var(--color-primary)] text-card'
                     : 'border-border bg-card text-muted-foreground',
                 )}
                 onClick={() => toggleSlot(slot.value)}

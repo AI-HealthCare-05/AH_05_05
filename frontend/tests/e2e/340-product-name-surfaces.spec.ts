@@ -124,7 +124,7 @@ async function routeProducts(page: Page) {
   }));
 }
 
-test('긴 제품 이름은 랭킹·검색·제품 상세·추가 시트에서 전체가 보인다', async ({ page }) => {
+test('긴 제품 이름은 랭킹에서 말줄임하고 검색·제품 상세·추가 시트에서는 전체가 보인다', async ({ page }) => {
   test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
   test.setTimeout(120_000);
   await routeProducts(page);
@@ -135,8 +135,15 @@ test('긴 제품 이름은 랭킹·검색·제품 상세·추가 시트에서 �
 
     const ranking = page.getByLabel('영양제 랭킹');
     const rankingRow = ranking.getByRole('listitem').first();
-    await expectContained(rankingRow.getByText(RANKING_NAME, { exact: true }), rankingRow);
-    await expect(rankingRow.getByText('등록됨', { exact: true })).toBeVisible();
+    const rankingName = rankingRow.getByText(RANKING_NAME, { exact: true });
+    await expect(rankingName).toBeVisible();
+    await expect(rankingName).toHaveAttribute('title', RANKING_NAME);
+    const rankingNameStyle = await rankingName.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { textOverflow: style.textOverflow, whiteSpace: style.whiteSpace };
+    });
+    expect(rankingNameStyle).toEqual({ textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+    await expect(rankingRow.getByText('복용 중', { exact: true })).toBeVisible();
 
     await page.getByPlaceholder('제품명 또는 성분 검색').fill('초고함량');
     const results = page.getByLabel('영양제 검색 결과');

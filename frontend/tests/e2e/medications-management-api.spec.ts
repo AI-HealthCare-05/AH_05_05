@@ -1,6 +1,8 @@
 import { expect, test, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+import { expectSelectedSlotDepth } from './helpers/doseSlotDepth';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 const MEAL_TIMES = {
   morning: '08:00',
@@ -84,6 +86,56 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem('poke.account-principal', 'medication-management@example.com');
   });
 });
+
+for (const individual of [false, true]) {
+  for (const width of [375, 390, 1280]) {
+    test(`복약 ${individual ? '개별 약' : '처방'} 선택 시간은 입체감과 동일한 선택색을 유지한다 (${width}px)`, async ({ page }, testInfo) => {
+      const item = overview(12, false, 3);
+      item.medications[0].slots = ['morning', 'evening'];
+      await page.route('**/api/v1/medications', (route) => fulfillJson(route, [item]));
+      await page.route('**/api/v1/med/medication/schedule/12', (route) =>
+        fulfillJson(route, schedule(12, 3, ['morning', 'evening'])),
+      );
+      await page.route('**/api/v1/ocr/jobs/12/image', (route) => route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="80"><rect width="64" height="80" fill="#fff"/><text x="5" y="35" font-size="9">fixture</text></svg>',
+      }));
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(individual ? '/dev/medications' : '/medications');
+      if (individual) {
+        await page.getByRole('button', { name: /2026년 8월 22일 처방/ }).click();
+        await page.getByRole('button', { name: /셀레콕시브.*복용 시간 수정/ }).click();
+      } else {
+        await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
+      }
+      const dialog = page.getByRole('dialog', { name: individual ? '셀레콕시브 복용 시간' : '처방 편집' });
+      const lunch = dialog.getByRole('button', { name: '셀레콕시브 점심약' });
+      if (testInfo.project.use.hasTouch) await lunch.tap();
+      else {
+        await lunch.click();
+        await lunch.hover();
+      }
+      const selected = dialog.locator('button[aria-pressed="true"]');
+      await expectSelectedSlotDepth(selected);
+      await page.keyboard.press('Tab');
+      await lunch.focus();
+      await expect(lunch).toBeFocused();
+      await expect(lunch).toHaveCSS('outline-style', 'solid');
+      await expect(lunch).toHaveCSS('outline-width', '2px');
+      await expectSelectedSlotDepth(selected);
+      await lunch.scrollIntoViewIfNeeded();
+      if (width === 390) {
+        await waitForVisibleImages(page);
+        await page.screenshot({ path: testInfo.outputPath(`426-medication-${individual ? 'individual' : 'prescription'}-depth-390.png`) });
+      }
+      await lunch.click();
+      await expect(lunch).toHaveAttribute('aria-pressed', 'false');
+      await expect(lunch).toHaveCSS('background-image', 'none');
+      await expect(lunch).toHaveCSS('box-shadow', 'none');
+      await expectSelectedSlotDepth(selected);
+    });
+  }
+}
 
 test('처방 편집은 원본 하루 횟수까지만 선택하고 기존 시간을 바꿀 수 있다', async ({ page }) => {
   let scheduleLoads = 0;
