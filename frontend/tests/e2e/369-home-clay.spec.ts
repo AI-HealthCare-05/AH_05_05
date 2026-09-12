@@ -66,7 +66,7 @@ test('clay selection stays distinct from completion and does not move the medica
   await expect(row).toHaveCSS('transform', 'none');
   await page.mouse.up();
   await row.click();
-  await morning.getByRole('button', { name: '먹었어요', exact: true }).click();
+  await morning.getByRole('button', { name: /먹었어요$/ }).click();
   await expect(row.locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await page.screenshot({ path: testInfo.outputPath('369-home-clay-complete-390.png') });

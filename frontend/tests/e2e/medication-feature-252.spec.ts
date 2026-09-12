@@ -418,10 +418,10 @@ test('복약 목록은 연필로 활성 회차를 편집하고 완료 회차를 
 
 test('복약 삭제 선택 모드는 고정 안내와 비활성 위험 버튼을 먼저 보여준다', async ({ page }) => {
   await page.goto('/medications');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
-  const deleteButton = page.getByRole('button', { name: '선택한 처방 삭제' });
+  const deleteButton = page.getByRole('button', { name: '삭제', exact: true });
   await expect(deleteButton).toBeDisabled();
   await expect(deleteButton).toHaveClass(/bg-muted-bg/);
 

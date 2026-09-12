@@ -101,7 +101,7 @@ test('completion pill stays above the hospital name across widths, expansion, se
   await detail.getByRole('button', { name: /처방 펼치기$/ }).click();
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await row.click();
-  await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
+  await detail.getByRole('button', { name: /먹었어요$/ }).click();
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await expect(headerSummary).toHaveText('복용 완료');
   await expect(pill).toHaveCount(0);
@@ -153,7 +153,7 @@ for (const { hiddenFails, allVisibleTaken } of [
     await page.goto('/home');
     const detail = page.getByRole('group', { name: '아침약 상세' });
     await expect(detail.getByRole('article')).toHaveCount(2);
-    await detail.getByRole('button', { name: '먹었어요', exact: true }).click();
+    await detail.getByRole('button', { name: /먹었어요$/ }).click();
     await expect.poll(() => requests.map(item => item.recordId).sort()).toEqual(allVisibleTaken ? [12] : [12, 24]);
     expect(requests.every(item => item.taken)).toBe(true);
     if (hiddenFails) {

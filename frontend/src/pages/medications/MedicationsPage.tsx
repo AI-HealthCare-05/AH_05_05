@@ -440,7 +440,7 @@ export function MedicationsPage({
           {feature252 && (
             <button
               type="button"
-              className="min-h-touch rounded-pill border border-border bg-card px-4 text-sm font-bold text-foreground"
+              className="min-h-touch rounded-pill border border-border bg-card px-4 text-sm font-bold text-foreground shadow-card"
               onClick={() => navigate('/medications/notes', { state: { entry: 'medications' } })}
             >
               복약 메모
@@ -451,19 +451,31 @@ export function MedicationsPage({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Button
             fullWidth={false}
+            variant="secondary"
             className="self-start"
             onClick={() => navigate('/document-upload')}
           >
             <Plus aria-hidden className="mr-1 size-4" />
             처방 추가
           </Button>
-          <button
-            type="button"
-            className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => selectionMode ? leaveSelectionMode() : setSelectionMode(true)}
-          >
-            {selectionMode ? '완료' : '삭제'}
-          </button>
+          {selectionMode ? (
+            <Button
+              fullWidth={false}
+              variant="danger"
+              disabled={selectedRecordIds.size === 0}
+              onClick={openDeleteConfirmation}
+            >
+              삭제
+            </Button>
+          ) : (
+            <button
+              type="button"
+              className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setSelectionMode(true)}
+            >
+              선택
+            </button>
+          )}
         </div>
 
         {loadError ? (
@@ -523,15 +535,6 @@ export function MedicationsPage({
           </section>
         )}
 
-        {selectionMode && (
-          <Button
-            variant="danger"
-            disabled={selectedRecordIds.size === 0}
-            onClick={openDeleteConfirmation}
-          >
-            선택한 처방 삭제
-          </Button>
-        )}
       </main>
 
       <BottomTabbar

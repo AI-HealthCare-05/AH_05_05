@@ -74,7 +74,12 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
           영양제 복용 정보를 불러오는 중이에요.
         </LoadingState>
       ) : scheduled.length === 0 ? (
-        <Card className="p-4"><p className="text-sm text-muted-foreground">오늘 먹을 영양제가 없어요.</p></Card>
+        <Card title="오늘의 영양제" className="gap-4 bg-primary-bg p-5">
+          <p className="text-sm text-muted-foreground">
+            영양제를 등록하시면 시간에 맞춰 알림을 받으실 수 있어요.
+          </p>
+          <Button onClick={onBrowse}>영양제 살펴보기</Button>
+        </Card>
       ) : primarySlot ? (
         <TimeSlotNavigator key={date} items={supplementSlots} initialSlot={primarySlot.slot} label="영양제">
           {(item) => (
@@ -90,9 +95,11 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
           )}
         </TimeSlotNavigator>
       ) : null}
-      <button type="button" className="min-h-touch self-end text-sm font-bold text-primary-strong" onClick={onBrowse}>
-        영양제 살펴보기
-      </button>
+      {scheduled.length > 0 && (
+        <Button fullWidth={false} variant="secondary" className="self-end" onClick={onBrowse}>
+          영양제 살펴보기
+        </Button>
+      )}
     </section>
   );
 }

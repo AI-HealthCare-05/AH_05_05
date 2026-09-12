@@ -348,9 +348,9 @@ test('전체 목록을 한 번 호출해 모두 표시하고 삭제 결과를 �
   const cards = page.getByRole('button', { name: /처방 · 약/ });
   await expect(cards).toHaveCount(41);
 
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox').first().check();
-  await page.getByRole('button', { name: '선택한 처방 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '삭제하기' }).click();
 
   await expect(page.getByText('1개를 삭제했어요')).toBeVisible();
@@ -412,10 +412,10 @@ test('긴 별칭과 약 이름은 요약·선택·편집·완료 상세에서 �
     await expectContained(details.getByText(new RegExp(longMedication)), details);
     await activeCard.click();
 
-    await page.getByRole('button', { name: '삭제', exact: true }).click();
+    await page.getByRole('button', { name: '선택', exact: true }).click();
     await expect(page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ })).toBeVisible();
     await expectContained(activeName, activeCard);
-    await page.getByRole('button', { name: '완료', exact: true }).click();
+    await page.getByRole('button', { name: '취소', exact: true }).click();
 
     await page.getByRole('button', { name: '처방 수정 · 2026년 8월 22일', exact: true }).click();
     const editSheet = page.getByRole('dialog', { name: '처방 편집' });
@@ -466,10 +466,10 @@ test('선택 삭제는 순차 실행하고 부분 실패 항목만 선택 상태
   });
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
   await page.getByRole('checkbox', { name: /2026년 8월 24일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '선택한 처방 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '삭제하기' }).click();
 
   await expect(page.getByText('1개를 삭제했어요. 1개는 실패했어요')).toBeVisible();
@@ -497,10 +497,10 @@ test('선택 삭제가 전부 실패하면 같은 항목들을 순서대로 재�
   });
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
   await page.getByRole('checkbox', { name: /2026년 8월 24일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '선택한 처방 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: '삭제하기' }).click();
 

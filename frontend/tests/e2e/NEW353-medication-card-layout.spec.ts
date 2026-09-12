@@ -75,6 +75,30 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/medications', (route) =>
     fulfillJson(route, [overview(353, false, 5), overview(354, true, 0)]),
   );
+  await page.route('**/api/v1/med/medication/schedule/353', (route) =>
+    fulfillJson(route, {
+      start: overview(353, false, 5).start,
+      mealTimes: MEAL_TIMES,
+      medications: [
+        {
+          medicationId: 3530,
+          name: LONG_MEDICATION_NAME,
+          dose: '125/500mg 2정',
+          timesPerDay: 4,
+          timing: '식후',
+          slots: ['morning', 'lunch', 'evening', 'bedtime'],
+        },
+        {
+          medicationId: 3531,
+          name: '아세트아미노펜복합연질캡슐',
+          dose: '650mg 1캡슐',
+          timesPerDay: 2,
+          timing: '식후',
+          slots: ['morning', 'evening'],
+        },
+      ],
+    }),
+  );
 });
 
 test('상태 행을 카드 왼쪽 위에 두고 모든 처방 정보를 폭별로 자르지 않는다', async ({
@@ -157,7 +181,7 @@ test('본 카드의 펼침과 연필 편집, 기본 카드 D-Day, 선택 모드�
   await expect(page.getByRole('region', { name: '2026년 9월 5일 처방 상세' })).toHaveCount(0);
   await page.getByRole('dialog').getByRole('button', { name: '닫기' }).click();
 
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   const checkbox = page.getByRole('checkbox', { name: '2026년 9월 5일 처방 선택' });
   await featureCard.click();
   await expect(checkbox).toBeChecked();

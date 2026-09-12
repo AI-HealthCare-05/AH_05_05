@@ -361,7 +361,7 @@ function TimelineItem({
                           key={`${medication.recordId}:${medication.medicationId}`}
                           className="flex min-w-0 items-start"
                         >
-                          <span className="min-w-0 [overflow-wrap:anywhere] text-base font-bold text-foreground">
+                          <span className="min-w-0 [overflow-wrap:anywhere] text-base font-normal text-foreground">
                             {medication.name}
                           </span>
                         </li>
@@ -404,7 +404,11 @@ function TimelineItem({
             className="min-h-touch flex-1 px-3"
             onClick={handleDoseAction}
           >
-            {actionCompleted || allEpisodesCompleted ? '복약 기록 되돌리기' : '먹었어요'}
+            {actionCompleted || allEpisodesCompleted
+              ? '복약 기록 되돌리기'
+              : hasSelection
+                ? '선택한 약 먹었어요'
+                : '모두 먹었어요'}
           </Button>
         </div>
       </div>

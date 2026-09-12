@@ -2042,9 +2042,9 @@ test('복약 선택 삭제는 오류를 팝업에 남기고 재시도하면 목�
   );
 
   await page.goto('/medications');
-  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await page.getByRole('button', { name: '선택', exact: true }).click();
   await page.getByRole('checkbox', { name: /2026년 8월 22일 처방 선택/ }).check();
-  await page.getByRole('button', { name: '선택한 처방 삭제' }).click();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: '1개를 삭제할까요?' })).toBeVisible();
   await expect(dialog).toContainText('삭제한 처방은 약봉투를 다시 등록해야 복구할 수 있어요.');

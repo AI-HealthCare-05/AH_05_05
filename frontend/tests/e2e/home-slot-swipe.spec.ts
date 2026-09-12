@@ -105,12 +105,12 @@ test('medication selection and completion belong to their slot; all includes col
   await tabs.getByRole('tab', { name: '저녁', exact: true }).click();
   const evening = page.getByRole('group', { name: '저녁약 상세' });
   await expect(evening.locator('[aria-pressed="true"]')).toHaveCount(0);
-  await evening.getByRole('button', { name: '먹었어요', exact: true }).click();
+  await evening.getByRole('button', { name: /먹었어요$/ }).click();
   await expect.poll(() => writes.length).toBe(3);
   expect(writes.map(item => [item.recordId, item.slot, item.taken]).sort()).toEqual([[1, 'evening', true], [2, 'evening', true], [3, 'evening', true]]);
   await tabs.getByRole('tab', { name: '아침', exact: true }).click();
   await expect(morning.locator('[aria-pressed="true"]')).toHaveCount(1);
-  await morning.getByRole('button', { name: '먹었어요', exact: true }).click();
+  await morning.getByRole('button', { name: /먹었어요$/ }).click();
   await expect.poll(() => writes.length).toBe(4);
   expect(writes[3]).toMatchObject({ recordId: 3, slot: 'morning', taken: true });
   await tabs.getByRole('tab', { name: '저녁', exact: true }).click();

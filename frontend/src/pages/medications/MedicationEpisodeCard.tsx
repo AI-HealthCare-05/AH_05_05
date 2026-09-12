@@ -64,50 +64,62 @@ export function MedicationEpisodeCard({
           </label>
         )}
         <div className="min-w-0 flex-1">
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-controls={panelId}
-            aria-label={`${dateLabel} 처방 · 약 ${overview.medications.length}개 · ${statusLabel}`}
-            className={`flex min-h-24 w-full min-w-0 items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${feature252 ? 'pb-0' : ''}`}
-            onClick={selectionMode ? onToggleSelected : onToggleExpanded}
-          >
-            <span className="min-w-0 flex-1">
-              <span className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
-                <span
-                  className={`shrink-0 rounded-pill px-2.5 py-1 text-xs font-bold ${
-                    overview.isFinished
-                      ? 'bg-muted-bg text-muted-foreground'
-                      : 'bg-primary-bg text-primary-strong'
-                  }`}
-                >
-                  {statusLabel}
-                </span>
-                {!overview.isFinished && (
-                  <span className="text-xs font-bold text-primary-strong tnum">
-                    {feature252 ? `${Math.max(0, overview.daysRemaining)}일 남음` : dDay}
+          <div className="flex min-w-0 items-stretch">
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={panelId}
+              aria-label={`${dateLabel} 처방 · 약 ${overview.medications.length}개 · ${statusLabel}`}
+              className={`flex min-h-24 min-w-0 flex-1 items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${feature252 ? 'pb-0' : ''}`}
+              onClick={selectionMode ? onToggleSelected : onToggleExpanded}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+                  <span
+                    className={`shrink-0 rounded-pill px-2.5 py-1 text-xs font-bold ${
+                      overview.isFinished
+                        ? 'bg-muted-bg text-muted-foreground'
+                        : 'bg-primary-bg text-primary-strong'
+                    }`}
+                  >
+                    {statusLabel}
                   </span>
-                )}
+                  {!overview.isFinished && (
+                    <span className="text-xs font-bold text-primary-strong tnum">
+                      {feature252 ? `${Math.max(0, overview.daysRemaining)}일 남음` : dDay}
+                    </span>
+                  )}
+                </span>
+                <strong className="block [overflow-wrap:anywhere] text-lg text-foreground">
+                  {feature252 && overview.alias?.trim() ? overview.alias : `${dateLabel} 처방`}
+                </strong>
+                <span className="mt-1 block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
+                  {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })}
+                  {!feature252 && ` · 약 ${overview.medications.length}개`}
+                </span>
               </span>
-              <strong className="block [overflow-wrap:anywhere] text-lg text-foreground">
-                {feature252 && overview.alias?.trim() ? overview.alias : `${dateLabel} 처방`}
-              </strong>
-              <span className="mt-1 block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
-                {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })}
-                {!feature252 && ` · 약 ${overview.medications.length}개`}
+              <span className="flex min-w-touch shrink-0 items-center justify-center">
+                <ChevronDown
+                  aria-hidden
+                  className={`size-5 shrink-0 text-disabled-foreground transition-transform motion-reduce:transition-none ${
+                    expanded ? 'rotate-180' : ''
+                  }`}
+                />
               </span>
-            </span>
-            <span className="flex min-w-touch shrink-0 items-center justify-center">
-            <ChevronDown
-              aria-hidden
-              className={`size-5 shrink-0 text-disabled-foreground transition-transform motion-reduce:transition-none ${
-                expanded ? 'rotate-180' : ''
-              }`}
-            />
-            </span>
-          </button>
+            </button>
+            {feature252 && !selectionMode && !overview.isFinished && onOpenEpisode && (
+              <button
+                type="button"
+                aria-label={`처방 수정 · ${dateLabel}`}
+                className="flex min-h-24 min-w-touch shrink-0 items-center justify-center pt-4 text-primary-strong hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                onClick={onOpenEpisode}
+              >
+                <Pencil aria-hidden className="size-4" />
+              </button>
+            )}
+          </div>
           {feature252 && (
-            <div className="mt-3 flex min-w-0 items-start gap-2 px-4 pb-3">
+            <div className="mt-3 flex min-w-0 px-4 pb-3">
               <div className="flex min-h-touch min-w-0 flex-1 flex-wrap content-start gap-2 py-2">
                 {scheduledSlots.map((slot) => (
                   <span key={slot} className={`rounded-pill px-2.5 py-1 text-xs font-bold ${SLOT_CHIP_CLASSES[slot]}`}>
@@ -115,16 +127,6 @@ export function MedicationEpisodeCard({
                   </span>
                 ))}
               </div>
-              {!selectionMode && !overview.isFinished && onOpenEpisode && (
-                <button
-                  type="button"
-                  aria-label={`처방 수정 · ${dateLabel}`}
-                  className="flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-control text-primary-strong hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={onOpenEpisode}
-                >
-                  <Pencil aria-hidden className="size-4" />
-                </button>
-              )}
             </div>
           )}
         </div>
