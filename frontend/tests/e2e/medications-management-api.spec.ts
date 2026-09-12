@@ -2,6 +2,7 @@ import { expect, test, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
 import { expectSelectedSlotDepth } from './helpers/doseSlotDepth';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 const MEAL_TIMES = {
   morning: '08:00',
@@ -124,6 +125,7 @@ for (const individual of [false, true]) {
       await expectSelectedSlotDepth(selected);
       await lunch.scrollIntoViewIfNeeded();
       if (width === 390) {
+        await waitForVisibleImages(page);
         await page.screenshot({ path: testInfo.outputPath(`426-medication-${individual ? 'individual' : 'prescription'}-depth-390.png`) });
       }
       await lunch.click();
@@ -378,6 +380,10 @@ test('별칭 PATCH 뒤 홈 진입과 재진입은 후속 처방 조회의 별칭
   await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
   expect(aliasPayloads).toEqual([{ alias: '실 API 홈 별칭' }]);
 
+  // The pointer remains over the bottom toast after saving, which pauses
+  // Sonner's dismissal timer and covers the bottom navigation in this fixture.
+  await page.mouse.move(0, 0);
+  await expect(page.getByText('처방을 저장했어요.')).toBeHidden({ timeout: 10_000 });
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await expect(page.getByRole('heading', { name: '실 API 홈 별칭', exact: true })).toBeVisible();
   await page.goto('/medications');

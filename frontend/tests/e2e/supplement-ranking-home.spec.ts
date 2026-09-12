@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 const RANKING_RESPONSE = {
   display_id: 3,
@@ -170,7 +171,8 @@ test('홈 랭킹 전체 보기는 둘러보기 탭으로 바로 이동한다', a
   await expect(page).toHaveURL(/\/supplements\?tab=browse$/);
 });
 
-test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭킹을 표시한다', async ({ page }) => {
+test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭킹을 표시한다', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   let supplementListRequests = 0;
   await page.route('**/api/v1/display/med/nutr/rank', async (route) => {
     await fulfillJson(route, RANKING_RESPONSE);
@@ -197,6 +199,8 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
   await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
   await expect(ranking.getByRole('listitem')).toHaveCount(5);
   expect(supplementListRequests).toBe(0);
+  await waitForVisibleImages(page);
+  await page.screenshot({ path: testInfo.outputPath('426-guest-ranking-subtitle-390.png'), fullPage: true });
 });
 
 test('등록 목록 조회가 실패해도 랭킹은 배지 없이 표시한다', async ({ page }) => {

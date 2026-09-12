@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from 'playwright/test';
 
+import { waitForVisibleImages } from './helpers/visibleImages';
+
 const PRODUCT = {
   id: 701, food_code: 'SUPPL-426-701', name: 'EYE100 테스트 제품', basis_qty: '1000mg',
   energy_kcal: 0, water_g: null, protein_g: null, fat_g: null, ash_g: null,
@@ -76,6 +78,7 @@ for (const width of [375, 390, 1280]) {
     expect(parseFloat(cardStyle.radius)).toBeGreaterThan(0);
     expect(cardStyle.shadow).not.toBe('none');
     expect(cardStyle.image).toContain('linear-gradient');
+    await waitForVisibleImages(page);
     await page.screenshot({ path: testInfo.outputPath(`426-product-info-panel-${width}.png`), fullPage: true });
   });
 }

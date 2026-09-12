@@ -58,3 +58,12 @@
 - TypeScript `tsc --noEmit` 및 `git diff --check` 통과.
 - 검증 실행은 detached 작업 폴더, 포트 45526, 독립 Vite cache를 사용했습니다. API 경계 회귀는 fixture만 사용하며 테스트 서버가 미목업 API 요청을 proxy 이전에 차단합니다.
 - 390px 시각 검증: `frontend/test-results/426-depth-green/` 아래 `426-supplement-edit-depth-390.png`, `426-medication-prescription-depth-390.png`, `426-medication-individual-depth-390.png`(각 desktop/touch 디렉터리). 선택 controls가 보이도록 스크롤한 캡처입니다.
+
+## 작은 화면·제품 정보·게스트 문구 후속 검증
+
+- 22개 검색 결과의 첫·중간·마지막·다음 페이지 제품을 선택해 320×568, 375×667, 360×800, 393×852, 390×700, 1280×900 viewport에서 전체 카드와 추가 버튼이 scroll viewport 안에 들어오는지 검증했습니다. 페이지 추가 실패 후에도 직접 입력 경로는 유지됩니다.
+- 제품 정보는 흰색·1px 테두리·16px 좌우 여백의 사각 `dl` 패널로 표시하고, 그림자·그라데이션·둥근 모서리는 적용하지 않습니다. 성분 카드의 입체감은 유지했습니다.
+- 비로그인 홈 랭킹의 고정 부제도 로그인 상태와 같은 `RxVita가 골랐어요`를 사용합니다. 게스트의 개인 복약 API 미호출, 로그인 CTA, 공개 랭킹은 그대로입니다.
+- 결합 GREEN: 신규·집중 desktop 26/26, touch 16/16, 기존 #426·복약·홈 desktop 37/37, #353 mock 13/13, 보충제 mock 4/4. `tsc --noEmit`과 `git diff --check`도 통과했습니다.
+- 캡처 전 표시 중인 모든 `img`의 `decode()`와 양수 `naturalWidth`/`naturalHeight`를 확인했습니다. 안정 경로는 `frontend/test-results/426-followup-final-artifacts/`입니다.
+- 검증은 fixture API만 사용하고 `/api`·`/media` 미목업 요청을 proxy 전 503으로 차단한 detached 작업 폴더와 독립 포트 45529에서 수행했습니다. 실기기 browser chrome, safe area, software keyboard는 직접 검증하지 않았습니다.

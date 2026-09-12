@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page, type Route } from 'playwright/test';
 
+import { waitForVisibleImages } from './helpers/visibleImages';
+
 const PRODUCT = {
   id: 701, food_code: 'SUPPL-426-701', name: '테스트 영양제', basis_qty: '1000mg',
   energy_kcal: 0, water_g: null, protein_g: null, fat_g: null, ash_g: null,
@@ -71,7 +73,10 @@ for (const [width, height] of [[320, 568], [375, 667], [360, 800], [393, 852], [
         expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
       }
       await expect(sheet.getByRole('searchbox')).toHaveValue('테스트');
-      if (index === 9) await page.screenshot({ path: testInfo.outputPath(`426-selected-${width}x${height}-emulated.png`) });
+      if (index === 9) {
+        await waitForVisibleImages(page);
+        await page.screenshot({ path: testInfo.outputPath(`426-selected-${width}x${height}-emulated.png`) });
+      }
     }
   });
 }
