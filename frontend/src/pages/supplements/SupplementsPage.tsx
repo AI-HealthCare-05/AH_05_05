@@ -76,10 +76,6 @@ export function SupplementsPage({
   const hasStandardProfile = standards !== null;
   const exceeded = hasStandardProfile ? totals.filter((total) => total.exceeded) : [];
   const neutral = hasStandardProfile ? totals.filter((total) => !total.exceeded) : totals;
-  const supplementsWithNutrients = (supplements ?? []).filter(
-    (supplement) => supplement.nutrientDataAvailable,
-  ).length;
-  const manuallyEnteredSupplements = (supplements ?? []).length - supplementsWithNutrients;
   const registeredProductIds = useMemo(
     () =>
       new Set(
@@ -483,18 +479,9 @@ export function SupplementsPage({
 
                 <div className="flex flex-col gap-1 text-sm text-muted-foreground">
                   <p>{standardSourceLabel(profile)}</p>
-                  {supplementsWithNutrients > 0 && (
-                    <>
-                      <p>등록한 영양제의 성분만 더한 값이에요</p>
-                      <p>음식과 의약품을 통한 섭취량은 포함되지 않아요.</p>
-                    </>
-                  )}
-                  {manuallyEnteredSupplements > 0 && (
-                    <p>
-                      직접 입력한 {manuallyEnteredSupplements}개는 성분을 알 수 없어 합계에 포함하지
-                      않았어요.
-                    </p>
-                  )}
+                  <p>검색된 영양제의 성분만 합산된 결과예요.</p>
+                  <p>직접 입력한 영양제는 성분 합산에 포함되지 않아요.</p>
+                  <p>음식과 의약품을 통한 섭취량은 포함되지 않아요.</p>
                   {profileResolved && !hasStandardProfile && (
                     <button
                       type="button"
@@ -573,33 +560,47 @@ function NutrientTotalCard({
   const isOverUpperLimit = showStandards && evaluation.status === 'over-upper-limit';
 
   const content = (
-    <>
-        <div className="flex items-start gap-3">
-          <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
+    <div className="flex flex-col gap-4">
+      <div
+        data-testid="nutrient-total-summary"
+        className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
+      >
+        <h3 className="text-lg font-bold text-foreground">{total.name}</h3>
+        <strong
+          className={`text-lg font-bold tnum ${
+            isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
+          }`}
+        >
+          {numberFormat.format(total.amount)}
+        </strong>
+        <span className="text-unit text-muted-foreground">{total.unit}</span>
+      </div>
+
+      {showStandards && (
+        <div className="flex flex-col gap-1">
+          <StandardStatus total={total} />
+          {(evaluation.base !== null || total.ul !== null) && <NutrientRangeBar total={total} />}
         </div>
+      )}
 
-        <div className="flex items-baseline gap-2">
-          <strong
-            className={`text-metric font-bold tnum ${
-              isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
-            }`}
-          >
-            {numberFormat.format(total.amount)}
-          </strong>
-          <span className="text-unit text-muted-foreground">{total.unit}</span>
-        </div>
-
-        {showStandards && (
-          <>
-            {(evaluation.base !== null || total.ul !== null) && <NutrientRangeBar total={total} />}
-            <StandardStatus total={total} />
-          </>
-        )}
-
-        <p className="text-sm text-muted-foreground">
-          {total.sourceNames.join(' · ')}에 들어 있어요
-        </p>
-    </>
+      <details className="group text-sm text-muted-foreground">
+        <summary className="flex min-h-touch cursor-pointer list-none items-center justify-between gap-3 rounded-control py-1 font-bold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <span>성분 포함 제품 {total.sourceNames.length}개</span>
+          <DrawnChevron
+            aria-hidden
+            direction="down"
+            className="size-5 shrink-0 text-disabled-foreground transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <ul className="flex flex-col gap-1 border-t border-border pt-2">
+          {total.sourceNames.map((sourceName) => (
+            <li key={sourceName} className="[overflow-wrap:anywhere]">
+              {sourceName}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
   );
 
   if (grouped) {
@@ -629,11 +630,18 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
     return null;
   }
   if (evaluation.status === 'over-upper-limit') {
-    return <p className="text-sm font-bold text-danger-strong">상한 초과</p>;
+    return (
+      <p
+        data-nutrient-status
+        className="ml-auto text-right text-sm font-bold text-danger-strong"
+      >
+        상한 초과
+      </p>
+    );
   }
   if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p data-nutrient-status className="ml-auto text-right text-sm text-muted-foreground">
         {baseLabel}의 {numberFormat.format(evaluation.percentOfBase)}%예요
       </p>
     );
@@ -641,12 +649,16 @@ function StandardStatus({ total }: { total: NutrientTotal }) {
   if (evaluation.status === 'recommended') {
     if (total.ul === null && evaluation.percentOfBase !== null) {
       return (
-        <p className="text-sm text-muted-foreground">
+        <p data-nutrient-status className="ml-auto text-right text-sm text-muted-foreground">
           {baseLabel}의 {numberFormat.format(evaluation.percentOfBase)}%예요
         </p>
       );
     }
-    return <p className="text-sm text-muted-foreground">권장 범위예요</p>;
+    return (
+      <p data-nutrient-status className="ml-auto text-right text-sm text-muted-foreground">
+        권장 범위예요
+      </p>
+    );
   }
   return null;
 }

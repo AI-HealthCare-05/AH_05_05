@@ -1,0 +1,91 @@
+import { expect, test } from 'playwright/test';
+
+import { IS_REAL_API, MOCK_ONLY_REASON } from './helpers/mode';
+
+test.beforeEach(() => {
+  test.skip(IS_REAL_API, MOCK_ONLY_REASON);
+});
+
+test('성분명 옆 합계와 그래프 오른쪽 위의 기존 판정 문구를 표시한다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+
+  const totals = page.getByRole('region', { name: '성분 합계' });
+  const vitaminA = totals.getByRole('article', { name: '비타민 A 성분 합계' });
+  const summary = vitaminA.getByTestId('nutrient-total-summary');
+  await expect(summary).toContainText('비타민 A');
+  await expect(summary).toContainText('3,200');
+  await expect(summary).toContainText('µg RAE');
+  const nameBox = await vitaminA.getByRole('heading', { name: '비타민 A' }).boundingBox();
+  const amountBox = await summary.locator('strong').boundingBox();
+  expect(Math.abs((nameBox?.y ?? 0) - (amountBox?.y ?? 0))).toBeLessThan(8);
+
+  const status = vitaminA.getByText('상한 초과', { exact: true });
+  const graph = vitaminA.locator('[data-nutrient-range]');
+  const statusBox = await status.boundingBox();
+  const graphBox = await graph.boundingBox();
+  expect(statusBox?.y).toBeLessThan(graphBox?.y ?? 0);
+  expect(statusBox?.x).toBeGreaterThan((graphBox?.x ?? 0) + (graphBox?.width ?? 0) / 2);
+
+  const calcium = totals.getByRole('article', { name: '칼슘 성분 합계' });
+  await expect(calcium.getByText('권장량의 50%예요', { exact: true })).toBeVisible();
+  const vitaminD = totals.getByRole('article', { name: '비타민 D 성분 합계' });
+  await expect(vitaminD.getByText('권장 범위예요', { exact: true })).toBeVisible();
+});
+
+test('성분 포함 제품을 접어서 제공하고 펼치면 제품명을 모두 보여준다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+
+  const vitaminA = page
+    .getByRole('region', { name: '성분 합계' })
+    .getByRole('article', { name: '비타민 A 성분 합계' });
+  const disclosure = vitaminA.getByText('성분 포함 제품 2개', { exact: true });
+  await expect(disclosure).toBeVisible();
+  await expect(vitaminA.getByText('오메가3', { exact: true })).toBeHidden();
+  await disclosure.click();
+  await expect(vitaminA.getByText('오메가3', { exact: true })).toBeVisible();
+  await expect(vitaminA.getByText('종합비타민', { exact: true })).toBeVisible();
+  await expect(vitaminA.getByText(/확인 필요 제품/)).toHaveCount(0);
+});
+
+test('기준 정보와 합산 제외 범위를 확정 문구로 안내한다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+
+  await expect(
+    page.getByText('기준 · 2025 한국인 영양소 섭취기준 · 만 26세 남성', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('검색된 영양제의 성분만 합산된 결과예요.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('직접 입력한 영양제는 성분 합산에 포함되지 않아요.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('음식과 의약품을 통한 섭취량은 포함되지 않아요.', { exact: true }),
+  ).toBeVisible();
+});
+
+test('자료가 없어 판정할 수 없는 성분에는 상태와 그래프를 만들지 않는다', async ({ page }) => {
+  await page.goto('/dev/supplements');
+
+  const selenium = page
+    .getByRole('region', { name: '성분 합계' })
+    .getByRole('article', { name: '셀레늄 성분 합계' });
+  await expect(selenium.getByTestId('nutrient-total-summary')).toContainText('셀레늄');
+  await expect(selenium.getByTestId('nutrient-total-summary')).toContainText('55');
+  await expect(selenium.getByTestId('nutrient-total-summary')).toContainText('µg');
+  await expect(selenium.locator('[data-nutrient-status]')).toHaveCount(0);
+  await expect(selenium.locator('[data-nutrient-range]')).toHaveCount(0);
+});
+
+test('375px, 390px와 1280px에서 성분 합계가 가로로 넘치지 않는다', async ({ page }, testInfo) => {
+  for (const width of [375, 390, 1280]) {
+    await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
+    await page.goto('/dev/supplements');
+    await expect(page.getByRole('region', { name: '성분 합계' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`nutrient-totals-${width}px.png`),
+      fullPage: true,
+    });
+  }
+});
