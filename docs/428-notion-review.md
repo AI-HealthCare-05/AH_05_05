@@ -10,7 +10,7 @@
 | [홈 화살표·달성률·오늘 상태](https://app.notion.com/p/3d97226115e780a4ac6dcbc8e7c48275) | fixed / superseded | 화살표를 카드 아래로 배치. 공식 홈·목록·상세는 같은 진행률 함수, 맞춤은 기존 `customChallengeDayProgress` 공유. 일 단위 완료/목표 표시. 사용자가 확정한 `완료/미완료` 구분 적용, 완료 카드는 유지. 원문의 달성을 미완료로 바꾸는 문구는 확정 결정으로 대체 |
 | [영양제 중복 선택](https://app.notion.com/p/3d97226115e78070ba67ef6d9c5adccd) | fixed | 이미 참여 중인 영양제 선택 비활성화, 기존 참여 링크 유지. 추천의 참여 가능 개수와 둘러보기 참여 중 판정도 같은 정책 적용 |
 | [둘러보기 유형](https://app.notion.com/p/3d97226115e780f698d9d1cb3e47b214) | fixed | 각 항목 오른쪽에 공식·맞춤 표시 |
-| [재참여 버튼 위치](https://app.notion.com/p/3d97226115e780c8a0fad8aa403fe9cc) | superseded / already implemented | 최신 결정은 하단 돌아가기 삭제이므로 재도입하지 않음. 취소 참여의 재참여 버튼 및 확인 흐름은 유지 |
+| [재참여 버튼 위치](https://app.notion.com/p/3d97226115e780c8a0fad8aa403fe9cc) | fixed (누락 후 수정) | 확인창의 `다시 참여하기`를 위, `돌아가기`를 아래로 배치. 이전 `superseded` 판정은 페이지 하단 복귀 버튼 삭제와 확인창 버튼 순서를 혼동한 오류였다. 페이지 하단 복귀는 재도입하지 않고 확인창의 취소·재참여 흐름은 유지 |
 | [영양제 부분 중복](https://app.notion.com/p/3d97226115e7800bbb10e0e942db36a7) | fixed | 서버의 완전 동일 집합 비교를 교집합 검사로 변경. 기존 User → source → settings 행 잠금과 요청 키 선확인 유지 |
 | [모집기간·공식 상세 구분](https://app.notion.com/p/3d97226115e780288ea2cbb788399969) | already implemented / fixed | 모집기간은 이미 년월일 표기, 목록은 제목과 모집기간 구조. 공식·맞춤 참여 안내에 유형 박스 적용 |
 
@@ -21,6 +21,13 @@
 - 새 UI 테스트 `frontend/tests/e2e/428-challenge-policy.spec.ts` 9 passed. 기존 `304-official-challenges-api.spec.ts`와 `315-custom-challenges-api.spec.ts`에서 변경 관련 회귀 18개 passed. 변경된 정책 기대도 갱신했다.
 - TypeScript `tsc --noEmit` 통과. 최종 브라우저 실행 결과와 명령은 외부 작업 보고서 `428-report.md`에 기록한다.
 - 화면 캡처: `frontend/test-results/428-final/428-challenge-policy-home--7630c-y-s-completed-card-at-375px/{home-375,detail-375}.png`, `...home--d963b-y-s-completed-card-at-390px/{home-390,detail-390}.png`, `...home--2e5c8--s-completed-card-at-1280px/{home-1280,detail-1280}.png`. fixture 데이터만 사용하며 이미지는 커밋하지 않는다.
+
+## 누락 정정: 재참여 확인창 버튼 순서
+
+- 공식 상세와 취소된 참여 상세가 사용하는 `OfficialChallengeRejoinDialog`의 자식 버튼 순서만 수정했다. 공통 DialogFooter, 참여 가능 조건, 요청 중 비활성화/닫기 방지, 이벤트 처리 및 페이지 하단 복귀는 변경하지 않았다.
+- 두 실제 진입 화면의 390px에서 잘못된 세로 순서를 RED로 확인했다. 수정 후 새 순서·키보드 이동·취소·요청 중 방지 8개와 기존 재참여/이력 보존/실패 복구 회귀 10개, 총 18개가 통과했다. 320·390·1280px 확인창 캡처는 `frontend/test-results/rejoin-green/`에 보관했다. 실제 사용자 API 쓰기는 차단한 fixture 환경이다.
+- WSL 환경 복구 후 완료된 참여의 기존 재참여 제한 검증을 추가한 최종 9개도 통과했다(29.0s). 최종 캡처는 `frontend/test-results/rejoin-final-recovered/`에 보관했으며 TypeScript 검사와 `git diff --check`도 통과했다.
+- 이 항목은 이전에 구현된 것이 아니라 사용자 지적으로 누락을 확인한 뒤 수정한 것이다. 완료된 참여의 재참여 허용 범위 등 기존 정책은 넓히지 않았다.
 
 ## 범위와 제한
 
