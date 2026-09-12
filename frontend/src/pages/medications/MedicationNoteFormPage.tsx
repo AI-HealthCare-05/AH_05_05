@@ -245,6 +245,7 @@ export function MedicationNoteFormPage() {
             }
             availableEpisodes.unshift(episodeFromNote(referenceNote));
           } catch (error: unknown) {
+            if (cancelled) return;
             if (inventoryFailure) {
               setInitialLoadError(inventoryFailure);
               return;
