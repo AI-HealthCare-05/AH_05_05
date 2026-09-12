@@ -238,12 +238,6 @@ class AnswerMedicationQuestionUseCase:
         r"(?:복용|용량|섭취량)\s*(?:을|를)?\s*(?:늘리|줄이|바꾸|변경)|"
         r"(?:시작|중단|증량|감량)\s*(?:해도|해야|해|할)",
     )
-    _CONDITIONAL_SECTION_SEARCH_TERMS = {
-        KnowledgeSectionType.FUNCTION: ("효능", "효과", "기능"),
-        KnowledgeSectionType.DAILY_INTAKE: ("복용법", "섭취량", "용법"),
-        KnowledgeSectionType.CAUTION: ("주의사항", "금기", "이상반응"),
-        KnowledgeSectionType.INTERACTION: ("상호작용", "병용", "흡수"),
-    }
 
     def __init__(
         self,
@@ -576,11 +570,7 @@ class AnswerMedicationQuestionUseCase:
             return terminal_result
         evidence_reasoning = await self._reason_about_interaction_evidence(
             request=request,
-            query_plan=query_plan,
-            execution_plan=execution_plan,
-            rules=rules,
-            answer_chunks=answer_chunks,
-            interaction_question=interaction_question,
+            evidence=evidence,
         )
         unsupported_pairs = self._unsupported_interaction_pairs(
             query_plan=query_plan,
@@ -753,13 +743,16 @@ class AnswerMedicationQuestionUseCase:
         self,
         *,
         request: MedicationChatRequest,
-        query_plan: MedicationKnowledgeQueryPlan,
-        execution_plan: MedicationSearchExecutionPlan,
-        rules: list[InteractionRuleFact],
-        answer_chunks: list[RetrievedKnowledgeChunk],
-        interaction_question: bool,
+        evidence: MedicationEvidenceBundle,
     ) -> EvidenceReasoningOutput | None:
         chain = self._interaction_evidence_reasoning_chain
+        query_plan = evidence.query_plan
+        execution_plan = evidence.execution_plan
+        rules = evidence.rules
+        interaction_chunks = self._interaction_evidence_chunks(
+            answer_chunks=list(evidence.answer_chunks),
+            interaction_pair_keys=execution_plan.interaction_pair_keys,
+        )
         entity_names = list(
             dict.fromkeys(
                 [
@@ -769,7 +762,12 @@ class AnswerMedicationQuestionUseCase:
                 ]
             )
         )
-        if chain is None or not interaction_question or len(entity_names) < 2 or (not rules and not answer_chunks):
+        if (
+            chain is None
+            or not evidence.interaction_question
+            or len(entity_names) < 2
+            or (not rules and not interaction_chunks)
+        ):
             return None
 
         approved_rules = [
@@ -790,7 +788,7 @@ class AnswerMedicationQuestionUseCase:
                 pair_keys=chunk.metadata.interaction_pair_keys,
                 study_scope=chunk.metadata.study_population.value,
             )
-            for chunk in answer_chunks
+            for chunk in interaction_chunks
         ]
         reasoning_input = EvidenceReasoningInput(
             question=request.question,
@@ -825,6 +823,22 @@ class AnswerMedicationQuestionUseCase:
                 }
             )
             return result
+
+    @staticmethod
+    def _interaction_evidence_chunks(
+        *,
+        answer_chunks: list[RetrievedKnowledgeChunk],
+        interaction_pair_keys: list[str],
+    ) -> list[RetrievedKnowledgeChunk]:
+        requested_pair_keys = set(interaction_pair_keys)
+        return [
+            chunk
+            for chunk in answer_chunks
+            if (
+                chunk.metadata.section_type is KnowledgeSectionType.INTERACTION
+                or bool(requested_pair_keys.intersection(chunk.metadata.interaction_pair_keys))
+            )
+        ]
 
     async def current_medication_names(
         self,
@@ -1231,13 +1245,8 @@ class AnswerMedicationQuestionUseCase:
         validated_query_plan = query_plan.model_copy(
             update={
                 "section_types": section_types,
-                "interaction_pair_keys": list(
-                    dict.fromkeys(
-                        [
-                            *query_plan.interaction_pair_keys,
-                            *validated_pair_keys,
-                        ]
-                    )
+                "interaction_pair_keys": (
+                    validated_pair_keys if validated_pair_keys else query_plan.interaction_pair_keys
                 ),
                 "alternate_queries": list(
                     dict.fromkeys(
@@ -1263,6 +1272,7 @@ class AnswerMedicationQuestionUseCase:
                 "resolved_question": output.normalized_question,
                 "requested_section_types": section_types,
                 "needs_clarification": output.needs_clarification,
+                "clarification_question": output.clarification_question,
                 "query_plan_hash": validated_query_plan.query_plan_hash,
             }
         )
@@ -1282,18 +1292,19 @@ class AnswerMedicationQuestionUseCase:
             ),
         )
 
-    @classmethod
+    @staticmethod
     def _conditional_allowed_search_terms(
-        cls,
         query_plan: MedicationKnowledgeQueryPlan,
     ) -> list[str]:
         values = [
             *(entity.surface for entity in query_plan.entities),
             *(entity.canonical_name for entity in query_plan.entities),
             *query_plan.entity_names,
+            *re.findall(
+                r"[0-9a-zA-Z가-힣μ㎍%]+",
+                query_plan.expanded_query,
+            ),
         ]
-        for section in query_plan.section_types:
-            values.extend(cls._CONDITIONAL_SECTION_SEARCH_TERMS.get(section, ()))
         return list(dict.fromkeys(value.strip() for value in values if value.strip()))
 
     @staticmethod
@@ -2202,6 +2213,12 @@ class AnswerMedicationQuestionUseCase:
                 early_result,
                 interpretation=interpretation,
             )
+        if interpretation.needs_clarification and interpretation.clarification_question:
+            return self._conditional_clarification_result(
+                request=request,
+                context=context,
+                interpretation=interpretation,
+            )
         if self._can_answer_from_active_context(
             question=request.question,
             context=context,
@@ -2223,6 +2240,30 @@ class AnswerMedicationQuestionUseCase:
             context=context,
             interpretation=interpretation,
             decision=dose_decision,
+        )
+
+    @classmethod
+    def _conditional_clarification_result(
+        cls,
+        *,
+        request: MedicationChatRequest,
+        context: ActiveIntakeContext,
+        interpretation: MedicationQuestionInterpretation,
+    ) -> MedicationChatResult:
+        if not interpretation.clarification_question:
+            raise ValueError("조건부 확인 응답에는 확인 질문이 필요합니다.")
+        return MedicationChatResult(
+            request_id=request.request_id,
+            answer=interpretation.clarification_question,
+            route=MedicationChatRoute.CLARIFICATION,
+            safety_status=SafetyStatus.RESTRICTED,
+            safety_reason_codes=[
+                MedicationChatReasonCode.AMBIGUOUS_QUERY_EXPRESSION.value,
+            ],
+            prompt_version=MEDICATION_CHAT_PROMPT_VERSION,
+            schema_version=MEDICATION_CHAT_SCHEMA_VERSION,
+            context_hash=cls._context_hash(context),
+            question_interpretation=interpretation,
         )
 
     @classmethod

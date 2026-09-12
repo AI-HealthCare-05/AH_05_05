@@ -25,7 +25,6 @@ _DOSAGE_VALUE_PATTERN = re.compile(
 )
 
 PROMPT_DOCUMENT = load_prompt_chain_stage(
-    "medication_chat_prompt_v7.md",
     MedicationPromptStage.ANSWER_GENERATION,
 )
 SYSTEM_PROMPT = PROMPT_DOCUMENT.compiled_system

@@ -201,7 +201,6 @@ def build_conditional_question_interpretation_chain(
         )
 
     prompt_document = load_prompt_chain_stage(
-        "medication_chat_prompt_v7.md",
         MedicationPromptStage.DIRECTIONAL_QUERY,
     )
     prompt = ChatPromptTemplate.from_messages(
@@ -221,6 +220,22 @@ def build_conditional_question_interpretation_chain(
         )
 
     def render(value: ConditionalQuestionInterpretationInput):
+        query_plan = value.current_query_plan
+        current_classification = (
+            {
+                "section_types": [section.value for section in query_plan.section_types],
+                "document_types": [document_type.value for document_type in query_plan.document_types],
+                "alternate_query_count": len(query_plan.alternate_queries),
+                "entity_count": len(query_plan.entities),
+                "interaction_pair_count": len(query_plan.interaction_pairs),
+                "has_medication_product_cue": query_plan.has_medication_product_cue,
+            }
+            if query_plan is not None
+            else {
+                "section_types": [section.value for section in value.requested_section_types],
+                "interaction_pair_count": len(value.candidate_pair_keys),
+            }
+        )
         return prompt.format_messages(
             question=value.question,
             session_reference_json=json.dumps(
@@ -244,7 +259,7 @@ def build_conditional_question_interpretation_chain(
                 separators=(",", ":"),
             ),
             current_query_plan_json=json.dumps(
-                (value.current_query_plan.model_dump(mode="json") if value.current_query_plan is not None else {}),
+                current_classification,
                 ensure_ascii=False,
                 separators=(",", ":"),
             ),

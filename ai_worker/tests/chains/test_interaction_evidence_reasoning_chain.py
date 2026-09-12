@@ -12,19 +12,21 @@ from ai_worker.schemas.evidence_reasoning import (
 )
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 
+PAIR_KEY = "a" * 64
+
 
 def build_input() -> EvidenceReasoningInput:
     return EvidenceReasoningInput(
         question="마그네슘과 아연을 같이 먹어도 되나요?",
         entity_names=["마그네슘", "아연"],
         requested_section_types=[KnowledgeSectionType.INTERACTION],
-        interaction_pair_keys=["supplement:마그네슘|supplement:아연"],
+        interaction_pair_keys=[PAIR_KEY],
         evidence_items=[
             EvidenceItem(
                 evidence_id="chunk:abc",
                 content="사람 대상 연구에서 두 성분을 함께 섭취한 조건을 비교했다.",
                 section_types=[KnowledgeSectionType.INTERACTION],
-                pair_keys=["supplement:마그네슘|supplement:아연"],
+                pair_keys=[PAIR_KEY],
                 study_scope="HUMAN",
             )
         ],
@@ -95,6 +97,36 @@ async def test_chain_rejects_claim_with_unknown_evidence_id() -> None:
         await chain.ainvoke(build_input())
 
 
+async def test_chain_rejects_interaction_claim_backed_by_wrong_pair() -> None:
+    class Client:
+        async def ainvoke(self, messages):
+            return {
+                "reasoning_status": "SUPPORTED",
+                "interaction_decision": "INTERACTION_CONFIRMED",
+                "claims": [
+                    {
+                        "section_type": "INTERACTION",
+                        "statement": "다른 조합의 근거입니다.",
+                        "evidence_ids": ["chunk:abc"],
+                        "scope_note": None,
+                    }
+                ],
+                "supported_action": None,
+                "missing_section_types": [],
+                "conflict_evidence_ids": [],
+            }
+
+    payload = build_input().model_dump()
+    payload["evidence_items"][0]["pair_keys"] = ["b" * 64]
+    chain = build_interaction_evidence_reasoning_chain(
+        model="test-model",
+        client=Client(),
+    )
+
+    with pytest.raises(ValueError, match="요청한 상호작용 조합"):
+        await chain.ainvoke(EvidenceReasoningInput.model_validate(payload))
+
+
 def test_output_rejects_free_form_chain_of_thought() -> None:
     with pytest.raises(ValueError):
         EvidenceReasoningOutput.model_validate(
@@ -134,6 +166,48 @@ def test_conflicting_decision_requires_two_conflict_evidence_ids() -> None:
             claims=[],
             missing_section_types=[],
             conflict_evidence_ids=["chunk:abc"],
+        )
+
+
+def test_evidence_input_rejects_non_canonical_interaction_pair_key() -> None:
+    payload = build_input().model_dump()
+    payload["interaction_pair_keys"] = ["supplement:마그네슘|supplement:아연"]
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        EvidenceReasoningInput.model_validate(payload)
+
+
+def test_evidence_output_rejects_more_than_four_claims() -> None:
+    with pytest.raises(ValueError):
+        EvidenceReasoningOutput(
+            reasoning_status="SUPPORTED",
+            interaction_decision="INTERACTION_CONFIRMED",
+            claims=[
+                EvidenceClaim(
+                    section_type=KnowledgeSectionType.INTERACTION,
+                    statement=f"근거 요약 {index}",
+                    evidence_ids=["chunk:abc"],
+                )
+                for index in range(5)
+            ],
+        )
+
+
+def test_evidence_claim_rejects_oversized_statement() -> None:
+    with pytest.raises(ValueError):
+        EvidenceClaim(
+            section_type=KnowledgeSectionType.INTERACTION,
+            statement="가" * 241,
+            evidence_ids=["chunk:abc"],
+        )
+
+
+def test_evidence_claim_rejects_whitespace_only_statement() -> None:
+    with pytest.raises(ValueError):
+        EvidenceClaim(
+            section_type=KnowledgeSectionType.INTERACTION,
+            statement=" ",
+            evidence_ids=["chunk:abc"],
         )
 
 

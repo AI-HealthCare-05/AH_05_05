@@ -44,7 +44,6 @@ class AsyncConversationGateClient(Protocol):
 
 
 PROMPT_DOCUMENT = load_prompt_chain_stage(
-    "medication_chat_prompt_v7.md",
     MedicationPromptStage.CONVERSATION_GATE,
 )
 PROMPT = ChatPromptTemplate.from_messages(

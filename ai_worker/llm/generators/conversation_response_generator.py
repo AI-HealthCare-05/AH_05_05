@@ -41,7 +41,6 @@ class AsyncConversationResponseClient(Protocol):
 CONVERSATION_RESPONSE_PROMPT_VERSION = "conversation-response-prompt-v7"
 
 PROMPT_DOCUMENT = load_prompt_chain_stage(
-    "medication_chat_prompt_v7.md",
     MedicationPromptStage.CONVERSATION_RESPONSE,
 )
 PROMPT = ChatPromptTemplate.from_messages(

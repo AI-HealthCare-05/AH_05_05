@@ -3,13 +3,15 @@ from enum import StrEnum
 from functools import cache
 from importlib.resources import files
 
+MEDICATION_CHAT_PROMPT_CHAIN_ASSET = "medication_chat_prompt_v7.md"
+
 _ALLOWED_PROMPT_ASSETS = frozenset(
     {
         "medication_chat_prompt_v3.md",
         "medication_chat_prompt_v4.md",
         "medication_chat_prompt_v5.md",
         "medication_chat_prompt_v6.md",
-        "medication_chat_prompt_v7.md",
+        MEDICATION_CHAT_PROMPT_CHAIN_ASSET,
         "conversation_gate_prompt_v1.md",
         "conversation_response_prompt_v1.md",
         "medication_note_summary_prompt_v1.md",
@@ -71,32 +73,21 @@ def load_prompt_asset(asset_name: str) -> str:
 def parse_prompt_template_document(
     content: str,
 ) -> PromptTemplateDocument:
-    def extract(section_name: str) -> str:
-        start_marker = f"<!-- prompt:{section_name}:start -->"
-        end_marker = f"<!-- prompt:{section_name}:end -->"
-        if content.count(start_marker) != 1 or content.count(end_marker) != 1:
-            raise ValueError(f"프롬프트 구역 표시는 각각 한 번만 있어야 합니다: {section_name}")
-        start_index = content.index(start_marker) + len(start_marker)
-        end_index = content.index(end_marker, start_index)
-        section = content[start_index:end_index].strip()
-        if not section:
-            raise ValueError(f"프롬프트 구역은 비어 있을 수 없습니다: {section_name}")
-        return section
-
     return PromptTemplateDocument(
-        system=extract("system"),
-        user=extract("user"),
-        assistant_example=extract("assistant_example"),
+        system=_extract_prompt_section(content, marker_name="system"),
+        user=_extract_prompt_section(content, marker_name="user"),
+        assistant_example=_extract_prompt_section(
+            content,
+            marker_name="assistant_example",
+        ),
     )
 
 
 def _extract_prompt_section(
     content: str,
     *,
-    stage_name: str,
-    section_name: str,
+    marker_name: str,
 ) -> str:
-    marker_name = f"{stage_name}:{section_name}"
     start_marker = f"<!-- prompt:{marker_name}:start -->"
     end_marker = f"<!-- prompt:{marker_name}:end -->"
     if content.count(start_marker) != 1 or content.count(end_marker) != 1:
@@ -116,23 +107,19 @@ def parse_prompt_chain_stage_document(
     return PromptChainStageDocument(
         common=_extract_prompt_section(
             content,
-            stage_name="common",
-            section_name="system",
+            marker_name="common:system",
         ),
         system=_extract_prompt_section(
             content,
-            stage_name=stage.value,
-            section_name="system",
+            marker_name=f"{stage.value}:system",
         ),
         user=_extract_prompt_section(
             content,
-            stage_name=stage.value,
-            section_name="user",
+            marker_name=f"{stage.value}:user",
         ),
         examples=_extract_prompt_section(
             content,
-            stage_name=stage.value,
-            section_name="examples",
+            marker_name=f"{stage.value}:examples",
         ),
     )
 
@@ -148,8 +135,8 @@ def load_prompt_template_document(
 
 @cache
 def load_prompt_chain_stage(
-    asset_name: str,
     stage: MedicationPromptStage,
+    asset_name: str = MEDICATION_CHAT_PROMPT_CHAIN_ASSET,
 ) -> PromptChainStageDocument:
     return parse_prompt_chain_stage_document(
         load_prompt_asset(asset_name),

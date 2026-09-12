@@ -2,7 +2,22 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ai_worker.schemas.knowledge import KnowledgeSectionType
+from ai_worker.schemas.knowledge import (
+    KnowledgeSectionType,
+    normalize_interaction_pair_keys,
+)
+
+
+def _normalize_required_text(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("값은 공백일 수 없습니다.")
+    return normalized
+
+
+def _normalize_required_text_list(values: list[str]) -> list[str]:
+    normalized = [_normalize_required_text(value) for value in values]
+    return list(dict.fromkeys(normalized))
 
 
 class EvidenceReasoningStatus(StrEnum):
@@ -24,23 +39,23 @@ class EvidenceItem(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    evidence_id: str = Field(min_length=1)
-    content: str = Field(min_length=1)
+    evidence_id: str = Field(min_length=1, max_length=160)
+    content: str = Field(min_length=1, max_length=4000)
     section_types: list[KnowledgeSectionType] = Field(default_factory=list)
-    pair_keys: list[str] = Field(default_factory=list)
-    study_scope: str | None = None
+    pair_keys: list[str] = Field(default_factory=list, max_length=16)
+    study_scope: str | None = Field(default=None, max_length=80)
 
-    @field_validator("evidence_id", "content")
+    @field_validator("evidence_id", "content", mode="before")
     @classmethod
     def strip_required_text(cls, value: str) -> str:
-        return value.strip()
+        return _normalize_required_text(value)
 
     @field_validator("pair_keys")
     @classmethod
     def normalize_pair_keys(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        return normalize_interaction_pair_keys(values)
 
-    @field_validator("study_scope")
+    @field_validator("study_scope", mode="before")
     @classmethod
     def normalize_study_scope(cls, value: str | None) -> str | None:
         if value is None:
@@ -55,22 +70,27 @@ class EvidenceReasoningInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     question: str = Field(min_length=1)
-    entity_names: list[str] = Field(min_length=2)
-    requested_section_types: list[KnowledgeSectionType] = Field(min_length=1)
-    interaction_pair_keys: list[str] = Field(default_factory=list)
-    evidence_items: list[EvidenceItem] = Field(default_factory=list)
-    approved_rules: list[EvidenceItem] = Field(default_factory=list)
-    risk_profile: dict[str, str] = Field(default_factory=dict)
+    entity_names: list[str] = Field(min_length=2, max_length=12)
+    requested_section_types: list[KnowledgeSectionType] = Field(min_length=1, max_length=4)
+    interaction_pair_keys: list[str] = Field(default_factory=list, max_length=16)
+    evidence_items: list[EvidenceItem] = Field(default_factory=list, max_length=30)
+    approved_rules: list[EvidenceItem] = Field(default_factory=list, max_length=30)
+    risk_profile: dict[str, str] = Field(default_factory=dict, max_length=8)
 
-    @field_validator("question")
+    @field_validator("question", mode="before")
     @classmethod
     def strip_question(cls, value: str) -> str:
-        return value.strip()
+        return _normalize_required_text(value)
 
-    @field_validator("entity_names", "interaction_pair_keys")
+    @field_validator("entity_names")
     @classmethod
     def normalize_unique_text(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        return _normalize_required_text_list(values)
+
+    @field_validator("interaction_pair_keys")
+    @classmethod
+    def normalize_interaction_pairs(cls, values: list[str]) -> list[str]:
+        return normalize_interaction_pair_keys(values)
 
     @model_validator(mode="after")
     def require_two_normalized_entities(self) -> "EvidenceReasoningInput":
@@ -83,21 +103,21 @@ class EvidenceClaim(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     section_type: KnowledgeSectionType
-    statement: str = Field(min_length=1)
-    evidence_ids: list[str] = Field(min_length=1)
-    scope_note: str | None = None
+    statement: str = Field(min_length=1, max_length=240)
+    evidence_ids: list[str] = Field(min_length=1, max_length=8)
+    scope_note: str | None = Field(default=None, max_length=160)
 
-    @field_validator("statement")
+    @field_validator("statement", mode="before")
     @classmethod
     def strip_statement(cls, value: str) -> str:
-        return value.strip()
+        return _normalize_required_text(value)
 
     @field_validator("evidence_ids")
     @classmethod
     def normalize_evidence_ids(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        return _normalize_required_text_list(values)
 
-    @field_validator("scope_note")
+    @field_validator("scope_note", mode="before")
     @classmethod
     def normalize_scope_note(cls, value: str | None) -> str | None:
         if value is None:
@@ -109,18 +129,18 @@ class EvidenceClaim(BaseModel):
 class SupportedEvidenceAction(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    statement: str = Field(min_length=1)
-    evidence_ids: list[str] = Field(min_length=1)
+    statement: str = Field(min_length=1, max_length=240)
+    evidence_ids: list[str] = Field(min_length=1, max_length=8)
 
-    @field_validator("statement")
+    @field_validator("statement", mode="before")
     @classmethod
     def strip_statement(cls, value: str) -> str:
-        return value.strip()
+        return _normalize_required_text(value)
 
     @field_validator("evidence_ids")
     @classmethod
     def normalize_evidence_ids(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        return _normalize_required_text_list(values)
 
 
 class EvidenceReasoningOutput(BaseModel):
@@ -130,15 +150,15 @@ class EvidenceReasoningOutput(BaseModel):
 
     reasoning_status: EvidenceReasoningStatus
     interaction_decision: InteractionEvidenceDecision
-    claims: list[EvidenceClaim] = Field(default_factory=list)
+    claims: list[EvidenceClaim] = Field(default_factory=list, max_length=4)
     supported_action: SupportedEvidenceAction | None = None
-    missing_section_types: list[KnowledgeSectionType] = Field(default_factory=list)
-    conflict_evidence_ids: list[str] = Field(default_factory=list)
+    missing_section_types: list[KnowledgeSectionType] = Field(default_factory=list, max_length=4)
+    conflict_evidence_ids: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("conflict_evidence_ids")
     @classmethod
     def normalize_conflict_evidence_ids(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        return _normalize_required_text_list(values)
 
     @model_validator(mode="after")
     def validate_decision_contract(self) -> "EvidenceReasoningOutput":
@@ -147,8 +167,27 @@ class EvidenceReasoningOutput(BaseModel):
         ):
             raise ValueError("INTERACTION_CONFIRMED에는 INTERACTION claim이 필요합니다.")
         if (
+            self.interaction_decision is InteractionEvidenceDecision.INTERACTION_CONFIRMED
+            and self.reasoning_status
+            not in {
+                EvidenceReasoningStatus.SUPPORTED,
+                EvidenceReasoningStatus.PARTIAL,
+            }
+        ):
+            raise ValueError("INTERACTION_CONFIRMED에는 SUPPORTED 또는 PARTIAL 상태가 필요합니다.")
+        if (
+            self.interaction_decision is InteractionEvidenceDecision.NO_DIRECT_EVIDENCE
+            and self.reasoning_status is not EvidenceReasoningStatus.INSUFFICIENT
+        ):
+            raise ValueError("NO_DIRECT_EVIDENCE에는 INSUFFICIENT 상태가 필요합니다.")
+        if (
             self.interaction_decision is InteractionEvidenceDecision.CONFLICTING_EVIDENCE
             and len(self.conflict_evidence_ids) < 2
         ):
             raise ValueError("CONFLICTING_EVIDENCE에는 두 개 이상의 충돌 근거 ID가 필요합니다.")
+        if (
+            self.interaction_decision is InteractionEvidenceDecision.CONFLICTING_EVIDENCE
+            and self.reasoning_status is not EvidenceReasoningStatus.CONFLICTING
+        ):
+            raise ValueError("CONFLICTING_EVIDENCE에는 CONFLICTING 상태가 필요합니다.")
         return self

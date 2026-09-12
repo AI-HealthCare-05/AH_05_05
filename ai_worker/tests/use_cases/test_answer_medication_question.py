@@ -1081,6 +1081,36 @@ async def test_interaction_with_evidence_calls_structured_reasoning_chain() -> N
     assert "evidence_reasoning" not in result.model_dump()
 
 
+def test_interaction_evidence_chunks_exclude_unrelated_sections() -> None:
+    pair_key = "c" * 64
+    interaction_chunk = build_chunk().model_copy(
+        update={
+            "chunk_id": "d" * 64,
+            "metadata": build_chunk().metadata.model_copy(
+                update={"section_type": KnowledgeSectionType.INTERACTION},
+            ),
+        }
+    )
+    pair_scoped_chunk = build_chunk().model_copy(
+        update={
+            "chunk_id": "e" * 64,
+            "metadata": build_chunk().metadata.model_copy(
+                update={"interaction_pair_keys": [pair_key]},
+            ),
+        }
+    )
+    unrelated_chunk = build_chunk().model_copy(
+        update={"chunk_id": "f" * 64},
+    )
+
+    selected = AnswerMedicationQuestionUseCase._interaction_evidence_chunks(
+        answer_chunks=[interaction_chunk, pair_scoped_chunk, unrelated_chunk],
+        interaction_pair_keys=[pair_key],
+    )
+
+    assert [chunk.chunk_id for chunk in selected] == ["d" * 64, "e" * 64]
+
+
 async def test_non_interaction_question_skips_evidence_reasoning_chain() -> None:
     reasoning = EvidenceReasoningOutput(
         reasoning_status="INSUFFICIENT",
@@ -2716,6 +2746,35 @@ async def test_execute_applies_only_bounded_directional_search_stimuli() -> None
     assert retriever.execution_plans[0].query_plan.alternate_queries == ["마그네슘 효능"]
 
 
+async def test_execute_returns_conditional_llm_clarification_before_retrieval() -> None:
+    class UnexpectedRetriever(FakeKnowledgeRetriever):
+        async def search_with_diagnostics(self, *, execution_plan):
+            raise AssertionError("확인 질문이 있으면 근거 검색을 실행하지 않아야 합니다.")
+
+    chain = RecordingConditionalInterpretationChain(
+        ConditionalQuestionInterpretationOutput(
+            normalized_question="마그네슘 제품의 종류를 확인해 주세요.",
+            candidate_entity_keys=["candidate_0"],
+            requested_section_types=[KnowledgeSectionType.FUNCTION],
+            confidence="LOW",
+            reason_codes=["LOW_CONFIDENCE"],
+            needs_clarification=True,
+            clarification_question="의약품 마그네슘과 영양제 마그네슘 중 무엇을 뜻하나요?",
+        )
+    )
+
+    result = await build_use_case(
+        retriever=UnexpectedRetriever(),
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(["마그네슘"]),
+        conditional_interpretation_chain=chain,
+    ).execute(build_request("마그네슘에 대해 알려줘"))
+
+    assert result.route is MedicationChatRoute.CLARIFICATION
+    assert result.answer == "의약품 마그네슘과 영양제 마그네슘 중 무엇을 뜻하나요?"
+    assert result.question_interpretation is not None
+    assert result.question_interpretation.needs_clarification is True
+
+
 async def test_execute_discards_unknown_conditional_llm_entity_before_search() -> None:
     chain = RecordingConditionalInterpretationChain(
         ConditionalQuestionInterpretationOutput(
@@ -2742,6 +2801,33 @@ async def test_execute_discards_unknown_conditional_llm_entity_before_search() -
         KnowledgeSectionType.FUNCTION,
         KnowledgeSectionType.CAUTION,
     ]
+
+
+async def test_execute_uses_validated_conditional_pair_selection_to_narrow_search() -> None:
+    class SelectFirstPairChain:
+        async def ainvoke(self, input, config=None, **kwargs):
+            return ConditionalQuestionInterpretationOutput(
+                normalized_question=input.question,
+                route="INTERACTION",
+                candidate_entity_keys=list(input.candidate_entities),
+                requested_section_types=[KnowledgeSectionType.INTERACTION],
+                interaction_pair_keys=input.candidate_pair_keys[:1],
+                confidence="MEDIUM",
+                reason_codes=["MULTI_ENTITY"],
+            )
+
+    retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        retriever=retriever,
+        supplement_ingredient_catalog=StaticSupplementIngredientCatalog(
+            ["마그네슘", "아연", "칼슘"],
+        ),
+        conditional_interpretation_chain=SelectFirstPairChain(),
+    ).execute(build_request("마그네슘, 아연, 칼슘을 같이 먹어도 돼?"))
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert len(query_plan.interaction_pair_keys) == 1
 
 
 async def test_execute_records_fallback_reason_without_answer_content() -> None:

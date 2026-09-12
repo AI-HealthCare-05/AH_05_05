@@ -11,7 +11,6 @@ def test_v7_prompt_pack_loads_only_requested_stage() -> None:
     prompt_assets = _prompt_assets_module()
 
     document = prompt_assets.load_prompt_chain_stage(
-        "medication_chat_prompt_v7.md",
         prompt_assets.MedicationPromptStage.DIRECTIONAL_QUERY,
     )
 

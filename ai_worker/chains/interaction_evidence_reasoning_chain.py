@@ -40,6 +40,48 @@ class AsyncInteractionEvidenceReasoningClient(Protocol):
     ) -> EvidenceReasoningOutput | dict[str, Any]: ...
 
 
+def _validate_evidence_reasoning_output(
+    envelope: dict[
+        str,
+        EvidenceReasoningInput | EvidenceReasoningOutput | dict[str, Any],
+    ],
+) -> EvidenceReasoningOutput:
+    input_value = EvidenceReasoningInput.model_validate(envelope["input"])
+    output_value = EvidenceReasoningOutput.model_validate(envelope["output"])
+    evidence_by_id = {
+        item.evidence_id: item
+        for item in (
+            *input_value.evidence_items,
+            *input_value.approved_rules,
+        )
+    }
+    referenced_ids = {evidence_id for claim in output_value.claims for evidence_id in claim.evidence_ids}
+    if output_value.supported_action is not None:
+        referenced_ids.update(output_value.supported_action.evidence_ids)
+    referenced_ids.update(output_value.conflict_evidence_ids)
+    if unknown_ids := referenced_ids - set(evidence_by_id):
+        raise ValueError(f"입력 근거 ID에 없는 값을 참조했습니다: {sorted(unknown_ids)}")
+
+    requested_pair_keys = set(input_value.interaction_pair_keys)
+    for claim in output_value.claims:
+        if claim.section_type is not KnowledgeSectionType.INTERACTION:
+            continue
+        for evidence_id in claim.evidence_ids:
+            evidence = evidence_by_id[evidence_id]
+            if KnowledgeSectionType.INTERACTION not in evidence.section_types:
+                raise ValueError("상호작용 claim은 INTERACTION 근거만 참조할 수 있습니다.")
+            if requested_pair_keys and not requested_pair_keys.intersection(
+                evidence.pair_keys,
+            ):
+                raise ValueError("상호작용 claim이 요청한 상호작용 조합의 근거를 참조하지 않았습니다.")
+    if (
+        KnowledgeSectionType.INTERACTION in input_value.requested_section_types
+        and output_value.interaction_decision is InteractionEvidenceDecision.NOT_APPLICABLE
+    ):
+        raise ValueError("상호작용 요청에는 NOT_APPLICABLE 판정을 사용할 수 없습니다.")
+    return output_value
+
+
 def build_interaction_evidence_reasoning_chain(
     *,
     model: str,
@@ -77,7 +119,6 @@ def build_interaction_evidence_reasoning_chain(
         )
 
     prompt_document = load_prompt_chain_stage(
-        "medication_chat_prompt_v7.md",
         MedicationPromptStage.EVIDENCE_REASONING,
     )
     prompt = ChatPromptTemplate.from_messages(
@@ -124,25 +165,6 @@ def build_interaction_evidence_reasoning_chain(
             ),
         )
 
-    def validate_output(
-        envelope: dict[str, EvidenceReasoningInput | EvidenceReasoningOutput | dict[str, Any]],
-    ) -> EvidenceReasoningOutput:
-        input_value = EvidenceReasoningInput.model_validate(envelope["input"])
-        output_value = EvidenceReasoningOutput.model_validate(envelope["output"])
-        allowed_evidence_ids = {item.evidence_id for item in (*input_value.evidence_items, *input_value.approved_rules)}
-        referenced_ids = {evidence_id for claim in output_value.claims for evidence_id in claim.evidence_ids}
-        if output_value.supported_action is not None:
-            referenced_ids.update(output_value.supported_action.evidence_ids)
-        referenced_ids.update(output_value.conflict_evidence_ids)
-        if unknown_ids := referenced_ids - allowed_evidence_ids:
-            raise ValueError(f"입력 근거 ID에 없는 값을 참조했습니다: {sorted(unknown_ids)}")
-        if (
-            KnowledgeSectionType.INTERACTION in input_value.requested_section_types
-            and output_value.interaction_decision is InteractionEvidenceDecision.NOT_APPLICABLE
-        ):
-            raise ValueError("상호작용 요청에는 NOT_APPLICABLE 판정을 사용할 수 없습니다.")
-        return output_value
-
     validated_input = RunnableLambda(validate_input).with_config(
         run_name="medication.evidence_reasoning.input",
     )
@@ -158,7 +180,7 @@ def build_interaction_evidence_reasoning_chain(
             input=RunnablePassthrough(),
             output=prompted_response,
         )
-        | RunnableLambda(validate_output).with_config(
+        | RunnableLambda(_validate_evidence_reasoning_output).with_config(
             run_name="medication.evidence_reasoning.output",
         )
     ).with_types(

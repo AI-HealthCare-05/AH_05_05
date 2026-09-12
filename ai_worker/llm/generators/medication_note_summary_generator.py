@@ -27,7 +27,6 @@ class AsyncMedicationNoteSummaryClient(Protocol):
 
 
 PROMPT_DOCUMENT = load_prompt_chain_stage(
-    "medication_chat_prompt_v7.md",
     MedicationPromptStage.MEDICATION_NOTE_SUMMARY,
 )
 PROMPT = ChatPromptTemplate.from_messages(

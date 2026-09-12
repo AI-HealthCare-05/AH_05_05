@@ -116,12 +116,34 @@ Conversation Gate, 증상 후속 응답, 복약메모 요약, 최종 답변이 �
 6. Evidence Reasoning은 검색 후 근거를 판정할 뿐 검색 순위와 안전 규칙을 대체하지 않는다.
 7. 최종 답변 뒤 `GroundedClaimValidator` 검사를 그대로 수행한다.
 
+## 실험 6: 구현 후 단순화·안전성 검토
+
+### 문제
+
+초기 GREEN 구현에는 검색 section 용어의 중복, pair key의 느슨한 검증, LLM 구조화 출력 크기 무제한, 조건부 LLM 확인 질문의 미사용 문제가 남아 있었다.
+
+### 실험
+
+- RED: 잘못된 pair key, 다른 조합의 근거를 참조한 interaction claim, 5개 이상의 claim, 240자를 넘는 statement, 공백 statement를 기존 스키마가 허용했다.
+- RED: 조건부 LLM이 `needs_clarification=true`와 확인 질문을 반환해도 RAG 검색과 일반 답변 생성이 계속됐다.
+- RED: Evidence Reasoning에 관계없는 section 청크를 제외하는 경계가 없었다.
+- 수정: 기존 SHA-256 pair-key 정규화 함수를 재사용하고, interaction claim이 요청 pair와 일치하는 `INTERACTION` 근거만 참조하도록 검증했다.
+- 수정: claim 최대 4개, 문장·근거 ID·충돌 ID 길이와 개수를 제한하고 공백 값은 검증 전에 정리해 거부했다.
+- 수정: 조건부 LLM의 확인 질문을 검색 전에 `CLARIFICATION` 응답으로 반환하고, 검색 자극 허용어는 Query Plan의 `expanded_query`에서 파생했다.
+- 수정: 상호작용 section 또는 요청 pair에 연결된 청크만 Evidence Reasoning에 전달했다.
+- 단순화: v7 자산명과 marker parser를 한 곳으로 모으고, 재검색 후 확정된 `MedicationEvidenceBundle`을 근거 추론의 단일 입력으로 사용했다.
+
+### 결과
+
+- 성공: 신규 회귀를 포함한 대상 테스트 108개 통과.
+- 이유: LLM이 입력 밖 근거나 과도한 출력으로 다음 프롬프트를 오염시키는 경계를 코드와 Pydantic 양쪽에서 제한했고, 확인이 필요한 질문은 검색 전에 종료한다.
+
 ## 최종 검증
 
 - `uv run ruff check ai_worker`: 통과.
 - `uv run ruff format --check ai_worker`: 378개 파일 포맷 확인.
-- `uv run pytest ai_worker/tests -q`: 1,363 passed, 1 skipped.
-- 테스트 프로세스 종료 후 macOS `libc++`의 `recursive_mutex lock failed` 경고가 한 번 출력됐으나 명령 종료 코드는 0이었고 pytest 실패는 없었다. 런타임 기능 실패로 판정하지 않았으며, 향후 SentenceTransformer/native library 종료 시점 경고가 반복되는지는 별도 추적한다.
+- `uv run pytest ai_worker/tests -q`: 1,371 passed, 1 skipped.
+- Ruff와 연속 실행한 첫 검증에서는 테스트 완료 뒤 macOS `libc++`의 `recursive_mutex lock failed`가 발생해 종료 코드 134를 반환했다. 같은 pytest 명령을 즉시 단독 재실행했을 때 1,371개 테스트가 종료 코드 0으로 통과했다. 테스트 assertion 실패와 분리된 간헐적 SentenceTransformer/native library 종료 시점 문제로 기록하고 반복 여부를 추적한다.
 
 ## 현재 결론
 
