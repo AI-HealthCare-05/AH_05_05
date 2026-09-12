@@ -50,6 +50,7 @@ export function AddSupplementSheet({
   const [manualName, setManualName] = useState('');
   const [saving, setSaving] = useState(false);
   const searchGenerationRef = useRef(0);
+  const selectedProductCardRef = useRef<HTMLElement | null>(null);
   const isPresetProductMode = presetProductId !== null;
 
   useEffect(() => {
@@ -132,6 +133,14 @@ export function AddSupplementSheet({
       if (generation === searchGenerationRef.current) searchGenerationRef.current += 1;
     };
   }, [debouncedQuery, isPresetProductMode, manualMode, open, query]);
+
+  useEffect(() => {
+    if (!open || selectedProductId === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      selectedProductCardRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, selectedProductId]);
 
   const selectedProduct =
     results.find((product) => product.productId === selectedProductId) ?? null;
@@ -241,7 +250,7 @@ export function AddSupplementSheet({
       <DialogContent
         variant="sheet"
         aria-describedby="supplement-add-description"
-        className="flex max-h-[88dvh] min-h-[70dvh] flex-col gap-4 overflow-hidden p-5 pb-0"
+        className="flex max-h-[94dvh] min-h-[70dvh] flex-col gap-4 overflow-hidden p-5 pb-0"
       >
         <span aria-hidden className="mx-auto h-1 w-10 shrink-0 rounded-pill bg-border" />
         <div className="shrink-0 pr-10">
@@ -358,8 +367,9 @@ export function AddSupplementSheet({
                   {results.map((product) => {
                     const selected = product.productId === selectedProductId;
                     return (
-                      <li key={product.productId}>
+                      <li key={product.productId} className="shrink-0">
                         <article
+                          ref={selected ? selectedProductCardRef : undefined}
                           className={cn(
                             'overflow-hidden rounded-card border bg-card shadow-card',
                             selected ? 'border-primary' : 'border-transparent',
@@ -403,7 +413,7 @@ export function AddSupplementSheet({
                               />
                               {product.recommendedDoseAmount !== null && (
                                 <p className="text-sm text-muted-foreground">
-                                  제품 표시사항의 섭취방법을 채워놨어요.
+                                  제품 정보의 복용 권장사항을 참고하세요.
                                 </p>
                               )}
                               <Button

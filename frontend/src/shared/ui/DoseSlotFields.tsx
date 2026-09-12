@@ -73,7 +73,7 @@ export function DoseSlotFields({
                 className={cn(
                   'min-h-touch rounded-input border px-1 text-sm font-bold',
                   selected
-                    ? 'border-primary bg-primary text-card'
+                    ? 'border-primary bg-[var(--color-primary)] text-card'
                     : 'border-border bg-card text-muted-foreground',
                 )}
                 onClick={() => toggleSlot(slot.value)}

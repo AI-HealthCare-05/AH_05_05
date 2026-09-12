@@ -135,7 +135,7 @@ test('등록 여부를 확인하는 중에도 랭킹 제품 정보는 열 수 �
   await expect(ranking.getByRole('button', { name: '1위 튼튼 철분 캡슐 제품 정보', exact: true })).toBeEnabled();
 
   releaseSupplements();
-  await expect(ranking.getByText('등록됨', { exact: true })).toBeVisible();
+  await expect(ranking.getByText('복용 중', { exact: true })).toBeVisible();
   await expect(ranking.getByRole('button', { name: '1위 튼튼 철분 캡슐 제품 정보', exact: true })).toBeEnabled();
 });
 
@@ -148,7 +148,7 @@ test('홈은 서버 제목과 고정 부제만 표시하고 등록 여부를 제
   await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
   await expect(ranking.getByText('RxVita가 골랐어요', { exact: true })).toBeVisible();
   await expect(ranking.getByText('튼튼 철분 캡슐', { exact: true })).toBeVisible();
-  await expect(ranking.getByText('등록됨', { exact: true })).toBeVisible();
+  await expect(ranking.getByText('복용 중', { exact: true })).toBeVisible();
   await expect(ranking).not.toContainText(/인기|많이|베스트|추천|명이 등록|전시 기간/);
 
   const rows = ranking.getByRole('listitem');
@@ -191,7 +191,7 @@ test('비로그인 홈은 개인 복약 조회 없이 제목·CTA와 공개 랭�
   await expect(ranking.getByRole('button', { name: '전체 보기', exact: true })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /영양제 추가/ })).toHaveCount(0);
   await expect(ranking.getByRole('button', { name: /제품 정보$/ })).toHaveCount(5);
-  await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);
+  await expect(ranking.getByText('복용 중', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '오늘의 복약' })).toBeVisible();
   await expect(page.getByRole('button', { name: '로그인하고 시작하기' })).toBeVisible();
   await expect(ranking.getByRole('listitem')).toHaveCount(5);
@@ -205,7 +205,7 @@ test('등록 목록 조회가 실패해도 랭킹은 배지 없이 표시한다'
 
   const ranking = page.getByRole('region', { name: '영양제 랭킹' });
   await expect(ranking.getByRole('heading', { name: '9월 면역력 관리' })).toBeVisible();
-  await expect(ranking.getByText('등록됨', { exact: true })).toHaveCount(0);
+  await expect(ranking.getByText('복용 중', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('tabpanel', { name: '오늘의 복약' })).toBeVisible();
 });
 

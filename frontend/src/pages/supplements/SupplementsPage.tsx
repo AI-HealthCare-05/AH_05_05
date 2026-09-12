@@ -25,7 +25,6 @@ import {
   Card,
   ErrorDialog,
   Header,
-  StatusBadge,
 } from '@/shared/ui';
 import { AddSupplementSheet } from './AddSupplementSheet';
 import { EditSupplementSheet } from './EditSupplementSheet';
@@ -416,17 +415,14 @@ export function SupplementsPage({
                             onClick={() => setEditingSupplement(supplement)}
                           >
                             <span className="min-w-0 flex-1">
-                              <span className="flex min-w-0 items-start gap-2">
-                                <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-base text-foreground">{supplement.name}</strong>
-                                {!supplement.nutrientDataAvailable && (
-                                  <StatusBadge type="done" className="shrink-0 px-2.5 py-1 text-xs">
-                                    성분 정보 없음
-                                  </StatusBadge>
-                                )}
-                              </span>
+                              <strong className="block [overflow-wrap:anywhere] text-base text-foreground">
+                                {supplement.name}
+                              </strong>
                               <span className="block text-sm text-muted-foreground">
                                 하루 {supplement.slots.length}회 · 1회 {formatDoseAmount(supplement.doseAmount)}
-                                {supplement.doseUnit} ·{' '}
+                                {supplement.doseUnit}
+                              </span>
+                              <span className="mt-0.5 block text-sm text-muted-foreground">
                                 {supplement.slots.map((slot) => mealSlotLabel(slot, 'short')).join(' · ')}
                               </span>
                               {supplement.score !== null && (
@@ -513,12 +509,6 @@ export function SupplementsPage({
               </>
             )}
 
-            {supplements.length > 0 && (
-              <Button variant="secondary" onClick={openAddSheet}>
-                <Plus aria-hidden className="mr-2 size-5" />
-                영양제 추가
-              </Button>
-            )}
           </>
         )}
       </main>

@@ -45,7 +45,10 @@ test('제품 상세는 섭취 정보와 성분을 보여주고 기준선 바는 
 
   await expect(page.getByRole('heading', { name: '제품 정보' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '센트룸 실버 우먼' })).toBeVisible();
-  await expect(page.getByText('한국화이자 · 1정 · 1회', { exact: true })).toBeVisible();
+  const information = page.getByRole('region', { name: '제품 정보 상세' });
+  await expect(information.getByText('한국화이자', { exact: true })).toBeVisible();
+  await expect(information.getByText('1정', { exact: true })).toBeVisible();
+  await expect(information.getByText('1회', { exact: true })).toBeVisible();
   const nutrients = page.getByLabel('제품 성분');
   await expect(nutrients.getByText('비타민 A', { exact: true })).toBeVisible();
   await expect(nutrients.getByText('400 µg RAE', { exact: true })).toBeVisible();
@@ -99,6 +102,9 @@ test('실 API 모드에서도 제품 상세 응답과 등록 상태를 함께 �
   await page.goto('/dev/supplements/product/2048');
 
   await expect(page.getByRole('heading', { name: '종합비타민' })).toBeVisible();
-  await expect(page.getByText('성인 · 2정 · 1회', { exact: true })).toBeVisible();
+  const information = page.getByRole('region', { name: '제품 정보 상세' });
+  await expect(information.getByText('성인', { exact: true })).toBeVisible();
+  await expect(information.getByText('2정', { exact: true })).toBeVisible();
+  await expect(information.getByText('1회', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '내 영양제에 추가' })).toBeVisible();
 });
