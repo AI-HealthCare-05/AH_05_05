@@ -17,13 +17,6 @@ interface MedicationEpisodeCardProps {
   onOpenEpisode?: () => void;
 }
 
-const SLOT_CHIP_CLASSES: Record<MealSlot, string> = {
-  morning: 'bg-warning-bg text-warning-strong',
-  lunch: 'bg-primary-bg text-primary-strong',
-  evening: 'bg-warm-200 text-brand',
-  bedtime: 'bg-muted-bg text-muted-foreground',
-};
-
 // Midpoint between the original pastel chips and their strong legend text colors.
 const SLOT_DOT_CLASSES: Record<MealSlot, string> = {
   morning: 'bg-[color-mix(in_srgb,var(--color-warning-strong)_50%,var(--color-warning-bg))]',
@@ -47,9 +40,6 @@ export function MedicationEpisodeCard({
   const panelId = `medication-episode-${overview.recordId}`;
   const statusLabel = overview.isFinished ? '복용 완료' : '복용 중';
   const dDay = overview.daysRemaining <= 1 ? 'D-Day' : `D-${overview.daysRemaining - 1}`;
-  const scheduledSlots = SLOT_ORDER.filter((slot) =>
-    overview.medications.some((medication) => !medication.asNeeded && medication.slots.includes(slot)),
-  );
 
   return (
     <article className="rounded-card bg-card shadow-card">
@@ -64,6 +54,39 @@ export function MedicationEpisodeCard({
           </label>
         )}
         <div className="min-w-0 flex-1">
+          {feature252 ? (
+            <div className="p-4">
+              <div className="flex min-h-touch items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className={`shrink-0 rounded-pill px-2.5 py-1 text-xs font-bold ${overview.isFinished ? 'bg-muted-bg text-muted-foreground' : 'bg-primary-bg text-primary-strong'}`}>
+                    {statusLabel}
+                  </span>
+                  {!overview.isFinished && <span className="text-xs font-bold text-primary-strong tnum">{Math.max(0, overview.daysRemaining)}일 남음</span>}
+                </div>
+                {!selectionMode && !overview.isFinished && onOpenEpisode && (
+                  <button type="button" aria-label={`처방 수정 · ${dateLabel}`}
+                    className="flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-control text-primary-strong hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={onOpenEpisode}>
+                    <Pencil aria-hidden className="size-4" />
+                  </button>
+                )}
+              </div>
+              <button type="button" aria-expanded={expanded} aria-controls={panelId}
+                aria-label={`${dateLabel} 처방 · 약 ${overview.medications.length}개 · ${statusLabel}`}
+                className="block w-full min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                onClick={selectionMode ? onToggleSelected : onToggleExpanded}>
+                <span className="flex min-h-touch items-center gap-3">
+                  <strong className="min-w-0 flex-1 [overflow-wrap:anywhere] text-lg text-foreground">{overview.alias?.trim() ? overview.alias : `${dateLabel} 처방`}</strong>
+                  <span className="flex min-h-touch min-w-touch shrink-0 items-center justify-center">
+                    <ChevronDown aria-hidden className={`size-5 text-disabled-foreground transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`} />
+                  </span>
+                </span>
+                <span className="block whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground tnum">
+                  {formatDatePeriod(overview.start.date, overview.endDate, { includeYear: true })}
+                </span>
+              </button>
+            </div>
+          ) : (
           <div className="flex min-w-0 items-stretch">
             <button
               type="button"
@@ -107,27 +130,7 @@ export function MedicationEpisodeCard({
                 />
               </span>
             </button>
-            {feature252 && !selectionMode && !overview.isFinished && onOpenEpisode && (
-              <button
-                type="button"
-                aria-label={`처방 수정 · ${dateLabel}`}
-                className="flex min-h-24 min-w-touch shrink-0 items-center justify-center pt-4 text-primary-strong hover:bg-primary-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                onClick={onOpenEpisode}
-              >
-                <Pencil aria-hidden className="size-4" />
-              </button>
-            )}
           </div>
-          {feature252 && (
-            <div className="mt-3 flex min-w-0 px-4 pb-3">
-              <div className="flex min-h-touch min-w-0 flex-1 flex-wrap content-start gap-2 py-2">
-                {scheduledSlots.map((slot) => (
-                  <span key={slot} className={`rounded-pill px-2.5 py-1 text-xs font-bold ${SLOT_CHIP_CLASSES[slot]}`}>
-                    {mealSlotLabel(slot)}
-                  </span>
-                ))}
-              </div>
-            </div>
           )}
         </div>
       </div>
@@ -139,6 +142,35 @@ export function MedicationEpisodeCard({
           aria-label={`${dateLabel} 처방 상세`}
           className="border-t border-border px-4 pb-4"
         >
+          {feature252 ? (
+            <table className="w-full table-fixed border-collapse text-sm" aria-label={`${dateLabel} 처방 복용 시간`}>
+              <colgroup><col />{SLOT_ORDER.map(slot => <col key={slot} className="w-9 sm:w-12" />)}</colgroup>
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th scope="col" className="py-3 pr-2 text-left font-bold">복용약</th>
+                  {SLOT_ORDER.map(slot => <th key={slot} scope="col" className="py-3 text-center text-xs font-bold">{mealSlotLabel(slot)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {overview.medications.map(medication => (
+                  <tr key={medication.medicationId} className="border-b border-border last:border-b-0">
+                    <th scope="row" className="py-3 pr-2 text-left align-top font-bold text-foreground [overflow-wrap:anywhere]">
+                      {medication.name}
+                      {medication.asNeeded && <span className="mt-1 block text-xs font-normal text-muted-foreground">필요할 때만 · 알림 없음</span>}
+                      {medication.untilComplete && <span className="mt-1 block text-xs font-normal text-warning-strong">끝까지 복용</span>}
+                    </th>
+                    {SLOT_ORDER.map(slot => (
+                      <td key={slot} className="py-3 text-center align-middle">
+                        {!medication.asNeeded && medication.slots.includes(slot) && (
+                          <span role="img" aria-label={mealSlotLabel(slot)} title={mealSlotLabel(slot)} className={`mx-auto block size-3.5 rounded-full ${SLOT_DOT_CLASSES[slot]}`} />
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
           <ul className="divide-y divide-border" aria-label={`${dateLabel} 처방 약 목록`}>
             {overview.medications.map((medication) => (
               <li key={medication.medicationId} className="flex min-w-0 items-start gap-3 py-3">
@@ -185,6 +217,7 @@ export function MedicationEpisodeCard({
               </li>
             ))}
           </ul>
+          )}
         </div>
       )}
     </article>

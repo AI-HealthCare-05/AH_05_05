@@ -328,6 +328,9 @@ test('별칭 PATCH 뒤 홈 진입과 재진입은 후속 처방 조회의 별칭
   await expect(page.getByText('처방을 저장했어요.')).toBeVisible();
   expect(aliasPayloads).toEqual([{ alias: '실 API 홈 별칭' }]);
 
+  // Move off the bottom toast before navigation: hovering keeps its dismissal timer paused.
+  await page.mouse.move(0, 0);
+  await expect(page.getByText('처방을 저장했어요.')).toBeHidden({ timeout: 10_000 });
   await page.getByRole('button', { name: '홈', exact: true }).click();
   await expect(page.getByRole('heading', { name: '실 API 홈 별칭', exact: true })).toBeVisible();
   await page.goto('/medications');
@@ -432,7 +435,7 @@ test('긴 별칭과 약 이름은 요약·선택·편집·완료 상세에서 �
     const finishedSheet = page.getByRole('region', { name: '2026년 8월 24일 처방 상세' });
     const finishedCard = page.locator('article').filter({ has: finishedSheet });
     await expectContained(finishedCard.getByText(finishedAlias, { exact: true }), finishedCard);
-    await expectContained(finishedSheet.locator('p').filter({ hasText: longMedication }).first(), finishedSheet);
+    await expectContained(finishedSheet.getByRole('rowheader', { name: longMedication, exact: true }), finishedSheet);
     await page.getByRole('button', { name: /2026년 8월 24일 처방/ }).click();
   }
 
