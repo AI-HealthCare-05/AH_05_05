@@ -19,6 +19,7 @@ import {
 import { TAB_ROUTES } from '@/shared/config/tabRoutes';
 import { calculateFullAge } from '@/shared/lib/birthDate';
 import { mealSlotLabel } from '@/shared/model/mealSlot';
+import { navigateBackOrReplace } from '@/shared/lib/navigation';
 import {
   BottomTabbar,
   Button,
@@ -255,7 +256,7 @@ export function SupplementsPage({
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
         title="영양제"
-        onBack={() => navigate(-1)}
+        onBack={() => navigateBackOrReplace(navigate, '/home')}
         right={
           <button
             type="button"

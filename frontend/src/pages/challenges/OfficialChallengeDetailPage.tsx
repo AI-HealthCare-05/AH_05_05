@@ -13,6 +13,7 @@ import { apiAssetUrl } from '@/shared/api/assetUrl';
 import { Button } from '@/shared/ui/Button';
 import { Header } from '@/shared/ui/Header';
 import { LoadingState } from '@/shared/ui/LoadingState';
+import { navigateBackOrReplace } from '@/shared/lib/navigation';
 import { koreanChallengeDate } from './officialChallengeDates';
 import { OfficialChallengeRejoinDialog } from './OfficialChallengeRejoinDialog';
 
@@ -43,6 +44,7 @@ export function OfficialChallengeDetailPage() {
   const { challengeId } = useParams();
   const id = positiveId(challengeId);
   const navigate = useNavigate();
+  const goBack = () => navigateBackOrReplace(navigate, '/challenges/browse');
   const { principalKey } = useSession();
   const principalRef = useRef(principalKey);
   const requestGenerationRef = useRef(0);
@@ -91,7 +93,7 @@ export function OfficialChallengeDetailPage() {
     return (
       <main className="flex flex-col gap-4 px-page-x py-5">
         <h1 className="text-xl font-bold">챌린지를 찾을 수 없어요</h1>
-        <Button variant="secondary" onClick={() => navigate('/challenges/browse')}>둘러보기로 돌아가기</Button>
+        <Button variant="secondary" onClick={goBack}>둘러보기로 돌아가기</Button>
       </main>
     );
   }
@@ -107,7 +109,7 @@ export function OfficialChallengeDetailPage() {
   }
 
   if (!item) {
-    return <><Header title="챌린지" onBack={() => navigate('/challenges/browse')} /><main className="px-page-x py-5"><LoadingState label="챌린지 상세 불러오는 중">챌린지를 불러오고 있어요.</LoadingState></main></>;
+    return <><Header title="챌린지" onBack={goBack} /><main className="px-page-x py-5"><LoadingState label="챌린지 상세 불러오는 중">챌린지를 불러오고 있어요.</LoadingState></main></>;
   }
 
   const selfCheck = item.check_type_code === 'SELF';
@@ -158,7 +160,7 @@ export function OfficialChallengeDetailPage() {
 
   return (
     <>
-    <Header title={item.name} onBack={() => navigate('/challenges/browse')} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
+    <Header title={item.name} onBack={goBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
     <main className="flex flex-col gap-4 px-page-x py-5">
       <p className="text-caption text-muted-foreground">공식 챌린지</p>
 
