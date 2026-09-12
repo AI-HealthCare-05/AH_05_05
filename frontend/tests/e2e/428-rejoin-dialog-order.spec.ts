@@ -1,5 +1,6 @@
 import { expect, test, type Page } from 'playwright/test';
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 const challenge = {
   id: 101, name: '걷기 챌린지', phrase: '매일 30분 걷기', description: '매일 실천해요.',
@@ -54,7 +55,7 @@ for (const entry of ['catalog', 'participation'] as const) {
       await primary.focus(); await page.keyboard.press('Tab'); await expect(secondary).toBeFocused();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await dialog.getByRole('heading').click();
-      await page.locator('img').evaluateAll(async imgs => { await Promise.all(imgs.filter(img => img.getBoundingClientRect().width > 0).map(img => img.decode().catch(() => {}))); });
+      await waitForVisibleImages(page);
       await dialog.screenshot({ path: info.outputPath(`428-rejoin-${entry}-${width}.png`) });
       await secondary.click(); await expect(dialog).toHaveCount(0);
       expect(writes).toBe(0);

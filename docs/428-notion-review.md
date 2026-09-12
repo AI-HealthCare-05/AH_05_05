@@ -53,3 +53,14 @@
 - TDD RED: 종료 3상태 × 390/1280px 6개 모두 남은 footer로 실패, 보존 대상 2개는 통과. GREEN: 새 8개와 기존 취소·헤더·달성 스냅샷·공식 재참여 회귀를 합한 14개 통과 (55.6s). `tsc --noEmit` 및 `git diff --check` 통과.
 - 화면: `frontend/test-results/428-footer-green/`에 상태별 390/1280px 상단·하단 fixture 캡처 12개 보관. 사용자 데이터/실제 서버 쓰기는 사용하지 않았다.
 - 작업은 `ba021727`에서 분리된 HEAD로 수행했다. 실제 `feature/428` ref와 사용자 기본 작업 폴더는 변경하지 않았으며, 독립 리뷰 및 부모 작업의 안전한 ref 갱신 전까지 전달 대기다.
+
+## 2026-09-12 추가 요청 네 건 결합
+
+- 챌린지 탭 `마이`를 `나의 챌린지`로 바꾸고, 공식 Home 카드에서 행동 버튼과 중복되던 `미완료`만 제거했다. 맞춤 카드의 `미완료`, 완료 카드 유지, 공식 체크인의 pending·실패·동일 idempotency key 재시도는 보존했다.
+- 공식 재참여 확인창은 `다시 참여하기`를 `돌아가기` 위에 배치했다. 두 진입 화면, 키보드 순서, 취소 무쓰기, pending 중 중복 요청·닫기 방지와 COMPLETED 재참여 제한을 유지했다.
+- 새 MEDICATION/SUPPLEMENT 참여는 KST 참여 시각 이하의 네 설정 중 가장 늦은 시간대를 경계로 삼는다. 그 시간대와 이후의 미복용 대상만 참여일 목표가 되고, 더 이른 시간대와 참여 전 복용은 소급하지 않는다. 다음날부터는 정상 전체 일정이며 동일 시각 설정은 함께 포함한다. 기본 planner는 strict를 유지하고 join/recommendation에서만 opt-in한다.
+- 결합 fixture는 2026-09-10 19:00 KST 참여, 9월 17일 자정 종료, 실제 종료일 9월 16일의 7일 기간이다. 참여일 저녁·자기 전 2건과 이후 6일×4건, 총 26개 목표를 사용해 Home `0 / 7일`, 상세 오늘 `0/2`, 다음날 `예정 4회`, 아침·점심 소급 없음까지 검증한다. 브라우저 fixture는 실제 backend 연결 증거로 부르지 않는다.
+- 최종 frontend real-fixture 묶음은 46 passed / mock 전용 3 skipped, 이어서 그 mock 전용 3건은 별도 mode에서 3 passed였다. TypeScript `tsc --noEmit`도 통과했다. 실행 중 발견한 기존 목업 회귀는 완료 카드를 제거하고 Home에 집계 문구가 있다고 가정한 오래된 기대였다. 최신 계약대로 Home의 100%·`완료` 카드 유지, 차단된 undo 뒤 유지, 나의 챌린지의 `진행 중 1개 · 달성 2개`, 기존 2건 배지 이력과 fetch/xhr 0건을 계속 검증하도록 테스트만 정정했다.
+- decoded image gate 뒤 전용 output에서 가입일 Home·상세 캡처를 다시 1 passed로 남겼다. 안정 복사본은 `.codex-work/notion-20260912/artifacts/428-followups/428-join-day-{home,detail}-390.png`이다. 독립 승인된 재참여 390px 캡처도 같은 폴더에 복사했다. 탭 390px 생산자 캡처는 라벨 근거에는 유효하지만 당시 무관한 launcher 이미지가 늦게 로드된 한계가 있어 polished 전체 화면 근거로 사용하지 않는다. 최종 결합 탭 테스트 자체는 strict decoded image gate를 포함해 통과했다.
+- Backend 생산자 검증은 SQLite 메모리 fixture 90건(27+22+26+15), Ruff lint/format, diff check 통과다. 전체 앱 import가 필요한 API/lifecycle/cancel과 route 1건은 기존 `transformers` metadata scan 제한으로 완료하지 못했으며 전체 backend pass로 표현하지 않는다. mypy는 기준과 동일한 기존 오류 23개다.
+- 기존 실제 participation은 자동 보정하지 않았다. 운영 문서는 실행하지 않은 검토용 절차이며 실제 DB/API/SQL/backfill은 별도 대상 확인과 승인이 필요하다. 실제 `feature/428` ref, 사용자 checkout, 원격/PR도 최종 독립 결합 리뷰와 안전 인계 승인 전에는 변경하지 않는다.

@@ -1,5 +1,7 @@
 import { expect, test } from 'playwright/test';
 
+import { waitForVisibleImages } from './helpers/visibleImages';
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('poke.access-token', 'challenge-tab-fixture');
@@ -37,6 +39,7 @@ for (const base of ['/challenges', '/dev/challenges']) {
       expect(await tabs.evaluate(nav => [...nav.querySelectorAll('a')].every(link =>
         link.scrollWidth <= link.clientWidth && link.scrollHeight <= link.clientHeight,
       ) && nav.scrollWidth <= nav.clientWidth)).toBe(true);
+      await waitForVisibleImages(page);
       await page.screenshot({ path: testInfo.outputPath(`my-${width}.png`), animations: 'disabled' });
 
       await browse.click();
@@ -46,6 +49,7 @@ for (const base of ['/challenges', '/dev/challenges']) {
       await expect(browse).toHaveAttribute('aria-current', 'page');
       await expect(tabs.getByRole('link', { name: '마이', exact: true })).toHaveCount(0);
       expect(await tabs.evaluate(nav => nav.scrollWidth <= nav.clientWidth)).toBe(true);
+      await waitForVisibleImages(page);
       await page.screenshot({ path: testInfo.outputPath(`browse-${width}.png`), animations: 'disabled' });
 
       await my.click();

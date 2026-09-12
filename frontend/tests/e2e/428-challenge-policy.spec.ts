@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from 'playwright/test';
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
+import { waitForVisibleImages } from './helpers/visibleImages';
 
 test.skip(!IS_REAL_API, REAL_API_ONLY_REASON);
 const walkingBadge = readFileSync(new URL('../../public/images/challenges/badge-walk.png', import.meta.url));
@@ -47,12 +48,80 @@ const custom = {
   ],
 };
 
-async function lists(page: Page, officials: unknown[] = [official], customs: unknown[] = [custom]) {
+async function lists(
+  page: Page,
+  officials: unknown[] = [official],
+  customs: unknown[] = [custom],
+  customDetail: unknown = custom,
+) {
   await page.route('**/api/v1/user/challenges', route => route.fulfill({ json: { items: officials, total_count: officials.length } }));
   await page.route('**/api/v1/user/custom-challenge-participations', route => route.fulfill({ json: { items: customs, totalCount: customs.length } }));
   await page.route('**/api/v1/user/challenges/501', route => route.fulfill({ json: official }));
-  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: custom }));
+  await page.route('**/api/v1/user/custom-challenge-participations/701', route => route.fulfill({ json: customDetail }));
 }
+
+test('join-day current supplement slot is visible on Home and detail without earlier slots', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.setFixedTime(new Date('2026-09-10T19:00:00+09:00'));
+  const laterOccurrences = Array.from({ length: 6 }, (_, dayIndex) => {
+    const scheduledDate = `2026-09-${String(11 + dayIndex).padStart(2, '0')}`;
+    return [
+      ['MORNING', '08:00'],
+      ['LUNCH', '12:00'],
+      ['EVENING', '18:00'],
+      ['BEDTIME', '22:00'],
+    ].map(([slot, time], slotIndex) => ({
+      id: 821 + (dayIndex * 4) + slotIndex,
+      targetId: 901,
+      scheduledDate,
+      slot,
+      scheduledAt: `${scheduledDate}T${time}:00+09:00`,
+      isCompleted: false,
+    }));
+  }).flat();
+  const joinDay = {
+    ...custom,
+    joinedAt: '2026-09-10T19:00:00+09:00',
+    endAt: '2026-09-17T00:00:00+09:00',
+    actualEndDate: '2026-09-16',
+    targetCount: 26,
+    completedCount: 0,
+    progressRate: '0.00',
+    targetDayCount: 7,
+    completedDayCount: 0,
+    dayProgressRate: '0.00',
+    occurrences: [
+      { id: 811, targetId: 901, scheduledDate: '2026-09-10', slot: 'EVENING', scheduledAt: '2026-09-10T18:00:00+09:00', isCompleted: false },
+      { id: 812, targetId: 901, scheduledDate: '2026-09-10', slot: 'BEDTIME', scheduledAt: '2026-09-10T22:00:00+09:00', isCompleted: false },
+      ...laterOccurrences,
+    ],
+  };
+  await lists(page, [{ ...official, can_verify: true, verified_dates: [] }], [joinDay], joinDay);
+
+  await page.goto('/home');
+  const summary = page.getByRole('region', { name: '챌린지', exact: true });
+  const officialCard = summary.getByRole('article', { name: '매일 걷기', exact: true });
+  const customCard = summary.getByRole('article', { name: '영양제 챌린지', exact: true });
+  await expect(officialCard.getByRole('button', { name: '매일 걷기 했어요' })).toBeEnabled();
+  await expect(officialCard.getByText('미완료', { exact: true })).toHaveCount(0);
+  await expect(customCard).toContainText('0 / 7일');
+  await expect(customCard.getByText('미완료', { exact: true })).toBeVisible();
+  await waitForVisibleImages(page);
+  await summary.screenshot({ path: testInfo.outputPath('428-join-day-current-slot-home-390.png'), animations: 'disabled' });
+
+  await page.goto('/challenges/custom-participations/701');
+  const today = page.getByRole('button', { name: '2026.09.10, 0/2 완료, 오늘' });
+  await expect(today).toHaveAttribute('aria-pressed', 'true');
+  const records = page.getByRole('region', { name: '날짜별 복용 기록' });
+  await expect(records.getByRole('listitem')).toHaveCount(2);
+  await expect(records.getByText('저녁', { exact: true })).toBeVisible();
+  await expect(records.getByText('자기전', { exact: true })).toBeVisible();
+  await expect(records.getByText('아침', { exact: true })).toHaveCount(0);
+  await expect(records.getByText('점심', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '2026.09.11, 예정 4회' })).toBeEnabled();
+  await waitForVisibleImages(page);
+  await page.screenshot({ path: testInfo.outputPath('428-join-day-current-slot-detail-390.png'), fullPage: true, animations: 'disabled' });
+});
 
 test('occupied supplement is disabled while a distinct registration remains selectable', async ({ page }) => {
   await page.route('**/api/v1/user/custom-challenge-recommendations', route => route.fulfill({ json: { items: [{
