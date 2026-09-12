@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import cast
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
+from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
 from app.core import config as _config
@@ -52,7 +53,7 @@ from app.models.medications import MedicationDose
 from app.models.supplement_nutrients import SupplementDose, UserSupplementNutrient
 from app.models.users import User, UserSettings
 from app.services.custom_challenge_badges import CustomChallengeBadgeService
-from app.services.custom_challenge_goal_planner import GoalWindow, PlannedGoal, plan_goals, seven_day_end
+from app.services.custom_challenge_goal_planner import KST, GoalKey, GoalWindow, PlannedGoal, plan_goals, seven_day_end
 from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
 
 config = cast(Config, _config)
@@ -129,6 +130,45 @@ def medication_challenge_end(windows: builtins.list[GoalWindow]) -> datetime | N
     if not last_dates:
         return None
     return datetime.combine(max(last_dates) + timedelta(days=1), time.min, tzinfo=config.TIMEZONE)
+
+
+async def completed_join_day_keys(
+    *,
+    user_id: int,
+    source_kind: CustomChallengeType,
+    source_ids: Collection[int],
+    joined_at: datetime,
+    connection: BaseDBAsyncClient | None = None,
+    recorded_before_join: bool = False,
+) -> set[GoalKey]:
+    """Read dose keys only; joining must not award credit for already-taken doses.
+
+    At join the transaction holds the user's lock, shared with dose saves. For
+    reconciliation only pre-join records are excluded; later completions must
+    remain attached to their existing goals and continue supporting undo.
+    """
+    if not source_ids:
+        return set()
+    joined_date = joined_at.astimezone(KST).date()
+    query: QuerySet[MedicationDose] | QuerySet[SupplementDose]
+    if source_kind is CustomChallengeType.MEDICATION:
+        query = MedicationDose.filter(user_id=user_id, care_episode_id__in=source_ids, dose_date=joined_date)
+        source_field = "care_episode_id"
+    elif source_kind is CustomChallengeType.SUPPLEMENT:
+        query = SupplementDose.filter(
+            registration__user_id=user_id, registration_id__in=source_ids, dose_date=joined_date
+        )
+        source_field = "registration_id"
+    else:
+        return set()
+    if recorded_before_join:
+        # A pre-existing row can share the join timestamp at DB precision.
+        # Existing goal keys are preserved separately by the reconciler.
+        query = query.filter(taken_at__lte=joined_at)
+    if connection is not None:
+        query = query.using_db(connection)
+    rows = await query.values_list(source_field, "dose_date", "slot")
+    return {(source_id, dose_date, _meal_slot(slot)) for source_id, dose_date, slot in rows}
 
 
 class CustomChallengeService:
@@ -497,6 +537,13 @@ class CustomChallengeService:
         if lock:
             query = query.select_for_update()
         episodes = await query.prefetch_related("medications__slots")
+        completed_keys = await completed_join_day_keys(
+            user_id=user_id,
+            source_kind=CustomChallengeType.MEDICATION,
+            source_ids=[episode.id for episode in episodes],
+            joined_at=now,
+            connection=connection,
+        )
         result: builtins.list[tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]] = []
         for episode in episodes:
             windows = medication_goal_windows(episode)
@@ -508,6 +555,8 @@ class CustomChallengeService:
                 meal_times=meal_times,
                 joined_at=now,
                 end_at=end_at,
+                include_join_slot=True,
+                excluded_keys=completed_keys,
             )
             if goals:
                 name = episode.alias or episode.hospital_name or f"복약 기록 {episode.id}"
@@ -535,6 +584,13 @@ class CustomChallengeService:
         if lock:
             query = query.select_for_update()
         registrations = await query.prefetch_related("slots", "supplement_nutrient")
+        completed_keys = await completed_join_day_keys(
+            user_id=user_id,
+            source_kind=CustomChallengeType.SUPPLEMENT,
+            source_ids=[registration.id for registration in registrations],
+            joined_at=now,
+            connection=connection,
+        )
         end_at = seven_day_end(now)
         result: builtins.list[tuple[int, str, builtins.list[GoalWindow], builtins.list[PlannedGoal]]] = []
         for registration in registrations:
@@ -544,6 +600,8 @@ class CustomChallengeService:
                 meal_times=meal_times,
                 joined_at=now,
                 end_at=end_at,
+                include_join_slot=True,
+                excluded_keys=completed_keys,
             )
             if goals:
                 product = registration.supplement_nutrient

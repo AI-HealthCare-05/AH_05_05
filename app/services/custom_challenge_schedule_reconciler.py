@@ -26,6 +26,7 @@ from app.services.custom_challenge_goal_planner import (
     plan_goals,
 )
 from app.services.custom_challenges import (
+    completed_join_day_keys,
     custom_challenge_meal_times,
     medication_challenge_end,
     medication_goal_windows,
@@ -119,6 +120,14 @@ class CustomChallengeScheduleReconciler:
             preserved_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in past}
             existing_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in future}
             joined_at = _database_datetime(participation.joined_at)
+            prejoin_completed = await completed_join_day_keys(
+                user_id=user_id,
+                source_kind=source_kind,
+                source_ids=[target.source_id_snapshot],
+                joined_at=joined_at,
+                connection=connection,
+                recorded_before_join=True,
+            )
             desired = (
                 plan_goals(
                     windows=windows_by_source.get(target.source_id_snapshot, []),
@@ -128,6 +137,9 @@ class CustomChallengeScheduleReconciler:
                     not_before=changed_at,
                     preserved_keys=preserved_keys,
                     existing_keys=existing_keys,
+                    # Never recreate an absent future slot taken before join.
+                    # Existing goals (including legacy ones) retain their history.
+                    excluded_keys=prejoin_completed - existing_keys,
                 )
                 if planned_end_at > joined_at
                 else []

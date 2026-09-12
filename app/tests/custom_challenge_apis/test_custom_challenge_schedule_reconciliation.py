@@ -430,7 +430,7 @@ async def test_notify_time_change_preserves_existing_supplement_key_moved_before
     ]
 
 
-async def test_join_after_current_slot_time_does_not_backfill_a_new_goal() -> None:
+async def test_join_after_current_slot_time_includes_current_pending_slot_but_not_earlier_slots() -> None:
     user = await _user("join-after-current-slot@example.com")
     medication_template, _ = await _templates()
     episode = await _episode(user)
@@ -444,10 +444,10 @@ async def test_join_after_current_slot_time_does_not_backfill_a_new_goal() -> No
     )
     participation = await CustomChallengeParticipation.get(id=response.id)
 
-    assert not any(
-        row.scheduled_date == joined_at.date() and row.slot is MealSlot.EVENING
-        for row in await _occurrences(participation)
-    )
+    today = [row for row in await _occurrences(participation) if row.scheduled_date == joined_at.date()]
+    assert [(row.slot, _aware(row.scheduled_at)) for row in today] == [
+        (MealSlot.EVENING, datetime(2026, 9, 10, 16, 0, tzinfo=config.TIMEZONE))
+    ]
 
 
 async def test_reconcile_is_owner_scoped_and_zero_future_does_not_complete_or_award() -> None:
