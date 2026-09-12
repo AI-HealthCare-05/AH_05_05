@@ -85,6 +85,9 @@ from ai_worker.llm.generators.conversation_response_generator import (
     ConversationResponseGenerator,
     ConversationResponseInput,
 )
+from ai_worker.llm.prompts.medication_chat_prompt import (
+    MEDICATION_CHAT_PROMPT_VERSION,
+)
 from ai_worker.observability.chat_tracer import ChatTracer, NoOpChatTracer
 from ai_worker.rag.errors import GuidelineRetrievalError
 from ai_worker.rag.metadata.supplement_interaction_registry import (
@@ -172,7 +175,6 @@ from ai_worker.use_cases.medication_chat_pipeline import (
 )
 from ai_worker.use_cases.medication_note_summary import MedicationNoteSummaryUseCase
 
-MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v3"
 MEDICATION_CHAT_SCHEMA_VERSION = "medication-chat-result-v1"
 logger = logging.getLogger(__name__)
 

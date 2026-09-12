@@ -25,6 +25,7 @@ def test_v7_prompt_pack_loads_only_requested_stage() -> None:
     assert document.compiled_system.startswith(document.common)
     assert document.system in document.compiled_system
     assert document.examples in document.compiled_system
+    assert "예시(Example)" in document.compiled_system
 
 
 def test_stage_parser_rejects_missing_stage_marker() -> None:

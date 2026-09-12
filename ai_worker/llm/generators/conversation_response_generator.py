@@ -4,7 +4,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from ai_worker.llm.prompts.prompt_assets import load_prompt_template_document
+from ai_worker.llm.prompts.prompt_assets import (
+    MedicationPromptStage,
+    load_prompt_chain_stage,
+)
 from ai_worker.schemas.conversation_gate import ConversationIntent, SymptomFollowUpField
 
 
@@ -35,10 +38,15 @@ class AsyncConversationResponseClient(Protocol):
     async def ainvoke(self, messages: Any) -> ConversationResponsePayload | dict[str, Any]: ...
 
 
-PROMPT_DOCUMENT = load_prompt_template_document("conversation_response_prompt_v1.md")
+CONVERSATION_RESPONSE_PROMPT_VERSION = "conversation-response-prompt-v7"
+
+PROMPT_DOCUMENT = load_prompt_chain_stage(
+    "medication_chat_prompt_v7.md",
+    MedicationPromptStage.CONVERSATION_RESPONSE,
+)
 PROMPT = ChatPromptTemplate.from_messages(
     [
-        ("system", PROMPT_DOCUMENT.system),
+        ("system", PROMPT_DOCUMENT.compiled_system),
         ("human", PROMPT_DOCUMENT.user),
     ]
 )

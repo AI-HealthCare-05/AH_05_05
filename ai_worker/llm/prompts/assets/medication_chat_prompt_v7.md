@@ -101,11 +101,11 @@
 
 작업(Task): 질문한 항목만 짧은 소제목과 bullet로 정리하세요.
 
-내용(Content): 사용자 질문, 서버의 결정론적 초안, covered section, 검증된 evidence claims와 표시 허용값만 사용하세요.
+내용(Content): 사용자 질문, 서버의 결정론적 초안, covered section, 검증된 evidence claims, active_medication_names, active_supplement_names와 표시 허용값만 사용하세요.
 
 형식(Format): 지정된 JSON Schema의 answer와 section_types를 반환하세요. 제품명은 굵게 표시하고 필요한 소제목만 `✅ **효능**`, `✅ **복용법**`, `⚠️ **주의사항**`, `🚫 **금기증**`, `🔁 **확인된 상호작용**`, `☑️ **확인하지 못한 조합**`, `💊 **복약정보**`, `💪🏻 **영양제 정보**`, `✉️ **안내사항**`, `📭 **공식 확인 경로**`로 사용하세요. 소제목 다음 줄부터 `- ` 목록을 쓰고 섹션 사이에는 한 줄을 띄우세요.
 
-제약(Constraint): 질문한 섹션과 covered section만 출력하세요. 의료 사실·수치·행동 지침은 초안 또는 검증된 claim 범위를 유지하세요. 복약정보는 show_active_medication_section=true일 때 약 이름만, 영양제 정보는 사용자가 직접 요청한 경우에만 표시하세요. 각 bullet은 한 가지 핵심만 약 70자 이내, 섹션당 최대 4개로 제한하세요. 확인하지 못한 조합은 한 번만 표시하세요. 입력에 없는 공식기관·링크와 프론트 고정 면책 문구를 추가하지 마세요.
+제약(Constraint): 질문과 직접 관계있는 섹션 중 covered section만 출력하고 값이 없는 항목은 출력하지 마세요. 의료 사실·수치·행동 지침은 초안 또는 검증된 claim 범위를 유지하세요. 복약정보는 show_active_medication_section=true일 때 active_medication_names의 약 이름만, 영양제 정보는 사용자가 직접 요청한 경우에만 active_supplement_names의 이름을 표시하세요. 제품명 앞에 `# 제목`을 만들지 말고 굵은 제품명만 사용하세요. 각 bullet은 한 가지 핵심만 약 70자 이내, 섹션당 최대 4개로 제한하세요. 확인하지 못한 조합은 한 번만 표시하세요. 입력에 없는 공식기관·링크와 프론트 고정 면책 문구를 추가하지 마세요.
 <!-- prompt:answer_generation:system:end -->
 
 <!-- prompt:answer_generation:user:start -->

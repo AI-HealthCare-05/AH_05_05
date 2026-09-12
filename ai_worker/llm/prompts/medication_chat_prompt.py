@@ -3,7 +3,10 @@ import re
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from ai_worker.llm.prompts.prompt_assets import load_prompt_template_document
+from ai_worker.llm.prompts.prompt_assets import (
+    MedicationPromptStage,
+    load_prompt_chain_stage,
+)
 from ai_worker.schemas.knowledge import KnowledgeSectionType
 from ai_worker.schemas.medication_chat import (
     ActiveIntakeContext,
@@ -12,7 +15,7 @@ from ai_worker.schemas.medication_chat import (
     MedicationChatRoute,
 )
 
-MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v6"
+MEDICATION_CHAT_PROMPT_VERSION = "medication-chat-prompt-v7"
 
 _DOSAGE_VALUE_PATTERN = re.compile(
     r"\d+(?:\s*[|,./~–-]\s*\d+)*\s*"
@@ -21,10 +24,13 @@ _DOSAGE_VALUE_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 
-PROMPT_DOCUMENT = load_prompt_template_document("medication_chat_prompt_v6.md")
-SYSTEM_PROMPT = PROMPT_DOCUMENT.system
+PROMPT_DOCUMENT = load_prompt_chain_stage(
+    "medication_chat_prompt_v7.md",
+    MedicationPromptStage.ANSWER_GENERATION,
+)
+SYSTEM_PROMPT = PROMPT_DOCUMENT.compiled_system
 USER_PROMPT_TEMPLATE = PROMPT_DOCUMENT.user
-ASSISTANT_EXAMPLE = PROMPT_DOCUMENT.assistant_example
+ASSISTANT_EXAMPLE = PROMPT_DOCUMENT.examples
 
 
 def build_medication_chat_messages(

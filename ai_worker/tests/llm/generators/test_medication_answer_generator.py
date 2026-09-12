@@ -80,7 +80,7 @@ async def test_generator_rewrites_draft_and_preserves_grounding_metadata() -> No
     assert outcome.result.answer.startswith("정해진 용법")
     assert outcome.result.sources == build_result().sources
     assert outcome.result.model_name == "gpt-4o-mini"
-    assert outcome.result.prompt_version == "medication-chat-prompt-v6"
+    assert outcome.result.prompt_version == "medication-chat-prompt-v7"
     assert outcome.observation.status == MedicationAnswerRewriteStatus.REWRITTEN
     assert outcome.observation.fallback_used is False
     assert outcome.observation.fallback_reason is None
