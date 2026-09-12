@@ -36,6 +36,10 @@ const noteEpisode = {
   alias: '아침 처방',
   startDate: '2026-08-01',
   status: 'ACTIVE',
+  noteCount: 1,
+  medicationCount: 1,
+  representativeMedicationName: '아침 처방 약',
+  medications: [{ id: 410, name: '아침 처방 약', dose: '1정' }],
 };
 
 const note = {
@@ -148,7 +152,7 @@ test.beforeEach(async ({ page }) => {
     items: [], totalCount: 0,
   }));
   await page.route('**/api/v1/medications', route => fulfillJson(route, [medicationOverview]));
-  await page.route('**/api/v1/med/notes/episodes', route => fulfillJson(route, [noteEpisode]));
+  await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, route => fulfillJson(route, [noteEpisode]));
   await page.route('**/api/v1/med/notes/901', route => fulfillJson(route, {
     ...note,
     ...(route.request().method() === 'PATCH' ? route.request().postDataJSON() : {}),
@@ -231,15 +235,17 @@ test('마이에서 연 복약 메모는 작성 취소와 수정 저장 뒤에도
   await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/medications/notes');
 
+  await page.getByRole('tab', { name: '작성한 메모', exact: true }).click();
+  await page.getByRole('button', { name: /아침 처방.*펼치기/ }).click();
   await page.getByRole('button', { name: '처방 전체 기존 메모', exact: true }).click();
-  await page.getByLabel('복용 후 느낀 점').fill('수정한 메모');
+  await page.getByLabel('건강상태 기록').fill('수정한 메모');
   await page.getByRole('button', { name: '수정 저장', exact: true }).click();
-  await expect(page).toHaveURL('/medications/notes');
+  await expect(page).toHaveURL('/medications/notes?episodeId=41');
 
   await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/my');
   await page.goForward();
-  await expect(page).toHaveURL('/medications/notes');
+  await expect(page).toHaveURL('/medications/notes?episodeId=41');
   await page.goBack();
   await expect(page).toHaveURL('/my');
 });

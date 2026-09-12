@@ -263,30 +263,72 @@ class MedicationService:
         )
         return page.items
 
-    async def list_note_episodes(self, user: User) -> list[MedicationNoteEpisodeResponse]:
-        rows = await (
-            CareEpisode.filter(
+    async def list_note_episodes(
+        self,
+        user: User,
+        *,
+        include_without_notes: bool = False,
+    ) -> list[MedicationNoteEpisodeResponse]:
+        if include_without_notes:
+            episode_query = CareEpisode.filter(user_id=user.id).filter(
+                Q(status__not=CareEpisodeStatus.CANCELLED) | Q(medication_notes__user_id=user.id)
+            )
+        else:
+            episode_query = CareEpisode.filter(
                 user_id=user.id,
                 medication_notes__user_id=user.id,
             )
-            .distinct()
+        rows = await (
+            episode_query.distinct()
             .order_by("-medication_start_date", "-id")
-            .values("id", "alias", "medication_start_date", "status")
+            .values("id", "alias", "medication_start_date", "medication_start_slot", "status")
         )
         episode_ids = [row["id"] for row in rows]
         medication_rows = (
             await Medication.filter(care_episode_id__in=episode_ids)
             .order_by("care_episode_id", "id")
-            .values("care_episode_id", "name")
+            .values("id", "care_episode_id", "name", "strength")
             if episode_ids
             else []
         )
         representative_medication_names: dict[int, str] = {}
         medication_counts: dict[int, int] = {}
+        medications_by_episode: dict[int, list[MedicationNoteMedicationResponse]] = {}
         for medication_row in medication_rows:
             episode_id = medication_row["care_episode_id"]
             representative_medication_names.setdefault(episode_id, medication_row["name"])
             medication_counts[episode_id] = medication_counts.get(episode_id, 0) + 1
+            medications_by_episode.setdefault(episode_id, []).append(
+                MedicationNoteMedicationResponse(
+                    id=medication_row["id"],
+                    name=medication_row["name"],
+                    dose=medication_row["strength"],
+                )
+            )
+
+        note_counts: dict[int, int] = {}
+        if include_without_notes and episode_ids:
+            note_rows = await MedicationNote.filter(
+                user_id=user.id,
+                care_episode_id__in=episode_ids,
+            ).values("care_episode_id")
+            for note_row in note_rows:
+                episode_id = note_row["care_episode_id"]
+                note_counts[episode_id] = note_counts.get(episode_id, 0) + 1
+            rows = [row for row in rows if medication_counts.get(row["id"], 0) > 0 or note_counts.get(row["id"], 0) > 0]
+
+        first_dose_at_by_episode: dict[int, datetime | None] = {}
+        if include_without_notes:
+            settings = await UserSettings.get_or_none(user_id=user.id)
+            meal_times = self._meal_times(settings)
+            for row in rows:
+                start_date = row["medication_start_date"]
+                start_slot = row["medication_start_slot"] or MealSlot.MORNING
+                first_dose_at_by_episode[row["id"]] = (
+                    datetime.combine(start_date, time.fromisoformat(getattr(meal_times, start_slot.value.lower())))
+                    if start_date is not None
+                    else None
+                )
 
         return [
             MedicationNoteEpisodeResponse(
@@ -296,6 +338,9 @@ class MedicationService:
                 status=row["status"],
                 representative_medication_name=representative_medication_names.get(row["id"]),
                 medication_count=medication_counts.get(row["id"], 0),
+                **({"note_count": note_counts.get(row["id"], 0)} if include_without_notes else {}),
+                **({"medications": medications_by_episode.get(row["id"], [])} if include_without_notes else {}),
+                **({"first_dose_at": first_dose_at_by_episode[row["id"]]} if include_without_notes else {}),
             )
             for row in rows
         ]
