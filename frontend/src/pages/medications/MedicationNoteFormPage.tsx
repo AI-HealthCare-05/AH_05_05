@@ -10,7 +10,6 @@ import {
   updateMedicationNote,
   type MedicationNote,
   type MedicationNoteEpisode,
-  type MedicationNoteMedication,
 } from '@/entities/medication-note';
 import {
   getMedicationOverviews,
@@ -36,7 +35,6 @@ import {
 
 interface NoteFormState {
   recordId: string;
-  medicationId: string;
   takenAt: string;
   experience: string;
 }
@@ -47,14 +45,10 @@ interface NoteEpisodeOption {
   startDate: string | null;
   firstDoseAt: string | null;
   status: string;
-  medications: MedicationNoteMedication[];
 }
-
-const DELETED_MEDICATION_ID = '__deleted__';
 
 const EMPTY_FORM: NoteFormState = {
   recordId: '',
-  medicationId: '',
   takenAt: '',
   experience: '',
 };
@@ -65,10 +59,6 @@ function prescriptionLabel(episode: NoteEpisodeOption): string {
     return `${formatDateLabel(episode.startDate, { includeYear: true })} 처방`;
   }
   return '처방';
-}
-
-function medicineLabel(medication: MedicationNoteMedication): string {
-  return medication.name;
 }
 
 function toLocalDateTime(value: string): string {
@@ -86,7 +76,6 @@ function initialForm(note: MedicationNote | null): NoteFormState {
   return note
     ? {
         recordId: String(note.careEpisodeId),
-        medicationId: note.medicationId === null ? '' : String(note.medicationId),
         takenAt: toLocalDateTime(note.dosedAt),
         experience: note.body,
       }
@@ -100,11 +89,6 @@ function episodeFromOverview(overview: MedicationOverview): NoteEpisodeOption {
     startDate: overview.start.date,
     firstDoseAt: firstDoseAtFromOverview(overview),
     status: overview.isFinished ? 'COMPLETED' : 'ACTIVE',
-    medications: overview.medications.map((medication) => ({
-      id: medication.medicationId,
-      name: medication.name,
-      dose: medication.dose || null,
-    })),
   };
 }
 
@@ -115,7 +99,6 @@ function episodeFromNote(note: MedicationNote): NoteEpisodeOption {
     startDate: note.careEpisodeStartDate,
     firstDoseAt: null,
     status: note.careEpisodeStatus,
-    medications: note.availableMedications,
   };
 }
 
@@ -126,7 +109,6 @@ function episodeFromInventory(episode: MedicationNoteEpisode): NoteEpisodeOption
     startDate: episode.startDate,
     firstDoseAt: null,
     status: episode.status,
-    medications: episode.medications ?? [],
   };
 }
 
@@ -287,16 +269,8 @@ export function MedicationNoteFormPage() {
           const initialEpisode = nextEpisodes.find((episode) => episode.id === initialEpisodeId);
           if (initialEpisode) {
             nextForm.recordId = String(initialEpisode.id);
-            nextForm.medicationId = '';
             nextForm.takenAt = initialEpisode.firstDoseAt ?? '';
           }
-        }
-        if (
-          loadedNote &&
-          loadedNote.medicationId !== null &&
-          !originalEpisode?.medications.some((medication) => medication.id === loadedNote.medicationId)
-        ) {
-          nextForm.medicationId = DELETED_MEDICATION_ID;
         }
         setForm((current) => preserveForm && Object.values(current).some((value) => value !== '')
           ? current
@@ -321,25 +295,12 @@ export function MedicationNoteFormPage() {
     () => episodes?.find((episode) => String(episode.id) === form.recordId) ?? null,
     [episodes, form.recordId],
   );
-  const availableMedications = selectedEpisode?.medications ?? [];
-  const deletedMedication =
-    editing && note?.medicationId !== null && note?.medicationId !== undefined &&
-    !availableMedications.some((medication) => medication.id === note.medicationId)
-      ? { id: note.medicationId, name: '삭제된 약', dose: null }
-      : null;
-  const medicationOptions = deletedMedication
-    ? [deletedMedication, ...availableMedications]
-    : availableMedications;
-  const selectedMedication = medicationOptions.find(
-    (medication) => String(medication.id) === form.medicationId,
-  );
   const canSave =
     episodes !== null &&
     selectedEpisode !== null &&
     form.recordId !== '' &&
     form.takenAt !== '' &&
-    form.experience.trim() !== '' &&
-    (form.medicationId === '' || selectedMedication !== undefined);
+    form.experience.trim() !== '';
 
   function setField<K extends keyof NoteFormState>(key: K, value: NoteFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -351,7 +312,6 @@ export function MedicationNoteFormPage() {
     setForm((current) => ({
       ...current,
       recordId: value,
-      medicationId: '',
       takenAt: next?.firstDoseAt ?? '',
     }));
   }
@@ -400,17 +360,12 @@ export function MedicationNoteFormPage() {
       let createdEpisodeId: number | null = null;
       if (editing && noteId) {
         await updateMedicationNote(decodeURIComponent(noteId), {
-          medicationId:
-            form.medicationId === '' || form.medicationId === DELETED_MEDICATION_ID
-              ? null
-              : Number(form.medicationId),
           dosedAt: form.takenAt,
           body: form.experience.trim(),
         });
       } else {
         const createdNote = await createMedicationNote({
           careEpisodeId: Number(form.recordId),
-          ...(form.medicationId !== '' ? { medicationId: Number(form.medicationId) } : {}),
           dosedAt: form.takenAt,
           body: form.experience.trim(),
         });
@@ -500,32 +455,6 @@ export function MedicationNoteFormPage() {
                 {editing && (
                   <span className="text-xs font-normal text-muted-foreground">
                     기존 복용 기록의 처방은 수정할 수 없어요.
-                  </span>
-                )}
-              </label>
-
-              <label className="flex flex-col gap-1 text-sm font-bold text-foreground">
-                약
-                <select
-                  aria-label="약"
-                  value={form.medicationId}
-                  onChange={(event) => setField('medicationId', event.target.value)}
-                  disabled={!selectedEpisode || episodes === null || saving}
-                  className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
-                >
-                  <option value="">처방 전체</option>
-                  {deletedMedication && (
-                    <option value={DELETED_MEDICATION_ID}>삭제된 약 (처방 전체로 변경)</option>
-                  )}
-                  {availableMedications.map((medication) => (
-                    <option key={medication.id} value={medication.id}>
-                      {medicineLabel(medication)}
-                    </option>
-                  ))}
-                </select>
-                {editing && note?.medicationId === null && (
-                  <span className="text-xs font-normal text-muted-foreground">
-                    약이 삭제되었거나 처방 전체에 대한 메모예요.
                   </span>
                 )}
               </label>

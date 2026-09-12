@@ -235,7 +235,7 @@ test('마이에서 연 복약 메모는 작성 취소와 수정 저장 뒤에도
   await page.getByRole('button', { name: '뒤로 가기', exact: true }).click();
   await expect(page).toHaveURL('/medications/notes');
 
-  await page.getByRole('tab', { name: '메모 있는 처방', exact: true }).click();
+  await page.getByRole('tab', { name: '작성한 메모', exact: true }).click();
   await page.getByRole('button', { name: /아침 처방.*펼치기/ }).click();
   await page.getByRole('button', { name: '처방 전체 기존 메모', exact: true }).click();
   await page.getByLabel('건강상태 기록').fill('수정한 메모');

@@ -43,7 +43,7 @@ for (const invalidEpisodeId of ['abc', '0']) {
 
     await expect(page.getByRole('alert')).toContainText('올바르지 않은 처방 주소예요');
     expect(listRequests).toBe(0);
-    await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+    await page.getByRole('tab', { name: '작성한 메모' }).click();
     await page.getByRole('button', { name: /아침 처방 .*펼치기/ }).click();
     await expect(page).toHaveURL('/medications/notes?episodeId=41');
     await expect(page.getByText('속이 편했어요')).toBeVisible();

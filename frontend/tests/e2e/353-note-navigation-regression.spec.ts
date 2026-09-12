@@ -43,7 +43,7 @@ async function enterNotesFromMedicationTab(page: Page) {
 }
 
 async function openEpisode(page: Page) {
-  await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
   await page.getByRole('button', { name: /아침 처방 .*펼치기/ }).click();
   await expect(page.getByText('속이 편했어요')).toBeVisible();
 }

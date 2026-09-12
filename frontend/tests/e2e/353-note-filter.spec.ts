@@ -64,7 +64,7 @@ test('요약 API의 모든 메모 처방을 아코디언에 보이고 처방 변
   });
 
   await page.goto('/medications/notes');
-  await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
   await expect(page.getByRole('button', { name: /감기약 · 2026년 9월 1일 · 타이레놀 외 2개 펼치기/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /감기약 · 2026년 9월 1일 · 아목시실린 펼치기/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /2024년 1월 2일 처방 .*펼치기/ })).toBeVisible();
@@ -110,7 +110,7 @@ test('처방 인벤토리 조회가 실패하면 오류를 보이고 다시 시�
   const failedAttempts = attempts;
   allowOptions = true;
   await page.getByRole('button', { name: '다시 시도' }).first().click();
-  await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
   await expect(page.getByRole('button', { name: /아목시실린 펼치기/ })).toBeVisible();
   expect(attempts).toBeGreaterThan(failedAttempts);
 });

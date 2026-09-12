@@ -33,7 +33,7 @@ test('동일 이름·날짜의 처방은 실제 약으로 구분하고 같은 �
     return route.fulfill({ json: { items: [], total: filter === '7003' ? 3 : 0, nextCursor: null } });
   });
   await page.goto('/medications/notes');
-  await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
   for (const label of [
     '감기약 · 처방 1', '감기약', '감기약 · 처방 2',
     '처방 · 처방 1', '처방 · 처방 2',
@@ -61,7 +61,7 @@ test('mock 요약도 실제 약 목록의 대표약과 개수로 중복 처방�
     sessionStorage.setItem('rxvita.mock.medication-notes:note-episode-labels%40example.com', JSON.stringify(notes));
   });
   await page.goto('/medications/notes');
-  await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
   await expect(page.getByRole('button', { name: /감기약 · 2026년 9월 1일 · 아목시실린 외 1개 펼치기/ })).toBeVisible();
   await page.getByRole('button', { name: /감기약 · 2026년 9월 1일 · 타이레놀 펼치기/ }).click();
   await expect(page.getByText('메모 1', { exact: true })).toBeVisible();

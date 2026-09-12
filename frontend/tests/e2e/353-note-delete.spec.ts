@@ -57,7 +57,7 @@ async function mockNoteList(page: Page) {
 
 async function openNote(page: Page, name: string, body: string) {
   await page.goto('/medications/notes');
-  await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
   await page.getByRole('button', { name: new RegExp(`${name} .*펼치기`) }).click();
   await page.getByRole('button', { name: new RegExp(body) }).click();
 }
@@ -79,7 +79,7 @@ test('상세 화면에서 확인 후 삭제하면 마지막 메모인 처방을 
   await page.getByRole('button', { name: '삭제하기' }).click();
 
   await expect(page).toHaveURL('/medications/notes?episodeId=41');
-  await expect(page.getByRole('tab', { name: '메모 없는 처방' })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('tab', { name: '메모작성하기' })).toHaveAttribute('data-state', 'active');
   await expect(page.getByRole('button', { name: /아침 처방 .*접기/ })).toBeVisible();
   await expect(page.getByText('속이 편했어요')).toHaveCount(0);
 });

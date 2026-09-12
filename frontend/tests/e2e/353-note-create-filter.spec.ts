@@ -59,7 +59,7 @@ async function openNewNote(page: Page, episodeId: string | null = '41', hasNotes
   await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '복약', exact: true }).click();
   await page.getByRole('button', { name: '복약 메모', exact: true }).click();
   if (episodeId !== null) {
-    if (hasNotes) await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+    if (hasNotes) await page.getByRole('tab', { name: '작성한 메모' }).click();
     const episode = episodes.find((item) => String(item.careEpisodeId) === episodeId);
     await page.getByRole('button', { name: new RegExp(`${episodeName ?? episode?.alias ?? '지난 처방'} .*펼치기`) }).click();
     await page.getByRole('button', { name: hasNotes ? '이 처방에 새 메모' : '이 처방에 메모 작성' }).click();
@@ -72,7 +72,7 @@ async function openNewNote(page: Page, episodeId: string | null = '41', hasNotes
 test('아코디언의 처방으로 새 메모를 열면 처방과 복용 일시를 채우고 전체 처방을 기본값으로 둔다', async ({ page }) => {
   await openNewNote(page);
   await expect(page.getByLabel('처방', { exact: true })).toHaveValue('41');
-  await expect(page.getByLabel('약', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('약', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('복용 일시')).toHaveValue('2026-08-01T08:00');
 });
 
@@ -83,7 +83,7 @@ for (const chosenEpisode of ['41', '42']) {
     await page.getByLabel('건강상태 기록').fill('저장한 새 메모');
     await page.getByRole('button', { name: '저장', exact: true }).click();
     await expect(page).toHaveURL(`/medications/notes?episodeId=${chosenEpisode}`);
-    await expect(page.getByRole('tab', { name: '메모 있는 처방' })).toHaveAttribute('data-state', 'active');
+    await expect(page.getByRole('tab', { name: '작성한 메모' })).toHaveAttribute('data-state', 'active');
     await expect(page.getByRole('button', { name: new RegExp(`${chosenEpisode === '41' ? '아침' : '저녁'} 처방 .*접기`) })).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByText('저장한 새 메모')).toBeVisible();
     await page.getByRole('button', { name: '뒤로 가기' }).click();
@@ -140,7 +140,7 @@ test('새 메모 화면을 새로고침한 뒤 저장해도 저장한 처방 필
   await page.getByLabel('건강상태 기록').fill('새로고침 후 저장');
   await page.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page).toHaveURL('/medications/notes?episodeId=42');
-  await expect(page.getByRole('tab', { name: '메모 있는 처방' })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('tab', { name: '작성한 메모' })).toHaveAttribute('data-state', 'active');
   await page.getByRole('button', { name: '뒤로 가기' }).click();
   await expect(page).toHaveURL('/medications');
 });
@@ -171,7 +171,7 @@ for (const status of ['COMPLETED', 'CANCELLED']) {
     });
     await openNewNote(page, '41', true, '지난 처방');
     await expect(page.getByLabel('처방', { exact: true })).toHaveValue('41');
-    await expect(page.getByLabel('약', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('약', { exact: true })).toHaveCount(0);
     await expect(page.getByLabel('건강상태 기록')).toHaveValue('');
     await page.getByLabel('복용 일시').fill('2025-01-03T09:00');
     await page.getByLabel('건강상태 기록').fill('과거 처방에 작성한 새 메모');

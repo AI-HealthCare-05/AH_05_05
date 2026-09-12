@@ -19,7 +19,7 @@ async function delayFirstMockResponse(page: Page) {
 }
 
 async function openRecordedPrescriptions(page: Page) {
-  await page.getByRole('tab', { name: '메모 있는 처방' }).click();
+  await page.getByRole('tab', { name: '작성한 메모' }).click();
   await expect(page.getByRole('button', { name: /감기 처방.*펼치기/ })).toBeVisible();
 }
 
