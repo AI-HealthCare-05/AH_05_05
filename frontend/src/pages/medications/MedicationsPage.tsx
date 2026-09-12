@@ -399,6 +399,42 @@ export function MedicationsPage({
     );
   }
 
+  function renderListActions(className: string) {
+    return (
+      <div className={className}>
+        <Button
+          fullWidth={false}
+          variant="secondary"
+          className="self-start"
+          onClick={() => navigate('/document-upload')}
+        >
+          <Plus aria-hidden className="mr-1 size-4" />
+          처방 추가
+        </Button>
+        {selectionMode ? (
+          <Button
+            fullWidth={false}
+            variant="danger"
+            disabled={selectedRecordIds.size === 0}
+            onClick={openDeleteConfirmation}
+          >
+            삭제
+          </Button>
+        ) : (
+          <button
+            type="button"
+            className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setSelectionMode(true)}
+          >
+            선택
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const hasLoadedFeatureEpisodes = feature252 && !loadError && overviews && overviews.length > 0;
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
       <Header
@@ -448,35 +484,8 @@ export function MedicationsPage({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Button
-            fullWidth={false}
-            variant="secondary"
-            className="self-start"
-            onClick={() => navigate('/document-upload')}
-          >
-            <Plus aria-hidden className="mr-1 size-4" />
-            처방 추가
-          </Button>
-          {selectionMode ? (
-            <Button
-              fullWidth={false}
-              variant="danger"
-              disabled={selectedRecordIds.size === 0}
-              onClick={openDeleteConfirmation}
-            >
-              삭제
-            </Button>
-          ) : (
-            <button
-              type="button"
-              className="min-h-touch px-2 text-sm font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setSelectionMode(true)}
-            >
-              선택
-            </button>
-          )}
-        </div>
+        {!hasLoadedFeatureEpisodes &&
+          renderListActions('flex flex-wrap items-center justify-between gap-2')}
 
         {loadError ? (
           <Card title="복용약을 불러오지 못했어요" className="p-5">
@@ -503,11 +512,14 @@ export function MedicationsPage({
         ) : feature252 ? (
           <>
             <section className="flex flex-col gap-3 motion-safe:animate-[rx-overlay-in_200ms_ease-out]" aria-labelledby="active-episode-list-title">
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
-                  복용 중
-                </h2>
-                <span className="text-sm text-muted-foreground tnum">{activeOverviews.length}개</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex shrink-0 items-baseline gap-2">
+                  <h2 id="active-episode-list-title" className="text-xl font-bold text-foreground">
+                    복용 중
+                  </h2>
+                  <span className="text-sm text-muted-foreground tnum">{activeOverviews.length}개</span>
+                </div>
+                {renderListActions('flex shrink-0 items-center gap-2')}
               </div>
               {activeOverviews.map(renderEpisodeCard)}
             </section>

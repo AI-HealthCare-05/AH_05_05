@@ -19,7 +19,9 @@
    - 터치 영역은 브라우저의 `pinch-zoom`을 허용하지만 실제 물리 pinch 제스처는 자동화 검증 범위에 포함하지 않았다.
 5. [복약 상단 버튼 영역](https://app.notion.com/p/3d97226115e78040862fd97600c127a8) — **fixed**
    - `AI 보고서 받기`는 주 동작, `처방 추가`는 보조 동작으로 시각적으로 구분했다.
+   - 목록을 불러온 뒤 `복용 중 N개`는 왼쪽, `처방 추가`와 `선택`/`삭제`는 오른쪽의 같은 행에 둔다.
    - 유휴 `선택`, 선택 중 `삭제`, 헤더 `취소` 경로를 제공하고 삭제 버튼은 항목 선택 전 비활성화했다.
+   - 로딩·오류·빈 상태의 독립 액션과 완료 목록 섹션은 기존 구조를 유지한다.
    - 상단 `복약 메모` 버튼의 카드 그림자를 보존했다.
 6. [복약 아침/점심/저녁 색상](https://app.notion.com/p/3d97226115e780588f8feab165166ef6) — **fixed / superseded**
    - 확정안대로 50:50 중간톤 시간대 점, 헤더 범례, `복용 중` 스티커를 유지했다.
@@ -48,11 +50,12 @@
 
 ## 검증과 화면
 
-- #430 전용 E2E: 375/390/1280px 포함 12개 통과
+- #430 전용 E2E: 375/390/1280px 포함 14개 통과
 - 복약/OCR 실 API 모드 집중 회귀: 18개 통과
 - 선택/보고서 목업 모드 집중 회귀: 6개 통과
 - 기존 #353 편집·선택 회귀: 1개 통과
+- 상단 한 행 정렬 후 실 API 선택·삭제 회귀 4개 및 카드 편집·선택 분리 회귀 1개 통과
 - TypeScript `tsc --noEmit` 통과
-- 화면: `frontend/test-results/430-zoom-review-green/*/ocr-preview-zoom-*.png` 및 기존 홈/복약 캡처
+- 화면: `frontend/test-results/430-zoom-review-green/*/ocr-preview-zoom-*.png`, `frontend/test-results/430-toolbar-final/*/medication-toolbar-*.png`, `medication-selection-*.png` 및 기존 홈/복약 캡처
 
 화면 캡처는 테스트 fixture만 사용하며 커밋하지 않는다.

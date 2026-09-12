@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from 'playwright/test';
+import { expect, test, type Locator, type Page, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
 
@@ -238,29 +238,56 @@ for (const width of [375, 390, 1280]) {
   });
 }
 
-test('복약 상단은 처방 추가와 선택을 구분하고 선택 중 삭제와 취소 경로를 제공한다', async ({ page }, testInfo) => {
-  await routeApp(page);
-  await page.goto('/medications');
+for (const width of [375, 390, 1280]) {
+  test(`복약 상단은 복용 중 개수와 처방 추가·선택/삭제를 한 행에 둔다 (${width}px)`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await routeApp(page);
+    await page.goto('/medications');
 
-  const report = page.getByRole('button', { name: 'AI 보고서 받기' });
-  const add = page.getByRole('button', { name: '처방 추가' });
-  const select = page.getByRole('button', { name: '선택', exact: true });
-  await expect(select).toBeVisible();
-  expect(await report.evaluate((element) => getComputedStyle(element).backgroundColor))
-    .not.toBe(await add.evaluate((element) => getComputedStyle(element).backgroundColor));
+    const report = page.getByRole('button', { name: 'AI 보고서 받기' });
+    const activeSection = page.getByRole('region', { name: '복용 중' });
+    const heading = activeSection.getByRole('heading', { name: '복용 중', exact: true });
+    const count = activeSection.getByText('2개', { exact: true });
+    const add = page.getByRole('button', { name: '처방 추가' });
+    const select = page.getByRole('button', { name: '선택', exact: true });
+    await expect(select).toBeVisible();
+    await expect(add).toHaveCount(1);
+    expect(await report.evaluate((element) => getComputedStyle(element).backgroundColor))
+      .not.toBe(await add.evaluate((element) => getComputedStyle(element).backgroundColor));
 
-  await select.click();
-  await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
-  const remove = page.getByRole('button', { name: '삭제', exact: true });
-  await expect(remove).toBeDisabled();
-  await page.getByRole('checkbox', { name: /2026년 9월 10일 처방 선택/ }).check();
-  await expect(remove).toBeEnabled();
-  await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('medication-selection-375.png'), fullPage: true });
-  await page.getByRole('button', { name: '취소', exact: true }).click();
-  await expect(page.getByRole('checkbox')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
-});
+    const expectSameRow = async (action: Locator) => {
+      const [headingBox, countBox, addBox, actionBox] = await Promise.all([
+        heading.boundingBox(),
+        count.boundingBox(),
+        add.boundingBox(),
+        action.boundingBox(),
+      ]);
+      for (const box of [headingBox, countBox, addBox, actionBox]) expect(box).not.toBeNull();
+      const centers = [headingBox!, countBox!, addBox!, actionBox!]
+        .map((box) => box.y + box.height / 2);
+      expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(4);
+      expect(countBox!.x).toBeGreaterThanOrEqual(headingBox!.x + headingBox!.width);
+      expect(countBox!.x - (headingBox!.x + headingBox!.width)).toBeLessThanOrEqual(12);
+      expect(actionBox!.x).toBeGreaterThan(addBox!.x + addBox!.width - 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    };
+
+    await expectSameRow(select);
+    await page.screenshot({ path: testInfo.outputPath(`medication-toolbar-${width}.png`), fullPage: true });
+    await select.click();
+    await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
+    const remove = page.getByRole('button', { name: '삭제', exact: true });
+    await expect(remove).toBeDisabled();
+    await expectSameRow(remove);
+    await page.getByRole('checkbox', { name: /2026년 9월 10일 처방 선택/ }).check();
+    await expect(remove).toBeEnabled();
+    await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`medication-selection-${width}.png`), fullPage: true });
+    await page.getByRole('button', { name: '취소', exact: true }).click();
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
+  });
+}
 
 for (const width of [390, 1280]) {
   test(`복용 중 카드의 시간대 범례와 중간톤 점을 유지한다 (${width}px)`, async ({ page }, testInfo) => {
