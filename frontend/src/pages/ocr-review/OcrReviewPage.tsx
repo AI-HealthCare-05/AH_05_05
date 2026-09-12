@@ -1,5 +1,5 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import { AlertTriangle, Pencil, Plus } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { AlertTriangle, Pencil, Plus, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { formatMedicationDoseQuantity, formatMedicationLabel, formatMedicationStrength } from '@/shared/lib/medicationLabel';
@@ -20,6 +20,7 @@ import {
   Button,
   Card,
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -27,7 +28,6 @@ import {
   DialogTitle,
   ErrorDialog,
   Header,
-  ImageViewer,
   Input,
   RxVitaFeatureCarousel,
   RegistrationProgress,
@@ -947,49 +947,183 @@ export function OcrReviewPage() {
         onCancel={() => setReviewConfirmOpen(false)}
       />
       {(processedImageUrl || originalImageUrl) && (
-        <ImageViewer
+        <OcrEnvelopeImageViewer
           open={imageViewerOpen}
-          src={
-            imageView === 'processed'
-              ? (processedImageUrl ?? originalImageUrl ?? '')
-              : (originalImageUrl ?? processedImageUrl ?? '')
-          }
-          title="약봉투 이미지 크게 보기"
-          alt={imageView === 'processed' ? '확대한 약봉투' : '확대한 약봉투 원본'}
-          toolbar={
-            <div
-              role="group"
-              aria-label="약봉투 이미지 보기"
-              className="flex rounded-full bg-background/95 p-1 shadow-card"
-            >
-              <button
-                type="button"
-                aria-pressed={imageView === 'processed'}
-                disabled={!processedImageUrl}
-                className={`min-h-10 rounded-full px-4 text-sm font-bold disabled:opacity-40 ${
-                  imageView === 'processed' ? 'bg-primary text-primary-foreground' : 'text-foreground'
-                }`}
-                onClick={() => setImageView('processed')}
-              >
-                선명하게 보기
-              </button>
-              <button
-                type="button"
-                aria-pressed={imageView === 'original'}
-                disabled={!originalImageUrl}
-                className={`min-h-10 rounded-full px-4 text-sm font-bold disabled:opacity-40 ${
-                  imageView === 'original' ? 'bg-primary text-primary-foreground' : 'text-foreground'
-                }`}
-                onClick={() => setImageView('original')}
-              >
-                원본 보기
-              </button>
-            </div>
-          }
+          imageView={imageView}
+          processedImageUrl={processedImageUrl}
+          originalImageUrl={originalImageUrl}
+          onImageViewChange={setImageView}
           onOpenChange={setImageViewerOpen}
         />
       )}
     </div>
+  );
+}
+
+const OCR_PREVIEW_ZOOM_LEVELS = [1, 1.5, 2, 3] as const;
+
+function OcrEnvelopeImageViewer({
+  open,
+  imageView,
+  processedImageUrl,
+  originalImageUrl,
+  onImageViewChange,
+  onOpenChange,
+}: {
+  open: boolean;
+  imageView: 'processed' | 'original';
+  processedImageUrl: string | null;
+  originalImageUrl: string | null;
+  onImageViewChange: (view: 'processed' | 'original') => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [zoomIndex, setZoomIndex] = useState(0);
+  const [fittedSize, setFittedSize] = useState<{ width: number; height: number } | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const src = imageView === 'processed'
+    ? (processedImageUrl ?? originalImageUrl ?? '')
+    : (originalImageUrl ?? processedImageUrl ?? '');
+  const zoom = OCR_PREVIEW_ZOOM_LEVELS[zoomIndex];
+  const scaledSize = fittedSize
+    ? { width: fittedSize.width * zoom, height: fittedSize.height * zoom }
+    : null;
+
+  function measureFittedSize() {
+    const area = scrollAreaRef.current;
+    const image = imageRef.current;
+    if (!area || !image || image.naturalWidth === 0 || image.naturalHeight === 0) return;
+    const areaBox = area.getBoundingClientRect();
+    const fit = Math.min(
+      areaBox.width / image.naturalWidth,
+      areaBox.height / image.naturalHeight,
+      1,
+    );
+    const next = {
+      width: image.naturalWidth * fit,
+      height: image.naturalHeight * fit,
+    };
+    setFittedSize((current) =>
+      current &&
+      Math.abs(current.width - next.width) < 0.5 &&
+      Math.abs(current.height - next.height) < 0.5
+        ? current
+        : next,
+    );
+  }
+
+  useEffect(() => {
+    if (open) {
+      setZoomIndex(0);
+      setFittedSize(null);
+    }
+  }, [imageView, open, src]);
+
+  useLayoutEffect(() => {
+    if (!open || !scrollAreaRef.current) return undefined;
+    measureFittedSize();
+    const observer = new ResizeObserver(measureFittedSize);
+    observer.observe(scrollAreaRef.current);
+    return () => observer.disconnect();
+  }, [open, src]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="inset-0 left-0 top-0 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col overflow-hidden rounded-none border-0 bg-foreground p-4"
+      >
+        <DialogTitle className="sr-only">약봉투 이미지 크게 보기</DialogTitle>
+        <div className="relative flex min-h-12 shrink-0 items-center justify-center pr-14 sm:px-14">
+          <div
+            role="group"
+            aria-label="약봉투 이미지 보기"
+            className="flex max-w-full rounded-full bg-background/95 p-1 shadow-card"
+          >
+            <button
+              type="button"
+              aria-pressed={imageView === 'processed'}
+              disabled={!processedImageUrl}
+              className={`min-h-touch rounded-full px-3 text-xs font-bold disabled:opacity-40 sm:px-4 sm:text-sm ${
+                imageView === 'processed' ? 'bg-primary text-primary-foreground' : 'text-foreground'
+              }`}
+              onClick={() => onImageViewChange('processed')}
+            >
+              선명하게 보기
+            </button>
+            <button
+              type="button"
+              aria-pressed={imageView === 'original'}
+              disabled={!originalImageUrl}
+              className={`min-h-touch rounded-full px-3 text-xs font-bold disabled:opacity-40 sm:px-4 sm:text-sm ${
+                imageView === 'original' ? 'bg-primary text-primary-foreground' : 'text-foreground'
+              }`}
+              onClick={() => onImageViewChange('original')}
+            >
+              원본 보기
+            </button>
+          </div>
+          <DialogClose
+            aria-label="닫기"
+            className="absolute right-0 top-0 flex size-12 items-center justify-center rounded-full bg-white text-slate-900 shadow-lg transition-colors hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+          >
+            <X className="size-7" strokeWidth={2.5} aria-hidden />
+          </DialogClose>
+        </div>
+
+        <div
+          ref={scrollAreaRef}
+          role="region"
+          tabIndex={0}
+          aria-label="확대한 약봉투 이동 영역"
+          className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
+        >
+          <div
+            className="grid min-h-full min-w-full place-items-center"
+            style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
+          >
+            <img
+              ref={imageRef}
+              src={src}
+              alt={imageView === 'processed' ? '확대한 약봉투' : '확대한 약봉투 원본'}
+              draggable={false}
+              className={scaledSize ? 'block max-w-none object-contain' : 'max-h-full w-auto max-w-full object-contain'}
+              style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
+              onLoad={measureFittedSize}
+            />
+          </div>
+        </div>
+
+        <div
+          role="group"
+          aria-label="이미지 확대 축소"
+          className="mx-auto flex min-h-12 shrink-0 items-center gap-1 rounded-full bg-background/95 p-1 text-foreground shadow-card"
+        >
+          <button
+            type="button"
+            aria-label="축소"
+            disabled={zoomIndex === 0}
+            className="flex size-touch items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setZoomIndex((index) => Math.max(0, index - 1))}
+          >
+            <ZoomOut aria-hidden className="size-5" />
+          </button>
+          <span role="status" aria-label="확대 비율" className="min-w-14 text-center text-sm font-bold tnum">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            aria-label="확대"
+            disabled={zoomIndex === OCR_PREVIEW_ZOOM_LEVELS.length - 1}
+            className="flex size-touch items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setZoomIndex((index) => Math.min(OCR_PREVIEW_ZOOM_LEVELS.length - 1, index + 1))}
+          >
+            <ZoomIn aria-hidden className="size-5" />
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

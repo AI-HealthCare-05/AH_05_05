@@ -267,9 +267,8 @@ test('복약 액션은 간결한 라벨과 완료 badge를 사용하고 되돌�
   await expect(selectionGlyph).toHaveClass(/border-2/);
   await expect(selectionGlyph.locator('svg')).toHaveCount(0);
   const completedSummary = timeline.locator('[data-medication-completed-summary]');
-  await expect(completedSummary).toHaveAttribute('aria-hidden', 'true');
-  await expect(completedSummary).toHaveText('복용 완료');
-  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(completedSummary).toHaveCount(0);
+  await expect(firstEpisode.locator('[data-episode-completed-badge]')).toHaveText('복용 완료');
 
   const undo = detail.getByRole('button', { name: '복약 기록 되돌리기' });
   await expect(undo).toBeVisible();
@@ -359,8 +358,8 @@ test('회차별 복약 액션은 첫 회차 완료 뒤에도 선택한 다음 �
   await expect(activeAction).toHaveClass(/bg-primary/);
   await activeAction.click();
   await expect(second.getByRole('button', { name: /8월 24일 처방 복용 완료/ })).toBeVisible();
-  await expect(page.getByRole('region', { name: '오늘의 복약' }).locator('[data-medication-completed-summary]')).toHaveCount(1);
-  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '오늘의 복약' }).locator('[data-medication-completed-summary]')).toHaveCount(0);
+  await expect(detail.locator('[data-episode-completed-badge]')).toHaveCount(2);
   const completedAction = detail.getByRole('button', { name: '복약 기록 되돌리기' });
   await expect(completedAction).toBeDisabled();
   await second.getByRole('button', { name: /8월 24일 처방.*복용 완료/ }).click();
