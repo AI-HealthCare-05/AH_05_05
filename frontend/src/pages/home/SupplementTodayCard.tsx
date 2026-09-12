@@ -73,7 +73,7 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
         <LoadingState label="영양제 복용 정보 불러오는 중">
           영양제 복용 정보를 불러오는 중이에요.
         </LoadingState>
-      ) : scheduled.length === 0 ? (
+      ) : supplements.length === 0 ? (
         <Card title="오늘의 영양제" className="gap-4 bg-primary-bg p-5">
           <p className="text-sm text-muted-foreground">
             영양제를 등록하시면 시간에 맞춰 알림을 받으실 수 있어요.
@@ -95,11 +95,6 @@ export function SupplementTodayCard({ supplements, date, loading, loadError, onR
           )}
         </TimeSlotNavigator>
       ) : null}
-      {scheduled.length > 0 && (
-        <Button fullWidth={false} variant="secondary" className="self-end" onClick={onBrowse}>
-          영양제 살펴보기
-        </Button>
-      )}
     </section>
   );
 }
