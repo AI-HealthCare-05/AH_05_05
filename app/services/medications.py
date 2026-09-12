@@ -287,16 +287,24 @@ class MedicationService:
         medication_rows = (
             await Medication.filter(care_episode_id__in=episode_ids)
             .order_by("care_episode_id", "id")
-            .values("care_episode_id", "name")
+            .values("id", "care_episode_id", "name", "strength")
             if episode_ids
             else []
         )
         representative_medication_names: dict[int, str] = {}
         medication_counts: dict[int, int] = {}
+        medications_by_episode: dict[int, list[MedicationNoteMedicationResponse]] = {}
         for medication_row in medication_rows:
             episode_id = medication_row["care_episode_id"]
             representative_medication_names.setdefault(episode_id, medication_row["name"])
             medication_counts[episode_id] = medication_counts.get(episode_id, 0) + 1
+            medications_by_episode.setdefault(episode_id, []).append(
+                MedicationNoteMedicationResponse(
+                    id=medication_row["id"],
+                    name=medication_row["name"],
+                    dose=medication_row["strength"],
+                )
+            )
 
         note_counts: dict[int, int] = {}
         if include_without_notes and episode_ids:
@@ -322,6 +330,7 @@ class MedicationService:
                 representative_medication_name=representative_medication_names.get(row["id"]),
                 medication_count=medication_counts.get(row["id"], 0),
                 **({"note_count": note_counts.get(row["id"], 0)} if include_without_notes else {}),
+                **({"medications": medications_by_episode.get(row["id"], [])} if include_without_notes else {}),
             )
             for row in rows
         ]

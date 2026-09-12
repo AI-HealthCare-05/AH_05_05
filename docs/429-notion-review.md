@@ -6,6 +6,7 @@
 - 상태: **fixed**
 - `복용시 건강상태 변화를 기록해 보세요.`, `건강상태 기록`, 상담 활용 안내 문구로 변경했다.
 - 새 메모는 처방을 고른 뒤에도 `처방 전체`가 기본값이고, 사용자가 원할 때만 개별 약을 고른다.
+- 작성 폼은 같은 opt-in 처방 인벤토리의 약 목록을 사용하므로 overview 날짜 범위 밖의 활성 처방과 완료 처방도 첫 메모를 작성할 수 있다.
 - 화면: `/medications/notes/new`, `/medications/notes/:noteId`
 
 ## 복약 메모 > 개선
@@ -16,6 +17,8 @@
 - `메모 없는 처방`과 `메모 있는 처방` 탭을 처방별 아코디언으로 구성했다.
 - `includeWithoutNotes=true` 처방 인벤토리의 `noteCount`로 분류하므로 아직 로드하지 않은 메모 페이지 때문에 무메모로 오판하지 않는다.
 - 메모 본문은 아코디언을 펼칠 때 해당 `episodeId`만 조회하며, 처방별 커서 페이지네이션·빈 상태·오류·재시도를 유지한다.
+- URL 딥링크 초기화는 인벤토리 세대마다 한 번만 적용해 사용자가 접은 뒤 늦게 도착한 성공·오류 응답이 아코디언을 다시 열지 않는다.
+- 처방 인벤토리가 비어 있으면 `등록된 처방이 없어요.`로 안내하고, 실제 처방이 모두 기록됐을 때만 모든 처방에 기록이 있다고 안내한다.
 - 화면: `/medications/notes`
 
 ## 복약 메모 > 처방 약명 표기
@@ -39,7 +42,8 @@
 
 ## 검증
 
-- `frontend/tests/e2e/429-medication-note-tabs.spec.ts`: 권위 있는 탭 분류, 20개 초과 처방별 페이지네이션, 첫 작성/마지막 삭제 탭 전환, 헤더 작성 버튼, 처방 전체 기본값, 약명, 상세 삭제.
+- `frontend/tests/e2e/429-medication-note-tabs.spec.ts`: 권위 있는 탭 분류, 20개 초과 처방별 페이지네이션, 첫 작성/마지막 삭제 탭 전환, 완료·overview 누락 활성 처방의 첫 작성, 늦은 응답 후 접힘 유지, 빈 인벤토리, 처방 전체 기본값, 약명, 상세 삭제.
+- `frontend/tests/e2e/353-note-*.spec.ts`: 폐기된 select·목록 일괄삭제 전제를 탭·아코디언·상세삭제 계약으로 이관하고 딥링크, 저장/취소/뒤로가기, 세션 세대, 오류/재시도, 중복 처방 구분을 보존한다.
 - `frontend/tests/e2e/310-medication-note-collection.spec.ts`: mock 데이터의 여러 줄 본문, 처방별 페이지네이션, 늦은 응답 격리를 새 아코디언 계약으로 회귀 검증.
-- `app/tests/med_apis/test_medication_note_episode_options_sqlite.py`: 기본 응답 호환, 사용자 소유권, 활성·완료 무메모 포함, 취소 무메모 제외, 메모 수 집계.
+- `app/tests/med_apis/test_medication_note_episode_options_sqlite.py`: 기본 응답 호환, 사용자 소유권, 활성·완료 무메모 포함, 취소 무메모 제외, 메모 수와 작성 가능한 약 인벤토리 집계.
 - Playwright 375px 및 1280px 스크린샷을 테스트 산출물로 검토한다.

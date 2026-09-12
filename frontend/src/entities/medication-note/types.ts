@@ -37,6 +37,8 @@ export interface MedicationNoteEpisode {
   medicationCount?: number;
   /** includeWithoutNotes=true일 때만 내려오는 사용자 소유 메모 수 */
   noteCount?: number;
+  /** includeWithoutNotes=true일 때만 내려오는 작성 대상 약 목록 */
+  medications?: MedicationNoteMedication[];
 }
 
 export interface MedicationNoteListParams {

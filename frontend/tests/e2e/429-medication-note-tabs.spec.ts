@@ -225,3 +225,93 @@ test('메모 삭제는 목록이 아니라 수정 상세의 확인 절차에서 
   await expect(page.getByRole('tab', { name: '메모 없는 처방' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('button', { name: /저녁 감기 처방.*접기/ })).toBeVisible();
 });
+
+for (const response of ['success', 'error'] as const) {
+  test(`메모 첫 페이지 ${response} 응답 전에 접은 처방은 응답 후에도 닫혀 있다`, async ({ page }) => {
+    let releaseResponse!: () => void;
+    const responseCanFinish = new Promise<void>((resolve) => { releaseResponse = resolve; });
+    let requested = false;
+    await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, (route) => fulfillJson(route, [
+      { careEpisodeId: 103, alias: '저녁 감기 처방', startDate: '2026-09-10', status: 'ACTIVE', noteCount: 1 },
+    ]));
+    await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, async (route) => {
+      requested = true;
+      await responseCanFinish;
+      if (response === 'error') return fulfillJson(route, { message: '조회 실패' }, 500);
+      return fulfillJson(route, { items: [note], total: 1, nextCursor: null });
+    });
+
+    await page.goto('/medications/notes?episodeId=103');
+    await expect.poll(() => requested).toBe(true);
+    await page.getByRole('button', { name: /저녁 감기 처방.*접기/ }).click();
+    await expect(page.getByRole('button', { name: /저녁 감기 처방.*펼치기/ })).toBeVisible();
+    releaseResponse();
+
+    await page.waitForTimeout(100);
+    await expect(page.getByRole('button', { name: /저녁 감기 처방.*펼치기/ })).toBeVisible();
+    await expect(page.getByText('열이 내려가고 잠이 잘 왔어요.')).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  });
+}
+
+for (const episodeStatus of ['ACTIVE', 'COMPLETED'] as const) {
+  test(`${episodeStatus} 무메모 처방이 overview에 없어도 처방 전체로 첫 메모를 작성한다`, async ({ page }) => {
+    let created = false;
+    let postedPayload: Record<string, unknown> | null = null;
+    const inventoryEpisode = {
+      careEpisodeId: 777,
+      alias: episodeStatus === 'ACTIVE' ? '범위 밖 활성 처방' : '지난 완료 처방',
+      startDate: '2024-01-01',
+      status: episodeStatus,
+      representativeMedicationName: '원제품명정50mg',
+      medicationCount: 1,
+      noteCount: created ? 1 : 0,
+      medications: [{ id: 7077, name: '원제품명정50mg', dose: '50mg' }],
+    };
+    const createdNote = {
+      ...note,
+      id: 9777,
+      careEpisodeId: 777,
+      careEpisodeAlias: inventoryEpisode.alias,
+      careEpisodeStartDate: inventoryEpisode.startDate,
+      careEpisodeStatus: episodeStatus,
+      availableMedications: inventoryEpisode.medications,
+      dosedAt: '2024-01-02T09:00:00',
+      body: '첫 건강상태 기록',
+    };
+    await page.route('**/api/v1/medications', (route) => fulfillJson(route, []));
+    await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, (route) => fulfillJson(route, [{
+      ...inventoryEpisode,
+      noteCount: created ? 1 : 0,
+    }]));
+    await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, (route) => {
+      if (route.request().method() === 'POST') {
+        postedPayload = route.request().postDataJSON() as Record<string, unknown>;
+        created = true;
+        return fulfillJson(route, createdNote, 201);
+      }
+      return fulfillJson(route, { items: created ? [createdNote] : [], total: created ? 1 : 0, nextCursor: null });
+    });
+
+    await page.goto('/medications/notes');
+    await page.getByRole('button', { name: new RegExp(`${inventoryEpisode.alias}.*펼치기`) }).click();
+    await page.getByRole('button', { name: '이 처방에 메모 작성' }).click();
+    await expect(page.getByLabel('처방', { exact: true })).toHaveValue('777');
+    await expect(page.getByLabel('약', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('약', { exact: true }).locator('option')).toHaveText(['처방 전체', '원제품명정50mg']);
+    await page.getByLabel('복용 일시').fill('2024-01-02T09:00');
+    await page.getByLabel('건강상태 기록').fill('첫 건강상태 기록');
+    await page.getByRole('button', { name: '저장', exact: true }).click();
+
+    await expect.poll(() => postedPayload).not.toBeNull();
+    expect(postedPayload).toMatchObject({ careEpisodeId: 777, body: '첫 건강상태 기록' });
+    expect(postedPayload).not.toHaveProperty('medicationId');
+  });
+}
+
+test('처방 인벤토리가 비어 있으면 등록된 처방이 없다고 안내한다', async ({ page }) => {
+  await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, (route) => fulfillJson(route, []));
+  await page.goto('/medications/notes');
+  await expect(page.getByText('등록된 처방이 없어요.')).toBeVisible();
+  await expect(page.getByText('모든 처방에 건강상태 기록이 있어요.')).toHaveCount(0);
+});

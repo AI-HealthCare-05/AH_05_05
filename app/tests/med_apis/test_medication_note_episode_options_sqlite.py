@@ -224,8 +224,16 @@ async def test_note_episode_options_can_include_owned_active_and_completed_episo
         start_date=date(2026, 9, 7),
         episode_status=CareEpisodeStatus.ACTIVE,
     )
-    await Medication.create(care_episode=active_without_note, name="현재 처방 약")
-    await Medication.create(care_episode=completed_without_note, name="종료 처방 약")
+    active_medication = await Medication.create(
+        care_episode=active_without_note,
+        name="현재 처방 약50mg",
+        strength="50mg",
+    )
+    completed_medication = await Medication.create(
+        care_episode=completed_without_note,
+        name="종료 처방 약10mg",
+        strength="10mg",
+    )
     await Medication.create(care_episode=active_with_note, name="기록 처방 약")
     await create_note(owner, active_with_note, "기록 1")
     await create_note(owner, active_with_note, "기록 2")
@@ -248,8 +256,10 @@ async def test_note_episode_options_can_include_owned_active_and_completed_episo
         cancelled_with_note.id,
     ]
     assert [item["noteCount"] for item in items] == [0, 0, 2, 1]
-    assert items[0]["representativeMedicationName"] == "현재 처방 약"
-    assert items[1]["representativeMedicationName"] == "종료 처방 약"
+    assert items[0]["representativeMedicationName"] == "현재 처방 약50mg"
+    assert items[0]["medications"] == [{"id": active_medication.id, "name": "현재 처방 약50mg", "dose": "50mg"}]
+    assert items[1]["representativeMedicationName"] == "종료 처방 약10mg"
+    assert items[1]["medications"] == [{"id": completed_medication.id, "name": "종료 처방 약10mg", "dose": "10mg"}]
     assert cancelled_without_note.id not in {item["careEpisodeId"] for item in items}
     assert other_episode.id not in {item["careEpisodeId"] for item in items}
     assert empty_draft.id not in {item["careEpisodeId"] for item in items}

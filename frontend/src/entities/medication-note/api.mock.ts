@@ -169,6 +169,7 @@ export function mockListMedicationNoteEpisodes(
       representativeMedicationName: representative?.name ?? null,
       medicationCount: note.availableMedications.length,
       ...(options.includeWithoutNotes ? { noteCount: 1 } : {}),
+      ...(options.includeWithoutNotes ? { medications: note.availableMedications } : {}),
     });
   }
   if (options.includeWithoutNotes) {
@@ -182,6 +183,11 @@ export function mockListMedicationNoteEpisodes(
         representativeMedicationName: overview.medications[0]?.name ?? null,
         medicationCount: overview.medications.length,
         noteCount: 0,
+        medications: overview.medications.map((medication) => ({
+          id: medication.medicationId,
+          name: medication.name,
+          dose: medication.dose || null,
+        })),
       });
     }
   }

@@ -5,9 +5,11 @@ import {
   createMedicationNote,
   deleteMedicationNote,
   getMedicationNote,
+  listMedicationNoteEpisodes,
   listMedicationNotes,
   updateMedicationNote,
   type MedicationNote,
+  type MedicationNoteEpisode,
   type MedicationNoteMedication,
 } from '@/entities/medication-note';
 import {
@@ -117,6 +119,17 @@ function episodeFromNote(note: MedicationNote): NoteEpisodeOption {
   };
 }
 
+function episodeFromInventory(episode: MedicationNoteEpisode): NoteEpisodeOption {
+  return {
+    id: episode.careEpisodeId,
+    alias: episode.alias,
+    startDate: episode.startDate,
+    firstDoseAt: null,
+    status: episode.status,
+    medications: episode.medications ?? [],
+  };
+}
+
 export function MedicationNoteFormPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -173,8 +186,11 @@ export function MedicationNoteFormPage() {
       ? getMedicationNote(decodeURIComponent(noteId))
       : Promise.resolve(null);
     const overviewRequest = getMedicationOverviews();
-    Promise.allSettled([noteRequest, overviewRequest])
-      .then(async ([noteResult, overviewResult]) => {
+    const inventoryRequest = editing
+      ? Promise.resolve([])
+      : listMedicationNoteEpisodes({ includeWithoutNotes: true });
+    Promise.allSettled([noteRequest, overviewRequest, inventoryRequest])
+      .then(async ([noteResult, overviewResult, inventoryResult]) => {
         if (cancelled) return;
         if (noteResult.status === 'rejected') {
           setInitialLoadError(
@@ -189,13 +205,25 @@ export function MedicationNoteFormPage() {
           setInitialLoadError('복약 메모를 찾지 못했어요.');
           return;
         }
-        const activeEpisodes = overviewResult.status === 'fulfilled'
+        const overviewEpisodes = overviewResult.status === 'fulfilled'
           ? overviewResult.value
               .filter((overview) => overview.medications.length > 0)
               .map(episodeFromOverview)
           : [];
+        const inventoryEpisodes = inventoryResult.status === 'fulfilled'
+          ? inventoryResult.value
+              .filter((episode) => (episode.medications?.length ?? 0) > 0)
+              .map(episodeFromInventory)
+          : [];
+        const overviewById = new Map(overviewEpisodes.map((episode) => [episode.id, episode]));
+        const availableEpisodes = [
+          ...inventoryEpisodes.map((episode) => overviewById.get(episode.id) ?? episode),
+          ...overviewEpisodes.filter(
+            (episode) => !inventoryEpisodes.some((inventory) => inventory.id === episode.id),
+          ),
+        ];
         if (!loadedNote && initialEpisodeId !== undefined &&
-          !activeEpisodes.some((episode) => episode.id === initialEpisodeId)) {
+          !availableEpisodes.some((episode) => episode.id === initialEpisodeId)) {
           const referenceNote = referenceNoteId === undefined
             ? (await listMedicationNotes({ episodeId: initialEpisodeId, limit: 1 })).items[0]
             : await getMedicationNote(referenceNoteId);
@@ -203,12 +231,19 @@ export function MedicationNoteFormPage() {
           if (!referenceNote || referenceNote.careEpisodeId !== initialEpisodeId) {
             throw new Error('선택한 처방을 확인하지 못했어요. 목록에서 다시 선택해주세요.');
           }
-          activeEpisodes.unshift(episodeFromNote(referenceNote));
+          availableEpisodes.unshift(episodeFromNote(referenceNote));
         }
-        if (overviewResult.status === 'rejected' && !loadedNote && activeEpisodes.length === 0) {
+        if (
+          overviewResult.status === 'rejected' &&
+          inventoryResult.status === 'rejected' &&
+          !loadedNote &&
+          availableEpisodes.length === 0
+        ) {
           setInitialLoadError(
-            overviewResult.reason instanceof Error
-              ? overviewResult.reason.message
+            inventoryResult.reason instanceof Error
+              ? inventoryResult.reason.message
+              : overviewResult.reason instanceof Error
+                ? overviewResult.reason.message
               : '처방 목록을 불러오지 못했어요.',
           );
           return;
@@ -217,9 +252,9 @@ export function MedicationNoteFormPage() {
         const nextEpisodes = originalEpisode
           ? [
               originalEpisode,
-              ...activeEpisodes.filter((episode) => episode.id !== originalEpisode.id),
+              ...availableEpisodes.filter((episode) => episode.id !== originalEpisode.id),
             ]
-          : activeEpisodes;
+          : availableEpisodes;
         setNote(loadedNote);
         setEpisodes(nextEpisodes);
         const nextForm = { ...initialForm(loadedNote) };

@@ -79,6 +79,7 @@ export function MedicationNotesPage() {
   const [metadataRetryKey, setMetadataRetryKey] = useState(0);
   const [episodePages, setEpisodePages] = useState<Record<number, EpisodePageState>>({});
   const metadataGenerationRef = useRef(0);
+  const appliedUrlSelectionRef = useRef<string | null>(null);
   const episodeRequestGenerationRef = useRef(new Map<number, number>());
   const principalKeyRef = useRef(principalKey);
   principalKeyRef.current = principalKey;
@@ -97,6 +98,7 @@ export function MedicationNotesPage() {
     setNoteEpisodes(null);
     setNoteEpisodesError(null);
     setEpisodePages({});
+    appliedUrlSelectionRef.current = null;
     episodeRequestGenerationRef.current.clear();
 
     void listMedicationNoteEpisodes({ includeWithoutNotes: true })
@@ -172,11 +174,14 @@ export function MedicationNotesPage() {
     if (!selectedEpisodeId || !noteEpisodes) return;
     const selectedEpisode = noteEpisodes.find((episode) => episode.careEpisodeId === selectedEpisodeId);
     if (!selectedEpisode) return;
+    const selectionKey = `${metadataGenerationRef.current}:${selectedEpisodeId}`;
+    if (appliedUrlSelectionRef.current === selectionKey) return;
+    appliedUrlSelectionRef.current = selectionKey;
     const hasNotes = (selectedEpisode.noteCount ?? 0) > 0;
     setTab(hasNotes ? 'withNotes' : 'withoutNotes');
     setExpandedEpisodeId(selectedEpisodeId);
-    if (hasNotes && !episodePages[selectedEpisodeId]) void loadEpisodePage(selectedEpisodeId);
-  }, [episodePages, loadEpisodePage, noteEpisodes, selectedEpisodeId]);
+    if (hasNotes) void loadEpisodePage(selectedEpisodeId);
+  }, [loadEpisodePage, noteEpisodes, selectedEpisodeId]);
 
   const episodesWithNotesIds = useMemo(
     () => new Set(noteEpisodes?.filter((episode) => (episode.noteCount ?? 0) > 0).map((episode) => episode.careEpisodeId) ?? []),
@@ -223,6 +228,7 @@ export function MedicationNotesPage() {
       return;
     }
     setExpandedEpisodeId(id);
+    appliedUrlSelectionRef.current = `${metadataGenerationRef.current}:${id}`;
     setSearchParams({ episodeId: String(id) }, { replace: true, state: location.state });
     if (kind === 'withNotes') {
       if (!episodePages[id]) void loadEpisodePage(id);
@@ -237,14 +243,26 @@ export function MedicationNotesPage() {
   function renderEpisodeHeader(episode: MedicationNoteEpisode, kind: NotesTab) {
     const id = episode.careEpisodeId;
     const expanded = expandedEpisodeId === id;
-    const label = episodeLabel(episode);
+    const baseLabel = episodeLabel(episode);
     const date = episode.startDate;
+    const summary = episodeMedicationSummary(episode);
+    const matchingEpisodes = noteEpisodes?.filter((candidate) =>
+      episodeLabel(candidate) === baseLabel &&
+      candidate.startDate === date &&
+      episodeMedicationSummary(candidate) === summary
+    ) ?? [];
+    const duplicateIndex = matchingEpisodes.findIndex((candidate) => candidate.careEpisodeId === id);
+    const label = matchingEpisodes.length > 1 ? `${baseLabel} · 처방 ${duplicateIndex + 1}` : baseLabel;
+    const details = [
+      date ? formatDateLabel(date, { includeYear: true }) : null,
+      summary,
+    ].filter(Boolean).join(' · ');
     return (
       <button
         type="button"
         aria-expanded={expanded}
         aria-controls={`medication-note-episode-${id}`}
-        aria-label={`${label} ${expanded ? '접기' : '펼치기'}`}
+        aria-label={`${label} · ${details} ${expanded ? '접기' : '펼치기'}`}
         onClick={() => toggleEpisode(episode, kind)}
         className="flex min-h-20 w-full items-center gap-3 rounded-card px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
@@ -270,11 +288,7 @@ export function MedicationNotesPage() {
         {expanded && (
           <div id={`medication-note-episode-${episode.careEpisodeId}`} className="flex flex-col gap-3 border-t border-border px-4 pb-4 pt-3">
             <p className="text-sm text-muted-foreground">이 처방의 건강상태 기록이 아직 없어요.</p>
-            {episode.status === 'ACTIVE' ? (
-              <Button onClick={() => openNewNote(episode.careEpisodeId)}>이 처방에 메모 작성</Button>
-            ) : (
-              <p className="text-sm font-medium text-muted-foreground">복용이 끝난 처방이에요.</p>
-            )}
+            <Button onClick={() => openNewNote(episode.careEpisodeId)}>이 처방에 메모 작성</Button>
           </div>
         )}
       </article>
@@ -390,6 +404,8 @@ export function MedicationNotesPage() {
               </Card>
             ) : noteEpisodes === null ? (
               <div role="status" aria-label="메모 없는 처방 불러오는 중" className="min-h-32 animate-pulse rounded-card bg-muted-bg" />
+            ) : noteEpisodes.length === 0 ? (
+              <Card className="p-5">등록된 처방이 없어요.</Card>
             ) : episodesWithoutNotes.length === 0 ? (
               <Card className="p-5">모든 처방에 건강상태 기록이 있어요.</Card>
             ) : (
