@@ -3,6 +3,7 @@ import { DrawnArrow, DrawnChevron } from '@/shared/ui/DrawnArrow';
 import { Link, useLocation, useNavigate } from 'react-router';
 
 import { useChallengeMock } from '@/features/challenges';
+import { NavigationTabs } from '@/shared/ui';
 import { ChallengePageHeading } from './ChallengePageHeading';
 
 function challengeBase(pathname: string) {
@@ -32,10 +33,13 @@ export function ChallengeBrowsePage() {
     <>
       <ChallengePageHeading />
       <main className="flex flex-col gap-4 px-page-x py-5">
-      <nav aria-label="챌린지 보기" className="grid h-11 grid-cols-2 rounded-input bg-muted-bg p-1">
-        <Link to={base} className="flex items-center justify-center rounded-[9px] text-sm font-medium text-muted-foreground">나의 챌린지</Link>
-        <Link aria-current="page" to={`${base}/browse`} className="flex items-center justify-center rounded-[9px] bg-card text-sm font-bold text-primary shadow-card">둘러보기</Link>
-      </nav>
+      <NavigationTabs
+        label="챌린지 보기"
+        items={[
+          { label: '나의 챌린지', to: base, end: true },
+          { label: '둘러보기', to: `${base}/browse` },
+        ]}
+      />
 
       <Link to={`${base}/tailored`} className="flex min-h-12 items-center justify-between rounded-button border border-primary bg-card px-4 text-sm font-bold text-primary">
         <span>내 기록으로 맞춤 챌린지 보기</span>
