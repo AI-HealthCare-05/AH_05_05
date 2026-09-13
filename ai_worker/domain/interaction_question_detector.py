@@ -47,6 +47,7 @@ def is_interaction_question(question: str) -> bool:
         for pattern in (
             _EXPLICIT_INTERACTION_PATTERN,
             _COADMINISTRATION_PATTERN,
+            _TYPOED_COADMINISTRATION_PATTERN,
             _RELATIONAL_INTAKE_PATTERN,
             _RELATIONAL_AVOIDANCE_PATTERN,
             _INTAKE_CONTEXT_AVOIDANCE_PATTERN,

@@ -57,7 +57,7 @@ class OpenAIMedicationAnswerGenerator:
         re.IGNORECASE,
     )
     _MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s*")
-    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚫|💊|💪🏻|🔁)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
+    _SECTION_HEADER_PATTERN = re.compile(r"^\s*(?P<icon>✅|⚠️|🚨|🚫|💊|💪🏻|🔁)\s*\*\*(?P<title>[^*\n]+)\*\*\s*:?\s*$")
     _BOLD_MARKER_PATTERN = re.compile(r"\*\*(.+?)\*\*")
     _INTERACTION_PAIR_HEADER_PATTERN = re.compile(r"^\*\*(?P<pair>\[[^\]\n]+\])\*\*$")
     _BULLET_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•])\s*")

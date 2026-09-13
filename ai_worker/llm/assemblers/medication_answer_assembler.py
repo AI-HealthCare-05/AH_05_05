@@ -40,6 +40,7 @@ class MedicationAnswerAssembler:
         ingredient_family: SupplementIngredientFamily | None = None,
         unsupported_pairs: list[str] | None = None,
         question_interaction_pairs: list[MedicationInteractionQueryPair] | None = None,
+        active_intake_interaction: bool = False,
         evidence_coverage: MedicationEvidenceCoverage | None = None,
     ) -> str:
         intake_sections = self._patient_intake_sections(context)
@@ -49,79 +50,18 @@ class MedicationAnswerAssembler:
             chunks=chunks,
             interaction_question=interaction_question,
             question_interaction_pairs=question_interaction_pairs or [],
+            active_intake_interaction=active_intake_interaction,
             evidence_coverage=evidence_coverage,
         )
         sections.extend(interaction_sections)
         if guide is not None:
-            covered = self._covered_sections(evidence_coverage)
-            guide_lines = [
-                (
-                    f"- 기준 제품: {guide.product_name} ({guide.manufacturer_name})"
-                    if family_reference
-                    else f"- 제품: {guide.product_name} ({guide.manufacturer_name})"
-                ),
-            ]
-            if family_reference:
-                guide_lines.extend(
-                    (
-                        self._guide_line("효능", guide.efficacy),
-                        (
-                            "- 주의사항: 같은 통칭의 제품이라도 제품별 "
-                            "성분·함량·제형과 복용법이 다를 수 있으므로 "
-                            "정확한 제품명을 확인해 주세요."
-                        ),
-                    )
+            sections.append(
+                self._product_guide_section(
+                    guide=guide,
+                    family_reference=family_reference,
+                    evidence_coverage=evidence_coverage,
                 )
-                section_title = "통칭 제품 참고 안내"
-            else:
-                guide_lines.extend(
-                    self._guide_line(label, value)
-                    for label, value, section_type in (
-                        (
-                            "효능",
-                            guide.efficacy,
-                            KnowledgeSectionType.FUNCTION,
-                        ),
-                        (
-                            "사용법",
-                            guide.usage_instructions,
-                            KnowledgeSectionType.DAILY_INTAKE,
-                        ),
-                        (
-                            "사용 전 확인",
-                            guide.pre_use_warning,
-                            KnowledgeSectionType.CAUTION,
-                        ),
-                        (
-                            "주의사항",
-                            guide.precautions,
-                            KnowledgeSectionType.CAUTION,
-                        ),
-                        (
-                            "함께 주의할 약·음식",
-                            guide.drug_food_interactions,
-                            KnowledgeSectionType.INTERACTION,
-                        ),
-                        (
-                            "이상반응",
-                            guide.adverse_reactions,
-                            KnowledgeSectionType.CAUTION,
-                        ),
-                        (
-                            "보관법",
-                            guide.storage_instructions,
-                            None,
-                        ),
-                    )
-                    if self._has_guide_value(value)
-                    and self._section_is_allowed(
-                        section_type,
-                        coverage=evidence_coverage,
-                        covered=covered,
-                    )
-                )
-                section_title = referenced_product_heading or "일반 제품 안내"
-            sections.append(section_title + "\n" + "\n".join(guide_lines))
+            )
         if chunks and not question_interaction_pairs:
             public_lines = [f"- {chunk.content}" for chunk in chunks[:4]]
             if interaction_question:
@@ -166,6 +106,95 @@ class MedicationAnswerAssembler:
             return "\n\n".join([*intake_sections, "---", *sections])
         return "\n\n".join([*intake_sections, *sections])
 
+    def _product_guide_section(
+        self,
+        *,
+        guide: MedicationGuideFact,
+        family_reference: bool,
+        evidence_coverage: MedicationEvidenceCoverage | None,
+    ) -> str:
+        if family_reference:
+            guide_lines = [f"- 기준 제품: {guide.product_name} ({guide.manufacturer_name})"]
+            guide_lines.extend(
+                (
+                    self._guide_line("효능", guide.efficacy),
+                    (
+                        "- 주의사항: 같은 통칭의 제품이라도 제품별 "
+                        "성분·함량·제형과 복용법이 다를 수 있으므로 "
+                        "정확한 제품명을 확인해 주세요."
+                    ),
+                )
+            )
+            return "통칭 제품 참고 안내\n" + "\n".join(guide_lines)
+
+        covered = self._covered_sections(evidence_coverage)
+        guide_sections = [f"**{guide.product_name}**"]
+        self._append_allowed_guide_section(
+            guide_sections,
+            heading="✅ **효능**",
+            value=guide.efficacy,
+            section_type=KnowledgeSectionType.FUNCTION,
+            evidence_coverage=evidence_coverage,
+            covered=covered,
+        )
+        self._append_allowed_guide_section(
+            guide_sections,
+            heading="✅ **복용법**",
+            value=guide.usage_instructions,
+            section_type=KnowledgeSectionType.DAILY_INTAKE,
+            evidence_coverage=evidence_coverage,
+            covered=covered,
+        )
+        caution_values = [
+            value
+            for value in (guide.pre_use_warning, guide.precautions)
+            if self._guide_value_is_allowed(
+                value,
+                KnowledgeSectionType.CAUTION,
+                coverage=evidence_coverage,
+                covered=covered,
+            )
+        ]
+        if caution_values:
+            guide_sections.append(
+                "⚠️ **주의사항**\n" + "\n".join(self._guide_line("", value) for value in caution_values)
+            )
+        self._append_allowed_guide_section(
+            guide_sections,
+            heading="🚨 **이상반응**",
+            value=guide.adverse_reactions,
+            section_type=KnowledgeSectionType.CAUTION,
+            evidence_coverage=evidence_coverage,
+            covered=covered,
+        )
+        self._append_allowed_guide_section(
+            guide_sections,
+            heading="🔁 **함께 주의할 약·음식**",
+            value=guide.drug_food_interactions,
+            section_type=KnowledgeSectionType.INTERACTION,
+            evidence_coverage=evidence_coverage,
+            covered=covered,
+        )
+        return "\n\n".join(guide_sections)
+
+    def _append_allowed_guide_section(
+        self,
+        sections: list[str],
+        *,
+        heading: str,
+        value: str,
+        section_type: KnowledgeSectionType,
+        evidence_coverage: MedicationEvidenceCoverage | None,
+        covered: set[KnowledgeSectionType],
+    ) -> None:
+        if self._guide_value_is_allowed(
+            value,
+            section_type,
+            coverage=evidence_coverage,
+            covered=covered,
+        ):
+            sections.append(heading + "\n" + self._guide_line("", value))
+
     @classmethod
     def _interaction_sections(
         cls,
@@ -174,6 +203,7 @@ class MedicationAnswerAssembler:
         chunks: list[RetrievedKnowledgeChunk],
         interaction_question: bool,
         question_interaction_pairs: list[MedicationInteractionQueryPair],
+        active_intake_interaction: bool,
         evidence_coverage: MedicationEvidenceCoverage | None,
     ) -> tuple[list[str], bool]:
         sections: list[str] = []
@@ -202,7 +232,10 @@ class MedicationAnswerAssembler:
                 ),
             )
         if interaction_question and not chunks and not rules:
-            sections.append(cls._unverified_interaction_section())
+            if active_intake_interaction:
+                sections.append("🔁 **복약정보와 상호작용**\n" + cls._unverified_interaction_section())
+            else:
+                sections.append(cls._unverified_interaction_section())
             return sections, True
         return sections, False
 
@@ -216,7 +249,23 @@ class MedicationAnswerAssembler:
 
     @staticmethod
     def _guide_line(label: str, value: str) -> str:
-        return f"- {label}: {value.strip()}"
+        prefix = f"{label}: " if label else ""
+        return f"- {prefix}{value.strip()}"
+
+    @classmethod
+    def _guide_value_is_allowed(
+        cls,
+        value: str,
+        section_type: KnowledgeSectionType | None,
+        *,
+        coverage: MedicationEvidenceCoverage | None,
+        covered: set[KnowledgeSectionType],
+    ) -> bool:
+        return cls._has_guide_value(value) and cls._section_is_allowed(
+            section_type,
+            coverage=coverage,
+            covered=covered,
+        )
 
     @staticmethod
     def _covered_sections(
@@ -287,8 +336,16 @@ class MedicationAnswerAssembler:
             return ""
 
         verified_pair_keys = set(evidence_coverage.verified_interaction_pair_keys if evidence_coverage else [])
+        verified_pairs = [
+            pair
+            for pair in pairs
+            if any(rule.pair_key == pair.pair_key for rule in rules) or pair.pair_key in verified_pair_keys
+        ]
+        if len(pairs) > 1 and not verified_pairs:
+            return cls._unverified_interaction_section()
+
         lines = ["🔁 **질문 상호작용**"]
-        for pair in pairs:
+        for pair in verified_pairs or pairs:
             lines.extend(["", f"**[{pair.left_name}-{pair.right_name}]**"])
             pair_rules = [rule for rule in rules if rule.pair_key == pair.pair_key]
             if pair_rules:
@@ -304,6 +361,8 @@ class MedicationAnswerAssembler:
                     "- 현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
                     "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
                 )
+        if verified_pairs and len(verified_pairs) != len(pairs):
+            lines.extend(["", cls._unverified_interaction_section()])
         return "\n".join(lines)
 
     @staticmethod
