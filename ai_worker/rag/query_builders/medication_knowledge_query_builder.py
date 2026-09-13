@@ -37,6 +37,7 @@ from ai_worker.schemas.medication_search import (
 )
 
 _FUNCTION_INTENT_PATTERN = re.compile(r"어디(?:에)?\s*(?:좋|쓰)|(?:뭐|무엇)(?:야|예요|인가요)")
+_GENERAL_EXPLANATION_INTENT_PATTERN = re.compile(r"대해\s*(?:알려|설명)")
 _DAILY_INTAKE_INTENT_PATTERN = re.compile(
     r"(?:하루|1일).{0,12}?(?:최대|몇\s*(?:정|캡슐|포|회|mg|밀리그램))|"
     r"최대.{0,12}?(?:용량|복용량|몇\s*(?:정|캡슐|포|회|mg|밀리그램))",
@@ -654,9 +655,11 @@ class MedicationKnowledgeQueryBuilder:
             return [KnowledgeSectionType.INTERACTION], ["상호작용", "병용 주의"]
         section_types: list[KnowledgeSectionType] = []
         expansion_terms: list[str] = []
-        if any(
-            keyword in question for keyword in ("효능", "효과", "기능", "역할", "왜 먹")
-        ) or _FUNCTION_INTENT_PATTERN.search(question):
+        if (
+            any(keyword in question for keyword in ("효능", "효과", "기능", "역할", "왜 먹"))
+            or _FUNCTION_INTENT_PATTERN.search(question)
+            or _GENERAL_EXPLANATION_INTENT_PATTERN.search(question)
+        ):
             section_types.append(KnowledgeSectionType.FUNCTION)
             expansion_terms.extend(["건강기능식품", "기능성", "효능", "섭취 목적"])
         if any(

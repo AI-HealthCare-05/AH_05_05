@@ -241,6 +241,7 @@ export function CustomChallengeParticipationPage() {
       setError(null);
       setCancelOpen(false);
       invalidateCustomChallengeProgress();
+      navigate('/challenges', { replace: true });
     } catch (reason) {
       if (!isCurrent() || (reason instanceof ApiError && reason.status === 401)) return;
       setCancelError(reason instanceof Error ? reason.message : '참여를 취소하지 못했어요. 다시 시도해주세요.');
@@ -279,11 +280,14 @@ export function CustomChallengeParticipationPage() {
   const days = customChallengeDayProgress(participation);
   const rate = progressValue(days.rate);
   const finalized = participation.status !== 'ACTIVE';
+  const displayedTargets = participation.status === 'ACTIVE'
+    ? participation.targets.filter(target => !target.isExcluded)
+    : participation.targets;
   return (
     <>
       <Header title={participation.challengeName} onBack={handleBack} className="h-auto! min-h-header py-2 [&_button]:shrink-0 [&_h1]:overflow-visible [&_h1]:whitespace-normal [&_h1]:break-words [&_h1]:[overflow-wrap:anywhere]" />
       <main className="flex flex-col gap-4 px-page-x py-5">
-      <p className="text-caption font-bold text-primary">{statusLabel(participation.status)}</p>
+      <p className="text-caption font-bold text-warning-strong">{statusLabel(participation.status)}</p>
 
       {error ? (
         <section role="alert" className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card">
@@ -292,7 +296,7 @@ export function CustomChallengeParticipationPage() {
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-3 rounded-card bg-primary-bg p-5" aria-labelledby="custom-progress-title">
+      <section className="flex flex-col gap-3 rounded-card bg-warning-bg p-5" aria-labelledby="custom-progress-title">
         <div className="flex items-center justify-between gap-3"><h2 id="custom-progress-title" className="text-base font-bold">{finalized ? '최종 결과' : '내 진행률'}</h2><strong className="text-primary">{rate.toFixed(2)}%</strong></div>
         <div role="progressbar" aria-label="맞춤 챌린지 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border"><div className="h-full rounded-pill bg-primary" style={{ width: `${rate}%` }} /></div>
         <p className="text-sm text-foreground">{days.completed} / {days.target}일</p>
@@ -325,16 +329,15 @@ export function CustomChallengeParticipationPage() {
       <section className="flex flex-col gap-2 rounded-card bg-card p-5 shadow-card" aria-labelledby="custom-target-title">
           <div className="flex items-center justify-between gap-3">
             <h2 id="custom-target-title" className="text-base font-bold">참여 대상</h2>
-            <span className="shrink-0 text-caption text-muted-foreground">{participation.targets.length}개</span>
+            <span className="shrink-0 text-caption text-muted-foreground">{displayedTargets.length}개</span>
           </div>
           <ul className="mt-2 flex flex-col gap-3">
-            {participation.targets.map(target => <li key={target.id} className="break-words text-sm text-foreground [overflow-wrap:anywhere]">{target.name}</li>)}
+            {displayedTargets.map(target => <li key={target.id} className="break-words text-sm text-foreground [overflow-wrap:anywhere]">{target.name}</li>)}
           </ul>
       </section>
 
       <CustomChallengeCalendar key={`${participation.id}:${participation.status}`} participation={participation} />
 
-      <p className="text-caption leading-5 text-muted-foreground">진행률은 홈과 {participation.challengeType === 'SUPPLEMENT' ? '영양제' : '복약'} 기록을 기준으로 자동 계산돼요. 달력에서는 기록을 확인할 수 있어요.</p>
       {participation.status === 'ACTIVE' ? <Button variant="secondary" disabled={cancelPending || claimPending} onClick={() => { setCancelError(null); setCancelOpen(true); }}>챌린지 참여 취소</Button> : null}
       <Dialog open={cancelOpen} onOpenChange={open => { if (!cancelPendingRef.current) { setCancelOpen(open); if (!open) setCancelError(null); } }}>
         <DialogContent showCloseButton={!cancelPending}>

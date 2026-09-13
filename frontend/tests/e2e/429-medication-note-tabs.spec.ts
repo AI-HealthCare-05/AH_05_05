@@ -229,7 +229,7 @@ test('메모 삭제는 목록이 아니라 수정 상세의 확인 절차에서 
   await page.goto('/medications/notes?episodeId=103');
   await expect(page.getByRole('button', { name: '삭제', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /저녁 감기 처방.*접기/ })).toBeVisible();
-  await page.getByRole('button', { name: '처방 전체 열이 내려가고 잠이 잘 왔어요.' }).click();
+  await page.getByRole('button', { name: '열이 내려가고 잠이 잘 왔어요.', exact: true }).click();
   await page.getByRole('button', { name: '메모 삭제' }).click();
   await expect(page.getByRole('dialog')).toContainText('이 복약 메모를 삭제할까요?');
   await page.getByRole('button', { name: '삭제하기' }).click();

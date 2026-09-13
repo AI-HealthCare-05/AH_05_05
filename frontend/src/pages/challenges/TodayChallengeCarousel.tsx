@@ -42,7 +42,7 @@ export function TodayChallengeCarousel({ items }: { items: TodayChallengeCard[] 
 
   return <div className="relative min-w-0">
     <div ref={viewport} aria-label="오늘 할 챌린지" tabIndex={0} className="rx-today-challenge-scroll">
-      {items.map(item => <article key={item.id} aria-label={item.title} className="rx-today-challenge-item">
+      {items.map(item => <article key={item.id} aria-label={item.title} className={`rx-today-challenge-item ${item.official ? 'rx-today-challenge-item--official' : 'rx-today-challenge-item--custom'}`}>
         <Link to={item.href} aria-label={`${item.title}, ${item.progress}, 상세 보기`} className="rx-today-challenge-detail">
         <ChallengeTypeBadge official={item.official} />
         <img src={item.image} alt={item.badgeName} width={56} height={56} className="size-14 self-center rounded-pill object-contain" />
@@ -58,9 +58,13 @@ export function TodayChallengeCarousel({ items }: { items: TodayChallengeCard[] 
         {item.error && <p role="alert" className="text-center text-caption text-destructive">{item.error}</p>}
       </article>)}
     </div>
-    {(edges.left || edges.right) && <div className="mt-2 flex justify-end gap-2">
-      <button type="button" aria-label="이전 챌린지" disabled={!edges.left} className="rx-today-challenge-arrow" onClick={() => move(-1)}><DrawnChevron direction="left" className="size-5" /></button>
-      <button type="button" aria-label="다음 챌린지" disabled={!edges.right} className="rx-today-challenge-arrow" onClick={() => move(1)}><DrawnChevron direction="right" className="size-5" /></button>
+    {items.length > 1 && <div className="rx-today-challenge-navigation">
+      <button type="button" aria-label="이전 챌린지" disabled={!edges.left} className="rx-today-challenge-arrow rx-today-challenge-arrow--previous" onClick={() => move(-1)}>
+        <span data-challenge-arrow-circle className="rx-today-challenge-arrow-circle"><DrawnChevron direction="left" className="size-4" /></span>
+      </button>
+      <button type="button" aria-label="다음 챌린지" disabled={!edges.right} className="rx-today-challenge-arrow rx-today-challenge-arrow--next" onClick={() => move(1)}>
+        <span data-challenge-arrow-circle className="rx-today-challenge-arrow-circle"><DrawnChevron direction="right" className="size-4" /></span>
+      </button>
     </div>}
   </div>;
 }

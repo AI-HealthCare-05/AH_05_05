@@ -101,9 +101,10 @@ export function SupplementReviewSection({ productId }: { productId: string }) {
         <h2 id="supplement-reviews-title" className="text-xl font-bold text-foreground">
           후기
         </h2>
-        {result && result.reviewCount > 0 && (
+        {result && result.total > 0 && (
           <p className="text-sm font-bold text-warning-strong">
-            ★{result.ratingAverage?.toFixed(1)} · 후기: {result.reviewCount}개
+            {result.ratingAverage !== null && `★${result.ratingAverage.toFixed(1)} · `}
+            후기: {result.total}개
           </p>
         )}
       </div>

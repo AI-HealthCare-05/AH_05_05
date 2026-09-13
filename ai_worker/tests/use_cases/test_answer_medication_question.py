@@ -320,8 +320,8 @@ class FakeKnowledgeRetriever:
 
 
 class RecordingQueryPlanRetriever(FakeKnowledgeRetriever):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, chunks: list[RetrievedKnowledgeChunk] | None = None) -> None:
+        super().__init__(chunks=chunks)
         self.received_kwargs = None
 
     async def search_with_diagnostics(
@@ -1592,8 +1592,8 @@ async def test_active_medication_interaction_without_approved_rule_states_uncert
         ),
     ).execute(build_request("현재 먹는 두 약 사이에 상호작용이 있어?"))
 
-    assert "상호작용을 확인하지 못했습니다" in result.answer
-    assert "안전하다는 의미는 아닙니다" in result.answer
+    assert "확인하지 못한 조합" in result.answer
+    assert "안전하다는 뜻은 아닙니다" in result.answer
 
 
 async def test_harmful_request_is_blocked_before_rag() -> None:
@@ -1750,6 +1750,41 @@ async def test_medication_question_bypasses_conversation_gate() -> None:
     ).execute(build_request("타이레놀은 어디에 좋아?"))
 
     assert result.route is MedicationChatRoute.MEDICATION_GUIDE
+
+
+async def test_qdrant_resolved_supplement_question_bypasses_conversation_gate() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    gate = StaticConversationGate(
+        ConversationClassification(
+            intent="CASUAL",
+            safety_signal="NONE",
+            confidence="HIGH",
+        )
+    )
+
+    await build_use_case(
+        retriever=retriever,
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="마그네슘",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.QDRANT,
+                    )
+                ]
+            )
+        ),
+        conversation_gate_chain=gate,
+    ).execute(build_request("마그네슘에 대해 알려줘"))
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entities[0].canonical_name == "마그네슘"
+    assert query_plan.entities[0].kind is InteractionEntityKind.SUPPLEMENT
+    assert query_plan.entities[0].source is MedicationQueryEntitySource.QDRANT
+    assert gate.inputs == []
 
 
 async def test_execute_uses_injected_query_plan_chain() -> None:
@@ -1943,10 +1978,9 @@ async def test_active_intake_question_without_external_evidence_uses_registered_
     assert execution_plan.supplement_names == ["비타민 K"]
     assert result.route == MedicationChatRoute.ACTIVE_INTAKE
     assert result.safety_status == SafetyStatus.RESTRICTED
-    assert "복약정보\n- 와파린" in result.answer
-    assert "영양제 정보\n- 비타민 K" in result.answer
-    assert "직접 근거를 확인하지 못했습니다" in result.answer
-    assert "의료진·약사에게 확인할 내용" in result.answer
+    assert "💊 **복약정보**\n- 와파린" in result.answer
+    assert "💪🏻 **영양제 정보**\n- 비타민 K" in result.answer
+    assert "☑️ **확인하지 못한 조합**" in result.answer
     assert "오메가3" not in result.answer
 
 
@@ -2002,7 +2036,7 @@ async def test_active_intake_therapeutic_class_question_uses_only_classified_reg
     assert execution_plan.query_plan.entity_names == ["와파린", "비타민 K"]
     assert execution_plan.medication_names == ["와파린"]
     assert "타이레놀정500밀리그람" not in execution_plan.query_plan.entity_names
-    assert "복약정보\n- 와파린" in result.answer
+    assert "💊 **복약정보**\n- 와파린" in result.answer
     assert "타이레놀정500밀리그람" not in result.answer
     class_span = next(span for span in tracer.spans if span.name == "therapeutic_class.resolve")
     assert class_span.outputs == {
@@ -2365,7 +2399,7 @@ async def test_general_drug_question_runs_without_episode() -> None:
 
     assert result.route == MedicationChatRoute.MEDICATION_GUIDE
     assert "통증과 발열을 완화합니다" in result.answer
-    assert result.answer.startswith("일반 제품 안내\n")
+    assert result.answer.startswith("**타이레놀정500밀리그람**\n")
     assert "성분을 확인합니다" in result.answer
     assert "다른 약 복용 시 전문가에게 알립니다" in result.answer
 
@@ -2386,6 +2420,263 @@ async def test_execute_keeps_tylenol_efficacy_and_caution_without_global_disclai
     assert "통증과 발열을 완화합니다" in result.answer
     assert "정해진 용법을 지킵니다" in result.answer
     assert "의료진의 진료, 진단 또는 처방을 대체하지 않습니다" not in result.answer
+
+
+async def test_session_referenced_product_interaction_displays_question_pair() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    request = build_request("그 약과 비타민 D를 같이 먹어도 돼?").model_copy(
+        update={
+            "session_reference": MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name="타이레놀정500밀리그람",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    )
+                ]
+            )
+        }
+    )
+
+    result = await build_use_case(
+        retriever=retriever,
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="세레콕시브캡슐200mg",
+                )
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 D",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+    ).execute(request)
+
+    assert result.route is MedicationChatRoute.INTERACTION
+    assert "🔁 **질문 상호작용**\n\n**[타이레놀정500밀리그람-비타민 D]**" in result.answer
+    assert "세레콕시브캡슐200mg ↔" not in result.answer
+    assert retriever.received_kwargs is not None
+    assert [
+        (pair.left_name, pair.right_name)
+        for pair in retriever.received_kwargs["execution_plan"].query_plan.interaction_pairs
+    ] == [("타이레놀정500밀리그람", "비타민 D")]
+
+
+async def test_session_referenced_product_interaction_keeps_question_pair_with_evidence() -> None:
+    pair_key = build_interaction_pair_key(
+        InteractionEntity(
+            kind=InteractionEntityKind.DRUG,
+            display_name="타이레놀정500밀리그람",
+        ),
+        InteractionEntity(
+            kind=InteractionEntityKind.SUPPLEMENT,
+            display_name="비타민 D",
+        ),
+    )
+    evidence_chunk = build_chunk().model_copy(
+        update={
+            "content": "타이레놀정500밀리그람과 비타민 D 조합의 확인된 상호작용 근거입니다.",
+            "metadata": build_chunk().metadata.model_copy(
+                update={
+                    "section_type": KnowledgeSectionType.INTERACTION,
+                    "drug_names": ["타이레놀정500밀리그람"],
+                    "ingredient_names": ["비타민 D"],
+                    "interaction_pair_keys": [pair_key],
+                }
+            ),
+        }
+    )
+    request = build_request("그 약과 비타민 D를 같이 먹어도 돼?").model_copy(
+        update={
+            "session_reference": MedicationChatSessionReference(
+                entities=[
+                    MedicationChatSessionReferenceEntity(
+                        name="타이레놀정500밀리그람",
+                        entity_type=MedicationQueryEntityType.PRODUCT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                    )
+                ]
+            )
+        }
+    )
+
+    result = await build_use_case(
+        retriever=RecordingQueryPlanRetriever([evidence_chunk]),
+        context=ActiveIntakeContext(user_id=1),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 D",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+    ).execute(request)
+
+    assert result.route is MedicationChatRoute.INTERACTION
+    assert "🔁 **질문 상호작용**\n\n**[타이레놀정500밀리그람-비타민 D]**" in result.answer
+
+
+@pytest.mark.parametrize(
+    ("question", "left_name", "right_name"),
+    [
+        ("타이레놀과 비타민 D 같이 먹어도 돼?", "아세트아미노펜", "비타민 D"),
+        ("마그네슘과 아연 같이 먹어도 돼?", "마그네슘", "아연"),
+        ("마그네슘이랑 아연 같이 머거도대?", "마그네슘", "아연"),
+    ],
+)
+async def test_explicit_interaction_question_displays_the_question_pair(
+    question: str,
+    left_name: str,
+    right_name: str,
+) -> None:
+    retriever = RecordingQueryPlanRetriever()
+    result = await build_use_case(
+        retriever=retriever,
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="세레콕시브캡슐200mg",
+                )
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="아세트아미노펜",
+                        aliases=["타이레놀"],
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.DRUG,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 D",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="마그네슘",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                    MedicationCatalogEntry(
+                        canonical_name="아연",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    ),
+                ]
+            )
+        ),
+    ).execute(build_request(question))
+
+    assert result.route is MedicationChatRoute.INTERACTION
+    assert f"🔁 **질문 상호작용**\n\n**[{left_name}-{right_name}]**" in result.answer
+    assert retriever.received_kwargs is not None
+    assert [
+        (pair.left_name, pair.right_name)
+        for pair in retriever.received_kwargs["execution_plan"].query_plan.interaction_pairs
+    ] == [(left_name, right_name)]
+
+
+async def test_active_intake_interaction_pairs_registered_medications_with_explicit_target() -> None:
+    retriever = RecordingQueryPlanRetriever()
+    await build_use_case(
+        retriever=retriever,
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="세레콕시브캡슐200mg",
+                ),
+                ActiveMedication(
+                    medication_id=2,
+                    care_episode_id=1,
+                    name="아세트아미노펜서방정650mg",
+                ),
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 D",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+    ).execute(build_request("내가 먹는 약과 비타민 D 같이 먹어도 돼?"))
+
+    assert retriever.received_kwargs is not None
+    query_plan = retriever.received_kwargs["execution_plan"].query_plan
+    assert query_plan.entity_names == [
+        "세레콕시브캡슐200mg",
+        "아세트아미노펜서방정650mg",
+        "비타민 D",
+    ]
+    assert [(pair.left_name, pair.right_name) for pair in query_plan.interaction_pairs] == [
+        ("세레콕시브캡슐200mg", "비타민 D"),
+        ("아세트아미노펜서방정650mg", "비타민 D"),
+    ]
+
+
+async def test_active_intake_interaction_without_direct_evidence_keeps_active_medication_section() -> None:
+    result = await build_use_case(
+        retriever=RecordingQueryPlanRetriever(),
+        context=ActiveIntakeContext(
+            user_id=1,
+            medications=[
+                ActiveMedication(
+                    medication_id=1,
+                    care_episode_id=1,
+                    name="세레콕시브캡슐200mg",
+                )
+            ],
+        ),
+        question_resolver=RuleBasedMedicationQuestionResolver(
+            catalog=StaticTypedExpressionCatalog(
+                [
+                    MedicationCatalogEntry(
+                        canonical_name="비타민 D",
+                        entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                        kind=InteractionEntityKind.SUPPLEMENT,
+                        source=MedicationQueryEntitySource.CATALOG,
+                    )
+                ]
+            )
+        ),
+    ).execute(build_request("내 약과 비타민 D 같이 먹어도 돼?"))
+
+    assert "💊 **복약정보**\n- 세레콕시브캡슐200mg" in result.answer
+    assert "---\n\n🔁 **복약정보와 상호작용**" in result.answer
+    assert result.answer.count("☑️ **확인하지 못한 조합**") == 1
 
 
 async def test_execute_resolves_single_drug_reference_from_explicit_session_memory() -> None:
@@ -3078,7 +3369,7 @@ async def test_execute_uses_general_guidance_for_low_risk_supplement_pair_withou
         ),
     ).execute(build_request(resolution.original_question))
 
-    assert result.route == MedicationChatRoute.SUPPLEMENT_GUIDE
+    assert result.route == MedicationChatRoute.INTERACTION
     assert result.safety_status == SafetyStatus.SAFE
     assert result.safety_reason_codes == ["GENERAL_SUPPLEMENT_GUIDANCE"]
     assert result.risk_decision is not None
@@ -3301,7 +3592,7 @@ async def test_execute_discards_unknown_conditional_llm_entity_before_search() -
     ]
 
 
-async def test_execute_uses_validated_conditional_pair_selection_to_narrow_search() -> None:
+async def test_execute_preserves_all_explicit_interaction_pairs_when_conditional_llm_selects_one() -> None:
     class SelectFirstPairChain:
         async def ainvoke(self, input, config=None, **kwargs):
             return ConditionalQuestionInterpretationOutput(
@@ -3353,11 +3644,17 @@ async def test_execute_uses_validated_conditional_pair_selection_to_narrow_searc
 
     assert retriever.received_kwargs is not None
     query_plan = retriever.received_kwargs["execution_plan"].query_plan
-    assert len(query_plan.interaction_pair_keys) == 1
-    assert len(query_plan.interaction_pairs) == 1
+    assert len(query_plan.interaction_pair_keys) == 3
+    assert len(query_plan.interaction_pairs) == 3
     assert query_plan.interaction_types == [InteractionPairType.SUPPLEMENT_SUPPLEMENT]
-    assert query_plan.alternate_queries == ["마그네슘 아연 상호작용"]
-    assert retriever.received_kwargs["execution_plan"].approved_rule_pair_keys == [query_plan.interaction_pair_keys[0]]
+    assert set(query_plan.alternate_queries) >= {
+        "마그네슘 아연 상호작용",
+        "마그네슘 칼슘 상호작용",
+        "아연 칼슘 상호작용",
+    }
+    assert set(retriever.received_kwargs["execution_plan"].approved_rule_pair_keys) == set(
+        query_plan.interaction_pair_keys
+    )
 
 
 def test_pair_narrowing_removes_unselected_legacy_pair_query() -> None:
@@ -3618,8 +3915,8 @@ async def test_confirmed_medication_precedes_general_guide_and_rag() -> None:
         )
     )
 
-    assert result.answer.index("복약정보") < result.answer.index("일반 제품 안내")
-    assert result.answer.index("일반 제품 안내") < result.answer.index("공공자료 추가 설명")
+    assert result.answer.index("복약정보") < result.answer.index("**타이레놀정500밀리그람**")
+    assert result.answer.index("**타이레놀정500밀리그람**") < result.answer.index("공공자료 추가 설명")
 
 
 async def test_no_interaction_evidence_never_claims_safe() -> None:
@@ -3968,7 +4265,7 @@ async def test_supplement_pair_question_skips_medication_product_lookup() -> Non
     )
 
     assert result.route == MedicationChatRoute.INTERACTION
-    assert "검색된 상호작용 연구 근거" in result.answer
+    assert "☑️ **확인하지 못한 조합**" in result.answer
     assert "제품명을 확인" not in result.answer
 
 
@@ -4059,11 +4356,10 @@ async def test_multi_entity_answer_uses_generic_notice_for_unverified_pairs() ->
     )
 
     assert result.route == MedicationChatRoute.INTERACTION
-    assert "검색된 상호작용 연구 근거" in result.answer
     assert "☑️ **확인하지 못한 조합**" in result.answer
-    assert "🔁 **확인된 상호작용**" not in result.answer
-    assert "와파린 ↔ 비타민 K" not in result.answer
-    assert "칼슘 ↔ 철분" not in result.answer
+    assert result.answer.count("☑️ **확인하지 못한 조합**") == 1
+    assert "**[와파린-비타민 K]**" not in result.answer
+    assert "**[칼슘-철분]**" not in result.answer
 
 
 async def test_unknown_risk_does_not_restrict_general_omega3_intake_guidance() -> None:

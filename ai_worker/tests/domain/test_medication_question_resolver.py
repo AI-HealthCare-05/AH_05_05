@@ -100,6 +100,29 @@ async def test_resolver_preserves_catalog_entity_type_and_source() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_matches_catalog_supplement_before_location_particle() -> None:
+    resolver = RuleBasedMedicationQuestionResolver(
+        catalog=StaticTypedExpressionCatalog(
+            [
+                MedicationCatalogEntry(
+                    canonical_name="마그네슘",
+                    entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                    kind=InteractionEntityKind.SUPPLEMENT,
+                    source=MedicationQueryEntitySource.QDRANT,
+                )
+            ]
+        ),
+    )
+
+    result = await resolver.resolve(question="마그네슘에 대해 알려줘")
+
+    assert result.status == MedicationExpressionResolutionStatus.UNCHANGED
+    assert [(entity.canonical_name, entity.kind) for entity in result.entities] == [
+        ("마그네슘", InteractionEntityKind.SUPPLEMENT),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_resolver_prefers_general_supplement_over_same_named_drug_ingredient() -> None:
     resolver = RuleBasedMedicationQuestionResolver(
         catalog=StaticTypedExpressionCatalog(

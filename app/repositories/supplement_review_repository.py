@@ -35,6 +35,7 @@ class SupplementReviewRepository:
         self,
         product_id: int,
         *,
+        user_id: int,
         offset: int,
         limit: int,
     ) -> tuple[list[UserSupplementNutrient], int, Decimal | None, int] | None:
@@ -42,6 +43,8 @@ class SupplementReviewRepository:
             return None
 
         excluded_ids = await self.list_excluded_registration_ids()
+        reported_ids = await self.list_reported_registration_ids_for_product(user_id, product_id)
+        excluded_ids = list(dict.fromkeys([*excluded_ids, *reported_ids]))
         display_filter = Q(score__isnull=False) | Q(review_body__isnull=False)
         query = UserSupplementNutrient.filter(
             display_filter,
@@ -65,6 +68,17 @@ class SupplementReviewRepository:
             .first()
         )
         return items, total, summary.rating_average, summary.review_count
+
+    async def list_reported_registration_ids_for_product(self, user_id: int, product_id: int) -> list[int]:
+        rows = await SupplementReviewReport.filter(
+            user_id=user_id,
+            registration__supplement_nutrient_id=product_id,
+        ).values_list("registration_id", flat=True)
+        return list(rows)
+
+    async def list_reported_registration_ids_for_user(self, user_id: int) -> list[int]:
+        rows = await SupplementReviewReport.filter(user_id=user_id).values_list("registration_id", flat=True)
+        return list(rows)
 
     async def list_reported_registration_ids(self, user_id: int, registration_ids: list[int]) -> set[int]:
         if not registration_ids:

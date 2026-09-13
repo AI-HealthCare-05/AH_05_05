@@ -114,17 +114,17 @@ export function OfficialChallengeBrowsePage() {
                   disabled={item.participating}
                   aria-label={`${item.name} ${item.participating ? '참여중' : item.type === 'custom' ? '대상 선택' : '자세히 보기'}`}
                   onClick={() => navigate(item.destination)}
-                  className="flex w-full items-center gap-3 rounded-card bg-card p-4 text-left shadow-card disabled:cursor-default disabled:bg-muted-bg disabled:text-disabled-foreground disabled:shadow-none"
+                  className="relative flex w-full items-center rounded-card bg-card p-4 text-left shadow-card disabled:cursor-default disabled:bg-muted-bg disabled:text-disabled-foreground disabled:shadow-none"
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-bold">
-                      <span className="break-words [overflow-wrap:anywhere]">{item.name}</span>
-                      {item.participating ? <span className="text-caption font-medium">참여중</span> : null}
+                    <span className={`flex min-w-0 items-start gap-2 text-base font-bold ${item.participating ? '' : 'pr-8'}`}>
+                      <ChallengeTypeBadge official={item.type === 'official'} />
+                      <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{item.name}</span>
+                      {item.participating ? <span className="shrink-0 text-caption font-medium">참여중</span> : null}
                     </span>
-                    <span className={`text-caption leading-5 ${item.participating ? 'text-disabled-foreground' : 'text-muted-foreground'}`}>모집기간 : {item.recruitment}</span>
+                    <span className={`whitespace-nowrap text-caption leading-5 tabular-nums ${item.participating ? 'text-disabled-foreground' : 'text-muted-foreground'}`}>모집기간 : {item.recruitment}</span>
                   </span>
-                  <ChallengeTypeBadge official={item.type === 'official'} />
-                  {!item.participating ? <DrawnChevron direction="right" className="size-5 shrink-0 text-primary" /> : null}
+                  {!item.participating ? <DrawnChevron direction="right" className="absolute right-4 top-1/2 size-5 -translate-y-1/2 text-primary" /> : null}
                 </button>
               ))}
             </ChallengeAccordion>

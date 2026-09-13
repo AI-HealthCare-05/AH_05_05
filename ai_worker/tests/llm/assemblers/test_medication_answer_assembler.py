@@ -49,7 +49,7 @@ def test_assemble_omits_empty_product_guide_fields() -> None:
         interaction_question=False,
     )
 
-    assert "사용법: 1일 1~2캡슐" in answer
+    assert "✅ **복용법**\n- 1일 1~2캡슐" in answer
     assert "함께 주의할 약·음식" not in answer
     assert "이 안내는 보유한 자료를 바탕으로 한 참고 정보" not in answer
 
@@ -85,9 +85,35 @@ def test_assemble_only_includes_guide_sections_with_requested_evidence() -> None
         ),
     )
 
-    assert "효능: 위산 과다 증상 완화" in answer
-    assert "사용법: 1일 1~2캡슐" not in answer
+    assert "✅ **효능**\n- 위산 과다 증상 완화" in answer
+    assert "✅ **복용법**" not in answer
     assert "복용법: 현재 근거에서 확인하지 못했습니다" in answer
+
+
+def test_assemble_groups_product_guide_into_function_caution_and_adverse_reaction_sections() -> None:
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=build_guide(),
+        rules=[],
+        chunks=[],
+        interaction_question=False,
+        evidence_coverage=MedicationEvidenceCoverage(
+            requested_section_types=[
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+            ],
+            covered_section_types=[
+                KnowledgeSectionType.FUNCTION,
+                KnowledgeSectionType.CAUTION,
+            ],
+        ),
+    )
+
+    assert answer.startswith("**마그오캡슐500mg**")
+    assert "✅ **효능**\n- 위산 과다 증상 완화와 변비 치료에 사용합니다." in answer
+    assert "⚠️ **주의사항**\n- 신장 질환이 있으면 복용 전 상담합니다." in answer
+    assert "🚨 **이상반응**\n- 설사 등이 나타날 수 있습니다." in answer
+    assert "✅ **복용법**" not in answer
 
 
 def test_assemble_does_not_claim_missing_when_interaction_evidence_exists() -> None:
@@ -364,3 +390,34 @@ def test_assemble_does_not_repeat_unverified_interaction_notice_as_missing_evide
 
     assert answer.count("☑️ **확인하지 못한 조합**") == 1
     assert "근거를 확인하지 못한 항목" not in answer
+
+
+def test_assemble_uses_one_generic_notice_when_every_multi_entity_pair_is_unverified() -> None:
+    pairs = [
+        MedicationInteractionQueryPair(
+            left_name=left_name,
+            right_name=right_name,
+            pair_type="SUPPLEMENT_SUPPLEMENT",
+            pair_key=pair_key * 64,
+        )
+        for left_name, right_name, pair_key in (
+            ("마그네슘", "아연", "a"),
+            ("마그네슘", "칼슘", "b"),
+            ("아연", "칼슘", "c"),
+        )
+    ]
+
+    answer = MedicationAnswerAssembler().assemble(
+        context=ActiveIntakeContext(user_id=1),
+        guide=None,
+        rules=[],
+        chunks=[],
+        interaction_question=True,
+        question_interaction_pairs=pairs,
+    )
+
+    assert answer == (
+        "☑️ **확인하지 못한 조합**\n"
+        "현재 보유한 승인 규칙과 검색 근거에서는 해당 조합을 확인하지 "
+        "못했습니다. 확인되지 않았다는 뜻이지 안전하다는 뜻은 아닙니다."
+    )

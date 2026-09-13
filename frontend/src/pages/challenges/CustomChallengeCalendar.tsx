@@ -20,8 +20,8 @@ function rememberCompletionMotion(key: string, complete: boolean) {
   catch { /* Session memory still prevents refresh/render duplicates when storage is unavailable. */ }
 }
 
-/** Decorative and read-only: only actual completion changes may start a drawing. */
-function CompletionMark({ motionKey, complete, large = false }: { motionKey: string; complete: boolean; large?: boolean }) {
+/** Decorative and read-only: only whole-day completion changes may start a drawing. */
+function CompletionMark({ motionKey, complete }: { motionKey: string; complete: boolean }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const observed = useRef<{ key: string; complete: boolean; animate: boolean } | null>(null);
   useLayoutEffect(() => {
@@ -34,16 +34,16 @@ function CompletionMark({ motionKey, complete, large = false }: { motionKey: str
     if (!complete || !svg || !observed.current.animate || media.matches) return;
     const animations = [...svg.querySelectorAll('circle,path')].map(element => element.animate(
       [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }],
-      { duration: element.tagName === 'circle' ? 480 : 260, delay: large && element.tagName === 'path' ? 360 : 0,
+      { duration: element.tagName === 'circle' ? 480 : 260, delay: element.tagName === 'path' ? 360 : 0,
         easing: 'ease-out', fill: 'both' },
     ));
     const settle = () => { if (media.matches) animations.forEach(animation => animation.cancel()); };
     media.addEventListener('change', settle);
     return () => { media.removeEventListener('change', settle); animations.forEach(animation => animation.cancel()); };
-  }, [motionKey, complete, large]);
-  return <span aria-hidden="true" className={large ? 'custom-challenge-day-check text-primary' : cn('flex size-8 shrink-0 items-center justify-center rounded-pill border-2', complete ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card')}>
-    {complete && <svg ref={svgRef} viewBox="0 0 64 64" className={large ? 'size-16' : 'size-[18px]'} fill="none" stroke="currentColor" strokeWidth={large ? 3 : 8} strokeLinecap="round" strokeLinejoin="round">
-      {large && <circle cx="32" cy="32" r="28" pathLength="1" className="custom-challenge-check-stroke" />}
+  }, [motionKey, complete]);
+  return <span aria-hidden="true" className="custom-challenge-day-check text-primary">
+    {complete && <svg ref={svgRef} viewBox="0 0 64 64" className="size-16" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="32" cy="32" r="28" pathLength="1" className="custom-challenge-check-stroke" />
       <path d="m18 32 9 9 19-20" pathLength="1" className="custom-challenge-check-stroke" />
     </svg>}
   </span>;
@@ -86,6 +86,12 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
     byDate.set(occurrence.scheduledDate, items);
   }
   const selectedRecords = [...(byDate.get(selectedDate) ?? [])].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+  const selectedGroups = new Map<CustomChallengeOccurrence['slot'], CustomChallengeOccurrence[]>();
+  for (const occurrence of selectedRecords) {
+    const records = selectedGroups.get(occurrence.slot) ?? [];
+    records.push(occurrence);
+    selectedGroups.set(occurrence.slot, records);
+  }
   const completedCount = selectedRecords.filter(item => item.isCompleted).length;
   const allDone = selectedDate <= today && selectedRecords.length > 0 && completedCount === selectedRecords.length;
   const doseLabel = participation.challengeType === 'SUPPLEMENT' ? '영양제를' : '약을';
@@ -207,31 +213,31 @@ export function CustomChallengeCalendar({ participation }: { participation: Cust
             </button>;
           })}
         </div>
-        <section aria-label="날짜별 복용 기록" aria-describedby="custom-date-navigation-hint" className="mt-4 min-w-0 touch-pan-y"
+        <section aria-label="날짜별 복용 기록" className="mt-4 min-w-0 touch-pan-y"
           onPointerDown={startSwipe} onPointerUp={finishSwipe} onPointerCancel={() => { gesture.current = null; }}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h4 className="text-sm font-bold">복용 기록</h4>
             <p className="text-caption text-muted-foreground">{completedCount} / {selectedRecords.length}회 완료</p>
           </div>
           <div hidden={!allDone} role={allDone ? 'status' : undefined} className={cn('mb-4 flex-col items-center gap-3 rounded-card bg-primary-bg px-4 py-6 text-center text-primary', allDone ? 'flex' : 'hidden')}>
-            <CompletionMark motionKey={`${motionScope}:${selectedDate}:day`} complete={allDone} large />
+            <CompletionMark motionKey={`${motionScope}:${selectedDate}:day`} complete={allDone} />
             <p className="text-base font-bold">{selectedDate === today ? '오늘' : monthDay(selectedDate)} 먹을 {doseLabel} 다 먹었어요!</p>
           </div>
-          {selectedRecords.length === 0 ? <p className="rounded-card bg-muted-bg px-4 py-6 text-sm text-muted-foreground">이날은 목표 기록이 없어요.</p> : <ul aria-label="선택한 날짜의 복용 기록" className="flex flex-col gap-3">
-            {selectedRecords.map(occurrence => <li key={occurrence.id} className="flex min-w-0 items-center gap-3 rounded-card border border-border bg-card p-4">
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <p className="text-sm font-bold">{SLOT_LABEL[occurrence.slot]}</p>
-                  <span className={cn('text-caption', occurrence.isCompleted ? 'font-bold text-primary' : 'text-muted-foreground')}>
-                    {occurrence.isCompleted ? '완료' : occurrence.scheduledDate < today ? '미완료' : '예정'}
+          {selectedRecords.length === 0 ? <p className="rounded-card bg-muted-bg px-4 py-6 text-sm text-muted-foreground">이날은 목표 기록이 없어요.</p> : <div role="list" aria-label="선택한 날짜의 복용 기록" className="flex flex-col gap-3">
+            {[...selectedGroups].map(([slot, records]) => <section key={slot} aria-label={`${SLOT_LABEL[slot]} 복용 기록`} className="min-w-0 rounded-card border border-border bg-card p-4">
+              <h5 className="mb-2 text-sm font-bold text-foreground">{SLOT_LABEL[slot]}</h5>
+              <ul className="divide-y divide-border">
+                {records.map(occurrence => <li key={occurrence.id} className="flex min-w-0 items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                  <p className="min-w-0 flex-1 break-words text-caption leading-5 text-muted-foreground [overflow-wrap:anywhere]">{targetNames.get(occurrence.targetId) ?? '참여 대상'}</p>
+                  <span className={cn('shrink-0 rounded-pill px-2 py-0.5', occurrence.isCompleted
+                    ? 'bg-primary-bg text-sm font-bold text-primary-strong'
+                    : 'bg-muted-bg text-caption font-medium text-muted-foreground')}>
+                    {occurrence.isCompleted ? '복용 완료' : occurrence.scheduledDate < today ? '미완료' : '예정'}
                   </span>
-                </div>
-                <p className="break-words text-caption leading-5 text-muted-foreground [overflow-wrap:anywhere]">{targetNames.get(occurrence.targetId) ?? '참여 대상'}</p>
-              </div>
-              <CompletionMark motionKey={`${motionScope}:${selectedDate}:record:${occurrence.id}`} complete={occurrence.isCompleted} />
-            </li>)}
-          </ul>}
-          <p id="custom-date-navigation-hint" className="mt-4 text-center text-caption text-muted-foreground">기록을 좌우로 밀어 다른 날짜를 확인해요.</p>
+                </li>)}
+              </ul>
+            </section>)}
+          </div>}
         </section>
     </section>
   );

@@ -2,7 +2,7 @@ import { Link } from 'react-router';
 
 import type { ChallengeParticipation } from '@/entities/challenge';
 import { Button } from '@/shared/ui/Button';
-import { inclusiveChallengeEndDate } from './officialChallengeDates';
+import { inclusiveChallengeEndDate, koreanChallengeDate } from './officialChallengeDates';
 import { officialChallengeProgress } from './officialChallengeProgress';
 import { ChallengeTypeBadge } from './ChallengeTypeBadge';
 
@@ -45,9 +45,9 @@ export function OfficialChallengeProgressCard({
   return (
     <article aria-label={participation.challenge_name} className="relative flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
           <ChallengeTypeBadge official />
-          <Link to={`/challenges/participations/${participation.id}`} aria-label={`${participation.challenge_name} 자세히 보기`} className="block break-words text-base font-bold text-foreground after:absolute after:inset-0 after:rounded-card focus-visible:after:outline-2 focus-visible:after:outline-primary [overflow-wrap:anywhere]">
+          <Link to={`/challenges/participations/${participation.id}`} aria-label={`${participation.challenge_name} 자세히 보기`} className="min-w-0 flex-1 break-words text-base font-bold text-foreground after:absolute after:inset-0 after:rounded-card focus-visible:after:outline-2 focus-visible:after:outline-primary [overflow-wrap:anywhere]">
             {participation.challenge_name}
           </Link>
         </div>
@@ -61,8 +61,8 @@ export function OfficialChallengeProgressCard({
       ) : (
         <>
           <div className="flex items-center justify-between gap-2 text-caption text-muted-foreground">
-            <span>{participation.started_at.slice(0, 10).slice(5).replace('-', '.')} ~ {inclusiveChallengeEndDate(participation.end_at).slice(5).replace('-', '.')}</span>
-            <span className="font-bold text-primary">{rate}% 달성</span>
+            <span>{koreanChallengeDate(participation.started_at)} ~ {koreanChallengeDate(inclusiveChallengeEndDate(participation.end_at))}</span>
+            <span className="shrink-0 whitespace-nowrap font-bold text-primary">{rate}% 달성</span>
           </div>
           <div role="progressbar" aria-label={`${participation.challenge_name} 진행률`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate} className="h-2 overflow-hidden rounded-pill bg-border">
             <div className="h-full rounded-pill bg-primary transition-[width] motion-reduce:transition-none" style={{ width: `${rate}%` }} />

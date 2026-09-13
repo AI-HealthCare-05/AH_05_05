@@ -266,6 +266,67 @@ async def test_accept_request_recovers_drug_reference_from_prior_guide_source() 
 
 
 @pytest.mark.asyncio
+async def test_accept_request_prioritizes_product_guide_reference_over_registered_intake_sources() -> None:
+    user = await create_user()
+    episode = await CareEpisode.create(user=user)
+    medications = [
+        await Medication.create(care_episode=episode, name=name)
+        for name in [
+            "세레콕시브캡슐200mg",
+            "아세트아미노펜서방정650mg",
+            "에페리손염산염정50mg",
+            "파모티딘정20mg",
+        ]
+    ]
+    guide = await create_medication_guide()
+    repository = ChatRepository()
+    first = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=None,
+        request_id="30500000-0000-4000-8000-000000000001",
+        content="타이레놀은 뭐야?",
+    )
+    await repository.complete_request(
+        assistant_message_id=first.assistant_message.id,
+        result=build_core_result().model_copy(
+            update={
+                "request_id": "30500000-0000-4000-8000-000000000001",
+                "sources": [
+                    *[
+                        MedicationChatSource(
+                            kind=MedicationChatSourceKind.PATIENT_MEDICATION,
+                            title=f"사용자 복용 약 · {medication.name}",
+                            medication_id=medication.id,
+                            care_episode_id=episode.id,
+                        )
+                        for medication in medications
+                    ],
+                    MedicationChatSource(
+                        kind=MedicationChatSourceKind.MEDICATION_GUIDE,
+                        title="e약은요 · 타이레놀산500밀리그램(아세트아미노펜)",
+                        medication_guide_id=guide.id,
+                    ),
+                ],
+            },
+        ),
+        duration_ms=10,
+    )
+
+    next_request = await repository.accept_request(
+        user_id=user.id,
+        care_episode_id=None,
+        conversation_id=first.session.id,
+        request_id="30500000-0000-4000-8000-000000000002",
+        content="그 약과 비타민 D를 같이 먹어도 돼?",
+    )
+
+    assert next_request.session_reference.entities[0].name == "타이레놀산500밀리그램(아세트아미노펜)"
+    assert next_request.session_reference.entities[0].entity_type == MedicationQueryEntityType.PRODUCT_NAME
+    assert next_request.session_reference.entities[0].kind == InteractionEntityKind.DRUG
+
+
+@pytest.mark.asyncio
 async def test_accept_request_recovers_typed_registered_intake_references_from_latest_session_answer() -> None:
     user = await create_user()
     episode = await CareEpisode.create(user=user)

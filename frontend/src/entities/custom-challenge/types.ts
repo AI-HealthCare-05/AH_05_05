@@ -38,6 +38,7 @@ export interface CustomChallengeTarget {
   id: number;
   sourceId: number;
   name: string;
+  isExcluded?: boolean;
 }
 
 export interface CustomChallengeOccurrence {

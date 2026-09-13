@@ -65,7 +65,7 @@ for (const action of ['new-back', 'edit-back', 'edit-save'] as const) {
     await enterNotesFromMedicationTab(page);
     await openEpisode(page);
     if (action === 'new-back') await page.getByRole('button', { name: '이 처방에 새 메모' }).click();
-    else await page.getByRole('button', { name: '처방 전체 속이 편했어요' }).click();
+    else await page.getByRole('button', { name: '속이 편했어요', exact: true }).click();
     if (action === 'edit-save') {
       await page.getByLabel('건강상태 기록').fill('수정한 메모');
       await page.getByRole('button', { name: '수정 저장' }).click();
@@ -92,7 +92,7 @@ test('직접 연 메모 작성의 뒤로가기는 메모 작성 이력을 다시
 
 test('직접 연 필터 목록에서 수정 후 뒤로가기는 필터를 보존한다', async ({ page }) => {
   await page.goto('/medications/notes?episodeId=41');
-  await page.getByRole('button', { name: '처방 전체 속이 편했어요' }).click();
+  await page.getByRole('button', { name: '속이 편했어요', exact: true }).click();
   await page.getByRole('button', { name: '뒤로 가기' }).click();
   await expect(page).toHaveURL('/medications/notes?episodeId=41');
 });
@@ -110,7 +110,7 @@ for (const entry of ['medication', 'direct'] as const) {
     if (entry === 'medication') await enterNotesFromMedicationTab(page);
     else await page.goto('/medications/notes');
     await openEpisode(page);
-    await page.getByRole('button', { name: '처방 전체 속이 편했어요' }).click();
+    await page.getByRole('button', { name: '속이 편했어요', exact: true }).click();
     await page.getByRole('navigation', { name: '주요 화면' }).getByRole('button', { name: '복약', exact: true }).click();
     await expect(page).toHaveURL('/medications');
     await page.getByRole('button', { name: '뒤로 가기' }).click();
@@ -129,7 +129,7 @@ for (const exit of ['header', 'tab', 'browser'] as const) {
     });
     await enterNotesFromMedicationTab(page);
     await openEpisode(page);
-    await page.getByRole('button', { name: '처방 전체 속이 편했어요' }).click();
+    await page.getByRole('button', { name: '속이 편했어요', exact: true }).click();
     await page.getByLabel('건강상태 기록').fill('저장 응답을 기다리는 메모');
     const saveRequested = page.waitForRequest((request) =>
       request.url().endsWith('/api/v1/med/notes/901') && request.method() === 'PATCH');

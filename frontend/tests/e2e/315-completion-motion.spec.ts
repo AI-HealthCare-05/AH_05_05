@@ -45,8 +45,7 @@ for (const type of ['MEDICATION', 'SUPPLEMENT'] as const) {
     await page.setViewportSize({ width: 390, height: 900 });
     const { item, calendar, unexpected, refresh } = await openCalendar(page, type);
     await expect(calendar.getByRole('status')).toHaveCount(0);
-    const recordCheck = calendar.getByRole('listitem').first().locator('svg path');
-    expect(await recordCheck.evaluate(element => element.getAnimations().length)).toBeGreaterThan(0);
+    await expect(calendar.getByRole('listitem').locator('svg')).toHaveCount(0);
     item.occurrences[1].isCompleted = true;
     await refresh();
     const status = calendar.getByRole('status');
@@ -88,7 +87,7 @@ test('refresh, date navigation and reload do not replay completion; observed und
   expect(await status.locator('svg').evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(2);
 });
 
-test('reduced motion immediately settles record and daily checks without animations or overflow at 320px', async ({ page }) => {
+test('reduced motion immediately settles the daily check without animations or overflow at 320px', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.setViewportSize({ width: 320, height: 900 });
   const { item, calendar, refresh } = await openCalendar(page);
   item.occurrences[1].isCompleted = true; await refresh();

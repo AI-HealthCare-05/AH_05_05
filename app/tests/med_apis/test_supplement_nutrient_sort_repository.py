@@ -48,18 +48,19 @@ class RecordingQuery:
 
 class RecordingRepository:
     def __init__(self) -> None:
-        self.search_args: tuple[str, str, str | None, int, int] | None = None
+        self.search_args: tuple[str, int | None, str, str | None, int, int] | None = None
 
     async def search(
         self,
         name: str,
         *,
+        user_id: int | None,
         sort: str,
         direction: str | None,
         offset: int,
         limit: int,
     ) -> tuple[list[SupplementNutrient], int]:
-        self.search_args = (name, sort, direction, offset, limit)
+        self.search_args = (name, user_id, sort, direction, offset, limit)
         return [], 0
 
 
@@ -107,9 +108,9 @@ async def test_service_forwards_direction_to_repository() -> None:
     repository = RecordingRepository()
     service = SupplementNutrientService(repository=repository)
 
-    await service.search("  비타민  ", sort="reviews", direction="asc", offset=20, limit=10)
+    await service.search("  비타민  ", user_id=42, sort="reviews", direction="asc", offset=20, limit=10)
 
-    assert repository.search_args == ("비타민", "reviews", "asc", 20, 10)
+    assert repository.search_args == ("비타민", 42, "reviews", "asc", 20, 10)
 
 
 def test_search_direction_is_a_validated_query_enum() -> None:

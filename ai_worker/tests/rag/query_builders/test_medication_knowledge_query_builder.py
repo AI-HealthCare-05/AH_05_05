@@ -32,6 +32,23 @@ def test_build_expands_supplement_function_question() -> None:
     assert plan.has_medication_product_cue is False
 
 
+def test_build_treats_generic_supplement_about_question_as_function_request() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="마그네슘",
+                canonical_name="마그네슘",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            )
+        ]
+    ).build("마그네슘에 대해 알려줘")
+
+    assert plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert "효능" in plan.expanded_query
+
+
 def test_build_does_not_treat_unregistered_general_words_as_drug_entities() -> None:
     plan = MedicationKnowledgeQueryBuilder(catalog_entities=[]).build(
         "피곤할 때 가장 좋은 영양제 하나 추천해줘",
@@ -410,6 +427,24 @@ def test_build_preserves_every_entity_when_known_pair_is_part_of_larger_question
     assert "와파린 비타민 K 상호작용" in plan.alternate_queries
     assert "와파린 칼슘 상호작용" in plan.alternate_queries
     assert "calcium iron absorption interaction" in plan.alternate_queries
+
+
+def test_build_preserves_every_pair_for_three_explicit_supplements() -> None:
+    plan = MedicationKnowledgeQueryBuilder().build(
+        "마그네슘, 아연, 칼슘을 같이 먹어도 되나요?",
+    )
+
+    assert plan.entity_names == ["마그네슘", "아연", "칼슘"]
+    assert {(pair.left_name, pair.right_name) for pair in plan.interaction_pairs} == {
+        ("마그네슘", "아연"),
+        ("마그네슘", "칼슘"),
+        ("아연", "칼슘"),
+    }
+    assert set(plan.alternate_queries) >= {
+        "마그네슘 아연 상호작용",
+        "마그네슘 칼슘 상호작용",
+        "아연 칼슘 상호작용",
+    }
 
 
 def test_build_limits_multi_entity_pairs_and_prioritizes_drug_drug() -> None:
