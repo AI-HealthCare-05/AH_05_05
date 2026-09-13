@@ -113,7 +113,7 @@ async def generate_intake_report(
     result = await service.generate(user=user)
     response = IntakeReportResponse.from_result(result)
     if result.status.value != "EMPTY" and isinstance(getattr(user, "email", None), str):
-        email_content = render_intake_report_email(response)
+        email_content = render_intake_report_email(response, standalone=True)
         response.email_token = email_service.create_snapshot_token(
             user=user,
             report_markdown=email_content[1] if email_content is not None else result.report_markdown,
@@ -142,11 +142,18 @@ async def send_intake_report_email(
     except IntakeReportEmailNotVerifiedError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
+    if getattr(user, "birth_date", None) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="보고서 첨부파일의 비밀번호를 설정하려면 회원정보에 생년월일을 등록해 주세요.",
+        )
     job = await email_job_service.enqueue_intake_report(
         user_id=user.id,
         recipient_email=recipient_email,
         report_markdown=snapshot.report_markdown,
         report_id=snapshot.report_id,
+        report_birth_date=user.birth_date,
+        recipient_name=getattr(user, "name", None),
         **({"report_html": snapshot.report_html} if getattr(snapshot, "report_html", None) is not None else {}),
     )
     if job.status is BackgroundJobStatus.FAILED:

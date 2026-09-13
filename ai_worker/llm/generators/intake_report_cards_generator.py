@@ -312,7 +312,8 @@ class OpenAIIntakeReportCardsGenerator:
         self, catalog: V11EvidenceCatalog, *, request_semaphore: asyncio.Semaphore | None = None
     ) -> IntakeReportCardsPlan:
         plan = build_canonical_card_plan(catalog)
-        request = prepare_spacing_repair(plan, catalog)
+        # Dense-run validation alone misses short warnings and numeric dosing prose.
+        request = prepare_spacing_repair(plan, catalog, review_all_text=True)
         if request is None:
             try:
                 return validate_card_plan(plan, catalog)

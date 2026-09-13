@@ -1,7 +1,7 @@
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -151,13 +151,14 @@ class TestEmailWorker(TestCase):
             )
         )
 
-    def intake_report_payload(self) -> str:
+    def intake_report_payload(self, birth_date: date | None = date(1990, 1, 2)) -> str:
         return self.codec.encrypt(
             EmailJobPayload(
                 template=EmailTemplate.INTAKE_REPORT,
                 recipient_email="recipient@example.com",
                 report_id="report-20260911-abc123",
                 report_markdown="# 복용약 보고서\n\n내용",
+                report_birth_date=birth_date,
             )
         )
 
@@ -252,6 +253,7 @@ class TestEmailWorker(TestCase):
             hashed_password=hash_password("Original123!"),
             name="보고서 사용자",
             status=AccountStatus.ACTIVE,
+            birth_date=date(1990, 1, 2),
         )
         await EmailVerification.create(
             email=user.email,
@@ -267,6 +269,33 @@ class TestEmailWorker(TestCase):
         await job.refresh_from_db()
         assert job.status is BackgroundJobStatus.COMPLETED
         self.sender.send.assert_called_once()
+        message = self.sender.send.call_args.args[0]
+        assert len(message.attachments) == 1
+        assert message.attachments[0].content_type == "text/html"
+        assert "900102" not in message.text_body + message.html_body
+
+    async def test_intake_report_without_birthdate_fails_without_sending(self) -> None:
+        user = await User.create(
+            email="recipient@example.com",
+            hashed_password=hash_password("Original123!"),
+            name="보고서 사용자",
+            status=AccountStatus.ACTIVE,
+        )
+        await EmailVerification.create(
+            email=user.email,
+            purpose=EmailVerificationPurpose.SIGNUP,
+            code_digest="a" * 64,
+            expires_at=datetime.now(config.TIMEZONE) + timedelta(minutes=5),
+            verified_at=datetime.now(config.TIMEZONE),
+        )
+        job = await self.create_job(reference_table="intake_reports", reference_id=user.id, user_id=user.id)
+
+        await worker.send_email(self.context, job.id, self.intake_report_payload(birth_date=None))
+
+        await job.refresh_from_db()
+        assert job.status is BackgroundJobStatus.FAILED
+        assert job.error_code == "EMAIL_PAYLOAD_INVALID"
+        self.sender.send.assert_not_called()
 
     async def test_retryable_failure_waits_and_raises_arq_retry(self) -> None:
         job = await self.create_job(max_retry_count=3)

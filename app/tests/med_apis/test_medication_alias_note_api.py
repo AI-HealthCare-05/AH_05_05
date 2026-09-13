@@ -1,19 +1,30 @@
 from datetime import date, datetime
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
 
+from app.apis.v1.medication_router import get_medication_service
+from app.core import config
 from app.main import app
 from app.models.care import CareEpisode
 from app.models.enums import CareEpisodeStatus
 from app.models.medications import Medication, MedicationNote
 from app.models.users import User
+from app.services.medications import MedicationService
 from app.tests.med_apis.helpers import authentication_headers
 
 ALIAS_URL = "/api/v1/med/episodes"
 MEDICATIONS_URL = "/api/v1/medications"
 NOTES_URL = "/api/v1/med/notes"
+
+
+@pytest.fixture(autouse=True)
+def fixed_medication_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CRUD fixtures cover an active September 3-9 episode, independent of the run date.
+    service = MedicationService(mutation_time_provider=lambda: datetime(2026, 9, 3, 12, tzinfo=config.TIMEZONE))
+    monkeypatch.setitem(app.dependency_overrides, get_medication_service, lambda: service)
 
 
 async def create_episode(user: User, *, title: str, alias: str | None = None) -> CareEpisode:
@@ -112,6 +123,7 @@ class TestMedicationNotesAPI(TestCase):
                 },
                 headers=headers,
             )
+            assert first.status_code == status.HTTP_201_CREATED, first.text
             second = await client.post(
                 NOTES_URL,
                 json={
@@ -121,6 +133,7 @@ class TestMedicationNotesAPI(TestCase):
                 },
                 headers=headers,
             )
+            assert second.status_code == status.HTTP_201_CREATED, second.text
             listed = await client.get(
                 NOTES_URL,
                 params={"episodeId": episode.id, "limit": 10},
@@ -136,11 +149,9 @@ class TestMedicationNotesAPI(TestCase):
             deleted = await client.delete(f"{NOTES_URL}/{note_id}", headers=headers)
             after_delete = await client.get(NOTES_URL, headers=headers)
 
-        assert first.status_code == status.HTTP_201_CREATED
         assert first.json()["careEpisodeId"] == episode.id
         assert first.json()["medicationId"] == medication.id
         assert first.json()["dosedAt"].startswith("2026-09-02T19:00")
-        assert second.status_code == status.HTTP_201_CREATED
         assert second.json()["medicationId"] is None
         assert listed.status_code == status.HTTP_200_OK
         assert listed.json()["total"] == 2
