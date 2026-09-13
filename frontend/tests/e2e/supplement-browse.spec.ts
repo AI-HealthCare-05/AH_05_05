@@ -128,6 +128,35 @@ test('검색 결과는 평점 집계를 보여주고 제품 상세로 이동한�
   await expect(page).toHaveURL(/\/supplements\/product\/sp-001$/);
 });
 
+test('검색 카드는 별점 없는 본문 후기도 후기 수를 표시한다', async ({ page }) => {
+  test.skip(!IS_REAL_API, '실 API의 본문 전용 후기 집계 표시를 확인합니다.');
+  await page.route('**/api/v1/med/nutr?*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          ...SEARCH_PRODUCT_RESPONSE,
+          id: 2049,
+          name: '본문 후기 영양제',
+          rating_average: null,
+          review_count: 1,
+        }],
+        total: 1,
+        offset: 0,
+        limit: 20,
+      }),
+    }),
+  );
+  await page.goto('/dev/supplements?tab=browse');
+
+  await page.getByPlaceholder('제품명 또는 성분 검색').fill('본문 후기');
+
+  const result = page.getByRole('button', { name: /본문 후기 영양제/ });
+  await expect(result).toContainText('후기: 1개');
+  await expect(result).not.toContainText('★');
+});
+
 test('정렬 칩은 URL을 바꾸지 않고 실 검색 API 정렬을 첫 페이지부터 요청한다', async ({
   page,
 }) => {

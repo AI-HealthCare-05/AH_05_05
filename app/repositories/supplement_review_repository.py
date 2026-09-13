@@ -76,6 +76,10 @@ class SupplementReviewRepository:
         ).values_list("registration_id", flat=True)
         return list(rows)
 
+    async def list_reported_registration_ids_for_user(self, user_id: int) -> list[int]:
+        rows = await SupplementReviewReport.filter(user_id=user_id).values_list("registration_id", flat=True)
+        return list(rows)
+
     async def list_reported_registration_ids(self, user_id: int, registration_ids: list[int]) -> set[int]:
         if not registration_ids:
             return set()

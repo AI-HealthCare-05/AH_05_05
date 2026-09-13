@@ -92,7 +92,7 @@ async def list_nutrient_standards(
     summary="건강기능식품 영양성분 검색",
 )
 async def search_supplement_nutrients(
-    _user: Annotated[User, Depends(get_request_user)],
+    user: Annotated[User, Depends(get_request_user)],
     service: Annotated[SupplementNutrientService, Depends(get_supplement_nutrient_service)],
     name: Annotated[str, Query(min_length=1, max_length=100)],
     sort: Annotated[SupplementSort, Query(description="검색 결과 정렬 기준")] = "name",
@@ -106,6 +106,7 @@ async def search_supplement_nutrients(
     """제품명 앞뒤 부분 검색으로 건강기능식품 기준정보를 페이지 단위로 조회한다."""
     products, total = await service.search(
         name,
+        user_id=user.id,
         sort=sort,
         direction=direction,
         offset=offset,

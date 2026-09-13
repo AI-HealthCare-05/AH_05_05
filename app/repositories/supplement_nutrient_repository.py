@@ -33,6 +33,7 @@ class SupplementNutrientRepository:
         self,
         name: str,
         *,
+        user_id: int | None = None,
         sort: SupplementSort,
         direction: SupplementSortDirection | None = None,
         offset: int,
@@ -41,12 +42,17 @@ class SupplementNutrientRepository:
         query = SupplementNutrient.filter(name__icontains=name)
         total = await query.count()
         excluded_ids = await self.review_repository.list_excluded_registration_ids()
-        review_filter = Q(user_registrations__score__isnull=False)
+        if user_id is not None:
+            reported_ids = await self.review_repository.list_reported_registration_ids_for_user(user_id)
+            excluded_ids = list(dict.fromkeys([*excluded_ids, *reported_ids]))
+        rating_filter = Q(user_registrations__score__isnull=False)
+        review_filter = rating_filter | Q(user_registrations__review_body__isnull=False)
         if excluded_ids:
+            rating_filter &= ~Q(user_registrations__id__in=excluded_ids)
             review_filter &= ~Q(user_registrations__id__in=excluded_ids)
         active_registration_filter = Q(user_registrations__status=SupplementStatus.ACTIVE)
         annotated = query.annotate(
-            rating_average=Avg("user_registrations__score", _filter=review_filter),
+            rating_average=Avg("user_registrations__score", _filter=rating_filter),
             review_count=Count("user_registrations", _filter=review_filter),
             registration_count=Count(
                 "user_registrations",
