@@ -81,9 +81,12 @@ async function physical(control: Locator) {
   return control.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
-      shadow: style.boxShadow,
-      border: style.borderTopWidth,
-      image: style.backgroundImage,
+      backgroundColor: style.backgroundColor,
+      backgroundImage: style.backgroundImage,
+      borderColor: style.borderTopColor,
+      borderWidth: style.borderTopWidth,
+      boxShadow: style.boxShadow,
+      transform: style.transform,
     };
   });
 }
@@ -133,19 +136,43 @@ test('홈 공식 인증은 compact 공통 표면과 pending 중복 방지를 함
     return fulfillJson(route, { message: '447 fixture missing' }, 503);
   });
 
+  await page.goto('/dev/medications');
+  const canonical = page.getByRole('button', { name: 'AI 보고서 받기', exact: true });
+  await expectClay(canonical, 44);
+  const canonicalIdle = await physical(canonical);
+  await canonical.hover();
+  await page.waitForTimeout(160);
+  const canonicalHover = await physical(canonical);
+  await canonical.evaluate((element) => { element.style.transition = 'none'; });
+  await page.mouse.down();
+  await expect.poll(() => canonical.evaluate((element) => getComputedStyle(element).transform)).not.toBe('none');
+  await page.waitForTimeout(160);
+  const canonicalPressed = await physical(canonical);
+  await page.mouse.move(0, 0);
+  await page.mouse.up();
+
+  await page.goto('/dev/medication-schedule');
+  const canonicalDisabled = page.getByRole('button', { name: '저장하고 계속', exact: true });
+  await expect(canonicalDisabled).toBeDisabled();
+  const canonicalDisabledSurface = await physical(canonicalDisabled);
+
   await page.goto('/home');
   const checkIn = page.getByRole('button', { name: `${challenge.name} 했어요` });
   await expect(checkIn).toHaveAttribute('data-size', 'compact');
   await expectClay(checkIn, 44);
+  expect(await physical(checkIn)).toEqual(canonicalIdle);
   await page.locator('.rx-today-challenge-item').evaluate(async (element) => {
     await Promise.all(element.getAnimations().map((animation) => animation.finished));
   });
   await captureReviewScreenshot(page, 'task-1-home-controls-390.png');
-  const idleSurface = await physical(checkIn);
   await checkIn.hover();
-  expect(await physical(checkIn)).not.toEqual(idleSurface);
+  await page.waitForTimeout(160);
+  expect(await physical(checkIn)).toEqual(canonicalHover);
+  await checkIn.evaluate((element) => { element.style.transition = 'none'; });
   await page.mouse.down();
   await expect.poll(() => checkIn.evaluate((element) => getComputedStyle(element).transform)).not.toBe('none');
+  await page.waitForTimeout(160);
+  expect(await physical(checkIn)).toEqual(canonicalPressed);
   await page.mouse.move(0, 0);
   await page.mouse.up();
 
@@ -154,6 +181,8 @@ test('홈 공식 인증은 compact 공통 표면과 pending 중복 방지를 함
   await expect(pending).toBeDisabled();
   await expect(pending).toHaveText('저장 중…');
   await expectClay(pending, 44);
+  await pending.evaluate((element) => { element.style.transition = 'none'; });
+  expect(await physical(pending)).toEqual(canonicalDisabledSurface);
   await pending.evaluate((button: HTMLButtonElement) => button.click());
   expect(verificationPosts).toBe(1);
   releaseVerification();
@@ -221,14 +250,42 @@ for (const width of [320, 390, 1280]) {
 }
 
 test('챌린지·채팅 compact 실행은 긴 문구에서도 44px 높이와 내용을 보존한다', async ({ page }) => {
-  await page.goto('/dev/challenges');
-  const challengeButton = page.getByRole('button', { name: '했어요', exact: true }).first();
+  await authenticate(page);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/v1/user/challenges' && request.method() === 'GET') {
+      return fulfillJson(route, { items: [participation(false)], total_count: 1 });
+    }
+    if (pathname === '/api/v1/user/custom-challenge-participations') {
+      return fulfillJson(route, { items: [], totalCount: 0 });
+    }
+    if (pathname === '/api/v1/user/badges') {
+      return fulfillJson(route, { items: [], total_count: 0 });
+    }
+    return fulfillJson(route, { message: '447 official challenge fixture missing' }, 503);
+  });
+  await page.goto('/challenges');
+  await page.getByRole('button', { name: '진행 중인 챌린지 펼치기', exact: true }).click();
+  const officialCard = page.getByRole('article', { name: challenge.name });
+  const challengeButton = officialCard.locator('button.rx-button').last();
+  await expect(challengeButton).toHaveText('했어요');
   await expect(challengeButton).toHaveAttribute('data-size', 'compact');
   await expectClay(challengeButton, 44);
-  expect(await challengeButton.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+  const originalLabel = await challengeButton.textContent();
+  const longCompactLabel = '오늘 공식 챌린지 인증 기록을 다시 불러오기';
+  await challengeButton.evaluate((element, label) => { element.textContent = label; }, longCompactLabel);
+  await expect(challengeButton).toHaveText(longCompactLabel);
+  expect(await challengeButton.evaluate((element) => ({
+    horizontal: element.scrollWidth <= element.clientWidth + 1,
+    vertical: element.scrollHeight <= element.clientHeight + 1,
+  }))).toEqual({ horizontal: true, vertical: true });
+  await challengeButton.evaluate((element, label) => { element.textContent = label; }, originalLabel);
+  await expect(challengeButton).toHaveText('했어요');
 
   await page.evaluate(() => {
-    localStorage.setItem('poke.mock-chat-sessions:guest', JSON.stringify({
+    localStorage.setItem('poke.mock-chat-sessions:issue-447%40example.com', JSON.stringify({
       nextSessionId: 78,
       nextMessageId: 1205,
       sessions: [{

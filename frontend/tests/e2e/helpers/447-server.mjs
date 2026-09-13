@@ -9,6 +9,7 @@ const { createServer } = await import(require.resolve('vite'));
 const { default: react } = await import(require.resolve('@vitejs/plugin-react'));
 const { default: tailwindcss } = await import(require.resolve('@tailwindcss/vite'));
 const port = Number(process.env.PLAYWRIGHT_TEST_PORT ?? '45547');
+const adapterMode = process.env.VITE_USE_MOCK ?? 'true';
 
 const server = await createServer({
   configFile: false,
@@ -33,7 +34,7 @@ const server = await createServer({
     tailwindcss(),
   ],
   define: {
-    'import.meta.env.VITE_USE_MOCK': JSON.stringify(process.env.VITE_USE_MOCK ?? 'true'),
+    'import.meta.env.VITE_USE_MOCK': JSON.stringify(adapterMode),
     'import.meta.env.VITE_VAPID_PUBLIC_KEY': JSON.stringify(''),
   },
   resolve: {
@@ -51,7 +52,7 @@ const server = await createServer({
 });
 
 await server.listen();
-console.log(`447 controls Vite ready http://127.0.0.1:${port}; mock adapters; fail closed; watch null`);
+console.log(`447 controls Vite ready http://127.0.0.1:${port}; ${adapterMode === 'true' ? 'mock' : 'intercepted real'} adapters; fail closed; watch null`);
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, async () => {

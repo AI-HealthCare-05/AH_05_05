@@ -20,6 +20,8 @@ export default defineConfig({
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 30_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
     env: {
       ...process.env,
       PLAYWRIGHT_TEST_PORT: String(port),
