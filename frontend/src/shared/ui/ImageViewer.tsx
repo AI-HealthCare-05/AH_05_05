@@ -1,6 +1,8 @@
-import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { X, ZoomIn, ZoomOut } from 'lucide-react';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './dialog';
+
+const IMAGE_VIEWER_ZOOM_LEVELS = [1, 1.5, 2, 3] as const;
 
 export interface ImageViewerProps {
   open: boolean;
@@ -13,7 +15,7 @@ export interface ImageViewerProps {
 
 /**
  * 등록 문서 원본을 화면 가득 확인하는 뷰어입니다.
- * 이미지의 기본 확대 제스처를 막지 않도록 touch-action을 auto로 유지합니다.
+ * 맞춤 확대 단계와 스크롤 이동으로 작은 글자를 확인할 수 있습니다.
  */
 export function ImageViewer({
   open,
@@ -23,6 +25,53 @@ export function ImageViewer({
   toolbar,
   onOpenChange,
 }: ImageViewerProps) {
+  const [zoomIndex, setZoomIndex] = useState(0);
+  const [fittedSize, setFittedSize] = useState<{ width: number; height: number } | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const zoom = IMAGE_VIEWER_ZOOM_LEVELS[zoomIndex];
+  const scaledSize = fittedSize
+    ? { width: fittedSize.width * zoom, height: fittedSize.height * zoom }
+    : null;
+
+  function measureFittedSize() {
+    const area = scrollAreaRef.current;
+    const image = imageRef.current;
+    if (!area || !image || image.naturalWidth === 0 || image.naturalHeight === 0) return;
+    const areaBox = area.getBoundingClientRect();
+    const fit = Math.min(
+      areaBox.width / image.naturalWidth,
+      areaBox.height / image.naturalHeight,
+      1,
+    );
+    const next = {
+      width: image.naturalWidth * fit,
+      height: image.naturalHeight * fit,
+    };
+    setFittedSize((current) =>
+      current &&
+      Math.abs(current.width - next.width) < 0.5 &&
+      Math.abs(current.height - next.height) < 0.5
+        ? current
+        : next,
+    );
+  }
+
+  useEffect(() => {
+    if (open) {
+      setZoomIndex(0);
+      setFittedSize(null);
+    }
+  }, [open, src]);
+
+  useLayoutEffect(() => {
+    if (!open || !scrollAreaRef.current) return undefined;
+    measureFittedSize();
+    const observer = new ResizeObserver(measureFittedSize);
+    observer.observe(scrollAreaRef.current);
+    return () => observer.disconnect();
+  }, [open, src]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -39,14 +88,55 @@ export function ImageViewer({
             <X className="size-7" strokeWidth={2.5} aria-hidden />
           </DialogClose>
         </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <img
-            src={src}
-            alt={alt}
-            className="max-h-full w-auto max-w-full object-contain"
-            style={{ touchAction: 'auto' }}
-            onClick={() => onOpenChange(false)}
-          />
+        <div
+          ref={scrollAreaRef}
+          role="region"
+          tabIndex={0}
+          aria-label="확대한 약봉투 이동 영역"
+          className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
+        >
+          <div
+            className="grid min-h-full min-w-full place-items-center"
+            style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
+          >
+            <img
+              ref={imageRef}
+              src={src}
+              alt={alt}
+              draggable={false}
+              className={scaledSize ? 'block max-w-none object-contain' : 'max-h-full w-auto max-w-full object-contain'}
+              style={scaledSize ? { width: scaledSize.width, height: scaledSize.height } : undefined}
+              onLoad={measureFittedSize}
+            />
+          </div>
+        </div>
+        <div
+          role="group"
+          aria-label="이미지 확대 축소"
+          className="mx-auto flex min-h-12 shrink-0 items-center gap-1 rounded-full bg-background/95 p-1 text-foreground shadow-card"
+        >
+          <button
+            type="button"
+            aria-label="축소"
+            disabled={zoomIndex === 0}
+            className="flex size-touch items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setZoomIndex((index) => Math.max(0, index - 1))}
+          >
+            <ZoomOut aria-hidden className="size-5" />
+          </button>
+          <span role="status" aria-label="확대 비율" className="min-w-14 text-center text-sm font-bold tnum">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            aria-label="확대"
+            disabled={zoomIndex === IMAGE_VIEWER_ZOOM_LEVELS.length - 1}
+            className="flex size-touch items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setZoomIndex((index) => Math.min(IMAGE_VIEWER_ZOOM_LEVELS.length - 1, index + 1))}
+          >
+            <ZoomIn aria-hidden className="size-5" />
+          </button>
         </div>
       </DialogContent>
     </Dialog>
