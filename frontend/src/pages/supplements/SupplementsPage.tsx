@@ -39,6 +39,7 @@ import { SupplementsBrowseView } from './SupplementsBrowseView';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 
 const numberFormat = new Intl.NumberFormat('ko-KR');
+const nutrientNumberFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
 
 interface SupplementsPageProps {
   supplementsOverride?: Supplement[];
@@ -648,7 +649,7 @@ function NutrientTotalCard({
                 isOverUpperLimit ? 'text-danger-strong' : 'text-foreground'
               }`}
             >
-              {numberFormat.format(total.amount)}
+              {nutrientNumberFormat.format(total.amount)}
             </strong>
             <span className="text-unit text-muted-foreground">{total.unit}</span>
           </div>
@@ -711,12 +712,12 @@ function standardStatusLabel(
     return '상한 초과';
   }
   if (evaluation.status === 'below-base' && evaluation.percentOfBase !== null) {
-    return `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`;
+    return `${baseLabel}의 ${nutrientNumberFormat.format(evaluation.percentOfBase)}%예요`;
   }
   if (evaluation.status === 'recommended') {
     return (
       total.ul === null && evaluation.percentOfBase !== null
-        ? `${baseLabel}의 ${numberFormat.format(evaluation.percentOfBase)}%예요`
+        ? `${baseLabel}의 ${nutrientNumberFormat.format(evaluation.percentOfBase)}%예요`
         : '권장 범위예요'
     );
   }
@@ -788,7 +789,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
           <span className="row-start-1">
             {evaluation.baseKind === 'ai' ? '충분' : '권장'}
           </span>
-          <span className="row-start-3 tnum">{numberFormat.format(evaluation.base)}</span>
+          <span className="row-start-3 tnum">{nutrientNumberFormat.format(evaluation.base)}</span>
         </div>
       )}
       {positions.upper !== null && upperLimit !== null && (
@@ -800,7 +801,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
           style={{ left: `${clampThresholdLabel(positions.upper)}%` }}
         >
           <span className="row-start-1">상한</span>
-          <span className="row-start-3 tnum">{numberFormat.format(upperLimit)}</span>
+          <span className="row-start-3 tnum">{nutrientNumberFormat.format(upperLimit)}</span>
         </div>
       )}
       <div
@@ -810,7 +811,7 @@ function NutrientRangeBar({ total }: { total: NutrientTotal }) {
         aria-valuenow={upperLimit !== null ? Math.min(total.amount, upperLimit) : undefined}
         aria-valuemax={upperLimit ?? undefined}
         aria-valuetext={
-          hasUpperLimit ? `${numberFormat.format(total.amount)}${total.unit}` : undefined
+          hasUpperLimit ? `${nutrientNumberFormat.format(total.amount)}${total.unit}` : undefined
         }
         className="absolute inset-x-0 top-4 h-5"
       >
