@@ -26,7 +26,7 @@ function NutrientBar({ item }: { item: NutrientTotal }) {
       <div className="relative h-4 text-micro text-muted-foreground" aria-hidden="true"><span className="absolute left-0">0%</span><span className="absolute left-[75%] -translate-x-1/2">100%</span><span className="absolute right-0">130%+</span></div>
       <p className="text-xs text-muted-foreground">{referenceLabel} {item.referenceValue}{item.unit ?? ''} 기준 · 확인된 합계 {amount}</p>
     </> : <p className="text-xs leading-relaxed text-muted-foreground">비교 기준 또는 함량이 미확인이라 막대를 표시하지 않았어요.</p>}
-    {item.unknownProductNames?.length ? <p className="break-words text-xs text-muted-foreground">확인 필요 제품: {item.unknownProductNames.join(' · ')}</p> : null}
+    {item.unknownProductNames?.length ? <p className="break-words text-xs text-muted-foreground">성분 포함 제품: {item.unknownProductNames.join(' · ')}</p> : null}
     {item.includedProductNames.length > 0 && <p className="break-words text-xs text-muted-foreground">포함 제품 · {item.includedProductNames.join(' · ')}</p>}
   </article>;
 }
@@ -42,7 +42,6 @@ export function AiReportBody({ report }: { report: IntakeReport }) {
       <p className="w-fit rounded-pill bg-card px-2 py-1 text-micro font-bold text-primary">AI 보고서</p>
       <h1 className="text-2xl font-bold leading-tight">맞춤 복용 보고서</h1>
       <p className="break-words text-sm text-muted-foreground">{profile}</p>
-      {report.basisNote && <p className="break-words text-sm leading-relaxed">{report.basisNote}</p>}
     </section>
 
     {fallbackUsed && <section role="alert" className="rounded-card border border-primary bg-primary-bg p-4 text-sm leading-relaxed">
@@ -55,11 +54,14 @@ export function AiReportBody({ report }: { report: IntakeReport }) {
     </ReportSection>
 
     {report.currentStack.length > 0 && <ReportSection title="등록한 복용 정보" id="ai-report-stack">
+      {report.currentStack.some(item => item.itemType === 'SUPPLEMENT') && <p className="text-xs text-muted-foreground">영양제 성분은 등록한 하루량 기준이에요.</p>}
       <div role="region" aria-label="현재 복용 목록 표 가로 스크롤" tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-primary">
         <table aria-label="현재 복용 목록" className={reportTableClass}>
           <thead><tr><th scope="col">제품</th><th scope="col">등록한 복용 정보</th><th scope="col">시간대</th></tr></thead>
           <tbody>{report.currentStack.map(item => <tr key={`${item.itemType}-${item.itemId}`}>
-            <td><strong className="block">{item.productName}</strong><span className="text-xs text-muted-foreground">{item.itemType === 'MEDICATION' ? '복용약' : item.itemType === 'SUPPLEMENT' ? '영양제' : '기타'}{item.ingredientName ? ` · ${item.ingredientName}` : ''}</span></td>
+            <td><strong className="block">{item.productName}</strong><span className="text-xs text-muted-foreground">{item.itemType === 'MEDICATION' ? '복용약' : item.itemType === 'SUPPLEMENT' ? '영양제' : '기타'}{item.itemType !== 'SUPPLEMENT' && item.ingredientName ? ` · ${item.ingredientName}` : ''}</span>
+              {item.itemType === 'SUPPLEMENT' && <p className="text-xs text-muted-foreground">{item.ingredientSummary?.trim() || '성분·함량 확인 필요'}</p>}
+            </td>
             <td>{item.registeredIntakeInfo}</td>
             <td>{item.scheduledSlots.map(slot => slotLabels[slot.toUpperCase()] ?? slot).join(' · ') || '미등록'}</td>
           </tr>)}</tbody>
@@ -67,8 +69,18 @@ export function AiReportBody({ report }: { report: IntakeReport }) {
       </div>
     </ReportSection>}
 
-    {report.nutrientTotals.length > 0 && <ReportSection title="영양소 합계" id="ai-report-nutrients">
-      <p className="text-xs leading-relaxed text-muted-foreground">식단은 포함하지 않으며, 확인되지 않은 함량은 0으로 계산하지 않았어요. 100%는 권장·충분섭취량 비교 기준이며, 이 비율만으로 부족·과다를 판단하지 않아요.</p>
+    {report.nutrientTotals.length > 0 && <ReportSection title="영양제 성분 합계" id="ai-report-nutrients">
+      <ul className="list-disc pl-4 text-xs leading-relaxed text-muted-foreground">
+        {report.basisNote ? <>
+          <li>{report.basisNote}</li>
+          <li>직접 입력한 영양제와 의약품의 성분은 합산에 포함되지 않아요.</li>
+        </> : <>
+          <li>검색된 영양제의 성분만 합산된 결과예요.</li>
+          <li>직접 입력한 영양제는 성분 합산에 포함되지 않아요.</li>
+          <li>음식과 의약품을 통한 섭취량은 포함되지 않아요.</li>
+        </>}
+      </ul>
+      <p className="text-xs leading-relaxed text-muted-foreground">100%는 권장·충분섭취량 비교 기준이며, 이 비율만으로 부족·과다를 판단하지 않아요.</p>
       {report.nutrientTotals.map((item, index) => <NutrientBar key={`${item.nutrientName}-${index}`} item={item} />)}
     </ReportSection>}
 

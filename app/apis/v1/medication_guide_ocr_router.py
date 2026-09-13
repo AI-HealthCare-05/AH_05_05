@@ -1,6 +1,6 @@
 from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Body, Depends, File, Header, Path, Query, Response, UploadFile, status
+from fastapi import APIRouter, Body, Depends, Header, Path, Query, Response, UploadFile, status
 
 from app.core.api_timeout import api_timeout
 from app.core.exceptions import OcrJobStateConflictError
@@ -22,6 +22,7 @@ from app.dtos.medication_guide_ocr import (
 )
 from app.models.users import User
 from app.services.medication_guide_ocr_jobs import MedicationGuideOcrJobService
+from app.services.ocr_memory_upload import get_ocr_memory_upload, get_ocr_preview_memory_slot
 
 medication_guide_ocr_router = APIRouter(tags=["medication-guide-ocr"])
 OCR_FILE_API_TIMEOUT_SECONDS = 10.0
@@ -92,10 +93,30 @@ CONFIRMED_OCR_RESULT_EXAMPLE = {
         },
     },
     summary="조제약 복약안내 OCR 작업 생성",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["file"],
+                        "properties": {
+                            "file": {
+                                "type": "string",
+                                "format": "binary",
+                                "description": "JPG 또는 PNG 조제약 복약안내 이미지",
+                            }
+                        },
+                    }
+                }
+            },
+        }
+    },
 )
 @api_timeout(OCR_FILE_API_TIMEOUT_SECONDS)
 async def submit_medication_guide_ocr(
-    file: Annotated[UploadFile, File(description="JPG 또는 PNG 조제약 복약안내 이미지")],
+    file: Annotated[UploadFile, Depends(get_ocr_memory_upload)],
     idempotency_key: Annotated[str, Header(min_length=8, max_length=100)],
     response: Response,
     user: Annotated[User, Depends(get_request_user)],
@@ -138,6 +159,7 @@ async def submit_medication_guide_ocr(
 @api_timeout(OCR_FILE_API_TIMEOUT_SECONDS)
 async def get_medication_guide_ocr_image(
     ocr_job_id: Annotated[int, Path(alias="ocrJobId")],
+    _preview_memory_slot: Annotated[None, Depends(get_ocr_preview_memory_slot)],
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[MedicationGuideOcrJobService, Depends(get_medication_guide_ocr_job_service)],
 ) -> Response:
@@ -176,6 +198,7 @@ async def get_medication_guide_ocr_image(
 @api_timeout(OCR_FILE_API_TIMEOUT_SECONDS)
 async def get_medication_guide_ocr_processed_image(
     ocr_job_id: Annotated[int, Path(alias="ocrJobId")],
+    _preview_memory_slot: Annotated[None, Depends(get_ocr_preview_memory_slot)],
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[MedicationGuideOcrJobService, Depends(get_medication_guide_ocr_job_service)],
 ) -> Response:

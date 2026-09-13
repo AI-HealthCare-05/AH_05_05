@@ -61,4 +61,18 @@ def test_builder_uses_structured_evidence_card_generator(monkeypatch) -> None:
     # generator even when the DTO and frontend accept v11 cards.
     assert type(service._use_case._generator).__name__ == "OpenAIIntakeReportCardsGenerator"
     assert options["timeout_seconds"] >= 75.0
+    assert options["enable_plain_language"] is False
+    assert service._use_case._generator._plain_language_refiner is None
     assert service._use_case._generator._generation_timeout_seconds == 90.0
+
+
+def test_builder_wires_bounded_candidate_selector_using_configured_model() -> None:
+    from ai_worker.llm.generators.medication_candidate_selector import OpenAIMedicationCandidateSelector
+
+    settings = Config(OPENAI_API_KEY="offline-not-a-real-key", KNOWLEDGE_SEARCH_MODE="DENSE", _env_file=None)
+    service = build_intake_report_core_service(settings=settings, qdrant_client=object())
+
+    selector = service._use_case._guide_repository._candidate_selector
+    assert isinstance(selector, OpenAIMedicationCandidateSelector)
+    assert selector.model_name == settings.OPENAI_CHAT_MODEL
+    assert selector._timeout_seconds <= 5.0

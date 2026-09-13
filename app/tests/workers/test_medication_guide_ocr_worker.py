@@ -34,6 +34,28 @@ async def test_cleanup_cron_delegates_to_expired_job_cleanup():
 
 
 @pytest.mark.asyncio
+async def test_storage_close_failure_still_closes_other_worker_resources(monkeypatch):
+    storage = MagicMock(aclose=AsyncMock(side_effect=OSError("storage close failed")))
+    provider = MagicMock(aclose=AsyncMock())
+    redis_pool = MagicMock(aclose=AsyncMock())
+    close_connections = AsyncMock()
+    monkeypatch.setattr(worker.Tortoise, "close_connections", close_connections)
+    ctx = {
+        "ocr_storage": storage,
+        "ocr_provider": provider,
+        "ocr_redis_pool": redis_pool,
+        "ocr_tortoise_active": True,
+        "ocr_job_service": object(),
+    }
+    with pytest.raises(OSError, match="storage close failed"):
+        await worker.shutdown(ctx)
+    provider.aclose.assert_awaited_once_with()
+    redis_pool.aclose.assert_awaited_once_with()
+    close_connections.assert_awaited_once_with()
+    assert ctx == {}
+
+
+@pytest.mark.asyncio
 async def test_startup_and_shutdown_manage_worker_owned_resources(monkeypatch):
     redis_pool = MagicMock()
     redis_pool.aclose = AsyncMock()

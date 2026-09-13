@@ -208,26 +208,6 @@ export function OcrReviewPage() {
   }, [batchId]);
 
   useEffect(() => {
-    if (!batchId || !initialRegistrationDraft) return;
-    let cancelled = false;
-    void Promise.allSettled([
-      getOcrProcessedImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
-      getOcrDocumentImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
-    ]).then(([processed, original]) => {
-      if (cancelled) return;
-      const nextProcessed = processed.status === 'fulfilled' ? processed.value : null;
-      const nextOriginal = original.status === 'fulfilled' ? original.value : null;
-      setProcessedImageUrl(nextProcessed);
-      setOriginalImageUrl(nextOriginal);
-      setImageView(nextProcessed ? 'processed' : 'original');
-      setImageUnavailable(!nextProcessed && !nextOriginal);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [batchId, initialRegistrationDraft]);
-
-  useEffect(() => {
     if (!state.file || batchId) return;
     let cancelled = false;
     setReadingStage('uploading');
@@ -301,11 +281,7 @@ export function OcrReviewPage() {
             setDispensedDate(data.fields.dispensedDate?.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
             setMedications(data.medications);
-            if (
-              data.ocrStatus === 'ready_for_review' ||
-              confirmedReviewMode ||
-              registrationEditMode
-            ) {
+            if (data.ocrStatus === 'ready_for_review') {
               void Promise.allSettled([
                 getOcrProcessedImageUrl(batchId, data.documentImageUrl),
                 getOcrDocumentImageUrl(batchId, data.documentImageUrl),
@@ -412,6 +388,24 @@ export function OcrReviewPage() {
     } finally {
       setRetaking(false);
     }
+  }
+
+  async function leaveReview() {
+    if (retaking) return;
+    if (result?.ocrStatus === 'ready_for_review' && batchId) {
+      setRetaking(true);
+      try {
+        await cancelOcrResult(batchId);
+        navigate('/home', { replace: true });
+      } catch {
+        toast.error('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.');
+      } finally {
+        setRetaking(false);
+      }
+      return;
+    }
+    if (batchId) releaseOcrDocumentImageUrl(batchId);
+    navigate('/home', { replace: true });
   }
 
   function createRegistrationDraft(): OcrRegistrationDraft | undefined {
@@ -745,8 +739,8 @@ export function OcrReviewPage() {
         </Card>
 
         {imageUnavailable && (
-          <Card tone="info" title="원본 미리보기를 불러오지 못했어요">
-            OCR 결과는 계속 확인하고 저장할 수 있어요.
+          <Card tone="info" title="사진 미리보기를 사용할 수 없어요">
+            사진 보관 시간이 지났거나 일시적으로 사용할 수 없어요. OCR 결과는 계속 확인하고 저장할 수 있어요.
           </Card>
         )}
 
@@ -865,10 +859,9 @@ export function OcrReviewPage() {
           </DialogHeader>
           <DialogFooter>
             <Button onClick={() => setExitConfirmOpen(false)}>계속 설정</Button>
-            <Button variant="secondary" onClick={() => {
-              if (batchId) releaseOcrDocumentImageUrl(batchId);
-              navigate('/home', { replace: true });
-            }}>나가기</Button>
+            <Button variant="secondary" onClick={leaveReview} disabled={retaking}>
+              {retaking ? '취소 중...' : '나가기'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

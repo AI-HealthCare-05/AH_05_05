@@ -190,6 +190,7 @@ class EmailJobService:
         recipient_email: str,
         report_markdown: str,
         report_id: str,
+        report_html: str | None = None,
     ) -> BackgroundJob:
         idempotency_key = f"email:intake-report:{user_id}:{report_id}"
         try:
@@ -219,6 +220,7 @@ class EmailJobService:
                     recipient_email=recipient_email,
                     report_id=report_id,
                     report_markdown=report_markdown,
+                    report_html=report_html,
                 )
             )
         except Exception as exc:
