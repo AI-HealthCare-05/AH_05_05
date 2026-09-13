@@ -72,6 +72,7 @@ class CommonCodeGroupResponse(BaseSerializerModel):
     updated_by_admin_id: int | None
     created_at: datetime
     updated_at: datetime | None
+    can_delete: bool
 
 
 class CommonCodeGroupListResponse(BaseSerializerModel):
