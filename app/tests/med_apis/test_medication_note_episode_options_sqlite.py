@@ -253,12 +253,14 @@ async def test_note_inventory_includes_current_candidates_and_historical_episode
     await create_note(owner, other_episode, "다른 처방에 잘못 연결한 기록")
 
     async with AsyncClient(
-        transport=ASGITransport(app=api_for(
-            owner,
-            service=MedicationService(
-                mutation_time_provider=lambda: datetime(2026, 9, 13, 12, 0, tzinfo=config.TIMEZONE),
-            ),
-        )),
+        transport=ASGITransport(
+            app=api_for(
+                owner,
+                service=MedicationService(
+                    mutation_time_provider=lambda: datetime(2026, 9, 13, 12, 0, tzinfo=config.TIMEZONE),
+                ),
+            )
+        ),
         base_url="http://test",
     ) as client:
         response = await client.get(OPTIONS_URL, params={"includeWithoutNotes": "true"})
@@ -309,12 +311,14 @@ async def test_note_inventory_first_dose_uses_owned_schedule_and_excludes_unknow
     unknown = await create_episode(owner, alias="시작일 미상", start_date=None, episode_status=CareEpisodeStatus.ACTIVE)
     await Medication.create(care_episode=unknown, name="시작일 미상 약")
     async with AsyncClient(
-        transport=ASGITransport(app=api_for(
-            owner,
-            service=MedicationService(
-                mutation_time_provider=lambda: datetime(2026, 9, 13, 12, 0, tzinfo=config.TIMEZONE),
-            ),
-        )),
+        transport=ASGITransport(
+            app=api_for(
+                owner,
+                service=MedicationService(
+                    mutation_time_provider=lambda: datetime(2026, 9, 13, 12, 0, tzinfo=config.TIMEZONE),
+                ),
+            )
+        ),
         base_url="http://test",
     ) as client:
         response = await client.get(OPTIONS_URL, params={"includeWithoutNotes": "true"})
@@ -389,9 +393,7 @@ async def test_create_note_rechecks_current_period_but_cancel_keeps_existing_his
 ) -> None:
     today = date(2026, 9, 13)
     owner = await create_user("note-create-period@example.com")
-    first_day = await create_episode(
-        owner, alias="첫날", start_date=today, episode_status=CareEpisodeStatus.ACTIVE
-    )
+    first_day = await create_episode(owner, alias="첫날", start_date=today, episode_status=CareEpisodeStatus.ACTIVE)
     last_day = await create_episode(
         owner, alias="마지막날", start_date=date(2026, 9, 11), episode_status=CareEpisodeStatus.ACTIVE
     )

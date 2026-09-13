@@ -306,9 +306,7 @@ class MedicationService:
         )
         episode_ids = [row["id"] for row in rows]
         episode_models = (
-            await CareEpisode.filter(id__in=episode_ids).prefetch_related("medications")
-            if episode_ids
-            else []
+            await CareEpisode.filter(id__in=episode_ids).prefetch_related("medications") if episode_ids else []
         )
         representative_medication_names: dict[int, str] = {}
         medication_counts: dict[int, int] = {}
@@ -345,11 +343,7 @@ class MedicationService:
                 )
                 for row in rows
             }
-            rows = [
-                row
-                for row in rows
-                if note_counts.get(row["id"], 0) > 0 or can_create_note_by_episode[row["id"]]
-            ]
+            rows = [row for row in rows if note_counts.get(row["id"], 0) > 0 or can_create_note_by_episode[row["id"]]]
 
         first_dose_at_by_episode: dict[int, datetime | None] = {}
         if include_without_notes:

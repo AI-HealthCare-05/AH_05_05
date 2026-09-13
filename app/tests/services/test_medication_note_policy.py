@@ -28,22 +28,24 @@ def test_note_creation_period_includes_the_first_and_last_intake_days() -> None:
 def test_note_creation_period_excludes_before_after_and_non_active_episodes() -> None:
     medications = [medication(days=3)]
 
-    assert can_create_medication_note(
-        episode(start=date(2026, 9, 11)), medications, date(2026, 9, 10)
-    ) is False
-    assert can_create_medication_note(
-        episode(start=date(2026, 9, 11)), medications, date(2026, 9, 14)
-    ) is False
-    assert can_create_medication_note(
-        episode(start=date(2026, 9, 11), status=CareEpisodeStatus.COMPLETED),
-        medications,
-        date(2026, 9, 12),
-    ) is False
-    assert can_create_medication_note(
-        episode(start=date(2026, 9, 11), status=CareEpisodeStatus.CANCELLED),
-        medications,
-        date(2026, 9, 12),
-    ) is False
+    assert can_create_medication_note(episode(start=date(2026, 9, 11)), medications, date(2026, 9, 10)) is False
+    assert can_create_medication_note(episode(start=date(2026, 9, 11)), medications, date(2026, 9, 14)) is False
+    assert (
+        can_create_medication_note(
+            episode(start=date(2026, 9, 11), status=CareEpisodeStatus.COMPLETED),
+            medications,
+            date(2026, 9, 12),
+        )
+        is False
+    )
+    assert (
+        can_create_medication_note(
+            episode(start=date(2026, 9, 11), status=CareEpisodeStatus.CANCELLED),
+            medications,
+            date(2026, 9, 12),
+        )
+        is False
+    )
 
 
 def test_note_creation_requires_a_known_period_with_at_least_one_medication() -> None:
