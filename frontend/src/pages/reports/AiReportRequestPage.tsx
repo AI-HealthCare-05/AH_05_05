@@ -49,7 +49,7 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
   const label = source === 'medications' ? '복약' : '영양제';
   return <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
     <Header title="복용 정보 AI 보고서" onBack={() => navigate(`/${source}`)} />
-    <main className="flex min-w-0 flex-1 flex-col gap-5 px-page-x py-5">
+    <main className="rx-reading-content flex min-w-0 flex-1 flex-col gap-5 px-page-x py-5">
       {!report && <section className="space-y-4 rounded-card bg-card p-5 shadow-card">
         <FileText aria-hidden className="size-8 text-primary" />
         <h2 className="text-xl font-bold text-foreground">현재 복용 정보를 함께 살펴봐요</h2>

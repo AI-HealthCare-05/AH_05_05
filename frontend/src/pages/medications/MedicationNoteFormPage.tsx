@@ -448,7 +448,7 @@ export function MedicationNoteFormPage() {
                   value={form.recordId}
                   onChange={(event) => chooseOverview(event.target.value)}
                   disabled={editing || episodes === null}
-                  className="h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
+                  className="rx-input h-control w-full rounded-input border border-input bg-card px-3.5 text-[length:var(--text-control)] font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
                 >
                   <option value="">처방을 선택해주세요</option>
                   {episodes?.map((episode) => (
@@ -483,7 +483,7 @@ export function MedicationNoteFormPage() {
                   maxLength={500}
                   disabled={episodes === null || saving}
                   placeholder="건강상태 변화를 작성하여 다음 진료시 의료진과 상담내용으로 활용해보세요."
-                  className="w-full resize-y rounded-input border border-input bg-card px-3.5 py-3 text-base font-normal text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
+                  className="rx-input w-full resize-y rounded-input border border-input bg-card px-3.5 py-3 text-base font-normal text-foreground placeholder:text-tertiary-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted-bg disabled:text-disabled-foreground"
                 />
               </label>
             </div>

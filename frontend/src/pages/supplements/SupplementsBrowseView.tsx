@@ -10,7 +10,7 @@ import {
   type SupplementSortKey,
 } from '@/entities/supplement';
 import { SupplementRankingCard } from '@/pages/home/SupplementRankingCard';
-import { Button, Card, StatusBadge } from '@/shared/ui';
+import { Button, Card, Input, StatusBadge } from '@/shared/ui';
 import { ContinuousTabs } from '@/shared/ui/ContinuousTabs';
 
 const SORT_OPTIONS: { key: SupplementSortKey; label: string }[] = [
@@ -208,24 +208,24 @@ export function SupplementsBrowseView({
 
   return (
     <>
-      <label className="relative block">
-        <span className="sr-only">영양제 제품 검색</span>
+      <div className="relative">
         <Search
           aria-hidden
-          className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-3.5 z-10 size-5 -translate-y-1/2 text-disabled-foreground"
         />
-        <input
+        <Input
           type="search"
+          aria-label="영양제 제품 검색"
           value={query}
           placeholder="제품명 또는 성분 검색"
-          className="h-12 w-full rounded-input border border-border bg-card pl-11 pr-4 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+          className="[&_input]:pl-11"
           onChange={(event) => {
             const nextQuery = event.target.value;
             invalidateSearchRequests(searchRequestKey(nextQuery, sort, direction));
             setQuery(nextQuery);
           }}
         />
-      </label>
+      </div>
 
       {results && results.items.length > 0 ? (
         <div className="flex flex-col gap-2">

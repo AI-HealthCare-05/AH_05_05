@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MedicationOverviewRange } from '@/entities/medication';
-import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@/shared/ui';
+import { Button, Dialog, DialogContent, DialogDescription, DialogTitle, Input } from '@/shared/ui';
 import {
   addCalendarYears,
   localIsoDate,
@@ -107,34 +107,30 @@ export function MedicationPeriodFilterSheet({
 
         {preset === 'custom' && (
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex min-w-0 flex-col gap-1 text-sm text-muted-foreground">
-              시작일
-              <input
-                type="date"
-                value={from}
-                min={earliestDate}
-                max={to && to < today ? to : today}
-                className="min-h-touch min-w-0 rounded-input border border-input bg-card px-3 text-foreground"
-                onChange={(event) => {
-                  setFrom(event.target.value);
-                  setError(null);
-                }}
-              />
-            </label>
-            <label className="flex min-w-0 flex-col gap-1 text-sm text-muted-foreground">
-              종료일
-              <input
-                type="date"
-                value={to}
-                min={from && from > earliestDate ? from : earliestDate}
-                max={today}
-                className="min-h-touch min-w-0 rounded-input border border-input bg-card px-3 text-foreground"
-                onChange={(event) => {
-                  setTo(event.target.value);
-                  setError(null);
-                }}
-              />
-            </label>
+            <Input
+              label="시작일"
+              type="date"
+              value={from}
+              min={earliestDate}
+              max={to && to < today ? to : today}
+              className="min-w-0 [&_input]:min-w-0"
+              onChange={(event) => {
+                setFrom(event.target.value);
+                setError(null);
+              }}
+            />
+            <Input
+              label="종료일"
+              type="date"
+              value={to}
+              min={from && from > earliestDate ? from : earliestDate}
+              max={today}
+              className="min-w-0 [&_input]:min-w-0"
+              onChange={(event) => {
+                setTo(event.target.value);
+                setError(null);
+              }}
+            />
           </div>
         )}
 

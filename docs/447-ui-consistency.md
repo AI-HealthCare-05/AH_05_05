@@ -8,6 +8,9 @@
 - 공식 챌린지 상세·참여 화면은 loading, success, 404, load error 네 상태 모두 `Header`와 기존 뒤로 가기 목적지를 유지한다.
 - 맞춤 추천 카드의 제목 행→연동 정보→대상 정보 간격은 로컬 8px, 빈 상태의 제목→설명→링크 간격은 로컬 12px이다. 공통 `Card` 구조는 변경하지 않는다.
 - 처방 추가/선택과 영양제 추가/삭제·완료는 같은 secondary `Button` 테두리·라운드·52px 표면을 사용한다. 실제 삭제 실행은 danger 의미와 disabled guard를 유지한다. 최근 6개월/복약 메모 pill과 Header 취소는 별도 역할이므로 유지한다.
+- 단일 행 입력은 공용 `Input`의 52px 높이·15px 글자·`rounded-input`·`border-input`·`rx-input` 표면을 사용한다. 네이티브 `select`·`textarea`와 시간 선택을 여는 버튼은 각각의 의미·행 수·길이 제한·resize·disabled 동작을 유지하면서 `rx-input` 표면만 공유한다. 날짜는 네이티브 `type=date`와 min/max 검증을 그대로 둔다.
+- MY의 재시도·로그아웃·탈퇴 진입은 실행 버튼이므로 secondary `Button`을 사용하고, 되돌릴 수 없는 탈퇴 확인 실행만 danger 단계를 유지한다. 비밀번호 변경은 화면 이동 성격의 64px navigation row이므로 chevron과 평면 카드 역할을 유지한다.
+- AI 보고서의 생성 전·대기·오류·빈 결과·기본/V11 결과와 하단 CTA는 모두 최대 760px의 `rx-reading-content` 읽기 열 안에 둔다. 좁은 화면에서는 기존처럼 폭 100%를 사용한다.
 
 ## 제외 및 후속 범위
 
