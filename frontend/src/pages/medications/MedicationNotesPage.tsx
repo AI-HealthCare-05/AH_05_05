@@ -556,6 +556,7 @@ export function MedicationNotesPage() {
             onDelete={openDeleteConfirmation}
             deletePending={deletePending}
             aria-label="복약 메모 선택"
+            className="max-[360px]:[&>button]:px-3"
           />
         ) : undefined}
       />

@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Route } from 'playwright/test';
 
 import { IS_REAL_API, REAL_API_ONLY_REASON } from './helpers/mode';
@@ -71,6 +73,38 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route(/^https:\/\/(?!127\.0\.0\.1:45547).*/, route => route.abort());
 });
+
+for (const width of [320, 390]) {
+  test(`메모 헤더는 열 개 선택해도 제목과 버튼이 잘리지 않는다 (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.route('**/api/v1/**', route => fulfillJson(route, { code: 'FIXTURE_MISSING', message: 'fixture missing' }, 503));
+    await page.route(/\/api\/v1\/med\/notes\/episodes(?:\?.*)?$/, route => fulfillJson(route, [{ ...endedEpisode, noteCount: 10 }]));
+    await page.route(/\/api\/v1\/med\/notes(?:\?.*)?$/, route => fulfillJson(route, {
+      items: Array.from({ length: 10 }, (_, index) => ({ ...note(6001 + index), dosedAt: '2026-09-03T08:00:00+09:00' })),
+      total: 10, nextCursor: null,
+    }));
+    await page.goto('/medications/notes');
+    await page.getByRole('tab', { name: '작성한 메모' }).click();
+    await page.getByRole('button', { name: /지난 처방.*펼치기/ }).click();
+    const banner = page.getByRole('banner');
+    await banner.getByRole('button', { name: '선택', exact: true }).click();
+    for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check();
+    await expect(banner.getByRole('button', { name: '삭제 10개', exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('group', { name: '복약 메모 선택' })).toHaveCount(0);
+    const geometry = await banner.evaluate((element) => {
+      const title = element.querySelector('h1')!;
+      const back = element.querySelector('button')!.getBoundingClientRect();
+      return { titleFits: title.scrollWidth <= title.clientWidth, backWidth: back.width, noOverflow: document.documentElement.scrollWidth <= innerWidth };
+    });
+    expect(geometry).toEqual({ titleFits: true, backWidth: 44, noOverflow: true });
+    const directory = process.env.UI456_MEMO_SCREENSHOT_DIR;
+    if (directory) {
+      mkdirSync(directory, { recursive: true });
+      await banner.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(directory, `memo-header-selection-${width}.png`), animations: 'disabled' });
+    }
+  });
+}
 
 test('작성 목록은 현재 복용 기간만 열고 지난·삭제 처방의 기존 메모는 계속 보여 준다', async ({ page }) => {
   await page.route('**/api/v1/**', route => fulfillJson(route, { code: 'FIXTURE_MISSING', message: 'fixture missing' }, 503));

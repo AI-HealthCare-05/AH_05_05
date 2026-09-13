@@ -74,7 +74,12 @@ export function SupplementsPage({
   const [listEditOpen, setListEditOpen] = useState(false);
   const [selectedSupplementIds, setSelectedSupplementIds] = useState<Set<number>>(new Set());
   const [bulkStopping, setBulkStopping] = useState(false);
-  const [removalWarning, setRemovalWarning] = useState<{ count: number; endsChallenge: boolean } | null>(null);
+  const [removalWarning, setRemovalWarning] = useState<{
+    count: number;
+    endsChallenge: boolean;
+    excludesFromChallenge: boolean;
+    stopName?: string;
+  } | null>(null);
   const removalDecision = useRef<((confirmed: boolean) => void) | null>(null);
   const mounted = useRef(true);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -111,7 +116,7 @@ export function SupplementsPage({
     setRemovalWarning(null);
   }
 
-  async function confirmSupplementRemoval(ids: number[]): Promise<boolean> {
+  async function confirmSupplementRemoval(ids: number[], stopName?: string): Promise<boolean> {
     try {
       // Read at the point of deletion so newly joined challenges are included.
       const { items } = await getCustomChallengeParticipations();
@@ -121,14 +126,17 @@ export function SupplementsPage({
         participation.status === 'ACTIVE' && participation.challengeType === 'SUPPLEMENT' &&
         participation.targets.some((target) => !target.isExcluded && selected.has(target.sourceId)),
       );
-      if (affected.length === 0) return true;
+      if (affected.length === 0 && stopName === undefined) return true;
       const endsChallenge = affected.some((participation) =>
         participation.targets.filter((target) => !target.isExcluded)
           .every((target) => selected.has(target.sourceId)),
       );
+      const excludesFromChallenge = affected.some((participation) =>
+        participation.targets.some((target) => !target.isExcluded && !selected.has(target.sourceId)),
+      );
       return await new Promise<boolean>((resolve) => {
         removalDecision.current = resolve;
-        setRemovalWarning({ count: ids.length, endsChallenge });
+        setRemovalWarning({ count: ids.length, endsChallenge, excludesFromChallenge, stopName });
       });
     } catch (error: unknown) {
       if (mounted.current) {
@@ -442,10 +450,6 @@ export function SupplementsPage({
                         );
                       })}
                     </ul>
-                    <p className="text-center text-xs text-muted-foreground">
-                      삭제한 영양제는 챌린지 대상에서 제외돼요. 남은 영양제가 없으면 챌린지가
-                      취소돼요. 지난 기록은 유지돼요.
-                    </p>
                   </div>
                 ) : (
                   <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
@@ -567,7 +571,7 @@ export function SupplementsPage({
         }}
         onSave={editSupplement}
         onStop={async (supplementId) => {
-          if (!(await confirmSupplementRemoval([supplementId]))) return false;
+          if (!(await confirmSupplementRemoval([supplementId], editingSupplement?.name ?? '영양제'))) return false;
           await stopActiveSupplement(supplementId);
           return true;
         }}
@@ -580,18 +584,24 @@ export function SupplementsPage({
       <Dialog open={removalWarning !== null} onOpenChange={(open) => { if (!open) resolveRemoval(false); }}>
         <DialogContent showCloseButton={false} className="gap-4 p-6">
           <DialogHeader>
-            <DialogTitle>영양제를 삭제할까요?</DialogTitle>
+            <DialogTitle className="[overflow-wrap:anywhere]">
+              {removalWarning?.stopName ? `${removalWarning.stopName} 복용을 중단할까요?` : '영양제를 삭제할까요?'}
+            </DialogTitle>
             <DialogDescription>
-              이 영양제로 참여 중인 챌린지가 있어요.<br />
-              삭제하면 해당 챌린지의 대상에서 제외돼요.
-              {removalWarning?.endsChallenge && (
-                <span className="mt-2 block">챌린지에 남는 영양제가 없어 챌린지가 종료돼요.</span>
-              )}
+              {removalWarning?.endsChallenge && removalWarning.excludesFromChallenge
+                ? '일부 챌린지는 종료되고, 나머지 챌린지에서는 선택한 영양제가 제외돼요.'
+                : removalWarning?.endsChallenge
+                  ? `${removalWarning.stopName ? '복용을 중단하면' : '삭제하면'} 참여 중인 챌린지가 종료돼요.`
+                  : removalWarning?.excludesFromChallenge
+                    ? <>이 영양제로 참여 중인 챌린지가 있어요.<br />{removalWarning.stopName ? '복용을 중단하면' : '삭제하면'} 해당 챌린지의 대상에서 제외돼요.</>
+                    : '성분 합계에서 제외됩니다. 다시 추가할 수 있어요.'}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => resolveRemoval(false)}>취소</Button>
-            <Button variant="danger" onClick={() => resolveRemoval(true)}>삭제 {removalWarning?.count}개</Button>
+            <Button variant="danger" onClick={() => resolveRemoval(true)}>
+              {removalWarning?.stopName ? '중단하기' : `삭제 ${removalWarning?.count}개`}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

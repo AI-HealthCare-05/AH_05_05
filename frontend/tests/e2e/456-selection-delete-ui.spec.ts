@@ -219,6 +219,7 @@ for (const width of [320, 390]) {
     await selectionEntry.click();
     const cancel = page.getByRole('button', { name: '취소', exact: true });
     await expect(add).toHaveCount(0);
+    await expect(page.getByText(/삭제한 영양제는 챌린지 대상에서 제외돼요/)).toHaveCount(0);
     await expectWhiteRoundedControl(cancel);
     await expect(page.getByRole('button', { name: /삭제 \d+개/ })).toHaveCount(0);
 
@@ -323,10 +324,16 @@ for (const removeAll of [false, true]) {
     await page.getByRole('button', { name: `삭제 ${count}개`, exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '영양제를 삭제할까요?' });
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('이 영양제로 참여 중인 챌린지가 있어요.');
-    await expect(dialog).toContainText('삭제하면 해당 챌린지의 대상에서 제외돼요.');
+    if (removeAll) {
+      await expect(dialog).toContainText('삭제하면 참여 중인 챌린지가 종료돼요.');
+      await expect(dialog.getByText('이 영양제로 참여 중인 챌린지가 있어요.')).toHaveCount(0);
+      await expect(dialog.getByText('삭제하면 해당 챌린지의 대상에서 제외돼요.')).toHaveCount(0);
+    } else {
+      await expect(dialog).toContainText('이 영양제로 참여 중인 챌린지가 있어요.');
+      await expect(dialog).toContainText('삭제하면 해당 챌린지의 대상에서 제외돼요.');
+      await expect(dialog.getByText('삭제하면 참여 중인 챌린지가 종료돼요.')).toHaveCount(0);
+    }
     await capture(page, `supplement-delete-warning-${removeAll ? 'last' : 'partial'}.png`);
-    await expect(dialog.getByText('챌린지에 남는 영양제가 없어 챌린지가 종료돼요.')).toHaveCount(removeAll ? 1 : 0);
     expect(deleted).toEqual([]);
     await dialog.getByRole('button', { name: '취소', exact: true }).click();
     await expect(dialog).toHaveCount(0);
@@ -392,15 +399,31 @@ test('편집 화면의 복용 중단도 챌린지 경고 취소 시 영양제를
   await page.goto('/supplements');
   await page.getByRole('button', { name: /^아침 비타민/ }).click();
   await page.getByRole('button', { name: '복용 중단하기', exact: true }).click();
-  await page.getByRole('button', { name: '중단하기', exact: true }).click();
-  const warning = page.getByRole('dialog', { name: '영양제를 삭제할까요?' });
+  const warning = page.getByRole('dialog', { name: '아침 비타민 복용을 중단할까요?' });
   await expect(warning).toBeVisible();
+  await expect(warning).toContainText('복용을 중단하면 참여 중인 챌린지가 종료돼요.');
+  await expect(page.locator('[role="dialog"][data-variant="dialog"]')).toHaveCount(1);
   await warning.getByRole('button', { name: '취소', exact: true }).click();
-  await expect(page.getByRole('button', { name: '중단하기', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '복용 중단하기', exact: true })).toBeEnabled();
   expect(deleteCount).toBe(0);
-  await page.getByRole('button', { name: '중단하기', exact: true }).click();
-  await warning.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  await page.getByRole('button', { name: '복용 중단하기', exact: true }).click();
+  await warning.getByRole('button', { name: '중단하기', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^아침 비타민/ })).toHaveCount(0);
   expect(deleteCount).toBe(1);
+});
+
+test('여러 챌린지의 종료와 일부 제외가 함께 발생하면 둘 다 안내한다', async ({ page }) => {
+  await prepareSupplements(page);
+  await page.route('**/api/v1/user/custom-challenge-participations', route => fulfillJson(route, {
+    items: [linkedChallenge([45621]), { ...linkedChallenge([45621, 45622]), id: 45632 }], totalCount: 2,
+  }));
+  await page.goto('/supplements');
+  await page.getByRole('button', { name: '선택', exact: true }).click();
+  await page.getByRole('checkbox').first().check();
+  await page.getByRole('button', { name: '삭제 1개', exact: true }).click();
+  const warning = page.getByRole('dialog', { name: '영양제를 삭제할까요?' });
+  await expect(warning).toContainText('일부 챌린지는 종료되고, 나머지 챌린지에서는 선택한 영양제가 제외돼요.');
+  await warning.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(page.getByRole('checkbox').first()).toBeChecked();
 });
