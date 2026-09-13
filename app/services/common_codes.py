@@ -1,9 +1,12 @@
 import re
 
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
+from tortoise.transactions import in_transaction
 
 from app.core.exceptions import (
     CommonCodeAlreadyExistsError,
+    CommonCodeGroupInUseError,
     CommonCodeGroupNotFoundError,
     CommonCodeNotFoundError,
     InvalidCommonCodeError,
@@ -16,6 +19,8 @@ from app.dtos.common_codes import (
     CommonCodeListQuery,
     CommonCodeUpdateRequest,
 )
+from app.models.challenges import Badge, Challenge, CustomChallengeTemplate
+from app.models.chat import ChatSession
 from app.models.common_codes import CommonCode, CommonCodeGroup
 from app.repositories.common_code_repository import CommonCodeRepository
 
@@ -46,17 +51,92 @@ class CommonCodeService:
             query.category = normalize_common_group_code(query.category)
         if query.group_code:
             query.group_code = normalize_common_group_code(query.group_code)
-        return await self.repository.list_groups(query)
+        groups, total = await self.repository.list_groups(query)
+        used_group_ids = await self._used_group_ids(groups)
+        for group in groups:
+            group.can_delete = group.id not in used_group_ids
+        return groups, total
 
     async def get_group(self, group_id: int) -> CommonCodeGroup:
         group = await self.repository.get_group(group_id)
         if group is None:
             raise CommonCodeGroupNotFoundError()
+        group.can_delete = group.id not in await self._used_group_ids([group])
         return group
+
+    async def delete_group(self, group_id: int) -> None:
+        try:
+            async with in_transaction() as connection:
+                group = await CommonCodeGroup.filter(id=group_id).using_db(connection).select_for_update().first()
+                if group is None:
+                    raise CommonCodeGroupNotFoundError()
+                if group.id in await self._used_group_ids([group], connection):
+                    raise CommonCodeGroupInUseError()
+                await CommonCode.filter(group_id=group.id).using_db(connection).delete()
+                await group.delete(using_db=connection)
+        except IntegrityError as error:
+            raise CommonCodeGroupInUseError() from error
+
+    @staticmethod
+    async def _used_group_ids(
+        groups: list[CommonCodeGroup],
+        connection: BaseDBAsyncClient | None = None,
+    ) -> set[int]:
+        if not groups:
+            return set()
+
+        group_ids = [group.id for group in groups]
+        codes_query = CommonCode.filter(group_id__in=group_ids)
+        if connection is not None:
+            codes_query = codes_query.using_db(connection)
+        code_rows = await codes_query.values("id", "group_id", "detail_code")
+        if not code_rows:
+            return set()
+
+        code_to_group = {row["id"]: row["group_id"] for row in code_rows}
+        code_ids = list(code_to_group)
+        used_code_ids: set[int] = set()
+
+        reference_queries = (
+            (Badge.filter(type_id__in=code_ids), "type_id"),
+            (Challenge.filter(challenge_type_id__in=code_ids), "challenge_type_id"),
+            (Challenge.filter(challenge_period_id__in=code_ids), "challenge_period_id"),
+            (Challenge.filter(check_type_id__in=code_ids), "check_type_id"),
+            (Challenge.filter(check_frequency_id__in=code_ids), "check_frequency_id"),
+            (CustomChallengeTemplate.filter(check_type_id__in=code_ids), "check_type_id"),
+            (CustomChallengeTemplate.filter(challenge_type_id__in=code_ids), "challenge_type_id"),
+        )
+        for query, field_name in reference_queries:
+            if connection is not None:
+                query = query.using_db(connection)
+            used_code_ids.update(await query.values_list(field_name, flat=True))
+
+        reason_groups = {
+            (group.category, group.group_code): group.id
+            for group in groups
+            if group.category == "CHAT" and group.group_code in {"P_REASON", "N_REASON"}
+        }
+        if reason_groups:
+            reason_codes = [row["detail_code"] for row in code_rows if row["group_id"] in reason_groups.values()]
+            chat_query = ChatSession.filter(reason_code__in=reason_codes)
+            if connection is not None:
+                chat_query = chat_query.using_db(connection)
+            detail_groups = {
+                (row["group_id"], row["detail_code"]) for row in code_rows if row["group_id"] in reason_groups.values()
+            }
+            for row in await chat_query.values("reason_code", "is_like"):
+                group_code = "P_REASON" if row["is_like"] is True else "N_REASON" if row["is_like"] is False else None
+                group_id = reason_groups.get(("CHAT", group_code)) if group_code else None
+                if group_id is not None and (group_id, row["reason_code"]) in detail_groups:
+                    used_code_ids.update(
+                        code_id for code_id, mapped_group_id in code_to_group.items() if mapped_group_id == group_id
+                    )
+
+        return {code_to_group[code_id] for code_id in used_code_ids}
 
     async def create_group(self, request: CommonCodeGroupCreateRequest, actor_admin_id: int) -> CommonCodeGroup:
         try:
-            return await self.repository.create_group(
+            group = await self.repository.create_group(
                 category=normalize_common_group_code(request.category),
                 group_code=normalize_common_group_code(request.group_code),
                 group_name=request.group_name,
@@ -65,6 +145,8 @@ class CommonCodeService:
                 created_by_admin_id=actor_admin_id,
                 updated_by_admin_id=actor_admin_id,
             )
+            group.can_delete = True
+            return group
         except IntegrityError as error:
             raise CommonCodeAlreadyExistsError() from error
 

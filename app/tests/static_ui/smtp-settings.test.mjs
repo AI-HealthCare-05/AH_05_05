@@ -2,10 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-import {
-  buildSmtpSettingsPayload,
-  populateSmtpSettingsForm,
-} from "../../static/js/smtp-settings.js";
+import * as smtpSettings from "../../static/js/smtp-settings.js";
+
+const { buildSmtpSettingsPayload, populateSmtpSettingsForm } = smtpSettings;
+const smtpSidebarPages = [
+  "common-code-management.html",
+  "challenge-management.html",
+  "custom-challenge-template-management.html",
+  "badge-management.html",
+];
+
+test("SMTP settings opens with overlay styles on every management page", async () => {
+  for (const filename of smtpSidebarPages) {
+    const pageUrl = new URL(`../../static/templates/${filename}`, import.meta.url);
+    const html = await readFile(pageUrl, "utf8");
+
+    assert.match(html, /href="\.\.\/css\/overlays\.css\?v=[^"]+"/, filename);
+  }
+});
 
 function fakePanel(initial = {}) {
   const fields = new Map(Object.entries(initial).map(([name, value]) => [name, { value }]));
@@ -75,6 +89,86 @@ test("buildSmtpSettingsPayload omits an unchanged blank password", () => {
     smtpUser: "sender@example.com",
     smtpFromEmail: "from@example.com",
   });
+});
+
+test("unchanged SMTP settings skip the confirmation", () => {
+  const initial = {
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 587,
+    smtpUser: "sender@example.com",
+    smtpFromEmail: "from@example.com",
+    smtpPasswordConfigured: true,
+  };
+  let confirmationCount = 0;
+
+  const accepted = smtpSettings.confirmSmtpSettingsChanges?.(initial, {
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 587,
+    smtpUser: "sender@example.com",
+    smtpFromEmail: "from@example.com",
+  }, () => {
+    confirmationCount += 1;
+    return false;
+  });
+
+  assert.equal(accepted, true);
+  assert.equal(confirmationCount, 0);
+});
+
+test("changed SMTP settings show the warning and respect cancellation", () => {
+  const messages = [];
+
+  const accepted = smtpSettings.confirmSmtpSettingsChanges?.(
+    {
+      smtpHost: "smtp.gmail.com",
+      smtpPort: 587,
+      smtpUser: "sender@example.com",
+      smtpFromEmail: "from@example.com",
+    },
+    {
+      smtpHost: "smtp.changed.example.com",
+      smtpPort: 587,
+      smtpUser: "sender@example.com",
+      smtpFromEmail: "from@example.com",
+    },
+    (message) => {
+      messages.push(message);
+      return false;
+    },
+  );
+
+  assert.equal(accepted, false);
+  assert.deepEqual(messages, [
+    "[주의] 임시비밀번호 발송과 이메일 인증 발송 시 사용되는 정보이므로 변경 시 주의해 주세요. 저장하시겠습니까?",
+  ]);
+});
+
+test("entering a new SMTP password requires confirmation", () => {
+  let confirmationCount = 0;
+
+  const accepted = smtpSettings.confirmSmtpSettingsChanges?.(
+    {
+      smtpHost: "smtp.gmail.com",
+      smtpPort: 587,
+      smtpUser: "sender@example.com",
+      smtpFromEmail: "from@example.com",
+      smtpPasswordConfigured: true,
+    },
+    {
+      smtpHost: "smtp.gmail.com",
+      smtpPort: 587,
+      smtpUser: "sender@example.com",
+      smtpFromEmail: "from@example.com",
+      smtpPassword: "new-app-password",
+    },
+    () => {
+      confirmationCount += 1;
+      return true;
+    },
+  );
+
+  assert.equal(accepted, true);
+  assert.equal(confirmationCount, 1);
 });
 
 test("SMTP settings overlay follows the common admin edit popup design", async () => {
