@@ -1,5 +1,5 @@
-from collections.abc import Collection
-from datetime import datetime
+from collections.abc import Collection, Mapping, Sequence
+from datetime import datetime, time
 from typing import cast
 
 from tortoise.backends.base.client import BaseDBAsyncClient
@@ -15,6 +15,7 @@ from app.models.enums import (
     CareEpisodeStatus,
     ChallengeParticipationStatus,
     CustomChallengeType,
+    MealSlot,
     SupplementStatus,
 )
 from app.models.supplement_nutrients import UserSupplementNutrient
@@ -45,6 +46,7 @@ class CustomChallengeScheduleReconciler:
         source_ids: Collection[int] | None,
         changed_at: datetime,
         connection: BaseDBAsyncClient,
+        refresh_join_day_slot: bool = False,
     ) -> None:
         if not isinstance(source_kind, CustomChallengeType) or source_kind not in {
             CustomChallengeType.MEDICATION,
@@ -146,6 +148,19 @@ class CustomChallengeScheduleReconciler:
                 connection=connection,
                 recorded_before_join=True,
             )
+            # Keep existing_keys separate: newly eligible goals must still be
+            # excluded when taken before joining, unlike existing goal history.
+            eligible_keys = existing_keys | self._refreshed_join_day_keys(
+                enabled=(
+                    refresh_join_day_slot
+                    and source_kind is CustomChallengeType.SUPPLEMENT
+                    and changed_at.date() == joined_at.date()
+                ),
+                windows=target_windows,
+                meal_times=meal_times,
+                changed_at=changed_at,
+                end_at=planned_end_at,
+            )
             desired = (
                 plan_goals(
                     windows=target_windows,
@@ -154,7 +169,7 @@ class CustomChallengeScheduleReconciler:
                     end_at=planned_end_at,
                     not_before=mutation_boundary,
                     preserved_keys=preserved_keys,
-                    existing_keys=existing_keys,
+                    existing_keys=eligible_keys,
                     # Never recreate an absent future slot taken before join.
                     # Existing goals (including legacy ones) retain their history.
                     excluded_keys=prejoin_completed - existing_keys,
@@ -181,6 +196,31 @@ class CustomChallengeScheduleReconciler:
             changed_at=changed_at,
             connection=connection,
         )
+
+    @staticmethod
+    def _refreshed_join_day_keys(
+        *,
+        enabled: bool,
+        windows: Sequence[GoalWindow],
+        meal_times: Mapping[MealSlot, time],
+        changed_at: datetime,
+        end_at: datetime,
+    ) -> set[GoalKey]:
+        if not enabled or changed_at >= end_at:
+            return set()
+        # A clock change can make an earlier, absent slot the current one.
+        # Re-evaluate at the mutation time, not the original join time.
+        return {
+            (goal.source_id, goal.scheduled_date, goal.slot)
+            for goal in plan_goals(
+                windows=windows,
+                meal_times=meal_times,
+                joined_at=changed_at,
+                end_at=end_at,
+                include_join_slot=True,
+            )
+            if goal.scheduled_date == changed_at.date()
+        }
 
     @staticmethod
     async def _finalize_reconciled(

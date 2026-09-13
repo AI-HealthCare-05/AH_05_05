@@ -927,7 +927,9 @@ async def test_supplement_complete_cancels_last_target_without_completion_or_awa
 
     rows = await _occurrences(participation)
     assert rows == []
-    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.CANCELLED
+    assert (
+        await CustomChallengeParticipation.get(id=participation.id)
+    ).status is ChallengeParticipationStatus.CANCELLED
     assert await ChallengeProgress.all().count() == 0
     assert await UserBadge.all().count() == 0
 
@@ -950,7 +952,9 @@ async def test_supplement_complete_reconciles_legacy_future_when_already_complet
 
     remaining = await _occurrences(participation)
     assert remaining == []
-    assert (await CustomChallengeParticipation.get(id=participation.id)).status is ChallengeParticipationStatus.CANCELLED
+    assert (
+        await CustomChallengeParticipation.get(id=participation.id)
+    ).status is ChallengeParticipationStatus.CANCELLED
     assert await ChallengeProgress.all().count() == 0
     assert await UserBadge.all().count() == 0
 
@@ -1051,6 +1055,7 @@ async def test_notify_time_change_uses_one_post_lock_boundary_for_all_source_typ
             source_ids: Collection[int] | None,
             changed_at: datetime,
             connection: BaseDBAsyncClient,
+            refresh_join_day_slot: bool = False,
         ) -> None:
             self.changed_ats.append(changed_at)
             await super().reconcile(
@@ -1059,6 +1064,7 @@ async def test_notify_time_change_uses_one_post_lock_boundary_for_all_source_typ
                 source_ids=source_ids,
                 changed_at=changed_at,
                 connection=connection,
+                refresh_join_day_slot=refresh_join_day_slot,
             )
 
     user = await _user("notify-boundary@example.com")
