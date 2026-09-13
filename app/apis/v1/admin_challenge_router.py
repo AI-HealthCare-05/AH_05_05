@@ -17,6 +17,7 @@ from app.dtos.challenges import (
     ChallengeAdminListQuery,
     ChallengeCreateRequest,
     ChallengeListResponse,
+    ChallengeParticipantListResponse,
     ChallengeResponse,
     ChallengeUpdateRequest,
     CustomChallengeTemplateAdminListQuery,
@@ -159,6 +160,30 @@ async def get_challenge(challenge_id: Annotated[int, Path(ge=1)], _: AdminRead) 
     return await AdminChallengeService().get_challenge(challenge_id)
 
 
+@admin_challenge_router.get(
+    "/challenges/{challenge_id}/participants",
+    response_model=ChallengeParticipantListResponse,
+    summary="공식 챌린지 참여 목록 조회",
+)
+async def list_challenge_participants(
+    challenge_id: Annotated[int, Path(ge=1)],
+    _: AdminRead,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=20)] = 20,
+) -> ChallengeParticipantListResponse:
+    items, total = await AdminChallengeService().list_challenge_participants(
+        challenge_id,
+        offset=offset,
+        limit=limit,
+    )
+    return ChallengeParticipantListResponse(
+        items=items,
+        total_count=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
 @admin_challenge_router.patch(
     "/challenges/{challenge_id}",
     response_model=ChallengeResponse,
@@ -234,11 +259,24 @@ async def update_custom_challenge_template(
 
 
 @admin_challenge_router.delete(
+    "/custom-challenge-templates/{template_id}",
+    status_code=204,
+    summary="맞춤 챌린지 템플릿 삭제",
+)
+async def delete_custom_challenge_template(
+    template_id: Annotated[int, Path(ge=1)],
+    _: AdminCreateUpdate,
+) -> Response:
+    await AdminChallengeService().delete_custom_template(template_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@admin_challenge_router.delete(
     "/challenges/{challenge_id}",
     status_code=204,
     summary="공식 챌린지 삭제",
 )
-async def delete_challenge(challenge_id: Annotated[int, Path(ge=1)], actor: AdminWrite) -> Response:
+async def delete_challenge(challenge_id: Annotated[int, Path(ge=1)], actor: AdminCreateUpdate) -> Response:
     await AdminChallengeService().delete_challenge(challenge_id, actor.admin_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

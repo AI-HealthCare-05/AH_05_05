@@ -140,6 +140,15 @@ body.dashboard-page > main { height: calc(100vh - 56px) !important; }
 .badge-form-row textarea.ui-control { min-height: 84px; padding: 9px 10px; resize: vertical; }
 .badge-form-checkbox > span:last-child { display: flex; align-items: center; gap: 7px; min-height: 36px; font-weight: 400; }
 .challenge-form-error { min-height: 20px; margin: 8px 0; color: #b91c1c; font-size: 13px; }
+.challenge-participant-dialog { width: min(680px, calc(100vw - 32px)); }
+.challenge-participant-dialog footer { justify-content: center; }
+.challenge-participant-summary { color: #374151; font-size: 14px; }
+.challenge-participant-table-wrap { max-height: min(480px, calc(100vh - 300px)); border: 1px solid #e5e7eb; border-radius: 8px; }
+.challenge-participant-pagination { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; }
+.challenge-participant-pagination-pages { display: flex; gap: 6px; }
+.challenge-participant-page-button { min-width: 36px; padding: 0 8px; }
+.challenge-participant-page-button.is-active { background: var(--brand-primary-strong); border-color: var(--brand-primary-strong); color: #fff; }
+.challenge-participant-page-button.is-active:hover { background: var(--brand-primary-strong-hover); }
 .badge-thumbnail { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #e5e7eb; object-fit: cover; background: #f8fafc; }
 .ranking-heading, .rank-form-heading, .rank-form-actions, .rank-search-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rank-display-form { padding: 20px; }

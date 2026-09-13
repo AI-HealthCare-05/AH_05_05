@@ -12,7 +12,8 @@ from app.core import config
 from app.dependencies.security import get_request_user
 from app.models.challenges import Challenge, UserBadge, UserChallenge
 from app.models.common_codes import CommonCode, CommonCodeGroup
-from app.models.enums import AdminRole
+from app.models.custom_challenges import CustomChallengeParticipation
+from app.models.enums import AdminRole, ChallengeParticipationStatus, CustomChallengeType
 from app.tests.admin_apis.conftest import auth_header, create_admin, create_user, request
 
 
@@ -36,7 +37,7 @@ class TestChallengeDomainAPI(TestCase):
 
     async def _create_codes(self) -> dict[str, CommonCode]:
         values = {
-            "CHL_TYPE": ["WALK"],
+            "CHL_TYPE": ["WALK", "RUN"],
             "CHL_PERIOD": ["D7", "D30"],
             "CHK_TYPE": ["SELF", "MANUAL"],
             "CST_CHK_TYPE": ["COUNT", "PHOTO"],
@@ -58,6 +59,161 @@ class TestChallengeDomainAPI(TestCase):
                     detail_name=detail_code,
                 )
         return result
+
+    def _challenge_payload(
+        self,
+        *,
+        name: str,
+        start: datetime,
+        end: datetime,
+        challenge_type: str = "WALK",
+        is_displayed: bool = True,
+    ) -> dict:
+        return {
+            "name": name,
+            "challenge_type_id": self.codes[challenge_type].id,
+            "phrase": "건강 챌린지",
+            "recruit_start_at": start.isoformat(),
+            "recruit_end_at": end.isoformat(),
+            "challenge_period_id": self.codes["D7"].id,
+            "check_type_id": self.codes["SELF"].id,
+            "check_frequency_id": self.codes["DAILY"].id,
+            "is_displayed": is_displayed,
+        }
+
+    async def test_display_period_overlap_rejects_same_type_challenge_creation(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        first = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(
+                name="기존 걷기",
+                start=now,
+                end=now + timedelta(days=10),
+            ),
+        )
+        overlapping = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(
+                name="중복 걷기",
+                start=now + timedelta(days=5),
+                end=now + timedelta(days=15),
+            ),
+        )
+
+        assert first.status_code == 201, first.text
+        assert overlapping.status_code == 409, overlapping.text
+        assert overlapping.json() == {
+            "code": "CHALLENGE_DISPLAY_PERIOD_OVERLAP",
+            "message": "동일한 챌린지 유형의 전시기간이 중복됩니다. (미전시 제외)",
+        }
+        assert await Challenge.all().count() == 1
+
+    async def test_display_period_overlap_allows_hidden_challenge(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        first = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(name="전시 걷기", start=now, end=now + timedelta(days=10)),
+        )
+        hidden = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(
+                name="미전시 걷기",
+                start=now + timedelta(days=5),
+                end=now + timedelta(days=15),
+                is_displayed=False,
+            ),
+        )
+
+        assert first.status_code == 201, first.text
+        assert hidden.status_code == 201, hidden.text
+
+    async def test_display_period_overlap_allows_different_challenge_type(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        first = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(name="걷기", start=now, end=now + timedelta(days=10)),
+        )
+        running = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(
+                name="달리기",
+                start=now + timedelta(days=5),
+                end=now + timedelta(days=15),
+                challenge_type="RUN",
+            ),
+        )
+
+        assert first.status_code == 201, first.text
+        assert running.status_code == 201, running.text
+
+    async def test_display_period_overlap_allows_touching_period_boundaries(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        first = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(name="오전 걷기", start=now, end=now + timedelta(days=10)),
+        )
+        next_challenge = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(
+                name="다음 걷기",
+                start=now + timedelta(days=10),
+                end=now + timedelta(days=20),
+            ),
+        )
+
+        assert first.status_code == 201, first.text
+        assert next_challenge.status_code == 201, next_challenge.text
+
+    async def test_display_period_overlap_rejects_conflicting_challenge_update(self) -> None:
+        now = datetime.now(config.TIMEZONE)
+        first = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(name="첫 걷기", start=now, end=now + timedelta(days=10)),
+        )
+        second = await request(
+            "POST",
+            "/api/v1/admin/challenges",
+            headers=self.admin_headers,
+            json=self._challenge_payload(
+                name="두 번째 걷기",
+                start=now + timedelta(days=20),
+                end=now + timedelta(days=30),
+            ),
+        )
+        overlapping = await request(
+            "PATCH",
+            f"/api/v1/admin/challenges/{second.json()['id']}",
+            headers=self.admin_headers,
+            json={
+                "recruit_start_at": (now + timedelta(days=5)).isoformat(),
+                "recruit_end_at": (now + timedelta(days=15)).isoformat(),
+            },
+        )
+
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+        assert overlapping.status_code == 409, overlapping.text
+        unchanged = await Challenge.get(id=second.json()["id"])
+        assert unchanged.recruit_start_at == now + timedelta(days=20)
+        assert unchanged.recruit_end_at == now + timedelta(days=30)
 
     async def test_admin_can_create_search_and_update_custom_challenge_template(self) -> None:
         badge = await self._create_badge()
@@ -103,6 +259,88 @@ class TestChallengeDomainAPI(TestCase):
         assert updated.json()["name"] == "하루 물 마시기"
         assert updated.json()["check_type_id"] == self.codes["PHOTO"].id
         assert updated.json()["is_active"] is False
+
+    async def test_staff_can_delete_an_unused_custom_challenge_template(self) -> None:
+        created = await request(
+            "POST",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            json={
+                "name": "삭제 가능한 템플릿",
+                "check_type_id": self.codes["COUNT"].id,
+                "challenge_type": self.codes["CUSTOM"].id,
+                "is_active": True,
+            },
+        )
+        staff = await create_admin(
+            name="템플릿 스태프",
+            email="template-delete-staff@example.com",
+            role=AdminRole.STAFF,
+        )
+
+        listed = await request(
+            "GET",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=auth_header(staff.id),
+        )
+        deleted = await request(
+            "DELETE",
+            f"/api/v1/admin/custom-challenge-templates/{created.json()['id']}",
+            headers=auth_header(staff.id),
+        )
+        detail = await request(
+            "GET",
+            f"/api/v1/admin/custom-challenge-templates/{created.json()['id']}",
+            headers=auth_header(staff.id),
+        )
+
+        assert created.status_code == 201, created.text
+        assert listed.status_code == 200, listed.text
+        assert listed.json()["items"][0]["is_deletable"] is True
+        assert deleted.status_code == 204, deleted.text
+        assert detail.status_code == 404, detail.text
+
+    async def test_used_custom_challenge_template_cannot_be_deleted(self) -> None:
+        created = await request(
+            "POST",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+            json={
+                "name": "사용 중인 템플릿",
+                "check_type_id": self.codes["COUNT"].id,
+                "challenge_type": self.codes["CUSTOM"].id,
+                "is_active": True,
+            },
+        )
+        now = datetime.now(config.TIMEZONE)
+        await CustomChallengeParticipation.create(
+            user=self.user,
+            template_id=created.json()["id"],
+            challenge_type=CustomChallengeType.MEDICATION,
+            challenge_name="사용 중인 맞춤 챌린지",
+            idempotency_key="used-template-test",
+            end_at=now + timedelta(days=7),
+        )
+
+        listed = await request(
+            "GET",
+            "/api/v1/admin/custom-challenge-templates",
+            headers=self.admin_headers,
+        )
+        deleted = await request(
+            "DELETE",
+            f"/api/v1/admin/custom-challenge-templates/{created.json()['id']}",
+            headers=self.admin_headers,
+        )
+
+        assert created.status_code == 201, created.text
+        assert listed.status_code == 200, listed.text
+        assert listed.json()["items"][0]["is_deletable"] is False
+        assert deleted.status_code == 409, deleted.text
+        assert deleted.json() == {
+            "code": "CUSTOM_CHALLENGE_TEMPLATE_IN_USE",
+            "message": "사용 중인 맞춤 챌린지 템플릿은 삭제할 수 없습니다.",
+        }
 
     async def test_custom_challenge_template_rejects_other_common_code_group(self) -> None:
         response = await request(
@@ -346,6 +584,7 @@ class TestChallengeDomainAPI(TestCase):
         period: str = "D30",
         frequency: str = "WEEKLY_3",
         reference_time: datetime | None = None,
+        is_displayed: bool = True,
     ) -> dict:
         now = reference_time or datetime.now(config.TIMEZONE)
         response = await request(
@@ -363,7 +602,7 @@ class TestChallengeDomainAPI(TestCase):
                 "check_type_id": self.codes[check_type].id,
                 "check_frequency_id": self.codes[frequency].id,
                 "reward_badge_id": badge_id,
-                "is_displayed": True,
+                "is_displayed": is_displayed,
             },
         )
         assert response.status_code == 201, response.text
@@ -414,6 +653,81 @@ class TestChallengeDomainAPI(TestCase):
             "code": "CHALLENGE_IN_USE",
             "message": "참여자가 있는 챌린지는 삭제할 수 없습니다.",
         }
+
+    async def test_staff_can_delete_an_unused_challenge(self) -> None:
+        badge = await self._create_badge()
+        challenge = await self._create_challenge(badge["id"])
+        staff = await create_admin(
+            name="챌린지 스태프",
+            email="challenge-delete-staff@example.com",
+            role=AdminRole.STAFF,
+        )
+
+        deleted = await request(
+            "DELETE",
+            f"/api/v1/admin/challenges/{challenge['id']}",
+            headers=auth_header(staff.id),
+        )
+        detail = await request(
+            "GET",
+            f"/api/v1/admin/challenges/{challenge['id']}",
+            headers=auth_header(staff.id),
+        )
+
+        assert deleted.status_code == 204, deleted.text
+        assert detail.status_code == 404, detail.text
+
+    async def test_admin_lists_only_non_cancelled_challenge_participations_with_masked_names(self) -> None:
+        badge = await self._create_badge()
+        challenge = await self._create_challenge(badge["id"])
+        newest_user = await create_user(name="김은미", email="challenge-newest@example.com")
+        cancelled_user = await create_user(name="취소회원", email="challenge-cancelled@example.com")
+        now = datetime.now(config.TIMEZONE)
+        await UserChallenge.create(
+            user=self.user,
+            challenge_id=challenge["id"],
+            started_at=now - timedelta(hours=2),
+            end_at=now + timedelta(days=7),
+        )
+        newest = await UserChallenge.create(
+            user=newest_user,
+            challenge_id=challenge["id"],
+            status=ChallengeParticipationStatus.COMPLETED,
+            started_at=now - timedelta(hours=1),
+            end_at=now + timedelta(days=7),
+        )
+        await UserChallenge.create(
+            user=cancelled_user,
+            challenge_id=challenge["id"],
+            status=ChallengeParticipationStatus.CANCELLED,
+            started_at=now,
+            end_at=now + timedelta(days=7),
+        )
+
+        first_page = await request(
+            "GET",
+            f"/api/v1/admin/challenges/{challenge['id']}/participants",
+            headers=self.admin_headers,
+            params={"offset": 0, "limit": 1},
+        )
+        second_page = await request(
+            "GET",
+            f"/api/v1/admin/challenges/{challenge['id']}/participants",
+            headers=self.admin_headers,
+            params={"offset": 1, "limit": 1},
+        )
+
+        assert first_page.status_code == 200, first_page.text
+        assert first_page.json()["total_count"] == 2
+        assert first_page.json()["items"] == [
+            {
+                "masked_name": "김*미",
+                "started_at": newest.started_at.isoformat(),
+            }
+        ]
+        assert second_page.status_code == 200, second_page.text
+        assert second_page.json()["total_count"] == 2
+        assert second_page.json()["items"][0]["masked_name"] == "참*자"
 
     async def test_admin_uploads_badge_image(self) -> None:
         buffer = BytesIO()
@@ -585,13 +899,11 @@ class TestChallengeDomainAPI(TestCase):
 
     async def test_catalog_requires_user_and_hides_unpublished_data(self) -> None:
         from app.main import app
-        from app.models.challenges import Challenge
 
         assert (await request("GET", "/api/v1/user/challenge-catalog")).status_code == 401
         badge = await self._create_badge()
         visible = await self._create_challenge(badge["id"], period="D7", frequency="DAILY")
-        hidden = await self._create_challenge(badge["id"])
-        await Challenge.filter(id=hidden["id"]).update(is_displayed=False)
+        hidden = await self._create_challenge(badge["id"], is_displayed=False)
         app.dependency_overrides[get_request_user] = lambda: self.user
         response = await request("GET", "/api/v1/user/challenge-catalog?limit=1")
         assert response.status_code == 200, response.text
