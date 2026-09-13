@@ -301,7 +301,7 @@ for (const width of [375, 390, 1280]) {
     await expectSameRow(select);
     await page.screenshot({ path: testInfo.outputPath(`medication-toolbar-${width}.png`), fullPage: true });
     await select.click();
-    await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '복약' })).toBeVisible();
     const remove = page.getByRole('button', { name: '삭제', exact: true });
     await expect(remove).toBeDisabled();
     await expectSameRow(remove);

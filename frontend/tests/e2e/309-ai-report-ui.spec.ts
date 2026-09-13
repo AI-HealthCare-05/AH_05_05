@@ -59,7 +59,7 @@ test('body management remains available and report UI fits a narrow screen', asy
   await page.goto('/medications');
   await expect(page.getByRole('button', { name: '선택', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '선택', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '복약' })).toBeVisible();
   await expect(page.getByRole('button', { name: '삭제', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: '취소', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '취소', exact: true }).click();

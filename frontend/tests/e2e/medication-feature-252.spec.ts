@@ -423,7 +423,7 @@ test('복약 삭제 선택 모드는 고정 안내와 비활성 위험 버튼을
   await page.goto('/medications');
   await page.getByRole('button', { name: '선택', exact: true }).click();
 
-  await expect(page.getByRole('heading', { name: '삭제할 처방을 선택하세요' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '복약' })).toBeVisible();
   const deleteButton = page.getByRole('button', { name: '삭제', exact: true });
   await expect(deleteButton).toBeDisabled();
   await expect(deleteButton).toHaveClass(/bg-muted-bg/);
