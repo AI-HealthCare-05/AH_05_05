@@ -32,6 +32,23 @@ def test_build_expands_supplement_function_question() -> None:
     assert plan.has_medication_product_cue is False
 
 
+def test_build_treats_generic_supplement_about_question_as_function_request() -> None:
+    plan = MedicationKnowledgeQueryBuilder(
+        catalog_entities=[
+            MedicationQueryEntity(
+                surface="마그네슘",
+                canonical_name="마그네슘",
+                entity_type=MedicationQueryEntityType.INGREDIENT_NAME,
+                kind=InteractionEntityKind.SUPPLEMENT,
+                source=MedicationQueryEntitySource.QDRANT,
+            )
+        ]
+    ).build("마그네슘에 대해 알려줘")
+
+    assert plan.section_types == [KnowledgeSectionType.FUNCTION]
+    assert "효능" in plan.expanded_query
+
+
 def test_build_does_not_treat_unregistered_general_words_as_drug_entities() -> None:
     plan = MedicationKnowledgeQueryBuilder(catalog_entities=[]).build(
         "피곤할 때 가장 좋은 영양제 하나 추천해줘",

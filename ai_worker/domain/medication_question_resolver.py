@@ -62,7 +62,7 @@ class RuleBasedMedicationQuestionResolver:
     )
     _TRAILING_PARTICLE = re.compile(
         r"(?:으로|에서|부터|까지|처럼|보다|에게|한테|하고|이며|이나|"
-        r"이랑|랑|은|는|이|가|을|를|과|와|도|의|로)$",
+        r"이랑|랑|은|는|이|가|을|를|과|와|도|의|에|로)$",
     )
     _DOMAIN_CUE = re.compile(
         r"약|의약품|복약|복용|처방|영양제|건강기능식품|성분|함량|"
