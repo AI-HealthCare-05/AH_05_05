@@ -117,13 +117,13 @@ export function OfficialChallengeBrowsePage() {
                   className="flex w-full items-center gap-3 rounded-card bg-card p-4 text-left shadow-card disabled:cursor-default disabled:bg-muted-bg disabled:text-disabled-foreground disabled:shadow-none"
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-bold">
-                      <span className="break-words [overflow-wrap:anywhere]">{item.name}</span>
-                      {item.participating ? <span className="text-caption font-medium">참여중</span> : null}
+                    <span className="flex min-w-0 items-start gap-2 text-base font-bold">
+                      <ChallengeTypeBadge official={item.type === 'official'} />
+                      <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{item.name}</span>
+                      {item.participating ? <span className="shrink-0 text-caption font-medium">참여중</span> : null}
                     </span>
                     <span className={`text-caption leading-5 ${item.participating ? 'text-disabled-foreground' : 'text-muted-foreground'}`}>모집기간 : {item.recruitment}</span>
                   </span>
-                  <ChallengeTypeBadge official={item.type === 'official'} />
                   {!item.participating ? <DrawnChevron direction="right" className="size-5 shrink-0 text-primary" /> : null}
                 </button>
               ))}

@@ -16,9 +16,9 @@ export function CustomChallengeProgressCard({ participation: item }: { participa
   return (
     <article aria-label={item.challengeName} className="relative flex flex-col gap-3 rounded-card bg-card p-5 shadow-card">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
           <ChallengeTypeBadge official={false} />
-          <Link to={`/challenges/custom-participations/${item.id}`} aria-label={`${item.challengeName} 자세히 보기`} className="block break-words text-base font-bold text-foreground after:absolute after:inset-0 after:rounded-card focus-visible:after:outline-2 focus-visible:after:outline-primary [overflow-wrap:anywhere]">{item.challengeName}</Link>
+          <Link to={`/challenges/custom-participations/${item.id}`} aria-label={`${item.challengeName} 자세히 보기`} className="min-w-0 flex-1 break-words text-base font-bold text-foreground after:absolute after:inset-0 after:rounded-card focus-visible:after:outline-2 focus-visible:after:outline-primary [overflow-wrap:anywhere]">{item.challengeName}</Link>
         </div>
         {item.status !== 'ACTIVE' && <span className="shrink-0 rounded-pill bg-muted-bg px-2 py-1 text-micro font-bold text-muted-foreground">{statusLabel(item.status)}</span>}
       </div>
