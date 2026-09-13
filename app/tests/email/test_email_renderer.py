@@ -139,7 +139,7 @@ def test_intake_report_template_renders_safe_korean_markdown() -> None:
         )
     )
 
-    assert message.subject == "RxVita 복용약·영양제 AI 보고서"
+    assert message.subject == "RxVita 복용약·영양제 AI 보고서 · report-20260911-abc123"
     assert "복용약·영양제 AI 보고서" in message.text_body
     assert "매우 긴 한글 제품명" in message.html_body
     assert "<table" in message.html_body
