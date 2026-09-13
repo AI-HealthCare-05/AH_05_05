@@ -451,12 +451,14 @@ const imageUrl = URL.createObjectURL(blob);
 | `medications[].name` | string | O | 1~100자 비공백 |
 | `medications[].strength` | string | X | 1~50자 비공백. 없으면 생략 |
 | `medications[].doseQuantity` | string | X | 1~50자 비공백. 없으면 생략 |
-| `medications[].timesPerDay` | integer \| null | X | 1~6 또는 `null`; `null`은 필요 시 복용 확정일 때만 허용 |
-| `medications[].days` | integer | X | 1~365. 없으면 생략 |
+| `medications[].timesPerDay` | integer \| null | O | 1~6 또는 `null`; `null`은 사용자가 필요 시 복용을 선택한 경우만 허용. 미입력/키 생략은 422 |
+| `medications[].days` | integer | O | 1~365. 미입력/키 생략/`null`은 422 |
 
 ### 확정 요청 규칙
 
 프론트는 GET의 약 목록을 최종 수정본으로 유지하고 `confidence`를 제외해 한 번의 PATCH로 전송한다. 수정하지 않은 선택 필드는 그대로 보내고, 없는 선택 필드는 빈 문자열·`null` 대신 생략한다. 사용자가 삭제한 약은 최종 배열에서 제외하며, 추가한 약은 새 `tempId`와 직접 입력한 값을 포함한다.
+
+OCR 조회 결과는 미추출 값을 계속 생략하지만, 확정·등록 수정 시에는 각 약의 약품명·복용 횟수·복용 일수를 사용자가 채워야 한다. 직접 추가에도 같은 검증을 적용한다. 1회 투약량과 함량은 선택 사항이며, 누락된 횟수·일수를 임의의 기본값으로 채워 저장하지 않는다.
 
 별칭 입력은 OCR 병원명을 기본값으로 표시하며 사용자가 수정하거나 비울 수 있다. 사용자가 편집한 별칭은 등록 단계의 뒤로가기·복원에서 유지한다. 병원명 원문은 별칭과 별도로 저장한다. `alias`의 명시적 비우기는 위 선택 필드 생략 규칙의 예외다.
 

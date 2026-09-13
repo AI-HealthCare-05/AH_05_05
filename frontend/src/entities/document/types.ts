@@ -119,9 +119,10 @@ export interface ConfirmOcrResultPayload {
     name: string;
     strength?: string;
     doseQuantity?: string;
-    /** 사용자가 명시한 필요 시 복용만 null이며, 미추출은 키를 생략합니다. */
-    timesPerDay?: number | null;
-    days?: number;
+    /** 사용자가 명시한 필요 시 복용은 null입니다. */
+    timesPerDay: number | null;
+    /** 확정 등록에는 1~365일의 복용 일수가 필요합니다. */
+    days: number;
   }>;
 }
 

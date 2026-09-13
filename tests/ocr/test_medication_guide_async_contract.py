@@ -77,7 +77,7 @@ def test_confirm_request_accepts_the_six_field_rdb_shape_and_an_empty_medication
                     "timesPerDay": 3,
                     "days": 5,
                 },
-                {"tempId": "med-2", "name": "단위 없는 약", "doseQuantity": "1"},
+                {"tempId": "med-2", "name": "단위 없는 약", "doseQuantity": "1", "timesPerDay": 1, "days": 7},
             ],
         }
     )
@@ -138,7 +138,7 @@ def test_confirm_request_accepts_explicit_prn_but_rejects_null_ocr_optionals_and
     prn = MedicationGuideConfirmRequest.model_validate(
         {
             "dispensingDate": "2026-08-25",
-            "medications": [{"tempId": "med-prn", "name": "필요 시 약", "timesPerDay": None}],
+            "medications": [{"tempId": "med-prn", "name": "필요 시 약", "timesPerDay": None, "days": 7}],
         }
     )
     assert prn.medications[0].times_per_day is None
@@ -153,7 +153,9 @@ def test_confirm_request_accepts_explicit_prn_but_rejects_null_ocr_optionals_and
         {"tempId": "med-1", "name": "약", "efficacy": "효능"},
     ):
         try:
-            MedicationGuideConfirmRequest.model_validate({"dispensingDate": "2026-08-25", "medications": [medication]})
+            MedicationGuideConfirmRequest.model_validate(
+                {"dispensingDate": "2026-08-25", "medications": [{"timesPerDay": 1, "days": 7, **medication}]}
+            )
         except ValueError:
             pass
         else:

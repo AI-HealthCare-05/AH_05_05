@@ -100,8 +100,10 @@ class MedicationConfirmation(CamelModel):
     name: str = Field(min_length=1, max_length=100)
     strength: str = Field(default=MISSING, min_length=1, max_length=50)
     dose_quantity: str = Field(default=MISSING, min_length=1, max_length=50)
-    times_per_day: int | None = Field(default=MISSING, ge=1, le=6)
-    days: int = Field(default=MISSING, ge=1, le=365)
+    # Extraction may be incomplete; confirmed schedules must be user-completed.
+    # Explicit null means the user selected PRN, not an unread OCR value.
+    times_per_day: int | None = Field(ge=1, le=6)
+    days: int = Field(ge=1, le=365)
 
     @field_validator("name", "strength")
     @classmethod

@@ -268,14 +268,14 @@ CONFIRM_LIMIT_DAYS = 31
 def guide_payload(dispensing_date: date) -> dict:
     return {
         "dispensingDate": dispensing_date,
-        "medications": [{"tempId": "t1", "name": "타이레놀정"}],
+        "medications": [{"tempId": "t1", "name": "타이레놀정", "timesPerDay": 1, "days": 3}],
     }
 
 
 def document_payload(dispensed_date: date) -> dict:
     return {
         "dispensedDate": dispensed_date,
-        "medications": [{"tempId": "t1", "name": "타이레놀정"}],
+        "medications": [{"tempId": "t1", "name": "타이레놀정", "timesPerDay": 1, "days": 3}],
     }
 
 
