@@ -35,7 +35,7 @@ from app.services.custom_challenges import (
 
 
 class CustomChallengeScheduleReconciler:
-    """Diff mutable goals; rows before each mutation boundary are immutable history."""
+    """Diff mutable goals while preserving completed supplements and prior-day history."""
 
     async def reconcile(
         self,
@@ -99,13 +99,21 @@ class CustomChallengeScheduleReconciler:
             targets=targets,
             connection=connection,
         )
+        mutation_boundary = (
+            changed_at.replace(hour=0, minute=0, second=0, microsecond=0)
+            if source_kind is CustomChallengeType.SUPPLEMENT
+            else changed_at
+        )
 
         for target in targets:
             participation = participations_by_id[cast(int, target.participation_id)]
+            target_windows = windows_by_source.get(target.source_id_snapshot, [])
+            if source_kind is CustomChallengeType.SUPPLEMENT and target.supplement_registration_id is None:
+                target_windows = []
             planned_end_at = await self._planned_end_at(
                 participation=participation,
                 source_kind=source_kind,
-                windows=windows_by_source.get(target.source_id_snapshot, []),
+                windows=target_windows,
                 changed_at=changed_at,
                 connection=connection,
             )
@@ -115,8 +123,18 @@ class CustomChallengeScheduleReconciler:
                 .select_for_update()
                 .order_by("id")
             )
-            past = [row for row in occurrences if _database_datetime(row.scheduled_at) < changed_at]
-            future = [row for row in occurrences if _database_datetime(row.scheduled_at) >= changed_at]
+            completed_ids = (
+                await lifecycle._completed_occurrence_ids(participation, [target], occurrences, connection)
+                if source_kind is CustomChallengeType.SUPPLEMENT
+                else set()
+            )
+            past = [
+                row
+                for row in occurrences
+                if _database_datetime(row.scheduled_at) < mutation_boundary or row.id in completed_ids
+            ]
+            preserved_ids = {row.id for row in past}
+            future = [row for row in occurrences if row.id not in preserved_ids]
             preserved_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in past}
             existing_keys: set[GoalKey] = {(target.source_id_snapshot, row.scheduled_date, row.slot) for row in future}
             joined_at = _database_datetime(participation.joined_at)
@@ -130,11 +148,11 @@ class CustomChallengeScheduleReconciler:
             )
             desired = (
                 plan_goals(
-                    windows=windows_by_source.get(target.source_id_snapshot, []),
+                    windows=target_windows,
                     meal_times=meal_times,
                     joined_at=joined_at,
                     end_at=planned_end_at,
-                    not_before=changed_at,
+                    not_before=mutation_boundary,
                     preserved_keys=preserved_keys,
                     existing_keys=existing_keys,
                     # Never recreate an absent future slot taken before join.
@@ -150,13 +168,69 @@ class CustomChallengeScheduleReconciler:
                 desired=desired,
                 connection=connection,
             )
+            if source_kind is CustomChallengeType.SUPPLEMENT and target.source_id_snapshot not in windows_by_source:
+                # Re-registering the same product reuses its source ID. Detach the
+                # removed target so it can never regain goals in this participation.
+                await self._detach_supplement_target(target, past, completed_ids, connection)
 
+        await self._finalize_reconciled(
+            user_id=user_id,
+            source_kind=source_kind,
+            participations=participations_by_id,
+            affected_ids={cast(int, target.participation_id) for target in targets},
+            changed_at=changed_at,
+            connection=connection,
+        )
+
+    @staticmethod
+    async def _finalize_reconciled(
+        *,
+        user_id: int,
+        source_kind: CustomChallengeType,
+        participations: dict[int, CustomChallengeParticipation],
+        affected_ids: set[int],
+        changed_at: datetime,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        from app.services.custom_challenge_lifecycle import CustomChallengeLifecycleService
+
+        lifecycle = CustomChallengeLifecycleService()
         if source_kind is CustomChallengeType.MEDICATION:
             await lifecycle.finalize_due_for_user(
                 user_id=user_id,
                 now=changed_at,
                 connection=connection,
             )
+            return
+        for participation_id in sorted(affected_ids):
+            has_active_target = (
+                await CustomChallengeTarget.filter(
+                    participation_id=participation_id,
+                    supplement_registration__user_id=user_id,
+                    supplement_registration__status=SupplementStatus.ACTIVE,
+                )
+                .using_db(connection)
+                .exists()
+            )
+            if not has_active_target:
+                await lifecycle.finalize_cancelled(participations[participation_id], changed_at, connection)
+
+    @staticmethod
+    async def _detach_supplement_target(
+        target: CustomChallengeTarget,
+        preserved: list[CustomChallengeOccurrence],
+        completed_ids: set[int],
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        if target.supplement_registration_id is None:
+            return
+        for occurrence in preserved:
+            completed = occurrence.id in completed_ids
+            if occurrence.is_completed != completed:
+                occurrence.is_completed = completed
+                await occurrence.save(using_db=connection, update_fields=["is_completed"])
+        target.supplement_registration_id = None
+        await target.save(using_db=connection, update_fields=["supplement_registration_id"])
 
     @staticmethod
     async def _planned_end_at(
