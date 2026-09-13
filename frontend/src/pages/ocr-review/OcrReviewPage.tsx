@@ -16,6 +16,7 @@ import {
   type OcrResult,
 } from '@/entities/document';
 import type { EditableOcrMedication } from '@/entities/document/types';
+import { isReadyForMedicationRegistration } from '@/entities/document/medicationRegistrationValidation';
 import {
   Button,
   Card,
@@ -208,26 +209,6 @@ export function OcrReviewPage() {
   }, [batchId]);
 
   useEffect(() => {
-    if (!batchId || !initialRegistrationDraft) return;
-    let cancelled = false;
-    void Promise.allSettled([
-      getOcrProcessedImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
-      getOcrDocumentImageUrl(batchId, initialRegistrationDraft.documentImageUrl),
-    ]).then(([processed, original]) => {
-      if (cancelled) return;
-      const nextProcessed = processed.status === 'fulfilled' ? processed.value : null;
-      const nextOriginal = original.status === 'fulfilled' ? original.value : null;
-      setProcessedImageUrl(nextProcessed);
-      setOriginalImageUrl(nextOriginal);
-      setImageView(nextProcessed ? 'processed' : 'original');
-      setImageUnavailable(!nextProcessed && !nextOriginal);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [batchId, initialRegistrationDraft]);
-
-  useEffect(() => {
     if (!state.file || batchId) return;
     let cancelled = false;
     setReadingStage('uploading');
@@ -301,11 +282,7 @@ export function OcrReviewPage() {
             setDispensedDate(data.fields.dispensedDate?.value ?? '');
             setDispensedDateConfidence(data.fields.dispensedDate?.confidence ?? null);
             setMedications(data.medications);
-            if (
-              data.ocrStatus === 'ready_for_review' ||
-              confirmedReviewMode ||
-              registrationEditMode
-            ) {
+            if (data.ocrStatus === 'ready_for_review') {
               void Promise.allSettled([
                 getOcrProcessedImageUrl(batchId, data.documentImageUrl),
                 getOcrDocumentImageUrl(batchId, data.documentImageUrl),
@@ -397,7 +374,16 @@ export function OcrReviewPage() {
 
   const maxDispensedDate = seoulDateISO(31);
   const dispensedDateTooLate = dispensedDate > maxDispensedDate;
-  const canSave = Boolean(dispensedDate) && !dispensedDateTooLate && !saving && !retaking;
+  const confirmedMedications = medications.filter(isReadyForMedicationRegistration);
+  const medicationsMissingRequiredIntake = medications.filter(
+    (medication) => !isReadyForMedicationRegistration(medication),
+  );
+  const canSave =
+    Boolean(dispensedDate) &&
+    !dispensedDateTooLate &&
+    confirmedMedications.length === medications.length &&
+    !saving &&
+    !retaking;
 
   async function retakePhoto() {
     if (saving || retaking) return;
@@ -412,6 +398,24 @@ export function OcrReviewPage() {
     } finally {
       setRetaking(false);
     }
+  }
+
+  async function leaveReview() {
+    if (retaking) return;
+    if (result?.ocrStatus === 'ready_for_review' && batchId) {
+      setRetaking(true);
+      try {
+        await cancelOcrResult(batchId);
+        navigate('/home', { replace: true });
+      } catch {
+        toast.error('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.');
+      } finally {
+        setRetaking(false);
+      }
+      return;
+    }
+    if (batchId) releaseOcrDocumentImageUrl(batchId);
+    navigate('/home', { replace: true });
   }
 
   function createRegistrationDraft(): OcrRegistrationDraft | undefined {
@@ -456,7 +460,7 @@ export function OcrReviewPage() {
         !(result.ocrStatus === 'failed' && dismissedOcrFailure) &&
         !(registrationEditMode && result.ocrStatus === 'complete')) ||
       !batchId ||
-      !dispensedDate
+      !canSave
     ) {
       return;
     }
@@ -468,15 +472,13 @@ export function OcrReviewPage() {
         {
           ...(hospitalName.trim() ? { hospitalName: hospitalName.trim() } : {}),
           dispensedDate,
-          medications: medications.map((medication) => ({
+          medications: confirmedMedications.map((medication) => ({
             tempId: medication.tempId,
             name: medication.name,
             ...(medication.strength ? { strength: medication.strength } : {}),
             ...(medication.doseQuantity ? { doseQuantity: medication.doseQuantity } : {}),
-            ...(medication.timesPerDay !== undefined
-              ? { timesPerDay: medication.timesPerDay }
-              : {}),
-            ...(medication.days !== undefined ? { days: medication.days } : {}),
+            timesPerDay: medication.timesPerDay,
+            days: medication.days,
           })),
           alias: episodeAlias.trim() || null,
         },
@@ -745,8 +747,8 @@ export function OcrReviewPage() {
         </Card>
 
         {imageUnavailable && (
-          <Card tone="info" title="원본 미리보기를 불러오지 못했어요">
-            OCR 결과는 계속 확인하고 저장할 수 있어요.
+          <Card tone="info" title="사진 미리보기를 사용할 수 없어요">
+            사진 보관 시간이 지났거나 일시적으로 사용할 수 없어요. OCR 결과는 계속 확인하고 저장할 수 있어요.
           </Card>
         )}
 
@@ -832,6 +834,15 @@ export function OcrReviewPage() {
           ))}
         </section>
 
+        {!confirmedReviewMode && medicationsMissingRequiredIntake.length > 0 && (
+          <div role="alert">
+            <Card tone="warning" title="복약 정보를 더 입력해주세요">
+              <p>약을 수정해 약품명, 복용 일수와 1일 복용 횟수를 모두 입력해주세요. 필요 시 복용이면 필요 시를 선택할 수 있어요.</p>
+              <p className="mt-1">수정 필요: {medicationsMissingRequiredIntake.map((medication) => medication.name || '약품명 미입력').join(', ')}</p>
+            </Card>
+          </div>
+        )}
+
         <p className="text-sm text-muted-foreground">
           {confirmedReviewMode
             ? '복약 시간 설정 전에 저장된 약 정보를 다시 확인할 수 있어요.'
@@ -865,10 +876,9 @@ export function OcrReviewPage() {
           </DialogHeader>
           <DialogFooter>
             <Button onClick={() => setExitConfirmOpen(false)}>계속 설정</Button>
-            <Button variant="secondary" onClick={() => {
-              if (batchId) releaseOcrDocumentImageUrl(batchId);
-              navigate('/home', { replace: true });
-            }}>나가기</Button>
+            <Button variant="secondary" onClick={leaveReview} disabled={retaking}>
+              {retaking ? '취소 중...' : '나가기'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

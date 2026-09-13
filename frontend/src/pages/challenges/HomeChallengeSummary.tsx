@@ -170,7 +170,7 @@ function OfficialHomeChallengeSummary({ principal }: { principal: string | null 
     {!loading && !official.error && !custom.error && items.length === 0 && <p className="py-4 text-sm text-muted-foreground">{hasActiveParticipation ? '오늘 예정된 챌린지가 없어요.' : '챌린지를 등록하고 생활습관 개선에 도전하세요.'}</p>}
     {([['공식 챌린지', official], ['맞춤 챌린지', custom]] as const).map(([label, state]) => state.error && <section key={label} aria-label={label} className="flex flex-col gap-2 py-2">
       <p role="alert" className="text-sm text-muted-foreground">{state.error}</p>
-      <Button variant="secondary" className="h-11 min-h-11" onClick={state.reload}>다시 불러오기</Button>
+      <Button size="compact" variant="secondary" onClick={state.reload}>다시 불러오기</Button>
     </section>)}
   </SummaryFrame>;
 }

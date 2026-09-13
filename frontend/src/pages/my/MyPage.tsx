@@ -13,6 +13,7 @@ import { getSupplements } from '@/entities/supplement';
 import { listFollowUpVisits, type FollowUpVisit } from '@/entities/follow-up-visit';
 import {
   BottomTabbar,
+  Button,
   ErrorDialog,
   Header,
   NotifyBlockedDialog,
@@ -458,14 +459,16 @@ export function MyPage({
               <DrawnChevron direction="right" className="size-5 shrink-0 text-disabled-foreground" />
             </button>
             {profileLoadError && (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="compact"
+                fullWidth={false}
                 aria-label="프로필 다시 시도"
-                className="mt-2 min-h-touch self-end rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground"
+                className="mt-2 self-end"
                 onClick={() => setProfileReloadKey((current) => current + 1)}
               >
                 다시 시도
-              </button>
+              </Button>
             )}
 
             <section
@@ -619,13 +622,13 @@ export function MyPage({
               )}
             </section>
 
-            <button
-              type="button"
-              className="mt-1 h-11 min-h-touch w-full rounded-card border border-border bg-card px-4 text-sm font-bold text-muted-foreground transition-colors hover:bg-muted-bg"
+            <Button
+              variant="secondary"
+              className="mt-1 text-muted-foreground"
               onClick={() => void handleSignOut()}
             >
               로그아웃
-            </button>
+            </Button>
           </>
         ) : null}
       </main>

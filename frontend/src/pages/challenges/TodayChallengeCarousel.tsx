@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { DrawnChevron } from '@/shared/ui/DrawnArrow';
+import { Button } from '@/shared/ui/Button';
 import { ChallengeTypeBadge } from './ChallengeTypeBadge';
 import './today-challenges.css';
 
@@ -52,7 +53,7 @@ export function TodayChallengeCarousel({ items }: { items: TodayChallengeCard[] 
         </span>
         </Link>
         {item.completed ? <p className="rx-today-challenge-state text-primary" aria-live="polite"><svg aria-hidden="true" className="rx-drawn-icon size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6" pathLength="1" /></svg>완료</p>
-          : item.onCheckIn ? <div className="flex items-center gap-2">{!item.official && <span className="text-micro text-muted-foreground">미완료</span>}<button type="button" aria-label={`${item.title} 했어요`} disabled={item.pending} onClick={item.onCheckIn} className="rx-today-challenge-checkin min-w-0 flex-1">{item.pending ? '저장 중…' : '했어요'}</button></div>
+          : item.onCheckIn ? <div className="flex items-center gap-2">{!item.official && <span className="text-micro text-muted-foreground">미완료</span>}<Button size="compact" fullWidth={false} aria-label={`${item.title} 했어요`} disabled={item.pending} onClick={item.onCheckIn} className="rx-today-challenge-checkin min-w-0 flex-1 text-[13px]">{item.pending ? '저장 중…' : '했어요'}</Button></div>
           : !item.official && <p className="rx-today-challenge-state text-muted-foreground" aria-live="polite">미완료</p>}
         {item.error && <p role="alert" className="text-center text-caption text-destructive">{item.error}</p>}
       </article>)}

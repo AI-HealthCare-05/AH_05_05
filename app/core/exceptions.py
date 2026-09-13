@@ -110,6 +110,12 @@ class ChallengeInUseError(AppError):
     message = "참여자가 있는 챌린지는 삭제할 수 없습니다."
 
 
+class ChallengeDisplayPeriodOverlapError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CHALLENGE_DISPLAY_PERIOD_OVERLAP"
+    message = "동일한 챌린지 유형의 전시기간이 중복됩니다. (미전시 제외)"
+
+
 class CustomChallengeTemplateNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "CUSTOM_CHALLENGE_TEMPLATE_NOT_FOUND"
@@ -120,6 +126,12 @@ class CustomChallengeTemplateNameAlreadyExistsError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "CUSTOM_CHALLENGE_TEMPLATE_NAME_ALREADY_EXISTS"
     message = "이미 등록된 맞춤 챌린지 템플릿명입니다."
+
+
+class CustomChallengeTemplateInUseError(AppError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CUSTOM_CHALLENGE_TEMPLATE_IN_USE"
+    message = "사용 중인 맞춤 챌린지 템플릿은 삭제할 수 없습니다."
 
 
 class CustomChallengeTemplateUnavailableError(AppError):

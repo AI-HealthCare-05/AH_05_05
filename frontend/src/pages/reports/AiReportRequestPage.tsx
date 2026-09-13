@@ -49,7 +49,7 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
   const label = source === 'medications' ? '복약' : '영양제';
   return <div className="mx-auto flex min-h-dvh w-full max-w-app flex-col bg-background">
     <Header title="복용 정보 AI 보고서" onBack={() => navigate(`/${source}`)} />
-    <main className="flex min-w-0 flex-1 flex-col gap-5 px-page-x py-5">
+    <main className="rx-reading-content flex min-w-0 flex-1 flex-col gap-5 px-page-x py-5">
       {!report && <section className="space-y-4 rounded-card bg-card p-5 shadow-card">
         <FileText aria-hidden className="size-8 text-primary" />
         <h2 className="text-xl font-bold text-foreground">현재 복용 정보를 함께 살펴봐요</h2>
@@ -65,9 +65,8 @@ function ReportRequest({ source }: { source: 'medications' | 'supplements' }) {
       </section> : report ? <Suspense fallback={<p role="status" className="text-sm text-primary">보고서 화면을 준비하고 있어요.</p>}><IntakeReportBody report={report} /></Suspense> : null}
       <div className="mt-auto flex flex-col gap-3 pt-4 pb-3">
         {report && report.reportStatus !== 'EMPTY' ? <>
-          <Button disabled aria-describedby="report-email-help">이메일로 받기</Button>
-          <p id="report-email-help" className="text-center text-xs text-muted-foreground">이메일 발송 기능은 준비 중이에요.</p>
-        </> : <Button onClick={() => void generate()} disabled={pending} aria-busy={pending || undefined}>{pending ? '보고서 생성 중' : error ? '다시 시도' : '보고서 생성하기'}</Button>}
+          <ReportEmailButton emailToken={report.emailToken} onRegenerate={() => void generate()} />
+        </> : <Button onClick={() => void generate()} disabled={pending} loading={pending}>{pending ? '보고서 생성 중' : error ? '다시 시도' : '보고서 생성하기'}</Button>}
         <Button variant="secondary" onClick={() => navigate(`/${source}`)}>{source === 'medications' ? '복약으로 돌아가기' : '영양제로 돌아가기'}</Button>
       </div>
     </main>

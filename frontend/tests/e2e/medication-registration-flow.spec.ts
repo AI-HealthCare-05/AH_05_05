@@ -63,12 +63,15 @@ const readyOcrResult = {
       name: '아세트아미노펜',
       strength: '650mg',
       doseQuantity: '1정',
+      timesPerDay: 1,
       days: 7,
       confidence: 'high',
     },
     {
       tempId: 'm4',
       name: ' 파모티딘 원문 ',
+      timesPerDay: 1,
+      days: 7,
       confidence: 'high',
     },
   ],
@@ -253,6 +256,121 @@ test('OCR 재촬영 취소 요청이 실패하면 검토 화면에서 다시 시
   expect(cancelCount).toBe(2);
 });
 
+test('READY 검토 나가기는 취소가 완료될 때까지 홈으로 이동하지 않는다', async ({ page }) => {
+  await authenticate(page);
+  let cancelCount = 0;
+  let releaseCancel!: () => void;
+  const cancelPending = new Promise<void>((resolve) => {
+    releaseCancel = resolve;
+  });
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21' });
+      return;
+    }
+    if (request.method() === 'POST' && path === '/api/v1/ocr/jobs/b_mock_9f21/cancel') {
+      cancelCount += 1;
+      await cancelPending;
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    if (request.method() === 'GET' && path.includes('/image')) {
+      await route.fulfill({ status: 404 });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/dev/ocr-review');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  const exitDialog = page.getByRole('dialog', { name: '설정을 취소하고 나갈까요?' });
+  const leave = exitDialog.getByRole('button', { name: '나가기', exact: true });
+  await leave.click();
+  await expect.poll(() => cancelCount).toBe(1);
+  await expect(page).toHaveURL(/\/ocr-review/);
+  await expect(exitDialog.getByRole('button', { name: '취소 중...', exact: true })).toBeDisabled();
+  expect(cancelCount).toBe(1);
+
+  releaseCancel();
+  await expect(page).toHaveURL('/home');
+  expect(cancelCount).toBe(1);
+});
+
+test('READY 검토 나가기 취소 실패는 화면에 머물고 다시 시도할 수 있다', async ({ page }) => {
+  await authenticate(page);
+  let cancelCount = 0;
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21' });
+      return;
+    }
+    if (request.method() === 'POST' && path === '/api/v1/ocr/jobs/b_mock_9f21/cancel') {
+      cancelCount += 1;
+      if (cancelCount === 1) {
+        await fulfillJson(route, { code: 'temporary' }, 503);
+      } else {
+        await route.fulfill({ status: 204 });
+      }
+      return;
+    }
+    if (request.method() === 'GET' && path.includes('/image')) {
+      await route.fulfill({ status: 404 });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/dev/ocr-review');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  const exitDialog = page.getByRole('dialog', { name: '설정을 취소하고 나갈까요?' });
+  const leave = exitDialog.getByRole('button', { name: '나가기', exact: true });
+  await leave.click();
+  await expect(page.getByText('기존 OCR 작업을 취소하지 못했어요. 다시 시도해주세요.')).toBeVisible();
+  await expect(page).toHaveURL(/\/ocr-review/);
+  await expect(leave).toBeEnabled();
+  await leave.click();
+  await expect(page).toHaveURL('/home');
+  expect(cancelCount).toBe(2);
+});
+
+test('COMPLETE 등록 수정 나가기는 OCR 취소 요청 없이 홈으로 이동한다', async ({ page }) => {
+  await authenticate(page);
+  let cancelCount = 0;
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21', ocrStatus: 'complete' });
+      return;
+    }
+    if (request.method() === 'POST' && path === '/api/v1/ocr/jobs/b_mock_9f21/cancel') {
+      cancelCount += 1;
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    if (request.method() === 'GET' && path.includes('/image')) {
+      await route.fulfill({ status: 404 });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/ocr-review?batchId=b_mock_9f21&recordId=315&mode=registration-edit&flow=registration');
+  await expect(page.getByRole('heading', { name: '확인해주세요' })).toBeVisible();
+  await page.getByRole('button', { name: '뒤로 가기' }).click();
+  await page.getByRole('dialog', { name: '설정을 취소하고 나갈까요?' })
+    .getByRole('button', { name: '나가기', exact: true })
+    .click();
+  await expect(page).toHaveURL('/home');
+  expect(cancelCount).toBe(0);
+});
+
 async function interceptDefaultNotifySettings(page: Page) {
   await page.route('**/api/v1/me/settings', async (route) => {
     await fulfillJson(route, {
@@ -382,7 +500,7 @@ async function selectGalleryPng(page: Page) {
 }
 
 for (const width of [375, 1280]) {
-test(`OCR 이미지 미리보기 전환과 명시적 닫기·Escape 닫기 (${width})`, async ({ page }, testInfo) => {
+test(`OCR synthetic fixture 미리보기 전환과 선명한 닫기·한 번 클릭 닫기 (${width})`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
   await authenticate(page);
   const requestedImages: string[] = [];
@@ -422,17 +540,28 @@ test(`OCR 이미지 미리보기 전환과 명시적 닫기·Escape 닫기 (${wi
   const enlarged = viewer.getByRole('img', { name: '확대한 약봉투' });
   await expect(enlarged).toBeVisible();
   const processedSrc = await enlarged.getAttribute('src');
+  expect(processedSrc).toMatch(/^blob:/);
   await expect(viewer.getByRole('button', { name: '선명하게 보기' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
 
   await viewer.getByRole('button', { name: '원본 보기' }).click();
-  await expect(viewer.getByRole('img', { name: '확대한 약봉투 원본' })).toBeVisible();
-  await expect(viewer.getByRole('img', { name: '확대한 약봉투 원본' })).not.toHaveAttribute(
+  const original = viewer.getByRole('img', { name: '확대한 약봉투 원본' });
+  await expect(original).toBeVisible();
+  await expect(original).toHaveAttribute('src', /^blob:/);
+  await expect(original).not.toHaveAttribute(
     'src',
     processedSrc ?? '',
   );
+  await expect.poll(async () => original.evaluate((image) => {
+    const dialog = image.closest('[role="dialog"]');
+    const overlay = document.querySelector<HTMLElement>('[data-slot="dialog-overlay"]');
+    return image.complete && image.naturalWidth > 0 && image.naturalHeight > 0 &&
+      getComputedStyle(image).opacity === '1' &&
+      getComputedStyle(dialog ?? image).opacity === '1' &&
+      getComputedStyle(overlay ?? image).opacity === '1';
+  })).toBe(true);
   expect(requestedImages).toEqual([
     '/api/v1/ocr/jobs/b_mock_9f21/processed-image',
     '/api/v1/ocr/jobs/b_mock_9f21/image',
@@ -512,6 +641,98 @@ test('OCR 검토의 직접 추가 버튼과 입력 제한을 간결하게 표시
   await days.fill('365');
   await expect(days).toHaveValue('365');
 });
+
+test('직접 추가는 복용 일수와 횟수를 요구하고 필요 시를 허용한다', async ({ page }) => {
+  await authenticate(page);
+  await page.route('**/api/v1/ocr/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+      await fulfillJson(route, { ...readyOcrResult, batchId: 'b_mock_9f21' });
+      return;
+    }
+    if (
+      request.method() === 'GET' &&
+      (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
+        path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+    ) {
+      await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/dev/ocr-review');
+  await page.getByRole('button', { name: '직접 추가', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '약 추가' });
+  const save = dialog.getByRole('button', { name: '저장', exact: true });
+
+  await dialog.getByLabel('약품명').fill('직접 추가 약');
+  await expect(save).toBeDisabled();
+  await dialog.getByLabel('복용 일수').fill('7');
+  await expect(save).toBeDisabled();
+
+  await dialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '6회', exact: true }).click();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.getByRole('article', { name: '직접 추가 약', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '직접 추가 약 수정', exact: true }).click();
+  const editDialog = page.getByRole('dialog', { name: '직접 추가 약 수정' });
+  await editDialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '필요 시', exact: true }).click();
+  await expect(editDialog.getByRole('button', { name: '저장', exact: true })).toBeEnabled();
+});
+
+for (const width of [375, 1280]) {
+  test(`OCR 미추출 복용 정보는 낮은 신뢰도 확인으로도 확정할 수 없다 (${width}px)`, async ({ page }, testInfo) => {
+    await authenticate(page);
+    let patchCount = 0;
+    await page.route('**/api/v1/ocr/**', async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'PATCH' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+        patchCount += 1;
+        await fulfillJson(route, { recordId: 315, hasMedication: true, statusCode: 'active' });
+        return;
+      }
+      if (request.method() === 'GET' && path === '/api/v1/ocr/jobs/b_mock_9f21') {
+        await fulfillJson(route, {
+          batchId: 'b_mock_9f21',
+          ocrStatus: 'ready_for_review',
+          documentImageUrl: '',
+          fields: {
+            dispensedDate: { value: '2026-08-22', confidence: 'high' },
+          },
+          medications: [
+            { tempId: 'missing-intake', name: '미추출 복용약', confidence: 'low' },
+          ],
+          lowConfidenceCount: 1,
+        });
+        return;
+      }
+      if (
+        request.method() === 'GET' &&
+        (path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image' ||
+          path === '/api/v1/ocr/jobs/b_mock_9f21/image')
+      ) {
+        await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/ocr-review?batchId=b_mock_9f21');
+
+    await expect(page.getByRole('alert')).toContainText('복용 일수와 1일 복용 횟수를 모두 입력해주세요.');
+    await expect(page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true })).toBeDisabled();
+    await expect(page.getByRole('dialog', { name: '확인이 필요한 항목을 모두 보셨나요?' })).toHaveCount(0);
+    expect(patchCount).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath(`ocr-missing-intake-${width}.png`), fullPage: true });
+  });
+}
 
 test('OCR 결과를 확정하면 해당 복약 시간 설정 화면으로 이동한다', async ({ page }) => {
   await authenticate(page);
@@ -847,11 +1068,21 @@ test('등록 수정 URL 직접 진입은 재판독 연출 없이 완료 결과�
   page,
 }) => {
   await authenticate(page);
+  const imageRequests: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (
+      path === '/api/v1/ocr/jobs/b_mock_9f21/image' ||
+      path === '/api/v1/ocr/jobs/b_mock_9f21/processed-image'
+    ) {
+      imageRequests.push(path);
+    }
+  });
   let releaseResult!: () => void;
   const resultGate = new Promise<void>((resolve) => {
     releaseResult = resolve;
   });
-  await page.route('**/api/v1/ocr/jobs/b_mock_9f21*', async (route) => {
+  await page.route('**/api/v1/ocr/jobs/b_mock_9f21', async (route) => {
     await resultGate;
     await fulfillJson(route, {
       ...readyOcrResult,
@@ -860,7 +1091,7 @@ test('등록 수정 URL 직접 진입은 재판독 연출 없이 완료 결과�
     });
   });
   await page.route('**/api/v1/ocr/jobs/b_mock_9f21/*image', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'image/png', body: ONE_PIXEL_PNG });
+    await route.fulfill({ status: 404 });
   });
 
   await page.goto(
@@ -872,7 +1103,8 @@ test('등록 수정 URL 직접 진입은 재판독 연출 없이 완료 결과�
   releaseResult();
   await expect(page.getByRole('heading', { name: '약 4개' })).toBeVisible();
   await expect(page.getByLabel('조제일')).toBeEditable();
-  await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toHaveAttribute('src', /^blob:/);
+  await expect(page.getByRole('img', { name: '약봉투 미리보기' })).toHaveCount(0);
+  expect(imageRequests).toEqual([]);
 });
 
 for (const width of [375, 1280]) {
@@ -1277,6 +1509,9 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
   await addDialog.getByLabel('약품명').fill('새 약');
   await addDialog.getByLabel('함량').fill('500mg');
   await addDialog.getByLabel('1회 투약량').fill('1캡슐');
+  await addDialog.getByLabel('복용 일수').fill('7');
+  await addDialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '2회', exact: true }).click();
   await addDialog.getByRole('button', { name: '저장', exact: true }).click();
   await expect(page.getByRole('heading', { name: '약 5개' })).toBeVisible();
 
@@ -1338,12 +1573,14 @@ test('인증된 문서 OCR 계약으로 결과를 검토·수정하고 저장한
         days: 7,
       },
       { tempId: 'm3', name: '아세트아미노펜', strength: '650mg', doseQuantity: '1정', timesPerDay: null, days: 7 },
-      { tempId: 'm4', name: ' 파모티딘 원문 ', doseQuantity: '0.75' },
+      { tempId: 'm4', name: ' 파모티딘 원문 ', doseQuantity: '0.75', timesPerDay: 1, days: 7 },
       {
         tempId: expect.stringMatching(/^new_/),
         name: '새 약',
         strength: '500mg',
         doseQuantity: '1캡슐',
+        timesPerDay: 2,
+        days: 7,
       },
     ]),
   );
@@ -2086,7 +2323,7 @@ test('업로드 응답에 문서 ID가 없으면 polling을 시작하지 않는�
   expect(pollCount).toBe(0);
 });
 
-test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장한다', async ({ page }) => {
+test('RAM 이미지가 404여도 medium OCR 결과를 확인하고 저장한다', async ({ page }) => {
   await authenticate(page);
   const images: CapturedRequest[] = [];
   const patches: CapturedRequest[] = [];
@@ -2111,7 +2348,7 @@ test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장�
     ) {
       images.push(capture(route));
       await route.fulfill({
-        status: 503,
+        status: 404,
         contentType: 'application/json',
         body: JSON.stringify({ code: 'image_unavailable', message: '원본 이미지를 불러올 수 없어요.' }),
       });
@@ -2146,10 +2383,12 @@ test('원본 이미지가 실패해도 medium OCR 결과를 확인하고 저장�
   await expect(page.getByText('내용을 잘 읽었어요')).toBeVisible();
   await expect(page.getByText('1곳만 확인해주세요')).toHaveCount(0);
   await expect(page.getByText('확인 권장', { exact: true })).toHaveCount(1);
-  await expect(page.getByText('원본 미리보기를 불러오지 못했어요')).toBeVisible();
+  await expect(page.getByText('사진 미리보기를 사용할 수 없어요')).toBeVisible();
   await expect(page.getByRole('img', { name: '등록한 약봉투 원본' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
+  const saveButton = page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true });
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
   await expect(page).toHaveURL(
     '/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration',
   );
@@ -2341,6 +2580,9 @@ test('이미 완료되었거나 실패한 문서 OCR 상태를 기존 화면으�
   await page.getByRole('button', { name: '직접 추가', exact: true }).click();
   const medicationDialog = page.getByRole('dialog', { name: '약 추가' });
   await medicationDialog.getByLabel('약품명').fill('직접입력약');
+  await medicationDialog.getByLabel('복용 일수').fill('7');
+  await medicationDialog.getByRole('combobox').click();
+  await page.getByRole('option', { name: '1회', exact: true }).click();
   await medicationDialog.getByRole('button', { name: '저장', exact: true }).click();
   await page.getByRole('button', { name: '저장하고 복약 시간 설정', exact: true }).click();
   await expect(page).toHaveURL('/medication-schedule?recordId=315&ocrJobId=b_mock_9f21&flow=registration');

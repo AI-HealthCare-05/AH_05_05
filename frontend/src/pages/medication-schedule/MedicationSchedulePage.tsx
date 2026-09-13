@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router';
 import {
   Button,
   Card,
+  DoseSlotButton,
   ErrorDialog,
   Header,
   Input,
@@ -596,21 +597,14 @@ export function MedicationSchedulePage({
                       {MEAL_SLOTS.map((slot) => {
                         const on = medSlots.includes(slot.value);
                         return (
-                          <button
+                          <DoseSlotButton
                             key={slot.value}
-                            type="button"
-                            aria-pressed={on}
+                            selected={on}
                             aria-label={`${med.name} ${slot.label}`}
                             onClick={() => toggleSlot(med.medicationId, slot.value)}
-                            className={cn(
-                              'h-touch rounded-input border text-sm transition-colors',
-                              on
-                                ? 'border-primary bg-primary font-bold text-card'
-                                : 'border-border bg-card text-muted-foreground hover:bg-muted-bg',
-                            )}
                           >
                             {slot.short}
-                          </button>
+                          </DoseSlotButton>
                         );
                       })}
                     </div>
@@ -1183,22 +1177,15 @@ function MedicationRegistrationWizard({
                     {MEAL_SLOTS.map((slot) => {
                       const selected = (slots[medication.medicationId] ?? []).includes(slot.value);
                       return (
-                        <button
+                        <DoseSlotButton
                           key={slot.value}
-                          type="button"
-                          aria-pressed={selected}
+                          selected={selected}
                           aria-label={`${medication.name} ${slot.label}`}
                           aria-describedby={slotLimitErrors[medication.medicationId] ? `slot-limit-${medication.medicationId}` : undefined}
                           onClick={() => toggleSlot(medication.medicationId, slot.value)}
-                          className={cn(
-                            'min-h-touch rounded-input border text-sm',
-                            selected
-                              ? 'border-primary bg-primary font-bold text-card'
-                              : 'border-border bg-card text-muted-foreground',
-                          )}
                         >
                           {slot.short}
-                        </button>
+                        </DoseSlotButton>
                       );
                     })}
                   </div>

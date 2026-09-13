@@ -1,5 +1,6 @@
 /* Position and modal/keyboard visibility remain owned by the shared app shell. */
 .chat-launcher {
+  --chat-launcher-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   width: 60px;
   height: 60px;
   padding: 0;
@@ -8,6 +9,8 @@
   background: var(--color-primary);
   box-shadow: 0 4px 0 var(--color-primary-strong), 0 9px 16px rgb(0 44 104 / 22%);
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
@@ -42,6 +45,13 @@
   height: 80px;
   object-fit: contain;
   transform: translate(-50%, -50%);
+  -webkit-user-drag: none;
+}
+
+.chat-launcher.is-dragging {
+  cursor: grabbing;
+  transform: none;
+  transition: box-shadow 160ms ease;
 }
 
 @media (hover: hover) {
@@ -49,11 +59,20 @@
     transform: translateY(-2px);
     box-shadow: 0 5px 0 var(--color-primary-strong), 0 12px 20px rgb(0 44 104 / 23%);
   }
+
+  .chat-launcher-positioned:hover {
+    transform: none;
+  }
 }
 
 .chat-launcher:active {
   transform: translateY(2px);
   box-shadow: 0 2px 0 var(--color-primary-strong), 0 5px 10px rgb(0 44 104 / 18%);
+}
+
+.chat-launcher-positioned:active,
+.chat-launcher.is-dragging:active {
+  transform: none;
 }
 
 .chat-launcher:focus-visible {

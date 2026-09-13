@@ -131,12 +131,12 @@ test('선택한 정렬명은 방향을 표시하고 후기 수와 현재 복용 
 
   await page.getByPlaceholder('제품명 또는 성분 검색').fill('테스트');
   const sorts = page.getByRole('group', { name: '검색 결과 정렬' });
-  await expect(sorts.getByText('이름순 ▲', { exact: true })).toBeVisible();
+  await expect(sorts.getByRole('button', { name: '이름순 ▲', exact: true })).toBeVisible();
   await expect(page.getByText('★4.6 · 후기: 2개', { exact: true })).toBeVisible();
   await expect(page.getByLabel('영양제 검색 결과').getByText('복용 중', { exact: true })).toBeVisible();
 
-  await page.getByRole('group', { name: '정렬 방향' }).getByRole('button', { name: '내림차순' }).click();
-  await expect(sorts.getByText('이름순 ▼', { exact: true })).toBeVisible();
+  await sorts.getByRole('button', { name: '이름순 ▲', exact: true }).click();
+  await expect(sorts.getByRole('button', { name: '이름순 ▼', exact: true })).toBeVisible();
   expect(listRequests.length).toBeGreaterThan(0);
   expect(listRequests.every((request) => request.searchParams.get('status') === 'ACTIVE')).toBe(true);
 

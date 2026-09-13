@@ -66,9 +66,15 @@ class EmailTemplateRenderer:
             report_markdown = payload.report_markdown or ""
             return EmailMessage(
                 to=str(payload.recipient_email),
-                subject=INTAKE_REPORT_SUBJECT,
-                text_body=self._intake_report_plain_text(report_markdown),
-                html_body=template.render(report_html=render_safe_markdown(report_markdown)),
+                # Keep each report out of older Gmail conversations, where
+                # repeated clinical text can otherwise be hidden as quoted text.
+                subject=f"{INTAKE_REPORT_SUBJECT} · {payload.report_id}",
+                text_body=report_markdown
+                if payload.report_html is not None
+                else self._intake_report_plain_text(report_markdown),
+                html_body=payload.report_html
+                if payload.report_html is not None
+                else template.render(report_html=render_safe_markdown(report_markdown)),
                 inline_attachments=(self._logo_attachment(),),
             )
         raise ValueError("지원하지 않는 이메일 템플릿입니다.")

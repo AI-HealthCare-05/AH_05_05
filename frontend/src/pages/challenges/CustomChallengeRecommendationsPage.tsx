@@ -65,10 +65,12 @@ export function CustomChallengeRecommendationsPage() {
         </div>
       ) : null}
       {items?.length === 0 ? (
-        <Card className="gap-3 p-5 shadow-none">
-          <h2 className="text-base font-bold">지금 참여할 수 있는 맞춤 챌린지가 없어요.</h2>
-          <p className="text-sm text-muted-foreground">복약 또는 영양제 기록을 등록한 뒤 다시 확인해주세요.</p>
-          <Link to="/medications" className="text-sm font-bold text-primary">내 기록 확인하기 ›</Link>
+        <Card className="p-5 shadow-none">
+          <div className="flex flex-col gap-3">
+            <h2 className="text-base font-bold">지금 참여할 수 있는 맞춤 챌린지가 없어요.</h2>
+            <p className="text-sm text-muted-foreground">복약 또는 영양제 기록을 등록한 뒤 다시 확인해주세요.</p>
+            <Link to="/medications" className="text-sm font-bold text-primary">내 기록 확인하기 ›</Link>
+          </div>
         </Card>
       ) : null}
       {items?.map(item => {
@@ -82,15 +84,17 @@ export function CustomChallengeRecommendationsPage() {
             className="block"
             aria-label={`${item.challengeName} 대상 선택`}
           >
-            <Card className="gap-2 p-5 shadow-none">
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="text-base font-bold text-foreground">{item.challengeName}</h2>
-                <ArrowRight aria-hidden className="size-5 shrink-0 text-primary" />
+            <Card className="p-5 shadow-none">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="text-base font-bold text-foreground">{item.challengeName}</h2>
+                  <ArrowRight aria-hidden className="size-5 shrink-0 text-primary" />
+                </div>
+                <p className="text-xs font-bold text-primary">
+                  {item.challengeType === 'MEDICATION' ? '복약 기록 연동' : '영양제 기록 연동'}
+                </p>
+                <p className="text-sm text-muted-foreground">참여 가능한 대상 {available}개</p>
               </div>
-              <p className="text-xs font-bold text-primary">
-                {item.challengeType === 'MEDICATION' ? '복약 기록 연동' : '영양제 기록 연동'}
-              </p>
-              <p className="text-sm text-muted-foreground">참여 가능한 대상 {available}개</p>
             </Card>
           </Link>
         );

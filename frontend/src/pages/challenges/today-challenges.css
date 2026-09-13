@@ -25,10 +25,7 @@
 .rx-today-challenge-detail { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
 .rx-today-challenge-detail:focus-visible,
 .rx-today-challenge-checkin:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
-.rx-today-challenge-checkin,
 .rx-today-challenge-state { display: flex; min-height: 44px; align-items: center; justify-content: center; gap: 4px; font-size: 13px; font-weight: 700; }
-.rx-today-challenge-checkin { border-radius: var(--radius-button); background: var(--color-primary); color: var(--color-primary-foreground); }
-.rx-today-challenge-checkin:disabled { opacity: 0.65; cursor: wait; }
 .rx-today-challenge-arrow {
   display: flex;
   align-items: center;

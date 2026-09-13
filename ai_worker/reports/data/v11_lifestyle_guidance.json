@@ -1,0 +1,95 @@
+{
+  "food_action": "식품은 참고 예시이며, 영양소 부족을 뜻하지 않아요. 알레르기·식이 제한과 복용약의 음식 주의사항을 함께 고려해 주세요.",
+  "food_category": "영양소 식품 안내",
+  "timing_category": "복용 시점",
+  "foods": [
+    {
+      "nutrient_name": "칼슘",
+      "expected_units": ["mg"],
+      "source": {
+        "id": "source:ods-calcium",
+        "title": "Calcium — Health Professional Fact Sheet",
+        "organization": "National Institutes of Health, Office of Dietary Supplements (NIH ODS)",
+        "url": "https://ods.od.nih.gov/factsheets/Calcium-HealthProfessional/",
+        "evidence_level": "PUBLIC_GUIDE"
+      },
+      "title": "칼슘이 들어있는 식품",
+      "summary": "우유·요거트·치즈 같은 유제품과, 칼슘으로 응고했거나 칼슘으로 강화된 두부에 칼슘이 들어 있어요. (모든 두부가 아니라 응고·강화 방식에 따라 다르니 제품 표시를 확인하세요)",
+      "card_id": "food:calcium"
+    },
+    {
+      "nutrient_name": "철",
+      "expected_units": ["mg"],
+      "source": {
+        "id": "source:ods-iron-food",
+        "title": "Iron — Health Professional Fact Sheet (Sources of Iron section)",
+        "organization": "National Institutes of Health, Office of Dietary Supplements (NIH ODS)",
+        "url": "https://ods.od.nih.gov/factsheets/Iron-HealthProfessional/",
+        "evidence_level": "PUBLIC_GUIDE"
+      },
+      "title": "철분이 들어있는 식품",
+      "summary": "살코기 등 육류, 콩류, 견과류에 철분이 들어 있어요.",
+      "card_id": "food:iron"
+    },
+    {
+      "nutrient_name": "비타민 C",
+      "expected_units": ["mg"],
+      "source": {
+        "id": "source:ods-vitaminc-food",
+        "title": "Vitamin C — Consumer Fact Sheet (What foods provide vitamin C? section)",
+        "organization": "National Institutes of Health, Office of Dietary Supplements (NIH ODS)",
+        "url": "https://ods.od.nih.gov/factsheets/VitaminC-Consumer/",
+        "evidence_level": "PUBLIC_GUIDE"
+      },
+      "title": "비타민 C가 들어있는 식품",
+      "summary": "빨간색·초록색 피망, 브로콜리, 딸기, 키위 같은 식품에 비타민 C가 들어 있어요.",
+      "card_id": "food:vitamin-c"
+    },
+    {
+      "nutrient_name": "비타민 D",
+      "expected_units": ["μg", "µg", "mcg", "㎍"],
+      "source": {
+        "id": "source:ods-vitamind-food",
+        "title": "Vitamin D — Consumer Fact Sheet",
+        "organization": "National Institutes of Health, Office of Dietary Supplements (NIH ODS)",
+        "url": "https://ods.od.nih.gov/factsheets/VitaminD-Consumer/",
+        "evidence_level": "PUBLIC_GUIDE"
+      },
+      "title": "비타민 D가 들어있는 식품",
+      "summary": "연어·고등어 같은 생선과 달걀노른자(소량 포함)에 비타민 D가 들어 있고, 비타민 D가 강화된 식품도 있어요. 강화 여부는 제품 표시로 확인하세요.",
+      "card_id": "food:vitamin-d"
+    }
+  ],
+  "timings": [
+    {
+      "nutrient_name": "비타민 D",
+      "expected_units": ["μg", "µg", "mcg", "㎍"],
+      "source": {
+        "id": "source:ods-vitamind-food",
+        "title": "Vitamin D — Consumer Fact Sheet",
+        "organization": "National Institutes of Health, Office of Dietary Supplements (NIH ODS)",
+        "url": "https://ods.od.nih.gov/factsheets/VitaminD-Consumer/",
+        "evidence_level": "PUBLIC_GUIDE"
+      },
+      "title": "비타민 D는 식사와 함께 먹는 게 흡수에 유리해요",
+      "summary": "비타민 D는 지방이 포함된 식사나 간식과 함께 섭취할 때 흡수가 더 잘 되는 것으로 알려져 있어요.",
+      "action": "지방이 포함된 식사나 간식 시간에 맞춰 드시는 걸 추천해요.",
+      "card_id": "timing:vitamin-d"
+    },
+    {
+      "nutrient_name": "칼슘",
+      "expected_units": ["mg"],
+      "source": {
+        "id": "source:ods-calcium",
+        "title": "Calcium — Health Professional Fact Sheet",
+        "organization": "National Institutes of Health, Office of Dietary Supplements (NIH ODS)",
+        "url": "https://ods.od.nih.gov/factsheets/Calcium-HealthProfessional/",
+        "evidence_level": "PUBLIC_GUIDE"
+      },
+      "title": "칼슘 보충제는 성분 형태에 따라 복용 시점이 다를 수 있어요",
+      "summary": "탄산칼슘(calcium carbonate)은 음식과 함께 먹을 때 흡수에 유리하고, 구연산칼슘(calcium citrate)은 음식 유무와 관계없이 먹을 수 있다고 알려져 있어요.",
+      "action": "제품 라벨의 칼슘 형태를 기준으로, 탄산칼슘은 식사와 함께, 구연산칼슘은 식사 여부와 관계없이 편한 시간에 드시는 걸 추천해요.",
+      "card_id": "timing:calcium"
+    }
+  ]
+}

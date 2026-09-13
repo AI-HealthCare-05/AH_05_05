@@ -1,6 +1,6 @@
 import { Minus, Plus } from 'lucide-react';
-import { cn } from '@/shared/lib/cn';
 import { MEAL_SLOTS, SLOT_ORDER, type MealSlot } from '@/shared/model/mealSlot';
+import { DoseSlotButton } from './DoseSlotButton';
 
 const MAX_DOSE_AMOUNT = 99_999.999;
 
@@ -66,20 +66,13 @@ export function DoseSlotFields({
           {MEAL_SLOTS.map((slot) => {
             const selected = slots.includes(slot.value);
             return (
-              <button
+              <DoseSlotButton
                 key={slot.value}
-                type="button"
-                aria-pressed={selected}
-                className={cn(
-                  'rx-dose-slot min-h-touch rounded-input border px-1 text-sm font-bold',
-                  selected
-                    ? 'border-primary bg-[var(--color-primary)] text-card'
-                    : 'border-border bg-card text-muted-foreground',
-                )}
+                selected={selected}
                 onClick={() => toggleSlot(slot.value)}
               >
                 {slot.short}
-              </button>
+              </DoseSlotButton>
             );
           })}
         </div>

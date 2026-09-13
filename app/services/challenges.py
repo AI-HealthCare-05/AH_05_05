@@ -7,12 +7,15 @@ from app.core.exceptions import (
     BadgeInUseError,
     BadgeNameAlreadyExistsError,
     BadgeNotFoundError,
+    ChallengeDisplayPeriodOverlapError,
     ChallengeInUseError,
     ChallengeNotFoundError,
+    CustomChallengeTemplateInUseError,
     CustomChallengeTemplateNameAlreadyExistsError,
     CustomChallengeTemplateNotFoundError,
     InvalidCommonCodeError,
 )
+from app.core.utils.common import mask_admin_user_name
 from app.dtos.challenges import (
     BadgeAdminListQuery,
     BadgeCreateRequest,
@@ -20,6 +23,7 @@ from app.dtos.challenges import (
     BadgeUpdateRequest,
     ChallengeAdminListQuery,
     ChallengeCreateRequest,
+    ChallengeParticipantResponse,
     ChallengeResponse,
     ChallengeUpdateRequest,
     CustomChallengeTemplateAdminListQuery,
@@ -30,6 +34,7 @@ from app.dtos.challenges import (
 from app.models.challenges import Badge, Challenge, CustomChallengeTemplate, UserBadge, UserChallenge
 from app.models.common_codes import CommonCode
 from app.models.custom_challenges import CustomChallengeBadgeAward, CustomChallengeParticipation
+from app.models.enums import ChallengeParticipationStatus
 from app.repositories.badge_repository import BadgeRepository
 from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.custom_challenge_template_repository import CustomChallengeTemplateRepository
@@ -140,8 +145,15 @@ class AdminChallengeService:
         data: ChallengeCreateRequest,
         admin_id: int,
     ) -> ChallengeResponse:
-        await self._validate_challenge_relations(data.model_dump())
-        challenge = await Challenge.create(**data.model_dump(), created_by_admin_id=admin_id)
+        values = data.model_dump()
+        await self._validate_challenge_relations(values)
+        await self._validate_display_period_overlap(
+            challenge_type_id=values["challenge_type_id"],
+            recruit_start_at=values["recruit_start_at"],
+            recruit_end_at=values["recruit_end_at"],
+            is_displayed=values["is_displayed"],
+        )
+        challenge = await Challenge.create(**values, created_by_admin_id=admin_id)
         return self.challenge_response(challenge)
 
     async def list_challenges(
@@ -164,6 +176,28 @@ class AdminChallengeService:
             raise ChallengeNotFoundError()
         return self.challenge_response(challenge)
 
+    async def list_challenge_participants(
+        self,
+        challenge_id: int,
+        *,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[ChallengeParticipantResponse], int]:
+        if await self.challenges.get(challenge_id) is None:
+            raise ChallengeNotFoundError()
+        query = UserChallenge.filter(challenge_id=challenge_id).exclude(
+            status=ChallengeParticipationStatus.CANCELLED,
+        )
+        total = await query.count()
+        participations = await query.select_related("user").order_by("-started_at", "-id").offset(offset).limit(limit)
+        return [
+            ChallengeParticipantResponse(
+                masked_name=mask_admin_user_name(participation.user.name),
+                started_at=participation.started_at,
+            )
+            for participation in participations
+        ], total
+
     async def update_challenge(
         self,
         challenge_id: int,
@@ -179,11 +213,41 @@ class AdminChallengeService:
         end = values.get("recruit_end_at", challenge.recruit_end_at)
         if end <= start:
             raise ValueError("모집 종료 일시는 모집 시작 일시보다 늦어야 합니다.")
+        await self._validate_display_period_overlap(
+            challenge_type_id=values.get("challenge_type_id", challenge.challenge_type_id),
+            recruit_start_at=start,
+            recruit_end_at=end,
+            is_displayed=values.get("is_displayed", challenge.is_displayed),
+            exclude_challenge_id=challenge.id,
+        )
         for key, value in values.items():
             setattr(challenge, key, value)
         challenge.updated_by_admin_id = admin_id
         await challenge.save()
         return self.challenge_response(challenge)
+
+    @staticmethod
+    async def _validate_display_period_overlap(
+        *,
+        challenge_type_id: int,
+        recruit_start_at: datetime,
+        recruit_end_at: datetime,
+        is_displayed: bool,
+        exclude_challenge_id: int | None = None,
+    ) -> None:
+        if not is_displayed:
+            return
+        query = Challenge.filter(
+            challenge_type_id=challenge_type_id,
+            is_displayed=True,
+            is_deleted=False,
+            recruit_start_at__lt=recruit_end_at,
+            recruit_end_at__gt=recruit_start_at,
+        )
+        if exclude_challenge_id is not None:
+            query = query.exclude(id=exclude_challenge_id)
+        if await query.exists():
+            raise ChallengeDisplayPeriodOverlapError()
 
     async def delete_challenge(self, challenge_id: int, admin_id: int) -> None:
         challenge = await self.challenges.get(challenge_id)
@@ -226,13 +290,38 @@ class AdminChallengeService:
         query: CustomChallengeTemplateAdminListQuery,
     ) -> tuple[list[CustomChallengeTemplateResponse], int]:
         items, total = await self.custom_templates.list(**query.model_dump())
-        return [self.custom_template_response(item) for item in items], total
+        used_ids = await self._used_custom_template_ids([item.id for item in items])
+        return [self.custom_template_response(item, is_deletable=item.id not in used_ids) for item in items], total
 
     async def get_custom_template(self, template_id: int) -> CustomChallengeTemplateResponse:
         template = await self.custom_templates.get(template_id)
         if template is None:
             raise CustomChallengeTemplateNotFoundError()
-        return self.custom_template_response(template)
+        used_ids = await self._used_custom_template_ids([template.id])
+        return self.custom_template_response(
+            template,
+            is_deletable=template.id not in used_ids,
+        )
+
+    async def delete_custom_template(self, template_id: int) -> None:
+        template = await self.custom_templates.get(template_id)
+        if template is None:
+            raise CustomChallengeTemplateNotFoundError()
+        if template.id in await self._used_custom_template_ids([template.id]):
+            raise CustomChallengeTemplateInUseError()
+        try:
+            await template.delete()
+        except IntegrityError as error:
+            raise CustomChallengeTemplateInUseError() from error
+
+    @staticmethod
+    async def _used_custom_template_ids(template_ids: list[int]) -> set[int]:
+        if not template_ids:
+            return set()
+        used_ids = await CustomChallengeParticipation.filter(
+            template_id__in=template_ids,
+        ).values_list("template_id", flat=True)
+        return set(used_ids)
 
     async def update_custom_template(
         self,
@@ -311,5 +400,8 @@ class AdminChallengeService:
     @staticmethod
     def custom_template_response(
         template: CustomChallengeTemplate,
+        *,
+        is_deletable: bool = True,
     ) -> CustomChallengeTemplateResponse:
-        return CustomChallengeTemplateResponse.model_validate(template)
+        response = CustomChallengeTemplateResponse.model_validate(template)
+        return response.model_copy(update={"is_deletable": is_deletable})

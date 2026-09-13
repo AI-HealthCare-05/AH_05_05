@@ -261,13 +261,14 @@ export function SupplementsPage({
         title="영양제"
         onBack={() => navigateBackOrReplace(navigate, '/home')}
         right={
-          <button
-            type="button"
-            className="min-h-touch shrink-0 rounded-button bg-primary px-3 text-sm font-bold text-white hover:bg-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          <Button
+            size="compact"
+            fullWidth={false}
+            className="px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => navigate('/reports/new?source=supplements')}
           >
             AI 보고서 받기
-          </button>
+          </Button>
         }
       />
 
@@ -322,24 +323,24 @@ export function SupplementsPage({
                   </h2>
                 )}
                 {supplements.length > 0 && (
-                  <div className="ml-auto flex shrink-0 items-center gap-1">
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
                     {!listEditOpen && (
-                      <button
-                        type="button"
-                        aria-label="영양제 추가"
-                        className="flex size-touch items-center justify-center rounded-button text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      <Button
+                        fullWidth={false}
+                        variant="secondary"
                         onClick={openAddSheet}
                       >
-                        <Plus aria-hidden className="size-5" />
-                      </button>
+                        <Plus aria-hidden className="mr-1 size-4" />
+                        영양제 추가
+                      </Button>
                     )}
-                    <button
-                      type="button"
-                      className="flex min-h-touch min-w-touch items-center justify-center rounded-button px-1 text-sm font-bold text-primary-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <Button
+                      fullWidth={false}
+                      variant="secondary"
                       onClick={toggleListEdit}
                     >
                       {listEditOpen ? '완료' : '삭제'}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>

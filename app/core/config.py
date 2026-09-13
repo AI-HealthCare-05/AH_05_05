@@ -73,9 +73,12 @@ class Config(BaseSettings):
         "v3.4.2",
         "v3.4.3",
     ] = "v3.4.1"
+    # Only the explicit legacy-file maintenance command uses this directory.
     OCR_TEMP_DIR: Path = Path("media/ocr-tmp")
+    # Dedicated instance with RDB/AOF disabled. Never point this at the ARQ broker.
+    OCR_IMAGE_REDIS_URL: str = "redis://ocr-images:6379/0"
     OCR_QUEUE_NAME: str = "arq:ocr"
-    OCR_REVIEW_TTL_MINUTES: int = Field(default=60, gt=0)
+    OCR_REVIEW_TTL_MINUTES: int = Field(default=60, gt=0, le=60)
     OCR_RETRY_BASE_SECONDS: int = Field(default=5, gt=0)
 
     INTERNAL_API_KEY: str = ""

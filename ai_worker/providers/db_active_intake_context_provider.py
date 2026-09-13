@@ -46,10 +46,11 @@ class DbActiveIntakeContextProvider:
             user_id=user_id,
             status=CareEpisodeStatus.ACTIVE,
             confirmed_at__not_isnull=True,
-        ).values_list("id", flat=True)
+        )
+        episodes_by_id = {episode.id: episode for episode in episodes}
         medication_rows = (
             await Medication.filter(
-                care_episode_id__in=episodes,
+                care_episode_id__in=episodes_by_id,
             )
             .prefetch_related("slots")
             .order_by("id")
@@ -62,7 +63,13 @@ class DbActiveIntakeContextProvider:
 
         today = self._today_provider()
         medications = [
-            self._to_active_medication(row) for row in medication_rows if self._is_current_medication(row, today=today)
+            self._to_active_medication(row)
+            for row in medication_rows
+            if self._is_current_medication(
+                row,
+                episode=episodes_by_id[row.care_episode_id],
+                today=today,
+            )
         ]
         supplements = [
             self._to_active_supplement(row)
@@ -96,13 +103,18 @@ class DbActiveIntakeContextProvider:
     def _is_current_medication(
         medication: Medication,
         *,
+        episode: CareEpisode,
         today: date,
     ) -> bool:
-        if medication.prescribed_at is None or medication.days is None:
+        start_date = episode.medication_start_date or medication.prescribed_at
+        if start_date is None:
             return True
-        last_day = medication.prescribed_at + timedelta(
-            days=medication.days - 1,
-        )
+        if start_date > today:
+            return False
+        days = medication.days or episode.medication_days
+        if days is None:
+            return True
+        last_day = start_date + timedelta(days=days - 1)
         return last_day >= today
 
     @staticmethod

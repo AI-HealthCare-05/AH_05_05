@@ -68,7 +68,10 @@ def test_api_dto_preserves_generated_report_and_visible_fallback_metadata() -> N
     ],
     ids=["omitted-originals", "empty-originals", "preserved-originals"],
 )
-def test_api_dto_preserves_v11_cards_and_same_email_markdown(original_texts: list[dict] | None) -> None:
+@pytest.mark.parametrize("identity_notice", [None, "등록 이름을 제품명으로 추정한 안내입니다."])
+def test_api_dto_preserves_v11_cards_and_same_email_markdown(
+    original_texts: list[dict] | None, identity_notice: str | None
+) -> None:
     from app.dtos.intake_reports import IntakeReportResponse
 
     cards = {
@@ -98,7 +101,13 @@ def test_api_dto_preserves_v11_cards_and_same_email_markdown(original_texts: lis
     }
     if original_texts is not None:
         cards["originalTexts"] = original_texts
-    expected_cards = {**cards, "originalTexts": original_texts if original_texts is not None else []}
+    if identity_notice is not None:
+        cards["medications"][0]["identityNotice"] = identity_notice
+    expected_cards = {
+        **cards,
+        "medications": [{**cards["medications"][0], "identityNotice": identity_notice}],
+        "originalTexts": original_texts if original_texts is not None else [],
+    }
     values = IntakeReportResult.empty(user_id=1).model_dump()
     values.update(
         status="COMPLETED",

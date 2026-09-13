@@ -21,16 +21,31 @@ export function sanitizeDetailCodeInput(value) {
 }
 
 export function guardCodeInput(event) {
-  if (
-    event.type === "keydown"
-    && (event.isComposing || event.key === "Process" || event.keyCode === 229)
-  ) {
-    event.preventDefault();
-    return;
-  }
+  // IME 조합 중에는 개입하지 않는다. 조합 중에 preventDefault 하거나 값을 건드리면
+  // 조합 범위가 깨져 **앞서 입력한 값까지 지워진다**(#374 비밀번호 칸, #460 공통코드).
+  // 조합으로 들어온 한글은 compositionend 에서 제거한다.
+  if (event.isComposing) return;
+  // 조합이 아닌 입력(붙여넣기·직접 입력)에서만 코드 외 문자를 삽입 전에 막는다.
   if (event.type === "beforeinput" && event.data && /[^A-Za-z0-9_]/.test(event.data)) {
     event.preventDefault();
   }
+}
+
+/**
+ * 코드값 칸(영문·숫자·_ 전용)에 한글 차단을 건다.
+ *
+ * 조합 중에는 value 를 건드리지 않고(#460), 조합이 끝난 뒤에만 정리한다.
+ * 조합 중에 `input.value = …` 로 덮어쓰면 IME 가 조합 범위를 잃어 앞 입력이 지워진다.
+ */
+function attachCodeInputGuard(input, sanitize) {
+  input.addEventListener("beforeinput", guardCodeInput);
+  input.addEventListener("input", (event) => {
+    if (event.isComposing) return;
+    input.value = sanitize(input.value);
+  });
+  input.addEventListener("compositionend", () => {
+    input.value = sanitize(input.value);
+  });
 }
 
 export function sanitizeSortOrderInput(value) {
@@ -144,20 +159,8 @@ function initializeCommonCodeManagement() {
   let codeItems = [];
 
   if (!isAdmin) document.querySelectorAll("[data-write-control]").forEach((node) => node.remove());
-  document.querySelectorAll(".common-code-input").forEach((input) => {
-    input.addEventListener("keydown", guardCodeInput);
-    input.addEventListener("beforeinput", guardCodeInput);
-    input.addEventListener("input", () => {
-      input.value = sanitizeGroupCodeInput(input.value);
-    });
-  });
-  document.querySelectorAll(".detail-code-input").forEach((input) => {
-    input.addEventListener("keydown", guardCodeInput);
-    input.addEventListener("beforeinput", guardCodeInput);
-    input.addEventListener("input", () => {
-      input.value = sanitizeDetailCodeInput(input.value);
-    });
-  });
+  document.querySelectorAll(".common-code-input").forEach((input) => attachCodeInputGuard(input, sanitizeGroupCodeInput));
+  document.querySelectorAll(".detail-code-input").forEach((input) => attachCodeInputGuard(input, sanitizeDetailCodeInput));
   codeForm.elements.sort_order.addEventListener("input", (event) => {
     event.currentTarget.value = sanitizeSortOrderInput(event.currentTarget.value).slice(0, 2);
   });

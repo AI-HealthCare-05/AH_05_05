@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { EditableOcrMedication } from '@/entities/document/types';
+import {
+  isValidMedicationRegistrationDays,
+  isValidMedicationRegistrationFrequency,
+} from '@/entities/document/medicationRegistrationValidation';
 import { cn } from '@/shared/lib/cn';
 import {
   Button,
@@ -47,6 +51,8 @@ const TIMES_PER_DAY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '2', label: '2회' },
   { value: '3', label: '3회' },
   { value: '4', label: '4회' },
+  { value: '5', label: '5회' },
+  { value: '6', label: '6회' },
   { value: 'prn', label: '필요 시' },
   { value: 'unread', label: '미추출' },
 ];
@@ -106,6 +112,11 @@ export function MedicationEditDialog({
 }: MedicationEditDialogProps) {
   const [draft, setDraft] = useState<Draft>(() => toDraft(medication));
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const parsedDays = parsePositiveInteger(draft.days);
+  const hasName = Boolean(draft.name.trim());
+  const hasValidDays = isValidMedicationRegistrationDays(parsedDays);
+  const hasValidFrequency = isValidMedicationRegistrationFrequency(draft.timesPerDay);
+  const canSave = hasName && hasValidDays && hasValidFrequency;
 
   useEffect(() => {
     if (!open) return;
@@ -114,16 +125,15 @@ export function MedicationEditDialog({
   }, [medication, open]);
 
   function save() {
-    if (!draft.name.trim()) return;
+    if (!canSave || parsedDays === undefined) return;
     const doseQuantity = draft.doseQuantity.trim();
-    const days = parsePositiveInteger(draft.days);
     onSave({
       tempId: medication?.tempId ?? `new_${Date.now()}`,
       name: draft.name,
       ...(draft.strength.trim() ? { strength: draft.strength.trim() } : {}),
       ...(doseQuantity ? { doseQuantity } : {}),
       ...(draft.timesPerDay !== undefined ? { timesPerDay: draft.timesPerDay } : {}),
-      ...(days !== undefined ? { days } : {}),
+      days: parsedDays,
       ...(medication?.confidence ? { confidence: medication.confidence } : {}),
     });
   }
@@ -180,6 +190,7 @@ export function MedicationEditDialog({
                 maxLength={100}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 placeholder="예: 셀레콕시브"
+                error={hasName ? undefined : '약품명을 입력해주세요.'}
               />
               <Input
                 label="함량"
@@ -204,7 +215,10 @@ export function MedicationEditDialog({
                     setDraft({ ...draft, timesPerDay: selectValueToTimesPerDay(value) })
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    aria-invalid={!hasValidFrequency || undefined}
+                    className={!hasValidFrequency ? 'border-danger' : undefined}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -215,6 +229,9 @@ export function MedicationEditDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                {!hasValidFrequency && (
+                  <p className="text-sm text-danger-strong">1일 복용 횟수 또는 필요 시를 선택해주세요.</p>
+                )}
               </div>
 
               <Input
@@ -231,10 +248,11 @@ export function MedicationEditDialog({
                   })
                 }
                 placeholder="예: 7"
+                error={hasValidDays ? undefined : '복용 일수는 1일에서 365일 사이로 입력해주세요.'}
               />
             </div>
 
-            <Button disabled={!draft.name.trim()} onClick={save}>
+            <Button disabled={!canSave} onClick={save}>
               저장
             </Button>
 

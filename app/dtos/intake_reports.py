@@ -109,6 +109,7 @@ class IntakeReportCurrentStackItemResponse(CamelModel):
     item_id: int
     product_name: str
     ingredient_name: str | None = None
+    ingredient_summary: str | None = None
     registered_intake_info: str
     scheduled_slots: list[str]
     evidence_level: str
@@ -164,6 +165,8 @@ class IntakeReportNutrientTotalResponse(CamelModel):
     reference_value: str | None = None
     reference_kind: Literal["RNI", "AI"] | None = None
     reference_percent: str | None = None
+    upper_limit_value: str | None = None
+    upper_limit_note: str | None = None
     unknown_product_names: list[str] = Field(default_factory=list)
 
     @classmethod

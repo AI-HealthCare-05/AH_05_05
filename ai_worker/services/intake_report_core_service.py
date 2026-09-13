@@ -5,6 +5,7 @@ from ai_worker.domain.errors import AIConfigurationError
 from ai_worker.llm.generators.intake_report_cards_generator import (
     OpenAIIntakeReportCardsGenerator,
 )
+from ai_worker.llm.generators.medication_candidate_selector import OpenAIMedicationCandidateSelector
 from ai_worker.observability.chat_tracer import (
     ChatTracer,
     NoOpChatTracer,
@@ -27,8 +28,8 @@ from ai_worker.reports.nutrients import load_report_nutrients
 from ai_worker.repositories.interaction_rule_repository import (
     DbInteractionRuleRepository,
 )
-from ai_worker.repositories.medication_product_guide_repository import (
-    DbMedicationProductGuideRepository,
+from ai_worker.repositories.report_medication_guide_repository import (
+    ReportMedicationGuideRepository,
 )
 from ai_worker.schemas.intake_report import IntakeReportResult
 from ai_worker.schemas.knowledge import (
@@ -86,7 +87,13 @@ def build_intake_report_core_service(
         )
     use_case = GenerateIntakeReportUseCase(
         context_provider=DbActiveIntakeContextProvider(),
-        guide_repository=DbMedicationProductGuideRepository(),
+        guide_repository=ReportMedicationGuideRepository(
+            candidate_selector=OpenAIMedicationCandidateSelector(
+                model=settings.OPENAI_CHAT_MODEL,
+                api_key=settings.OPENAI_API_KEY,
+                timeout_seconds=5.0,
+            ),
+        ),
         interaction_rule_repository=DbInteractionRuleRepository(
             active_dataset_version=settings.INTERACTION_RULE_DATASET_VERSION,
         ),
@@ -99,6 +106,7 @@ def build_intake_report_core_service(
         generator=OpenAIIntakeReportCardsGenerator(
             model=settings.OPENAI_CHAT_MODEL,
             api_key=settings.OPENAI_API_KEY,
+            enable_plain_language=False,
             # A complete evidence-locked card plan is longer than a chat reply.
             # Keep the generator's overall 90s budget while allowing one full
             # response instead of repeatedly cancelling it at the chat timeout.

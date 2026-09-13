@@ -103,11 +103,10 @@ async def test_cancel_route_returns_204_with_no_body() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cancel_ready_job_mutates_only_lifecycle_metadata_and_retains_review_artifacts() -> None:
+async def test_cancel_ready_job_retains_history_without_an_active_review_payload() -> None:
     user = await create_user("ready")
     job = await create_job(user, OcrJobStatus.READY_FOR_REVIEW)
     original_manifest = job.input_manifest
-    original_result = job.structured_result
     before = datetime.now(config.TIMEZONE)
 
     await MedicationGuideOcrJobService().cancel(user, job.id)
@@ -120,7 +119,8 @@ async def test_cancel_ready_job_mutates_only_lifecycle_metadata_and_retains_revi
     assert cancelled.expires_at is None
     assert cancelled.error_code == "USER_CANCELLED"
     assert cancelled.input_manifest == original_manifest
-    assert cancelled.structured_result == original_result
+    assert cancelled.structured_result is None
+    assert cancelled.ready_at is None
 
 
 @pytest.mark.asyncio

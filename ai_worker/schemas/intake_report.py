@@ -72,6 +72,7 @@ class IntakeReportCurrentStackItem(BaseModel):
     item_id: int = Field(ge=1)
     product_name: str = Field(min_length=1)
     ingredient_name: str | None = None
+    ingredient_summary: str | None = None
     registered_intake_info: str = Field(min_length=1)
     scheduled_slots: list[str] = Field(default_factory=list)
     evidence_level: IntakeReportEvidenceLevel
@@ -110,6 +111,8 @@ class IntakeReportNutrientTotal(BaseModel):
     reference_value: str | None = None
     reference_kind: Literal["RNI", "AI"] | None = None
     reference_percent: str | None = None
+    upper_limit_value: str | None = None
+    upper_limit_note: str | None = None
     unknown_product_names: list[str] = Field(default_factory=list)
 
 
@@ -159,6 +162,7 @@ class IntakeReportDraft(BaseModel):
     deterministic_markdown: str = Field(min_length=1)
     guide_evidence: list[MedicationGuideFact] = Field(default_factory=list)
     guide_item_bindings: dict[int, int] = Field(default_factory=dict)
+    inferred_guide_items: dict[int, str] = Field(default_factory=dict)
     knowledge_evidence: list[RetrievedKnowledgeChunk] = Field(default_factory=list)
     profile_label: str | None = None
     basis_note: str | None = None
